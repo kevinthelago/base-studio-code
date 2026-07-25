@@ -69,7 +69,11 @@ export const SEED_COMPONENTS: ComponentRecord[] = Object.keys(migratedApp)
  * With the seed now empty (#3543), this DROPS every prior pristine packaged component on the next boot.
  */
 export function reconcileComponents(loaded: ComponentRecord[]): SeedReconcile<ComponentRecord> {
-  return reconcileSeed(loaded, SEED_COMPONENTS, "component");
+  // Page records (#3723) are import-based SPECS the app renders through the registry at runtime — not
+  // designer-editable content. So the seed is AUTHORITATIVE for them: a diverged store copy (a designer
+  // self-contained a page so it would render in the preview sandbox) is forced back to the seed instead
+  // of kept — which is what silently shadowed Settings (#3658), then the whole app (#3723).
+  return reconcileSeed(loaded, SEED_COMPONENTS, "component", { seedAuthoritative: (r) => r.role === "page" });
 }
 
 /** Reconcile loaded kits with the packaged built-in kits (see {@link reconcileComponents}). Drops every
