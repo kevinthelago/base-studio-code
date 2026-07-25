@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "fixtures:store": "node scripts/gen-store-fixtures.mjs",
     "test:e2e": "playwright test",
     "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json"
   },
