@@ -58,6 +58,42 @@ impl EmitKit {
         Self::from_artifact(crate::kit::PACKAGED_KIT_JSON).expect("embedded react-ui.json is a valid kit artifact")
     }
 
+    /// Build an EmitKit from the live component STORE overlaid on the packaged artifact (#3720) — so
+    /// `emit component` can vendor a component from ANY kit (react-d3, harvested, …), not just react-ui.
+    ///
+    /// The packaged artifact is the BASE: it supplies the react-ui component sources (a built-in's store
+    /// `source` is STRIPPED, #2794, so the store alone couldn't vendor react-ui) AND the shared runtime
+    /// closure (`@/shared/lib/…` support modules every kit imports). Each store component that carries real
+    /// source is then OVERLAID — a react-d3 chart or a harvested component resolves to its own source, and
+    /// its `@/…` imports walk against the store siblings + the packaged runtime. A store record with NO
+    /// usable source never clobbers a packaged source (a stripped builtin stays served from the artifact);
+    /// it only registers its id→path so a `composes` edge to it still resolves best-effort.
+    pub fn from_store(store_components: &[Value]) -> EmitKit {
+        let mut kit = Self::packaged();
+        // The merged view's provenance id — an emitted cross-kit file did not come from `bsc/react-ui`.
+        kit.id = "bsc/studio".to_string();
+        for c in store_components {
+            let (Some(cid), Some(src)) = (
+                c.get("id").and_then(Value::as_str),
+                c.get("src").and_then(Value::as_str).filter(|s| !s.is_empty()),
+            ) else {
+                continue;
+            };
+            match component_source(c) {
+                Some(source) => {
+                    kit.id_to_path.insert(cid.to_string(), src.to_string());
+                    kit.component_paths.insert(src.to_string());
+                    kit.source_by_path.insert(src.to_string(), source);
+                }
+                None => {
+                    kit.id_to_path.entry(cid.to_string()).or_insert_with(|| src.to_string());
+                    kit.component_paths.insert(src.to_string());
+                }
+            }
+        }
+        kit
+    }
+
     /// Parse a kit artifact JSON (`{ id, version, components: [{id, src, source}], runtime: {path: src} }`).
     pub fn from_artifact(json: &str) -> Result<EmitKit, String> {
         let v: Value = serde_json::from_str(json).map_err(|e| format!("kit artifact is not valid JSON: {e}"))?;
@@ -300,6 +336,18 @@ fn import_specifiers(source: &str) -> Vec<String> {
     out
 }
 
+/// The verbatim module source of a STORE component record for emit — its `source`, else its `srcText`,
+/// whichever is non-empty first. `None` = a source-stripped builtin (#2794) or a spec-only record with
+/// nothing to vendor, so the overlay leaves the packaged source (if any) in place.
+fn component_source(c: &Value) -> Option<String> {
+    for field in ["source", "srcText"] {
+        if let Some(s) = c.get(field).and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+            return Some(s.to_string());
+        }
+    }
+    None
+}
+
 /// The npm PACKAGE name of a non-first-party specifier — `react` / `react/jsx-runtime` → `react`,
 /// `@scope/pkg/sub` → `@scope/pkg`. `None` for a relative specifier (`.`/`..`) — those resolve within
 /// the emitted tree and are never external.
@@ -474,6 +522,40 @@ mod tests {
         // A managed file whose path the kit dropped is Unknown (nothing to re-render).
         let orphan = v1.render_path("shared/lib/core/format.ts").unwrap();
         assert!(matches!(v2.classify("shared/lib/core/format.ts", &orphan), SyncVerdict::Unknown));
+    }
+
+    #[test]
+    fn from_store_emits_a_component_the_packaged_artifact_lacks() {
+        // #3720: a react-d3 chart is NOT in the packaged react-ui artifact, so `emit component barchart`
+        // used to fail 'unknown component'. Overlaid from the store, it emits from its own `srcText`.
+        assert!(
+            EmitKit::packaged().plan_component("barchart").is_err(),
+            "precondition: the packaged artifact has no barchart"
+        );
+        let store = serde_json::json!([{
+            "id": "barchart", "name": "BarChart", "kitId": "react-d3", "src": "shared/ui/charts/BarChart.tsx",
+            "srcText": "import { scaleLinear } from \"d3-scale\";\nexport const BarChart = () => null;"
+        }]);
+        let plan = EmitKit::from_store(store.as_array().unwrap()).plan_component("barchart").unwrap();
+        let file = plan.files.iter().find(|f| f.path == "shared/ui/charts/BarChart.tsx").expect("BarChart emitted");
+        assert!(file.content.contains("export const BarChart"), "its store source is vendored: {}", file.content);
+        assert!(file.content.starts_with("// vendored from bsc/studio@"), "stamped with the merged-view id");
+        assert_eq!(plan.external_deps, vec!["d3-scale".to_string()], "its external dep is reported");
+    }
+
+    #[test]
+    fn from_store_does_not_let_a_source_stripped_builtin_clobber_the_packaged_source() {
+        // #2794: a builtin's store record has its `source` stripped. Overlaying that empty record must NOT
+        // wipe the packaged source — `card` still emits with real content from the artifact.
+        let stripped = serde_json::json!([{ "id": "card", "name": "Card", "kitId": "react-ui",
+            "src": "shared/ui/data/Card.tsx", "source": "", "srcText": "" }]);
+        let plan = EmitKit::from_store(stripped.as_array().unwrap()).plan_component("card").unwrap();
+        let card = plan.files.iter().find(|f| f.path.ends_with("Card.tsx")).expect("card emitted");
+        // The body (after the stamp line) is the packaged source — not empty.
+        assert!(!body_of(&card.content).trim().is_empty(), "packaged card source survived the empty overlay");
+        for f in &plan.files {
+            assert!(!f.content.contains("@/"), "{} still has a first-party alias — closure incomplete", f.path);
+        }
     }
 
     #[test]
