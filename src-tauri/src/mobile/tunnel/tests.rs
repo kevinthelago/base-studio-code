@@ -761,7 +761,8 @@ fn app_messages_roundtrip_through_the_noise_session() {
         &mut host,
         &ServerMsg::AuthOk { protocol_version: PROTOCOL_VERSION, input_granted: false },
     )
-    .unwrap();
+    .unwrap()
+    .expect("an auth_ok frame is far under the Noise size cap");
     let mut out = vec![0u8; frame.len()];
     let n = mobile.read_message(&frame, &mut out).unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out[..n]).unwrap();
@@ -777,6 +778,28 @@ fn app_messages_roundtrip_through_the_noise_session() {
     cf.truncate(m);
     let decoded = decode_room_msg(&mut host, &cf).unwrap();
     assert!(matches!(decoded, ClientMsg::Auth { token, .. } if token == "secret"));
+}
+
+/// A frame whose serialized plaintext exceeds the Noise per-message cap encodes to `Ok(None)`
+/// (the caller skips + warns) rather than erroring — so one oversized `store_state` domain can't
+/// tear down the whole connect-time replay and blank every other domain on mobile (#3755). A
+/// normal frame still encodes to `Some`.
+#[test]
+fn an_oversized_frame_encodes_to_none_instead_of_aborting() {
+    let (mut host, _mobile) = handshake_pair();
+
+    let small = ServerMsg::StoreState { domain: "glance".into(), rev: 1, json: "{}".into() };
+    assert!(
+        transport::encode(&mut host, &small).unwrap().is_some(),
+        "an under-cap frame must still encode to a sendable Some(..)"
+    );
+
+    // `x` needs no JSON escaping, so ~70K chars is a ~70K-byte plaintext — well over the 65519 cap.
+    let huge = ServerMsg::StoreState { domain: "components".into(), rev: 1, json: "x".repeat(70_000) };
+    assert!(
+        transport::encode(&mut host, &huge).unwrap().is_none(),
+        "an over-cap frame must encode to None so send_msg skips it instead of tearing down the session"
+    );
 }
 
 // ── F2: fleet roster + coord event ──────────────────────────────────────────
