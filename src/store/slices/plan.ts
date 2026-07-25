@@ -7,7 +7,7 @@ import type { AppStore } from "../types";
 import { makeBlueprints, mkStage, cloneStages, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
 import { packagedUiKitPin, resolveBlueprintUiKit } from "@/features/planner/blueprints/uiKitPin";
 import { packagedSoundKitPin, resolveBlueprintSoundKit } from "@/features/planner/blueprints/soundKitPin";
-import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
+import { canonicalTopicKey, FEATURES_KEY } from "@/features/planner/stages/planTopics";
 import { emptyFleet } from "@/features/planner/fleet/planFleet";
 import { defaultStageConfig, discoveryOnlyStageConfig, enabledOrderedStages } from "@/features/planner/stages/planStages";
 import { normalizeFlow, resolveFlow } from "@/features/planner/fleet/agentFlow";
@@ -333,12 +333,16 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         const sections = enabledOrderedStages(cfg).map((s) => mkStage(s.id));
         const title = st.planningTitle?.trim() || "Project";
         const id = `bp-${Date.now().toString(36)}`;
+        // Capture the project's curated FEATURE LIST — the `features` section content (features.md) —
+        // so the blueprint carries the features that route builds, not just the empty stage route.
+        const features = st.planStages[projectKey]?.[FEATURES_KEY]?.trim();
         const bp: Blueprint = {
           id,
           name: `${title} blueprint`,
           desc: `Generated from the ${title} project's plan`,
           origin: "local",
           sections,
+          ...(features ? { features } : {}),
           uiKit: packagedUiKitPin(),
           soundKit: packagedSoundKitPin(),
         };

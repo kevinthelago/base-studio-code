@@ -295,6 +295,12 @@ export interface Blueprint {
   name: string;
   desc: string;
   sections: BlueprintStage[];
+  /** The curated FEATURE LIST this blueprint seeds (#3785) — the raw `features` section content
+   *  (`features.md`) captured when a completed project is promoted (`generateBlueprint`). A blueprint
+   *  is a goal/domain planning ROUTE (its `sections`/stages) PLUS the features that route builds
+   *  (this). Absent ⇒ no seeded features (the blueprint is a bare route); applying one with features
+   *  seeds them into the new project's Features stage. */
+  features?: string;
   /** Display + provenance metadata (#609). All optional — the Library derives sensible
    *  fallbacks (icon from the name, hue from the id, origin "local", local-only gist). */
   icon?: string;
