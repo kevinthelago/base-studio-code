@@ -113,6 +113,7 @@ fn run_mcp(rest: Vec<String>) -> Result<(), String> {
     match server {
         "research" => mcp_rpc::run_stdio_server(&research::mcp::Server::from_env()?),
         "compliance" => mcp_rpc::run_stdio_server(&compliance::mcp::Server::from_env()?),
+        "channel-mock" => mcp_rpc::run_stdio_server(&channel::mock::Server::from_env()?),
         "" | "help" | "-h" | "--help" => {
             print!("{}", mcp_help());
             Ok(())
@@ -127,8 +128,9 @@ fn mcp_help() -> String {
          USAGE:\n  \
          bsc mcp <server>\n\n\
          SERVERS:\n  \
-         research    literature grounding (arXiv · Semantic Scholar · PubMed · Crossref)\n  \
-         compliance  compliance standards corpus (WCAG · GDPR · CCPA · SOC 2)\n\n\
+         research      literature grounding (arXiv · Semantic Scholar · PubMed · Crossref)\n  \
+         compliance    compliance standards corpus (WCAG · GDPR · CCPA · SOC 2)\n  \
+         channel-mock  the Marketer's mock marketing channel — records send_email/post/schedule (no real sends)\n\n\
          These are spawned by Claude Code from the project's .mcp.json; you rarely run them by hand.\n",
     )
 }
@@ -143,6 +145,13 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcp_help_lists_the_mock_marketing_channel() {
+        let h = mcp_help();
+        assert!(h.contains("channel-mock"), "the bundled mock marketing channel is listed (#3146)");
+        assert!(h.contains("research") && h.contains("compliance"), "the existing servers stay listed");
+    }
 
     #[test]
     fn top_help_marks_component_deprecated_and_points_at_ui() {

@@ -761,6 +761,7 @@ dependencies = [
  "bsc-teams",
  "bsc-ui",
  "bsc-util",
+ "channel",
  "compliance",
  "errordb",
  "logs",
@@ -1269,6 +1270,14 @@ dependencies = [
  "cipher",
  "poly1305",
  "zeroize",
+]
+
+[[package]]
+name = "channel"
+version = "0.1.0"
+dependencies = [
+ "mcp-rpc",
+ "serde_json",
 ]
 
 [[package]]
