@@ -115,6 +115,37 @@
         { "key": "border", "name": "--chip-border", "type": "color", "default": "var(--border-soft)", "governs": "chip border colour" }
       ],
       "variants": []
+    },
+    {
+      "component": "tab",
+      "governs": "the Tab strip and its tabs",
+      "tokens": [
+        { "key": "bg", "name": "--tab-bg", "type": "color", "default": "transparent", "governs": "resting tab background" },
+        { "key": "fg", "name": "--tab-fg", "type": "color", "default": "var(--fg-muted)", "governs": "resting tab text colour" },
+        { "key": "strip-bg", "name": "--tab-strip-bg", "type": "color", "default": "var(--bg-panel)", "governs": "tab strip background" },
+        { "key": "strip-border", "name": "--tab-strip-border", "type": "color", "default": "var(--border-soft)", "governs": "tab strip bottom border colour" }
+      ],
+      "variants": [
+        {
+          "variant": "active",
+          "governs": "the active (selected) tab",
+          "tokens": [
+            { "key": "bg", "name": "--tab-active-bg", "type": "color", "default": "var(--bg-canvas)", "governs": "active tab background" },
+            { "key": "fg", "name": "--tab-active-fg", "type": "color", "default": "var(--fg)", "governs": "active tab text colour" },
+            { "key": "border", "name": "--tab-active-border", "type": "color", "default": "var(--border-soft)", "governs": "active tab border colour" }
+          ]
+        }
+      ]
+    },
+    {
+      "component": "modal",
+      "governs": "the Modal / Dialog surface",
+      "tokens": [
+        { "key": "bg", "name": "--modal-bg", "type": "color", "default": "var(--bg-elev)", "governs": "modal surface background" },
+        { "key": "border", "name": "--modal-border", "type": "color", "default": "var(--border)", "governs": "modal border colour" },
+        { "key": "radius", "name": "--modal-radius", "type": "dimension", "default": "var(--r-lg)", "governs": "modal corner radius" }
+      ],
+      "variants": []
     }
   ],
   "domain": [

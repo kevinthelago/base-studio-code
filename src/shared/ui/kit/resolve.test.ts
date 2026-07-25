@@ -20,6 +20,8 @@ describe("resolveTheme / themeHoles (#2637)", () => {
   it("the contract token set spans base + component + domain", () => {
     expect(CONTRACT_TOKENS.has("--accent")).toBe(true); // base
     expect(CONTRACT_TOKENS.has("--card-bg")).toBe(true); // component
+    expect(CONTRACT_TOKENS.has("--tab-active-bg")).toBe(true); // tab variant (#3739)
+    expect(CONTRACT_TOKENS.has("--modal-bg")).toBe(true); // modal (#3739)
     expect(CONTRACT_TOKENS.has("--graph-health-error")).toBe(true); // domain (#2607)
     expect(CONTRACT_TOKENS.has("--nope")).toBe(false);
   });
@@ -79,5 +81,22 @@ describe("resolveThemeTokens (#3711) — the JS projection", () => {
 
   it("leaves an unknown (non-contract) token reference in place — --btn-font-family = var(--mono), a global outside the descriptor", () => {
     expect(resolveThemeTokens("default")["--btn-font-family"]).toBe("var(--mono)");
+  });
+
+  it("resolves the tab + modal tokens through their var() chains (#3739)", () => {
+    const t = resolveThemeTokens("default");
+    // literal passthrough
+    expect(t["--tab-bg"]).toBe("transparent");
+    // component tokens dereference to the SAME concrete value as their base token
+    expect(t["--tab-fg"]).toBe(t["--fg-muted"]);
+    expect(t["--tab-strip-bg"]).toBe(t["--bg-panel"]);
+    expect(t["--tab-active-bg"]).toBe(t["--bg-canvas"]);
+    expect(t["--tab-active-fg"]).toBe(t["--fg"]);
+    expect(t["--modal-bg"]).toBe(t["--bg-elev"]);
+    expect(t["--modal-border"]).toBe(t["--border"]);
+    expect(t["--modal-radius"]).toBe(t["--r-lg"]);
+    // a theme override composes THROUGH the chain (nord retints --bg-canvas)
+    const n = resolveThemeTokens("nord");
+    expect(n["--tab-active-bg"]).toBe(n["--bg-canvas"]);
   });
 });
