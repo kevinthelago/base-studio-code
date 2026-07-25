@@ -55,6 +55,11 @@ pub struct NavRequest {
     /// A kit theme id (e.g. `nord`) — pair with `component` for a themed capture.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<String>,
+    /// A preview DATA-STATE to render (`loaded` · `empty` · `loading`) — pair with `component` to capture
+    /// a specific render (e.g. the skeleton vs the loaded body), instead of whatever state was pinned. It
+    /// drives the Design Studio's state control, the same axis a human toggles there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
 }
 
 impl NavRequest {
@@ -65,6 +70,7 @@ impl NavRequest {
             && self.kit.is_none()
             && self.component.is_none()
             && self.theme.is_none()
+            && self.state.is_none()
     }
 }
 
@@ -81,6 +87,8 @@ pub struct NavResult {
     pub component: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
 }
 
 #[cfg(test)]
@@ -92,6 +100,7 @@ mod tests {
         assert!(NavRequest::default().is_read_only());
         assert!(!NavRequest { component: Some("Heatmap".into()), ..Default::default() }.is_read_only());
         assert!(!NavRequest { theme: Some("nord".into()), ..Default::default() }.is_read_only());
+        assert!(!NavRequest { state: Some("loading".into()), ..Default::default() }.is_read_only());
     }
 
     #[test]
@@ -125,6 +134,7 @@ mod tests {
             kit: Some("react-d3".into()),
             component: Some("Heatmap".into()),
             theme: Some("default".into()),
+            state: Some("loading".into()),
         };
         let ok = bsc_appchan::Reply::ok("a", &landed, 1);
         assert_eq!(bsc_appchan::take_payload::<NavResult>(ok).unwrap(), landed);

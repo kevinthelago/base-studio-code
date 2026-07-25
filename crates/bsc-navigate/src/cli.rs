@@ -25,17 +25,20 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "focus a Design Studio component (implies its workspace + page)",
         usage: "\
 USAGE:
-  bsc navigate component <kit> <component> [--theme <id>] [--timeout <ms>] [--json|--pretty]
+  bsc navigate component <kit> <component> [--theme <id>] [--state <s>] [--timeout <ms>] [--json|--pretty]
 
 Selects a component in the Design Studio and reports the view that landed. Also lands the workspace and
 page — you should not need to know which Workspace hosts the Studio to point at a component.
 
   --theme <id>   also switch the kit theme, for a themed capture (pairs with `bsc ui theme`)
+  --state <s>    render a preview DATA-STATE: loaded · empty · loading — so a capture targets a specific
+                 render (e.g. the loading skeleton vs the loaded body) instead of whatever state was pinned
 
 THE POINT
   A shot captures what is on screen. This is what makes a targeted capture race-free:
 
     bsc navigate component react-d3 Heatmap && bsc shot take
+    bsc navigate component react-d3 Heatmap --state loading && bsc shot frame   # capture the skeleton
 
   navigate does not return until the frontend has APPLIED the change and acked, so the capture cannot
   fire against the previous view.
@@ -88,10 +91,15 @@ and can lag the running app. This asks the app itself.",
     },
 ];
 
+/// The preview DATA-STATES `--state` accepts — the navigable subset of the Design Studio's state axis
+/// (`error` is a render OUTCOME, not something you request). The frontend bridge validates the SAME set.
+const NAV_STATES: &[&str] = &["loaded", "empty", "loading"];
+
 #[derive(Default)]
 struct Args {
     positional: Vec<String>,
     theme: Option<String>,
+    state: Option<String>,
     timeout_ms: Option<i64>,
     json: bool,
     pretty: bool,
@@ -105,6 +113,7 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--theme" => a.theme = Some(it.next().ok_or("--theme needs an id")?),
+            "--state" => a.state = Some(it.next().ok_or("--state needs a value (loaded|empty|loading)")?),
             "--timeout" => {
                 let v = it.next().ok_or("--timeout needs a value in ms")?;
                 a.timeout_ms = Some(v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?);
@@ -118,7 +127,17 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
 
 /// Build the request for a parsed command line. Pure — the arg→intent mapping is the part worth testing
 /// without a running app.
-fn plan(cmd: &str, rest: &[String], theme: Option<String>) -> Result<NavRequest, String> {
+fn plan(cmd: &str, rest: &[String], theme: Option<String>, state: Option<String>) -> Result<NavRequest, String> {
+    // `--state` is a component render axis; it is only meaningful with `component`, and its value is
+    // validated up front so a typo fails fast at the CLI rather than as a frontend ack error.
+    if let Some(st) = &state {
+        if cmd != "component" {
+            return Err("--state applies only to `bsc navigate component`".into());
+        }
+        if !NAV_STATES.contains(&st.as_str()) {
+            return Err(format!("--state: unknown state '{st}' — one of: {}", NAV_STATES.join(", ")));
+        }
+    }
     match cmd {
         "component" => {
             let kit = rest.first().ok_or("usage: bsc navigate component <kit> <component>")?;
@@ -127,6 +146,7 @@ fn plan(cmd: &str, rest: &[String], theme: Option<String>) -> Result<NavRequest,
                 kit: Some(kit.clone()),
                 component: Some(component.clone()),
                 theme,
+                state,
                 ..Default::default()
             })
         }
@@ -158,7 +178,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         return Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, &cmd));
     }
 
-    let req = plan(&cmd, &args.positional[1..], args.theme.clone())?;
+    let req = plan(&cmd, &args.positional[1..], args.theme.clone(), args.state.clone())?;
     let res = send(&req, args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS))?;
     bsc_cli_util::emit(args.pretty, args.json, &res, || lean(&res));
     Ok(())
@@ -199,6 +219,9 @@ fn lean(r: &NavResult) -> String {
     if let Some(t) = &r.theme {
         parts.push(format!("theme={t}"));
     }
+    if let Some(st) = &r.state {
+        parts.push(format!("state={st}"));
+    }
     parts.join(" · ")
 }
 
@@ -212,7 +235,7 @@ mod tests {
 
     #[test]
     fn component_takes_kit_and_component_and_can_carry_a_theme() {
-        let r = plan("component", &s(&["react-d3", "Heatmap"]), Some("nord".into())).unwrap();
+        let r = plan("component", &s(&["react-d3", "Heatmap"]), Some("nord".into()), None).unwrap();
         assert_eq!(r.kit.as_deref(), Some("react-d3"));
         assert_eq!(r.component.as_deref(), Some("Heatmap"));
         assert_eq!(r.theme.as_deref(), Some("nord"));
@@ -223,23 +246,36 @@ mod tests {
     }
 
     #[test]
+    fn component_carries_a_valid_state_and_rejects_a_bad_one_or_a_misplaced_flag() {
+        // A valid state rides on the component request.
+        let r = plan("component", &s(&["harvested", "mergequeue"]), None, Some("loading".into())).unwrap();
+        assert_eq!(r.component.as_deref(), Some("mergequeue"));
+        assert_eq!(r.state.as_deref(), Some("loading"));
+        // An unknown state value fails fast at the CLI, naming the allowed set.
+        let err = plan("component", &s(&["k", "c"]), None, Some("spinning".into())).unwrap_err();
+        assert!(err.contains("loaded") && err.contains("empty") && err.contains("loading"), "{err}");
+        // `--state` on a non-component command is refused (it is a component render axis).
+        assert!(plan("theme", &s(&["nord"]), None, Some("loading".into())).is_err());
+    }
+
+    #[test]
     fn component_without_both_args_is_a_usage_error_not_a_partial_request() {
-        assert!(plan("component", &s(&["react-d3"]), None).is_err());
-        assert!(plan("component", &s(&[]), None).is_err());
+        assert!(plan("component", &s(&["react-d3"]), None, None).is_err());
+        assert!(plan("component", &s(&[]), None, None).is_err());
     }
 
     #[test]
     fn workspace_page_and_theme_each_set_only_their_own_field() {
-        assert_eq!(plan("workspace", &s(&["glance"]), None).unwrap().workspace.as_deref(), Some("glance"));
-        assert_eq!(plan("page", &s(&["designs"]), None).unwrap().page.as_deref(), Some("designs"));
-        let t = plan("theme", &s(&["nord"]), None).unwrap();
+        assert_eq!(plan("workspace", &s(&["glance"]), None, None).unwrap().workspace.as_deref(), Some("glance"));
+        assert_eq!(plan("page", &s(&["designs"]), None, None).unwrap().page.as_deref(), Some("designs"));
+        let t = plan("theme", &s(&["nord"]), None, None).unwrap();
         assert_eq!(t.theme.as_deref(), Some("nord"));
         assert!(t.workspace.is_none() && t.page.is_none() && t.component.is_none());
     }
 
     #[test]
     fn show_asks_for_nothing_so_the_app_treats_it_as_a_read() {
-        let r = plan("show", &s(&[]), None).unwrap();
+        let r = plan("show", &s(&[]), None, None).unwrap();
         assert!(r.is_read_only(), "show must not mutate the view it is reporting");
     }
 
@@ -256,8 +292,12 @@ mod tests {
             kit: Some("react-d3".into()),
             component: Some("Heatmap".into()),
             theme: Some("nord".into()),
+            state: Some("loading".into()),
         });
-        assert_eq!(out, "workspace=projects · page=designs · kit=react-d3 · component=Heatmap · theme=nord");
+        assert_eq!(
+            out,
+            "workspace=projects · page=designs · kit=react-d3 · component=Heatmap · theme=nord · state=loading"
+        );
     }
 
     #[test]
@@ -268,6 +308,7 @@ mod tests {
             kit: None,
             component: None,
             theme: None,
+            state: None,
         });
         assert_eq!(out, "workspace=console");
     }

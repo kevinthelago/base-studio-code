@@ -12,6 +12,7 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
     projectsPageMode: "projects",
     designsKitId: "",
     designsCompId: null,
+    designsPreviewState: "loaded",
     kitTheme: "default",
     kits: [{ id: "react-ui" }, { id: "react-d3" }],
     kitThemes: [{ id: "default" }, { id: "nord" }],
@@ -25,6 +26,7 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
     setKitTheme: (v: string) => { s.kitTheme = v; },
     setDesignsKit: (v: string) => { s.designsKitId = v; s.designsCompId = null; },
     setDesignsComp: (v: string | null) => { s.designsCompId = v; },
+    setDesignsPreviewState: (v: string) => { s.designsPreviewState = v; },
     ...over,
   };
   return {
@@ -103,6 +105,25 @@ describe("navigateBridge — component (the case #3261 needed a human click for)
     expect(ack.theme).toBe("nord");
     expect(ack.component).toBe("Heatmap");
   });
+
+  it("#3717: drives the preview DATA-STATE so a capture targets a specific render", () => {
+    const v = makeVocab(onStudio);
+    const ack = applyNavigate({ kit: "react-d3", component: "Heatmap", state: "loading" }, v);
+    expect(ack.error).toBeUndefined();
+    expect(ack.state).toBe("loading");
+    expect(v.s.designsPreviewState).toBe("loading");
+    // The state control and navigate now share ONE store value.
+  });
+
+  it("#3717: rejects an unknown state, listing the valid ones (no half-apply)", () => {
+    const v = makeVocab(onStudio);
+    const ack = applyNavigate({ kit: "react-d3", component: "Heatmap", state: "spinning" }, v);
+    expect(ack.error).toContain("unknown state 'spinning'");
+    expect(ack.error).toContain("loading");
+    // Validated BEFORE any mutation — the component focus did not move either.
+    expect(v.s.designsPreviewState).toBe("loaded");
+    expect(v.s.designsCompId).toBeNull();
+  });
 });
 
 describe("navigateBridge — unknown ids are errors, not silent no-ops", () => {
@@ -165,6 +186,7 @@ describe("navigateBridge — the other verbs", () => {
       kit: "react-d3",
       component: "Heatmap",
       theme: "default",
+      state: "loaded",
     });
     expect(v.s.activeWorkspace).toBe("glance");
   });

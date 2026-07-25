@@ -9,6 +9,7 @@ import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { ComponentRecord, Kit } from "./lib/model";
 import type { ComponentBuildStatus, RuntimeStateCategory } from "./lib/componentScan";
+import type { PreviewState } from "./lib/componentPreview";
 import type { KitConsumer, KitChange, Dispatch } from "./lib/propagation";
 import type { SeedNotice } from "./lib/seedRefresh";
 import { kitUsageId, makeChange, planPropagation, dispatchKey } from "./lib/propagation";
@@ -130,6 +131,14 @@ export interface ComponentsSlice {
   /** Select a kit; clears the component selection (a component belongs to exactly one kit). */
   setDesignsKit: (id: string) => void;
   setDesignsComp: (id: string | null) => void;
+
+  /** The preview's DATA-STATE axis (#3717) — `loaded` (demo) · `empty` (no data) · `loading` (skeleton).
+   *  In the STORE (not local to the workbench) so BOTH the state SegmentedControl AND `bsc navigate
+   *  component --state <s>` drive one value — the latter lets an external session (the overnight loop)
+   *  deliberately capture a specific render via `bsc shot frame`. TRANSIENT (not persisted): it resets to
+   *  `loaded` each boot, so a stale state never survives to be "leftover" on the next render. */
+  designsPreviewState: PreviewState;
+  setDesignsPreviewState: (s: PreviewState) => void;
 
   /** The library id the designer AI most-recently touched (#2525) — a component/kit/theme id from a
    *  `bsc ui set/remove` mutation the `useUiActivity` poll observed. The Design Studio live-focuses it
@@ -310,6 +319,8 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
   designsCompId: null,
   setDesignsKit: (id) => set({ designsKitId: id, designsCompId: null }),
   setDesignsComp: (id) => set({ designsCompId: id }),
+  designsPreviewState: "loaded",
+  setDesignsPreviewState: (s) => set({ designsPreviewState: s }),
 
   aiFocusedId: null,
 
