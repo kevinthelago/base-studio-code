@@ -2019,6 +2019,19 @@ describe("blueprints library (#513/#514)", () => {
     expect(bp.sections.length).toBeGreaterThan(0);
   });
 
+  it("generateBlueprint promotes a project's plan into a named user blueprint (#3785)", () => {
+    useAppStore.getState().setPlanningTitle("Acme CRM");
+    const before = useAppStore.getState().blueprints.length;
+    // No custom stage config for this key → generateBlueprint falls back to the default enabled set,
+    // so the promoted blueprint still captures a plan route as sections.
+    const id = useAppStore.getState().generateBlueprint("proj-key");
+    const bp = useAppStore.getState().blueprints.find((b) => b.id === id)!;
+    expect(useAppStore.getState().blueprints.length).toBe(before + 1);
+    expect(bp.name).toBe("Acme CRM blueprint"); // named after the project
+    expect(bp.origin).toBe("local"); // a user blueprint — persisted + share-eligible
+    expect(bp.sections.length).toBeGreaterThan(0); // the plan route captured as sections
+  });
+
   it("setActiveBlueprint switches the active id", () => {
     useAppStore.getState().setActiveBlueprint("api");
     expect(useAppStore.getState().activeBlueprintId).toBe("api");

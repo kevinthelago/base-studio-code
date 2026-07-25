@@ -144,6 +144,8 @@ export function Planning({ visible }: { visible: boolean }) {
   const skillGroups = useAppStore(s => s.skillGroups);
   // The extensions store drives the MCP stage pane (#878); the base dir is read on demand.
   const mcpServers = useAppStore(s => s.mcpServers);
+  const generateBlueprint = useAppStore(s => s.generateBlueprint);
+  const triagedProjects = useAppStore(s => s.triagedProjects);
 
   // The session key (set once at session entry) is the single source of truth
   // for the planning directory, PTY slot, and plan buckets — identical to the
@@ -752,6 +754,8 @@ export function Planning({ visible }: { visible: boolean }) {
         triaging={triaging}
         planReady={planReady}
         launchTriage={launchTriage}
+        triaged={!!triagedProjects[effectiveProjectId]}
+        onGenerateBlueprint={() => generateBlueprint(effectiveProjectId)}
       />
       {/* Notices (extracted → PlanningNotices) */}
       <PlanningNotices

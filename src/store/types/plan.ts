@@ -134,6 +134,8 @@ export interface PlanState {
    *  The planner restarts the session separately. No-op if the blueprint is unknown. */
   applyBlueprintToProject: (projectId: string, blueprintId: string) => void;
   addBlueprint:       () => string;
+  /** Promote a completed project's plan into a reusable blueprint (#3785); returns the new id. */
+  generateBlueprint:  (projectKey: string) => string;
   duplicateBlueprint: (id: string) => string;
   updateBlueprintMeta: (id: string, patch: Partial<Omit<Blueprint, "id" | "sections">>) => void;
   setBlueprintStages: (id: string, sections: BlueprintStage[]) => void;
