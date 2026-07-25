@@ -64,6 +64,16 @@
   --chip-bg: var(--bg-elev2);
   --chip-fg: var(--fg-muted);
   --chip-border: var(--border-soft);
+  --tab-bg: transparent;
+  --tab-fg: var(--fg-muted);
+  --tab-strip-bg: var(--bg-panel);
+  --tab-strip-border: var(--border-soft);
+  --tab-active-bg: var(--bg-canvas);
+  --tab-active-fg: var(--fg);
+  --tab-active-border: var(--border-soft);
+  --modal-bg: var(--bg-elev);
+  --modal-border: var(--border);
+  --modal-radius: var(--r-lg);
 
   /* domain / categorical tokens — data-viz palettes (graph status/kind/category/edge); the contract vocabulary a kit consumes and a theme binds (#2607) */
   --graph-health-idle: #5b9dff;
