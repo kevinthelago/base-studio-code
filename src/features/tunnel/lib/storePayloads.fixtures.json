@@ -368,6 +368,44 @@
       ]
     },
     "security": {
+      "appRoles": [
+        {
+          "id": "sys_planner",
+          "name": "Project Planner",
+          "category": "application",
+          "desc": "plans projects; never writes code",
+          "mode": "deny",
+          "commands": [
+            "gh *"
+          ],
+          "tools": {
+            "read": "allow",
+            "grep": "allow",
+            "glob": "allow",
+            "edit": "deny",
+            "write": "deny",
+            "bash": "ask",
+            "web": "allow",
+            "task": "deny"
+          },
+          "paths": {
+            "allow": [],
+            "deny": [
+              "**"
+            ]
+          },
+          "net": [
+            "api.github.com"
+          ],
+          "builtin": true,
+          "color": "#c792ea",
+          "origin": "built-in",
+          "surface": "Planner",
+          "surfaceGlyph": "◆",
+          "session": "planner",
+          "owns": "the plan"
+        }
+      ],
       "profiles": [
         {
           "id": "pf_worker",
@@ -376,7 +414,7 @@
           "desc": "builds features under review",
           "mode": "ask",
           "commands": [
-            "git *"
+            "cargo *"
           ],
           "tools": {
             "read": "allow",
@@ -399,27 +437,54 @@
           "net": [
             "api.github.com"
           ],
-          "builtin": true
+          "builtin": false,
+          "color": "#7aa2ff",
+          "origin": "user-defined"
+        }
+      ],
+      "consoles": [
+        {
+          "id": "t0",
+          "name": "Build",
+          "repo": "acme/api",
+          "projectAllow": [
+            "npm run build"
+          ],
+          "repoAllow": [
+            "cargo test"
+          ],
+          "panes": [
+            {
+              "id": "t0p0",
+              "profileId": "pf_worker"
+            }
+          ]
         }
       ],
       "paneRoles": {
-        "demo:auth": "worker"
+        "t0p0": "worker"
       },
       "paneProfiles": {
-        "demo:auth": "pf_worker"
+        "t0p0": "pf_worker"
       },
       "audit": [
         {
           "ts": "2026-07-25T10:15:00.000Z",
-          "pane": "demo:auth",
-          "toolName": "Bash",
-          "target": "git push origin auth"
+          "console": "Build",
+          "pane": "t0p0",
+          "profileId": "pf_worker",
+          "kind": "cmd",
+          "target": "git push origin auth",
+          "decision": "allow"
         },
         {
           "ts": "2026-07-25T10:16:30.000Z",
-          "pane": "demo:ui",
-          "toolName": "Edit",
-          "target": "src/ui/Login.tsx"
+          "console": "Build",
+          "pane": "t0p0",
+          "profileId": "pf_worker",
+          "kind": "tool",
+          "target": ".env",
+          "decision": "block"
         }
       ]
     }

@@ -21,7 +21,7 @@ import { useGlanceProjects, useGlanceFaults, useProjectFleet } from "@/features/
 import { resolveKitLibraryRefs } from "@/features/designs";
 import { loadPendingLessons } from "@/features/skills";
 import { resolveAllInstalledMcp } from "@/features/mcp";
-import { parseAuditLog, type AuditRecord } from "@/features/security";
+import { deriveConsoles, buildAuditRows, APP_ROLES } from "@/features/security";
 import type { Lesson } from "@/features/skills/lib/lessons";
 import {
   buildGlancePayload, buildOrgPayload, buildBlueprintsPayload, buildSkillsPayload,
@@ -148,23 +148,40 @@ export function useStoreProjector(): void {
     publishTunnelDomain("mcp", buildMcpPayload({ servers: mcpServers, installedIds }));
   }, [tunnelRunning, mcpServers]);
 
-  // ── security — least-privilege profiles + per-pane assignments + recent audit (#2530) ──
-  // Profiles + assignments are live store slices; the audit log is a CLI read (no store slice),
-  // polled like lessons/coord — the SAME `bsc logs tail audit --json` the desktop Agents page uses.
+  // ── security — application roles + assignable profiles + console model + per-pane assignments +
+  // recent audit (#2530 / #3754) ──
+  // Profiles + assignments are live store slices; the console model is derived from the workspace tabs
+  // (the SAME deriveConsoles the desktop Security page uses), and the audit log is a CLI read (no store
+  // slice), polled like lessons/coord. The audit `decision` + pane→console name are computed HERE via
+  // buildAuditRows (the desktop's one source of truth) so mobile never re-derives a security verdict.
   const agentProfiles = useAppStore((s) => s.agentProfiles);
   const paneRoles = useAppStore((s) => s.paneRoles);
   const paneProfiles = useAppStore((s) => s.paneProfiles);
-  const [audit, setAudit] = useState<AuditRecord[]>([]);
+  const tabs = useAppStore((s) => s.tabs);
+  const paneNames = useAppStore((s) => s.paneNames);
+  const disabledPanes = useAppStore((s) => s.disabledPanes);
+  const activeRepoName = useAppStore((s) => s.activeRepoName);
+  const secConsoles = useMemo(
+    () => deriveConsoles({ tabs, paneNames, disabledPanes, paneProfiles, activeRepoName }),
+    [tabs, paneNames, disabledPanes, paneProfiles, activeRepoName],
+  );
+  const [auditLines, setAuditLines] = useState<string[]>([]);
   usePoll(async (isCancelled) => {
-    if (!tunnelRunning) { setAudit([]); return; } // React bails when already []
+    if (!tunnelRunning) { setAuditLines([]); return; } // React bails when already []
     const lines = await logsTail("audit", 300);
     if (isCancelled()) return;
-    setAudit(parseAuditLog(lines.join("\n")));
+    setAuditLines(lines);
   }, AUDIT_POLL_MS, [tunnelRunning]);
+  const auditRows = useMemo(
+    () => buildAuditRows(auditLines, { consoles: secConsoles, profiles: agentProfiles, paneProfiles, paneRoles }),
+    [auditLines, secConsoles, agentProfiles, paneProfiles, paneRoles],
+  );
   useEffect(() => {
     if (!tunnelRunning) return;
-    publishTunnelDomain("security", buildSecurityPayload({ profiles: agentProfiles, paneRoles, paneProfiles, audit }));
-  }, [tunnelRunning, agentProfiles, paneRoles, paneProfiles, audit]);
+    publishTunnelDomain("security", buildSecurityPayload({
+      appRoles: APP_ROLES, profiles: agentProfiles, consoles: secConsoles, paneRoles, paneProfiles, auditRows,
+    }));
+  }, [tunnelRunning, agentProfiles, secConsoles, paneRoles, paneProfiles, auditRows]);
 
   // ── alerts — coord-log events + the focus queue's awaiting set ────────────────
   // Coord entries carry their own `at`, so re-derivation is idempotent (the hub dedups by id).
@@ -188,10 +205,9 @@ export function useStoreProjector(): void {
   }, COORD_POLL_MS, [tunnelRunning]);
 
   // Prompt-waiting is a transition (no durable log): diff the awaiting set against the previous
-  // tick; a pane that resolves and awaits again re-alerts.
-  const tabs = useAppStore((s) => s.tabs);
+  // tick; a pane that resolves and awaits again re-alerts. (`tabs`/`paneNames` are read once above
+  // for the security console model.)
   const focusQueue = useAppStore((s) => s.focusQueue);
-  const paneNames = useAppStore((s) => s.paneNames);
   const prevAwaiting = useRef<AwaitingPane[]>([]);
   useEffect(() => {
     if (!tunnelRunning) {
