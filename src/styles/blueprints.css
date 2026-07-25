@@ -31,7 +31,7 @@
   }
   .btn:hover { background: var(--bg-elev2); }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
-  .btn.primary { background: var(--accent); color: #1a120a; border-color: transparent; font-weight: 600; }
+  .btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
   .btn.primary:hover:not(:disabled) { filter: brightness(1.06); }
   .btn.ghost { background: transparent; }
   .btn.ghost:hover { background: var(--bg-elev); }
