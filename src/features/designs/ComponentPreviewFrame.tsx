@@ -16,10 +16,12 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/componentBundle";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { compileAnimationsCss, animClassName, type AnimationDef } from "@/shared/ui/kit";
-import { componentPreviewFiles, type KitArtifact, type PreviewState } from "./lib/componentPreview";
+import { componentPreviewFiles, supportedStates, type KitArtifact, type PreviewState } from "./lib/componentPreview";
 import { usePreviewData } from "./usePreviewData";
 import { recordPreviewError } from "./lib/componentBridge";
-import { libraryModuleResolver } from "./lib/libraryModules";
+import { registerPreviewFrame, unregisterPreviewFrame } from "./lib/previewRegistry";
+import { makeLibraryResolvers } from "./lib/libraryModules";
+import { useActiveSoundKit } from "./lib/useActiveSoundKit";
 import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
 
 // The packaged kit artifact carries each built-in's verbatim `source` + the `runtime` (@/) closure
@@ -33,7 +35,7 @@ const PAGE_ASPECT = 1.15;
 
 type Status = "building" | "ready" | "error";
 
-export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", scrollY, zoomEngine, registerZoomApi, shotTarget }: {
+export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", scrollY, zoomEngine, registerZoomApi, onNavigate, shotTarget }: {
   comp: ComponentRecord;
   /** The selected theme's light/dark surface (its `base`). */
   theme: "dark" | "light";
@@ -64,6 +66,10 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   /** Receives the engine's +/−/fit control API (or `null` on teardown) so the host can wire its zoom
    *  buttons — the engine lives in the iframe, so the buttons post `__cmd` messages to it (#3190). */
   registerZoomApi?: (api: { zoomIn: () => void; zoomOut: () => void; fit: () => void } | null) => void;
+  /** Enable Alt-hold inspect (#3596): while Alt is held the preview rings the child component under the
+   *  cursor and calls this with its NAME on click. Only the EXPANDED try-on passes it (its `composes`
+   *  become the navigable set); omit for thumbnails, which stay plain interactable previews. */
+  onNavigate?: (name: string) => void;
   /** #3308: mark THIS frame as the app's `"preview"` shot target — the inspector's lead preview passes it
    *  so `bsc shot preview` crops the webview to just this component (the designer's ground truth). Only
    *  ONE mounted frame should set it. */
@@ -76,6 +82,10 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // here since the frame is inline-styled and self-contained (works wherever it's mounted).
   const [hint, setHint] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // A stable id for THIS frame instance in the #3437 preview registry — so a rebuild replaces its
+  // entry rather than duplicating it, and unmount removes exactly its own.
+  const frameKey = useRef(`pv-${Math.random().toString(36).slice(2)}`).current;
+  useEffect(() => () => unregisterPreviewFrame(frameKey), [frameKey]);
   // #3190: the forwarded-gesture handlers + the last screen position of an in-flight forwarded drag, held
   // in refs so the message listener stays subscribed across renders (the callbacks' identity may churn).
   // Measure the frame so page-like components can render at a natural viewport canvas and scale-to-fit
@@ -93,14 +103,18 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   const pageLike = comp.role === "page" || comp.role === "layout";
   // The page canvas + scale-to-fit ratio (#3139): render at the frame WIDTH (the selected sm/md/auto
   // breakpoint = the page's authored layout width) × a taller viewport canvas, then contain-scale so the
-  // whole page shows. `null` for non-pages (they render 1:1) or before the frame is measured.
+  // whole page shows. `null` for non-pages (they render 1:1) or before the frame is measured — AND under
+  // `zoomEngine` (#3551): the in-iframe pan/zoom engine owns ALL scaling, so this pre-#3190 parent
+  // CSS-scale must NOT also apply (a page in the expanded try-on was scaled twice, and the second
+  // transform fought the engine → the drag couldn't pan). The engine's iframe then fills the frame 1:1.
+  const hasZoomEngine = !!zoomEngine;
   const canvas = useMemo(() => {
-    if (!pageLike || frame.w === 0 || frame.h === 0) return null;
+    if (!pageLike || hasZoomEngine || frame.w === 0 || frame.h === 0) return null;
     const naturalW = frame.w;
     const naturalH = Math.max(frame.h, Math.round(naturalW * PAGE_ASPECT));
     const scale = Math.min(1, frame.w / naturalW, frame.h / naturalH);
     return { naturalW, naturalH, scale };
-  }, [pageLike, frame.w, frame.h]);
+  }, [pageLike, hasZoomEngine, frame.w, frame.h]);
   // The kit-scoped animation defs this component BINDS (#2942) — the kit owns the keyframes, the
   // component references them by name. A derived key so authoring/removing a binding OR editing the
   // kit's motion re-renders the preview (the object identity alone isn't a stable dep).
@@ -149,10 +163,30 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   );
   const exitKey = exitSelectors.join("|");
 
+  // #3556: the selected theme's `:root` token overrides, as a standalone stylesheet string. Kept OUT of the
+  // build effect's `injectedCss` so a theme change never rebuilds the iframe — it is applied LIVE via a
+  // `{ __bsc_theme }` postMessage (below), preserving the pan/zoom engine's view across a theme switch.
+  const themeCss = useMemo(() => {
+    const vars = Object.entries(themeVars).map(([k, v]) => `${k}:${v}`).join(";");
+    return vars ? `:root{${vars}}` : "";
+  }, [themeVars]);
+
   // Studio network (#2940): a bound librarian algorithm's generated dataset for this component's preview
   // props (`{ prop: JS-source literal }`), or `{}`. Resolves async (sandbox run); the reference is stable
   // (a shared EMPTY until it lands) so it rebuilds the preview exactly once when the data arrives.
   const previewData = usePreviewData(comp);
+
+  // The library resolver this preview vendors `@bsc/…` imports through. Its SOUND arm follows the active
+  // blueprint's `soundKit` pin (#3412), so a component importing `@bsc/sounds/click` plays the kit its
+  // project actually adopted — and an unresolvable pin makes that import fail loudly rather than silently
+  // sounding like the packaged starter kit.
+  const soundKit = useActiveSoundKit();
+  const libResolver = useMemo(() => makeLibraryResolvers(soundKit).libraryModuleResolver, [soundKit]);
+  // #3567: build ONCE with every supported state's props embedded, so a state change is a live re-render
+  // (postMessage below), not an esbuild rebuild + reload + "building" flash — the same live-apply pattern
+  // as the theme (#3556). The scan keeps its per-state single builds (not passed `liveStates`).
+  const liveStates = useMemo(() => supportedStates(comp), [comp]);
+  const liveStatesKey = liveStates.join(",");
 
   // Rebuild when the selection / theme / retry / resolved preview-data changes (keyed on stable fields).
   useEffect(() => {
@@ -161,7 +195,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     setStatus("building");
     setError("");
     /* eslint-enable react-hooks/set-state-in-effect */
-    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libraryModuleResolver, previewState, previewData);
+    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libResolver, previewState, previewData, liveStates);
     if (!build) {
       setStatus("error");
       setError(
@@ -175,8 +209,6 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
       try {
         const js = await bundleComponent(build.files, build.entry);
         if (cancelled) return;
-        // App styles (tokens + component CSS) + the selected theme's semantic-token overrides on :root.
-        const themeCss = Object.entries(themeVars).map(([k, v]) => `${k}:${v}`).join(";");
         // The previewed component's bound kit MOTION (#2942): compile the kit animations it plays into
         // the iframe (guaranteed present, not reliant on the global managed <style>), and put their
         // `.<kit>-anim-<name>` classes on #root so the motion actually plays — hover/mount/always all
@@ -189,7 +221,9 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
           .map((d) => animClassName(d))
           .filter((c) => /^[a-z][a-z0-9-]+$/.test(c))
           .join(" ");
-        const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "") + (animCss ? `\n${animCss}` : "");
+        // #3556: theme vars are NO LONGER folded in here (they go in a dedicated `<style id="__bsc_theme">`
+        // via `themeCss`, applied live) — only the app CSS + this component's animation CSS.
+        const injectedCss = collectAppCss() + (animCss ? `\n${animCss}` : "");
         // #3141: pages/layouts are scaled parent-side (the canvas above); a component that overflows the
         // frame gets the in-iframe scale-to-fit shim instead so it shows whole rather than clipping.
         // #3190: a scrollable component renders at natural size (no fit-shim) and scrolls tall content;
@@ -199,11 +233,25 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         // else a non-page mount scales-to-fit (#3141); pages always scale parent-side (#3139).
         const doScroll = !!scrollY && !pageLike && !zoomEngine;
         const srcDoc = buildComponentSrcDoc(js, {
-          injectedCss, theme, rootClass, exitSelectors,
+          injectedCss, themeCss, theme, rootClass, exitSelectors,
           fitContent: !pageLike && !doScroll, scrollY: doScroll,
-          zoomEngine: zoomEngine ? { initial: zoomEngine.initial } : undefined,
+          zoomEngine: zoomEngine ? {} : undefined,
+          // #3596: the expanded try-on (which passes onNavigate) gets the Alt-hold inspect layer, keyed
+          // to THIS component's composed children — the names the fiber-walk navigates to.
+          inspect: onNavigate ? comp.composes : undefined,
         });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
+        // #3437: publish what this frame IS, for `bsc debug frames`. Recorded here because the pair that
+        // matters — the engine was REQUESTED vs it actually reached the srcdoc — is only knowable at the
+        // build, and their disagreement is invisible from the DOM afterwards.
+        if (iframeRef.current) {
+          registerPreviewFrame(frameKey, {
+            component: comp.id,
+            iframe: iframeRef.current,
+            engineRequested: !!zoomEngine,
+            engineInSrcdoc: srcDoc.includes("__cmd"),
+          });
+        }
         setStatus("ready");
       } catch (e) {
         if (cancelled) return;
@@ -212,8 +260,26 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
       }
     })();
     return () => { cancelled = true; };
+    // #3556: `themeId`/`themeCss`/`theme` are NOT deps — a theme change must NOT rebuild (it would reset the
+    // pan/zoom engine); applied live below. #3567: `previewState` is NOT a dep either — a state change must
+    // NOT rebuild (it flashes "building"); applied live below. The initial build reads the current theme +
+    // state fresh; `liveStatesKey` rebuilds only when the component gains/loses a supported state.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, scrollY, zoomEngine?.initial, retry, previewData]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, liveStatesKey, scrollY, hasZoomEngine, retry, previewData, libResolver, !!onNavigate]);
+
+  // #3556: apply a theme change LIVE to the mounted iframe (data-theme base + the `__bsc_theme` token
+  // overrides) via postMessage — no rebuild, so the in-iframe pan/zoom view survives a theme switch. Keyed
+  // on `themeId` (the stable theme identity); the initial build already baked the current theme in.
+  useEffect(() => {
+    iframeRef.current?.contentWindow?.postMessage({ __bsc_theme: { base: theme, css: themeCss } }, "*");
+  }, [themeId, theme, themeCss]);
+
+  // #3567: apply a STATE change LIVE — post `{ __state }` to the mounted iframe, which re-renders the
+  // component with that state's embedded props. No esbuild, no reload, no "building" flash. The initial
+  // build already mounted the current state.
+  useEffect(() => {
+    iframeRef.current?.contentWindow?.postMessage({ __state: previewState }, "*");
+  }, [previewState]);
 
   // #3190 crisp pass: hand the host the engine's +/−/fit controls. The engine lives in the iframe, so each
   // call posts a `__cmd` message to it; re-registered whenever the iframe rebuilds (`retry`/comp switch).
@@ -234,10 +300,13 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       const d = e.data;
-      if (!d || !d.__preview) return;
-      // Errors/renders are PER-FRAME — match THIS iframe's window so a concurrent scan probe's error
-      // doesn't leak into (and falsely fail) this live preview (#2908).
+      if (!d) return;
+      // Per-frame messages — match THIS iframe's window so a concurrent scan probe's message doesn't
+      // leak into (and falsely fail / mis-navigate) this live preview (#2908).
       if (e.source !== iframeRef.current?.contentWindow) return;
+      // #3596: Alt-hold inspect navigated to a child — route it to the host (the graph selects that node).
+      if (d.__navigate && onNavigate) { onNavigate(String(d.__navigate)); return; }
+      if (!d.__preview) return;
       if (d.__preview === "error") {
         const message = String(d.message);
         setStatus("error");
@@ -247,7 +316,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [comp.id]);
+  }, [comp.id, onNavigate]);
 
   // #3308: when this is the designated shot target (the inspector's lead preview), keep its on-screen rect
   // registered with the backend so `bsc shot preview` crops the webview to JUST this component (the

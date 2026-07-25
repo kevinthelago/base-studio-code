@@ -7,22 +7,21 @@
 // enforces it for real at session launch, not just in the UI. Pure + unit-testable.
 
 import type { AgentProfile, ToolKey, Tier } from "./agentProfiles";
+import { editPathRule } from "@/shared/lib/session/sessionRoles";
 
-/** The Claude Code tool name(s) each profile capability maps to. `edit` covers all
- *  in-place edit tools; `write` is creation; `web` is both fetch + search. */
+/** The Claude Code tool name(s) each profile capability maps to (bare, whole-tool rules). `edit`
+ *  covers the in-place edit tools; `write` is creation; `web` is both fetch + search. No `MultiEdit`
+ *  — it was removed from Claude Code (#3534). */
 const TOOL_NAMES: Record<ToolKey, string[]> = {
   read: ["Read"],
   grep: ["Grep"],
   glob: ["Glob"],
-  edit: ["Edit", "MultiEdit", "NotebookEdit"],
+  edit: ["Edit", "NotebookEdit"],
   write: ["Write"],
   bash: ["Bash"],
   web: ["WebFetch", "WebSearch"],
   task: ["Task"],
 };
-
-/** The file-write tools a path-scope rule applies to (`Tool(<glob>)`). */
-const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
 
 /** Settings-rule inputs for `ensure_session_settings`, identical to the role gate's. */
 export interface ProfileSessionSettings {
@@ -71,12 +70,11 @@ export function resolveProfileSettings(profile: AgentProfile): ProfileSessionSet
     }
   }
 
-  for (const g of profile.paths.allow) {
-    for (const t of WRITE_TOOLS) allowToolRules.push(`${t}(${g})`);
-  }
-  for (const g of profile.paths.deny) {
-    for (const t of WRITE_TOOLS) denyToolRules.push(`${t}(${g})`);
-  }
+  // Path-scoped file rules are `Edit(<glob>)` ONLY (#3534): Claude Code matches file-permission rules
+  // on the Edit tool alone, and that one rule covers every file-editing tool. `Write(<glob>)` etc. were
+  // never enforced — a silent no-op for an allow, an unenforced deny for a deny.
+  for (const g of profile.paths.allow) allowToolRules.push(editPathRule(g));
+  for (const g of profile.paths.deny) denyToolRules.push(editPathRule(g));
 
   return {
     allowedCommands: dedupe(profile.commands),

@@ -6,15 +6,17 @@ import { Tabstrip } from "@/app/chrome/Tabstrip";
 import { StatusBar } from "@/app/chrome/StatusBar";
 import { ErrorBoundary } from "@/app/safety/ErrorBoundary";
 import { useAppStore } from "@/store";
+import { useAppRepoRoot } from "@/shared/hooks/useAppRepoRoot";
 import { Box } from "@/shared/ui/layout/Box";
 import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useHotkeys } from "./useHotkeys";
 import { useNavigateBridge } from "./useNavigateBridge";
+import { useDebugChannel } from "./useDebugChannel";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 import { ConsoleWorkspace } from "@/app/console";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
-import { DebugSessionMount } from "@/features/debug";
+import { DebugSessionMount, RequestSessionsMount } from "@/features/debug";
 import { StudioSessionHosts } from "@/features/studio-sessions";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
@@ -28,6 +30,7 @@ import { useNotificationSounds } from "@/features/sounds";
 import { useAppBoot } from "@/app/useAppBoot";
 import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
+import { effectiveWorkspace } from "@/app/registry";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, SettingsWorkspace,
   ProjectsWorkspace, SkillsWorkspace, SecurityWorkspace, GlanceWorkspace, WorkspaceFallback,
@@ -40,6 +43,9 @@ export default function App() {
   // #3274: apply `bsc navigate` requests from the appchan watcher (Rust emits `bsc://navigate`), so an
   // external session can steer the app to a view before capturing it.
   useNavigateBridge();
+  // #3437: answer `bsc debug` — read-only inspection of the live DOM + preview state, so a session can
+  // ask what is actually on screen instead of inferring it from source.
+  useDebugChannel();
   useScheduler();
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
   useStoreProjector(); // generic store_state projector: scoped domains + the alert pipeline (#2498)
@@ -52,28 +58,38 @@ export default function App() {
   useAppBoot();    // accent vars · startup trace · base-dir/crash/skills hydration · deferred perf monitor
   useNavHistory(); // mouse back/forward (X1/X2) → app-wide navigation history (workspace + Glance drill)
 
-  const {
-    activeWorkspace: rawActiveWorkspace, setWorkspace,
-    tabs, activeTabIdx,
-    focusedAgentName,
-    activeRepoName,
-    activePageTab,
-    crumbEntity,
-    projectsPageMode,
-    projectsView,
-    githubTab,
-    githubBoardOpen,
-    githubBoardTab,
-    settingsSection,
-    hasHydrated,
-    showConsolePage,
-  } = useAppStore();
+  // Per-field selectors, NOT a bare `useAppStore()` (#3612): the shell is always mounted, and a
+  // whole-store read re-renders the ENTIRE app tree (9 terminals + the 154-component Studio + Glance) on
+  // EVERY store mutation anywhere — including the Design Studio scan's ~308 componentBuildStatus writes,
+  // which produced the measured 100–386 ms jank. Subscribing per field compares by Object.is, so an
+  // unrelated write stays silent. (Same pattern the console pinned in storeSelectors.test.tsx.)
+  const rawActiveWorkspace = useAppStore((s) => s.activeWorkspace);
+  const setWorkspace = useAppStore((s) => s.setWorkspace);
+  const tabs = useAppStore((s) => s.tabs);
+  const activeTabIdx = useAppStore((s) => s.activeTabIdx);
+  const focusedAgentName = useAppStore((s) => s.focusedAgentName);
+  const activeRepoName = useAppStore((s) => s.activeRepoName);
+  const activePageTab = useAppStore((s) => s.activePageTab);
+  const crumbEntity = useAppStore((s) => s.crumbEntity);
+  const projectsPageMode = useAppStore((s) => s.projectsPageMode);
+  const projectsView = useAppStore((s) => s.projectsView);
+  const githubTab = useAppStore((s) => s.githubTab);
+  const githubBoardOpen = useAppStore((s) => s.githubBoardOpen);
+  const githubBoardTab = useAppStore((s) => s.githubBoardTab);
+  const settingsSection = useAppStore((s) => s.settingsSection);
+  const hasHydrated = useAppStore((s) => s.hasHydrated);
+  const showConsolePage = useAppStore((s) => s.showConsolePage);
 
   // The legacy Console page is opt-in (#2372). When it's off, a persisted (or just-toggled-off)
   // console-active workspace falls back to Glance — derived, so every downstream `activeWorkspace`
   // check (rail highlight, chrome, the console mount's display:none) redirects with no reset effect.
   // The console STILL mounts hidden (its PTYs stay alive for the Glance stream dock to reconnect).
-  const activeWorkspace = !showConsolePage && rawActiveWorkspace === "console" ? "glance" : rawActiveWorkspace;
+  // effectiveWorkspace (registry.ts) is the shared definition — useHotkeys gates on it too (#3575).
+  const activeWorkspace = effectiveWorkspace(rawActiveWorkspace, showConsolePage);
+
+  // Resolve the app's own source tree once (#3509) so a launch can turn a role's symbolic
+  // `app-repo` harvest root into a real path without awaiting.
+  useAppRepoRoot();
 
   // The console owns its tabs: the layout picker, close (+ a confirm when a session is live),
   // layout change (PTY teardown), reorder, tear-off — all behind useConsoleTabs (#app-shell).
@@ -173,6 +189,8 @@ export default function App() {
     {/* Keeps the app-owned DEBUG session's PTY warm on TerminalHost while the Settings flag is on (#3326),
         so the Glance `debugger` node's morph can re-parent it in. Renders off-screen / null. */}
     <DebugSessionMount />
+    {/* #3498: a debug session per open request. Inert while auto-spawn is off (the default). */}
+    <RequestSessionsMount />
     {/* Keeps each WANTED app-owned studio session (designer/librarian/architect) warm on TerminalHost
         (#3357), so its page dock and its Glance node morph can both re-parent the one live terminal in.
         Lazily started by whichever surface first shows it; reclaimed by the 30-minute idle reaper. */}

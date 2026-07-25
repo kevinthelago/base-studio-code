@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { loadLibrary, pushSkill, dropSkill, pushGroup, dropGroup } from "./lib/skillBridge";
-import { blankSkill, type SkillDef } from "./lib/skills";
+import { blankSkill, seedSkills, type SkillDef } from "./lib/skills";
 import { useAppStore } from "@/store";
 
 const sk = (over: Partial<SkillDef> & { id: string; name: string }): SkillDef =>
@@ -114,6 +114,26 @@ describe("skills store ↔ skills.db (#1338 → bsc #2142)", () => {
     expect(skills.some((s) => s.id === "user-1")).toBe(true);  // the user's db skill is preserved
     expect(skills.some((s) => s.packaged)).toBe(true);          // packaged set reconciled in from code
     expect(skillGroups).toEqual([{ id: "g1", name: "G", hue: "h", skillIds: [] }]);
+  });
+
+  it("hydrateSkills re-pushes NOTHING when the db already holds the current packaged set (#3672)", async () => {
+    const calls: BscPayload[] = [];
+    // The db already mirrors the code-owned packaged set → no content drift → no re-push burst.
+    mockBsc({ skills: seedSkills(), groups: [] }, calls);
+    await useAppStore.getState().hydrateSkills();
+    await Promise.resolve();
+    expect(calls.filter((c) => c.args[0] === "skill" && c.args[1] === "add")).toEqual([]);
+  });
+
+  it("hydrateSkills re-pushes ONLY a packaged skill whose authored content drifted (#3672)", async () => {
+    const calls: BscPayload[] = [];
+    // The db's stored copy of the first packaged skill lags the code (its prompt changed).
+    const stale = seedSkills().map((s, i) => (i === 0 ? { ...s, prompt: "STALE BODY" } : s));
+    mockBsc({ skills: stale, groups: [] }, calls);
+    await useAppStore.getState().hydrateSkills();
+    await Promise.resolve();
+    const adds = calls.filter((c) => c.args[0] === "skill" && c.args[1] === "add");
+    expect(adds.length).toBe(1); // just the drifted one, not all ~40
   });
 
   it("refreshSkills re-reads the library WITHOUT pushing the set back (cheap poll, #1419)", async () => {

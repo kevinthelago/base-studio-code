@@ -30,6 +30,11 @@ pub use log_streams::{LogStream, LOG_STREAMS};
 /// (`Bash(<glob>)` deny rules) and the bsc-agent runtime (substring match) render from.
 pub mod dangerous;
 
+/// Matching for the SESSION's bash deny patterns (#3483) — program-name entries match the PROGRAM,
+/// not any substring of the command. Kept apart from [`dangerous`], whose substring semantics are
+/// load-bearing and deliberately unchanged.
+pub mod deny;
+
 /// The user's home directory, resolved WITHOUT a `dirs`/`home` crate.
 ///
 /// # Precedence (the fix for #1646)
@@ -121,11 +126,13 @@ pub fn iso8601_to_epoch_ms(ts: &str) -> Option<i64> {
     Some((days * 86_400 + h * 3_600 + mi * 60 + s) * 1_000)
 }
 
-/// Format one UI-activity TSV line (#2525) — the pure, testable core of [`emit_ui_activity`].
-/// Columns: `ts \t pane \t ui-touch \t <collection> \t <id>\n` — the same `ts·pane·kind·…` shape the
-/// coord emitters write, so `bsc logs tail ui` reads it uniformly. Trailing newline included.
-pub fn ui_activity_line(ts: &str, pane: &str, collection: &str, id: &str) -> String {
-    format!("{ts}\t{pane}\tui-touch\t{collection}\t{id}\n")
+/// Format one UI-activity TSV line (#2525/#3545) — the pure, testable core of [`emit_ui_activity`] /
+/// [`emit_ui_focus`]. Columns: `ts \t pane \t <kind> \t <collection> \t <id>\n` where `kind` is
+/// `ui-touch` (a WRITE — drives focus + re-hydrate) or `ui-focus` (a READ — drives focus only). The same
+/// `ts·pane·kind·…` shape the coord emitters write, so `bsc logs tail ui` reads it uniformly. Trailing
+/// newline included.
+pub fn ui_activity_line(ts: &str, pane: &str, kind: &str, collection: &str, id: &str) -> String {
+    format!("{ts}\t{pane}\t{kind}\t{collection}\t{id}\n")
 }
 
 /// Append a `ui-touch` activity line for `(collection, id)` to `$BSC_UI_ACTIVITY_LOG` (#2525) — the
@@ -136,12 +143,27 @@ pub fn ui_activity_line(ts: &str, pane: &str, collection: &str, id: &str) -> Str
 /// matching the `bsc-*` helpers' `date -u +%Y-%m-%dT%H:%M:%SZ`. Best-effort: a write failure is
 /// swallowed (activity signalling must never break a store mutation).
 pub fn emit_ui_activity(collection: &str, id: &str) {
+    emit_ui_line("ui-touch", collection, id);
+}
+
+/// Append a `ui-focus` activity line for `(collection, id)` to `$BSC_UI_ACTIVITY_LOG` (#3545) — the
+/// designer session's live-focus signal for a READ (`bsc ui get`/`preview-props`), so the Design Studio
+/// preview follows the node Claude is INSPECTING, not only one it writes. Unlike [`emit_ui_activity`]
+/// (`ui-touch`), the frontend drives this into focus WITHOUT re-hydrating the library — a read changed
+/// nothing to reload. Same no-op-when-unwired + best-effort contract as [`emit_ui_activity`].
+pub fn emit_ui_focus(collection: &str, id: &str) {
+    emit_ui_line("ui-focus", collection, id);
+}
+
+/// Shared body of [`emit_ui_activity`] / [`emit_ui_focus`] — resolve the log path + pane and append one
+/// line of the given `kind`. No-op when `$BSC_UI_ACTIVITY_LOG` is absent/empty (non-designer sessions).
+fn emit_ui_line(kind: &str, collection: &str, id: &str) {
     let path = match std::env::var_os("BSC_UI_ACTIVITY_LOG") {
         Some(p) if !p.is_empty() => PathBuf::from(p),
         _ => return, // no activity stream wired — hand shell / non-designer session
     };
     let pane = std::env::var("BSC_AUDIT_PANE").ok().filter(|p| !p.is_empty()).unwrap_or_else(|| "?".to_string());
-    let line = ui_activity_line(&epoch_ms_to_iso8601(now_ms()), &pane, collection, id);
+    let line = ui_activity_line(&epoch_ms_to_iso8601(now_ms()), &pane, kind, collection, id);
     append_line(&path, &line);
 }
 
@@ -273,10 +295,15 @@ mod tests {
     static UI_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn ui_activity_line_is_the_tsv_touch_shape() {
+    fn ui_activity_line_is_the_tsv_kind_shape() {
         assert_eq!(
-            ui_activity_line("2026-07-07T00:00:00Z", "design-studio:designer", "component", "button"),
+            ui_activity_line("2026-07-07T00:00:00Z", "design-studio:designer", "ui-touch", "component", "button"),
             "2026-07-07T00:00:00Z\tdesign-studio:designer\tui-touch\tcomponent\tbutton\n",
+        );
+        // #3545: a read emits `ui-focus` (focus only, no re-hydrate).
+        assert_eq!(
+            ui_activity_line("2026-07-07T00:00:00Z", "design-studio:designer", "ui-focus", "component", "chip"),
+            "2026-07-07T00:00:00Z\tdesign-studio:designer\tui-focus\tcomponent\tchip\n",
         );
     }
 
@@ -308,6 +335,14 @@ mod tests {
         assert_eq!(cols[4], "button");
         assert!(iso8601_to_epoch_ms(cols[0]).is_some(), "col0 is a parseable ISO-8601 timestamp");
         assert!(lines[1].ends_with("\ttheme\tneon"), "the second collection/id rides through");
+
+        // #3545: emit_ui_focus writes a `ui-focus` line (a read), and is likewise a no-op when unwired.
+        std::env::set_var("BSC_AUDIT_PANE", "design-studio:designer");
+        emit_ui_focus("component", "chip");
+        let last = std::fs::read_to_string(&file).unwrap().lines().last().unwrap().to_string();
+        let fcols: Vec<&str> = last.split('\t').collect();
+        assert_eq!(fcols[2], "ui-focus", "a read emits ui-focus, not ui-touch");
+        assert_eq!((fcols[3], fcols[4]), ("component", "chip"));
 
         // Missing pane falls back to "?".
         std::env::remove_var("BSC_AUDIT_PANE");

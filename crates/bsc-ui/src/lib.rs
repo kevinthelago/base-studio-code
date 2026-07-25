@@ -1,14 +1,17 @@
-//! `bsc-ui` — the spec-first UI SDK's agent-facing core (#1852 Phase 2). A KitNode is a declarative,
+//! `bsc-ui` — the spec-first UI SDK's agent-facing core (#1852 Phase 2). A UI spec is a declarative,
 //! style/theme-independent description of UI that an AI emits as *data* (never JSX). This crate embeds
-//! the KitNode contract from the ONE source of truth — `src-tauri/data/ui/kit-nodes.json`, the same
-//! file the frontend SDK reads via `@data` — and provides a structural validator over it, surfaced as
-//! the `bsc ui` CLI ([`cli`]). So a live session can author a spec and check it with `bsc ui validate`
-//! from its own shell, against the exact contract the frontend `KitRenderer` renders.
+//! the PRIMITIVE contract from the ONE source of truth — `src-tauri/data/ui/primitives.json`, generated
+//! from the frontend's `shared/ui/manifest.ts` — and provides a structural validator over it, surfaced
+//! as the `bsc ui` CLI ([`cli`]). So a live session can author a spec and check it with
+//! `bsc ui validate` from its own shell, against the exact contract the frontend `KitRenderer` renders.
 //!
-//! The validator mirrors the frontend `validateKitNode` (src/shared/ui/spec/schema.ts) rule-for-rule:
-//! at every node — `kind` present + known · every required field present · no field outside the kind's
-//! allowed set · enum fields hold an allowed value · a children-bearing kind's `children` (when present)
-//! is an array — recursing into any nested node (`header`) or array-of-nodes (`children`).
+//! The validator mirrors the frontend `validateGeneralNode` (src/shared/ui/spec/generalNode.ts)
+//! rule-for-rule — the agreement is TESTED, not asserted: both run the shared fixture set in
+//! `src-tauri/data/ui/node-validation.fixtures.json`, so a divergence in either implementation (down
+//! to the wording of an error) fails the build rather than passing quietly.
+//!
+//! #3500 retired the closed `KitNode` vocabulary — 8 hardcoded node kinds, each with a hand-written
+//! branch in the renderer — in favour of nodes that name REAL kit primitives.
 
 //! Home, too, of the global UI-KIT STORE (#2465) — [`kit`]: immutable versioned kit artifacts
 //! (`~/.base-studio-code/kits/<id>/<version>/`) blueprints PIN by `{ id, version, hash }`, with the
@@ -16,20 +19,13 @@
 
 pub mod cli;
 pub mod emit;
+/// The GENERAL node validator (#3485) — `{ type, props, children }` over the full primitive registry,
+/// the Rust face of `src/shared/ui/spec/generalNode.ts`. Both read the same generated contract.
+pub mod general_node;
+pub mod harvest;
 pub mod kit;
 
 use serde_json::Value;
-
-/// The KitNode contract, embedded at compile time from the single source of truth
-/// (`src-tauri/data/ui/kit-nodes.json`). The frontend SDK reads the same file via `@data/ui/...`, so
-/// the two faces of the SDK can never drift.
-pub const CONTRACT_JSON: &str = include_str!("../../../src-tauri/data/ui/kit-nodes.json");
-
-/// The parsed contract. The embedded file is valid JSON (guarded by [`tests::contract_is_valid`]), so
-/// this does not fail in practice.
-pub fn contract() -> Value {
-    serde_json::from_str(CONTRACT_JSON).expect("embedded kit-nodes.json is valid JSON")
-}
 
 /// The kit THEME registry (#1852 Phase 3), embedded from the same source of truth the frontend reads
 /// via `@data/ui/themes.json`. A theme is a map of semantic-token overrides; `bsc ui theme` serves it.
@@ -308,79 +304,11 @@ pub fn validate_theme(theme: &Value) -> Vec<String> {
     errs
 }
 
-/// Structurally validate a KitNode tree against the contract — the EXACT rules the frontend
-/// `validateKitNode` enforces, so a spec valid here is valid there. Returns the flat list of
-/// human-readable errors (empty = valid).
+/// Validate a UI spec against the embedded primitive contract. Returns a list of human-readable
+/// errors, empty when the spec is valid. Every node is `{ type, props, children, binds, actions }`
+/// naming a real kit primitive; the rules live in [`general_node`].
 pub fn validate_spec(node: &Value) -> Vec<String> {
-    let contract = contract();
-    let nodes = contract.get("nodes").cloned().unwrap_or(Value::Null);
-    let mut errors = Vec::new();
-    walk(node, "$", &nodes, &mut errors);
-    errors
-}
-
-fn walk(node: &Value, path: &str, nodes: &Value, errors: &mut Vec<String>) {
-    let Some(obj) = node.as_object() else {
-        errors.push(format!("{path}: expected a node object"));
-        return;
-    };
-    let Some(kind) = obj.get("kind").and_then(Value::as_str) else {
-        errors.push(format!("{path}: missing string \"kind\""));
-        return;
-    };
-    let Some(spec) = nodes.get(kind) else {
-        errors.push(format!("{path}: unknown kind \"{kind}\""));
-        return;
-    };
-
-    let fields: Vec<&str> = spec
-        .get("fields")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
-    for key in obj.keys() {
-        if key != "kind" && !fields.contains(&key.as_str()) {
-            errors.push(format!("{path}: unknown field \"{key}\" for kind \"{kind}\""));
-        }
-    }
-
-    if let Some(req) = spec.get("required").and_then(Value::as_array) {
-        for r in req.iter().filter_map(Value::as_str) {
-            if obj.get(r).is_none_or(Value::is_null) {
-                errors.push(format!("{path}: missing required field \"{r}\" for kind \"{kind}\""));
-            }
-        }
-    }
-
-    if let Some(enums) = spec.get("enums").and_then(Value::as_object) {
-        for (field, values) in enums {
-            let Some(v) = obj.get(field).filter(|v| !v.is_null()) else { continue };
-            let allowed: Vec<&str> = values
-                .as_array()
-                .map(|a| a.iter().filter_map(Value::as_str).collect())
-                .unwrap_or_default();
-            let shown = v.as_str().map_or_else(|| v.to_string(), String::from);
-            if !allowed.contains(&shown.as_str()) {
-                errors.push(format!("{path}.{field}: \"{shown}\" not one of {}", allowed.join(", ")));
-            }
-        }
-    }
-
-    // Recurse nested nodes: any field value that is itself a node, or an array of nodes.
-    for (field, value) in obj {
-        if field == "kind" {
-            continue;
-        }
-        if let Some(arr) = value.as_array() {
-            for (i, child) in arr.iter().enumerate() {
-                if child.is_object() && child.get("kind").is_some() {
-                    walk(child, &format!("{path}.{field}[{i}]"), nodes, errors);
-                }
-            }
-        } else if value.is_object() && value.get("kind").is_some() {
-            walk(value, &format!("{path}.{field}"), nodes, errors);
-        }
-    }
+    crate::general_node::validate_general_node(node)
 }
 
 // ── palette generator (#2634) — the "data generates design" engine + the no-holes guarantee ─────────
@@ -486,22 +414,33 @@ mod tests {
         assert!(p.iter().all(|(_, v)| v.starts_with("var(--")), "status → semantic tokens, never raw hues: {p:?}");
     }
 
+    /// The embedded PRIMITIVE contract must be internally coherent (#3500 — this replaced the
+    /// equivalent guard over the retired `kit-nodes.json`). It is GENERATED from the frontend
+    /// manifest, so the risk is not a typo but a regeneration that silently drops structure the
+    /// validator depends on — an enum with no `values` constrains nothing, and a prop with no `type`
+    /// is unvalidatable. Both would make the validator quietly permissive rather than fail loudly.
     #[test]
-    fn contract_is_valid() {
-        let c = contract();
-        assert!(c.get("nodes").and_then(Value::as_object).is_some(), "contract has a nodes map");
-        // Every required/enum field a node names must be one of its allowed fields.
-        for (kind, spec) in c["nodes"].as_object().unwrap() {
-            let fields: Vec<&str> =
-                spec["fields"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
-            if let Some(req) = spec.get("required").and_then(Value::as_array) {
-                for r in req.iter().filter_map(Value::as_str) {
-                    assert!(fields.contains(&r), "{kind}.required {r} is an allowed field");
-                }
-            }
-            if let Some(enums) = spec.get("enums").and_then(Value::as_object) {
-                for f in enums.keys() {
-                    assert!(fields.contains(&f.as_str()), "{kind}.enums {f} is an allowed field");
+    fn primitive_contract_is_coherent() {
+        let parsed: Value =
+            serde_json::from_str(general_node::PRIMITIVES_JSON).expect("primitives.json is valid JSON");
+        let list = parsed.get("primitives").and_then(Value::as_array).expect("a primitives array");
+        assert!(list.len() > 50, "expected the full kit, got {}", list.len());
+        for p in list {
+            let name = p.get("name").and_then(Value::as_str).expect("every primitive is named");
+            let props = p.get("props").and_then(Value::as_array).expect("{name} declares props");
+            for prop in props {
+                let pname =
+                    prop.get("name").and_then(Value::as_str).unwrap_or_else(|| panic!("{name}: a prop with no name"));
+                let ty = prop
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_else(|| panic!("{name}.{pname}: a prop with no type is unvalidatable"));
+                if ty == "enum" {
+                    let values = prop.get("values").and_then(Value::as_array);
+                    assert!(
+                        values.is_some_and(|v| !v.is_empty()),
+                        "{name}.{pname}: an enum with no declared values constrains nothing"
+                    );
                 }
             }
         }
@@ -638,7 +577,21 @@ mod tests {
 
     #[test]
     fn variant_authoring_validates_name_keys_and_values() {
-        assert_eq!(component_token_keys("btn"), vec!["bg", "bg-hover", "border", "fg", "radius"]);
+        // The token surface a component exposes GROWS as the design system does — `btn` went from 5
+        // keys to 13 — so pinning the exact list only records a snapshot and goes red on every
+        // addition (it had, on develop). This test is about variant NAME + VALUE validation; the key
+        // set matters here only insofar as `validate_variant_tokens` agrees with it, so assert THAT
+        // relationship instead of the membership.
+        let btn_keys = component_token_keys("btn");
+        assert!(btn_keys.len() >= 5, "btn exposes a real token surface: {btn_keys:?}");
+        for expected in ["bg", "fg"] {
+            assert!(btn_keys.contains(&expected.to_string()), "{expected} is a btn token: {btn_keys:?}");
+        }
+        assert!(!btn_keys.contains(&"nope".to_string()), "the bad key below is genuinely unknown");
+        // Every declared key must be authorable — otherwise the surface and the validator disagree.
+        let all: serde_json::Map<String, Value> =
+            btn_keys.iter().map(|k| (k.clone(), Value::String("var(--fg)".into()))).collect();
+        assert!(validate_variant_tokens("btn", &all).is_empty(), "every declared key validates");
         assert!(sanitize_variant_name("danger-outline").is_ok());
         for bad in ["Danger", "1x", "a--b", "a-", "a b", "a}b", ""] {
             assert!(sanitize_variant_name(bad).is_err(), "'{bad}' rejected");
@@ -697,17 +650,32 @@ mod tests {
         }
     }
 
+    /// `validate_spec` is the PUBLIC entry (`bsc ui validate`). The rules themselves are covered in
+    /// depth by the shared cross-language fixtures in [`general_node`]; these cases prove the public
+    /// function is wired to them, and pin the errors an agent sees most often.
     #[test]
     fn accepts_the_demo_spec() {
         // The same LLM-provider card the frontend demoSpec renders — validates clean here too.
         let demo = json!({
-            "kind": "card", "tone": "var(--accent)",
-            "header": { "kind": "header", "title": "LLM provider", "hint": "API-tier" },
+            "type": "Card",
+            "props": {
+                "tone": "var(--accent)",
+                "header": { "type": "Text", "props": { "size": "md", "weight": 600 }, "children": "LLM provider" }
+            },
             "children": [
-                { "kind": "field", "control": "select", "label": "Provider", "bind": "provider", "options": ["anthropic", "openai"] },
-                { "kind": "field", "control": "password", "label": "API key", "bind": "apiKey" },
-                { "kind": "row", "label": "Stream responses", "children": [{ "kind": "toggle", "bind": "stream" }] },
-                { "kind": "button", "variant": "primary", "label": "Save", "action": "save" }
+                { "type": "SelectField",
+                  "props": { "label": "Provider", "children": [
+                      { "type": "Option", "props": { "value": "anthropic" }, "children": "anthropic" }
+                  ] },
+                  "binds": { "value": "provider" }, "actions": { "onChange": "setProvider" } },
+                { "type": "TextField", "props": { "label": "API key" },
+                  "binds": { "value": "apiKey" }, "actions": { "onChange": "setApiKey" } },
+                { "type": "Row", "props": { "gap": "sm", "justify": "between" }, "children": [
+                    { "type": "Text", "children": "Stream responses" },
+                    { "type": "Toggle", "binds": { "on": "stream" }, "actions": { "onClick": "toggleStream" } }
+                ] },
+                { "type": "Button", "props": { "variant": "primary" }, "children": "Save",
+                  "actions": { "onClick": "save" } }
             ]
         });
         assert_eq!(validate_spec(&demo), Vec::<String>::new());
@@ -719,42 +687,63 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_and_unknown_kind() {
-        assert_eq!(validate_spec(&json!({ "title": "x" })), vec!["$: missing string \"kind\""]);
-        assert_eq!(validate_spec(&json!({ "kind": "widget" })), vec!["$: unknown kind \"widget\""]);
+    fn rejects_missing_and_unknown_type() {
+        assert_eq!(validate_spec(&json!({ "title": "x" })), vec!["$: missing string \"type\""]);
+        assert_eq!(
+            validate_spec(&json!({ "type": "Widget" })),
+            vec!["$: unknown primitive \"Widget\""]
+        );
     }
 
+    /// The retired `kind` vocabulary must FAIL, not pass quietly (#3500). An agent working from a
+    /// stale example has to be told, or it will keep emitting specs nothing can render.
     #[test]
-    fn reports_missing_required_field() {
+    fn rejects_the_retired_kind_vocabulary() {
         assert_eq!(
-            validate_spec(&json!({ "kind": "field", "control": "text" })),
-            vec!["$: missing required field \"label\" for kind \"field\""]
+            validate_spec(&json!({ "kind": "card", "children": [] })),
+            vec!["$: missing string \"type\""]
         );
     }
 
     #[test]
-    fn reports_unknown_field() {
+    fn reports_missing_required_prop() {
         assert_eq!(
-            validate_spec(&json!({ "kind": "tag", "label": "x", "bogus": 1 })),
-            vec!["$: unknown field \"bogus\" for kind \"tag\""]
+            validate_spec(&json!({ "type": "Toggle" })),
+            vec!["$.props.on: missing required prop for \"Toggle\""]
+        );
+    }
+
+    #[test]
+    fn reports_unknown_prop() {
+        assert_eq!(
+            validate_spec(&json!({ "type": "Spacer", "props": { "bogus": 1 } })),
+            vec!["$.props.bogus: unknown prop for \"Spacer\""]
         );
     }
 
     #[test]
     fn reports_bad_enum() {
-        let errs = validate_spec(&json!({ "kind": "field", "control": "radio", "label": "x" }));
-        assert!(errs.contains(&"$.control: \"radio\" not one of text, password, select".to_string()));
+        let errs = validate_spec(&json!({ "type": "Text", "children": "x", "props": { "tone": "radio" } }));
+        assert!(
+            errs.iter().any(|e| e.contains("\"radio\" is not one of") && e.contains("accent")),
+            "{errs:?}"
+        );
     }
 
     #[test]
-    fn recurses_into_children_and_header() {
+    fn recurses_into_children_and_prop_slots() {
         assert_eq!(
-            validate_spec(&json!({ "kind": "card", "children": [{ "kind": "button" }] })),
-            vec!["$.children[0]: missing required field \"label\" for kind \"button\""]
+            validate_spec(&json!({ "type": "Stack", "children": [{ "type": "Toggle" }] })),
+            vec!["$.children[0].props.on: missing required prop for \"Toggle\""]
         );
         assert_eq!(
-            validate_spec(&json!({ "kind": "card", "header": { "kind": "header" }, "children": [] })),
-            vec!["$.header: missing required field \"title\" for kind \"header\""]
+            validate_spec(&json!({
+                "type": "Card",
+                "props": { "header": { "type": "Text" } },
+                "children": []
+            })),
+            vec!["$.props.header.props.children: missing required prop for \"Text\""]
         );
     }
+
 }

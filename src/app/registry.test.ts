@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { WORKSPACES, workspaceLabel, type Workspace } from "./registry";
+import { WORKSPACES, workspaceLabel, effectiveWorkspace, type Workspace } from "./registry";
 
 describe("screen registry (#nav-pass)", () => {
   it("gives every screen a non-empty label, a unique key, and an icon", () => {
@@ -24,5 +24,20 @@ describe("screen registry (#nav-pass)", () => {
     expect(workspaceLabel("security")).toBe("Security");      // Agents screen is labeled Security
     expect(workspaceLabel("automation")).toBe("Automations");
     expect(workspaceLabel("nonexistent" as Workspace)).toBe("nonexistent");
+  });
+});
+
+describe("effectiveWorkspace — Console-page opt-in redirect (#2372/#3575)", () => {
+  it("redirects console → glance only when the page toggle is off", () => {
+    expect(effectiveWorkspace("console", false)).toBe("glance"); // page off → fall back to Glance
+    expect(effectiveWorkspace("console", true)).toBe("console"); // page on  → stay on Console
+  });
+
+  it("passes every other workspace through, toggle regardless", () => {
+    for (const raw of WORKSPACES.map((s) => s.key)) {
+      if (raw === "console") continue;
+      expect(effectiveWorkspace(raw, false)).toBe(raw);
+      expect(effectiveWorkspace(raw, true)).toBe(raw);
+    }
   });
 });

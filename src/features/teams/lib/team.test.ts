@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   BUILTIN_ORGS, COMMUNICATION_FORMS, RELATIONSHIP_ARCHETYPES,
   makeBuiltinOrgs, reconcileOrgs, orgStructureKey, blankOrg, orgSlug, orgIssues, deriveCommunication,
-  archetypeById, formById, augmentStudioNetworkForDebug, STUDIO_NETWORK_ID, type Team,
+  archetypeById, formById, augmentStudioNetworkForDebug, augmentStudioNetworkForRequests, STUDIO_NETWORK_ID, type Team,
 } from "./team";
 
 describe("org vocabulary (#2193)", () => {
@@ -219,5 +219,43 @@ describe("archetypeById", () => {
   it("resolves a known archetype and returns undefined otherwise", () => {
     expect(archetypeById("manages")?.label).toBe("Manages");
     expect(archetypeById("nope")).toBeUndefined();
+  });
+});
+
+describe("augmentStudioNetworkForRequests — overflow pool slots (#3535)", () => {
+  const studio = (): Team => ({
+    id: STUDIO_NETWORK_ID,
+    name: "Studio Network",
+    positions: [{ nodeId: "designer", kind: "agent", personaId: "persona-designer", x: 0, y: 0 }],
+    relationships: [],
+  } as unknown as Team);
+
+  it("adds one node per live pool slot", () => {
+    const t = augmentStudioNetworkForRequests(studio(), [0, 1]);
+    expect(t.positions.map((p) => p.nodeId)).toEqual(["designer", "debugger-pool-0", "debugger-pool-1"]);
+    // Fanned along x so N sessions never stack on a single point.
+    const xs = t.positions.filter((p) => p.nodeId.startsWith("debugger-pool-")).map((p) => p.x);
+    expect(new Set(xs).size).toBe(2);
+  });
+
+  it("relates each to the DESIGNER, never to the debugger node", () => {
+    // The `debugger` node only exists while the debugSession flag is on; an edge to it would dangle
+    // whenever a request session runs with that flag off.
+    const t = augmentStudioNetworkForRequests(studio(), [5]);
+    const rel = t.relationships.find((r) => r.from === "debugger-pool-5");
+    expect(rel?.to).toBe("designer");
+    expect(t.relationships.some((r) => r.to === "debugger")).toBe(false);
+  });
+
+  it("is idempotent and a no-op when there is nothing to add", () => {
+    const once = augmentStudioNetworkForRequests(studio(), [1]);
+    expect(augmentStudioNetworkForRequests(once, [1])).toBe(once);
+    const base = studio();
+    expect(augmentStudioNetworkForRequests(base, [])).toBe(base);
+  });
+
+  it("never touches a team that is not the Studio Network", () => {
+    const other = { ...studio(), id: "some-other-team" } as Team;
+    expect(augmentStudioNetworkForRequests(other, [1, 2])).toBe(other);
   });
 });

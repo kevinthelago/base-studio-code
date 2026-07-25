@@ -71,20 +71,64 @@ pic.src = "data:image/gif;base64,R0lGODlhAgACAIAAAP///wAAACH5BAEAAAAALAAAAAACAAI
 pic.style.cssText = "width:240px;height:120px;background:#456";
 
 wrap.append(text, btn, field, pic);
+__COMPOSE__
+__TALL__
 document.getElementById("root").appendChild(wrap);
 export {};
+`;
+
+// Two "child components" for the Alt-hold inspect test (#3596), tagged with the data-bsc-comp seam the
+// inspect engine falls back to when there is no React fiber (this fixture is React-free). Each also counts
+// its OWN clicks, so a test can prove a plain (no-Alt) click still reaches the child (interactivity kept).
+const COMPOSE_BLOCK = `
+window.__childClicks = { ChildA: 0, ChildB: 0 };
+["ChildA", "ChildB"].forEach(function (name) {
+  const c = document.createElement("div");
+  c.id = name;
+  c.setAttribute("data-bsc-comp", name);
+  c.style.cssText = "width:260px;height:90px;display:flex;align-items:center;justify-content:center;background:#334;color:#fff;font:600 15px/1 sans-serif";
+  c.textContent = name;
+  c.addEventListener("click", function () { window.__childClicks[name] += 1; });
+  wrap.appendChild(c);
+});`;
+
+// A block far taller than the 800×600 harness frame, with a marker pinned to its very bottom — so a test
+// can assert the OFF-SCREEN bottom actually renders (is painted, not clipped) once the engine fits (#3551).
+const TALL_BLOCK = `
+const tall = document.createElement("div");
+tall.id = "tall";
+tall.style.cssText = "position:relative;width:100%;height:1400px;margin-top:16px;background:linear-gradient(#223,#557)";
+const bottom = document.createElement("div");
+bottom.id = "bottom";
+bottom.style.cssText = "position:absolute;left:0;right:0;bottom:0;height:56px;display:flex;align-items:center;justify-content:center;background:#0c8;color:#012;font-weight:700";
+bottom.textContent = "BOTTOM EDGE";
+tall.appendChild(bottom);
+wrap.appendChild(tall);
 `;
 
 /** Options the harness forwards straight into `buildComponentSrcDoc` — the same knobs the live frame sets. */
 export interface MountOptions {
   /** Mount with the in-iframe pan/zoom ENGINE (#3190), as the expanded try-on does. */
   zoomEngine?: boolean;
+  /** Append a block far taller than the frame, so the "renders the whole height, unclipped" test (#3551)
+   *  has real off-screen overflow to check. */
+  tall?: boolean;
+  /** Append the two tagged "child components" (`ChildA`/`ChildB`), for the Alt-hold inspect test (#3596). */
+  compose?: boolean;
+  /** Enable the Alt-hold inspect layer with these navigable child names — as the expanded frame passes
+   *  its `composes` (#3596). */
+  inspect?: string[];
 }
 
 declare global {
   interface Window {
     /** The Playwright-facing entry point, installed below. */
-    __previewHarness?: { mount: (opts?: MountOptions) => Promise<void> };
+    __previewHarness?: { mount: (opts?: MountOptions) => Promise<void>; mountRaw: (source: string) => Promise<void> };
+    /** #3596: every `{__navigate}` the inspect layer posts, in order — the spec reads this. */
+    __navigations?: string[];
+    /** #3596: per-child click counters set inside the composing fixture's iframe (`ChildA`/`ChildB`),
+     *  so a spec can prove a plain click reaches the child but an Alt-click does not. */
+    __childClicks: Record<string, number>;
   }
 }
 
@@ -96,15 +140,26 @@ declare global {
  */
 async function mount(opts: MountOptions = {}): Promise<void> {
   const iframe = document.getElementById("preview") as HTMLIFrameElement;
-  const js = await bundleComponent({ "fixture.ts": FIXTURE_SOURCE }, "fixture.ts");
+  const source = FIXTURE_SOURCE
+    .replace("__COMPOSE__", opts.compose ? COMPOSE_BLOCK : "")
+    .replace("__TALL__", opts.tall ? TALL_BLOCK : "");
+  const js = await bundleComponent({ "fixture.ts": source }, "fixture.ts");
   const srcDoc = buildComponentSrcDoc(js, {
     injectedCss: collectAppCss(),
     theme: "dark",
-    // The live frame passes `{ initial }` only; min/max fall back to the engine's own defaults.
-    zoomEngine: opts.zoomEngine ? { initial: 1 } : undefined,
+    // The engine has no options that vary per-mount (it opens FIT and reads its own defaults); an empty
+    // object enables it, exactly as the live frame passes `zoomEngine={{}}`.
+    zoomEngine: opts.zoomEngine ? {} : undefined,
+    // #3596: the Alt-hold inspect layer, keyed to the navigable child names (the expanded frame's `composes`).
+    inspect: opts.inspect,
   });
 
-  await new Promise<void>((resolve, reject) => {
+  await assignAndWait(iframe, srcDoc);
+}
+
+/** Assign a srcdoc to the preview iframe and resolve once it reports `ready`; reject on `error`/timeout. */
+function assignAndWait(iframe: HTMLIFrameElement, srcDoc: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       window.removeEventListener("message", onMsg);
       reject(new Error("preview harness: iframe never reported ready"));
@@ -129,4 +184,26 @@ async function mount(opts: MountOptions = {}): Promise<void> {
   });
 }
 
-window.__previewHarness = { mount };
+/**
+ * Bundle + mount ARBITRARY component source through the shipped chain (`bundleComponent` →
+ * `buildComponentSrcDoc`) under the real CSP — for the #3696 shim-resolution spec. A component importing
+ * native/unknown packages (react-native, expo-router, a made-up package) must BUNDLE + RENDER (its imports
+ * resolve to bundled-in local shims/stubs), not fail with "Failed to resolve module specifier". Offline: the
+ * universal stub needs no React, so this exercises the whole resolution path with zero CDN dependency.
+ */
+async function mountRaw(source: string): Promise<void> {
+  const iframe = document.getElementById("preview") as HTMLIFrameElement;
+  const js = await bundleComponent({ "fixture.ts": source }, "fixture.ts");
+  const srcDoc = buildComponentSrcDoc(js, { injectedCss: collectAppCss(), theme: "dark" });
+  await assignAndWait(iframe, srcDoc);
+}
+
+// #3596: record every `{__navigate}` the inspect layer posts from a mounted preview, so the spec can
+// assert Alt-click navigation. Correlating by source window is unnecessary here (only one preview mounts).
+window.__navigations = [];
+window.addEventListener("message", (e: MessageEvent) => {
+  const d = e.data as { __navigate?: unknown } | null;
+  if (d && typeof d.__navigate === "string") window.__navigations!.push(d.__navigate);
+});
+
+window.__previewHarness = { mount, mountRaw };

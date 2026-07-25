@@ -10,7 +10,6 @@ import { InlineError } from "@/shared/ui/feedback/InlineError";
 import type { DraftRow, LocalProjectLite } from "./drafts";
 import type { LocalPublishedRow } from "./localPublished";
 import { useReopenProject } from "./ReopenProjectModal";
-import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { STATUS_META, type GhProject, type ProjStatus } from "./published/publishedModel";
 import { ProjectRow } from "./published/ProjectRow";
 import { GroupHeader } from "./published/GroupHeader";
@@ -83,9 +82,8 @@ export function PublishedProjects({
   orphans = [], onCleanupOrphans,
 }: PublishedProjectsProps) {
   const {
-    setWorkspace, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard,
+    navigate, setProjectsView, setActiveProjectMeta, openGithubBoard,
     setPlanningContext, setPlanningTitle, setPlanningSession, githubToken,
-    setRelaunchOnOpen, triagedProjects,
   } = useAppStore();
   const [deleteTarget, setDeleteTarget] = useState<GhProject | null>(null);
 
@@ -93,8 +91,9 @@ export function PublishedProjects({
   function handleOpenGithubBoard(p: GhProject) {
     const repos = p.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
     setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
-    setGithubTab("projects"); // so "← portfolio" returns to the Projects tab
-    setWorkspace("github");
+    // Land on the GitHub workspace's Projects tab (#3602) — so "← portfolio" returns there, not to
+    // whatever github tab was last open.
+    navigate({ workspace: "github", page: "projects" });
     openGithubBoard("board");
   }
 
@@ -120,13 +119,6 @@ export function PublishedProjects({
   const reopen = useReopenProject<GhProject>(openPlanning, refreshLocalProjects);
   function handleEditPlan(p: GhProject) {
     reopen.begin(p, p.title, localProjects);
-  }
-  // #3044 — relaunch a project's fleet from the list: arm the auto-launch signal for its frozen key, then
-  // open it (reopen handles hub derivation / the mismatch modal). usePlanPublish fires launchTriage once
-  // the planning session has loaded. Reuses the whole tested launch path — no bespoke relaunch orchestration.
-  function relaunchFleet(p: GhProject) {
-    setRelaunchOnOpen(projectSlug(p.title));
-    handleEditPlan(p);
   }
 
   const publishedAndDrafts = publishedCount + fDrafts.length;
@@ -294,7 +286,6 @@ export function PublishedProjects({
                         onPlan={handleEditPlan}
                         onBoard={handleOpenGithubBoard}
                         onDelete={setDeleteTarget}
-                        onRelaunch={triagedProjects[projectSlug(p.title)] != null ? relaunchFleet : undefined}
                         menuOpenId={menuOpenId}
                         setMenuOpenId={setMenuOpenId}
                       />

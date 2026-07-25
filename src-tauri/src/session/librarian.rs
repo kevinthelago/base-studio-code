@@ -59,12 +59,18 @@ mod tests {
     #[test]
     fn creates_the_workspace_and_writes_the_librarian_claude_md() {
         let base = scratch();
-        let dir = setup_librarian_workspace_inner(&base).unwrap();
-        assert_eq!(dir, base.join("algorithms-studio"));
-        let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
-        // The written spec is exactly the loaded seed (config-dir copy or the embedded default).
-        assert_eq!(md, crate::platform::config::load_str("librarian/claude.md"));
-        assert!(!md.trim().is_empty());
+        // #3479 — pin the config root for this thread; unpinned, `load_str` resolves through the
+        // process-global home that `testutil::temp_home` repoints mid-run. See
+        // `platform::config::with_config_root`.
+        let cfg = base.join("config");
+        crate::platform::config::with_config_root(&cfg, || {
+            let dir = setup_librarian_workspace_inner(&base).unwrap();
+            assert_eq!(dir, base.join("algorithms-studio"));
+            let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
+            // The written spec is exactly the loaded seed (here the embedded default).
+            assert_eq!(md, crate::platform::config::load_str("librarian/claude.md"));
+            assert!(!md.trim().is_empty());
+        });
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -85,6 +91,13 @@ mod tests {
     /// follows the literal `bsc graph `, stripped of the markdown punctuation that can trail it
     /// (backtick, comma, backslash, period, closing paren). A bare `` `bsc graph` `` mention yields the
     /// next prose word, so callers filter to the tokens they care about rather than trusting all of them.
+    /// The CLI a documentation line invokes — the word after its FIRST `bsc `. `None` when the line
+    /// invokes no `bsc` command. Used to attribute a line's flags to the right CLI (#3477).
+    fn first_bsc_cli(line: &str) -> Option<&str> {
+        let i = line.find("bsc ")?;
+        line[i + 4..].split_whitespace().next()
+    }
+
     fn documented_graph_tokens(seed: &str) -> Vec<String> {
         seed.match_indices("bsc graph ")
             .map(|(i, m)| seed[i + m.len()..].split_whitespace().next().unwrap_or_default())
@@ -133,15 +146,22 @@ mod tests {
 
         // Flags are the whole payload surface of `impl set`, so the same rule applies in reverse:
         // no flag may be documented that the CLI does not read.
-        for flag in seed.split_whitespace().filter(|w| w.starts_with("--") && w.len() > 2) {
-            let flag = flag.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
-            if flag.starts_with("--") {
-                assert!(
-                    bsc_graph::cli::FLAGS.contains(&flag),
-                    "librarian seed documents `{flag}`, which `bsc graph` does not read \
-                     (legal flags: {:?})",
-                    bsc_graph::cli::FLAGS,
-                );
+        //
+        // SCOPED to lines that actually invoke `bsc graph` (#3477). The spec also teaches OTHER CLIs —
+        // `bsc request new … --cmd … --surface`, the loop verbs — and scanning every `--token` in the
+        // whole document attributed those flags to `bsc graph`, leaving this gate RED so it protected
+        // nothing. A line's owner is its FIRST `bsc <cli>` invocation.
+        for line in seed.lines().filter(|l| first_bsc_cli(l) == Some("graph")) {
+            for flag in line.split_whitespace().filter(|w| w.starts_with("--") && w.len() > 2) {
+                let flag = flag.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
+                if flag.starts_with("--") {
+                    assert!(
+                        bsc_graph::cli::FLAGS.contains(&flag),
+                        "librarian seed documents `{flag}` on a `bsc graph` line, which the CLI does \
+                         not read (legal flags: {:?})",
+                        bsc_graph::cli::FLAGS,
+                    );
+                }
             }
         }
     }

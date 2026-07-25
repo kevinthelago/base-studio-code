@@ -3,7 +3,8 @@
 // drilled-in graph is the STUDIO NETWORK team (`org-planning-studio`, completed in #3317), rendered
 // through the existing Team→Glance adapter (`buildOrgFleetData`). The debugger node is gated by the
 // Settings `debugSession` toggle via #3317's pure augmentation. Pure + React-free so it's unit-testable.
-import { augmentStudioNetworkForDebug, STUDIO_NETWORK_ID, type Team } from "@/features/teams";
+import { augmentStudioNetworkForDebug, augmentStudioNetworkForRequests, STUDIO_NETWORK_ID, type Team } from "@/features/teams";
+import { poolSlotFromNodeId, poolPaneId } from "@/shared/lib/session/requestSpawn";
 import type { Persona } from "@/features/personas";
 import {
   DEBUG_STUDIO_SESSION_ID, DESIGN_STUDIO_SESSION_ID,
@@ -34,9 +35,17 @@ export const BASE_STUDIO_PROJECT: ProjectLite = {
  * Settings debug toggle is on. Returns `null` when the team isn't present (so the caller falls back to
  * the empty/sample graph rather than crashing). Pure.
  */
-export function buildStudioFleetData(teams: readonly Team[], personas: Persona[], debugOn: boolean): GlanceData | null {
+export function buildStudioFleetData(
+  teams: readonly Team[],
+  personas: Persona[],
+  debugOn: boolean,
+  /** #3535: live overflow-pool SLOT indices — each becomes its own openable node. */
+  poolSlots: readonly number[] = [],
+): GlanceData | null {
   const team = teams.find((t) => t.id === STUDIO_NETWORK_ID);
-  return team ? buildOrgFleetData(augmentStudioNetworkForDebug(team, debugOn), personas) : null;
+  if (!team) return null;
+  const withDebug = augmentStudioNetworkForDebug(team, debugOn);
+  return buildOrgFleetData(augmentStudioNetworkForRequests(withDebug, poolSlots), personas);
 }
 
 /**
@@ -56,6 +65,11 @@ const STUDIO_NODE_SESSION: Record<string, string> = {
   debugger: DEBUG_STUDIO_SESSION_ID,
 };
 export function studioPaneIdForNode(nodeId: string): string | null {
+  // #3535: an overflow-pool session is DYNAMIC — one node per live pool slot — so it cannot live in the
+  // fixed map above. Without this branch such a node resolves to no pane, which means it cannot be
+  // opened, cannot report live status, and is a session the user can neither watch nor stop.
+  const slot = poolSlotFromNodeId(nodeId);
+  if (slot !== null) return poolPaneId(slot);
   return STUDIO_NODE_SESSION[nodeId] ?? null;
 }
 
@@ -71,6 +85,8 @@ export type StudioNodeHome =
   | { kind: "morph" }
   | { kind: "page"; pageMode: "designs" | "algorithms" | "teams" };
 export function studioNodeHome(nodeId: string): StudioNodeHome | null {
+  // #3535: an overflow-pool session opens exactly like the studios it is one of.
+  if (poolSlotFromNodeId(nodeId) !== null) return { kind: "morph" };
   switch (nodeId) {
     case "debugger":
     case "designer":

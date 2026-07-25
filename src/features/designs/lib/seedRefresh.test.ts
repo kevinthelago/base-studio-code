@@ -205,3 +205,29 @@ describe("reconcileSeed on kit records (#2483) — the kit store rots the same w
     expect(r.notices).toEqual([{ kind: "orphaned", type: "kit", id: "spring-kotlin", name: "Spring Kotlin" }]);
   });
 });
+
+describe("reconcileSeed — suppression tombstones (#3725)", () => {
+  it("a tombstone blocks the builtin re-seed and is excluded from the library, but stays in the store", () => {
+    const seedComp = stampSeedHash(comp({ id: "cost", name: "CostEnergyView" }));
+    // The builtin was suppressed: the store holds ONLY the `{ id, suppressed }` tombstone.
+    const r = reconcileSeed([{ ...comp({ id: "cost" }), suppressed: true }], [seedComp], "component");
+    expect(r.records.some((x) => x.id === "cost")).toBe(false); // not rendered — it's a tombstone
+    expect(r.pushes.some((x) => x.id === "cost")).toBe(false); // NOT re-seeded (the whole point of #13)
+    expect(r.drops).not.toContain("cost"); // the tombstone stays, to keep blocking the re-seed
+  });
+
+  it("removing the tombstone (unsuppress) lets the seed re-add the builtin", () => {
+    const seedComp = stampSeedHash(comp({ id: "cost", name: "CostEnergyView" }));
+    // With the tombstone gone, the store lacks the builtin → the seed re-adds it (append + push).
+    const r = reconcileSeed([], [seedComp], "component");
+    expect(r.records).toEqual([seedComp]);
+    expect(r.pushes).toEqual([seedComp]);
+  });
+
+  it("suppresses a kit the same way", () => {
+    const seedK = stampSeedHash(kit({ id: "fleet", name: "Fleet" }));
+    const r = reconcileSeed([{ ...kit({ id: "fleet" }), suppressed: true }], [seedK], "kit");
+    expect(r.records.some((x) => x.id === "fleet")).toBe(false);
+    expect(r.pushes.some((x) => x.id === "fleet")).toBe(false);
+  });
+});

@@ -13,6 +13,7 @@
 // `bsc plan transformation` set-time enums, so the vocabulary can't drift between the CLI
 // validator and the pane's display metadata (verbMeta tooltips, tierLabel headings).
 
+import { visitNodes, type GeneralNode } from "@/shared/ui/spec";
 import taxonomyEmbedded from "@data/transformations/taxonomy.json";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
 
@@ -32,7 +33,7 @@ export interface TransformationProvenance {
 
 /** One `bsc plan transformation list --json` row — the unit of modification (#2509):
  *  verb · target · delta · invariants · blast radius, plus the confirm-queue fields
- *  (`tier`/`confirmed`) and the optional live-render `spec` (a KitNode tree). */
+ *  (`tier`/`confirmed`) and the optional live-render `spec` (a node tree). */
 export interface TransformationRow {
   id: string;
   /** From the verb taxonomy (rename · extract · split · merge · …) — each has a known recipe. */
@@ -52,7 +53,7 @@ export interface TransformationRow {
   provenance?: TransformationProvenance;
   /** A gap-fill that contributes a missing abstraction to the kit itself. */
   kitContribution?: boolean;
-  /** A KitNode render spec (#1852) — rendered live through KitRenderer when present. */
+  /** A render spec (#1852, general node form since #3500) — rendered live through KitRenderer. */
   spec?: object;
   confirmed?: boolean;
 }
@@ -181,18 +182,17 @@ export function coerceTransformationRows(raw: unknown): TransformationRow[] {
     });
 }
 
-/** Count the nodes of a KitNode spec tree (objects carrying a `kind`) — the "spec present
- *  (n nodes)" fallback figure when the live render is unavailable. */
+/** Count the nodes of a render spec tree — the "spec present (n nodes)" fallback figure shown when the
+ *  live render is unavailable.
+ *
+ *  Delegates to the SDK's own `visitNodes` rather than re-walking the tree here. #3500 moved slots into
+ *  `props` (a Card's `header` used to be a top-level field), so a local walk that only descended
+ *  top-level fields silently undercounted every nested slot — and a count that disagrees with the
+ *  renderer about how many nodes a spec has is worse than no count. A tree that is not a valid node
+ *  counts 0, which is exactly when the caller wants the fallback anyway. */
 export function specNodeCount(spec: unknown): number {
-  if (!isRecord(spec) || typeof spec.kind !== "string") return 0;
-  let count = 1;
-  for (const [field, value] of Object.entries(spec)) {
-    if (field === "kind") continue;
-    if (Array.isArray(value)) {
-      for (const child of value) count += specNodeCount(child);
-    } else {
-      count += specNodeCount(value);
-    }
-  }
+  if (!isRecord(spec) || typeof spec.type !== "string") return 0;
+  let count = 0;
+  visitNodes(spec as unknown as GeneralNode, () => { count += 1; });
   return count;
 }

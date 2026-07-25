@@ -29,6 +29,13 @@
 //! a demo placeholder, #2921). "Unused" = orphan ∪ dangling-branch — a node with no composer AND
 //! `used == 0`; a `page`/`layout` with `used > 0` is a legit entry point, never flagged.
 //!
+//! **Reporting a dead root is not the same as auto-DELETING one.** The findings above are a diagnosis;
+//! [`prune_plan`] is what `bsc ui doctor --fix` may actually remove, and it filters the dead-root
+//! candidates through three guards (#3087) — never a `page` (a page is a root by definition), never a
+//! `builtin: true` packaged seed, and never anything at all while the `used` index is unpopulated
+//! (`used == 0` store-wide means the usage signal is UNKNOWN, not that everything is unused). A guarded
+//! candidate is still REPORTED; only its automatic removal is withheld.
+//!
 //! The **no-implementation** check is artifact-aware: a store record strips a built-in's `source`
 //! (#2794), so both built-ins and user specs look source-less in the store — but a built-in still
 //! builds because its real code lives in the packaged react-ui artifact. So a node is buildable iff
@@ -43,8 +50,9 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
-    /// `unresolvable-import` | `reimplementation` | `orphan` | `unwired-prop` | `phantom-compose` |
-    /// `no-empty-state` | `no-loading-state` | `slot-shell`.
+    /// `unresolvable-import` | `stubbed-import` (#3696, sev-1) | `hardcoded-color` (#3704, sev-1) |
+    /// `reimplementation` | `orphan` | `unwired-prop` | `phantom-compose` | `no-empty-state` |
+    /// `no-loading-state` | `no-error-state` (#3555) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -76,6 +84,79 @@ impl Finding {
     }
 }
 
+/// Findings for components whose PREVIEW failed — a `build:` esbuild failure OR a `render:` runtime throw
+/// (#3540/#3549) — the half doctor's static analyzer is blind to. Doctor cannot run esbuild or mount a
+/// component, so a preview failure can only reach the report via the durable preview-error log
+/// (`preview_errors::latest_error_by_id`), which the app's on-visit scan + live previews record with a
+/// `build:`/`render:` kind prefix. Fed those `(id, message)` pairs, this emits one finding per errored
+/// component STILL in `components` (a stale id for a removed component is dropped), with prose matched to
+/// the kind (a build failure and a render throw need different fixes).
+///
+/// Deliberately NOT part of [`analyze_with`]: that function has a byte-parity TS twin (`graphHealth.ts`)
+/// which is static-only, and the render error is a Rust/CLI-only signal fed from a log the frontend
+/// doesn't read. `cmd_doctor` appends these like `analyze_motion`, so the twin stays untouched.
+pub fn render_error_findings(components: &[Value], errors: &[(String, String)]) -> Vec<Finding> {
+    let by_id: BTreeMap<&str, &Value> = components
+        .iter()
+        // #3725: a suppression tombstone is not a component — drop its errors like a store-absent one.
+        .filter(|c| c.get("suppressed").and_then(Value::as_bool) != Some(true))
+        .filter_map(|c| c.get("id").and_then(Value::as_str).map(|id| (id, c)))
+        .collect();
+    errors
+        .iter()
+        .filter_map(|(id, message)| {
+            let comp = by_id.get(id.as_str())?; // drop a stale error for a component no longer in the store
+            // #3737: drop a render-error for a component whose current srcText is EMPTY — an empty spec
+            // can't have a live render error (the preview shows no-implementation, not a throw), so a
+            // persisted error there is stale by definition (the component was reduced to a spec since).
+            // Conservative: a NON-empty srcText keeps its error (a real build/render failure is possible).
+            if comp.get("srcText").and_then(Value::as_str).unwrap_or_default().trim().is_empty() {
+                return None;
+            }
+            let name = comp.get("name").and_then(Value::as_str).unwrap_or(id.as_str()).to_string();
+            let kit = comp.get("kitId").and_then(Value::as_str).unwrap_or_default().to_string();
+            // The scan records the failure with a `build:`/`render:` kind prefix (#3549). Strip it for
+            // display and branch the prose — a BUILD failure (esbuild) and a RENDER throw (an exception
+            // during mount) need different fixes. A raw message with no prefix is treated as a render throw.
+            let is_build = message.starts_with("build:");
+            let detail = message
+                .strip_prefix("build:")
+                .or_else(|| message.strip_prefix("render:"))
+                .unwrap_or(message)
+                .trim();
+            // Collapse a multi-line stack trace to one line and cap it — the finding is a summary; the
+            // full trace stays in `bsc ui preview-errors`.
+            let one_line: String = detail.replace(['\n', '\t'], " ").chars().take(240).collect();
+            Some(Finding {
+                // Severity 5 — above every static finding (cycle is 4): a confirmed preview failure is the
+                // most actionable, so it sorts to the top of the report.
+                category: "render-error",
+                severity: 5,
+                kit,
+                node_ids: vec![id.clone()],
+                node_names: vec![name.clone()],
+                why: if is_build {
+                    format!("`{name}` failed to BUILD in the preview: {}", one_line.trim())
+                } else {
+                    format!("`{name}` threw when the preview rendered it: {}", one_line.trim())
+                },
+                suggested_action: if is_build {
+                    format!(
+                        "the preview's esbuild build failed — check the source + imports with \
+                         `bsc ui get {id} --field srcText --raw` (a missing/mistyped import, an unresolved \
+                         sibling, or TypeScript in a file loaded as plain JS shows up here)"
+                    )
+                } else {
+                    format!(
+                        "the preview likely passes `undefined` for a prop it reads — check `bsc ui preview-props {id}` \
+                         and guard the access (or fix the sample-data shape)"
+                    )
+                },
+            })
+        })
+        .collect()
+}
+
 /// A component record reduced to the fields the analyzer needs (parsed from the store JSON). Records
 /// that don't parse to at least an id are skipped — the analyzer never crashes on an odd row.
 struct Node {
@@ -93,6 +174,10 @@ struct Node {
     /// The component's own implementation `source`, when it carries one (a user-authored module).
     /// The store strips a built-in's `source` (#2794), so this is empty for built-ins.
     source: String,
+    /// The registered PLATFORM module specifier this graph-source component OVERRIDES (#3660), e.g.
+    /// `@/shared/ui/typography/Text` — empty when it's an ordinary component. The runtime loader resolves a
+    /// `@/…` import to the component that `provides` it; the buildability check mirrors that (#43).
+    provides: String,
     /// `(name, type)` per prop — for the slot-shell check (a non-`children` ReactNode content slot).
     props: Vec<(String, String)>,
     /// Whether this is a packaged built-in (its store record is a contract catalog: `source` stripped,
@@ -108,6 +193,12 @@ fn s(v: &Value, key: &str) -> String {
 fn parse_node(v: &Value) -> Option<Node> {
     let id = v.get("id").and_then(Value::as_str)?.to_string();
     if id.is_empty() {
+        return None;
+    }
+    // #3725: a suppression tombstone (`{ id, suppressed: true }`) is not a component — it marks a
+    // permanently-removed packaged builtin. Skip it here so EVERY graph-health consumer (analyze,
+    // prunable, usage index) ignores it and it never shows a false `no-implementation` etc.
+    if v.get("suppressed").and_then(Value::as_bool) == Some(true) {
         return None;
     }
     Some(Node {
@@ -131,6 +222,7 @@ fn parse_node(v: &Value) -> Option<Node> {
         src_text: s(v, "srcText"),
         src: s(v, "src"),
         source: s(v, "source"),
+        provides: s(v, "provides"),
         props: v
             .get("props")
             .and_then(Value::as_array)
@@ -174,6 +266,14 @@ fn is_loading_prop(name: &str, ty: &str) -> bool {
         && matches!(name.to_lowercase().as_str(), "loading" | "busy" | "pending" | "isloading")
 }
 
+/// Is `(name, ty)` an ERROR-family prop (`error`/`err`/`isError`/`hasError`, and NOT a callback)? A data
+/// component with one can preview its error render (#3555). Mirrors `isErrorProp` (componentPreview.ts).
+fn is_error_prop(name: &str, ty: &str) -> bool {
+    let t = ty.to_lowercase();
+    let is_fn = t.contains("=>") || t.contains("function") || t.contains("void");
+    !is_fn && matches!(name.to_lowercase().as_str(), "error" | "err" | "iserror" | "haserror")
+}
+
 /// The packaged `bsc/react-ui` kit artifact — the SAME embedded `react-ui.json` the kit store + the
 /// vendored-source emit read (`bsc_ui::kit::PACKAGED_KIT_JSON`). Embedded here too because this crate
 /// can't depend on `bsc-ui` (that edge would cycle), so the buildability check can cross-reference a
@@ -194,8 +294,9 @@ const PREVIEW_IMPORTMAP_JSON: &str = include_str!("../../../src-tauri/data/ui/pr
 /// `@bsc/algorithms/<missing>` is. The Rust twin of `libraryModules.ts` / `graphHealth.ts`.
 const ALGORITHMS_JSON: &str = include_str!("../../../src-tauri/data/knowledge/algorithms.json");
 
-/// The DEFAULT sound kit seed (`src-tauri/data/sounds/signal.json`) — the SAME kit the frontend resolves a
-/// `@bsc/sounds/<id>` reference against (`libraryModules.ts` picks the first packaged built-in, `signal`).
+/// The DEFAULT sound kit seed (`src-tauri/data/sounds/signal.json`) — the kit an UNPINNED project resolves
+/// `@bsc/sounds/<id>` against, the twin of the frontend's `SoundKitSelection::default` arm. A project whose
+/// blueprint PINS a sound kit resolves against that kit instead ([`HealthOptions::sound_kit_json`], #3412).
 /// Embedded so the SOUNDS arm of the third import class (#3117) is recognized with no fs/network: a
 /// reference matching a real cue/voice resolves (the preview vendors a GENERATED player module — a sound has
 /// no JS source) and is NEVER flagged; a `@bsc/sounds/<missing>` is. The Rust twin of `soundNodeLookup` /
@@ -299,7 +400,7 @@ fn sound_library_names_from(json: &str) -> BTreeSet<String> {
 /// voice id — the preview vendors a generated player module). Any other segment (`ui`) has no vendor path
 /// here → false. A non-`@bsc/` spec returns false (gated by `is_library_specifier`). Mirrors
 /// `libraryModuleResolver(spec) !== null` (graphHealth.ts / libraryModules.ts).
-fn resolves_library(spec: &str) -> bool {
+fn resolves_library(spec: &str, sounds: &BTreeSet<String>) -> bool {
     let Some(rest) = spec.strip_prefix("@bsc/") else {
         return false;
     };
@@ -311,7 +412,7 @@ fn resolves_library(spec: &str) -> bool {
     }
     match segment {
         "algorithms" => algo_library_names().contains(name),
-        "sounds" => sound_library_names().contains(name),
+        "sounds" => sounds.contains(name),
         _ => false,
     }
 }
@@ -416,8 +517,20 @@ fn import_specifiers(source: &str) -> Vec<String> {
             }
             last_word = w;
         } else {
-            // A non-identifier char (whitespace, `(`, `;`, …) — keep `last_word` so `import(` / `import "x"`
-            // still see the `import` keyword.
+            // A non-identifier char between a keyword and a string decides whether the string is a REAL
+            // import target. A pending `from`/`import` survives ONLY across whitespace (`from "x"`,
+            // `import "x"`); `import` additionally survives a single `(` (dynamic `import("x")`). Anything
+            // else — a `:` (`{ from: "x" }` graph-edge demo data), a `(` after `from` (`Array.from("x")`),
+            // a `.`, `,`, `{`, … — means the keyword was an object key or member, NOT an import clause, so
+            // clear it. Without this a graph component's demo edge `{ from: "node-id" }` was misread as
+            // importing "node-id" and flagged unresolvable-import (#3687: false positives on
+            // RelationshipGraphView / TeamsCanvas, filed 5×). Mirrors the regex twins `\bfrom\s+["']`.
+            let survives = last_word.is_empty()
+                || c.is_whitespace()
+                || (c == '(' && last_word == "import");
+            if !survives {
+                last_word.clear();
+            }
             i += 1;
         }
     }
@@ -540,9 +653,18 @@ fn is_buildable(node: &Node, buildable: &BTreeSet<String>, kit_targets: &BTreeSe
 /// (componentPreview.ts). Like `looks_buildable_module`, but an internal (`@/`, `./`) import is ALLOWED
 /// when it resolves to a sibling in `kit_targets` (the kit's component `src` paths); an internal import
 /// that resolves to NOTHING still fails, as do a `…` placeholder and a missing `export`.
+///
+/// This predicate answers "will the preview build it?", so its `…` test must be whatever the TS
+/// `isPreviewBuildable` does — `doctor` must never be more permissive than the thing it reports on, or it
+/// calls a component healthy that the preview then refuses (a MISSED no-implementation finding). Until
+/// #3486 that pinned it to the PLAIN substring test, because the TS side still used one. #3486 ported the
+/// context-aware scanner to TS, so both moved to [`has_code_elision`] together — and they must keep
+/// moving together. The two are also wrong in opposite directions if they drift: plain-here/aware-there
+/// makes `doctor` report a no-implementation the preview happily renders, which is the false accusation
+/// #3486 was filed for.
 fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<String>) -> bool {
     let s = src_text.trim();
-    if s.is_empty() || !contains_word(s, "export") || s.contains('…') {
+    if s.is_empty() || !contains_word(s, "export") || has_code_elision(s) {
         return false;
     }
     import_specifiers(s)
@@ -567,17 +689,105 @@ fn own_module_source<'a>(node: &'a Node, kit_targets: &BTreeSet<String>) -> Opti
 
 /// Rust port of `looksBuildableModule` (componentPreview.ts, #2828): does `src_text` look like a
 /// self-contained, buildable component MODULE rather than the usual usage snippet? Conservative — it
-/// must declare an `export`, contain no `…` usage-snippet placeholder, and use no `@/` first-party
-/// import (which has no dependency closure to resolve against here). MUST stay in lockstep with the TS
-/// twin — both gate the SAME preview build. Crate-visible so the write-time syntax gate (#2928) reuses
-/// the SAME "is this a module?" test to decide whether to syntax-check a `srcText`.
+/// must declare an `export`, contain no `…` code-elision marker, and use no `@/` first-party import
+/// (which has no dependency closure to resolve against here). Crate-visible so the write-time syntax
+/// gate (#2928) reuses the SAME "is this a module?" test to decide whether to syntax-check a `srcText`.
+///
+/// It is now the boolean face of [`module_defects`] — the reasons ARE the predicate, so the write-time
+/// gate can NAME why it treated a `srcText` as a spec instead of silently skipping it (#3470).
 pub(crate) fn looks_buildable_module(src_text: &str) -> bool {
+    !src_text.trim().is_empty() && module_defects(src_text).is_empty()
+}
+
+/// Every reason `src_text` is NOT a self-contained, buildable component module — empty when it IS one
+/// (so `defects.is_empty()` is exactly [`looks_buildable_module`] for a non-blank source). Reason-first
+/// rather than bool-first because of #3470: `bsc ui set` used to SKIP its syntax gate whenever this
+/// predicate was false, so the source least like a module — one that keeps its unresolved `@/…` imports —
+/// got the LEAST validation and stored with no complaint at all, surfacing only much later as a
+/// `no-implementation` finding in `bsc ui doctor`. Storing a spec-only record stays legitimate; it just
+/// has to be a STATED outcome, which needs the reasons this returns. Mirrors `bsc_ui::harvest`'s
+/// `buildability`, which reports the same three defects for a harvested candidate.
+///
+/// A blank source is NOT a defect here (it returns no reasons): "this record carries no `srcText`" is a
+/// different, legitimate state, and every caller checks it first.
+pub(crate) fn module_defects(src_text: &str) -> Vec<String> {
     let s = src_text.trim();
-    !s.is_empty()
-        && contains_word(s, "export") // an export for the bootstrap to import + mount
-        && !s.contains('…') // the `…` usage-snippet placeholder won't compile
-        && !s.contains("\"@/") // a `@/` first-party import — no closure to resolve it against here
-        && !s.contains("'@/")
+    let mut why = Vec::new();
+    if s.is_empty() {
+        return why;
+    }
+    if !contains_word(s, "export") {
+        why.push("no `export` — the preview has nothing to import and mount".to_string());
+    }
+    if has_code_elision(s) {
+        why.push("a `…` elision marker stands in for omitted code — a sketch, not compilable code".to_string());
+    }
+    if s.contains("\"@/") || s.contains("'@/") {
+        let named = internal_specifiers(s);
+        let list = if named.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", named.iter().map(|m| format!("`{m}`")).collect::<Vec<_>>().join(", "))
+        };
+        why.push(format!(
+            "unresolved first-party `@/…` import(s){list} — there is no dependency closure to resolve them against"
+        ));
+    }
+    why
+}
+
+/// The distinct `@/…` module specifiers `src_text` imports, in source order and de-duplicated — used
+/// only to NAME them in a [`module_defects`] reason (the defect itself is decided by the coarser
+/// substring test above, which is what the preview gate uses, so the message can never contradict it).
+fn internal_specifiers(src_text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for spec in import_specifiers(src_text) {
+        if spec.starts_with("@/") && !out.iter().any(|s| s == &spec) {
+            out.push(spec);
+        }
+    }
+    out
+}
+
+/// Does `…` appear in real CODE — not inside a string/template literal or a comment? Only then is it an
+/// elision marker standing in for omitted code. The plain substring test this replaced (#3470) is a
+/// MEASURED false-positive generator, not a hypothetical one: `…` is ordinary UI copy
+/// (`placeholder="Select…"`) and ordinary doc-comment prose, and over this repo's own `src/shared/ui` it
+/// condemned 13 perfectly good components as sketches. Condemning a real component over the ellipsis in
+/// its placeholder text is a false accusation someone then has to overrule, so both contexts are skipped.
+///
+/// Lives here, in the crate that owns the buildability predicates, so `bsc_ui::harvest` (which found the
+/// false positives) and the write-time gate share ONE scanner rather than drifting copies.
+pub fn has_code_elision(src: &str) -> bool {
+    let b: Vec<char> = src.chars().collect();
+    let (mut i, n) = (0usize, b.len());
+    while i < n {
+        match b[i] {
+            '/' if i + 1 < n && b[i + 1] == '/' => {
+                while i < n && b[i] != '\n' {
+                    i += 1;
+                }
+            }
+            '/' if i + 1 < n && b[i + 1] == '*' => {
+                i += 2;
+                while i + 1 < n && !(b[i] == '*' && b[i + 1] == '/') {
+                    i += 1;
+                }
+                i = (i + 2).min(n);
+            }
+            quote @ ('"' | '\'' | '`') => {
+                i += 1;
+                while i < n && b[i] != quote {
+                    // A backslash escapes the next char, so an escaped quote doesn't end the literal.
+                    i += if b[i] == '\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            '…' => return true,
+            _ => i += 1,
+        }
+    }
+    false
 }
 
 /// Whether `needle` appears in `haystack` as a whole word (the JS `\bword\b` the TS twin uses) —
@@ -662,7 +872,152 @@ fn is_self_referential_stub(node: &Node, kit_targets: &BTreeSet<String>) -> bool
 /// Analyze the component records for graph-health findings, grouped and scoped PER KIT (edges only
 /// resolve within a kit). Returns a ranked list, most-severe first (stable tiebreak: kit, then the
 /// first node name), so the same input always yields the same ordering.
+/// How to run [`analyze_with`] — the injected state the packaged seeds can't supply (#3412).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct HealthOptions<'a> {
+    /// The PINNED sound kit's artifact JSON — the kit a `@bsc/sounds/<id>` reference resolves against for
+    /// this project, mirroring the frontend's `SoundKitSelection`. `None` = no pin ⇒ the packaged default
+    /// kit (the documented default, byte-identical to pre-#3412 behavior).
+    ///
+    /// FAIL LOUDLY, never a silent degrade: a caller holding a pin it could not resolve must NOT pass
+    /// `None` (that would quietly report against the starter kit, and the user cannot hear the
+    /// difference) — it should refuse to run. `bsc ui doctor --sound-kit` does exactly that.
+    /// A malformed artifact yields an empty name set, so every `@bsc/sounds/…` is flagged — fail safe.
+    pub sound_kit_json: Option<&'a str>,
+}
+
+/// The hardcoded COLOR literals in `text` (#3704, the theme-adherence check) — the leak candidates a theme
+/// change can NOT reach (a `var(--token)` carries none): a 6- or 8-digit hex (`#rrggbb` / `#rrggbbaa`) or an
+/// `rgb(` / `rgba(` / `hsl(` / `hsla(` / `oklch(` / `oklab(` function. Deliberately conservative — a 3-digit
+/// `#219` (an issue ref) is skipped, named colors + values in comments aren't caught. Mirrors `colorLiterals`
+/// (TS) + `bsc ui`'s `count_color_literals` (reimplemented here — this crate can't depend on `bsc-ui`).
+fn color_literals(text: &str) -> Vec<String> {
+    let b = text.as_bytes();
+    let n = b.len();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < n {
+        if b[i] == b'#' {
+            let mut j = i + 1;
+            while j < n && b[j].is_ascii_hexdigit() {
+                j += 1;
+            }
+            let len = j - i - 1;
+            if len == 6 || len == 8 {
+                out.push(text[i..j].to_string());
+            }
+            i = j.max(i + 1);
+        } else {
+            i += 1;
+        }
+    }
+    let lower = text.to_ascii_lowercase();
+    for kw in ["rgb(", "rgba(", "hsl(", "hsla(", "oklch(", "oklab("] {
+        for _ in 0..lower.matches(kw).count() {
+            out.push(kw.trim_end_matches('(').to_string());
+        }
+    }
+    out
+}
+
+/// Does `text` reference a THEME TOKEN — a `var(--…)` design-token consumer? A component that does is
+/// considered wired to the theme (it re-themes with the active palette); one that hardcodes colors and has
+/// NONE is the `hardcoded-color` finding (#3704). Mirrors `usesThemeToken` (TS).
+fn uses_theme_token(text: &str) -> bool {
+    text.contains("var(--")
+}
+
+/// The JS unicode/hex escapes in `src` that sit in CODE position — OUTSIDE any string literal, template,
+/// or comment (#3709). A `\uXXXX` / `\u{H+}` / `\xHH` here is almost always a JSX-**text** leak: JSX
+/// children text is not a JS string literal, so the escape is never interpreted — the browser renders the
+/// literal 6 characters `backslash-u-0-0-b-7`, not the `·` glyph. It passes the syntax check (valid JS)
+/// and stores clean, so only a screenshot catches it. String/comment-aware (mirrors `has_code_elision`'s
+/// scanner), so the CORRECT forms — a real `·` UTF-8 char, or the JSX `{"·"}` — are NOT flagged (the
+/// escape lives inside a string there, or there is no escape at all). Conservative: a lone `\u` in a regex
+/// literal is a rare false
+/// positive, tolerable for an advisory. Mirrors `jsxTextEscapeLeaks` (there is no TS twin — this is a
+/// write-time advisory, Rust-only).
+pub fn jsx_text_escape_leaks(src: &str) -> Vec<String> {
+    let b: Vec<char> = src.chars().collect();
+    let (mut i, n) = (0usize, b.len());
+    let mut out = Vec::new();
+    while i < n {
+        match b[i] {
+            '/' if i + 1 < n && b[i + 1] == '/' => {
+                while i < n && b[i] != '\n' {
+                    i += 1;
+                }
+            }
+            '/' if i + 1 < n && b[i + 1] == '*' => {
+                i += 2;
+                while i + 1 < n && !(b[i] == '*' && b[i + 1] == '/') {
+                    i += 1;
+                }
+                i = (i + 2).min(n);
+            }
+            quote @ ('"' | '\'' | '`') => {
+                i += 1;
+                while i < n && b[i] != quote {
+                    // A backslash escapes the next char — an escaped quote does not end the literal,
+                    // and a `·` INSIDE the string (the correct form) is consumed here, never flagged.
+                    i += if b[i] == '\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            '\\' if i + 1 < n && (b[i + 1] == 'u' || b[i + 1] == 'x') => {
+                let is_u = b[i + 1] == 'u';
+                let start = i;
+                let mut j = i + 2;
+                if is_u && j < n && b[j] == '{' {
+                    // `\u{H+}` — code-point escape.
+                    j += 1;
+                    while j < n && b[j].is_ascii_hexdigit() {
+                        j += 1;
+                    }
+                    if j < n && b[j] == '}' {
+                        j += 1;
+                    } else {
+                        // Malformed (no closing `}`) — not an escape, step past the backslash only.
+                        i += 1;
+                        continue;
+                    }
+                } else {
+                    // `\uHHHH` (4 hex) or `\xHH` (2 hex). Only a leak if the hex digits are actually there;
+                    // a bare `\u` with no digits is a syntax error the write gate rejects separately.
+                    let want = if is_u { 4 } else { 2 };
+                    let mut got = 0;
+                    while got < want && j < n && b[j].is_ascii_hexdigit() {
+                        j += 1;
+                        got += 1;
+                    }
+                    if got < want {
+                        i += 1;
+                        continue;
+                    }
+                }
+                out.push(b[start..j].iter().collect::<String>());
+                i = j;
+            }
+            _ => i += 1,
+        }
+    }
+    out
+}
+
+/// [`analyze_with`] against the packaged seeds — the unpinned default (see [`HealthOptions`]).
 pub fn analyze(components: &[Value]) -> Vec<Finding> {
+    analyze_with(components, &HealthOptions::default())
+}
+
+/// The graph-health analyzer, run against a specific library context (#3412) — the Rust twin of
+/// `analyzeGraphHealth(comps, libResolver)`. Both sides take the SAME pinned sound kit, so a reference
+/// that resolves in the Design Studio resolves here too.
+pub fn analyze_with(components: &[Value], opts: &HealthOptions) -> Vec<Finding> {
+    // The pinned kit's importable names when a pin is supplied, else the packaged default kit's.
+    let sounds = match opts.sound_kit_json {
+        Some(json) => sound_library_names_from(json),
+        None => sound_library_names().clone(),
+    };
     let nodes: Vec<Node> = components.iter().filter_map(parse_node).collect();
     let mut by_kit: BTreeMap<&str, Vec<&Node>> = BTreeMap::new();
     for n in &nodes {
@@ -671,7 +1026,7 @@ pub fn analyze(components: &[Value]) -> Vec<Finding> {
     let buildable = buildable_srcs();
     let mut out = Vec::new();
     for (kit, kit_nodes) in by_kit {
-        analyze_kit(kit, &kit_nodes, buildable, &mut out);
+        analyze_kit(kit, &kit_nodes, buildable, &sounds, &mut out);
     }
     out.sort_by(|a, b| {
         b.severity
@@ -690,23 +1045,94 @@ pub struct Prunable {
     pub reason: String,
 }
 
+/// A dead-root finding the auto-prune plan deliberately WITHHELD (#3087). It is still REPORTED by
+/// `bsc ui doctor` — the read-only diagnosis stays complete — but `--fix` will never remove it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PruneSkip {
+    pub id: String,
+    pub name: String,
+    /// Which guard held it back, in prose (printed by `--fix` so the withholding is never silent).
+    pub guard: String,
+}
+
+/// The auto-prune plan: what `--fix` MAY remove, and what a guard held back (#3087).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PrunePlan {
+    pub prune: Vec<Prunable>,
+    pub skipped: Vec<PruneSkip>,
+}
+
+/// Is the `used` reuse-count index POPULATED for this component set — does ANY node carry `used > 0`?
+///
+/// `used` is a cross-codebase reuse count that no writer currently maintains: the packaged kit artifact
+/// ships every component at `used: 0` and nothing increments it, so on a real install the whole store
+/// reads zero. A store where NOTHING is used is therefore not a store full of dead components — it is a
+/// store with **no usage signal at all**, and `used == 0` there means UNKNOWN, not unused (#3087).
+/// Judged over the components HANDED IN, so a `--kit`-scoped call can only ever prune LESS.
+pub fn usage_index_populated(components: &[Value]) -> bool {
+    components.iter().filter_map(parse_node).any(|n| n.used > 0)
+}
+
 /// The safe-to-remove set (#2679): the ROOT of every orphan / dangling-branch finding — a node with
 /// no composer and `used == 0`. Deliberately NOT the branch DESCENDANTS (one might be shared by a live
 /// component): removing the roots and re-running `doctor` surfaces any newly-orphaned children on the
 /// next pass. Cycles, duplicates, and no-implementation findings are never auto-pruned (they need a
 /// human's merge/break/author call). By construction a `used > 0` node can never appear here.
+///
+/// See [`prune_plan`] for the three safety guards this set is filtered through.
 pub fn prunable(components: &[Value]) -> Vec<Prunable> {
-    analyze(components)
-        .into_iter()
-        .filter_map(|f| match f.category {
-            "orphan" | "dangling-branch" => Some(Prunable {
-                id: f.node_ids.into_iter().next()?,
-                name: f.node_names.into_iter().next().unwrap_or_default(),
-                reason: f.why,
-            }),
-            _ => None,
-        })
-        .collect()
+    prune_plan(components).prune
+}
+
+/// The guarded auto-prune plan (#3087). Every orphan / dangling-branch ROOT is a *candidate*; three
+/// guards decide whether it may actually be removed, because the dead-root heuristic (`in-degree 0 AND
+/// used == 0`) has three known FALSE-POSITIVE classes — and epic #3087 wires a curator to run `--fix`
+/// automatically, which turns each of them into unattended data loss:
+///
+/// 1. **A `page` is a root BY DEFINITION** — nothing composes a page; that is what makes it a page. The
+///    heuristic condemns the whole pages tier (#2505) on principle. (The orphan arm already refuses to
+///    flag an isolated page/layout as "entry point by role"; the dangling-branch arm did not, so a page
+///    that composes anything at all — i.e. every real page — landed in the prune plan.)
+/// 2. **A packaged `builtin: true` seed is not garbage** — the viz kits' demo components (#3194/#3242)
+///    are isolated ON PURPOSE, to demo their kit's motion. Removing one only invites the seed reconcile
+///    to re-add it on the next launch, so the "optimization" is a no-op that churns the store.
+/// 3. **An unpopulated usage index is UNKNOWN, not unused** — see [`usage_index_populated`]. When no
+///    node in scope carries `used > 0` the usage half of the heuristic carries no information, and
+///    in-degree alone must not condemn a node.
+///
+/// A guarded candidate moves to `skipped` rather than vanishing: `doctor` still REPORTS the finding
+/// (the diagnosis is useful), only the automatic removal is withheld.
+pub fn prune_plan(components: &[Value]) -> PrunePlan {
+    let nodes: Vec<Node> = components.iter().filter_map(parse_node).collect();
+    let by_id: BTreeMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    let usage_known = nodes.iter().any(|n| n.used > 0);
+
+    let mut plan = PrunePlan::default();
+    for f in analyze(components) {
+        if !matches!(f.category, "orphan" | "dangling-branch") {
+            continue;
+        }
+        let Some(id) = f.node_ids.into_iter().next() else { continue };
+        let name = f.node_names.into_iter().next().unwrap_or_default();
+        let node = by_id.get(id.as_str());
+        let guard = if !usage_known {
+            Some(
+                "the usage index is unpopulated — NOTHING in scope has `used` > 0, so `used = 0` means \
+                 UNKNOWN, not unused",
+            )
+        } else if node.is_some_and(|n| n.role == "page") {
+            Some("a `page` is a root BY DEFINITION — nothing composes a page; that is what makes it a page")
+        } else if node.is_some_and(|n| n.builtin) {
+            Some("a packaged built-in seed — it is shipped on purpose and the seed reconcile re-adds it")
+        } else {
+            None
+        };
+        match guard {
+            Some(guard) => plan.skipped.push(PruneSkip { id, name, guard: guard.to_string() }),
+            None => plan.prune.push(Prunable { id, name, reason: f.why }),
+        }
+    }
+    plan
 }
 
 /// A byte-identical MERGE group (#3089, epic #3087) — the OPTIMIZE analog of a [`Prunable`]: the safe,
@@ -817,7 +1243,14 @@ pub fn merge_plan(components: &[Value]) -> MergePlan {
     MergePlan { groups, repoints }
 }
 
-fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &mut Vec<Finding>) {
+fn analyze_kit(
+    kit: &str,
+    nodes: &[&Node],
+    buildable: &BTreeSet<String>,
+    // The importable `@bsc/sounds/…` names for THIS run — the pinned kit's, else the packaged default's.
+    sounds: &BTreeSet<String>,
+    out: &mut Vec<Finding>,
+) {
     // Name → id (in-kit). A duplicate NAME would collide; the store keys by id, so we keep the first.
     let mut id_by_name: BTreeMap<&str, &str> = BTreeMap::new();
     for n in nodes {
@@ -840,10 +1273,22 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
     let node_by_id: BTreeMap<&str, &&Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
     let name_of = |id: &str| node_by_id.get(id).map(|n| n.name.clone()).unwrap_or_default();
 
-    // The kit's component `src` paths — what a user component's internal (`@/`, `./`) import can resolve
-    // to, so a srcText that COMPOSES a sibling builds and is scanned as the module it is (#3112).
-    let kit_targets: BTreeSet<String> =
-        nodes.iter().map(|n| n.src.clone()).filter(|s| !s.is_empty()).collect();
+    // What a component's internal (`@/`, `./`) import resolves to when the preview BUILDS it — the Rust
+    // mirror of `componentPreviewFiles`'s resolution (#43/#3660): this kit's component `src` paths, the
+    // packaged artifact's built-in sources + runtime closure (the app's real modules), AND every graph
+    // component's `provides` specifier (a graph-source primitive importing a sibling resolves exactly as the
+    // runtime loader does). So a graph-source component composing siblings + app utilities builds — and is
+    // scanned as the module it is — instead of being falsely flagged no-implementation (#3112).
+    let kit_targets: BTreeSet<String> = {
+        let mut t = internal_targets().clone();
+        t.extend(nodes.iter().map(|n| n.src.clone()).filter(|s| !s.is_empty()));
+        for n in nodes {
+            if let Some(base) = resolve_internal_base(&n.provides, "") {
+                t.insert(format!("{base}.tsx"));
+            }
+        }
+        t
+    };
 
     // ── cycles (severity 4) — a `composes` loop; report each SCC of size > 1 (or a self-loop).
     for scc in strongly_connected(nodes, &out_ids) {
@@ -887,6 +1332,43 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
                 "author a self-contained module for `{}` (its own `source`/`srcText`) or compose it from built-in kit components",
                 n.name
             ),
+        });
+    }
+
+    // ── hardcoded-color (severity 1, #3704): a component NOT wired to the theme — its own source hardcodes
+    // color literals (hex / rgb / hsl / oklch) and references NO `var(--…)` design token, so it won't follow
+    // the active theme/preset (the contract is "components reference ONLY semantic tokens, never raw
+    // colors"). Built-ins are skipped (their store record is a curated snippet, not the real source). Uses
+    // the node's own source (`source` else `srcText`) — independent of buildability, so an unthemed mobile
+    // component is flagged whether or not its imports resolve standalone. Mirrors `analyzeGraphHealth` (TS).
+    for n in nodes {
+        if n.builtin {
+            continue;
+        }
+        let src = if !n.source.trim().is_empty() { n.source.as_str() } else { n.src_text.as_str() };
+        if src.trim().is_empty() || uses_theme_token(src) {
+            continue;
+        }
+        let colors = color_literals(src);
+        if colors.is_empty() {
+            continue;
+        }
+        let sample = colors.iter().take(4).map(|c| format!("`{c}`")).collect::<Vec<_>>().join(", ");
+        let more = if colors.len() > 4 { format!(", +{}", colors.len() - 4) } else { String::new() };
+        out.push(Finding {
+            category: "hardcoded-color",
+            severity: 1,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` hardcodes {} color literal{} ({sample}{more}) and references no theme token — it won't follow the active theme/preset",
+                n.name,
+                colors.len(),
+                if colors.len() == 1 { "" } else { "s" },
+            ),
+            suggested_action:
+                "replace the raw colors with `var(--…)` design tokens (e.g. `var(--fg)`, `var(--bg-panel)`, `var(--accent)`; see `bsc ui tokens`) so it re-themes with the palette".to_string(),
         });
     }
 
@@ -1018,9 +1500,11 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
 
     // ── unresolvable-import (severity 3): a component whose module imports something the preview CAN'T
     // resolve — the class `bsc ui doctor` was blind to (the static graph looked clean while the component
-    // was broken). Three kinds, all flagged here (#2934 bare, #2954 internal, #3116 library):
-    //   • BARE — an npm package not in the preview import-map → the iframe throws "Failed to resolve
-    //     module specifier".
+    // was broken). Kinds (#2934 bare, #2954 internal, #3116 library):
+    //   • BARE npm (#3696) — a package not among the curated preview externals no longer FAILS: the preview
+    //     bundles a local shim/stub for it, so it renders APPROXIMATELY. Emitted as a severity-1
+    //     `stubbed-import` NOTE (not the old sev-3 error) so the designer knows the preview isn't the real
+    //     package. Only INTERNAL/LIBRARY below are genuine (sev-3 `unresolvable-import`) — they have no stub.
     //   • INTERNAL — a `@/…` or RELATIVE import resolving to NEITHER a kit component NOR a runtime-closure
     //     module → "module not found" (exactly the `Code`→`../typography/type` / `Skeleton`→`./shimmer`
     //     failure #2954 fixed in the packaged closure; this catches any future/user-authored recurrence).
@@ -1028,9 +1512,9 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
     //     nor first-party) naming NO real library node. A `@bsc/algorithms/<name>` matching a real algorithm
     //     is a NEW resolvable class (the preview vendors its code), NEVER flagged; only a missing one is.
     // Scanned on own-source components (a built-in's `source`, or a `looks_buildable_module` srcText) — the
-    // source the preview actually builds. Mirrors `graphHealth.ts`.
-    let mut targets = internal_targets().clone();
-    targets.extend(nodes.iter().map(|n| n.src.clone()).filter(|s| !s.is_empty()));
+    // source the preview actually builds. Resolution uses `kit_targets` (the full build set: artifact +
+    // node srcs + `provides`, #43), so a graph-source import resolves here exactly as the build does.
+    // Mirrors `graphHealth.ts`.
     for n in nodes {
         let Some(src) = own_module_source(n, &kit_targets) else {
             continue;
@@ -1038,61 +1522,80 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
         let resolvable = resolvable_specifiers();
         let specs = import_specifiers(src);
         // A `@bsc/…` LIBRARY reference (#3116) is bare-shaped but resolves against the algorithms store, NOT
-        // the import-map — so it's excluded from `bare` and judged by `resolves_library` (a match ⇒ the
+        // the import-map — so it's excluded from `stubbed` and judged by `resolves_library` (a match ⇒ the
         // preview vendors its code ⇒ clean; a `@bsc/algorithms/<missing>` ⇒ flagged here).
         let mut library: Vec<String> =
-            specs.iter().filter(|s| is_library_specifier(s) && !resolves_library(s)).cloned().collect();
-        let mut bare: Vec<String> = specs
+            specs.iter().filter(|s| is_library_specifier(s) && !resolves_library(s, sounds)).cloned().collect();
+        // A BARE npm specifier that isn't a curated preview external (#3696): it no longer FAILS — the
+        // preview bundles a local shim/stub for any such import (react-native → real layout, react-native-svg
+        // → real SVG, else a universal passthrough), so nothing throws "Failed to resolve module specifier".
+        // It renders APPROXIMATELY (a stub, not the real package) → a severity-1 note, not the old sev-3 error.
+        let mut stubbed: Vec<String> = specs
             .iter()
             .filter(|s| is_bare_specifier(s) && !is_library_specifier(s) && !resolvable.contains(*s))
             .cloned()
             .collect();
         let mut internal: Vec<String> = specs
             .iter()
-            .filter(|s| is_internal_specifier(s) && !resolves_internal(s, &n.src, &targets))
+            .filter(|s| is_internal_specifier(s) && !resolves_internal(s, &n.src, &kit_targets))
             .cloned()
             .collect();
-        for v in [&mut bare, &mut library, &mut internal] {
+        for v in [&mut stubbed, &mut library, &mut internal] {
             v.sort();
             v.dedup();
         }
-        if bare.is_empty() && library.is_empty() && internal.is_empty() {
-            continue;
-        }
         let fmt = |v: &[String]| v.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ");
-        let mut reasons = Vec::new();
-        let mut actions = Vec::new();
-        if !bare.is_empty() {
-            reasons.push(format!("{} (no preview import-map entry)", fmt(&bare)));
-            actions.push(format!(
-                "pin {} in the preview import-map (src-tauri/data/ui/preview-importmap.json) or drop it",
-                fmt(&bare)
-            ));
+        // GENUINELY unresolvable (severity 3): a first-party `@/…`/relative module mapping to no kit
+        // component or runtime file, or a `@bsc/…` library reference naming no real node. Unlike a bare npm
+        // import, these have NO stub fallback — the preview really can't build them.
+        if !library.is_empty() || !internal.is_empty() {
+            let mut reasons = Vec::new();
+            let mut actions = Vec::new();
+            if !library.is_empty() {
+                reasons.push(format!("{} (no matching node in the library)", fmt(&library)));
+                actions.push(format!(
+                    "reference an EXISTING library node for {} (e.g. `@bsc/algorithms/fibonacci`), or author it in the library",
+                    fmt(&library)
+                ));
+            }
+            if !internal.is_empty() {
+                reasons.push(format!("{} (no such module in the kit or its runtime closure)", fmt(&internal)));
+                actions.push(format!("fix or add the module for {} (it resolves to no kit component or runtime file)", fmt(&internal)));
+            }
+            out.push(Finding {
+                category: "unresolvable-import",
+                severity: 3,
+                kit: kit.to_string(),
+                node_ids: vec![n.id.clone()],
+                node_names: vec![n.name.clone()],
+                why: format!(
+                    "`{}` imports {} — the preview can't resolve it, so it throws \"module not found\" when rendered",
+                    n.name,
+                    reasons.join("; ")
+                ),
+                suggested_action: actions.join("; "),
+            });
         }
-        if !library.is_empty() {
-            reasons.push(format!("{} (no matching node in the library)", fmt(&library)));
-            actions.push(format!(
-                "reference an EXISTING library node for {} (e.g. `@bsc/algorithms/fibonacci`), or author it in the library",
-                fmt(&library)
-            ));
+        // STUBBED npm imports (severity 1): the component renders, but the package is a local shim/stub, not
+        // the real thing — informational so the designer knows the preview is approximate (#3696).
+        if !stubbed.is_empty() {
+            out.push(Finding {
+                category: "stubbed-import",
+                severity: 1,
+                kit: kit.to_string(),
+                node_ids: vec![n.id.clone()],
+                node_names: vec![n.name.clone()],
+                why: format!(
+                    "`{}` imports {} — not a curated preview external, so the preview renders it via a bundled-in local shim/stub (approximate, not the real package)",
+                    n.name,
+                    fmt(&stubbed)
+                ),
+                suggested_action: format!(
+                    "acceptable for most native/app packages; if {} needs its REAL behaviour in the preview, add it to the curated externals (src-tauri/data/ui/preview-importmap.json)",
+                    fmt(&stubbed)
+                ),
+            });
         }
-        if !internal.is_empty() {
-            reasons.push(format!("{} (no such module in the kit or its runtime closure)", fmt(&internal)));
-            actions.push(format!("fix or add the module for {} (it resolves to no kit component or runtime file)", fmt(&internal)));
-        }
-        out.push(Finding {
-            category: "unresolvable-import",
-            severity: 3,
-            kit: kit.to_string(),
-            node_ids: vec![n.id.clone()],
-            node_names: vec![n.name.clone()],
-            why: format!(
-                "`{}` imports {} — the preview can't resolve it, so it throws \"module not found\" when rendered",
-                n.name,
-                reasons.join("; ")
-            ),
-            suggested_action: actions.join("; "),
-        });
     }
 
     // ── reimplementation (severity 3): the "compose, don't recreate" guardrail (#3118, epic #3114). An
@@ -1233,11 +1736,12 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
         });
     }
 
-    // ── no-empty-state / no-loading-state (severity 1, INFORMATIONAL, #3135): the preview's data-state
-    // switcher (loaded/empty/loading) can only SHOW a state a component SUPPORTS. A DATA component (has a
+    // ── no-empty-state / no-loading-state / no-error-state (severity 1, INFORMATIONAL, #3135/#3555): the
+    // preview's data-state switcher can only SHOW a state a component SUPPORTS. A DATA component (has a
     // collection/array prop), scanned from its own module source, is flagged when it lacks: (a) an EMPTY
-    // render — no `EmptyState` and no `Array.isArray`/`.length` empty-guard; or (b) a `loading`-family prop.
-    // Guides the designer session to add the missing state. Mirrors `analyzeGraphHealth` (graphHealth.ts).
+    // render — no `EmptyState` and no `Array.isArray`/`.length` empty-guard; (b) a `loading`-family prop;
+    // or (c) an `error`-family prop. Guides the designer session to add the missing state. Mirrors
+    // `analyzeGraphHealth` (graphHealth.ts).
     for n in nodes {
         let Some(src) = own_module_source(n, &kit_targets) else {
             continue;
@@ -1278,6 +1782,24 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
                     collections.join(", ")
                 ),
                 suggested_action: format!("add a boolean `loading` prop to `{}` that renders a skeleton", n.name),
+            });
+        }
+        if !n.props.iter().any(|p| is_error_prop(&p.0, &p.1)) {
+            out.push(Finding {
+                category: "no-error-state",
+                severity: 1,
+                kit: kit.to_string(),
+                node_ids: vec![n.id.clone()],
+                node_names: vec![n.name.clone()],
+                why: format!(
+                    "`{}` takes data ({}) but exposes no `error` prop — the preview can't show its ERROR state",
+                    n.name,
+                    collections.join(", ")
+                ),
+                suggested_action: format!(
+                    "add an `error` prop to `{}` (a message string or boolean) that renders an error state",
+                    n.name
+                ),
             });
         }
     }
@@ -1701,18 +2223,44 @@ mod tests {
     }
 
     #[test]
-    fn flags_a_user_component_importing_a_preview_unresolvable_package() {
-        // Imports d3-scale (NOT in the preview import-map) alongside react + lucide-react (both pinned).
+    fn import_specifiers_ignores_a_from_field_in_object_data_and_a_from_call() {
+        // #3687: a `from` OBJECT KEY (graph-edge demo data) or a `.from(` CALL is not an import. Renaming a
+        // graph node's `id` used to move this false positive in lockstep (an edge's `from` value == the id),
+        // which looked like the scanner keyed on `id`; it actually keyed on the `from` keyword.
+        let src = "import React from \"react\";\n\
+                   const DEMO_GRAPH = { edges: [{ from: 'agentA', to: 'reviewer-2' }] };\n\
+                   const ids = Array.from('n1n2g1');\n\
+                   export function View(){ return React.createElement('div'); }";
+        let specs = import_specifiers(src);
+        assert!(specs.contains(&"react".to_string()), "the real import still resolves");
+        assert!(!specs.contains(&"agentA".to_string()), "a `from:` object key is not an import");
+        assert!(!specs.contains(&"reviewer-2".to_string()), "the edge's `to` value is not an import");
+        assert!(!specs.contains(&"n1n2g1".to_string()), "an `Array.from(` call arg is not an import");
+        // The real forms all still capture (guarded alongside so the gate can't over-tighten).
+        let real = import_specifiers(
+            "import \"./side-effect\";\nexport { a } from \"pkg-a\";\nconst m = import(\"pkg-b\");\nimport X from\"pkg-c\";",
+        );
+        for want in ["./side-effect", "pkg-a", "pkg-b", "pkg-c"] {
+            assert!(real.contains(&want.to_string()), "still captures {want}");
+        }
+    }
+
+    #[test]
+    fn notes_a_bare_npm_miss_as_stubbed_not_an_error() {
+        // #3696: d3-scale (NOT a curated external) alongside react + lucide-react (both pinned). A bare npm
+        // miss no longer FAILS — the preview bundles a local stub for it → a severity-1 `stubbed-import`
+        // NOTE, never the old sev-3 `unresolvable-import` error.
         let comps = [json!({
             "id":"chart", "name":"Chart", "kitId":"k", "role":"composite", "used":2, "composes":[],
             "srcText":"import React from \"react\";\nimport { scaleLinear } from \"d3-scale\";\nimport { Icon } from \"lucide-react\";\nexport function Chart(){ return React.createElement(Icon, null, scaleLinear); }"
         })];
         let fs = analyze(&comps);
-        let f = fs.iter().find(|f| f.category == "unresolvable-import").expect("flagged");
-        assert_eq!(f.severity, 3);
-        assert!(f.why.contains("d3-scale"), "names the unresolvable specifier");
-        assert!(!f.why.contains("`react`") && !f.why.contains("`lucide-react`"), "pinned imports not listed");
+        let f = fs.iter().find(|f| f.category == "stubbed-import").expect("noted as stubbed");
+        assert_eq!(f.severity, 1);
+        assert!(f.why.contains("d3-scale"), "names the stubbed specifier");
+        assert!(!f.why.contains("`react`") && !f.why.contains("`lucide-react`"), "pinned externals not listed");
         assert!(f.suggested_action.contains("preview-importmap"));
+        assert!(!fs.iter().any(|f| f.category == "unresolvable-import"), "a bare npm miss is no longer an ERROR");
     }
 
     #[test]
@@ -1744,9 +2292,9 @@ mod tests {
     }
 
     #[test]
-    fn does_not_flag_an_absolute_url_import_but_still_flags_a_bare_miss() {
-        // #2963: a full esm.sh URL resolves DIRECTLY in the preview (no import-map entry) → not flagged;
-        // a bare package missing from the map (d3-scale) is still flagged.
+    fn an_absolute_url_import_is_clean_and_a_bare_miss_is_only_a_stub_note() {
+        // #2963: a full esm.sh URL resolves DIRECTLY in the preview → never flagged. #3696: a bare package
+        // missing from the curated externals (d3-scale) is a severity-1 `stubbed-import` NOTE, not an error.
         let comps = [
             json!({ "id":"chart", "name":"Chart", "kitId":"k", "role":"composite", "used":2, "composes":[],
                     "srcText":"import * as d3 from \"https://esm.sh/d3@7\";\nexport function Chart(){ return d3; }" }),
@@ -1754,10 +2302,11 @@ mod tests {
                     "srcText":"import { scaleLinear } from \"d3-scale\";\nexport function Bad(){ return scaleLinear; }" }),
         ];
         let fs = analyze(&comps);
-        let flagged: Vec<_> = fs.iter().filter(|f| f.category == "unresolvable-import").collect();
-        assert_eq!(flagged.len(), 1, "only the bare miss is flagged, not the esm.sh URL");
-        assert_eq!(flagged[0].node_names, ["Bad"]);
-        assert!(flagged[0].why.contains("d3-scale"));
+        assert!(!fs.iter().any(|f| f.category == "unresolvable-import"), "neither a URL nor a bare miss is an ERROR");
+        let stubbed: Vec<_> = fs.iter().filter(|f| f.category == "stubbed-import").collect();
+        assert_eq!(stubbed.len(), 1, "only the bare miss gets a stub note, not the esm.sh URL");
+        assert_eq!(stubbed[0].node_names, ["Bad"]);
+        assert!(stubbed[0].why.contains("d3-scale"));
     }
 
     #[test]
@@ -1848,11 +2397,12 @@ mod tests {
     fn resolves_library_recognizes_a_real_algorithm_but_not_a_missing_one() {
         // A `@bsc/algorithms/<name>` reference resolves against the TS algorithm kit (bare name OR exact id);
         // a missing name, a graph with no vendor path here, and a bare npm spec never resolve.
-        assert!(resolves_library("@bsc/algorithms/fibonacci"), "the seeded TS fibonacci resolves by bare name");
-        assert!(resolves_library("@bsc/algorithms/fibonacci.ts"), "…and by exact id");
-        assert!(!resolves_library("@bsc/algorithms/nope"), "a missing algorithm does not resolve");
-        assert!(!resolves_library("@bsc/ui/Sparkline"), "a graph with no vendor path here does not resolve");
-        assert!(!resolves_library("d3-scale"), "a bare npm spec is not a library reference");
+        let sounds = sound_library_names();
+        assert!(resolves_library("@bsc/algorithms/fibonacci", sounds), "the seeded TS fibonacci resolves by bare name");
+        assert!(resolves_library("@bsc/algorithms/fibonacci.ts", sounds), "…and by exact id");
+        assert!(!resolves_library("@bsc/algorithms/nope", sounds), "a missing algorithm does not resolve");
+        assert!(!resolves_library("@bsc/ui/Sparkline", sounds), "a graph with no vendor path here does not resolve");
+        assert!(!resolves_library("d3-scale", sounds), "a bare npm spec is not a library reference");
         assert!(is_library_specifier("@bsc/algorithms/fibonacci") && !is_library_specifier("@/x") && !is_library_specifier("d3"));
     }
 
@@ -1904,22 +2454,94 @@ mod tests {
 
     #[test]
     fn resolves_library_recognizes_a_real_sound_cue_but_not_a_missing_one() {
-        // A `@bsc/sounds/<id>` reference resolves against the default sound kit (a cue or voice id); a missing
-        // name and an empty name never resolve.
-        assert!(resolves_library("@bsc/sounds/click"), "the seeded default-kit `click` cue resolves by id");
-        assert!(resolves_library("@bsc/sounds/blip"), "a voice resolves too (a playable patch)");
-        assert!(!resolves_library("@bsc/sounds/nope"), "a missing cue does not resolve");
-        assert!(!resolves_library("@bsc/sounds/"), "an empty name does not resolve");
+        // An UNPINNED project resolves `@bsc/sounds/<id>` against the packaged default kit (a cue or voice
+        // id); a missing name and an empty name never resolve.
+        let sounds = sound_library_names();
+        assert!(resolves_library("@bsc/sounds/click", sounds), "the seeded default-kit `click` cue resolves by id");
+        assert!(resolves_library("@bsc/sounds/blip", sounds), "a voice resolves too (a playable patch)");
+        assert!(!resolves_library("@bsc/sounds/nope", sounds), "a missing cue does not resolve");
+        assert!(!resolves_library("@bsc/sounds/", sounds), "an empty name does not resolve");
     }
 
     #[test]
-    fn the_embedded_sound_seed_is_the_signal_kit_and_carries_click() {
-        // LOCKSTEP guard: the sounds arm embeds the DEFAULT kit `signal` — the first packaged built-in the
-        // frontend (`STARTER_KIT`) resolves against. If the default changes or the seed drifts, update BOTH
-        // this embed and the TS `KIT_FOR_GRAPH.sound` in lockstep.
+    fn the_embedded_sound_seed_is_the_packaged_default_kit() {
+        // LOCKSTEP guard (#3412): the DEFAULT arm embeds the SAME packaged kit the frontend's
+        // `SoundKitSelection` default arm uses (`STARTER_KIT`, the first packaged built-in). Deliberately
+        // NOT pinned to the literal `signal` any more — which kit resolves is now DATA on both sides (a pin
+        // can name any kit), so what must hold in lockstep is that the embed IS the packaged seed and is
+        // usable: a well-formed kit whose cues are importable. Changing which kit ships means changing the
+        // include path here and `STARTER_KIT` there — that pairing is what this guards.
         let v: Value = serde_json::from_str(SOUND_KIT_JSON).expect("the embedded sound seed parses");
-        assert_eq!(v.get("id").and_then(Value::as_str), Some("signal"), "the embedded sound kit is `signal`");
-        assert!(sound_library_names().contains("click"), "the packaged default kit must carry the `click` cue");
+        assert!(
+            v.get("id").and_then(Value::as_str).is_some_and(|id| !id.is_empty()),
+            "the embedded default kit names itself",
+        );
+        assert!(!sound_library_names().is_empty(), "the packaged default kit must expose importable cues");
+        assert!(
+            v.get("cues").and_then(Value::as_array).is_some_and(|c| !c.is_empty()),
+            "a kit with no cues maps to no UI sound",
+        );
+    }
+
+    /// A minimal kit artifact carrying exactly one cue — the shape a pinned release artifact has.
+    fn kit_with_cue(id: &str, cue: &str) -> String {
+        format!(
+            r#"{{"id":"{id}","name":"{id}","primitives":[],"voices":[],
+               "cues":[{{"id":"{cue}","name":"{cue}","category":"ui","layers":[]}}]}}"#
+        )
+    }
+
+    #[test]
+    fn a_pinned_kit_replaces_the_default_one_for_resolution() {
+        // #3412 core: the PINNED kit — not the packaged default — is the resolution target. A cue only the
+        // pin carries resolves; a cue only the DEFAULT carries does not (no cross-kit bleed and no silent
+        // per-cue fallback: a kit is adopted wholesale, epic #3071).
+        let sounds = sound_library_names_from(&kit_with_cue("acme/neon", "zap"));
+        assert!(resolves_library("@bsc/sounds/zap", &sounds), "the PINNED kit's cue resolves");
+        assert!(
+            !resolves_library("@bsc/sounds/click", &sounds),
+            "a cue only the packaged DEFAULT carries must NOT resolve under a pin — no starter bleed",
+        );
+        // …and the default arm is untouched for an unpinned project (the documented default).
+        assert!(resolves_library("@bsc/sounds/click", sound_library_names()), "unpinned still resolves `click`");
+    }
+
+    #[test]
+    fn analyze_with_flags_a_cue_the_pinned_kit_lacks() {
+        // #3412 end-to-end (Rust twin): the SAME component is clean under a kit carrying `zap` and flagged
+        // `unresolvable-import` under one that lacks it — proving the pin reaches the ANALYZER, not just
+        // `resolves_library`.
+        let comps = vec![serde_json::json!({
+            "id": "c1", "kitId": "k", "name": "ZapBtn", "role": "primitive", "used": 1,
+            "srcText": "import { play } from \"@bsc/sounds/zap\";\nexport function ZapBtn(){ return play(); }"
+        })];
+        let carries = kit_with_cue("acme/neon", "zap");
+        let lacks = kit_with_cue("acme/mute", "other");
+
+        let clean = analyze_with(&comps, &HealthOptions { sound_kit_json: Some(&carries) });
+        assert!(
+            !clean.iter().any(|f| f.category == "unresolvable-import"),
+            "a cue the PINNED kit carries is never flagged: {clean:?}",
+        );
+
+        let flagged = analyze_with(&comps, &HealthOptions { sound_kit_json: Some(&lacks) });
+        let hit: Vec<_> = flagged.iter().filter(|f| f.category == "unresolvable-import").collect();
+        assert_eq!(hit.len(), 1, "a cue the pinned kit LACKS is flagged: {flagged:?}");
+        assert!(hit[0].why.contains("@bsc/sounds/zap"), "names the unresolvable ref: {:?}", hit[0].why);
+    }
+
+    #[test]
+    fn analyze_is_analyze_with_no_pin() {
+        // The "no pin → unchanged" acceptance criterion: the legacy entry point and an explicitly-empty
+        // options run must agree exactly, so an unpinned project's report is byte-identical to pre-#3412.
+        let comps = vec![serde_json::json!({
+            "id": "c1", "kitId": "k", "name": "Btn", "role": "primitive", "used": 1,
+            "srcText": "import { play } from \"@bsc/sounds/click\";\nexport function Btn(){ return play(); }"
+        })];
+        assert_eq!(
+            analyze(&comps).iter().map(Finding::to_value).collect::<Vec<_>>(),
+            analyze_with(&comps, &HealthOptions::default()).iter().map(Finding::to_value).collect::<Vec<_>>(),
+        );
     }
 
     #[test]
@@ -2254,6 +2876,108 @@ mod tests {
         assert!(!ids.contains(&"b1".to_string()) && !ids.contains(&"b2".to_string())); // duplicates aren't pruned
     }
 
+    // ── prune guards (#3087) ─────────────────────────────────────────────────────────────────────
+
+    /// A live-store `page`: a root by definition (nothing composes it) that pulls in its section
+    /// components. Before the guard it landed in the prune plan as a "dangling-branch", so `--fix`
+    /// proposed deleting the ENTIRE pages tier (#2505) — the regression this test pins.
+    #[test]
+    fn a_page_is_reported_as_a_dead_root_but_is_never_pruned() {
+        let comps = [
+            // The usage index IS populated here, so guard 3 can't be what saves the page.
+            comp("Button", "primitive", 9, &[]),
+            json!({ "id": "invoicespage", "name": "InvoicesPage", "kitId": "k", "role": "page", "used": 0,
+                    "composes": ["DataTable"], "srcText": "p", "source": "export const C = () => null;" }),
+            json!({ "id": "table", "name": "DataTable", "kitId": "k", "role": "composite", "used": 0,
+                    "composes": [], "srcText": "t", "source": "export const C = () => null;" }),
+        ];
+        // The FINDING survives — the read-only diagnosis is still complete.
+        let reported: Vec<String> = analyze(&comps)
+            .into_iter()
+            .filter(|f| f.category == "dangling-branch")
+            .map(|f| f.node_names[0].clone())
+            .collect();
+        assert_eq!(reported, ["InvoicesPage"], "the dead-root finding is still REPORTED");
+
+        let plan = prune_plan(&comps);
+        assert!(
+            !plan.prune.iter().any(|p| p.id == "invoicespage"),
+            "a page is a root BY DEFINITION — never auto-pruned: {:?}",
+            plan.prune,
+        );
+        let skip = plan.skipped.iter().find(|s| s.id == "invoicespage").expect("held back, not dropped");
+        assert!(skip.guard.contains("page"), "the guard names itself: {}", skip.guard);
+    }
+
+    /// A packaged built-in seed (the viz kits' demo components, #3194/#3242) is isolated ON PURPOSE.
+    /// Pruning one is data loss that the seed reconcile immediately undoes.
+    #[test]
+    fn a_packaged_builtin_seed_is_reported_but_never_pruned() {
+        let comps = [
+            comp("Button", "primitive", 9, &[]), // populates the usage index
+            json!({ "id": "algocells", "name": "AlgoCells", "kitId": "k", "role": "primitive", "used": 0,
+                    "builtin": true, "composes": [], "srcText": "a", "source": "export const C = () => null;" }),
+            json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0,
+                    "composes": [], "srcText": "g", "source": "export const C = () => null;" }),
+        ];
+        assert!(
+            analyze(&comps).iter().any(|f| f.category == "orphan" && f.node_names[0] == "AlgoCells"),
+            "the orphan finding is still REPORTED",
+        );
+
+        let plan = prune_plan(&comps);
+        let prune_ids: Vec<&str> = plan.prune.iter().map(|p| p.id.as_str()).collect();
+        assert!(!prune_ids.contains(&"algocells"), "a builtin seed is never auto-pruned: {prune_ids:?}");
+        assert!(prune_ids.contains(&"ghost"), "a plain user orphan still prunes: {prune_ids:?}");
+        assert!(plan.skipped.iter().any(|s| s.id == "algocells" && s.guard.contains("built-in")));
+    }
+
+    #[test]
+    fn a_suppression_tombstone_is_skipped_by_every_doctor_check() {
+        // #3725: a `{ id, suppressed: true }` tombstone is not a component — `parse_node` drops it, so it
+        // produces NO finding (a source-less record would otherwise be flagged `no-implementation`) and
+        // never appears in the prune plan.
+        let comps = [comp("Button", "primitive", 5, &[]), json!({ "id": "cost", "suppressed": true })];
+        let findings = analyze(&comps);
+        assert!(
+            !findings.iter().any(|f| f.node_ids.contains(&"cost".to_string())),
+            "the tombstone produces no finding: {findings:?}",
+        );
+        assert!(!prune_plan(&comps).prune.iter().any(|p| p.id == "cost"), "the tombstone is not prunable");
+    }
+
+    /// `used` is a reuse count nothing currently increments — the packaged kit ships every component at
+    /// `used: 0`. So a store where NOTHING is used has no usage SIGNAL, and `used == 0` there means
+    /// UNKNOWN. Half the heuristic being blank must not condemn a node on in-degree alone.
+    #[test]
+    fn an_unpopulated_usage_index_is_unknown_not_unused() {
+        let comps = [
+            comp("Ghost", "primitive", 0, &[]),
+            json!({ "id": "shell", "name": "DeadShell", "kitId": "k", "role": "layout", "used": 0,
+                    "composes": ["Widget"], "srcText": "a" }),
+            json!({ "id": "widget", "name": "Widget", "kitId": "k", "role": "composite", "used": 0,
+                    "composes": [], "srcText": "b" }),
+        ];
+        assert!(!usage_index_populated(&comps), "nothing carries used > 0");
+        // Both dead roots are still REPORTED …
+        assert_eq!(
+            analyze(&comps).iter().filter(|f| matches!(f.category, "orphan" | "dangling-branch")).count(),
+            2,
+        );
+        // … and NOTHING is proposed for removal.
+        let plan = prune_plan(&comps);
+        assert!(plan.prune.is_empty(), "no usage signal ⇒ nothing auto-pruned: {:?}", plan.prune);
+        assert_eq!(plan.skipped.len(), 2, "both are held back, each with its guard");
+        assert!(plan.skipped.iter().all(|s| s.guard.contains("usage index")));
+
+        // One real usage count anywhere restores the signal — and the same nodes prune again.
+        let mut with_signal = comps.to_vec();
+        with_signal.push(comp("Button", "primitive", 4, &[]));
+        assert!(usage_index_populated(&with_signal));
+        let ids: Vec<String> = prunable(&with_signal).into_iter().map(|p| p.id).collect();
+        assert!(ids.contains(&"Ghost".to_string()) && ids.contains(&"shell".to_string()), "{ids:?}");
+    }
+
     #[test]
     fn ranks_most_severe_first() {
         let comps = [
@@ -2345,6 +3069,83 @@ mod tests {
     }
 
     #[test]
+    fn a_graph_source_primitive_importing_artifact_and_provides_siblings_is_buildable() {
+        // #43/#3660: a `provides` component (a shared/ui primitive migrated into the graph, #3604) whose
+        // srcText imports an artifact RUNTIME util (`@/shared/ui/layout/space`) AND a SIBLING it provides
+        // (`@/shared/ui/feedback/Skeleton`) is a real, buildable module — resolved via the artifact + the
+        // graph's `provides`, exactly as the runtime loader does — so it is NOT falsely flagged
+        // no-implementation. Before #43 the buildability check saw neither and reported it "a spec, not code".
+        let box_c = json!({ "id":"box", "name":"Box", "kitId":"base-studio-code", "role":"primitive",
+            "used":2, "composes":[], "src":"src/shared/ui/layout/Box.tsx", "source":"",
+            "provides":"@/shared/ui/layout/Box",
+            "srcText":"import { space } from \"@/shared/ui/layout/space\";\nimport { Skeleton } from \"@/shared/ui/feedback/Skeleton\";\nexport function Box(){ return space || Skeleton ? null : null; }" });
+        let skeleton = json!({ "id":"skeleton", "name":"Skeleton", "kitId":"base-studio-code", "role":"primitive",
+            "used":2, "composes":[], "src":"src/shared/ui/feedback/Skeleton.tsx", "source":"",
+            "provides":"@/shared/ui/feedback/Skeleton",
+            "srcText":"export function Skeleton(){ return null; }" });
+        let fs = analyze(&[box_c, skeleton]);
+        assert!(!fs.iter().any(|f| f.category == "no-implementation"),
+            "a graph-source primitive importing an artifact util + a provides-sibling is buildable: {fs:?}");
+        assert!(!fs.iter().any(|f| f.category == "unresolvable-import"),
+            "its @/ imports resolve (artifact + provides), not unresolvable: {fs:?}");
+    }
+
+    #[test]
+    fn jsx_text_escape_leaks_flags_code_position_escapes_not_string_ones() {
+        // #3709: the exact designer bug. NOTE: every `\\u…` below is the literal 6-char escape TEXT
+        // `\u…` in the source string — NOT a real glyph — since that text between JSX tags is the leak.
+        // A `·` / `↻` typed between JSX tags (code position) is a leak.
+        let leaked = "export function FleetPage(){ return (<span>{count} workers \\u00b7 {count} running \\u21bb</span>); }";
+        let got = jsx_text_escape_leaks(leaked);
+        assert_eq!(got, vec!["\\u00b7".to_string(), "\\u21bb".to_string()], "both JSX-text escapes: {got:?}");
+
+        // Correct forms — the same escape inside a JS string / template / comment, or a real glyph — clean.
+        assert!(jsx_text_escape_leaks("const dot = \"\\u00b7\";").is_empty(), "escape in a string literal");
+        assert!(jsx_text_escape_leaks("return (<span>{\"\\u00b7\"}</span>);").is_empty(), "escape in a JSX string expr");
+        assert!(jsx_text_escape_leaks("// separator \\u00b7 between counts").is_empty(), "escape in a line comment");
+        assert!(jsx_text_escape_leaks("const t = `a \\u00b7 b`;").is_empty(), "escape in a template literal");
+        assert!(jsx_text_escape_leaks("return (<span>{count} · {count}</span>);").is_empty(), "a real UTF-8 glyph is fine");
+
+        // Both other escape shapes are caught in code position.
+        assert_eq!(jsx_text_escape_leaks("<b>\\u{1F600}</b>"), vec!["\\u{1F600}".to_string()], "the `\\u{{…}}` form");
+        assert_eq!(jsx_text_escape_leaks("<b>\\xb7</b>"), vec!["\\xb7".to_string()], "the `\\xHH` form");
+        // A bare `\u` with no hex digits is a syntax error the write gate rejects — not reported here.
+        assert!(jsx_text_escape_leaks("<b>\\u</b>").is_empty(), "an incomplete escape is not flagged");
+    }
+
+    #[test]
+    fn color_literals_finds_hex_and_color_functions_not_short_refs() {
+        let lits = color_literals("color:#e8ecf4; background:rgba(0,0,0,.5); border:#0b0e14ff; issue #219 var(--fg)");
+        assert!(lits.contains(&"#e8ecf4".to_string()), "6-digit hex");
+        assert!(lits.contains(&"#0b0e14ff".to_string()), "8-digit hex");
+        assert!(lits.iter().any(|c| c == "rgba"), "an rgba() function");
+        assert!(!lits.iter().any(|c| c.contains("219")), "a 3-digit ref like #219 is not a color");
+        assert!(uses_theme_token("x var(--fg) y") && !uses_theme_token("color:#fff"));
+    }
+
+    #[test]
+    fn flags_a_component_not_wired_to_the_theme_as_hardcoded_color() {
+        // #3704: a component that hardcodes colors and references NO `var(--…)` token isn't wired to the
+        // theme → a severity-1 `hardcoded-color` note. One that uses a token, and a built-in, are clean.
+        let unwired = json!({ "id":"card", "name":"WorkerCard", "kitId":"mobile-studio-code", "role":"composite",
+            "used":2, "composes":[], "src":"WorkerCard.tsx",
+            "srcText":"export function WorkerCard(){ const s={ color:\"#e8ecf4\", background:\"#161b26\", accent:\"#7aa2ff\" }; return s ? null : null; }" });
+        let themed = json!({ "id":"btn", "name":"Btn", "kitId":"base-studio-code", "role":"primitive",
+            "used":2, "composes":[], "src":"Btn.tsx",
+            "srcText":"export function Btn(){ const s={ color:\"var(--fg)\", background:\"var(--btn-bg)\" }; return s ? null : null; }" });
+        let builtin = json!({ "id":"bi", "name":"BuiltIn", "kitId":"react-ui", "role":"primitive", "used":2,
+            "composes":[], "src":"BuiltIn.tsx", "builtin": true,
+            "srcText":"export function BuiltIn(){ const s={ color:\"#ffffff\" }; return s ? null : null; }" });
+        let fs = analyze(&[unwired, themed, builtin]);
+        let hc: Vec<_> = fs.iter().filter(|f| f.category == "hardcoded-color").collect();
+        assert_eq!(hc.len(), 1, "only the unwired component is flagged: {fs:?}");
+        assert_eq!(hc[0].node_names, ["WorkerCard"]);
+        assert_eq!(hc[0].severity, 1);
+        assert!(hc[0].why.contains("#e8ecf4"), "names a sample literal: {}", hc[0].why);
+        assert!(hc[0].suggested_action.contains("var(--"), "points at design tokens");
+    }
+
+    #[test]
     fn flags_a_declared_composition_the_source_never_renders_as_phantom_compose() {
         // #3111: a chart that DECLARES it composes ChartFrame/Axis but redraws them inline (renders only
         // raw SVG) — a phantom edge the graph would draw, and the false in-edge would mask orphan detection.
@@ -2397,8 +3198,9 @@ mod tests {
     }
 
     #[test]
-    fn flags_a_data_component_lacking_empty_or_loading_state() {
-        // #3135: a chart with a data array rendered raw — no EmptyState/empty-guard, no `loading` prop.
+    fn flags_a_data_component_lacking_empty_loading_or_error_state() {
+        // #3135/#3555: a chart with a data array rendered raw — no EmptyState/empty-guard, no `loading`
+        // prop, no `error` prop.
         let chart = json!({ "id": "bar", "name": "BarChart", "kitId": "d3", "role": "composite", "used": 2,
             "composes": [], "src": "d3/BarChart.tsx",
             "source": "export function BarChart({ data }){ return <svg>{data.map((d) => <rect key={d} />)}</svg>; }",
@@ -2406,16 +3208,17 @@ mod tests {
         let fs = analyze(&[chart]);
         assert!(fs.iter().any(|f| f.category == "no-empty-state"), "flags no-empty-state: {fs:?}");
         assert!(fs.iter().any(|f| f.category == "no-loading-state"), "flags no-loading-state: {fs:?}");
+        assert!(fs.iter().any(|f| f.category == "no-error-state"), "flags no-error-state: {fs:?}");
     }
 
     #[test]
-    fn does_not_flag_data_states_when_empty_handled_and_loading_present_or_no_data_prop() {
+    fn does_not_flag_data_states_when_empty_handled_and_loading_error_present_or_no_data_prop() {
         let comps = [
-            // handles empty (Array.isArray) + a `loading` prop → supports both states.
+            // handles empty (Array.isArray) + a `loading` prop + an `error` prop → supports every state.
             json!({ "id": "good", "name": "Good", "kitId": "d3", "role": "composite", "used": 2, "composes": [],
                 "src": "d3/Good.tsx",
-                "source": "export function Good({ data, loading }){ if (loading) return <span/>; return <svg>{Array.isArray(data) ? data.map((d) => <rect key={d} />) : null}</svg>; }",
-                "props": [{ "name": "data", "type": "Datum[]" }, { "name": "loading", "type": "boolean" }] }),
+                "source": "export function Good({ data, loading, error }){ if (error) return <span/>; if (loading) return <span/>; return <svg>{Array.isArray(data) ? data.map((d) => <rect key={d} />) : null}</svg>; }",
+                "props": [{ "name": "data", "type": "Datum[]" }, { "name": "loading", "type": "boolean" }, { "name": "error", "type": "string" }] }),
             // no collection prop at all → not a data component.
             json!({ "id": "btn", "name": "Button", "kitId": "d3", "role": "primitive", "used": 5, "composes": [],
                 "src": "d3/Button.tsx", "source": "export function Button({ label }){ return <button>{label}</button>; }",
@@ -2423,8 +3226,8 @@ mod tests {
         ];
         let fs = analyze(&comps);
         assert!(
-            fs.iter().all(|f| f.category != "no-empty-state" && f.category != "no-loading-state"),
-            "empty-handled + loading-prop / no-data-prop are not flagged: {fs:?}"
+            fs.iter().all(|f| f.category != "no-empty-state" && f.category != "no-loading-state" && f.category != "no-error-state"),
+            "empty-handled + loading-prop + error-prop / no-data-prop are not flagged: {fs:?}"
         );
     }
 
@@ -2442,6 +3245,85 @@ mod tests {
         assert!(!looks_buildable_module("export function X() { return <Card>…</Card>; }"));
         // `export` must be a WHOLE word — a substring like `reexported` doesn't qualify.
         assert!(!looks_buildable_module("const reexportedThing = 1;"));
+    }
+
+    #[test]
+    fn module_defects_names_every_reason_and_is_the_predicates_reasons() {
+        // A real module has NO defects — and the bool is exactly `defects.is_empty()`.
+        let ok = "import * as d3 from \"d3\";\nexport function Foo() { return null; }";
+        assert!(module_defects(ok).is_empty(), "{:?}", module_defects(ok));
+        assert!(looks_buildable_module(ok));
+
+        // #3470 row 3 — the source LEAST like a module: it keeps its `@/` imports. It must be reported
+        // (and the reason must NAME the specifiers), not silently skipped.
+        let spec = "import { Card } from \"@/shared/ui/data/Card\";\nimport { Row } from '@/shared/ui/layout/Row';\nexport function X() { return null; }";
+        let why = module_defects(spec);
+        assert_eq!(why.len(), 1, "exactly the import defect: {why:?}");
+        assert!(why[0].contains("@/shared/ui/data/Card"), "names the first import: {why:?}");
+        assert!(why[0].contains("@/shared/ui/layout/Row"), "names the second import: {why:?}");
+        assert!(!looks_buildable_module(spec));
+
+        // Every defect is reported, not just the first — a usage snippet trips all three at once.
+        let snippet = "import { B } from \"@/x\";\n<B label={…} />";
+        let why = module_defects(snippet);
+        assert_eq!(why.len(), 3, "export + elision + import: {why:?}");
+        assert!(why.iter().any(|r| r.contains("export")), "{why:?}");
+        assert!(why.iter().any(|r| r.contains('…')), "{why:?}");
+        assert!(why.iter().any(|r| r.contains("@/x")), "{why:?}");
+
+        // A record with no source is NOT a defect — "carries no srcText" is a different, legit state
+        // every caller checks first.
+        assert!(module_defects("").is_empty());
+        assert!(module_defects("   \n  ").is_empty());
+        assert!(!looks_buildable_module("   \n  "), "…but it is still not a module");
+    }
+
+    #[test]
+    fn an_ellipsis_in_copy_or_a_comment_is_not_a_code_elision() {
+        // A MEASURED false positive, not a hypothetical (#3470): the plain `contains('…')` test this
+        // replaced condemned 13 real components in this repo's own `src/shared/ui`, because `…` is
+        // ordinary UI copy and ordinary doc-comment prose. Those are real modules and must gate as such.
+        assert!(has_code_elision("export function A() { … }"), "a genuine code elision");
+        assert!(!has_code_elision(r#"export const A = () => <input placeholder="Select…" />;"#), "UI copy");
+        assert!(!has_code_elision("// mentions …\nexport function A() { return null; }"), "line comment");
+        assert!(!has_code_elision("/* block … */\nexport function A() { return null; }"), "block comment");
+        assert!(!has_code_elision("export const A = () => <b>{`tpl …`}</b>;"), "template literal");
+        assert!(!has_code_elision("export const A = () => <b title='an …' />;"), "single-quoted");
+        assert!(!has_code_elision("export const A = \"\\\"…\";"), "an escaped quote doesn't end the literal");
+        // The scanner must RESUME scanning as code once a literal closes, or a real elision could hide
+        // behind any earlier piece of copy. (Mirrors the TS case of the same name, #3486.)
+        assert!(
+            has_code_elision("const s = \"Select…\"; export function A() { … }"),
+            "a marker after a string that contains one is still found"
+        );
+
+        // …so the predicate itself no longer mis-flags a component whose only `…` is in its copy.
+        assert!(looks_buildable_module(r#"export const A = () => <input placeholder="Select…" />;"#));
+        assert!(!looks_buildable_module("export function X() { return <Card>…</Card>; }"), "JSX text is code");
+    }
+
+    #[test]
+    fn the_preview_predicate_uses_the_context_aware_scanner_too() {
+        // #3486: `is_preview_buildable` deliberately kept the PLAIN `contains('…')` test while the TS
+        // `isPreviewBuildable` still had one, so that `doctor` could never be more permissive than the
+        // preview it reports on. Once the TS side ported the context-aware scanner, keeping the plain
+        // test here inverted the bug: `doctor` would report a `no-implementation` finding for a
+        // component the preview renders perfectly well. The two must move together, so this pins that
+        // a copy-only ellipsis is preview-buildable on BOTH sides.
+        let targets = BTreeSet::new();
+        let copy_only = r#"export const A = () => <input placeholder="Select…" />;"#;
+        assert!(
+            is_preview_buildable(copy_only, "shared/ui/A.tsx", &targets),
+            "an ellipsis in placeholder COPY must not read as omitted code"
+        );
+        assert!(
+            !is_preview_buildable("export function A() { … }", "shared/ui/A.tsx", &targets),
+            "a genuine code elision must still fail"
+        );
+
+        // And the consequence that motivated the issue: such a component reports NO defect, so it is
+        // not surfaced as a no-implementation finding.
+        assert!(module_defects(copy_only).is_empty(), "{:?}", module_defects(copy_only));
     }
 
     #[test]
@@ -2566,5 +3448,85 @@ mod tests {
         assert!(analyze_motion(std::slice::from_ref(&none)).is_empty());
         let refs = json!({ "id": "y", "name": "Y", "kitId": "k", "animations": ["fade-in", "pulse"] });
         assert!(analyze_motion(std::slice::from_ref(&refs)).is_empty(), "name-refs alone raise no motion finding");
+    }
+
+    #[test]
+    fn render_error_findings_reports_each_errored_component_and_skips_the_unknown() {
+        let comps = vec![
+            json!({ "id": "bsc-keyvaluelist", "name": "BscKeyValueList", "kitId": "harvested",
+                    "srcText": "export const BscKeyValueList = () => null;" }),
+            json!({ "id": "bsc-dropdown", "name": "BscDropdown", "kitId": "harvested",
+                    "srcText": "export const BscDropdown = () => null;" }),
+        ];
+        let errors = vec![
+            ("bsc-keyvaluelist".to_string(), "Cannot read properties of undefined (reading 'map')".to_string()),
+            ("bsc-dropdown".to_string(), "trace line 1\n  at foo\n  at bar".to_string()),
+            ("ghost".to_string(), "not in the store — must be dropped".to_string()),
+        ];
+        let f = render_error_findings(&comps, &errors);
+        assert_eq!(f.len(), 2, "the stale `ghost` error is dropped");
+        for x in &f {
+            assert_eq!(x.category, "render-error");
+            assert_eq!(x.severity, 5, "sorts above every static finding");
+            assert_eq!(x.kit, "harvested");
+        }
+        let kvl = f.iter().find(|x| x.node_ids == ["bsc-keyvaluelist"]).unwrap();
+        assert!(kvl.why.contains("reading 'map'"), "carries the real throw message");
+        assert!(kvl.suggested_action.contains("bsc ui preview-props bsc-keyvaluelist"));
+        // A multi-line stack trace is collapsed to one line in the summary.
+        let dd = f.iter().find(|x| x.node_ids == ["bsc-dropdown"]).unwrap();
+        assert!(!dd.why.contains('\n'), "the trace is flattened for the one-line finding");
+    }
+
+    #[test]
+    fn render_error_findings_drops_a_stale_error_for_an_empty_srctext_component() {
+        // #3737: a component reduced to an empty spec can't have a LIVE render error (the preview shows
+        // no-implementation, not a throw), so a persisted error there is stale by definition. A non-empty
+        // component keeps its recorded error.
+        let comps = vec![
+            json!({ "id": "empty", "name": "Empty", "kitId": "k", "srcText": "   " }),
+            json!({ "id": "real", "name": "Real", "kitId": "k", "srcText": "export const Real = () => null;" }),
+        ];
+        let errors = vec![
+            ("empty".to_string(), "no export Empty in @/x".to_string()),
+            ("real".to_string(), "threw at render".to_string()),
+        ];
+        let f = render_error_findings(&comps, &errors);
+        let ids: Vec<&str> = f.iter().flat_map(|x| x.node_ids.iter().map(String::as_str)).collect();
+        assert!(!ids.contains(&"empty"), "the empty-srcText render-error is dropped as stale: {ids:?}");
+        assert!(ids.contains(&"real"), "the non-empty component keeps its error: {ids:?}");
+    }
+
+    #[test]
+    fn render_error_findings_is_empty_with_no_errors() {
+        let comps = vec![json!({ "id": "a", "name": "A", "kitId": "k", "srcText": "export const A = () => null;" })];
+        assert!(render_error_findings(&comps, &[]).is_empty());
+    }
+
+    #[test]
+    fn render_error_findings_distinguishes_a_build_failure_from_a_render_throw() {
+        let comps = vec![
+            json!({ "id": "workspaceshellpage", "name": "WorkspaceShellPage", "kitId": "harvested" }),
+            json!({ "id": "bsc-dropdown", "name": "BscDropdown", "kitId": "harvested" }),
+        ];
+        let errors = vec![
+            // A `build:`-prefixed message (#3549) — the scan records esbuild failures too now.
+            (
+                "workspaceshellpage".to_string(),
+                "build: Build failed with 1 error: mem:src/shared/ui/layouts:2:12: ERROR: Expected \"from\" but found \"{\"".to_string(),
+            ),
+            ("bsc-dropdown".to_string(), "render: Cannot read properties of undefined".to_string()),
+        ];
+        let f = render_error_findings(&comps, &errors);
+        let ws = f.iter().find(|x| x.node_ids == ["workspaceshellpage"]).unwrap();
+        assert!(ws.why.contains("failed to BUILD"), "build failures read as a build error, not a render throw");
+        assert!(!ws.why.contains("build:"), "the kind prefix is stripped from the display message");
+        assert!(ws.why.contains("Expected"), "carries the real esbuild message");
+        assert!(ws.suggested_action.contains("--field srcText"), "build suggestion points at the source, not props");
+        // The `render:`-prefixed one keeps the runtime prose + prop suggestion, prefix stripped.
+        let dd = f.iter().find(|x| x.node_ids == ["bsc-dropdown"]).unwrap();
+        assert!(dd.why.contains("threw when the preview rendered it"));
+        assert!(!dd.why.contains("render:"), "the kind prefix is stripped");
+        assert!(dd.suggested_action.contains("bsc ui preview-props"));
     }
 }

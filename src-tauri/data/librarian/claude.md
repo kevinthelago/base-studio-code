@@ -44,6 +44,16 @@ Real project code is the reality the library should track. Mine it into candidat
 - `bsc graph curate <dir> [--tech T] [--apply]` — curate the WORTHY candidates into the library
   (add / optimize). `--apply` writes the runtime store; without it you get the plan to review first.
 
+**Harvest reach is a READ-only allow-list, separate from where you may write.** Your own session root is
+always harvestable, and your role grants one more: **this app's own source tree** (base-studio-code), so
+you can mine the real algorithms already living in the codebase — the pure logic behind its pages, its
+data transforms — straight into the library. A `<dir>` outside every allowed root is refused and the
+refusal names them: that is the same FS confinement your file tools obey, applied to the CLI so a
+directory argument cannot reach around it. This widens only what you may SCAN — it grants no write
+anywhere. Only `scratch/**` is writable, and `bsc graph curate --apply` writes the store, not files. If
+the code you want to mine sits outside every allowed root, say so and ask, rather than hunting for a path
+that slips through.
+
 ## Curate the store — the write commands
 
 Every write persists to the store (`~/.base-studio-code/knowledge/algorithms.json`), and a re-read
@@ -121,6 +131,19 @@ and confirm it landed. Then run the coverage doctor:
 
 Fix every finding on an algorithm you touched before moving on.
 
+## Keep the graph minimal — measure, then combine (#3594)
+
+The library is only useful if it stays lean, and that is a set of TOOLS, not hand-organization:
+
+- `bsc graph used-by <id>` — the composes-INVERSE: which implementations compose `<id>` (and how many).
+  `bsc graph used-by --all` ranks every impl by usage. This is how you tell a load-bearing primitive
+  from an orphan — the measure step before you decide what to combine or prune.
+- `bsc graph merge <from-id> <into-id>` — when two implementations do the same job, fold one INTO the
+  other in ONE step: it repoints every impl's `composes` from→into (deduped) then removes `<from>`.
+  Decide the survivor with `used-by`: **merge the LESS-used into the more-used**, so the one everything
+  builds on stays. Reach for it whenever `harvest`/`curate` surface a duplicate of something already in
+  the library — never leave two impls for the same algorithm.
+
 ## What you never do
 
 - No file writes (your write tools are denied — the library lives behind `bsc graph`, not files).
@@ -189,7 +212,7 @@ So when `bsc graph` cannot do something you need, that is **a gap in the tool, n
 around**. File it:
 
 ```
-bsc request new "bsc graph list has no way to filter or format the output"   --cmd "bsc graph impl list | python3 -c \"...\"" --surface "bsc graph"
+bsc request new "bsc graph impl list has no way to filter or format the output"   --cmd "bsc graph impl list | python3 -c \"...\"" --surface "bsc graph"
 ```
 
 `--cmd` is the important part — pass the EXACT command that failed. A request is *observed*, not

@@ -11,6 +11,7 @@
 import type * as Esbuild from "esbuild-wasm";
 import wasmURL from "esbuild-wasm/esbuild.wasm?url";
 import importmapEmbedded from "@data/ui/preview-importmap.json";
+import { PREVIEW_SHIM_NAMESPACE, shimModuleFor, scanStubImports, previewCspMeta } from "@/shared/lib/preview/previewShims";
 
 /** esm.sh import-map for the externals (pinned; `deps` params keep React deduped) — the pins live in
  *  `@data/ui/preview-importmap.json` (#2419; ONE source, also read by streamingRuntime.ts), a plain
@@ -66,6 +67,7 @@ function ensureEsbuild(): Promise<typeof Esbuild> {
 }
 
 function inMemoryPlugin(files: Record<string, string>): Esbuild.Plugin {
+  const stubExports = scanStubImports(files, (s) => PREVIEW_EXTERNALS.includes(s)); // #3696 — names per stubbed package
   return {
     name: "preview-mem",
     setup(build) {
@@ -73,8 +75,11 @@ function inMemoryPlugin(files: Record<string, string>): Esbuild.Plugin {
         if (args.kind === "entry-point") return { path: BOOTSTRAP_ENTRY, namespace: "mem" };
         if (PREVIEW_EXTERNALS.includes(args.path)) return { path: args.path, external: true };
         if (args.path.startsWith(".")) return { path: resolveMemPath(args.importer, args.path), namespace: "mem" };
-        return { path: args.path, external: true }; // any other bare import → external (esm.sh)
+        // #3696: any OTHER bare import resolves to a bundled-in LOCAL shim/stub (never esm.sh at large), so a
+        // skeleton that pulls in a native/npm package still bundles + renders instead of failing to resolve.
+        return { path: args.path, namespace: PREVIEW_SHIM_NAMESPACE };
       });
+      build.onLoad({ filter: /.*/, namespace: PREVIEW_SHIM_NAMESPACE }, (args) => ({ contents: shimModuleFor(args.path, stubExports.get(args.path)), loader: "js" }));
       build.onLoad({ filter: /.*/, namespace: "mem" }, (args) => {
         const hit = lookupMem(files, args.path);
         if (!hit) return { errors: [{ text: `preview: module not found: ${args.path}` }] };
@@ -110,6 +115,7 @@ export async function bundleSkeleton(files: Record<string, string>, screenEntry:
  */
 export function buildPreviewSrcDoc(bundleJs: string, importmap: Record<string, string> = DEFAULT_IMPORTMAP): string {
   return `<!doctype html><html><head><meta charset="utf-8" />
+${previewCspMeta()}
 <style>html,body,#root{margin:0;height:100%;background:var(--bg, #0d0d0f);font-family:Inter,system-ui,sans-serif;color:#eee}</style>
 <script type="importmap">${JSON.stringify({ imports: importmap })}</script>
 </head><body><div id="root"></div>

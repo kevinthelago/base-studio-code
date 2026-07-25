@@ -8,7 +8,7 @@
 // composition + light view state only.
 import { useCallback, useMemo, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsTail } from "@/shared/lib/core/logsBridge";
 import { slugify } from "@/shared/lib/core/format";
 import { type TabItem } from "@/shared/ui/layouts/TabBar";
 import { Screen } from "@/shared/ui/layouts/Screen";
@@ -25,6 +25,9 @@ import { AssignmentsTab } from "./AssignmentsTab";
 import { ActivityTab } from "./ActivityTab";
 import { FlowTab } from "./FlowTab";
 import "./security.css";
+
+// The graph-hosted workspace (#3646) — App.tsx/DetachedWindow render this via the lazy SecurityWorkspace.
+export { SecurityGraphHost } from "./SecurityGraphHost";
 
 // Re-exported for tests + back-compat: the pane-profile picker + app-session label
 // helpers used to live here; they moved to ./AssignmentsTab and ./lib/appSession (#1643).
@@ -82,7 +85,7 @@ export function SecurityWorkspace({ pageOverride }: { pageOverride?: string } = 
 
   usePoll(async (isCancelled) => {
     if (tab !== "activity") return;
-    const lines = await bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "300", "--json"], []);
+    const lines = await logsTail("audit", 300);
     const rows = buildAuditRows(lines, { consoles, profiles, paneProfiles, paneRoles });
     if (!isCancelled()) setAuditRows(rows);
   }, 3000, [tab, paneProfiles, profiles, paneRoles, consoles]);

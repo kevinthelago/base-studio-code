@@ -1,9 +1,9 @@
 //! The `bsc ui` subcommand — the ONE UI-design-surface command (#2469). Three verb families under a
 //! single mount, so a restricted design session is expressible as one allow rule (`Bash(bsc ui *)`):
 //!
-//! - the **contract** verbs (#1852, owned here, over the embedded KitNode contract
+//! - the **contract** verbs (#1852, owned here, over the embedded primitive contract
 //!   `crate::CONTRACT_JSON`): `schema` (print the contract — every kind, its fields + enums),
-//!   `validate [file]` (check a KitNode spec, a file else stdin, against it), and
+//!   `validate [file]` (check a spec, a file else stdin, against it), and
 //!   `theme list|get|set|remove` (the kit THEME collection — a designer-writable verbatim-JSON store
 //!   at `~/.base-studio-code/themes/` seeded by the desktop from the embedded registry, #2488; the
 //!   reads MERGE the embedded built-ins in so a pre-seed session still sees every theme, and the
@@ -27,29 +27,36 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 const TAGLINE: &str =
-    "the UI design surface — the KitNode contract + themes (#1852) and the component library (#2469)";
+    "the UI design surface — the primitive contract + themes (#1852) and the component library (#2469)";
 
 /// The contract verbs bsc-ui owns. The component-library verbs are appended from
 /// [`bsc_component::cli::command_docs`] by [`merged_commands`].
 const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "schema",
-        summary: "print the KitNode contract (every kind, its fields + enums)",
+        summary: "print the primitive contract (every component, its props + enums)",
         usage: "\
 USAGE:
-  bsc ui schema [--pretty]
+  bsc ui schema [--name <Primitive>] [--pretty]
 
-Prints the KitNode contract — every node `kind`, the fields it accepts, which are required, whether it
-bears children, and the closed value sets for its enum fields. This is the contract an AI authors UI
-against: emit a tree of these nodes and the desktop `KitRenderer` renders it through the shared kit.
-Compact JSON by default; --pretty for indented.",
+Prints the PRIMITIVE contract — every component of the shared kit, the props it accepts, which are
+required, their types, and the closed value sets for enum props. This is the contract an AI authors UI
+against: emit a tree of `{ type, props, children, binds, actions }` nodes and the desktop KitRenderer
+renders it through the shared kit. It is the same contract `bsc ui validate` enforces.
+
+  props     plain data — a literal for a declared prop.
+  binds     a prop READ from host state: { \"on\": \"someStateKey\" }.
+  actions   a prop that is a host CALLBACK, named: { \"onClick\": \"doTheThing\" }. A data tree never
+            carries a function, so naming the host's action is the only way to wire behaviour.
+
+--name narrows to one primitive (the whole kit is large). Compact JSON by default; --pretty indents.",
     },
     CmdDoc {
         name: "validate",
-        summary: "validate a KitNode spec (file or stdin) against the contract",
+        summary: "validate a UI spec (file or stdin) against the primitive contract",
         usage: "\
 USAGE:
-  bsc ui validate <file>     # a KitNode spec JSON file
+  bsc ui validate <file>     # a UI spec JSON file
   bsc ui validate            # ... or read the spec JSON from stdin
 
 Structurally validates the spec against the contract (kind known · required present · no unknown fields
@@ -238,6 +245,56 @@ The report names the theme's `group` — its design-group binding (#2749) — so
 which group's contract it resolved against. Compact JSON by default; --pretty indents.",
     },
     CmdDoc {
+        name: "harvest",
+        summary: "scan a repo and surface reusable COMPONENT candidates for the library (#3471)",
+        usage: "USAGE:
+  bsc ui harvest <repo-dir-or-file> [--kit K] [--worthy-only] [--out <name>] [--pretty]
+
+The target is a directory (scan the tree) OR a single FILE (#3722 — scope to one component's module).
+Parses the repo's real .tsx/.ts/.jsx/.js source with tree-sitter and lifts each React component into a
+CANDIDATE component record — the component half of `bsc graph harvest`, so a project that gets BUILT fills
+the component graph instead of the library being hand-authored one `bsc ui set` at a time. Deterministic
+and zero-egress: parsing is local, and the walk is sorted so the output is order-stable. READ-ONLY — it
+emits candidates, never stores them; promoting one is the curation gate's job.
+
+A component is a PascalCase-named function that renders JSX — a `function`, an arrow, or one WRAPPED in a
+higher-order call (`memo`/`forwardRef`/`observer`). Vendored/build/VCS dirs, test/story files, and NESTED
+git roots (worktrees/submodules, whose src duplicates the primary tree) are skipped.
+
+Not sure WHICH dir to harvest? A confined session's cwd is its own workspace, not the repo — run
+`bsc ui env` to see the roots you may harvest (e.g. the app's own source tree), then harvest one of those.
+
+Unlike the algorithms harvest, a candidate's `srcText` is a CLOSURE, not a node slice: the component plus
+the same-file declarations it transitively references plus exactly the imports those need — because a
+component's stored source must be a module the preview can COMPILE. Every candidate carries an honest
+`buildable` with `unbuildableReasons`; one that could not be closed is emitted FLAGGED rather than
+quietly degraded (a srcText with unresolved `@/…` imports otherwise stores with no complaint at all,
+#3470). `composes` lists component NAMES (the component graph composes by name, not by id).
+
+Prints { candidates: [...], count }, plus (#3740) `functionalModules` + a `note` when the tree also holds
+functional/algorithmic modules (functions, hooks, utils) that are NOT components — those belong in the
+ALGORITHMS graph, so harvest them with `bsc graph harvest <dir>` instead (this surfaces + routes them so
+they aren't lost between the two harvests). --kit sets the kit candidates would join (default `harvested`
+— NOT an existing kit, since unreviewed candidates must not contaminate a curated one). --worthy-only keeps
+those the classifier scores net-positive. --out <name> (#3722) writes the JSON to a BARE-named file in
+$BSC_SCRATCH instead of stdout, then prints that path — use it when a large harvest would be truncated on
+stdout (and spilled OUT of the confinement, unreadable); the scratch file is Read-able in full.",
+    },
+    CmdDoc {
+        name: "env",
+        summary: "show this session's scratch dir, write scopes, and the roots it may harvest (#3571)",
+        usage: "USAGE:
+  bsc ui env [--json]
+
+Prints the session-scoped environment a confined studio session runs under — its scratch dir
+($BSC_SCRATCH), its write scopes ($BSC_SCOPES), its FS-confinement root ($BSC_REPO_ROOT), and the READ-only
+HARVEST roots it may scan ($BSC_HARVEST_ROOTS, e.g. the app's own source tree granted to the designer).
+
+WHY: a restricted session is cwd'd in its own sealed workspace, NOT the repo, so it cannot otherwise
+discover WHERE the app's UI lives on disk. Run this, read the harvest roots, then `bsc ui harvest <root>`
+to mine that tree's components. READ-ONLY. --json emits the same as a machine-readable object.",
+    },
+    CmdDoc {
         name: "emit",
         summary: "vendor a component (or the whole kit) as compilable source into a directory (#2800)",
         usage: "\
@@ -247,12 +304,15 @@ USAGE:
   bsc ui emit sync <dir>             # re-emit MANAGED files whose kit source moved; warn on hand-edited
 
 Writes REAL, compilable source into <dir> (mirroring the src/ layout), every first-party `@/…` import
-rewritten to a resolvable relative path — so the emitted tree builds with NO alias config and NO
-network. Resolves against the EMBEDDED kit artifact (the packaged `bsc/react-ui`), so it works inside
-the sealed sandbox where the mutable stores aren't reachable. Each file is provenance-stamped
-(`// vendored from bsc/react-ui@<version> (sha256:…)`), the fingerprint `sync` keys on. `component`/`kit`
-print { emitted, dir, files, externalDeps } — `externalDeps` lists the npm packages (react, d3-*) the
-vendored code imports and the app must declare (the closure vendors first-party source only).
+rewritten to a resolvable relative path — so the emitted tree builds with NO alias config and NO network.
+`component` resolves against the WHOLE component store (#3720) when it's reachable — so ANY kit's
+component emits (react-d3, harvested, …), not just react-ui — overlaid on the packaged artifact (which
+supplies the react-ui sources + the shared runtime closure); when the store isn't mounted (the sealed
+sandbox) it falls back to the packaged `bsc/react-ui` artifact, so react-ui still emits offline. (`kit`
+and `sync` remain packaged-react-ui only.) Each file is provenance-stamped (`// vendored from <kit>@<ver>
+(sha256:…)`), the fingerprint `sync` keys on. `component`/`kit` print { emitted, dir, files, externalDeps }
+— `externalDeps` lists the npm packages (react, d3-*) the vendored code imports and the app must declare
+(the closure vendors first-party source only).
 
 `sync` is the ADOPT step (the atomic-upgrade model — re-run the command, don't hand-edit): it re-emits
 every MANAGED file (unchanged since it was emitted — its body still matches the stamp's sha256) from
@@ -314,6 +374,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("generate") => cmd_generate(&args[1..], prog),
         Some("resolve") => cmd_resolve(&args[1..]),
         Some("emit") => cmd_emit(&args[1..], prog),
+        Some("harvest") => cmd_harvest(&args[1..]),
+        Some("env") => cmd_env(&args[1..]),
         Some("changes") => cmd_changes(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
@@ -499,6 +561,139 @@ fn cmd_resolve(args: &[String]) -> Result<(), String> {
 /// `bsc ui emit component <id> <dir>` / `bsc ui emit kit <dir>` (#2800) — vendor a component + its
 /// transitive closure (or the whole kit) as compilable source, from the EMBEDDED artifact (no store /
 /// network → sandbox-safe). See [`crate::emit`].
+/// `bsc ui harvest <repo-dir>` (#3471) — scan a repo for reusable component candidates. READ-ONLY, so
+/// no write-scope gate: it emits candidates and stores nothing (mirroring `bsc graph harvest`, where
+/// storing is the curation gate's job). Pure JSON out, `--pretty` to indent.
+fn cmd_harvest(args: &[String]) -> Result<(), String> {
+    if args.first().map(String::as_str) == Some("help") {
+        print!("{}", bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "harvest"));
+        return Ok(());
+    }
+    let mut target: Option<&str> = None;
+    let (mut kit, mut worthy_only, mut pretty) = (crate::harvest::DEFAULT_KIT.to_string(), false, false);
+    let mut out: Option<String> = None;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--kit" => kit = it.next().cloned().ok_or("--kit needs a kit id")?,
+            "--worthy-only" => worthy_only = true,
+            "--pretty" => pretty = true,
+            "--out" => out = Some(it.next().cloned().ok_or("--out needs a bare file name")?),
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => target = Some(other),
+        }
+    }
+    let target = target
+        .ok_or("usage: bsc ui harvest <repo-dir-or-file> [--kit K] [--worthy-only] [--out <name>] [--pretty]")?;
+    let path = std::path::Path::new(target);
+    // #3722: a single FILE is a valid target now (scope to one component's module) — not only a dir.
+    let is_file = path.is_file();
+    if !path.is_dir() && !is_file {
+        return Err(format!("no such file or directory: {target}"));
+    }
+    // #3475: a harvest hands back file CONTENTS, so it must honor the SAME boundary the file tools do.
+    // `bsc-confine` only inspects Claude's file-tool payloads and is blind to what this binary reads —
+    // without this, a confined studio session (designer/librarian) reads any path on disk through an
+    // allow-listed CLI. Checked after the existence test so the target is known to exist.
+    bsc_cli_util::require_harvestable_root(path)?;
+    let mut candidates =
+        if is_file { crate::harvest::harvest_file(path, &kit) } else { crate::harvest::harvest(path, &kit) };
+    if worthy_only {
+        candidates.retain(|c| c.classification.worthy);
+    }
+    let items: Vec<serde_json::Value> = candidates.iter().map(harvest_json).collect();
+    let mut payload = serde_json::json!({ "candidates": items, "count": items.len() });
+    // #3740: surface the functional/algorithmic modules (functions, hooks, utils) this component harvest
+    // SKIPS — they belong in the ALGORITHMS graph, not the component graph. Route them to `bsc graph
+    // harvest` so they aren't lost between the two harvests. Omitted entirely when the tree has none.
+    let functional = crate::harvest::functional_module_names(path);
+    if !functional.is_empty() {
+        payload["note"] = serde_json::json!(format!(
+            "{} functional/algorithmic module(s) here are NOT components — harvest them into the algorithms \
+             graph with `bsc graph harvest {target}` (functions, hooks, and utils belong there).",
+            functional.len()
+        ));
+        payload["functionalModules"] = serde_json::json!(functional);
+    }
+    let text = if pretty {
+        serde_json::to_string_pretty(&payload)
+    } else {
+        serde_json::to_string(&payload)
+    }
+    .map_err(|e| e.to_string())?;
+    // #3722: `--out <name>` spills the JSON to the session scratch dir — a confinement-allowed path the
+    // session Reads in full — instead of stdout, which a restricted session truncates for a large harvest
+    // (and spills OUT of the confinement, unreadable). Symmetric with `bsc ui get --out` (#20).
+    match out {
+        Some(name) => {
+            let file = bsc_cli_util::resolve_scratch_out(&name)?;
+            std::fs::write(&file, format!("{text}\n"))
+                .map_err(|e| format!("cannot write --out {}: {e}", file.display()))?;
+            println!("{}", file.display());
+        }
+        None => println!("{text}"),
+    }
+    Ok(())
+}
+
+/// `bsc ui env [--json]` (#3571) — surface the session-scoped environment a confined studio session
+/// runs under, chiefly the READ-only HARVEST roots it may scan. A designer/librarian session is cwd'd
+/// in its own sealed workspace, not the repo, so without this it has no way to DISCOVER where the app's
+/// UI lives — the reach was granted (`$BSC_HARVEST_ROOTS`) but never surfaced, so `harvest` refused every
+/// guessed path with only a terse "outside every root". READ-ONLY (no scope gate); the report itself
+/// lives in `bsc-cli-util` so `bsc graph env` can adopt it too.
+fn cmd_env(args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        Some("help") => {
+            print!("{}", bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "env"));
+            Ok(())
+        }
+        Some("--json") => {
+            let s = bsc_cli_util::session_env_snapshot();
+            let out = serde_json::json!({
+                "scratch": s.scratch,
+                "scopes": s.scopes,
+                "repoRoot": s.repo_root,
+                "harvestRoots": s.harvest_roots,
+                "harvestableRoots": s.harvestable_roots(),
+            });
+            println!("{}", serde_json::to_string(&out).map_err(|e| e.to_string())?);
+            Ok(())
+        }
+        Some(other) => Err(format!("unknown flag '{other}' — usage: bsc ui env [--json]")),
+        None => {
+            print!("{}", bsc_cli_util::format_session_env("bsc ui"));
+            Ok(())
+        }
+    }
+}
+
+/// One harvested candidate as the store's component-record shape (plus the harvest-only verdict
+/// fields), so a curator can pipe it straight into `bsc ui set` after review. Seeds `group` as the
+/// component's FOLDER PATH derived from `src` (#3579, [`bsc_component::group_from_src`]) so a fresh
+/// harvest organizes like the project's folders; omitted (not `null`) when `src` yields no folder, per
+/// the "absent ⇒ ungrouped" record convention.
+fn harvest_json(c: &crate::harvest::Candidate) -> serde_json::Value {
+    let mut v = serde_json::json!({
+        "id": c.id,
+        "name": c.name,
+        "kitId": c.kit_id,
+        "role": c.role,
+        "composes": c.composes,
+        "srcText": c.src_text,
+        "src": c.src,
+        "buildable": c.buildable,
+        "unbuildableReasons": c.unbuildable_reasons,
+        "worthy": c.classification.worthy,
+        "score": c.classification.score,
+        "reasons": c.classification.reasons,
+    });
+    if let Some(group) = bsc_component::group_from_src(&c.src) {
+        v["group"] = serde_json::Value::String(group);
+    }
+    v
+}
+
 fn cmd_emit(args: &[String], prog: &str) -> Result<(), String> {
     match args.first().map(String::as_str) {
         None | Some("help") => {
@@ -508,7 +703,9 @@ fn cmd_emit(args: &[String], prog: &str) -> Result<(), String> {
         Some("component") => {
             let id = args.get(1).ok_or("usage: bsc ui emit component <id> <dir>")?;
             let dir = args.get(2).ok_or("usage: bsc ui emit component <id> <dir>")?;
-            write_plan(&crate::emit::EmitKit::packaged().plan_component(id)?, dir)
+            // #3720: resolve against the WHOLE store (any kit) when it's reachable, else the packaged
+            // react-ui artifact (the sealed-sandbox fallback — the store isn't mounted there).
+            write_plan(&emit_kit().plan_component(id)?, dir)
         }
         Some("kit") => {
             let dir = args.get(1).ok_or("usage: bsc ui emit kit <dir>")?;
@@ -522,6 +719,25 @@ fn cmd_emit(args: &[String], prog: &str) -> Result<(), String> {
             "unknown emit command '{other}' — want: component <id> <dir> | kit <dir> | sync <dir>"
         )),
     }
+}
+
+/// The `EmitKit` `emit component` resolves against (#3720): the live component STORE overlaid on the
+/// packaged artifact when the store is reachable (so ANY kit's component emits), else the packaged
+/// artifact alone — the sealed-sandbox fallback, where the mutable store isn't mounted and react-ui still
+/// emits. A store that resolves but is empty (a fresh install) also falls back to packaged.
+fn emit_kit() -> crate::emit::EmitKit {
+    match load_store_components() {
+        Ok(comps) if !comps.is_empty() => crate::emit::EmitKit::from_store(&comps),
+        _ => crate::emit::EmitKit::packaged(),
+    }
+}
+
+/// Every component record in the working store (`BSC_COMPONENT_DIR` → `~/.base-studio-code/components/`),
+/// parsed; malformed rows are skipped. `Err` only when the store dir can't be resolved (no home) — the
+/// caller treats that, like an empty store, as "fall back to packaged".
+fn load_store_components() -> Result<Vec<serde_json::Value>, String> {
+    let store = component_collection("components", "BSC_COMPONENT_DIR", "component")?;
+    Ok(store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect())
 }
 
 /// `bsc ui emit sync <dir>` (#2804) — the ADOPT step: re-emit every MANAGED vendored kit file (one
@@ -578,7 +794,36 @@ fn write_plan(plan: &crate::emit::EmitPlan, dir: &str) -> Result<(), String> {
 
 fn cmd_schema(args: &[String]) -> Result<(), String> {
     let pretty = args.iter().any(|a| a == "--pretty");
-    let contract = crate::contract();
+    // #3500 — this now prints the PRIMITIVE contract (the general vocabulary: every real component of
+    // the shared kit and the props it declares), not the 8 hardcoded node kinds it used to. It is the
+    // same generated contract `bsc ui validate` enforces, so what an agent reads here is exactly what
+    // it will be checked against. `--name` narrows it, because the full kit is large and an agent
+    // authoring one node wants one entry.
+    let contract: serde_json::Value = serde_json::from_str(crate::general_node::PRIMITIVES_JSON)
+        .map_err(|e| format!("embedded primitives.json is not valid JSON: {e}"))?;
+    let mut wanted: Option<String> = None;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--name" {
+            wanted = Some(it.next().cloned().ok_or("--name needs a primitive name")?);
+        }
+    }
+    let contract = match wanted {
+        Some(name) => {
+            let found = contract
+                .get("primitives")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|list| {
+                    list.iter()
+                        .find(|p| p.get("name").and_then(serde_json::Value::as_str) == Some(&name))
+                        .cloned()
+                });
+            found.ok_or_else(|| {
+                format!("unknown primitive \"{name}\" — run `bsc ui schema` for the full contract")
+            })?
+        }
+        None => contract,
+    };
     let out = if pretty {
         serde_json::to_string_pretty(&contract)
     } else {
@@ -2593,6 +2838,151 @@ mod tests {
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "components");
         for needle in ["--coverage", "--dir", "var(--<token>", "zeroConsumers", "node_modules", "leakCandidates"] {
             assert!(d.contains(needle), "components help mentions {needle}");
+        }
+    }
+
+    #[test]
+    fn harvest_dispatches_parses_its_flags_and_rejects_bad_input() {
+        // Covers the CLI surface the library tests can't see: the dispatch arm, flag parsing, and the
+        // read-only contract (no write-scope gate — harvest emits candidates, it stores nothing).
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests").join("fixtures").join("harvest").to_string_lossy().into_owned();
+        assert!(run(vec!["harvest".into(), dir.clone(), "--pretty".into()], "bsc ui").is_ok());
+        assert!(run(
+            vec!["harvest".into(), dir, "--kit".into(), "demo".into(), "--worthy-only".into()],
+            "bsc ui",
+        )
+        .is_ok());
+        // A missing/!dir path and an unknown flag must FAIL rather than emit an empty harvest, which
+        // would read as "this repo has no components".
+        assert!(run(vec!["harvest".into(), "no-such-dir-here".into()], "bsc ui").is_err());
+        assert!(run(vec!["harvest".into(), ".".into(), "--nope".into()], "bsc ui").is_err());
+        assert!(run(vec!["harvest".into()], "bsc ui").is_err(), "the repo dir is required");
+    }
+
+    #[test]
+    fn harvest_json_seeds_group_as_the_folder_path_from_src() {
+        // #3579: a fresh harvest organizes like the project's folders — `group` is seeded from `src`.
+        let mk = |src: &str| crate::harvest::Candidate {
+            id: "button".into(),
+            name: "Button".into(),
+            kit_id: "harvested".into(),
+            role: "primitive",
+            composes: vec![],
+            src_text: String::new(),
+            src: src.into(),
+            buildable: true,
+            unbuildable_reasons: vec![],
+            classification: crate::harvest::Classification::default(),
+        };
+        let with_folder = harvest_json(&mk("src/shared/ui/controls/Button.tsx"));
+        assert_eq!(with_folder["group"], "shared/ui/controls", "group seeded as the folder path");
+        // No folder ⇒ the key is OMITTED (not `null`), matching the absent-⇒-ungrouped record convention.
+        let no_folder = harvest_json(&mk("Button.tsx"));
+        assert!(no_folder.get("group").is_none(), "a folderless src emits no `group` key at all");
+    }
+
+    #[test]
+    fn harvest_is_allowed_from_a_read_only_listed_root_outside_the_confinement_root() {
+        // #3509, proposed by the designer itself: harvest is a READ, so tying it to the WRITE
+        // confinement root left a kit-only session unable to mine any source at all (its studio dir
+        // holds none). A listed harvest root grants the read without widening where it may write.
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests").join("fixtures").join("harvest").to_string_lossy().into_owned();
+        let elsewhere = std::env::temp_dir().to_string_lossy().into_owned();
+        // Confined elsewhere → refused, as before.
+        assert!(bsc_cli_util::with_repo_root(Some(&elsewhere), || {
+            run(vec!["harvest".into(), fixtures.clone()], "bsc ui")
+        })
+        .is_err());
+        // …and allowed once that tree is on the session's harvest allow-list.
+        assert!(
+            bsc_cli_util::with_repo_root(Some(&elsewhere), || bsc_cli_util::with_harvest_roots(
+                Some(&fixtures),
+                || run(vec!["harvest".into(), fixtures.clone()], "bsc ui"),
+            ))
+            .is_ok(),
+            "a listed harvest root must permit the scan",
+        );
+    }
+
+    #[test]
+    fn harvest_accepts_a_single_file_and_out_spills_to_the_scratch_dir() {
+        // #3722: a single FILE target (not only a dir), and `--out` writing the JSON to the scratch dir
+        // (a confinement-allowed path) instead of stdout — the truncation fix for a large harvest.
+        let base = std::env::temp_dir().join(format!("bsc-harvest-cli-out-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (root, scratch) = (base.join("root"), base.join("scratch"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&scratch).unwrap();
+        let file = root.join("Widget.tsx");
+        std::fs::write(&file, "export const Widget = () => <div/>;").unwrap();
+
+        let root_s = root.to_string_lossy().into_owned();
+        let scratch_s = scratch.to_string_lossy().into_owned();
+        let file_s = file.to_string_lossy().into_owned();
+        bsc_cli_util::with_repo_root(Some(&root_s), || {
+            bsc_cli_util::with_scratch(Some(&scratch_s), || {
+                run(vec!["harvest".into(), file_s.clone(), "--out".into(), "harvest.json".into()], "bsc ui").unwrap();
+            });
+        });
+        let written = std::fs::read_to_string(scratch.join("harvest.json")).unwrap();
+        assert!(written.contains("\"Widget\""), "the single-file harvest landed in the scratch file: {written}");
+        assert!(written.contains("\"count\":1"), "exactly one candidate from the single file: {written}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn harvest_is_in_the_help_catalog() {
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "harvest");
+        for needle in ["<repo-dir>", "--kit", "--worthy-only", "buildable", "composes", "CLOSURE"] {
+            assert!(d.contains(needle), "harvest help mentions {needle}");
+        }
+    }
+
+    #[test]
+    fn harvest_refuses_a_target_outside_the_sessions_confinement_root() {
+        // #3475: the designer holds `bsc ui` (so `Bash(bsc ui *)` already matches harvest) but is
+        // confined to its studio workspace and cannot `Read` a repo file. Without this gate the verb
+        // would hand it every component's source from any path on disk, laundered through the CLI.
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests").join("fixtures").join("harvest").to_string_lossy().into_owned();
+        let elsewhere = std::env::temp_dir().to_string_lossy().into_owned();
+        let err = bsc_cli_util::with_repo_root(Some(&elsewhere), || {
+            run(vec!["harvest".into(), fixtures.clone()], "bsc ui").unwrap_err()
+        });
+        assert!(err.contains("outside every root this session may harvest"), "{err}");
+        // …and the SAME call inside the session's root still works — this bounds, it does not revoke.
+        let own_root = env!("CARGO_MANIFEST_DIR").to_string();
+        assert!(
+            bsc_cli_util::with_repo_root(Some(&own_root), || run(
+                vec!["harvest".into(), fixtures.clone()],
+                "bsc ui"
+            ))
+            .is_ok(),
+            "a target inside the root is still harvestable",
+        );
+        // An unconfined session (no root set) is unchanged.
+        assert!(bsc_cli_util::with_repo_root(None, || run(vec!["harvest".into(), fixtures], "bsc ui")).is_ok());
+    }
+
+    #[test]
+    fn env_command_dispatches_reports_the_harvest_roots_and_is_in_help() {
+        // #3571: the read-only discovery verb — Ok in every form; a bad flag errs; and with a granted
+        // harvest root it names the exact `bsc ui harvest <root>` the session should run.
+        assert!(run(vec!["env".into()], "bsc ui").is_ok());
+        assert!(run(vec!["env".into(), "--json".into()], "bsc ui").is_ok());
+        assert!(run(vec!["env".into(), "help".into()], "bsc ui").is_ok());
+        assert!(run(vec!["env".into(), "--nope".into()], "bsc ui").is_err());
+        // The report (pure core in bsc-cli-util) surfaces a granted app-source root as a harvest target.
+        let report = bsc_cli_util::with_harvest_roots(Some("C:/src/base-studio-code"), || {
+            bsc_cli_util::format_session_env("bsc ui")
+        });
+        assert!(report.contains("bsc ui harvest C:/src/base-studio-code"), "{report}");
+        // It is in the help catalog and points at the harvest verb.
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "env");
+        for needle in ["$BSC_HARVEST_ROOTS", "harvest", "--json"] {
+            assert!(d.contains(needle), "env help mentions {needle}");
         }
     }
 }

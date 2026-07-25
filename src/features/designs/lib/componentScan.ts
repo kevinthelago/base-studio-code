@@ -24,7 +24,10 @@
 // on the #3135 static no-empty/no-loading advisories: it catches a component that HAS an empty/loading
 // branch which itself renders nothing (e.g. `data.length ? list : null`), which the static heuristic misses.
 import type { RuntimeOutcome } from "@/shared/lib/preview/componentRuntimeProbe";
-import { componentPreviewFiles, isCollectionProp, isLoadingProp, type KitArtifact } from "./componentPreview";
+import {
+  componentPreviewFiles, isCollectionProp, isLoadingProp,
+  type KitArtifact, type LibraryModuleResolver,
+} from "./componentPreview";
 import type { HealthCategory } from "./graphHealth";
 import { libraryModuleResolver } from "./libraryModules";
 import type { ComponentRecord } from "./model";
@@ -41,6 +44,30 @@ export type ComponentBuildStatus =
   | { state: "ok" }
   | { state: "error"; kind: "build" | "runtime"; message: string }
   | { state: "empty"; message: string };
+
+/**
+ * What the scan should mirror to the DURABLE preview-error log (`bsc ui preview-error`) for a component
+ * whose status went `prior` → `next` (#3540) — so `bsc ui doctor` sees the COMPLETE errored set, not
+ * just components a human opened. Returns:
+ *  - the message to RECORD, for BOTH a `build` failure and a `runtime` throw (#3549). Doctor's STATIC
+ *    checks assume a build error is always statically detectable, but it isn't (WorkspaceShellPage's
+ *    extensionless `src` built clean by the analyzer yet the real esbuild loader rejected its TS), so
+ *    the real preview build is the authority — its failures must reach the log too. The message is
+ *    prefixed with the kind (`build:`/`render:`) so the doctor finding reads correctly for either;
+ *  - `""` to CLEAR, when a component that WAS an error is now ok/empty (so a fixed one drops out);
+ *  - `null` to do nothing — a first-visit `ok`/`empty` (no prior error), so a sweep of ~50 healthy
+ *    components logs nothing.
+ *
+ * Pure — the hook calls `recordPreviewError` only when this is non-null.
+ */
+export function durableLogSync(
+  prior: ComponentBuildStatus | undefined,
+  next: ComponentBuildStatus,
+): string | null {
+  if (next.state === "error") return `${next.kind === "build" ? "build" : "render"}: ${next.message}`;
+  if (prior?.state === "error") return ""; // next is now ok/empty — a prior error is resolved, so clear it
+  return null;
+}
 
 /** A per-STATE preview build to render-confirm for a BLANK #root (#3191) — the empty/loading data-state a
  *  component supports. `category` is the finding it yields when that state renders nothing; `files`/`entry`
@@ -74,12 +101,19 @@ export function buildSignature(c: ComponentRecord): string {
 /** The subset of `comps` that HAS buildable preview source (`componentPreviewFiles` non-null) — the scan
  *  targets. Components with no buildable source are deliberately excluded (they're the separate static
  *  `no-implementation` graph-health finding, not a build FAILURE), so this never double-reports them. */
-export function scannableComponents(comps: ComponentRecord[], artifact: KitArtifact): ScannableComponent[] {
+export function scannableComponents(
+  comps: ComponentRecord[],
+  artifact: KitArtifact,
+  // The library resolver the scan judges `@bsc/…` imports with — the ACTIVE project's pinned sound kit
+  // when a caller has project context (#3412), else the packaged default. It is part of the build, so a
+  // kit switch changes which components build and must reach the scan, not just the live preview.
+  libResolver: LibraryModuleResolver = libraryModuleResolver,
+): ScannableComponent[] {
   const out: ScannableComponent[] = [];
   for (const c of comps) {
     // Same-kit siblings so a composing user component's imported siblings vendor into its build (#3112).
     const siblings = comps.filter((s) => s.kitId === c.kitId && s.id !== c.id);
-    const build = componentPreviewFiles(c, artifact, siblings, libraryModuleResolver);
+    const build = componentPreviewFiles(c, artifact, siblings, libResolver);
     if (!build) continue;
     // Only VENDORED sibling files + any `@bsc/…` LIBRARY module (#3116) add info beyond `buildSignature(c)`:
     // a built-in's whole-artifact file set isn't record-derived and a non-composing component vendors
@@ -93,11 +127,11 @@ export function scannableComponents(comps: ComponentRecord[], artifact: KitArtif
     // collections / turns on the loading prop) — so each reuses `componentPreviewFiles(..., state)`.
     const states: StateProbe[] = [];
     if (c.props.some(isCollectionProp)) {
-      const s = componentPreviewFiles(c, artifact, siblings, libraryModuleResolver, "empty");
+      const s = componentPreviewFiles(c, artifact, siblings, libResolver, "empty");
       if (s) states.push({ category: "empty-empty-state", files: s.files, entry: s.entry });
     }
     if (c.props.some(isLoadingProp)) {
-      const s = componentPreviewFiles(c, artifact, siblings, libraryModuleResolver, "loading");
+      const s = componentPreviewFiles(c, artifact, siblings, libResolver, "loading");
       if (s) states.push({ category: "empty-loading-state", files: s.files, entry: s.entry });
     }
     // Fold the qualifying states into the sig so adding/removing a collection/loading prop re-queues the

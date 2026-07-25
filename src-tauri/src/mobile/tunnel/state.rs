@@ -55,15 +55,9 @@ pub(super) struct Inner {
     /// client so it mirrors the live session immediately. `plan_event` is transient (not stored).
     pub(super) plan_states: HashMap<String, ServerMsg>,
     pub(super) plan_statuses: HashMap<String, ServerMsg>,
-    // ── Fleet / coordination (F2) ────────────────────────────────────────────
-    /// Latest fleet roster — replayed to freshly-paired mobile clients.
-    pub(super) fleet_sessions: Vec<FleetSession>,
     // ── Automations (A2) ────────────────────────────────────────────────────
     /// Latest automation list — replayed to freshly-paired mobile clients.
     pub(super) automations: Vec<AutomationFrame>,
-    // ── MCP extensions (M2) ─────────────────────────────────────────────────
-    /// Latest MCP extension list — replayed to freshly-paired mobile clients.
-    pub(super) mcp_extensions: Vec<McpExtFrame>,
     // ── Hook telemetry (M3 / #937) ──────────────────────────────────────────
     /// Latest aggregated hook-fire telemetry — replayed to freshly-paired mobile clients.
     /// `None` until the frontend pushes the first summary (read-only projection).
@@ -230,9 +224,7 @@ impl TunnelState {
                 plan_files: HashMap::new(),
                 plan_states: HashMap::new(),
                 plan_statuses: HashMap::new(),
-                fleet_sessions: Vec::new(),
                 automations: Vec::new(),
-                mcp_extensions: Vec::new(),
                 hook_telemetry: None,
                 store_states: HashMap::new(),
             }),
@@ -441,16 +433,8 @@ impl TunnelState {
         inner.plan_states.values().cloned().chain(inner.plan_statuses.values().cloned()).collect()
     }
 
-    pub(super) fn fleet_snapshot(&self) -> Vec<FleetSession> {
-        self.inner.lock().unwrap().fleet_sessions.clone()
-    }
-
     pub(super) fn automations_snapshot(&self) -> Vec<AutomationFrame> {
         self.inner.lock().unwrap().automations.clone()
-    }
-
-    pub(super) fn mcp_snapshot(&self) -> Vec<McpExtFrame> {
-        self.inner.lock().unwrap().mcp_extensions.clone()
     }
 
     /// The last aggregated hook-fire telemetry summary to replay to a freshly-paired client
@@ -486,8 +470,8 @@ impl TunnelState {
     }
 
     /// Store a pushed snapshot under the lock, then broadcast `msg` to connected clients.
-    /// Shared by the metadata-push setters (`tunnel_set_panes` / `tunnel_set_fleet_state` /
-    /// `tunnel_set_automations` / `tunnel_set_mcp_state` / `tunnel_set_hook_telemetry`), which all follow the same
+    /// Shared by the metadata-push setters (`tunnel_set_panes` / `tunnel_set_automations` /
+    /// `tunnel_set_hook_telemetry` / `tunnel_set_store_state`), which all follow the same
     /// store-then-broadcast shape (only the field written, the log line, and the broadcast
     /// variant differ — those stay at the call site).
     pub(super) fn set_and_broadcast(&self, msg: ServerMsg, set: impl FnOnce(&mut Inner)) {

@@ -58,12 +58,40 @@ mod tests {
     #[test]
     fn creates_the_workspace_and_writes_the_designer_claude_md() {
         let base = scratch();
-        let dir = setup_designer_workspace_inner(&base).unwrap();
-        assert_eq!(dir, base.join("design-studio"));
-        let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
-        // The written spec is exactly the loaded seed (config-dir copy or the embedded default).
-        assert_eq!(md, crate::platform::config::load_str("designer/claude.md"));
-        assert!(!md.trim().is_empty());
+        // #3479 — pin the config root to an EMPTY dir for this thread, so the spec resolves to the
+        // embedded seed deterministically. Unpinned, `load_str` reads through the process-global
+        // `HOME`/`USERPROFILE`, which `testutil::temp_home` repoints for the whole process at some
+        // unpredictable moment; the write below and the read-back could then straddle the flip and
+        // compare two different specs. See `platform::config::with_config_root`.
+        let cfg = base.join("config");
+        crate::platform::config::with_config_root(&cfg, || {
+            let dir = setup_designer_workspace_inner(&base).unwrap();
+            assert_eq!(dir, base.join("design-studio"));
+            let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
+            // The written spec is exactly the loaded seed (here the embedded default — the
+            // config-dir-copy-wins leg is `config::tests::load_from_prefers_the_on_disk_copy_…`).
+            assert_eq!(md, crate::platform::config::load_str("designer/claude.md"));
+            assert!(!md.trim().is_empty());
+        });
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// #3479 regression — the spec that lands is the one the PINNED config root resolves, never a
+    /// function of whatever home a sibling test happens to have set process-wide by then.
+    #[test]
+    fn the_written_spec_follows_the_pinned_config_root() {
+        let base = scratch();
+        let cfg = base.join("config");
+        std::fs::create_dir_all(cfg.join("designer")).unwrap();
+        std::fs::write(cfg.join("designer").join("claude.md"), "PINNED CONFIG COPY\n").unwrap();
+        crate::platform::config::with_config_root(&cfg, || {
+            let dir = setup_designer_workspace_inner(&base).unwrap();
+            assert_eq!(
+                std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap(),
+                "PINNED CONFIG COPY\n",
+                "the pinned config-dir copy is what the workspace gets, whatever HOME is in force",
+            );
+        });
         let _ = std::fs::remove_dir_all(&base);
     }
 

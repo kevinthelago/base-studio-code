@@ -1,6 +1,6 @@
 // The themeable kit (#1852 Phases 0/1/3) — public barrel. The semantic component tokens live in
 // styles/tokens.css; this module is the THEME axis over them: the registry + apply helpers + the
-// scoped wrapper. See also `@/shared/ui/spec` (the SPEC axis — KitNode + KitRenderer).
+// scoped wrapper. See also `@/shared/ui/spec` (the SPEC axis — the node contract + KitRenderer).
 
 export type { KitTheme } from "./theme";
 export {
@@ -11,6 +11,12 @@ export {
 } from "./theme";
 export { ThemeScope } from "./ThemeScope";
 export type { ThemeScopeProps } from "./ThemeScope";
+// #3711/#3715: the JS projection of the active theme — concrete token VALUES for a component that renders to
+// a NON-CSS surface (canvas / WebGL / non-web runtime) and can't see the cascade. `<ThemeProvider>` is the
+// JS counterpart to `<ThemeScope>`; `useResolvedTheme()` reads it; `resolveThemeTokens` is the pure resolver.
+export { ThemeProvider, useResolvedTheme } from "./ThemeProvider";
+export type { ResolvedTheme } from "./ThemeProvider";
+export { resolveThemeTokens } from "./resolve";
 // #2569: data-defined component variants — compile the designer-authored variant store into a managed
 // `<style>` of `.<component>.<variant>` rules (the render path for `bsc ui component … define-variant`).
 export type { VariantDef } from "./variants";

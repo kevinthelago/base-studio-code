@@ -1,0 +1,2358 @@
+{
+  "version": 1,
+  "note": "GENERATED from src/shared/ui/manifest.ts — do not edit by hand. The structured prop contract `bsc ui validate` enforces for general nodes ({ type, props, children }). `values` is the closed set for `type: enum`. `passthrough` primitives forward arbitrary DOM props, so unknown props are NOT an error on them. Regenerate: UPDATE_KITS=1 npx vitest run primitives.gen",
+  "primitives": [
+    {
+      "name": "Box",
+      "passthrough": true,
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "as",
+          "type": "string"
+        },
+        {
+          "name": "pad",
+          "type": "space"
+        },
+        {
+          "name": "bg",
+          "type": "color"
+        },
+        {
+          "name": "border",
+          "type": "enum",
+          "values": [
+            "true",
+            "soft",
+            "<color>"
+          ]
+        },
+        {
+          "name": "radius",
+          "type": "enum",
+          "values": [
+            "sm",
+            "md",
+            "lg"
+          ]
+        },
+        {
+          "name": "shadow",
+          "type": "enum",
+          "values": [
+            "sm",
+            "md",
+            "lg",
+            "xl"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Stack",
+      "passthrough": true,
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "gap",
+          "type": "space"
+        },
+        {
+          "name": "align",
+          "type": "enum",
+          "values": [
+            "start",
+            "center",
+            "end",
+            "baseline",
+            "stretch"
+          ]
+        },
+        {
+          "name": "justify",
+          "type": "enum",
+          "values": [
+            "start",
+            "center",
+            "end",
+            "between",
+            "around",
+            "evenly"
+          ]
+        },
+        {
+          "name": "wrap",
+          "type": "boolean"
+        },
+        {
+          "name": "pad",
+          "type": "space"
+        },
+        {
+          "name": "inline",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Row",
+      "passthrough": true,
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "gap",
+          "type": "space"
+        },
+        {
+          "name": "align",
+          "type": "enum",
+          "values": [
+            "start",
+            "center",
+            "end",
+            "baseline",
+            "stretch"
+          ]
+        },
+        {
+          "name": "justify",
+          "type": "enum",
+          "values": [
+            "start",
+            "center",
+            "end",
+            "between",
+            "around",
+            "evenly"
+          ]
+        },
+        {
+          "name": "wrap",
+          "type": "boolean"
+        },
+        {
+          "name": "pad",
+          "type": "space"
+        },
+        {
+          "name": "inline",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Spacer",
+      "props": [
+        {
+          "name": "size",
+          "type": "space"
+        }
+      ]
+    },
+    {
+      "name": "Slot",
+      "props": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "Grid",
+      "passthrough": true,
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "cols",
+          "type": "tracks"
+        },
+        {
+          "name": "rows",
+          "type": "tracks"
+        },
+        {
+          "name": "gap",
+          "type": "space"
+        },
+        {
+          "name": "align",
+          "type": "enum",
+          "values": [
+            "start",
+            "center",
+            "end",
+            "baseline",
+            "stretch"
+          ]
+        },
+        {
+          "name": "justify",
+          "type": "enum",
+          "values": [
+            "start",
+            "center",
+            "end",
+            "between",
+            "around",
+            "evenly"
+          ]
+        },
+        {
+          "name": "inline",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "SectionHeader",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        },
+        {
+          "name": "meta",
+          "type": "node"
+        },
+        {
+          "name": "right",
+          "type": "node"
+        },
+        {
+          "name": "titleStyle",
+          "type": "style"
+        }
+      ]
+    },
+    {
+      "name": "SectionLabel",
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "size",
+          "type": "enum",
+          "values": [
+            "sm",
+            "md"
+          ]
+        },
+        {
+          "name": "tone",
+          "type": "enum",
+          "values": [
+            "dim",
+            "muted"
+          ]
+        },
+        {
+          "name": "right",
+          "type": "node"
+        }
+      ]
+    },
+    {
+      "name": "Dialog",
+      "props": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "actions",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "onDismiss",
+          "type": "function",
+          "required": true
+        },
+        {
+          "name": "danger",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "ModalScrim",
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "onDismiss",
+          "type": "function"
+        },
+        {
+          "name": "align",
+          "type": "enum",
+          "values": [
+            "center",
+            "start"
+          ]
+        },
+        {
+          "name": "blur",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "ModalCard",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "sub",
+          "type": "node"
+        },
+        {
+          "name": "icon",
+          "type": "node"
+        },
+        {
+          "name": "iconBackground",
+          "type": "color"
+        },
+        {
+          "name": "iconColor",
+          "type": "color"
+        },
+        {
+          "name": "onClose",
+          "type": "function"
+        },
+        {
+          "name": "busy",
+          "type": "boolean"
+        },
+        {
+          "name": "width",
+          "type": "number"
+        },
+        {
+          "name": "maxHeight",
+          "type": "string"
+        },
+        {
+          "name": "align",
+          "type": "enum",
+          "values": [
+            "center",
+            "start"
+          ]
+        },
+        {
+          "name": "blur",
+          "type": "boolean"
+        },
+        {
+          "name": "headExtra",
+          "type": "node"
+        },
+        {
+          "name": "foot",
+          "type": "node"
+        },
+        {
+          "name": "bodyStyle",
+          "type": "style"
+        },
+        {
+          "name": "footStyle",
+          "type": "style"
+        }
+      ]
+    },
+    {
+      "name": "Text",
+      "passthrough": true,
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "size",
+          "type": "fontSize"
+        },
+        {
+          "name": "tone",
+          "type": "enum",
+          "values": [
+            "dim",
+            "muted",
+            "accent",
+            "danger",
+            "success"
+          ]
+        },
+        {
+          "name": "mono",
+          "type": "boolean"
+        },
+        {
+          "name": "weight",
+          "type": "number"
+        },
+        {
+          "name": "as",
+          "type": "string"
+        },
+        {
+          "name": "loading",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Button",
+      "passthrough": true,
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "variant",
+          "type": "enum",
+          "values": [
+            "default",
+            "primary",
+            "ghost"
+          ]
+        },
+        {
+          "name": "size",
+          "type": "enum",
+          "values": [
+            "md",
+            "sm"
+          ]
+        },
+        {
+          "name": "danger",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "IconButton",
+      "props": [
+        {
+          "name": "children",
+          "type": "node"
+        },
+        {
+          "name": "onClick",
+          "type": "function"
+        },
+        {
+          "name": "size",
+          "type": "enum",
+          "values": [
+            "md",
+            "sm",
+            "xs"
+          ]
+        },
+        {
+          "name": "danger",
+          "type": "boolean"
+        },
+        {
+          "name": "disabled",
+          "type": "boolean"
+        },
+        {
+          "name": "title",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "Checkbox",
+      "props": [
+        {
+          "name": "checked",
+          "type": "boolean",
+          "required": true
+        },
+        {
+          "name": "onChange",
+          "type": "function"
+        },
+        {
+          "name": "size",
+          "type": "number"
+        },
+        {
+          "name": "disabled",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Toggle",
+      "props": [
+        {
+          "name": "on",
+          "type": "boolean",
+          "required": true
+        },
+        {
+          "name": "onClick",
+          "type": "function"
+        },
+        {
+          "name": "size",
+          "type": "enum",
+          "values": [
+            "xs",
+            "sm",
+            "md"
+          ]
+        },
+        {
+          "name": "tone",
+          "type": "enum",
+          "values": [
+            "accent",
+            "success"
+          ]
+        },
+        {
+          "name": "role",
+          "type": "string"
+        },
+        {
+          "name": "ariaChecked",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "SegmentedControl",
+      "props": [
+        {
+          "name": "options",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "variant",
+          "type": "enum",
+          "values": [
+            "padded",
+            "joined"
+          ]
+        },
+        {
+          "name": "size",
+          "type": "enum",
+          "values": [
+            "sm",
+            "md"
+          ]
+        },
+        {
+          "name": "label",
+          "type": "node"
+        }
+      ]
+    },
+    {
+      "name": "TextField",
+      "passthrough": true,
+      "props": [
+        {
+          "name": "value",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "onChange",
+          "type": "function",
+          "required": true
+        },
+        {
+          "name": "label",
+          "type": "node"
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        },
+        {
+          "name": "trailing",
+          "type": "node"
+        },
+        {
+          "name": "loading",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "TextArea",
+      "passthrough": true,
+      "props": [
+        {
+          "name": "value",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "onChange",
+          "type": "function",
+          "required": true
+        },
+        {
+          "name": "label",
+          "type": "node"
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        },
+        {
+          "name": "trailing",
+          "type": "node"
+        },
+        {
+          "name": "loading",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "SelectField",
+      "passthrough": true,
+      "props": [
+        {
+          "name": "value",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "onChange",
+          "type": "function",
+          "required": true
+        },
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "label",
+          "type": "node"
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        }
+      ]
+    },
+    {
+      "name": "Option",
+      "props": [
+        {
+          "name": "children",
+          "type": "node"
+        },
+        {
+          "name": "value",
+          "type": "string"
+        },
+        {
+          "name": "disabled",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "BackButton",
+      "props": [
+        {
+          "name": "onClick",
+          "type": "function",
+          "required": true
+        },
+        {
+          "name": "aria-label",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "variant",
+          "type": "enum",
+          "values": [
+            "icon",
+            "text"
+          ]
+        },
+        {
+          "name": "label",
+          "type": "string"
+        },
+        {
+          "name": "disabled",
+          "type": "boolean"
+        },
+        {
+          "name": "size",
+          "type": "number"
+        },
+        {
+          "name": "title",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "ColorSwatch",
+      "props": [
+        {
+          "name": "color",
+          "type": "color",
+          "required": true
+        },
+        {
+          "name": "size",
+          "type": "number"
+        },
+        {
+          "name": "radius",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "ConfirmButton",
+      "props": [
+        {
+          "name": "label",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "armedLabel",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "onConfirm",
+          "type": "function",
+          "required": true
+        },
+        {
+          "name": "size",
+          "type": "enum",
+          "values": [
+            "sm",
+            "md"
+          ]
+        },
+        {
+          "name": "disabled",
+          "type": "boolean"
+        },
+        {
+          "name": "danger",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Card",
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "title",
+          "type": "node"
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        },
+        {
+          "name": "right",
+          "type": "node"
+        },
+        {
+          "name": "header",
+          "type": "node"
+        },
+        {
+          "name": "tone",
+          "type": "color"
+        },
+        {
+          "name": "interactive",
+          "type": "boolean"
+        },
+        {
+          "name": "pad",
+          "type": "enum",
+          "values": [
+            "sm"
+          ]
+        },
+        {
+          "name": "onClick",
+          "type": "function"
+        },
+        {
+          "name": "loading",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Chip",
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "tone",
+          "type": "enum",
+          "values": [
+            "neutral",
+            "accent",
+            "success",
+            "info",
+            "danger"
+          ]
+        },
+        {
+          "name": "color",
+          "type": "color"
+        },
+        {
+          "name": "dot",
+          "type": "boolean"
+        },
+        {
+          "name": "size",
+          "type": "enum",
+          "values": [
+            "xs",
+            "sm",
+            "md"
+          ]
+        },
+        {
+          "name": "loading",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "StatTile",
+      "props": [
+        {
+          "name": "k",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "v",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "sub",
+          "type": "node"
+        },
+        {
+          "name": "tone",
+          "type": "enum",
+          "values": [
+            "success",
+            "accent",
+            "danger"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "FillBar",
+      "props": [
+        {
+          "name": "value",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "color",
+          "type": "color"
+        },
+        {
+          "name": "track",
+          "type": "color"
+        },
+        {
+          "name": "height",
+          "type": "number"
+        },
+        {
+          "name": "rounded",
+          "type": "boolean"
+        },
+        {
+          "name": "loading",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Code",
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "maxHeight",
+          "type": "number"
+        },
+        {
+          "name": "wrap",
+          "type": "boolean"
+        },
+        {
+          "name": "tone",
+          "type": "enum",
+          "values": [
+            "dim",
+            "muted",
+            "accent",
+            "danger",
+            "success"
+          ]
+        },
+        {
+          "name": "loading",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Avatar",
+      "props": [
+        {
+          "name": "login",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "size",
+          "type": "number"
+        },
+        {
+          "name": "palette",
+          "type": "boolean"
+        },
+        {
+          "name": "bordered",
+          "type": "boolean"
+        },
+        {
+          "name": "ml",
+          "type": "number"
+        },
+        {
+          "name": "fontScale",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "IconBox",
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "size",
+          "type": "number"
+        },
+        {
+          "name": "radius",
+          "type": "number"
+        },
+        {
+          "name": "background",
+          "type": "color"
+        },
+        {
+          "name": "color",
+          "type": "color"
+        },
+        {
+          "name": "fontSize",
+          "type": "number"
+        },
+        {
+          "name": "fontWeight",
+          "type": "number"
+        },
+        {
+          "name": "border",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "CardListRow",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "lead",
+          "type": "node"
+        },
+        {
+          "name": "badge",
+          "type": "node"
+        },
+        {
+          "name": "titleAside",
+          "type": "node"
+        },
+        {
+          "name": "subtitle",
+          "type": "node"
+        },
+        {
+          "name": "body",
+          "type": "node"
+        },
+        {
+          "name": "trailing",
+          "type": "node"
+        },
+        {
+          "name": "selected",
+          "type": "boolean"
+        },
+        {
+          "name": "off",
+          "type": "boolean"
+        },
+        {
+          "name": "variant",
+          "type": "enum",
+          "values": [
+            "card",
+            "grouped"
+          ]
+        },
+        {
+          "name": "accent",
+          "type": "color"
+        },
+        {
+          "name": "onClick",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "name": "DataTableRow",
+      "props": [
+        {
+          "name": "template",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "index",
+          "type": "number"
+        },
+        {
+          "name": "selected",
+          "type": "boolean"
+        },
+        {
+          "name": "off",
+          "type": "boolean"
+        },
+        {
+          "name": "onClick",
+          "type": "function"
+        },
+        {
+          "name": "height",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "RoleTierChips",
+      "props": [
+        {
+          "name": "role",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "StatCard",
+      "props": [
+        {
+          "name": "k",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "v",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "sub",
+          "type": "node"
+        },
+        {
+          "name": "tone",
+          "type": "enum",
+          "values": [
+            "fg",
+            "accent",
+            "info",
+            "success",
+            "danger"
+          ]
+        },
+        {
+          "name": "loading",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "LineArea",
+      "props": [
+        {
+          "name": "series",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "labels",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "height",
+          "type": "number"
+        },
+        {
+          "name": "yMax",
+          "type": "number"
+        },
+        {
+          "name": "area",
+          "type": "boolean"
+        },
+        {
+          "name": "fmtY",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "name": "Bars",
+      "props": [
+        {
+          "name": "groups",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "labels",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "height",
+          "type": "number"
+        },
+        {
+          "name": "stacked",
+          "type": "boolean"
+        },
+        {
+          "name": "fmtY",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "name": "Donut",
+      "props": [
+        {
+          "name": "slices",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "size",
+          "type": "number"
+        },
+        {
+          "name": "thickness",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "HBars",
+      "props": [
+        {
+          "name": "rows",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "fmtV",
+          "type": "function"
+        },
+        {
+          "name": "max",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "Swimlane",
+      "props": [
+        {
+          "name": "lanes",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "events",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "height",
+          "type": "number"
+        },
+        {
+          "name": "marks",
+          "type": "array"
+        }
+      ]
+    },
+    {
+      "name": "Spark",
+      "props": [
+        {
+          "name": "data",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "color",
+          "type": "color",
+          "required": true
+        },
+        {
+          "name": "w",
+          "type": "number"
+        },
+        {
+          "name": "h",
+          "type": "number"
+        },
+        {
+          "name": "fill",
+          "type": "boolean"
+        },
+        {
+          "name": "dot",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Legend",
+      "props": [
+        {
+          "name": "items",
+          "type": "array",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "StackedDayBars",
+      "props": [
+        {
+          "name": "data",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "subtitle",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "upperLabel",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "lowerLabel",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "upperColor",
+          "type": "color"
+        },
+        {
+          "name": "lowerColor",
+          "type": "color"
+        }
+      ]
+    },
+    {
+      "name": "Banner",
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "tone",
+          "type": "enum",
+          "values": [
+            "neutral",
+            "info",
+            "success",
+            "warn",
+            "danger",
+            "accent"
+          ]
+        },
+        {
+          "name": "variant",
+          "type": "enum",
+          "values": [
+            "inline",
+            "bar"
+          ]
+        },
+        {
+          "name": "lead",
+          "type": "node"
+        },
+        {
+          "name": "dot",
+          "type": "boolean"
+        },
+        {
+          "name": "loud",
+          "type": "boolean"
+        },
+        {
+          "name": "right",
+          "type": "node"
+        },
+        {
+          "name": "onDismiss",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "name": "InlineError",
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "pad",
+          "type": "space"
+        },
+        {
+          "name": "radius",
+          "type": "enum",
+          "values": [
+            "sm",
+            "md",
+            "lg"
+          ]
+        },
+        {
+          "name": "borderFade",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "EmptyState",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "node"
+        },
+        {
+          "name": "icon",
+          "type": "node"
+        },
+        {
+          "name": "iconVariant",
+          "type": "enum",
+          "values": [
+            "solid",
+            "dashed"
+          ]
+        },
+        {
+          "name": "actions",
+          "type": "node"
+        },
+        {
+          "name": "variant",
+          "type": "enum",
+          "values": [
+            "inline",
+            "card"
+          ]
+        },
+        {
+          "name": "align",
+          "type": "enum",
+          "values": [
+            "center",
+            "left"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "StatusDot",
+      "props": [
+        {
+          "name": "state",
+          "type": "enum",
+          "values": [
+            "run",
+            "wait",
+            "idle",
+            "stopped"
+          ]
+        },
+        {
+          "name": "color",
+          "type": "color"
+        },
+        {
+          "name": "size",
+          "type": "number"
+        },
+        {
+          "name": "pulse",
+          "type": "boolean"
+        },
+        {
+          "name": "title",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "Skeleton",
+      "props": [
+        {
+          "name": "w",
+          "type": "number"
+        },
+        {
+          "name": "h",
+          "type": "number"
+        },
+        {
+          "name": "radius",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "MasterDetail",
+      "props": [
+        {
+          "name": "rail",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "detail",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "toolbar",
+          "type": "node"
+        },
+        {
+          "name": "railWidth",
+          "type": "number"
+        },
+        {
+          "name": "railPad",
+          "type": "space"
+        },
+        {
+          "name": "detailPad",
+          "type": "space"
+        },
+        {
+          "name": "resizable",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "SplitView",
+      "props": [
+        {
+          "name": "primary",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "secondary",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "toolbar",
+          "type": "node"
+        },
+        {
+          "name": "orientation",
+          "type": "enum",
+          "values": [
+            "horizontal",
+            "vertical"
+          ]
+        },
+        {
+          "name": "resizable",
+          "type": "boolean"
+        },
+        {
+          "name": "secondarySize",
+          "type": "number"
+        },
+        {
+          "name": "divider",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "GraphCanvas",
+      "props": [
+        {
+          "name": "vp",
+          "type": "object",
+          "required": true
+        },
+        {
+          "name": "world",
+          "type": "object",
+          "required": true
+        },
+        {
+          "name": "toolbar",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "rail",
+          "type": "node"
+        },
+        {
+          "name": "inspector",
+          "type": "node"
+        },
+        {
+          "name": "dock",
+          "type": "node"
+        },
+        {
+          "name": "overlays",
+          "type": "node"
+        },
+        {
+          "name": "grid",
+          "type": "boolean"
+        },
+        {
+          "name": "gridSize",
+          "type": "number"
+        },
+        {
+          "name": "railResizable",
+          "type": "boolean"
+        },
+        {
+          "name": "inspectorResizable",
+          "type": "boolean"
+        },
+        {
+          "name": "onBackgroundClick",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "name": "PaneGrid",
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "cols",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "rows",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "gap",
+          "type": "number"
+        },
+        {
+          "name": "pad",
+          "type": "number"
+        },
+        {
+          "name": "hidden",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Sequence",
+      "props": [
+        {
+          "name": "steps",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "detail",
+          "type": "function"
+        },
+        {
+          "name": "orientation",
+          "type": "enum",
+          "values": [
+            "horizontal",
+            "vertical"
+          ]
+        },
+        {
+          "name": "toolbar",
+          "type": "node"
+        },
+        {
+          "name": "selectedId",
+          "type": "string"
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string"
+        },
+        {
+          "name": "onSelect",
+          "type": "function"
+        },
+        {
+          "name": "railWidth",
+          "type": "number"
+        },
+        {
+          "name": "detailPad",
+          "type": "space"
+        }
+      ]
+    },
+    {
+      "name": "Tree",
+      "props": [
+        {
+          "name": "nodes",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "variant",
+          "type": "enum",
+          "values": [
+            "indented",
+            "layered"
+          ]
+        },
+        {
+          "name": "detail",
+          "type": "node"
+        },
+        {
+          "name": "toolbar",
+          "type": "node"
+        },
+        {
+          "name": "selectedId",
+          "type": "string"
+        },
+        {
+          "name": "onSelect",
+          "type": "function"
+        },
+        {
+          "name": "defaultCollapsedIds",
+          "type": "array"
+        },
+        {
+          "name": "onToggle",
+          "type": "function"
+        },
+        {
+          "name": "indent",
+          "type": "number"
+        },
+        {
+          "name": "railWidth",
+          "type": "number"
+        },
+        {
+          "name": "resizable",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "LabelChip",
+      "props": [
+        {
+          "name": "label",
+          "type": "object",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "ActivityFeed",
+      "props": [
+        {
+          "name": "items",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "hint",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "loading",
+          "type": "boolean",
+          "required": true
+        },
+        {
+          "name": "tone",
+          "type": "object",
+          "required": true
+        },
+        {
+          "name": "right",
+          "type": "node"
+        },
+        {
+          "name": "actionWidth",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "KeyValueList",
+      "props": [
+        {
+          "name": "items",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "labelWidth",
+          "type": "number"
+        },
+        {
+          "name": "mono",
+          "type": "boolean"
+        },
+        {
+          "name": "loading",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Pane",
+      "props": [
+        {
+          "name": "mode",
+          "type": "enum",
+          "values": [
+            "drawer",
+            "inline"
+          ]
+        },
+        {
+          "name": "open",
+          "type": "boolean"
+        },
+        {
+          "name": "header",
+          "type": "node"
+        },
+        {
+          "name": "body",
+          "type": "node"
+        },
+        {
+          "name": "children",
+          "type": "node"
+        },
+        {
+          "name": "footer",
+          "type": "node"
+        },
+        {
+          "name": "onClose",
+          "type": "function"
+        },
+        {
+          "name": "onRemove",
+          "type": "function"
+        },
+        {
+          "name": "isDraft",
+          "type": "boolean"
+        },
+        {
+          "name": "onCommit",
+          "type": "function"
+        },
+        {
+          "name": "commitDisabled",
+          "type": "boolean"
+        },
+        {
+          "name": "flush",
+          "type": "boolean"
+        },
+        {
+          "name": "bare",
+          "type": "boolean"
+        },
+        {
+          "name": "className",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "TelemetryPanel",
+      "props": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "hint",
+          "type": "string"
+        },
+        {
+          "name": "right",
+          "type": "node"
+        },
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "ItemBars",
+      "props": [
+        {
+          "name": "rows",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "empty",
+          "type": "node"
+        }
+      ]
+    },
+    {
+      "name": "SplitBar",
+      "props": [
+        {
+          "name": "label",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "a",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "b",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "aLabel",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "bLabel",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "aColor",
+          "type": "color"
+        },
+        {
+          "name": "bColor",
+          "type": "color"
+        }
+      ]
+    },
+    {
+      "name": "TablePage",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        },
+        {
+          "name": "toolbar",
+          "type": "node"
+        },
+        {
+          "name": "columns",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "rows",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "selectedId",
+          "type": "string"
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string"
+        },
+        {
+          "name": "onSelect",
+          "type": "function"
+        },
+        {
+          "name": "detail",
+          "type": "function"
+        },
+        {
+          "name": "detailWidth",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "TreeExplorerPage",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        },
+        {
+          "name": "toolbar",
+          "type": "node"
+        },
+        {
+          "name": "nodes",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "selectedId",
+          "type": "string"
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string"
+        },
+        {
+          "name": "onSelect",
+          "type": "function"
+        },
+        {
+          "name": "defaultCollapsedIds",
+          "type": "array"
+        },
+        {
+          "name": "detail",
+          "type": "function"
+        },
+        {
+          "name": "nodeFacts",
+          "type": "function"
+        },
+        {
+          "name": "railWidth",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "PipelinePage",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        },
+        {
+          "name": "toolbar",
+          "type": "node"
+        },
+        {
+          "name": "steps",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "orientation",
+          "type": "enum",
+          "values": [
+            "horizontal",
+            "vertical"
+          ]
+        },
+        {
+          "name": "selectedId",
+          "type": "string"
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string"
+        },
+        {
+          "name": "onSelect",
+          "type": "function"
+        },
+        {
+          "name": "detail",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "name": "NetworkPage",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        },
+        {
+          "name": "toolbar",
+          "type": "node"
+        },
+        {
+          "name": "nodes",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "edges",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "selectedId",
+          "type": "string"
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string"
+        },
+        {
+          "name": "onSelect",
+          "type": "function"
+        },
+        {
+          "name": "detail",
+          "type": "function"
+        },
+        {
+          "name": "inspectorWidth",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "DashboardPage",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        },
+        {
+          "name": "toolbar",
+          "type": "node"
+        },
+        {
+          "name": "stats",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "trend",
+          "type": "object"
+        },
+        {
+          "name": "breakdown",
+          "type": "object"
+        },
+        {
+          "name": "activity",
+          "type": "object"
+        }
+      ]
+    },
+    {
+      "name": "CollectionPage",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        },
+        {
+          "name": "toolbar",
+          "type": "node"
+        },
+        {
+          "name": "items",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "selectedId",
+          "type": "string"
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string"
+        },
+        {
+          "name": "onSelect",
+          "type": "function"
+        },
+        {
+          "name": "detail",
+          "type": "function"
+        },
+        {
+          "name": "railWidth",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "RecordPage",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "subtitle",
+          "type": "node"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "statusTone",
+          "type": "enum",
+          "values": [
+            "neutral",
+            "accent",
+            "success",
+            "info",
+            "danger"
+          ]
+        },
+        {
+          "name": "actions",
+          "type": "node"
+        },
+        {
+          "name": "sections",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "aside",
+          "type": "node"
+        },
+        {
+          "name": "asideWidth",
+          "type": "number"
+        }
+      ]
+    }
+  ]
+}

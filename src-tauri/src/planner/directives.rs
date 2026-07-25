@@ -162,7 +162,7 @@ mod tests {
             plandb::validate::validate_transformation(row)
                 .unwrap_or_else(|e| panic!("worked-example row {i} fails the contract: {e}"));
         }
-        // Row 1: the migrate-to-kit replace, with its optional KitNode `spec` deliberately omitted.
+        // Row 1: the migrate-to-kit replace, with its optional preview `spec` deliberately omitted.
         assert_eq!(rows[0]["verb"], serde_json::json!("replace"));
         assert_eq!(rows[0]["provenance"]["recipe"], serde_json::json!("migrate-to-kit"));
         assert!(rows[0].get("spec").is_none(), "the replace row teaches that `spec` is optional");
@@ -208,11 +208,16 @@ mod tests {
             evidence.iter().all(|e| e.as_str().is_some_and(|s| s.contains("usages"))),
             "every evidence entry carries its usage count"
         );
-        // #2509 slice d: the gap-fill row carries a live-preview `spec` (a KitNode object) — the
-        // user decides to build the NEW component by SEEING it in the pane, so a gap-fill spec is
-        // now REQUIRED at set-time and the taught example must model one.
+        // #2509 slice d: the gap-fill row carries a live-preview `spec` — the user decides to build
+        // the NEW component by SEEING it in the pane, so a gap-fill spec is REQUIRED at set-time and
+        // the taught example must model one. #3500 moved it to the general node vocabulary, so the
+        // discriminant is `type` naming a REAL kit primitive (the example sketches a Card).
         assert!(rows[0]["spec"].is_object(), "the gap-fill row carries a preview spec object");
-        assert_eq!(rows[0]["spec"]["kind"], serde_json::json!("card"), "the spec is a card sketch");
+        assert_eq!(rows[0]["spec"]["type"], serde_json::json!("Card"), "the spec is a Card sketch");
+        assert!(
+            rows[0]["spec"].get("kind").is_none(),
+            "the taught spec uses the general vocabulary, not the retired `kind` nodes"
+        );
         // Row 2: the migration — replace, sequenced ON the gap-fill (foundation before fan-out).
         assert_eq!(rows[1]["verb"], serde_json::json!("replace"));
         assert_eq!(rows[1]["kitContribution"], serde_json::json!(false));
@@ -306,7 +311,7 @@ mod tests {
             );
             // The shape slugs are the shared vocabulary both CLIs accept — pin them so the prose
             // can't teach a token `bsc ui shapes` would reject.
-            for shape in ["list", "linked-list", "tree", "graph", "table", "key-value"] {
+            for shape in ["list", "linked-list", "tree", "graph", "table", "key-value", "series"] {
                 assert!(
                     both.contains(shape),
                     "stage '{id}' must name the `{shape}` vocabulary token"
@@ -336,7 +341,7 @@ mod tests {
                 Some(stem)
             })
             .collect();
-        let expected: BTreeSet<String> = ["discovery","deployment","ui","features",
+        let expected: BTreeSet<String> = ["discovery","deployment","ui","features","function_spec",
             "automations","skills","purpose","bp_stages","bp_capabilities",
             "bp_review","streams","source","test_ui","market","transformations"].iter().map(|s| s.to_string()).collect();
         assert_eq!(with_directive, expected, "stage `directive` set drifted from the expected set");

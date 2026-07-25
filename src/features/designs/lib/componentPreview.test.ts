@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { componentPreviewFiles, bootstrapSource, samplePropValue, looksBuildableModule, isPreviewBuildable, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, bootstrapSource, samplePropValue, isErrorProp, supportedStates, previewCycleStates, looksBuildableModule, isPreviewBuildable, hasCodeElision, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord, PropSpec } from "./model";
 
 const prop = (name: string, type: string, req = false): PropSpec => ({ name, type, req, desc: "" });
@@ -152,6 +152,29 @@ describe("componentPreviewFiles — sibling vendoring (#3112)", () => {
   });
 });
 
+describe("componentPreviewFiles — graph-source provides + artifact resolution (#43)", () => {
+  it("a graph-source component importing an artifact util + a provides-sibling BUILDS (not no-implementation)", () => {
+    // Box provides `@/shared/ui/layout/Box` and imports an artifact RUNTIME util (`@/shared/lib/core/format`)
+    // AND a sibling it provides (`@/shared/ui/feedback/Skeleton`). Before #43 the user-authored path didn't
+    // seed the artifact runtime and ignored `provides`, so this returned null (a false no-implementation).
+    const box: ComponentRecord = { ...base, id: "box", name: "Box", provides: "@/shared/ui/layout/Box",
+      src: "src/shared/ui/layout/Box.tsx",
+      srcText: 'import { fmt } from "@/shared/lib/core/format";\nimport { Sk } from "@/shared/ui/feedback/Skeleton";\nexport function Box(){ return fmt || Sk ? null : null; }' };
+    const sk: ComponentRecord = { ...base, id: "sk", name: "Sk", provides: "@/shared/ui/feedback/Skeleton",
+      src: "src/shared/ui/feedback/Skeleton.tsx", srcText: "export function Sk(){ return null; }" };
+    const build = componentPreviewFiles(box, ARTIFACT, [box, sk]);
+    expect(build).not.toBeNull();
+    expect(build!.files["shared/lib/core/format.ts"]).toBeTruthy();          // artifact runtime vendored → @/ util resolves
+    expect(build!.files["shared/ui/feedback/Skeleton.tsx"]).toContain("Sk"); // provides-sibling vendored (graph-first) → @/ resolves
+  });
+
+  it("still returns null when an internal import resolves to NOTHING (honest no-implementation)", () => {
+    const bad: ComponentRecord = { ...base, id: "bad", name: "Bad", src: "user/Bad.tsx",
+      srcText: 'import { Nope } from "@/shared/ui/does/not/Exist";\nexport function Bad(){ return null; }' };
+    expect(componentPreviewFiles(bad, ARTIFACT, [bad])).toBeNull();
+  });
+});
+
 describe("componentPreviewFiles — library (algorithm) vendoring (#3116)", () => {
   // A FAKE resolver (kept pure — no algorithms store): resolve exactly the fibonacci reference.
   const FIB = "export function fibonacci(n: number): number { return n < 2 ? n : fibonacci(n - 1) + fibonacci(n - 2); }";
@@ -257,9 +280,31 @@ describe("samplePropValue (#2824)", () => {
     expect(samplePropValue(prop("open", "boolean"))).toBe("true");
     expect(samplePropValue(prop("onClick", "() => void"))).toBe("() => {}");
     expect(samplePropValue(prop("rows", "Row[]"))).toBeNull(); // optional collection → omitted in loaded (#3135)
-    expect(samplePropValue(prop("rows", "Row[]", true))).toBe("[]"); // a REQUIRED collection still renders
+    expect(samplePropValue(prop("rows", "Row[]", true))).toBeNull(); // #3693: required collection ALSO omits in loaded (default demo shows)
     expect(samplePropValue(prop("tone", '"neutral" | "danger"'))).toBe('"neutral"');
     expect(samplePropValue(prop("color", "string"))).toBe('"var(--accent)"');
+  });
+
+  it("treats Record / Set / Map as data containers, not strings (#3693)", () => {
+    // A Record<string, number> / Set<string> type STRING contains "string"/"number"; without a container
+    // check it fell through to the string branch → a title-cased string (NaN nonsense, or `.has()` crash).
+    expect(samplePropValue(prop("langTotals", "Record<string, number>", true))).toBeNull(); // omitted in loaded
+    expect(samplePropValue(prop("langTotals", "Record<string, number>", true), "empty")).toBe("{}");
+    expect(samplePropValue(prop("highlight", "Set<string>"))).toBeNull();
+    expect(samplePropValue(prop("highlight", "Set<string>"), "empty")).toBe("new Set()");
+    expect(samplePropValue(prop("byId", "Map<string, Row>"), "empty")).toBe("new Map()");
+    // word-boundary: `offset` is a number, not a Set; `dataset` prop name is not a Set type either.
+    expect(samplePropValue(prop("offset", "number"))).toBe("3");
+  });
+
+  it("gives a layout-column width a fixed px, not the viewport (#3693)", () => {
+    // A flex:none sidebar sized to window.innerWidth eats the whole preview frame — a rail/aside width is 240.
+    expect(samplePropValue(prop("railWidth", "number"))).toBe("240");
+    expect(samplePropValue(prop("asideWidth", "number"))).toBe("240");
+    expect(samplePropValue(prop("sidebarHeight", "number"))).toBe("240");
+    // a canvas width still fills the frame; a style-dim width stays small.
+    expect(samplePropValue(prop("chartWidth", "number"))).toBe("window.innerWidth");
+    expect(samplePropValue(prop("strokeWidth", "number"))).toBe("3");
   });
 
   it("samples canvas-dimension props with the frame size so a sized component fills the frame (#2918)", () => {
@@ -297,8 +342,52 @@ describe("samplePropValue (#2824)", () => {
     expect(samplePropValue(data, "loading")).toBeNull();
     // a non-loading boolean is unaffected by state (always true).
     expect(samplePropValue(prop("stacked", "boolean"), "loading")).toBe("true");
-    // a REQUIRED collection always renders ([]), even in loaded — so a required-data component isn't blank.
-    expect(samplePropValue(prop("rows", "Row[]", true), "loaded")).toBe("[]");
+    // #3693: a REQUIRED collection now omits in loaded/loading (default demo shows), `[]` only in empty —
+    // so a 'loaded' preview no longer renders identical to 'empty' for a required-data component.
+    expect(samplePropValue(prop("rows", "Row[]", true), "loaded")).toBeNull();
+    expect(samplePropValue(prop("rows", "Row[]", true), "loading")).toBeNull();
+    expect(samplePropValue(prop("rows", "Row[]", true), "empty")).toBe("[]");
+  });
+
+  it("drives an ERROR-family prop only in the error state (#3555)", () => {
+    const errStr = prop("error", "string"), errBool = prop("hasError", "boolean");
+    // error state: a string error → a message; a boolean error → true.
+    expect(samplePropValue(errStr, "error")).toBe('"Something went wrong"');
+    expect(samplePropValue(errBool, "error")).toBe("true");
+    // every other state omits it, so the component renders normally.
+    for (const s of ["loaded", "empty", "loading"] as const) {
+      expect(samplePropValue(errStr, s)).toBeNull();
+      expect(samplePropValue(errBool, s)).toBeNull();
+    }
+    // `onError` is a callback, NOT an error state prop.
+    expect(isErrorProp(prop("onError", "() => void"))).toBe(false);
+    expect(samplePropValue(prop("onError", "() => void"), "error")).toBe("() => {}");
+  });
+});
+
+describe("supportedStates / previewCycleStates (#3555)", () => {
+  const mk = (props: PropSpec[]): ComponentRecord => ({ ...base, props });
+
+  it("a plain component supports only `loaded` — no state tabs, nothing to cycle", () => {
+    const btn = mk([prop("label", "string"), prop("onClick", "() => void")]);
+    expect(supportedStates(btn)).toEqual(["loaded"]);
+    expect(previewCycleStates(btn)).toEqual(["loaded"]);
+  });
+
+  it("detects each state from its prop, in natural order (loading → loaded → empty → error)", () => {
+    const full = mk([prop("loading", "boolean"), prop("rows", "Row[]"), prop("error", "string")]);
+    expect(supportedStates(full)).toEqual(["loading", "loaded", "empty", "error"]);
+    // a data component with no loading/error prop → just loaded + empty.
+    expect(supportedStates(mk([prop("rows", "Row[]")]))).toEqual(["loaded", "empty"]);
+    // loading-only → loading + loaded.
+    expect(supportedStates(mk([prop("busy", "boolean")]))).toEqual(["loading", "loaded"]);
+  });
+
+  it("the auto-cycle drops empty but keeps loading/loaded/error", () => {
+    const full = mk([prop("loading", "boolean"), prop("rows", "Row[]"), prop("error", "string")]);
+    expect(previewCycleStates(full)).toEqual(["loading", "loaded", "error"]);
+    // a data-only component's cycle is just loaded (empty dropped → nothing else to show).
+    expect(previewCycleStates(mk([prop("rows", "Row[]")]))).toEqual(["loaded"]);
   });
 });
 
@@ -312,6 +401,30 @@ describe("bootstrapSource — data-state threads to the sampled props (#3135)", 
     expect(bootstrapSource(chart, "@/x/Chart", "empty")).toContain('"data": []');
     expect(bootstrapSource(chart, "@/x/Chart", "loading")).toContain('"loading": true');
   });
+
+  it("with liveStates, embeds EVERY state's props once + a `__state` re-render handler (#3567)", () => {
+    const src = bootstrapSource(chart, "@/x/Chart", "loaded", {}, ["loading", "loaded", "empty"]);
+    // every state's props are in the __STATES map …
+    expect(src).toContain("const __STATES = {");
+    expect(src).toContain('"loading": {'); // loading state's props
+    expect(src).toContain('"loaded": {');
+    expect(src).toContain('"empty": {');
+    expect(src).toContain('"data": []'); // the empty state's collection, embedded alongside the others
+    // … one root, switched by a message, not rebuilt.
+    expect(src).toContain('let __state = "loaded"'); // opens on the requested initial state
+    expect(src).toContain("createRoot(document.getElementById(\"root\"))");
+    expect(src).toContain("e.data && e.data.__state"); // the live-switch handler
+    expect(src).toContain("__STATES[__state]");
+    // a single root (not one per state) — the whole point is no rebuild/remount.
+    expect(src.match(/createRoot\(/g)?.length).toBe(1);
+  });
+
+  it("without liveStates, the single-state entry is byte-unchanged (the scan's path) (#3567)", () => {
+    const single = bootstrapSource(chart, "@/x/Chart", "loading");
+    expect(single).not.toContain("__STATES");
+    expect(single).not.toContain("__state");
+    expect(single).toContain('"loading": true'); // just the one state, inline
+  });
 });
 
 describe("bootstrapSource — role-aware mount wrapper (#3139)", () => {
@@ -323,5 +436,72 @@ describe("bootstrapSource — role-aware mount wrapper (#3139)", () => {
     expect(layoutSrc).not.toContain("justifyContent");
     const compSrc = bootstrapSource({ ...base, name: "Chip", role: "primitive" }, "@/x/Chip");
     expect(compSrc).toContain('justifyContent: "center"'); // a component reads best centered
+  });
+});
+
+describe("hasCodeElision — an ellipsis in COPY is not an elision marker (#3486)", () => {
+  // The scanner is the TS twin of Rust `has_code_elision`. Before #3486 both `looksBuildableModule`
+  // and `isPreviewBuildable` used a plain substring test, so a component whose only ellipsis was UI
+  // copy was ACCEPTED by the Rust write gate and then REFUSED by the preview — and reported as
+  // `no-implementation` by doctor. Measured at 13 of 93 over this repo's own `src/shared/ui`.
+  const E = String.fromCodePoint(0x2026);
+
+  it("elisionMarkerIsU2026 — the marker survived this file's encoding", () => {
+    // Guards the one thing a cp1252 round-trip would silently break: if the literal in
+    // componentPreview.ts is ever re-encoded, the scanner stops matching and reports EVERY source as
+    // clean — a no-op that no other test would notice, because "clean" is the passing direction.
+    expect(hasCodeElision(`const x = ${E}`)).toBe(true);
+  });
+
+  it("finds a marker standing in for omitted code", () => {
+    expect(hasCodeElision(`export function F() { ${E} }`)).toBe(true);
+  });
+
+  it("ignores one inside a string literal — the measured false positive", () => {
+    expect(hasCodeElision(`<input placeholder="Select${E}" />`)).toBe(false);
+    expect(hasCodeElision(`const s = 'Loading${E}'`)).toBe(false);
+  });
+
+  it("ignores one inside a template literal", () => {
+    expect(hasCodeElision("const s = `Saving" + E + "`")).toBe(false);
+  });
+
+  it("ignores one in a line or block comment", () => {
+    expect(hasCodeElision(`// prose with an ellipsis ${E}\nconst a = 1;`)).toBe(false);
+    expect(hasCodeElision(`/* doc prose ${E} */ const a = 1;`)).toBe(false);
+  });
+
+  it("does not let an ESCAPED quote end a literal and expose the copy inside", () => {
+    // If the backslash branch were missing, the `\"` would close the string early and the ellipsis
+    // after it would read as code — a false positive that only shows up on escaped copy.
+    expect(hasCodeElision(`const s = "a \\" quote then ${E}";`)).toBe(false);
+  });
+
+  it("still finds a marker AFTER a string that contains one", () => {
+    // The scanner must resume scanning as code once the literal closes, or a component could hide a
+    // real elision behind any earlier piece of copy.
+    expect(hasCodeElision(`const s = "Select${E}"; export function F() { ${E} }`)).toBe(true);
+  });
+});
+
+describe("the buildability predicates use the context-aware scanner (#3486)", () => {
+  const E = String.fromCodePoint(0x2026);
+  const withCopy = `export function F() { return <input placeholder="Select${E}" />; }`;
+  const withElision = `export function F() { ${E} }`;
+
+  it("looksBuildableModule accepts a module whose only ellipsis is placeholder copy", () => {
+    expect(looksBuildableModule(withCopy)).toBe(true);
+  });
+
+  it("looksBuildableModule still rejects a real code elision", () => {
+    expect(looksBuildableModule(withElision)).toBe(false);
+  });
+
+  it("isPreviewBuildable accepts the same copy-only module", () => {
+    expect(isPreviewBuildable(withCopy, "shared/ui/data/Card.tsx", () => true)).toBe(true);
+  });
+
+  it("isPreviewBuildable still rejects a real code elision", () => {
+    expect(isPreviewBuildable(withElision, "shared/ui/data/Card.tsx", () => true)).toBe(false);
   });
 });

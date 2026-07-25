@@ -29,8 +29,19 @@ export function usePoll(
 
   useEffect(() => {
     let cancelled = false;
+    let running = false; // #3666: don't RE-ENTER while the previous async run is still pending.
     const isCancelled = () => cancelled;
-    const tick = () => { void fnRef.current(isCancelled); };
+    const tick = () => {
+      // A run that outlasts `ms` must NOT stack: overlapping runs pile invokes into the backend queue
+      // (the planner's ~13 `bsc plan` reads per 2s tick jammed every pty_write, #3666). Skip a tick
+      // while the previous async run is in flight; a sync (void-returning) `fn` is unaffected.
+      if (running) return;
+      const r = fnRef.current(isCancelled);
+      if (r && typeof (r as Promise<unknown>).then === "function") {
+        running = true;
+        void (r as Promise<unknown>).finally(() => { running = false; });
+      }
+    };
     if (immediate) tick();
     const id = setInterval(tick, ms);
     return () => { cancelled = true; clearInterval(id); };

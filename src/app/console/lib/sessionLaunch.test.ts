@@ -63,6 +63,50 @@ describe("buildAgentEnv", () => {
     }
   });
 
+  it("resolves a role's symbolic harvest root to the app repo path (#3509)", () => {
+    // The designer is `code: none` with `scratch/**` its only writable glob, yet it must be able to
+    // MINE the app's own UI (#3451/#3471). The role declares the intent; the launch resolves it.
+    const s = mkStore({ paneRoles: { p: "designer" }, appRepoRoot: "C:/src/base-studio-code" });
+    const e = buildAgentEnv(s, "p", "claude", "");
+    expect(e?.BSC_HARVEST_ROOTS).toBe("C:/src/base-studio-code");
+    // Read-only means read-only: the harvest root must NOT widen the write scope.
+    expect(e?.BSC_SCOPE_GLOBS).toBe("scratch/**");
+  });
+
+  it("adds the whole projects/ dir as a second read-only harvest root for the designer (#3664)", () => {
+    // The designer can now mine UI from every downloaded project repo, not just the app's own source.
+    const s = mkStore({ paneRoles: { p: "designer" }, appRepoRoot: "C:/src/base-studio-code", bscBaseDir: "C:/Users/k/.base-studio-code" });
+    const e = buildAgentEnv(s, "p", "claude", "");
+    // Both roots, newline-separated, in declared order (app-repo, then projects).
+    expect(e?.BSC_HARVEST_ROOTS).toBe("C:/src/base-studio-code\nC:/Users/k/.base-studio-code/projects");
+    // Still read-only — the extra root does NOT widen the write scope.
+    expect(e?.BSC_SCOPE_GLOBS).toBe("scratch/**");
+  });
+
+  it("omits BSC_HARVEST_ROOTS when the role declares none (#3509)", () => {
+    const s = mkStore({ paneRoles: { p: "worker" }, appRepoRoot: "C:/src/base-studio-code" });
+    expect(buildAgentEnv(s, "p", "claude", "")?.BSC_HARVEST_ROOTS).toBeUndefined();
+  });
+
+  it("resolves the librarian's app-repo harvest root too, read-only (#3516)", () => {
+    // The librarian's cwd is `algorithms-studio/`, which holds no source — the same wall #3509 removed
+    // for the designer. It declares the SAME symbolic root so `bsc graph harvest` can mine the app's
+    // own logic into the algorithms graph. This is the companion capability; the launch resolution is
+    // generic, so the only thing to pin here is that the role-capabilities entry actually carries it.
+    const s = mkStore({ paneRoles: { p: "librarian" }, appRepoRoot: "C:/src/base-studio-code" });
+    const e = buildAgentEnv(s, "p", "claude", "");
+    expect(e?.BSC_HARVEST_ROOTS).toBe("C:/src/base-studio-code");
+    // Same read/write asymmetry as the designer: a harvest root grants reads, not writes.
+    expect(e?.BSC_SCOPE_GLOBS).toBe("scratch/**");
+  });
+
+  it("fails CLOSED when the symbolic root cannot be resolved (#3509)", () => {
+    // A shipped binary has no source tree. An unresolvable token must contribute NOTHING rather
+    // than emitting an empty entry, which the CLI would otherwise have to interpret.
+    const s = mkStore({ paneRoles: { p: "designer" }, appRepoRoot: null });
+    expect(buildAgentEnv(s, "p", "claude", "")?.BSC_HARVEST_ROOTS).toBeUndefined();
+  });
+
   it("still carries GH_TOKEN for a role with real gh access (#3357 must not over-reach)", () => {
     // triage is `git:none` but `github:write` — it drives the gh CLI and MUST keep its token.
     expect(buildAgentEnv(mkStore({ paneRoles: { p: "triage" } }), "p", "claude", "ghp_x")?.GH_TOKEN).toBe("ghp_x");
@@ -198,16 +242,34 @@ describe("buildSessionSettings", () => {
     // FS confinement (bsc-confine, #158) + the dangerous-command floor (bsc-deny, #1916) are the
     // DEFAULT denies — present even with no role/profile — alongside the always-on turn-activity
     // hooks. The audit/scope/taint hooks stay gated.
-    expect(cmds(out)).toEqual(["bsc-confine", "bsc-deny", "bsc-activity run", "bsc-activity idle", "bsc-activity idle"]);
+    expect(cmds(out)).toEqual([
+      "bsc-confine", "bsc-deny", "bsc-activity run", "bsc-activity idle", "bsc-activity idle",
+      "bsc-tokens", "bsc-tokens",
+    ]);
     // ...and the confinement config is write-protected on every pane, so the agent can't edit
     // `.claude/**` to remove the hook or widen its own permissions (#1916).
-    expect(out.denyToolRules).toEqual(expect.arrayContaining(
-      ["Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)", "NotebookEdit(.claude/**)"]));
+    // ONE Edit(.claude/**) rule (#3534): Claude Code matches file rules on Edit alone, which covers
+    // every file-editing tool — the former Write/MultiEdit/NotebookEdit forms were never enforced.
+    expect(out.denyToolRules).toContain("Edit(.claude/**)");
+    expect(out.denyToolRules).not.toContain("Write(.claude/**)");
+    expect(out.denyToolRules).not.toContain("MultiEdit(.claude/**)");
   });
 
   it("honours the global bypass posture for an ordinary pane", () => {
     expect(buildSessionSettings(mkStore({ bypassPermissions: false }), "p").bypass).toBe(false);
     expect(buildSessionSettings(mkStore({ bypassPermissions: true }), "p").bypass).toBe(true);
+  });
+
+  it("wires bsc-tokens on BOTH Stop and SubagentStop, on every pane (#3452 regression)", () => {
+    // The cost regression: bsc-tokens was defined in the rc but registered as a hook NOWHERE, so
+    // tokens.log went dead and `bsc logs cost` / the desktop cost UI / `bsc metrics` all read $0.
+    // tokens.log is the ONLY per-session token source, so this MUST be present or the whole cost
+    // subsystem is blind. Assert the exact event coverage, on an ungated pane AND a gated worker.
+    for (const store of [mkStore(), mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } })]) {
+      const hooks = buildSessionSettings(store, "p").hooks;
+      const tokenEvents = hooks.filter((h) => h.command === "bsc-tokens").map((h) => h.event).sort();
+      expect(tokenEvents).toEqual(["Stop", "SubagentStop"]);
+    }
   });
 
   it("forces bypass=true for the DEBUG session regardless of the global posture (#3326)", () => {
@@ -219,13 +281,27 @@ describe("buildSessionSettings", () => {
     expect(out.denyToolRules).not.toContain("Task"); // no worker sub-agent block
   });
 
+  it("forces bypass=true for an AUTO-SPAWNED per-request debug session too (#3520)", () => {
+    // The spawned per-request session (`debug-studio:req-<id>`) is the same full-capability actor as the
+    // standing one: role-less and in the source tree, with the human's PR review as its control gate.
+    // Keying the carve-out on the singleton id alone left it falling through to the (off) global toggle,
+    // so it stopped to ask for every edit. It must launch bypass even with the global posture off.
+    const out = buildSessionSettings(mkStore({ bypassPermissions: false }), "debug-studio:req-7");
+    expect(out.bypass).toBe(true);
+    expect(out.allowedCommands).toEqual([]); // role-less: no restricted role surface, no write-scope
+    expect(out.denyToolRules).not.toContain("Task");
+  });
+
   it("installs the audit/confine/scope/taint hooks + worker Stop-bounce for a worker role", () => {
     const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
     const out = buildSessionSettings(s, "p");
     const c = cmds(out);
     expect(c).toEqual(expect.arrayContaining(["bsc-audit", "bsc-mcp", "bsc-confine", "bsc-deny", "bsc-scope", "bsc-taint", "bsc-defer"]));
-    // turn-activity hooks remain last (after bsc-defer) so a worker's Stop still records idle.
-    expect(c.slice(-3)).toEqual(["bsc-activity run", "bsc-activity idle", "bsc-activity idle"]);
+    // turn-activity hooks stay together (after bsc-defer) so a worker's Stop still records idle, and
+    // the cost hooks (#3452) trail them — both must fire on Stop even though bsc-defer blocks the stop.
+    expect(c.slice(-5)).toEqual([
+      "bsc-activity run", "bsc-activity idle", "bsc-activity idle", "bsc-tokens", "bsc-tokens",
+    ]);
     // role denies flow through; Task is denied for a worker (sub-agent block #1036).
     const cap = roleCapability("worker", { writeGlobs: [] });
     expect(out.deniedCommands).toEqual(expect.arrayContaining(roleDeniedCommands(cap)));
@@ -241,10 +317,23 @@ describe("buildSessionSettings", () => {
     for (const d of roleDenies.filter((x) => !granted.includes(x))) expect(out.deniedCommands).toContain(d);
   });
 
-  it("gates a director without the worker-only Stop bounce", () => {
+  it("gates a director without ANY Stop bounce (unrestricted, non-worker)", () => {
     const c = cmds(buildSessionSettings(mkStore({ paneRoles: { p: "director" } }), "p"));
     expect(c).toContain("bsc-audit");
     expect(c).not.toContain("bsc-defer");
+    expect(c).not.toContain("bsc-continue"); // #3580: the studio bsc-continue Stop hook was removed
+  });
+
+  it("gives a restricted STUDIO role NO Stop-bounce — its keep-going is the loop pump, not a hook (#3580)", () => {
+    // #3547 installed bsc-continue for every studio role; #3580 dropped it. Keep-going in loop mode is the
+    // app-side loop pump (useDesignerLoopPump, #3292), so an interactive studio session stops and hands
+    // back instead of being told to power through a queue that isn't there. The pane is still gated.
+    for (const role of ["designer", "librarian", "sound-designer", "architect", "curator"]) {
+      const c = cmds(buildSessionSettings(mkStore({ paneRoles: { p: role } }), "p"));
+      expect(c, role).not.toContain("bsc-continue");
+      expect(c, role).not.toContain("bsc-defer");
+      expect(c, role).toContain("bsc-audit");
+    }
   });
 
   it("takes allowedCommands + bashPosture from the assigned profile", () => {
@@ -309,15 +398,25 @@ describe("buildSessionSettings", () => {
       // The whole auto-run command surface is the role's fixed store CLI — nothing from a profile.
       expect(out.allowedCommands).toEqual(restrictedRoleCommands(role));
       expect(out.allowedCommands.length).toBeGreaterThan(0);
-      // Baselines suppressed + Read granted (verbatim the bespoke `[...write.allow, "Read"]`).
+      // Baselines suppressed + Read granted — `[...write.allow, "Read"]`, where write.allow is the
+      // `scratch/**` carve-out (#3373) rather than empty (see the write-tool assertions below).
       expect(out.restrictedAllow).toBe(true);
-      expect(out.allowToolRules).toEqual(["Read"]);
-      // The role gate's denies: git/gh outright, every file-write tool, the web tools.
+      expect(out.allowToolRules).toContain("Read");
+      // The role gate's denies: git/gh outright, the web tools.
       expect(out.deniedCommands).toEqual(expect.arrayContaining(roleDeniedCommands(cap)));
       expect(out.deniedCommands).toEqual(expect.arrayContaining(["git", "gh"]));
-      for (const t of ["Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch"]) {
+      for (const t of ["WebFetch", "WebSearch"]) {
         expect(out.denyToolRules).toContain(t);
       }
+      // The write tools are NOT denied wholesale (#3428/#3373): a studio carries the `scratch/**`
+      // carve-out, so they are auto-approved for exactly that sealed staging dir and nothing else.
+      // Claude Code's precedence is deny > allow, so a bare deny here would mask the carve-out and
+      // leave the session unable to stage the payload `bsc <store> set --file` reads.
+      for (const t of ["Edit", "Write", "NotebookEdit"]) {
+        expect(out.denyToolRules).not.toContain(t); // no wholesale write deny — the carve-out must survive
+      }
+      // The carve-out is one Edit(scratch/**) allow (#3534): Edit(path) covers Write/NotebookEdit too.
+      expect(out.allowToolRules).toContain("Edit(scratch/**)");
       // A restricted role is NEVER bypass — bypass ignores permissions.deny, which would undo all of it.
       expect(out.bypass).toBe(false);
       expect(buildSessionSettings(mkStore({ paneRoles: { p: role }, bypassPermissions: true }), "p").bypass).toBe(false);
@@ -329,6 +428,32 @@ describe("buildSessionSettings", () => {
       expect(env.BSC_SCOPE_GLOBS).toBe("scratch/**");
     },
   );
+
+  // #3428 — the regression this pins. `paneRoleGlobs` is written ONLY by `fleetStartProject`, so every
+  // non-fleet pane reaches buildSessionSettings with an empty entry. Passing that straight through as an
+  // override REPLACED the role table's own `writeGlobs` (roleCapability is a plain spread), which silently
+  // erased both scoped carve-outs. The builder must FLOOR the empty case, exactly as `scopeWriteGlobs`
+  // does — otherwise the launch settings and the bsc-scope hook disagree about the same boundary.
+  it.each([
+    ["designer", "scratch/**"],
+    ["documentor", undefined],
+  ] as const)("floors an EMPTY paneRoleGlobs to the %s role's own writeGlobs (#3428)", (role, glob) => {
+    const out = buildSessionSettings(mkStore({ paneRoles: { p: role } }), "p");
+    const expected = glob ? [glob] : roleCapability(role).writeGlobs;
+    expect(expected.length).toBeGreaterThan(0);
+    // The carve-out survives: per-glob allows, and NO bare write-tool deny to mask them.
+    for (const g of expected) expect(out.allowToolRules).toContain(`Edit(${g})`); // path rules are Edit-only (#3534)
+    expect(out.denyToolRules).not.toContain("Write");
+    // The launch payload and the runtime hook agree on one boundary.
+    expect(scopeWriteGlobs(role, [])).toEqual(expected);
+  });
+
+  it("assigned owned globs still OVERRIDE the role default (#3428 must not regress the worker lane)", () => {
+    const owned = ["src/features/glance/**"];
+    const out = buildSessionSettings(mkStore({ paneRoles: { p: "worker" }, paneRoleGlobs: { p: owned } }), "p");
+    expect(out.allowToolRules).toContain("Edit(src/features/glance/**)"); // path rules are Edit-only (#3534)
+    expect(scopeWriteGlobs("worker", owned)).toEqual(owned);
+  });
 
   it("a PROFILE would widen a studio pane — so the studio mount must never assign one (#3357)", () => {
     // Documents WHY `StudioSessionMount` sets `paneRoles` and nothing else. If a profile ever leaks onto a

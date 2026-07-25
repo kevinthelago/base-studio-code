@@ -46,6 +46,8 @@ pub struct NavAck {
     pub component: Option<String>,
     #[serde(default)]
     pub theme: Option<String>,
+    #[serde(default)]
+    pub state: Option<String>,
 }
 
 /// In-flight navigations, keyed by request id. The watcher parks on the receiver; `navigate_ack`
@@ -93,6 +95,7 @@ pub fn apply(
         kit: ack.kit,
         component: ack.component,
         theme: ack.theme,
+        state: ack.state,
     })
 }
 
@@ -169,6 +172,7 @@ mod tests {
             kit: None,
             component: None,
             theme: None,
+            state: None,
         })
         .unwrap();
 

@@ -33,6 +33,7 @@ import previewImportmap from "@data/ui/preview-importmap.json";
 import { buildComposesEdges } from "./compositionLayout";
 import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, type KitArtifact } from "./componentPreview";
 import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
+import type { LibraryModuleResolver } from "./componentPreview";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import { resolveInternalBase } from "@/shared/lib/preview/importPath";
 import type { ComponentRecord, PropSpec } from "./model";
@@ -65,6 +66,14 @@ function isLoadingProp(p: PropSpec): boolean {
   return (t === "boolean" || t.includes("boolean")) && /^(loading|busy|pending|isloading)$/i.test(p.name);
 }
 
+/** Is `p` an ERROR-family prop (`error`/`err`/`isError`/`hasError`, non-function)? A data component with one
+ *  can preview its error render (#3555). Mirrors `isErrorProp` (componentPreview.ts). */
+function isErrorProp(p: PropSpec): boolean {
+  const t = (p.type || "").toLowerCase();
+  const isFn = t.includes("=>") || t.includes("function") || t.includes("void");
+  return !isFn && /^(error|err|isError|hasError)$/i.test(p.name);
+}
+
 /** The component's OWN module source (a user-authored module) — its record `source`, else a `srcText`
  *  that {@link looksBuildableModule} — or `null` when the source isn't in the record: a built-in (its
  *  artifact `source` is stripped from the store, #2794) or a spec (no buildable module). Only these have
@@ -78,8 +87,13 @@ function ownModuleSource(c: ComponentRecord, siblings: readonly ComponentRecord[
   const srcText = c.srcText ?? "";
   if (!srcText.trim()) return null;
   if (siblings.length) {
+    // Resolve `@/` the way `componentPreviewFiles` does (#43/#3660): a graph `provides` specifier, the
+    // packaged artifact runtime/built-ins, OR a sibling `src` base — so a graph-source primitive that
+    // composes siblings + app utilities is scanned as the real module it is (lockstep with the build).
+    const providesSpecs = new Set([c, ...siblings].map((s) => s.provides?.trim()).filter(Boolean) as string[]);
     const sibTargets = new Set(siblings.filter((s) => s.id !== c.id).map((s) => s.src).filter(Boolean));
-    const resolves = (spec: string, fromRel: string) => resolvesInternal(spec, fromRel, sibTargets);
+    const resolves = (spec: string, fromRel: string): boolean =>
+      providesSpecs.has(spec) || resolvesInternal(spec, fromRel, sibTargets) || resolvesInternal(spec, fromRel, INTERNAL_TARGETS);
     return isPreviewBuildable(srcText, c.src, resolves) ? srcText : null;
   }
   return looksBuildableModule(srcText) ? srcText : null;
@@ -197,12 +211,14 @@ const INTERNAL_TARGETS = new Set<string>([
 
 export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
+  | "stubbed-import" // #3696 — a bare npm import rendered via a local shim/stub (sev 1, not an error)
+  | "hardcoded-color" // #3704 — hardcodes color literals + no theme token (not wired to the theme, sev 1)
   | "reimplementation" | "orphan" | "unwired-prop" | "phantom-compose"
   // MOTION checks (#3163, `bsc ui doctor --motion` / `analyzeMotion`) — mechanical faults an author used to
   // hand-diagnose: a dead animation-selector hook, a stroke-dash draw with no pathLength, a CSS-transform
   // keyframe fighting an SVG transform ATTRIBUTE, and a cross-component keyframe-name collision.
   | "motion-dead-selector" | "motion-dash-no-pathlength" | "motion-transform-attr" | "motion-name-collision"
-  | "no-empty-state" | "no-loading-state"
+  | "no-empty-state" | "no-loading-state" | "no-error-state"
   // RUNTIME data-state blanks (#3191) — a component that BUILDS clean and renders fine LOADED but produces
   // a BLANK #root in a real app state: `empty-empty-state` (no output when its data is empty — no
   // empty-state message) / `empty-loading-state` (no output while loading — no skeleton/spinner). Unlike
@@ -225,6 +241,8 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "no-implementation": 3,
   "self-reference": 3,
   "unresolvable-import": 3,
+  "stubbed-import": 1,
+  "hardcoded-color": 1,
   reimplementation: 3,
   orphan: 2,
   "unwired-prop": 2,
@@ -238,6 +256,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "motion-transform-attr": 1,
   "no-empty-state": 1,
   "no-loading-state": 1,
+  "no-error-state": 1,
   // Runtime data-state blanks (#3191) — a real but mild defect (renders fine loaded, blanks in a real app
   // state), the unwired-prop/orphan tier (2). Render-confirmed by the scan, so ABOVE the static #3135
   // no-empty/no-loading advisories (1): when a node hits both, the confirmed blank wins the badge.
@@ -258,6 +277,8 @@ export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string
   "no-implementation": { glyph: "∅", label: "no buildable implementation — a spec, not code" },
   "self-reference": { glyph: "↺", label: "self-referential stub — only renders itself; supply its real body" },
   "unresolvable-import": { glyph: "↯", label: "imports a package the preview can't resolve — throws at preview time" },
+  "stubbed-import": { glyph: "◍", label: "imports a non-curated package — renders via a local shim/stub (approximate, not the real package)" },
+  "hardcoded-color": { glyph: "▦", label: "hardcodes colors + no theme token — won't follow the active theme; wire it to var(--…) tokens" },
   reimplementation: { glyph: "♻", label: "reimplements a library node — compose it via @bsc/… instead of re-coding it" },
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
@@ -268,6 +289,7 @@ export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string
   "motion-name-collision": { glyph: "⧗", label: "cross-component keyframe-name collision — two components' same-named animations clobber" },
   "no-empty-state": { glyph: "◍", label: "no empty state — takes data but renders no distinct empty view; add an EmptyState" },
   "no-loading-state": { glyph: "◌", label: "no loading state — takes data but has no `loading` prop; add one for a loading preview" },
+  "no-error-state": { glyph: "◒", label: "no error state — takes data but has no `error` prop; add one for an error preview" },
   "empty-empty-state": { glyph: "⬚", label: "blank empty state — renders NOTHING when its data is empty; add an empty-state message" },
   "empty-loading-state": { glyph: "◐", label: "blank loading state — renders NOTHING while loading; add a skeleton/spinner" },
   "slot-shell": { glyph: "▤", label: "slot shell — previews a demo placeholder; fill its content slots to see its real function" },
@@ -314,11 +336,33 @@ function cycleNodes(ids: string[], out: Map<string, string[]>): Set<string> {
   return onCycle;
 }
 
+/** The hardcoded COLOR literals in `text` (#3704) — a 6- or 8-digit hex or an `rgb()/rgba()/hsl()/hsla()/
+ *  oklch()/oklab()` function; the leak candidates a theme change can't reach. A 3-digit `#219` (an issue
+ *  ref) is skipped. Rust twin: `color_literals`. */
+function colorLiterals(text: string): string[] {
+  const hex = text.match(/#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6})\b/g) ?? [];
+  const fns = text.match(/\b(?:rgba|rgb|hsla|hsl|oklch|oklab)\(/gi) ?? [];
+  return [...hex, ...fns.map((f) => f.replace("(", ""))];
+}
+
+/** Does `text` reference a THEME TOKEN (`var(--…)`)? A component that does is wired to the theme. Rust twin:
+ *  `uses_theme_token`. */
+function usesThemeToken(text: string): boolean {
+  return text.includes("var(--");
+}
+
 /**
  * Analyze one kit's components for graph-health findings, ranked most-severe first. Pure — mirrors
  * `graph_health::analyze`. Same input always yields the same order (stable name tiebreak).
  */
-export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
+export function analyzeGraphHealth(
+  comps: ComponentRecord[],
+  // The library resolver `@bsc/…` references are judged against — the ACTIVE project's pinned sound kit
+  // when the caller has project context (#3412), else the packaged default. Kept a PARAM so this module
+  // stays pure; the Rust twin takes the same kit via `HealthOptions::sound_kit_json`, so a reference that
+  // resolves here resolves there.
+  libResolver: LibraryModuleResolver = libraryModuleResolver,
+): HealthFinding[] {
   const nameById = new Map(comps.map((c) => [c.id, c.name]));
   const edges = buildComposesEdges(comps);
 
@@ -383,10 +427,26 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
   for (const c of comps) {
     // Pass the kit as siblings so a composing user component (importing a sibling, #3112) builds and is
     // NOT falsely flagged — the exact set the live preview vendors.
-    if (componentPreviewFiles(c, ARTIFACT, comps, libraryModuleResolver) === null) {
+    if (componentPreviewFiles(c, ARTIFACT, comps, libResolver) === null) {
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code)` });
     }
+  }
+
+  // hardcoded-color (#3704) — a component NOT wired to the theme: its own source hardcodes color literals
+  // (hex / rgb / hsl / oklch) and references NO `var(--…)` design token, so it won't follow the active
+  // theme/preset (the contract is "components reference ONLY semantic tokens, never raw colors"). Built-ins
+  // are skipped (their record is a curated snippet). Uses the node's own source, independent of
+  // buildability, so an unthemed mobile component is flagged whether or not its imports resolve. Rust twin.
+  for (const c of comps) {
+    if (c.builtin) continue;
+    const src = (c.source && c.source.trim() ? c.source : c.srcText) ?? "";
+    if (!src.trim() || usesThemeToken(src)) continue;
+    const colors = colorLiterals(src);
+    if (!colors.length) continue;
+    const sample = colors.slice(0, 4).map((x) => `\`${x}\``).join(", ") + (colors.length > 4 ? `, +${colors.length - 4}` : "");
+    findings.push({ category: "hardcoded-color", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
+      why: `${c.name} hardcodes ${colors.length} color literal${colors.length === 1 ? "" : "s"} (${sample}) and references no theme token — it won't follow the active theme/preset` });
   }
 
   // self-reference — an own-module component whose only rendered element is ITSELF (`<Name/>`): a
@@ -413,23 +473,37 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
   // Only own-source components (`ownModuleSource`) — the source the preview actually builds. Rust twin:
   // the `unresolvable-import` loop in graph_health.rs.
   const internalTargets = new Set<string>([...INTERNAL_TARGETS, ...comps.map((c) => c.src).filter(Boolean)]);
+  // #43/#3660: a `@/X` import also resolves to the graph component that `provides` X (a graph-source
+  // primitive), exactly as the build does — so it's not falsely flagged an unresolvable internal import.
+  for (const c of comps) {
+    const base = c.provides ? resolveInternalBase(c.provides, "") : null;
+    if (base) internalTargets.add(`${base}.tsx`);
+  }
   const fmtSpecs = (v: string[]) => v.map((s) => `\`${s}\``).join(", ");
   for (const c of comps) {
     const src = ownModuleSource(c, comps);
     if (!src) continue;
     const specs = importSpecifiers(src);
     // A `@bsc/…` library spec is bare-shaped but resolves against the algorithms store, NOT the import-map
-    // — so it's excluded from `bare` and judged by `libraryModuleResolver` (resolvable ⇒ vendored ⇒ clean).
-    const library = specs.filter((s) => isLibrarySpec(s) && libraryModuleResolver(s) === null).sort();
-    const bare = specs.filter((s) => isBareSpecifier(s) && !isLibrarySpec(s) && !RESOLVABLE_SPECIFIERS.has(s)).sort();
+    // — so it's excluded from `stubbed` and judged by `libraryModuleResolver` (resolvable ⇒ vendored ⇒ clean).
+    const library = specs.filter((s) => isLibrarySpec(s) && libResolver(s) === null).sort();
+    // #3696: a bare npm specifier that isn't a curated preview external no longer FAILS — the preview bundles
+    // a local shim/stub for it, so it renders approximately → a severity-1 `stubbed-import` note, not an error.
+    const stubbed = specs.filter((s) => isBareSpecifier(s) && !isLibrarySpec(s) && !RESOLVABLE_SPECIFIERS.has(s)).sort();
     const internal = specs.filter((s) => isInternalSpecifier(s) && !resolvesInternal(s, c.src, internalTargets)).sort();
-    if (bare.length === 0 && internal.length === 0 && library.length === 0) continue;
-    const reasons: string[] = [];
-    if (bare.length) reasons.push(`${fmtSpecs(bare)} (no preview import-map entry)`);
-    if (library.length) reasons.push(`${fmtSpecs(library)} (no matching node in the library)`);
-    if (internal.length) reasons.push(`${fmtSpecs(internal)} (no such module in the kit or its runtime closure)`);
-    findings.push({ category: "unresolvable-import", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
-      why: `${c.name} imports ${reasons.join("; ")} — the preview can't resolve it, so it throws "module not found" when rendered` });
+    // GENUINELY unresolvable (sev 3): a `@/…`/relative or `@bsc/…` import with NO stub fallback.
+    if (internal.length || library.length) {
+      const reasons: string[] = [];
+      if (library.length) reasons.push(`${fmtSpecs(library)} (no matching node in the library)`);
+      if (internal.length) reasons.push(`${fmtSpecs(internal)} (no such module in the kit or its runtime closure)`);
+      findings.push({ category: "unresolvable-import", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
+        why: `${c.name} imports ${reasons.join("; ")} — the preview can't resolve it, so it throws "module not found" when rendered` });
+    }
+    // STUBBED npm imports (sev 1): renders, but via a local shim/stub, not the real package (#3696).
+    if (stubbed.length) {
+      findings.push({ category: "stubbed-import", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
+        why: `${c.name} imports ${fmtSpecs(stubbed)} — not a curated preview external, so the preview renders it via a bundled-in local shim/stub (approximate, not the real package)` });
+    }
   }
 
   // reimplementation — the "compose, don't recreate" guardrail (#3118, epic #3114). An own-source
@@ -492,12 +566,13 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
       why: `${c.name} declares it composes ${phantom.join(", ")} but its source never renders ${phantom.length === 1 ? "it" : "them"} — a phantom composition edge (the graph draws a composition that doesn't happen, and the false edge hides the child from orphan detection)` });
   }
 
-  // no-empty-state / no-loading-state (informational, #3135) — the preview's data-state switcher (loaded/
-  // empty/loading) can only SHOW a state a component SUPPORTS. A DATA component (has a collection/array
+  // no-empty-state / no-loading-state / no-error-state (informational, #3135/#3555) — the preview's
+  // data-state switcher can only SHOW a state a component SUPPORTS. A DATA component (has a collection/array
   // prop), scanned from its own module source, is flagged when it lacks: (a) an EMPTY render — no
-  // `EmptyState` and no `Array.isArray`/`.length` empty-guard, so its empty preview matches loaded; or (b)
-  // a `loading`-family prop, so its loading preview can't skeleton. Guides the designer session to add the
-  // missing state. Rust twin: the no-empty-state/no-loading-state loop in graph_health.rs.
+  // `EmptyState` and no `Array.isArray`/`.length` empty-guard, so its empty preview matches loaded; (b) a
+  // `loading`-family prop, so its loading preview can't skeleton; or (c) an `error`-family prop, so its
+  // error preview can't render. Guides the designer session to add the missing state. Rust twin:
+  // the same loop in graph_health.rs.
   for (const c of comps) {
     const src = ownModuleSource(c, comps);
     if (!src) continue;
@@ -510,6 +585,10 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
     if (!c.props.some(isLoadingProp)) {
       findings.push({ category: "no-loading-state", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} takes data (${collections.join(", ")}) but exposes no \`loading\` prop — the preview can't show its LOADING state; add a boolean \`loading\` prop that renders a skeleton` });
+    }
+    if (!c.props.some(isErrorProp)) {
+      findings.push({ category: "no-error-state", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
+        why: `${c.name} takes data (${collections.join(", ")}) but exposes no \`error\` prop — the preview can't show its ERROR state; add an \`error\` prop (message string or boolean) that renders an error state` });
     }
   }
 

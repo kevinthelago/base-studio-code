@@ -8,13 +8,13 @@
 //  - readCoordState(limit): the imperative read. Returns `null` on a read FAILURE (so the actuator
 //    loops keep their "skip this tick, don't touch ref state" guard) and the full ingest result
 //    otherwise. A successful read of an EMPTY log returns an empty-but-non-null result.
-//  - useCoordLog({ limit, ms }): the polling hook for views that just want the latest state — polls
-//    via usePoll and returns the latest `{ state, ready, answered }`, keeping the last good result
-//    across a transient read failure.
+//  - useCoordLog({ limit }): the hook for views that just want the latest state — re-reads
+//    event-driven on `logs://coord` changes and returns the latest `{ state, ready, answered }`,
+//    keeping the last good result across a transient read failure.
 
 import { useState } from "react";
-import { bscJson } from "@/shared/lib/core/bsc";
-import { usePoll } from "@/shared/hooks/usePoll";
+import { logsTail } from "@/shared/lib/core/logsBridge";
+import { useLogStream } from "@/shared/hooks/useLogStream";
 import { ingestCoordLog, emptyCoordState } from "./coordination";
 
 /** The replayed coord state (`state`/`ready`/`answered`) plus the raw `lines` — the director
@@ -23,7 +23,8 @@ export type CoordResult = ReturnType<typeof ingestCoordLog> & { lines: string[] 
 
 /** Read + replay the coordination log. `null` on a read failure; the replay + raw lines otherwise. */
 export async function readCoordState(limit = 1000): Promise<CoordResult | null> {
-  const lines = await bscJson<string[] | null>(null, ["logs", "tail", "coord", "--limit", String(limit), "--oldest", "--json"], null);
+  // In-process read (#3630) — `null` fallback preserves the "read failed → skip this tick" guard.
+  const lines = await logsTail("coord", limit, true, null);
   if (!lines) return null;
   return { lines, ...ingestCoordLog(lines, emptyCoordState()) };
 }
@@ -31,19 +32,19 @@ export async function readCoordState(limit = 1000): Promise<CoordResult | null> 
 interface UseCoordLogOptions {
   /** Lines to read from the tail of the log (default 1000). */
   limit?: number;
-  /** Poll cadence in ms (default 1000). */
-  ms?: number;
 }
 
 /** Poll the coordination log and return the latest replay. Keeps the last good result on a
  *  transient read failure rather than blanking. */
 export function useCoordLog(opts: UseCoordLogOptions = {}): CoordResult {
-  const { limit = 1000, ms = 1000 } = opts;
+  const { limit = 1000 } = opts;
   const [result, setResult] = useState<CoordResult>(() => ({ lines: [], ...ingestCoordLog([], emptyCoordState()) }));
-  usePoll(async (isCancelled) => {
+  // Event-driven (#3638): re-read + replay only when the coord log changes (plus mount + a slow
+  // backstop), instead of polling on a fixed cadence — the `logs://coord` change event drives the read.
+  useLogStream("coord", async (isCancelled) => {
     const res = await readCoordState(limit);
     if (isCancelled() || !res) return;
     setResult(res);
-  }, ms, [limit]);
+  }, [limit]);
   return result;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsTail } from "@/shared/lib/core/logsBridge";
 import { useAppStore } from "@/store";
 import { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "@/features/mcp";
 import { StatCard, StackedDayBars, TelemetryPanel, ItemBars, SplitBar } from "@/shared/ui/charts";
@@ -30,7 +30,7 @@ export function HookAnalyticsTab() {
   const [an, setAn] = useState<HookAnalytics | null>(null);
   useEffect(() => {
     let cancelled = false;
-    bscJson<string[]>(null, ["logs", "tail", "hook", "--limit", "8000", "--json"], [])
+    logsTail("hook", 8000)
       .then(lines => { if (!cancelled) setAn(aggregateHookTelemetry(parseHookLog((lines ?? []).join("\n")), new Date(), DAYS)); });
     return () => { cancelled = true; };
   }, []);

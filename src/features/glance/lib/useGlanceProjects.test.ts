@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, resolveProjectCategory } from "./useGlanceProjects";
+import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyDormantHealth, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, resolveProjectCategory } from "./useGlanceProjects";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
 import type { ProjectLite } from "./glanceData";
@@ -32,7 +32,11 @@ describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", ()
     expect(result.current.find((p) => p.id === "billing-svc")).toMatchObject({ role: "service", health: "warning", activity: "waiting" });
   });
 
-  it("rests both axes at idle when NOT declared — building comes from running agents, not a fallback (#2551)", () => {
+  // #2551 established that `building` comes from RUNNING AGENTS, never from merely having a planned
+  // fleet. #3429 then split the undeclared resting state in two: nothing running at all reads `off`,
+  // a session that exists but is quiet reads `idle`. Neither project here has a session, so both read
+  // `off · idle` — the assertion below was left at the pre-#3429 `idle · idle` and went red on develop.
+  it("rests at off · idle when NOT declared — building comes from running agents, not a fallback (#2551/#3429)", () => {
     useAppStore.setState({
       localDraftProjects: {
         plain: { title: "Plain", pitch: "", createdAt: 1 },
@@ -50,9 +54,10 @@ describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", ()
     const { result } = renderHook(() => useGlanceProjects());
     const plain = result.current.find((p) => p.id === "plain");
     const fleeted = result.current.find((p) => p.id === "fleeted");
-    expect(plain).toMatchObject({ health: "idle", activity: "idle" });
+    expect(plain).toMatchObject({ health: "off", activity: "idle" });
     expect(plain?.role).toBeUndefined(); // derived downstream in buildGlanceData (hash), not here
-    expect(fleeted).toMatchObject({ health: "idle", activity: "idle" }); // a PLANNED (not launched) fleet is still idle
+    // A PLANNED (not launched) fleet is still idle — planning one does not make a project active.
+    expect(fleeted).toMatchObject({ health: "off", activity: "idle" });
   });
 });
 
@@ -189,12 +194,19 @@ describe("deriveBuildingKeys / applyRunningActivity — running agents → build
     { id: "beta", name: "Beta", health: "idle", activity: "idle" },
   ];
 
-  it("deriveBuildingKeys reads the roster + run/on pane statuses, keyed by the project prefix", () => {
+  it("deriveBuildingKeys reads the LIVE panes + run/on pane statuses, keyed by the project prefix", () => {
     const keys = deriveBuildingKeys(
-      { "alpha:auth": {} },                                  // a launched worker stream → alpha
+      new Set(["alpha:auth"]),                               // a live worker cell → alpha
       { "beta:director": "run", "gamma:web": "idle" },       // director running → beta; idle → ignored
     );
     expect([...keys].sort()).toEqual(["alpha", "beta"]);
+  });
+
+  // #3429 — the roster map (`fleetPaneStreams`) this used to read is only cleared by `closeTab`, so an
+  // ended fleet kept its project reading `building`/`healthy` until the tab itself was closed. Reading the
+  // pruned live set instead means "End sessions" is enough.
+  it("deriveBuildingKeys drops a pane that is no longer a live cell (#3429)", () => {
+    expect([...deriveBuildingKeys(new Set(), { "alpha:auth": "idle" })]).toEqual([]);
   });
 
   it("applyRunningActivity marks a project with a live agent as building + healthy, leaves the rest idle", () => {
@@ -205,6 +217,40 @@ describe("deriveBuildingKeys / applyRunningActivity — running agents → build
 
   it("no running agents → the input is returned untouched", () => {
     expect(applyRunningActivity(projects, new Set())).toBe(projects);
+  });
+});
+
+// #3429 — the L0 half of the #3415 existence rule. Until this overlay existed the L0 stack could only
+// ESCALATE off the merge default, so "nothing is running" and "a session exists but is quiet" both
+// rendered `idle` — the exact ambiguity #3415 removed one layer down.
+describe("applyDormantHealth — no session and no live app reads `off`, not `idle` (#3429)", () => {
+  const projects: ProjectLite[] = [
+    { id: "alpha", name: "Alpha", health: "healthy", activity: "building" },
+    { id: "beta", name: "Beta", health: "idle", activity: "idle" },
+  ];
+
+  it("marks a project with nothing running as off · idle", () => {
+    const out = applyDormantHealth(projects, new Set(["alpha"]));
+    expect(out.find((p) => p.id === "beta")).toMatchObject({ health: "off", activity: "idle" });
+  });
+
+  it("leaves a project with a live session or a live app untouched", () => {
+    const out = applyDormantHealth(projects, new Set(["alpha"]));
+    expect(out.find((p) => p.id === "alpha")).toEqual(projects[0]);
+  });
+
+  it("reads every project off when nothing at all is running — the no-launched-tabs case", () => {
+    for (const p of applyDormantHealth(projects, new Set())) {
+      expect(p).toMatchObject({ health: "off", activity: "idle" });
+    }
+  });
+
+  // Order matters: dormancy is applied BEFORE the fault overlay, so an unfixed error still surfaces on a
+  // project nobody is working on rather than being hidden behind `off`.
+  it("does not mask an unresolved fault — the fault overlay still wins over dormancy", () => {
+    const dormant = applyDormantHealth(projects, new Set());
+    const out = applyFaultHealth(dormant, { beta: { level: "error", title: "boom", count: 1 } as GlanceFault });
+    expect(out.find((p) => p.id === "beta")).toMatchObject({ health: "error", reason: "boom" });
   });
 });
 

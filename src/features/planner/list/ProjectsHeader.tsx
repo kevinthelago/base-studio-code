@@ -205,8 +205,8 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
 
 export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   const {
-    setProjectsView, setPlanningContext, setPlanningSession,
-    setWorkspace, githubBoardTab, setGithubBoardTab, closeGithubBoard,
+    setProjectsView, navigate, setPlanningContext, setPlanningSession,
+    githubBoardTab, setGithubBoardTab, closeGithubBoard,
   } = useAppStore();
   const { tabs: boardTabs, activeId: boardActive, select: boardSelect, reorder: boardReorder, tearOff: boardTearOff } =
     usePageTabs("github-board", GITHUB_BOARD_TABS,
@@ -221,8 +221,10 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
       proj.repo,
     );
     setPlanningSession(key);
-    // Planning lives on the Projects page; from the GitHub board, jump there.
-    setWorkspace("projects");
+    // Planning lives on the Projects page; from the GitHub board, jump there — and onto the `projects`
+    // page MODE, else the planning view is hidden behind whatever mode (designs/teams/…) was active
+    // (#3598). One `navigate` sets the workspace + page together so the mode can't be forgotten (#3602).
+    navigate({ workspace: "projects", page: "projects" });
     setProjectsView("planning");
   });
 

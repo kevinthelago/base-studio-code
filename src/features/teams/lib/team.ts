@@ -5,6 +5,7 @@
 // prose hardcoded in fleet/*-protocol.md. Pure model (no React/Tauri) so it's unit-testable and the
 // store seeds from it directly. The closed vocabulary (forms + archetypes) is externalized to
 // @data/teams/*; the built-in orgs to @data/teams/orgs/*.json — overlay-editable + in the config bundle.
+import { poolNodeId } from "@/shared/lib/session/requestSpawn";
 import formsEmbedded from "@data/teams/communication-forms.json";
 import archetypesEmbedded from "@data/teams/archetypes.json";
 import { overlayFile, overlayGlob } from "@/shared/lib/core/configOverrides";
@@ -167,6 +168,47 @@ export function augmentStudioNetworkForDebug(org: Team, debugOn: boolean): Team 
     relationships: [
       ...org.relationships,
       { id: "r-serves-debugger", archetype: "serves", from: DEBUGGER_NODE, to: "designer", bow: -30 },
+    ],
+  };
+}
+
+/**
+ * Add a node per LIVE auto-spawned request session (#3498), so each one is visible and openable in the
+ * Glance graph instead of a hidden background actor. An auto-spawned session the user cannot see is one
+ * they cannot supervise or stop, which is the whole reason this exists.
+ *
+ * Each relates `serves → designer`, exactly as the standing debugger node does — a request session
+ * serves the designer's report. Deliberately NOT related to the `debugger` node: that node only exists
+ * while the `debugSession` flag is on, and an edge to an absent node would dangle. Idempotent, and a
+ * no-op off the Studio Network or with no live sessions.
+ */
+export function augmentStudioNetworkForRequests(org: Team, poolSlots: readonly number[]): Team {
+  if (!poolSlots.length || org.id !== STUDIO_NETWORK_ID) return org;
+  const present = new Set(org.positions.map((p) => p.nodeId));
+  const add = poolSlots.filter((slot) => !present.has(poolNodeId(slot)));
+  if (!add.length) return org;
+  return {
+    ...org,
+    positions: [
+      ...org.positions,
+      // Fanned in a row beneath the debugger's slot so N sessions never stack on one point.
+      ...add.map((slot, i) => ({
+        nodeId: poolNodeId(slot),
+        kind: "agent" as const,
+        personaId: "persona-debugger",
+        x: 96 + i * 72,
+        y: 132,
+      })),
+    ],
+    relationships: [
+      ...org.relationships,
+      ...add.map((slot) => ({
+        id: `r-serves-${poolNodeId(slot)}`,
+        archetype: "serves",
+        from: poolNodeId(slot),
+        to: "designer",
+        bow: -18,
+      })),
     ],
   };
 }

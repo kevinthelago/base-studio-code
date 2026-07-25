@@ -1,66 +1,79 @@
-// The packaged Component Library (#2269), loaded from `src-tauri/data/components/*.json` (#2305 slice
-// 1b — one self-contained, gist-distributable JSON file per kit). `react-ui` is the app's own shared-UI
-// primitives, GENERATED from the introspection manifest (`reactUiKit.ts`, kept in sync by
-// `reactUiKit.gen.test.ts`). The hand-authored `examples` demo kit was retired (#2506): react-ui's own
-// pages tier (#2505) supersedes its page→primitive exemplar role, and the #2483 seed refresh deletes
-// its pristine copies from existing stores on the next boot. This is what the library shows until the
-// global `bsc ui` store lands (then `hydrateComponents` replaces it).
+// The packaged Component Library seed (#2269) — reset to a CLEAN SLATE (#3543): a single EMPTY kit,
+// `base-studio-code`. The designer session fills it (components + all algorithm animations + everything
+// needed to create/run the app) via `bsc ui`, and the studio command exports it. This is the concrete
+// first move toward "the app's own entire UI as one graph" (endpoint of #3451).
+//
+// What this replaced: six separately-seeded kits — `react-ui` (generated primitives, gated off #3029),
+// `fleet` (#3462), `base` motion (#3451), and the three viz kits (#3194/#3242). Their per-kit assemblers
+// were deleted with this change. IMPORTANT: the algorithm-viz MOTION still lives in the shared
+// `*_VIZ_ANIMATIONS` consts under `shared/ui/kit/` — the Algorithms graph renderers compile from those
+// DIRECTLY, independent of the design kits, so wiping the design library does NOT touch the Algorithms
+// feature. The `react-ui.json` artifact is likewise untouched (still consumed by the released-kit store,
+// the preview raw-import, and the manifest drift guard).
+//
+// The wipe: on the next launch `hydrateComponents` reconciles the store toward this seed. Every prior
+// PRISTINE packaged kit LEFT the seed, so the #2483 refresh DROPS it (from `app-state.json` and the
+// on-disk `bsc` store); the empty `base-studio-code` kit is seeded in its place. (A hand-edited builtin
+// is kept with an `orphaned` notice — the designer can delete it, or a hard reset can force-clear.)
 import type { ComponentRecord, Kit } from "./model";
-import { makeBuiltinKits } from "./builtinKits";
-import { makeAlgoVizKit } from "./algoVizKit";
-import { makeMatrixVizKit } from "./matrixVizKit";
-import { makeGraphVizKit } from "./graphVizKit";
-import { reconcileSeed, type SeedReconcile } from "./seedRefresh";
+import { projectComponent } from "./componentBridge";
+import { reconcileSeed, stampSeedHash, type SeedReconcile } from "./seedRefresh";
 
-const { kits, components } = makeBuiltinKits();
-// The algorithm-visualization motion libraries as recoverable builtin kits (#3194 array, #3242 matrix +
-// graph). Assembled in code (their motion is a TS constant, not JSON) and seeded UNCONDITIONALLY below —
-// they're new, self-contained builtins, not the react-ui default #3029 disabled.
-const { kits: algoKits, components: algoComponents } = makeAlgoVizKit();
-const { kits: matrixKits, components: matrixComponents } = makeMatrixVizKit();
-const { kits: graphKits, components: graphComponents } = makeGraphVizKit();
+/** The one packaged kit id — the base-studio-code app's own UI as a single graph (#3543). */
+export const BASE_STUDIO_CODE_KIT_ID = "base-studio-code";
 
-/** The always-on viz kits (#3194/#3242) — array + matrix + graph — seeded regardless of the react-ui flag. */
-const vizKits: Kit[] = [...algoKits, ...matrixKits, ...graphKits];
-const vizComponents: ComponentRecord[] = [...algoComponents, ...matrixComponents, ...graphComponents];
+/** The single packaged kit — the app's own UI as one graph. `tech: "react"` is load-bearing: packaged
+ *  themes bind to the design group by `tech` (never kit id), so keeping it "react" preserves every theme.
+ *  `style` is the Components-rail GROUP label; it is deliberately the kit's own name (NOT "studio", which
+ *  would collide with the "Studio" app-library snapshot concept — bsc-studio — and confuse users, #3640). */
+const baseStudioCodeKit: Kit = stampSeedHash({
+  id: BASE_STUDIO_CODE_KIT_ID,
+  name: "base-studio-code",
+  tech: "react",
+  style: "base-studio-code",
+  stack: "base-studio-code",
+  dot: "var(--accent)",
+  animations: [],
+  builtin: true,
+});
 
-/** The packaged built-in kits — the generated react-ui kit (`@data/components/*.json`) + the three viz
- *  kits (algo-viz #3194, matrix-viz + graph-viz #3242). Enumerated by the stamping + round-trip drift guards. */
-export const SEED_KITS: Kit[] = [...kits, ...vizKits];
+/** The packaged built-in kits — one empty `base-studio-code` kit (#3543). Enumerated by the stamping +
+ *  round-trip drift guards. */
+export const SEED_KITS: Kit[] = [baseStudioCodeKit];
 
-/** The packaged built-in components — react-ui's records + the three viz-kit demo components (#3194/#3242). */
-export const SEED_COMPONENTS: ComponentRecord[] = [...components, ...vizComponents];
+// The migrated app-page components — the app's own UI authored as graph source under
+// `src-tauri/data/components/app/**` (#3604, moving the code UI into the one `base-studio-code` graph).
+// Vite-glob-imported (eager) so a newly-migrated page is PACKAGED simply by dropping its `.json` there,
+// no seed edit. Each row runs through the SAME `projectComponent` load projection + is stamped
+// `builtin`/`seedHash`, so `seed === load(push(seed))` (the #2514 round-trip) holds BY CONSTRUCTION and
+// the #2483 reconcile seeds it on first run + tracks it release-to-release.
+const migratedApp = import.meta.glob<Partial<ComponentRecord>>("@data/components/app/**/*.json", {
+  eager: true,
+  import: "default",
+});
 
-/** TEMPORARY (#3029) — the packaged default `react-ui` kit is being REDEFINED by hand via the designer
- *  session (the generated-from-manifest default was lacking). While that's in progress the reconcile
- *  seeds NOTHING: an existing store's pristine `react-ui` built-ins retire on the next boot (the #2483
- *  "seed removed a built-in → drop pristine copies" path), and a fresh install starts empty — so the
- *  Design Studio library is a blank slate for the new default. `SEED_KITS`/`SEED_COMPONENTS` above, the
- *  `react-ui.json` artifact, the `shared/ui` manifest, and the generator are all UNTOUCHED (still the test
- *  fixtures + the preview/doctor artifact). To restore: flip this back to `true` (or point the reconcile
- *  at the new packaged kit) — a one-line revert. */
-export const DEFAULT_KIT_SEEDED = false;
+/** The packaged built-in components — the migrated app pages (#3604); the `base-studio-code` kit fills as
+ *  the code UI moves into the graph. Empty until the first page migrated (fleetpage, #3606). */
+export const SEED_COMPONENTS: ComponentRecord[] = Object.keys(migratedApp)
+  .sort() // deterministic order — glob key order is filesystem-dependent
+  .map((path) => stampSeedHash({ ...projectComponent(migratedApp[path]), builtin: true }));
 
-/** The seed the reconcile converges the store toward. The three viz kits (algo-viz #3194, matrix-viz +
- *  graph-viz #3242) seed UNCONDITIONALLY — they're new, self-contained builtins (not the react-ui default
- *  #3029 is redefining by hand), so they're recoverable + shadow-proof (re-added if the store lacks them)
- *  even while {@link DEFAULT_KIT_SEEDED} is off. react-ui stays gated on the flag: when it's off the
- *  reconcile retires react-ui's pristine copies (add nothing) and seeds only the viz kits; when it's on both seed. */
-const seededKits = DEFAULT_KIT_SEEDED ? SEED_KITS : vizKits;
-const seededComponents = DEFAULT_KIT_SEEDED ? SEED_COMPONENTS : vizComponents;
-
-/** Reconcile the store's loaded components with the packaged built-ins (#2483, hash-based refresh —
- *  the full verdict table lives on {@link reconcileSeed}): a PRISTINE built-in copy (its content
- *  still hashes to its stamped `seedHash`; a legacy no-hash copy counts as pristine) tracks the
- *  seed — refreshed when the seed changed, deleted when the built-in left the seed. A USER-EDITED
- *  built-in is always kept (store wins), with a notice when the seed diverged. User-authored records
- *  are never touched; built-ins the store lacks are re-added. `hydrateComponents` applies the
- *  pushes/drops so the store converges. */
+/**
+ * Reconcile the store's loaded components with the packaged built-ins (#2483, hash-based refresh — the
+ * full verdict table lives on {@link reconcileSeed}): a PRISTINE built-in copy (its content still hashes
+ * to its stamped `seedHash`; a legacy no-hash copy counts as pristine) tracks the seed — refreshed when
+ * the seed changed, deleted when the built-in left the seed. A USER-EDITED built-in is always kept (store
+ * wins), with a notice when the seed diverged. User-authored records are never touched; built-ins the
+ * store lacks are re-added. `hydrateComponents` applies the pushes/drops so the store converges.
+ *
+ * With the seed now empty (#3543), this DROPS every prior pristine packaged component on the next boot.
+ */
 export function reconcileComponents(loaded: ComponentRecord[]): SeedReconcile<ComponentRecord> {
-  return reconcileSeed(loaded, seededComponents, "component");
+  return reconcileSeed(loaded, SEED_COMPONENTS, "component");
 }
 
-/** Reconcile loaded kits with the packaged built-in kits (see {@link reconcileComponents}). */
+/** Reconcile loaded kits with the packaged built-in kits (see {@link reconcileComponents}). Drops every
+ *  prior pristine packaged kit and seeds the one empty `base-studio-code` kit (#3543). */
 export function reconcileKits(loaded: Kit[]): SeedReconcile<Kit> {
-  return reconcileSeed(loaded, seededKits, "kit");
+  return reconcileSeed(loaded, SEED_KITS, "kit");
 }

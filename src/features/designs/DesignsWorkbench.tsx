@@ -45,16 +45,24 @@ import { analyzeGraphHealth, analyzeMotion, HEALTH_SEVERITY, HEALTH_BADGE, type 
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
-import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, ROLE_COLOR, ROLES, type ComponentRecord, type ChangeEntry } from "./lib/model";
+import { timeAgo } from "@/shared/lib/core/format";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
+import { designStudioVisible } from "./lib/studioVisibility";
+import { makeLibraryResolvers } from "./lib/libraryModules";
+import { useActiveSoundKit } from "./lib/useActiveSoundKit";
 import { groupKits } from "./lib/kitGroups";
+import { supportedStates, previewCycleStates } from "./lib/componentPreview";
+import { usePreviewStateCycle } from "./lib/usePreviewStateCycle";
+import { expandedPreviewFit } from "./lib/expandedPreviewFit";
 import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
 import type { PreviewState } from "./lib/componentPreview";
 import { ThemesMenu } from "./ThemesMenu";
 import { AnimationsMenu } from "./AnimationsMenu";
 import { PaletteStrip } from "./PaletteStrip";
+import { PaletteToggle } from "./PaletteToggle";
 import { DEFAULT_THEME } from "@/shared/ui/kit";
 
 /** The preview surface's light/dark axis, read off the selected theme's `base`. */
@@ -62,12 +70,11 @@ type PreviewTheme = "dark" | "light";
 import type { KitThemeRecord } from "./lib/themes";
 import "./designStudio.css";
 
-type Tab = "overview" | "source" | "usage";
+type Tab = "overview" | "source" | "usage" | "history";
 type Viewport = "sm" | "md" | "auto";
 
 // Cross-graph library band (#3116) — the fenced top band of algorithm nodes a kit's components `require`.
 /** The preview data-state axis (#3135) — the switcher's options, in order. */
-const PREVIEW_STATES: PreviewState[] = ["loaded", "empty", "loading"];
 const BAND_PAD = 60;         // left/right inset the band centers over (matches the composition layout pad)
 const BAND_TOP = 40;         // y of the band cards' top edge
 const BAND_GAP = 34;         // clearance from the band cards down to the fence divider
@@ -107,8 +114,11 @@ export function DesignsWorkbench() {
   const setCompId = useAppStore((s) => s.setDesignsComp);
   const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
-  // The preview's DATA-STATE axis (#3135): loaded (demo) · empty (no data) · loading (skeleton).
-  const [previewState, setPreviewState] = useState<PreviewState>("loaded");
+  // The preview's DATA-STATE axis (#3135): loaded (demo) · empty (no data) · loading (skeleton). In the
+  // STORE (#3717), not local, so `bsc navigate component --state <s>` can drive the SAME value the
+  // SegmentedControl below sets — letting an external session capture a specific render via `bsc shot`.
+  const previewState = useAppStore((s) => s.designsPreviewState);
+  const setPreviewState = useAppStore((s) => s.setDesignsPreviewState);
   // The preview's THEME axis (#2488) — ONE control now (#2545): the selected theme drives both the
   // component retint (its `vars`, via <ThemeScope>) AND the sandbox SURFACE (its `base`, below). The
   // old hardcoded dark/light SegmentedControl is retired — light/dark is theme data served through
@@ -128,11 +138,21 @@ export function DesignsWorkbench() {
   const [previewMode, setPreviewMode] = useState(false);
   // Preview-mode right-pane axis (#2942): try on the palette (Themes) or the kit's MOTION (Animations).
   const [rightAxis, setRightAxis] = useState<"themes" | "animations">("themes");
+  // The theme try-on's raw palette strip is HIDDEN by default (#3706); the top-bar theme label is now a
+  // toggle (PaletteToggle) that reveals it — so the swatch band is opt-in and the specimen owns the full
+  // preview height until you ask for the raw palette.
+  const [showPalette, setShowPalette] = useState(false);
   // The kit animation PLAYED on the vehicle — the motion try-on (#2942), or null.
   const [tryAnim, setTryAnim] = useState<string | null>(null);
-  // Live-focus (#2525): the designer session is ALWAYS mounted (#2597), so poll its activity stream
-  // for the whole Design Studio lifecycle; clear the focus when the studio unmounts.
-  useUiActivity(true);
+  // Whether the Design Studio is the VISIBLE page (not merely mounted). KeptMountedPage keeps this
+  // Workbench mounted (display:none) after the first visit, and a hidden child's effects keep firing —
+  // so this one flag gates every background loop below (#3616/#3620/#3627) on real visibility.
+  const scanVisible = useAppStore((s) => designStudioVisible(s.activeWorkspace, s.projectsPageMode));
+  // Live-focus (#2525): poll the designer session's activity stream to show what Claude is working on.
+  // Gate on `scanVisible` (#3627) — an unconditional `true` kept polling `bsc logs tail ui` against a
+  // hidden page forever (the same KeptMountedPage leak #3616 fixed for the scan below). Paused when
+  // hidden; `bsc logs tail` catches up on return; the `setAiFocused(null)` cleanup handles unmount.
+  useUiActivity(scanVisible);
   useDesignerLoopPump(); // #3292: drive the open designer loop (bsc loop) from this long-lived workspace
   useEffect(() => () => useAppStore.getState().setAiFocused(null), []);
 
@@ -157,7 +177,15 @@ export function DesignsWorkbench() {
   // Preview-error scan (#2838): while the Studio is mounted (visit, not boot — it lazily first-mounts via
   // KeptMountedPage), esbuild-build each buildable component in the active kit — throttled — and record
   // ok/error in the store; the graph badges the failures. Re-runs only for components whose source changed.
-  useComponentScan(true, kitComps);
+  // The active blueprint's pinned sound kit (#3412) — the ONE resolution target the Studio's preview,
+  // scan, and health pass all share, so a badge, a build, and a played cue can never disagree.
+  const soundKit = useActiveSoundKit();
+  const libResolver = useMemo(() => makeLibraryResolvers(soundKit).libraryModuleResolver, [soundKit]);
+  // Gate the scan on the Studio being VISIBLE, not merely mounted (#3616): an unconditional `true` here
+  // kept esbuild-building + iframe-probing all 154 components forever in the background (~40% renderer
+  // CPU for a page nobody's on). Paused when hidden; the sig-cache means resuming re-scans nothing
+  // unchanged. `scanVisible` is computed once above (#3627) and shared with the activity poll.
+  useComponentScan(scanVisible, kitComps, undefined, libResolver);
   // The FOCUSED component — strictly the one the user picked, in the current kit; drives the graph's
   // `.on` selection ring. No fallback to "the first".
   const sel = compId ? components.find((c) => c.id === compId && c.kitId === kitId) ?? null : null;
@@ -176,13 +204,13 @@ export function DesignsWorkbench() {
     : null;
   const focusComp = sel ?? aiComp;
 
-  // The expanded try-on's pan/zoom (#3190 CRISP pass). The host no longer CSS-scales the iframe — that
-  // blurs a composited texture. Instead the iframe runs its own DOM-transform pan/zoom ENGINE (crisp),
-  // and the host just FRAMES the fixed design viewport (previewW×previewH) into the canvas at a
-  // DOWNSCALE-ONLY fit (never upscales → the iframe stays 1:1-or-smaller → sharp). The measured canvas
-  // drives the fit; the engine hands back its +/−/fit API for the buttons.
-  const previewW = vp === "sm" ? 380 : vp === "md" ? 640 : 1200;
-  const previewH = 440;
+  // The expanded try-on's pan/zoom (#3190 CRISP pass + #3551 fluid fit). The iframe runs its OWN
+  // DOM-transform pan/zoom ENGINE (crisp), so the host must NOT CSS-scale the iframe — a host downscale
+  // both shrinks the preview AND desyncs the engine's pointer math (its drag reads iframe-internal
+  // clientX), which read as "no click and drag". So the host just FRAMES the design viewport into the
+  // measured canvas, and in fluid (default) mode the frame FILLS the canvas at scale 1 — width-first,
+  // grows on resize, pan stays 1:1. `expandedPreviewFit` owns that pure math; the engine hands back its
+  // +/−/fit API for the buttons.
   const [previewCanvas, setPreviewCanvas] = useState({ w: 0, h: 0 });
   const previewRo = useRef<ResizeObserver | null>(null);
   const mountPreviewCanvas = useCallback((el: HTMLDivElement | null) => {
@@ -194,18 +222,36 @@ export function DesignsWorkbench() {
     }
   }, []);
   useEffect(() => () => previewRo.current?.disconnect(), []);
-  // Centered, downscale-only fit of the design frame into the canvas (scale ≤ 1). A FIXED framing — the
-  // user's zoom happens inside the iframe, not here — so it never re-fits away an in-progress zoom.
-  const previewFit = useMemo(() => {
-    const pad = 24, cw = previewCanvas.w, ch = previewCanvas.h;
-    if (!cw || !ch) return { scale: 1, tx: 0, ty: 0 };
-    const scale = Math.min(1, (cw - pad * 2) / previewW, (ch - pad * 2) / previewH);
-    return { scale, tx: (cw - previewW * scale) / 2, ty: (ch - previewH * scale) / 2 };
-  }, [previewCanvas.w, previewCanvas.h, previewW]);
-  // The engine opens ZOOMED IN (a page is letterboxed small by its render ratio, so 1:1 reads tiny);
-  // pages get a stronger factor than 1:1 components.
-  const previewInitialZoom = sel && (sel.role === "page" || sel.role === "layout") ? 1.4 : 1.15;
+  const { previewW, previewH, ...previewFit } = useMemo(
+    () => expandedPreviewFit(vp, previewCanvas.w, previewCanvas.h),
+    [vp, previewCanvas.w, previewCanvas.h],
+  );
   const [previewZoomApi, setPreviewZoomApi] = useState<{ zoomIn: () => void; zoomOut: () => void; fit: () => void } | null>(null);
+  // The expanded try-on's live frame — defined once so it mounts EITHER directly (fluid: it fills the
+  // canvas at scale 1) OR inside the centering placer (a fixed breakpoint), without duplicating props.
+  // The zoom engine opens FIT (whole component visible); scroll zooms, drag pans.
+  const expandedPreviewFrame = sel && (
+    <ComponentPreviewFrame
+      comp={sel}
+      theme={theme}
+      themeId={kitTheme}
+      themeVars={activeTheme?.vars ?? {}}
+      width={previewW}
+      height={previewH}
+      extraAnimation={tryAnimDef}
+      previewState={previewState}
+      zoomEngine={{}}
+      registerZoomApi={setPreviewZoomApi}
+      // #3596: hold Alt in the expanded preview → clicking a child component navigates the graph to it.
+      // Uses the store setters directly (selectComp is declared below this const); the inspector re-derives.
+      onNavigate={(name) => {
+        const child = components.find((c) => c.name === name && c.kitId === kitId);
+        if (!child) return;
+        if (child.kitId !== kitId) setKitId(child.kitId);
+        setCompId(child.id);
+      }}
+    />
+  );
 
   const allVariants = focusComp ? focusComp.variants : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
@@ -289,7 +335,10 @@ export function DesignsWorkbench() {
   // Graph health (#2680) — the same taxonomy `bsc ui doctor` reports (lib/graphHealth), mirrored to
   // badge dead/duplicated nodes. `nodeHealth` maps each flagged node to its MOST-SEVERE category.
   // Topology findings + the #3163 MOTION findings (`bsc ui doctor --motion`) — badge both from the graph.
-  const healthFindings = useMemo(() => [...analyzeGraphHealth(kitComps), ...analyzeMotion(kitComps)], [kitComps]);
+  const healthFindings = useMemo(
+    () => [...analyzeGraphHealth(kitComps, libResolver), ...analyzeMotion(kitComps)],
+    [kitComps, libResolver],
+  );
   const nodeHealth = useMemo(() => {
     const m = new Map<string, HealthCategory>();
     const consider = (id: string, cat: HealthCategory) => {
@@ -350,6 +399,7 @@ export function DesignsWorkbench() {
         />
       )}
       <GraphCanvas
+        profileId="designs"
         vp={gvp}
         world={world}
         className="ds-graph"
@@ -384,9 +434,10 @@ export function DesignsWorkbench() {
             <Button variant="ghost" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Button>
           </>
         )}
-        rail={
+        rail={scanVisible ? (
           // Headerless graph-nav menu (#2797): search over the collapsible kits→components tree — no
-          // label bar (the PageTabs strip already titles the studio).
+          // label bar (the PageTabs strip already titles the studio). #3620: gated with the world content
+          // so a hidden Studio doesn't re-render the 154-row component tree in the background either.
           <GraphRail
             tools={
               <SearchField
@@ -404,7 +455,7 @@ export function DesignsWorkbench() {
               components={components} match={match} selectComp={selectComp} query={query}
             />
           </GraphRail>
-        }
+        ) : undefined}
         // Details pane — selection-driven visibility (#3090, restoring #2705 over #2818): the Inspector
         // renders ONLY when a component is focused (`focusComp` = the user's pick, else the node Claude is
         // working), so the graph is full-width by default — a clean rail + graph at half-screen. Focusing a
@@ -476,7 +527,8 @@ export function DesignsWorkbench() {
               {allVariants.length > 1 && (
                 <SegmentedControl label="" options={allVariants.map((v) => ({ label: v, on: v === activeVariant, onClick: () => setVariant(v) }))} />
               )}
-              <SegmentedControl label="" options={PREVIEW_STATES.map((s) => ({ label: s, on: s === previewState, onClick: () => setPreviewState(s) }))} />
+              {/* #3555: offer only the states THIS component supports (a static component gets no tabs). */}
+              <SegmentedControl label="" options={supportedStates(sel).map((s) => ({ label: s, on: s === previewState, onClick: () => setPreviewState(s) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === vp, onClick: () => setVpKind(k) }))} />
               {/* Zoom controls (#3190) — post to the iframe's crisp pan/zoom engine (not a host viewport). */}
               <Box style={{ display: "flex", gap: 4 }}>
@@ -484,43 +536,44 @@ export function DesignsWorkbench() {
                 <Button variant="ghost" onClick={() => previewZoomApi?.zoomIn()} aria-label="zoom in">+</Button>
                 <Button variant="ghost" onClick={() => previewZoomApi?.fit()}>fit</Button>
               </Box>
-              <Text mono size="xxs" tone="muted">{activeTheme?.label}</Text>
+              {activeTheme && (
+                <PaletteToggle label={activeTheme.label} open={showPalette} onToggle={() => setShowPalette((v) => !v)} />
+              )}
             </Box>
             {/* Palette strip (#2834): the theme's semantic swatches — the raw palette beside the applied
-                result — so the try-on shows both at once. */}
-            {activeTheme && <PaletteStrip theme={activeTheme} />}
+                result. HIDDEN by default (#3706); the top-bar PaletteToggle reveals it on demand. */}
+            {activeTheme && showPalette && <PaletteStrip theme={activeTheme} />}
             {/* Crisp pan/zoom (#3190): the host is just the FRAME. It measures this canvas and places the
                 design viewport (previewW×previewH) at a fixed downscale-only fit (never upscales → the
                 iframe texture stays 1:1-or-smaller → sharp). ALL pan/zoom happens INSIDE the iframe as a
                 DOM transform on `#root` (the browser re-rasterizes crisply at any scale, unlike a
                 CSS-scaled iframe). Drag pans anywhere (a click still interacts); the wheel scrolls/pans the
                 content, ⌘/ctrl+wheel zooms; the +/−/fit buttons post commands to the engine. */}
-            {/* eslint-disable-next-line no-restricted-syntax -- callback ref: a ResizeObserver reads this canvas's px size to size the fixed fit (#3190) */}
+            {/* eslint-disable-next-line no-restricted-syntax -- callback ref: a ResizeObserver reads this canvas's px size to size the fluid fit (#3190/#3551) */}
             <div
               ref={mountPreviewCanvas}
               style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", background: "var(--bg-canvas, var(--bg))" }}
             >
-              {/* #3251: no `user-select:none` here — it read as the drag's selection guard but is a no-op
-                  (this wrapper's only child is the iframe, and CSS does not cross a document boundary).
-                  The guard lives in the engine's own srcdoc CSS, where the drag actually happens. */}
-              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: previewH, pointerEvents: "auto", transform: `translate(${previewFit.tx}px,${previewFit.ty}px) scale(${previewFit.scale})`, transformOrigin: "0 0" }}>
-                <ComponentPreviewFrame
-                  comp={sel}
-                  theme={theme}
-                  themeId={kitTheme}
-                  themeVars={activeTheme?.vars ?? {}}
-                  width={previewW}
-                  height={previewH}
-                  extraAnimation={tryAnimDef}
-                  previewState={previewState}
-                  zoomEngine={{ initial: previewInitialZoom }}
-                  registerZoomApi={setPreviewZoomApi}
-                />
-              </Box>
+              {/* #3551: in fluid mode the frame IS the canvas (scale 1), so it mounts DIRECTLY — no placer
+                  wrapper, one fewer same-size box in the stack. A fixed breakpoint keeps the placer, which
+                  centers + downscale-fits its frame into the canvas via the transform. #3251: no
+                  `user-select:none` here — the drag's selection guard lives in the engine's own srcdoc CSS
+                  (CSS does not cross the iframe document boundary). */}
+              {vp === "auto" ? expandedPreviewFrame : (
+                <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: previewH, pointerEvents: "auto", transform: `translate(${previewFit.tx}px,${previewFit.ty}px) scale(${previewFit.scale})`, transformOrigin: "0 0" }}>
+                  {expandedPreviewFrame}
+                </Box>
+              )}
             </div>
           </Box>
         ) : legend}
       >
+        {/* #3620: skip the 154-node world render while the Studio is HIDDEN (kept-mounted) — it was
+            re-rendering at 20-32ms every few seconds in the background (a frequently-changing store
+            subscription re-runs this whole subtree even at display:none). The DesignerTerminal dock (a
+            prop above) stays mounted, so the always-on designer session survives; viewport + selection
+            state live in DesignsWorkbench, so nothing is lost when the Studio is shown again. */}
+        {scanVisible && (<>
         <svg width={world.w} height={world.h} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
           {/* Semantic swimlanes (#2964): Pages (top) · Composables (middle) · Fundamentals (base) — shifted
               below the library band (#3116) when the kit reaches into the library. */}
@@ -615,17 +668,21 @@ export function DesignsWorkbench() {
               {emptyRender && (
                 <Text as="span" className="ds-emptyrender" title={emptyRender}>▢</Text>
               )}
-              <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                <RoleDot role={c.role} /><Text weight={600} size={13}>{c.name}</Text>
+              <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, minWidth: 0 }}>
+                {/* name truncates to ONE line (#3699) — a long name (GitHubCrossRepoActivity) must fit the
+                    fixed-width node, not wrap + overflow. Full name on hover via `title`. */}
+                <RoleDot role={c.role} /><Text weight={600} size={13} title={c.name} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</Text>
               </Box>
-              <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minWidth: 0 }}>
                 {/* group indicator (#3048) — the component's purpose partition, read inline on the
-                    existing role line (no layout change; role-tier banding is unchanged). */}
-                <Text size={10} tone="dim">{c.role}{c.group ? <Text as="span" tone="muted"> · {c.group}</Text> : ""}</Text><Text mono size="xxs" tone="muted">×{c.used}</Text>
+                    existing role line. Truncates to one line (#3699) — a long group (features/planner/fleet)
+                    must not wrap; the ×used count is kept, never squeezed off. */}
+                <Text size={10} tone="dim" title={c.group ? `${c.role} · ${c.group}` : c.role} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.role}{c.group ? <Text as="span" tone="muted"> · {c.group}</Text> : ""}</Text><Text mono size="xxs" tone="muted" style={{ flexShrink: 0, marginLeft: 6 }}>×{c.used}</Text>
               </Box>
             </Box>
           );
         })}
+        </>)}
       </GraphCanvas>
     </>
   );
@@ -666,6 +723,11 @@ interface InspProps {
 }
 function Inspector(p: InspProps) {
   const sel = p.sel;
+  // The small preview auto-cycles through the states this component supports (#3555), pausing on hover so
+  // it can be inspected. Independent of the expanded try-on's manual `previewState`.
+  const [hoverPreview, setHoverPreview] = useState(false);
+  const cycleState = usePreviewStateCycle(sel, hoverPreview);
+  const cyclesStates = previewCycleStates(sel).length > 1;
   // GraphCanvas owns the inspector column width now (#2766) — fill the wrapper it gives us; bring only
   // the left border + elevated surface (the old `.ds-col ds-insp` shell classes are gone). The Inspector
   // mounts ONLY with a focused component now (#3090), so there is no in-pane empty state.
@@ -681,6 +743,10 @@ function Inspector(p: InspProps) {
             <Box style={{ flex: 1, minWidth: 0 }}>
               <Text weight={600} size={16} style={{ letterSpacing: "-.01em" }}>{sel.name}</Text>
               <Text size={11.5} tone="muted" as="div" style={{ marginTop: 2 }}>{sel.role} · {p.kitName}</Text>
+              {/* Folder breadcrumb (#3589) — WHERE this component lives in the kit's project tree. */}
+              {sel.group && (
+                <Text mono size={10} tone="dim" as="div" title="folder" style={{ marginTop: 1 }}>{sel.group}</Text>
+              )}
             </Box>
             {/* THEME switcher (#2488/#2545) — a header-level control beside the component name (#3085):
                 the ONE theme control (hydrated light/dark + designer-authored), driving both the surface
@@ -708,7 +774,7 @@ function Inspector(p: InspProps) {
               Live preview (#2824): the component is BUILT (esbuild-wasm) from its real source and rendered in
               a sandboxed iframe — its own build/error state inside — filling the surface (fluid width, full
               height) so it reads at real size. */}
-          <Box className="ds-preview">
+          <Box className="ds-preview" onMouseEnter={() => setHoverPreview(true)} onMouseLeave={() => setHoverPreview(false)}>
             <Box className="ds-surface">
               <Box className="ds-frame">
                 <ComponentPreviewFrame
@@ -720,16 +786,23 @@ function Inspector(p: InspProps) {
                   width="100%"
                   height="100%"
                   onExpand={p.onExpand}
-                  previewState={p.previewState}
+                  previewState={cycleState}
                 />
               </Box>
+              {/* A subtle marker of the auto-cycling state (#3555) — only when the component actually cycles.
+                  Dims while hovered (cycling is paused, so it's less of a distraction). */}
+              {cyclesStates && (
+                <Box style={{ position: "absolute", left: 8, bottom: 8, zIndex: 2, pointerEvents: "none", padding: "1px 7px", borderRadius: 999, background: "color-mix(in srgb, var(--bg) 72%, transparent)", border: "1px solid var(--border-soft)", opacity: hoverPreview ? 0.5 : 0.9, transition: "opacity .2s" }}>
+                  <Text mono size="xxs" tone="muted">{cycleState}</Text>
+                </Box>
+              )}
             </Box>
           </Box>
 
           {/* detail tabs */}
           <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <Box className="ds-tabs">
-              {(["overview", "source", "usage"] as Tab[]).map((t) => (
+              {(["overview", "source", "usage", "history"] as Tab[]).map((t) => (
                 <Box as="button" key={t} role="tab" aria-selected={p.tab === t} className={`ds-tab${p.tab === t ? " on" : ""}`} onClick={() => p.setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</Box>
               ))}
               <Box style={{ flex: 1 }} />
@@ -749,6 +822,7 @@ function Inspector(p: InspProps) {
                   <GuideCard tone="danger" title="✗ When NOT to use" items={sel.whenNot} glyph="✕" />
                 </Box>
               )}
+              {p.tab === "history" && <InspectorHistory sel={sel} />}
             </Box>
           </Box>
     </Box>
@@ -808,6 +882,53 @@ function InspectorOverview({ sel, allVariants, activeVariant, composes, onSelect
           </>
         ) : <Text size={11.5} tone="dim" style={{ fontStyle: "italic" }}>Primitive — composes nothing.</Text>}
       </Box>
+    </Box>
+  );
+}
+
+/** The History tab body (#3568) — the component's change log, newest-first: one row per write with its
+ *  rev, writer, when, optional note, and the fields that changed. The Rust stamp boundary records these on
+ *  every `bsc ui` write (`bsc ui log <id>` reads the same log), so a session can review a component's past
+ *  before editing it. Legacy records (never written since #3568) fall back to the single provenance stamp. */
+function InspectorHistory({ sel }: { sel: ComponentRecord }) {
+  // Stored oldest-first; the log reads newest-first (mirrors record::log_value).
+  const entries: ChangeEntry[] = useMemo(() => [...(sel.history ?? [])].reverse(), [sel.history]);
+  return (
+    <Box style={{ padding: "14px 14px 16px" }}>
+      <Text mono size="xxs" tone="dim" as="div" style={{ letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 10 }}>
+        Change history{entries.length ? ` · ${entries.length}` : ""}
+      </Text>
+      {entries.length ? (
+        <Box style={{ display: "flex", flexDirection: "column", gap: 0, borderLeft: "1px dashed var(--border)", paddingLeft: 14 }}>
+          {entries.map((e, i) => (
+            <Box key={`${e.rev}-${i}`} style={{ position: "relative", paddingBottom: i === entries.length - 1 ? 0 : 16 }}>
+              {/* timeline dot */}
+              <Box style={{ position: "absolute", left: -20, top: 3, width: 8, height: 8, borderRadius: "50%", background: i === 0 ? "var(--accent)" : "var(--fg-muted)", border: "2px solid var(--bg-canvas)" }} />
+              <Box style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: e.note ? 5 : 6 }}>
+                <Text mono size={10.5} tone="accent" style={{ background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 5, padding: "1px 6px" }}>rev {e.rev}</Text>
+                <Text size={11.5} weight={600}>{e.by || "unknown"}</Text>
+                {e.at && <Text size={11} tone="dim" title={e.at}>{timeAgo(e.at) || e.at}</Text>}
+              </Box>
+              {e.note && <Text size={11.5} tone="muted" as="div" style={{ lineHeight: 1.45, marginBottom: 6 }}>{e.note}</Text>}
+              <Box style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {e.changed.map((f) => (
+                  <Text key={f} mono size={10.5} tone={f === "created" ? "accent" : "muted"} style={{ background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 5, padding: "1px 6px" }}>{f}</Text>
+                ))}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      ) : (
+        <Box className="ds-inspbox">
+          <Box className="ds-insprow">
+            <Text size={11.5} tone="dim">
+              {sel.updatedBy
+                ? `No detailed history — last written by ${sel.updatedBy}${sel.updatedAt ? ` ${timeAgo(sel.updatedAt) || ""}` : ""} (rev ${sel.rev ?? 0}).`
+                : "No change history yet — it accrues one entry per edit as the component is authored."}
+            </Text>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 }

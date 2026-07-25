@@ -822,9 +822,13 @@ mod tests {
 
         // The role write-path guard: deny every write tool (planner/director/triage),
         // and auto-approve a worker's boundary glob.
+        // Example rules use the corrected model (#3534): a path-scoped file rule is `Edit(<glob>)`
+        // (covers every file-editing tool), and a whole-tool write deny lists the real bare tools
+        // (Edit/Write/NotebookEdit — no MultiEdit, a removed tool). The writer is generic; this
+        // asserts it lands whatever tool rules it is handed VERBATIM (not Bash-wrapped).
         write_session_settings(&SessionSettingsSpec {
-            allow_tool_rules: &["Edit(src/auth/**)".into(), "Write(src/auth/**)".into()],
-            deny_tool_rules: &["Edit".into(), "Write".into(), "MultiEdit".into(), "NotebookEdit".into()],
+            allow_tool_rules: &["Edit(src/auth/**)".into()],
+            deny_tool_rules: &["Edit".into(), "Write".into(), "NotebookEdit".into()],
             ..SessionSettingsSpec::for_dir(&dir.to_string_lossy())
         }).unwrap();
 
@@ -836,11 +840,9 @@ mod tests {
             .iter().map(|x| x.as_str().unwrap().to_string()).collect();
         // Tool rules land verbatim — NOT wrapped in Bash(...).
         assert!(allow.contains(&"Edit(src/auth/**)".to_string()));
-        assert!(allow.contains(&"Write(src/auth/**)".to_string()));
         assert!(!allow.iter().any(|r| r.contains("Bash(Edit")));
         assert!(deny.contains(&"Edit".to_string()));
         assert!(deny.contains(&"Write".to_string()));
-        assert!(deny.contains(&"MultiEdit".to_string()));
         assert!(deny.contains(&"NotebookEdit".to_string()));
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -2,6 +2,10 @@
 // surfaced: permission denials (`bsc logs perm`), coordination stalls/deadlocks (`coordinationSummary`),
 // warden quarantine trips, and auto-end needs-attention/blocked verdicts. Produces one recent-errors
 // feed + counts. No fabrication — every item is a real recorded signal.
+//
+// The merge itself is the generic `mergeFeeds` (#3465) — the reusable "K streams → one recent-first
+// feed with a pinned class + per-kind counts" algorithm this panel was the source for.
+import { mergeFeeds, feedStream } from "@/shared/lib/algorithms/streamMerge";
 
 /** One `bsc logs perm --json` row (subset). `summary` is already human-readable (e.g. "scope block src/App.tsx"). */
 export interface PermEvent { ts_ms: number; session: string; summary: string }
@@ -50,42 +54,55 @@ export interface HealthInput {
   permLimit?: number;
 }
 
-/** Merge every error signal into one recent-first feed + counts. Pure. */
+/** The kind set, in badge order — passed to `mergeFeeds` so `counts` carries a zero for every one. */
+const HEALTH_KINDS: HealthKind[] = ["deadlock", "stalled", "quarantine", "blocked", "attention", "denied"];
+
+/** The per-item payload the feed carries beyond `{ kind, pinned, sortKey }`. */
+type HealthPayload = { label: string; detail: string; danger: boolean };
+
+/**
+ * Merge every error signal into one recent-first feed + counts. Pure.
+ *
+ * Delegates the merge to the generic `mergeFeeds` (#3465): this function is now the DOMAIN part —
+ * which signal sources exist and how each projects to a kind/label/detail — while the ordering, the
+ * pin-above-recency rule, and the per-kind count are the shared algorithm. The stalls/deadlocks are
+ * `pinned` (a live problem sits above the time sort), replacing the `sortKey: Infinity` sentinel the
+ * hand-written version used, which left two live items with no defined order between them.
+ */
 export function buildFleetHealth(input: HealthInput): FleetHealth {
   const name = (id: string, fallback: string) => input.nameByPane.get(id) ?? fallback;
-  const items: HealthItem[] = [];
-
-  // Coordination stalls / deadlocks — LIVE, so they pin to the top (sortKey Infinity).
-  for (const b of input.blocked) {
-    if (!b.stalled && !b.deadlocked) continue;
-    const failed = b.deps.filter((d) => d.status === "failed").map((d) => d.ref).join(", ");
-    items.push({
-      kind: b.deadlocked ? "deadlock" : "stalled",
-      label: name(b.session, b.session),
-      detail: b.deadlocked ? "in a wait-for cycle — no producer will satisfy it" : `stalled on ${failed || "a failed dependency"}`,
-      sortKey: Infinity, danger: true,
-    });
-  }
-  // Warden quarantine trips.
-  for (const [pane, q] of Object.entries(input.quarantined)) {
-    items.push({ kind: "quarantine", label: name(pane, q.streamId), detail: q.summary, sortKey: q.at, danger: true });
-  }
-  // Auto-end verdicts that need eyes (done is not an error).
-  for (const [pane, e] of Object.entries(input.ended)) {
-    if (e.state === "done") continue;
-    items.push({
-      kind: e.state === "blocked" ? "blocked" : "attention",
-      label: name(pane, e.streamId), detail: e.summary, sortKey: e.at, danger: e.state === "blocked",
-    });
-  }
-  // Recent permission denials.
   const recentPerm = [...input.perm].sort((a, b) => b.ts_ms - a.ts_ms).slice(0, input.permLimit ?? 8);
-  for (const p of recentPerm) {
-    items.push({ kind: "denied", label: name(p.session, p.session), detail: p.summary, sortKey: p.ts_ms, danger: false });
-  }
 
-  items.sort((a, b) => b.sortKey - a.sortKey);
-  const counts: Record<HealthKind, number> = { deadlock: 0, stalled: 0, quarantine: 0, blocked: 0, attention: 0, denied: 0 };
-  for (const it of items) counts[it.kind]++;
-  return { items, counts, total: items.length, hasIssues: items.length > 0 };
+  const { items, counts, total, hasItems } = mergeFeeds<HealthKind, HealthPayload>(
+    [
+      // Coordination stalls / deadlocks — LIVE, so they PIN above the time sort.
+      feedStream(input.blocked, (b) => {
+        if (!b.stalled && !b.deadlocked) return null;
+        const failed = b.deps.filter((d) => d.status === "failed").map((d) => d.ref).join(", ");
+        return {
+          kind: b.deadlocked ? "deadlock" : "stalled", pinned: true, sortKey: 0,
+          label: name(b.session, b.session),
+          detail: b.deadlocked ? "in a wait-for cycle — no producer will satisfy it" : `stalled on ${failed || "a failed dependency"}`,
+          danger: true,
+        };
+      }),
+      // Warden quarantine trips.
+      feedStream(Object.entries(input.quarantined), ([pane, q]) => ({
+        kind: "quarantine", pinned: false, sortKey: q.at, label: name(pane, q.streamId), detail: q.summary, danger: true,
+      })),
+      // Auto-end verdicts that need eyes (done is not an error → dropped by returning null).
+      feedStream(Object.entries(input.ended), ([pane, e]) =>
+        e.state === "done" ? null : {
+          kind: e.state === "blocked" ? "blocked" : "attention", pinned: false, sortKey: e.at,
+          label: name(pane, e.streamId), detail: e.summary, danger: e.state === "blocked",
+        }),
+      // Recent permission denials.
+      feedStream(recentPerm, (p) => ({
+        kind: "denied", pinned: false, sortKey: p.ts_ms, label: name(p.session, p.session), detail: p.summary, danger: false,
+      })),
+    ],
+    HEALTH_KINDS,
+  );
+
+  return { items, counts, total, hasIssues: hasItems };
 }

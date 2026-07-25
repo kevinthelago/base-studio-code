@@ -1,3 +1,10 @@
+# Normalize every text file to LF in the repo AND on checkout, on every platform (#3761 / D1 of
+# Mobile-Studio-Code#246). This makes the byte-comparison harnesses' `$comment` claims of
+# byte-identity with mobile-studio-code literally true on a Windows checkout — without it, a CRLF
+# working tree false-fails any hash/deepEqual comparison of the shared fixtures.
+* text=auto eol=lf
+*.fixtures.json text eol=lf
+
 # App-authored document templates are embedded verbatim via include_str! and
 # written out as session CLAUDE.md / protocol files. Pin them to LF on every
 # platform so the embedded content (and the generated files) are byte-identical
@@ -32,6 +39,11 @@ src-tauri/data/runtime-fault/shims/*.tmpl   text eol=lf
 # every platform. The artifact is (re)generated LF by reactUiKit.gen.test.ts.
 src-tauri/data/components/react-ui.json  text eol=lf
 src-tauri/data/ui/react-ui-kit.meta.json text eol=lf
+# GENERATED from the shared-UI manifest (#3485) — pinned so the drift guard compares the same bytes on
+# every platform, and so the Rust `include_str!` and the TS import see identical content.
+src-tauri/data/ui/primitives.json        text eol=lf
+# Hand-authored, but read by BOTH validators — pinned for the same reason.
+src-tauri/data/ui/node-validation.fixtures.json text eol=lf
 
 # The sounds twin (#3371): the packaged `signal` sound-kit seed + its hash sidecar. Same contract —
 # the Rust `bsc sound release` store embeds BOTH via include_str! as the packaged fallback entry, so

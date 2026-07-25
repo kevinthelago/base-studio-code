@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { REACT_UI_COMPONENTS, REACT_UI_KIT } from "./reactUiKit";
-import { SEED_COMPONENTS, SEED_KITS } from "./seed";
+import { SEED_COMPONENTS, SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./seed";
 import { componentRules } from "./rules";
 import { UI_KIT } from "@/shared/ui/manifest";
 
@@ -122,7 +122,7 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     const claimants = (shape: string, role: string) =>
       REACT_UI_COMPONENTS.filter((c) => c.role === role && ((c.shapes ?? []) as string[]).includes(shape))
         .map((c) => c.name);
-    for (const s of ["list", "linked-list", "tree", "graph", "table", "key-value"]) {
+    for (const s of ["list", "linked-list", "tree", "graph", "table", "key-value", "series"]) {
       expect(claimants(s, "layout").length, `layout tier claims ${s} at most once`).toBeLessThanOrEqual(1);
       expect(claimants(s, "page").length, `page tier claims ${s} at most once`).toBeLessThanOrEqual(1);
     }
@@ -133,16 +133,22 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(all("tree")).toEqual(["Tree", "TreeExplorerPage"]);
     expect(all("linked-list")).toEqual(["PipelinePage", "Sequence"]);
     expect(all("key-value")).toEqual(["KeyValueList", "RecordPage"]);
+    // series (#3517): the four charting composites claim it — an axis + aligned numeric value series
+    // (windowedTally's { labels, series }). No layout/page tier claims it (per-tier ≤1 holds trivially).
+    expect(all("series")).toEqual(["Bars", "LineArea", "Spark", "StackedDayBars"]);
   });
 
-  it("the packaged seed is the generated react-ui kit + the three viz kits (#2506/#3194/#3242)", () => {
-    // The #2456 examples kit demonstrated the page→primitive model; react-ui's own pages tier
-    // (#2505) supersedes it, so the seed carries the one generated kit. #3194 adds the always-on
-    // `algo-viz` viz kit; #3242 adds `matrix-viz` + `graph-viz` (their demo components) as builtins.
-    expect(SEED_KITS.map((k) => k.id)).toEqual(["react-ui", "algo-viz", "matrix-viz", "graph-viz"]);
-    expect(SEED_COMPONENTS.map((c) => c.name).sort()).toEqual(
-      [...REACT_UI_COMPONENTS.map((c) => c.name), "AlgoCells", "MatrixCells", "GraphNodes"].sort(),
-    );
+  it("the packaged seed is a single EMPTY kit — base-studio-code — the designer fills it (#3543)", () => {
+    // #3543 wiped the packaged component library to a clean slate: ONE empty kit, `base-studio-code`,
+    // which the designer session fills (components + all algorithm animations) and the studio command
+    // exports. The react-ui LIBRARY still exists as the manifest-generated assembler (REACT_UI_KIT /
+    // REACT_UI_COMPONENTS — asserted throughout this file); it is just no longer SEEDED into the store.
+    //
+    // This assertion is HAND-MAINTAINED on purpose. Adding a packaged kit back to the seed should be a
+    // decision someone signs off on, not a glob — a failure here is that sign-off being asked for.
+    expect(SEED_KITS.map((k) => k.id)).toEqual([BASE_STUDIO_CODE_KIT_ID]);
+    expect(SEED_KITS[0].animations ?? []).toEqual([]);
+    expect(SEED_COMPONENTS).toEqual([]);
   });
 });
 

@@ -105,6 +105,7 @@ export function AlgorithmsWorkspace() {
 
   return (
     <GraphCanvas
+      profileId="algorithms"
       vp={vp}
       world={kitLayout.world}
       grid

@@ -80,7 +80,7 @@ vi.mock("@/shared/lib/core/bsc", () => ({
 
 import { useAppStore } from "@/store";
 import type { ComponentRecord, Kit } from "./model";
-import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, DEFAULT_KIT_SEEDED } from "./seed";
+import { SEED_COMPONENTS, SEED_KITS, reconcileComponents } from "./seed";
 import { SEED_THEMES } from "./themes";
 import { SEED_HASH_EXCLUDED, stableStringify, seedHashOf, type SeedRecord } from "./seedRefresh";
 import { loadComponents, loadKits, pushComponent, pushKit } from "./componentBridge";
@@ -139,8 +139,7 @@ describe("the round-trip invariant (#2514): every packaged stamp survives push �
 });
 
 describe("hydrate is a fixpoint across restarts (#2514)", () => {
-  // TEMPORARY (#3029): hydrate seeds nothing while the default kit is disabled — restored with the flag.
-  it.skipIf(!DEFAULT_KIT_SEEDED)("boot 1 seeds the empty store; boot 2 re-loads it and changes NOTHING", async () => {
+  it("boot 1 seeds the empty store; boot 2 re-loads it and changes NOTHING", async () => {
     await useAppStore.getState().hydrateComponents(); // boot 1: empty store → seed everything
     const afterBoot1 = fake.counts();
     expect(afterBoot1.writes).toBe(SEED_COMPONENTS.length + SEED_KITS.length);
@@ -182,43 +181,12 @@ describe("the #2514 heal — the maintainer's REAL broken store converges on one
     for (const k of brokenKits) expect(seedHashOf(k)).toBe(k.seedHash);
   });
 
-  it.skipIf(!DEFAULT_KIT_SEEDED)("hydrating over the broken store deletes the retirees, refreshes the rest, and materializes tech/style/pages", async () => {
-    for (const c of brokenComponents) await fake.write(null, ["ui", "set"], c);
-    for (const k of brokenKits) await fake.write(null, ["ui", "kit", "set"], k);
-
-    await useAppStore.getState().hydrateComponents();
-    const s = useAppStore.getState();
-    // Retired built-ins deleted — the examples kit and its services are NOT immortal.
-    expect(s.kits.map((k) => k.id)).toEqual(["react-ui"]);
-    expect(s.components.some((c) => c.kitId === "examples")).toBe(false);
-    for (const id of retiredIds) expect(fake.has("component", id)).toBe(false);
-    expect(fake.has("kit", "examples")).toBe(false);
-    // Current built-ins refreshed / appended: the collection converges to EXACTLY the packaged seed
-    // (loaded-order-first, so compare as id-sorted sets).
-    const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id);
-    expect([...s.components].sort(byId)).toEqual([...SEED_COMPONENTS].sort(byId));
-    // The #2487 axes and the #2505 pages tier materialize.
-    expect(s.kits[0].tech).toBeDefined();
-    expect(s.kits[0].style).toBeDefined();
-    expect(s.components.some((c) => c.role === "page")).toBe(true);
-    // All 48 stale records were pristine → the heal is silent (no orphan/upstream notices).
-    expect(s.seedNotices).toEqual([]);
-  });
-
-  it.skipIf(!DEFAULT_KIT_SEEDED)("a rotten STAMP on an in-seed record heals via the tolerant re-stamp (#2514 branch 1)", () => {
-    // Dynamically pick a fixture record whose content still equals the CURRENT seed's (avatar at the
-    // time of writing) so the test tracks seed evolution instead of hardcoding an id.
-    const seedById = new Map(SEED_COMPONENTS.map((s) => [s.id, s]));
-    const pristine = brokenComponents.find((c) => seedById.get(c.id) && seedHashOf(c) === seedById.get(c.id)!.seedHash);
-    expect(pristine, "no fixture record matches the current seed content anymore — pick a new one").toBeDefined();
-    // The rot the issue observed: a stamp the content no longer (appears to) match.
-    const rotten = { ...pristine!, seedHash: "f675d19a" };
-    const r = reconcileComponents([rotten]);
-    const healed = r.records.find((c) => c.id === rotten.id)!;
-    expect(healed).toEqual(seedById.get(rotten.id)); // same content, corrected stamp
-    expect(r.pushes).toContainEqual(healed); // pushed so the store converges
-    expect(r.notices).toEqual([]); // nothing diverged — silent heal
-  });
+  // The full "hydrate over the maintainer's real broken store" + "rotten stamp on an in-seed record"
+  // acceptance tests were react-ui-SEED specific (they asserted the store converges to the react-ui
+  // kit + its 48 components). With the clean-slate empty seed (#3543) there is nothing for a stale
+  // react-ui record to converge TO, so those two are dropped; the reconcile MECHANICS they exercised
+  // (drop-on-leave, refresh, keep-user-edit) are covered by seed.test.ts against the current seed. The
+  // RETIRED-record branch below still holds — every broken-store record is now a retiree.
 
   it("a rotten stamp on a RETIRED record is kept but NEVER silently (#2514 branch 2)", () => {
     const personaservice = brokenComponents.find((c) => c.id === "personaservice")!;

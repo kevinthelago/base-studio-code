@@ -32,22 +32,41 @@ import { DEBUG_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
  *  systemSessions, like the designer/librarian/architect). */
 export const DEBUG_PANE_ID = DEBUG_STUDIO_SESSION_ID;
 
-/** Resume the prior debug conversation across app restarts, else launch a fresh session. */
-const DEBUG_INIT_CMD = "claude --continue 2>/dev/null || claude";
+/**
+ * ALWAYS launch a FRESH conversation (#3497) — never `--continue`.
+ *
+ * This pane's cwd is the REPO ROOT, which is the same cwd every other Claude session on the machine
+ * uses, and `claude --continue` resumes the most recent conversation for a **directory**, not for a
+ * pane. So `--continue` here did not resume "the prior debug conversation" — it resumed whichever
+ * unrelated session last ran in this repo (there were three from the same hour when this was found).
+ *
+ * And it failed SILENTLY in both directions: the charter below is delivered as `--initial-message`
+ * FRESH-ONLY, so a resumed launch dropped it and the session was never told to work the request queue.
+ * The queue then sat unread with no error anywhere — `activity.log` showed prompts submitted while
+ * `audit.log` / `tokens.log` / `perm.log` had nothing at all for this pane.
+ *
+ * Launching fresh removes the whole class: the pane can never attach to a stranger's conversation, and
+ * the charter always arrives. The cost is no continuity across restarts, which is the right trade for
+ * a queue worker — it re-reads the queue on every start — and is the direction #3498 is heading anyway
+ * (per-request ephemeral sessions, where continuity is explicitly not wanted).
+ */
+export const DEBUG_INIT_CMD = "claude";
 
-/** The inline charter baked into the launch as `claude --initial-message` (fresh-only — delivered on the
- *  first launch, dropped when a later launch resumes an existing conversation; see
- *  `resolveStartupPromptFreshOnly`). Kept verbatim from the old `useDebugTerminal`. */
+/** The inline charter baked into the launch as `claude --initial-message`. Delivery is `fresh-only`
+ *  (`resolveStartupPromptFreshOnly`), which is why {@link DEBUG_INIT_CMD} must never resume: a resumed
+ *  launch drops this silently and the session runs with no idea it is the debugger (#3497). Kept
+ *  verbatim from the old `useDebugTerminal`. */
 export const DEBUG_START_PROMPT =
   "You are the base-studio-code DEBUG session. You have full read/write access to THIS repository and " +
   "run the normal dev workflow. Your job: improve the `bsc ui` surface so the Design Studio's designer " +
-  "session never needs permissions outside it. Work the improvement queue — run `bsc request list --open`, " +
-  "pick a request (each cites the exact `bsc ui` command that failed), reproduce it, implement the fix in " +
-  "crates/bsc-ui with tests, verify the gate (cargo check + clippy --all-targets + typecheck/lint for any " +
-  "frontend), then `bsc request resolve <id> --note \"<what changed>\"` and rebuild the sidecar with " +
+  "session never needs permissions outside it. Work the improvement queue — CLAIM the next request with " +
+  "`bsc request claim --by \"$BSC_AUDIT_PANE\" --json` (claiming is atomic, so you and the overflow pool " +
+  "never take the same one; if it prints nothing the queue is empty), reproduce the cited `bsc` command, " +
+  "implement the fix in the owning crate with tests, verify the gate (cargo check + clippy --all-targets " +
+  "+ typecheck/lint for any frontend), then `bsc request resolve <id> --note \"<what changed>\"` and rebuild the sidecar with " +
   "`cargo build --release --bin bsc` so the running app picks it up. Do your work in a git worktree under " +
   "`.claude/worktrees/<branch>/` on a branch off develop and open a PR — NEVER commit/push to develop or " +
-  "main directly, and never switch the main checkout off develop. Start by listing the open requests.";
+  "main directly, and never switch the main checkout off develop. Start by claiming a request.";
 
 /** Keeps the debug session's PTY warm on TerminalHost while `debugSession` is on. Renders nothing visible
  *  (the terminal is shown by the Glance morph); returns null when the flag is off or the source tree isn't
@@ -70,13 +89,19 @@ export function DebugSessionMount() {
   }, [debugSession]);
 
   // Seed the two ordinary Claude-launch store fields TerminalView reads at pty_create: the charter (baked
-  // as --initial-message) and the resume flag (claude --continue). Everything else about the debug
-  // session's posture comes from the isFullCapabilitySession carve-out, not the store.
+  // as --initial-message) and the resume flag. Everything else about the debug session's posture comes
+  // from the isFullCapabilitySession carve-out, not the store.
+  //
+  // `paneContinue` is FALSE (#3497). It is the flag TerminalView actually turns into `claude --continue`
+  // at pty_create, so it — not just the initCmd — is what made this pane resume. Both had to change:
+  // fixing only the initCmd would have left the bug fully intact. See {@link DEBUG_INIT_CMD} for why
+  // resuming is wrong here at all (this pane's cwd is the shared repo root, so a resume attaches to
+  // whichever unrelated session last ran in this repo, and silently drops the fresh-only charter).
   useEffect(() => {
     if (!debugSession || !repoRoot) return;
     useAppStore.setState((st) => ({
       paneStartupPromptText: { ...st.paneStartupPromptText, [DEBUG_PANE_ID]: DEBUG_START_PROMPT },
-      paneContinue:          { ...st.paneContinue, [DEBUG_PANE_ID]: true },
+      paneContinue:          { ...st.paneContinue, [DEBUG_PANE_ID]: false },
     }));
   }, [debugSession, repoRoot]);
 

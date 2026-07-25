@@ -1,6 +1,7 @@
 // Console domain — navigation + the tabs/panes/focus core app state, plus the pane-lifecycle
 // value types (warden quarantine, auto-ended workers). Split from store/types (#1634).
 import type { Workspace } from "@/app/chrome/Rail";
+import type { NavLoc } from "@/app/navigate";
 import type { Tab } from "@/app/chrome/Tabstrip";
 import type { ViewKey } from "@/app/console/panes/viewDefs";
 import type { ReaperConfig } from "@/app/console/lib/idleReaper";
@@ -49,6 +50,10 @@ export interface ConsoleState {
   // Navigation
   activeWorkspace: Workspace;
   setWorkspace: (screen: Workspace) => void;
+  /** Navigate to a location — switch the workspace AND set its page/entity in one call (#3602), so a
+   *  cross-workspace jump can never forget the page. Prefer this over a bare `setWorkspace` whenever the
+   *  target page matters (which is nearly always, except the page-less console). */
+  navigate: (loc: NavLoc) => void;
   // True once the async persisted state has rehydrated (transient — NOT persisted).
   // The app shell holds its first paint until this flips, to avoid a defaults flash.
   hasHydrated: boolean;

@@ -179,7 +179,288 @@ pub const BSC_SCOPES_ENV: &str = "BSC_SCOPES";
 /// bsc_cli_util::require_write_scope("skill")?; // Err → stderr + nonzero exit via cli_main
 /// ```
 pub fn scope_allows_write(scope: &str) -> bool {
-    scope_allows_write_in(std::env::var(BSC_SCOPES_ENV).ok().as_deref(), scope)
+    scope_allows_write_in(session_env(&SCOPES_OVERRIDE, BSC_SCOPES_ENV).as_deref(), scope)
+}
+
+/// A per-thread override of one session env var. Outer `None` = no override in force (read the real
+/// env); `Some(inner)` = use `inner`, where `None` means "the var is unset".
+type EnvOverride = std::cell::RefCell<Option<Option<String>>>;
+
+thread_local! {
+    /// The scope-doc override — see [`with_scopes`].
+    static SCOPES_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
+    /// The scratch-dir override — see [`with_scratch`].
+    static SCRATCH_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
+    /// The confinement-root override — see [`with_repo_root`].
+    static REPO_ROOT_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
+    /// The harvest-roots override — see [`with_harvest_roots`].
+    static HARVEST_ROOTS_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
+}
+
+/// The value of a session env var for THIS thread: the thread-local override when one is in force,
+/// else the real process environment. The single funnel [`with_scopes`] and [`with_scratch`] hang
+/// off, so a test seam can never disagree with the production read.
+fn session_env(cell: &'static std::thread::LocalKey<EnvOverride>, var: &str) -> Option<String> {
+    match cell.with(|c| c.borrow().clone()) {
+        Some(v) => v,
+        None => std::env::var(var).ok(),
+    }
+}
+
+/// Run `f` with `cell`'s override set to `doc`, restoring the previous value on drop — including
+/// while unwinding from a failed assertion. The shared body of [`with_scopes`] / [`with_scratch`].
+fn with_env_override<T>(
+    cell: &'static std::thread::LocalKey<EnvOverride>,
+    doc: Option<&str>,
+    f: impl FnOnce() -> T,
+) -> T {
+    struct Restore(&'static std::thread::LocalKey<EnvOverride>, Option<Option<String>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let prev = self.1.take();
+            self.0.with(|c| *c.borrow_mut() = prev);
+        }
+    }
+    let prev = cell.with(|c| c.borrow_mut().replace(doc.map(str::to_owned)));
+    let _restore = Restore(cell, prev);
+    f()
+}
+
+/// Run `f` with the session scope doc forced to `doc` **for the calling thread only** (#3382).
+///
+/// A TEST SEAM, and the reason it exists is worth stating plainly: `cargo test` runs a crate's tests
+/// as parallel THREADS OF ONE PROCESS, so `std::env::set_var(BSC_SCOPES_ENV, …)` is shared mutable
+/// state. A test that scoped `ui` read-only raced every concurrently-running test that called a write
+/// verb, and whichever lost saw a scope doc no one wrote for it — surfacing as an intermittent "this
+/// session's 'ui' scope is read-only" panic in an unrelated test (reproduced at ~5 runs in 12). A
+/// serializing mutex does NOT fix that: it orders the tests that TAKE it, while every test that merely
+/// reads the env stays exposed.
+///
+/// Thread-local removes the category rather than scheduling around it — each test thread sees exactly
+/// the doc it asked for, tests keep running in parallel, and no lock is needed. Production never sets
+/// an override, so [`scope_allows_write`] falls through to the real environment unchanged.
+///
+/// ```ignore
+/// bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+///     let err = run(vec!["remove".into(), "x".into()], "bsc ui").unwrap_err();
+///     assert!(err.contains("read-only"));
+/// });
+/// ```
+pub fn with_scopes<T>(doc: Option<&str>, f: impl FnOnce() -> T) -> T {
+    with_env_override(&SCOPES_OVERRIDE, doc, f)
+}
+
+/// Run `f` with `$BSC_SCRATCH` forced to `dir` **for the calling thread only** (#3382) — the scratch
+/// twin of [`with_scopes`], and the same disease: tests that `set_var`/`remove_var` this path raced
+/// each other, so `read_payload`'s "missing file" case intermittently saw "no scratch dir" because a
+/// sibling test had just cleared it. Pass `None` to assert the unset case hermetically.
+pub fn with_scratch<T>(dir: Option<&str>, f: impl FnOnce() -> T) -> T {
+    with_env_override(&SCRATCH_OVERRIDE, dir, f)
+}
+
+/// The env var naming the session's FS-confinement root (#158) — the repo root the `bsc-confine`
+/// PreToolUse hook checks Claude's file-tool paths against. `pty_create` sets it on EVERY pane, in
+/// BASH form on Windows (`/c/Users/…`), which is why [`require_harvestable_root`] normalizes before
+/// resolving.
+pub const BSC_REPO_ROOT_ENV: &str = "BSC_REPO_ROOT";
+
+/// Extra roots this session may HARVEST (read) from, beyond its confinement root (#3509) —
+/// newline-separated. READ-ONLY: it widens what `bsc ui harvest` / `bsc graph harvest` may scan and
+/// touches no write path, so a session can mine a repo it may not write to.
+pub const BSC_HARVEST_ROOTS_ENV: &str = "BSC_HARVEST_ROOTS";
+
+/// Run `f` with the confinement root forced to `root` **for the calling thread only** (#3475) — the
+/// repo-root twin of [`with_scopes`], and thread-local for exactly the same reason (#3382): `cargo
+/// test` runs a crate's tests as parallel threads of one process, so a `set_var` seam would race
+/// every sibling test. Pass `None` to assert the unconfined case hermetically.
+pub fn with_repo_root<T>(root: Option<&str>, f: impl FnOnce() -> T) -> T {
+    with_env_override(&REPO_ROOT_OVERRIDE, root, f)
+}
+
+/// Run `f` with `$BSC_HARVEST_ROOTS` forced to `roots` (newline-separated) **for the calling thread
+/// only** (#3509) — the harvest-allow-list twin of [`with_repo_root`], thread-local for the same #3382
+/// reason: `cargo test` runs a crate's tests as parallel threads of one process.
+pub fn with_harvest_roots<T>(roots: Option<&str>, f: impl FnOnce() -> T) -> T {
+    with_env_override(&HARVEST_ROOTS_OVERRIDE, roots, f)
+}
+
+/// A git-bash drive path (`/c/Users/…`) back to a native one (`C:/Users/…`) so Windows fs APIs can
+/// resolve it. The session writes `$BSC_REPO_ROOT` in BASH form, so comparing it against a native
+/// target would never match — the gate would refuse everything. Deliberately a local copy of
+/// src-tauri's `to_native_path`: that one is `pub(crate)` and the dependency direction runs
+/// src-tauri → crates, so it cannot be imported here.
+fn to_native_path(p: &str) -> String {
+    #[cfg(windows)]
+    {
+        let b = p.as_bytes();
+        if b.len() >= 3 && b[0] == b'/' && b[2] == b'/' && (b[1] as char).is_ascii_alphabetic() {
+            let drive = (b[1] as char).to_ascii_uppercase();
+            return format!("{drive}:/{}", &p[3..]);
+        }
+        p.to_string()
+    }
+    #[cfg(not(windows))]
+    p.to_string()
+}
+
+/// Refuse a path outside the session's FS-confinement root (#3475/#158) — the CLI twin of the
+/// `bsc-confine` PreToolUse hook.
+///
+/// WHY THIS EXISTS: `bsc-confine` reads `file_path` out of the hook payload, so it gates Claude's FILE
+/// TOOLS and is structurally blind to what a spawned binary reads. A verb that takes a directory and
+/// returns file CONTENTS — `bsc ui harvest`, `bsc graph harvest` — therefore hands a deliberately
+/// confined session (the designer and librarian are limited to their studio workspace, and CANNOT
+/// `Read` a repo file) a read of any path on disk, laundered through an allow-listed CLI. The grant was
+/// never the gap; the missing boundary was. Every verb that reads a caller-named directory should call
+/// this.
+///
+/// An UNSET or empty root means an unconfined session — a plain console, or a direct CLI run — and is
+/// allowed unchanged, so this is fully back-compatible. When the root IS set, both sides are resolved
+/// with `canonicalize` before comparing, so `..` segments and symlinks cannot walk out of it. A root
+/// that cannot itself be resolved FAILS CLOSED: a misconfigured confinement must not silently degrade
+/// into no confinement at all.
+pub fn require_harvestable_root(target: &std::path::Path) -> Result<(), String> {
+    let Some(root_raw) = session_env(&REPO_ROOT_OVERRIDE, BSC_REPO_ROOT_ENV) else { return Ok(()) };
+    if root_raw.trim().is_empty() {
+        return Ok(());
+    }
+    // The CONFINEMENT root fails closed when unresolvable: a misconfigured confinement must never
+    // silently degrade into no confinement.
+    let root_real = resolved_root(&root_raw).ok_or_else(|| {
+        format!(
+            "the session's confinement root ({}) cannot be resolved — refusing to read outside it              ($BSC_REPO_ROOT, #158)",
+            to_native_path(root_raw.trim())
+        )
+    })?;
+    let target_real = target
+        .canonicalize()
+        .map_err(|e| format!("cannot resolve '{}': {e}", target.display()))?;
+    if within(&target_real, &root_real) {
+        return Ok(());
+    }
+    let extra = harvest_roots();
+    if extra.iter().any(|r| within(&target_real, r)) {
+        return Ok(());
+    }
+    let mut allowed = vec![root_real.display().to_string()];
+    allowed.extend(extra.iter().map(|r| r.display().to_string()));
+    Err(format!(
+        "blocked: '{}' is outside every root this session may harvest ({}) — #158 FS confinement.          Add it to $BSC_HARVEST_ROOTS to grant READ-only harvest access, or run this from a session          whose root covers that path.",
+        target_real.display(),
+        allowed.join(", "),
+    ))
+}
+
+/// Is `target` the root itself or inside it? Both sides are already canonical.
+fn within(target: &std::path::Path, root: &std::path::Path) -> bool {
+    target == root || target.starts_with(root)
+}
+
+/// Canonicalize one root string, or `None` when it is blank or cannot be resolved. Callers decide what
+/// `None` means: for the confinement root it is a hard error, for an ALLOW-LIST entry it simply grants
+/// nothing — which is the fail-closed direction for a list that only ever widens access.
+fn resolved_root(raw: &str) -> Option<PathBuf> {
+    let r = raw.trim();
+    if r.is_empty() {
+        return None;
+    }
+    PathBuf::from(to_native_path(r)).canonicalize().ok()
+}
+
+/// The EXTRA roots this session may HARVEST from (#3509) — `$BSC_HARVEST_ROOTS`, newline-separated.
+///
+/// Newline, not the OS path separator, for the same reason `$BSC_DENY_BASH` uses it: a Windows path
+/// contains `;` and a `:`-bearing drive letter, so any single-character separator that also occurs in
+/// paths would split them wrongly.
+fn harvest_roots() -> Vec<PathBuf> {
+    session_env(&HARVEST_ROOTS_OVERRIDE, BSC_HARVEST_ROOTS_ENV)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(resolved_root)
+        .collect()
+}
+
+/// A read-only view of the session-scoped environment a confined CLI session runs under (#3571) — the
+/// data behind `bsc ui env`. A restricted studio session (designer/librarian) is cwd'd in its own
+/// sealed workspace, NOT the repo, so it cannot see its scratch dir, its write scopes, or — the reason
+/// this exists — the roots it may HARVEST. `harvest` refused every guessed path with only a terse "outside
+/// every root" message, leaving the session no way to DISCOVER where the app's UI actually lives. This
+/// surfaces all of it. Every field is read through the same `session_env` accessor the gates use, so the
+/// thread-local test overrides ([`with_scratch`]/[`with_scopes`]/[`with_repo_root`]/[`with_harvest_roots`])
+/// apply.
+pub struct SessionEnvSnapshot {
+    /// `$BSC_SCRATCH` — the sealed dir a `--file` payload is staged in. `None` ⇒ no scratch dir.
+    pub scratch: Option<String>,
+    /// `$BSC_SCOPES` — the write-scope doc (`{"ui":"read"}`). `None` ⇒ unconfined (full write access).
+    pub scopes: Option<String>,
+    /// `$BSC_REPO_ROOT` — the FS-confinement root, which is also the session's own harvestable root.
+    /// `None` ⇒ an unconfined session (a plain console / a direct CLI run).
+    pub repo_root: Option<String>,
+    /// `$BSC_HARVEST_ROOTS` — the EXTRA read-only trees this session may harvest (e.g. the app's own
+    /// source tree granted to the designer), already split and trimmed. Empty ⇒ none beyond `repo_root`.
+    pub harvest_roots: Vec<String>,
+}
+
+impl SessionEnvSnapshot {
+    /// The roots `harvest` will accept a directory under — the confinement root plus every extra harvest
+    /// root, in the order [`require_harvestable_root`] checks them.
+    pub fn harvestable_roots(&self) -> Vec<&str> {
+        self.repo_root.as_deref().into_iter().chain(self.harvest_roots.iter().map(String::as_str)).collect()
+    }
+}
+
+fn nonblank(o: Option<String>) -> Option<String> {
+    o.filter(|s| !s.trim().is_empty())
+}
+
+/// Snapshot the session-scoped env ([`SessionEnvSnapshot`]) — what `bsc ui env` reports so a confined
+/// session can discover its scratch dir, scopes, and harvestable roots.
+pub fn session_env_snapshot() -> SessionEnvSnapshot {
+    SessionEnvSnapshot {
+        scratch: nonblank(session_env(&SCRATCH_OVERRIDE, BSC_SCRATCH_ENV)),
+        scopes: nonblank(session_env(&SCOPES_OVERRIDE, BSC_SCOPES_ENV)),
+        repo_root: nonblank(session_env(&REPO_ROOT_OVERRIDE, BSC_REPO_ROOT_ENV)),
+        harvest_roots: session_env(&HARVEST_ROOTS_OVERRIDE, BSC_HARVEST_ROOTS_ENV)
+            .unwrap_or_default()
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect(),
+    }
+}
+
+/// Render [`session_env_snapshot`] as the human-readable `bsc ui env` report. `prog` is the command
+/// surface (`"bsc ui"`) so the closing hint names the real harvest verb the session should run.
+pub fn format_session_env(prog: &str) -> String {
+    let s = session_env_snapshot();
+    let mut out = String::new();
+    out.push_str(&format!(
+        "scratch dir:  {}\n",
+        s.scratch.as_deref().unwrap_or("(none — this session has no scratch dir)")
+    ));
+    out.push_str(&format!(
+        "write scopes: {}\n",
+        s.scopes.as_deref().unwrap_or("(unconfined — full write access)")
+    ));
+    out.push_str(&format!(
+        "confinement:  {}\n",
+        s.repo_root.as_deref().unwrap_or("(unconfined — no FS confinement)")
+    ));
+    let harvestable = s.harvestable_roots();
+    out.push_str("harvest roots (READ-only — the trees `harvest` may scan):\n");
+    if harvestable.is_empty() {
+        out.push_str("  (unconfined — harvest may scan any path)\n");
+    } else {
+        for r in &harvestable {
+            out.push_str(&format!("  {r}\n"));
+        }
+    }
+    // Point at the app's own source tree (an EXTRA root) when granted, else the session's own root.
+    if let Some(target) = s.harvest_roots.first().or(s.repo_root.as_ref()) {
+        out.push_str(&format!("\nMine a tree's components with:  {prog} harvest {target}\n"));
+    }
+    out
 }
 
 /// The pure core of [`scope_allows_write`]: `doc` is the raw `$BSC_SCOPES` value (or `None` when the
@@ -331,11 +612,33 @@ pub fn resolve_scratch_file(name: &str) -> Result<std::path::PathBuf, String> {
              its name, e.g. --file payload.json"
         ));
     }
-    let dir = std::env::var(BSC_SCRATCH_ENV).unwrap_or_default();
+    let dir = session_env(&SCRATCH_OVERRIDE, BSC_SCRATCH_ENV).unwrap_or_default();
     if dir.trim().is_empty() {
         return Err(format!(
             "--file needs ${BSC_SCRATCH_ENV} to be set (this session has no scratch dir); pipe the \
              payload on stdin instead"
+        ));
+    }
+    Ok(std::path::Path::new(&dir).join(name))
+}
+
+/// Resolve `--out <name>` to an absolute path inside the session scratch dir — the WRITE-side twin of
+/// [`resolve_scratch_file`] (#3713). Same traversal defence ([`is_bare_filename`]) and same
+/// fail-closed-on-unset-`$BSC_SCRATCH`, worded for the output flag. Lets a READ verb spill a large value
+/// into a confinement-allowed path the session can then Read/Grep, instead of relying on stdout — which a
+/// restricted studio session truncates (and spills OUT of the confinement, unreadable) for large output.
+pub fn resolve_scratch_out(name: &str) -> Result<std::path::PathBuf, String> {
+    if !is_bare_filename(name) {
+        return Err(format!(
+            "--out takes a BARE FILENAME inside the session scratch dir, not a path: '{name}' is not \
+             allowed (no '/', '\\', '..' or ':'). Pass just a name, e.g. --out srcText.tsx"
+        ));
+    }
+    let dir = session_env(&SCRATCH_OVERRIDE, BSC_SCRATCH_ENV).unwrap_or_default();
+    if dir.trim().is_empty() {
+        return Err(format!(
+            "--out needs ${BSC_SCRATCH_ENV} to be set (this session has no scratch dir); drop --out to \
+             print to stdout instead"
         ));
     }
     Ok(std::path::Path::new(&dir).join(name))
@@ -538,23 +841,67 @@ mod tests {
         assert!(scope_allows_write_in(Some(r#"{"ui":5}"#), "ui"));
     }
 
-    // ONE test owns the real $BSC_SCOPES env var (tests run in parallel threads; splitting these
-    // cases across tests would race on the shared process environment).
+    // #3382: these cases used to own the real $BSC_SCOPES env var, with a comment explaining that
+    // splitting them across tests would race the shared process environment. The override is
+    // thread-local, so that constraint is gone — each case is independent and they run in parallel.
     #[test]
-    fn scope_env_wrapper_and_require_write_scope_read_bsc_scopes() {
-        std::env::set_var(BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
-        assert!(!scope_allows_write("ui"));
-        assert!(scope_allows_write("plan")); // unlisted store stays unrestricted
-        let err = require_write_scope("ui").unwrap_err();
-        assert!(err.contains("'ui'"), "refusal names the scope: {err}");
-        assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
-        assert!(err.contains("read-only"), "refusal states the tier semantics: {err}");
-        std::env::set_var(BSC_SCOPES_ENV, r#"{"ui":"write"}"#);
-        assert!(scope_allows_write("ui"));
-        assert!(require_write_scope("ui").is_ok());
-        std::env::remove_var(BSC_SCOPES_ENV);
-        assert!(scope_allows_write("ui"), "absent env is unrestricted (back-compat)");
-        assert!(require_write_scope("ui").is_ok());
+    fn a_read_scope_refuses_the_write_and_names_why() {
+        with_scopes(Some(r#"{"ui":"read"}"#), || {
+            assert!(!scope_allows_write("ui"));
+            assert!(scope_allows_write("plan")); // unlisted store stays unrestricted
+            let err = require_write_scope("ui").unwrap_err();
+            assert!(err.contains("'ui'"), "refusal names the scope: {err}");
+            assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
+            assert!(err.contains("read-only"), "refusal states the tier semantics: {err}");
+        });
+    }
+
+    #[test]
+    fn a_write_scope_permits_the_write() {
+        with_scopes(Some(r#"{"ui":"write"}"#), || {
+            assert!(scope_allows_write("ui"));
+            assert!(require_write_scope("ui").is_ok());
+        });
+    }
+
+    #[test]
+    fn an_absent_scope_doc_is_unrestricted() {
+        with_scopes(None, || {
+            assert!(scope_allows_write("ui"), "absent doc is unrestricted (back-compat)");
+            assert!(require_write_scope("ui").is_ok());
+        });
+    }
+
+    #[test]
+    fn with_scopes_does_not_leak_into_a_sibling_thread() {
+        // THE #3382 REGRESSION GUARD. With process env this assertion was impossible to make: a
+        // read-only doc set by one test was visible to every other test in the process, which is
+        // exactly how an unrelated write verb started failing. A sibling thread must see its own
+        // unrestricted default while THIS thread is scoped read-only.
+        with_scopes(Some(r#"{"ui":"read"}"#), || {
+            assert!(!scope_allows_write("ui"), "this thread is scoped read-only");
+            let sibling = std::thread::spawn(|| scope_allows_write("ui"));
+            assert!(
+                sibling.join().unwrap(),
+                "a concurrently-running thread must be unaffected by this thread's scope override",
+            );
+        });
+    }
+
+    #[test]
+    fn with_scopes_restores_the_previous_state_including_on_panic() {
+        with_scopes(Some(r#"{"ui":"read"}"#), || {
+            // Nested: the inner override wins, then the outer one is restored on exit.
+            with_scopes(Some(r#"{"ui":"write"}"#), || assert!(scope_allows_write("ui")));
+            assert!(!scope_allows_write("ui"), "the outer read scope is restored");
+            // A panicking assertion is the NORMAL failure mode of a test — it must not leak the
+            // override into whatever runs next on this thread.
+            let boom = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                with_scopes(Some(r#"{"ui":"none"}"#), || panic!("a failing assertion"));
+            }));
+            assert!(boom.is_err(), "the panic propagated");
+            assert!(!scope_allows_write("ui"), "the outer read scope survived the unwind");
+        });
     }
 
     // ── `--file` scratch resolution (#3373) — the traversal defence ────────────────────────────────
@@ -586,19 +933,38 @@ mod tests {
 
     #[test]
     fn resolve_scratch_file_joins_a_bare_name_onto_the_scratch_dir() {
-        std::env::set_var(BSC_SCRATCH_ENV, "/tmp/bsc-scratch-test");
-        let p = resolve_scratch_file("payload.json").unwrap();
-        assert_eq!(p, std::path::Path::new("/tmp/bsc-scratch-test").join("payload.json"));
-        std::env::remove_var(BSC_SCRATCH_ENV);
+        with_scratch(Some("/tmp/bsc-scratch-test"), || {
+            let p = resolve_scratch_file("payload.json").unwrap();
+            assert_eq!(p, std::path::Path::new("/tmp/bsc-scratch-test").join("payload.json"));
+        });
     }
 
     #[test]
     fn resolve_scratch_file_refuses_a_path_and_says_why() {
-        std::env::set_var(BSC_SCRATCH_ENV, "/tmp/bsc-scratch-test");
-        let err = resolve_scratch_file("../../etc/passwd").unwrap_err();
-        assert!(err.contains("BARE FILENAME"), "refusal names the rule: {err}");
-        assert!(err.contains("--file payload.json"), "refusal shows the correct form: {err}");
-        std::env::remove_var(BSC_SCRATCH_ENV);
+        with_scratch(Some("/tmp/bsc-scratch-test"), || {
+            let err = resolve_scratch_file("../../etc/passwd").unwrap_err();
+            assert!(err.contains("BARE FILENAME"), "refusal names the rule: {err}");
+            assert!(err.contains("--file payload.json"), "refusal shows the correct form: {err}");
+        });
+    }
+
+    #[test]
+    fn resolve_scratch_out_mirrors_the_file_side_defences_for_the_output_flag() {
+        // #3713: the WRITE twin — same bare-name join, same traversal refusal, same fail-closed, worded
+        // for --out.
+        with_scratch(Some("/tmp/bsc-scratch-test"), || {
+            assert_eq!(
+                resolve_scratch_out("src.tsx").unwrap(),
+                std::path::Path::new("/tmp/bsc-scratch-test").join("src.tsx"),
+                "a bare name joins onto the scratch dir"
+            );
+            let err = resolve_scratch_out("../../etc/passwd").unwrap_err();
+            assert!(err.contains("BARE FILENAME") && err.contains("--out"), "refusal names the rule + flag: {err}");
+        });
+        with_scratch(None, || {
+            let err = resolve_scratch_out("src.tsx").unwrap_err();
+            assert!(err.contains(BSC_SCRATCH_ENV), "fails closed, naming the env var: {err}");
+        });
     }
 
     /// FAIL CLOSED: with no scratch dir the flag is refused outright. It must never resolve against the
@@ -606,14 +972,14 @@ mod tests {
     /// whole confinement.
     #[test]
     fn resolve_scratch_file_fails_closed_when_the_scratch_env_is_unset_or_blank() {
-        std::env::remove_var(BSC_SCRATCH_ENV);
-        let err = resolve_scratch_file("payload.json").unwrap_err();
-        assert!(err.contains(BSC_SCRATCH_ENV), "refusal names the env var: {err}");
-        assert!(err.contains("stdin"), "refusal points at the alternative: {err}");
-
-        std::env::set_var(BSC_SCRATCH_ENV, "   ");
-        assert!(resolve_scratch_file("payload.json").is_err(), "a blank scratch dir is still closed");
-        std::env::remove_var(BSC_SCRATCH_ENV);
+        with_scratch(None, || {
+            let err = resolve_scratch_file("payload.json").unwrap_err();
+            assert!(err.contains(BSC_SCRATCH_ENV), "refusal names the env var: {err}");
+            assert!(err.contains("stdin"), "refusal points at the alternative: {err}");
+        });
+        with_scratch(Some("   "), || {
+            assert!(resolve_scratch_file("payload.json").is_err(), "a blank scratch dir is still closed");
+        });
     }
 
     /// `--file` is exactly "stdin, from a sealed file": a payload read through it must be byte-identical
@@ -626,21 +992,21 @@ mod tests {
         let payload = "{\"id\":\"k/btn\",\"srcText\":\"export function B(){\\n  return <b c='x'/>;\\n}\"}";
         std::fs::write(dir.join("payload.json"), payload).unwrap();
 
-        std::env::set_var(BSC_SCRATCH_ENV, &dir);
-        let got = read_payload(Some("payload.json")).unwrap();
-        assert_eq!(got, payload, "--file must not transform the bytes");
-        std::env::remove_var(BSC_SCRATCH_ENV);
+        with_scratch(dir.to_str(), || {
+            let got = read_payload(Some("payload.json")).unwrap();
+            assert_eq!(got, payload, "--file must not transform the bytes");
+        });
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn read_payload_reports_a_missing_scratch_file_with_its_resolved_path() {
         let dir = std::env::temp_dir().join(format!("bsc-scratch-missing-{}", std::process::id()));
-        std::env::set_var(BSC_SCRATCH_ENV, &dir);
-        let err = read_payload(Some("nope.json")).unwrap_err();
-        assert!(err.contains("cannot read --file"), "names the failure: {err}");
-        assert!(err.contains("nope.json"), "names the file: {err}");
-        std::env::remove_var(BSC_SCRATCH_ENV);
+        with_scratch(dir.to_str(), || {
+            let err = read_payload(Some("nope.json")).unwrap_err();
+            assert!(err.contains("cannot read --file"), "names the failure: {err}");
+            assert!(err.contains("nope.json"), "names the file: {err}");
+        });
     }
 
     #[test]
@@ -651,5 +1017,246 @@ mod tests {
         assert_eq!(msg, format!("unknown command 'bogus'\n\n{}", help_overview("bsc-x", "a test tool", DOCS)));
         assert!(msg.contains("COMMANDS:"));
         assert!(msg.contains("tree"));
+    }
+
+    // ── FS confinement for caller-named directories (#3475/#158) ────────────────────────────────────
+    /// A unique, EMPTY scratch root. Named with the pid AND a counter, and removed first: pids are
+    /// recycled, and a fixture that inherits a previous run's directory is exactly the #3382 flake.
+    fn tmp_root(tag: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static N: AtomicU32 = AtomicU32::new(0);
+        let d = std::env::temp_dir().join(format!(
+            "bsc-confine-{}-{}-{tag}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn an_absent_or_empty_root_leaves_the_session_unconfined() {
+        // Back-compat: a plain console and a direct CLI run set no root and must be unchanged.
+        with_repo_root(None, || assert!(require_harvestable_root(&tmp_root("unset")).is_ok()));
+        with_repo_root(Some(""), || assert!(require_harvestable_root(&tmp_root("empty")).is_ok()));
+        with_repo_root(Some("   "), || assert!(require_harvestable_root(&tmp_root("blank")).is_ok()));
+    }
+
+    #[test]
+    fn a_target_inside_the_root_is_allowed_including_the_root_itself() {
+        let root = tmp_root("inside");
+        let child = root.join("a").join("b");
+        std::fs::create_dir_all(&child).unwrap();
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            assert!(require_harvestable_root(&root).is_ok(), "the root itself");
+            assert!(require_harvestable_root(&child).is_ok(), "a nested dir");
+        });
+    }
+
+    #[test]
+    fn a_target_outside_the_root_is_refused_and_the_error_names_both_paths() {
+        let root = tmp_root("root");
+        let outside = tmp_root("outside");
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            let err = require_harvestable_root(&outside).unwrap_err();
+            assert!(err.contains("outside every root this session may harvest"), "{err}");
+            assert!(err.contains("#158"), "cites the confinement: {err}");
+        });
+    }
+
+    #[test]
+    fn session_env_snapshot_surfaces_the_harvest_roots_a_confined_session_cannot_otherwise_see() {
+        // #3571: the whole point — a designer session cwd'd in its own workspace learns the app source
+        // tree (its granted extra root) from this, then harvests it.
+        with_scratch(Some("C:/ws/scratch"), || {
+            with_scopes(Some(r#"{"ui":"read"}"#), || {
+                with_repo_root(Some("C:/ws/design-studio"), || {
+                    with_harvest_roots(Some("C:/src/base-studio-code\nC:/src/other"), || {
+                        let s = session_env_snapshot();
+                        assert_eq!(s.scratch.as_deref(), Some("C:/ws/scratch"));
+                        assert_eq!(s.scopes.as_deref(), Some(r#"{"ui":"read"}"#));
+                        assert_eq!(s.repo_root.as_deref(), Some("C:/ws/design-studio"));
+                        assert_eq!(
+                            s.harvest_roots,
+                            vec!["C:/src/base-studio-code".to_string(), "C:/src/other".to_string()],
+                        );
+                        // Gate order: the confinement root first, then the extra harvest roots.
+                        assert_eq!(
+                            s.harvestable_roots(),
+                            vec!["C:/ws/design-studio", "C:/src/base-studio-code", "C:/src/other"],
+                        );
+                        let report = format_session_env("bsc ui");
+                        assert!(report.contains("C:/src/base-studio-code"), "names the app root:\n{report}");
+                        // The closing hint gives the exact verb + prefers the app tree (an extra root).
+                        assert!(
+                            report.contains("bsc ui harvest C:/src/base-studio-code"),
+                            "actionable hint:\n{report}",
+                        );
+                    });
+                });
+            });
+        });
+    }
+
+    #[test]
+    fn session_env_report_reads_gracefully_when_unconfined() {
+        // A plain console / direct CLI run sets none of these; the report says so rather than erroring.
+        with_scratch(None, || {
+            with_scopes(None, || {
+                with_repo_root(None, || {
+                    with_harvest_roots(None, || {
+                        let s = session_env_snapshot();
+                        assert!(s.scratch.is_none() && s.scopes.is_none());
+                        assert!(s.repo_root.is_none() && s.harvest_roots.is_empty());
+                        assert!(s.harvestable_roots().is_empty());
+                        let report = format_session_env("bsc ui");
+                        assert!(report.contains("unconfined"), "{report}");
+                    });
+                });
+            });
+        });
+    }
+
+    #[test]
+    fn dotdot_cannot_walk_out_of_the_root() {
+        // THE bypass that matters: without canonicalizing, `<root>/sub/../..` compares as a prefix of
+        // the root string and would sail straight through.
+        let root = tmp_root("dotdot");
+        let sub = root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            assert!(require_harvestable_root(&sub.join("..").join("..")).is_err(), "escaped via ..");
+            assert!(require_harvestable_root(&sub.join("..")).is_ok(), "..-back-to-root is still inside");
+        });
+    }
+
+    #[test]
+    fn a_root_that_cannot_be_resolved_fails_closed() {
+        // A misconfigured confinement must NOT silently degrade into no confinement at all.
+        let target = tmp_root("failclosed");
+        with_repo_root(Some("/no/such/confinement/root/anywhere"), || {
+            let err = require_harvestable_root(&target).unwrap_err();
+            assert!(err.contains("cannot be resolved"), "{err}");
+        });
+    }
+
+    #[test]
+    fn the_repo_root_override_does_not_leak_into_a_sibling_thread() {
+        // The #3382 guarantee, restated for this seam: parallel test threads must not see each other's
+        // override. Impossible to assert against process env, which is why the seam is thread-local.
+        let root = tmp_root("thread");
+        let outside = tmp_root("thread-outside");
+        let probe = outside.clone();
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            assert!(require_harvestable_root(&outside).is_err(), "this thread is confined");
+            let sibling = std::thread::spawn(move || require_harvestable_root(&probe).is_ok());
+            assert!(sibling.join().unwrap(), "a sibling thread must be unconfined");
+        });
+    }
+
+    // ── READ-only harvest roots, separate from the write confinement (#3509) ───────────────────────
+    #[test]
+    fn a_listed_harvest_root_is_allowed_even_though_it_is_outside_the_confinement_root() {
+        // THE point of #3509. The designer's root is its studio dir, which holds no source, so tying
+        // harvest to the WRITE root left it unable to mine anything. Harvest is a READ; this grants it
+        // without touching where the session may write.
+        let root = tmp_root("hr-root");
+        let elsewhere = tmp_root("hr-elsewhere");
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            assert!(require_harvestable_root(&elsewhere).is_err(), "refused before it is listed");
+            with_harvest_roots(Some(&elsewhere.to_string_lossy()), || {
+                assert!(require_harvestable_root(&elsewhere).is_ok(), "allowed once listed");
+            });
+        });
+    }
+
+    #[test]
+    fn a_target_outside_both_is_still_refused_and_the_error_names_every_allowed_root() {
+        let root = tmp_root("hr2-root");
+        let listed = tmp_root("hr2-listed");
+        let other = tmp_root("hr2-other");
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            with_harvest_roots(Some(&listed.to_string_lossy()), || {
+                let err = require_harvestable_root(&other).unwrap_err();
+                assert!(err.contains("outside every root this session may harvest"), "{err}");
+                assert!(err.contains("$BSC_HARVEST_ROOTS"), "points at the remedy: {err}");
+            });
+        });
+    }
+
+    #[test]
+    fn several_roots_are_newline_separated_and_each_grants_its_own_subtree() {
+        let root = tmp_root("hr3-root");
+        let a = tmp_root("hr3-a");
+        let b = tmp_root("hr3-b");
+        let nested = b.join("deep").join("er");
+        std::fs::create_dir_all(&nested).unwrap();
+        let list = format!("{}
+{}", a.display(), b.display());
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            with_harvest_roots(Some(&list), || {
+                assert!(require_harvestable_root(&a).is_ok());
+                assert!(require_harvestable_root(&nested).is_ok(), "a subtree of a listed root");
+            });
+        });
+    }
+
+    #[test]
+    fn an_unresolvable_harvest_entry_grants_nothing_rather_than_widening_access() {
+        // An ALLOW-list only ever widens, so a junk entry must be SKIPPED — that is its fail-closed
+        // direction. (The CONFINEMENT root is the opposite: unresolvable there is a hard error.)
+        let root = tmp_root("hr4-root");
+        let outside = tmp_root("hr4-outside");
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            with_harvest_roots(Some("/no/such/root
+
+   "), || {
+                assert!(require_harvestable_root(&outside).is_err(), "junk grants nothing");
+                assert!(require_harvestable_root(&root).is_ok(), "the real root still works");
+            });
+        });
+    }
+
+    #[test]
+    fn dotdot_cannot_escape_a_listed_harvest_root_either() {
+        let root = tmp_root("hr5-root");
+        let listed = tmp_root("hr5-listed");
+        let sub = listed.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            with_harvest_roots(Some(&listed.to_string_lossy()), || {
+                assert!(require_harvestable_root(&sub).is_ok());
+                assert!(require_harvestable_root(&sub.join("..").join("..")).is_err(), "escaped via ..");
+            });
+        });
+    }
+
+    #[test]
+    fn harvest_roots_do_not_touch_the_write_gate() {
+        // The whole proposal is read-only. Listing a root must not make a read-only scope writable.
+        let listed = tmp_root("hr6-listed");
+        with_harvest_roots(Some(&listed.to_string_lossy()), || {
+            with_scopes(Some(r#"{"ui":"read"}"#), || {
+                assert!(!scope_allows_write("ui"), "still read-only");
+                assert!(require_write_scope("ui").is_err());
+            });
+        });
+    }
+
+    #[test]
+    fn the_harvest_override_does_not_leak_into_a_sibling_thread() {
+        let root = tmp_root("hr7-root");
+        let listed = tmp_root("hr7-listed");
+        let probe = listed.clone();
+        let root_s = root.to_string_lossy().into_owned();
+        let root_for_sibling = root_s.clone();
+        with_repo_root(Some(&root_s), || {
+            with_harvest_roots(Some(&listed.to_string_lossy()), || {
+                assert!(require_harvestable_root(&listed).is_ok(), "this thread may harvest it");
+                let sibling = std::thread::spawn(move || {
+                    with_repo_root(Some(&root_for_sibling), || require_harvestable_root(&probe).is_err())
+                });
+                assert!(sibling.join().unwrap(), "a sibling thread must NOT inherit the allow-list");
+            });
+        });
     }
 }

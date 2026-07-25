@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  seedSkills, resolveSkills, toSkillCfgs, skillSlug, blankSkill,
+  seedSkills, resolveSkills, toSkillCfgs, skillSlug, skillContentKey, blankSkill,
   parseSkillsFile, deriveSkillKpis, refreshPackagedSkills,
   sessionSkillState, effectiveSessionSkills, applySessionSkillChoice,
   expandGroups, groupSkillCount, parseSkillGroupsFile, type SkillDef, type SkillGroup,
@@ -30,6 +30,16 @@ describe("seedSkills", () => {
     expect(seed.every(s => s.enabled)).toBe(true);
     expect(seed.every(s => s.projects.length === 0)).toBe(true);
     expect(seed.every(s => typeof s.prompt === "string")).toBe(true);
+  });
+
+  it("seeds the designer AUTHORING skills (a11y + compliance) as workflow, distinct from the *-review audits (#3766)", () => {
+    const seed = seedSkills();
+    const authoring = seed.filter(s => s.id.startsWith("author-")).map(s => s.id).sort();
+    expect(authoring).toEqual(["author-accessible-components", "author-compliant-components"]);
+    // Authoring = a build-time procedure (workflow), NOT a post-hoc review — that's the shift-left point.
+    expect(seed.filter(s => s.id.startsWith("author-")).every(s => s.kind === "workflow")).toBe(true);
+    // The audit twin stays a review: author → audit is the two-sided loop.
+    expect(seed.find(s => s.id === "wcag-audit")?.kind).toBe("review");
   });
 });
 
@@ -173,6 +183,27 @@ describe("toSkillCfgs", () => {
   it("maps to the backend payload and skips name-less skills", () => {
     const cfgs = toSkillCfgs([def({ name: "Open a clean PR" }), def({ id: "x", name: "***" })]);
     expect(cfgs).toEqual([{ id: "s1", name: "Open a clean PR", description: "d", prompt: "body", tools: ["create_pr"] }]);
+  });
+});
+
+describe("skillContentKey (#3672)", () => {
+  it("is equal for identical authored content, differs when any authored field changes, and ignores user/display state", () => {
+    const a = def();
+    expect(skillContentKey(a)).toBe(skillContentKey({ ...a }));
+    // Each AUTHORED field (the packaged code owns) shifts the key, so a code update re-pushes.
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, name: "Renamed" }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, kind: "review" }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, source: "imported" }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, desc: "changed" }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, prompt: "new body" }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, tools: [...a.tools, "extra"] }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, profiles: ["review"] }));
+    // User/display state is NOT part of the key — enabled/pinned/projects/telemetry write through
+    // their own mutations, so a toggle never triggers a hydrate re-push (the whole point of #3672).
+    expect(skillContentKey(a)).toBe(skillContentKey({
+      ...a, id: "whatever", enabled: false, pinned: true, projects: ["p1"],
+      invocations: 99, success: 42, avgTokensK: 7, trend: [1, 2, 3],
+    }));
   });
 });
 

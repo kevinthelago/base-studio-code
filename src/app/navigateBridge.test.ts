@@ -12,6 +12,7 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
     projectsPageMode: "projects",
     designsKitId: "",
     designsCompId: null,
+    designsPreviewState: "loaded",
     kitTheme: "default",
     kits: [{ id: "react-ui" }, { id: "react-d3" }],
     kitThemes: [{ id: "default" }, { id: "nord" }],
@@ -25,6 +26,7 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
     setKitTheme: (v: string) => { s.kitTheme = v; },
     setDesignsKit: (v: string) => { s.designsKitId = v; s.designsCompId = null; },
     setDesignsComp: (v: string | null) => { s.designsCompId = v; },
+    setDesignsPreviewState: (v: string) => { s.designsPreviewState = v; },
     ...over,
   };
   return {
@@ -35,9 +37,12 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
   };
 }
 
+// The Design Studio "already showing" store — a component navigate folds to it (#3599).
+const onStudio = { activeWorkspace: "projects", projectsPageMode: "designs" };
+
 describe("navigateBridge — component (the case #3261 needed a human click for)", () => {
-  it("selects the component AND lands its workspace + page (intents, not steps)", () => {
-    const v = makeVocab();
+  it("when the Studio is showing, selects the component AND lands its workspace + page (intents, not steps)", () => {
+    const v = makeVocab(onStudio);
     const ack = applyNavigate({ kit: "react-d3", component: "Heatmap" }, v);
     expect(ack.error).toBeUndefined();
     // The caller asked for a component; it should not have to know where the Studio lives.
@@ -47,18 +52,39 @@ describe("navigateBridge — component (the case #3261 needed a human click for)
     expect(ack.component).toBe("Heatmap");
   });
 
-  it("reports the view read back AFTER the mutations, not the request it was handed", () => {
-    // The stale-snapshot bug: read the store once up front and the ack reports the PRE-navigation view
-    // (workspace=console), which would send every following capture at the wrong screen — confidently.
-    const v = makeVocab();
-    expect(v.s.activeWorkspace).toBe("console");
+  it("#3599: OFF the Studio, sets the focus but does NOT yank the user off their current page", () => {
+    const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
     const ack = applyNavigate({ kit: "react-d3", component: "Heatmap" }, v);
+    expect(ack.error).toBeUndefined();
+    // The focus IS set (so the Studio shows it when the user opens it themselves) …
+    expect(v.s.designsKitId).toBe("react-d3");
+    expect(v.s.designsCompId).toBe("Heatmap");
+    // … but the user's current view is UNTOUCHED — no forced navigation.
+    expect(v.s.activeWorkspace).toBe("github");
+    expect(v.s.projectsPageMode).toBe("projects");
+    expect(ack.workspace).toBe("github");
+  });
+
+  it("#3599: an EXPLICIT workspace/page request still navigates (a deliberate steer, not a background focus)", () => {
+    const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
+    const ack = applyNavigate({ workspace: "projects", page: "designs", kit: "react-d3", component: "Heatmap" }, v);
     expect(ack.workspace).toBe("projects");
-    expect(v.s.activeWorkspace).toBe("projects");
+    expect(ack.page).toBe("designs");
+    expect(ack.component).toBe("Heatmap");
+  });
+
+  it("reports the view read back AFTER the mutations, not the request it was handed", () => {
+    // The stale-snapshot bug: read the store once up front and the ack reports the PRE-mutation value
+    // (an empty component), which would send every following capture at the wrong node — confidently.
+    const v = makeVocab(onStudio);
+    expect(v.s.designsCompId).toBeNull();
+    const ack = applyNavigate({ kit: "react-d3", component: "Heatmap" }, v);
+    expect(ack.component).toBe("Heatmap");
+    expect(v.s.designsCompId).toBe("Heatmap");
   });
 
   it("sets the kit BEFORE the component (setDesignsKit clears the selection)", () => {
-    const v = makeVocab();
+    const v = makeVocab(onStudio);
     const ack = applyNavigate({ kit: "react-d3", component: "Heatmap" }, v);
     // If the order flipped, the kit change would null the component and this would be undefined.
     expect(ack.component).toBe("Heatmap");
@@ -78,6 +104,25 @@ describe("navigateBridge — component (the case #3261 needed a human click for)
     const ack = applyNavigate({ kit: "react-d3", component: "Heatmap", theme: "nord" }, v);
     expect(ack.theme).toBe("nord");
     expect(ack.component).toBe("Heatmap");
+  });
+
+  it("#3717: drives the preview DATA-STATE so a capture targets a specific render", () => {
+    const v = makeVocab(onStudio);
+    const ack = applyNavigate({ kit: "react-d3", component: "Heatmap", state: "loading" }, v);
+    expect(ack.error).toBeUndefined();
+    expect(ack.state).toBe("loading");
+    expect(v.s.designsPreviewState).toBe("loading");
+    // The state control and navigate now share ONE store value.
+  });
+
+  it("#3717: rejects an unknown state, listing the valid ones (no half-apply)", () => {
+    const v = makeVocab(onStudio);
+    const ack = applyNavigate({ kit: "react-d3", component: "Heatmap", state: "spinning" }, v);
+    expect(ack.error).toContain("unknown state 'spinning'");
+    expect(ack.error).toContain("loading");
+    // Validated BEFORE any mutation — the component focus did not move either.
+    expect(v.s.designsPreviewState).toBe("loaded");
+    expect(v.s.designsCompId).toBeNull();
   });
 });
 
@@ -141,6 +186,7 @@ describe("navigateBridge — the other verbs", () => {
       kit: "react-d3",
       component: "Heatmap",
       theme: "default",
+      state: "loaded",
     });
     expect(v.s.activeWorkspace).toBe("glance");
   });

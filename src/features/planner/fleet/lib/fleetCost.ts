@@ -1,6 +1,13 @@
 // Fleet cost & energy (#2237) — pure aggregation of per-pane token/cost telemetry over the live worker
 // roster. COST is real (priced from each transcript's actual model by `bsc logs cost`); ENERGY is a
 // clearly-labeled DIRECTIONAL ESTIMATE (tokens × a per-model-tier coefficient), never metered.
+//
+// The groupBy-and-total is the generic `groupTotals` (#3465) — the reusable "roll rows up per key +
+// overall in one pass" algorithm this panel was a source for. The Wh-per-token energy estimate is
+// likewise the generic `estimateEnergyWh` node (#3462, `llmEnergy.ts`) — this panel was its source,
+// so the local copy is gone and it's delegated + re-exported (#3607).
+import { groupTotals } from "@/shared/lib/algorithms/groupTotals";
+import { estimateEnergyWh } from "@/shared/lib/algorithms/llmEnergy";
 
 /** The per-pane rollup shape from `bsc logs cost --full` (subset used here; keys = the Rust struct). */
 export interface TokenUsage {
@@ -35,31 +42,13 @@ export interface FleetCost {
 }
 
 // ── Energy estimate ────────────────────────────────────────────────────────────
-// Rough Wh per 1k tokens by model tier. Output generation dominates energy; input/cache are cheaper.
-// These are ORDER-OF-MAGNITUDE constants for a directional estimate — NOT a measurement. Tune freely.
-const WH_PER_1K: Record<"large" | "medium" | "small" | "local", { in: number; out: number }> = {
-  large: { in: 0.05, out: 0.9 },   // Opus / GPT-4-class frontier models
-  medium: { in: 0.03, out: 0.4 },  // Sonnet / GPT-4o / Gemini-Pro-class
-  small: { in: 0.01, out: 0.15 },  // Haiku / mini / flash
-  local: { in: 0, out: 0 },        // local models — no cloud energy attributed
-};
+// `estimateEnergyWh` is the generic algorithms-graph node (`llmEnergy.ts`, #3462): tokens × a
+// per-model-tier coefficient, directional not metered. It's re-exported here so this panel and its
+// test still resolve it from one place, while the single implementation lives in the graph (#3607).
+export { estimateEnergyWh };
 
 /** Average grid carbon intensity (kg CO₂ per kWh) — a rough global figure for the CO₂ estimate. */
 export const CO2_KG_PER_KWH = 0.40;
-
-function tier(model: string): keyof typeof WH_PER_1K {
-  const m = model.toLowerCase();
-  if (/local|ollama|llama|mistral|qwen|deepseek|phi/.test(m)) return "local";
-  if (/opus|ultra|gpt-4(?!o)|gpt4(?!o)/.test(m)) return "large";
-  if (/haiku|mini|flash|nano|small|lite/.test(m)) return "small";
-  return "medium"; // sonnet / gpt-4o / gemini-pro / unknown hosted → Sonnet-class
-}
-
-/** Estimated Wh for an input/output token split at the model's tier. Directional, not metered. */
-export function estimateEnergyWh(model: string, inputTokens: number, outputTokens: number): number {
-  const k = WH_PER_1K[tier(model)];
-  return (inputTokens / 1000) * k.in + (outputTokens / 1000) * k.out;
-}
 
 /** Join per-pane usage to the live roster and roll up per-worker + fleet totals + a by-model split. */
 export function aggregateFleetCost(workers: CostWorkerLike[], usage: Map<string, TokenUsage>): FleetCost {
@@ -78,23 +67,25 @@ export function aggregateFleetCost(workers: CostWorkerLike[], usage: Map<string,
   }
   list.sort((a, b) => b.costUsd - a.costUsd);
 
-  const byModelMap = new Map<string, { model: string; tokens: number; costUsd: number; energyWh: number }>();
-  for (const c of list) {
-    const e = byModelMap.get(c.model) ?? { model: c.model, tokens: 0, costUsd: 0, energyWh: 0 };
-    e.tokens += c.totalTokens; e.costUsd += c.costUsd; e.energyWh += c.energyWh;
-    byModelMap.set(c.model, e);
-  }
+  // The groupBy-by-model + every fleet total is the generic `groupTotals` (#3465), one pass over the
+  // rolled-up rows — so a fleet total can never disagree with the sum of its per-model breakdown. The
+  // JOIN + per-row rollup above (usage → worker cost) stays here: it is the app-specific projection,
+  // and a graph algorithm cannot know a TokenUsage.
+  const { totals, groups } = groupTotals(list, (c) => c.model, {
+    totalTokens: (c) => c.totalTokens,
+    totalInput: (c) => c.input,
+    totalOutput: (c) => c.output,
+    totalCache: (c) => c.cache,
+    totalCostUsd: (c) => c.costUsd,
+    totalEnergyWh: (c) => c.energyWh,
+  });
 
-  const sum = (f: (c: WorkerCost) => number) => list.reduce((a, c) => a + f(c), 0);
   return {
     workers: list,
-    totalTokens: sum((c) => c.totalTokens),
-    totalInput: sum((c) => c.input),
-    totalOutput: sum((c) => c.output),
-    totalCache: sum((c) => c.cache),
-    totalCostUsd: sum((c) => c.costUsd),
-    totalEnergyWh: sum((c) => c.energyWh),
-    byModel: [...byModelMap.values()].sort((a, b) => b.costUsd - a.costUsd),
+    ...totals,
+    byModel: groups
+      .map((g) => ({ model: g.key, tokens: g.totals.totalTokens, costUsd: g.totals.totalCostUsd, energyWh: g.totals.totalEnergyWh }))
+      .sort((a, b) => b.costUsd - a.costUsd),
     hasData: list.length > 0,
   };
 }

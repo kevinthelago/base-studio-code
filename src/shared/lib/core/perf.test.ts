@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { timed, formatPerfSummary } from "./perf";
+import { timed, timedSync, formatPerfSummary } from "./perf";
 import { log } from "./log";
 import { useAppStore } from "@/store";
 import type { PerfConfig } from "@/store";
@@ -174,5 +174,31 @@ describe("perf backend commands (mocked invoke)", () => {
     await expect(
       invoke("perf_get_config")
     ).resolves.toBeNull();
+  });
+});
+
+describe("timedSync (#3618)", () => {
+  it("returns the fn result untouched", () => {
+    expect(timedSync("x", () => 42)).toBe(42);
+  });
+
+  it("does NOT log a fast call (under the threshold)", () => {
+    const warn = vi.spyOn(log, "warn");
+    timedSync("fast", () => 1, 16);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("logs `[perf] <label> took Nms` when the call exceeds the threshold", () => {
+    const warn = vi.spyOn(log, "warn");
+    vi.spyOn(performance, "now").mockReturnValueOnce(0).mockReturnValueOnce(25);
+    timedSync("buildGraph:glance-project", () => 1, 16);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("buildGraph:glance-project took 25ms"));
+  });
+
+  it("still times (and rethrows) when the fn throws", () => {
+    const warn = vi.spyOn(log, "warn");
+    vi.spyOn(performance, "now").mockReturnValueOnce(0).mockReturnValueOnce(30);
+    expect(() => timedSync("boom", () => { throw new Error("e"); }, 16)).toThrow("e");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("boom took 30ms"));
   });
 });

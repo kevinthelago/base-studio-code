@@ -13,6 +13,7 @@ import { Box } from "./layout/Box";
 import { Stack } from "./layout/Stack";
 import { Row } from "./layout/Row";
 import { Spacer } from "./layout/Spacer";
+import { Slot } from "./layout/Slot";
 import { Grid } from "./layout/Grid";
 import { SectionHeader } from "./layout/SectionHeader";
 import { SectionLabel } from "./layout/SectionLabel";
@@ -26,6 +27,7 @@ import { Checkbox } from "./controls/Checkbox";
 import { Toggle } from "./controls/Toggle";
 import { SegmentedControl } from "./controls/SegmentedControl";
 import { TextField, TextArea, SelectField } from "./controls/Field";
+import { Option } from "./controls/Option";
 import { BackButton } from "./controls/BackButton";
 import { ColorSwatch } from "./controls/ColorSwatch";
 import { ConfirmButton } from "./controls/ConfirmButton";
@@ -76,9 +78,9 @@ type AnyComponent = ComponentType<any>;
 /** name → component for every primitive in the manifest. The `Record<PrimitiveName>` type enforces
  *  exhaustive, in-sync coverage at compile time. */
 export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
-  Box, Stack, Row, Spacer, Grid, SectionHeader, SectionLabel, Dialog, ModalScrim, ModalCard,
+  Box, Stack, Row, Spacer, Slot, Grid, SectionHeader, SectionLabel, Dialog, ModalScrim, ModalCard,
   Text,
-  Button, IconButton, Checkbox, Toggle, SegmentedControl, TextField, TextArea, SelectField,
+  Button, IconButton, Checkbox, Toggle, SegmentedControl, TextField, TextArea, SelectField, Option,
   BackButton, ColorSwatch, ConfirmButton,
   Card, Chip, StatTile, FillBar, Code,
   Avatar, IconBox, CardListRow, DataTableRow, RoleTierChips,
