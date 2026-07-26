@@ -74,14 +74,33 @@ describe("BlueprintImportModal", () => {
     expect(onImport).not.toHaveBeenCalled();                  // previewing never imports
   });
 
-  it("filters by the search query", async () => {
+  it("re-lists when the gist source is changed (#3802)", async () => {
+    // The source input IS the query now — typing a new account + Enter re-runs listBlueprintGists
+    // for THAT account and lists every gist it publishes.
+    vi.mocked(listBlueprintGists).mockImplementation(async (src: string) =>
+      src === "otheruser" ? [gist({ id: "g-other", name: "Other BP" })] : ITEMS);
+    renderModal();                                        // initial source = "me"
+    await screen.findByText("Fresh BP");
+    expect(vi.mocked(listBlueprintGists)).toHaveBeenCalledWith("me", "tok");
+
+    const sourceInput = screen.getByLabelText("Gist source (GitHub account)");
+    fireEvent.change(sourceInput, { target: { value: "otheruser" } });
+    fireEvent.keyDown(sourceInput, { key: "Enter" });
+
+    expect(await screen.findByText("Other BP")).toBeTruthy();
+    expect(vi.mocked(listBlueprintGists)).toHaveBeenCalledWith("otheruser", "tok");
+    expect(screen.queryByText("Fresh BP")).toBeNull();    // the old source's gists are gone
+  });
+
+  it("lists every gist from the source (no within-source search) (#3802)", async () => {
     vi.mocked(listBlueprintGists).mockResolvedValue(ITEMS);
     renderModal();
     await screen.findByText("Fresh BP");
-    fireEvent.change(screen.getByPlaceholderText(/search blueprints/i), { target: { value: "fresh" } });
-    expect(screen.getByText("Fresh BP")).toBeTruthy();
-    expect(screen.queryByText("Imported BP")).toBeNull();
-    expect(screen.queryByText("Stale BP")).toBeNull();
+    // All three of the source's gists are listed — there is no search box to narrow them.
+    expect(screen.getByText("Imported BP")).toBeTruthy();
+    expect(screen.getByText("Stale BP")).toBeTruthy();
+    expect(screen.queryByPlaceholderText(/search blueprints/i)).toBeNull();
+    expect(screen.getByLabelText("Gist source (GitHub account)")).toBeTruthy();
   });
 
   it("fires onImport with the gist id + updatedAt when Import is clicked", async () => {

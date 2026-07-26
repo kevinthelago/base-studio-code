@@ -6,7 +6,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { ProjectsList } from "./ProjectsList";
 import { useAppStore } from "@/store";
-import type { GhProject } from "./PublishedProjects";
+import type { GhProject } from "./published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
 
 const LOCAL_PUBLISHED = { key: "acme-crm", title: "Acme CRM", hasPlan: true, updatedAt: 5, published: true };

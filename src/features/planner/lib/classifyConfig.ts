@@ -13,9 +13,21 @@
  *  (FileIntakePane). */
 export type UiMode = "custom" | "external";
 
+/** The project's APPLICATION ARCHITECTURE (#3802) — what KIND of app it is, the axis the Projects
+ *  list facets by. A flat taxonomy grounded in the deploy model (cloud `workload` +
+ *  local `localKind`): a general application, a desktop/mobile app, a backend API, serverless
+ *  functions, a static site, a CLI tool, or a published library. Unset ⇒ read as "application". */
+export type AppType =
+  | "application" | "desktop" | "mobile" | "api" | "serverless" | "static" | "cli" | "library";
+
+/** The valid `AppType` tokens, for the coerce below + facet iteration. */
+export const APP_TYPES: AppType[] = ["application", "api", "serverless", "static", "desktop", "mobile", "cli", "library"];
+
 export interface ClassifyConfig {
   /** Which surface the `ui` stage renders. Unset → the body defaults to "custom". */
   uiMode?: UiMode;
+  /** The project's application architecture (#3802). Unset → read as "application". */
+  appType?: AppType;
   /** The project connects to an external system → show the `source` stage. */
   needsSource?: boolean;
   /** The project uses MCP servers → show the `mcps` stage. */
@@ -34,6 +46,7 @@ export function coerceClassifyConfig(raw: unknown): ClassifyConfig | null {
   const r = raw as Record<string, unknown>;
   const cfg: ClassifyConfig = {};
   if (r.uiMode === "custom" || r.uiMode === "external") cfg.uiMode = r.uiMode;
+  if (typeof r.appType === "string" && (APP_TYPES as string[]).includes(r.appType)) cfg.appType = r.appType as AppType;
   if (typeof r.needsSource === "boolean") cfg.needsSource = r.needsSource;
   if (typeof r.needsMcp === "boolean") cfg.needsMcp = r.needsMcp;
   if (typeof r.needsSkills === "boolean") cfg.needsSkills = r.needsSkills;

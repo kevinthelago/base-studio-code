@@ -5,8 +5,9 @@ import { ProjectsList } from "./ProjectsList";
 import { useAppStore } from "@/store";
 import { type Blueprint } from "../stages/blueprints";
 
-// The Projects-tab Blueprints section: the user's saved library blueprints plus the built-in
-// app templates, selectable for the next project.
+// The create flow (#3802): `+ New project` opens the full-pane ProjectSetupPage (name + blueprint)
+// BETWEEN the list and the planner; the chosen blueprint is bound AT CREATION. These tests drive
+// that flow end-to-end through <ProjectsList /> (the setup page's own unit tests live alongside it).
 
 function bp(over: Partial<Blueprint>): Blueprint {
   return { id: "x", name: "X", desc: "", sections: [], category: "greenfield", ...over };
@@ -20,7 +21,12 @@ function routeInvoke() {
   }) as unknown as typeof invoke);
 }
 
-describe("ProjectsList — Blueprints section", () => {
+/** Click `+ New project` (there can be two — the header + the empty-state — so take the first). */
+function openSetup() {
+  fireEvent.click(screen.getAllByRole("button", { name: "+ New project" })[0]);
+}
+
+describe("ProjectsList — create flow (setup page)", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
     routeInvoke();
@@ -33,7 +39,7 @@ describe("ProjectsList — Blueprints section", () => {
     });
   });
 
-  it("shows ALL blueprints — saved AND built-in (#blueprints)", async () => {
+  it("opens the setup page and lists ALL blueprints — saved AND built-in (#blueprints)", async () => {
     useAppStore.setState({
       blueprints: [
         bp({ id: "mine", name: "My Greenfield", origin: "local", category: "greenfield" }),
@@ -41,12 +47,14 @@ describe("ProjectsList — Blueprints section", () => {
       ],
     });
     render(<ProjectsList />);
-    await screen.findByText("Blueprints");
+    await screen.findByRole("button", { name: "+ New project" });
+    openSetup();
+    expect(await screen.findByText("New project")).toBeTruthy();
     expect(screen.getByText("My Greenfield")).toBeTruthy();
-    expect(screen.getByText("Stock Built-in")).toBeTruthy(); // built-ins are surfaced here too now
+    expect(screen.getByText("Stock Built-in")).toBeTruthy(); // built-ins are surfaced here too
   });
 
-  it("binds the SELECTED blueprint AT CREATION — not on a later open (#988)", async () => {
+  it("binds the ACTIVE blueprint AT CREATION — not on a later open (#988)", async () => {
     // Regression: opening a project used to adopt the transient global selection. The binding must
     // be captured once, when the project is created, from whatever is selected then.
     useAppStore.setState({
@@ -54,10 +62,9 @@ describe("ProjectsList — Blueprints section", () => {
       activeBlueprintId: "fullstack",
     });
     render(<ProjectsList />);
-    await screen.findByText("Blueprints");
-    // Target the header button by role — the empty projects column also prints "+ New project".
-    fireEvent.click(screen.getByRole("button", { name: "+ New project" }));
-    fireEvent.change(screen.getByPlaceholderText("project title…"), { target: { value: "My New App" } });
+    await screen.findByRole("button", { name: "+ New project" });
+    openSetup();
+    fireEvent.change(await screen.findByLabelText("Project name"), { target: { value: "My New App" } });
     fireEvent.click(screen.getByText("start planning →"));
     await waitFor(() => {
       const s = useAppStore.getState();
@@ -69,16 +76,37 @@ describe("ProjectsList — Blueprints section", () => {
     });
   });
 
-  it("clicking a blueprint SELECTS it (sets active) — it does NOT open the planner (#blueprints)", async () => {
+  it("binds a NEWLY-SELECTED blueprint (not the active default) at creation", async () => {
     useAppStore.setState({
-      blueprints: [bp({ id: "mine", name: "My Greenfield", origin: "local", category: "greenfield" })],
-      projectsView: "list",
+      blueprints: [
+        bp({ id: "default", name: "Default", origin: "built-in" }),
+        bp({ id: "api", name: "API Service", origin: "local", category: "greenfield" }),
+      ],
+      activeBlueprintId: "default",
     });
     render(<ProjectsList />);
-    await screen.findByText("Blueprints");
-    fireEvent.click(screen.getByText("My Greenfield"));
-    const s = useAppStore.getState();
-    expect(s.activeBlueprintId).toBe("mine");        // selecting sets it active for the next project
-    expect(s.projectsView).toBe("list");             // …without opening the planner
+    await screen.findByRole("button", { name: "+ New project" });
+    openSetup();
+    fireEvent.click(await screen.findByText("API Service"));   // select a different blueprint
+    fireEvent.change(screen.getByLabelText("Project name"), { target: { value: "Widgets" } });
+    fireEvent.click(screen.getByText("start planning →"));
+    await waitFor(() => {
+      const s = useAppStore.getState();
+      expect(s.planningSessionKey).toBe("widgets");
+      expect(s.projectBlueprintId[s.planningSessionKey]).toBe("api");
+    });
+  });
+
+  it("returns to the list (does not create) when the user backs out", async () => {
+    useAppStore.setState({
+      blueprints: [bp({ id: "mine", name: "My Greenfield", origin: "local", category: "greenfield" })],
+    });
+    render(<ProjectsList />);
+    await screen.findByRole("button", { name: "+ New project" });
+    openSetup();
+    fireEvent.click(await screen.findByLabelText("Back to projects"));
+    // Back on the list; no project was created.
+    await screen.findByRole("button", { name: "+ New project" });
+    expect(useAppStore.getState().planningSessionKey).toBeFalsy();
   });
 });
