@@ -81,11 +81,11 @@ const orgPersona = {
 const bpTeam = { positions: [{ nodeId: "n1", kind: "agent" as const, personaId: "p1" }], relationships: [] };
 const bpDefault = {
   id: "default", name: "Default", desc: "greenfield seed", sections: [],
-  category: "greenfield", mode: "create", team: bpTeam,
+  mode: "create", team: bpTeam,
   uiKit: { id: "bsc/react-ui", version: "1.2.0", hash: "abc123", themeId: "soft" },
   soundKit: { id: "bsc/signal", version: "1.0.0", hash: "deadbeef", source: "https://gist.github.com/a/b" },
 } satisfies Blueprint;
-const bpMigrate = { id: "migrate", name: "Migrate", desc: "restructure repos", sections: [], category: "transform" } satisfies Blueprint;
+const bpMigrate = { id: "migrate", name: "Migrate", desc: "restructure repos", sections: [] } satisfies Blueprint;
 
 // ── skills ─────────────────────────────────────────────────────────────────────────────────────
 const skill = {

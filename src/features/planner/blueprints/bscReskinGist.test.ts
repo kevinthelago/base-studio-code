@@ -24,7 +24,6 @@ describe("bsc-reskin gist blueprint (#1212)", () => {
     const bp = manifestToBlueprint(res.manifest);
     expect(bp.ok).toBe(true);
     if (!bp.ok) return;
-    expect(bp.blueprint.category).toBe("transform");
     expect(bp.blueprint.mode).toBe("operate");
     // Every stage resolved with a key, name, and a working prompt.
     expect(bp.blueprint.sections.length).toBeGreaterThanOrEqual(9);
