@@ -389,7 +389,10 @@ export function DesignsWorkbench() {
   // graph header. Modals + notice cards are siblings of the canvas.
   return (
     <>
-      <DesignerLoopBanner />
+      {/* #3852: the banner lives IN the graph header now (see `toolbar` below). It stays here as the
+          overlay for the one case there is no header — theme-preview mode drops the whole header row, and
+          the loop's Stop must not become unreachable: it is the only brake on an unattended run. */}
+      {previewMode && <DesignerLoopBanner />}
       {shareOpen && (
         <KitShareModal
           kit={kit ?? null}
@@ -421,10 +424,15 @@ export function DesignsWorkbench() {
         // the header row so the preview overlay owns the whole center (the graph beneath it is covered).
         toolbar={previewMode ? null : (
           <>
-            <Eyebrow size={9.5}>Composition graph{kit ? ` · ${kit.name}` : ""}</Eyebrow>
+            {/* The loop banner owns the header's leading slot (#3852) — it replaced a "Composition graph ·
+                <kit>" eyebrow that repeated what the PageTabs strip and the rail already say. */}
+            <DesignerLoopBanner inline />
             {healthFindings.length > 0 && (
-              <Text as="span" className="ds-healthcount" title="Graph-health findings — the same set `bsc ui doctor` reports (#2680)">
-                ⚠ {healthFindings.length} health finding{healthFindings.length === 1 ? "" : "s"}
+              <Text
+                as="span" className="ds-healthcount"
+                title={`${healthFindings.length} graph-health finding${healthFindings.length === 1 ? "" : "s"} — the same set \`bsc ui doctor\` reports (#2680)`}
+              >
+                ⚠ {healthFindings.length}
               </Text>
             )}
             <Box style={{ flex: 1 }} />
