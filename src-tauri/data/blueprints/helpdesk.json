@@ -4,6 +4,7 @@
   "name": "Helpdesk / ITSM",
   "desc": "Build a service desk — omnichannel ticketing, ITIL workflows, and AI-resolution agents.",
   "icon": "fact_check",
+  "h": 200,
   "origin": "built-in",
   "mode": "create",
   "skills": ["web-seo"],
