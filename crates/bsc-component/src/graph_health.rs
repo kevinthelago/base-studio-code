@@ -52,7 +52,7 @@ pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
     /// `unresolvable-import` | `stubbed-import` (#3696, sev-1) | `hardcoded-color` (#3704, sev-1) |
     /// `reimplementation` | `orphan` | `unwired-prop` | `phantom-compose` | `no-empty-state` |
-    /// `no-loading-state` | `no-error-state` (#3555) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
+    /// `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -184,6 +184,10 @@ struct Node {
     /// `srcText` an illustrative snippet). The phantom-compose check (#3111) skips built-ins — scanning
     /// their illustrative snippet for composed children would false-positive.
     builtin: bool,
+    /// How many analytics events the component's `analytics` manifest declares (#3810) — the per-node
+    /// events contract (data, not code). 0 ⇒ uninstrumented, which the `no-analytics` check flags for an
+    /// interactive component.
+    analytics_events: usize,
 }
 
 fn s(v: &Value, key: &str) -> String {
@@ -237,7 +241,16 @@ fn parse_node(v: &Value) -> Option<Node> {
             })
             .unwrap_or_default(),
         builtin: v.get("builtin").and_then(Value::as_bool).unwrap_or(false),
+        analytics_events: v.get("analytics").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
     })
+}
+
+/// Is `(name, ty)` an ACTION prop — an event/callback the component fires (`onClick`, `onChange`,
+/// `onSelect`, …: name starts with `on` + a function type)? Its presence marks the component as
+/// INTERACTIVE, so the `no-analytics` check (#3810) expects an events manifest. Mirrors `isActionProp`
+/// (graphHealth.ts).
+fn is_action_prop(name: &str, ty: &str) -> bool {
+    name.len() > 2 && name.to_lowercase().starts_with("on") && ty.contains("=>")
 }
 
 /// Is `(name, ty)` a CONTENT-SLOT prop — a non-`children` prop typed as a React node? Mirrors
@@ -1804,6 +1817,42 @@ fn analyze_kit(
         }
     }
 
+    // ── no-analytics (severity 1, INFORMATIONAL, #3810): an INTERACTIVE component (exposes an action/event
+    // prop the user can trigger) that declares NO analytics events. Instrumentation is a per-node data
+    // CONTRACT — like the behavior/motion a node already carries — so every interactive node should
+    // declare what it emits, and any app composed from these nodes is instrumented by construction.
+    // Own-module (user-authored) only; built-ins are skipped (packaged separately). Mirrors the frontend
+    // `analyzeGraphHealth` (graphHealth.ts).
+    for n in nodes {
+        if own_module_source(n, &kit_targets).is_none() {
+            continue; // built-in / no user source — not the designer's to instrument in-session
+        }
+        if n.analytics_events > 0 {
+            continue; // already declares events
+        }
+        let actions: Vec<&str> =
+            n.props.iter().filter(|p| is_action_prop(&p.0, &p.1)).map(|p| p.0.as_str()).collect();
+        if actions.is_empty() {
+            continue; // not interactive — nothing to instrument
+        }
+        out.push(Finding {
+            category: "no-analytics",
+            severity: 1,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` is interactive ({}) but declares no analytics events — an app composed from it captures nothing when the user acts",
+                n.name,
+                actions.join(", ")
+            ),
+            suggested_action: format!(
+                "add an `analytics` manifest to `{}` declaring the events it emits (e.g. a `click` event for its action) — data, not code",
+                n.name
+            ),
+        });
+    }
+
     // ── slot-shell (severity 1, INFORMATIONAL): a composite whose composed children arrive via ReactNode
     // CONTENT SLOTS. Standalone (no slots passed) it renders a demo/placeholder fallback, not its
     // assembled function — so a preview looks non-functional even though it isn't (#2921). Explains e.g.
@@ -2702,7 +2751,10 @@ mod tests {
                 // would also (correctly) trigger the #3135 no-empty-state/no-loading-state checks.
                 { "name": "data", "type": "Row" },
                 { "name": "onRefresh", "type": "() => void" }
-            ]
+            ],
+            // Declares its event so the #3810 no-analytics check is satisfied — keeps this a PURE
+            // unwired-prop case (the `onRefresh` prop is still unused by the source).
+            "analytics": [{ "event": "refresh" }]
         })];
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["unwired-prop"]);
@@ -3229,6 +3281,36 @@ mod tests {
             fs.iter().all(|f| f.category != "no-empty-state" && f.category != "no-loading-state" && f.category != "no-error-state"),
             "empty-handled + loading-prop + error-prop / no-data-prop are not flagged: {fs:?}"
         );
+    }
+
+    #[test]
+    fn flags_an_interactive_component_without_analytics_and_clears_on_a_manifest() {
+        // #3810: a user-authored interactive component (an `onClick` action prop) with no `analytics`.
+        let bare = json!({ "id": "btn", "name": "IconButton", "kitId": "ui", "role": "primitive", "used": 3,
+            "composes": [], "src": "ui/IconButton.tsx",
+            "source": "export function IconButton({ onClick, label }){ return <button onClick={onClick}>{label}</button>; }",
+            "props": [{ "name": "onClick", "type": "() => void" }, { "name": "label", "type": "string" }] });
+        assert!(analyze(&[bare]).iter().any(|f| f.category == "no-analytics"), "flags an uninstrumented interactive component");
+
+        // Declaring an events manifest clears it.
+        let instrumented = json!({ "id": "btn", "name": "IconButton", "kitId": "ui", "role": "primitive", "used": 3,
+            "composes": [], "src": "ui/IconButton.tsx",
+            "source": "export function IconButton({ onClick, label }){ return <button onClick={onClick}>{label}</button>; }",
+            "props": [{ "name": "onClick", "type": "() => void" }, { "name": "label", "type": "string" }],
+            "analytics": [{ "event": "click", "props": [{ "name": "label", "type": "string" }] }] });
+        assert!(analyze(&[instrumented]).iter().all(|f| f.category != "no-analytics"), "a declared manifest clears it");
+
+        // A DISPLAY-only component (no action prop) is never flagged.
+        let display = json!({ "id": "txt", "name": "Label", "kitId": "ui", "role": "primitive", "used": 5, "composes": [],
+            "src": "ui/Label.tsx", "source": "export function Label({ text }){ return <span>{text}</span>; }",
+            "props": [{ "name": "text", "type": "string" }] });
+        assert!(analyze(&[display]).iter().all(|f| f.category != "no-analytics"), "a display-only component is not flagged");
+
+        // A built-in (no own source) is skipped — packaged instrumentation is a separate concern.
+        let builtin = json!({ "id": "b", "name": "Btn", "kitId": "ui", "role": "primitive", "used": 9, "composes": [],
+            "src": "ui/Btn.tsx", "builtin": true, "srcText": "<button onClick={onClick}/>",
+            "props": [{ "name": "onClick", "type": "() => void" }] });
+        assert!(analyze(&[builtin]).iter().all(|f| f.category != "no-analytics"), "a built-in is skipped");
     }
 
     #[test]
