@@ -96,6 +96,14 @@ pub(crate) fn error_db_path(project_key: &str) -> std::path::PathBuf {
     project_dir(project_key).join("error.db")
 }
 
+/// The project hub's per-project SQLite **usage-events store**: `projects/<key>/usage.db` (#3812, epic
+/// #3809). Scoped at a live session by `$BSC_USAGE_DB`, cwd-derived exactly like `error_db_path` — so
+/// the whole fleet shares one usage.db per project (a running/generated app records usage, an agent
+/// reads it via `bsc usage`).
+pub(crate) fn usage_db_path(project_key: &str) -> std::path::PathBuf {
+    project_dir(project_key).join("usage.db")
+}
+
 /// The project's **durable ingest token** file: `projects/<key>/ingest-token` (#2262). A per-project
 /// secret the runtime-fault collector validates; it lives in the hub next to `error.db` so a shim baked
 /// into a generated app at generation keeps validating across desktop restarts (the old in-memory mint

@@ -13,6 +13,7 @@ mod hook;
 const COMMANDS: &[(&str, &str)] = &[
     ("plan", "per-project plan store: issues, features, fleet, sections"),
     ("errors", "per-project runtime-fault store: fingerprinted errors + alerts"),
+    ("usage", "per-project usage-events store: record + query what users do (epic #3809)"),
     ("project", "cross-project hub: list local projects + the .published marker"),
     ("skill", "global skills + task-groups store"),
     ("compliance", "compliance standards corpus"),
@@ -60,6 +61,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
     match cmd {
         "plan" => plandb::cli::run(rest, "bsc plan"),
         "errors" => errordb::cli::run(rest, "bsc errors"),
+        "usage" => usagedb::cli::run(rest, "bsc usage"),
         "project" => bsc_project::cli::run(rest, "bsc project"),
         "skill" => skilldb::cli::run(rest, "bsc skill"),
         "compliance" => compliance::cli::run(rest, "bsc compliance"),
@@ -223,6 +225,13 @@ mod tests {
         assert!(dispatch("cve", vec!["help".into()]).is_ok());
         assert!(top_help().contains("vulnerability data"), "the cve row describes the data layer");
         assert!(mcp_help().contains("cve"), "bsc mcp cve is listed as a bundled server");
+    }
+
+    #[test]
+    fn usage_dispatches_and_appears_in_the_overview() {
+        // #3812 (epic #3809): the per-project usage-events store is mounted + listed. Help path — no db.
+        assert!(dispatch("usage", vec!["help".into()]).is_ok());
+        assert!(top_help().contains("usage-events store"), "the usage row describes the store");
     }
 
     #[test]
