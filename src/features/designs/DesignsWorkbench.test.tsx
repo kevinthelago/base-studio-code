@@ -34,6 +34,12 @@ beforeEach(() => {
     aiFocusedId: null,
     designsKitId: "",
     designsCompId: null,
+    // The studio must be the VISIBLE page (#3627): `scanVisible` gates the rail, the component
+    // scan and the activity poll on it, so a hidden Studio does no background work. Without this
+    // the workbench renders the graph but no rail — and every rail-driven assertion below fails.
+    // (`DesignsWorkbench.visibility.test.tsx` owns the hidden-page cases.)
+    activeWorkspace: "projects",
+    projectsPageMode: "designs",
   });
 });
 
@@ -514,7 +520,10 @@ describe("theme try-on preview (#2834)", () => {
     fireEvent.click(graphNode("Chip"));
     expect(container.querySelector(".ds-palette")).toBeNull();           // not before expanding
     fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
-    // The palette strip mounts with the expanded preview: the grouped semantic swatches.
+    // The palette is OPT-IN behind its toggle now — expanding alone no longer mounts it.
+    expect(container.querySelector(".ds-palette")).toBeNull();
+    fireEvent.click(screen.getByTitle(/Show the theme palette/));
+    // Toggled on, the strip carries the grouped semantic swatches.
     expect(container.querySelector(".ds-palette")).toBeTruthy();
     expect(container.querySelectorAll(".ds-swatch").length).toBe(14);
     expect(screen.getByText("Surfaces")).toBeTruthy();
@@ -615,8 +624,9 @@ describe("component folders render as readable rows (#3632)", () => {
     expect(folder.matches("button.rail-row")).toBe(true);
     expect(folder.classList.contains("rail-grouphead")).toBe(false);
     expect(folder.textContent).toContain("widgets");           // label reads in normal case (not "WIDGETS")
-    expect(screen.getByText("Alpha")).toBeTruthy();            // its components list under it (open by default)
+    // Scope to the RAIL: "Alpha" also labels its graph node, so a bare getByText matches twice.
+    expect(railRow("Alpha")).toBeTruthy();                     // its components list under it (open by default)
     fireEvent.click(folder);                                   // collapse the folder…
-    expect(screen.queryByText("Alpha")).toBeNull();            // …hides its components
+    expect(railRow("Alpha")).toBeFalsy();                      // …hides its components (the graph node stays)
   });
 });

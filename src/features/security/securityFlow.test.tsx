@@ -13,11 +13,15 @@ import { useAppStore } from "@/store";
 const TS = "2026-05-30T18:00:00Z";
 const mockInvoke = vi.mocked(invoke);
 
-/** Drive invoke: `bsc logs tail coord` returns `coordLines` (as a JSON string, #2144); else null. */
+/** Drive invoke: the coord tail returns `coordLines`; else null.
+ *  #3630 moved this read IN-PROCESS — `readCoordState` now calls `logsTail`, i.e. the `logs_tail`
+ *  Tauri command returning a `string[]` — instead of shelling out to `bsc logs tail coord` and
+ *  JSON-parsing its stdout. Seeding the old `bsc` bridge left the tab with an empty coord state,
+ *  so no waiter, no deadlock banner and no Wake button ever rendered. */
 function seedCoordLog(coordLines: string[]) {
   mockInvoke.mockImplementation(async (cmd: string, payload?: unknown) => {
-    if (cmd === "bsc" && (payload as { args: string[] }).args?.[2] === "coord") {
-      return JSON.stringify(coordLines) as unknown as null;
+    if (cmd === "logs_tail" && (payload as { stream?: string })?.stream === "coord") {
+      return coordLines as unknown as null;
     }
     return null;
   });

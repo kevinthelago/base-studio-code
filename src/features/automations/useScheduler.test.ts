@@ -18,13 +18,18 @@ describe("useScheduler", () => {
     expect(dueAutomations).toHaveBeenCalledTimes(1); // grace tick
   });
 
-  it("then checks on the 20s interval", () => {
+  // ASYNC timer advance, deliberately: the scheduler tick is async, and usePoll skips a tick while
+  // the previous run is still in flight (#3666, so slow runs cannot stack). The sync
+  // `advanceTimersByTime` never flushes the microtask queue, so that in-flight promise would never
+  // settle and the SECOND interval tick would be (correctly) suppressed — an artifact of the fake
+  // clock, not of the scheduler. `advanceTimersByTimeAsync` drains microtasks between ticks.
+  it("then checks on the 20s interval", async () => {
     renderHook(() => useScheduler());
-    vi.advanceTimersByTime(1000);   // grace
+    await vi.advanceTimersByTimeAsync(1000);   // grace
     expect(dueAutomations).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(20_000); // first interval tick (immediate:false → at TICK_MS)
+    await vi.advanceTimersByTimeAsync(20_000); // first interval tick (immediate:false → at TICK_MS)
     expect(dueAutomations).toHaveBeenCalledTimes(2);
-    vi.advanceTimersByTime(20_000);
+    await vi.advanceTimersByTimeAsync(20_000);
     expect(dueAutomations).toHaveBeenCalledTimes(3);
   });
 

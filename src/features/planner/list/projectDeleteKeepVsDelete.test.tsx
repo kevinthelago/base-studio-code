@@ -163,15 +163,19 @@ describe("ProjectsList — draft delete now requires confirmation (#1216)", () =
 
     render(<ProjectsList />);
     await screen.findByText("My Draft");
-    // The ✕ on the chip — opens the confirm modal, must NOT delete the folder yet.
-    fireEvent.click(screen.getByTitle("delete draft"));
+    // The card's ⋯ menu (#3802 rebuilt the tab in the Skills-tab style, so the destructive action
+    // moved off an inline chip ✕ and behind the menu) — opens the confirm modal, must NOT delete
+    // the folder yet. EXACT names: the card is itself a role=button whose accessible name
+    // concatenates its subtree, so a loose /delete draft/i also matches the card.
+    fireEvent.click(screen.getByTitle("More options"));
+    fireEvent.click(screen.getByRole("button", { name: "delete draft" }));   // menu item
     expect(screen.getByText("Delete draft?")).toBeTruthy();
     expect(calls.includes("delete_project_dir")).toBe(false);
-    // "My Draft" now appears both on the chip and in the modal's <b>; still present (not deleted).
+    // "My Draft" now appears both on the card and in the modal's <b>; still present (not deleted).
     expect(screen.getAllByText("My Draft").length).toBeGreaterThan(0);
 
     // Confirm — now it deletes.
-    fireEvent.click(screen.getByRole("button", { name: /delete draft/i }));
+    fireEvent.click(screen.getByRole("button", { name: "delete draft" }));   // modal confirm
     await waitFor(() => expect(screen.queryByText("My Draft")).toBeNull());
     expect(calls.includes("delete_project_dir")).toBe(true);
     expect(useAppStore.getState().localDraftProjects.my_draft).toBeUndefined();
@@ -188,7 +192,8 @@ describe("ProjectsList — draft delete now requires confirmation (#1216)", () =
 
     render(<ProjectsList />);
     await screen.findByText("My Draft");
-    fireEvent.click(screen.getByTitle("delete draft"));
+    fireEvent.click(screen.getByTitle("More options"));
+    fireEvent.click(screen.getByRole("button", { name: "delete draft" }));   // menu item
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     await waitFor(() => expect(screen.queryByText("Delete draft?")).toBeNull());
     expect(calls.includes("delete_project_dir")).toBe(false);

@@ -350,10 +350,14 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     // archived `testing` stage used to (completes only on confirm, never vacuously).
     const secs = [mkStage("discovery"), mkStage("mcps", { optional: false })];
     const info = secs.find((s) => s.key === "mcps")!;
+    // `mcps` only APPLIES when the project is classified as needing MCP servers (#3784) — without
+    // that signal it reads "na", which is a different assertion than the gateless-completion one
+    // this test makes. Turn it on so the section is applicable, then measure its completion.
+    const applies = { ...sig(), needsMcp: true };
     // not vacuously complete on a fresh/cleared plan
-    expect(stageStatus(info, secs, sig()).status).toBe("in-progress");
+    expect(stageStatus(info, secs, applies).status).toBe("in-progress");
     // complete once the section is confirmed
-    expect(stageStatus(info, secs, { ...sig(), [confirmedSignal("mcps")]: true }).status).toBe("complete");
+    expect(stageStatus(info, secs, { ...applies, [confirmedSignal("mcps")]: true }).status).toBe("complete");
   });
 
   it("an optional stage is shown + never locks dependents, but IS a deliberate stop the user must decide (#676/#921)", () => {

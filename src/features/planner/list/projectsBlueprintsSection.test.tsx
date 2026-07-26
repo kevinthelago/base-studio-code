@@ -21,7 +21,9 @@ function routeInvoke() {
   }) as unknown as typeof invoke);
 }
 
-/** Click `+ New project` (there can be two — the header + the empty-state — so take the first). */
+/** Click `+ New project` (there can be two — the header + the empty-state — so take the first).
+ *  For the same reason every WAIT for the button uses findAllByRole: the singular query throws
+ *  on multiple matches, and the empty-state CTA (#3802) made a second one routine. */
 function openSetup() {
   fireEvent.click(screen.getAllByRole("button", { name: "+ New project" })[0]);
 }
@@ -36,6 +38,9 @@ describe("ProjectsList — create flow (setup page)", () => {
       localDraftProjects: {},
       projectBlueprintId: {},
       blueprints: [],
+      // Cleared per-test: the creating tests above set it, and the back-out test asserts nothing
+      // was created — without this reset that assertion reads the PREVIOUS test's key.
+      planningSessionKey: "",
     });
   });
 
@@ -47,7 +52,7 @@ describe("ProjectsList — create flow (setup page)", () => {
       ],
     });
     render(<ProjectsList />);
-    await screen.findByRole("button", { name: "+ New project" });
+    await screen.findAllByRole("button", { name: "+ New project" });
     openSetup();
     expect(await screen.findByText("New project")).toBeTruthy();
     expect(screen.getByText("My Greenfield")).toBeTruthy();
@@ -62,7 +67,7 @@ describe("ProjectsList — create flow (setup page)", () => {
       activeBlueprintId: "fullstack",
     });
     render(<ProjectsList />);
-    await screen.findByRole("button", { name: "+ New project" });
+    await screen.findAllByRole("button", { name: "+ New project" });
     openSetup();
     fireEvent.change(await screen.findByLabelText("Project name"), { target: { value: "My New App" } });
     fireEvent.click(screen.getByText("start planning →"));
@@ -85,7 +90,7 @@ describe("ProjectsList — create flow (setup page)", () => {
       activeBlueprintId: "default",
     });
     render(<ProjectsList />);
-    await screen.findByRole("button", { name: "+ New project" });
+    await screen.findAllByRole("button", { name: "+ New project" });
     openSetup();
     fireEvent.click(await screen.findByText("API Service"));   // select a different blueprint
     fireEvent.change(screen.getByLabelText("Project name"), { target: { value: "Widgets" } });
@@ -102,11 +107,11 @@ describe("ProjectsList — create flow (setup page)", () => {
       blueprints: [bp({ id: "mine", name: "My Greenfield", origin: "local" })],
     });
     render(<ProjectsList />);
-    await screen.findByRole("button", { name: "+ New project" });
+    await screen.findAllByRole("button", { name: "+ New project" });
     openSetup();
     fireEvent.click(await screen.findByLabelText("Back to projects"));
     // Back on the list; no project was created.
-    await screen.findByRole("button", { name: "+ New project" });
+    await screen.findAllByRole("button", { name: "+ New project" });
     expect(useAppStore.getState().planningSessionKey).toBeFalsy();
   });
 });

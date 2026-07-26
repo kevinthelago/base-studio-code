@@ -50,11 +50,12 @@ describe("useUiActivity (#2525)", () => {
     vi.mocked(invoke).mockReset();
   });
 
-  /** Route the `bsc logs tail ui` bridge call to `lines`; every other `bsc` call resolves empty. */
+  /** Route the ui-log tail to `lines`; every other call resolves empty.
+   *  #3630 moved this read IN-PROCESS: the hook calls `logsTail`, i.e. the `logs_tail` Tauri
+   *  command returning a `string[]` — not `bsc logs tail ui` with a JSON-string stdout. */
   const mockBridge = (lines: string[]) =>
-    vi.mocked(invoke).mockImplementation(async (_cmd, payload) => {
-      const args = (payload as { args?: string[] } | undefined)?.args;
-      if (args?.[0] === "logs") return JSON.stringify(lines);
+    vi.mocked(invoke).mockImplementation(async (cmd, payload) => {
+      if (cmd === "logs_tail" && (payload as { stream?: string } | undefined)?.stream === "ui") return lines;
       return ""; // hydrate calls (loadComponents/etc.) degrade to empty → no-op
     });
 
@@ -75,7 +76,7 @@ describe("useUiActivity (#2525)", () => {
     renderHook(() => useUiActivity(false, 10));
     // Give the immediate tick a chance to run; it must early-return before touching the bridge.
     await new Promise((r) => setTimeout(r, 30));
-    const logsCalls = vi.mocked(invoke).mock.calls.filter(([, p]) => (p as { args?: string[] } | undefined)?.args?.[0] === "logs");
+    const logsCalls = vi.mocked(invoke).mock.calls.filter(([c]) => c === "logs_tail");
     expect(logsCalls.length).toBe(0);
     expect(useAppStore.getState().aiFocusedId).toBeNull();
   });
