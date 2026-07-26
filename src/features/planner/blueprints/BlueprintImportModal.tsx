@@ -1,12 +1,13 @@
 // The Import-blueprint-from-gist modal (design: "Repository code review request" /
-// BlueprintImportModal.dc.html). Lists the blueprint gists published under a GitHub account
-// (the user's own) and imports one into the library, with the manual "by URL / ID" paste as a
-// fallback. States: loading (skeletons) · list (per-row import / Imported / Update / importing) ·
-// empty · error. Pure-ish presentational shell over `listBlueprintGists`; CRUD is the parent's
-// `onImport` (resolve + dedupe-by-gist-id). The page-oriented gist catalog, in a modal.
+// BlueprintImportModal.dc.html). Lists every blueprint gist published under a GitHub account and
+// imports one into the library, with the manual "by URL / ID" paste as a fallback. The account is a
+// USER-EDITABLE SOURCE input (#3802) — the source IS the query, so any account's published blueprints
+// can be browsed (replacing the old within-source search bar). States: loading (skeletons) · list
+// (per-row import / Imported / Update / importing) · empty · error. Pure-ish presentational shell over
+// `listBlueprintGists`; CRUD is the parent's `onImport` (resolve + dedupe-by-gist-id).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Cloud, RefreshCw, Link2, X, Search, Check, ArrowUpCircle, AlertTriangle, Inbox, Loader2, Eye } from "lucide-react";
+import { Download, Cloud, RefreshCw, Link2, X, User, Check, ArrowUpCircle, AlertTriangle, Inbox, Loader2, Eye } from "lucide-react";
 import "../../../styles/blueprintImport.css";
 import { hue, tint, gistUpdateAvailable } from "./blueprintCatalog";
 import { listBlueprintGists, type BlueprintGistItem } from "@/features/planner/lib/gist/gist";
@@ -27,7 +28,9 @@ import { GistPreview } from "./GistPreview";
 import { spin, shimmer, pill, type PreviewEntry } from "./blueprintImport.helpers";
 
 export interface BlueprintImportModalProps {
-  /** GitHub account to pull blueprint gists from (the user's own login). */
+  /** INITIAL GitHub account to pull blueprint gists from (the user's own login by default). The
+   *  source is user-editable in-modal (#3802): the user can type ANY account to browse its
+   *  published blueprint gists — the source IS the query now. */
   source: string;
   /** GitHub token — optional (public gists need none; raises rate limit + shows secret gists). */
   token?: string;
@@ -45,10 +48,13 @@ export interface BlueprintImportModalProps {
   onClose: () => void;
 }
 
-export function BlueprintImportModal({ source, token = "", importedById = {}, onImport, onPreview, onManualImport, onClose }: BlueprintImportModalProps) {
+export function BlueprintImportModal({ source: defaultSource, token = "", importedById = {}, onImport, onPreview, onManualImport, onClose }: BlueprintImportModalProps) {
   const [items, setItems] = useState<BlueprintGistItem[] | null>(null); // null = loading
   const [error, setError] = useState(false);
-  const [query, setQuery] = useState("");
+  // The gist SOURCE is user-editable (#3802) — the account whose published blueprint gists we list.
+  // `source` drives the load; `sourceInput` is the in-progress text, applied on Enter / blur / Browse.
+  const [source, setSource] = useState(defaultSource);
+  const [sourceInput, setSourceInput] = useState(defaultSource);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [toast, setToast] = useState("");
@@ -71,12 +77,15 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
   };
 
   const load = useCallback(() => {
-    setItems(null); setError(false);
+    setItems(null); setError(false); setPreviewId(null);
     listBlueprintGists(source, token)
       .then((rows) => setItems(rows))
       .catch(() => { setItems([]); setError(true); });
   }, [source, token]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load]);   // re-runs whenever the source changes
+
+  // Apply the typed source (Enter / blur / Browse) — a real change re-lists via `load`'s dep on it.
+  const applySource = () => { const s = sourceInput.trim(); if (s && s !== source) setSource(s); };
 
   // Clear any pending toast/busy timers on unmount (Esc + overlay dismiss handled by ModalScrim).
   useEffect(() => {
@@ -105,9 +114,8 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
     }
   };
 
-  const q = query.trim().toLowerCase();
-  const rows = (items ?? []).filter((it) =>
-    (it.name + " " + it.description + " " + it.owner).toLowerCase().includes(q));
+  // No within-source search anymore (#3802) — the source input IS the query; list every gist it has.
+  const rows = items ?? [];
 
   const statusLoading = items === null;
   const statusError = !statusLoading && error;
@@ -132,7 +140,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
           <IconBox size={32} radius={8} background="color-mix(in oklch, var(--accent), transparent 84%)" color="var(--accent)"><Download size={16} /></IconBox>
           <Box style={{ minWidth: 0 }}>
             <Text as="h2" mono size={14.5} weight={600} style={{ margin: 0, letterSpacing: ".01em" }}>Import blueprint</Text>
-            <Text as="div" size={10.5} tone="dim" style={{ marginTop: 2 }}>your published blueprint gists</Text>
+            <Text as="div" size={10.5} tone="dim" style={{ marginTop: 2 }}>browse any account's published blueprint gists</Text>
           </Box>
           <Box as="span" style={{ flex: 1 }} />
           <Box as="span" className="mono" pad={[0, 10]} bg="var(--bg-elev)" border="soft" radius={99} style={{
@@ -144,18 +152,24 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
           <IconButton onClick={onClose} title="Close" aria-label="Close"><X size={15} /></IconButton>
         </Row>
 
-        {/* sticky search */}
+        {/* sticky SOURCE input (#3802) — the gist source is the query now: type any GitHub account
+            and list every blueprint gist it publishes. Applied on Enter / blur / Browse. */}
         <Row gap={10} style={{ flex: "0 0 auto", padding: "11px 20px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
           <Box style={{ position: "relative", flex: 1 }}>
-            <Box as="span" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--fg-dim)", display: "flex" }}><Search size={13} /></Box>
-            {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline search input (absolute-positioned icon overlay; not the .input/.field stack) */}
+            <Box as="span" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--fg-dim)", display: "flex" }}><User size={13} /></Box>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline source input (absolute-positioned icon overlay; not the .input/.field stack) */}
             <input
-              value={query} onChange={(e) => setQuery(e.target.value)}
-              placeholder="search blueprints by name, description, owner…"
+              value={sourceInput}
+              onChange={(e) => setSourceInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") applySource(); }}
+              onBlur={applySource}
+              placeholder="GitHub username or gist source…"
+              aria-label="Gist source (GitHub account)"
               className="mono"
               style={{ height: 30, width: "100%", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", color: "var(--fg)", fontSize: 11, padding: "0 10px 0 30px", outline: "none" }}
             />
           </Box>
+          <Button onClick={applySource} title="List this account's blueprint gists" style={{ height: 30, fontSize: 10.5 }}>Browse</Button>
           <Text as="span" size={10.5} tone="dim" className="mono" style={{ whiteSpace: "nowrap" }}>{resultLabel}</Text>
         </Row>
 
@@ -264,9 +278,6 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                   </Box>
                 );
               })}
-              {rows.length === 0 && (
-                <Box className="mono" pad={[30, 0]} style={{ textAlign: "center", fontSize: 11, color: "var(--fg-dim)"}}>No blueprints match “{query}”.</Box>
-              )}
             </>
           )}
 
@@ -274,8 +285,8 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
             <EmptyState
               iconVariant="dashed"
               icon={<Inbox size={22} />}
-              title="No blueprint gists yet"
-              description={<><b style={{ color: "var(--fg)" }}>{source}</b> hasn't published any blueprint gists. Publish one from the editor, or pull a blueprint someone shared with you by URL / ID.</>}
+              title="No blueprint gists found"
+              description={<>No published blueprint gists found for <b style={{ color: "var(--fg)" }}>{source}</b>. Try a different GitHub account above, or pull a blueprint someone shared with you by URL / ID.</>}
               actions={<Button variant="primary" onClick={onManualImport}><Link2 size={13} />Import by URL / ID</Button>}
             />
           )}
