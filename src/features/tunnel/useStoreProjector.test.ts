@@ -34,7 +34,7 @@ vi.mock("@/features/mcp", () => ({
 vi.mock("@/shared/lib/fleet/useCoordLog", () => ({
   readCoordState: vi.fn().mockResolvedValue(null),
 }));
-// The security audit poll reads the CLI (`bsc logs tail audit`); stub it (preserving the module's
+// The security audit poll reads the audit log; stub it (preserving the module's
 // other exports the store uses) so the poll is deterministic — profiles/assignments publish on mount.
 vi.mock("@/shared/lib/core/bsc", async (orig) => ({
   ...(await orig<typeof import("@/shared/lib/core/bsc")>()),

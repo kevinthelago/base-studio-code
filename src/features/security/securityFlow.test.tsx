@@ -7,8 +7,8 @@ import { useAppStore } from "@/store";
 /**
  * #199 — the Agents-screen "Flow" tab surfaces the fleet's coordination state
  * (parked/ready/stalled/deadlocked sessions), cross-referenced with the profile each
- * session runs under. Coord state is rebuilt from $BSC_COORD_LOG via the mocked
- * `bsc logs tail coord` bridge read.
+ * session runs under. Coord state is rebuilt from $BSC_COORD_LOG via the mocked coord tail
+ * (the in-process `logs_tail` command — see seedCoordLog below).
  */
 const TS = "2026-05-30T18:00:00Z";
 const mockInvoke = vi.mocked(invoke);
