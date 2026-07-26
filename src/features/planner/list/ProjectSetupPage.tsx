@@ -19,6 +19,7 @@ import { DEFAULT_GIST_SOURCE } from "../blueprints/blueprintCatalog";
 import { manifestToBlueprint, bundledSkillsFromManifest } from "../blueprints/blueprintShare";
 import { installFromGist, gistIdFromUrl } from "@/features/planner/lib/gist/gist";
 import { Pane } from "@/shared/ui/overlay/Pane";
+import { useDragResize } from "@/shared/hooks/useDragResize";
 import { BackButton } from "@/shared/ui/controls/BackButton";
 import { Button } from "@/shared/ui/controls/Button";
 import { TextField } from "@/shared/ui/controls/Field";
@@ -55,6 +56,9 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
     () => new Set(blueprints.filter((b) => b.gist?.id).map((b) => b.gist!.id!)),
     [blueprints],
   );
+  // The cloud column is drag-resizable (the Skills/rail pattern). invert: the column sits AFTER the
+  // handle, so it grows as the pointer moves left.
+  const cloudDrag = useDragResize({ initial: 340, min: 280, max: 560, axis: "x", invert: true });
   const canStart = title.trim().length > 0 && !!selected;
   const start = () => { if (canStart) onStart(title.trim(), selected); };
 
@@ -184,13 +188,18 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
             </Box>
           </Box>
 
-          {/* right — the persistent cloud-blueprint column (not-yet-downloaded gists + inline download). */}
-          <CloudBlueprints
-            defaultSource={githubUser?.login ?? DEFAULT_GIST_SOURCE}
-            token={githubToken}
-            downloadedGistIds={downloadedGistIds}
-            onDownload={downloadBlueprint}
-          />
+          {/* splitter — drag to resize the cloud column. */}
+          <Box className="resize-x" {...cloudDrag.handleProps} title="Drag to resize" />
+
+          {/* right — the persistent, resizable cloud-blueprint column (not-yet-downloaded gists + inline download). */}
+          <Box style={{ flex: `0 0 ${cloudDrag.size}px`, width: cloudDrag.size, minWidth: 0, minHeight: 0, display: "flex", overflow: "hidden" }}>
+            <CloudBlueprints
+              defaultSource={githubUser?.login ?? DEFAULT_GIST_SOURCE}
+              token={githubToken}
+              downloadedGistIds={downloadedGistIds}
+              onDownload={downloadBlueprint}
+            />
+          </Box>
         </Row>
       </Pane>
 

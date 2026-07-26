@@ -90,7 +90,7 @@ export function CloudBlueprints({ defaultSource, token = "", downloadedGistIds, 
 
   return (
     <Box style={{
-      width: 340, flex: "0 0 340px", minWidth: 0, minHeight: 0,
+      flex: 1, minWidth: 0, minHeight: 0,
       display: "flex", flexDirection: "column",
       borderLeft: "1px solid var(--border-soft)", background: "var(--bg-elev)",
     }}>
