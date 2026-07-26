@@ -7,6 +7,7 @@ import { Ic } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { blueprintHue, type BpItem } from "./blueprintLibrary.helpers";
 
 /** A compact blueprint card for the right rail — the blueprint's own hued icon tile + name + ⋯
@@ -67,6 +68,16 @@ export function BlueprintCard({ b, onUse, onDelete, activeId, menuOpenId, setMen
           )}
         </div>
       </Row>
+      {/* What this blueprint is FOR (#3840). Every packaged blueprint carries a `desc` and
+          `buildBlueprintItems` maps it onto `pitch`, but the card never showed it — so the picker
+          offered cards distinguished only by name + glyph. WRAPS deliberately (unlike the title,
+          which stays single-line + ellipsis): the whole point is reading what you are choosing. */}
+      {b.pitch.trim() && (
+        <Text as="div" className="bp-rail-card-desc" size={11.5} tone="muted"
+          style={{ marginTop: 7, lineHeight: 1.5, whiteSpace: "normal", overflowWrap: "anywhere" }}>
+          {b.pitch}
+        </Text>
+      )}
       {/* Gated-stage progression (#blueprints): one segment per enabled, applicable section,
           colored by gate status — a preview of the lifecycle this blueprint walks through. */}
       <Box className="bp-rail-card-gates" style={{ marginTop: 9 }}>

@@ -35,6 +35,19 @@ describe("ProjectSetupPage", () => {
     expect(screen.getByText("start planning →").closest("button")).toBeDisabled();
   });
 
+  it("frames the name field as step 1, the page's primary action (#3840)", () => {
+    const { container } = render(<ProjectSetupPage onBack={() => {}} onStart={() => {}} />);
+    // The two steps read as a sequence, so the field is not just another row in the column.
+    expect(screen.getByText("step 1")).toBeInTheDocument();
+    expect(screen.getByText("Name the project")).toBeInTheDocument();
+    expect(screen.getByText("step 2")).toBeInTheDocument();
+    expect(screen.getByText("Pick a blueprint")).toBeInTheDocument();
+    // …and the input itself is enlarged, not default-sized.
+    const input = screen.getByLabelText("Project name") as HTMLInputElement;
+    expect(input.style.fontSize).toBe("15px");
+    expect(container.querySelector(".setup-name")).toBeTruthy();
+  });
+
   it("defaults the blueprint to the active one and starts with the typed name", () => {
     const onStart = vi.fn();
     render(<ProjectSetupPage onBack={() => {}} onStart={onStart} />);
