@@ -1,0 +1,25 @@
+{
+  "order": 11,
+  "id": "erp",
+  "name": "ERP",
+  "desc": "Build an ERP platform — core financials, procure-to-pay, order-to-cash, and inventory on one ledger.",
+  "icon": "layers",
+  "origin": "built-in",
+  "category": "greenfield",
+  "mode": "create",
+  "skills": ["web-seo"],
+  "sections": [
+    { "key": "discovery" },
+    { "key": "market" },
+    { "key": "deployment" },
+    { "key": "source" },
+    { "key": "features" },
+    { "key": "ui", "optional": true },
+    { "key": "streams" },
+    { "key": "mcps" },
+    { "key": "automations" },
+    { "key": "skills" }
+  ],
+  "kit": "react-ui",
+  "features": "## Core\n- General ledger with a multi-dimensional chart of accounts\n- Accounts payable — vendor bills, three-way match, approval workflows\n- Accounts receivable — customer invoicing, collections, cash application\n- Cash & bank management — statement reconciliation, positive pay\n- Fixed assets — acquisition, depreciation schedules, disposal\n- Tax engine — VAT/GST/sales-tax calculation & filing\n- Multi-entity, multi-currency consolidation with intercompany eliminations\n- Procure-to-pay — requisitions, purchase orders, vendor portals, OCR invoice capture\n- Order-to-cash — sales orders, fulfillment, returns/RMA\n- Multi-location inventory — lot/serial/bin tracking, multiple valuation methods\n- Demand planning & reorder points\n- Financial reporting & dashboards\n- Role-based security & immutable audit trail\n\n## Differentiators\n- Manufacturing — multi-level BOMs, routings, work orders, MRP/MPS\n- Warehouse management (WMS) — barcode picking, putaway/slotting, cycle counting\n- Compliance automation — revenue recognition (ASC 606) & lease accounting (ASC 842)\n- Embedded analytics & AI demand forecasting\n"
+}

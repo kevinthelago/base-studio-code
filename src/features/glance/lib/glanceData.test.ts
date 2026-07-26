@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { SAMPLE_GRAPH, buildGlanceData } from "./glanceData";
-import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId } from "./glanceGraph";
+import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId } from "./glanceGraph";
+import type { ProjectLink } from "./projectLinks";
 // Cross-feature via the barrel (#1309): the REAL kit→library roll-up + the component record it reads.
 import { resolveKitLibraryRefs, type ComponentRecord } from "@/features/designs";
 
@@ -54,6 +55,13 @@ describe("buildGlanceData", () => {
     expect(g.rawNodes[0].category).toBe("transform");
     // the same project id always yields the same node (was hash-derived role before) — deterministic
     expect(buildGlanceData([{ id: "p", name: "P", category: "transform" }]).rawNodes[0]).toEqual(g.rawNodes[0]);
+  });
+
+  it("carries a project's APP-TYPE onto the node — the contract endpoint-type discriminator (#3786/#3802)", () => {
+    const g = buildGlanceData([{ id: "p", name: "P", appType: "api" }]);
+    expect(g.rawNodes[0].appType).toBe("api");
+    // absent appType ⇒ the node is byte-identical to before (toEqual ignores the undefined key)
+    expect(buildGlanceData([{ id: "q", name: "Q" }]).rawNodes[0].appType).toBeUndefined();
   });
 });
 
@@ -184,5 +192,135 @@ describe("buildGlanceData — cross-graph `requires` from REAL library refs (#31
     expect(refs).toEqual([]);
     const usage = [{ projectKey: "route-planner", kitId: "react-ui" }];
     expect(buildGlanceData(projects, [], usage, kits, refs)).toEqual(buildGlanceData(projects, [], usage, kits));
+  });
+});
+
+// The external MCP-CONTRACT dimension (#3786, Phase 1 inter-app contracts) — mirrors the kit loop: a
+// SCOPED server (its `projects` names ≥1 project in the graph) becomes one contract node edged from each
+// consumer; a GLOBAL server (`projects: []`, every session gets it) is skipped.
+describe("buildGlanceData — MCP contract nodes (#3786)", () => {
+  const projects = [{ id: "app-a", name: "App A" }, { id: "app-b", name: "App B" }];
+  const server = (over: Partial<{ id: string; name: string; projects: string[]; transport: "stdio" | "http" }> = {}) =>
+    ({ id: "postgres", name: "Postgres", projects: ["app-a"], transport: "stdio" as const, ...over });
+
+  it("adds ONE mcp node per scoped server + one project→mcp `uses-mcp` edge per consumer", () => {
+    const g = buildGlanceData(projects, [], [], [], [], [server({ projects: ["app-a", "app-b"] })]);
+    const mcp = g.rawNodes.find((n) => n.kind === "mcp");
+    expect(mcp).toMatchObject({ id: mcpNodeId("postgres"), kind: "mcp", slug: "Postgres", role: "infra", health: "idle", activity: "idle" });
+    expect(g.rawNodes.filter((n) => n.kind === "mcp")).toHaveLength(1); // two consumers of the SAME server ⇒ one node
+    expect(g.rawEdges.filter((e) => e.kind === "uses-mcp")).toEqual([
+      { id: usesMcpEdgeId("app-a", "postgres"), from: "app-a", to: mcpNodeId("postgres"), kind: "uses-mcp" },
+      { id: usesMcpEdgeId("app-b", "postgres"), from: "app-b", to: mcpNodeId("postgres"), kind: "uses-mcp" },
+    ]);
+  });
+
+  it("skips a GLOBAL server (empty `projects`) — a global built-in is not a specific contract", () => {
+    const g = buildGlanceData(projects, [], [], [], [], [server({ projects: [] })]);
+    expect(g.rawNodes.some((n) => n.kind === "mcp")).toBe(false);
+    expect(g.rawEdges.some((e) => e.kind === "uses-mcp")).toBe(false);
+  });
+
+  it("emits NO mcp node for a server whose only scoped project isn't in this graph (stale scope)", () => {
+    const g = buildGlanceData(projects, [], [], [], [], [server({ projects: ["ghost"] })]);
+    expect(g.rawNodes.some((n) => n.kind === "mcp")).toBe(false);
+    expect(g.rawEdges.some((e) => e.kind === "uses-mcp")).toBe(false);
+  });
+
+  it("derives the mcp node's appType from the transport — http ⇒ api, stdio ⇒ serverless", () => {
+    const http = buildGlanceData(projects, [], [], [], [], [server({ id: "sentry", transport: "http" })]);
+    expect(http.rawNodes.find((n) => n.kind === "mcp")?.appType).toBe("api");
+    const stdio = buildGlanceData(projects, [], [], [], [], [server({ transport: "stdio" })]);
+    expect(stdio.rawNodes.find((n) => n.kind === "mcp")?.appType).toBe("serverless");
+  });
+
+  it("dedupes a duplicate (projectKey, serverId) into a single edge", () => {
+    const g = buildGlanceData(projects, [], [], [], [], [server({ projects: ["app-a", "app-a"] })]);
+    expect(g.rawEdges.filter((e) => e.kind === "uses-mcp")).toHaveLength(1);
+  });
+
+  it("falls back to the server ID when it has no name", () => {
+    const g = buildGlanceData(projects, [], [], [], [], [server({ id: "mystery", name: "", projects: ["app-a"] })]);
+    expect(g.rawNodes.find((n) => n.kind === "mcp")?.slug).toBe("mystery");
+  });
+
+  it("adds nothing (byte-identical to before #3786) when there are no scoped mcp servers", () => {
+    expect(buildGlanceData(projects, [], [], [], [], [])).toEqual(buildGlanceData(projects));
+    expect(buildGlanceData(projects, [], [], [], [], [server({ projects: [] })])).toEqual(buildGlanceData(projects));
+  });
+});
+
+// EXPLICIT, planner-declared inter-app contracts (#3786 Phase 2) — a stored ProjectLink whose `target` is
+// a `service` or `mcp` endpoint (not another project) becomes an external band node edged from `from`,
+// GENERALIZING the Phase-1 auto-derived mcp scope. Deduped against the auto-mcp nodes by node id.
+describe("buildGlanceData — explicit external contracts (#3786 Phase 2)", () => {
+  const projects = [{ id: "app-a", name: "App A" }, { id: "app-b", name: "App B" }];
+
+  it("renders a SERVICE-targeted contract as ONE external service node + a uses-service edge", () => {
+    const links: ProjectLink[] = [
+      { id: "app-a>stripe:api", from: "app-a", to: "stripe", kind: "api",
+        target: { type: "service", name: "Stripe", url: "https://api.stripe.com", appType: "api" } },
+    ];
+    const g = buildGlanceData(projects, links);
+    expect(g.rawNodes.find((n) => n.kind === "service")).toMatchObject({
+      id: serviceNodeId("stripe"), kind: "service", slug: "Stripe", appType: "api", role: "infra", health: "idle", activity: "idle",
+    });
+    expect(g.rawEdges).toEqual([
+      { id: usesServiceEdgeId("app-a", "stripe"), from: "app-a", to: serviceNodeId("stripe"), kind: "uses-service" },
+    ]);
+    // NOT a project edge (the target isn't a project) — lifted into the band, never the L0 network.
+    expect(g.rawEdges.some((e) => e.id === "app-a>stripe:api")).toBe(false);
+  });
+
+  it("renders an MCP-targeted contract as ONE external mcp node + a uses-mcp edge, appType from the declaration", () => {
+    const links: ProjectLink[] = [
+      { id: "app-a>postgres:data", from: "app-a", to: "postgres", kind: "data", target: { type: "mcp", appType: "serverless" } },
+    ];
+    const g = buildGlanceData(projects, links);
+    expect(g.rawNodes.find((n) => n.kind === "mcp")).toMatchObject({ id: mcpNodeId("postgres"), kind: "mcp", slug: "postgres", appType: "serverless" });
+    expect(g.rawEdges).toEqual([
+      { id: usesMcpEdgeId("app-a", "postgres"), from: "app-a", to: mcpNodeId("postgres"), kind: "uses-mcp" },
+    ]);
+  });
+
+  it("DEDUPES an explicit mcp contract against a Phase-1 auto-derived mcp node — ONE node, ONE edge", () => {
+    // `postgres` is BOTH in the mcp scope (Phase-1 auto) AND declared as an explicit contract from app-a:
+    // the same server id ⇒ ONE node (the auto node wins) and the edge id collides ⇒ ONE edge.
+    const links: ProjectLink[] = [
+      { id: "app-a>postgres:data", from: "app-a", to: "postgres", kind: "data", target: { type: "mcp", appType: "serverless" } },
+    ];
+    const mcpServers = [{ id: "postgres", name: "Postgres", projects: ["app-a"], transport: "stdio" as const }];
+    const g = buildGlanceData(projects, links, [], [], [], mcpServers);
+    expect(g.rawNodes.filter((n) => n.kind === "mcp")).toHaveLength(1);
+    expect(g.rawNodes.find((n) => n.kind === "mcp")?.slug).toBe("Postgres");  // the auto node (store name) wins
+    expect(g.rawEdges.filter((e) => e.kind === "uses-mcp")).toHaveLength(1);
+  });
+
+  it("keeps an explicit contract ALONGSIDE a distinct auto-mcp node (no false dedup across kinds)", () => {
+    const links: ProjectLink[] = [
+      { id: "app-a>stripe:api", from: "app-a", to: "stripe", kind: "api", target: { type: "service", appType: "api" } },
+    ];
+    const mcpServers = [{ id: "postgres", name: "Postgres", projects: ["app-b"], transport: "http" as const }];
+    const g = buildGlanceData(projects, links, [], [], [], mcpServers);
+    expect(g.rawNodes.filter((n) => n.kind === "service")).toHaveLength(1);
+    expect(g.rawNodes.filter((n) => n.kind === "mcp")).toHaveLength(1);
+  });
+
+  it("skips an external contract whose consuming project isn't in this graph (stale from)", () => {
+    const links: ProjectLink[] = [
+      { id: "ghost>stripe:api", from: "ghost", to: "stripe", kind: "api", target: { type: "service" } },
+    ];
+    const g = buildGlanceData(projects, links);
+    expect(g.rawNodes.some((n) => n.kind === "service")).toBe(false);
+    expect(g.rawEdges).toEqual([]);
+  });
+
+  it("leaves a legacy project↔project link (no target) as a plain L0 edge — byte-identical", () => {
+    const link: ProjectLink = { id: "app-a>app-b:api", from: "app-a", to: "app-b", kind: "api" };
+    const g = buildGlanceData(projects, [link]);
+    expect(g.rawEdges).toEqual([{ id: "app-a>app-b:api", from: "app-a", to: "app-b", kind: "api" }]);
+    expect(g.rawNodes.some((n) => n.kind === "service" || n.kind === "mcp")).toBe(false);
+    // an explicit `{ type: "project" }` target draws the SAME plain project edge (no band node)
+    const withProjTarget: ProjectLink = { ...link, target: { type: "project" } };
+    expect(buildGlanceData(projects, [withProjTarget])).toEqual(g);
   });
 });

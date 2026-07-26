@@ -9,3 +9,29 @@
   min-height: 0;
   overflow: hidden;
 }
+
+/* Projects page (#3802) — the Skills-shaped rail + card/list layout. The list column is a size-query
+   container so the slim over-the-list header can drop the summary first when the column narrows,
+   keeping the count/sort/density/New controls. Mirrors .skills-listcol (skills.css). */
+.projects-listcol { container-type: inline-size; }
+@container (max-width: 620px) {
+  .projects-listhead-summary { display: none; }
+}
+
+/* clickable card affordance — the accent border/wash on hover (like the Skills card + the old
+   ProjectRow's left-accent). `tone` isn't passed to the Card so this CSS wins (no inline borderColor). */
+.projects-workspace .project-card:hover { border-color: var(--accent); background: var(--bg-elev); }
+.projects-workspace .project-card:hover .project-open { color: var(--accent); }
+
+/* list-density row — a full-width single row with a hover left-accent (the old ProjectRow look). */
+.projects-workspace .project-row {
+  padding: 11px 14px;
+  border: 1px solid var(--border-soft);
+  border-left: 2px solid transparent;
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.projects-workspace .project-row:hover { border-left-color: var(--accent); background: var(--bg-elev); }
+.projects-workspace .project-row:hover .project-open { color: var(--accent); }

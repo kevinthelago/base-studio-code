@@ -5,7 +5,10 @@
   "deps": [
     "discovery"
   ],
-  "optional": true,
+  "appliesWhen": {
+    "signal": "needsMarket",
+    "target": true
+  },
   "blurb": "Measure the idea's value against its market — desk research and revealed-behavior signals only, never polls or surveys.",
   "gateRule": {
     "require": [

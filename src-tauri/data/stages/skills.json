@@ -4,6 +4,10 @@
   "glyph": "✦",
   "gate": "skills selected",
   "deps": [],
+  "appliesWhen": {
+    "signal": "needsSkills",
+    "target": true
+  },
   "gateRule": {
     "require": [
       {

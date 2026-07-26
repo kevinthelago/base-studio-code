@@ -53,7 +53,6 @@ export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneD
     skills: input.skills ?? [],
     mcpServers: buildMcpServers(input.mcpServers ?? [], input.projectKey ?? "", input.fleet, input.mcpInstallState),
     features: input.features ?? [],
-    authoredBlueprint: input.authoredBlueprint,
     deploy: input.deployConfig,
     dependencies: input.dependencies ?? [],
     registries: input.registries ?? {},
