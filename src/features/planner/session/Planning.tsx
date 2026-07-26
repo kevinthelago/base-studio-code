@@ -22,6 +22,7 @@ import { type McpInstallState } from "../lib/mcpPaneData";
 import { buildProjectPaneData } from "../pane/projectPaneData";
 import { toWorkerUiPairing } from "../fleet/workerScope";
 import { normalizeDeployConfig } from "../lib/deployConfig";
+import { appTypeHasUi } from "../lib/classifyConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
@@ -444,7 +445,11 @@ export function Planning({ visible }: { visible: boolean }) {
   // progress rail, current-stage, and advance/publish footer all read these. #668 deleted
   // this whole substrate; the store data (blueprints, ui, automations, pipelines) survived.
   const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
-  const requiresUi = stageConfig.enabled.ui;
+  // The UI stage applies when the BLUEPRINT enables it AND the project's APP TYPE actually has
+  // screens (#3784): an API / serverless / CLI / library / MCP-server project has nothing to
+  // design, so the stage drops even though the blueprint carries it. Unclassified projects read as
+  // "application" ⇒ true, so this never hides a UI stage that showed before the planner classified.
+  const requiresUi = stageConfig.enabled.ui && appTypeHasUi(classifyCfg);
   const uiCounts = useMemo(() => {
     if (!requiresUi) return { approved: 0, total: 0 };
     const declared = uiScreens[effectiveProjectId] ?? [];
