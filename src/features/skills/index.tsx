@@ -40,7 +40,7 @@ import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { LessonsTab } from "./LessonsTab";
 import { NewGroupDialog } from "./NewGroupDialog";
 import { SkillDrawer } from "./SkillDrawer";
-import { SkillsDigestBar, SkillsDigestPanel } from "./SkillsDigest";
+import { SkillsDigestToggle, SkillsDigestPanel } from "./SkillsDigest";
 import { RunsTab } from "./RunsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
@@ -219,11 +219,10 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
             {/* Left rail — DRAG-RESIZABLE (#2816), the same pattern GraphCanvas uses (railResizable): a
                 sized wrapper + a `.resize-x` splitter. GraphRail fills the wrapper (its default flex:1). */}
             <Box style={{ flex: `0 0 ${railDrag.size}px`, width: railDrag.size, minWidth: 0, display: "flex", overflow: "hidden" }}>
+            // #3854: no `tools` — search moved to the list HEADER. `query` is still read here for the
+            // clear-all-filters footer below.
             <GraphRail
               bodyPad="12px 10px 20px"
-              tools={
-                <SearchField value={query} onChange={setQuery} placeholder="Search name, description, tools…" aria-label="Search skills" style={{ width: "100%" }} />
-              }
               footer={(activeFacetCount > 0 || query || groupFilter) ? (
                 <Box style={{ borderTop: "1px solid var(--border-soft)", padding: "10px 12px" }}>
                   <Box as="button" onClick={clearFilters} style={{ fontSize: 11, color: "var(--fg-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>clear all filters</Box>
@@ -280,12 +279,17 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
             <Stack className="skills-listcol" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
               {/* Header like the graph toolbar (#2816): 52px, elevated bg, soft border. */}
               <Row className="skills-listhead" gap={16} align="center" style={{ height: 52, flex: "none", padding: "0 16px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)" }}>
-                {/* Digest stats — the FIRST to hide when the header narrows (container query in skills.css). */}
-                <Box className="skills-listhead-digest" style={{ minWidth: 0, overflow: "hidden" }}>
-                  <SkillsDigestBar merged={merged} stats={stats} kpis={kpis} digestOpen={digestOpen} onToggle={() => setDigestOpen((v) => !v)} />
-                </Box>
+                {/* #3854: the header LEADS with search — the control users reach for. It replaced an
+                    always-on KPI digest (skills/enabled/pinned/today/avg-success), which did not earn the
+                    primary slot; the digest PANEL is still one click away via the toggle on the right. */}
+                <SearchField
+                  value={query} onChange={setQuery}
+                  placeholder="Search name, description, tools…" aria-label="Search skills"
+                  style={{ flex: "0 1 320px", minWidth: 0 }}
+                />
                 <Box as="span" style={{ flex: 1 }} />
                 {/* Controls — always kept. */}
+                <SkillsDigestToggle digestOpen={digestOpen} onToggle={() => setDigestOpen((v) => !v)} />
                 <Text as="span" mono size={11} tone="muted" style={{ flex: "none" }}>{filtered.length} <Text as="span" tone="dim">of {kpis.total}</Text></Text>
                 <Row gap={6} style={{ position: "relative", flex: "none" }}>
                   <Text as="span" mono size={10} tone="dim" style={{ textTransform: "uppercase" }}>Sort</Text>
