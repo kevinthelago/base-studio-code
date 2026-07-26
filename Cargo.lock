@@ -771,6 +771,7 @@ dependencies = [
  "research",
  "serde_json",
  "skilldb",
+ "usagedb",
 ]
 
 [[package]]
@@ -6922,6 +6923,17 @@ dependencies = [
  "serde",
  "unic-ucd-ident",
  "url",
+]
+
+[[package]]
+name = "usagedb"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
