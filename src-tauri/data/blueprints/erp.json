@@ -4,6 +4,7 @@
   "name": "ERP",
   "desc": "Build an ERP platform — core financials, procure-to-pay, order-to-cash, and inventory on one ledger.",
   "icon": "layers",
+  "h": 290,
   "origin": "built-in",
   "mode": "create",
   "skills": ["web-seo"],

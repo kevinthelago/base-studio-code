@@ -3,7 +3,7 @@ import {
   filterBlueprints, makeBlueprints, resolveProjectSeed, refreshBuiltIns,
   type Blueprint,
 } from "../stages/blueprints";
-import { blueprintIcon } from "../list/blueprintLibrary.helpers";
+import { blueprintIcon, blueprintHue } from "../list/blueprintLibrary.helpers";
 
 const bp = (id: string, name: string, over: Partial<Blueprint> = {}): Blueprint =>
   ({ id, name, desc: "", sections: [], ...over });
@@ -25,6 +25,18 @@ describe("the built-in blueprint library (#645/#3785)", () => {
     // grid — so `default` (the blank route, which declares none) reads as generic, by design.
     const icons = all.map(blueprintIcon);
     expect(new Set(icons).size, `distinct glyphs: ${icons.join(", ")}`).toBe(all.length);
+  });
+
+  it("gives every built-in a DISTINCT tile COLOUR (#3838)", () => {
+    // The glyph alone was doing all the work: no packaged blueprint declared `h`, so every card
+    // fell through to `blueprintHue`'s single fallback and all six tiles rendered the same amber.
+    // (Older than #3823 — before it the colour came from the equally-degenerate `category`, which
+    // was "greenfield" on every built-in.) A new blueprint without a hue must fail here, loudly,
+    // rather than silently joining the fallback.
+    const all = makeBlueprints();
+    for (const b of all) expect(b.h, `${b.id} declares an accent hue`).toBeTypeOf("number");
+    const hues = all.map((b) => blueprintHue(b.h));
+    expect(new Set(hues).size, `distinct colours: ${hues.join(", ")}`).toBe(all.length);
   });
 
   it("the default blueprint's deployment stage is enabled so it shows in the plan (#672/#1914)", () => {
