@@ -1,6 +1,7 @@
 // #2445 — logged out of GitHub, published projects must still appear in the Projects page: the
-// published column renders the LOCAL inventory (hubs carrying `.published` + `.title`) with a quiet
-// "not synced" hint, and a fetched GitHub board overlays its hub once the query returns.
+// published column renders the LOCAL inventory (hubs carrying `.published` + `.title`), and a
+// fetched GitHub board overlays its hub once the query returns. (The local-only "not synced" hint
+// that shipped with #2445 was removed in #3818; the header's `○ github offline` states it instead.)
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -30,7 +31,7 @@ describe("ProjectsList — local published inventory (#2445)", () => {
     useAppStore.setState({ activeWorkspace: "projects", localDraftProjects: {}, hiddenProjectIds: [], githubState: null });
   });
 
-  it("LOGGED OUT: a local published hub renders in the published column with the not-synced hint", async () => {
+  it("LOGGED OUT: a local published hub renders in the published column", async () => {
     useAppStore.setState({ githubToken: "" });
     routeInvoke([]);
     render(<ProjectsList />);
@@ -38,22 +39,21 @@ describe("ProjectsList — local published inventory (#2445)", () => {
     // The hub renders from the local inventory — title from `.title`, key as the identity.
     await screen.findByText("Acme CRM");
     expect(screen.getByText("acme-crm")).toBeTruthy();
-    // …and the column carries the quiet local-only hint.
-    expect(screen.getByText(/not synced/i)).toBeTruthy();
+    // Logged out and never synced, no staleness hint renders at all (#3818).
+    expect(screen.queryByText(/synced/i)).toBeNull();
     // A published hub is NOT a draft — no draft chip / delete affordance for it.
     expect(screen.queryByTitle("delete draft")).toBeNull();
   });
 
-  it("LOGGED IN: the fetched board OVERLAYS the hub — one row, no not-synced hint", async () => {
+  it("LOGGED IN: the fetched board OVERLAYS the hub — one row", async () => {
     useAppStore.setState({ githubToken: "gho_test" });
     routeInvoke([GH_ACME]);
     render(<ProjectsList />);
 
     await screen.findByText("Acme CRM");
     // The GitHub sync landed and its record matched the hub key, so the local row dropped out:
-    // exactly ONE "Acme CRM" (the full board ProjectRow) and no local-only hint.
+    // exactly ONE "Acme CRM" (the full board ProjectRow).
     await waitFor(() => expect(screen.getAllByText("Acme CRM")).toHaveLength(1));
-    expect(screen.queryByText(/not synced/i)).toBeNull();
     expect(screen.queryByText("acme-crm")).toBeNull(); // the local row's key line is gone too
     expect(screen.queryByText(/last synced/i)).toBeNull(); // live data — no staleness hint (#2446)
   });
@@ -90,9 +90,8 @@ describe("ProjectsList — persisted GitHub-state overlay (#2446)", () => {
     // row's key line is gone) …
     await screen.findByText("Acme CRM");
     await waitFor(() => expect(screen.queryByText("acme-crm")).toBeNull());
-    // … under the stale-marked hint instead of the #2445 "not synced" wording.
+    // … under the stale-marked hint, which is the only hint the column renders (#3818).
     expect(screen.getByText(/last synced 2h ago/i)).toBeTruthy();
-    expect(screen.queryByText(/not synced/i)).toBeNull();
     // The don't-resurrect rule: a persisted record with no local hub does NOT render.
     expect(screen.queryByText("Ghost App")).toBeNull();
   });
