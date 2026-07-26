@@ -35,10 +35,11 @@ import { bscJson, bscRun } from "@/shared/lib/core/bsc";
 import { injectPrompt } from "@/shared/lib/fleet/paneInject";
 import { DESIGN_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 import {
-  decideLoopPumpAction, decideOvernightAction, driverSay, pickDesignerLoop,
-  DEFAULT_NUDGE_MS, DRIVER, type LoopRow, type LoopTurn,
+  decideOvernightAction, driverSay, pickDesignerLoop,
+  DEFAULT_NUDGE_MS, DRIVER, DESIGNER, type LoopRow, type LoopTurn,
 } from "./lib/designerLoopDrive";
 import { buildDesignerQueue, parseCoverage, parseResolve, type DesignDirective } from "./lib/designerQueue";
+import { publishDesignerLoopState } from "./useDesignerLoopState";
 
 const POLL_MS = 3000;
 
@@ -85,28 +86,47 @@ export function useDesignerLoopPump(): void {
       const run = s.designerOvernight;
       if (!loop) {
         lastInjectAt.current = 0; // no active loop → reset the stall clock
+        publishDesignerLoopState(null); // #3850: the banner's only source — collapse it to the idle pill
         if (run) s.endDesignerOvernight(); // the run's loop is closed/gone → leave overnight mode
         return;
       }
-      // A run whose loop is no longer THE open loop is over; fall back to the interactive path.
+      // The pump drives ONLY a loop this app started (#3850). A run whose loop is no longer THE open loop
+      // is over. An ORPHAN open loop — CLI-created, or one that outlived a restart — is deliberately NOT
+      // adopted: #3304's fourth brake is that run state is never persisted, so overnight mode cannot
+      // auto-start or survive a restart, and adopting an orphan would resume spending money after one. The
+      // banner still shows it with a reachable Stop, and the loop's own durable --max-turns/--budget apply.
       const overnight = run && run.loopId === loop.id ? run : null;
       if (run && !overnight) s.endDesignerOvernight();
 
+      // Drive ONLY a loop this app started. An orphan is published above (observable + stoppable) but never
+      // adopted — see the note on `overnight` for why that brake matters.
+      if (!overnight) return;
+
       // A halt was requested — dispatch NOTHING and keep re-issuing the stop until the loop is observably
       // gone (the branch above then clears the run). Idempotent, so retrying costs nothing.
-      if (overnight?.stopping) {
+      if (overnight.stopping) {
         await bscRun(null, ["loop", "stop", String(loop.id)]);
         return;
       }
 
-      const show = await bscJson<{ turns: LoopTurn[] } | null>(null, ["loop", "show", String(loop.id), "--json"], null);
+      const show = await bscJson<{ turns: LoopTurn[]; total_cost?: number } | null>(
+        null, ["loop", "show", String(loop.id), "--json"], null,
+      );
       if (isCancelled() || !show) return;
       const turns = show.turns ?? [];
+      // #3850: publish what this read already knows — the banner renders it instead of running its own
+      // `loop list` + `loop show`. Published for EVERY open loop, including an orphan we won't drive, so
+      // the pill (and its Stop) stays reachable for the one case the human is the only brake for.
+      publishDesignerLoopState({
+        id: loop.id,
+        changes: turns.filter((t) => t.participant === DESIGNER).length,
+        cost: show.total_cost ?? 0,
+      });
 
       // Build the queue ONCE per run, before the first dispatch. Building it once (rather than per turn) is
       // what makes `queue[cursor]` mean what `decideOvernightAction` says it means: a rebuilt queue shrinks
       // as findings are fixed, which would slide the cursor over unfixed work.
-      if (overnight && overnight.queue.length === 0) {
+      if (overnight.queue.length === 0) {
         const comps = s.components.filter((c) => c.kitId === s.designsKitId);
         const queue = await buildQueue(comps, 0);
         if (isCancelled()) return;
@@ -118,12 +138,10 @@ export function useDesignerLoopPump(): void {
         return; // dispatch on the next tick, against the installed queue
       }
 
-      const action = overnight
-        ? decideOvernightAction({
-            loop, turns, now: Date.now(), lastInjectAt: lastInjectAt.current, nudgeAfterMs: DEFAULT_NUDGE_MS,
-            queue: overnight.queue, cursor: overnight.cursor, maxTurns: overnight.maxTurns,
-          })
-        : decideLoopPumpAction({ loop, turns, now: Date.now(), lastInjectAt: lastInjectAt.current, nudgeAfterMs: DEFAULT_NUDGE_MS });
+      const action = decideOvernightAction({
+        loop, turns, now: Date.now(), lastInjectAt: lastInjectAt.current, nudgeAfterMs: DEFAULT_NUDGE_MS,
+        queue: overnight.queue, cursor: overnight.cursor, maxTurns: overnight.maxTurns,
+      });
 
       if (action.kind === "wait" || action.kind === "idle") return;
       if (action.kind === "stop") {
@@ -147,12 +165,8 @@ export function useDesignerLoopPump(): void {
           useAppStore.getState().advanceDesignerOvernight();
           return;
         }
-        // `continue` advances the alternation (posts the driver's turn) before prompting; a `nudge` re-prompts
-        // the same (still-designer) turn without posting, so it doesn't skew the transcript.
-        if (action.kind === "continue") {
-          await bscRun(null, ["loop", "say", String(loop.id), "--as", DRIVER, "continue"]);
-          if (isCancelled()) return;
-        }
+        // The only other actuation is `nudge` — re-prompt the same (still-designer) turn WITHOUT posting a
+        // driver turn, so a stall recovery doesn't skew the transcript's alternation.
         await injectPrompt(DESIGN_STUDIO_SESSION_ID, action.prompt);
         lastInjectAt.current = Date.now();
       } finally {

@@ -12,11 +12,10 @@ vi.mock("@/shared/lib/core/bsc", () => ({
   bscWrite: vi.fn(async () => undefined),
 }));
 
-import { bscJson, bscRun } from "@/shared/lib/core/bsc";
+import { bscRun } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
 import { DesignerLoopBanner } from "./DesignerLoopBanner";
-
-const LOOP = { id: 7, a: "driver", b: "designer", status: "open" };
+import { publishDesignerLoopState } from "./useDesignerLoopState";
 
 // Two tests swap a store ACTION for a spy. Captured up-front and restored per test, so the swap can't
 // leak into a later test and make this file order-dependent.
@@ -25,14 +24,10 @@ const REAL_ACTIONS = {
   stopDesignerOvernight: useAppStore.getState().stopDesignerOvernight,
 };
 
-/** Route the banner's two polls; `loops: []` is the idle (no open loop) state. */
-function routeBsc(loops: unknown, turns: { participant: string }[] = [], cost = 0) {
-  vi.mocked(bscJson).mockImplementation(async (_k: unknown, args: unknown, fallback: unknown) => {
-    const a = args as string[];
-    if (a[0] === "loop" && a[1] === "list") return loops;
-    if (a[0] === "loop" && a[1] === "show") return { turns, total_cost: cost };
-    return fallback;
-  });
+/** Publish the loop the banner should render (#3850). The banner makes NO `bsc` calls now — the pump owns
+ *  the read and publishes; this stands in for the pump. `null` is the idle (no open loop) state. */
+function showLoop(loop: { id: number; changes: number; cost: number } | null) {
+  publishDesignerLoopState(loop);
 }
 
 /** Render and let the immediate poll settle. */
@@ -45,9 +40,8 @@ async function mount() {
 describe("DesignerLoopBanner (#3292/#3304)", () => {
   beforeEach(() => {
     vi.mocked(bscRun).mockReset().mockResolvedValue(undefined);
-    vi.mocked(bscJson).mockReset();
     useAppStore.setState({ designerOvernight: null, ...REAL_ACTIONS });
-    routeBsc([]);
+    showLoop(null);
   });
 
   it("offers the opt-in trigger when idle — and starts NOTHING on its own", async () => {
@@ -69,7 +63,7 @@ describe("DesignerLoopBanner (#3292/#3304)", () => {
   });
 
   it("shows the live run — id, change count, cost — with the reachable Stop", async () => {
-    routeBsc([LOOP], [{ participant: "driver" }, { participant: "designer" }, { participant: "driver" }], 1.5);
+    showLoop({ id: 7, changes: 1, cost: 1.5 }); // one designer turn = one shot-paired change
     await mount();
 
     expect(screen.getByText(/design loop #7/)).toBeInTheDocument();
@@ -78,7 +72,7 @@ describe("DesignerLoopBanner (#3292/#3304)", () => {
   });
 
   it("surfaces the overnight run's progress against its ceiling", async () => {
-    routeBsc([LOOP], [{ participant: "driver" }], 0.25);
+    showLoop({ id: 7, changes: 0, cost: 0.25 });
     useAppStore.setState({
       designerOvernight: { loopId: 7, maxTurns: 40, budget: 10, cursor: 3, queue: [], stopping: false, startedAt: 1 },
     });
@@ -88,7 +82,7 @@ describe("DesignerLoopBanner (#3292/#3304)", () => {
   });
 
   it("stops a plain interactive loop out-of-band via `bsc loop stop`", async () => {
-    routeBsc([LOOP], [{ participant: "driver" }]);
+    showLoop({ id: 7, changes: 0, cost: 0 });
     await mount();
 
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^stop$/i })); });
@@ -98,7 +92,7 @@ describe("DesignerLoopBanner (#3292/#3304)", () => {
 
   it("stops an OVERNIGHT run through the store action, so the halt is retried until it lands", async () => {
     const stop = vi.fn(async () => undefined);
-    routeBsc([LOOP], [{ participant: "driver" }]);
+    showLoop({ id: 7, changes: 0, cost: 0 });
     useAppStore.setState({
       designerOvernight: { loopId: 7, maxTurns: 40, budget: 10, cursor: 1, queue: [], stopping: false, startedAt: 1 },
       stopDesignerOvernight: stop,
@@ -113,7 +107,7 @@ describe("DesignerLoopBanner (#3292/#3304)", () => {
   });
 
   it("reports a pending halt and disables Stop, so the run isn't claimed gone before it is", async () => {
-    routeBsc([LOOP], [{ participant: "driver" }]);
+    showLoop({ id: 7, changes: 0, cost: 0 });
     useAppStore.setState({
       designerOvernight: { loopId: 7, maxTurns: 40, budget: 10, cursor: 1, queue: [], stopping: true, startedAt: 1 },
     });
