@@ -82,7 +82,10 @@ function renderNode(node: GeneralNode, ctx: KitBindings, key: string): ReactNode
       // Arguments are FORWARDED: a handler like `TextField.onChange(next)` carries the new value, and
       // dropping it would make every text/select field in a data-driven UI unwritable.
       const action = typeof value === "string" ? value : "";
-      props[name] = (...args: unknown[]) => ctx.on?.[action]?.(...args);
+      props[name] = (...args: unknown[]) => {
+        ctx.on?.[action]?.(...args);
+        ctx.emit?.({ type: node.type, prop: name, args });
+      };
       continue;
     }
     if (declared?.type === "node") {
@@ -104,7 +107,10 @@ function renderNode(node: GeneralNode, ctx: KitBindings, key: string): ReactNode
   // precisely when an author is trying to be unambiguous. This is also the ONLY way to bind a handler
   // on a `passthrough` primitive (e.g. `Button.onClick`), whose handlers are undeclared.
   for (const [propName, actionName] of Object.entries(node.actions ?? {})) {
-    props[propName] = (...args: unknown[]) => ctx.on?.[actionName]?.(...args);
+    props[propName] = (...args: unknown[]) => {
+      ctx.on?.[actionName]?.(...args);
+      ctx.emit?.({ type: node.type, prop: propName, args });
+    };
   }
 
   // Node-level `children` is sugar for the `children` prop (the 3a normalisation) — resolved here too,
@@ -132,6 +138,14 @@ export interface KitBindings {
    *  value is the name). Called with whatever the underlying handler was called with — a click event
    *  for `onClick`, the new value for `onChange` — so a host can write a field back. */
   on?: Record<string, (...args: unknown[]) => void>;
+  /** Analytics EMIT hook (#3816, epic #3809 slice 3). Called AFTER a bound handler fires, with the
+   *  node's component `type`, the action PROP that fired, and its args. A host-supplied, manifest-driven
+   *  runtime (`makeAnalyticsEmit` in `@/features/designs`) turns this into a `bsc usage record` call —
+   *  so a spec composed from instrumented components self-reports BY CONSTRUCTION. Absent ⇒ no
+   *  instrumentation: the default render path is byte-for-byte unchanged (the dev-only / opt-in gate).
+   *  The renderer never reads a component's analytics manifest itself — that lives in the components
+   *  store, a feature the shared renderer cannot import — so the host wires the lookup into this hook. */
+  emit?: (fire: { type: string; prop: string; args: unknown[] }) => void;
 }
 
 export interface KitRendererProps extends KitBindings {
@@ -140,6 +154,6 @@ export interface KitRendererProps extends KitBindings {
 }
 
 /** Render a node tree. `values`/`on` wire the spec's `binds`/`actions` to host state and behaviour. */
-export function KitRenderer({ node, values, on, slots }: KitRendererProps) {
-  return <>{renderNode(node, { values, on, slots }, "$")}</>;
+export function KitRenderer({ node, values, on, slots, emit }: KitRendererProps) {
+  return <>{renderNode(node, { values, on, slots, emit }, "$")}</>;
 }
