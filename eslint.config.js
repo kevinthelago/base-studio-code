@@ -56,7 +56,6 @@ export default tseslint.config(
     ignores: [
       "dist",
       "target",
-      "design",
       "node_modules",
       "relay",
       "**/wt*/**",
