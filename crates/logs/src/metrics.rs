@@ -34,13 +34,21 @@ use std::path::Path;
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ProjectMetrics {
     pub project: String,
-    /// How many fleet panes were attributed to it (director + workers + triage).
+    /// How many panes were attributed to it (planner + director + workers + triage).
     pub panes: usize,
     pub input: u64,
     pub output: u64,
     pub cache_creation: u64,
     pub cache_read: u64,
     pub cost_usd: f64,
+    /// Cost split by phase (#3814): `build` = the construction fleet (planner + director + workers)
+    /// constructing the project; `run` = triage + operate/maintain work on the built repo. The two sum
+    /// to `cost_usd` across the attributed panes (`category_of` buckets each).
+    pub build_cost_usd: f64,
+    pub run_cost_usd: f64,
+    /// Tokens (input + output) split the same build/run way.
+    pub build_tokens: u64,
+    pub run_tokens: u64,
     /// `cache_read / (input + cache_read)` — the fraction of INPUT served from cache, the dial the
     /// prompt-caching lever moves. `0.0` when there is no input yet.
     pub cache_hit_rate: f64,
@@ -91,6 +99,14 @@ pub fn belongs_to(project: &str, pane: &str) -> bool {
         && pane.starts_with(project)
 }
 
+/// Every pane whose spend/activity is ATTRIBUTED to `project` for metrics (#3814): its fleet panes
+/// ([`belongs_to`]) PLUS its planner session (`planning_<key>`), so the planning cost counts as the
+/// project's BUILD cost instead of vanishing. (`belongs_to` stays the strict fleet-pane predicate for
+/// callers that need it; only the metrics rollup widens to the planner.)
+pub fn attributed_to(project: &str, pane: &str) -> bool {
+    belongs_to(project, pane) || pane.strip_prefix("planning_") == Some(project)
+}
+
 /// The pure rollup: fold the per-pane costs + activity timestamps + optional completion into one
 /// [`ProjectMetrics`]. `activity` is `(pane, epoch_ms)` for every activity event (unfiltered — this
 /// filters by project itself, so one test drives the whole computation).
@@ -108,6 +124,10 @@ pub fn rollup(
         cache_creation: 0,
         cache_read: 0,
         cost_usd: 0.0,
+        build_cost_usd: 0.0,
+        run_cost_usd: 0.0,
+        build_tokens: 0,
+        run_tokens: 0,
         cache_hit_rate: 0.0,
         wall_clock_ms: 0,
         issues_done: completion.map(|(d, _)| d),
@@ -115,12 +135,21 @@ pub fn rollup(
         per_pane: Vec::new(),
     };
 
-    for c in costs.iter().filter(|c| belongs_to(project, &c.session)) {
+    for c in costs.iter().filter(|c| attributed_to(project, &c.session)) {
         m.input += c.input;
         m.output += c.output;
         m.cache_creation += c.cache_creation;
         m.cache_read += c.cache_read;
         m.cost_usd += c.cost_usd;
+        // #3814: split the spend by build (the construction fleet) vs run (triage/operate).
+        let tokens = c.input + c.output;
+        if crate::category_of(&c.session) == "build" {
+            m.build_cost_usd += c.cost_usd;
+            m.build_tokens += tokens;
+        } else {
+            m.run_cost_usd += c.cost_usd;
+            m.run_tokens += tokens;
+        }
         m.per_pane.push(c.clone());
     }
     m.panes = m.per_pane.len();
@@ -146,7 +175,7 @@ pub const EPISODE_GAP_MS: i64 = 20 * 60 * 1_000;
 /// epoch. `0` when the last run has fewer than two events (nothing to span).
 fn latest_run_span_ms(project: &str, activity: &[(String, i64)]) -> u64 {
     let mut ts: Vec<i64> =
-        activity.iter().filter(|(p, t)| *t > 0 && belongs_to(project, p)).map(|(_, t)| *t).collect();
+        activity.iter().filter(|(p, t)| *t > 0 && attributed_to(project, p)).map(|(_, t)| *t).collect();
     if ts.len() < 2 {
         return 0;
     }
@@ -281,9 +310,11 @@ fn lean(m: &ProjectMetrics) -> String {
         _ => String::new(),
     };
     format!(
-        "{} · ${:.4} · {} in / {} out · cache {:.0}% · {} · {} panes · {}{}",
+        "{} · ${:.4} (build ${:.4} / run ${:.4}) · {} in / {} out · cache {:.0}% · {} · {} panes · {}{}",
         m.project,
         m.cost_usd,
+        m.build_cost_usd,
+        m.run_cost_usd,
         kfmt(m.input),
         kfmt(m.output),
         m.cache_hit_rate * 100.0,
@@ -320,6 +351,36 @@ mod tests {
         assert!(!belongs_to("shop", "shop")); // no colon → not a fleet pane
         assert!(!belongs_to("shop", "other:director"));
         assert!(!belongs_to("shop", "planning_shop")); // the planner is a separate session, not fleet
+    }
+
+    #[test]
+    fn attributed_to_folds_in_the_planner() {
+        // #3814: belongs_to stays strict (fleet only); attributed_to ALSO folds in the project's planner
+        // (`planning_<key>`), so its planning spend counts as this project's build cost.
+        assert!(attributed_to("shop", "planning_shop"));
+        assert!(attributed_to("shop", "shop:director")); // fleet panes still attributed
+        assert!(!attributed_to("shop", "planning_other")); // a different project's planner
+        assert!(!attributed_to("shop", "shop-admin:director")); // no prefix bleed
+        assert!(!attributed_to("shop", "planning_shop-admin")); // exact planner-key match, no bleed
+    }
+
+    #[test]
+    fn rollup_splits_cost_by_build_vs_run() {
+        // #3814: the construction fleet (planner + director + workers) is BUILD; triage is RUN.
+        let costs = vec![
+            cost("planning_shop", 100, 20, 0, 0.05),  // planner → build
+            cost("shop:director", 100, 50, 0, 0.10),  // director → build
+            cost("shop:api", 200, 80, 0, 0.20),       // worker → build
+            cost("shop:web:triage", 40, 10, 0, 0.03), // triage → run
+        ];
+        let m = rollup("shop", &costs, &[], None);
+        assert_eq!(m.panes, 4, "planner + director + worker + triage all attributed");
+        assert!((m.build_cost_usd - 0.35).abs() < 1e-9, "planner + director + worker: {}", m.build_cost_usd);
+        assert!((m.run_cost_usd - 0.03).abs() < 1e-9, "triage: {}", m.run_cost_usd);
+        assert_eq!(m.build_tokens, (100 + 20) + (100 + 50) + (200 + 80));
+        assert_eq!(m.run_tokens, 40 + 10);
+        // Build + run sum to the total.
+        assert!((m.build_cost_usd + m.run_cost_usd - m.cost_usd).abs() < 1e-9);
     }
 
     #[test]
