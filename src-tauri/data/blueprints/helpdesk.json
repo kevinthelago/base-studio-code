@@ -5,7 +5,6 @@
   "desc": "Build a service desk — omnichannel ticketing, ITIL workflows, and AI-resolution agents.",
   "icon": "fact_check",
   "origin": "built-in",
-  "category": "greenfield",
   "mode": "create",
   "skills": ["web-seo"],
   "sections": [

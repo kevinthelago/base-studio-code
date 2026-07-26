@@ -58,21 +58,15 @@ describe("MarketBody — full payload", () => {
     expect(screen.getByText(/reachable wedge/)).toBeTruthy();
   });
 
-  it("weights the total by the bound blueprint's category", () => {
-    // Score a skewed profile so category weighting changes the total.
+  it("weights the total by the project's DISCOVERED lifecycle (#3785)", () => {
+    // Score a skewed profile so lifecycle weighting changes the total.
     const cfg = fullConfig();
     cfg.scores.problemSeverity = { score: 5, rationale: "r", sources: ["s"] };
     cfg.scores.reachableMarket = { score: 1, rationale: "r", sources: ["s"] };
     useAppStore.getState().setPlanMarketConfig(PID, cfg);
-    // Bind the project to a transform blueprint — severity-weighted. #3785 removed the built-in
-    // transform blueprints, so inject a local transform blueprint to exercise the category weighting.
-    useAppStore.setState({
-      blueprints: [
-        ...useAppStore.getState().blueprints,
-        { id: "tx-test", name: "Tx", desc: "", origin: "local", category: "transform", sections: [] },
-      ],
-    });
-    useAppStore.getState().setProjectBlueprintId(PID, "tx-test");
+    // Classify the project as a TRANSFORM — severity-weighted. Lifecycle left the blueprint model
+    // in #3785; the planner discovers it (#3784), so the weighting reads the classification.
+    useAppStore.setState({ planClassification: { [PID]: { lifecycle: "transform" } } });
     render(<MarketBody projectId={PID} />);
     const expected = weightedMarketScore(cfg, marketWeights("transform"));
     expect(screen.getByText(`${expected}/100`)).toBeTruthy();

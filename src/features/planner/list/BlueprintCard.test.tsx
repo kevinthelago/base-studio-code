@@ -4,12 +4,12 @@ import { BlueprintCard } from "./BlueprintCard";
 import type { BpItem } from "./blueprintLibrary.helpers";
 
 const item = (over: Partial<BpItem> = {}): BpItem => ({
-  id: "a", name: "Alpha", pitch: "", category: "greenfield",
+  id: "a", name: "Alpha", pitch: "", icon: "hub",
   stages: 0, sections: [], updatedLabel: "", sort: 0, ...over,
 });
 
 describe("BlueprintCard", () => {
-  it("renders the blueprint name, category and gist label", () => {
+  it("renders the blueprint name and gist label", () => {
     render(
       <BlueprintCard
         b={item({ gistLabel: "gist · abc1234" })}
@@ -18,8 +18,29 @@ describe("BlueprintCard", () => {
       />,
     );
     expect(screen.getByText("Alpha")).toBeInTheDocument();
-    expect(screen.getByText("greenfield")).toBeInTheDocument();
     expect(screen.getByText("gist · abc1234")).toBeInTheDocument();
+    // #3785: the lifecycle-category badge is gone — it was the same "greenfield" on every card.
+    expect(screen.queryByText("greenfield")).toBeNull();
+  });
+
+  it("renders the blueprint's OWN glyph — two blueprints no longer share one icon (#3785)", () => {
+    // Every card used to draw the same category-derived glyph, since every packaged blueprint was
+    // "greenfield". `Ic` renders inline SVG paths, so compare the rendered markup.
+    const glyph = (icon: string) => {
+      const { container, unmount } = render(
+        <BlueprintCard
+          b={item({ icon })}
+          onUse={() => {}} onDelete={() => {}}
+          menuOpenId={null} setMenuOpenId={() => {}}
+        />,
+      );
+      const svg = container.querySelector(".bp-rail-card-head svg")!.innerHTML;
+      unmount();
+      return svg;
+    };
+    expect(glyph("hub")).not.toEqual(glyph("checklist"));
+    // An undeclared icon resolves to the generic grid, not to another blueprint's domain glyph.
+    expect(glyph("category")).not.toEqual(glyph("hub"));
   });
 
   it("selects the blueprint on a card click (onUse)", () => {

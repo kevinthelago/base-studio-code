@@ -128,8 +128,8 @@ describe("buildBlueprintsPayload", () => {
   it("builds library cards with team presence + the uiKit pin, not full stage payloads", () => {
     const out = buildBlueprintsPayload({
       blueprints: [
-        bp("default", { category: "greenfield", mode: "create", team, uiKit: { id: "bsc/react-ui", version: "1.2.0", hash: "abc", themeId: "soft" } }),
-        bp("migrate", { category: "transform" }),
+        bp("default", { mode: "create", team, uiKit: { id: "bsc/react-ui", version: "1.2.0", hash: "abc", themeId: "soft" } }),
+        bp("migrate", {}),
       ],
       activeBlueprintId: "default",
     });
