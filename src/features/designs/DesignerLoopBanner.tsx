@@ -16,12 +16,17 @@ import { bscRun } from "@/shared/lib/core/bsc";
 import { useDesignerLoopState } from "./useDesignerLoopState";
 import "./designerLoopBanner.css";
 
-export function DesignerLoopBanner() {
+export function DesignerLoopBanner({ inline = false }: { inline?: boolean } = {}) {
   // PRESENTATION ONLY (#3850): the loop state has one owner now. This component used to run its own
   // `bsc loop list` + `bsc loop show` poll while the pump ran another — two spawns per tick for one fact.
   const active = useDesignerLoopState();
   const [starting, setStarting] = useState(false);
   const [stopRequested, setStopRequested] = useState(false);
+  // INLINE (#3852) = a pill inside the graph header row; otherwise the fixed top-center overlay. The
+  // overlay is still needed: the header is dropped in theme-preview mode, and the Stop must stay
+  // reachable there (it is the only brake on an unattended, token-spending run).
+  const cls = (extra = "") =>
+    ["designer-loop-banner", inline ? "dlb-inline" : "", extra].filter(Boolean).join(" ");
   const overnight = useAppStore((s) => s.designerOvernight);
   const startOvernight = useAppStore((s) => s.startDesignerOvernight);
   const stopOvernight = useAppStore((s) => s.stopDesignerOvernight);
@@ -38,7 +43,7 @@ export function DesignerLoopBanner() {
   // Idle — offer the opt-in trigger. Deliberately a plain, unpulsing pill: nothing is running.
   if (!active) {
     return (
-      <Box className="designer-loop-banner dlb-idle">
+      <Box className={cls("dlb-idle")}>
         {/* eslint-disable-next-line no-restricted-syntax -- a self-contained pill button; the shared Button carries layout this overlay doesn't want */}
         <button
           type="button"
@@ -73,7 +78,7 @@ export function DesignerLoopBanner() {
   const stopping = (overnight?.stopping ?? false) || stopRequested;
 
   return (
-    <Box className="designer-loop-banner" role="status" aria-label="design loop running">
+    <Box className={cls()} role="status" aria-label="design loop running">
       <Box as="span" className="dlb-dot" aria-hidden />
       <Text as="span" className="dlb-label mono">
         design loop #{active.id}

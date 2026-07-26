@@ -57,9 +57,12 @@ describe("DesignsWorkbench (#2308)", () => {
     // The page toolbar was removed (#move-to-planner) — the studio is a Planner tab, so the PageTabs
     // strip is its header. No "Design Studio" heading, no kit-switcher chip row.
     expect(screen.queryByText("Design Studio")).toBeNull();
-    // The kit is named in the graph header; the rail is now HEADERLESS (#2797) and leads with a search
-    // box (the label bar was dropped — the PageTabs strip already titles the studio).
-    expect(screen.getByText(/Composition graph · react-ui/)).toBeTruthy(); // graph mounts with the page
+    // #3852: the graph header no longer repeats the studio's name or its kit — the PageTabs strip titles
+    // the studio and the rail names the kit. Its leading slot is the LOOP banner; `fit` is the header
+    // control that proves the row mounted at all.
+    expect(screen.getByRole("button", { name: "Auto-improve" })).toBeTruthy(); // the header's leading slot
+    expect(screen.getByRole("button", { name: "fit" })).toBeTruthy();          // …and the graph chrome
+    expect(screen.queryByText(/Composition graph/)).toBeNull();                // the eyebrow is gone
     expect(screen.getByLabelText("Search components")).toBeTruthy();       // the rail's search box leads it
     expect(screen.queryByText(/Kits.*Components/)).toBeNull();             // no label header anymore
     // The Library/Graph toggle is gone — there is no alternate center mode.
@@ -76,7 +79,7 @@ describe("DesignsWorkbench (#2308)", () => {
     // The composition-graph shell still mounts (no kit-name suffix) with its rail search — the studio never
     // hides behind a StudioEmpty page (which would hide the designer terminal you need to BUILD the kit). The
     // Inspector is hidden (nothing to focus in an empty library, #3090).
-    expect(screen.getByText("Composition graph")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "fit" })).toBeTruthy(); // the graph shell still mounts
     expect(screen.getByLabelText("Search components")).toBeTruthy();
     expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();
   });
@@ -151,7 +154,10 @@ describe("DesignsWorkbench (#2308)", () => {
     // The toolbar switcher is gone (#move-to-planner) — clicking a rail kit head activates that kit. The
     // vue kit's head is labelled with its style ("material") under the single-kit style merge (#2506).
     fireEvent.click(screen.getByText("material").closest("button.ds-kithead")!);
-    expect(screen.getByText(/Composition graph · vue-kit/)).toBeTruthy();
+    // #3852: the header no longer names the kit, so assert the thing that actually matters — the graph is
+    // re-scoped to the new kit's components (its node is present, the old kit's are not).
+    expect(graphNode("VueButton")).toBeTruthy();
+    expect(graphNode("Chip")).toBeFalsy(); // scoped to graph NODES — "Chip" still lists in the rail tree
     expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();  // switching focuses nothing → hidden (#3090)
     // …then picking a component from the new kit reveals its details.
     fireEvent.click(railRow("VueButton"));
@@ -593,13 +599,17 @@ describe("theme try-on preview (#2834)", () => {
   });
 
   it("preview mode hides the graph chrome (the composition-graph toolbar); it returns on exit (#2849)", () => {
-    render(<DesignsWorkbench />);
-    expect(screen.getByText(/Composition graph/)).toBeTruthy();          // graph header shown normally
+    const { container } = render(<DesignsWorkbench />);
+    const chrome = () => screen.queryByRole("button", { name: /Share/ }); // header-ONLY (the expanded preview has its own fit)
+    expect(chrome()).toBeTruthy();                                       // graph header shown normally
     fireEvent.click(graphNode("Chip"));
     fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
-    expect(screen.queryByText(/Composition graph/)).toBeNull();          // hidden while previewing
+    expect(chrome()).toBeNull();                                         // hidden while previewing
+    // …but the loop banner SURVIVES as the overlay (#3852): the header is gone, and its Stop is the only
+    // brake on an unattended run, so it must not become unreachable.
+    expect(container.querySelector(".designer-loop-banner:not(.dlb-inline)")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Back to graph/ }));
-    expect(screen.getByText(/Composition graph/)).toBeTruthy();          // restored on exit
+    expect(chrome()).toBeTruthy();                                       // restored on exit
   });
 });
 
