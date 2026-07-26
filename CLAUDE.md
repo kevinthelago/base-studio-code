@@ -140,8 +140,6 @@ base-studio-code/
 │       ├── index.ts         #   create() composes feature slices + persist
 │       ├── types.ts         #   AppStore = feature slice interfaces (`extends …Slice`) + core fields
 │       └── slices/          #   console (core app state), plan, projects, session + core/shell residuals
-├── design/                  # ⚠️  REFERENCE ONLY — do not edit
-│   └── *.jsx / styles.css   # Browser-rendered design prototype (Babel standalone)
 └── package.json
 ```
 
@@ -512,7 +510,11 @@ Issues #4 and #5 can be worked in parallel after #3 merges. Issues #6–#10 can 
 
 ## Design Reference
 
-`design/` contains the full browser-rendered prototype (React JSX + Babel standalone). Every screen, component, color token, layout, and sample data set is defined there. When implementing a screen, match the design exactly — layout, inline styles, and CSS class usage. Do not modify files under `design/`.
+**The design lives in the app.** The **Design Studio** (`src/features/designs/`, v1.0.51) authors pages, components, and animations in-app against the packaged `base-studio-code` kit, previewed live by the render-preview chain — and #3783 closed the external Claude-Design round-trip in the planner (the UI stage generates a navigable shell in-app; the drop-files intake survives only as the opt-in `external` `uiMode`).
+
+The old `design/` folder — the browser-rendered Claude Design prototypes — was **removed** (#3834). Its trees had gone stale and partly broken, and the workflow they served is gone. Git history keeps them if a past screen ever needs consulting; a few `// Ported from design/bsc …` comments remain in `features/planner/relationship/*` as provenance.
+
+> Not to be confused with the **runtime** `design/` directory inside a project hub (`fileIntake.ts`'s `INTAKE_DIR`, `project/ui_skeleton.rs`) — that is where a user's dropped design files are staged, and it is unrelated to the deleted repo folder.
 
 ## Companion App
 
