@@ -3,12 +3,11 @@
    don't leak globally; .card/.tag/.kbd/.btn/.hint come from styles/tokens.css. */
 
 /* Unified Library layout (#2813): the list column is a size-query container so the over-the-list
-   header can DROP THE DIGEST FIRST when the column narrows, keeping the sort/density/Select controls.
-   The container is the list column (not the whole page), so the breakpoint tracks the real header room. */
+   header responsive. The drop-the-digest-first rule went with the digest itself (#3854): the header
+   leads with SEARCH now, and a search field must not be the thing that vanishes when the column
+   narrows. The container is the list column (not the whole page), so any future breakpoint still
+   tracks the real header room. */
 .skills-listcol { container-type: inline-size; }
-@container (max-width: 760px) {
-  .skills-listhead-digest { display: none; }
-}
 
 .skills-workspace {
   flex: 1;

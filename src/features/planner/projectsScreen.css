@@ -11,12 +11,10 @@
 }
 
 /* Projects page (#3802) — the Skills-shaped rail + card/list layout. The list column is a size-query
-   container so the slim over-the-list header can drop the summary first when the column narrows,
-   keeping the count/sort/density/New controls. Mirrors .skills-listcol (skills.css). */
+   container, kept for future header responsiveness. The drop-the-summary-first rule went with the
+   summary itself (#3854): the header leads with SEARCH now, and a search field must not be the thing
+   that vanishes when the column narrows. Mirrors .skills-listcol (skills.css). */
 .projects-listcol { container-type: inline-size; }
-@container (max-width: 620px) {
-  .projects-listhead-summary { display: none; }
-}
 
 /* clickable card affordance — the accent border/wash on hover (like the Skills card + the old
    ProjectRow's left-accent). `tone` isn't passed to the Card so this CSS wins (no inline borderColor). */
