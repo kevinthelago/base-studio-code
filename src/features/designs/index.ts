@@ -9,7 +9,15 @@ export { createComponentsSlice, DEFAULT_OVERNIGHT_BUDGET, type ComponentsSlice, 
 export {
   ROLE_COLOR, ROLES, matchesQuery, resolveComposes, resolveUsedBy,
   type ComponentRecord, type Kit, type PropSpec, type Role, type KitRule, type KitRuleKind,
+  type AnalyticsEvent,
 } from "./lib/model";
+// The shipped analytics EMIT runtime (#3816, epic #3809 slice 3) — manifests (#3810) drive `bsc usage
+// record` (#3812) by construction at the KitRenderer action seam. Host-agnostic: inject the sink.
+export {
+  eventNameForProp, resolveAnalyticsEmit, usageRecordArgs, makeAnalyticsEmit,
+  componentAnalyticsLookup, collectingSink, consoleUsageSink,
+  type ActionFire, type UsageRecord, type UsageSink, type AnalyticsLookup,
+} from "./lib/analyticsEmit";
 export { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 // Mounted-preview registry (#3437) — what `bsc debug frames` reports on.
 export {
