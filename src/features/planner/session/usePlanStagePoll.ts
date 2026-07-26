@@ -90,10 +90,21 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
         // stringify-compare change-guard, the silent "not created yet" try/catch, the same fetch/
         // stringify fallbacks, coercers, setters, and order. Three artifacts (repos / deps / mcp) don't
         // fit the shape (loop / one-time legacy import / per-name set) and stay as bespoke blocks below.
+        // ── THE batched read (#3842) ──────────────────────────────────────────────────────────
+        // One `bsc plan snapshot --json` — one process spawn, one SQLite open — replacing the 17
+        // separate `bsc plan <noun>` spawns this tick used to make. At 150-660ms per spawn those cost
+        // more than the 2s interval, so the Tauri command queue oversubscribed and the user's
+        // keystrokes (`pty_write`) queued behind them. #3666 stopped ticks STACKING; this shrinks the
+        // tick itself. An empty object on failure ⇒ every artifact falls back exactly as before.
+        const snap = await bscJson<Record<string, unknown>>(
+          effectiveProjectId, ["plan", "snapshot", "--json"], {},
+        ) ?? {};
+
         interface ArtifactDescriptor {
-          /** `bsc plan …` args producing the artifact's JSON. */
-          args: string[];
-          /** bscJson fallback (empty output / bridge absent → this). */
+          /** This artifact's key in the `bsc plan snapshot` payload (#3842). */
+          key: string;
+          /** Value used when the snapshot has no entry (bridge absent / plan.db not created yet).
+           *  Identical to the `--json` fallback each artifact's standalone read used to pass. */
           fetchFallback: unknown;
           /** Skip the whole reflect on a null/empty read (the artifacts the old code wrapped in `if (db)`). */
           requireTruthy?: boolean;
@@ -106,9 +117,12 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
           /** Reflect the read into the store. */
           apply: (db: unknown, raw: string) => void;
         }
-        const reflectArtifact = async (d: ArtifactDescriptor): Promise<void> => {
+        const reflectArtifact = (d: ArtifactDescriptor): void => {
           try {
-            const db = await bscJson<unknown>(effectiveProjectId, d.args, d.fetchFallback);
+            // #3842: the value comes from the ONE snapshot read above, not a per-artifact spawn.
+            // `?? fetchFallback` reproduces exactly what the standalone `--json` read returned when
+            // plan.db had no such artifact, so every guard/coercer/setter below is unchanged.
+            const db = snap[d.key] ?? d.fetchFallback;
             if (d.requireTruthy && !db) return;
             const raw = JSON.stringify(db ?? d.stringifyFallback);
             if (raw !== d.applied()) {
@@ -122,25 +136,25 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
         const ARTIFACTS: ArtifactDescriptor[] = [
           // Issues (#plan-db) → the "issues" section, so publish / structure card / grading / mobile mirror read unchanged.
           {
-            args: ["plan", "list", "--full", "--json"], fetchFallback: [], stringifyFallback: [],
+            key: "issues", fetchFallback: [], stringifyFallback: [],
             applied: () => saved["issues"] ?? "", setApplied: () => undefined,
             apply: (_db, raw) => store.setPlanStage(effectiveProjectId, "issues", raw),
           },
           // Features (#plan-db) → the "features" section (board + gate).
           {
-            args: ["plan", "feature", "list", "--json"], fetchFallback: [], stringifyFallback: [],
+            key: "features", fetchFallback: [], stringifyFallback: [],
             applied: () => saved[FEATURES_KEY] ?? "", setApplied: () => undefined,
             apply: (_db, raw) => store.setPlanStage(effectiveProjectId, FEATURES_KEY, raw),
           },
           // Fleet (#1018/#1805, plan.db is the SOLE fleet source) → the "fleet" section (parseFleetFile → setPlanFleet).
           {
-            args: ["plan", "fleet", "get", "--full", "--json"], fetchFallback: null, requireTruthy: true,
+            key: "fleet", fetchFallback: null, requireTruthy: true,
             applied: () => saved[FLEET_KEY] ?? "", setApplied: () => undefined,
             apply: (_db, raw) => store.setPlanStage(effectiveProjectId, FLEET_KEY, raw),
           },
           // Deploy config (#1020) → coerced through parseDeployConfigTag into planDeployConfig (the `deploy` gate).
           {
-            args: ["plan", "deploy", "get", "--json"], fetchFallback: null, requireTruthy: true,
+            key: "deploy", fetchFallback: null, requireTruthy: true,
             applied: () => deployAppliedRef.current[effectiveProjectId],
             setApplied: (raw) => { deployAppliedRef.current[effectiveProjectId] = raw; },
             apply: (_db, raw) => {
@@ -150,7 +164,7 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
           },
           // Market assessment (#2430) → coerced into planMarketConfig (the `marketDefined` gate + Market body).
           {
-            args: ["plan", "market", "get", "--json"], fetchFallback: null, requireTruthy: true,
+            key: "market", fetchFallback: null, requireTruthy: true,
             applied: () => marketAppliedRef.current[effectiveProjectId],
             setApplied: (raw) => { marketAppliedRef.current[effectiveProjectId] = raw; },
             apply: (db) => {
@@ -162,7 +176,7 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
           // preview vs external drop-files) AND the source/mcp/skills/automations need-flags. Stored whole
           // into planClassification; FocusedBodies reads uiMode, usePlanGates derives the visibility signals.
           {
-            args: ["plan", "classify", "get", "--json"], fetchFallback: null, requireTruthy: true,
+            key: "classify", fetchFallback: null, requireTruthy: true,
             applied: () => classifyAppliedRef.current[effectiveProjectId],
             setApplied: (raw) => { classifyAppliedRef.current[effectiveProjectId] = raw; },
             apply: (db) => {
@@ -172,21 +186,21 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
           },
           // Transformations (#2509) → coerced rows into planTransformations (the bottom-up confirm queue + gate).
           {
-            args: ["plan", "transformation", "list", "--json"], fetchFallback: [], stringifyFallback: [],
+            key: "transformations", fetchFallback: [], stringifyFallback: [],
             applied: () => transformationsAppliedRef.current[effectiveProjectId],
             setApplied: (raw) => { transformationsAppliedRef.current[effectiveProjectId] = raw; },
             apply: (db) => store.setPlanTransformations(effectiveProjectId, coerceTransformationRows(db)),
           },
           // Automations (#2009) → full replace of planAutomations (the `automations` gate).
           {
-            args: ["plan", "automations", "list", "--json"], fetchFallback: [], stringifyFallback: [],
+            key: "automations", fetchFallback: [], stringifyFallback: [],
             applied: () => autoAppliedRef.current[effectiveProjectId],
             setApplied: (raw) => { autoAppliedRef.current[effectiveProjectId] = raw; },
             apply: (db) => store.setPlanAutomations(effectiveProjectId, (db as AutomationSuggestion[] | null) ?? []),
           },
           // Startup scripts (#2010) → per-repo dev/triage startup prompt docs (each `path` resolved to a unified-store relpath).
           {
-            args: ["plan", "startup", "list", "--json"], fetchFallback: [], stringifyFallback: [],
+            key: "startup", fetchFallback: [], stringifyFallback: [],
             applied: () => startupAppliedRef.current[effectiveProjectId],
             setApplied: (raw) => { startupAppliedRef.current[effectiveProjectId] = raw; },
             apply: (db) => {
@@ -199,12 +213,12 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
             },
           },
         ];
-        for (const d of ARTIFACTS) await reflectArtifact(d);
+        for (const d of ARTIFACTS) reflectArtifact(d);
 
         // Linked repos are DB-owned too (#1012) — restore them from the hub's plan.db into the store
         // so a zustand/app-state reset can't lose the links (the store-only persistence proved fragile).
         try {
-          const dbRepos = await bscJson<string[]>(effectiveProjectId, ["plan", "repo", "list", "--json"], []);
+          const dbRepos = (snap.repos as string[] | undefined) ?? [];
           for (const r of dbRepos ?? []) store.addProjectRepo(effectiveProjectId, r);
         } catch { /* plan.db not created until the first repo is linked — ignore */ }
 
@@ -214,7 +228,7 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
         // still empty but a legacy `dependencies.json` exists in the section store, import it ONCE
         // (no data loss) so pre-#1191 projects migrate transparently; after that the DB is authoritative.
         try {
-          const dbDeps = await bscJson<unknown | null>(effectiveProjectId, ["plan", "deps", "get", "--json"], null);
+          const dbDeps = snap.deps ?? null;
           if (dbDeps) {
             const raw = JSON.stringify(dbDeps);
             if (raw !== depsAppliedRef.current[effectiveProjectId]) {
@@ -239,7 +253,7 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
         // (#1055) instead of cloned silently. The applied-set guards against re-applying the same name
         // every 2s tick (and the modal's seen-set guards against re-prompting).
         try {
-          const dbMcp = await bscJson<string[]>(effectiveProjectId, ["plan", "mcp", "list", "--json"], []);
+          const dbMcp = (snap.mcp as string[] | undefined) ?? [];
           const toDownload: string[] = [];
           for (const name of dbMcp ?? []) {
             const key = `${effectiveProjectId}::${name.toLowerCase()}`;
@@ -288,7 +302,7 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
         // mismatch), and forward-migrate any pre-#2256 app-state-only confirmations into plan.db once.
         // Runs AFTER all content writes above so the live fingerprints reflect this tick's sections.
         try {
-          const rows = await bscJson<ConfirmRow[]>(effectiveProjectId, ["plan", "confirm", "list", "--json"], []);
+          const rows = (snap.confirm as ConfirmRow[] | undefined) ?? [];
           const fresh = useAppStore.getState();
           const liveSections = fresh.planStages[effectiveProjectId] ?? {};
           const plan = reconcileConfirmations(
@@ -310,7 +324,7 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
         // skip is a plain decision, not content-based). Rehydrate the skipped set on revisit and
         // forward-migrate any pre-#2267 app-state-only skips into plan.db once.
         try {
-          const rows = await bscJson<string[]>(effectiveProjectId, ["plan", "skip", "list", "--json"], []);
+          const rows = (snap.skip as string[] | undefined) ?? [];
           const fresh = useAppStore.getState();
           const plan = reconcileSkips(
             rows,
