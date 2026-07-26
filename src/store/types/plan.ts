@@ -10,6 +10,7 @@ import type { StageRunState } from "@/features/planner/preview/stageRun";
 import type { Blueprint, BlueprintStage } from "@/features/planner/stages/blueprints";
 import type { DeployConfig } from "@/features/planner/lib/deployConfig";
 import type { MarketConfig } from "@/features/planner/lib/marketConfig";
+import type { ClassifyConfig } from "@/features/planner/lib/classifyConfig";
 import type { TransformationRow } from "@/features/planner/lib/transformations";
 import type { SourceConfig } from "@/features/planner/lib/sourceConfig";
 import type { IntegrationStrategy } from "@/features/planner/lib/integrationStrategy";
@@ -51,10 +52,6 @@ export interface PlanState {
   /** Add a confirmation to the store ONLY (no plan.db write-through) — the poll uses this to
    *  rehydrate the durable confirmed set (#2256) from plan.db on revisit without echoing it back. */
   markStageConfirmedLocal: (projectId: string, key: string) => void;
-  /** The in-progress blueprint an AUTHORING project (#923) is designing — emitted by the planner's
-   *  <blueprint> tag, rendered in the focused pane, and published to a gist at the Review stage. */
-  planAuthoredBlueprint: Record<string, Blueprint>;
-  setAuthoredBlueprint: (projectId: string, bp: Blueprint) => void;
   /** Per-project deployment & infrastructure config (#919) — edited by the planner's Deploy
    *  stage pane; the `deploymentDefined` gate signal derives from it. */
   planDeployConfig: Record<string, DeployConfig>;
@@ -129,11 +126,14 @@ export interface PlanState {
   // offer to reset. Set on first seed + on an explicit blueprint switch.
   projectBlueprintId: Record<string, string>;
   setProjectBlueprintId: (projectId: string, blueprintId: string) => void;
-  /** Re-seed a project's plan from a blueprint and CLEAR its progress (grades, screen
-   *  approvals, preview, pipeline runs) — the destructive "reset plan to blueprint" (#647).
-   *  The planner restarts the session separately. No-op if the blueprint is unknown. */
-  applyBlueprintToProject: (projectId: string, blueprintId: string) => void;
+  /** The planner's per-project classification (#3783/#3784) — UI mode + which optional stages the
+   *  project needs. Set at discovery via `bsc plan classify`, polled in; drives the UI-stage surface
+   *  and the source/mcp/skills/automations visibility signals. */
+  planClassification: Record<string, ClassifyConfig>;
+  setPlanClassification: (projectId: string, cfg: ClassifyConfig) => void;
   addBlueprint:       () => string;
+  /** Promote a completed project's plan into a reusable blueprint (#3785); returns the new id. */
+  generateBlueprint:  (projectKey: string) => string;
   duplicateBlueprint: (id: string) => string;
   updateBlueprintMeta: (id: string, patch: Partial<Omit<Blueprint, "id" | "sections">>) => void;
   setBlueprintStages: (id: string, sections: BlueprintStage[]) => void;

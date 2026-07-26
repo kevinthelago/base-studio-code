@@ -2,11 +2,10 @@ use super::prompts::*;
 
 /// The user-facing planner introduction kickoff for a session mode (#1240). Returned to the
 /// frontend, which bakes it into the planner's `claude` launch as a fresh-only startup prompt.
-/// `mode`: `"blueprint"` (authoring) | `"existing"` (existing repos) | anything else ⇒ new project.
+/// `mode`: `"existing"` (existing repos) | anything else ⇒ new project.
 #[tauri::command]
 pub(crate) fn planner_intro_prompt(mode: String) -> String {
     match mode.as_str() {
-        "blueprint" => planning_greeting_blueprint(),
         "existing" => planning_greeting_existing(),
         _ => planning_greeting_new(),
     }
@@ -59,22 +58,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ui_directive_routes_design_without_generating_it() {
-        // #1371: the UI stage must route dropped design files into the repo and author the kickoff.
-        // #1404: but it must NOT instruct the planner to GENERATE the UI — no skeleton code, no live
-        // preview; the visual design comes from the user via Claude Design (matches sections/ui.json).
+    fn ui_directive_commissions_the_designer_reuse_first() {
+        // #3783 (flips #1371/#1404): the UI stage now generates a live, navigable UI IN-APP — it
+        // commissions the INTERNAL designer (reuse-first from the shared kit), rendered in the planner's
+        // preview pane — instead of sending the user out to Claude Design. External design stays a
+        // documented FALLBACK, so the intake-routing + kickoff still appear (retired fully in a later slice).
         let ui = stage_directive("ui");
-        assert!(ui.contains("design/intake.json"), "ui directive must reference the intake manifest: {ui}");
-        assert!(ui.contains("ui-kickoff.md"), "ui directive must still author the kickoff: {ui}");
+        // Primary path: internal designer commission, reuse-first, previewed as a navigable shell.
+        assert!(ui.contains("bsc-commission designer"), "ui directive must commission the internal designer: {ui}");
+        assert!(ui.contains("reuse-first"), "ui directive must source components reuse-first: {ui}");
+        assert!(ui.contains("preview pane") && ui.contains("navigable"),
+            "ui directive must render a navigable shell in the preview pane: {ui}");
+        assert!(ui.contains("author no UI code"), "the planner specs; the designer builds — the planner writes no UI itself: {ui}");
         assert!(!ui.contains(".ui-skeleton/"), "ui directive must NOT tell the planner to write UI skeletons: {ui}");
-        assert!(!ui.contains("ui_preview"), "ui directive must NOT tell the planner to render a live preview: {ui}");
-        assert!(ui.contains("Do NOT design"), "ui directive must tell the planner not to design the screens: {ui}");
-        // #786: when a Data Model exists, the kickoff is authored FROM it (entities→screens) + the
-        // behavior summary — the generation stays the existing Claude Design loop, no new engine.
-        // #1446: the Data Model + behaviors now live in DuckDB, read via `bsc data` (not a file).
+        // Fallback (external design) stays available: the intake manifest + the Claude Design kickoff.
+        assert!(ui.contains("design/intake.json"), "ui directive keeps the external-design intake manifest as a fallback: {ui}");
+        assert!(ui.contains("ui-kickoff.md"), "ui directive keeps the Claude Design kickoff as a fallback: {ui}");
+        // #786/#1446: when a Data Model exists, the shape is derived FROM it via `bsc data` (DuckDB, not a file).
         assert!(ui.contains("bsc data model get"), "ui directive must read the Data Model via `bsc data`: {ui}");
         assert!(!ui.contains("datamodel.json"), "the Data Model is in DuckDB now, not a datamodel.json file (#1446): {ui}");
-        assert!(ui.contains("Platform Behavior Summary"), "ui directive must fold the captured behaviors into the kickoff: {ui}");
+        assert!(ui.contains("Platform Behavior Summary"), "ui directive must fold the captured behaviors into the screens: {ui}");
     }
 
     #[test]
@@ -124,7 +127,7 @@ mod tests {
         // #1914: the unified vocabulary collapsed repos+deploy → `deployment` and
         // structure+permissions → `streams`; the legacy `repos`/`structure`/`permissions` defs are gone.
         let migrated = ["discovery","deployment","ui","features",
-            "automations","skills","purpose","bp_stages","bp_capabilities","bp_review",
+            "automations","skills",
             "streams","source","market","transformations"];
         for id in migrated {
             let d = stage_directive(id);
@@ -341,9 +344,9 @@ mod tests {
                 Some(stem)
             })
             .collect();
-        let expected: BTreeSet<String> = ["discovery","deployment","ui","features","function_spec",
-            "automations","skills","purpose","bp_stages","bp_capabilities",
-            "bp_review","streams","source","test_ui","market","transformations"].iter().map(|s| s.to_string()).collect();
+        let expected: BTreeSet<String> = ["discovery","deployment","ui","features",
+            "automations","skills",
+            "streams","source","test_ui","market","transformations"].iter().map(|s| s.to_string()).collect();
         assert_eq!(with_directive, expected, "stage `directive` set drifted from the expected set");
     }
 }

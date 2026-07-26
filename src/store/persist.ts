@@ -107,7 +107,6 @@ export function persistedState(s: AppStore) {
     configProfiles:       s.configProfiles,
     planStages:          s.planStages,
     planConfirmedStages: s.planConfirmedStages,
-    planAuthoredBlueprint: s.planAuthoredBlueprint,
     planDeployConfig:      s.planDeployConfig,
     planMarketConfig:      s.planMarketConfig, // #2430: the market-stage assessment
     planTransformations:   s.planTransformations, // #2509: the transformations confirm queue
@@ -117,6 +116,7 @@ export function persistedState(s: AppStore) {
     planAutomations:       s.planAutomations,
     planStageConfig:       s.planStageConfig,
     projectBlueprintId:    s.projectBlueprintId,
+    planClassification:    s.planClassification,
     uiScreens:             s.uiScreens,
     uiApproved:            s.uiApproved,
     blueprints:            s.blueprints,

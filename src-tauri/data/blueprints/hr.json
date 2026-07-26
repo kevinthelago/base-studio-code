@@ -1,0 +1,25 @@
+{
+  "order": 13,
+  "id": "hr",
+  "name": "HR / HCM",
+  "desc": "Build an HR platform — a core HRIS with payroll, benefits, time, and the full talent lifecycle.",
+  "icon": "group",
+  "origin": "built-in",
+  "category": "greenfield",
+  "mode": "create",
+  "skills": ["web-seo"],
+  "sections": [
+    { "key": "discovery" },
+    { "key": "market" },
+    { "key": "deployment" },
+    { "key": "source" },
+    { "key": "features" },
+    { "key": "ui", "optional": true },
+    { "key": "streams" },
+    { "key": "mcps" },
+    { "key": "automations" },
+    { "key": "skills" }
+  ],
+  "kit": "react-ui",
+  "features": "## Core\n- Core HRIS — single employee system of record, profiles, org charts\n- Document management with e-signature\n- Employee & manager self-service (web + mobile)\n- Configurable approval workflows\n- Full-service payroll — automated federal/state/local tax calc & filing, W-2/1099, direct deposit, garnishments\n- Benefits administration — open enrollment, medical/dental/vision, HSA/FSA, 401(k), carrier EDI, ACA/COBRA\n- Time, attendance & scheduling — clock in/out, PTO/leave accruals, overtime, shift scheduling, payroll sync\n- Reporting & analytics\n- Role-based security, audit trails & compliance (SOC 2)\n\n## Talent lifecycle\n- Applicant tracking (ATS) & recruiting\n- Onboarding\n- Performance reviews & goals\n- Compensation management\n- Learning management\n- Succession & internal mobility\n\n## Differentiators\n- AI HR copilot — conversational assistant, AI job descriptions & candidate matching\n- Turnover prediction & anomaly detection\n- Skills-based talent intelligence & an internal opportunity marketplace\n- Engagement & wellbeing surveys\n"
+}

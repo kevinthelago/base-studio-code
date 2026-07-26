@@ -1,7 +1,7 @@
 // Projects domain — page mode/view, active-project meta, drafts, startup-prompt + reference-context
 // assignment, planning-session context, triage + fleet launch. Split from store/types (#1634).
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
-import type { ProjectLink } from "@/features/glance/lib/projectLinks";
+import type { ProjectLink, ContractTarget } from "@/features/glance/lib/projectLinks";
 import type { GEdgeKind, GRole, GCategory, GHealth, GActivity } from "@/features/glance/lib/glanceGraph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { ReviewFinding } from "@/shared/lib/preview/previewReview";
@@ -36,12 +36,13 @@ export interface ProjectsState {
   // app-wide navigation history (mouse back/forward) steps drill in/out. See useNavHistory.
   teamsDrill: string | null;
   setTeamsDrill: (id: string | null) => void;
-  // Project↔project relationships (#2253, part of #2205) — the user-drawn edges of the Glance L1 network.
-  // A write-through cache over the global `bsc project link` store (agent-reachable): `addProjectLink`
-  // (idempotent, deterministic id) + `removeProjectLink` push through the bridge; `hydrateProjectLinks`
-  // loads authoritative on boot; the persisted copy is a fast-first-paint fallback.
+  // Inter-app contracts (#2253 → #3786 Phase 2) — the edges of the Glance L0 network. A write-through
+  // cache over the global `bsc project link` store (agent-reachable): `addProjectLink` (idempotent,
+  // deterministic id) + `removeProjectLink` push through the bridge; `hydrateProjectLinks` loads
+  // authoritative on boot; the persisted copy is a fast-first-paint fallback. `target` (#3786) names a
+  // NON-project endpoint (an external service / mcp server); absent ⇒ a project↔project contract.
   projectLinks: ProjectLink[];
-  addProjectLink: (from: string, to: string, kind: GEdgeKind) => void;
+  addProjectLink: (from: string, to: string, kind: GEdgeKind, target?: ContractTarget) => void;
   removeProjectLink: (id: string) => void;
   /** Hydrate the links from the global `bsc project link` store on boot (write-through cache). No-op when
    *  the bridge is unreachable (keeps the persisted cache). */

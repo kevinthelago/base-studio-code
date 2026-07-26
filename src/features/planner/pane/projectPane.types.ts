@@ -10,7 +10,6 @@ import type { DirectorDrive } from "../fleet/directorDrive";
 import type { IntegrationStrategy } from "../lib/integrationStrategy";
 import type { ModelId } from "@/app/console/lib/models";
 import type { PlanFeature } from "../issues/featureList";
-import type { Blueprint } from "../stages/blueprints";
 import type { DeployConfig } from "../lib/deployConfig";
 import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 import type { Topology, RelationshipArtifact, AgentRelationship } from "../relationship/relationshipGraph";
@@ -139,9 +138,6 @@ export interface ProjectPaneData {
   mcpServers?: McpServer[];
   /** User-facing capabilities defined in the Features stage (#…); each is a fleet stream. */
   features?: PlanFeature[];
-  /** The in-progress blueprint an AUTHORING project is designing (#923) — rendered in the
-   *  authoring stages' focused bodies (Purpose/Stages/Capabilities/Review). */
-  authoredBlueprint?: Blueprint;
   /** The deployment & infrastructure config (#919) — the Deploy stage pane's editable state. */
   deploy?: DeployConfig;
   /** The locked dependency manifest (#1127/#1133) — authored in the Deploy stage; surfaced in the

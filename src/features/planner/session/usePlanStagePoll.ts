@@ -1,10 +1,10 @@
 // usePlanStagePoll (#1474) — the planner's 2-second plan.db + section-file poll, extracted
 // verbatim from Planning.tsx. While the planning page is visible it reflects every DB-owned
-// artifact (issues / features / repos / fleet / deploy / deps / mcp / blueprint) plus the
+// artifact (issues / features / repos / fleet / deploy / deps / mcp) plus the
 // `read_plan_stages` file poll into the store, with per-artifact change-guards so an unchanged
 // blob never churns state. Side-effect only — owns its guard refs internally and returns nothing.
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { invoke } from "@tauri-apps/api/core";
 import { bscJson, bscRun, bscWrite } from "@/shared/lib/core/bsc";
@@ -14,13 +14,12 @@ import { FLEET_KEY } from "../fleet/planFleet";
 import { FEATURES_KEY, canonicalTopicKey } from "../stages/planTopics";
 import { reconcileConfirmations, reconcileSkips, type ConfirmRow } from "../stages/confirmReconcile";
 import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";
-import { AUTHORING_BLUEPRINT_ID } from "../stages/blueprints";
 import { parseDeployConfigTag } from "../lib/deployConfig";
 import { coerceMarketConfig } from "../lib/marketConfig";
+import { coerceClassifyConfig } from "../lib/classifyConfig";
 import { coerceTransformationRows } from "../lib/transformations";
 import { applyMcpAssign } from "../lib/planExtensions";
 import { catalogLink } from "@/features/mcp";
-import { coerceBlueprint } from "../blueprints/blueprintShare";
 import { scriptDocRelpath } from "./planningSession";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import { wantsSandboxLaunch } from "./plannerSandbox";
@@ -43,17 +42,16 @@ interface StagePollDeps {
 
 export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publishRepos, enqueueMcpDownloads, planningDir }: StagePollDeps): void {
   // Per-artifact change-guards: skip re-applying an unchanged DB blob each 2s tick. `depsImportedRef`
-  // gates the one-time legacy dependencies.json import; `mcpAppliedRef` the per-name MCP resolve;
-  // `lastBpJsonRef` the authored-blueprint coercion (reset on project switch).
+  // gates the one-time legacy dependencies.json import; `mcpAppliedRef` the per-name MCP resolve.
   const deployAppliedRef = useRef<Record<string, string>>({});
   const marketAppliedRef = useRef<Record<string, string>>({});
+  const classifyAppliedRef = useRef<Record<string, string>>({});
   const transformationsAppliedRef = useRef<Record<string, string>>({});
   const depsAppliedRef = useRef<Record<string, string>>({});
   const depsImportedRef = useRef<Set<string>>(new Set());
   const mcpAppliedRef = useRef<Set<string>>(new Set());
   const autoAppliedRef = useRef<Record<string, string>>({});
   const startupAppliedRef = useRef<Record<string, string>>({});
-  const lastBpJsonRef = useRef<string>("");
   // Projects whose pre-#2256 app-state confirmations have already been forward-migrated into plan.db
   // (one-time per project, so the migration doesn't re-run every 2s tick).
   const confirmMigratedRef = useRef<Set<string>>(new Set());
@@ -66,8 +64,6 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
   // to the store drives the derived `sections`/`skipped` — confirmed sections
   // stay frozen. This file poll is more reliable than the raw <plan_update>
   // stream and is what surfaces brand-new topics as their own cards.
-  // Reset the blueprint.json change-guard on a project switch, before the first poll below.
-  useEffect(() => { if (visible) lastBpJsonRef.current = ""; }, [visible, effectiveProjectId]);
 
   usePoll(() => {
     if (!visible) return;
@@ -162,6 +158,18 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
               if (cfg) store.setPlanMarketConfig(effectiveProjectId, cfg);
             },
           },
+          // Classification (#3783/#3784) → the planner's discovery output: the UI mode (custom in-app
+          // preview vs external drop-files) AND the source/mcp/skills/automations need-flags. Stored whole
+          // into planClassification; FocusedBodies reads uiMode, usePlanGates derives the visibility signals.
+          {
+            args: ["plan", "classify", "get", "--json"], fetchFallback: null, requireTruthy: true,
+            applied: () => classifyAppliedRef.current[effectiveProjectId],
+            setApplied: (raw) => { classifyAppliedRef.current[effectiveProjectId] = raw; },
+            apply: (db) => {
+              const cfg = coerceClassifyConfig(db);
+              if (cfg) store.setPlanClassification(effectiveProjectId, cfg);
+            },
+          },
           // Transformations (#2509) → coerced rows into planTransformations (the bottom-up confirm queue + gate).
           {
             args: ["plan", "transformation", "list", "--json"], fetchFallback: [], stringifyFallback: [],
@@ -188,24 +196,6 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
                 if (sc.mode === "triage") store.setRepoTriagePromptDoc(effectiveProjectId, sc.repo, relpath);
                 else                      store.setRepoStartupPromptDoc(effectiveProjectId, sc.repo, relpath);
               }
-            },
-          },
-          // Authored blueprint (#1022/#923) → coerced into the in-progress blueprint, binding pinned to the
-          // authoring lifecycle. Guard is the module-lifetime lastBpJsonRef (reset on project switch above).
-          {
-            args: ["plan", "blueprint", "get", "--json"], fetchFallback: null, requireTruthy: true,
-            applied: () => lastBpJsonRef.current,
-            setApplied: (raw) => { lastBpJsonRef.current = raw; },
-            apply: (db) => {
-              try {
-                const parsed = coerceBlueprint(db, { allowEmptySections: true });
-                if (parsed) {
-                  store.setAuthoredBlueprint(effectiveProjectId, parsed);
-                  if (store.projectBlueprintId[effectiveProjectId] !== AUTHORING_BLUEPRINT_ID) {
-                    store.setProjectBlueprintId(effectiveProjectId, AUTHORING_BLUEPRINT_ID);
-                  }
-                }
-              } catch { /* mid-write / invalid shape — ignore, the planner re-writes */ }
             },
           },
         ];
@@ -281,7 +271,7 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
           // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
           // still satisfies the gate (#…).
           const key = canonicalTopicKey(rawKey);
-          if (key === "issues" || key === FEATURES_KEY || key === FLEET_KEY || key === "blueprint") continue; // DB-owned (#plan-db/#1018/#1022) — sourced from plan.db above, not a file
+          if (key === "issues" || key === FEATURES_KEY || key === FLEET_KEY) continue; // DB-owned (#plan-db/#1018) — sourced from plan.db above, not a file
           // Dependencies are DB-owned (#1191): once plan.db has supplied the manifest, the DB blob wins
           // over any lingering legacy `dependencies.json`. Until then, let the file through so the
           // one-time legacy import (above) can read it.

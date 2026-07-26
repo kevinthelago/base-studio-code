@@ -21,7 +21,6 @@ function makeDeps(over: Partial<PlanningSessionDeps> = {}): PlanningSessionDeps 
     paneId: "planning_proj",
     linkedRepos: [],
     treatAsExisting: false,
-    isAuthoring: false,
     activeProjectName: "Proj",
     activeProjectNumber: 7,
     planningPitch: "a pitch",
@@ -30,7 +29,6 @@ function makeDeps(over: Partial<PlanningSessionDeps> = {}): PlanningSessionDeps 
     refreshSetupSig: vi.fn(),
     setShowBlueprintModal: vi.fn(),
     setShowClearConfirm: vi.fn(),
-    setSwitchOpen: vi.fn(),
     ...over,
   };
 }
@@ -65,18 +63,6 @@ describe("usePlanningSession", () => {
     expect(deps.setShowBlueprintModal).toHaveBeenCalledWith(false);
     expect(invokeMock).toHaveBeenCalledWith("setup_workspaces", expect.objectContaining({ projectKey: "proj" }));
     // "Keep files" must NEVER delete plan files.
-    expect(invokeMock).not.toHaveBeenCalledWith("clear_project_plan_files", expect.anything());
-  });
-
-  it("doSwitchBlueprint leaves plan files intact when the switch is refused (blueprint unchanged)", async () => {
-    // Seed the store so applyBlueprintToProject is a no-op (target == current) → refused.
-    useAppStore.setState({ projectBlueprintId: { proj: "bp-x" } });
-    const deps = makeDeps();
-    const { result } = renderHook(() => usePlanningSession(deps));
-
-    await result.current.doSwitchBlueprint("bp-x");
-
-    expect(deps.setSwitchOpen).toHaveBeenCalledWith(false);
     expect(invokeMock).not.toHaveBeenCalledWith("clear_project_plan_files", expect.anything());
   });
 

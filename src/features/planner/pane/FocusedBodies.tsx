@@ -24,22 +24,22 @@ import { AutomationsBody } from "../bodies/FocusedAutomationsBody";
 import { SkillsBody } from "../bodies/FocusedSkillsBody";
 import { McpsBody } from "../bodies/McpsBody";
 import { FeaturesBody } from "../bodies/FocusedFeaturesBody";
-import { AuthoringBody } from "../bodies/FocusedAuthoringBody";
 import { StreamsBody } from "../bodies/StreamsBody";
 import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 // The Planner Components pane (#2314) — the body of the `test_ui` stage.
 import { PlannerComponentsPane } from "@/features/designs";
+import { PreviewPaneShell } from "../preview/PreviewPaneShell";
+import { useAppStore } from "@/store";
 
-// Re-export the shared body types so existing `from "./FocusedBodies"` imports keep resolving
-// (ProjectPane imports `AuthoringWiring`).
-export type { FleetHandlers, McpHandlers, AuthoringWiring, SyncState } from "../bodies/focusedHandlers";
+// Re-export the shared body types so existing `from "./FocusedBodies"` imports keep resolving.
+export type { FleetHandlers, McpHandlers, SyncState } from "../bodies/focusedHandlers";
 
 /* =================================================================
    FocusedStageBody — maps a Stage to its body (#652 / #674)
    ================================================================= */
 
-export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo, onView, onFlow, onModel, onPersona, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext, onInject }: {
+export function FocusedStageBody({ stage, data, projectId, onLinkRepo, onView, onFlow, onModel, onPersona, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext, onInject }: {
   stage: Stage;
   data?: ProjectPaneData;
   projectId?: string;
@@ -47,8 +47,6 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
   requiredContext?: string[];
   /** Inject a prompt into the live planner terminal (#1986) — the Source body's declare affordance. */
   onInject?: (text: string) => void;
-  /** Authoring-lifecycle wiring (#923) — present only for a blueprint-authoring project. */
-  authoring?: import("../bodies/focusedHandlers").AuthoringWiring;
   onLinkRepo?: (r: string) => void;
   /** Deploy stage (#919): persist the edited deployment config. */
   onDeployChange?: (next: DeployConfig) => void;
@@ -63,6 +61,9 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
   onAddMcp?: (input: string) => void;
   onRemoveMcp?: (id: string) => void;
 }) {
+  // #3783: the UI stage renders one of two surfaces per the project's UI mode (planner-set at
+  // discovery; an unset project defaults to "custom" — the in-app designer preview).
+  const uiMode = useAppStore((s) => (projectId ? s.planClassification[projectId]?.uiMode : undefined) ?? "custom");
   // Assemble the repeated handler sets once (#1640) so the cases below spread them instead of
   // re-threading each handler by name. Same handlers, same values — purely cuts prop-chain noise.
   const fleetHandlers: FleetHandlers = { onFlow, onModel, onPersona, onTopology, onDirectorDrive };
@@ -91,10 +92,13 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
       // modification rows from `bsc plan transformation` — tier by tier, confirm-only.
       return <TransformationsBody projectId={projectId} />;
     case "ui":
-      // The UI stage's drop-in-files surface (#604/#829): stage design assets into the
-      // project's `design/` dir for the planner to route. The pipeline-screen registry that
-      // hosted this was orphaned by the focused-pane refactor — render it directly here.
-      return <FileIntakePane projectKey={projectId ?? ""} />;
+      // #3783: the UI stage renders one of two surfaces depending on the project's UI mode.
+      // "custom" (default) = the in-app designer preview — the render-preview pipeline shows the
+      // navigable shell the designer commissions (PreviewPaneShell). "external" = the drop-in-files
+      // surface (#604/#829) that stages Claude-Design assets into `design/` for the planner to route.
+      return uiMode === "external"
+        ? <FileIntakePane projectKey={projectId ?? ""} />
+        : <PreviewPaneShell projectKey={projectId ?? ""} />;
     case "features":
       return <FeaturesBody features={data?.features} />;
     case "streams":
@@ -115,13 +119,6 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
       // hand-offs, or the whole app assembled from the kit). Reads the global library from the store,
       // so it needs no stage data.
       return <PlannerComponentsPane />;
-    // Blueprint-authoring stages (#923): the interactive editor views over the in-progress blueprint.
-    case "purpose":
-    case "bp_stages":
-    case "bp_capabilities":
-    case "bp_team":
-    case "bp_review":
-      return <AuthoringBody bp={data?.authoredBlueprint} stageKey={stage.key} wiring={authoring} />;
     default:
       return <EmptyState iconVariant="dashed" icon="⋯" title="The planner documents this stage." />;
   }

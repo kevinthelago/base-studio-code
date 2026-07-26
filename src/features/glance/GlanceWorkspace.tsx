@@ -35,7 +35,7 @@ import { GlanceInspector } from "./GlanceInspector";
 import { cellRect, placeByDirection, releaseCell, occupants, clampCell, DEFAULT_CELL, type CellSize, type MorphPlacement } from "./lib/morphGrid";
 import { fleetPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
 import { resumeProjectFleet } from "./lib/resumeProject";
-import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
+import { buildGraph, focusSets, isBandNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
 import { timedSync } from "@/shared/lib/core/perf";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
@@ -118,6 +118,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // it on every poll. This way the scan runs only when the component library actually changes.
   const components = useAppStore((s) => s.components);
   const libraryRefs = useMemo(() => resolveKitLibraryRefs(components), [components]);
+  // The MCP-CONTRACT dimension (#3786, Phase 1 inter-app contracts): the MCP server store drives one
+  // external contract node per SCOPED server (a global server is skipped), edged from each consuming
+  // project — showing which projects contract with which external MCP servers.
+  const mcpServers = useAppStore((s) => s.mcpServers);
   // Per-project auto-triage toggle (#2265) — gates the fault→fix loop; surfaced in the node inspector.
   const autoTriage = useAppStore((s) => s.autoTriage);
   const setAutoTriage = useAppStore((s) => s.setAutoTriage);
@@ -158,11 +162,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     [projectsBase, liveWaiting, faults, now, glanceOff],
   );
   // L0 — the project-network graph (nodes = real projects + UI-kit nodes #2571 + the algorithm/sound
-  // library nodes their kits require #3133, edges = the user-drawn relationships #2253 + one kit→project
-  // edge per consumer #2571 + the transitive project→library `requires` edges #3133).
+  // library nodes their kits require #3133 + external MCP-contract nodes #3786, edges = the user-drawn
+  // relationships #2253 + one kit→project edge per consumer #2571 + the transitive project→library
+  // `requires` edges #3133 + one project→mcp `uses-mcp` edge per scoped consumer #3786).
   const projectData = useMemo(
-    () => buildGlanceData(projects, projectLinks, kitUsage, kits, libraryRefs),
-    [projects, projectLinks, kitUsage, kits, libraryRefs],
+    () => buildGlanceData(projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers),
+    [projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers],
   );
   const projectModel = useMemo(() => timedSync("buildGraph:glance-project", () => buildGraph(projectData.rawNodes, projectData.rawEdges)), [projectData]);
 
@@ -347,9 +352,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       else if (isLiveAgent(id)) openChat(id);
       else pickNode(id);
     }
-    // A cross-graph LIBRARY node (#2571 kit → generalized #3119: kit/algorithm/sound) has no fleet to
-    // drill into — a click just SELECTS it (→ the library inspector).
-    else if (isLibraryNode(projectModel.nodes.find((n) => n.id === id) ?? {})) pickNode(id);
+    // A fenced-BAND node — a cross-graph LIBRARY node (#2571 kit → #3119 kit/algorithm/sound) OR an
+    // external MCP-CONTRACT node (#3786) — has no fleet to drill into, so a click just SELECTS it
+    // (→ the library/contract inspector).
+    else if (isBandNode(projectModel.nodes.find((n) => n.id === id) ?? {})) pickNode(id);
     // An OFF (deactivated) node (#3239): a click SELECTS it (→ the details pane, where the user turns it
     // back on) rather than drilling into a fleet the user has muted.
     else if (glanceOff[id]) pickNode(id);

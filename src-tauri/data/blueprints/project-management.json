@@ -1,0 +1,25 @@
+{
+  "order": 14,
+  "id": "project-management",
+  "name": "Project Management",
+  "desc": "Build a work-management platform — multi-view tracking, automation, and portfolio planning.",
+  "icon": "checklist",
+  "origin": "built-in",
+  "category": "greenfield",
+  "mode": "create",
+  "skills": ["web-seo"],
+  "sections": [
+    { "key": "discovery" },
+    { "key": "market" },
+    { "key": "deployment" },
+    { "key": "source" },
+    { "key": "features" },
+    { "key": "ui", "optional": true },
+    { "key": "streams" },
+    { "key": "mcps" },
+    { "key": "automations" },
+    { "key": "skills" }
+  ],
+  "kit": "react-ui",
+  "features": "## Core\n- Multiple work views — List, Board/Kanban, Gantt/Timeline, Calendar, Workload\n- Tasks & subtasks — assignees, custom fields, statuses, priorities\n- Task dependencies & critical path\n- No-code automation engine — trigger→condition→action with a recipe library\n- Intake forms with conditional / branching logic\n- Dashboards & reporting — real-time, filterable widget library\n- Goals / OKRs linked to execution with task-to-objective rollup\n- Native time tracking & budgeting\n- Docs, wikis & whiteboards\n- Templates / blueprints\n- Role-based security, SSO & audit logs\n- REST API + integrations\n\n## Differentiators\n- Portfolio management — cross-project rollup, resource & capacity planning, scenario/what-if\n- Agile / sprint suite — backlog, sprints, scrum & kanban boards, burndown/velocity\n- AI assistant — agentic actions, NL→automation/formula, AI summaries & status\n- Cross-app enterprise search\n"
+}

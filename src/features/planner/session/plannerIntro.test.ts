@@ -2,11 +2,9 @@ import { describe, it, expect } from "vitest";
 import { plannerIntroMode, composePlannerIntro, plannerTreatAsExisting } from "./plannerIntro";
 
 describe("plannerIntro — mode selection (#1240)", () => {
-  it("authoring → blueprint, existing project → existing, else new", () => {
-    expect(plannerIntroMode({ isAuthoring: true, isExisting: false })).toBe("blueprint");
-    expect(plannerIntroMode({ isAuthoring: true, isExisting: true })).toBe("blueprint"); // authoring wins
-    expect(plannerIntroMode({ isAuthoring: false, isExisting: true })).toBe("existing");
-    expect(plannerIntroMode({ isAuthoring: false, isExisting: false })).toBe("new");
+  it("existing project → existing, else new", () => {
+    expect(plannerIntroMode({ isExisting: true })).toBe("existing");
+    expect(plannerIntroMode({ isExisting: false })).toBe("new");
   });
 });
 
@@ -25,7 +23,7 @@ describe("plannerTreatAsExisting — orientation follows blueprint mode (#1286)"
   });
   it("composes with plannerIntroMode: a just-switched draft transform gets the existing intro", () => {
     const treat = plannerTreatAsExisting({ isSaved: false, mode: "operate" });
-    expect(plannerIntroMode({ isAuthoring: false, isExisting: treat })).toBe("existing");
+    expect(plannerIntroMode({ isExisting: treat })).toBe("existing");
   });
 });
 
@@ -38,7 +36,6 @@ describe("plannerIntro — compose (#1240)", () => {
 
   it("ignores the pitch for non-new modes and when blank", () => {
     expect(composePlannerIntro("INTRO", "existing", "build a todo app")).toBe("INTRO");
-    expect(composePlannerIntro("INTRO", "blueprint", "build a todo app")).toBe("INTRO");
     expect(composePlannerIntro("INTRO", "new", "   ")).toBe("INTRO");
   });
 
