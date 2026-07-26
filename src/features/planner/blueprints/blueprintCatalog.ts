@@ -42,10 +42,10 @@ export function stageKind(key: string): StageKindMeta {
 }
 
 /** The kinds offered in the editor's "add stage" palette — a CURATED subset of {@link STAGE_KINDS},
- *  NOT every entry. The map now also carries icon/metadata for stages that arrive via blueprints or
- *  STAGE_DEFS but aren't hand-addable (the data-platform pipeline stages, the lifecycle stages
- *  seeded by their category's built-in, and the blueprint-authoring meta-stages), so an imported
- *  blueprint resolves a real icon for every stage without those flooding the palette. */
+ *  NOT every entry. The map also carries icon/metadata for stages that arrive via blueprints or
+ *  STAGE_DEFS but aren't hand-addable (the data-platform pipeline stages and the lifecycle stages
+ *  seeded by their category's built-in), so an imported blueprint resolves a real icon for every
+ *  stage without those flooding the palette. */
 export const STAGE_KIND_KEYS = [
   "discovery", "deployment", "users", "ui", "stack", "architecture", "schema", "api",
   "streams", "automations", "skills", "security",

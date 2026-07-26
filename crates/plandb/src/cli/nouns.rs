@@ -174,6 +174,19 @@ pub(crate) fn cmd_market(args: &Args) -> Result<(), String> {
     )
 }
 
+/// `classify` — the project classification (one blob, #3783/#3784): the planner's discovery output
+/// that shapes the plan (the UI mode + which optional stages the project needs). Validated at
+/// set-time; the echo mirrors the chosen uiMode + which optional stages are on.
+pub(crate) fn cmd_classify(args: &Args) -> Result<(), String> {
+    cmd_blob_noun(
+        args, "classify", "classification JSON", "(no classification)",
+        crate::validate::validate_classify_config,
+        |s, v| s.classify_set(v).map_err(|e| e.to_string()),
+        |s| s.classify_get().map_err(|e| e.to_string()),
+        |v| format!("classify set{}", crate::validate::classify_readiness(v)),
+    )
+}
+
 /// `transformation` — the Transformations stage's list (#2509): the modification counterpart to
 /// features, one JSON-per-row (the `fleet_streams` shape) backing the bottom-up confirm queue.
 /// Writes validate at set-time (#2395: verb taxonomy, discovered target, delta, invariants, owns,

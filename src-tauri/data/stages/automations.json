@@ -6,6 +6,10 @@
   "deps": [
     "streams"
   ],
+  "appliesWhen": {
+    "signal": "needsAutomations",
+    "target": true
+  },
   "gateRule": {
     "require": [
       {

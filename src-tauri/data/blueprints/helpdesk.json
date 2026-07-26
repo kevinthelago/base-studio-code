@@ -1,0 +1,25 @@
+{
+  "order": 12,
+  "id": "helpdesk",
+  "name": "Helpdesk / ITSM",
+  "desc": "Build a service desk — omnichannel ticketing, ITIL workflows, and AI-resolution agents.",
+  "icon": "fact_check",
+  "origin": "built-in",
+  "category": "greenfield",
+  "mode": "create",
+  "skills": ["web-seo"],
+  "sections": [
+    { "key": "discovery" },
+    { "key": "market" },
+    { "key": "deployment" },
+    { "key": "source" },
+    { "key": "features" },
+    { "key": "ui", "optional": true },
+    { "key": "streams" },
+    { "key": "mcps" },
+    { "key": "automations" },
+    { "key": "skills" }
+  ],
+  "kit": "react-ui",
+  "features": "## Core\n- Omnichannel ticketing inbox — email, chat, web form, social, SMS in one workspace\n- Ticket routing & assignment — skills / capacity / priority-based, round-robin\n- SLA policies — targets, business hours, breach escalation\n- Knowledge base & self-service portal — articles, versioning, deflection\n- No-code automation engine — triggers, macros, canned responses\n- Reporting & dashboards — CSAT, ticket volume, resolution time\n- Role-based agent permissions & audit logs\n- REST API + app marketplace\n\n## ITSM depth\n- Incident management — logging, categorization, major-incident workflow\n- Problem management — root-cause analysis, known-error & workaround tracking\n- Change management — risk assessment, CAB approvals, change calendar\n- Service catalog & request fulfillment\n- Asset & configuration management (CMDB) with auto-discovery\n- On-call scheduling & alerting\n\n## Differentiators\n- Autonomous AI resolution agents — full-resolution bots across every channel\n- Agent-assist copilot — AI-drafted replies, summaries, next-best-action\n- AI-generated KB articles from resolved tickets + generative search\n- Workforce management & AI quality scoring\n"
+}

@@ -41,6 +41,7 @@ mod artifacts;
 mod assignments;
 mod blueprint;
 mod confirmed;
+mod classify;
 mod deploy;
 mod discovery;
 mod features;

@@ -28,19 +28,27 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
       teamsDrill: null,
       setTeamsDrill: (id) => set({ teamsDrill: id }),
 
-      // #2253 write-through cache over `bsc project link` — hydrate authoritative on boot, each mutation
-      // pushes through the bridge so agents (and a restart) see the same relationships.
+      // #2253 → #3786 write-through cache over `bsc project link` — hydrate authoritative on boot, each
+      // mutation pushes through the bridge so agents (and a restart) see the same contracts. `target`
+      // (#3786) names a non-project endpoint (a service / mcp server); a project↔project contract leaves it
+      // absent so the persisted/wire shape stays byte-identical to the pre-#3786 model.
       projectLinks: [],
-      addProjectLink: (from, to, kind) => {
-        if (from === to) return;
+      addProjectLink: (from, to, kind, target) => {
+        // A self-loop is only meaningless for a project target — an external service/mcp endpoint lives in
+        // its own namespace, so `from === to` there is a legitimate contract (matches the Rust add_contract).
+        if (from === to && (!target || target.type === "project")) return;
         const id = projectLinkId(from, to, kind);
+        // Only a non-project target is stored on the link (keeps a project contract byte-identical).
+        const external = target && target.type !== "project" ? target : undefined;
         let added = false;
         set((s) => {
           if (s.projectLinks.some((l) => l.id === id)) return {};
           added = true;
-          return { projectLinks: [...s.projectLinks, { id, from, to, kind }] };
+          return { projectLinks: [...s.projectLinks, { id, from, to, kind, ...(external ? { target: external } : {}) }] };
         });
-        if (added) void pushProjectLink(from, to, kind);
+        // Keep the plain project-link call at 3 args (a trailing undefined is a distinct arity to
+        // `toHaveBeenCalledWith`) so the pre-#3786 write-through contract is unchanged.
+        if (added) void (external ? pushProjectLink(from, to, kind, external) : pushProjectLink(from, to, kind));
       },
       removeProjectLink: (id) => {
         set((s) => ({ projectLinks: s.projectLinks.filter((l) => l.id !== id) }));

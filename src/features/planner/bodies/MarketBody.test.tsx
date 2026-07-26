@@ -64,8 +64,15 @@ describe("MarketBody — full payload", () => {
     cfg.scores.problemSeverity = { score: 5, rationale: "r", sources: ["s"] };
     cfg.scores.reachableMarket = { score: 1, rationale: "r", sources: ["s"] };
     useAppStore.getState().setPlanMarketConfig(PID, cfg);
-    // Bind the project to a built-in transform blueprint (feature-add) — severity-weighted.
-    useAppStore.getState().setProjectBlueprintId(PID, "feature-add");
+    // Bind the project to a transform blueprint — severity-weighted. #3785 removed the built-in
+    // transform blueprints, so inject a local transform blueprint to exercise the category weighting.
+    useAppStore.setState({
+      blueprints: [
+        ...useAppStore.getState().blueprints,
+        { id: "tx-test", name: "Tx", desc: "", origin: "local", category: "transform", sections: [] },
+      ],
+    });
+    useAppStore.getState().setProjectBlueprintId(PID, "tx-test");
     render(<MarketBody projectId={PID} />);
     const expected = weightedMarketScore(cfg, marketWeights("transform"));
     expect(screen.getByText(`${expected}/100`)).toBeTruthy();

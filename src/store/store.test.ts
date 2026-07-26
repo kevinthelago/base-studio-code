@@ -2006,8 +2006,9 @@ describe("blueprints library (#513/#514)", () => {
   });
 
   it("seeds the starter library with a default active", () => {
-    // default + complete + blueprint-author after the data/transform blueprints were archived (5def26b7).
-    expect(useAppStore.getState().blueprints.length).toBeGreaterThanOrEqual(3);
+    // #3785 made `default` the greenfield superset; #3783 adds the five domain greenfields
+    // (crm/erp/helpdesk/hr/project-management), so the built-in library is six blueprints.
+    expect(useAppStore.getState().blueprints.length).toBe(6);
     expect(useAppStore.getState().activeBlueprintId).toBe("default");
   });
 
@@ -2017,6 +2018,22 @@ describe("blueprints library (#513/#514)", () => {
     const bp = useAppStore.getState().blueprints.find((b) => b.id === id)!;
     expect(useAppStore.getState().blueprints.length).toBe(before + 1);
     expect(bp.sections.length).toBeGreaterThan(0);
+  });
+
+  it("generateBlueprint promotes a project's plan — route + feature list — into a named user blueprint (#3785)", () => {
+    useAppStore.getState().setPlanningTitle("Acme CRM");
+    // The project's Features stage content — the curated feature list the promote should carry.
+    useAppStore.setState((s) => ({ planStages: { ...s.planStages, "proj-key": { features: "## Contacts\nManage contacts." } } }));
+    const before = useAppStore.getState().blueprints.length;
+    // No custom stage config for this key → generateBlueprint falls back to the default enabled set,
+    // so the promoted blueprint still captures a plan route as sections.
+    const id = useAppStore.getState().generateBlueprint("proj-key");
+    const bp = useAppStore.getState().blueprints.find((b) => b.id === id)!;
+    expect(useAppStore.getState().blueprints.length).toBe(before + 1);
+    expect(bp.name).toBe("Acme CRM blueprint"); // named after the project
+    expect(bp.origin).toBe("local"); // a user blueprint — persisted + share-eligible
+    expect(bp.sections.length).toBeGreaterThan(0); // the plan route captured as sections
+    expect(bp.features).toContain("Contacts"); // the curated feature list captured too
   });
 
   it("setActiveBlueprint switches the active id", () => {
@@ -2036,12 +2053,15 @@ describe("blueprints library (#513/#514)", () => {
   });
 
   it("setBlueprintStages persists the new sections for that blueprint only", () => {
+    // #3785: `default` is the only built-in, so duplicate it for an independent sibling to prove the
+    // edit is scoped to one blueprint.
+    const sibId = useAppStore.getState().duplicateBlueprint("default");
     const def = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
     const flipped = def.sections.map((s) => (s.key === "discovery" ? { ...s, enabled: false } : s));
     useAppStore.getState().setBlueprintStages("default", flipped);
     expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "discovery")!.enabled).toBe(false);
-    // a sibling blueprint is untouched
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "complete")!.sections.find((s) => s.key === "discovery")!.enabled).toBe(true);
+    // the sibling blueprint is untouched
+    expect(useAppStore.getState().blueprints.find((b) => b.id === sibId)!.sections.find((s) => s.key === "discovery")!.enabled).toBe(true);
   });
 
   it("updateBlueprintMeta edits name/desc", () => {
@@ -2077,7 +2097,6 @@ describe("clearPlan (#505)", () => {
     useAppStore.setState({
       planStages: { myproj: { goal: "# Goal" }, other: { scope: "# Scope" } },
       planConfirmedStages: { myproj: ["goal"], other: [] },
-      planAuthoredBlueprint: { myproj: { id: "bp", name: "BP", desc: "", sections: [] } },
       planSkippedStages: { myproj: ["ui"], other: [] },
       planAutomations: { myproj: [] },
       planStageConfig: {},
@@ -2098,7 +2117,6 @@ describe("clearPlan (#505)", () => {
     const s = useAppStore.getState();
     expect(s.planStages["myproj"]).toBeUndefined();
     expect(s.planConfirmedStages["myproj"]).toBeUndefined();
-    expect(s.planAuthoredBlueprint["myproj"]).toBeUndefined();
     expect(s.planSkippedStages["myproj"]).toBeUndefined();
     expect(s.planAutomations["myproj"]).toBeUndefined();
     expect(s.uiScreens["myproj"]).toBeUndefined();
@@ -2119,17 +2137,6 @@ describe("clearPlan (#505)", () => {
     useAppStore.getState().clearPlan("nonexistent");
     const s = useAppStore.getState();
     expect(s.planStages["myproj"]).toEqual({ goal: "# Goal" });
-  });
-
-  it("setAuthoredBlueprint records the in-progress blueprint per project (#923)", () => {
-    useAppStore.setState({ planAuthoredBlueprint: {} });
-    const bp = { id: "x", name: "Authored", desc: "", sections: [] };
-    useAppStore.getState().setAuthoredBlueprint("proj", bp);
-    expect(useAppStore.getState().planAuthoredBlueprint["proj"]).toEqual(bp);
-    // overwrite replaces (the planner re-emits the full blueprint)
-    const bp2 = { ...bp, name: "Authored v2" };
-    useAppStore.getState().setAuthoredBlueprint("proj", bp2);
-    expect(useAppStore.getState().planAuthoredBlueprint["proj"].name).toBe("Authored v2");
   });
 });
 

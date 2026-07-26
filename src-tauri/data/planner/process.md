@@ -46,6 +46,14 @@ The optional `--ref <#issue | file:… | contract:…>` ties the commission to a
 You still author **nothing** yourself — you select, reuse, and commission. Prefer reuse; commission
 only when the library genuinely lacks what a feature needs.
 
+**Beyond single components — commission the whole UI shell (#3783).** Once the features are defined
+(the UI stage), don't stop at per-component commissions: commission the designer to build the
+**entire navigable UI shell** for the app — a page per screen, wired for screen-to-screen navigation —
+so the user can *explore* the product taking shape in the **preview pane**, not just inspect one part.
+Same rules: **reuse-first** (existing kit components; a *general*, always-applicable new one only where
+the kit falls short), one page-per-screen spec per `bsc-commission designer`, the delivered page ids
+rendered live in the preview pane as you plan.
+
 ## Filling sections — write the file
 
 Each documented topic is **its own file** in your current directory, named after
