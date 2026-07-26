@@ -114,6 +114,15 @@ export interface ChangeEntry {
   changed: string[];
 }
 
+/** One analytics event a component declares it emits (#3810, epic #3809) — DATA, not code. `event` is the
+ *  event name (`click`, `item_selected`); `when` is an optional human note on the trigger; `props` are the
+ *  event's payload fields. A shipped runtime (slice 2) reads these + emits; the component only DECLARES. */
+export interface AnalyticsEvent {
+  event: string;
+  when?: string;
+  props?: PropSpec[];
+}
+
 export interface ComponentRecord {
   id: string;
   name: string;
@@ -155,6 +164,12 @@ export interface ComponentRecord {
   source?: string;
   /** A packaged built-in (re-seeded into the store on hydrate). Absent ⇒ user-authored. */
   builtin?: boolean;
+  /** The component's analytics EVENTS manifest (#3810, epic #3809) — the events it emits, as DATA (not
+   *  code): a Button declares `click`, a CollectionPage `item_selected`/`filter_changed`. The per-node
+   *  instrumentation CONTRACT, sibling of the behavior/motion a node carries, so an app composed from
+   *  these nodes is instrumented by construction. Absent/empty ⇒ uninstrumented — the `no-analytics` doctor
+   *  finding flags an INTERACTIVE component that lacks one. A shipped runtime does the emitting (slice 2). */
+  analytics?: AnalyticsEvent[];
   /** A SUPPRESSION tombstone (#3725) — `true` marks this id as a PERMANENTLY removed packaged builtin, not
    *  a real component. `reconcileSeed` skips re-seeding it (the tombstone occupies the id) and the library
    *  excludes it; the Rust doctor skips it; `bsc ui suppress`/`unsuppress` write/clear it. Absent on every
