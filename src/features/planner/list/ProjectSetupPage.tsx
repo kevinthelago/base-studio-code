@@ -1,16 +1,17 @@
 // ProjectSetupPage (#3802) — the create-a-project setup PAGE. It sits BETWEEN the projects list and
-// the planner: name the project, pick the blueprint (locked at creation, #3785), optionally import a
-// blueprint from a gist, then "start planning →". Recast from the old `BlueprintPickerModal` — same
-// guts (the blueprint library as selectable `BlueprintCard`s + the gist-import affordance), but a
-// FULL PANE (not a `ModalScrim`) so the create flow reads list → setup → planner. The composer
-// (`ProjectsList`) runs the collision check + create + bind via `onStart`; the blueprint is the one
-// consent point (frozen at creation).
+// the planner: name the project, pick the blueprint (locked at creation, #3785), then "start
+// planning →". Recast from the old `BlueprintPickerModal` — same guts (the blueprint library as
+// selectable `BlueprintCard`s), but a FULL PANE (not a `ModalScrim`) so the create flow reads list →
+// setup → planner. The composer (`ProjectsList`) runs the collision check + create + bind via
+// `onStart`; the blueprint is the one consent point (frozen at creation).
+//
+// The gist-import affordance is no longer a modal (#3802): a persistent right-side `CloudBlueprints`
+// column lists the not-yet-downloaded gist blueprints beside the local ones, with inline download.
+// A downloaded blueprint drops into the left column, already selectable (`setSelected(newId)`).
 import { useMemo, useState } from "react";
-import { Download } from "lucide-react";
 import { useAppStore } from "@/store";
 import { uid, DEFAULT_BLUEPRINT_ID, type Blueprint, type BlueprintStage, type BlueprintDesign } from "../stages/blueprints";
-import { ImportModal, type PreviewBlueprint } from "../blueprints/BlueprintModals";
-import { BlueprintImportModal } from "../blueprints/BlueprintImportModal";
+import { type PreviewBlueprint } from "../blueprints/BlueprintModals";
 import { DesignReconcileModal } from "@/features/designs";
 import { reconcileDesign } from "@/shared/ui/kit";
 import { DEFAULT_GIST_SOURCE } from "../blueprints/blueprintCatalog";
@@ -25,6 +26,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { BlueprintCard } from "./BlueprintCard";
 import { buildBlueprintItems } from "./blueprintLibrary.helpers";
+import { CloudBlueprints } from "./CloudBlueprints";
 
 export interface ProjectSetupPageProps {
   /** ← back to the projects list (also the footer "cancel"). */
@@ -43,11 +45,14 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
   const [title, setTitle] = useState("");
   const [selected, setSelected] = useState<string>(activeBlueprintId || DEFAULT_BLUEPRINT_ID);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const [importOpen, setImportOpen] = useState(false);   // manual "paste a gist URL / ID" modal
-  const [catalogOpen, setCatalogOpen] = useState(false); // browse-gists catalog overlay
   const [reconcileTarget, setReconcileTarget] = useState<{ source: string; label: string; missing: string[]; themeRef?: string } | null>(null);
 
   const items = useMemo(() => buildBlueprintItems(blueprints), [blueprints]);
+  // Gist ids already in the library — the cloud column hides these ("not yet downloaded" only).
+  const downloadedGistIds = useMemo(
+    () => new Set(blueprints.filter((b) => b.gist?.id).map((b) => b.gist!.id!)),
+    [blueprints],
+  );
   const canStart = title.trim().length > 0 && !!selected;
   const start = () => { if (canStart) onStart(title.trim(), selected); };
 
@@ -92,7 +97,6 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
       });
       reconcileImportedDesign(existing.id, base?.name ?? existing.name, base?.design);
       setSelected(existing.id);
-      setImportOpen(false);
       return;
     }
     const bp: Blueprint = {
@@ -103,8 +107,11 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
     const newId = importBlueprint(bp);
     reconcileImportedDesign(newId, bp.name, bp.design);
     setSelected(newId);
-    setImportOpen(false);
   }
+
+  // The cloud column's inline download: resolve the gist → import into the library (which selects
+  // the new blueprint, so it lands in the left column ready to use). Rejections surface on the row.
+  const downloadBlueprint = (gistId: string) => resolveBlueprintImport(gistId).then((p) => importBlueprintPreview(p));
 
   return (
     <Stack style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
@@ -118,54 +125,59 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
         <Text as="span" size={14} weight={600} style={{ color: "var(--fg)" }}>New project</Text>
       </Row>
 
-      {/* scroll body — a centered single column (name · blueprint selection · gist import). */}
-      <Box style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: "22px 22px 90px" }}>
-        <Box style={{ maxWidth: 640, margin: "0 auto" }}>
-          {/* project name (moved out of the list header's inline form). */}
-          <TextField
-            label="Project name"
-            aria-label="Project name"
-            hint="The name IS the project — it names its files, sessions, and GitHub project, and is locked once created."
-            placeholder="Name your project…"
-            value={title}
-            onChange={setTitle}
-            onKeyDown={(e) => { if (e.key === "Enter") start(); }}
-          />
+      {/* body — two columns: the setup form (name + local blueprint selection) on the left, and the
+          persistent "Cloud blueprints" column on the right. Each column scrolls on its own. */}
+      <Row style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
+        <Box style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: "22px 22px 28px" }}>
+          <Box style={{ maxWidth: 640, margin: "0 auto" }}>
+            {/* project name (moved out of the list header's inline form). */}
+            <TextField
+              label="Project name"
+              aria-label="Project name"
+              hint="The name IS the project — it names its files, sessions, and GitHub project, and is locked once created."
+              placeholder="Name your project…"
+              value={title}
+              onChange={setTitle}
+              onKeyDown={(e) => { if (e.key === "Enter") start(); }}
+            />
 
-          {/* blueprint selection — the same selectable card list the picker used, defaulting to the
-              active/Default blueprint. The gist-import surface is folded in here (a single modal over
-              this page, no longer a modal nested inside a picker modal). */}
-          <Row gap={10} align="center" style={{ margin: "24px 0 10px" }}>
-            <Text as="span" size={13} weight={600} style={{ color: "var(--fg)" }}>Blueprint</Text>
-            <Text as="span" size={11} tone="muted">seeds the plan · locked at creation</Text>
-            <Box as="span" style={{ flex: 1 }} />
-            <Button
-              variant="ghost" title="Import a blueprint from a gist" onClick={() => setCatalogOpen(true)}
-              style={{ height: 26, display: "flex", alignItems: "center", gap: 6, flex: "none" }}
-            ><Download size={13} /> import</Button>
-          </Row>
+            {/* blueprint selection — the same selectable card list the picker used, defaulting to the
+                active/Default blueprint. Gist import now lives in the right column (no button here). */}
+            <Row gap={10} align="center" style={{ margin: "24px 0 10px" }}>
+              <Text as="span" size={13} weight={600} style={{ color: "var(--fg)" }}>Blueprint</Text>
+              <Text as="span" size={11} tone="muted">seeds the plan · locked at creation</Text>
+            </Row>
 
-          {items.length === 0 ? (
-            <Text as="div" mono size={11} tone="dim" style={{ lineHeight: 1.6, padding: "6px 2px" }}>
-              No blueprints yet. Import one from a gist, or generate one from a triaged project.
-            </Text>
-          ) : (
-            <Stack gap={9}>
-              {items.map((b) => (
-                <BlueprintCard
-                  key={b.id}
-                  b={b}
-                  onUse={setSelected}
-                  onDelete={(bp) => deleteBlueprint(bp.id)}
-                  activeId={selected}
-                  menuOpenId={menuOpenId}
-                  setMenuOpenId={setMenuOpenId}
-                />
-              ))}
-            </Stack>
-          )}
+            {items.length === 0 ? (
+              <Text as="div" mono size={11} tone="dim" style={{ lineHeight: 1.6, padding: "6px 2px" }}>
+                No blueprints yet. Download one from the cloud column, or generate one from a triaged project.
+              </Text>
+            ) : (
+              <Stack gap={9}>
+                {items.map((b) => (
+                  <BlueprintCard
+                    key={b.id}
+                    b={b}
+                    onUse={setSelected}
+                    onDelete={(bp) => deleteBlueprint(bp.id)}
+                    activeId={selected}
+                    menuOpenId={menuOpenId}
+                    setMenuOpenId={setMenuOpenId}
+                  />
+                ))}
+              </Stack>
+            )}
+          </Box>
         </Box>
-      </Box>
+
+        {/* right — the persistent cloud-blueprint column (not-yet-downloaded gists + inline download). */}
+        <CloudBlueprints
+          defaultSource={githubUser?.login ?? DEFAULT_GIST_SOURCE}
+          token={githubToken}
+          downloadedGistIds={downloadedGistIds}
+          onDownload={downloadBlueprint}
+        />
+      </Row>
 
       {/* footer advance bar — start is gated on a name AND a chosen blueprint. */}
       <Row gap={10} align="center" justify="end" style={{ flex: "none", padding: "12px 22px", background: "var(--bg-elev)", borderTop: "1px solid var(--border-soft)" }}>
@@ -176,21 +188,8 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
         <Button variant="primary" disabled={!canStart} onClick={start}>start planning →</Button>
       </Row>
 
-      {/* ── import overlays (a single modal over the page) ─────────────────────────────────────── */}
-      {catalogOpen && (
-        <BlueprintImportModal
-          source={githubUser?.login ?? DEFAULT_GIST_SOURCE}
-          token={githubToken}
-          importedById={Object.fromEntries(blueprints.filter((b) => b.gist?.id).map((b) => [b.gist!.id!, { updatedAt: b.gist!.updatedAt }]))}
-          onImport={(gistId, updatedAt) => resolveBlueprintImport(gistId).then((p) => importBlueprintPreview(p, { updatedAt }))}
-          onPreview={resolveBlueprintImport}
-          onManualImport={() => { setCatalogOpen(false); setImportOpen(true); }}
-          onClose={() => setCatalogOpen(false)}
-        />
-      )}
-      {importOpen && (
-        <ImportModal onClose={() => setImportOpen(false)} onResolve={resolveBlueprintImport} onImport={importBlueprintPreview} />
-      )}
+      {/* design reconcile — fires AFTER a download completes if the imported blueprint's design is
+          missing kit pieces (this is NOT an import modal; it stays). */}
       {reconcileTarget && (
         <DesignReconcileModal
           source={reconcileTarget.source}

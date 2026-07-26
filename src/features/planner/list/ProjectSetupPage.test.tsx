@@ -3,6 +3,13 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { ProjectSetupPage } from "./ProjectSetupPage";
 import { useAppStore } from "@/store";
 
+// The page now hosts the persistent CloudBlueprints column (#3802) — mock the gist client so its
+// load is deterministic (no network / invoke) and never floods these unit tests.
+vi.mock("@/features/planner/lib/gist/gist", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/planner/lib/gist/gist")>()),
+  listBlueprintGists: vi.fn(async () => []),
+}));
+
 describe("ProjectSetupPage", () => {
   beforeEach(() => {
     useAppStore.setState({
@@ -14,12 +21,16 @@ describe("ProjectSetupPage", () => {
     });
   });
 
-  it("renders the setup page: name input, blueprint list, and a gated start", () => {
+  it("renders the setup page: name input, blueprint list, cloud column, and a gated start", () => {
     render(<ProjectSetupPage onBack={() => {}} onStart={() => {}} />);
     expect(screen.getByText("New project")).toBeInTheDocument();
     expect(screen.getByLabelText("Project name")).toBeInTheDocument();
     expect(screen.getByText("Default")).toBeInTheDocument();
     expect(screen.getByText("API Service")).toBeInTheDocument();
+    // The persistent cloud column replaces the old import modal — no import button, a source input.
+    expect(screen.queryByText("import")).not.toBeInTheDocument();
+    expect(screen.getByText("Cloud blueprints")).toBeInTheDocument();
+    expect(screen.getByLabelText("Cloud blueprints source (GitHub account)")).toBeInTheDocument();
     // Start is disabled until the project is named.
     expect(screen.getByText("start planning →").closest("button")).toBeDisabled();
   });
