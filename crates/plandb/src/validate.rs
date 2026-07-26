@@ -536,11 +536,22 @@ pub fn market_readiness(v: &Value) -> String {
     }
 }
 
+/// The application-architecture taxonomy (#3784) — the axis that selects which stages run. Mirrors
+/// `APP_TYPES` in `src/features/planner/lib/classifyConfig.ts`; keep the two in lockstep.
+pub const APP_TYPES: [&str; 9] = [
+    "application", "api", "serverless", "static", "desktop", "mobile", "cli", "library", "mcp-server",
+];
+
+/// The lifecycle-intent taxonomy (#3784) — what the planning run is FOR. Lifecycle left the
+/// blueprint model in #3785, so discovery is its only home. Mirrors `LIFECYCLES` in
+/// `src/features/planner/lib/classifyConfig.ts`.
+pub const LIFECYCLES: [&str; 4] = ["greenfield", "transform", "harden", "maintain"];
+
 /// Validate a project classification blob (#3783/#3784/#3806): a JSON object whose optional `uiMode`
-/// is "custom"|"external" and whose optional `needsMarket`/`needsSource`/`needsMcp`/`needsSkills`/
-/// `needsAutomations` are booleans. Every field is optional (a partial or empty classification is
-/// valid); only a present-but-mistyped field is rejected, field-level (#2395) so an LLM author can
-/// self-correct.
+/// is "custom"|"external", whose optional `appType`/`lifecycle` are taxonomy tokens, and whose
+/// optional `needsMarket`/`needsSource`/`needsMcp`/`needsSkills`/`needsAutomations` are booleans.
+/// Every field is optional (a partial or empty classification is valid); only a present-but-mistyped
+/// field is rejected, field-level (#2395) so an LLM author can self-correct.
 pub fn validate_classify_config(v: &Value) -> Result<(), String> {
     let noun = "classification";
     if !v.is_object() {
@@ -554,6 +565,15 @@ pub fn validate_classify_config(v: &Value) -> Result<(), String> {
             errs.push(r#""uiMode" must be "custom" (in-app designer preview) or "external" (bring design files)"#.into());
         }
     }
+    // The two taxonomy axes. An unknown token is rejected with the full vocabulary, so the planner
+    // can correct itself without reading the source.
+    for (key, allowed) in [("appType", &APP_TYPES[..]), ("lifecycle", &LIFECYCLES[..])] {
+        if let Some(t) = v.get(key) {
+            if !t.as_str().is_some_and(|s| allowed.contains(&s)) {
+                errs.push(format!(r#""{key}" must be one of: {}"#, allowed.join(", ")));
+            }
+        }
+    }
     for k in ["needsMarket", "needsSource", "needsMcp", "needsSkills", "needsAutomations"] {
         if let Some(b) = v.get(k) {
             if !b.is_boolean() {
@@ -565,9 +585,13 @@ pub fn validate_classify_config(v: &Value) -> Result<(), String> {
 }
 
 /// The readiness suffix printed after a successful `classify set` (mirrors [`market_readiness`]):
-/// the chosen UI mode + which optional stages the classification turns on.
+/// the discovered lifecycle + app type, the chosen UI mode, and which optional stages the
+/// classification turns on. Unset axes report their read-as default, so the planner sees exactly
+/// what the plan will do rather than a blank.
 pub fn classify_readiness(v: &Value) -> String {
     let ui = v.get("uiMode").and_then(Value::as_str).unwrap_or("custom");
+    let app_type = v.get("appType").and_then(Value::as_str).unwrap_or("application");
+    let lifecycle = v.get("lifecycle").and_then(Value::as_str).unwrap_or("greenfield");
     let on = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
     let mut stages = Vec::new();
     if on("needsMarket") { stages.push("market"); }
@@ -576,7 +600,7 @@ pub fn classify_readiness(v: &Value) -> String {
     if on("needsSkills") { stages.push("skills"); }
     if on("needsAutomations") { stages.push("automations"); }
     let list = if stages.is_empty() { "none".to_string() } else { stages.join(", ") };
-    format!(" — uiMode {ui}; optional stages: {list}")
+    format!(" — {lifecycle} {app_type}; uiMode {ui}; optional stages: {list}")
 }
 
 // ── transformations (`bsc plan transformation add/update`) — the modification list (#2509) ──────
@@ -1769,5 +1793,64 @@ mod tests {
         assert!(t.publish_registries.iter().any(|r| r == "npm"));
         assert!(t.default_env_count >= 2, "default env ladder must satisfy the ≥2 check");
         assert!(t.default_stage_count >= 2, "default pipeline must satisfy the ≥2 check");
+    }
+
+    // ── classify (#3783/#3784/#3806) ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn classify_accepts_an_empty_partial_or_full_classification() {
+        // Every field is optional — an unclassified project is valid, and so is any subset.
+        assert!(validate_classify_config(&json!({})).is_ok());
+        assert!(validate_classify_config(&json!({ "uiMode": "external" })).is_ok());
+        assert!(validate_classify_config(&json!({
+            "lifecycle": "transform", "appType": "mcp-server", "uiMode": "custom",
+            "needsMarket": false, "needsSource": true, "needsMcp": true,
+            "needsSkills": false, "needsAutomations": false
+        }))
+        .is_ok());
+    }
+
+    #[test]
+    fn classify_accepts_every_published_taxonomy_token() {
+        for t in APP_TYPES {
+            assert!(validate_classify_config(&json!({ "appType": t })).is_ok(), "appType {t}");
+        }
+        for l in LIFECYCLES {
+            assert!(validate_classify_config(&json!({ "lifecycle": l })).is_ok(), "lifecycle {l}");
+        }
+    }
+
+    #[test]
+    fn classify_rejects_an_unknown_taxonomy_token_and_names_the_vocabulary() {
+        // The planner self-corrects from the error, so the message must carry the full list.
+        let err = validate_classify_config(&json!({ "appType": "webapp" })).unwrap_err();
+        assert!(err.contains("appType"), "{err}");
+        assert!(err.contains("mcp-server"), "the error must list the vocabulary: {err}");
+
+        let err = validate_classify_config(&json!({ "lifecycle": "rewrite" })).unwrap_err();
+        assert!(err.contains("greenfield") && err.contains("maintain"), "{err}");
+    }
+
+    #[test]
+    fn classify_rejects_a_mistyped_axis_that_is_not_a_string() {
+        assert!(validate_classify_config(&json!({ "appType": 3 })).is_err());
+        assert!(validate_classify_config(&json!({ "lifecycle": true })).is_err());
+        assert!(validate_classify_config(&json!({ "needsSource": "yes" })).is_err());
+        assert!(validate_classify_config(&json!("custom")).is_err());
+    }
+
+    #[test]
+    fn classify_readiness_reports_the_axes_and_their_unset_defaults() {
+        let full = classify_readiness(&json!({
+            "lifecycle": "harden", "appType": "api", "uiMode": "external", "needsSource": true
+        }));
+        assert!(full.contains("harden api"), "{full}");
+        assert!(full.contains("uiMode external"), "{full}");
+        assert!(full.contains("source"), "{full}");
+
+        // An unset axis reports what the plan will actually DO, not a blank.
+        let bare = classify_readiness(&json!({}));
+        assert!(bare.contains("greenfield application"), "{bare}");
+        assert!(bare.contains("optional stages: none"), "{bare}");
     }
 }

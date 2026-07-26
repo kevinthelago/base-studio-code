@@ -5,7 +5,6 @@
   "desc": "Build a CRM platform — contacts, pipeline, and sales automation with an AI assistant layer.",
   "icon": "hub",
   "origin": "built-in",
-  "category": "greenfield",
   "mode": "create",
   "skills": ["web-seo"],
   "sections": [

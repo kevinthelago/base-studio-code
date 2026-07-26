@@ -1,5 +1,5 @@
 // Pure blueprint/stage HELPERS (#513/#514, split out #2148): the functions over blueprint +
-// section data — the authoring-lifecycle checks, category filtering, section/dep/lock resolution,
+// section data — the authoring-lifecycle checks, search filtering, section/dep/lock resolution,
 // the built-in refresh/merge, the blueprint-driven stage status + progress engine, and the
 // template-change detection. Pure (no React/Tauri). Types live in blueprintTypes.ts; the packaged
 // data + library assembly in blueprintBuiltins.ts.
@@ -7,7 +7,7 @@
 import { PLAN_STAGES, type StageConfig, type StageId } from "./planStages";
 import { evalGate, gateApplies, type PlanSignals } from "./stageGate";
 import type {
-  Blueprint, BlueprintStage, BlueprintCategory, SectionStatus,
+  Blueprint, BlueprintStage, SectionStatus,
   StageRenderStatus, IncompleteStage, SectionDef, ModelCapabilityTier, StageSeed,
 } from "./blueprintTypes";
 import { uid, makeBlueprints, dedupeSections } from "./blueprintBuiltins";
@@ -37,22 +37,14 @@ export function stageSeed(section: Pick<SectionDef, "seed"> | undefined): StageS
   return seed?.content?.trim() ? seed : undefined;
 }
 
-/** A blueprint's category, defaulting to greenfield. */
-export function blueprintCategory(bp: Blueprint): BlueprintCategory {
-  return bp.category ?? "greenfield";
-}
-
-/** Filter blueprints by a free-text query (name/desc/tags) + optional category. Pure;
- *  drives the Library's search + category filter (#645). */
-export function filterBlueprints(blueprints: Blueprint[], opts: { query?: string; category?: BlueprintCategory | "all" }): Blueprint[] {
+/** Filter blueprints by a free-text query over name/desc/tags. Pure; drives the Library's search.
+ *  The lifecycle-category facet went away with #3785 — a blueprint is a goal/domain route now, and
+ *  lifecycle is discovered per PROJECT (`ClassifyConfig.lifecycle`), not declared per blueprint. */
+export function filterBlueprints(blueprints: Blueprint[], opts: { query?: string }): Blueprint[] {
   const q = (opts.query ?? "").trim().toLowerCase();
-  const cat = opts.category ?? "all";
-  return blueprints.filter((b) => {
-    if (cat !== "all" && blueprintCategory(b) !== cat) return false;
-    if (!q) return true;
-    const hay = `${b.name} ${b.desc} ${(b.tags ?? []).join(" ")} ${blueprintCategory(b)}`.toLowerCase();
-    return hay.includes(q);
-  });
+  if (!q) return blueprints;
+  return blueprints.filter((b) =>
+    `${b.name} ${b.desc} ${(b.tags ?? []).join(" ")}`.toLowerCase().includes(q));
 }
 
 export const DEFAULT_BLUEPRINT_ID = "default";
