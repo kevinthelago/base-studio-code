@@ -163,11 +163,6 @@ export interface BlueprintStage extends SectionDef {
 /** Where a blueprint came from (#609) — drives the card's origin tag. */
 export type BlueprintOrigin = "built-in" | "local" | "forked" | "imported";
 
-/** Lifecycle intent of a blueprint (#645) — what part of a project's life it serves.
- *  Greenfield = create from a pitch; transform = restructure existing repos; harden =
- *  improve quality in place; maintain = ongoing upkeep. Drives library grouping/labels. */
-export type BlueprintCategory = "greenfield" | "transform" | "harden" | "maintain" | "data" | "script";
-
 /** Whether a blueprint starts from a pitch (create) or runs against existing repos
  *  (operate) — selects the planner intro at launch. */
 export type BlueprintMode = "create" | "operate";
@@ -343,8 +338,6 @@ export interface Blueprint {
    *  theme ref; reconciled against the local design contract on download. Absent ⇒ nothing to reconcile
    *  (existing blueprints unaffected). See {@link BlueprintDesign}. */
   design?: BlueprintDesign;
-  /** Lifecycle intent (#645). Absent ⇒ greenfield (the create-a-project default). */
-  category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
   mode?: BlueprintMode;
   /** Catalog metadata: a one-line catalog pitch, the audience it serves, and the share visibility

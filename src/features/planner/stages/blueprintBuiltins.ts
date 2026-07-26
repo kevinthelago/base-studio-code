@@ -1,13 +1,12 @@
 // Built-in blueprint LIBRARY + stage defs (#513/#514, split out #2148): the runtime DATA
-// behind the Blueprints page — the packaged stage/section defs (STAGE_DEFS), the category
-// metadata, the section-instance builder (mkStage), and the assembly of the built-in blueprint
+// behind the Blueprints page — the packaged stage/section defs (STAGE_DEFS), the
+// section-instance builder (mkStage), and the assembly of the built-in blueprint
 // library (makeBlueprints). Pure (no React/Tauri) so it's unit-testable and the store can seed
 // from it directly. Types live in blueprintTypes.ts; the pure helpers in blueprintStages.ts.
 
-import blueprintMetaEmbedded from "@data/planner/blueprint-meta.json";
-import { overlayGlob, overlayFile } from "@/shared/lib/core/configOverrides";
+import { overlayGlob } from "@/shared/lib/core/configOverrides";
 import type {
-  SectionDef, BlueprintStage, Blueprint, BlueprintDef, BlueprintCategory,
+  SectionDef, BlueprintStage, Blueprint, BlueprintDef,
 } from "./blueprintTypes";
 
 // ── ids ──────────────────────────────────────────────────────────────────────
@@ -29,17 +28,7 @@ const sectionModules = import.meta.glob<{ default: SectionDef }>("@data/stages/*
  *  (#2047) overlays the Vite-embedded default per stage file. */
 export const STAGE_DEFS: Record<string, SectionDef> = Object.fromEntries(overlayGlob("stages", sectionModules));
 
-// The category list + display metadata load from @data/planner/blueprint-meta.json — the config-dir
-// copy (#2047) overlays the embedded default, so it's editable without a rebuild + in the config bundle.
-const blueprintMeta = overlayFile("planner/blueprint-meta.json", blueprintMetaEmbedded);
-export const BLUEPRINT_CATEGORIES: BlueprintCategory[] = blueprintMeta.categories as BlueprintCategory[];
-
-/** Display metadata per category (label + accent hue for the badge/filter). From blueprint-meta.json;
- *  `data` (#779) is the data-acquisition category, distinct from the software-lifecycle ones. */
-export const CATEGORY_META: Record<BlueprintCategory, { label: string; h: number }> =
-  blueprintMeta.categoryMeta as Record<BlueprintCategory, { label: string; h: number }>;
-
-/** The packaged library kit id (= `REACT_UI_KIT_ID`) a greenfield app is built on — stamped as a
+/** The packaged library kit id (= `REACT_UI_KIT_ID`) a fresh app is built on — stamped as a
  *  built-in blueprint's consumer `kit` so `recordBlueprintKit` files the `kit_usage` edge (#2277/#2810).
  *  A literal (not a `@/features/designs` import) to keep `planner` decoupled from `designs`. */
 const PACKAGED_KIT_ID = "react-ui";
@@ -82,11 +71,12 @@ export function makeBlueprints(): Blueprint[] {
     .map(([, def]) => def)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map(({ order: _order, sections, ...meta }) => {
-      // A GREENFIELD blueprint ships a fresh UI on the packaged kit, so record it as the app's consumer
+      // A CREATE blueprint ships a fresh UI on the packaged kit, so record it as the app's consumer
       // `kit` (#2277/#2810): `recordBlueprintKit` then files the `kit_usage` edge at every bind, so a kit
-      // change fans out to the project. An explicit `kit` in the def wins; operate-on-existing-repo
-      // categories (transform/harden/maintain/data/script) aren't tied to a shared kit → no key added.
-      const kit = meta.kit ?? (meta.category === "greenfield" ? PACKAGED_KIT_ID : undefined);
+      // change fans out to the project. An explicit `kit` in the def wins; an `operate` blueprint runs
+      // against existing repos and isn't tied to a shared kit → no key added. (Keyed off `mode` since
+      // #3785 — the lifecycle `category` this used to read left the blueprint model for discovery.)
+      const kit = meta.kit ?? (meta.mode !== "operate" ? PACKAGED_KIT_ID : undefined);
       return {
         ...meta,
         ...(kit ? { kit } : {}),
