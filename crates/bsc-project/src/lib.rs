@@ -86,24 +86,69 @@ pub fn list_projects() -> Vec<Project> {
     out
 }
 
-// ── Project relationships (#2253) — the edges of the Glance L1 network ──────────────────────────────
+// ── Project relationships / inter-app contracts (#2253 → #3786 Phase 2) ─────────────────────────────
 //
 // A GLOBAL, cross-project link store (not scoped to one hub): `~/.base-studio-code/project-links.json`,
-// a flat JSON array of `{ id, from, to, kind }`. `from` (consumer) depends on / consumes `to` (provider)
-// over a contract of `kind` (api | data | events). The desktop Glance UI draws these; an agent reads
-// them via `bsc project link list --json` to learn "what does my project consume". The id is derived so
-// adding the same edge twice is idempotent.
+// a flat JSON array of contracts. `from` (a project, the consumer) depends on / consumes `to` over a
+// contract of `kind` (api | data | events). #3786 Phase 2 generalizes a link's TARGET beyond another
+// project: `to` can also be an external `service` or an `mcp` server, described by an optional `target`
+// descriptor. The desktop Glance UI draws these; an agent reads them via `bsc project link list --json`
+// to learn "what does my project consume / contract with". The id is derived so adding the same edge
+// twice is idempotent.
+//
+// BYTE-COMPATIBLE: a legacy link written with NO `target` reads back as a project→project contract
+// (`{ type: "project" }`), and a plain project contract is still SAVED without a `target` key — so the
+// on-disk file for the pre-#3786 project-link case is byte-identical.
 
-/// The edge kinds a link may carry (the Glance contract surfaces).
+/// The contract kinds a link may carry (the Glance contract surfaces).
 pub const LINK_KINDS: [&str; 3] = ["api", "data", "events"];
 
-/// One project→project relationship.
+/// The target endpoint types a contract may point at (#3786 Phase 2): another `project` (the default,
+/// byte-compatible with the pre-#3786 model), an external `service`, or an `mcp` server.
+pub const TARGET_TYPES: [&str; 3] = ["project", "service", "mcp"];
+
+/// The endpoint a contract points at (#3786 Phase 2). `kind` is one of {@link TARGET_TYPES}; `name`,
+/// `url`, and `app_type` are optional descriptors for a non-project endpoint. A `project` target with
+/// no descriptors is the DEFAULT — it is not serialized (keeping legacy links byte-identical).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractTarget {
+    /// "project" (default) | "service" | "mcp".
+    pub kind: String,
+    /// Display name of an external endpoint (a service / mcp server).
+    pub name: Option<String>,
+    /// The endpoint URL, when known (an http service / mcp server).
+    pub url: Option<String>,
+    /// The endpoint's application-architecture discriminator (api | serverless | …), surfaced on the
+    /// Glance contract node — the same `AppType` vocabulary the frontend classifies a project by.
+    pub app_type: Option<String>,
+}
+
+impl Default for ContractTarget {
+    /// The default target is a bare `project` endpoint — what a pre-#3786 link (no `target`) reads as.
+    fn default() -> Self {
+        Self { kind: "project".into(), name: None, url: None, app_type: None }
+    }
+}
+
+impl ContractTarget {
+    /// True when this target is anything other than a bare project endpoint — i.e. it carries real
+    /// contract detail worth serializing. A trivial project target is omitted on save (byte-compat).
+    fn is_nontrivial(&self) -> bool {
+        self.kind != "project" || self.name.is_some() || self.url.is_some() || self.app_type.is_some()
+    }
+}
+
+/// One inter-app contract: `from` (a project) consumes `to` over `kind`, where `to` is an endpoint of
+/// `target.kind` (another project, an external service, or an mcp server).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectLink {
     pub id: String,
     pub from: String,
     pub to: String,
     pub kind: String,
+    /// The target endpoint (#3786). A legacy link with no `target` deserializes to the default
+    /// (`project`), so this is never absent in memory.
+    pub target: ContractTarget,
 }
 
 /// The global links file: `~/.base-studio-code/project-links.json`. `None` when no home dir resolves.
@@ -112,8 +157,31 @@ pub fn links_path() -> Option<PathBuf> {
 }
 
 /// Deterministic id for a link, so adding the same edge twice is idempotent (matches the frontend).
+/// The id is target-agnostic (`<from>><to>:<kind>`) — the same shape whatever the target endpoint is.
 pub fn link_id(from: &str, to: &str, kind: &str) -> String {
     format!("{from}>{to}:{kind}")
+}
+
+/// Parse a `target` value into a {@link ContractTarget}. A missing/non-object value (or a legacy link
+/// with no `target`) yields the default `project` endpoint; `type` defaults to `"project"`.
+fn target_from_json(v: &serde_json::Value) -> ContractTarget {
+    let Some(obj) = v.as_object() else { return ContractTarget::default() };
+    ContractTarget {
+        kind: obj.get("type").and_then(|t| t.as_str()).unwrap_or("project").to_string(),
+        name: obj.get("name").and_then(|s| s.as_str()).map(str::to_string),
+        url: obj.get("url").and_then(|s| s.as_str()).map(str::to_string),
+        app_type: obj.get("appType").and_then(|s| s.as_str()).map(str::to_string),
+    }
+}
+
+/// Serialize a target descriptor for the `list --json` / on-disk form. `type` is always present; the
+/// optional descriptors are omitted when absent.
+fn target_to_json(t: &ContractTarget) -> serde_json::Value {
+    let mut o = serde_json::json!({ "type": t.kind });
+    if let Some(n) = &t.name { o["name"] = serde_json::json!(n); }
+    if let Some(u) = &t.url { o["url"] = serde_json::json!(u); }
+    if let Some(a) = &t.app_type { o["appType"] = serde_json::json!(a); }
+    o
 }
 
 fn link_from_json(v: &serde_json::Value) -> Option<ProjectLink> {
@@ -122,11 +190,19 @@ fn link_from_json(v: &serde_json::Value) -> Option<ProjectLink> {
         from: v.get("from")?.as_str()?.to_string(),
         to: v.get("to")?.as_str()?.to_string(),
         kind: v.get("kind")?.as_str()?.to_string(),
+        // A legacy link (no `target`) reads as the default project endpoint (byte-compatible).
+        target: v.get("target").map(target_from_json).unwrap_or_default(),
     })
 }
 
 fn link_to_json(l: &ProjectLink) -> serde_json::Value {
-    serde_json::json!({ "id": l.id, "from": l.from, "to": l.to, "kind": l.kind })
+    let mut o = serde_json::json!({ "id": l.id, "from": l.from, "to": l.to, "kind": l.kind });
+    // A trivial project target is NOT written, so a plain project→project link stays byte-identical to
+    // the pre-#3786 on-disk form.
+    if l.target.is_nontrivial() {
+        o["target"] = target_to_json(&l.target);
+    }
+    o
 }
 
 /// Load every project link. Empty when the file is missing/unreadable/malformed (never errors — a
@@ -150,23 +226,38 @@ fn save_links(links: &[ProjectLink]) -> Result<(), String> {
     std::fs::write(&path, json).map_err(|e| format!("save_links: {e}"))
 }
 
-/// Add a link (idempotent by id). Rejects an empty endpoint, a self-loop, or an unknown kind. Returns
-/// the link id.
+/// Add a project→project link (idempotent by id) — the pre-#3786 form, a bare project target. Rejects
+/// an empty endpoint, a self-loop, or an unknown kind. Returns the link id. Thin wrapper over
+/// [`add_contract`] with the default (`project`) target.
 pub fn add_link(from: &str, to: &str, kind: &str) -> Result<String, String> {
+    add_contract(from, to, kind, ContractTarget::default())
+}
+
+/// Add a contract (#3786, idempotent by id). `target` names the endpoint `to` points at (another
+/// project, an external service, or an mcp server). Rejects an empty endpoint, an unknown kind, an
+/// unknown target type, or — for a PROJECT target only — a self-loop (a service/mcp endpoint shares no
+/// namespace with the project key, so `from == to` there is legitimate). Returns the link id.
+pub fn add_contract(from: &str, to: &str, kind: &str, target: ContractTarget) -> Result<String, String> {
     let (from, to, kind) = (from.trim(), to.trim(), kind.trim());
     if from.is_empty() || to.is_empty() {
-        return Err("add_link: empty from/to".into());
-    }
-    if from == to {
-        return Err("add_link: a project can't link to itself".into());
+        return Err("add_contract: empty from/to".into());
     }
     if !LINK_KINDS.contains(&kind) {
-        return Err(format!("add_link: unknown kind '{kind}' (want one of {LINK_KINDS:?})"));
+        return Err(format!("add_contract: unknown kind '{kind}' (want one of {LINK_KINDS:?})"));
+    }
+    let target_kind = target.kind.trim();
+    if !TARGET_TYPES.contains(&target_kind) {
+        return Err(format!("add_contract: unknown target type '{target_kind}' (want one of {TARGET_TYPES:?})"));
+    }
+    // A self-loop is only meaningless for a project target (a project can't depend on itself); a
+    // service/mcp endpoint lives in its own namespace, so `from == to` there is a legitimate contract.
+    if target_kind == "project" && from == to {
+        return Err("add_contract: a project can't link to itself".into());
     }
     let id = link_id(from, to, kind);
     let mut links = load_links();
     if !links.iter().any(|l| l.id == id) {
-        links.push(ProjectLink { id: id.clone(), from: from.into(), to: to.into(), kind: kind.into() });
+        links.push(ProjectLink { id: id.clone(), from: from.into(), to: to.into(), kind: kind.into(), target });
         save_links(&links)?;
     }
     Ok(id)
@@ -340,6 +431,81 @@ mod tests {
             assert_eq!(links[0].kind, "data");
             remove_link("missing").unwrap(); // no-op, not an error
             assert_eq!(load_links().len(), 1);
+        });
+    }
+
+    #[test]
+    fn contract_targets_round_trip_and_legacy_links_still_parse() {
+        with_home(|_home| {
+            // A plain project→project link (the pre-#3786 form) via add_link.
+            add_link("app", "billing", "api").unwrap();
+            // A SERVICE-targeted contract: `to` is the endpoint name, carrying a url + app_type.
+            add_contract(
+                "app",
+                "stripe",
+                "api",
+                ContractTarget {
+                    kind: "service".into(),
+                    name: Some("Stripe".into()),
+                    url: Some("https://api.stripe.com".into()),
+                    app_type: Some("api".into()),
+                },
+            )
+            .unwrap();
+            // An MCP-targeted contract (no descriptors beyond the type + app_type).
+            add_contract(
+                "app",
+                "postgres",
+                "data",
+                ContractTarget { kind: "mcp".into(), name: None, url: None, app_type: Some("serverless".into()) },
+            )
+            .unwrap();
+
+            let links = load_links();
+            assert_eq!(links.len(), 3);
+            let by_id = |id: &str| links.iter().find(|l| l.id == id).unwrap().clone();
+
+            // The project link reads back as the DEFAULT project target.
+            let proj = by_id("app>billing:api");
+            assert_eq!(proj.target, ContractTarget::default());
+            assert_eq!(proj.target.kind, "project");
+
+            // The service contract round-trips its whole descriptor.
+            let svc = by_id("app>stripe:api");
+            assert_eq!(svc.target.kind, "service");
+            assert_eq!(svc.target.name.as_deref(), Some("Stripe"));
+            assert_eq!(svc.target.url.as_deref(), Some("https://api.stripe.com"));
+            assert_eq!(svc.target.app_type.as_deref(), Some("api"));
+
+            // The mcp contract round-trips its type + app_type; a service/mcp self-namespace `to` is fine.
+            let mcp = by_id("app>postgres:data");
+            assert_eq!(mcp.target.kind, "mcp");
+            assert_eq!(mcp.target.app_type.as_deref(), Some("serverless"));
+
+            // BYTE-COMPAT: the project link is serialized with NO `target` key, while the external
+            // contracts DO carry one — so the pre-#3786 on-disk form is unchanged for project links.
+            let raw = std::fs::read_to_string(links_path().unwrap()).unwrap();
+            let arr: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+            let obj = |id: &str| arr.iter().find(|v| v["id"] == id).unwrap();
+            assert!(obj("app>billing:api").get("target").is_none(), "a plain project link writes no target");
+            assert_eq!(obj("app>stripe:api")["target"]["type"], "service");
+            assert_eq!(obj("app>postgres:data")["target"]["type"], "mcp");
+
+            // A hand-written LEGACY array (no `target` anywhere) still parses — every entry a project.
+            std::fs::write(
+                links_path().unwrap(),
+                r#"[{"id":"x>y:api","from":"x","to":"y","kind":"api"},{"id":"x>z:events","from":"x","to":"z","kind":"events"}]"#,
+            )
+            .unwrap();
+            let legacy = load_links();
+            assert_eq!(legacy.len(), 2);
+            assert!(legacy.iter().all(|l| l.target == ContractTarget::default()));
+
+            // An unknown target type is rejected.
+            assert!(add_contract("a", "b", "api", ContractTarget { kind: "widget".into(), ..Default::default() }).is_err());
+            // A service target `from == to` is allowed (own namespace) but a project self-loop is not.
+            assert!(add_contract("dup", "dup", "api", ContractTarget { kind: "service".into(), ..Default::default() }).is_ok());
+            assert!(add_link("solo", "solo", "api").is_err());
         });
     }
 
