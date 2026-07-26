@@ -32,6 +32,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 
 mod render;
+mod snapshot;
 mod issues;
 mod fleet;
 mod nouns;
@@ -43,6 +44,24 @@ const TAGLINE: &str = "the project plan store — issues, features, fleet, stage
 /// command keeps the overview tiny and the detail one-fetch-away; the multi-verb nouns document their
 /// subcommands in their own block. Reads are lean by default (#1562); `--json`/`--pretty` for JSON.
 const COMMANDS: &[CmdDoc] = &[
+    CmdDoc {
+        name: "snapshot",
+        summary: "EVERY artifact the planner poll needs, in ONE read (#3842)",
+        usage: "USAGE:
+  bsc plan snapshot --json
+
+The BATCHED read. Emits one object keyed by artifact — issues · features · fleet · deploy · market ·
+classify · transformations · automations · startup · repos · deps · mcp · confirm · skip · discovery —
+from a single store open.
+
+Exists because the planner's poll used to issue 17 separate `bsc plan <noun>` reads every 2s, each its
+own process spawn at 150-660ms, which oversubscribed the command queue and stalled the user's typing
+behind it (#3842; #3666 stopped ticks stacking but never shrank the per-tick fan-out).
+
+Each key carries exactly the shape its standalone `--json` read emits, with the same absent value
+(`null` for a blob noun, `[]` for a list noun), so a consumer swaps the source without touching its
+coercion. Read-only. Without --json, prints a per-artifact count summary.",
+    },
     CmdDoc {
         name: "add",
         summary: "upsert issue(s) from JSON on stdin; prints ref(s)",
@@ -526,6 +545,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "get" => issues::cmd_get(&args),
         "summary" => issues::cmd_summary(&args),
         "list" | "mine" => issues::cmd_list(&args),
+        // #3842: the BATCHED read — every artifact the planner poll needs in one spawn.
+        "snapshot" => snapshot::cmd_snapshot(&args),
         "status" => issues::cmd_status(&args),
         "remove" => issues::cmd_remove(&args),
         "render" => issues::cmd_render(&args),
@@ -677,7 +698,7 @@ mod tests {
         let ov = bsc_cli_util::help_overview("bsc plan", TAGLINE, COMMANDS);
         // Every top-level command appears in the compact menu.
         for c in [
-            "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
+            "add", "get", "summary", "list", "mine", "status", "remove", "render", "snapshot", "feature", "repo",
             "fleet", "deploy", "deps", "market", "classify", "transformation", "mcp", "blueprint", "ui", "discovery",
             "confirm", "skip", "integration", "lesson", "triage", "stage", "automations", "startup",
             "github-context", "artifact",

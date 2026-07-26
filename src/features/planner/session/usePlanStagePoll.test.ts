@@ -32,8 +32,10 @@ describe("usePlanStagePoll — fleet is plan.db-only (#1805)", () => {
       // Every plan.db read now routes through the generic `bsc` bridge (#2114) — JSON on stdout.
       if (cmd === "bsc") {
         const args = (payload as { args?: string[] } | undefined)?.args ?? [];
-        if (args[1] === "fleet") return JSON.stringify(dbFleet); // `plan fleet get --full --json`
-        return ""; // other bsc reads (issues/features/…) → empty → bscJson fallback
+        // #3842: ONE batched read serves every artifact — the fleet arrives as a snapshot key, not
+        // its own `plan fleet get` spawn.
+        if (args[1] === "snapshot") return JSON.stringify({ fleet: dbFleet });
+        return ""; // any other bsc read (e.g. discovery) → empty → bscJson fallback
       }
       switch (cmd) {
         // A stray fleet.json that leaked through the sweep — must be ignored — plus a real section.
@@ -50,12 +52,43 @@ describe("usePlanStagePoll — fleet is plan.db-only (#1805)", () => {
     });
     // An ordinary section file still flows through (the sweep runs; only fleet is excluded).
     expect(useAppStore.getState().planStages[PID]?.goal).toBe("the goal");
-    // `bsc plan fleet get --full --json` IS the fleet read path; no fleet.json file is ever read directly.
+    // The batched `bsc plan snapshot` IS the fleet read path; no fleet.json file is ever read directly.
     expect(
       vi.mocked(invoke).mock.calls.some(
-        ([c, p]) => c === "bsc" && (p as { args?: string[] } | undefined)?.args?.[1] === "fleet",
+        ([c, p]) => c === "bsc" && (p as { args?: string[] } | undefined)?.args?.[1] === "snapshot",
       ),
     ).toBe(true);
+
+    unmount();
+  });
+
+  it("reads plan.db in ONE batched spawn, not one per artifact (#3842)", async () => {
+    // The regression this guards: the poll used to fire 17 separate `bsc plan <noun>` reads every
+    // 2s, each its own process spawn at 150-660ms. That cost more than the interval, oversubscribed
+    // the Tauri command queue, and stalled `pty_write` — the user could not type. #3666 stopped ticks
+    // from STACKING but never shrank the tick, so the fan-out is what has to stay collapsed.
+    vi.mocked(invoke).mockImplementation(async (cmd: string, payload?: unknown) => {
+      if (cmd === "bsc") {
+        const args = (payload as { args?: string[] } | undefined)?.args ?? [];
+        if (args[1] === "snapshot") return JSON.stringify({ issues: [], features: [] });
+        return "";
+      }
+      if (cmd === "read_plan_stages") return { goal: "g" };
+      return null;
+    });
+
+    const { unmount } = render();
+    await waitFor(() => {
+      expect(useAppStore.getState().planStages[PID]?.goal).toBe("g");
+    });
+
+    const planReads = vi.mocked(invoke).mock.calls
+      .filter(([c, p]) => c === "bsc" && (p as { args?: string[] } | undefined)?.args?.[0] === "plan")
+      .map(([, p]) => ((p as { args?: string[] } | undefined)?.args ?? []).slice(0, 2).join(" "));
+
+    // Exactly one DISTINCT plan verb, and it is the batch. Any per-noun read reappearing here means
+    // the fan-out is back.
+    expect([...new Set(planReads)]).toEqual(["plan snapshot"]);
 
     unmount();
   });
