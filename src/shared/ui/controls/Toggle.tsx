@@ -7,6 +7,7 @@
 // slides right.
 
 import type { MouseEvent } from "react";
+import { onEnterOrSpace } from "@/shared/ui/a11y";
 
 interface ToggleProps {
   on: boolean;
@@ -28,6 +29,13 @@ export function Toggle({ on, onClick, size = "md", tone = "accent", className, r
   const borderOn = success ? "var(--success)" : "transparent";
   const borderOff = success ? "var(--border-soft)" : "var(--border)";
 
+  // The switch's a11y bundle: when clickable, a keyboard-operable `switch` (role + focus + Enter/Space
+  // activation ship WITH the click, #3775); a display-only toggle keeps just role/aria-checked. Bundled
+  // so an interactive toggle can never be click-only, and identical across both size branches below.
+  const switchProps = onClick
+    ? { role: role ?? "switch", "aria-checked": ariaChecked ?? on, tabIndex: 0, onClick, onKeyDown: onEnterOrSpace(onClick) }
+    : { role, "aria-checked": ariaChecked };
+
   // "sm" (26×15 / 11px knob) and "xs" (24×14 / 10px knob) share the absolute-knob track; only the
   // track/knob dimensions and the ON knob offset differ.
   if (size === "sm" || size === "xs") {
@@ -38,9 +46,7 @@ export function Toggle({ on, onClick, size = "md", tone = "accent", className, r
     return (
       <span
         className={className}
-        onClick={onClick}
-        role={role}
-        aria-checked={ariaChecked}
+        {...switchProps}
         style={{
           width: w, height: h, borderRadius: 99, position: "relative", flex: "0 0 auto",
           cursor: onClick ? "pointer" : "default",
@@ -58,9 +64,7 @@ export function Toggle({ on, onClick, size = "md", tone = "accent", className, r
   return (
     <span
       className={className}
-      onClick={onClick}
-      role={role}
-      aria-checked={ariaChecked}
+      {...switchProps}
       style={{
         display: "inline-flex", alignItems: "center",
         width: 32, height: 18, borderRadius: 99, cursor: "pointer",

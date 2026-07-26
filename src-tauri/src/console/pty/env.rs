@@ -87,6 +87,13 @@ fn error_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     Some(crate::error_db_path(&key.to_string_lossy()))
 }
 
+/// The project's per-project usage-events store (`projects/<key>/usage.db`) for `cwd`, or None for a
+/// non-project session (#3812, epic #3809).
+fn usage_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+    let key = project_key_from_cwd(cwd)?;
+    Some(crate::usage_db_path(&key.to_string_lossy()))
+}
+
 /// The project's per-project DuckDB **data store** (`~/.base-studio-code/data/<key>.duckdb`) for a
 /// session under a project hub — the Data Model + PlatformScan the planner reads via `bsc data`
 /// (#1446). Same key derivation as [`plan_db_for_cwd`]; None for a non-project session.
@@ -553,6 +560,11 @@ pub(super) fn wire_bsc_env(
     // whole fleet shares one error.db per project; a non-project session gets none and never calls it.
     if let Some(db) = error_db_for_cwd(cwd) {
         cmd.env("BSC_ERROR_DB", to_bash_path(&db.to_string_lossy()));
+    }
+    // bsc usage (#3812, epic #3809): point this session at its project's usage-events store, cwd-derived
+    // exactly like BSC_ERROR_DB — a running/generated app records usage, an agent reads via `bsc usage`.
+    if let Some(db) = usage_db_for_cwd(cwd) {
+        cmd.env("BSC_USAGE_DB", to_bash_path(&db.to_string_lossy()));
     }
     // Runtime-fault instrumentation (#2262): surface the durable per-project ingest token + the
     // collector's loopback port so a session that (re)generates the fault shim can bake them in. The

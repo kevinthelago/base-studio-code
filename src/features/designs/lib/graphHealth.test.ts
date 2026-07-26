@@ -20,6 +20,18 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(analyzeGraphHealth(comps)).toEqual([]);
   });
 
+  it("flags an interactive component with no analytics events, and clears on a manifest (#3810)", () => {
+    const action: Partial<ComponentRecord> = { props: [{ name: "onClick", type: "() => void", req: true, desc: "" }] };
+    // interactive (an action prop) + no analytics → flagged.
+    expect(analyzeGraphHealth([comp("IconButton", "primitive", 3, [], action)]).some((f) => f.category === "no-analytics")).toBe(true);
+    // declaring events clears it.
+    expect(analyzeGraphHealth([comp("IconButton", "primitive", 3, [], { ...action, analytics: [{ event: "click" }] })]).some((f) => f.category === "no-analytics")).toBe(false);
+    // a display-only component (no action prop) is never flagged.
+    expect(analyzeGraphHealth([comp("Label", "primitive", 5, [], { props: [{ name: "text", type: "string", req: true, desc: "" }] })]).some((f) => f.category === "no-analytics")).toBe(false);
+    // a built-in (no own module source) is skipped — packaged instrumentation is separate.
+    expect(analyzeGraphHealth([comp("Btn", "primitive", 9, [], { ...action, source: undefined, srcText: "<button/>", builtin: true })]).some((f) => f.category === "no-analytics")).toBe(false);
+  });
+
   it("flags an isolated unused primitive as an orphan (and never a used one)", () => {
     const fs = analyzeGraphHealth([comp("Button", "primitive", 5), comp("Ghost", "primitive", 0)]);
     expect(fs.map((f) => f.category)).toEqual(["orphan"]);
@@ -106,6 +118,9 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
         { name: "data", type: "Row", req: false, desc: "" },
         { name: "onRefresh", type: "() => void", req: false, desc: "" },
       ],
+      // Declares its event so the #3810 no-analytics check is satisfied — keeps this a PURE unwired-prop
+      // case (the `onRefresh` prop is still unused by the source).
+      analytics: [{ event: "refresh" }],
     });
     const fs = analyzeGraphHealth([stub]);
     expect(fs.map((f) => f.category)).toEqual(["unwired-prop"]);

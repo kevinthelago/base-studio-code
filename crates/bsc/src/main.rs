@@ -13,6 +13,7 @@ mod hook;
 const COMMANDS: &[(&str, &str)] = &[
     ("plan", "per-project plan store: issues, features, fleet, sections"),
     ("errors", "per-project runtime-fault store: fingerprinted errors + alerts"),
+    ("usage", "per-project usage-events store: record + query what users do (epic #3809)"),
     ("project", "cross-project hub: list local projects + the .published marker"),
     ("skill", "global skills + task-groups store"),
     ("compliance", "compliance standards corpus"),
@@ -35,7 +36,8 @@ const COMMANDS: &[(&str, &str)] = &[
     ("graph", "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)"),
     ("cad", "mesh/SDF geometry kernel (mm): mesh an op-tree spec into a binary STL"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
-    ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance"),
+    ("cve", "vulnerability data (OSV.dev): scan a lockfile · check a package · advisory detail (supply-chain #2433)"),
+    ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance · cve"),
     ("hook", "internal PreToolUse deny hooks (run by Claude Code, not by hand)"),
 ];
 
@@ -59,6 +61,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
     match cmd {
         "plan" => plandb::cli::run(rest, "bsc plan"),
         "errors" => errordb::cli::run(rest, "bsc errors"),
+        "usage" => usagedb::cli::run(rest, "bsc usage"),
         "project" => bsc_project::cli::run(rest, "bsc project"),
         "skill" => skilldb::cli::run(rest, "bsc skill"),
         "compliance" => compliance::cli::run(rest, "bsc compliance"),
@@ -94,6 +97,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "cad" => bsc_cad::cli::run(rest, "bsc cad"),
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
+        "cve" => cve::cli::run(rest, "bsc cve"),
         "mcp" => run_mcp(rest),
         "hook" => hook::run(&rest),
         "" | "help" | "-h" | "--help" => {
@@ -113,6 +117,7 @@ fn run_mcp(rest: Vec<String>) -> Result<(), String> {
     match server {
         "research" => mcp_rpc::run_stdio_server(&research::mcp::Server::from_env()?),
         "compliance" => mcp_rpc::run_stdio_server(&compliance::mcp::Server::from_env()?),
+        "cve" => mcp_rpc::run_stdio_server(&cve::mcp::Server::from_env()?),
         "channel-mock" => mcp_rpc::run_stdio_server(&channel::mock::Server::from_env()?),
         "" | "help" | "-h" | "--help" => {
             print!("{}", mcp_help());
@@ -130,6 +135,7 @@ fn mcp_help() -> String {
          SERVERS:\n  \
          research      literature grounding (arXiv · Semantic Scholar · PubMed · Crossref)\n  \
          compliance    compliance standards corpus (WCAG · GDPR · CCPA · SOC 2)\n  \
+         cve           vulnerability data (OSV.dev) — scan a lockfile · check a package · advisory detail\n  \
          channel-mock  the Marketer's mock marketing channel — records send_email/post/schedule (no real sends)\n\n\
          These are spawned by Claude Code from the project's .mcp.json; you rarely run them by hand.\n",
     )
@@ -210,6 +216,22 @@ mod tests {
         // $BSC_BIN with no PATH changes. Help path — no spec file required.
         assert!(dispatch("cad", vec!["help".into()]).is_ok());
         assert!(top_help().contains("mesh/SDF geometry kernel"), "the cad row describes the kernel");
+    }
+
+    #[test]
+    fn cve_dispatches_and_appears_in_the_overview() {
+        // #3797: the OSV.dev vulnerability data layer is mounted + listed, and its MCP server is
+        // reachable via `bsc mcp cve`. Help paths — no cache/network required.
+        assert!(dispatch("cve", vec!["help".into()]).is_ok());
+        assert!(top_help().contains("vulnerability data"), "the cve row describes the data layer");
+        assert!(mcp_help().contains("cve"), "bsc mcp cve is listed as a bundled server");
+    }
+
+    #[test]
+    fn usage_dispatches_and_appears_in_the_overview() {
+        // #3812 (epic #3809): the per-project usage-events store is mounted + listed. Help path — no db.
+        assert!(dispatch("usage", vec!["help".into()]).is_ok());
+        assert!(top_help().contains("usage-events store"), "the usage row describes the store");
     }
 
     #[test]

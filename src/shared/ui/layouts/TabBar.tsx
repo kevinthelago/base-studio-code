@@ -137,6 +137,7 @@ export function TabBar({
 
   return (
     <>
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- drag-reorder tabstrip; the tabs are separately interactive, keyboard reorder is out of scope */}
       <div
         ref={stripRef}
         className={"tabstrip" + (dragIdx !== null ? " dragging" : "")}

@@ -763,6 +763,7 @@ dependencies = [
  "bsc-util",
  "channel",
  "compliance",
+ "cve",
  "errordb",
  "logs",
  "mcp-rpc",
@@ -770,6 +771,7 @@ dependencies = [
  "research",
  "serde_json",
  "skilldb",
+ "usagedb",
 ]
 
 [[package]]
@@ -1639,6 +1641,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "cve"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "mcp-rpc",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6907,6 +6923,17 @@ dependencies = [
  "serde",
  "unic-ucd-ident",
  "url",
+]
+
+[[package]]
+name = "usagedb"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
