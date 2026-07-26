@@ -4,7 +4,7 @@ import { ExternalLink, MoreHorizontal, Trash2, Pencil, Search, Layers, GitFork, 
 import { useAppStore } from "../../store";
 import { useFleetLive } from "../../hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "../../lib/projectPaths";
-import { AUTHORING_BLUEPRINT_ID, CATEGORY_META, type Blueprint, type BlueprintGist, type BlueprintCategory } from "./blueprints";
+import { CATEGORY_META, type BlueprintGist, type BlueprintCategory } from "./blueprints";
 
 // A published project's lifecycle, derived from GitHub state: open ⇒ active, closed ⇒ shipped.
 // (Local, not-yet-on-GitHub work lives in the separate Drafts section.)
@@ -40,10 +40,9 @@ function prettyGist(g?: BlueprintGist): string | undefined {
   return g.id ? `gist · ${g.id.slice(0, 7)}` : undefined;
 }
 
-/** A blueprint surfaced in the Projects page: either a saved library blueprint, or an in-progress
- *  authoring draft (a planning session bound to the blueprint-author lifecycle). */
+/** A blueprint surfaced in the Projects page — a saved library blueprint. */
 interface BpItem {
-  id: string;          // library blueprint id, or "draft:<key>" for an authoring draft
+  id: string;          // library blueprint id
   kind: "library" | "draft";
   draftKey?: string;   // present for authoring drafts (its resume / delete target)
   draftTitle?: string;
@@ -433,7 +432,7 @@ function BlueprintCard({ b, onOpen, onDelete, menuOpenId, setMenuOpenId }: {
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId, setProjectBlueprintId, planAuthoredBlueprint, setAuthoredBlueprint, blueprints, removeBlueprint } = useAppStore();
+  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId, setProjectBlueprintId, blueprints, removeBlueprint } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -690,11 +689,6 @@ export function ProjectsList() {
     return [...byKey.values()].filter(d => !publishedKeys.has(d.key));
   }, [localProjects, localDraftProjects, projectKeyAlias, visibleProjects]);
 
-  // A draft bound to the blueprint-author lifecycle is an in-progress BLUEPRINT — it belongs in the
-  // Blueprints section, not the normal Drafts list (#923 / Projects-tab redesign).
-  const isAuthoringKey = useCallback((key: string) => projectBlueprintId[key] === AUTHORING_BLUEPRINT_ID, [projectBlueprintId]);
-  const normalDrafts = useMemo(() => allDrafts.filter(d => !isAuthoringKey(d.key)), [allDrafts, isAuthoringKey]);
-  const authoringDrafts = useMemo(() => allDrafts.filter(d => isAuthoringKey(d.key)), [allDrafts, isAuthoringKey]);
 
   // ── Blueprints surfaced here: the user's saved library blueprints (built-ins stay in the
   // Blueprints tab), plus any in-progress authoring drafts not yet saved to the library. The
@@ -717,20 +711,8 @@ export function ProjectsList() {
         updatedLabel: timeAgoMs(sortMs), sort: sortMs,
       });
     }
-    for (const d of authoringDrafts) {
-      const bp = planAuthoredBlueprint[d.key] as Blueprint | undefined;
-      const name = bp?.name ?? d.title;
-      if (seen.has(name.toLowerCase())) continue;
-      items.push({
-        id: "draft:" + d.key, kind: "draft", draftKey: d.key, draftTitle: d.title, draftPitch: d.pitch,
-        name, pitch: bp?.pitch ?? bp?.desc ?? d.pitch ?? "",
-        category: bp?.category ?? "greenfield",
-        stages: bp?.sections?.length ?? 0, vis: "draft",
-        updatedLabel: timeAgoMs(d.sort), sort: d.sort,
-      });
-    }
     return items;
-  }, [blueprints, authoringDrafts, planAuthoredBlueprint]);
+  }, [blueprints]);
 
   // ── Search + sort over every list (#… redesign). ───────────────────────────────────────────────
   const q = query.trim().toLowerCase();
@@ -751,11 +733,11 @@ export function ProjectsList() {
   }, [visibleProjects, sort, q]);
 
   const fDrafts = useMemo(() => {
-    const arr = normalDrafts.filter(matchD);
+    const arr = allDrafts.filter(matchD);
     arr.sort((a, b) => sort === "name" ? a.title.toLowerCase().localeCompare(b.title.toLowerCase()) : b.sort - a.sort);
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalDrafts, sort, q]);
+  }, [allDrafts, sort, q]);
 
   const fBlueprints = useMemo(() => {
     const arr = blueprintItems.filter(matchB);
@@ -768,9 +750,8 @@ export function ProjectsList() {
   const grandTotal = publishedCount + fDrafts.length + fBlueprints.length;
   const noResults = grandTotal === 0;
 
-  // "open & edit" a blueprint always lands in the project planning page (#…): an in-progress
-  // authoring draft resumes its session; a saved library blueprint re-opens an authoring session
-  // keyed by its name, seeded with the blueprint so the planner + focused pane edit it in place.
+  // "open & edit" a blueprint lands in the project planning page (#…): an in-progress draft
+  // resumes its session; a saved library blueprint seeds a new plan keyed by its name.
   function openBlueprint(b: BpItem) {
     if (b.kind === "draft" && b.draftKey) {
       reopenDraft({ key: b.draftKey, title: b.draftTitle ?? b.name, pitch: b.draftPitch ?? "" });
@@ -778,8 +759,7 @@ export function ProjectsList() {
     }
     const full = blueprints.find(x => x.id === b.id);
     const key = sanitizeProjectKey(b.name);
-    setProjectBlueprintId(key, AUTHORING_BLUEPRINT_ID);
-    if (full) setAuthoredBlueprint(key, full);
+    if (full) setProjectBlueprintId(key, full.id);
     setPlanningTitle(b.name);
     setPlanningContext(b.pitch || "Design a reusable blueprint to publish as a gist.", "");
     setActiveProjectMeta(null, "", "", 0);
@@ -792,7 +772,7 @@ export function ProjectsList() {
     else removeBlueprint(b.id);
   }
 
-  const totalSummary = `${visibleProjects.length} published · ${normalDrafts.length} draft${normalDrafts.length !== 1 ? "s" : ""} · ${blueprintItems.length} blueprint${blueprintItems.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
+  const totalSummary = `${visibleProjects.length} published · ${allDrafts.length} draft${allDrafts.length !== 1 ? "s" : ""} · ${blueprintItems.length} blueprint${blueprintItems.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
   const sortBtn = (active: boolean) => ({
     height: 28, padding: "0 11px", border: 0, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5,
     background: active ? "var(--bg-elev2)" : "transparent", color: active ? "var(--fg)" : "var(--fg-dim)",
