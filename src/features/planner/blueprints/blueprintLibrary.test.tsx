@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  filterBlueprints, makeBlueprints, resolveProjectSeed, refreshBuiltIns,
+  filterBlueprints, makeBlueprints, resolveProjectSeed, refreshBuiltIns, RETIRED_BLUEPRINT_IDS,
   type Blueprint,
 } from "../stages/blueprints";
 import { blueprintIcon, blueprintHue } from "../list/blueprintLibrary.helpers";
@@ -25,6 +25,22 @@ describe("the built-in blueprint library (#645/#3785)", () => {
     // grid — so `default` (the blank route, which declares none) reads as generic, by design.
     const icons = all.map(blueprintIcon);
     expect(new Set(icons).size, `distinct glyphs: ${icons.join(", ")}`).toBe(all.length);
+  });
+
+  it("drops RETIRED blueprint ids, so a stale config mirror cannot resurrect one (#3840)", () => {
+    // Deleting the packaged JSON is not enough: `overlayGlob` APPENDS any config-dir file whose stem
+    // it does not recognise, so an orphaned mirror copy re-introduces the blueprint on every install
+    // that once shipped it — and `refreshBuiltIns` then treats it as code-owned. The tombstone is
+    // what actually retires an id.
+    const ids = makeBlueprints().map((b) => b.id);
+    for (const dead of RETIRED_BLUEPRINT_IDS) {
+      expect(ids, `${dead} is retired`).not.toContain(dead);
+    }
+    // …and a persisted copy is pruned from the store, not just hidden from the fresh library.
+    const persisted = RETIRED_BLUEPRINT_IDS.map((id) =>
+      ({ id, name: id, desc: "", origin: "built-in" as const, sections: [] }));
+    const kept = refreshBuiltIns(persisted).map((b) => b.id);
+    for (const dead of RETIRED_BLUEPRINT_IDS) expect(kept).not.toContain(dead);
   });
 
   it("gives every built-in a DISTINCT tile COLOUR (#3838)", () => {

@@ -43,6 +43,33 @@ describe("BlueprintCard", () => {
     expect(glyph("category")).not.toEqual(glyph("hub"));
   });
 
+  it("renders the blueprint DESCRIPTION, wrapped (#3840)", () => {
+    const desc = "Build a CRM platform — contacts, pipeline, and service cases.";
+    const { container } = render(
+      <BlueprintCard
+        b={item({ pitch: desc })}
+        onUse={() => {}} onDelete={() => {}}
+        menuOpenId={null} setMenuOpenId={() => {}}
+      />,
+    );
+    expect(screen.getByText(desc)).toBeInTheDocument();
+    // The title stays single-line + ellipsis; the description must NOT — reading it is the point.
+    const el = container.querySelector(".bp-rail-card-desc") as HTMLElement;
+    expect(el).toBeTruthy();
+    expect(el.style.whiteSpace).toBe("normal");
+  });
+
+  it("omits the description block entirely when the blueprint has none", () => {
+    const { container } = render(
+      <BlueprintCard
+        b={item({ pitch: "   " })}
+        onUse={() => {}} onDelete={() => {}}
+        menuOpenId={null} setMenuOpenId={() => {}}
+      />,
+    );
+    expect(container.querySelector(".bp-rail-card-desc")).toBeNull();
+  });
+
   it("selects the blueprint on a card click (onUse)", () => {
     const onUse = vi.fn();
     render(
