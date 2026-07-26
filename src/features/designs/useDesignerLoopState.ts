@@ -16,7 +16,7 @@
 // Deliberately a module-level observable rather than a Zustand slice: one producer, one consumer, ephemeral
 // polled state — and the store's own rule is that persisted app state is not a cache for derived reads.
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 /** The open designer loop as the banner needs to render it. `null` when no loop is open. */
 export interface DesignerLoopState {
@@ -27,7 +27,7 @@ export interface DesignerLoopState {
 }
 
 let current: DesignerLoopState | null = null;
-const listeners = new Set<(s: DesignerLoopState | null) => void>();
+const listeners = new Set<() => void>();
 
 /** Publish the loop state observed this tick. Called by the pump — the one reader of `bsc loop`.
  *  Skips notifying when nothing changed, so a steady loop doesn't re-render the banner every tick. */
@@ -37,17 +37,21 @@ export function publishDesignerLoopState(next: DesignerLoopState | null): void {
         && current.changes === next.changes && current.cost === next.cost);
   if (same) return;
   current = next;
-  for (const fn of listeners) fn(next);
+  for (const fn of listeners) fn();
 }
 
-/** Subscribe to the published loop state. The banner's only source. */
+function subscribe(onChange: () => void): () => void {
+  listeners.add(onChange);
+  return () => { listeners.delete(onChange); };
+}
+
+/** Subscribe to the published loop state. The banner's only source.
+ *
+ *  `useSyncExternalStore` rather than useState + useEffect: this IS an external store, and the effect
+ *  form had to re-sync with a synchronous `setState` on mount to cover a publish that landed while the
+ *  component was unmounted — which is both a cascading-render smell and still racy (a publish between
+ *  render and subscribe is lost). This has neither problem, and `publishDesignerLoopState` only swaps
+ *  `current` when a value actually changed, so the snapshot identity is stable enough to read directly. */
 export function useDesignerLoopState(): DesignerLoopState | null {
-  const [state, setState] = useState<DesignerLoopState | null>(current);
-  useEffect(() => {
-    // Re-sync on mount: the pump may have published while this component was unmounted.
-    setState(current);
-    listeners.add(setState);
-    return () => { listeners.delete(setState); };
-  }, []);
-  return state;
+  return useSyncExternalStore(subscribe, () => current);
 }

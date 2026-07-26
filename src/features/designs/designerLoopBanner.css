@@ -71,6 +71,38 @@
   opacity: 0.7;
 }
 
+/* INLINE (#3852) — the same pill, hosted in the graph header row instead of floating over the canvas.
+ * Drops everything that only made sense as an overlay: the fixed positioning, the centering transform,
+ * the lift shadow. Keeps the pill shape so it still reads as one control, not header furniture. The
+ * overlay form survives for theme-preview mode, where there is no header to sit in. */
+.designer-loop-banner.dlb-inline {
+  position: static;
+  top: auto;
+  left: auto;
+  transform: none;
+  z-index: auto;
+  box-shadow: none;
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+/* Running, inline: re-assert the pill so the live run still reads as a distinct object in the row. */
+.designer-loop-banner.dlb-inline:not(.dlb-idle) {
+  padding: 3px 4px 3px 10px;
+  background: var(--bg-elev);
+  border-color: var(--border);
+}
+/* Idle, inline: no plate at all and no dimming — the trigger is a plain header control, and an overlay
+ * that recedes until hover would be a header control that looks broken. */
+.designer-loop-banner.dlb-inline.dlb-idle {
+  opacity: 1;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 /* Idle (#3304) — nothing is running, so the pill collapses to just the opt-in trigger and recedes. */
 .designer-loop-banner.dlb-idle {
   padding: 4px;
