@@ -652,7 +652,7 @@ mod tests {
             "soc2-readiness", "gdpr-review", "wcag-audit", "hipaa-safeguards", "pci-dss-review",
             "i18n-extract", "compliance-docs", "audit-consent-scaffold", "web-seo",
             "build-integration", "author-accessible-components", "author-compliant-components",
-            "no-install-scripts",
+            "no-install-scripts", "author-instrumented-components",
         ]
         .into_iter()
         .collect();

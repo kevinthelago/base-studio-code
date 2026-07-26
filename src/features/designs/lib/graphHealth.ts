@@ -74,6 +74,14 @@ function isErrorProp(p: PropSpec): boolean {
   return !isFn && /^(error|err|isError|hasError)$/i.test(p.name);
 }
 
+/** Is `p` an ACTION prop — an event/callback the component fires (`onClick`/`onChange`/…: name starts
+ *  with `on` + a function type)? Its presence marks the component INTERACTIVE, so `no-analytics` (#3810)
+ *  expects an events manifest. Mirrors `is_action_prop` (graph_health.rs). */
+function isActionProp(p: PropSpec): boolean {
+  const t = (p.type || "").toLowerCase();
+  return p.name.length > 2 && p.name.toLowerCase().startsWith("on") && t.includes("=>");
+}
+
 /** The component's OWN module source (a user-authored module) — its record `source`, else a `srcText`
  *  that {@link looksBuildableModule} — or `null` when the source isn't in the record: a built-in (its
  *  artifact `source` is stripped from the store, #2794) or a spec (no buildable module). Only these have
@@ -219,6 +227,9 @@ export type HealthCategory =
   // keyframe fighting an SVG transform ATTRIBUTE, and a cross-component keyframe-name collision.
   | "motion-dead-selector" | "motion-dash-no-pathlength" | "motion-transform-attr" | "motion-name-collision"
   | "no-empty-state" | "no-loading-state" | "no-error-state"
+  // no-analytics (#3810): an INTERACTIVE component (an action/event prop) that declares no analytics
+  // events manifest — instrumentation is a per-node data contract. Static; mirrored in the Rust doctor.
+  | "no-analytics"
   // RUNTIME data-state blanks (#3191) — a component that BUILDS clean and renders fine LOADED but produces
   // a BLANK #root in a real app state: `empty-empty-state` (no output when its data is empty — no
   // empty-state message) / `empty-loading-state` (no output while loading — no skeleton/spinner). Unlike
@@ -257,6 +268,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "no-empty-state": 1,
   "no-loading-state": 1,
   "no-error-state": 1,
+  "no-analytics": 1,
   // Runtime data-state blanks (#3191) — a real but mild defect (renders fine loaded, blanks in a real app
   // state), the unwired-prop/orphan tier (2). Render-confirmed by the scan, so ABOVE the static #3135
   // no-empty/no-loading advisories (1): when a node hits both, the confirmed blank wins the badge.
@@ -290,6 +302,7 @@ export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string
   "no-empty-state": { glyph: "◍", label: "no empty state — takes data but renders no distinct empty view; add an EmptyState" },
   "no-loading-state": { glyph: "◌", label: "no loading state — takes data but has no `loading` prop; add one for a loading preview" },
   "no-error-state": { glyph: "◒", label: "no error state — takes data but has no `error` prop; add one for an error preview" },
+  "no-analytics": { glyph: "◉", label: "no analytics — interactive but declares no events manifest; add one so a composed app is instrumented by construction (#3810)" },
   "empty-empty-state": { glyph: "⬚", label: "blank empty state — renders NOTHING when its data is empty; add an empty-state message" },
   "empty-loading-state": { glyph: "◐", label: "blank loading state — renders NOTHING while loading; add a skeleton/spinner" },
   "slot-shell": { glyph: "▤", label: "slot shell — previews a demo placeholder; fill its content slots to see its real function" },
@@ -590,6 +603,20 @@ export function analyzeGraphHealth(
       findings.push({ category: "no-error-state", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} takes data (${collections.join(", ")}) but exposes no \`error\` prop — the preview can't show its ERROR state; add an \`error\` prop (message string or boolean) that renders an error state` });
     }
+  }
+
+  // no-analytics (informational, #3810) — an INTERACTIVE component (exposes an action/event prop) that
+  // declares no analytics events. Instrumentation is a per-node data CONTRACT — like the behavior/motion a
+  // node already carries — so every interactive node should declare what it emits, and any app composed
+  // from these nodes is instrumented by construction. Own-module (user-authored) only; built-ins skipped.
+  // Rust twin: the same loop in graph_health.rs.
+  for (const c of comps) {
+    if (!ownModuleSource(c, comps)) continue;
+    if ((c.analytics?.length ?? 0) > 0) continue;
+    const actions = c.props.filter(isActionProp).map((p) => p.name);
+    if (actions.length === 0) continue;
+    findings.push({ category: "no-analytics", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
+      why: `${c.name} is interactive (${actions.join(", ")}) but declares no analytics events — an app composed from it captures nothing when the user acts; add an \`analytics\` manifest declaring the events it emits (data, not code)` });
   }
 
   // slot-shell (informational) — a composite whose composed children arrive via ReactNode CONTENT SLOTS.
