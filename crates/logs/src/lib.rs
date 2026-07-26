@@ -266,6 +266,28 @@ pub fn role_of(session: &str) -> &'static str {
     }
 }
 
+/// The spend categories (#3814) — the `errordb` `STAGES`/`is_valid_stage` shape, so a future stamped
+/// `category` column can validate against the same list.
+pub const CATEGORIES: [&str; 2] = ["build", "run"];
+
+/// Whether `c` is a valid spend category.
+pub fn is_valid_category(c: &str) -> bool {
+    CATEGORIES.contains(&c)
+}
+
+/// The spend CATEGORY a pane's session belongs to (#3814): `build` = the construction fleet — planner,
+/// director, workers — constructing the project; `run` = everything else (triage operating the built
+/// repo's issues, a manual/unknown console). Derived from the pane-id role, so no token-producer change
+/// is needed. Mirrors `errordb`'s stage taxonomy (a validated category seam). Maintenance (a repurposed
+/// worker pane) + a marketer launched as a `man:` pane don't yet have a distinct role and fall to
+/// build/unattributed — a stamped-category refinement later.
+pub fn category_of(session: &str) -> &'static str {
+    match role_of(session) {
+        "planner" | "director" | "worker" => "build",
+        _ => "run",
+    }
+}
+
 /// A one-line per-session rollup (the `bsc-logs sessions` entry point).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct SessionRow {
@@ -542,5 +564,17 @@ mod tests {
         assert_eq!(role_of("man:t1:p0"), "manual");
         assert_eq!(role_of("k:web/api:triage"), "triage");
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn category_of_splits_build_from_run() {
+        // #3814: the construction fleet is BUILD; triage/manual/unknown is RUN.
+        assert_eq!(category_of("planning_demo"), "build"); // planner
+        assert_eq!(category_of("shop:director"), "build");
+        assert_eq!(category_of("shop:api"), "build"); // a worker (has a `:`, no director/triage suffix)
+        assert_eq!(category_of("shop:web:triage"), "run"); // operates the built repo
+        assert_eq!(category_of("man:t1:p0"), "run"); // a manual console
+        assert_eq!(category_of("bare"), "run"); // unknown → not build
+        assert!(is_valid_category("build") && is_valid_category("run") && !is_valid_category("nope"));
     }
 }
