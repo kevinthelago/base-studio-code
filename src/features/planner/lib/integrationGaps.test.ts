@@ -6,7 +6,10 @@ import type { DeclaredSource } from "./sourceConfig";
 // The always-on built-in MCP servers (Research + Compliance, #1196) are global + enabled by
 // construction, so `resolveMcpServers` returns them for every project and they always classify as
 // `assigned`. Any count assertion has to account for them.
-const BUILTINS = BUILTIN_MCP_SERVERS.length;
+// The GLOBAL built-ins — the ones every session gets. Count only the ENABLED ones: a disabled
+// built-in (the per-stream mock channel, #3146/#3777) is catalog-present but reaches a session
+// only by explicit stream assignment, so `resolveMcpServers` never auto-assigns it here.
+const BUILTINS = BUILTIN_MCP_SERVERS.filter((s) => s.enabled).length;
 
 const mcp = (name: string, over: Partial<McpServer> = {}): McpServer => ({
   id: name, name, enabled: true, projects: [], transport: "stdio", command: "x", args: "", ...over,

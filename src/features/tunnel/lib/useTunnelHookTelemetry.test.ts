@@ -12,8 +12,14 @@ vi.mock("@/shared/lib/core/bsc", () => ({
 vi.mock("./tunnelClient", () => ({
   tunnelSetHookTelemetry: vi.fn().mockResolvedValue(undefined),
 }));
+// The hook reads the fire log through `logsTail`, which is a Tauri `logs_tail` invoke — NOT the
+// `bsc` bridge above. Mocking only `bscJson` left the hook on the global invoke mock, so it saw an
+// empty tail and aggregated an all-zero frame. Mock the bridge the hook actually calls.
+vi.mock("@/shared/lib/core/logsBridge", () => ({
+  logsTail: vi.fn(async () => [] as string[]),
+}));
 
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsTail } from "@/shared/lib/core/logsBridge";
 import { tunnelSetHookTelemetry } from "./tunnelClient";
 import { useTunnelHookTelemetry, toHookTelemetryFrame } from "./useTunnelHookTelemetry";
 
@@ -60,7 +66,7 @@ describe("useTunnelHookTelemetry (#937)", () => {
     vi.clearAllMocks();
     // The hook aggregates with `new Date()` (a real-time 14-day window), so the fixture line must be
     // RECENT — a hardcoded past date rots out of the window over time and the frame reads all-zeros.
-    vi.mocked(bscJson).mockResolvedValue([line("bsc-deny", "PreToolUse", "block", Date.now() - 3_600_000)]);
+    vi.mocked(logsTail).mockResolvedValue([line("bsc-deny", "PreToolUse", "block", Date.now() - 3_600_000)]);
     useAppStore.setState({ tunnelRunning: true });
   });
 
@@ -77,7 +83,7 @@ describe("useTunnelHookTelemetry (#937)", () => {
     useAppStore.setState({ tunnelRunning: false });
     renderHook(() => useTunnelHookTelemetry());
     await new Promise((r) => setTimeout(r, 0));
-    expect(bscJson).not.toHaveBeenCalled();
+    expect(logsTail).not.toHaveBeenCalled();
     expect(tunnelSetHookTelemetry).not.toHaveBeenCalled();
   });
 });
