@@ -4,6 +4,7 @@
   "name": "HR / HCM",
   "desc": "Build an HR platform — a core HRIS with payroll, benefits, time, and the full talent lifecycle.",
   "icon": "group",
+  "h": 340,
   "origin": "built-in",
   "mode": "create",
   "skills": ["web-seo"],

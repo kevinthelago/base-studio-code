@@ -4,6 +4,7 @@
   "name": "Project Management",
   "desc": "Build a work-management platform — multi-view tracking, automation, and portfolio planning.",
   "icon": "checklist",
+  "h": 145,
   "origin": "built-in",
   "mode": "create",
   "skills": ["web-seo"],
