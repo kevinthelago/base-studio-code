@@ -1,7 +1,7 @@
 // #3627 regression — the Design Studio's background loops (activity poll + preview scan) must pause when
 // the Studio is HIDDEN. KeptMountedPage keeps DesignsWorkbench mounted (display:none) after the first
 // visit and a hidden child's effects keep firing, so an unconditional `useUiActivity(true)` (the pre-#3627
-// bug) kept polling `bsc logs tail ui` against the Rust host forever. Both loops are gated on the one
+// bug) kept polling the ui log against the Rust host forever. Both loops are gated on the one
 // `designStudioVisible` flag; this asserts they receive it.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "@testing-library/react";
