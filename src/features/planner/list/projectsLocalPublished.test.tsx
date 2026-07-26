@@ -1,7 +1,8 @@
 // #2445 — logged out of GitHub, published projects must still appear in the Projects page: the
 // published column renders the LOCAL inventory (hubs carrying `.published` + `.title`), and a
-// fetched GitHub board overlays its hub once the query returns. (The local-only "not synced" hint
-// that shipped with #2445 was removed in #3818; the header's `○ github offline` states it instead.)
+// fetched GitHub board overlays its hub once the query returns. (The local-only "not synced" hint that
+// shipped with #2445 was removed in #3818, and the header's connection state that replaced it was itself
+// removed in #3854 — the header leads with search now. Neither is asserted here; the point is the ROWS.)
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -143,5 +144,24 @@ describe("ProjectsList — persisted GitHub-state overlay (#2446)", () => {
       expect(set[0].args).toMatchObject({ projectKey: "acme-crm", title: "Acme CRM" });
     });
     // …and the user-titled hub was not touched (exactly the one backfill call above).
+  });
+});
+
+describe("ProjectsList — the list header (#3854)", () => {
+  beforeEach(() => {
+    vi.mocked(invoke).mockReset();
+    useAppStore.setState({ activeWorkspace: "projects", githubToken: "", localDraftProjects: {}, githubState: null });
+    routeInvoke([]);
+  });
+
+  it("leads with search, and shows neither a connection state nor an overall-details digest", async () => {
+    render(<ProjectsList />);
+    await screen.findByLabelText("Search projects"); // the header's primary control
+
+    // The two things that used to own the leading slot are gone.
+    expect(screen.queryByText(/github (connected|offline)/)).toBeNull();
+    expect(screen.queryByText(/\d+ published ·/)).toBeNull();
+    // The controls that DO belong in a list header survive.
+    expect(screen.getByRole("button", { name: /sync/i })).toBeInTheDocument();
   });
 });
