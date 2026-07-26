@@ -22,9 +22,6 @@ import {
 import { FileIntakePane } from "./FileIntakePane";
 import { FocusedDeployBody } from "./DeployView";
 import type { DeployConfig } from "./deployConfig";
-import { PurposeView, StagesView, CapabilitiesView, PublishView } from "./BlueprintAuthorViews";
-import type { BlueprintSkillItem } from "./blueprintSkills";
-import type { McpLibraryItem } from "./blueprintMcp";
 
 /* =================================================================
    types
@@ -1207,50 +1204,6 @@ function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: {
 // The Features board (#…): one card per user-facing capability the planner has written to
 // features.json, with a defined/drafting badge + its owning stream. The "easy way" the user
 // curates and watches each feature take shape.
-/** Authoring config (#923) threaded from Planning — the live blueprint edits flow back via onChange
- *  (kept in sync with the planner's <blueprint> tag), plus the pickable libraries + publish. */
-export interface AuthoringWiring {
-  onChange: (bp: NonNullable<ProjectPaneData["authoredBlueprint"]>) => void;
-  skillLibrary?: BlueprintSkillItem[];
-  mcpLibrary?: McpLibraryItem[];
-  onPublish: () => void;
-  published: boolean;
-}
-
-/** The authoring stages' body (#923): the four interactive editor views (Purpose · Stages ·
- *  Capabilities · Review & publish) over the in-progress blueprint, ported from the design. Holds
- *  the selected-stage cursor for the Stages editor. */
-function FocusedAuthoringBody({ bp, phaseKey, wiring }: {
-  bp?: ProjectPaneData["authoredBlueprint"]; phaseKey: string; wiring?: AuthoringWiring;
-}) {
-  const [selStage, setSelStage] = useState<string | null>(null);
-  if (!bp || !wiring) {
-    return (
-      <div className="empty-state">
-        <span className="empty-icon">⎙</span>
-        <span>As the planner designs the blueprint, it appears here.</span>
-      </div>
-    );
-  }
-  const sel = selStage ?? bp.sections?.[0]?.uid ?? null;
-  const common = { bp, onChange: wiring.onChange, skillLibrary: wiring.skillLibrary, mcpLibrary: wiring.mcpLibrary };
-  const view = (() => {
-    switch (phaseKey) {
-      case "purpose":         return <PurposeView {...common} />;
-      case "bp_stages":       return <StagesView {...common} selectedUid={sel} onSelectStage={setSelStage} />;
-      case "bp_capabilities": return <CapabilitiesView {...common} />;
-      case "bp_review":       return <PublishView {...common} onPublish={wiring.onPublish} published={wiring.published} />;
-      default:                return null;
-    }
-  })();
-  if (!view) return null;
-  // blueprints.css scopes every component rule under `.bp-page`; the focused pane has no such
-  // ancestor, so the views render unstyled without this wrapper. `bpwrap` neutralizes .bp-page's
-  // own page-level layout and adds the focused-pane label/spacing tweaks (#923, ported from ba.css).
-  // No own padding — `.fp .pp-scroll` already pads the body (14px 16px 18px), matching every pane.
-  return <div className="bp-page bpwrap">{view}</div>;
-}
-
 function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
   const list = features ?? [];
   // Auto-expand the first not-yet-defined feature — the one the workshop is actively driving down.
@@ -1440,12 +1393,10 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onGenerateProf
   );
 }
 
-function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange }: {
+function FocusedPhaseBody({ phase, data, projectId, onLinkRepo, onView, onPerm, onPreset, onFlow, onGenerateProfiles, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange }: {
   phase: Phase;
   data?: ProjectPaneData;
   projectId?: string;
-  /** Authoring-lifecycle wiring (#923) — present only for a blueprint-authoring project. */
-  authoring?: AuthoringWiring;
   onLinkRepo?: (r: string) => void;
   /** Deploy stage (#919): persist the edited deployment config. */
   onDeployChange?: (next: DeployConfig) => void;
@@ -1483,12 +1434,6 @@ function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, onVie
       return <FocusedAutomationsBody automations={data?.automations} />;
     case "skills":
       return <FocusedSkillsBody skills={data?.skills} />;
-    // Blueprint-authoring stages (#923): the interactive editor views over the in-progress blueprint.
-    case "purpose":
-    case "bp_stages":
-    case "bp_capabilities":
-    case "bp_review":
-      return <FocusedAuthoringBody bp={data?.authoredBlueprint} phaseKey={phase.key} wiring={authoring} />;
     default:
       return (
         <div className="empty-state">
@@ -1784,11 +1729,6 @@ export function ProjectPane({
     onSkip?: () => void;
     /** The project already has a GitHub board — the publish action reads as "Update GitHub" (#823). */
     published?: boolean;
-    /** Override the footer publish label (#923) — "Publish blueprint" for an authoring project. */
-    publishLabel?: string;
-    /** Blueprint-authoring wiring (#923) — present only for an authoring project; drives the
-     *  interactive Purpose/Stages/Capabilities/Review editor views. */
-    authoring?: AuthoringWiring;
   };
   /** Callback to link a repository from the focused repos body (#677). */
   onLinkRepo?: (repo: string) => void;
@@ -1890,11 +1830,11 @@ export function ProjectPane({
         <FocusedPhaseHeader phase={selected} pill={focus.pill} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
+          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} onLinkRepo={onLinkRepo} onView={setViewing}
             onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onGenerateProfiles={onGenerateProfiles}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} />
         </div>
-        <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />
+        <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />
         {viewerModal}
       </div>
     );
