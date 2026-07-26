@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { SAMPLE_GRAPH, buildGlanceData } from "./glanceData";
-import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId } from "./glanceGraph";
+import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId } from "./glanceGraph";
 // Cross-feature via the barrel (#1309): the REAL kit→library roll-up + the component record it reads.
 import { resolveKitLibraryRefs, type ComponentRecord } from "@/features/designs";
 
@@ -54,6 +54,13 @@ describe("buildGlanceData", () => {
     expect(g.rawNodes[0].category).toBe("transform");
     // the same project id always yields the same node (was hash-derived role before) — deterministic
     expect(buildGlanceData([{ id: "p", name: "P", category: "transform" }]).rawNodes[0]).toEqual(g.rawNodes[0]);
+  });
+
+  it("carries a project's APP-TYPE onto the node — the contract endpoint-type discriminator (#3786/#3802)", () => {
+    const g = buildGlanceData([{ id: "p", name: "P", appType: "api" }]);
+    expect(g.rawNodes[0].appType).toBe("api");
+    // absent appType ⇒ the node is byte-identical to before (toEqual ignores the undefined key)
+    expect(buildGlanceData([{ id: "q", name: "Q" }]).rawNodes[0].appType).toBeUndefined();
   });
 });
 
@@ -184,5 +191,59 @@ describe("buildGlanceData — cross-graph `requires` from REAL library refs (#31
     expect(refs).toEqual([]);
     const usage = [{ projectKey: "route-planner", kitId: "react-ui" }];
     expect(buildGlanceData(projects, [], usage, kits, refs)).toEqual(buildGlanceData(projects, [], usage, kits));
+  });
+});
+
+// The external MCP-CONTRACT dimension (#3786, Phase 1 inter-app contracts) — mirrors the kit loop: a
+// SCOPED server (its `projects` names ≥1 project in the graph) becomes one contract node edged from each
+// consumer; a GLOBAL server (`projects: []`, every session gets it) is skipped.
+describe("buildGlanceData — MCP contract nodes (#3786)", () => {
+  const projects = [{ id: "app-a", name: "App A" }, { id: "app-b", name: "App B" }];
+  const server = (over: Partial<{ id: string; name: string; projects: string[]; transport: "stdio" | "http" }> = {}) =>
+    ({ id: "postgres", name: "Postgres", projects: ["app-a"], transport: "stdio" as const, ...over });
+
+  it("adds ONE mcp node per scoped server + one project→mcp `uses-mcp` edge per consumer", () => {
+    const g = buildGlanceData(projects, [], [], [], [], [server({ projects: ["app-a", "app-b"] })]);
+    const mcp = g.rawNodes.find((n) => n.kind === "mcp");
+    expect(mcp).toMatchObject({ id: mcpNodeId("postgres"), kind: "mcp", slug: "Postgres", role: "infra", health: "idle", activity: "idle" });
+    expect(g.rawNodes.filter((n) => n.kind === "mcp")).toHaveLength(1); // two consumers of the SAME server ⇒ one node
+    expect(g.rawEdges.filter((e) => e.kind === "uses-mcp")).toEqual([
+      { id: usesMcpEdgeId("app-a", "postgres"), from: "app-a", to: mcpNodeId("postgres"), kind: "uses-mcp" },
+      { id: usesMcpEdgeId("app-b", "postgres"), from: "app-b", to: mcpNodeId("postgres"), kind: "uses-mcp" },
+    ]);
+  });
+
+  it("skips a GLOBAL server (empty `projects`) — a global built-in is not a specific contract", () => {
+    const g = buildGlanceData(projects, [], [], [], [], [server({ projects: [] })]);
+    expect(g.rawNodes.some((n) => n.kind === "mcp")).toBe(false);
+    expect(g.rawEdges.some((e) => e.kind === "uses-mcp")).toBe(false);
+  });
+
+  it("emits NO mcp node for a server whose only scoped project isn't in this graph (stale scope)", () => {
+    const g = buildGlanceData(projects, [], [], [], [], [server({ projects: ["ghost"] })]);
+    expect(g.rawNodes.some((n) => n.kind === "mcp")).toBe(false);
+    expect(g.rawEdges.some((e) => e.kind === "uses-mcp")).toBe(false);
+  });
+
+  it("derives the mcp node's appType from the transport — http ⇒ api, stdio ⇒ serverless", () => {
+    const http = buildGlanceData(projects, [], [], [], [], [server({ id: "sentry", transport: "http" })]);
+    expect(http.rawNodes.find((n) => n.kind === "mcp")?.appType).toBe("api");
+    const stdio = buildGlanceData(projects, [], [], [], [], [server({ transport: "stdio" })]);
+    expect(stdio.rawNodes.find((n) => n.kind === "mcp")?.appType).toBe("serverless");
+  });
+
+  it("dedupes a duplicate (projectKey, serverId) into a single edge", () => {
+    const g = buildGlanceData(projects, [], [], [], [], [server({ projects: ["app-a", "app-a"] })]);
+    expect(g.rawEdges.filter((e) => e.kind === "uses-mcp")).toHaveLength(1);
+  });
+
+  it("falls back to the server ID when it has no name", () => {
+    const g = buildGlanceData(projects, [], [], [], [], [server({ id: "mystery", name: "", projects: ["app-a"] })]);
+    expect(g.rawNodes.find((n) => n.kind === "mcp")?.slug).toBe("mystery");
+  });
+
+  it("adds nothing (byte-identical to before #3786) when there are no scoped mcp servers", () => {
+    expect(buildGlanceData(projects, [], [], [], [], [])).toEqual(buildGlanceData(projects));
+    expect(buildGlanceData(projects, [], [], [], [], [server({ projects: [] })])).toEqual(buildGlanceData(projects));
   });
 });

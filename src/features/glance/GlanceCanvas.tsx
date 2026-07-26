@@ -9,7 +9,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, isLibraryNode, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
+import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, isBandNode, bandNodeMeta, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
 import { archetypeById, hueColor } from "@/features/teams";
@@ -34,12 +34,17 @@ const EDGE_ROWS_L0: [string, string, string][] = [
   [EDGE_META.events.label, EDGE_META.events.color, EDGE_META.events.dash],
   [EDGE_META["uses-kit"].label, EDGE_META["uses-kit"].color, EDGE_META["uses-kit"].dash], // #2571 kit-consumer edge
   [EDGE_META.requires.label, EDGE_META.requires.color, EDGE_META.requires.dash],           // #3119 cross-graph library edge
+  [EDGE_META["uses-mcp"].label, EDGE_META["uses-mcp"].color, EDGE_META["uses-mcp"].dash], // #3786 external mcp-contract edge
   ["cycle", "var(--graph-health-error)", "7 6"],
 ];
-// The cross-graph LIBRARY node dimensions (#3119) — the fenced-band flavours, each its own accent + glyph.
-// Shown as a distinct legend column at L0 (not while drilled into a fleet).
+// The fenced-band node dimensions (#3119 + #3786) — the library flavours (kit/algorithm/sound) + the
+// external MCP contract, each its own accent + glyph. Shown as a distinct legend column at L0 (not while
+// drilled into a fleet).
 const LIBRARY_GRAPHS: GLibraryGraph[] = ["ui", "algo", "sound"];
-const LIBRARY_ROWS: [string, string, string][] = LIBRARY_GRAPHS.map((g) => [LIBRARY_META[g].kindLabel, LIBRARY_META[g].color, LIBRARY_META[g].marker]);
+const LIBRARY_ROWS: [string, string, string][] = [
+  ...LIBRARY_GRAPHS.map((g): [string, string, string] => [LIBRARY_META[g].kindLabel, LIBRARY_META[g].color, LIBRARY_META[g].marker]),
+  [MCP_META.kindLabel, MCP_META.color, MCP_META.marker], // #3786 external mcp-contract node
+];
 // Fleet-drill (L1) legend: the role colour buckets read as agent FUNCTION groups; the edge rows are the
 // Org relationship archetypes actually present in the drilled fleet (#2561).
 const ROLE_ROWS_L1: [string, string][] = [["orchestrate", ROLE_COLOR.infra], ["build", ROLE_COLOR.service], ["verify", ROLE_COLOR.data], ["flow", ROLE_COLOR.client]];
@@ -115,16 +120,23 @@ export function GlanceCanvas(p: CanvasProps) {
     return partAroundPanel(model.nodes, morphRect, openChatIds);
   }, [morphRect, model.nodes, openChatIds]);
 
-  // The library dimension(s) present in the fenced band (#3119) — drive its accent + header. A
-  // single-dimension band reads in that graph's colour + name (kit-only stays cyan "UI KITS",
-  // byte-identical to #3007); a mixed band is neutral "LIBRARIES".
-  const bandGraphs = useMemo(() => {
-    const s = new Set<GLibraryGraph>();
-    for (const n of model.nodes) { const g = libraryGraphOf(n); if (g) s.add(g); }
+  // The dimension(s) present in the fenced band (#3119 + #3786) — library graphs (kit/algo/sound) AND/OR
+  // the external MCP contract — drive its accent + header. A single-dimension band reads in that
+  // dimension's colour + name (kit-only stays cyan "UI KITS", byte-identical to #3007; mcp-only reads
+  // amber "MCP SERVERS"); a mixed band is neutral "LIBRARIES".
+  const bandDims = useMemo(() => {
+    const s = new Set<string>();
+    for (const n of model.nodes) {
+      const g = libraryGraphOf(n);
+      if (g) s.add(g);
+      else if (n.kind === "mcp") s.add("mcp");
+    }
     return [...s];
   }, [model.nodes]);
-  const bandColor = bandGraphs.length === 1 ? LIBRARY_META[bandGraphs[0]].color : "var(--fg-muted)";
-  const bandLabel = bandGraphs.length === 1 ? LIBRARY_META[bandGraphs[0]].bandLabel : "LIBRARIES";
+  const soleDim = bandDims.length === 1 ? bandDims[0] : null;
+  const bandMeta = soleDim === "mcp" ? MCP_META : soleDim ? LIBRARY_META[soleDim as GLibraryGraph] : null;
+  const bandColor = bandMeta ? bandMeta.color : "var(--fg-muted)";
+  const bandLabel = bandMeta ? bandMeta.bandLabel : "LIBRARIES";
 
   return (
     <>
@@ -219,12 +231,13 @@ export function GlanceCanvas(p: CanvasProps) {
             </Box>
           );
         }
-        // A cross-graph LIBRARY node (#2571 kit → generalized #3119) reads distinctly — a dashed card in
-        // its graph's accent, with the graph glyph (◆/∑/♪), the kind word (kit/algorithm/sound), and the
-        // count of consuming projects (the edges INTO it) — so it never looks like a project node. The `ui`
-        // case is byte-identical to the pre-#3119 kit card (cyan · ◆ · "kit").
-        if (isLibraryNode(n)) {
-          const lib = LIBRARY_META[libraryGraphOf(n) ?? "ui"];
+        // A fenced-BAND node reads distinctly — a dashed card in its dimension's accent, with the glyph
+        // (◆/∑/♪ for a cross-graph LIBRARY node #2571/#3119; ⇄ for an external MCP-CONTRACT node #3786), the
+        // kind word (kit/algorithm/sound/mcp), and the count of consuming projects (the edges INTO it) — so
+        // it never looks like a project node. The `ui` case is byte-identical to the pre-#3119 kit card
+        // (cyan · ◆ · "kit"). An mcp node additionally shows its `appType` (api/serverless).
+        if (isBandNode(n)) {
+          const lib = bandNodeMeta(n);
           const consumers = model.edges.reduce((acc, e) => acc + (e.to === n.id ? 1 : 0), 0);
           const selected = p.selNodeId === n.id;
           const inFocus = focus ? focus.nodes.has(n.id) : true;
@@ -243,9 +256,12 @@ export function GlanceCanvas(p: CanvasProps) {
                   <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
                 </Box>
                 <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
-                  <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: lib.color }}>{lib.kindLabel}</Text>
+                  {/* The kind word — and for an mcp node its appType (api/serverless), the contract endpoint type (#3786). */}
+                  <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: lib.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {n.kind === "mcp" && n.appType ? `${lib.kindLabel} · ${n.appType}` : lib.kindLabel}
+                  </Text>
                   <Box style={{ flex: 1 }} />
-                  <Text as="span" mono size={10} weight={500} tone="dim">{consumers} app{consumers === 1 ? "" : "s"}</Text>
+                  <Text as="span" mono size={10} weight={500} tone="dim" style={{ flex: "none" }}>{consumers} app{consumers === 1 ? "" : "s"}</Text>
                 </Box>
               </Box>
             </Box>
@@ -311,6 +327,14 @@ export function GlanceCanvas(p: CanvasProps) {
                   style={{ width: 8, height: 8, borderRadius: "50%", background: health.color, flex: "none", opacity: inherited ? 0.5 : 1,
                     boxShadow: health.pulse && !inherited ? `0 0 8px ${health.color}` : "none", animation: health.pulse && !inherited ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }} />
                 <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
+                {/* The APP-TYPE discriminator (#3786/#3802) — a subtle mono micro-label on the title line: what
+                    KIND of app this endpoint is (api/serverless/cli/…). Gated on a non-default classification,
+                    so an unclassified project (appType absent, or "application") renders byte-identical. */}
+                {n.appType && n.appType !== "application" && (
+                  <Text as="span" mono size={8.5} title={`app type: ${n.appType}`}
+                    style={{ flex: "none", textTransform: "uppercase", letterSpacing: ".4px", color: "var(--fg-muted)", opacity: 0.7,
+                      border: "1px solid var(--border-soft)", borderRadius: 4, padding: "1px 4px", lineHeight: 1.3 }}>{n.appType}</Text>
+                )}
               </Box>
               <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
                 <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: role }}>{cat ? cat.label : (n.roleLabel ?? n.role)}</Text>
