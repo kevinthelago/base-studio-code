@@ -147,25 +147,41 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
         <Row align="stretch" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
           <Box style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: "22px 22px 28px" }}>
             <Box style={{ maxWidth: 640 }}>
-              {/* project name (moved out of the list header's inline form) — autofocused on open.
-                  A dedicated setup PAGE whose first and primary action is naming the project: focusing
-                  its lone text field on open is the expected behaviour, not a disorienting focus jump. */}
-              <TextField
-                label="Project name"
-                aria-label="Project name"
-                // eslint-disable-next-line jsx-a11y/no-autofocus -- single-purpose setup page; naming is the first action
-                autoFocus
-                hint="The name IS the project — it names its files, sessions, and GitHub project, and is locked once created."
-                placeholder="Name your project…"
-                value={title}
-                onChange={setTitle}
-                onKeyDown={(e) => { if (e.key === "Enter") start(); }}
-              />
+              {/* project name — the page's PRIMARY action, given emphasis to match (#3840). It used to
+                  render as an ordinary field, visually equal to everything under it, despite naming
+                  something that is LOCKED at creation. Now an accent-framed step-1 block with a larger
+                  input. Autofocused: a dedicated setup page whose first action is naming the project
+                  should focus that field on open, not make the user hunt for it. */}
+              <Box
+                className="setup-name"
+                pad={[16, 18]} radius={10} bg="var(--bg-elev)"
+                style={{ border: "1px solid color-mix(in oklch, var(--accent), transparent 62%)" }}
+              >
+                <Row gap={8} align="center" style={{ marginBottom: 10 }}>
+                  <Text as="span" mono size={9.5} tone="dim"
+                    style={{ letterSpacing: "0.08em", textTransform: "uppercase" }}>step 1</Text>
+                  <Text as="span" size={13} weight={600} style={{ color: "var(--fg)" }}>Name the project</Text>
+                </Row>
+                <TextField
+                  label="Project name"
+                  aria-label="Project name"
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- single-purpose setup page; naming is the first action
+                  autoFocus
+                  hint="The name IS the project — it names its files, sessions, and GitHub project, and is locked once created."
+                  placeholder="Name your project…"
+                  value={title}
+                  onChange={setTitle}
+                  onKeyDown={(e) => { if (e.key === "Enter") start(); }}
+                  style={{ height: 42, fontSize: 15 }}
+                />
+              </Box>
 
               {/* blueprint selection — the selectable local card list, defaulting to the active/Default
                   blueprint. Gist import lives in the right column (no button here). */}
-              <Row gap={10} align="center" style={{ margin: "24px 0 10px" }}>
-                <Text as="span" size={13} weight={600} style={{ color: "var(--fg)" }}>Blueprint</Text>
+              <Row gap={8} align="center" style={{ margin: "24px 0 10px" }}>
+                <Text as="span" mono size={9.5} tone="dim"
+                  style={{ letterSpacing: "0.08em", textTransform: "uppercase" }}>step 2</Text>
+                <Text as="span" size={13} weight={600} style={{ color: "var(--fg)" }}>Pick a blueprint</Text>
                 <Text as="span" size={11} tone="muted">seeds the plan · locked at creation</Text>
               </Row>
 
