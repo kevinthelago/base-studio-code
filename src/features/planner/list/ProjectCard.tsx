@@ -83,7 +83,7 @@ function CardMenu({ item, onBoard, onDelete, menuOpenId, setMenuOpenId }: Pick<P
   if (!isBoard && !isDraft) return null;
 
   return (
-    // eslint-disable-next-line no-restricted-syntax -- click-outside menu needs a real DOM ref (Box isn't forwardRef)
+    // eslint-disable-next-line no-restricted-syntax, jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- click-outside menu needs a real DOM ref (Box isn't forwardRef); onClick only stops card-click propagation, not a control
     <div ref={menuRef} style={{ position: "relative" }} onClick={(e) => e.stopPropagation()}>
       <Button
         variant="ghost"
