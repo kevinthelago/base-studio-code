@@ -51,6 +51,9 @@ bsc-graph = { path = "../bsc-graph" }
 bsc-cad = { path = "../bsc-cad" }
 plandb = { path = "../plandb" }
 errordb = { path = "../errordb" }
+# `bsc usage` — the per-project usage-events store (#3812, epic #3809): a running/generated app records
+# usage events, an agent reads what users do. The dev-process analogue of errordb.
+usagedb = { path = "../usagedb" }
 # DuckDB-backed `bsc data` — optional so `--no-default-features` yields a lean binary (#1877).
 bsc-data = { path = "../data", optional = true }
 # `bsc mcp <server>` — the bundled native MCP servers, now subcommands of the umbrella (#1877). Each
