@@ -55,15 +55,17 @@ pub(crate) fn repo_cache_key(base: &Path, cwd: &str) -> Option<String> {
     None
 }
 
-/// Env pairs (NATIVE OS paths — these are read by native tools, not the bash shell) that point each
-/// package manager at the shared, per-repo location. Empty for a non-fleet-worktree cwd. Pre-creates
-/// the dirs (best-effort) so first-run installs don't race and everything stays inside the app dir
-/// for any FS-confined session.
+/// Env that configures each package manager for a fleet-worktree session: the cache/store pairs
+/// (NATIVE OS paths — read by native tools, not the bash shell) that point every manager at the
+/// shared, per-repo location, PLUS the supply-chain install floor (#3795: `npm_config_ignore_scripts`
+/// — lifecycle scripts off by default). Empty for a non-fleet-worktree cwd. Pre-creates the cache
+/// dirs (best-effort) so first-run installs don't race and everything stays inside the app dir for
+/// any FS-confined session.
 pub(crate) fn package_cache_env(base: &Path, cwd: &str) -> Vec<(&'static str, String)> {
     let Some(key) = repo_cache_key(base, cwd) else { return Vec::new() };
     let caches = base.join("caches");
     let at = |sub: &str| caches.join(sub).to_string_lossy().into_owned();
-    let env: Vec<(&'static str, String)> = vec![
+    let mut env: Vec<(&'static str, String)> = vec![
         // Cargo: one shared target dir per repo (shared across all of its worktrees).
         ("CARGO_TARGET_DIR", caches.join("cargo-target").join(&key).to_string_lossy().into_owned()),
         // Node: shared download cache (npm/pnpm) + pnpm content-addressable store (hardlinks) + yarn.
@@ -80,6 +82,12 @@ pub(crate) fn package_cache_env(base: &Path, cwd: &str) -> Vec<(&'static str, St
     for (_, v) in &env {
         let _ = std::fs::create_dir_all(v);
     }
+    // Supply-chain floor (#3795, epic #2433): lifecycle scripts (preinstall/install/postinstall) are
+    // the Shai-Hulud execution vector, so every fleet `npm/pnpm/yarn install` runs with scripts OFF by
+    // default (npm, pnpm, and yarn-classic all read `npm_config_ignore_scripts`). Appended AFTER the
+    // dir-precreate loop — it is a POLICY value, not a directory to mkdir. A caller can still override
+    // it, and `bsc-build-allowed` re-runs scripts for the trusted native-build allowlist only.
+    env.push(("npm_config_ignore_scripts", "true".into()));
     env
 }
 
@@ -133,11 +141,31 @@ mod tests {
         let env = package_cache_env(&base(), &cwd.to_string_lossy());
         let names: Vec<&str> = env.iter().map(|(k, _)| *k).collect();
         for expected in ["CARGO_TARGET_DIR", "npm_config_cache", "npm_config_store_dir",
-                         "YARN_CACHE_FOLDER", "PIP_CACHE_DIR", "UV_CACHE_DIR", "GOMODCACHE", "GOCACHE"] {
+                         "YARN_CACHE_FOLDER", "PIP_CACHE_DIR", "UV_CACHE_DIR", "GOMODCACHE", "GOCACHE",
+                         "npm_config_ignore_scripts"] {
             assert!(names.contains(&expected), "missing {expected} in {names:?}");
         }
         // The cargo target is keyed per-repo under the shared caches dir.
         let target = env.iter().find(|(k, _)| *k == "CARGO_TARGET_DIR").unwrap().1.clone();
         assert!(target.contains("cargo-target") && target.contains("k") && target.ends_with("web"));
+    }
+
+    #[test]
+    fn a_fleet_worktree_disables_install_lifecycle_scripts() {
+        // #3795 supply-chain floor (epic #2433): every fleet install defaults to lifecycle scripts OFF
+        // (the Shai-Hulud execution vector). npm/pnpm/yarn-classic all read npm_config_ignore_scripts.
+        let cwd = base().join("worktrees").join("k").join("web--ui");
+        let env = package_cache_env(&base(), &cwd.to_string_lossy());
+        let v = env.iter().find(|(k, _)| *k == "npm_config_ignore_scripts");
+        assert_eq!(v.map(|(_, val)| val.as_str()), Some("true"),
+            "a fleet worktree must default to scripts-off installs");
+        // It's a POLICY value, not a path — so it can never be one the dir-precreate loop tries to mkdir
+        // (regression: it must be pushed AFTER that loop, else `./true` gets created in the cwd).
+        let val = &v.unwrap().1;
+        assert!(!val.contains('/') && !val.contains('\\'),
+            "the ignore-scripts value is a boolean literal, not a directory path");
+        // A non-fleet cwd carries no install policy — the maintainer's own global installs are untouched.
+        assert!(package_cache_env(&base(), "/some/other/place")
+            .iter().all(|(k, _)| *k != "npm_config_ignore_scripts"));
     }
 }

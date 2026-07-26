@@ -51,6 +51,9 @@ bsc-graph = { path = "../bsc-graph" }
 bsc-cad = { path = "../bsc-cad" }
 plandb = { path = "../plandb" }
 errordb = { path = "../errordb" }
+# `bsc usage` — the per-project usage-events store (#3812, epic #3809): a running/generated app records
+# usage events, an agent reads what users do. The dev-process analogue of errordb.
+usagedb = { path = "../usagedb" }
 # DuckDB-backed `bsc data` — optional so `--no-default-features` yields a lean binary (#1877).
 bsc-data = { path = "../data", optional = true }
 # `bsc mcp <server>` — the bundled native MCP servers, now subcommands of the umbrella (#1877). Each
@@ -59,4 +62,7 @@ research = { path = "../research" }
 # `bsc mcp channel-mock` — the Marketer's mock marketing channel (#3146, epic #3145): records
 # send_email/post/schedule calls instead of sending, so the outbound loop is testable with zero real sends.
 channel = { path = "../channel" }
+# `bsc cve` + `bsc mcp cve` — the OSV.dev vulnerability data layer (#3797, supply-chain #2433): scan a
+# lockfile / check a package / advisory detail, the data layer the install-time `bsc-supply` hook builds on.
+cve = { path = "../cve" }
 mcp-rpc = { path = "../mcp-rpc" }

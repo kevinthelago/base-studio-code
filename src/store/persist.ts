@@ -25,6 +25,10 @@ export function persistedState(s: AppStore) {
     accent:          s.accent,
     kitTheme:        s.kitTheme,
     soundNotifications: s.soundNotifications, // #3082: opt-in coord-event notification sounds
+    ttsEnabled:      s.ttsEnabled,      // #3804: opt-in spoken coordination (a11y Tier 1)
+    ttsRate:         s.ttsRate,
+    ttsVoice:        s.ttsVoice,
+    ttsVerbosity:    s.ttsVerbosity,
     designContributions: s.designContributions, // #2656: downloaded-blueprint design overlays survive restart
     keybindings:     s.keybindings,
     paneViews:       s.paneViews,

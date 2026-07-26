@@ -1,0 +1,29 @@
+[package]
+name = "cve"
+version = "0.1.0"
+edition = "2021"
+description = "The CVE / vulnerability data layer for base-studio-code (supply-chain #2433, #3797) — queries OSV.dev for known advisories against a package/version or a whole lockfile, caches results in SQLite, and is reachable from any live session as `bsc cve …` + the `bsc mcp cve` server. The data layer the install-time `bsc-supply` hook builds on."
+
+# The core lib (no Tauri) so the CLI + MCP stay lean and the parse/severity/engine logic is
+# unit-testable against recorded OSV fixtures with no live network.
+[lib]
+name = "cve"
+
+[dependencies]
+# Shared leaf utilities (#1646): the one epoch clock (`now_secs`).
+bsc-util = { path = "../bsc-util" }
+# Shared SQLite-CLI helpers: `print_json` + `read_stdin_json`, plus the `conn` `:memory:`-aware open +
+# default-store-path resolver the cache shares (#1863) — the compliance/research house style.
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# Shared CLI scaffold (#1762): `cli_main` + `resolve_store_path` + the help catalog dispatch.
+bsc-cli-util = { path = "../bsc-cli-util" }
+# Shared stdio JSON-RPC 2.0 core (#1622): handshake, builders, dispatch, run-loop for `bsc mcp cve`.
+mcp-rpc = { path = "../mcp-rpc" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Local on-disk cache of OSV query results (keyed by ecosystem:name:version), so a repeat scan is fast
+# + offline-friendly. `bundled` matches compliance/research/plandb.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# Blocking HTTP for the OSV.dev client — keeps the CLI + MCP server a simple synchronous flow (no tokio),
+# exactly as the research source clients do.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }

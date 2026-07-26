@@ -83,6 +83,7 @@ export function Pane(props: PaneProps) {
 
   return (
     <>
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- drawer scrim mouse-dismiss; the drawer has a keyboard-reachable close button */}
       <div className={"pane-scrim" + (open ? " on" : "")} onClick={onClose} />
       <div className={"pane-drawer" + (open ? " on" : "") + (className ? " " + className : "")}>
         {open && (

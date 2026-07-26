@@ -43,6 +43,8 @@
 //                   $BSC_SCOPE_GLOBS (the hard deny the role gate's allow-only rules lack). Mirrors sessionRoles.ts.
 //  * deny.sh      — bsc-deny (#1916): Bash PreToolUse hook → `bsc hook bash-deny` (the dangerous-command
 //                   floor + role/user denies that survive bypassPermissions). Backed by the bsc binary.
+//  * supply.sh    — bsc-supply (#3799): Bash PreToolUse hook → `bsc hook bash-supply` (blocks a dependency
+//                   ADD of a malicious/known-vulnerable package via OSV/`bsc cve`; fail-open). Gated panes only.
 //  * taint.sh     — bsc-taint (#1167): tainted-turn gate; return 2 on outward/destructive Bash within
 //                   $BSC_TAINT_WINDOW of ingesting untrusted input (WebFetch / curl / gh issue|pr view).
 //  * coord-emit.sh— __bsc_coord(+_log) + bsc-landed/merged/closed/failed/wait/maintain/ask/answer/issue/
@@ -88,6 +90,47 @@ pub(crate) fn bsc_defer_rc() -> String {
     s
 }
 
+/// The trusted native-build allowlist (#3795, epic #2433) — the packages whose install lifecycle
+/// script IS legit — read from the embedded `data/permissions/build-allowlist.json`. Names are
+/// filtered to a package-safe charset (`[A-Za-z0-9@/._-]`) so a malformed/hostile seed entry can
+/// never inject shell metacharacters into the rendered `for` list. An unreadable/empty seed yields an
+/// empty list (the helper is still defined, just a no-op).
+fn build_allowlist() -> Vec<String> {
+    #[derive(serde::Deserialize)]
+    struct Allowlist {
+        #[serde(default)]
+        packages: Vec<String>,
+    }
+    let raw = crate::platform::config::load_str("permissions/build-allowlist.json");
+    serde_json::from_str::<Allowlist>(&raw)
+        .map(|a| a.packages)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| {
+            !p.is_empty() && p.bytes().all(|b| b.is_ascii_alphanumeric() || b"@/._-".contains(&b))
+        })
+        .collect()
+}
+
+/// The `bsc-build-allowed` helper (#3795, epic #2433). With `npm_config_ignore_scripts=true` the
+/// supply-chain floor for every fleet install (`platform::pkgcache`), a session's `npm install` skips
+/// ALL lifecycle scripts — so a trusted native package (esbuild, better-sqlite3, …) never builds.
+/// After install, `bsc-build-allowed` runs `npm rebuild` for exactly the [`build_allowlist`] packages
+/// that are PRESENT under `./node_modules`, re-enabling scripts for that one invocation only — nothing
+/// off the allowlist ever runs a script. The allowlist is baked in at render time (like `bsc_defer_rc`).
+/// The fragment keeps its mandatory trailing newline (#296) so it doesn't glue onto the next helper.
+pub(crate) fn build_allowed_rc() -> String {
+    let list = build_allowlist().join(" ");
+    // Every name is charset-filtered above, so an unquoted `for` list is injection-safe. Each rebuild
+    // re-enables scripts locally (`npm_config_ignore_scripts=false`) against the scripts-off default.
+    // `return 0` so the helper always succeeds — else the loop's exit status is the LAST `[ -d ]` test,
+    // which is falsey (non-zero) whenever the last allowlist entry isn't installed, making a clean run
+    // look like a failure to any `$?` check (#3799: caught once the subshell test was actually run).
+    format!(
+        "bsc-build-allowed() {{ for p in {list}; do [ -d \"node_modules/$p\" ] && npm_config_ignore_scripts=false npm rebuild \"$p\"; done; return 0; }}\n"
+    )
+}
+
 /// Every `bsc-*` rc fragment, in the EXACT sequence the rc file concatenates them. This is the single
 /// source of truth for the concat order: the rc writer (`wire_bsc_env` → `bsc_rc_body`) and the
 /// `full_bsc_rc_is_syntactically_valid_bash` syntax guard both derive from it, so a new helper (or a
@@ -111,10 +154,12 @@ pub(crate) fn all_bsc_rc() -> Vec<String> {
         load_shell("confine.sh"),
         load_shell("scope.sh"),
         load_shell("deny.sh"),
+        load_shell("supply.sh"),
         load_shell("taint.sh"),
         load_shell("coord-emit.sh"),
         bsc_defer_rc(),
         load_shell("fleet.sh"),
+        build_allowed_rc(),
         load_shell("bsc.sh"),
         load_shell("learned.sh"),
     ]

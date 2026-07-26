@@ -293,6 +293,10 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
        { event: "PostToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
        { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit", command: "bsc-scope" },
        { event: "PreToolUse", matcher: "", command: "bsc-taint" },
+       // Supply-chain add gate (bsc-supply, #3799): block an install that ADDS a malicious/known-vulnerable
+       // dependency (OSV via `bsc cve`). GATED (agent panes only) — the threat is compromised agents, not
+       // the maintainer's manual console — and FAIL-OPEN, so an OSV outage never blocks the fleet.
+       { event: "PreToolUse", matcher: "Bash", command: "bsc-supply" },
        ...stopBounce]
     : hooks;
   // Skill telemetry (#406) follows the SKILLS, not the role gate: install the bsc-skill Pre/Post hooks
