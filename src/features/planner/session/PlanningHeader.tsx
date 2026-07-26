@@ -1,17 +1,17 @@
 // Planning page header, split out of Planning.tsx (decomposition pass).
 //
 // Pure presentation: the back button, the editable project title (published vs draft variants),
-// the drafting/expanding chip, the auto-planning progress line, and the restart / clear /
-// switch-blueprint / triage action buttons. No hooks, refs, or effects — every value and callback
-// is supplied by Planning.tsx, so extracting it does not change the parent's hook-call order.
+// the drafting/expanding chip, the auto-planning progress line, and the restart / clear / triage
+// action buttons. No hooks, refs, or effects — every value and callback is supplied by Planning.tsx,
+// so extracting it does not change the parent's hook-call order.
 import { BackButton } from "@/shared/ui/controls/BackButton";
 import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
-import { canLaunchTriage, triageLockReason } from "@/shared/lib/github/projectSync";
 import { clamp } from "@/shared/lib/core/math";
+import { canLaunchTriage, triageLockReason } from "@/shared/lib/github/projectSync";
 
 export interface PlanningHeaderProps {
   isExisting: boolean;
@@ -37,16 +37,18 @@ export interface PlanningHeaderProps {
   handleRestart: () => void;
   restarting: boolean;
   onClearPlan: () => void;
-  canSwitch: boolean;
-  onSwitchBlueprint: () => void;
   // Triage launch gate (#444/#551).
-  isAuthoring: boolean;
   published: boolean;
   hasRepos: boolean;
   hasFleet: boolean;
   triaging: boolean;
   planReady: boolean;
   launchTriage: () => void;
+  /** Whether this project has been triaged (`triagedProjects[key]`, #2541) — the drafted→working
+   *  transition. Before triage the primary action is Triage; AFTER it, Generate Blueprint (#3785). */
+  triaged: boolean;
+  /** Promote the completed project's plan into a reusable blueprint (#3785) — the post-triage action. */
+  onGenerateBlueprint: () => void;
 }
 
 export function PlanningHeader({
@@ -54,8 +56,9 @@ export function PlanningHeader({
   titleEdit, setTitleEdit, renameErr, setRenameErr, commitRename,
   planningTitle, setPlanningTitle, draftTitleErr, setDraftTitleErr, commitDraftTitle,
   autopilotRunning, autopilotProgressPct,
-  handleRestart, restarting, onClearPlan, canSwitch, onSwitchBlueprint,
-  isAuthoring, published, hasRepos, hasFleet, triaging, planReady, launchTriage,
+  handleRestart, restarting, onClearPlan,
+  published, hasRepos, hasFleet, triaging, planReady, launchTriage,
+  triaged, onGenerateBlueprint,
 }: PlanningHeaderProps) {
   return (
     <Box style={{ padding: "14px 24px 14px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
@@ -131,23 +134,20 @@ export function PlanningHeader({
       <Button variant="ghost" danger onClick={onClearPlan} title="Wipe this project's plan and restart the planner (#664)">
         clear plan
       </Button>
-      {/* Switch the project to a different blueprint (#923 / #1281 — any → any other). */}
-      {canSwitch && (
-        <Button variant="ghost" onClick={onSwitchBlueprint} title="Switch this project to a different blueprint">
-          switch blueprint
+      {/* The primary action follows the lifecycle: plan → TRIAGE (build the project) → then, once
+          it's been triaged, GENERATE BLUEPRINT (promote the plan for reuse, #3785). */}
+      {triaged ? (
+        <Button
+          variant="primary"
+          onClick={onGenerateBlueprint}
+          disabled={!planReady}
+          title={planReady ? "Save this project's plan as a reusable blueprint" : "Complete the plan first"}
+        >
+          Generate Blueprint →
         </Button>
-      )}
-      {/* No execution side for an authoring blueprint (#923) — its deliverable is the published
-          blueprint gist, so there are no repos to triage / no fleet to launch. */}
-      {!isAuthoring && (() => {
+      ) : (() => {
         // Full gate (#444/#551): plan complete + published + repos + fleet, not starting.
-        const gate = {
-          published,
-          hasRepos,
-          hasFleet,
-          busy: triaging,
-          planReady,
-        };
+        const gate = { published, hasRepos, hasFleet, busy: triaging, planReady };
         return (
           <Button
             variant="primary"

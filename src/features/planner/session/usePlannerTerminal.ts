@@ -31,7 +31,6 @@ export interface PlannerTerminalOpts {
   /** full_names linked + cloned for this project; drives the post-mount workspace re-sync. */
   linkedRepos: string[];
   treatAsExisting: boolean;
-  isAuthoring: boolean;
   activeProjectName: string;
   activeProjectNumber: number;
   planningPitch: string;
@@ -57,7 +56,7 @@ export interface PlannerTerminalHandle {
 
 export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHandle {
   const {
-    paneId, visible, effectiveProjectId, linkedRepos, treatAsExisting, isAuthoring,
+    paneId, visible, effectiveProjectId, linkedRepos, treatAsExisting,
     activeProjectName, activeProjectNumber, planningPitch, stageIdsFor, refreshSetupSig,
     processChunk, commands, schedules, setPlanningDir,
   } = opts;
@@ -80,7 +79,6 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
     snapshot: () => ({
       repoSnapshot:        linkedRepos, // string[] of full_names
       treatAsExistingSnap: treatAsExisting,
-      isAuthoringSnap:     isAuthoring,
       projNameSnap:        activeProjectName,
       projNumberSnap:      activeProjectNumber,
       pitchSnap:           planningPitch,
@@ -95,7 +93,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
 
     launch: async (term, snap) => {
       const {
-        repoSnapshot, treatAsExistingSnap, isAuthoringSnap, projNameSnap, projNumberSnap,
+        repoSnapshot, treatAsExistingSnap, projNameSnap, projNumberSnap,
         pitchSnap, projIdSnap, ghLoginSnap, ghNameSnap, automationsSnap,
       } = snap;
 
@@ -113,7 +111,6 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
           githubLogin:   ghLoginSnap,
           githubName:    ghNameSnap,
           enabledStages: stageIdsFor(projIdSnap), // scope the planner CLAUDE.md to the blueprint (#A)
-          authoring:     isAuthoringSnap,         // use the blueprint-author intro (#923)
         },
         null,
         (e: unknown) => console.error("workspace setup failed:", e),
@@ -164,7 +161,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       // returning user isn't re-greeted. For a new project the user's pitch rides along so the
       // planner acknowledges it rather than asking what they're building (replaces the old
       // idle-detection pitch-typing). On failure it's undefined → the launch falls back to initCmd.
-      const introMode = plannerIntroMode({ isAuthoring, isExisting: treatAsExistingSnap });
+      const introMode = plannerIntroMode({ isExisting: treatAsExistingSnap });
       const introText = await safeInvoke<string>("planner_intro_prompt", { mode: introMode }, "",
         (e: unknown) => console.error("planner intro prompt failed:", e));
       // Run the planner on the selected harness: Claude Code, or bsc-agent (any LLM) when chosen or
@@ -224,7 +221,6 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       githubLogin:   useAppStore.getState().githubUser?.login ?? "",
       githubName:    useAppStore.getState().githubUser?.name  ?? "",
       enabledStages: stageIdsFor(effectiveProjectId), // scope the planner CLAUDE.md (#A)
-      authoring:     isAuthoring,                     // use the blueprint-author intro (#923)
     }).then(() => refreshSetupSig()).catch(console.error); // baseline updated (#756)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedRepos]);

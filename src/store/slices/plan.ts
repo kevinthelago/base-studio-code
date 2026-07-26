@@ -4,12 +4,12 @@ import type { StateCreator } from "zustand";
 import { bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import { hashString } from "@/shared/lib/core/hashString";
 import type { AppStore } from "../types";
-import { makeBlueprints, mkStage, cloneStages, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
+import { makeBlueprints, mkStage, cloneStages, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
 import { packagedUiKitPin, resolveBlueprintUiKit } from "@/features/planner/blueprints/uiKitPin";
 import { packagedSoundKitPin, resolveBlueprintSoundKit } from "@/features/planner/blueprints/soundKitPin";
-import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
+import { canonicalTopicKey, FEATURES_KEY } from "@/features/planner/stages/planTopics";
 import { emptyFleet } from "@/features/planner/fleet/planFleet";
-import { defaultStageConfig, discoveryOnlyStageConfig } from "@/features/planner/stages/planStages";
+import { defaultStageConfig, discoveryOnlyStageConfig, enabledOrderedStages } from "@/features/planner/stages/planStages";
 import { normalizeFlow, resolveFlow } from "@/features/planner/fleet/agentFlow";
 import { setMapEntry } from "../updateHelpers";
 import { dropProjectScoped } from "./projectScopedMaps";
@@ -45,7 +45,7 @@ function recordBlueprintKit(get: () => AppStore, projectId: string, blueprintId:
 }
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planMarketConfig" | "setPlanMarketConfig" | "planTransformations" | "setPlanTransformations" | "planSourceConfig" | "setPlanSourceConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planDeployConfig" | "setPlanDeployConfig" | "planMarketConfig" | "setPlanMarketConfig" | "planTransformations" | "setPlanTransformations" | "planSourceConfig" | "setPlanSourceConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "projectBlueprintId" | "setProjectBlueprintId" | "planClassification" | "setPlanClassification" | "addBlueprint" | "generateBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -148,9 +148,6 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           if (existing.includes(key)) return {};
           return { planConfirmedStages: setMapEntry(s.planConfirmedStages, projectId, [...existing, key]) };
         }),
-      planAuthoredBlueprint: {},
-      setAuthoredBlueprint: (projectId, bp) =>
-        set((s) => ({ planAuthoredBlueprint: setMapEntry(s.planAuthoredBlueprint, projectId, bp) })),
       planDeployConfig: {},
       setPlanDeployConfig: (projectId, cfg) =>
         set((s) => ({ planDeployConfig: setMapEntry(s.planDeployConfig, projectId, cfg) })),
@@ -286,25 +283,12 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         // that kit, so a later kit change fans out to it. Idempotent by (projectKey, kitId); no-op when unset.
         recordBlueprintKit(get, projectId, blueprintId);
       },
-      applyBlueprintToProject: (projectId, blueprintId) => {
-        const bp = get().blueprints.find((b) => b.id === blueprintId);
-        if (!bp) return;
-        // Only a greenfield project may switch, and only to a transform/harden lifecycle (#923);
-        // every other origin/target (incl. the locked blueprint-author) is refused.
-        const current = get().blueprints.find((b) => b.id === get().projectBlueprintId[projectId]);
-        if (!canSwitchBlueprint(current, bp)) return;
-        // Full reset: wipe ALL of the project's planning state (everything the `applyBlueprint` op
-        // set in projectScopedMaps.ts drops — #2712) so no section reads as completed afterwards,
-        // then re-seed the stage config from the new blueprint + record it (#664). planStageConfig
-        // / projectBlueprintId are re-seeded (not dropped) so they are excluded from the op set.
-        set((s) => ({
-          ...dropProjectScoped(s, "applyBlueprint", projectId),
-          planStageConfig:    setMapEntry(s.planStageConfig, projectId, blueprintToStageConfig(bp)),
-          projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId),
-        }));
-        // #2277: the newly-seeded blueprint's kit becomes a consumer edge (idempotent; no-op when unset).
-        recordBlueprintKit(get, projectId, blueprintId);
-      },
+
+      // #3783/#3784: the planner's per-project classification (UI mode + which optional stages the
+      // project needs), set at discovery via `bsc plan classify` and polled in. Drives the UI-stage
+      // surface and the source/mcp/skills/automations visibility signals.
+      planClassification: {},
+      setPlanClassification: (projectId, cfg) => set((s) => ({ planClassification: setMapEntry(s.planClassification, projectId, cfg) })),
       addBlueprint: () => {
         const id = `bp-${Date.now().toString(36)}`;
         const bp: Blueprint = {
@@ -316,6 +300,34 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           uiKit: packagedUiKitPin(),
           // …and the packaged SOUND kit (#3372): a new blueprint is fully specified on BOTH library
           // pillars. Resolves against the store's embedded fallback, so it also costs zero downloads.
+          soundKit: packagedSoundKitPin(),
+        };
+        set((s) => ({ blueprints: [...s.blueprints, bp] }));
+        syncBlueprintFile(bp);
+        return id;
+      },
+      // Promote a completed project's PLAN into a reusable blueprint (#3785) — the "Steam library"
+      // contribution path. The blueprint captures the project's plan ROUTE (its enabled, ordered
+      // stages → sections), named after the project. (Config carry-over — skills / mcp / kit — and the
+      // curated FEATURE LIST are follow-up increments; `Blueprint.features` doesn't exist yet.) A user
+      // blueprint (`origin: "local"`) so it persists + is share-eligible like any authored one.
+      generateBlueprint: (projectKey) => {
+        const st = get();
+        const cfg = st.planStageConfig[projectKey] ?? defaultStageConfig();
+        const sections = enabledOrderedStages(cfg).map((s) => mkStage(s.id));
+        const title = st.planningTitle?.trim() || "Project";
+        const id = `bp-${Date.now().toString(36)}`;
+        // Capture the project's curated FEATURE LIST — the `features` section content (features.md) —
+        // so the blueprint carries the features that route builds, not just the empty stage route.
+        const features = st.planStages[projectKey]?.[FEATURES_KEY]?.trim();
+        const bp: Blueprint = {
+          id,
+          name: `${title} blueprint`,
+          desc: `Generated from the ${title} project's plan`,
+          origin: "local",
+          sections,
+          ...(features ? { features } : {}),
+          uiKit: packagedUiKitPin(),
           soundKit: packagedSoundKitPin(),
         };
         set((s) => ({ blueprints: [...s.blueprints, bp] }));

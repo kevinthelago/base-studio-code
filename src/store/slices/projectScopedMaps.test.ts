@@ -40,7 +40,7 @@ describe("projectScopedMaps registry", () => {
   it("delete does not touch maps outside the delete op set (e.g. reposPublic / stagePreview)", () => {
     const s = makeState();
     const out = deleteProjectScoped(s, new Set(["A"]));
-    // These are `applyBlueprint`/`clearPlan`-only maps — delete must never return them.
+    // These are `clearPlan`-only maps — delete must never return them.
     for (const outside of ["reposPublic", "planInjectionAck", "stagePreview", "stageRuns"] as (keyof AppStore)[]) {
       expect(asMap(out, outside)).toBeUndefined();
     }
@@ -87,18 +87,6 @@ describe("projectScopedMaps registry", () => {
     expect(asMap(out, "autoTriage" as keyof AppStore)).toBeUndefined();
     // …nor a rekey-only map.
     expect(asMap(out, "planFleetTopology" as keyof AppStore)).toBeUndefined();
-  });
-
-  it("dropProjectScoped(applyBlueprint) excludes the re-seeded maps planStageConfig/projectBlueprintId", () => {
-    const s = makeState();
-    const out = dropProjectScoped(s, "applyBlueprint", "A");
-    // These are set (not dropped) by applyBlueprintToProject, so must be absent from the drop set.
-    expect(asMap(out, "planStageConfig" as keyof AppStore)).toBeUndefined();
-    expect(asMap(out, "projectBlueprintId" as keyof AppStore)).toBeUndefined();
-    // But a normal reset map is dropped, and its repo map (repoPublic) too.
-    expect("A" in asMap(out, "planStages")).toBe(false);
-    expect("A::repo" in asMap(out, "repoPublic")).toBe(false);
-    expect("B::repo" in asMap(out, "repoPublic")).toBe(true);
   });
 
   it("dropProjectScoped(clearPlan) drops repoPublic entries for the key only", () => {

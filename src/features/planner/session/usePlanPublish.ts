@@ -24,9 +24,6 @@ import { recoverIssues, type GitHubIssueLike } from "../issues/recoverIssues";
 import { removeDbProject } from "../list/projectsDbBridge";
 import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
 import { canLaunchTriage, publishBlockReason } from "@/shared/lib/github/projectSync";
-import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
-import { resolveBlueprintSkillPayloads } from "../blueprints/blueprintSkills";
-import { publishGist } from "@/features/planner/lib/gist/gist";
 import {
   type GhApi, type Upd, seedPublishStatus,
   publishRepositories, scaffoldRepositories, ensureProjectBoard, createIssues, applyStreamLabels,
@@ -38,7 +35,6 @@ export type PublishPhase = "idle" | "running" | "done" | "error";
 type Store = ReturnType<typeof useAppStore.getState>;
 
 export interface PlanPublishDeps {
-  isAuthoring: boolean;
   githubToken: string;
   publishRepos: string[];
   injectionGateState: { cleared: boolean; findings: unknown[]; mode: string };
@@ -54,22 +50,19 @@ export interface PlanPublishDeps {
   depManifest: ReturnType<typeof parseDependencyManifest>;
   repoPublic: Store["repoPublic"];
   reposPublic: Record<string, boolean>;
-  planAuthoredBlueprint: Store["planAuthoredBlueprint"];
-  paneId: string;
   projectTitle: string;
   planReady: boolean;
   visible: boolean;
   addProjectRepo: Store["addProjectRepo"];
   fleetStartProject: Store["fleetStartProject"];
-  importBlueprint: Store["importBlueprint"];
 }
 
 export function usePlanPublish(deps: PlanPublishDeps) {
   const {
-    isAuthoring, githubToken, publishRepos, injectionGateState, sections, planningTitle,
+    githubToken, publishRepos, injectionGateState, sections, planningTitle,
     activeProjectName, planFleet, effectiveProjectId, activeProjectId, activeProjectNumber,
-    planFeatures, planDependencies, depManifest, repoPublic, reposPublic, planAuthoredBlueprint,
-    paneId, projectTitle, planReady, visible, addProjectRepo, fleetStartProject, importBlueprint,
+    planFeatures, planDependencies, depManifest, repoPublic, reposPublic,
+    projectTitle, planReady, visible, addProjectRepo, fleetStartProject,
   } = deps;
 
   const [triaging, setTriaging] = useState(false);
@@ -259,42 +252,6 @@ export function usePlanPublish(deps: PlanPublishDeps) {
     }
   }
 
-  // Publish an AUTHORING project's deliverable (#923): land the designed blueprint in the library,
-  // then ship it to a gist per the chosen visibility — "local" stays library-only, "private-gist" is
-  // secret, "catalog" is public. No repos/board/milestones/issues/fleet.
-  async function publishAuthoredBlueprint() {
-    const bp = planAuthoredBlueprint[effectiveProjectId];
-    const valid = bp ? coerceBlueprint(bp) : null;
-    if (!valid) { setPublishPhase("error"); return; }
-    const visibility = valid.visibility ?? "private-gist";
-    if (visibility !== "local" && !githubToken) { setPublishPhase("error"); return; }
-    setGhStatus({ blueprint: { status: "running" } });
-    setPublishPhase("running");
-    try {
-      const store = useAppStore.getState();
-      // Land it in the local library so it's editable + re-publishable, and record which blueprint
-      // seeded this project so re-opening resolves to it.
-      const newId = importBlueprint(valid);
-      store.setProjectBlueprintId(effectiveProjectId, newId);
-      if (visibility === "local") {
-        setGhStatus({ blueprint: { status: "created", detail: `${valid.name} · saved to library` } });
-        setPublishPhase("done");
-        fireInvoke("pty_write", { paneId, data: `[Blueprint "${valid.name}" saved to your local library.]\r` }, console.error);
-        return;
-      }
-      // Bundle attached skill/KB content so the share is self-contained; MCP stays by reference.
-      const bundled = resolveBlueprintSkillPayloads(valid, store.skills);
-      const res = await publishGist(githubToken, blueprintToManifest(valid, bundled), { public: visibility === "catalog" });
-      setGhStatus({ blueprint: { status: "created", detail: valid.name, url: res.htmlUrl } });
-      setPublishPhase("done");
-      const kind = visibility === "catalog" ? "public" : "secret";
-      fireInvoke("pty_write", { paneId, data: `[Blueprint published to a ${kind} gist: ${res.htmlUrl}]\r` }, console.error);
-    } catch (e) {
-      setGhStatus({ blueprint: { status: "error", detail: String(e) } });
-      setPublishPhase("error");
-    }
-  }
-
   /** The LOCAL commit (#3280) — materialize the plan's issues into plan.db and mark the project active,
    *  with NO GitHub round-trip. This is what lets the fleet launch offline: `activeProjectId` set to the
    *  local project key flips `published` true (`canLaunchTriage`) and works as a key everywhere; a later
@@ -319,7 +276,6 @@ export function usePlanPublish(deps: PlanPublishDeps) {
   }
 
   async function handlePublish() {
-    if (isAuthoring) { await publishAuthoredBlueprint(); return; }
     // #3280 local-first: with no GitHub token, "publish" commits the plan LOCALLY (plan.db) instead of
     // erroring — the fleet can then launch offline. Publishing to GitHub stays the optional path when
     // connected. (publishBlockReason's no-token case is now unreachable from here; the no-repo case

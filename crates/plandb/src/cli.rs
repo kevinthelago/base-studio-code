@@ -187,6 +187,19 @@ USAGE:
 registry needs a \"url\". A rejected write leaves the stored manifest untouched. --force skips.",
     },
     CmdDoc {
+        name: "classify",
+        summary: "the project's classification: UI mode + which optional stages it needs (one blob)",
+        usage: "USAGE:
+  bsc plan classify set [--force]   # replace the classification from a JSON object on stdin
+  bsc plan classify get             # print the stored classification
+
+The planner's discovery output (#3783/#3784/#3806) that shapes the plan — recorded as the closing
+step of Discovery (there is no separate Configure stage). Fields, all optional: uiMode (custom = the
+in-app designer preview, external = the Claude-Design drop-files intake), and the booleans
+needsMarket / needsSource / needsMcp / needsSkills / needsAutomations marking which optional stages
+(market / source / mcp / skills / automations) the project shows. `set` validates before storing; --force stores an unvalidated blob.",
+    },
+    CmdDoc {
         name: "market",
         summary: "the Market stage's scored assessment (one blob)",
         usage: "\
@@ -522,6 +535,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "deploy" => nouns::cmd_deploy(&args),
         "deps" => nouns::cmd_deps(&args),
         "market" => nouns::cmd_market(&args),
+        "classify" => nouns::cmd_classify(&args),
         "transformation" => nouns::cmd_transformation(&args),
         "mcp" => nouns::cmd_mcp(&args),
         "blueprint" => nouns::cmd_blueprint(&args),
@@ -664,7 +678,7 @@ mod tests {
         // Every top-level command appears in the compact menu.
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
-            "fleet", "deploy", "deps", "market", "transformation", "mcp", "blueprint", "ui", "discovery",
+            "fleet", "deploy", "deps", "market", "classify", "transformation", "mcp", "blueprint", "ui", "discovery",
             "confirm", "skip", "integration", "lesson", "triage", "stage", "automations", "startup",
             "github-context", "artifact",
         ] {

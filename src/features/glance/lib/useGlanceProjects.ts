@@ -307,6 +307,10 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   const projectBlueprintId = useAppStore((s) => s.projectBlueprintId);
   const blueprints = useAppStore((s) => s.blueprints);
   const catByBlueprint = useMemo(() => new Map(blueprints.map((b) => [b.id, b.category])), [blueprints]);
+  // The per-project classification (#3786/#3802): the planner-set `appType` (application architecture) —
+  // surfaced on each Glance project node as the contract endpoint-type discriminator. Absent for an
+  // unclassified project ⇒ the node renders plain (no type badge).
+  const planClassification = useAppStore((s) => s.planClassification);
   const liveKeys = useProjectLiveness(enabled);
 
   // The local published inventory (#2445): the on-disk hubs carrying `.published`, so a published
@@ -386,6 +390,7 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
             mergeGlanceProjects(drafts, effectivePublished, localPublished).map((p) => ({
               ...p,
               category: resolveProjectCategory(p.category, catByBlueprint.get(projectBlueprintId[p.id]), drafts[p.id] !== undefined),
+              appType: planClassification[p.id]?.appType, // #3786/#3802 — the contract endpoint-type discriminator (absent ⇒ plain)
             })),
             triagedProjects,
           ),
@@ -396,6 +401,6 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
       activeKeys,
       curatedKeys,
     ),
-    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, catByBlueprint, projectBlueprintId],
+    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, catByBlueprint, projectBlueprintId, planClassification],
   );
 }
