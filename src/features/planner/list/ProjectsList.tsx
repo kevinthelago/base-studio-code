@@ -438,12 +438,11 @@ export function ProjectsList() {
               {loading && items.length === 0 && (
                 <Text as="div" mono size={12} tone="dim" style={{ textAlign: "center", padding: "40px 0" }}>Loading projects…</Text>
               )}
-              {/* Staleness hint (#2445/#2446): persisted overlay carries its age; logged-out local copies say "not synced". */}
-              {staleFetchedAt != null ? (
+              {/* Staleness hint (#2446): a persisted overlay carries its age. The logged-out local-copies
+                  hint was dropped (#3818) — the header's `○ github offline` already states the connection. */}
+              {staleFetchedAt != null && (
                 <Text className="hint" as="div" mono size={10} style={{ margin: "0 0 8px", paddingLeft: 2 }}>last synced {timeAgoMs(staleFetchedAt)}</Text>
-              ) : (!githubToken && localPublishedAll.length > 0 && (
-                <Text className="hint" as="div" mono size={10} style={{ margin: "0 0 8px", paddingLeft: 2 }}>not synced — GitHub is disconnected, showing the local copies</Text>
-              ))}
+              )}
             </Box>
 
             {isEmpty ? (
