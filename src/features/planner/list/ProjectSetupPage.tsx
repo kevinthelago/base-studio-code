@@ -1,9 +1,10 @@
 // ProjectSetupPage (#3802) — the create-a-project setup PAGE. It sits BETWEEN the projects list and
 // the planner: name the project, pick the blueprint (locked at creation, #3785), then "start
 // planning →". Recast from the old `BlueprintPickerModal` — same guts (the blueprint library as
-// selectable `BlueprintCard`s), but a FULL PANE (not a `ModalScrim`) so the create flow reads list →
-// setup → planner. The composer (`ProjectsList`) runs the collision check + create + bind via
-// `onStart`; the blueprint is the one consent point (frozen at creation).
+// selectable `BlueprintCard`s), but the shared inline `Pane` (a full-height header/body frame, #1824)
+// so the create flow reads list → setup → planner. The back/cancel/start actions live in the pane
+// header (no footer); the content is TOP-aligned. The composer (`ProjectsList`) runs the collision
+// check + create + bind via `onStart`; the blueprint is the one consent point (frozen at creation).
 //
 // The gist-import affordance is no longer a modal (#3802): a persistent right-side `CloudBlueprints`
 // column lists the not-yet-downloaded gist blueprints beside the local ones, with inline download.
@@ -17,6 +18,7 @@ import { reconcileDesign } from "@/shared/ui/kit";
 import { DEFAULT_GIST_SOURCE } from "../blueprints/blueprintCatalog";
 import { manifestToBlueprint, bundledSkillsFromManifest } from "../blueprints/blueprintShare";
 import { installFromGist, gistIdFromUrl } from "@/features/planner/lib/gist/gist";
+import { Pane } from "@/shared/ui/overlay/Pane";
 import { BackButton } from "@/shared/ui/controls/BackButton";
 import { Button } from "@/shared/ui/controls/Button";
 import { TextField } from "@/shared/ui/controls/Field";
@@ -29,7 +31,7 @@ import { buildBlueprintItems } from "./blueprintLibrary.helpers";
 import { CloudBlueprints } from "./CloudBlueprints";
 
 export interface ProjectSetupPageProps {
-  /** ← back to the projects list (also the footer "cancel"). */
+  /** ← back to the projects list (also the header "cancel"). */
   onBack: () => void;
   /** Start planning with the entered name + chosen blueprint. The composer runs the name-collision
    *  check, then the create + bind (the blueprint is LOCKED once the project is created). */
@@ -114,79 +116,83 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
   const downloadBlueprint = (gistId: string) => resolveBlueprintImport(gistId).then((p) => importBlueprintPreview(p));
 
   return (
-    <Stack style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
-      {/* header — back to the list + title, over the same slim 52px bar the list header uses. */}
-      <Row gap={10} align="center" style={{ height: 52, flex: "none", padding: "0 16px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)" }}>
-        <BackButton
-          variant="text" label="projects" aria-label="Back to projects" onClick={onBack} className="mono"
-          style={{ background: "none", border: "none", padding: 0, color: "var(--fg-muted)", cursor: "pointer", fontSize: 12 }}
-        />
-        <Box as="span" style={{ width: 1, height: 16, background: "var(--border-soft)" }} />
-        <Text as="span" size={14} weight={600} style={{ color: "var(--fg)" }}>New project</Text>
-      </Row>
-
-      {/* body — two columns: the setup form (name + local blueprint selection) on the left, and the
-          persistent "Cloud blueprints" column on the right. Each column scrolls on its own. */}
-      <Row style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
-        <Box style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: "22px 22px 28px" }}>
-          <Box style={{ maxWidth: 640, margin: "0 auto" }}>
-            {/* project name (moved out of the list header's inline form). */}
-            <TextField
-              label="Project name"
-              aria-label="Project name"
-              hint="The name IS the project — it names its files, sessions, and GitHub project, and is locked once created."
-              placeholder="Name your project…"
-              value={title}
-              onChange={setTitle}
-              onKeyDown={(e) => { if (e.key === "Enter") start(); }}
+    <>
+      <Pane
+        mode="inline"
+        flush
+        className="project-setup"
+        header={
+          <>
+            <BackButton
+              variant="text" label="projects" aria-label="Back to projects" onClick={onBack} className="mono"
+              style={{ background: "none", border: "none", padding: 0, color: "var(--fg-muted)", cursor: "pointer", fontSize: 12 }}
             />
+            <Box as="span" style={{ width: 1, height: 16, background: "var(--border-soft)" }} />
+            <Text as="span" size={14} weight={600} style={{ color: "var(--fg)" }}>New project</Text>
+            <Box as="span" style={{ flex: 1 }} />
+            <Text as="span" size={11} tone="dim" style={{ marginRight: 2 }}>
+              {canStart ? "ready" : "name + pick a blueprint"}
+            </Text>
+            <Button variant="ghost" onClick={onBack}>cancel</Button>
+            <Button variant="primary" disabled={!canStart} onClick={start}>start planning →</Button>
+          </>
+        }
+      >
+        {/* body — two columns, content TOP-aligned: the setup form on the left, the persistent
+            "Cloud blueprints" column on the right. Each column scrolls on its own. */}
+        <Row style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
+          <Box style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: "22px 22px 28px" }}>
+            <Box style={{ maxWidth: 640 }}>
+              {/* project name (moved out of the list header's inline form) — autofocused on open. */}
+              <TextField
+                label="Project name"
+                aria-label="Project name"
+                autoFocus
+                hint="The name IS the project — it names its files, sessions, and GitHub project, and is locked once created."
+                placeholder="Name your project…"
+                value={title}
+                onChange={setTitle}
+                onKeyDown={(e) => { if (e.key === "Enter") start(); }}
+              />
 
-            {/* blueprint selection — the same selectable card list the picker used, defaulting to the
-                active/Default blueprint. Gist import now lives in the right column (no button here). */}
-            <Row gap={10} align="center" style={{ margin: "24px 0 10px" }}>
-              <Text as="span" size={13} weight={600} style={{ color: "var(--fg)" }}>Blueprint</Text>
-              <Text as="span" size={11} tone="muted">seeds the plan · locked at creation</Text>
-            </Row>
+              {/* blueprint selection — the selectable local card list, defaulting to the active/Default
+                  blueprint. Gist import lives in the right column (no button here). */}
+              <Row gap={10} align="center" style={{ margin: "24px 0 10px" }}>
+                <Text as="span" size={13} weight={600} style={{ color: "var(--fg)" }}>Blueprint</Text>
+                <Text as="span" size={11} tone="muted">seeds the plan · locked at creation</Text>
+              </Row>
 
-            {items.length === 0 ? (
-              <Text as="div" mono size={11} tone="dim" style={{ lineHeight: 1.6, padding: "6px 2px" }}>
-                No blueprints yet. Download one from the cloud column, or generate one from a triaged project.
-              </Text>
-            ) : (
-              <Stack gap={9}>
-                {items.map((b) => (
-                  <BlueprintCard
-                    key={b.id}
-                    b={b}
-                    onUse={setSelected}
-                    onDelete={(bp) => deleteBlueprint(bp.id)}
-                    activeId={selected}
-                    menuOpenId={menuOpenId}
-                    setMenuOpenId={setMenuOpenId}
-                  />
-                ))}
-              </Stack>
-            )}
+              {items.length === 0 ? (
+                <Text as="div" mono size={11} tone="dim" style={{ lineHeight: 1.6, padding: "6px 2px" }}>
+                  No blueprints yet. Download one from the cloud column, or generate one from a triaged project.
+                </Text>
+              ) : (
+                <Stack gap={9}>
+                  {items.map((b) => (
+                    <BlueprintCard
+                      key={b.id}
+                      b={b}
+                      onUse={setSelected}
+                      onDelete={(bp) => deleteBlueprint(bp.id)}
+                      activeId={selected}
+                      menuOpenId={menuOpenId}
+                      setMenuOpenId={setMenuOpenId}
+                    />
+                  ))}
+                </Stack>
+              )}
+            </Box>
           </Box>
-        </Box>
 
-        {/* right — the persistent cloud-blueprint column (not-yet-downloaded gists + inline download). */}
-        <CloudBlueprints
-          defaultSource={githubUser?.login ?? DEFAULT_GIST_SOURCE}
-          token={githubToken}
-          downloadedGistIds={downloadedGistIds}
-          onDownload={downloadBlueprint}
-        />
-      </Row>
-
-      {/* footer advance bar — start is gated on a name AND a chosen blueprint. */}
-      <Row gap={10} align="center" justify="end" style={{ flex: "none", padding: "12px 22px", background: "var(--bg-elev)", borderTop: "1px solid var(--border-soft)" }}>
-        <Text as="span" size={11} tone="dim" style={{ marginRight: "auto" }}>
-          {canStart ? "ready" : "name your project + pick a blueprint to continue"}
-        </Text>
-        <Button variant="ghost" onClick={onBack}>cancel</Button>
-        <Button variant="primary" disabled={!canStart} onClick={start}>start planning →</Button>
-      </Row>
+          {/* right — the persistent cloud-blueprint column (not-yet-downloaded gists + inline download). */}
+          <CloudBlueprints
+            defaultSource={githubUser?.login ?? DEFAULT_GIST_SOURCE}
+            token={githubToken}
+            downloadedGistIds={downloadedGistIds}
+            onDownload={downloadBlueprint}
+          />
+        </Row>
+      </Pane>
 
       {/* design reconcile — fires AFTER a download completes if the imported blueprint's design is
           missing kit pieces (this is NOT an import modal; it stays). */}
@@ -199,6 +205,6 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
           onClose={() => setReconcileTarget(null)}
         />
       )}
-    </Stack>
+    </>
   );
 }
