@@ -2006,9 +2006,9 @@ describe("blueprints library (#513/#514)", () => {
   });
 
   it("seeds the starter library with a default active", () => {
-    // #3785: `default` is the single built-in superset blueprint (complete + the transform/data
-    // blueprints were merged in / archived).
-    expect(useAppStore.getState().blueprints.length).toBe(1);
+    // #3785 made `default` the greenfield superset; #3783 adds the five domain greenfields
+    // (crm/erp/helpdesk/hr/project-management), so the built-in library is six blueprints.
+    expect(useAppStore.getState().blueprints.length).toBe(6);
     expect(useAppStore.getState().activeBlueprintId).toBe("default");
   });
 

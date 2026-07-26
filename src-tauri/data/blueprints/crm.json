@@ -1,0 +1,25 @@
+{
+  "order": 10,
+  "id": "crm",
+  "name": "CRM",
+  "desc": "Build a CRM platform — contacts, pipeline, and sales automation with an AI assistant layer.",
+  "icon": "group",
+  "origin": "built-in",
+  "category": "greenfield",
+  "mode": "create",
+  "skills": ["web-seo"],
+  "sections": [
+    { "key": "discovery" },
+    { "key": "market" },
+    { "key": "deployment" },
+    { "key": "source" },
+    { "key": "features" },
+    { "key": "ui", "optional": true },
+    { "key": "streams" },
+    { "key": "mcps" },
+    { "key": "automations" },
+    { "key": "skills" }
+  ],
+  "kit": "react-ui",
+  "features": "## Core\n- Contact & account records — full interaction history, custom fields, bulk import\n- Lead capture & qualification — web-to-lead forms, assignment & routing rules\n- Deal pipeline with custom stages — drag-and-drop board, multiple pipelines\n- Activity & task tracking — calls, meetings, reminders, unified timeline\n- Email sync, tracking & templates — two-way inbox sync, open/click tracking\n- Sales forecasting — quota vs. pipeline, forecast categories, close-date projection\n- Custom reports & dashboards\n- Workflow automation — trigger→action rules, approvals\n- Role-based security & granular permissions\n- REST API + integration marketplace\n- Native mobile app\n\n## Differentiators\n- AI sales assistant — predictive lead/deal scoring, AI email drafting, record & call summaries\n- Automated sequences / cadences — multi-touch email/call/task outreach with branching\n- Conversation intelligence — call recording, transcription, keyword & coaching insights\n- CPQ — product catalog, quote configuration, price rules, e-signature\n"
+}

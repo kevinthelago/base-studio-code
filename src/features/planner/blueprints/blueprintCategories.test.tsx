@@ -54,8 +54,10 @@ describe("blueprint categories (#645)", () => {
     // the user blueprint's content is preserved (refreshBuiltIns now canonicalizes section keys, #1914,
     // so it's a content-equal copy rather than the same reference)
     expect(out.find((b) => b.id === "mine")).toStrictEqual(mine);
-    // #3785: `default` is the only built-in now — the built-in set stays exactly [default].
-    expect(out.filter((b) => b.origin === "built-in").map((b) => b.id)).toEqual(["default"]);
+    // #3785 made `default` the greenfield superset; #3783 adds the domain greenfields. refreshBuiltIns
+    // refreshes the persisted `default` and APPENDS the new code-owned built-ins (ordered by `order`).
+    expect(out.filter((b) => b.origin === "built-in").map((b) => b.id))
+      .toEqual(["default", "crm", "erp", "helpdesk", "hr", "project-management"]);
   });
 
   it("prunes persisted built-ins that no longer exist in code, keeps user blueprints (#923)", () => {
@@ -70,9 +72,9 @@ describe("blueprint categories (#645)", () => {
   it("tags every built-in blueprint origin=built-in (#658)", () => {
     const all = makeBlueprints();
     expect(all.every((b) => b.origin === "built-in")).toBe(true);
-    // The packaged set after the #3785 consolidation: the single greenfield Default.
-    // (Complete + the transform/harden/data blueprints were merged in / archived.)
-    for (const id of ["default"]) {
+    // The packaged set after #3785 consolidation + #3783: the greenfield superset Default plus the
+    // five domain greenfields. (Complete + the transform/harden/data blueprints were merged in / archived.)
+    for (const id of ["default", "crm", "erp", "helpdesk", "hr", "project-management"]) {
       expect(all.find((b) => b.id === id)!.origin, id).toBe("built-in");
     }
   });

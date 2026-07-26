@@ -1,11 +1,13 @@
-//! Project classification (#3783/#3784) — one JSON blob per project (single row): the planner's
+//! Project classification (#3783/#3784/#3806) — one JSON blob per project (single row): the planner's
 //! discovery output that shapes the plan. The contract shape is `{ uiMode: "custom"|"external",
-//! needsSource?: bool, needsMcp?: bool, needsSkills?: bool }` — `uiMode` selects the UI stage's
-//! surface (the in-app designer preview vs the external Claude-Design drop-files intake), and the
-//! `needs*` booleans mark which optional stages (source / mcp / skills) the project shows. EVERY
-//! field is optional (an unclassified project reads as absent, and each consumer applies its own
-//! non-regressing default), validated at set-time by [`crate::validate::validate_classify_config`]
-//! so a mistyped value is rejected loudly instead of silently mis-shaping the plan.
+//! needsMarket?: bool, needsSource?: bool, needsMcp?: bool, needsSkills?: bool, needsAutomations?: bool }`
+//! — `uiMode` selects the UI stage's surface (the in-app designer preview vs the external
+//! Claude-Design drop-files intake), and the `needs*` booleans mark which optional stages (market /
+//! source / mcp / skills / automations) the project shows. The planner records it as the closing step
+//! of Discovery (there is no separate Configure stage, #3806). EVERY field is optional (an
+//! unclassified project reads as absent, and each consumer applies its own non-regressing default),
+//! validated at set-time by [`crate::validate::validate_classify_config`] so a mistyped value is
+//! rejected loudly instead of silently mis-shaping the plan.
 
 use crate::Store;
 

@@ -9,8 +9,7 @@
   "skills": ["web-seo"],
   "sections": [
     { "key": "discovery" },
-    { "key": "configure" },
-    { "key": "market", "optional": true },
+    { "key": "market" },
     { "key": "deployment" },
     { "key": "source" },
     { "key": "features" },

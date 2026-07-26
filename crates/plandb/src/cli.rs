@@ -193,10 +193,11 @@ registry needs a \"url\". A rejected write leaves the stored manifest untouched.
   bsc plan classify set [--force]   # replace the classification from a JSON object on stdin
   bsc plan classify get             # print the stored classification
 
-The planner's discovery output (#3783/#3784) that shapes the plan. Fields, all optional:
-uiMode (custom = the in-app designer preview, external = the Claude-Design drop-files intake), and
-the booleans needsSource / needsMcp / needsSkills / needsAutomations marking which optional stages
-(source / mcp / skills / automations) the project shows. `set` validates before storing; --force stores an unvalidated blob.",
+The planner's discovery output (#3783/#3784/#3806) that shapes the plan — recorded as the closing
+step of Discovery (there is no separate Configure stage). Fields, all optional: uiMode (custom = the
+in-app designer preview, external = the Claude-Design drop-files intake), and the booleans
+needsMarket / needsSource / needsMcp / needsSkills / needsAutomations marking which optional stages
+(market / source / mcp / skills / automations) the project shows. `set` validates before storing; --force stores an unvalidated blob.",
     },
     CmdDoc {
         name: "market",
