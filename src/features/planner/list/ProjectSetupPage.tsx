@@ -140,7 +140,7 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
       >
         {/* body — two columns, content TOP-aligned: the setup form on the left, the persistent
             "Cloud blueprints" column on the right. Each column scrolls on its own. */}
-        <Row style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
+        <Row align="stretch" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
           <Box style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: "22px 22px 28px" }}>
             <Box style={{ maxWidth: 640 }}>
               {/* project name (moved out of the list header's inline form) — autofocused on open. */}
