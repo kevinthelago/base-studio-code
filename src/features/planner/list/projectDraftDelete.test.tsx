@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ProjectsList } from "./ProjectsList";
 import { useAppStore } from "@/store";
 
-// Repro for the draft-delete crash (#…): pressing the trash button on a "draft" project
+// Repro for the draft-delete crash (#…): deleting a "draft" project
 // card must remove the card and never throw — regardless of what `list_local_projects`
 // returns (incl. a non-array) or whether the folder delete succeeds.
 
@@ -19,13 +19,17 @@ function routeInvoke(opts: { localProjects?: unknown; deleteRejects?: boolean } 
   }) as unknown as typeof invoke);
 }
 
-// Drafts are now compact chips (Planner two-pane redesign): the chip carries a ✕ titled
-// "delete draft". Clicking it now opens a confirmation modal (#1216) — confirm with the
-// modal's "delete draft" button to actually destroy the folder.
+// The Projects tab was rebuilt in the Skills-tab style (#3802): a draft is a CARD whose
+// destructive action lives behind the ⋯ menu, not an inline ✕ on a chip. So the delete is a
+// three-step drive — open the menu, pick "delete draft", then confirm in the modal (#1216).
+// The menu item and the modal button never coexist (picking the item closes the menu and opens
+// the modal), so the same query resolves unambiguously at each step.
 function clickDeleteDraft() {
-  fireEvent.click(screen.getByTitle("delete draft"));
-  // The modal's confirm button is the one inside a <button> ("delete draft" text).
-  fireEvent.click(screen.getByRole("button", { name: /delete draft/i }));
+  fireEvent.click(screen.getByTitle("More options"));
+  // EXACT name, not a regex: the card itself is a role=button whose accessible name concatenates
+  // its whole subtree, so a loose /delete draft/i also matches the card while the menu is open.
+  fireEvent.click(screen.getByRole("button", { name: "delete draft" }));   // menu item
+  fireEvent.click(screen.getByRole("button", { name: "delete draft" }));   // modal confirm
 }
 
 describe("ProjectsList — draft delete", () => {
@@ -38,7 +42,7 @@ describe("ProjectsList — draft delete", () => {
     });
   });
 
-  it("removes the draft card when the trash button is pressed (folder delete ok)", async () => {
+  it("removes the draft card when delete is confirmed (folder delete ok)", async () => {
     routeInvoke({ localProjects: [] });
     render(<ProjectsList />);
     await screen.findByText("My Draft");

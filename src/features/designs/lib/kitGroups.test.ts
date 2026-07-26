@@ -39,15 +39,16 @@ describe("groupKits — always technology → style (#2506)", () => {
     expect(styles.every((s) => s.children.length === 0)).toBe(true);
   });
 
-  it("the real packaged seed (one empty kit) groups under React → Studio → base-studio-code (#3543)", () => {
-    // #3543 wiped the library to a single empty `base-studio-code` kit (tech react / style studio). The
+  it("the real packaged seed groups under React → base-studio-code (#3543/#3640)", () => {
+    // #3543 wiped the library to a single `base-studio-code` kit. Its style is the kit's OWN name, not
+    // "studio" (#3640 — "studio" collided with the bsc-studio app-library snapshot concept). The
     // rich multi-kit grouping shapes (a multi-kit style group, a motion style, a data-viz group) are
     // exercised by the synthetic-fixture tests in this file; this one asserts the REAL seed still groups
-    // sanely — one kit under (react, studio), so the style header IS the kit (single-kit merge).
+    // sanely — one kit under (react, base-studio-code), so the style header IS the kit (single-kit merge).
     const t = groupKits(SEED_KITS);
     expect(t.map((n) => asGroup(n).label)).toEqual(["react"]);
     const styles = asGroup(t[0]).children.map(asGroup);
-    expect(styles.map((s) => s.label)).toEqual(["studio"]);
+    expect(styles.map((s) => s.label)).toEqual([BASE_STUDIO_CODE_KIT_ID]);
     expect(styles[0].kit?.id).toBe(BASE_STUDIO_CODE_KIT_ID);
     expect(styles[0].children).toHaveLength(0);
     // Nothing is dropped or reordered by the grouping.

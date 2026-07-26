@@ -13,13 +13,23 @@ const setEnabled = (sections: BlueprintStage[], key: string, enabled: boolean): 
   sections.map((s) => (s.key === key ? { ...s, enabled } : s));
 const signalsFrom = (over: Parameters<typeof buildPlanStageState>[0] = {}) =>
   planStateToSignals(buildPlanStageState(over));
+/** The per-project classification signals (#3784) that make Default's optional stages apply.
+ *  They default OFF, which hides those stages — orthogonal to what these tests measure. */
+const OPTIONAL_STAGES_ON = {
+  needsMarket: true, needsSource: true, needsMcp: true, needsAutomations: true, needsSkills: true,
+};
 
 describe("PlanStageBar", () => {
   it("renders one segment per enabled, applicable section (UI hidden when not required)", () => {
     // The default UI is now optional (always shown, #676); clear that here so this test
     // exercises the appliesWhen-hiding path for a required UI section.
     const sections = defaultSections().map((s) => (s.key === "ui" ? { ...s, optional: false } : s));
-    const { container } = render(<PlanStageBar sections={sections} signals={signalsFrom({ requiresUi: false })} />);
+    // Default also carries market/source/mcps/automations/skills, each gated by its own
+    // classification signal (#3784). Turn them ON so `ui` is the ONE inapplicable stage and this
+    // test still measures what it says: every enabled+applicable section gets a segment.
+    const { container } = render(
+      <PlanStageBar sections={sections} signals={{ ...signalsFrom({ requiresUi: false }), ...OPTIONAL_STAGES_ON }} />,
+    );
     const titles = titlesIn(container);
     const expected = sections.filter((s) => s.enabled && s.key !== "ui").length;
     expect(titles.length).toBe(expected);

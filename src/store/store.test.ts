@@ -1403,9 +1403,11 @@ describe("agent fleet store", () => {
     const paneKey = (p: number) => p === 0 ? directorPaneId("multi-key") : fleetPaneId("multi-key", ["sci", "ui"][p - 1]);
     const names = (p: number) => (st.paneMcpServers[paneKey(p)] ?? []).map((e) => e.name).sort();
     // Every session also gets the always-available built-in servers — Research (#1196) +
-    // Compliance (#1005).
-    // Director (pane 0) sees ALL installed servers — including the disabled and other-project ones.
-    expect(names(0)).toEqual(["Compliance", "Disabled", "Glob", "Research", "SciTool"]);
+    // Compliance (#1005). "Channel (mock)" (#3146/#3777) is a built-in too, but a DISABLED one:
+    // it is not global, and reaches a worker only by explicit per-stream assignment.
+    // Director (pane 0) sees ALL installed servers — including the disabled and other-project
+    // ones, so the disabled mock channel shows up here and NOT in either worker below.
+    expect(names(0)).toEqual(["Channel (mock)", "Compliance", "Disabled", "Glob", "Research", "SciTool"]);
     // The science worker gets the global baseline + built-ins + its assigned SciTool
     // (disabled/other-project, pulled in by the explicit assignment).
     expect(names(1)).toEqual(["Compliance", "Glob", "Research", "SciTool"]);
