@@ -350,7 +350,10 @@ export function ProjectsList() {
     setPlanningContext("", "");
     setActiveProjectMeta(null, "", "", 0);
     addDraftProject(draftKey, { title: trimmed, pitch: "", createdAt: Date.now() });
-    void addDbProject({ key: draftKey, title: trimmed, pitch: "", blueprint: bpId, category: blueprints.find((b) => b.id === bpId)?.category ?? null, state: "drafted" });
+    // No `category` at creation (#3785): the row used to copy the seeding blueprint's lifecycle
+    // category, but lifecycle left the blueprint model — the planner DISCOVERS it, so it isn't
+    // known yet here. Glance reads the discovered `ClassifyConfig.lifecycle` instead.
+    void addDbProject({ key: draftKey, title: trimmed, pitch: "", blueprint: bpId, state: "drafted" });
     fireInvoke("set_project_title", { projectKey: draftKey, title: trimmed });
     setProjectBlueprintId(draftKey, bpId);
     // #3785: seed the blueprint's curated feature list into the new project's Features stage.
