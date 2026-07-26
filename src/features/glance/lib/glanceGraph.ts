@@ -42,17 +42,20 @@ export type GHealth = "idle" | "healthy" | "warning" | "error" | "off";
 export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" | "live";
 /** A Glance edge's kind. The project-network contracts (`api`/`data`/`events`) plus the CROSS-GRAPH
  *  LIBRARY edges: `uses-kit` (a project consumes a `bsc ui` kit, #2571) and the generalized `requires`
- *  (#3119, epic #3114) — a project/page pulls in an ALGORITHM or a SOUND library node. Both library kinds
- *  ({@link isLibraryEdge}) route vertically into the fenced band; the project contracts flow left→right. */
-export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "uses-mcp";
+ *  (#3119, epic #3114) — a project/page pulls in an ALGORITHM or a SOUND library node — plus the EXTERNAL
+ *  CONTRACT edges (#3786): `uses-mcp` (an MCP server) and `uses-service` (a third-party service). Every
+ *  band edge ({@link isBandEdge}) routes vertically into the fenced band; the project contracts flow
+ *  left→right. */
+export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "uses-mcp" | "uses-service";
 /** A Glance node's KIND (#2571 → generalized #3119 → external contracts #3786). A PROJECT (the default), a
  *  UI-KIT node (`kit`, the `ui` library graph — kept as-is so existing fixtures + persisted ids are
  *  unaffected), a generalized cross-graph `library` node (an algorithm / sound, carrying
- *  {@link GRawNode.library}), or an `mcp` contract node (an external MCP server a project uses, #3786).
- *  ABSENT ⇒ `"project"`. A non-project node's id is namespaced (`kit:` / `algo:` / `sound:` / `mcp:`, see
- *  {@link libraryNodeId} / {@link mcpNodeId}) so it can never collide with a project key (a `[a-z0-9-]`
- *  slug — no colon). */
-export type GNodeKind = "project" | "kit" | "library" | "mcp";
+ *  {@link GRawNode.library}), an `mcp` contract node (an external MCP server a project uses, #3786 Phase 1
+ *  auto-derived + Phase 2 planner-declared), or a `service` contract node (a third-party service a project
+ *  contracts with, #3786 Phase 2). ABSENT ⇒ `"project"`. A non-project node's id is namespaced (`kit:` /
+ *  `algo:` / `sound:` / `mcp:` / `service:`, see {@link libraryNodeId} / {@link mcpNodeId} /
+ *  {@link serviceNodeId}) so it can never collide with a project key (a `[a-z0-9-]` slug — no colon). */
+export type GNodeKind = "project" | "kit" | "library" | "mcp" | "service";
 
 /** The cross-graph LIBRARY dimensions a band node can belong to (#3119) — reuses A's {@link NodeGraph}
  *  (algorithms · UI kits · sounds). A `kit` node is the `ui` case (kept for back-compat); a generalized
@@ -71,6 +74,11 @@ export const SOUND_COLOR = "#f472b6";
  *  pink sound) so an external-contract node + its `uses-mcp` edges read as their own dimension. MCP nodes
  *  are dashed band cards with no health dot, so this never blurs with the warning-health orange. */
 export const MCP_COLOR = "#f59e0b";
+/** External-SERVICE accent (#3786 Phase 2) — indigo, distinct from every other band dimension (cyan kit /
+ *  violet algo / pink sound / amber mcp) AND from the health palette (blue/green/orange/red), so a
+ *  third-party service node + its `uses-service` edges read as their own contract dimension. Like the mcp
+ *  node it is a dashed band card with no health dot. */
+export const SERVICE_COLOR = "#818cf8";
 
 /** The presentation row shared by every fenced-BAND node (#3119 + #3786) — the accent colour, the node
  *  glyph + kind word, the band header, the inspector panel title, the consumer-edge label, and the
@@ -103,6 +111,16 @@ export const LIBRARY_META: Record<GLibraryGraph, BandMeta> = {
 export const MCP_META: BandMeta = {
   color: MCP_COLOR, marker: "⇄", kindLabel: "mcp", bandLabel: "MCP SERVERS", panelTitle: "MCP SERVER", edgeLabel: "contracts with",
   blurb: "An external MCP server this project contracts with — a wire contract to a tool/data server, scoped to the projects that use it (a global built-in is not a specific contract, so it is not drawn here).",
+};
+
+/** External-SERVICE contract node presentation (#3786 Phase 2) — a third-party service (a payments API, a
+ *  SaaS backend, another team's endpoint) a project's planner has DECLARED it depends on. Rendered in the
+ *  same fenced top band as the mcp + library dimensions, but distinct (indigo · ☁ · "service" ·
+ *  "SERVICES") so it reads as an external, planner-declared wire contract. Its endpoint type lives on the
+ *  node's `appType`. */
+export const SERVICE_META: BandMeta = {
+  color: SERVICE_COLOR, marker: "☁", kindLabel: "service", bandLabel: "SERVICES", panelTitle: "SERVICE", edgeLabel: "contracts with",
+  blurb: "An external service this project contracts with — a third-party endpoint (a payments API, a SaaS backend, another team's service) the planner declared as a dependency, so the relationship is visible and downstream agents know the contract.",
 };
 
 /** Namespace prefix for a KIT node id (#2571). */
@@ -142,6 +160,19 @@ export const mcpIdOfNode = (nodeId: string): string =>
  *  {@link projectLinkId}, a {@link usesKitEdgeId}, or a {@link requiresEdgeId}. */
 export const usesMcpEdgeId = (projectKey: string, serverId: string): string => `usemcp:${projectKey}>${serverId}`;
 
+/** Namespace prefix for an external-SERVICE contract node id (#3786 Phase 2) — its own namespace so it
+ *  never collides with a project key or another band node id (`kit:`/`algo:`/`sound:`/`mcp:`). */
+export const SERVICE_NODE_PREFIX = "service:";
+/** The stable, collision-proof id of the graph node for an external service (#3786 Phase 2). `serviceId`
+ *  is the contract's `to` endpoint (the service name/slug the planner declared). */
+export const serviceNodeId = (serviceId: string): string => `${SERVICE_NODE_PREFIX}${serviceId}`;
+/** The service id behind a `service:<serviceId>` node id (identity for anything already bare). */
+export const serviceIdOfNode = (nodeId: string): string =>
+  nodeId.startsWith(SERVICE_NODE_PREFIX) ? nodeId.slice(SERVICE_NODE_PREFIX.length) : nodeId;
+/** Stable id for a project→service `uses-service` edge (#3786 Phase 2) — prefixed so it never collides
+ *  with a {@link projectLinkId}, a {@link usesKitEdgeId}, a {@link requiresEdgeId}, or a {@link usesMcpEdgeId}. */
+export const usesServiceEdgeId = (projectKey: string, serviceId: string): string => `usesvc:${projectKey}>${serviceId}`;
+
 /** Is `n` a cross-graph LIBRARY node (#3119) — a lifted band node, not a project? True for a legacy `kit`
  *  node (the `ui` graph) or a generalized `library` node (algo/sound/ui). */
 export const isLibraryNode = (n: { kind?: GNodeKind }): boolean => n.kind === "kit" || n.kind === "library";
@@ -154,15 +185,19 @@ export const libraryGraphOf = (n: { kind?: GNodeKind; library?: GLibraryGraph })
 export const isLibraryEdge = (kind: GEdgeKind): boolean => kind === "uses-kit" || kind === "requires";
 
 /** Is `n` a fenced-BAND node (#3786) — ANY lifted non-project node: a library node (kit/algorithm/sound)
- *  OR an external `mcp` contract node. These are lifted OUT of the project DAG into the top band. */
-export const isBandNode = (n: { kind?: GNodeKind }): boolean => isLibraryNode(n) || n.kind === "mcp";
-/** Is `kind` a BAND edge (#3786) — a library edge OR the `uses-mcp` contract edge. These route VERTICALLY
- *  into the fenced band and are excluded from the project-network layout. */
-export const isBandEdge = (kind: GEdgeKind): boolean => isLibraryEdge(kind) || kind === "uses-mcp";
+ *  OR an external contract node (`mcp` / `service`). These are lifted OUT of the project DAG into the top
+ *  band. */
+export const isBandNode = (n: { kind?: GNodeKind }): boolean =>
+  isLibraryNode(n) || n.kind === "mcp" || n.kind === "service";
+/** Is `kind` a BAND edge (#3786) — a library edge OR an external-contract edge (`uses-mcp`/`uses-service`).
+ *  These route VERTICALLY into the fenced band and are excluded from the project-network layout. */
+export const isBandEdge = (kind: GEdgeKind): boolean =>
+  isLibraryEdge(kind) || kind === "uses-mcp" || kind === "uses-service";
 /** The band presentation ({@link BandMeta}) for a fenced-band node (#3786) — the MCP row for an `mcp`
- *  contract node, else the library-graph row for a kit/algorithm/sound node. */
+ *  contract node, the SERVICE row for a `service` contract node, else the library-graph row for a
+ *  kit/algorithm/sound node. */
 export const bandNodeMeta = (n: { kind?: GNodeKind; library?: GLibraryGraph }): BandMeta =>
-  n.kind === "mcp" ? MCP_META : LIBRARY_META[libraryGraphOf(n) ?? "ui"];
+  n.kind === "mcp" ? MCP_META : n.kind === "service" ? SERVICE_META : LIBRARY_META[libraryGraphOf(n) ?? "ui"];
 
 /** One communication form on a fleet node's comms surface (#2563) — a typed interaction + its `bsc-*`
  *  runtime transport, pared from the Org model so the glance node model stays decoupled from it. */
@@ -234,8 +269,10 @@ export interface GRawNode {
   library?: GLibraryGraph;
   /** The project's APPLICATION ARCHITECTURE (#3786/#3802) — the contract endpoint-type discriminator:
    *  application/api/serverless/static/desktop/mobile/cli/library. Set on a PROJECT node from
-   *  `planClassification[key].appType` (absent ⇒ "application"/unknown, rendered plain), and on an `mcp`
-   *  contract node from its transport (http ⇒ api, stdio ⇒ serverless). Absent on library/kit nodes. */
+   *  `planClassification[key].appType` (absent ⇒ "application"/unknown, rendered plain); on an `mcp`
+   *  contract node from its transport (http ⇒ api, stdio ⇒ serverless) or a planner-declared `--app-type`;
+   *  and on a `service` contract node from the planner-declared `--app-type` (#3786 Phase 2). Absent on
+   *  library/kit nodes. */
   appType?: AppType;
 }
 /** A dependency edge: `from` depends on `to`, over a contract of `kind`. Optional stable `id` (a
@@ -340,6 +377,10 @@ export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: 
   // contract to an external tool/data server, drawn to the shared mcp node. Tight-dotted amber so it reads
   // apart from the kit/library edges.
   "uses-mcp": { label: "contracts with", color: MCP_COLOR, dash: "2 3", w: 1.6, surface: "contracts with a scoped external MCP server · a wire contract (Phase 1 inter-app contracts)" },
+  // The external SERVICE-CONTRACT dimension (#3786 Phase 2): a project CONTRACTS WITH a third-party
+  // service its planner declared — a wire contract to an external endpoint, drawn to the shared service
+  // node. Tight-dotted indigo so it reads apart from the mcp + kit/library edges.
+  "uses-service": { label: "contracts with", color: SERVICE_COLOR, dash: "2 3", w: 1.6, surface: "contracts with an external service · a planner-declared wire contract (Phase 2 inter-app contracts)" },
 };
 
 // Node box + spacing in world (design) coordinates.

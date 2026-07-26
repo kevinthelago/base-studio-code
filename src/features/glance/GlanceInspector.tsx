@@ -12,7 +12,7 @@ import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { StatTile } from "@/shared/ui/data/StatTile";
-import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, isBandNode, bandNodeMeta, libIdOfNode, mcpIdOfNode, type GraphModel, type GNode, type GEdge } from "./lib/glanceGraph";
+import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, isBandNode, bandNodeMeta, libIdOfNode, mcpIdOfNode, serviceIdOfNode, type GraphModel, type GNode, type GEdge } from "./lib/glanceGraph";
 import { archetypeById, formById, hueColor } from "@/features/teams";
 
 const FAULT_COLOR = "var(--graph-health-error)";
@@ -89,11 +89,12 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
     const n = model.nodes.find((x) => x.id === selId);
     if (!n) return null;
 
-    // A fenced-BAND node — a cross-graph LIBRARY node (#2571 kit → #3119) OR an external MCP-CONTRACT node
-    // (#3786): the node id + the projects that CONSUME it (the edges into it), each clickable to hop to that
-    // project. A band node has no health/activity/role of its own, so the project tiles are replaced by a
-    // scoped panel. The `ui` case is byte-identical to the pre-#3119 kit panel (header "UI KIT" · ◆ · "ui
-    // kit" · "uses kit"); an mcp node reads "MCP SERVER" · ⇄ · its appType · "contracts with".
+    // A fenced-BAND node — a cross-graph LIBRARY node (#2571 kit → #3119) OR an external CONTRACT node
+    // (#3786: an `mcp` server or a `service`): the node id + the projects that CONSUME it (the edges into
+    // it), each clickable to hop to that project. A band node has no health/activity/role of its own, so
+    // the project tiles are replaced by a scoped panel. The `ui` case is byte-identical to the pre-#3119
+    // kit panel (header "UI KIT" · ◆ · "ui kit" · "uses kit"); an mcp/service node reads its panel title ·
+    // glyph · appType · "contracts with".
     if (isBandNode(n)) {
       const lib = bandNodeMeta(n);
       const consumers = model.edges.filter((e) => e.to === n.id);
@@ -102,9 +103,10 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
           <Header title={lib.panelTitle} onClose={onClose} />
           <Box style={{ flex: 1, overflowY: "auto", padding: "18px 16px" }}>
             <Text as="div" mono size={19} weight={700} style={{ letterSpacing: "-.4px" }}>{n.slug}</Text>
-            {/* The node id — plus, for an mcp contract node, its appType (#3786): the contract endpoint type. */}
+            {/* The node id — plus, for an external contract node (mcp/service), its appType (#3786): the
+                contract endpoint type. Library/kit nodes carry no appType. */}
             <Text as="div" mono size={11} tone="dim" style={{ marginTop: 4 }}>
-              {n.kind === "mcp" ? mcpIdOfNode(n.id) : libIdOfNode(n.id)}{n.kind === "mcp" && n.appType ? ` · ${n.appType}` : ""}
+              {n.kind === "mcp" ? mcpIdOfNode(n.id) : n.kind === "service" ? serviceIdOfNode(n.id) : libIdOfNode(n.id)}{n.appType ? ` · ${n.appType}` : ""}
             </Text>
 
             <Grid cols={2} gap={8} style={{ marginTop: 16 }}>

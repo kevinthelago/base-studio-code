@@ -4,8 +4,8 @@
 // wiring real edges later is a drop-in — the page + graph core never change.
 import sampleGraphEmbedded from "@data/glance/sample-graph.json";
 import type { GRawNode, GRawEdge, GRole, GCategory, GHealth, GActivity } from "./glanceGraph";
-import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId } from "./glanceGraph";
-import type { ProjectLink } from "./projectLinks";
+import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId } from "./glanceGraph";
+import { isProjectContract, type ProjectLink } from "./projectLinks";
 // Cross-feature types only, via the barrel (#1309 boundary): the consumer index (`kitUsage`) whose
 // (projectKey, kitId) edges the kit nodes are built from, plus the kit→library `requires` roll-up
 // (`resolveKitLibraryRefs`, #3133) the caller resolves and hands in as plain data.
@@ -55,10 +55,12 @@ export const SAMPLE_GRAPH: GlanceData = {
  *  every algorithm / sound node the components of its kits import, so the fenced band carries real library
  *  dependencies (the logistics example: a route-planner project → its `algo:` dijkstra node), not just kits.
  *
- *  On top of THAT, the external MCP-CONTRACT dimension (#3786, Phase 1 inter-app contracts): one node per
- *  MCP server SCOPED to ≥1 project in this graph, edged from each consuming project — mirroring the kit
- *  dimension. A GLOBAL server (`projects: []`, every session gets it) is not a specific contract, so it is
- *  skipped; a project's `appType` (#3802) is surfaced on its node as the endpoint-type discriminator.
+ *  On top of THAT, the external CONTRACT dimension (#3786): (Phase 1) one auto-derived node per MCP server
+ *  SCOPED to ≥1 project in this graph, edged from each consuming project — mirroring the kit dimension; a
+ *  GLOBAL server (`projects: []`) is skipped. (Phase 2) plus EXPLICIT, planner-declared contracts — a
+ *  stored `ProjectLink` whose `target` is a `service` or `mcp` endpoint becomes an external band node
+ *  edged from `from`, DEDUPED against the Phase-1 auto-mcp nodes by node id. A project's `appType` (#3802)
+ *  is surfaced on its node as the endpoint-type discriminator.
  *
  *  @param kitUsage    the consumer index (`kitUsage`) — (projectKey, kitId) edges (from `@/features/designs`).
  *  @param kits        the kit library, so a kit node reads the kit's NAME (else its id).
@@ -89,11 +91,13 @@ export function buildGlanceData(
     appType: p.appType,                // #3786/#3802: the contract endpoint-type discriminator (absent ⇒ "application", rendered plain)
     // `kind` is left ABSENT here (⇒ "project", #2571) so a project node's shape is byte-identical to before.
   }));
-  // The user-drawn project relationships (#2253) — the real edges, filtered to links between two nodes
-  // that still exist. No fabricated topology; an un-wired project is simply an isolated node.
+  // The project↔project contracts (#2253) — the real edges, filtered to PROJECT-target links between two
+  // nodes that still exist. No fabricated topology; an un-wired project is simply an isolated node. A
+  // contract whose target is an external service / mcp server (#3786 Phase 2) is NOT a project edge — it
+  // is lifted into the band below.
   const ids = new Set(rawNodes.map((n) => n.id));
   const rawEdges: GRawEdge[] = links
-    .filter((l) => ids.has(l.from) && ids.has(l.to))
+    .filter((l) => isProjectContract(l) && ids.has(l.from) && ids.has(l.to))
     .map((l) => ({ id: l.id, from: l.from, to: l.to, kind: l.kind }));
 
   // The UI-KIT dimension (#2571): one node per DISTINCT kit that has ≥1 consumer AMONG the current
@@ -203,6 +207,40 @@ export function buildGlanceData(
     });
     for (const projectKey of consumers) {
       rawEdges.push({ id: usesMcpEdgeId(projectKey, serverId), from: projectKey, to: mcpNodeId(serverId), kind: "uses-mcp" });
+    }
+  }
+
+  // EXPLICIT, PLANNER-DECLARED external contracts (#3786 Phase 2) — a stored contract whose `target` is a
+  // `service` or `mcp` endpoint (not another project) becomes an external BAND node edged from `from`. This
+  // GENERALIZES the Phase-1 auto-derived mcp nodes (which come from the McpServer scope) to contracts the
+  // planner declares directly via `bsc project link add … --target-type`. DEDUPED against the auto-mcp
+  // nodes by node id: an explicit mcp contract to a server already in the scope reuses the ONE existing
+  // node (`mcp:<serverId>`) and its edge id collides, so neither node nor edge is doubled. A `service`
+  // target has no auto-derivation, so it always mints its own node. Additive + data-gated: no
+  // external-target contracts ⇒ nothing added (byte-identical to Phase 1).
+  const seenBandNodeId = new Set(rawNodes.map((n) => n.id)); // includes the auto-mcp nodes emitted above
+  const seenEdgeId = new Set(rawEdges.map((e) => e.id));
+  for (const l of links) {
+    const t = l.target;
+    if (!t || (t.type !== "service" && t.type !== "mcp")) continue; // project targets are drawn above
+    if (!ids.has(l.from)) continue;                                 // the consumer must be a project in this graph
+    const nodeId = t.type === "mcp" ? mcpNodeId(l.to) : serviceNodeId(l.to);
+    if (!seenBandNodeId.has(nodeId)) {
+      seenBandNodeId.add(nodeId);
+      rawNodes.push({
+        id: nodeId,
+        slug: t.name || l.to,
+        kind: t.type,        // "mcp" | "service"
+        role: "infra",       // an external contract is a shared foundational dependency
+        appType: t.appType,  // the planner-declared endpoint type (absent ⇒ rendered plain)
+        health: "idle",      // an external contract has no runtime health of its own — never pulls a consumer's dot
+        activity: "idle",
+      });
+    }
+    const edgeId = t.type === "mcp" ? usesMcpEdgeId(l.from, l.to) : usesServiceEdgeId(l.from, l.to);
+    if (!seenEdgeId.has(edgeId)) {
+      seenEdgeId.add(edgeId);
+      rawEdges.push({ id: edgeId, from: l.from, to: nodeId, kind: t.type === "mcp" ? "uses-mcp" : "uses-service" });
     }
   }
 

@@ -10,8 +10,8 @@
 
 use crate::store::{self, ProjectRow};
 use crate::{
-    add_link, is_published, list_projects, load_github_state, load_links, mark_published,
-    remove_link, save_github_state,
+    add_contract, is_published, list_projects, load_github_state, load_links, mark_published,
+    remove_link, save_github_state, target_to_json, ContractTarget,
 };
 use bsc_cli_util::CmdDoc;
 use serde::Deserialize;
@@ -60,16 +60,27 @@ moves the hub directory. For a single project's plan + prose, use `bsc plan` ins
     },
     CmdDoc {
         name: "link",
-        summary: "list / add / remove project relationships (the Glance network edges, #2253)",
+        summary: "list / add / remove inter-app contracts (the Glance network edges, #2253/#3786)",
         usage: "\
 USAGE:
-  bsc project link list [--json]              # every project relationship
-  bsc project link add <from> <to> <kind>     # add from->to over api|data|events (idempotent; prints the id)
+  bsc project link list [--json]              # every contract (--json includes the target endpoint)
+  bsc project link add <from> <to> <kind> [target flags]   # add from->to over api|data|events (idempotent; prints the id)
   bsc project link remove <id>                # remove by id (id is \"<from>><to>:<kind>\")
 
-A link records that project <from> depends on / consumes project <to> over a contract of <kind>
-(api | data | events). Global (not tied to one plan.db); stored in ~/.base-studio-code/project-links.json.
-Agents read `link list --json` to learn what their project consumes.",
+  target flags for `add` (#3786 — default is another project):
+    --target-type project|service|mcp   # what <to> is: another project (default), an external service, or an mcp server
+    --name <name>                       # display name of the external endpoint
+    --url <url>                         # endpoint URL (an http service / mcp server)
+    --app-type <type>                   # endpoint app type (api | serverless | static | …), shown on the Glance node
+
+A contract records that project <from> depends on / consumes <to> over <kind> (api | data | events).
+<to> is another project by default, or an external service / mcp server via --target-type. Global (not
+tied to one plan.db); stored in ~/.base-studio-code/project-links.json. Agents read `link list --json`
+to learn what their project consumes; the desktop Glance draws each contract as an edge (external
+service/mcp targets render as their own contract node).
+
+  e.g.  bsc project link add my-app postgres data --target-type mcp --app-type serverless
+        bsc project link add my-app stripe api --target-type service --url https://api.stripe.com --app-type api",
     },
     CmdDoc {
         name: "github-state",
@@ -104,19 +115,35 @@ it stamps createdAt on a NEW key and preserves it on an update, always bumping u
     },
 ];
 
-/// Parsed global flags + leftover positional args.
+/// Parsed global flags + the `link add` contract-target flags (#3786) + leftover positional args.
 struct Args {
     json: bool,
+    /// `--target-type project|service|mcp` (default project) — the endpoint kind a contract points at.
+    target_type: Option<String>,
+    /// `--name` — display name of an external endpoint.
+    name: Option<String>,
+    /// `--url` — the endpoint URL.
+    url: Option<String>,
+    /// `--app-type` — the endpoint's application-architecture discriminator (api | serverless | …).
+    app_type: Option<String>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, positional: Vec::new() };
-    for arg in raw {
+    let mut a = Args { json: false, target_type: None, name: None, url: None, app_type: None, positional: Vec::new() };
+    // A value flag consumes the NEXT token, so iterate with an index rather than a plain for-each.
+    let mut it = raw.into_iter();
+    while let Some(arg) = it.next() {
+        // The value flags (#3786) take `<flag> <value>`; missing the value is an error.
+        let mut take = |flag: &str| it.next().ok_or_else(|| format!("{flag} needs a value"));
         match arg.as_str() {
             "--json" => a.json = true,
             // `-h`/`--help` route to the help command (anywhere on the line).
             "-h" | "--help" => a.positional.insert(0, "help".into()),
+            "--target-type" => a.target_type = Some(take("--target-type")?),
+            "--name" => a.name = Some(take("--name")?),
+            "--url" => a.url = Some(take("--url")?),
+            "--app-type" => a.app_type = Some(take("--app-type")?),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             _ => a.positional.push(arg),
         }
@@ -206,25 +233,36 @@ fn cmd_link(args: &Args, prog: &str) -> Result<(), String> {
         "list" => {
             let links = load_links();
             if args.json {
+                // Every row emits its target endpoint (#3786) so the desktop cache + agents see the full
+                // contract; a legacy project link reads back as `{ "type": "project" }`.
                 let arr: Vec<serde_json::Value> = links
                     .iter()
-                    .map(|l| serde_json::json!({ "id": l.id, "from": l.from, "to": l.to, "kind": l.kind }))
+                    .map(|l| serde_json::json!({ "id": l.id, "from": l.from, "to": l.to, "kind": l.kind, "target": target_to_json(&l.target) }))
                     .collect();
                 println!("{}", serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into()));
             } else if links.is_empty() {
                 println!("(no project links)");
             } else {
                 for l in &links {
-                    println!("{}\t{} -> {} ({})", l.id, l.from, l.to, l.kind);
+                    // Human view: annotate a non-project target so the endpoint kind is visible at a glance.
+                    let via = if l.target.kind == "project" { String::new() } else { format!(" [{}]", l.target.kind) };
+                    println!("{}\t{} -> {}{} ({})", l.id, l.from, l.to, via, l.kind);
                 }
             }
             Ok(())
         }
         "add" => {
-            let from = args.positional.get(2).ok_or("usage: bsc project link add <from> <to> <kind>")?;
+            let from = args.positional.get(2).ok_or("usage: bsc project link add <from> <to> <kind> [--target-type project|service|mcp] [--name …] [--url …] [--app-type …]")?;
             let to = args.positional.get(3).ok_or("usage: bsc project link add <from> <to> <kind>")?;
             let kind = args.positional.get(4).ok_or("usage: bsc project link add <from> <to> <kind>")?;
-            let id = add_link(from, to, kind)?;
+            // The target endpoint (#3786) — default is another project when no --target-type is given.
+            let target = ContractTarget {
+                kind: args.target_type.clone().unwrap_or_else(|| "project".into()),
+                name: args.name.clone(),
+                url: args.url.clone(),
+                app_type: args.app_type.clone(),
+            };
+            let id = add_contract(from, to, kind, target)?;
             println!("{id}");
             Ok(())
         }
@@ -356,6 +394,69 @@ mod tests {
     }
 
     #[test]
+    fn parse_args_collects_the_contract_target_flags() {
+        let a = parse_args(vec![
+            "link".into(), "add".into(), "app".into(), "stripe".into(), "api".into(),
+            "--target-type".into(), "service".into(),
+            "--name".into(), "Stripe".into(),
+            "--url".into(), "https://api.stripe.com".into(),
+            "--app-type".into(), "api".into(),
+        ])
+        .unwrap();
+        assert_eq!(a.target_type.as_deref(), Some("service"));
+        assert_eq!(a.name.as_deref(), Some("Stripe"));
+        assert_eq!(a.url.as_deref(), Some("https://api.stripe.com"));
+        assert_eq!(a.app_type.as_deref(), Some("api"));
+        assert_eq!(a.positional, vec!["link", "add", "app", "stripe", "api"]);
+    }
+
+    #[test]
+    fn parse_args_errors_when_a_value_flag_has_no_value() {
+        assert!(parse_args(vec!["link".into(), "add".into(), "--target-type".into()]).is_err());
+    }
+
+    #[test]
+    fn link_add_dispatch_persists_a_targeted_contract() {
+        crate::testhome::with_home(|_home| {
+            // A default (project) contract, an mcp-targeted one, and a service-targeted one via the CLI.
+            run(vec!["link".into(), "add".into(), "app".into(), "billing".into(), "api".into()], "bsc project").unwrap();
+            run(
+                vec![
+                    "link".into(), "add".into(), "app".into(), "postgres".into(), "data".into(),
+                    "--target-type".into(), "mcp".into(), "--app-type".into(), "serverless".into(),
+                ],
+                "bsc project",
+            )
+            .unwrap();
+            run(
+                vec![
+                    "link".into(), "add".into(), "app".into(), "stripe".into(), "api".into(),
+                    "--target-type".into(), "service".into(), "--url".into(), "https://api.stripe.com".into(),
+                ],
+                "bsc project",
+            )
+            .unwrap();
+
+            let links = crate::load_links();
+            assert_eq!(links.len(), 3);
+            assert_eq!(links.iter().find(|l| l.id == "app>billing:api").unwrap().target.kind, "project");
+            let mcp = links.iter().find(|l| l.id == "app>postgres:data").unwrap();
+            assert_eq!(mcp.target.kind, "mcp");
+            assert_eq!(mcp.target.app_type.as_deref(), Some("serverless"));
+            assert_eq!(links.iter().find(|l| l.id == "app>stripe:api").unwrap().target.url.as_deref(), Some("https://api.stripe.com"));
+
+            // list dispatches (both modes) without error, and an unknown target type is rejected.
+            run(vec!["link".into(), "list".into(), "--json".into()], "bsc project").unwrap();
+            run(vec!["link".into(), "list".into()], "bsc project").unwrap();
+            assert!(run(
+                vec!["link".into(), "add".into(), "a".into(), "b".into(), "api".into(), "--target-type".into(), "widget".into()],
+                "bsc project",
+            )
+            .is_err());
+        });
+    }
+
+    #[test]
     fn parse_args_routes_help_flag_to_the_help_command() {
         let a = parse_args(vec!["--help".into()]).unwrap();
         assert_eq!(a.positional.first().map(String::as_str), Some("help"));
@@ -384,10 +485,12 @@ mod tests {
         assert!(ov.contains("published"));
         assert!(ov.contains("link"));
         assert!(ov.contains("github-state"));
-        // The link command's help drills into its add/remove subcommands.
+        // The link command's help drills into its add/remove subcommands + the #3786 target flags.
         let link = bsc_cli_util::help_for("bsc project", TAGLINE, COMMANDS, "link");
         assert!(link.contains("bsc project link"));
         assert!(link.contains("add"));
+        assert!(link.contains("--target-type"));
+        assert!(link.contains("--app-type"));
         // Per-command help shows that one command's detail (incl. its subcommands).
         let one = bsc_cli_util::help_for("bsc project", TAGLINE, COMMANDS, "published");
         assert!(one.contains("bsc project published"));

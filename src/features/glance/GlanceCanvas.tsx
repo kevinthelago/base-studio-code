@@ -9,7 +9,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, isBandNode, bandNodeMeta, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
+import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
 import { archetypeById, hueColor } from "@/features/teams";
@@ -38,12 +38,14 @@ const EDGE_ROWS_L0: [string, string, string][] = [
   ["cycle", "var(--graph-health-error)", "7 6"],
 ];
 // The fenced-band node dimensions (#3119 + #3786) — the library flavours (kit/algorithm/sound) + the
-// external MCP contract, each its own accent + glyph. Shown as a distinct legend column at L0 (not while
-// drilled into a fleet).
+// external contracts (mcp + service), each its own accent + glyph. Shown as a distinct legend column at
+// L0 (not while drilled into a fleet). The `uses-mcp`/`uses-service` edges share the "contracts with"
+// label, so they get ONE edge legend row (uses-mcp above); the node dimensions distinguish them here.
 const LIBRARY_GRAPHS: GLibraryGraph[] = ["ui", "algo", "sound"];
 const LIBRARY_ROWS: [string, string, string][] = [
   ...LIBRARY_GRAPHS.map((g): [string, string, string] => [LIBRARY_META[g].kindLabel, LIBRARY_META[g].color, LIBRARY_META[g].marker]),
-  [MCP_META.kindLabel, MCP_META.color, MCP_META.marker], // #3786 external mcp-contract node
+  [MCP_META.kindLabel, MCP_META.color, MCP_META.marker],         // #3786 external mcp-contract node
+  [SERVICE_META.kindLabel, SERVICE_META.color, SERVICE_META.marker], // #3786 Phase 2 external service-contract node
 ];
 // Fleet-drill (L1) legend: the role colour buckets read as agent FUNCTION groups; the edge rows are the
 // Org relationship archetypes actually present in the drilled fleet (#2561).
@@ -130,11 +132,12 @@ export function GlanceCanvas(p: CanvasProps) {
       const g = libraryGraphOf(n);
       if (g) s.add(g);
       else if (n.kind === "mcp") s.add("mcp");
+      else if (n.kind === "service") s.add("service");
     }
     return [...s];
   }, [model.nodes]);
   const soleDim = bandDims.length === 1 ? bandDims[0] : null;
-  const bandMeta = soleDim === "mcp" ? MCP_META : soleDim ? LIBRARY_META[soleDim as GLibraryGraph] : null;
+  const bandMeta = soleDim === "mcp" ? MCP_META : soleDim === "service" ? SERVICE_META : soleDim ? LIBRARY_META[soleDim as GLibraryGraph] : null;
   const bandColor = bandMeta ? bandMeta.color : "var(--fg-muted)";
   const bandLabel = bandMeta ? bandMeta.bandLabel : "LIBRARIES";
 
@@ -256,9 +259,11 @@ export function GlanceCanvas(p: CanvasProps) {
                   <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
                 </Box>
                 <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
-                  {/* The kind word — and for an mcp node its appType (api/serverless), the contract endpoint type (#3786). */}
+                  {/* The kind word — and for an external CONTRACT node (mcp/service) its appType
+                      (api/serverless/…), the contract endpoint type (#3786). Library/kit nodes carry no
+                      appType, so they read just the kind word. */}
                   <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: lib.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {n.kind === "mcp" && n.appType ? `${lib.kindLabel} · ${n.appType}` : lib.kindLabel}
+                    {n.appType ? `${lib.kindLabel} · ${n.appType}` : lib.kindLabel}
                   </Text>
                   <Box style={{ flex: 1 }} />
                   <Text as="span" mono size={10} weight={500} tone="dim" style={{ flex: "none" }}>{consumers} app{consumers === 1 ? "" : "s"}</Text>
