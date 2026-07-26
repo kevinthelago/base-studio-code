@@ -31,6 +31,7 @@ import { PROJECTS_QUERY, type GhProject } from "./published/publishedModel";
 import { useReopenProject } from "./ReopenProjectModal";
 import { DeleteProjectModal } from "./published/DeleteProjectModal";
 import { ProjectsRail } from "./ProjectsRail";
+import { SearchField } from "@/shared/ui/controls/SearchField";
 import { ProjectCard } from "./ProjectCard";
 import { ProjectSetupPage } from "./ProjectSetupPage";
 import {
@@ -241,8 +242,6 @@ export function ProjectsList() {
   }
 
   // ── derived lists ────────────────────────────────────────────────────────────────────────────────
-  const repos = useMemo(() => new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? [])), [visibleProjects]);
-
   // Per-project live fleet counts (matched by repo): running vs parked (asking/waiting/blocked).
   const fleetByProject = useMemo(() => {
     const m: Record<string, { running: number; paused: number }> = {};
@@ -311,7 +310,6 @@ export function ProjectsList() {
   const clearType = () => setTypeSel(new Set());
   const clearFilters = () => { setQuery(""); setStatusSel(new Set()); setTypeSel(new Set()); };
 
-  const totalSummary = `${visibleProjects.length} published · ${allDrafts.length} draft${allDrafts.length !== 1 ? "s" : ""} · ${blueprints.length} blueprint${blueprints.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
 
   // ── card routers ─────────────────────────────────────────────────────────────────────────────────
   function openItem(item: ProjectItem) {
@@ -376,7 +374,6 @@ export function ProjectsList() {
         <Box style={{ flex: `0 0 ${railDrag.size}px`, width: railDrag.size, minWidth: 0, display: "flex", overflow: "hidden" }}>
           <ProjectsRail
             query={query}
-            setQuery={setQuery}
             statusSel={statusSel}
             toggleStatus={toggleStatus}
             typeSel={typeSel}
@@ -394,13 +391,16 @@ export function ProjectsList() {
         {/* RIGHT main column — slim header over the card/list body. */}
         <Stack className="projects-listcol" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
           <Row className="projects-listhead" gap={14} align="center" style={{ height: 52, flex: "none", padding: "0 16px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)" }}>
-            <Box className="projects-listhead-summary" style={{ minWidth: 0, overflow: "hidden" }}>
-              <Row className="mono" gap={8} align="center" style={{ fontSize: 11, color: "var(--fg-muted)", whiteSpace: "nowrap" }}>
-                {githubToken ? <Text as="span" tone="success">● github connected</Text> : <Text as="span" tone="dim">○ github offline</Text>}
-                <Text as="span" tone="dim">·</Text>
-                <Box as="span" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{totalSummary}</Box>
-              </Row>
-            </Box>
+            {/* #3854: the header LEADS with search — it is the control users reach for. It replaced the
+                connection state + an overall-details digest (published/drafts/blueprints/repos), neither of
+                which earned the primary slot. */}
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Search title, description, repo…"
+              aria-label="Search projects"
+              style={{ flex: "0 1 320px", minWidth: 0 }}
+            />
             <Spacer />
             <Text as="span" mono size={11} tone="muted" style={{ flex: "none" }}>{filtered.length} <Text as="span" tone="dim">of {items.length}</Text></Text>
             <Button variant="ghost" onClick={() => fetchProjects({ force: true })} disabled={loading} style={{ flex: "none", fontSize: 11.5 }}>

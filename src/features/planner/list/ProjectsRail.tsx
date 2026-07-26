@@ -14,7 +14,6 @@ import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { RailSection } from "@/shared/ui/layouts/RailSection";
 import { RailRow } from "@/shared/ui/layouts/RailRow";
 import { useRailSections } from "@/shared/hooks/useRailSections";
-import { SearchField } from "@/shared/ui/controls/SearchField";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -22,7 +21,6 @@ import { STATUS_FACETS, TYPE_FACETS, type ProjectStatus, type AppType } from "./
 
 export interface ProjectsRailProps {
   query: string;
-  setQuery: (s: string) => void;
   /** Selected status facet values (empty ⇒ all). */
   statusSel: Set<ProjectStatus>;
   toggleStatus: (s: ProjectStatus) => void;
@@ -44,24 +42,17 @@ export interface ProjectsRailProps {
 }
 
 export function ProjectsRail({
-  query, setQuery, statusSel, toggleStatus, typeSel, toggleType,
+  query, statusSel, toggleStatus, typeSel, toggleType,
   counts, typeCountsByCat, total, onClearStatus, onClearType, onClearFilters,
 }: ProjectsRailProps) {
   const railSections = useRailSections();
   const anyFilter = statusSel.size > 0 || typeSel.size > 0 || query.trim().length > 0;
 
   return (
+    // #3854: no `tools` — the search field moved to the list HEADER, where the primary control belongs.
+    // `query` is still read here for `anyFilter`, which drives the clear-all-filters footer.
     <GraphRail
       bodyPad="12px 10px 20px"
-      tools={
-        <SearchField
-          value={query}
-          onChange={setQuery}
-          placeholder="Search title, description, repo…"
-          aria-label="Search projects"
-          style={{ width: "100%" }}
-        />
-      }
       footer={anyFilter ? (
         <Box style={{ borderTop: "1px solid var(--border-soft)", padding: "10px 12px" }}>
           <Box as="button" onClick={onClearFilters} style={{ fontSize: 11, color: "var(--fg-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>
