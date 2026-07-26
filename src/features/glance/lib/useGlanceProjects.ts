@@ -268,17 +268,21 @@ export function filterTriaged(projects: ProjectLite[], triaged: Record<string, n
 /**
  * Resolve a project's LIFECYCLE category (#2583) — what KIND of work it is, the app's real project
  * vocabulary that REPLACES the meaningless hash-per-id microservices tier. Priority: a curated/declared
- * category (a demo/tagged project) wins, else the seeding blueprint's category (`projectBlueprintId` →
- * `blueprint.category`), else a status heuristic — a draft is being CREATED (greenfield), a published /
- * already-worked project is in upkeep (maintain). Always yields a category so no L0 node falls back to
- * the old tier colouring. Pure.
+ * category (a demo/tagged project) wins, else the lifecycle the PLANNER DISCOVERED for the project
+ * (`ClassifyConfig.lifecycle`), else a status heuristic — a draft is being CREATED (greenfield), a
+ * published / already-worked project is in upkeep (maintain). Always yields a category so no L0 node
+ * falls back to the old tier colouring. Pure.
+ *
+ * The middle term used to be the SEEDING BLUEPRINT's category, which #3785 removed from the blueprint
+ * model — and which had degenerated to the same "greenfield" on every packaged blueprint, so it
+ * coloured every node identically. Lifecycle is discovered per project now (#3784).
  */
 export function resolveProjectCategory(
   declared: GCategory | undefined,
-  blueprintCategory: GCategory | undefined,
+  discoveredLifecycle: GCategory | undefined,
   isDraft: boolean,
 ): GCategory {
-  return declared ?? blueprintCategory ?? (isDraft ? "greenfield" : "maintain");
+  return declared ?? discoveredLifecycle ?? (isDraft ? "greenfield" : "maintain");
 }
 
 export function useGlanceProjects(enabled = true): ProjectLite[] {
@@ -302,11 +306,9 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   const paneStatus = useAppStore((s) => s.paneStatus);
   const githubState = useAppStore((s) => s.githubState);
   const setGithubState = useAppStore((s) => s.setGithubState);
-  // Lifecycle category (#2583): which blueprint seeded each project → its category, so a project node is
-  // coloured by what KIND of work it is (greenfield / transform / harden / maintain / data).
-  const projectBlueprintId = useAppStore((s) => s.projectBlueprintId);
-  const blueprints = useAppStore((s) => s.blueprints);
-  const catByBlueprint = useMemo(() => new Map(blueprints.map((b) => [b.id, b.category])), [blueprints]);
+  // Lifecycle category (#2583/#3785): the lifecycle the planner DISCOVERED for each project, so a
+  // project node is coloured by what KIND of work it is (greenfield / transform / harden / maintain).
+  // Read off the classification below — lifecycle is no longer a blueprint field.
   // The per-project classification (#3786/#3802): the planner-set `appType` (application architecture) —
   // surfaced on each Glance project node as the contract endpoint-type discriminator. Absent for an
   // unclassified project ⇒ the node renders plain (no type badge).
@@ -389,7 +391,7 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
           filterTriaged(
             mergeGlanceProjects(drafts, effectivePublished, localPublished).map((p) => ({
               ...p,
-              category: resolveProjectCategory(p.category, catByBlueprint.get(projectBlueprintId[p.id]), drafts[p.id] !== undefined),
+              category: resolveProjectCategory(p.category, planClassification[p.id]?.lifecycle, drafts[p.id] !== undefined),
               appType: planClassification[p.id]?.appType, // #3786/#3802 — the contract endpoint-type discriminator (absent ⇒ plain)
             })),
             triagedProjects,
@@ -401,6 +403,6 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
       activeKeys,
       curatedKeys,
     ),
-    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, catByBlueprint, projectBlueprintId, planClassification],
+    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification],
   );
 }

@@ -67,11 +67,10 @@ describe("blueprintShare (#598)", () => {
   it("allowEmptySections accepts a section-less in-progress blueprint (#923 authoring)", () => {
     // The Purpose stage emits identity (name/category) before any stages exist — strict import would
     // drop it, so the <blueprint> tag handler opts into allowEmptySections.
-    expect(coerceBlueprint({ id: "x", name: "y", category: "greenfield", sections: [] })).toBeNull();
-    const bp = coerceBlueprint({ id: "x", name: "y", category: "greenfield", sections: [] }, { allowEmptySections: true });
+    expect(coerceBlueprint({ id: "x", name: "y", sections: [] })).toBeNull();
+    const bp = coerceBlueprint({ id: "x", name: "y", sections: [] }, { allowEmptySections: true });
     expect(bp).not.toBeNull();
     expect(bp!.name).toBe("y");
-    expect(bp!.category).toBe("greenfield");
     expect(bp!.sections).toEqual([]);
     // still requires id + name even when empty sections are allowed
     expect(coerceBlueprint({ name: "no id", sections: [] }, { allowEmptySections: true })).toBeNull();
@@ -102,7 +101,6 @@ describe("blueprintShare (#598)", () => {
     // Blueprint-wide capabilities + metadata survive.
     expect(bp!.skills).toEqual(["bp-skill-1"]);
     expect(bp!.mcp).toEqual(["Compliance"]);
-    expect(bp!.category).toBe("transform");
     expect(bp!.mode).toBe("operate");
     // Per-section capabilities + shape survive import.
     const s = bp!.sections[0];
@@ -113,10 +111,17 @@ describe("blueprintShare (#598)", () => {
     expect(s.output).toBe("issues");
   });
 
-  it("ignores a bogus category/mode (falls back to undefined)", () => {
-    const bp = coerceBlueprint({ id: "x", name: "y", category: "bogus", mode: "nope", sections: [{ key: "discovery", name: "Discovery" }] });
-    expect(bp!.category).toBeUndefined();
+  it("ignores a bogus mode (falls back to undefined)", () => {
+    const bp = coerceBlueprint({ id: "x", name: "y", mode: "nope", sections: [{ key: "discovery", name: "Discovery" }] });
     expect(bp!.mode).toBeUndefined();
+  });
+
+  it("DROPS a legacy `category` from an old shared blueprint (#3785)", () => {
+    // Blueprints shared before lifecycle left the model still carry the field; it must not
+    // survive import onto the current model.
+    const bp = coerceBlueprint({ id: "x", name: "y", category: "transform", sections: [{ key: "discovery", name: "Discovery" }] });
+    expect(bp).not.toBeNull();
+    expect(bp).not.toHaveProperty("category");
   });
 
   it("bundles attached skill CONTENT and round-trips it through the manifest (#897 Phase 5b)", () => {

@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildBlueprintItems, catHue, prettyGist } from "./blueprintLibrary.helpers";
+import { buildBlueprintItems, blueprintHue, prettyGist } from "./blueprintLibrary.helpers";
 import type { Blueprint } from "../stages/blueprints";
 
 const bp = (over: Partial<Blueprint> & { id: string; name: string }): Blueprint => ({
-  desc: "", sections: [], category: "greenfield", ...over,
+  desc: "", sections: [], ...over,
 });
 
 describe("prettyGist", () => {
@@ -22,12 +22,12 @@ describe("prettyGist", () => {
   });
 });
 
-describe("catHue", () => {
-  it("produces an oklch string keyed by the category hue", () => {
-    expect(catHue("greenfield")).toMatch(/^oklch\(0\.75 0\.13 \d/);
+describe("blueprintHue", () => {
+  it("produces an oklch string keyed by the blueprint's own hue", () => {
+    expect(blueprintHue(200)).toBe("oklch(0.75 0.13 200)");
   });
-  it("uses the fallback hue for an unknown category", () => {
-    expect(catHue("nope" as never)).toBe("oklch(0.75 0.13 70)");
+  it("uses the fallback hue for a blueprint that declares none", () => {
+    expect(blueprintHue(undefined)).toBe("oklch(0.75 0.13 70)");
   });
 });
 

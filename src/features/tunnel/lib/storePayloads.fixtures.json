@@ -172,7 +172,6 @@
           "id": "default",
           "name": "Default",
           "desc": "greenfield seed",
-          "category": "greenfield",
           "mode": "create",
           "stageCount": 0,
           "hasTeam": true,
@@ -190,7 +189,6 @@
           "id": "migrate",
           "name": "Migrate",
           "desc": "restructure repos",
-          "category": "transform",
           "stageCount": 0,
           "hasTeam": false
         }
@@ -694,7 +692,6 @@
           "id": "migrate",
           "name": "Migrate",
           "desc": "restructure repos",
-          "category": "transform",
           "stageCount": 0,
           "hasTeam": false
         }

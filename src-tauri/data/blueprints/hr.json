@@ -5,7 +5,6 @@
   "desc": "Build an HR platform — a core HRIS with payroll, benefits, time, and the full talent lifecycle.",
   "icon": "group",
   "origin": "built-in",
-  "category": "greenfield",
   "mode": "create",
   "skills": ["web-seo"],
   "sections": [

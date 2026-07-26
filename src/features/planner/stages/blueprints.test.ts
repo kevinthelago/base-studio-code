@@ -20,15 +20,16 @@ const setEnabled = (secs: BlueprintStage[], key: string, enabled: boolean): Blue
 describe("greenfield blueprints declare their consumer kit (#2810)", () => {
   const bps = makeBlueprints();
 
-  it("greenfield built-ins auto-record kit=react-ui so the kit_usage edge fills at bind", () => {
-    // …every greenfield that actually SHIPS an app UI.
-    const greenfield = bps.filter((b) => b.category === "greenfield");
-    expect(greenfield.length).toBeGreaterThan(0);
-    expect(greenfield.every((b) => b.kit === "react-ui")).toBe(true);
+  it("CREATE built-ins auto-record kit=react-ui so the kit_usage edge fills at bind (#3785)", () => {
+    // …every create-from-a-pitch blueprint actually SHIPS an app UI. Keyed off `mode` since #3785
+    // removed the lifecycle `category` this used to read.
+    const create = bps.filter((b) => b.mode !== "operate");
+    expect(create.length).toBeGreaterThan(0);
+    expect(create.every((b) => b.kit === "react-ui")).toBe(true);
   });
 
-  it("a non-greenfield (operate-on-existing / data / script) built-in isn't auto-tied to a shared kit", () => {
-    const other = bps.find((b) => b.category !== "greenfield");
+  it("an OPERATE-on-existing-repos built-in isn't auto-tied to a shared kit", () => {
+    const other = bps.find((b) => b.mode === "operate");
     if (other) expect(other.kit).toBeUndefined();
   });
 });
@@ -165,9 +166,9 @@ describe("blueprints — seed library", () => {
     for (const k of ["repos", "structure", "permissions"]) {
       expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
     }
-    // #3783: the built-in greenfields are Default plus the domain blueprints.
-    const greenfield = makeBlueprints().filter((b) => b.category === "greenfield").map((b) => b.id);
-    expect(greenfield).toEqual(
+    // #3783: the built-ins are Default plus the domain blueprints.
+    const builtIns = makeBlueprints().map((b) => b.id);
+    expect(builtIns).toEqual(
       expect.arrayContaining(["default", "crm", "erp", "helpdesk", "hr", "project-management"]),
     );
     // Default is still the superset by keys — every domain blueprint's stages are a subset of it.
