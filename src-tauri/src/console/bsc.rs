@@ -55,6 +55,7 @@ fn wire_bsc_stores(cmd: &mut std::process::Command, project_key: Option<&str>) {
     if let Some(key) = project_key.filter(|k| !k.is_empty()) {
         cmd.env("BSC_PLAN_DB", plan_db_path(key));
         cmd.env("BSC_ERROR_DB", error_db_path(key));
+        cmd.env("BSC_USAGE_DB", usage_db_path(key));
         cmd.env("BSC_DATA_DB", data_db_path(key));
     }
     cmd.env("BSC_SKILL_DB", skills_db());
@@ -79,6 +80,7 @@ mod tests {
         // Per-project stores resolve to the SAME canonical paths as everything else (paths.rs).
         assert_eq!(e.get("BSC_PLAN_DB"), Some(&plan_db_path("my-app")));
         assert_eq!(e.get("BSC_ERROR_DB"), Some(&error_db_path("my-app")));
+        assert_eq!(e.get("BSC_USAGE_DB"), Some(&usage_db_path("my-app")));
         assert_eq!(e.get("BSC_DATA_DB"), Some(&data_db_path("my-app")));
         // The skills store is global.
         assert_eq!(e.get("BSC_SKILL_DB"), Some(&skills_db()));
@@ -92,6 +94,7 @@ mod tests {
         wire_bsc_stores(&mut cmd, None);
         let e = envs(&cmd);
         assert!(!e.contains_key("BSC_PLAN_DB"));
+        assert!(!e.contains_key("BSC_USAGE_DB"));
         assert!(!e.contains_key("BSC_DATA_DB"));
         assert_eq!(e.get("BSC_SKILL_DB"), Some(&skills_db()));
         // An empty key is treated like None (not a real project).
