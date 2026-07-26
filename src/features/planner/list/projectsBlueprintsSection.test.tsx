@@ -10,7 +10,7 @@ import { type Blueprint } from "../stages/blueprints";
 // that flow end-to-end through <ProjectsList /> (the setup page's own unit tests live alongside it).
 
 function bp(over: Partial<Blueprint>): Blueprint {
-  return { id: "x", name: "X", desc: "", sections: [], category: "greenfield", ...over };
+  return { id: "x", name: "X", desc: "", sections: [], ...over };
 }
 
 function routeInvoke() {
@@ -42,7 +42,7 @@ describe("ProjectsList — create flow (setup page)", () => {
   it("opens the setup page and lists ALL blueprints — saved AND built-in (#blueprints)", async () => {
     useAppStore.setState({
       blueprints: [
-        bp({ id: "mine", name: "My Greenfield", origin: "local", category: "greenfield" }),
+        bp({ id: "mine", name: "My Greenfield", origin: "local" }),
         bp({ id: "stock", name: "Stock Built-in", origin: "built-in" }),
       ],
     });
@@ -58,7 +58,7 @@ describe("ProjectsList — create flow (setup page)", () => {
     // Regression: opening a project used to adopt the transient global selection. The binding must
     // be captured once, when the project is created, from whatever is selected then.
     useAppStore.setState({
-      blueprints: [bp({ id: "fullstack", name: "Full-stack", origin: "local", category: "greenfield" })],
+      blueprints: [bp({ id: "fullstack", name: "Full-stack", origin: "local" })],
       activeBlueprintId: "fullstack",
     });
     render(<ProjectsList />);
@@ -80,7 +80,7 @@ describe("ProjectsList — create flow (setup page)", () => {
     useAppStore.setState({
       blueprints: [
         bp({ id: "default", name: "Default", origin: "built-in" }),
-        bp({ id: "api", name: "API Service", origin: "local", category: "greenfield" }),
+        bp({ id: "api", name: "API Service", origin: "local" }),
       ],
       activeBlueprintId: "default",
     });
@@ -99,7 +99,7 @@ describe("ProjectsList — create flow (setup page)", () => {
 
   it("returns to the list (does not create) when the user backs out", async () => {
     useAppStore.setState({
-      blueprints: [bp({ id: "mine", name: "My Greenfield", origin: "local", category: "greenfield" })],
+      blueprints: [bp({ id: "mine", name: "My Greenfield", origin: "local" })],
     });
     render(<ProjectsList />);
     await screen.findByRole("button", { name: "+ New project" });

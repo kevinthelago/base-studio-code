@@ -1,7 +1,7 @@
 // MarketBody — right-pane body for the "market" planning stage (#2430): the desk-research market
 // assessment. READ-FOCUSED by design (the UI-as-read-only direction, #2382): the planner does all
 // the editing via `bsc plan market set`; this pane renders the recorded artifact — the gap-statement
-// summary, the six-dimension scored rubric (weighted by the blueprint CATEGORY's rubric weights),
+// summary, the six-dimension scored rubric (weighted by the project LIFECYCLE's rubric weights),
 // the competitor landscape, and the go/caution/no-go verdict.
 
 import { useAppStore } from "@/store";
@@ -32,10 +32,12 @@ function scoreColor(score: number): string {
 export function MarketBody({ projectId }: { projectId?: string }) {
   const pid = projectId ?? "";
   const cfg: MarketConfig | null = useAppStore((s) => s.planMarketConfig[pid] ?? null);
-  // The active blueprint's lifecycle category selects the weight table (greenfield weighs
-  // reachable-market/timing; transform/harden weigh severity/gap). Unbound → greenfield.
-  const category = useAppStore((s) => s.blueprints.find((b) => b.id === s.projectBlueprintId[pid])?.category);
-  const weights = marketWeights(category);
+  // The project's DISCOVERED lifecycle selects the weight table (greenfield weighs
+  // reachable-market/timing; transform/harden weigh severity/gap). Unclassified → greenfield.
+  // Read from the classification since #3785 — it used to read the seeding blueprint's `category`,
+  // which was every packaged blueprint's identical "greenfield" stamp, so the table never varied.
+  const lifecycle = useAppStore((s) => s.planClassification[pid]?.lifecycle);
+  const weights = marketWeights(lifecycle);
 
   if (!cfg) {
     return (
@@ -60,10 +62,10 @@ export function MarketBody({ projectId }: { projectId?: string }) {
         </Card>
       )}
 
-      {/* The scored rubric — six rows, each weighted by the blueprint category's table. */}
+      {/* The scored rubric — six rows, each weighted by the project lifecycle's table. */}
       <Card
         label="Scored rubric"
-        hint={`${category ?? "greenfield"} weights`}
+        hint={`${lifecycle ?? "greenfield"} weights`}
         badge={<Chip tone="accent" size="xs" title="The 0-100 weighted total across the six dimensions">{total}/100</Chip>}
       >
         <Stack gap={7}>

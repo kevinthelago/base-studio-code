@@ -38,7 +38,7 @@ import type { Persona } from "@/features/personas/lib/persona";
 import type { Team } from "@/features/teams/lib/team";
 import type { SkillDef } from "@/features/skills/lib/skillsModel";
 import type { SkillGroup } from "@/features/skills/lib/skillGroups";
-import { makeBlueprints, type Blueprint } from "@/features/planner/stages/blueprints";
+import { makeBlueprints, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
 import type { Schedule, Command } from "@/shared/data/mock";
 import type { Automation } from "@/features/automations/lib/scheduler";
@@ -123,19 +123,18 @@ function demoOrg(): Team {
 // ── Blueprint — the reusable template that seeds the platform's projects ─────────────────────────
 const DEMO_BLUEPRINT_ID = blueprintData.id;
 
-/** Clone a built-in greenfield blueprint into the demo one (id/name/desc/skills overridden from
+/** Clone the default built-in blueprint into the demo one (id/name/desc/skills overridden from
  *  `@data/demo/blueprint.json`) so the full, valid stage set rides along without hand-authoring it.
  *  Attaches the demo skills so the blueprint cross-references the same playbook the personas use. */
 function demoBlueprint(): Blueprint {
   const builtins = makeBlueprints();
-  const base = builtins.find((b) => (b.category ?? "greenfield") === "greenfield") ?? builtins[0];
+  const base = builtins.find((b) => b.id === DEFAULT_BLUEPRINT_ID) ?? builtins[0];
   return {
     ...base,
     id: DEMO_BLUEPRINT_ID,
     name: blueprintData.name,
     desc: blueprintData.desc,
     origin: "local",
-    category: "greenfield",
     skills: skillsData.skills.map((s) => s.id),
     uses: blueprintData.uses,
     updatedAt: new Date(DEMO_EPOCH).toISOString(),

@@ -5,7 +5,6 @@
   "desc": "Build an ERP platform — core financials, procure-to-pay, order-to-cash, and inventory on one ledger.",
   "icon": "layers",
   "origin": "built-in",
-  "category": "greenfield",
   "mode": "create",
   "skills": ["web-seo"],
   "sections": [
