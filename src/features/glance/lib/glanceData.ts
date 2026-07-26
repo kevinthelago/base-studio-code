@@ -4,23 +4,33 @@
 // wiring real edges later is a drop-in — the page + graph core never change.
 import sampleGraphEmbedded from "@data/glance/sample-graph.json";
 import type { GRawNode, GRawEdge, GRole, GCategory, GHealth, GActivity } from "./glanceGraph";
-import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId } from "./glanceGraph";
+import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId } from "./glanceGraph";
 import type { ProjectLink } from "./projectLinks";
 // Cross-feature types only, via the barrel (#1309 boundary): the consumer index (`kitUsage`) whose
 // (projectKey, kitId) edges the kit nodes are built from, plus the kit→library `requires` roll-up
 // (`resolveKitLibraryRefs`, #3133) the caller resolves and hands in as plain data.
 import type { KitConsumer, KitLibraryRef } from "@/features/designs";
+// The project's application architecture (#3786/#3802) — the contract endpoint-type discriminator carried
+// onto each project node. `import type` is erased at build (no runtime edge to the planner).
+import type { AppType } from "@/features/planner";
 
 export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample: boolean }
 
 /** A minimal project as the adapter needs it — id + display name, plus the two axes the caller has
  *  resolved (#2541): `health` (idle/healthy/warning/error) and `activity` (the lifecycle word), with an
- *  optional `reason` (the fault title) shown when health is degraded. */
-export interface ProjectLite { id: string; name: string; role?: GRole; category?: GCategory; health?: GHealth; activity?: GActivity; reason?: string; faults?: number }
+ *  optional `reason` (the fault title) shown when health is degraded. `appType` (#3786) is the project's
+ *  application architecture — the contract endpoint-type discriminator, absent ⇒ read as "application". */
+export interface ProjectLite { id: string; name: string; role?: GRole; category?: GCategory; health?: GHealth; activity?: GActivity; reason?: string; faults?: number; appType?: AppType }
 
 /** A UI kit as the adapter needs it (#2571) — id + display name, so a kit node reads the kit's NAME
  *  (falling back to the id). The store's `Kit[]` is structurally assignable, so the caller passes it as-is. */
 export interface KitLite { id: string; name: string }
+
+/** An MCP server as the adapter needs it (#3786) — id + name + its per-server project scope + transport,
+ *  so an mcp node reads the server's NAME and derives its `appType` from the transport. The store's
+ *  `McpServer[]` is structurally assignable, so the caller passes it as-is. A server with an EMPTY
+ *  `projects` list is GLOBAL (every session gets it) — not a specific contract, so it is skipped. */
+export interface McpLite { id: string; name: string; projects: string[]; transport?: "stdio" | "http" }
 
 /** The packaged SAMPLE project network — the spec's example (roles · edge kinds · a dependency CYCLE:
  *  reporting → analytics → reporting · hazards). No longer an auto-fallback for an empty app (#2272 — an
@@ -45,17 +55,25 @@ export const SAMPLE_GRAPH: GlanceData = {
  *  every algorithm / sound node the components of its kits import, so the fenced band carries real library
  *  dependencies (the logistics example: a route-planner project → its `algo:` dijkstra node), not just kits.
  *
+ *  On top of THAT, the external MCP-CONTRACT dimension (#3786, Phase 1 inter-app contracts): one node per
+ *  MCP server SCOPED to ≥1 project in this graph, edged from each consuming project — mirroring the kit
+ *  dimension. A GLOBAL server (`projects: []`, every session gets it) is not a specific contract, so it is
+ *  skipped; a project's `appType` (#3802) is surfaced on its node as the endpoint-type discriminator.
+ *
  *  @param kitUsage    the consumer index (`kitUsage`) — (projectKey, kitId) edges (from `@/features/designs`).
  *  @param kits        the kit library, so a kit node reads the kit's NAME (else its id).
  *  @param libraryRefs the kit→library `requires` roll-up (`resolveKitLibraryRefs`, #3133) — resolved by the
  *                     CALLER and memoized on the component list, because deriving it scans component source;
- *                     this function must stay cheap (it re-runs on every project-status tick). */
+ *                     this function must stay cheap (it re-runs on every project-status tick).
+ *  @param mcpServers  the MCP server store (#3786) — a scoped server (`projects` non-empty) becomes one
+ *                     external contract node edged from each consuming project; a global server is skipped. */
 export function buildGlanceData(
   projects: ProjectLite[],
   links: ProjectLink[] = [],
   kitUsage: KitConsumer[] = [],
   kits: KitLite[] = [],
   libraryRefs: KitLibraryRef[] = [],
+  mcpServers: McpLite[] = [],
 ): GlanceData {
   const rawNodes: GRawNode[] = projects.map((p) => ({
     id: p.id,
@@ -68,6 +86,7 @@ export function buildGlanceData(
     activity: p.activity ?? "idle", // #2551 axis 2 — RESTING default; `building` is derived from live agents, not a fallback
     reason: p.reason,                  // the fault title shown when health is degraded
     faults: p.faults,                  // #2265: unresolved runtime-fault count (inspector)
+    appType: p.appType,                // #3786/#3802: the contract endpoint-type discriminator (absent ⇒ "application", rendered plain)
     // `kind` is left ABSENT here (⇒ "project", #2571) so a project node's shape is byte-identical to before.
   }));
   // The user-drawn project relationships (#2253) — the real edges, filtered to links between two nodes
@@ -147,6 +166,43 @@ export function buildGlanceData(
         seenReqEdge.add(id);
         rawEdges.push({ id, from: projectKey, to: nodeId, kind: "requires" });
       }
+    }
+  }
+
+  // The external MCP-CONTRACT dimension (#3786, Phase 1 inter-app contracts) — the SAME shape as the kit
+  // loop, mapped onto the MCP server store: one node per server SCOPED to ≥1 project in this graph, edged
+  // from every consuming project. A server with an EMPTY `projects` list is GLOBAL (every session gets it),
+  // so it is NOT a specific contract and is skipped. A scoped project not in this graph is skipped, so an
+  // mcp node is never emitted without a visible edge. Deduped per (project, server) like the kit loop. Edge
+  // direction follows the consumer→provider convention (project consumes the server), so the mcp node lands
+  // foundational in the band and its `idle` health never rolls up into a project. The mcp node's `appType`
+  // is derived from its transport — http ⇒ `api`, stdio (local) ⇒ `serverless` (the user's framing: "an
+  // mcp server, which can be serverless").
+  const consumersByMcp = new Map<string, string[]>();   // serverId → consuming project keys (in this graph)
+  const mcpById = new Map<string, McpLite>();
+  for (const s of mcpServers) {
+    if (s.projects.length === 0) continue;               // global — not a specific contract, skip
+    for (const projectKey of s.projects) {
+      if (!ids.has(projectKey)) continue;                // consumer must be a project node in this graph
+      const arr = consumersByMcp.get(s.id) ?? [];
+      if (!arr.includes(projectKey)) arr.push(projectKey); // dedupe a duplicate (projectKey, serverId)
+      consumersByMcp.set(s.id, arr);
+      mcpById.set(s.id, s);
+    }
+  }
+  for (const [serverId, consumers] of consumersByMcp) {
+    const s = mcpById.get(serverId)!;
+    rawNodes.push({
+      id: mcpNodeId(serverId),
+      slug: s.name || serverId,
+      kind: "mcp",
+      role: "infra",   // an external contract is a shared foundational dependency; `category` absent ⇒ the canvas draws it as an mcp node
+      appType: s.transport === "http" ? "api" : "serverless", // http endpoint ⇒ api · stdio (local) ⇒ serverless
+      health: "idle",  // an external contract has no runtime health of its own — it never pulls a consumer's dot
+      activity: "idle",
+    });
+    for (const projectKey of consumers) {
+      rawEdges.push({ id: usesMcpEdgeId(projectKey, serverId), from: projectKey, to: mcpNodeId(serverId), kind: "uses-mcp" });
     }
   }
 
