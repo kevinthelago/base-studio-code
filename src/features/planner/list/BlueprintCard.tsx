@@ -1,15 +1,16 @@
 import { useRef } from "react";
 import { useClickOutside } from "@/shared/hooks/useClickOutside";
-import { MoreHorizontal, Check, Layers, Link2, Trash2 } from "lucide-react";
+import { MoreHorizontal, Check, Link2, Trash2 } from "lucide-react";
 import { PlanGateRow } from "../pane/PlanStageBar";
 import { IconBox } from "@/shared/ui/data/IconBox";
+import { Ic } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
-import { CAT_ICON, catHue, type BpItem } from "./blueprintLibrary.helpers";
+import { blueprintHue, type BpItem } from "./blueprintLibrary.helpers";
 
-/** A compact blueprint card for the right rail — hued icon tile + name + ⋯ menu, then a
- *  category / stages / visibility meta row and an optional gist link. */
+/** A compact blueprint card for the right rail — the blueprint's own hued icon tile + name + ⋯
+ *  menu, then a stages / visibility meta row and an optional gist link. */
 export function BlueprintCard({ b, onUse, onDelete, activeId, menuOpenId, setMenuOpenId }: {
   b: BpItem;
   onUse: (id: string) => void;
@@ -24,8 +25,7 @@ export function BlueprintCard({ b, onUse, onDelete, activeId, menuOpenId, setMen
   const menuRef = useRef<HTMLDivElement>(null);
   useClickOutside(menuRef, () => setMenuOpenId(null), isOpen);
 
-  const hue = catHue(b.category);
-  const Icon = CAT_ICON[b.category] ?? Layers;
+  const hue = blueprintHue(b.h);
 
   return (
     <Box
@@ -36,12 +36,9 @@ export function BlueprintCard({ b, onUse, onDelete, activeId, menuOpenId, setMen
         border: "1px solid " + (isActive ? "var(--accent)" : "var(--border-soft)"), cursor: "pointer", position: "relative",
       }}>
       <Row className="bp-rail-card-head" gap={9}>
-        <IconBox size={30} radius={8} background={`color-mix(in oklch, ${hue}, transparent 88%)`} border={`1px solid color-mix(in oklch, ${hue}, transparent 70%)`} color={hue}><Icon size={15} /></IconBox>
+        <IconBox size={30} radius={8} background={`color-mix(in oklch, ${hue}, transparent 88%)`} border={`1px solid color-mix(in oklch, ${hue}, transparent 70%)`} color={hue}><Ic n={b.icon} size={15} /></IconBox>
         <Row className="bp-rail-card-titlewrap" gap={7} style={{ flex: 1, minWidth: 0 }}>
           <Box as="span" className="bp-rail-card-title" style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</Box>
-          <Box as="span" className="bp-rail-card-cat mono" pad={[1, 6]} bg={`color-mix(in oklch, ${hue}, transparent 90%)`} radius={99} style={{
-            flex: "0 0 auto", fontSize: 9, color: hue, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
-          }}>{b.category}</Box>
         </Row>
         {/* eslint-disable-next-line no-restricted-syntax, jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- click-outside menu needs a real DOM ref (Box isn't forwardRef); onClick only stops row-click propagation, not a control */}
         <div ref={menuRef} className="bp-rail-card-menu" style={{ position: "relative" }} onClick={e => e.stopPropagation()}>

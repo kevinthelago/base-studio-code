@@ -1,27 +1,30 @@
 import { describe, it, expect } from "vitest";
 import {
-  blueprintCategory, filterBlueprints, CATEGORY_META, makeBlueprints, resolveProjectSeed, refreshBuiltIns,
+  filterBlueprints, makeBlueprints, resolveProjectSeed, refreshBuiltIns,
   type Blueprint,
 } from "../stages/blueprints";
+import { blueprintIcon } from "../list/blueprintLibrary.helpers";
 
 const bp = (id: string, name: string, over: Partial<Blueprint> = {}): Blueprint =>
   ({ id, name, desc: "", sections: [], ...over });
 
-describe("blueprint categories (#645)", () => {
-  it("defaults to greenfield when unset", () => {
-    expect(blueprintCategory(bp("x", "X"))).toBe("greenfield");
-    expect(blueprintCategory(bp("x", "X", { category: "transform" }))).toBe("transform");
+describe("the built-in blueprint library (#645/#3785)", () => {
+  it("carries no lifecycle category — that left the blueprint model for discovery (#3785)", () => {
+    // A blueprint is a goal/domain ROUTE now; lifecycle is discovered per project
+    // (`ClassifyConfig.lifecycle`, #3784). Guard that nothing re-introduces the field.
+    for (const b of makeBlueprints()) {
+      expect(b, `${b.id} carries no category`).not.toHaveProperty("category");
+    }
   });
 
-  it("labels the built-ins by lifecycle intent", () => {
+  it("gives every built-in a DISTINCT tile glyph (#3785)", () => {
     const all = makeBlueprints();
-    expect(all.find((b) => b.id === "default")!.category).toBe("greenfield");
     expect(all.find((b) => b.id === "default")!.mode).toBe("create");
-  });
-
-  it("every category has display metadata", () => {
-    expect(CATEGORY_META.greenfield.label).toBe("Greenfield");
-    expect(CATEGORY_META.transform.label).toBe("Transform");
+    // Distinct per-domain glyphs are what replaced the one category-derived icon every card shared.
+    // `blueprintIcon` is what the card actually renders: the declared `icon`, else the generic
+    // grid — so `default` (the blank route, which declares none) reads as generic, by design.
+    const icons = all.map(blueprintIcon);
+    expect(new Set(icons).size, `distinct glyphs: ${icons.join(", ")}`).toBe(all.length);
   });
 
   it("the default blueprint's deployment stage is enabled so it shows in the plan (#672/#1914)", () => {
@@ -93,25 +96,24 @@ describe("resolveProjectSeed — blueprint tracking for the reset prompt (#647 f
   });
 });
 
-describe("filterBlueprints (#645)", () => {
+describe("filterBlueprints (#645, category facet dropped in #3785)", () => {
   const list = [
-    bp("a", "Default", { category: "greenfield", desc: "balanced start" }),
-    bp("b", "Refactor & Cleanup", { category: "transform", tags: ["dead-code"] }),
-    bp("c", "Harden security", { category: "harden" }),
+    bp("a", "Default", { desc: "balanced start" }),
+    bp("b", "Refactor & Cleanup", { tags: ["dead-code"] }),
+    bp("c", "Harden security"),
   ];
 
-  it("filters by category", () => {
-    expect(filterBlueprints(list, { category: "transform" }).map((b) => b.id)).toEqual(["b"]);
-    expect(filterBlueprints(list, { category: "all" })).toHaveLength(3);
+  it("returns everything for an empty query", () => {
+    expect(filterBlueprints(list, {})).toHaveLength(3);
+    expect(filterBlueprints(list, { query: "  " })).toHaveLength(3);
   });
-  it("filters by free-text across name/desc/tags/category", () => {
+  it("filters by free-text across name/desc/tags", () => {
     expect(filterBlueprints(list, { query: "refactor" }).map((b) => b.id)).toEqual(["b"]);
     expect(filterBlueprints(list, { query: "dead-code" }).map((b) => b.id)).toEqual(["b"]); // tag
-    expect(filterBlueprints(list, { query: "harden" }).map((b) => b.id)).toEqual(["c"]); // category word
+    expect(filterBlueprints(list, { query: "harden" }).map((b) => b.id)).toEqual(["c"]); // name
     expect(filterBlueprints(list, { query: "balanced" }).map((b) => b.id)).toEqual(["a"]); // desc
   });
-  it("combines query + category", () => {
-    expect(filterBlueprints(list, { query: "security", category: "harden" }).map((b) => b.id)).toEqual(["c"]);
-    expect(filterBlueprints(list, { query: "security", category: "greenfield" })).toHaveLength(0);
+  it("is case-insensitive", () => {
+    expect(filterBlueprints(list, { query: "REFACTOR" }).map((b) => b.id)).toEqual(["b"]);
   });
 });

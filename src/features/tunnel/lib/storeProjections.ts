@@ -138,7 +138,6 @@ export interface BlueprintCard {
   icon?: string;
   h?: number;
   origin?: string;
-  category?: string;
   mode?: string;
   tags?: string[];
   uses?: number;
@@ -170,7 +169,7 @@ export function buildBlueprintsPayload(input: {
     active: input.activeBlueprintId,
     library: input.blueprints.map((b) => ({
       id: b.id, name: b.name, desc: b.desc, icon: b.icon, h: b.h,
-      origin: b.origin, category: b.category, mode: b.mode, tags: b.tags,
+      origin: b.origin, mode: b.mode, tags: b.tags,
       uses: b.uses, updatedAt: b.updatedAt,
       stageCount: b.sections.length,
       hasTeam: !!b.team && b.team.positions.length > 0,

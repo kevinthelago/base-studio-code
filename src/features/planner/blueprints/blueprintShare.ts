@@ -13,7 +13,6 @@ import type { Position, Relationship } from "@/features/teams";
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
 const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
-const BP_CATEGORIES = ["greenfield", "transform", "harden", "maintain", "data"] as const;
 const BP_MODES = ["create", "operate"] as const;
 
 function coerceSection(v: unknown): BlueprintStage | null {
@@ -146,7 +145,7 @@ export function coerceFleetPolicy(v: unknown): FleetPolicy | undefined {
  *  name, and (by default) at least one valid section; assigns fresh uids.
  *
  *  `allowEmptySections` (#923) accepts a section-less blueprint — used for the IN-PROGRESS blueprint
- *  an authoring session emits via the `<blueprint>` tag, which has its identity (name/category) at
+ *  an authoring session emits via the `<blueprint>` tag, which has its identity (name) at
  *  the Purpose stage before any stages are designed. Import stays strict (≥1 section). */
 export function coerceBlueprint(
   payload: unknown,
@@ -165,8 +164,6 @@ export function coerceBlueprint(
   // Dedup the section keys defensively — a hand-edited/imported blueprint could carry a duplicate.
   const sections = dedupeSections(rawStages.map(coerceSection).filter(Boolean) as BlueprintStage[]);
   if (sections.length === 0 && !allowEmptySections) return null;
-  const category = (BP_CATEGORIES as readonly string[]).includes(str(o.category))
-    ? (str(o.category) as Blueprint["category"]) : undefined;
   const mode = (BP_MODES as readonly string[]).includes(str(o.mode))
     ? (str(o.mode) as Blueprint["mode"]) : undefined;
   const VIS = ["local", "private-gist", "catalog"] as const;
@@ -203,7 +200,6 @@ export function coerceBlueprint(
     ...(strArr(o.tags).length ? { tags: strArr(o.tags) } : {}),
     ...(typeof o.h === "number" ? { h: o.h } : {}),
     ...(str(o.icon) ? { icon: str(o.icon) } : {}),
-    ...(category ? { category } : {}),
     ...(mode ? { mode } : {}),
     ...(fleetPolicy ? { fleetPolicy } : {}),
     ...(team ? { team } : {}),
