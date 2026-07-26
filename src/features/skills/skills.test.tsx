@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SkillsWorkspace } from "./";
 import { useAppStore } from "@/store";
+import { resetPageTabs } from "@/test/storeReset";
 import { blankSkill } from "./lib/skills";
 
 const ROW = ".skill-row";
@@ -16,6 +17,9 @@ const LIB = [
 
 describe("SkillsWorkspace — library at scale (#skills-groups)", () => {
   beforeEach(() => {
+    // #3836: several tests below click a page tab, which PERSISTS the selection in the store —
+    // without this reset a later test renders that tab's page instead of the default one.
+    resetPageTabs();
     useAppStore.setState({ skills: LIB, skillGroups: [], sessionSkillGroups: {}, paneSkills: {}, githubToken: "" });
   });
 
