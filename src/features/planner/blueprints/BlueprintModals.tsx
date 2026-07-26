@@ -1,16 +1,13 @@
-// Blueprint gist + create modals (#609 slice 5) — ported from the design's gist.jsx.
-// Faithful UI; the side-effecting flows (publish / import) take async callbacks so the
-// page shell can wire them to the real gist client (gist.ts) while these stay testable.
+// Blueprint preview types + the shared stage-summary view (#609 slice 5) — ported from the design's
+// gist.jsx. The `PreviewBlueprint` shape drives resolve/import across the gist client (gist.ts); the
+// `StageSummary` render is reused by the plan stage bar (#3802: the paste-URL `ImportModal` was
+// removed with the gist-import modals — the not-yet-downloaded gists now live in the persistent
+// `CloudBlueprints` column on the ProjectSetupPage).
 
-import { useState } from "react";
 import "../../../styles/blueprints.css";
-import { ModalCard } from "@/shared/ui/overlay/ModalCard";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Ic } from "./blueprintIcons";
-import { Button } from "@/shared/ui/controls/Button";
-import { TextField } from "@/shared/ui/controls/Field";
 import { IconBox } from "@/shared/ui/data/IconBox";
-import { Card } from "@/shared/ui/data/Card";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -31,9 +28,6 @@ export interface PreviewBlueprint {
   /** Skill content embedded in the share (#897 Phase 5b) — reconstituted into the library on import. */
   bundled?: SkillPayload[];
 }
-
-// The titled head/body/foot chrome is the shared <ModalCard> (#2420); the `.bp-page` wrapper stays —
-// it scopes the blueprint component CSS (`.hint`, `.mono.dim`, …) the modal bodies/foots rely on.
 
 export function StageSummary({ sections }: { sections: BlueprintStage[] }) {
   return (
@@ -62,52 +56,5 @@ export function StageSummary({ sections }: { sections: BlueprintStage[] }) {
         );
       })}
     </Stack>
-  );
-}
-
-/* ── Import ── */
-export function ImportModal({ onClose, onResolve, onImport }: {
-  onClose: () => void;
-  onResolve: (ref: string) => Promise<PreviewBlueprint>;
-  onImport: (preview: PreviewBlueprint) => void;
-}) {
-  const [val, setVal] = useState("");
-  const [phase, setPhase] = useState<"input" | "loading" | "preview" | "error">("input");
-  const [preview, setPreview] = useState<PreviewBlueprint | null>(null);
-  const [err, setErr] = useState("");
-
-  async function resolve() {
-    if (!val.trim()) return;
-    setPhase("loading");
-    try { setPreview(await onResolve(val.trim())); setPhase("preview"); }
-    catch (e) { setErr(String(e)); setPhase("error"); }
-  }
-
-  return (
-    <Box className="bp-page" style={{ position: "fixed", inset: 0 }}>
-    <ModalCard icon={<Ic n="cloud_download" size={15} />} title="Import from gist" sub="Pull a blueprint someone shared with you" onClose={onClose}
-      foot={phase === "preview" && preview
-        ? <><Text as="span" className="hint">Imports as a linked copy — you can sync upstream later</Text><Box as="span" style={{ flex: 1 }} /><Button variant="ghost" onClick={() => setPhase("input")}>Back</Button><Button variant="primary" onClick={() => onImport(preview)}>Import to library</Button></>
-        : <><Box as="span" style={{ flex: 1 }} /><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!val.trim() || phase === "loading"} onClick={resolve}>{phase === "loading" ? "Resolving…" : "Resolve gist"}</Button></>}>
-      {phase === "preview" && preview ? (
-        <>
-          <Row gap={10} style={{ marginBottom: 12 }}>
-            <IconBox size={30} radius={8} fontSize={14} background={tint(preview.h, 0.16)} color={hue(preview.h)}>{preview.icon}</IconBox>
-            <Box><Text as="div" size={13} weight={600} className="mono">{preview.name}</Text><Text as="div" className="hint mono">{preview.author ? `by ${preview.author} · ` : ""}{preview.rev ? `revision ${preview.rev} · ` : ""}{preview.sections.length} stages</Text></Box>
-            <Box as="span" style={{ flex: 1 }} /><Chip tone="info">valid blueprint</Chip>
-          </Row>
-          <Card style={{ padding: 13 }}><StageSummary sections={preview.sections} /></Card>
-        </>
-      ) : (
-        <>
-          <TextField label="Gist URL or ID" hint="Paste a full URL or the raw gist ID."
-            // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the URL field when the import dialog opens
-            autoFocus placeholder="gist.github.com/user/a91f3c0e7  ·  or  ·  a91f3c0e7"
-            value={val} onChange={setVal} onKeyDown={(e) => { if (e.key === "Enter") void resolve(); }} />
-          {phase === "error" && <Box className="mono" style={{ color: "var(--danger)", fontSize: 11, marginTop: 10 }}>Couldn't resolve: {err}</Box>}
-        </>
-      )}
-    </ModalCard>
-    </Box>
   );
 }
