@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ProjectPane } from "./ProjectPane";
+import { useAppStore } from "@/store";
 import type { Stage } from "../stages/focusedPlan";
 
 const ph = (key: string, name: string, status: Stage["status"], index: number, total: number): Stage =>
@@ -51,12 +52,26 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText(/Locked\./)).toBeInTheDocument();
   });
 
-  it("renders the file-drop intake surface for the UI stage (#829)", () => {
+  it("renders the file-drop intake surface for the UI stage in EXTERNAL mode (#829/#3783)", () => {
+    // #3783 split the UI stage in two by `uiMode`: the drop surface is now the EXTERNAL path
+    // (the user brings Claude-Design files), so the project has to be classified into it.
+    useAppStore.setState({ planClassification: { "proj-x": { uiMode: "external" } } });
     render(<ProjectPane projectId="proj-x" focus={baseFocus({
       stages: [ph("ui", "UI", "active", 0, 1)],
       selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.getByText(/Drop design files or a folder/i)).toBeInTheDocument();
+  });
+
+  it("renders the in-app preview for the UI stage by DEFAULT, not the drop surface (#3783)", () => {
+    // The other half of the #3783 split, and the default: an unclassified project reads as
+    // `custom` — the designer builds the shell in-app, so the external drop must NOT appear.
+    useAppStore.setState({ planClassification: {} });
+    render(<ProjectPane projectId="proj-y" focus={baseFocus({
+      stages: [ph("ui", "UI", "active", 0, 1)],
+      selectedIdx: 0, activeIdx: 0,
+    })} />);
+    expect(screen.queryByText(/Drop design files or a folder/i)).toBeNull();
   });
 
   it("renders a generic body for a section without a dedicated panel", () => {

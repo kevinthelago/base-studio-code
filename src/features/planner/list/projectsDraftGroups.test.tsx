@@ -1,9 +1,15 @@
-// #2998 — the single drafts chip row is split into two lifecycle groups by the durable projects.db
-// state: DRAFTS (a bare `drafted`/absent idea, accent dot) then IN PROGRESS (a `created`/`planning`
-// project whose hub + plan already exist, violet dot). Each group renders only when non-empty, and
-// the per-chip state label is dropped (the group header conveys it).
+// #2998 — a draft's durable projects.db state splits DRAFTS (a bare `drafted`/absent idea) from
+// IN PROGRESS (a `created`/`planning` project whose hub + plan already exist).
+//
+// #3802 rebuilt the Projects tab in the Skills-tab style, so that split is no longer expressed as
+// two chip ROWS under counted headers ("2 in progress" / "1 draft") — every project is now a card
+// in ONE grid, carrying its own status chip, with the same distinction available as a status facet.
+// The GUARANTEE is unchanged and still worth a test at this level: the async `bsc project db list`
+// rows have to reach the rendered card as the right status. `projectsFilter.test.ts` covers the
+// pure derivation; this covers the wiring — the DB read, the merge with the store draft map, and
+// what actually lands on screen.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { ProjectsList } from "./ProjectsList";
 import { useAppStore } from "@/store";
@@ -16,21 +22,30 @@ const DB_ROWS: DbProject[] = [
   { key: "mid_plan", title: "Mid Plan", pitch: "", blueprint: null, category: null, state: "planning", createdAt: 0, updatedAt: 0 },
 ];
 
-function routeInvoke() {
+function routeInvoke(dbRows: DbProject[]) {
   vi.mocked(invoke).mockImplementation(((cmd: string, args?: Record<string, unknown>) => {
     if (cmd === "list_local_projects") return Promise.resolve([]);
     if (cmd === "github_graphql") return Promise.resolve({ viewer: { projectsV2: { nodes: [] } } });
     if (cmd === "bsc") {
       const a = (args as { args?: string[] } | undefined)?.args ?? [];
       // `bsc project db list --json` returns the raw stdout STRING the bridge JSON-parses.
-      if (a[0] === "project" && a[1] === "db" && a[2] === "list") return Promise.resolve(JSON.stringify(DB_ROWS));
+      if (a[0] === "project" && a[1] === "db" && a[2] === "list") return Promise.resolve(JSON.stringify(dbRows));
       return Promise.resolve("");
     }
     return Promise.resolve(null);
   }) as unknown as typeof invoke);
 }
 
-describe("ProjectsList — Drafts vs In progress split (#2998)", () => {
+/** The status chip text on the card carrying `title` — the per-project surface that replaced the
+ *  group headers. Scoped to the card so a chip on a sibling card can't satisfy the assertion. */
+function statusOf(title: string): string {
+  const card = screen.getByText(title).closest(".project-card, .project-row");
+  expect(card, `a card for ${title}`).toBeTruthy();
+  const chip = within(card as HTMLElement).getByText(/^(in progress|draft|active|shipped)$/);
+  return chip.textContent ?? "";
+}
+
+describe("ProjectsList — Drafts vs In progress split (#2998, per-card since #3802)", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
     useAppStore.setState({
@@ -47,43 +62,26 @@ describe("ProjectsList — Drafts vs In progress split (#2998)", () => {
     });
   });
 
-  it("groups drafted/absent under a drafts header and created/planning under an in-progress header", async () => {
-    routeInvoke();
+  it("marks created/planning projects in-progress and a bare idea a draft", async () => {
+    routeInvoke(DB_ROWS);
     render(<ProjectsList />);
 
-    // The in-progress group only forms once the DB rows load (async) — wait for its header.
-    const inProgHeader = await screen.findByText("2 in progress");
-    const inProgRow = inProgHeader.parentElement!;
-    // created + planning chips live under IN PROGRESS…
-    expect(within(inProgRow).getByText("Building App")).toBeTruthy();
-    expect(within(inProgRow).getByText("Mid Plan")).toBeTruthy();
-    expect(within(inProgRow).queryByText("Bare Idea")).toBeNull();
+    // `mid_plan` exists ONLY in the DB, so its card appearing proves the async read + merge ran.
+    await screen.findByText("Mid Plan");
 
-    // …and the bare idea lives under DRAFTS (its own row), with none of the in-progress chips.
-    const draftsHeader = screen.getByText("1 draft");
-    const draftsRow = draftsHeader.parentElement!;
-    expect(within(draftsRow).getByText("Bare Idea")).toBeTruthy();
-    expect(within(draftsRow).queryByText("Building App")).toBeNull();
-    expect(within(draftsRow).queryByText("Mid Plan")).toBeNull();
+    await waitFor(() => expect(statusOf("Building App")).toBe("in progress")); // DB state = created
+    expect(statusOf("Mid Plan")).toBe("in progress");                          // DB state = planning
+    expect(statusOf("Bare Idea")).toBe("draft");                               // no DB row
   });
 
-  it("renders only the drafts group when nothing is in progress", async () => {
-    // No DB rows → every draft is a bare `drafted`/absent idea; the in-progress group must not render.
-    vi.mocked(invoke).mockImplementation(((cmd: string, args?: Record<string, unknown>) => {
-      if (cmd === "list_local_projects") return Promise.resolve([]);
-      if (cmd === "github_graphql") return Promise.resolve({ viewer: { projectsV2: { nodes: [] } } });
-      if (cmd === "bsc") {
-        const a = (args as { args?: string[] } | undefined)?.args ?? [];
-        if (a[0] === "project" && a[1] === "db" && a[2] === "list") return Promise.resolve("[]");
-        return Promise.resolve("");
-      }
-      return Promise.resolve(null);
-    }) as unknown as typeof invoke);
+  it("leaves every draft a draft when the DB has no rows", async () => {
+    routeInvoke([]);
     render(<ProjectsList />);
 
     await screen.findByText("Bare Idea");
-    // Both store-map drafts fall into the drafts group; no in-progress header.
-    expect(screen.getByText("2 drafts")).toBeTruthy();
-    expect(screen.queryByText(/in progress/i)).toBeNull();
+    // Both store-map drafts stay bare; nothing is promoted to in-progress without a DB state.
+    expect(statusOf("Bare Idea")).toBe("draft");
+    expect(statusOf("Building App")).toBe("draft");
+    expect(screen.queryByText("Mid Plan")).toBeNull();
   });
 });

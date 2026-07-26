@@ -41,9 +41,11 @@ describe("components store slice (#2281)", () => {
     expect(useAppStore.getState().kits).toEqual(SEED_KITS);
   });
 
-  // #3543: the clean-slate seed is one EMPTY kit. An empty store recovers exactly it — the kit is appended
-  // + pushed (recover/shadow-proof), and NO component is seeded (there are none).
-  it("hydrateComponents seeds the single empty base-studio-code kit into an empty store (#3543)", async () => {
+  // #3543: the clean-slate seed is ONE kit. An empty store recovers exactly it — the kit is appended
+  // + pushed (recover/shadow-proof), along with the packaged components it ships.
+  // The kit is no longer EMPTY (#3604): the app's own migrated pages are packaged as graph source
+  // under `@data/components/app/**` and ride into `SEED_COMPONENTS`, so an empty store seeds them too.
+  it("hydrateComponents seeds the base-studio-code kit + its packaged components into an empty store (#3543/#3604)", async () => {
     vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([]);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce([]);
     const pushC = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
@@ -51,10 +53,11 @@ describe("components store slice (#2281)", () => {
     await useAppStore.getState().hydrateComponents();
     expect(useAppStore.getState().kits).toEqual(SEED_KITS);
     expect(useAppStore.getState().kits.map((k) => k.id)).toEqual([BASE_STUDIO_CODE_KIT_ID]);
-    expect(useAppStore.getState().components).toEqual([]);
+    expect(useAppStore.getState().components).toEqual(SEED_COMPONENTS);
     expect(pushK).toHaveBeenCalledTimes(1);
     expect(pushK).toHaveBeenCalledWith(expect.objectContaining({ id: BASE_STUDIO_CODE_KIT_ID }));
-    expect(pushC).not.toHaveBeenCalled();
+    // Each packaged component is pushed through the bridge too (recover/shadow-proof, same as the kit).
+    expect(pushC).toHaveBeenCalledTimes(SEED_COMPONENTS.length);
   });
 
   // #3543: the wipe at the STORE/bridge layer — a pre-#3543 store still holding the retired packaged kits
@@ -71,7 +74,8 @@ describe("components store slice (#2281)", () => {
     vi.spyOn(bridge, "pushKit").mockResolvedValue(undefined);
     await useAppStore.getState().hydrateComponents();
     expect(useAppStore.getState().kits.map((k) => k.id)).toEqual([BASE_STUDIO_CODE_KIT_ID]);
-    expect(useAppStore.getState().components).toEqual([]);
+    // The retirees are gone and the store converges to exactly the packaged set (#3604 — no longer empty).
+    expect(useAppStore.getState().components).toEqual(SEED_COMPONENTS);
     expect(dropK).toHaveBeenCalledWith("react-ui");
     expect(dropK).toHaveBeenCalledWith("fleet");
     expect(dropC).toHaveBeenCalledWith(oldComp.id);

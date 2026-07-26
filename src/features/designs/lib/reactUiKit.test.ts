@@ -138,17 +138,22 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(all("series")).toEqual(["Bars", "LineArea", "Spark", "StackedDayBars"]);
   });
 
-  it("the packaged seed is a single EMPTY kit — base-studio-code — the designer fills it (#3543)", () => {
-    // #3543 wiped the packaged component library to a clean slate: ONE empty kit, `base-studio-code`,
-    // which the designer session fills (components + all algorithm animations) and the studio command
-    // exports. The react-ui LIBRARY still exists as the manifest-generated assembler (REACT_UI_KIT /
-    // REACT_UI_COMPONENTS — asserted throughout this file); it is just no longer SEEDED into the store.
+  it("the packaged seed is a single kit — base-studio-code — carrying only the app's own pages (#3543/#3604)", () => {
+    // #3543 wiped the packaged component library to a clean slate: ONE kit, `base-studio-code`, which
+    // the designer session fills and the studio command exports. The react-ui LIBRARY still exists as
+    // the manifest-generated assembler (REACT_UI_KIT / REACT_UI_COMPONENTS — asserted throughout this
+    // file); it is just no longer SEEDED into the store.
     //
-    // This assertion is HAND-MAINTAINED on purpose. Adding a packaged kit back to the seed should be a
+    // The kit is no longer EMPTY: #3604 packages the app's OWN migrated pages as graph source under
+    // `@data/components/app/**`, glob-loaded into SEED_COMPONENTS. So the invariant is no longer
+    // "nothing is seeded" but "only that kit is, and only from that glob".
+    //
+    // This assertion is HAND-MAINTAINED on purpose. Adding a packaged KIT back to the seed should be a
     // decision someone signs off on, not a glob — a failure here is that sign-off being asked for.
     expect(SEED_KITS.map((k) => k.id)).toEqual([BASE_STUDIO_CODE_KIT_ID]);
     expect(SEED_KITS[0].animations ?? []).toEqual([]);
-    expect(SEED_COMPONENTS).toEqual([]);
+    // Every seeded component belongs to that one kit — no second kit sneaks in via the glob.
+    expect([...new Set(SEED_COMPONENTS.map((c) => c.kitId))]).toEqual([BASE_STUDIO_CODE_KIT_ID]);
   });
 });
 
