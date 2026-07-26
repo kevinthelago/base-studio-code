@@ -3,7 +3,7 @@
   "id": "hr",
   "name": "HR / HCM",
   "desc": "Build an HR platform — a core HRIS with payroll, benefits, time, and the full talent lifecycle.",
-  "icon": "account_tree",
+  "icon": "group",
   "origin": "built-in",
   "category": "greenfield",
   "mode": "create",
