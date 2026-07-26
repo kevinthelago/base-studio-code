@@ -536,10 +536,11 @@ pub fn market_readiness(v: &Value) -> String {
     }
 }
 
-/// Validate a project classification blob (#3783/#3784): a JSON object whose optional `uiMode` is
-/// "custom"|"external" and whose optional `needsSource`/`needsMcp`/`needsSkills` are booleans. Every
-/// field is optional (a partial or empty classification is valid); only a present-but-mistyped field
-/// is rejected, field-level (#2395) so an LLM author can self-correct.
+/// Validate a project classification blob (#3783/#3784/#3806): a JSON object whose optional `uiMode`
+/// is "custom"|"external" and whose optional `needsMarket`/`needsSource`/`needsMcp`/`needsSkills`/
+/// `needsAutomations` are booleans. Every field is optional (a partial or empty classification is
+/// valid); only a present-but-mistyped field is rejected, field-level (#2395) so an LLM author can
+/// self-correct.
 pub fn validate_classify_config(v: &Value) -> Result<(), String> {
     let noun = "classification";
     if !v.is_object() {
@@ -553,7 +554,7 @@ pub fn validate_classify_config(v: &Value) -> Result<(), String> {
             errs.push(r#""uiMode" must be "custom" (in-app designer preview) or "external" (bring design files)"#.into());
         }
     }
-    for k in ["needsSource", "needsMcp", "needsSkills", "needsAutomations"] {
+    for k in ["needsMarket", "needsSource", "needsMcp", "needsSkills", "needsAutomations"] {
         if let Some(b) = v.get(k) {
             if !b.is_boolean() {
                 errs.push(format!(r#""{k}" must be a boolean (true/false) when present"#));
@@ -569,6 +570,7 @@ pub fn classify_readiness(v: &Value) -> String {
     let ui = v.get("uiMode").and_then(Value::as_str).unwrap_or("custom");
     let on = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
     let mut stages = Vec::new();
+    if on("needsMarket") { stages.push("market"); }
     if on("needsSource") { stages.push("source"); }
     if on("needsMcp") { stages.push("mcp"); }
     if on("needsSkills") { stages.push("skills"); }

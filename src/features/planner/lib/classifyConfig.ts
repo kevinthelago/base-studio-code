@@ -28,6 +28,8 @@ export interface ClassifyConfig {
   uiMode?: UiMode;
   /** The project's application architecture (#3802). Unset → read as "application". */
   appType?: AppType;
+  /** A desk-research market assessment is worth doing → show the `market` stage (#3806). */
+  needsMarket?: boolean;
   /** The project connects to an external system → show the `source` stage. */
   needsSource?: boolean;
   /** The project uses MCP servers → show the `mcps` stage. */
@@ -47,6 +49,7 @@ export function coerceClassifyConfig(raw: unknown): ClassifyConfig | null {
   const cfg: ClassifyConfig = {};
   if (r.uiMode === "custom" || r.uiMode === "external") cfg.uiMode = r.uiMode;
   if (typeof r.appType === "string" && (APP_TYPES as string[]).includes(r.appType)) cfg.appType = r.appType as AppType;
+  if (typeof r.needsMarket === "boolean") cfg.needsMarket = r.needsMarket;
   if (typeof r.needsSource === "boolean") cfg.needsSource = r.needsSource;
   if (typeof r.needsMcp === "boolean") cfg.needsMcp = r.needsMcp;
   if (typeof r.needsSkills === "boolean") cfg.needsSkills = r.needsSkills;

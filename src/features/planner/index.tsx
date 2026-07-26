@@ -24,7 +24,7 @@ export {
 // needs the real list rather than a hand-copied one that could drift from the tabs actually rendered.
 export { PROJECT_MODES } from "./list/projectModes";
 // The project APPLICATION ARCHITECTURE (#3802 → the Glance endpoint-type discriminator, #3786): a
-// per-project attribute set at the Configure stage. Exposed on the barrel so cross-feature consumers
+// per-project attribute the planner classifies during Discovery. Exposed on the barrel so cross-feature consumers
 // (Glance surfaces it on each project node) reach the type, not the deep `lib/classifyConfig` path.
 export type { AppType } from "./lib/classifyConfig";
 export { installFromGist, publishGist } from "./lib/gist/gist";

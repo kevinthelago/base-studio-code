@@ -37,8 +37,12 @@ describe("blueprints — seed library", () => {
   it("seeds the starter blueprints with a 'default'", () => {
     const bps = makeBlueprints();
     expect(bps.find((b) => b.id === "default")).toBeTruthy();
-    // #3785: `default` is now the single built-in superset blueprint.
-    expect(bps.length).toBe(1);
+    // #3785 made `default` the greenfield superset; #3783 adds the five domain greenfields
+    // (crm/erp/helpdesk/hr/project-management) that walk that same route.
+    expect(bps.length).toBe(6);
+    for (const id of ["crm", "erp", "helpdesk", "hr", "project-management"]) {
+      expect(bps.find((b) => b.id === id), `built-in blueprint '${id}' present`).toBeTruthy();
+    }
   });
 
   it("each section carries a prompt module and a gate from its def", () => {
@@ -133,43 +137,54 @@ describe("blueprints — seed library", () => {
     }
   });
 
-  it("adds an optional market stage right after the Configure step in the greenfield blueprints (#2430/#3785)", () => {
+  it("market is a discovery-toggled optional stage — right after Discovery, hidden until needsMarket (#2430/#3806)", () => {
     for (const id of ["default"]) {
       const bp = makeBlueprints().find((b) => b.id === id)!;
-      const keys = bp.sections.map((s) => s.key);
-      // #3785: the Configure step sits between Discovery and Market, so market follows configure.
-      expect(keys.indexOf("configure"), `${id}: configure right after discovery`).toBe(keys.indexOf("discovery") + 1);
-      expect(keys.indexOf("market"), `${id}: market right after configure`).toBe(keys.indexOf("configure") + 1);
-      // Optional — a project that doesn't need the desk-research assessment skips it (#2267).
-      expect(bp.sections.find((s) => s.key === "market")!.optional).toBe(true);
+      const secs = bp.sections;
+      const keys = secs.map((s) => s.key);
+      // #3806: the Configure stage folded into Discovery, so market now follows Discovery directly.
+      expect(keys.indexOf("market"), `${id}: market right after discovery`).toBe(keys.indexOf("discovery") + 1);
+      // No longer the `optional` flag — market is signal-gated like source/mcp/skills/automations:
+      // hidden (N/A) by default, shown only once the planner sets needsMarket during Discovery.
+      const market = secs.find((s) => s.key === "market")!;
+      expect(market.optional).not.toBe(true);
+      expect(stageStatus(market, secs, { ...sig(), needsMarket: false }).status).toBe("na");
+      expect(stageStatus(market, secs, { ...sig(), needsMarket: true }).status).not.toBe("na");
     }
   });
 
-  it("Default is the single superset greenfield blueprint (#1003/#1914/#3785)", () => {
+  it("Default is the superset greenfield route; the domain greenfields walk it (#1003/#1914/#3785/#3783)", () => {
     const bp = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     const keysOf = (id: string) => bp(id).sections.map((s) => s.key);
-    // #3785: Default absorbed Complete's stages — it's now the one greenfield superset. The unified
+    // #3785: Default absorbed Complete's stages — it's the greenfield superset. The unified
     // vocabulary (#1914) collapsed repos+deploy → `deployment` and structure+permissions → `streams`.
     expect(keysOf("default")).toEqual(
-      ["discovery", "configure", "market", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
+      ["discovery", "market", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
     );
     // The legacy collapsed keys never survive the unified vocabulary.
     for (const k of ["repos", "structure", "permissions"]) {
       expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
     }
-    // Default is the only built-in greenfield blueprint now.
+    // #3783: the built-in greenfields are Default plus the domain blueprints.
     const greenfield = makeBlueprints().filter((b) => b.category === "greenfield").map((b) => b.id);
-    expect(greenfield).toEqual(["default"]);
+    expect(greenfield).toEqual(
+      expect.arrayContaining(["default", "crm", "erp", "helpdesk", "hr", "project-management"]),
+    );
+    // Default is still the superset by keys — every domain blueprint's stages are a subset of it.
+    const defaultKeys = new Set(keysOf("default"));
+    for (const id of ["crm", "erp", "helpdesk", "hr", "project-management"]) {
+      expect(keysOf(id).every((k) => defaultKeys.has(k)), `${id} keys ⊆ default`).toBe(true);
+    }
   });
 
-  it("the Configure step follows Discovery and gates on the recorded classification (#3784)", () => {
-    const secs = makeBlueprints().find((b) => b.id === "default")!.sections;
-    const configure = secs.find((s) => s.key === "configure")!;
-    // Every project runs it (it decides which OPTIONAL stages appear) — so it is NOT optional.
-    expect(configure.optional).not.toBe(true);
-    // Gate: `classified` — incomplete until the planner records the classification, complete once it has.
-    expect(stageStatus(configure, secs, { ...sig(), classified: false }).status).not.toBe("complete");
-    expect(stageStatus(configure, secs, { ...sig(), classified: true }).status).toBe("complete");
+  it("classification folded into Discovery — there is no standalone Configure stage (#3806)", () => {
+    // #3806: the Configure stage was removed; the planner classifies (uiMode + which optional stages
+    // the project needs) as the closing step of Discovery. No blueprint carries a `configure` section,
+    // and the registry has no `configure` def.
+    expect(STAGE_DEFS.configure).toBeUndefined();
+    for (const bp of makeBlueprints()) {
+      expect(bp.sections.map((s) => s.key), `${bp.id} has no configure stage`).not.toContain("configure");
+    }
   });
 
 });

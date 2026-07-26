@@ -147,10 +147,13 @@ export function ProjectSetupPage({ onBack, onStart }: ProjectSetupPageProps) {
         <Row align="stretch" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
           <Box style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: "22px 22px 28px" }}>
             <Box style={{ maxWidth: 640 }}>
-              {/* project name (moved out of the list header's inline form) — autofocused on open. */}
+              {/* project name (moved out of the list header's inline form) — autofocused on open.
+                  A dedicated setup PAGE whose first and primary action is naming the project: focusing
+                  its lone text field on open is the expected behaviour, not a disorienting focus jump. */}
               <TextField
                 label="Project name"
                 aria-label="Project name"
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- single-purpose setup page; naming is the first action
                 autoFocus
                 hint="The name IS the project — it names its files, sessions, and GitHub project, and is locked once created."
                 placeholder="Name your project…"
