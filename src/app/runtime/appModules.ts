@@ -29,6 +29,13 @@ import * as CardStates from "@/shared/ui/feedback/CardStates";
 import * as EmptyStateMod from "@/shared/ui/feedback/EmptyState";
 import * as Field from "@/shared/ui/controls/Field";
 import * as SegmentedControl from "@/shared/ui/controls/SegmentedControl";
+// ── Projects page (#3874) — the leaves it composes but does not redraw. ──────────────────────────────
+import * as Dropdown from "@/shared/ui/controls/Dropdown";
+import * as InlineError from "@/shared/ui/feedback/InlineError";
+import * as DialogMod from "@/shared/ui/overlay/Dialog";
+import * as SafeInvoke from "@/shared/lib/core/safeInvoke";
+import * as GithubProbe from "@/shared/lib/github/githubProbe";
+import * as GithubState from "@/shared/lib/github/githubState";
 import * as StatTile from "@/shared/ui/data/StatTile";
 import * as Pane from "@/shared/ui/overlay/Pane";
 // ── The tabbed-workspace shell a page composes (#3642): Screen + the page-tab + draft hooks ───────────
@@ -125,6 +132,13 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/feedback/EmptyState": EmptyStateMod,
   "@/shared/ui/controls/Field": Field,
   "@/shared/ui/controls/SegmentedControl": SegmentedControl,
+  // #3874 — Projects.
+  "@/shared/ui/controls/Dropdown": Dropdown,
+  "@/shared/ui/feedback/InlineError": InlineError,
+  "@/shared/ui/overlay/Dialog": DialogMod,
+  "@/shared/lib/core/safeInvoke": SafeInvoke,
+  "@/shared/lib/github/githubProbe": GithubProbe,
+  "@/shared/lib/github/githubState": GithubState,
   "@/shared/ui/data/StatTile": StatTile,
   "@/shared/ui/overlay/Pane": Pane,
   // The tabbed-workspace shell + its hooks a migrated page composes (#3642, Automations onward).
