@@ -2,8 +2,12 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AutomationsWorkspace } from "./";
 import { useAppStore } from "@/store";
+import { resetPageTabs } from "@/test/storeReset";
 
 beforeEach(() => {
+  // #3836: the tab-switching tests below PERSIST their selection in the store, so without this
+  // reset a later test renders that tab's page instead of Schedules.
+  resetPageTabs();
   useAppStore.setState({
     automations: [],
     automationsTab: "schedules",

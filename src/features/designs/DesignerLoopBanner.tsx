@@ -9,48 +9,27 @@
 // control is the ONLY way an overnight run starts: nothing auto-starts it, and because the run state is not
 // persisted, a restart always lands back here with the loop off.
 import { useState } from "react";
-import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { bscJson, bscRun } from "@/shared/lib/core/bsc";
-import { pickDesignerLoop, DESIGNER, type LoopRow, type LoopTurn } from "./lib/designerLoopDrive";
+import { bscRun } from "@/shared/lib/core/bsc";
+import { useDesignerLoopState } from "./useDesignerLoopState";
 import "./designerLoopBanner.css";
 
-interface ActiveLoop {
-  id: number;
-  changes: number; // the designer's recorded turns (each = one shot-paired change)
-  cost: number;
-}
-
-export function DesignerLoopBanner() {
-  const [active, setActive] = useState<ActiveLoop | null>(null);
+export function DesignerLoopBanner({ inline = false }: { inline?: boolean } = {}) {
+  // PRESENTATION ONLY (#3850): the loop state has one owner now. This component used to run its own
+  // `bsc loop list` + `bsc loop show` poll while the pump ran another — two spawns per tick for one fact.
+  const active = useDesignerLoopState();
   const [starting, setStarting] = useState(false);
+  const [stopRequested, setStopRequested] = useState(false);
+  // INLINE (#3852) = a pill inside the graph header row; otherwise the fixed top-center overlay. The
+  // overlay is still needed: the header is dropped in theme-preview mode, and the Stop must stay
+  // reachable there (it is the only brake on an unattended, token-spending run).
+  const cls = (extra = "") =>
+    ["designer-loop-banner", inline ? "dlb-inline" : "", extra].filter(Boolean).join(" ");
   const overnight = useAppStore((s) => s.designerOvernight);
   const startOvernight = useAppStore((s) => s.startDesignerOvernight);
   const stopOvernight = useAppStore((s) => s.stopDesignerOvernight);
-
-  usePoll(
-    async (isCancelled) => {
-      const loops = await bscJson<LoopRow[]>(null, ["loop", "list", "--open", "--json"], []);
-      if (isCancelled()) return;
-      const loop = pickDesignerLoop(loops);
-      if (!loop) {
-        setActive(null);
-        return;
-      }
-      const show = await bscJson<{ turns: LoopTurn[]; total_cost: number } | null>(
-        null,
-        ["loop", "show", String(loop.id), "--json"],
-        null,
-      );
-      if (isCancelled() || !show) return;
-      const changes = (show.turns ?? []).filter((t) => t.participant === DESIGNER).length;
-      setActive({ id: loop.id, changes, cost: show.total_cost ?? 0 });
-    },
-    3000,
-    [],
-  );
 
   const start = async () => {
     setStarting(true);
@@ -64,7 +43,7 @@ export function DesignerLoopBanner() {
   // Idle — offer the opt-in trigger. Deliberately a plain, unpulsing pill: nothing is running.
   if (!active) {
     return (
-      <Box className="designer-loop-banner dlb-idle">
+      <Box className={cls("dlb-idle")}>
         {/* eslint-disable-next-line no-restricted-syntax -- a self-contained pill button; the shared Button carries layout this overlay doesn't want */}
         <button
           type="button"
@@ -79,23 +58,27 @@ export function DesignerLoopBanner() {
     );
   }
 
-  // Stop covers BOTH shapes: an overnight run halts through the store action (which flags `stopping` so the
-  // pump stops dispatching immediately and keeps retrying the halt), a plain interactive loop through the
-  // direct out-of-band stop. The optimistic hide is skipped while stopping an overnight run, so the user
-  // keeps seeing the run until it is really gone rather than being told it stopped before it has.
+  // Stop covers both cases: a run this app started halts through the store action (which flags `stopping`
+  // so the pump stops dispatching immediately and keeps retrying the halt); an ORPHAN loop halts through the
+  // direct out-of-band stop, since no run state exists to flag. The optimistic hide is skipped while
+  // stopping a run, so the user keeps seeing it until it is really gone rather than being told it stopped
+  // before it has.
   const stop = () => {
     if (overnight) {
       void stopOvernight();
       return;
     }
+    // No optimistic hide (#3850): the state has one owner, and the banner's own rule for a run is that the
+    // user keeps seeing it until it is really gone. Applying that to an orphan too means the pill never
+    // claims a stop that has not landed — it just reads "Stopping…" until the owner's next poll clears it.
+    setStopRequested(true);
     void bscRun(null, ["loop", "stop", String(active.id)]);
-    setActive(null); // optimistic — the next poll confirms it's gone
   };
 
-  const stopping = overnight?.stopping ?? false;
+  const stopping = (overnight?.stopping ?? false) || stopRequested;
 
   return (
-    <Box className="designer-loop-banner" role="status" aria-label="design loop running">
+    <Box className={cls()} role="status" aria-label="design loop running">
       <Box as="span" className="dlb-dot" aria-hidden />
       <Text as="span" className="dlb-label mono">
         design loop #{active.id}

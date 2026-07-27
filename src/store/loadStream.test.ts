@@ -6,6 +6,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./";
+import { resetFleetPanes } from "@/test/storeReset";
 import type { AgentStream, FleetPlan } from "@/features/planner/fleet/planFleet";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 
@@ -47,7 +48,10 @@ const PROJECT_KEY  = sanitizeProjectKey(PROJECT_NAME);
 
 describe("load-stream fleet wiring (#ls-stream)", () => {
   beforeEach(() => {
-    useAppStore.setState({ tabs: [], bscBaseDir: "/home/user/.base-studio-code", fleetPaneStreams: {} });
+    // #3836: `paneRoleGlobs` is what this suite ASSERTS on and a sibling launch populates it, so it
+    // has to be cleared here or a later test reads the earlier project's globs.
+    resetFleetPanes();
+    useAppStore.setState({ tabs: [], bscBaseDir: "/home/user/.base-studio-code" });
   });
 
   it("paneRoleGlobs contains all load-stream owns, expanding trailing-slash globs", () => {

@@ -9,7 +9,7 @@ const typeCountsByCat = typeCounts([]); // all-zero baseline (every AppType key 
 function rail(over: Partial<Parameters<typeof ProjectsRail>[0]> = {}) {
   return (
     <ProjectsRail
-      query="" setQuery={() => {}}
+      query=""
       statusSel={new Set()} toggleStatus={() => {}}
       typeSel={new Set()} toggleType={() => {}}
       counts={counts} typeCountsByCat={typeCountsByCat} total={6}
@@ -20,9 +20,9 @@ function rail(over: Partial<Parameters<typeof ProjectsRail>[0]> = {}) {
 }
 
 describe("ProjectsRail", () => {
-  it("renders the search box and both facet groups", () => {
+  it("renders both facet groups (search moved to the list header, #3854)", () => {
     render(rail());
-    expect(screen.getByLabelText("Search projects")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Search projects")).toBeNull(); // the header owns it now
     // Status facet labels
     expect(screen.getByText("active")).toBeInTheDocument();
     expect(screen.getByText("in progress")).toBeInTheDocument();
@@ -30,13 +30,6 @@ describe("ProjectsRail", () => {
     expect(screen.getByText("application")).toBeInTheDocument();
     expect(screen.getByText("serverless")).toBeInTheDocument();
     expect(screen.getByText("desktop app")).toBeInTheDocument();
-  });
-
-  it("emits search input upward", () => {
-    const setQuery = vi.fn();
-    render(rail({ setQuery }));
-    fireEvent.change(screen.getByLabelText("Search projects"), { target: { value: "crm" } });
-    expect(setQuery).toHaveBeenCalledWith("crm");
   });
 
   it("toggles a status facet and a type facet", () => {

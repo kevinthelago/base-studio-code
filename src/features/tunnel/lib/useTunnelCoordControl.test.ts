@@ -36,7 +36,7 @@ beforeEach(() => {
     handlers[name] = cb as (e: { payload: { session: string } }) => void;
     return Promise.resolve(() => {});
   });
-  vi.mocked(invoke).mockResolvedValue(JSON.stringify([])); // `bsc logs tail coord` → [] (lines ignored; ingest is mocked)
+  vi.mocked(invoke).mockResolvedValue(JSON.stringify([])); // the coord tail → [] (lines ignored; ingest is mocked)
 });
 
 describe("useTunnelCoordControl (#935)", () => {

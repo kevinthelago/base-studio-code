@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SkillsWorkspace } from "./";
 import { useAppStore } from "@/store";
+import { resetPageTabs } from "@/test/storeReset";
 import { blankSkill } from "./lib/skills";
 
 const ROW = ".skill-row";
@@ -16,6 +17,9 @@ const LIB = [
 
 describe("SkillsWorkspace — library at scale (#skills-groups)", () => {
   beforeEach(() => {
+    // #3836: several tests below click a page tab, which PERSISTS the selection in the store —
+    // without this reset a later test renders that tab's page instead of the default one.
+    resetPageTabs();
     useAppStore.setState({ skills: LIB, skillGroups: [], sessionSkillGroups: {}, paneSkills: {}, githubToken: "" });
   });
 
@@ -23,6 +27,24 @@ describe("SkillsWorkspace — library at scale (#skills-groups)", () => {
     const { container } = render(<SkillsWorkspace />);
     expect(container.querySelectorAll(ROW).length).toBe(4);
     expect(screen.getByPlaceholderText("Search name, description, tools…")).toBeTruthy();
+  });
+
+  it("leads the header with search and shows no KPI digest, but keeps the fleet digest reachable (#3854)", () => {
+    render(<SkillsWorkspace />);
+    // The header's primary control.
+    expect(screen.getByPlaceholderText("Search name, description, tools…")).toBeInTheDocument();
+    // The always-on KPI strip that used to own that slot is gone (4 skills seeded, so "4 skills" would
+    // have rendered if it were still there).
+    expect(screen.queryByText(/\d+ skills/)).toBeNull();
+    expect(screen.queryByText(/avg success/)).toBeNull();
+    // …but the PANEL those numbers fronted is still one click away — removing the strip must not have
+    // removed the only way in.
+    const toggle = screen.getByRole("button", { name: /Fleet digest/i });
+    expect(toggle).toBeInTheDocument();
+    fireEvent.click(toggle);
+    // "Most invoked" is also a Sort option, so anchor on a tile only the PANEL renders.
+    expect(screen.getByText("Never run")).toBeInTheDocument();
+    expect(screen.getByText("Invoked 7d")).toBeInTheDocument();
   });
 
   it("search narrows the rows", () => {

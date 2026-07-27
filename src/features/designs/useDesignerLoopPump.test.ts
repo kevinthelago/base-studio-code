@@ -84,6 +84,18 @@ describe("useDesignerLoopPump — overnight/queue mode (#3304)", () => {
     routeBsc({});
   });
 
+  it("does NOT drive an ORPHAN loop — one this app never started (#3850)", async () => {
+    // #3304's fourth brake is that run state is never persisted, so a run cannot survive a restart. An
+    // open loop with no run state is therefore either CLI-created or the leftover of a restart, and
+    // adopting it would resume spending money after exactly the event the brake exists for. The banner
+    // still shows it with a reachable Stop; the pump must leave it alone.
+    useAppStore.setState({ designerOvernight: null });
+    await tick();
+    expect(sayCalls()).toEqual([]);
+    expect(injectPrompt).not.toHaveBeenCalled();
+    expect(stopCalls()).toEqual([]); // …and it is not force-stopped either — the human owns that call
+  });
+
   it("dispatches the directive at the cursor: shot → driver turn (shot attached) → inject → advance", async () => {
     setRun({ queue: [directive("a"), directive("b")], cursor: 1 });
     await tick();
@@ -212,16 +224,6 @@ describe("useDesignerLoopPump — overnight/queue mode (#3304)", () => {
   });
 
   // ── the interactive mode must be untouched ────────────────────────────────────────────────────────
-  it("REGRESSION: with no overnight run it drives the interactive loop (generic continue)", async () => {
-    useAppStore.setState({ designerOvernight: null });
-    await tick();
-
-    expect(sayCalls()[0]).toEqual(["loop", "say", "7", "--as", "driver", "continue"]);
-    expect(bscJson).not.toHaveBeenCalledWith(null, ["shot", "preview"], null); // no shot in interactive mode
-    const prompt = vi.mocked(injectPrompt).mock.calls[0][1];
-    expect(prompt).toContain("make ONE meaningful change");
-  });
-
   it("is dormant when no designer loop is open", async () => {
     routeBsc({ loops: [] });
     await tick();
