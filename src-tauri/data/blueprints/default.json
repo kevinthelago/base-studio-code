@@ -2,6 +2,7 @@
   "order": 0,
   "id": "default",
   "name": "Default",
+  "h": 70,
   "desc": "Greenfield app — pitch to agent-ready plan. Integrations, MCP servers, automations & skills switch on only if your project needs them.",
   "origin": "built-in",
   "mode": "create",

@@ -40,9 +40,16 @@ vi.mock("@/shared/hooks/usePoll", () => ({
 // (#3522). The gate runs the full file, so this matters.
 afterEach(cleanup);
 
+// #3836: every describe below must start from the SAME pool state. `#3522` used to reset only
+// `autoSpawnDebugSessions`, so when the shuffled order put it after `#3535` it inherited that
+// block's slots + seeded prompts and measured a different pool. One reset, shared by all of them.
+const resetPool = () =>
+  useAppStore.setState({
+    autoSpawnDebugSessions: false, paneContinue: {}, paneStartupPromptText: {}, activeDebugSlots: [],
+  });
+
 describe("RequestSessionsMount — the overflow pool (#3535)", () => {
-  beforeEach(() =>
-    useAppStore.setState({ autoSpawnDebugSessions: false, paneContinue: {}, paneStartupPromptText: {}, activeDebugSlots: [] }));
+  beforeEach(resetPool);
 
   it("spawns NOTHING while auto-spawn is off — the default", async () => {
     const { container } = render(<RequestSessionsMount />);
@@ -88,7 +95,7 @@ describe("pruning completed requests when auto-spawn turns on (#3522)", () => {
 
   beforeEach(() => {
     vi.mocked(bscRun).mockClear();
-    useAppStore.setState({ autoSpawnDebugSessions: false });
+    resetPool();
   });
 
   // FIRST, from a clean slate: mounting with the setting ALREADY on must not prune (see #3522 — this is

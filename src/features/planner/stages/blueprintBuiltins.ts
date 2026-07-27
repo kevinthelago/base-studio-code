@@ -64,11 +64,35 @@ export function mkStage(
 // metadata + an ordered list of section keys that chain into ./sections/*.json (resolved below).
 const blueprintModules = import.meta.glob<{ default: BlueprintDef }>("@data/blueprints/*.json", { eager: true });
 
+/** RETIRED packaged blueprint ids — a TOMBSTONE list (#3840, same shape as the component-suppression
+ *  tombstone in #3725).
+ *
+ *  Deleting a blueprint's `@data/blueprints/*.json` is NOT enough to retire it. `overlayGlob` matches
+ *  the config-dir mirror (`~/.base-studio-code/config/blueprints/`) to the embedded set by filename
+ *  stem and APPENDS any file it does not recognise — so on every install that once shipped the
+ *  blueprint, the orphaned mirror copy keeps re-introducing it. `refreshBuiltIns` then sees it as
+ *  code-owned and its prune (correctly) leaves it alone. Net effect: a retired blueprint is
+ *  immortal.
+ *
+ *  Listing the id here drops it after the overlay, so a stale mirror cannot resurrect it. Retired:
+ *    complete          — folded into `default` (the greenfield superset, #3785)
+ *    feature-add       — the add-a-feature route, folded into the planner's own flow
+ *    ui-kit            — obsolete once the designer generates UI in-app (#3783)
+ *    blueprint-author  — superseded by the post-triage Generate-Blueprint promotion (#3785/#3831)
+ *  (`serverless-function` is in the same orphaned state but was deliberately left in place.) */
+export const RETIRED_BLUEPRINT_IDS: readonly string[] = [
+  "complete", "feature-add", "ui-kit", "blueprint-author",
+];
+
 /** The built-in blueprint library, assembled from the per-blueprint JSON definitions: ordered by
- *  each def`s `order`, with its section keys resolved into section instances via mkStage. */
+ *  each def`s `order`, with its section keys resolved into section instances via mkStage.
+ *  {@link RETIRED_BLUEPRINT_IDS} are dropped AFTER the overlay, so a stale config mirror cannot
+ *  reintroduce a blueprint the app no longer ships. */
 export function makeBlueprints(): Blueprint[] {
   return overlayGlob("blueprints", blueprintModules)
+    .filter(([stem]) => !RETIRED_BLUEPRINT_IDS.includes(stem))
     .map(([, def]) => def)
+    .filter((def) => !RETIRED_BLUEPRINT_IDS.includes(def.id))
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map(({ order: _order, sections, ...meta }) => {
       // A CREATE blueprint ships a fresh UI on the packaged kit, so record it as the app's consumer

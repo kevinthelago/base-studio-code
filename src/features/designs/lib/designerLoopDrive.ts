@@ -31,53 +31,22 @@ export interface LoopTurn {
 }
 
 /** What the pump should do this tick. */
-export type LoopPumpAction =
-  | { kind: "continue"; prompt: string } // the driver's turn: post the driver turn, then inject the prompt
-  | { kind: "nudge"; prompt: string } //    the designer stalled: re-inject (do NOT post a driver turn)
-  | { kind: "wait" } //                     the designer is working — hold
-  | { kind: "idle" }; //                    no open designer loop — the pump is dormant
-
-/** The inputs a tick decides over. */
-export interface LoopPumpInput {
-  loop: LoopRow | null;
-  turns: readonly LoopTurn[];
-  now: number;
-  /** When the pump last injected for this loop (0 when it hasn't). */
-  lastInjectAt: number;
-  nudgeAfterMs: number;
-}
-
-/** The one OPEN designer loop (a `driver ↔ designer` pair), or `null`. The pump drives exactly one. */
-export function pickDesignerLoop(loops: readonly LoopRow[]): LoopRow | null {
-  return loops.find((l) => l.status === "open" && l.a === DRIVER && l.b === DESIGNER) ?? null;
+/** The one OPEN loop between `a` and `b`, or `null`. Defaults to the `driver ↔ designer` pair — the UI
+ *  loop this feature drives — but takes the pairing explicitly (#3850) so a DIFFERENT loop shape can
+ *  coexist: #3263's tooling loop is `designer ↔ external`, and a hard-coded pair would have made the two
+ *  mutually exclusive rather than concurrent. */
+export function pickDesignerLoop(
+  loops: readonly LoopRow[],
+  a: string = DRIVER,
+  b: string = DESIGNER,
+): LoopRow | null {
+  return loops.find((l) => l.status === "open" && l.a === a && l.b === b) ?? null;
 }
 
 /** Whose turn it is next — `a` first, strict alternation (mirrors the store's `next_speaker`). */
 export function whoseTurn(a: string, b: string, turns: readonly LoopTurn[]): string {
   const last = turns.length ? turns[turns.length - 1].participant : null;
   return last === a ? b : a;
-}
-
-/** Decide the pump's action for this tick. Pure. */
-export function decideLoopPumpAction(inp: LoopPumpInput): LoopPumpAction {
-  const { loop, turns, now, lastInjectAt, nudgeAfterMs } = inp;
-  if (!loop || loop.status !== "open") return { kind: "idle" };
-  if (whoseTurn(loop.a, loop.b, turns) === DRIVER) {
-    return { kind: "continue", prompt: nextChangePrompt(loop.id) };
-  }
-  // The designer's turn — it's working. Only re-prompt if it has clearly stalled past the last inject.
-  if (now - lastInjectAt > nudgeAfterMs) return { kind: "nudge", prompt: nudgePrompt(loop.id) };
-  return { kind: "wait" };
-}
-
-/** The next-change prompt injected into the designer PTY. SINGLE LINE (injectPrompt submits with a CR — an
- *  embedded newline would submit early). Backticks are markdown in Claude's input, not shell. */
-export function nextChangePrompt(id: number): string {
-  return (
-    `Design loop #${id}: make ONE meaningful change to the running app (via \`bsc ui\`), capture it with ` +
-    `\`bsc shot preview\`, then record it — \`bsc loop say --as designer ${id} --shot <path> "<what you changed>"\` — ` +
-    `and stop; you'll be prompted for the next change. The shot is the ground truth, not your description.`
-  );
 }
 
 /** The stall nudge — the designer hasn't recorded; prod it to record or make the next change. Single line. */
@@ -88,10 +57,13 @@ export function nudgePrompt(id: number): string {
   );
 }
 
-// ── Overnight mode (#3311): the auto-queue variant. The interactive loop above prompts a GENERIC "make a
-// change"; the overnight loop dispatches a specific DIRECTIVE from the auto-queue (buildDesignerQueue) each
-// turn, grounds it with a shot, and is BUDGET-bounded — it stops on a turn ceiling OR when the queue drains
-// (a GOOD end: nothing left to improve). Same turn-order progress signal as the interactive decider. ─────
+// ── The loop decider (#3311/#3850). A designer session is either running a LOOP or in normal chat —
+// there is no third "interactive loop" mode (the `decideLoopPumpAction` that used to sit above was a
+// vestige, and it contradicted the launch contract, which already said the pump drives "ONLY while an
+// open loop exists — so an interactive studio session stops and hands back"). So this is THE decider: each
+// driver turn dispatches a specific DIRECTIVE from the auto-queue (buildDesignerQueue), grounds it with a
+// shot, and is BUDGET-bounded — stopping on a turn ceiling OR when the queue drains (a GOOD end: nothing
+// left to improve). ─────────────────────────────────────────────────────────────────────────────────────
 
 /** Default overnight budget — "a while", not forever. The reachable Stop pill (#3294) can end it sooner. */
 export const DEFAULT_MAX_TURNS = 40;
@@ -119,8 +91,8 @@ export interface OvernightInput {
   maxTurns: number;
 }
 
-/** Decide the overnight pump's action for this tick. Pure. Mirrors {@link decideLoopPumpAction}'s turn-order
- *  signal, but the driver's turn dispatches the next queued directive — or stops (budget/drained). */
+/** Decide the loop pump's action for this tick. Pure. The driver's turn dispatches the next queued
+ *  directive — or stops (budget reached / queue drained). */
 export function decideOvernightAction(inp: OvernightInput): OvernightAction {
   const { loop, turns, now, lastInjectAt, nudgeAfterMs, queue, cursor, maxTurns } = inp;
   if (!loop || loop.status !== "open") return { kind: "idle" };
