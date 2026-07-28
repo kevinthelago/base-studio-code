@@ -24,6 +24,52 @@ export interface ResumeResult {
   error?: string;
   /** An informational summary of what was (or wasn't) launched — maintenance/no-repo streams. */
   note?: string;
+  /** Sessions deliberately NOT relaunched, with why (#3916). The caller SURFACES these — opens their
+   *  nodes so the user sees the problem — rather than resuming past them silently. */
+  blocked?: BlockedStream[];
+}
+
+/** A session a resume refused to relaunch, and why (#3916). */
+export interface BlockedStream {
+  streamId: string;
+  paneId: string;
+  reason: string;
+}
+
+/**
+ * Split the streams a resume WOULD launch into those that can actually run and those that cannot (#3916).
+ * Pure — the IO (worktree existence) is probed by the caller and injected — so the whole rule is
+ * exhaustively testable, like {@link planResumeLaunch} beside it.
+ *
+ * Two blocking conditions, both of which must SURFACE rather than be silently worked around:
+ *  · QUARANTINED — the warden hard-paused this worker. Resume used to call `clearProjectQuarantine`,
+ *    wiping the warden floor so a prior run's denied command couldn't re-pause it; that discarded the
+ *    exact signal the user needs. A quarantined worker now stays quarantined and becomes visible.
+ *  · WORKTREE MISSING — #3614: the boot-GC reclaims a merged+clean worktree and the boot reconcile marks
+ *    that worker ended. Relaunching it would spawn a session into a NON-EXISTENT cwd — the burst of
+ *    doomed sessions that jams the backend. Never launch it; report it.
+ */
+export function partitionResumable(
+  streams: Array<{ id: string }>,
+  projectKey: string,
+  probes: { quarantined: Record<string, { summary?: string } | undefined>; missingWorktreePanes: ReadonlySet<string> },
+): { resumable: Array<{ id: string }>; blocked: BlockedStream[] } {
+  const resumable: Array<{ id: string }> = [];
+  const blocked: BlockedStream[] = [];
+  for (const st of streams) {
+    const paneId = `${projectKey}:${st.id}`;
+    const q = probes.quarantined[paneId];
+    if (q) {
+      blocked.push({ streamId: st.id, paneId, reason: q.summary?.trim() || "quarantined by the warden" });
+      continue;
+    }
+    if (probes.missingWorktreePanes.has(paneId)) {
+      blocked.push({ streamId: st.id, paneId, reason: "its worktree is gone — nothing to resume into" });
+      continue;
+    }
+    resumable.push(st);
+  }
+  return { resumable, blocked };
 }
 
 /**
@@ -108,11 +154,45 @@ export async function resumeProjectFleet(opts: {
     };
   }
 
-  // 3. Clear a stale warden quarantine floor so a denied command from a prior run can't immediately
-  //    re-pause a relaunched worker (silent — the Planner's launch shows a confirm dialog; a graph
-  //    resume just stamps the floor).
-  const relaunchPanes = resolvedFleet.streams.map((st) => `${projectKey}:${st.id}`);
-  store.clearProjectQuarantine(projectKey, relaunchPanes, Date.now());
+  // 3. Partition (#3916). Resume relaunches what can actually RUN and SURFACES what cannot, instead of
+  //    steamrolling both. This deliberately replaces the old `clearProjectQuarantine` call, which wiped
+  //    the warden floor so a prior run's denied command couldn't re-pause a worker — that silently
+  //    discarded the one signal the user has to act on.
+  const candidateStreams = launchPlan.streams;
+  const paneOf = (id: string) => `${projectKey}:${id}`;
+  // A worktree the boot-GC reclaimed (#3614) has no cwd to spawn into. Probe only panes we have a
+  // recorded cwd for; one with none has never launched here, so `fleetStartProject` derives it fresh.
+  const missingWorktreePanes = new Set<string>();
+  await Promise.all(candidateStreams.map(async (st) => {
+    const paneId = paneOf(st.id);
+    const cwd = store.paneCwds[paneId];
+    if (!cwd) return;
+    const exists = await safeInvoke<boolean>("dir_exists", { path: cwd }, true);
+    if (!exists) missingWorktreePanes.add(paneId);
+  }));
+  const { resumable, blocked } = partitionResumable(candidateStreams, projectKey, {
+    quarantined: store.quarantinedPanes,
+    missingWorktreePanes,
+  });
+  if (resumable.length === 0 && !launchPlan.director.enabled) {
+    return {
+      ok: false,
+      error: blocked.length > 0
+        ? `Nothing resumable — ${blocked.length} session${blocked.length === 1 ? "" : "s"} need attention.`
+        : "No workers to resume.",
+      blocked,
+    };
+  }
+  // Only the resumable streams launch; the blocked ones keep their quarantine/ended state untouched.
+  const resumableIds = new Set(resumable.map((st) => st.id));
+  launchPlan.streams = launchPlan.streams.filter((st) => resumableIds.has(st.id));
+
+  // 3b. Clear the ENDED flag for exactly the panes we are relaunching (#3916). Without this the whole
+  //     resume was a no-op: `TerminalView` bails before `pty_create` when `endedPanes[paneId]` is set,
+  //     and `endedPanes` is persisted — so a worker ended by completion (#920) or by the boot-GC
+  //     worktree reconcile (#3614) could never be revived by a project resume. Cleared BEFORE
+  //     `fleetStartProject` so the remount it triggers already sees a clean flag.
+  store.clearEndedPanes([...resumableIds].map(paneOf));
 
   // 4. Give the director its standing protocol (bsc-fleet roster + worker Q&A) at the hub.
   if (launchPlan.director.enabled) {
@@ -126,5 +206,5 @@ export async function resumeProjectFleet(opts: {
   const hubPath = await safeInvoke<string>("project_dir_path", { projectKey }, "");
   const roster = store.fleetStartProject(projectName, launchPlan, projectKey, hubPath ? { hubPath } : undefined);
   publishFleetRoster(projectKey, roster);
-  return { ok: true, note };
+  return { ok: true, note, blocked };
 }

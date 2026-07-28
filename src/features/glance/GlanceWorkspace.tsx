@@ -136,6 +136,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const setPaneStatus = useAppStore((s) => s.setPaneStatus);
   // The per-pane run status — drives the fleet-drill agent nodes' live activity (#3252, `applyFleetLiveStatus`).
   const paneStatus = useAppStore((s) => s.paneStatus);
+  // #3916: quarantine is a FIRST-CLASS node state now — a warden hard-pause used to be invisible
+  // here, so a killed worker read as a plain `off` node (indistinguishable from never-launched).
+  const quarantinedPanes = useAppStore((s) => s.quarantinedPanes);
   // Confirm before the BULK "End sessions" (#3052) — stopping a whole fleet at once warrants a guard.
   const { confirm, dialog: endAllDialog } = useConfirmDialog();
   // HEALTH axis (#2541, was #2265): the worst unresolved fault per project (from `bsc errors`) overlaid
@@ -277,7 +280,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             rawNodes:
               drill === BASE_STUDIO_PROJECT_ID
                 ? applyStudioLiveStatus(fleetData.rawNodes, { debugSession, paneClaudeActive, paneStatus })
-                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now }),
+                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes }),
           }
         : fleetData,
     [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive],
@@ -460,7 +463,17 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     setResuming(true);
     try {
       const res = await resumeProjectFleet({ projectName: projectDisplayName(drill), projectKey: drill, fleet: effectiveFleet });
-      setResumeMsg(res.ok ? (res.note ?? null) : (res.error ?? "Couldn't resume this project."));
+      // #3916: SHOW the sessions that couldn't resume rather than quietly skipping them — select the
+      // first blocked node so the inspector opens on it (its overlay already carries the reason), and
+      // name the rest in the status line. The user decides what to do; resume never decides for them.
+      const blocked = res.blocked ?? [];
+      if (blocked.length > 0) pickNode(blocked[0].streamId);
+      const blockedMsg = blocked.length > 0
+        ? `${blocked.length} session${blocked.length === 1 ? "" : "s"} not resumed — `
+          + blocked.map((b) => `${b.streamId}: ${b.reason}`).join("; ")
+        : null;
+      const okMsg = [res.note, blockedMsg].filter(Boolean).join(" · ") || null;
+      setResumeMsg(res.ok ? okMsg : (res.error ?? "Couldn't resume this project."));
     } finally {
       setResuming(false);
     }

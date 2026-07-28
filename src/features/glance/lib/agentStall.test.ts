@@ -146,3 +146,31 @@ describe("applyFleetLiveStatus (#3252 — fleet-drill live agent status)", () =>
     expect(node(r, "__preview__")).toEqual(nodes[2]); // healthy/live/preview, unchanged
   });
 });
+
+describe("applyFleetLiveStatus — quarantine is a first-class node state (#3916)", () => {
+  const nodes = [{ id: "api" }, { id: "ui" }] as never as Parameters<typeof applyFleetLiveStatus>[0];
+  const base = { livePaneIds: new Set<string>(), paneStatus: {}, waiting: [], now: 0 };
+
+  it("shows a quarantined agent as ERROR with the warden's reason, not as `off`", () => {
+    // The warden KILLS the PTY when it quarantines, so the pane is never live — without this overlay the
+    // node fell through to `off`, reading as "never launched" rather than "hard-paused, here is why".
+    const out = applyFleetLiveStatus(nodes, "proj", {
+      ...base,
+      quarantined: { "proj:ui": { summary: "wrote outside its lane" } },
+    });
+    const ui = out.find((n) => n.id === "ui")!;
+    expect(ui.health).toBe("error");
+    expect(ui.reason).toBe("wrote outside its lane");
+    // An unquarantined, unlaunched sibling still reads `off` — the overlay is targeted, not blanket.
+    expect(out.find((n) => n.id === "api")!.health).toBe("off");
+  });
+
+  it("falls back to a readable reason when the quarantine carries no summary", () => {
+    const out = applyFleetLiveStatus(nodes, "proj", { ...base, quarantined: { "proj:api": {} } });
+    expect(out.find((n) => n.id === "api")!.reason).toBe("quarantined by the warden");
+  });
+
+  it("is inert when nothing is quarantined (pre-#3916 behaviour byte-for-byte)", () => {
+    expect(applyFleetLiveStatus(nodes, "proj", base)).toEqual(applyFleetLiveStatus(nodes, "proj", { ...base, quarantined: {} }));
+  });
+});
