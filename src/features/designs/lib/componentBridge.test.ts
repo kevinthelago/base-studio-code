@@ -50,6 +50,26 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(comps?.[1].group).toBeUndefined();
   });
 
+  it("a component's #3878 `tests` + #3810 `analytics` manifests ride verbatim — absent stays absent (#3884)", async () => {
+    // `projectComponent` is an ALLOWLIST: a field missing from it is dropped on EVERY hydrate. Both of
+    // these were declared as contracts before anything populated them, so the gap was invisible until the
+    // inspector's Tests tab went to read `tests` and found it always empty. The seed round-trip contract
+    // (`seed === load(push(seed))`) breaks the same way for any record carrying an unlisted field.
+    vi.mocked(bsc).mockResolvedValueOnce(JSON.stringify([
+      {
+        id: "btn", name: "Button", kitId: "react-ui", role: "primitive",
+        analytics: [{ event: "click", props: [{ name: "label", type: "string" }] }],
+        tests: [{ name: "fires onClick", src: "it('fires', () => {});" }],
+      },
+      { id: "txt", name: "Text", kitId: "react-ui", role: "primitive" }, // neither ⇒ both absent
+    ]));
+    const comps = await loadComponents();
+    expect(comps?.[0].tests).toEqual([{ name: "fires onClick", src: "it('fires', () => {});" }]);
+    expect(comps?.[0].analytics?.[0].event).toBe("click");
+    expect(comps?.[1].tests).toBeUndefined();
+    expect(comps?.[1].analytics).toBeUndefined();
+  });
+
   it("a component's #3568 change `history` + provenance ride through loadComponents (the inspector History tab reads them)", async () => {
     vi.mocked(bsc).mockResolvedValueOnce(JSON.stringify([
       {
