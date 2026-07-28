@@ -84,7 +84,12 @@ export function usePlanGates(deps: PlanGatesDeps) {
       // has been planned — i.e. there are streams.
       fleetProfilesComplete: streams.length > 0,
       automationsAck: (planAutomations[effectiveProjectId]?.length ?? 0) > 0,
-      skillsAck: false,
+      // #3905: was hardcoded `false`, which made the Skills gate ("assign skills to the fleet")
+      // UNSATISFIABLE — nothing ever set it true, so once the stage applied it blocked the plan
+      // forever and triage became unreachable. Derived like `automationsAck` above: the fleet has
+      // skills once the project resolves at least one. A project the planner flagged `needsSkills`
+      // but assigned NO skills still blocks, which is exactly what the gate label means.
+      skillsAck: projectSkillCount > 0,
       requiresUi,
       ui: uiCounts,
       // Routing dropped design files to the project completes the UI stage — recorded as a

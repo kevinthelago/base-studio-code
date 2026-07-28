@@ -65,6 +65,19 @@ describe("blueprints — seed library", () => {
     expect(STAGE_DEFS.ui.deps).toContain("features");
   });
 
+  it("the Skills stage is SKIPPABLE — an opt-in stage must never trap the plan (#3905)", () => {
+    // Skills sits behind the `needsSkills` opt-in AND self-enables whenever the project resolves
+    // any skill (`needsSkills: !!classifyCfg?.needsSkills || projectSkillCount > 0`). Without
+    // `optional` it offered no Skip, and its gate signal `skillsAck` was hardcoded false — so once
+    // the stage appeared the plan could never complete and TRIAGE became unreachable.
+    expect(STAGE_DEFS.skills.optional, "skills must declare optional so the footer offers Skip").toBe(true);
+    // …and the flag survives the section build (`mkStage` inherits `optional ?? def.optional`).
+    expect(mkStage("skills").optional).toBe(true);
+    // The gate still MEANS something: it requires `skillsAck`, which is satisfied by having skills,
+    // not by a stub. (A `needsSkills` project with zero skills assigned still blocks.)
+    expect(STAGE_DEFS.skills.gateRule?.require?.[0]?.signal).toBe("skillsAck");
+  });
+
   it("test_ui teaches the data-shape layout picker (#2475)", () => {
     const def = STAGE_DEFS.test_ui;
     expect(def).toBeTruthy();
