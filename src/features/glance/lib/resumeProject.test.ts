@@ -1,7 +1,7 @@
 // planResumeLaunch (#glance-resume) — the progress-gated stream partition a Glance project-resume runs.
 // Pure, so it's exhaustively unit-testable without any Tauri/store IO.
 import { describe, it, expect } from "vitest";
-import { planResumeLaunch, partitionResumable } from "./resumeProject";
+import { planResumeLaunch, partitionResumable, nothingToResume } from "./resumeProject";
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
 
 function stream(over: Partial<AgentStream> = {}): AgentStream {
@@ -104,5 +104,30 @@ describe("partitionResumable (#3916) — resume what can run, SURFACE what can't
     });
     expect(resumable).toEqual([]);
     expect(blocked).toHaveLength(3);
+  });
+});
+
+describe("nothingToResume (#3923) — Resume must start every OFF node, not bail on the first live one", () => {
+  const q = {} as Record<string, unknown>;
+
+  it("is FALSE when any pane is dormant — the regression: one live node used to disable Resume entirely", () => {
+    const panes = ["p:director", "p:api", "p:ui"];
+    expect(nothingToResume(panes, new Set(["p:director"]), q)).toBe(false);
+  });
+
+  it("is TRUE only when every pane is already live", () => {
+    const panes = ["p:api", "p:ui"];
+    expect(nothingToResume(panes, new Set(panes), q)).toBe(true);
+  });
+
+  it("counts a QUARANTINED pane as not-startable — it is surfaced, never relaunched (#3916)", () => {
+    const panes = ["p:api", "p:ui"];
+    expect(nothingToResume(panes, new Set(["p:api"]), { "p:ui": { summary: "off-lane write" } })).toBe(true);
+    // …but a third dormant pane still means there IS work.
+    expect(nothingToResume([...panes, "p:db"], new Set(["p:api"]), { "p:ui": {} })).toBe(false);
+  });
+
+  it("treats an empty/absent tab as work to do (build it), not as nothing", () => {
+    expect(nothingToResume([], new Set(), q)).toBe(false);
   });
 });

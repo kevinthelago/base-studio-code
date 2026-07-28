@@ -34,7 +34,7 @@ import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
 import { cellRect, placeByDirection, releaseCell, occupants, clampCell, DEFAULT_CELL, type CellSize, type MorphPlacement } from "./lib/morphGrid";
 import { fleetPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
-import { resumeProjectFleet } from "./lib/resumeProject";
+import { resumeProjectFleet, nothingToResume } from "./lib/resumeProject";
 import { buildGraph, focusSets, isBandNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
 import { timedSync } from "@/shared/lib/core/perf";
 import { buildGlanceData } from "./lib/glanceData";
@@ -455,10 +455,18 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const onResumeProject = async () => {
     if (!canResume || !drill || resuming) return;
     setResumeMsg(null);
+    // #3923: only navigate when there is genuinely NOTHING to start. This used to bail on the FIRST
+    // live pane, which made Resume permanently inert once a single node had been resumed on its own —
+    // the "turn them all back on" button just switched screens. Its stated reason ("rebuilding would
+    // restart running agents") does not hold: `pty_create` RECONNECTS to an existing session and
+    // returns before spawning, so a live pane's remount never re-sends `claude --continue`.
     const idx = findFleetTabIdx(drill);
     if (idx >= 0) {
-      const tab = useAppStore.getState().tabs[idx];
-      if ((tab?.paneIds ?? []).some((pid) => livePaneIds.has(pid))) { setWorkspace("console"); setActiveTab(idx); return; }
+      const paneIds = useAppStore.getState().tabs[idx]?.paneIds ?? [];
+      // Every pane already live ⇒ nothing to resume; jump to it. A pane that is live OR quarantined is
+      // not startable here (quarantine is surfaced, not relaunched, #3916), so a fleet made entirely of
+      // those two is "nothing to do" too.
+      if (nothingToResume(paneIds, livePaneIds, quarantinedPanes)) { setWorkspace("console"); setActiveTab(idx); return; }
     }
     setResuming(true);
     try {
