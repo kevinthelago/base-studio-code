@@ -1,74 +1,61 @@
-// The detached window's strip + the dock-back gesture (#3919).
+// The detached window's strip + the POINTER dock-back gesture (#3919/#3925/#3927).
 //
-// jsdom cannot run a real OS drag, so these pin the WIRING: that the strip presents its tab, that the
-// tear-off callback docks back rather than tearing off again, and that the preview names the right action.
-// The gesture itself is verified against the running app.
+// The gesture moved off HTML5 drag-and-drop deliberately: an HTML5 drag is owned by its source webview,
+// so over another window the OS paints `no-drop` and no `drop` ever arrives. These pin the pointer
+// mechanics — the release POSITION decides, not a drag event that stops firing when the cursor leaves.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 const emitDockBack = vi.fn().mockResolvedValue(undefined);
 const close = vi.fn().mockResolvedValue(undefined);
+const outerPosition = vi.fn().mockResolvedValue({ x: 100, y: 100 });
+const outerSize = vi.fn().mockResolvedValue({ width: 800, height: 600 });
 vi.mock("@/shared/lib/core/dockBack", () => ({
   emitDockBack: (p: unknown) => emitDockBack(p),
   DOCK_BACK_EVENT: "bsc://dock-back",
 }));
-vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ close }) }));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ close, outerPosition, outerSize }),
+}));
 
-import { DetachedTabStrip } from "./DetachedTabStrip";
+import { DetachedTabStrip, releasedOutside } from "./DetachedTabStrip";
 
 beforeEach(() => { emitDockBack.mockClear(); close.mockClear(); });
+
+/** Drain the microtask queue so the async window-rect fetch has settled. */
+const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+
+/** Press the tab, move to a screen point, release there. */
+async function dragTo(container: HTMLElement, to: { screenX: number; screenY: number }) {
+  const tab = container.querySelector("[data-tab]")!;
+  const bar = container.querySelector(".detached-bar")!;
+  fireEvent.pointerDown(tab, { pointerId: 1, screenX: 200, screenY: 120, clientX: 40, clientY: 16 });
+  await flush(); // the rect fetch is async (Promise.all + .then) — one microtask is not enough
+  fireEvent.pointerMove(bar, { pointerId: 1, ...to, clientX: 40, clientY: 16 });
+  fireEvent.pointerUp(bar, { pointerId: 1, ...to, clientX: 40, clientY: 16 });
+}
+
+describe("releasedOutside (#3927)", () => {
+  const r = { x: 100, y: 100, w: 800, h: 600 };
+  it("is false inside the window's screen rect", () => {
+    expect(releasedOutside({ screenX: 400, screenY: 300 }, r)).toBe(false);
+    expect(releasedOutside({ screenX: 100, screenY: 100 }, r)).toBe(false); // the edge counts as inside
+  });
+  it("is true past any edge", () => {
+    expect(releasedOutside({ screenX: 50, screenY: 300 }, r)).toBe(true);
+    expect(releasedOutside({ screenX: 400, screenY: 50 }, r)).toBe(true);
+    expect(releasedOutside({ screenX: 950, screenY: 300 }, r)).toBe(true);
+    expect(releasedOutside({ screenX: 400, screenY: 750 }, r)).toBe(true);
+  });
+  it("treats an UNKNOWN rect as outside, so a real drag still docks back", () => {
+    expect(releasedOutside({ screenX: 400, screenY: 300 }, null)).toBe(true);
+  });
+});
 
 describe("DetachedTabStrip (#3919)", () => {
   it("presents the page's tab, so there is something to grab", () => {
     render(<DetachedTabStrip page="github" section="repos" label="Repos" />);
-    // The tab itself — a detached window used to render a bare titlebar with nothing draggable.
     expect(screen.getAllByText("Repos").length).toBeGreaterThan(0);
-  });
-
-  it("docks back when the tab is dragged off the strip — the INVERSION of tear-off", () => {
-    const { container } = render(<DetachedTabStrip page="github" section="repos" label="Repos" />);
-    const strip = container.querySelector(".tabstrip")!;
-    const tab = container.querySelector("[data-tab]")!;
-    // Start the drag, then release far outside the strip's box — TabBar's tear-off path.
-    fireEvent.dragStart(tab, { dataTransfer: { setData: vi.fn(), setDragImage: vi.fn(), effectAllowed: "" } });
-    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 900, clientY: 900 }));
-    fireEvent(window, new MouseEvent("drop", { bubbles: true, cancelable: true, clientX: 900, clientY: 900 }));
-    expect(strip).toBeTruthy();
-    expect(emitDockBack).toHaveBeenCalledWith({ page: "github", section: "repos" });
-  });
-
-  it("docks back when the tab is released OUTSIDE the window — the natural gesture (#3925)", () => {
-    // HTML5 drag events only reach the source document while the pointer is over it, so dropping the tab
-    // onto the MAIN window delivers no `drop` here. `dragend` fires on the source element regardless, and
-    // it is the only signal for the gesture users actually make: drag toward the other window and release.
-    const { container } = render(<DetachedTabStrip page="github" section="repos" label="Repos" />);
-    const tab = container.querySelector("[data-tab]")!;
-    fireEvent.dragStart(tab, { dataTransfer: { setData: vi.fn(), setDragImage: vi.fn(), effectAllowed: "" } });
-    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 900, clientY: 900 }));
-    fireEvent.dragEnd(tab); // released over another window — NO drop event reaches this document
-    expect(emitDockBack).toHaveBeenCalledWith({ page: "github", section: "repos" });
-  });
-
-  it("does not dock back twice when the release happens INSIDE the window", () => {
-    const { container } = render(<DetachedTabStrip page="github" section="repos" label="Repos" />);
-    const tab = container.querySelector("[data-tab]")!;
-    fireEvent.dragStart(tab, { dataTransfer: { setData: vi.fn(), setDragImage: vi.fn(), effectAllowed: "" } });
-    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 900, clientY: 900 }));
-    fireEvent(window, new MouseEvent("drop", { bubbles: true, cancelable: true, clientX: 900, clientY: 900 }));
-    fireEvent.dragEnd(tab); // dragend ALWAYS follows drop — must not fire a second time
-    expect(emitDockBack).toHaveBeenCalledTimes(1);
-  });
-
-  it("does NOT dock back when the drag ends back on the strip — a cancelled gesture", () => {
-    const { container } = render(<DetachedTabStrip page="github" section="repos" label="Repos" />);
-    const strip = container.querySelector(".tabstrip") as HTMLElement;
-    strip.getBoundingClientRect = () => ({ left: 0, top: 0, right: 400, bottom: 40, width: 400, height: 40, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
-    const tab = container.querySelector("[data-tab]")!;
-    fireEvent.dragStart(tab, { dataTransfer: { setData: vi.fn(), setDragImage: vi.fn(), effectAllowed: "" } });
-    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 900, clientY: 900 })); // out…
-    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 100, clientY: 20 }));  // …and back
-    fireEvent.dragEnd(tab);
-    expect(emitDockBack).not.toHaveBeenCalled();
   });
 
   it("carries the window controls in the SAME bar — no separate titlebar, no breadcrumb", () => {
@@ -79,12 +66,47 @@ describe("DetachedTabStrip (#3919)", () => {
     expect(screen.queryByText(/github · Repos/), "no breadcrumb").toBeNull();
   });
 
-  it("names the DOCK-BACK action in the drag preview, not 'open in a new window'", () => {
+  it("does NOT make the tab HTML5-draggable — that mechanism paints the no-drop cursor (#3927)", () => {
+    const { container } = render(<DetachedTabStrip page="github" section="repos" label="Repos" />);
+    const tab = container.querySelector("[data-tab]") as HTMLElement;
+    expect(tab.getAttribute("draggable")).not.toBe("true");
+  });
+
+  it("docks back when released OUTSIDE the window", async () => {
+    const { container } = render(<DetachedTabStrip page="github" section="repos" label="Repos" />);
+    await dragTo(container, { screenX: 1500, screenY: 400 }); // past the right edge (100+800)
+    expect(emitDockBack).toHaveBeenCalledWith({ page: "github", section: "repos" });
+  });
+
+  it("does NOT dock back when released INSIDE the window — a cancelled gesture", async () => {
+    const { container } = render(<DetachedTabStrip page="github" section="repos" label="Repos" />);
+    await dragTo(container, { screenX: 400, screenY: 300 });
+    expect(emitDockBack).not.toHaveBeenCalled();
+  });
+
+  it("treats a press without movement as a CLICK, not a drag", async () => {
+    const { container } = render(<DetachedTabStrip page="github" section="repos" label="Repos" />);
+    await dragTo(container, { screenX: 202, screenY: 121 }); // 3px total — under the threshold
+    expect(emitDockBack).not.toHaveBeenCalled();
+  });
+
+  it("ignores a press that starts on the window controls, not the tab", async () => {
+    const { container } = render(<DetachedTabStrip page="github" section="repos" label="Repos" />);
+    const bar = container.querySelector(".detached-bar")!;
+    const controls = container.querySelector(".tabstrip-trailing")!;
+    fireEvent.pointerDown(controls, { pointerId: 1, screenX: 200, screenY: 120 });
+    await flush();
+    fireEvent.pointerUp(bar, { pointerId: 1, screenX: 1500, screenY: 400 });
+    expect(emitDockBack).not.toHaveBeenCalled();
+  });
+
+  it("shows the dock-back hint once the press becomes a drag", async () => {
     const { container } = render(<DetachedTabStrip page="github" section="repos" label="Repos" />);
     const tab = container.querySelector("[data-tab]")!;
-    fireEvent.dragStart(tab, { dataTransfer: { setData: vi.fn(), setDragImage: vi.fn(), effectAllowed: "" } });
-    fireEvent(window, new MouseEvent("dragover", { bubbles: true, clientX: 900, clientY: 900 }));
-    expect(screen.getByText(/dock back into the main window/)).toBeTruthy();
-    expect(screen.queryByText(/open in a new window/)).toBeNull();
+    const bar = container.querySelector(".detached-bar")!;
+    fireEvent.pointerDown(tab, { pointerId: 1, screenX: 200, screenY: 120, clientX: 40, clientY: 16 });
+    await flush();
+    fireEvent.pointerMove(bar, { pointerId: 1, screenX: 400, screenY: 300, clientX: 240, clientY: 200 });
+    expect(screen.getByText(/release over the main window to dock back/)).toBeTruthy();
   });
 });
