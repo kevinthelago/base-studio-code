@@ -78,7 +78,7 @@ describe("partitionResumable (#3916) — resume what can run, SURFACE what can't
     expect(blocked[0].reason).toBe("quarantined by the warden");
   });
 
-  it("BLOCKS a stream whose worktree is gone — #3614: never spawn into a missing cwd", () => {
+  it("BLOCKS only a stream whose worktree could not be REBUILT (#3920) — a rebuildable one resumes", () => {
     const { resumable, blocked } = partitionResumable(streams, "proj", {
       ...none,
       missingWorktreePanes: new Set(["proj:db"]),

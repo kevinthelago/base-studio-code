@@ -17,6 +17,8 @@ import { parseFleetFile, withDerivedStreamIssues, type FleetPlan } from "@/featu
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
 import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
+import { buildWorkerScope } from "@/features/planner/fleet/workerScope";
+import { parseDependencyManifest, depsForRepo } from "@/features/planner/issues/dependencies";
 
 export interface ResumeResult {
   ok: boolean;
@@ -64,7 +66,7 @@ export function partitionResumable(
       continue;
     }
     if (probes.missingWorktreePanes.has(paneId)) {
-      blocked.push({ streamId: st.id, paneId, reason: "its worktree is gone — nothing to resume into" });
+      blocked.push({ streamId: st.id, paneId, reason: "its worktree is gone and could not be rebuilt (no repo clone?)" });
       continue;
     }
     resumable.push(st);
@@ -144,7 +146,7 @@ export async function resumeProjectFleet(opts: {
 
   // 2. Progress-gate against plan.db.
   const dbIssues = await bscJson<PlanIssue[]>(projectKey, ["plan", "list", "--full", "--json"], []);
-  const { launchPlan, noRepo, note } = planResumeLaunch(resolvedFleet, dbIssues ?? []);
+  const { launchPlan, maintenanceIds, noRepo, note } = planResumeLaunch(resolvedFleet, dbIssues ?? []);
   if (launchPlan.streams.length === 0 && !launchPlan.director.enabled) {
     return {
       ok: false,
@@ -160,19 +162,36 @@ export async function resumeProjectFleet(opts: {
   //    discarded the one signal the user has to act on.
   const candidateStreams = launchPlan.streams;
   const paneOf = (id: string) => `${projectKey}:${id}`;
-  // A worktree the boot-GC reclaimed (#3614) has no cwd to spawn into. Probe only panes we have a
-  // recorded cwd for; one with none has never launched here, so `fleetStartProject` derives it fresh.
-  const missingWorktreePanes = new Set<string>();
+  // RECREATE a reclaimed worktree rather than refuse it (#3920). #3614's boot-GC reclaims a merged+clean
+  // worktree and the boot reconcile marks that worker ended; #3916 then (correctly) refused to spawn into
+  // the missing cwd, which meant a project whose worktrees had all been reclaimed could never resume at
+  // all. But nothing is lost in that state: the repo clone and every stream BRANCH still exist, and
+  // `ensure_worktree` explicitly reuses a leftover branch — so the worker comes back on its own history.
+  // Seed the SAME scope the Planner's launch seeds (`buildWorkerScope` + the repo's locked deps, #1111),
+  // or the rebuilt worker would return with a thinner CLAUDE.local.md than it had.
+  const depManifest = parseDependencyManifest(
+    JSON.stringify(await bscJson<unknown>(projectKey, ["plan", "deps", "get", "--json"], {}) ?? {}),
+  ).dependencies;
+  const worktreePaths: Record<string, string> = {};
+  const unrecoverable = new Set<string>();
   await Promise.all(candidateStreams.map(async (st) => {
     const paneId = paneOf(st.id);
+    if (store.quarantinedPanes[paneId]) return;          // quarantine is surfaced, never rebuilt
     const cwd = store.paneCwds[paneId];
-    if (!cwd) return;
-    const exists = await safeInvoke<boolean>("dir_exists", { path: cwd }, true);
-    if (!exists) missingWorktreePanes.add(paneId);
+    if (cwd && await safeInvoke<boolean>("dir_exists", { path: cwd }, true)) {
+      worktreePaths[st.id] = cwd;                        // still there — reuse it verbatim
+      return;
+    }
+    if (!st.repo) { unrecoverable.add(paneId); return; } // no repo ⇒ no worktree is possible
+    const scopeMd = buildWorkerScope(st, depsForRepo(depManifest, st.repo), maintenanceIds.has(st.id));
+    const path = await safeInvoke<string>("ensure_worktree",
+      { projectKey, repo: st.repo, agentId: st.id, scopeMd }, "");
+    if (path) worktreePaths[st.id] = path;
+    else unrecoverable.add(paneId);                      // clone missing / git failed — surface it
   }));
   const { resumable, blocked } = partitionResumable(candidateStreams, projectKey, {
     quarantined: store.quarantinedPanes,
-    missingWorktreePanes,
+    missingWorktreePanes: unrecoverable,
   });
   if (resumable.length === 0 && !launchPlan.director.enabled) {
     return {
@@ -204,7 +223,9 @@ export async function resumeProjectFleet(opts: {
   //    the worker's CLAUDE.local.md). fleetStartProject reuses the project's build tab in place, bumps its
   //    runId to remount, and switches to the Console.
   const hubPath = await safeInvoke<string>("project_dir_path", { projectKey }, "");
-  const roster = store.fleetStartProject(projectName, launchPlan, projectKey, hubPath ? { hubPath } : undefined);
+  // #905: hand the AUTHORITATIVE cwds (hub + each rebuilt/reused worktree) to the launch so no pane
+  // falls back to a bscBaseDir-derived guess.
+  const roster = store.fleetStartProject(projectName, launchPlan, projectKey, { hubPath: hubPath || undefined, worktreePaths });
   publishFleetRoster(projectKey, roster);
   return { ok: true, note, blocked };
 }
