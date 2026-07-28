@@ -1669,22 +1669,26 @@ fn analyze_kit(
     // builds, never self, and SKIPPED when the source already imports that identifier (a component may
     // legitimately re-export or alias). Mirrors graphHealth.ts.
     {
-        let node_names: BTreeSet<&str> = nodes.iter().map(|n| n.name.as_str()).collect();
         for n in nodes {
             let Some(src) = own_module_source(n, &kit_targets) else {
                 continue;
             };
             let imported = imported_identifiers(src);
-            let mut recoded: Vec<&str> = node_names
+            // SAME-FILE siblings are not stubs (#3895). Several nodes are routinely extracted from ONE
+            // module — `AgentFace` and `TeamsCanvas` both come from TeamsCanvas.tsx — so that module's
+            // closure legitimately CONTAINS both declarations. Flagging them would demand an import of the
+            // file from itself. Only a target from a DIFFERENT source is a re-declaration.
+            let mut recoded: Vec<&str> = nodes
                 .iter()
-                .copied()
-                .filter(|name| *name != n.name.as_str())
+                .filter(|t| t.name != n.name && (n.src.is_empty() || t.src != n.src))
+                .map(|t| t.name.as_str())
                 .filter(|name| declares_symbol(src, name) && !imported.contains(*name))
                 .collect();
             if recoded.is_empty() {
                 continue;
             }
             recoded.sort_unstable();
+            recoded.dedup();
             let list = recoded.iter().map(|x| format!("`{x}`")).collect::<Vec<_>>().join(", ");
             let one = recoded.len() == 1;
             out.push(Finding {
@@ -2809,6 +2813,26 @@ export function AgentFace(){ return <Box>hi</Box>; }" }),
         assert!(
             !analyze(&fixed).iter().any(|f| f.category == "reimplemented-component"),
             "importing the real component clears it"
+        );
+    }
+
+    #[test]
+    fn does_not_flag_a_sibling_extracted_from_the_same_module() {
+        // #3895: `AgentFace` and `TeamsCanvas` are both lifted from TeamsCanvas.tsx, so that module's
+        // closure legitimately CONTAINS both declarations. Flagging it would demand importing the file
+        // from itself. Same `src` => not a re-declaration.
+        let comps = [
+            json!({ "id":"agentface", "name":"AgentFace", "kitId":"harvested", "role":"primitive", "used":3,
+                    "src":"src/features/teams/TeamsCanvas.tsx",
+                    "srcText":"export function AgentFace(){ return <i/>; }" }),
+            json!({ "id":"teamscanvas", "name":"TeamsCanvas", "kitId":"harvested", "role":"composite", "used":2,
+                    "src":"src/features/teams/TeamsCanvas.tsx",
+                    "srcText":"function AgentFace(){ return <i/>; }
+export function TeamsCanvas(){ return <AgentFace/>; }" }),
+        ];
+        assert!(
+            !analyze(&comps).iter().any(|f| f.category == "reimplemented-component"),
+            "a same-file extraction is not a stub"
         );
     }
 
