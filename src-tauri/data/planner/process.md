@@ -252,9 +252,22 @@ in parallel — the **fleet**. The goal is maximum parallelism with minimum conf
 several sessions working at once, each in its own lane, so they rarely touch the same
 files and rarely need a human.
 
-1. **Partition the in-scope work into streams.** A *stream* is one
-   session with a focused role ("Auth UI", "API endpoints", "DB schema"). Split by
-   concern so that two streams never write the same files.
+1. **The streams ARE the features — derive them, do NOT re-partition.** A feature is a
+   capability AND a fleet stream: every feature's `stream` already defaults to its own slug,
+   so the decomposition you agreed with the user in `features` IS the fleet. Start from
+   `bsc plan feature list` and take ONE STREAM PER FEATURE. Do **not** re-slice the work into
+   broad concern-based lanes ("Auth UI", "API endpoints", "DB schema") — that collapses many
+   small, well-scoped agents into a few overloaded ones.
+   - **Why narrow lanes:** a stream carrying more work than fits one context window forces the
+     agent to COMPACT mid-task and lose the context it was working from. One feature per agent
+     keeps each problem small enough to finish in a single window, isolates a failure to one
+     lane, and lets the director route a fix straight to that agent (`bsc-assign`).
+   - **Merge only for correctness.** Two streams must never write the same files. Where two
+     features genuinely share a file surface and cannot be split cleanly, give them the SAME
+     `stream` (that is what the per-feature `stream` override is for). The invariant is
+     **streams <= features, never more** — merging is the only reason to have fewer.
+   - If a feature is too big to fit one agent's context, that is a FEATURE-SIZING problem:
+     split the feature (back in `features`, with the user) rather than splitting its stream.
 2. **Give each stream a non-overlapping ownership boundary** — the dirs/globs it
    owns. No path may belong to two streams. A shared file (schema, shared types,
    config, a contract) must be owned by exactly ONE stream; any stream that needs it
@@ -284,12 +297,10 @@ files and rarely need a human.
    non-overlapping and workers build against the planned contracts in parallel (a
    `dependsOn` is a planning-time ordering hint, NOT a runtime wait), that's normally **all
    of them**. Derive the number from the streams you built and explain the reasoning — don't
-   solicit it. There is **no hard limit** on concurrency: each session is a pane, one tab
-   holds up to **4×4 = 16** panes, and the user can open **many tabs**, so 16 is only a
-   per-tab layout limit, never a ceiling on the fleet (the one-click launch fills one build
-   tab with up to 16; the rest run from additional tabs). Steering capacity is the user's
-   call **at launch** — they open fewer panes/tabs if they'd rather watch a few at a time —
-   and it never changes the streams you planned.
+   solicit it. **There is no cap on fleet size.** Do NOT reason about screen layout, panes,
+   tabs or any display limit when planning the fleet — how the user VIEWS the sessions is a
+   separate concern they choose at launch, and it never changes the streams you planned. A
+   larger fleet of narrow agents is the GOAL, not a cost to minimise.
 5. **Recommend a director** when the fleet is non-trivial (2+ streams, or multiple
    repos). The director is an *async-integrator* session at the project root: it
    reviews/merges PRs, resolves the cross-stream decisions workers log, and keeps
