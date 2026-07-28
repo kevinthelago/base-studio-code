@@ -19,6 +19,20 @@ pub(crate) fn read_worktree_changes(cwd: String) -> Vec<String> {
     merge_change_lists(tracked, untracked)
 }
 
+/// BATCHED [`read_worktree_changes`] (#3908) — one invoke for the WHOLE fleet instead of one per
+/// worker. Results are index-aligned to `cwds`, so the caller zips them back onto its panes.
+///
+/// The warden re-checks every live worker on each sweep. At ~39 panes the per-pane call meant ~78 git
+/// subprocesses fired through `Promise.all` in one burst, and because this is a SYNCHRONOUS
+/// `#[tauri::command]` they saturated the command pool — measured 11s queue stalls that everything
+/// else (including `pty_create`, normally ~100ms) then waited behind. Batching keeps the same git
+/// work but pays the command-queue cost ONCE. Same tolerance as the single version: a cwd that fails
+/// yields an empty list rather than failing the batch.
+#[tauri::command]
+pub(crate) fn read_worktree_changes_batch(cwds: Vec<String>) -> Vec<Vec<String>> {
+    cwds.into_iter().map(read_worktree_changes).collect()
+}
+
 /// #3614: does `path` exist as a host directory? Normalizes a git-bash cwd first (like `pty_create`),
 /// so the frontend can pass a persisted `paneCwds[...]` value verbatim. The boot reconciliation uses
 /// this to detect a fleet worker whose worktree was reclaimed by the boot-GC — a vanished worktree means
@@ -173,6 +187,22 @@ mod relocated_tests {
     fn read_worktree_changes_empty_cwd_is_empty() {
         assert!(read_worktree_changes(String::new()).is_empty());
         assert!(read_worktree_changes("   ".into()).is_empty());
+    }
+
+    #[test]
+    fn batch_is_index_aligned_and_tolerates_bad_cwds() {
+        // #3908: the warden zips results back onto its panes BY INDEX, so the batch must return
+        // exactly one entry per input, in order — including for cwds that yield nothing. A short
+        // or reordered result would silently attribute one worker's changes to another.
+        let out = super::read_worktree_changes_batch(vec![
+            String::new(),
+            "   ".into(),
+            format!("{}/definitely--not--here--3908", env!("CARGO_MANIFEST_DIR")),
+        ]);
+        assert_eq!(out.len(), 3, "one entry per input cwd, in order");
+        assert!(out.iter().all(|v| v.is_empty()), "an unreadable cwd degrades to no file signal, never a failed batch");
+        // An empty fleet is a no-op, not an error.
+        assert!(super::read_worktree_changes_batch(vec![]).is_empty());
     }
 
     #[test]
