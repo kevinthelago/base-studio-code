@@ -2,6 +2,7 @@ import { useAppStore } from "@/store";
 import { ACHIEVEMENTS, isUnlocked } from "@/shared/lib/core/achievements";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Trophy } from "lucide-react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 
@@ -35,17 +36,32 @@ export function AchievementsCard() {
               border: "1px solid " + (unlocked ? "var(--accent)" : "var(--border-soft)"),
               opacity: unlocked ? 1 : 0.7,
             }}>
-              <img
-                src={a.icon}
-                alt={a.title}
-                width={48}
-                height={48}
-                draggable={false}
-                style={{
-                  flexShrink: 0, borderRadius: 8, objectFit: "contain",
-                  filter: unlocked ? "none" : "grayscale(1) brightness(0.6)",
-                }}
-              />
+              {/* #3939: an achievement no longer needs a bespoke image — most ship none, so the
+                  shared trophy glyph on the accent is the default emblem. A registry-supplied icon
+                  still wins. A locked one is desaturated either way. */}
+              {a.icon ? (
+                <img
+                  src={a.icon}
+                  alt=""
+                  width={48}
+                  height={48}
+                  draggable={false}
+                  style={{
+                    flexShrink: 0, borderRadius: 8, objectFit: "contain",
+                    filter: unlocked ? "none" : "grayscale(1) brightness(0.6)",
+                  }}
+                />
+              ) : (
+                <Box style={{
+                  flexShrink: 0, width: 48, height: 48, borderRadius: 10,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: unlocked ? "var(--accent)" : "var(--bg-soft)",
+                  color: unlocked ? "var(--bg-canvas, var(--bg))" : "var(--fg-dim)",
+                  border: unlocked ? "none" : "1px solid var(--border)",
+                }}>
+                  <Trophy size={22} />
+                </Box>
+              )}
               <Box style={{ flex: 1, minWidth: 0 }}>
                 <Text as="div" mono size={13} style={{ color: "var(--fg)" }}>
                   {a.title}{!unlocked && <Text size={11} tone="dim"> · locked</Text>}
