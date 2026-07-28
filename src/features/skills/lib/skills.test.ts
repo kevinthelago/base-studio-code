@@ -39,6 +39,7 @@ describe("seedSkills", () => {
     // shift-left move as authoring it accessible and compliant.
     expect(authoring).toEqual([
       "author-accessible-components", "author-compliant-components", "author-instrumented-components",
+      "author-tested-components",
     ]);
     // Authoring = a build-time procedure (workflow), NOT a post-hoc review — that's the shift-left point.
     expect(seed.filter(s => s.id.startsWith("author-")).every(s => s.kind === "workflow")).toBe(true);
