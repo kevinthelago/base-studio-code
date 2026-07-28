@@ -306,6 +306,24 @@ const PACKAGED_KIT_JSON: &str = include_str!("../../../src-tauri/data/components
 /// static `unresolvable-import` check runs with no fs/network — the Rust twin of `graphHealth.ts`.
 const PREVIEW_IMPORTMAP_JSON: &str = include_str!("../../../src-tauri/data/ui/preview-importmap.json");
 
+/// The specifiers the runtime module REGISTRY resolves (#3897) — the SAME json `graphHealth.ts` imports,
+/// generated from the real registry by `platformModules.gen.test.ts`.
+///
+/// Without it the buildability check resolved `@/…` against the packaged artifact and sibling node `src`
+/// paths only, so a record honestly importing a registered platform module
+/// (`@/features/security/lib/badgeTone`) matched neither and read as `no-implementation` — while the app
+/// mounted it fine. The finding then pressured the next author to STUB the import to silence it, which is
+/// the corruption `reimplemented-component` exists to catch (#3892/#3895).
+const PLATFORM_MODULES_JSON: &str = include_str!("../../../src-tauri/data/ui/platform-modules.json");
+
+/// The registered platform specifiers, matched LITERALLY (exactly as the loader's `isAppModule` does).
+fn platform_modules() -> &'static BTreeSet<String> {
+    static M: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    M.get_or_init(|| {
+        serde_json::from_str::<Vec<String>>(PLATFORM_MODULES_JSON).unwrap_or_default().into_iter().collect()
+    })
+}
+
 /// The algorithms knowledge seed (`src-tauri/data/knowledge/algorithms.json`) — the SAME json the frontend
 /// (`@data/knowledge/algorithms.json`) + `bsc graph` embed. Embedded here so the THIRD import-resolution
 /// class (#3116) — a `@bsc/algorithms/<name>` cross-graph reference — is recognized with no fs/network: a
@@ -688,7 +706,13 @@ fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<S
     }
     import_specifiers(s)
         .iter()
-        .all(|spec| !is_internal_specifier(spec) || resolves_internal(spec, from_rel, kit_targets))
+        // A REGISTERED platform module (#3897) resolves literally, like the loader's `isAppModule` — it is
+        // neither an artifact path nor a sibling `src`, so without this it read as unbuildable.
+        .all(|spec| {
+            !is_internal_specifier(spec)
+                || platform_modules().contains(spec)
+                || resolves_internal(spec, from_rel, kit_targets)
+        })
 }
 
 /// The component's OWN module source — its `source`, else a `srcText` that is a real module — or `None`
@@ -800,6 +824,13 @@ pub fn has_code_elision(src: &str) -> bool {
                     // A backslash escapes the next char, so an escaped quote doesn't end the literal.
                     i += if b[i] == '\\' { 2 } else { 1 };
                 }
+                i += 1;
+            }
+            // An ellipsis DIRECTLY after a word character is PROSE, not an elision marker (#3897) — JSX
+            // text like `>Loading projects…</Text>` is not quoted, so the string-skip above misses it, and
+            // ProjectsPage read as "a sketch, not compilable code" over three UI labels while the app
+            // mounted it fine. A real marker sits in code position (`{ … }`, or alone on a line).
+            '…' if b[..i].iter().rev().find(|c| !c.is_whitespace()).is_some_and(|c| c.is_alphanumeric()) => {
                 i += 1;
             }
             '…' => return true,
@@ -1342,6 +1373,11 @@ fn analyze_kit(
             if let Some(base) = resolve_internal_base(&n.provides, "") {
                 t.insert(format!("{base}.tsx"));
             }
+            // #3897: `@/components/<node-id>` is the loader's SIBLING-BY-ID form — how a migrated page
+            // pulls in its panels (`@/components/security-profiles`). It is neither a `src` path nor a
+            // registered module, so `securitypage` read as no-implementation while the app mounted it.
+            // Injected as a synthetic target so the ordinary resolver finds it.
+            t.insert(format!("components/{}.tsx", n.id));
         }
         t
     };
@@ -1593,7 +1629,7 @@ fn analyze_kit(
             .collect();
         let mut internal: Vec<String> = specs
             .iter()
-            .filter(|s| is_internal_specifier(s) && !resolves_internal(s, &n.src, &kit_targets))
+            .filter(|s| is_internal_specifier(s) && !platform_modules().contains(*s) && !resolves_internal(s, &n.src, &kit_targets))
             .cloned()
             .collect();
         for v in [&mut stubbed, &mut library, &mut internal] {
@@ -2833,6 +2869,51 @@ export function TeamsCanvas(){ return <AgentFace/>; }" }),
         assert!(
             !analyze(&comps).iter().any(|f| f.category == "reimplemented-component"),
             "a same-file extraction is not a stub"
+        );
+    }
+
+    #[test]
+    fn an_ellipsis_in_jsx_text_is_prose_not_an_elision_marker() {
+        // #3897: JSX text is not quoted, so the string-skip misses it. ProjectsPage was condemned as
+        // "a sketch, not compilable code" over `>Loading projects…</Text>` while the app mounted it.
+        assert!(!has_code_elision("export function X(){ return <p>Loading projects…</p>; }"));
+        assert!(!has_code_elision("export const s = <b>syncing…</b>;"));
+        // …and a REAL marker in code position is still caught.
+        assert!(has_code_elision("export function X(){
+  …
+}"));
+        assert!(has_code_elision("const cfg = { … };"));
+    }
+
+    #[test]
+    fn a_registered_platform_module_import_is_buildable_not_no_implementation() {
+        // #3897: `@/features/security/lib/badgeTone` is a REGISTERED platform module — resolved at runtime
+        // by the feature's graphPlatform, and neither an artifact path nor a sibling `src`. Before the
+        // manifest, a record honestly importing one read as `no-implementation` while the app mounted it.
+        let comps = [json!({
+            "id":"profiles", "name":"ProfilesTab", "kitId":"react-ui", "role":"composite", "used":2,
+            "src":"src/features/security/ProfilesTab.tsx",
+            "srcText":"import { badgeTone } from \"@/features/security/lib/badgeTone\";
+export function ProfilesTab(){ return <i>{badgeTone(1)}</i>; }"
+        })];
+        let fs = analyze(&comps);
+        assert!(!fs.iter().any(|f| f.category == "no-implementation"), "buildable: {fs:?}");
+        assert!(!fs.iter().any(|f| f.category == "unresolvable-import"), "resolvable: {fs:?}");
+    }
+
+    #[test]
+    fn an_unregistered_internal_import_is_still_unresolvable() {
+        // The other half: the manifest must not make every `@/…` pass.
+        let comps = [json!({
+            "id":"x", "name":"X", "kitId":"react-ui", "role":"composite", "used":2,
+            "src":"src/features/x/X.tsx",
+            "srcText":"import { nope } from \"@/features/x/lib/doesNotExist\";
+export function X(){ return <i>{nope}</i>; }"
+        })];
+        let cats: Vec<&str> = analyze(&comps).iter().map(|f| f.category).collect();
+        assert!(
+            cats.contains(&"unresolvable-import") || cats.contains(&"no-implementation"),
+            "an unregistered internal import is still caught: {cats:?}"
         );
     }
 

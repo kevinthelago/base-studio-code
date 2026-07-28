@@ -306,6 +306,28 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(fs.some((x) => x.category === "reimplemented-component" && x.nodeNames[0] === "Box")).toBe(false);
   });
 
+  it("treats a REGISTERED platform module import as resolvable (#3897)", () => {
+    // `@/features/security/lib/badgeTone` is resolved at runtime by the feature's graphPlatform, and is
+    // neither an artifact path nor a sibling `src`. Before the manifest it read as no-implementation while
+    // the app mounted the page fine — and the finding pressured authors to STUB the import to silence it.
+    const tab = comp("ProfilesTab", "composite", 2, [], {
+      src: "src/features/security/ProfilesTab.tsx",
+      source: 'import { badgeTone } from "@/features/security/lib/badgeTone";\nexport function ProfilesTab(){ return <i>{badgeTone(1)}</i>; }',
+    });
+    const cats = analyzeGraphHealth([tab]).map((f) => f.category);
+    expect(cats).not.toContain("no-implementation");
+    expect(cats).not.toContain("unresolvable-import");
+  });
+
+  it("still flags an UNREGISTERED internal import (#3897)", () => {
+    const x = comp("X", "composite", 2, [], {
+      src: "src/features/x/X.tsx",
+      source: 'import { nope } from "@/features/x/lib/doesNotExist";\nexport function X(){ return <i>{nope}</i>; }',
+    });
+    const cats = analyzeGraphHealth([x]).map((f) => f.category);
+    expect(cats.includes("unresolvable-import") || cats.includes("no-implementation")).toBe(true);
+  });
+
   it("does NOT flag a sibling extracted from the SAME module (#3895)", () => {
     // `AgentFace` and `TeamsCanvas` are both lifted from TeamsCanvas.tsx, so that module's closure
     // legitimately CONTAINS both declarations — flagging it would demand importing the file from itself.
