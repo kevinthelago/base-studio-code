@@ -30,6 +30,7 @@
 // artifact — only a node in NEITHER the artifact NOR carrying its own module/`source` is flagged.
 import reactUiArtifact from "@data/components/react-ui.json";
 import previewImportmap from "@data/ui/preview-importmap.json";
+import platformModules from "@data/ui/platform-modules.json";
 import { buildComposesEdges } from "./compositionLayout";
 import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, type KitArtifact } from "./componentPreview";
 import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
@@ -43,6 +44,17 @@ import type { KitAnimation } from "@/shared/ui/kit/animations";
  *  d3/lucide-react/…). A bare import not in this set throws "Failed to resolve module specifier" at
  *  preview time (#2934). Kept in lockstep with the Rust twin (which embeds the SAME json). */
 const RESOLVABLE_SPECIFIERS = new Set(Object.keys(previewImportmap));
+
+/** The specifiers the runtime module REGISTRY resolves (#3897) — generated from the real registry into
+ *  `@data/ui/platform-modules.json` (see platformModules.gen.test.ts).
+ *
+ *  Without this the buildability check resolved `@/…` against the packaged artifact and sibling node `src`
+ *  paths ONLY, so a record honestly importing a registered platform module
+ *  (`@/features/security/lib/badgeTone`) matched neither and read as `no-implementation` — while the app
+ *  mounted it fine. Worse, the finding pressured the next author to STUB the import to silence it, which is
+ *  the corruption `reimplemented-component` exists to catch (#3892/#3895). Matched LITERALLY, exactly as
+ *  the loader's `isAppModule` does. Rust twin embeds the same json. */
+const PLATFORM_MODULES = new Set<string>(platformModules as string[]);
 
 /** Is `p` a CONTENT-SLOT prop — a non-`children` prop typed as a React node? Matches how the preview
  *  samples props (`samplePropValue` treats any `reactnode`/`node`-typed prop as a slot), so a component
@@ -103,9 +115,15 @@ function ownModuleSource(c: ComponentRecord, siblings: readonly ComponentRecord[
     // packaged artifact runtime/built-ins, OR a sibling `src` base — so a graph-source primitive that
     // composes siblings + app utilities is scanned as the real module it is (lockstep with the build).
     const providesSpecs = new Set([c, ...siblings].map((s) => s.provides?.trim()).filter(Boolean) as string[]);
-    const sibTargets = new Set(siblings.filter((s) => s.id !== c.id).map((s) => s.src).filter(Boolean));
+    // `@/components/<node-id>` is the loader's SIBLING-BY-ID form (#3897) — how a migrated page pulls in
+    // its panels. Injected as a synthetic target so the ordinary resolver finds it.
+    const sibTargets = new Set([
+      ...siblings.filter((s) => s.id !== c.id).map((s) => s.src).filter(Boolean),
+      ...siblings.map((s) => `components/${s.id}.tsx`),
+    ]);
     const resolves = (spec: string, fromRel: string): boolean =>
-      providesSpecs.has(spec) || resolvesInternal(spec, fromRel, sibTargets) || resolvesInternal(spec, fromRel, INTERNAL_TARGETS);
+      PLATFORM_MODULES.has(spec) || providesSpecs.has(spec)
+      || resolvesInternal(spec, fromRel, sibTargets) || resolvesInternal(spec, fromRel, INTERNAL_TARGETS);
     return isPreviewBuildable(srcText, c.src, resolves) ? srcText : null;
   }
   return looksBuildableModule(srcText) ? srcText : null;
@@ -514,7 +532,11 @@ export function analyzeGraphHealth(
   //     is NEVER flagged; only a `@bsc/…/<missing>` is.
   // Only own-source components (`ownModuleSource`) — the source the preview actually builds. Rust twin:
   // the `unresolvable-import` loop in graph_health.rs.
-  const internalTargets = new Set<string>([...INTERNAL_TARGETS, ...comps.map((c) => c.src).filter(Boolean)]);
+  const internalTargets = new Set<string>([
+    ...INTERNAL_TARGETS,
+    ...comps.map((c) => c.src).filter(Boolean),
+    ...comps.map((c) => `components/${c.id}.tsx`), // #3897 — the loader's sibling-by-id form
+  ]);
   // #43/#3660: a `@/X` import also resolves to the graph component that `provides` X (a graph-source
   // primitive), exactly as the build does — so it's not falsely flagged an unresolvable internal import.
   for (const c of comps) {
@@ -532,7 +554,11 @@ export function analyzeGraphHealth(
     // #3696: a bare npm specifier that isn't a curated preview external no longer FAILS — the preview bundles
     // a local shim/stub for it, so it renders approximately → a severity-1 `stubbed-import` note, not an error.
     const stubbed = specs.filter((s) => isBareSpecifier(s) && !isLibrarySpec(s) && !RESOLVABLE_SPECIFIERS.has(s)).sort();
-    const internal = specs.filter((s) => isInternalSpecifier(s) && !resolvesInternal(s, c.src, internalTargets)).sort();
+    // A REGISTERED platform module (#3897) resolves literally, like the loader's `isAppModule` — it is
+    // neither an artifact path nor a sibling `src`, so without this it read as unresolvable.
+    const internal = specs
+      .filter((s) => isInternalSpecifier(s) && !PLATFORM_MODULES.has(s) && !resolvesInternal(s, c.src, internalTargets))
+      .sort();
     // GENUINELY unresolvable (sev 3): a `@/…`/relative or `@bsc/…` import with NO stub fallback.
     if (internal.length || library.length) {
       const reasons: string[] = [];
