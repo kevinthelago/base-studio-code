@@ -52,7 +52,7 @@ pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
     /// `unresolvable-import` | `stubbed-import` (#3696, sev-1) | `hardcoded-color` (#3704, sev-1) |
     /// `reimplementation` | `orphan` | `unwired-prop` | `phantom-compose` | `no-empty-state` |
-    /// `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
+    /// `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `no-tests` (#3878) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -188,6 +188,11 @@ struct Node {
     /// events contract (data, not code). 0 ⇒ uninstrumented, which the `no-analytics` check flags for an
     /// interactive component.
     analytics_events: usize,
+    /// How many tests the component's `tests` manifest carries (#3878) — the per-node test contract, the
+    /// same shape one field over from `analytics`. A node's tests travel WITH it, because once its source
+    /// is a store record compiled at runtime, a test file in `src/**` is no longer beside what it tests.
+    /// 0 ⇒ untested, which the `no-tests` check flags for an IMPLEMENTED own-module component.
+    tests: usize,
 }
 
 fn s(v: &Value, key: &str) -> String {
@@ -242,6 +247,7 @@ fn parse_node(v: &Value) -> Option<Node> {
             .unwrap_or_default(),
         builtin: v.get("builtin").and_then(Value::as_bool).unwrap_or(false),
         analytics_events: v.get("analytics").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
+        tests: v.get("tests").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
     })
 }
 
@@ -1853,6 +1859,49 @@ fn analyze_kit(
         });
     }
 
+    // ── no-tests (severity 1, INFORMATIONAL, #3878): an IMPLEMENTED own-module component that carries no
+    // tests. Tests are a per-node data contract — the same shape as the analytics manifest one field over —
+    // because once a component's source is a store record compiled at runtime, a test file under `src/**` is
+    // no longer beside the thing it tests. #3833 is the cost of that drift: the Skills record ran on a
+    // preview-grade transcription for days because the page still LOOKED right and git no longer held what
+    // shipped.
+    //
+    // Deliberately narrow, so this stays a useful suggestion rather than a finding on every node:
+    //   · built-ins are skipped — packaged separately, not the designer's to test in-session (as no-analytics);
+    //   · a SPEC-ONLY node is skipped — it already earns `no-implementation`, and nagging for tests over code
+    //     that does not exist would be a second finding for one cause;
+    //   · only INTERACTIVE nodes are flagged, the same line `no-analytics` draws. A component you can ACT on
+    //     is one whose behaviour can regress; a pure display primitive is covered by the render/preview
+    //     checks instead. Scoping it this way was not the first instinct — flagging every implemented node
+    //     lit up essentially the whole graph, which the test suite caught immediately. Widening later (pages
+    //     first) is a one-line change if the noise proves worth it.
+    for n in nodes {
+        if own_module_source(n, &kit_targets).is_none() {
+            continue; // built-in, or spec-only — no implementation of ours to cover
+        }
+        if n.tests > 0 {
+            continue; // already carries its tests
+        }
+        if !n.props.iter().any(|p| is_action_prop(&p.0, &p.1)) {
+            continue; // not interactive — nothing actable to regress
+        }
+        out.push(Finding {
+            category: "no-tests",
+            severity: 1,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` is interactive and implemented but carries no tests — its source lives in the graph while anything covering it does not, so the node can be revised with nothing to catch a regression",
+                n.name
+            ),
+            suggested_action: format!(
+                "add a `tests` manifest to `{}` — an array of `{{ name, src }}`, data alongside the node like its analytics events",
+                n.name
+            ),
+        });
+    }
+
     // ── slot-shell (severity 1, INFORMATIONAL): a composite whose composed children arrive via ReactNode
     // CONTENT SLOTS. Standalone (no slots passed) it renders a demo/placeholder fallback, not its
     // assembled function — so a preview looks non-functional even though it isn't (#2921). Explains e.g.
@@ -2753,8 +2802,11 @@ mod tests {
                 { "name": "onRefresh", "type": "() => void" }
             ],
             // Declares its event so the #3810 no-analytics check is satisfied — keeps this a PURE
-            // unwired-prop case (the `onRefresh` prop is still unused by the source).
-            "analytics": [{ "event": "refresh" }]
+            // unwired-prop case (the `onRefresh` prop is still unused by the source). Same for #3878's
+            // no-tests: `onRefresh` makes the node interactive, so an untested fixture would earn a second
+            // (legitimate) finding and stop this exact-list assertion from being about unwired-prop.
+            "analytics": [{ "event": "refresh" }],
+            "tests": [{ "name": "renders the title", "src": "it('renders', () => {})" }]
         })];
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["unwired-prop"]);
@@ -3281,6 +3333,42 @@ mod tests {
             fs.iter().all(|f| f.category != "no-empty-state" && f.category != "no-loading-state" && f.category != "no-error-state"),
             "empty-handled + loading-prop + error-prop / no-data-prop are not flagged: {fs:?}"
         );
+    }
+
+    #[test]
+    fn flags_an_interactive_component_without_tests_and_clears_on_a_manifest() {
+        // #3878: tests as a per-node data contract, the same shape as `analytics` one field over.
+        let base = |extra: serde_json::Value| {
+            let mut v = json!({ "id": "pk", "name": "Picker", "kitId": "ui", "role": "composite", "used": 3,
+                "composes": [], "src": "ui/Picker.tsx",
+                "source": "export function Picker({ onPick }){ return <button onClick={onPick}/>; }",
+                "props": [{ "name": "onPick", "type": "() => void" }] });
+            if let (Some(o), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+                for (k, val) in e { o.insert(k.clone(), val.clone()); }
+            }
+            v
+        };
+        assert!(analyze(&[base(json!({}))]).iter().any(|f| f.category == "no-tests"),
+                "flags an interactive, implemented component carrying no tests");
+
+        // Carrying tests clears it.
+        let tested = base(json!({ "tests": [{ "name": "picks", "src": "it('picks', () => {})" }] }));
+        assert!(analyze(&[tested]).iter().all(|f| f.category != "no-tests"), "a tests manifest clears it");
+
+        // NOT interactive → never flagged. This is the line that keeps the check a suggestion rather than a
+        // finding on every node — flagging every implemented component lit the whole graph up.
+        let display = json!({ "id": "txt", "name": "Label", "kitId": "ui", "role": "primitive", "used": 5, "composes": [],
+            "src": "ui/Label.tsx", "source": "export function Label({ text }){ return <span>{text}</span>; }",
+            "props": [{ "name": "text", "type": "string" }] });
+        assert!(analyze(&[display]).iter().all(|f| f.category != "no-tests"), "a display-only component is not flagged");
+
+        // A SPEC-ONLY node is skipped — it already earns `no-implementation`; one cause must not raise two.
+        let spec = json!({ "id": "sk", "name": "Sketch", "kitId": "ui", "role": "composite", "used": 2,
+            "composes": [], "src": "ui/Sketch.tsx", "source": "", "srcText": "",
+            "props": [{ "name": "onPick", "type": "() => void" }] });
+        let fs = analyze(&[spec]);
+        assert!(fs.iter().all(|f| f.category != "no-tests"), "a spec-only node is not nagged for tests");
+        assert!(fs.iter().any(|f| f.category == "no-implementation"), "…it earns no-implementation instead");
     }
 
     #[test]

@@ -32,6 +32,32 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(analyzeGraphHealth([comp("Btn", "primitive", 9, [], { ...action, source: undefined, srcText: "<button/>", builtin: true })]).some((f) => f.category === "no-analytics")).toBe(false);
   });
 
+  it("flags an INTERACTIVE implemented component carrying no tests, and clears on a manifest (#3878)", () => {
+    // Tests are a per-node data contract, the same shape as the analytics manifest one field over: once a
+    // component's source is a store record compiled at runtime, a test file under src/** is no longer
+    // beside what it tests.
+    const action: Partial<ComponentRecord> = { props: [{ name: "onPick", type: "() => void", req: true, desc: "" }] };
+    expect(analyzeGraphHealth([comp("Card", "composite", 3, [], action)]).some((f) => f.category === "no-tests")).toBe(true);
+    // carrying tests clears it.
+    expect(analyzeGraphHealth([comp("Card", "composite", 3, [], {
+      ...action, tests: [{ name: "renders its title", src: "it('renders', () => {})" }],
+    })]).some((f) => f.category === "no-tests")).toBe(false);
+    // NOT interactive → never flagged. This is the line that keeps the check a suggestion rather than a
+    // finding on every node: flagging every implemented component lit up essentially the whole graph.
+    expect(analyzeGraphHealth([comp("Label", "primitive", 5, [], {
+      props: [{ name: "text", type: "string", req: true, desc: "" }],
+    })]).some((f) => f.category === "no-tests")).toBe(false);
+    // a BUILT-IN is skipped — packaged separately, not the designer's to test in-session.
+    expect(analyzeGraphHealth([comp("Btn", "primitive", 9, [], {
+      ...action, source: undefined, srcText: "<button/>", builtin: true,
+    })]).some((f) => f.category === "no-tests")).toBe(false);
+    // a SPEC-ONLY node is skipped — it already earns `no-implementation`, and one cause must not raise two
+    // findings.
+    const specOnly = analyzeGraphHealth([comp("Sketch", "composite", 2, [], { ...action, source: "", srcText: "" })]);
+    expect(specOnly.some((f) => f.category === "no-tests")).toBe(false);
+    expect(specOnly.some((f) => f.category === "no-implementation")).toBe(true);
+  });
+
   it("flags an isolated unused primitive as an orphan (and never a used one)", () => {
     const fs = analyzeGraphHealth([comp("Button", "primitive", 5), comp("Ghost", "primitive", 0)]);
     expect(fs.map((f) => f.category)).toEqual(["orphan"]);
@@ -121,6 +147,10 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
       // Declares its event so the #3810 no-analytics check is satisfied — keeps this a PURE unwired-prop
       // case (the `onRefresh` prop is still unused by the source).
       analytics: [{ event: "refresh" }],
+      // …and its tests, for the same reason, against #3878's no-tests check: `onRefresh` makes this node
+      // interactive, so an untested fixture would earn a second (legitimate) finding and stop this
+      // exact-list assertion from being about unwired-prop.
+      tests: [{ name: "renders the title", src: "it('renders', () => {})" }],
     });
     const fs = analyzeGraphHealth([stub]);
     expect(fs.map((f) => f.category)).toEqual(["unwired-prop"]);

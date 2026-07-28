@@ -230,6 +230,8 @@ export type HealthCategory =
   // no-analytics (#3810): an INTERACTIVE component (an action/event prop) that declares no analytics
   // events manifest — instrumentation is a per-node data contract. Static; mirrored in the Rust doctor.
   | "no-analytics"
+  // no-tests (#3878): an IMPLEMENTED own-module component carrying no `tests` manifest.
+  | "no-tests"
   // RUNTIME data-state blanks (#3191) — a component that BUILDS clean and renders fine LOADED but produces
   // a BLANK #root in a real app state: `empty-empty-state` (no output when its data is empty — no
   // empty-state message) / `empty-loading-state` (no output while loading — no skeleton/spinner). Unlike
@@ -269,6 +271,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "no-loading-state": 1,
   "no-error-state": 1,
   "no-analytics": 1,
+  "no-tests": 1,
   // Runtime data-state blanks (#3191) — a real but mild defect (renders fine loaded, blanks in a real app
   // state), the unwired-prop/orphan tier (2). Render-confirmed by the scan, so ABOVE the static #3135
   // no-empty/no-loading advisories (1): when a node hits both, the confirmed blank wins the badge.
@@ -303,6 +306,7 @@ export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string
   "no-loading-state": { glyph: "◌", label: "no loading state — takes data but has no `loading` prop; add one for a loading preview" },
   "no-error-state": { glyph: "◒", label: "no error state — takes data but has no `error` prop; add one for an error preview" },
   "no-analytics": { glyph: "◉", label: "no analytics — interactive but declares no events manifest; add one so a composed app is instrumented by construction (#3810)" },
+  "no-tests": { glyph: "⊘", label: "no tests — has an implementation but carries no tests manifest; the node's source lives in the graph while nothing covering it does (#3878)" },
   "empty-empty-state": { glyph: "⬚", label: "blank empty state — renders NOTHING when its data is empty; add an empty-state message" },
   "empty-loading-state": { glyph: "◐", label: "blank loading state — renders NOTHING while loading; add a skeleton/spinner" },
   "slot-shell": { glyph: "▤", label: "slot shell — previews a demo placeholder; fill its content slots to see its real function" },
@@ -617,6 +621,21 @@ export function analyzeGraphHealth(
     if (actions.length === 0) continue;
     findings.push({ category: "no-analytics", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
       why: `${c.name} is interactive (${actions.join(", ")}) but declares no analytics events — an app composed from it captures nothing when the user acts; add an \`analytics\` manifest declaring the events it emits (data, not code)` });
+  }
+
+  // no-tests (informational, #3878) — an IMPLEMENTED own-module component carrying no tests. Tests are a
+  // per-node data CONTRACT, the same shape as the analytics manifest one field over: once a component's
+  // source is a store record compiled at runtime, a test file under src/** is no longer beside what it
+  // tests. Narrow on purpose — built-ins skipped; a SPEC-ONLY node skipped (it already earns
+  // `no-implementation`, and one cause should not raise two findings); and only INTERACTIVE nodes flagged,
+  // the same line no-analytics draws. Flagging every implemented node lit up essentially the whole graph.
+  // Rust twin: the same loop in graph_health.rs.
+  for (const c of comps) {
+    if (!ownModuleSource(c, comps)) continue;
+    if ((c.tests?.length ?? 0) > 0) continue;
+    if (!c.props.some(isActionProp)) continue;
+    findings.push({ category: "no-tests", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
+      why: `${c.name} is interactive and implemented but carries no tests — its source lives in the graph while anything covering it does not, so the node can be revised with nothing to catch a regression; add a \`tests\` manifest (an array of { name, src }), data alongside the node like its analytics events` });
   }
 
   // slot-shell (informational) — a composite whose composed children arrive via ReactNode CONTENT SLOTS.
