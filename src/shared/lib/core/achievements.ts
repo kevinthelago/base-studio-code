@@ -19,8 +19,9 @@ interface RawAchievement {
   id: string;
   title: string;
   description: string;
-  /** Icon asset filename under `src/assets/` (e.g. "super-user-achievement.png"). */
-  icon: string;
+  /** OPTIONAL emblem asset filename under `src/assets/`. Absent ⇒ the shared trophy glyph (#3939):
+   *  the toast renders from tokens now, so an achievement no longer needs a bespoke image. */
+  icon?: string;
   /** Optional unlock-toast sound filename under `src/assets/` (defaults to the shared sound). */
   sound?: string;
   /** Optional live unlock condition (omit for an achievement unlocked imperatively elsewhere). */
@@ -33,7 +34,7 @@ export interface AchievementDef {
   id: string;
   title: string;
   description: string;
-  /** Resolved image URL shown on the Settings page (and the unlock toast). */
+  /** Resolved emblem URL, or "" when the achievement ships no image (the common case, #3939). */
   icon: string;
   /** Resolved unlock-toast sound URL (undefined ⇒ the shared default). */
   sound?: string;

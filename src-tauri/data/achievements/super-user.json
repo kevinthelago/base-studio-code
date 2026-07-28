@@ -2,6 +2,9 @@
   "id": "super-user",
   "title": "Claude Super User",
   "description": "Run more than 10 agents at once.",
-  "icon": "super-user-achievement.png",
-  "trigger": { "field": "liveAgents", "op": "gt", "value": 10 }
+  "trigger": {
+    "field": "liveAgents",
+    "op": "gt",
+    "value": 10
+  }
 }

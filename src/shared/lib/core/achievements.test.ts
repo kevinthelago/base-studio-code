@@ -26,10 +26,22 @@ describe("achievements", () => {
     expect(isUnlocked({}, "super-user")).toBe(false);
   });
 
-  it("registry defines the super-user achievement with an icon", () => {
+  it("registry defines the super-user achievement — an icon is OPTIONAL (#3939)", () => {
     const a = achievementById("super-user");
     expect(a?.title).toBe("Claude Super User");
-    expect(a?.icon).toBeTruthy();
+    expect(a?.description).toBeTruthy();
+    // The toast renders from tokens now, so an achievement needs no bespoke image; `icon` resolves to
+    // "" when absent and both surfaces fall back to the shared trophy glyph.
+    expect(a?.icon).toBe("");
     expect(ACHIEVEMENTS.length).toBeGreaterThan(0);
+  });
+
+  it("ships NO achievement asset — the old toast reproduced Xbox trade dress (#3939)", () => {
+    // The guard against it creeping back: every achievement's title + description must be live text
+    // the toast can render, not pixels baked into a banner.
+    for (const a of ACHIEVEMENTS) {
+      expect(a.title, `${a.id} has a title`).toBeTruthy();
+      expect(a.description, `${a.id} has a description`).toBeTruthy();
+    }
   });
 });

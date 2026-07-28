@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { ACHIEVEMENTS, type AchievementDef } from "@/shared/lib/core/achievements";
-import achievementSound from "@/assets/achievement-sound.mp3";
+import { playAchievementChime } from "@/shared/lib/core/achievementChime";
+import { Trophy } from "lucide-react";
+import { Text } from "@/shared/ui/typography/Text";
 import "./achievement.css";
 
 // Easter-egg achievement toasts (#365), registry-driven. Each ACHIEVEMENTS entry that declares a
@@ -35,12 +37,16 @@ function Achievement({ def }: { def: AchievementDef }) {
       timersRef.current.forEach(clearTimeout);
       timersRef.current = [];
       setPhase("in");
-      try {
-        const audio = new Audio(sound ?? achievementSound);
-        audio.volume = 0.7;
-        void audio.play().catch(() => {});
-      } catch {
-        // autoplay blocked before a user gesture is fine; the visual still plays
+      // A registry-supplied `sound` still wins; otherwise the chime is SYNTHESIZED (#3939) rather than
+      // sampled, so the app ships no audio asset whose provenance it cannot vouch for.
+      if (sound) {
+        try {
+          const audio = new Audio(sound);
+          audio.volume = 0.7;
+          void audio.play().catch(() => {});
+        } catch { /* autoplay blocked before a user gesture is fine; the visual still plays */ }
+      } else {
+        playAchievementChime();
       }
       // Hold, then swipe away. in-animation ~0.95s, hold to ~4.2s, out ~0.5s.
       timersRef.current.push(setTimeout(() => setPhase("out"), 4200));
@@ -53,13 +59,21 @@ function Achievement({ def }: { def: AchievementDef }) {
 
   if (phase === "hidden") return null;
   return (
-    <Box className="achv-wrap" aria-hidden>
-      <img
-        src={def.icon}
-        alt={`${def.title} achievement unlocked`}
-        className={"achv " + phase}
-        draggable={false}
-      />
+    // `role="status"` rather than `aria-hidden` (#3939): the toast is real text now, so a screen reader
+    // can announce the unlock instead of being handed one alt string for a picture of it.
+    <Box className="achv-wrap">
+      <Box className={"achv " + phase} role="status">
+        <Box className="achv-emblem">
+          {def.icon
+            ? <img src={def.icon} alt="" width={26} height={26} draggable={false} />
+            : <Trophy size={17} />}
+        </Box>
+        <Box className="achv-body">
+          <Text as="div" mono className="achv-eyebrow">achievement unlocked</Text>
+          <Text as="div" className="achv-title">{def.title}</Text>
+          <Text as="div" className="achv-desc">{def.description}</Text>
+        </Box>
+      </Box>
     </Box>
   );
 }
