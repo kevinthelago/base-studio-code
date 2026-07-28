@@ -20,6 +20,7 @@ import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
 import { DesignerTerminal } from "./DesignerTerminal";
 import { DesignerLoopBanner } from "./DesignerLoopBanner";
+import { HealthFindingsPanel } from "./HealthFindingsPanel";
 import { useDesignerLoopPump } from "./useDesignerLoopPump";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -267,6 +268,12 @@ export function DesignsWorkbench() {
     setCompId(c.id); setVariant(c.variants[0] ?? "default"); setTab("overview");
     setTryAnim(null); // a new vehicle clears the motion try-on (#2942)
   };
+  /** Select by ID — what the health worklist hands back (#3886). A finding names node IDS, and a stale
+   *  one (a node dropped since the scan) must be a no-op, never a selection of nothing. */
+  const selectCompById = (id: string) => {
+    const c = components.find((x) => x.id === id);
+    if (c) selectComp(c);
+  };
   // Select a PRESET as the component's motion (#3083): fold every inline binding into ONE motion preset
   // group with `name` as the default (`selectAnimationPreset`), so exactly the picked one plays — the
   // "pick a value to set the entire component's animation" model. Persist through the STANDARD
@@ -427,14 +434,9 @@ export function DesignsWorkbench() {
             {/* The loop banner owns the header's leading slot (#3852) — it replaced a "Composition graph ·
                 <kit>" eyebrow that repeated what the PageTabs strip and the rail already say. */}
             <DesignerLoopBanner inline />
-            {healthFindings.length > 0 && (
-              <Text
-                as="span" className="ds-healthcount"
-                title={`${healthFindings.length} graph-health finding${healthFindings.length === 1 ? "" : "s"} — the same set \`bsc ui doctor\` reports (#2680)`}
-              >
-                ⚠ {healthFindings.length}
-              </Text>
-            )}
+            {/* #3886: the count is now the ENTRY POINT to the worklist, not a read-only number — the
+                findings fired and counted, but there was no way to see WHICH nodes they named. */}
+            <HealthFindingsPanel findings={healthFindings} onSelectNode={selectCompById} />
             <Box style={{ flex: 1 }} />
             <ZoomControls vp={gvp} step={1.15} />
             {/* The shared ghost Button (#2808), matching the Teams/Algorithms/Glance toolbars. */}
