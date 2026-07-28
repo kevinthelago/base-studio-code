@@ -84,26 +84,10 @@
 /* #3163 motion findings — dead selector + name collision are faults (warning tone); the two SVG traps are advisory (info tone). */
 .ds-health-motion-dead-selector, .ds-health-motion-name-collision { color: var(--warning, var(--state-wait)); border-color: color-mix(in srgb, var(--warning, var(--state-wait)) 45%, var(--border)); }
 .ds-health-motion-dash-no-pathlength, .ds-health-motion-transform-attr { color: var(--info, var(--accent)); border-color: color-mix(in srgb, var(--info, var(--accent)) 45%, var(--border)); }
-.ds-healthcount { font-family: var(--mono); font-size: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: 5px; padding: 1px 7px; margin-left: 8px; white-space: nowrap; cursor: pointer; }
-.ds-healthcount:hover, .ds-healthcount[aria-expanded="true"] { background: color-mix(in srgb, var(--danger) 22%, transparent); }
-
-/* The findings WORKLIST the badge opens (#3886). Anchored under the badge, scrolls on its own — eighty
-   findings must never grow the toolbar or the page. */
-.ds-healthpanel { position: absolute; top: calc(100% + 6px); left: 8px; z-index: 40; width: 300px; max-height: 60vh; overflow-y: auto; background: var(--bg-elev, var(--bg-soft)); border: 1px solid var(--border); border-radius: 9px; box-shadow: var(--shadow-lg, 0 10px 30px rgb(0 0 0 / .45)); padding: 6px; }
-.ds-healthgroup { padding: 2px 2px 4px; }
-/* `.ds-health` is the NODE badge: absolutely positioned at a graph card's corner. Inside the panel it
-   must sit inline in the group header, or it lands outside the row and reads as a missing glyph. */
-.ds-healthpanel .ds-health { position: static; width: 15px; height: 15px; flex: none; }
-.ds-healthgroup + .ds-healthgroup { border-top: 1px solid var(--border-soft, var(--border)); }
-.ds-healthgrouphead { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 6px; background: none; border: 1px solid transparent; border-radius: 6px; cursor: pointer; text-align: left; color: var(--fg); }
-.ds-healthgrouphead:hover { background: var(--bg-soft); border-color: var(--border); }
-.ds-healthgrouphead:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.ds-healthgroupdesc { padding: 0 4px 6px; line-height: 1.4; }
-/* `color` is NOT optional here: a <button> does not inherit it — it takes the `buttontext` system
-   colour — so without this the whole worklist renders washed out against the elevated panel (#3890). */
-.ds-healthrow { display: block; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 4px 8px; cursor: pointer; color: var(--fg); }
-.ds-healthrow:hover { background: var(--bg-soft); border-color: var(--border); }
-.ds-healthrow:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The graph-health count (#2680) — a read-only signal, NOT a control (#3889). It reports; `bsc ui doctor`
+   is what acts. `color` is set explicitly rather than inherited: the worklist's rules were `<button>`s
+   with no `color`, so they picked up the UA's dark `buttontext` and read as black text in dark mode. */
+.ds-healthcount { font-family: var(--mono); font-size: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: 5px; padding: 1px 7px; margin-left: 8px; white-space: nowrap; }
 
 /* Preview build-error badge (#2838) — the on-visit component scan (`useComponentScan`) esbuild-builds
    each buildable component; a node whose build FAILS gets this red glyph. Sits at the TOP-LEFT corner so
