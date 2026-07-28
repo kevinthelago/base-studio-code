@@ -218,3 +218,50 @@ mod relocated_tests {
         );
     }
 }
+
+/// Stream ids whose work has **LANDED** — their branch is an ancestor of its repo clone's HEAD (#3931).
+///
+/// This is the durable floor of the dependency gate. The readiness model (#199) speaks latches fed by
+/// `bsc-landed`/`merged`/`closed` coord events, but measurement on both live fleets found that floor
+/// empty: `network-monitor` has **zero** coord events and **zero** plan.db issues, so an issue-keyed or
+/// session-keyed latch would never satisfy and every dependent would stay dark permanently — strictly
+/// worse than launching everything. Branch-merge state is the one signal that actually exists: it is
+/// written by the act of merging, survives log rotation and app restarts, needs no agent to remember an
+/// emitter, and is the SAME evidence `worktree_is_disposable` already trusts to reclaim a worktree.
+///
+/// Branch names are stream ids by convention (`ensure_worktree` creates `<streamId>`), so the returned
+/// set is directly comparable to `dependsOn` entries. Cost is ONE `git branch --merged HEAD` per repo —
+/// a set intersection — not one `merge-base` per stream: 1 subprocess for a 38-stream fleet.
+///
+/// The result also contains the BASE branches (`main`, `develop`) — they are trivially their own
+/// ancestors. That is harmless: `landedStreams` only ever admits ids that are streams in the fleet, so a
+/// base-branch name can't satisfy a dep unless a stream is literally named `main`. Filtering here would
+/// need this command to know the base branch per repo for no gain.
+///
+/// Tolerant by design: a hub that doesn't exist, a subdir that isn't a clone, or a git failure
+/// contributes nothing rather than failing the call. An empty result therefore means "no evidence of
+/// landing", which the caller must treat as *not satisfied* — never as "everything is done".
+#[tauri::command]
+pub(crate) fn fleet_landed_streams(project_key: String) -> Vec<String> {
+    let hub = crate::project_dir(&project_key);
+    let Ok(rd) = std::fs::read_dir(&hub) else { return Vec::new() };
+    let mut landed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for entry in rd.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let repo = entry.path();
+        if !repo.join(".git").exists() {
+            continue;
+        }
+        // `--merged HEAD` asks git for the whole ancestor set in one pass. `--format` keeps the output
+        // bare (no `*` current-branch marker, no leading whitespace to trim).
+        for name in git_lines(&repo.to_string_lossy(), &["branch", "--merged", "HEAD", "--format=%(refname:short)"]) {
+            let n = name.trim();
+            if !n.is_empty() {
+                landed.insert(n.to_string());
+            }
+        }
+    }
+    landed.into_iter().collect()
+}
