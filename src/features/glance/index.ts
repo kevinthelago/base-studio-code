@@ -19,3 +19,5 @@ export { useGlanceFaults, type GlanceFault } from "./lib/useGlanceFaults";
 export { applyStallHealth, projectKeyOfSession, STALL_WARN_MS, type WaitLite } from "./lib/agentStall";
 export { useProjectFleet } from "./lib/useProjectFleet";
 export { type ProjectLink } from "./lib/projectLinks";
+// #3931: the fleet resume is the launch pump's actuator (mounted in the app shell), so it is public API.
+export { resumeProjectFleet, nothingToResume, type ResumeResult, type BlockedStream } from "./lib/resumeProject";

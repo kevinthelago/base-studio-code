@@ -19,6 +19,8 @@ import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { buildWorkerScope } from "@/features/planner/fleet/workerScope";
 import { parseDependencyManifest, depsForRepo } from "@/features/planner/issues/dependencies";
+import { partitionByDeps, heldReason, sessionDoneStreams, type LandedEvidence } from "@/shared/lib/fleet/streamGate";
+import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 
 export interface ResumeResult {
   ok: boolean;
@@ -29,6 +31,10 @@ export interface ResumeResult {
   /** Sessions deliberately NOT relaunched, with why (#3916). The caller SURFACES these — opens their
    *  nodes so the user sees the problem — rather than resuming past them silently. */
   blocked?: BlockedStream[];
+  /** Streams HELD by the dependency gate (#3931) — not started because an upstream hasn't landed.
+   *  Distinct from `blocked`: nothing is wrong with these, they are simply not their turn yet, so the
+   *  caller reports them without opening error nodes. */
+  held?: BlockedStream[];
 }
 
 /** A session a resume refused to relaunch, and why (#3916). */
@@ -165,13 +171,59 @@ export async function resumeProjectFleet(opts: {
 
   // 2. Progress-gate against plan.db.
   const dbIssues = await bscJson<PlanIssue[]>(projectKey, ["plan", "list", "--full", "--json"], []);
-  const { launchPlan, maintenanceIds, noRepo, note } = planResumeLaunch(resolvedFleet, dbIssues ?? []);
+  const { launchPlan, maintenanceIds, noRepo, note: gateNote } = planResumeLaunch(resolvedFleet, dbIssues ?? []);
   if (launchPlan.streams.length === 0 && !launchPlan.director.enabled) {
     return {
       ok: false,
       error: noRepo.length > 0
         ? `No workers to resume — ${noRepo.length} stream${noRepo.length === 1 ? "" : "s"} (${noRepo.join(", ")}) need a repo assigned.`
         : "No workers to resume.",
+    };
+  }
+
+  // 2b. THE DEPENDENCY GATE (#3931). Until now a resume started every stream at once — 38 simultaneous
+  //     `claude --continue` sessions on the live fleet, which is both the lag the user feels and simply
+  //     wrong: a stream whose upstream hasn't landed has nothing to build against. `dependsOn` already
+  //     carries the graph (plan.db, 37 of 38 populated); this is the launch-time consumer #1039 left
+  //     missing. Nothing PARKS — a held stream is never started, and a started one never waits — so
+  //     #1039's objection (a parked worker is a worker not working) still stands.
+  //
+  //     `fleet_landed_streams` is the durable evidence: one `git branch --merged HEAD` per repo. See
+  //     streamGate.ts for why the issue-keyed and session-keyed latches are BOTH empty on every live
+  //     project and would hang the fleet if trusted alone.
+  const [mergedBranches, coord] = await Promise.all([
+    safeInvoke<string[]>("fleet_landed_streams", { projectKey }, []),
+    readCoordState(),
+  ]);
+  const evidence: LandedEvidence = {
+    doneIssues: doneIssueRefs((dbIssues ?? []) as PlanIssue[]),
+    mergedBranches: new Set(mergedBranches ?? []),
+    // Tier 3: a worker that finished its lane parks in MAINTENANCE (#1957, `bsc-maintain`) — the one
+    // per-session completion signal that is actually populated in the live log (34 events, each keyed
+    // `<projectKey>:<streamId>`). `readCoordState` returns null on a read failure, in which case tier 3
+    // contributes nothing and tiers 1-2 still decide: a failed read must withhold evidence, never
+    // fabricate it, or a transient log error would release the whole fleet at once.
+    sessionDone: sessionDoneStreams(coord?.state.maintaining ?? [], projectKey),
+  };
+  const gate = partitionByDeps(launchPlan.streams, evidence);
+  // A landed stream relaunches into MAINTENANCE rather than build. This is the same rule
+  // `pruneCompletedStreams` applies via issues — extended with branch evidence, which is what makes it
+  // work at all on a 0-issue fleet (where nothing was ever routed to maintenance and every stream
+  // relaunched into a build it had already finished).
+  for (const st of gate.landed) maintenanceIds.add(st.id);
+  const heldIds = new Set(gate.held.map((h) => h.streamId));
+  const held: BlockedStream[] = gate.held.map((h) => ({
+    streamId: h.streamId, paneId: `${projectKey}:${h.streamId}`, reason: heldReason(h),
+  }));
+  launchPlan.streams = launchPlan.streams.filter((st) => !heldIds.has(st.id));
+  if (launchPlan.streams.length === 0 && !launchPlan.director.enabled) {
+    const cycle = gate.held.some((h) => h.deadlocked);
+    return {
+      ok: false,
+      error: cycle
+        ? "Nothing can start — the fleet's dependsOn graph has a cycle."
+        : `Nothing can start yet — all ${held.length} stream${held.length === 1 ? " is" : "s are"} waiting on an upstream.`,
+      held,
     };
   }
 
@@ -219,6 +271,7 @@ export async function resumeProjectFleet(opts: {
         ? `Nothing resumable — ${blocked.length} session${blocked.length === 1 ? "" : "s"} need attention.`
         : "No workers to resume.",
       blocked,
+      held,
     };
   }
   // Only the resumable streams launch; the blocked ones keep their quarantine/ended state untouched.
@@ -246,5 +299,8 @@ export async function resumeProjectFleet(opts: {
   // falls back to a bscBaseDir-derived guess.
   const roster = store.fleetStartProject(projectName, launchPlan, projectKey, { hubPath: hubPath || undefined, worktreePaths });
   publishFleetRoster(projectKey, roster);
-  return { ok: true, note, blocked };
+  const notes = [gateNote, held.length > 0
+    ? `${held.length} stream${held.length === 1 ? "" : "s"} held — waiting on an upstream to land`
+    : undefined].filter(Boolean);
+  return { ok: true, note: notes.length ? notes.join(". ") + "." : undefined, blocked, held };
 }

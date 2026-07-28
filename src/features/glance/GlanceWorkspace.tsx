@@ -50,6 +50,7 @@ import { useGlanceFaults } from "./lib/useGlanceFaults";
 import { applyStallHealth, applyFleetLiveStatus, liveWaits } from "./lib/agentStall";
 import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "./lib/useProjectFleet";
+import { useFleetHeld } from "./lib/useFleetHeld";
 import "./glance.css";
 
 // The agent-health watchdog (#2541) polls the coord log on a slow cadence — a stall is a minutes-scale
@@ -223,6 +224,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const loadedFleet = useProjectFleet(drill);
   const storeFleet = drill ? planFleet[drill] : undefined;
   const effectiveFleet = storeFleet && storeFleet.streams.length > 0 ? storeFleet : loadedFleet;
+  // #3931: which streams the dependency gate is holding, so their nodes explain themselves instead of
+  // rendering as anonymous dark `off` nodes. Read-only — this never launches anything.
+  const heldStreams = useFleetHeld(drill, effectiveFleet?.streams);
 
   const drillNode = drill ? projectModel.nodes.find((n) => n.id === drill) ?? null : null;
   // Name the drilled project in the titlebar crumb (#3041) — "" on the un-drilled network overview.
@@ -280,10 +284,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             rawNodes:
               drill === BASE_STUDIO_PROJECT_ID
                 ? applyStudioLiveStatus(fleetData.rawNodes, { debugSession, paneClaudeActive, paneStatus })
-                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes }),
+                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams }),
           }
         : fleetData,
-    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive],
+    // `quarantinedPanes` + `heldStreams` belong here: without them the memo keeps a stale overlay, so a
+    // newly quarantined worker (#3916) or a stream released by the gate (#3931) would not repaint until
+    // some unrelated dep changed.
+    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams],
   );
   const fleetModel = useMemo(() => (liveFleetData ? timedSync("buildGraph:glance-fleet", () => buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges)) : null), [liveFleetData]);
   // The ACTIVE graph — the drilled fleet (with live status), else the project network. Everything downstream
@@ -480,7 +487,15 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         ? `${blocked.length} session${blocked.length === 1 ? "" : "s"} not resumed — `
           + blocked.map((b) => `${b.streamId}: ${b.reason}`).join("; ")
         : null;
-      const okMsg = [res.note, blockedMsg].filter(Boolean).join(" · ") || null;
+      // #3931: streams HELD by the dependency gate are reported but NOT opened as errors — nothing is
+      // wrong with them, it simply isn't their turn. They launch on their own once their upstream lands,
+      // so naming them (and the first few ids) is the whole surface a resume owes the user.
+      const held = res.held ?? [];
+      const heldMsg = held.length > 0
+        ? `${held.length} held by dependencies — ${held.slice(0, 3).map((h) => h.streamId).join(", ")}`
+          + (held.length > 3 ? ` +${held.length - 3} more` : "")
+        : null;
+      const okMsg = [res.note, blockedMsg, heldMsg].filter(Boolean).join(" · ") || null;
       setResumeMsg(res.ok ? okMsg : (res.error ?? "Couldn't resume this project."));
     } finally {
       setResuming(false);

@@ -85,7 +85,7 @@ export function RelationshipInspector({ graph, focus, onFocusAgent, onInspectArt
           <RelRow glyph="▲" c="var(--accent)" head={`produced by ${a.producer}`} detail={`publishes the ${a.kind} · status ${rdy ? "ready" : "pending"}`} onClick={() => onFocusAgent(a.producer)} />
           {a.consumers.map((c) => {
             const e = ce.find((x) => x.to === c);
-            return <RelRow key={c} glyph="⤓" c="var(--accent)" head={`${c} consumes it`} detail={`bsc-blocked --on contract:${a.id}${e ? ` · ${hardLabel(e.hardness)} · via ${e.viaEff}` : ""}`} onClick={() => onFocusAgent(c)} />;
+            return <RelRow key={c} glyph="⤓" c="var(--accent)" head={`${c} consumes it`} detail={`held at launch until contract:${a.id} lands${e ? ` · ${hardLabel(e.hardness)} · via ${e.viaEff}` : ""}`} onClick={() => onFocusAgent(c)} />;
           })}
           <Text as="div" size={8.5} tone="dim" style={{ fontFamily: mono, marginTop: 2 }}>
             {rdy ? "● ready — parked consumers have been satisfied & woken." : `○ pending — consumers wait until ${a.producer} lands it.`}
