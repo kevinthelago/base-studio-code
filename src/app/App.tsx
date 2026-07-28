@@ -12,6 +12,7 @@ import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useHotkeys } from "./useHotkeys";
 import { useNavigateBridge } from "./useNavigateBridge";
 import { useDebugChannel } from "./useDebugChannel";
+import { useDockBack } from "./useDockBack";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 import { ConsoleWorkspace } from "@/app/console";
@@ -49,6 +50,10 @@ export default function App() {
   // #3437: answer `bsc debug` — read-only inspection of the live DOM + preview state, so a session can
   // ask what is actually on screen instead of inferring it from source.
   useDebugChannel();
+  // #3919: take a torn-off page back when its window drags the tab home. Main window ONLY — the hooks
+  // above this file's `isDetachedWindow()` early return run in BOTH windows, and a detached window must
+  // not re-dock its own page.
+  useDockBack(!isDetachedWindow());
   useScheduler();
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
   useStoreProjector(); // generic store_state projector: scoped domains + the alert pipeline (#2498)

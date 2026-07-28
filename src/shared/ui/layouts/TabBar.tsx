@@ -38,6 +38,10 @@ export interface TabBarProps {
   onReorder?: (from: number, to: number) => void;
   /** Tear a tab into a new window — fired when dropped outside the strip. */
   onTearOff?: (id: string) => void;
+  /** The line shown in the floating drag preview. Defaults to the tear-off wording; a DETACHED window
+   *  overrides it, because there the same gesture means the opposite — the tab is leaving THIS window,
+   *  i.e. going home (#3919). */
+  tearOffHint?: string;
   onClose?: (id: string) => void;
   onAdd?: () => void;
   onRename?: (id: string, name: string) => void;
@@ -47,7 +51,7 @@ export interface TabBarProps {
 }
 
 export function TabBar({
-  tabs, activeId, onSelect, onReorder, onTearOff, onClose, onAdd, onRename, renderMenu,
+  tabs, activeId, onSelect, onReorder, onTearOff, tearOffHint, onClose, onAdd, onRename, renderMenu,
 }: TabBarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -218,7 +222,7 @@ export function TabBar({
             <Box as="span" className="ttp-light" /><Box as="span" className="ttp-light" /><Box as="span" className="ttp-light" />
             <Box as="span" className="ttp-title">{tabs[dragIdx]?.label}</Box>
           </Box>
-          <Box className="ttp-body"><Box as="span" className="ttp-hint">↗ release to open in a new window</Box></Box>
+          <Box className="ttp-body"><Box as="span" className="ttp-hint">{tearOffHint ?? "↗ release to open in a new window"}</Box></Box>
         </Box>,
         document.body,
       )}

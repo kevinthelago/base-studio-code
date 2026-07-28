@@ -1,6 +1,7 @@
 import { useState, Suspense } from "react";
 import { useAppStore } from "@/store";
 import { Titlebar } from "@/app/chrome/Titlebar";
+import { DetachedTabStrip } from "./DetachedTabStrip";
 import { ConsoleWorkspace } from "@/app/console";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
@@ -57,7 +58,9 @@ export function DetachedWindow() {
     return (
       <TerminalHost>
       <Box className="app">
-        <Titlebar workspace={`${detSection.page} · ${detSection.section}`} />
+        {/* #3919: the browser model — this window carries its tab, and dragging it off the strip
+            docks the page back into the main window. */}
+        <DetachedTabStrip page={detSection.page} section={detSection.section} label={detSection.section} />
         <Box className="shell">
           <Box className="main">
             <Box className="page">
