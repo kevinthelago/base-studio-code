@@ -84,6 +84,11 @@ export interface FleetLiveSignals {
   now: number;
   /** Stall threshold; a wait beyond it escalates to `warning`. Defaults to {@link STALL_WARN_MS}. */
   warnMs?: number;
+  /** QUARANTINED panes (#3916) — the warden hard-paused these: it killed the PTY and marked why. Keyed
+   *  by pane id, valued by the summary the warden recorded. Until now quarantine was invisible in Glance
+   *  (grep found no handling outside `resumeProject`'s comments), so a hard-paused worker read as a plain
+   *  `off` node — indistinguishable from one that was simply never launched. */
+  quarantined?: Record<string, { summary?: string }>;
 }
 
 /**
@@ -107,6 +112,19 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
   return nodes.map((n) => {
     if (n.preview) return n; // not an agent — its own healthy/live state stands
     const paneId = fleetPaneId(projectKey, n.id);
+    // QUARANTINE FIRST (#3916): the warden kills the PTY when it quarantines, so a quarantined pane is
+    // never in `livePaneIds` and would otherwise fall through to `off` — reading as "never launched"
+    // rather than "hard-paused, here is why". It must outrank every other state: this is the one the
+    // user has to act on, and Resume deliberately refuses to relaunch it.
+    const q = sig.quarantined?.[paneId];
+    if (q) {
+      return {
+        ...n,
+        health: "error" as GHealth,
+        activity: "idle" as GActivity,
+        reason: q.summary?.trim() || "quarantined by the warden",
+      };
+    }
     // NOT LAUNCHED — there is no session behind this node. That is `off`, not `idle`: the two states
     // were indistinguishable while both rendered idle, so a node with no session read as one that was
     // merely quiet, and its empty log view looked like a broken log rather than an absent session.

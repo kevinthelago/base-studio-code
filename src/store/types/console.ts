@@ -186,6 +186,8 @@ export interface ConsoleState {
    *  relaunches with `claude --continue`. Non-disruptive — it touches ONLY this pane, so live
    *  siblings in the same build tab keep running. Returns false (a no-op) when no open tab hosts
    *  the pane id, so the caller can fall back to a full fleet relaunch. */
+  /** Drop the ENDED flag for a set of panes about to be relaunched (#3916). */
+  clearEndedPanes: (paneIds: string[]) => void;
   resumePaneSession: (paneId: string) => boolean;
   /** Update the idle-reaper config (Settings). */
   setIdleReaperConfig: (cfg: Partial<ReaperConfig>) => void;
