@@ -571,8 +571,52 @@ pub fn project_liveness(state: tauri::State<CollectorState>) -> Vec<ProjectLiven
     state.sweep(now_ms(), |k| Store::open(&error_db_path(k)))
 }
 
+/// Unresolved faults for MANY projects in ONE in-process read (#3912) — what the Glance fault badge
+/// polls.
+///
+/// It used to `Promise.all` a `bsc errors list --unresolved --json` **subprocess per project**. At 28
+/// projects on a 20s cadence that is ~21 concurrent `bsc` spawns three times a minute, each with a
+/// ~400ms floor (#3871) — measured as the single largest consumer of the Tauri command queue
+/// (15,806s of invoke time in a 72-minute window, p50 8.4s, max 96s). Since `src-tauri` already links
+/// `errordb`, none of that subprocess cost was ever necessary: this opens each project's error.db
+/// directly, the same way the collector already does.
+///
+/// Returns the raw unresolved rows keyed by project, NOT a precomputed summary — the count/worst-fault
+/// derivation stays in the frontend's existing pure `unresolvedCount`/`worstFault`, so there is no
+/// second implementation of the ranking to drift. A project with no error.db (never ran, or no fault
+/// yet) is simply ABSENT from the map, exactly as the per-project read degraded to `[]` before.
+#[tauri::command]
+pub fn fault_rows_batch(project_keys: Vec<String>) -> std::collections::HashMap<String, Vec<errordb::Fault>> {
+    let filter = errordb::Filter { unresolved: true, ..Default::default() };
+    project_keys
+        .into_iter()
+        .filter(|k| !k.trim().is_empty())
+        .filter_map(|key| {
+            // A missing/locked db is not an error here — the badge just has nothing to show for it.
+            let store = Store::open(&error_db_path(&key)).ok()?;
+            let rows = store.list(&filter).ok()?;
+            (!rows.is_empty()).then_some((key, rows))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fault_rows_batch_skips_unknown_projects_instead_of_failing() {
+        // #3912: the Glance badge polls the whole project set, most of which have no error.db (never
+        // ran, or no fault yet). Those must be ABSENT from the map — the same "no badge" outcome the
+        // old per-project subprocess produced by degrading to []. A missing db must never fail the
+        // batch and blank every OTHER project's badge with it.
+        let out = super::fault_rows_batch(vec![
+            "definitely--not--a--project--3912".into(),
+            String::new(),
+            "   ".into(),
+        ]);
+        assert!(out.is_empty(), "unknown/blank keys contribute nothing, and do not error");
+        assert!(super::fault_rows_batch(vec![]).is_empty(), "an empty project set is a no-op");
+    }
+
     use super::*;
 
     /// A `Shared` with `project` pre-registered to `token`, so `ingest` sees a known project.
