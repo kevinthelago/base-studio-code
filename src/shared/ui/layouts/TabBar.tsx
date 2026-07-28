@@ -38,6 +38,11 @@ export interface TabBarProps {
   onReorder?: (from: number, to: number) => void;
   /** Tear a tab into a new window — fired when dropped outside the strip. */
   onTearOff?: (id: string) => void;
+  /** Extra class on the strip (the detached window's one-bar chrome, #3925). */
+  className?: string;
+  /** Rendered at the RIGHT end of the strip, after the tabs. The detached window puts its window
+   *  controls here so the tab and the controls share ONE bar, browser-style (#3925). */
+  trailing?: ReactNode;
   /** The line shown in the floating drag preview. Defaults to the tear-off wording; a DETACHED window
    *  overrides it, because there the same gesture means the opposite — the tab is leaving THIS window,
    *  i.e. going home (#3919). */
@@ -51,7 +56,7 @@ export interface TabBarProps {
 }
 
 export function TabBar({
-  tabs, activeId, onSelect, onReorder, onTearOff, tearOffHint, onClose, onAdd, onRename, renderMenu,
+  tabs, activeId, onSelect, onReorder, onTearOff, tearOffHint, trailing, className, onClose, onAdd, onRename, renderMenu,
 }: TabBarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -87,7 +92,16 @@ export function TabBar({
     return els.length;
   }, []);
 
-  const endDrag = useCallback(() => { setDragIdx(null); setDropPos(null); setTearOff(null); }, []);
+  // Whether the CURRENT drag is parked outside the strip, tracked in a ref as well as state (#3925).
+  // `dragend` fires after `drop` and after React has torn the preview down, so the state is already stale
+  // by then — the ref is what tells the dragend handler that this drag ended in tear-off position.
+  const tearOffRef = useRef(false);
+  // Guards the double-fire: a release INSIDE the window fires `drop` (which tears off) and then `dragend`.
+  const firedRef = useRef(false);
+  const endDrag = useCallback(() => {
+    tearOffRef.current = false;
+    setDragIdx(null); setDropPos(null); setTearOff(null);
+  }, []);
 
   function commitDrop() {
     if (dragIdx !== null && dropPos !== null) {
@@ -111,8 +125,10 @@ export function TabBar({
       if (outside(e, r) && onTearOff) {
         e.preventDefault();
         setDropPos(null);
+        tearOffRef.current = true;
         setTearOff({ x: e.clientX, y: e.clientY });
       } else {
+        tearOffRef.current = false;
         setTearOff(null);
       }
     };
@@ -120,6 +136,7 @@ export function TabBar({
       const r = stripRef.current?.getBoundingClientRect();
       if (r && onTearOff && outside(e, r) && dragIdx !== null) {
         e.preventDefault();
+        firedRef.current = true;
         onTearOff(tabs[dragIdx]?.id);
       }
       endDrag();
@@ -144,7 +161,7 @@ export function TabBar({
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- drag-reorder tabstrip; the tabs are separately interactive, keyboard reorder is out of scope */}
       <div
         ref={stripRef}
-        className={"tabstrip" + (dragIdx !== null ? " dragging" : "")}
+        className={"tabstrip" + (className ? ` ${className}` : "") + (dragIdx !== null ? " dragging" : "")}
         onDragOver={(e) => { if (dragIdx === null) return; e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = "move"; setDropPos(dropGapFor(e.clientX)); }}
         onDrop={(e) => { if (dragIdx === null) return; e.preventDefault(); commitDrop(); }}
       >
@@ -172,7 +189,16 @@ export function TabBar({
                 e.dataTransfer.setDragImage(img, 0, 0);
               }
             }}
-            onDragEnd={endDrag}
+            onDragEnd={() => {
+              // The RELEASE-OUTSIDE-THE-WINDOW path (#3925). HTML5 drag events only reach the source
+              // document while the pointer is over it, so dropping the tab onto ANOTHER window delivers
+              // no `drop` here — and that is the natural gesture (drag the tab toward the other window).
+              // `dragend` fires on the source element wherever the release happened, so it is the
+              // reliable trigger; `firedRef` keeps an in-window release from tearing off twice.
+              if (!firedRef.current && tearOffRef.current && onTearOff) onTearOff(tabs[i]?.id);
+              firedRef.current = false;
+              endDrag();
+            }}
             style={tabDragStyle(i)}
           >
             {t.status !== undefined && <Box as="span" className={"dot " + t.status} />}
@@ -214,6 +240,7 @@ export function TabBar({
         {onAdd && (
           <button className="tab-add" onClick={onAdd}>+</button>
         )}
+        {trailing && <Box className="tabstrip-trailing">{trailing}</Box>}
       </div>
 
       {tearOff && dragIdx !== null && createPortal(

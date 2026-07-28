@@ -22,7 +22,14 @@ export function openDetachedSection(page: string, section: string, title?: strin
   u.hash = "";
   u.search = `?detach=${encodeURIComponent(page)}&section=${encodeURIComponent(section)}`;
   try {
-    const w = new WebviewWindow(label, { url: u.href, title: title || section, width: 1100, height: 800, decorations: false });
+    // `dragDropEnabled: false` is NOT optional (#3925). Tauri's WebView captures drag/drop for OS
+    // file-drop by default and swallows `dragstart`/`dragover`/`drop` before the DOM sees them — the bug
+    // #461 fixed for the main window via tauri.conf.json. A RUNTIME window does not inherit that config,
+    // so without this the torn-off window's tab cannot be dragged at all, and dock-back can never fire.
+    const w = new WebviewWindow(label, {
+      url: u.href, title: title || section, width: 1100, height: 800,
+      decorations: false, dragDropEnabled: false,
+    });
     if (onClose) w.once("tauri://destroyed", () => onClose());
   } catch (e) {
     console.error("openDetachedSection failed:", e);
