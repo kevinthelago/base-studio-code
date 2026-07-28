@@ -7,15 +7,17 @@
 // The CSS still ships as a normal bundled import here: the loader cannot resolve a CSS side-effect import,
 // so it was stripped from the graph source and the host owns the stylesheet the page's classes need.
 //
-// NOT YET MOUNTED. The Projects LIST is a page inside the `ProjectsWorkspace` tabbed shell (alongside
-// Planning / Designs / Algorithms), so the flip is the two `<ProjectsList />` sites in
-// `features/planner/index.tsx` — the tear-off (`pageOverride`) path and the normal one — not the rail-level
-// `lazyWorkspaces.tsx` slot. Both are marked in place. The reason it is deferred is
-// verification, not doubt about the code: the loader's compile step is esbuild-wasm and BROWSER-ONLY
-// (`componentLoader.test.ts` covers only the runtime half and says so), the e2e harness drives the preview
-// srcdoc rather than app page records, and the epic accepted that verification here is real-Chromium or
-// nothing. So the flip is left as a deliberate act taken while someone can watch the screen — the same
-// dormant state Settings' graph records sit in today (#3758).
+// MOUNTED (#3874). Both `<ProjectsList />` sites in `features/planner/index.tsx` — the tear-off
+// (`pageOverride`) path and the normal one — now render this host instead.
+//
+// HOW THE FLIP WAS VERIFIED, and why it had to be. The loader's compile step is esbuild-wasm and
+// BROWSER-ONLY, so no headless check can prove this page renders — the epic accepted that verification here
+// is real-Chromium or nothing. It was done against the RUNNING app (`bsc shot take` on a `tauri dev`
+// instance), and that is what caught the one real defect: `ProjectsList` reaches
+// `./published/ProjectRow` through a RE-EXPORT (`export { ProjectRow } from …`), which esbuild compiles to
+// the same `require` an import produces. `graphPlatform` didn't register it and the seed test's import scan
+// only matched `import … from`, so the page compiled, failed to resolve, and rendered its fallback — with a
+// green suite. Both are fixed; the scan now covers `export … from` too.
 import { GraphComponent } from "@/shared/lib/runtime/GraphComponent";
 import { GraphPageFallback } from "@/shared/lib/runtime/GraphPageFallback";
 import { registerProjectsPlatform } from "./list/graphPlatform";

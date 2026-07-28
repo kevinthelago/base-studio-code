@@ -24,9 +24,15 @@ beforeAll(() => {
   registerProjectsPlatform();
 });
 
-/** Every `from "…"` specifier in a source text. */
+/** Every `from "…"` specifier in a source text — `import … from` AND `export … from`.
+ *
+ *  The re-export form is load-bearing here and was the gap this scan originally had: esbuild compiles
+ *  `export { X } from "./y"` to the same `require("./y")` an import produces, so an unregistered
+ *  re-export fails the loader at runtime exactly like an unregistered import. Scanning only `import`
+ *  let `export { ProjectRow } from "./published/ProjectRow"` through, and the page fell back to its
+ *  error state on the first real-browser mount. */
 function importsOf(src: string): string[] {
-  return [...src.matchAll(/^\s*import\s[^"']*from\s+["']([^"']+)["']/gm)].map((m) => m[1]);
+  return [...src.matchAll(/^\s*(?:import|export)\s[^"']*from\s+["']([^"']+)["']/gm)].map((m) => m[1]);
 }
 
 describe("projectspage record (#3874)", () => {
@@ -44,6 +50,22 @@ describe("projectspage record (#3874)", () => {
     expect(sourceText).toMatch(/^import\s+"[^"]*\.css";/m);
   });
 
+  it("exports the PAGE first — the export `pickComponent` will mount", () => {
+    // `pickComponent` takes `default`, else the FIRST exported function. The bundled module re-exports
+    // `ProjectRow` for its existing importers, and that re-export sits above `export function ProjectsList`
+    // — so the graph copy mounted ProjectRow, which threw on `p.id` with no props and rendered the page's
+    // fallback. The loader had already logged `mounted`, so nothing pointed at the cause. The graph copy
+    // strips the re-export (the same treatment the CSS import gets, and for the same reason: it exists for
+    // the bundled module's consumers, not for the graph).
+    expect(sourceText, "the bundled module still re-exports ProjectRow for its importers")
+      .toMatch(/^export\s*\{\s*ProjectRow\s*\}\s*from/m);
+    expect(record.srcText, "the graph copy does NOT — it would be mounted instead of the page")
+      .not.toMatch(/^export\s*\{[^}]*\}\s*from/m);
+    // Whatever the source shape, the first thing `pickComponent` can reach must BE the page.
+    const firstExport = /^export\s+(?:default\s+)?function\s+([A-Za-z0-9_]+)/m.exec(record.srcText)?.[1];
+    expect(firstExport, "the first exported function is the page component").toBe("ProjectsList");
+  });
+
   it("declares the page node's identity the loader mounts by", () => {
     expect(record.id).toBe("projectspage");
     expect(record.role).toBe("page");
@@ -57,6 +79,10 @@ describe("projectspage record (#3874)", () => {
     // Non-vacuity guard: if the regex ever stops matching, `unresolved` is trivially empty and this test
     // passes while checking NOTHING. Pin the count so that failure is loud instead of silent.
     expect(specifiers.length, "the import scan still sees the page's imports").toBeGreaterThan(30);
+    // …and it still sees the RE-EXPORT form. The record itself no longer HAS one (stripped, above), so
+    // prove the widened scan against the bundled source that does — otherwise the day a record grows a
+    // re-export, this scan silently skips it again, which is exactly how it shipped broken the first time.
+    expect(importsOf(sourceText), "the scan covers `export … from` too").toContain("./published/ProjectRow");
 
     const unresolved = specifiers.filter((s) => !isAppModule(s));
     expect(unresolved, `unregistered specifiers: ${unresolved.join(", ")}`).toEqual([]);
