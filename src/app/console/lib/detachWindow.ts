@@ -55,6 +55,9 @@ export function openDetachedTab(tabId: string, title?: string, onClose?: () => v
       width: 960,
       height: 720,
       decorations: false, // use the app's custom titlebar, not the native OS frame
+      // #3925: a RUNTIME window does not inherit tauri.conf.json's `dragDropEnabled: false`, so without
+      // this its WebView swallows every HTML5 drag event for OS file-drop (the #461 bug).
+      dragDropEnabled: false,
     });
     // Re-dock when the detached window closes (best-effort; restart recovers it
     // regardless, since the detached set is session-only).
