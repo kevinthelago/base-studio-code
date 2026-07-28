@@ -146,8 +146,11 @@ export function restOpacity(kind: EdgeKind): number {
 /** The one-line runtime note for an edge — how the relationship is enforced at fleet time. */
 export function runtimeNote(e: ResolvedEdge): string {
   const map: Record<EdgeKind, string> = {
-    handoff:  `bsc-blocked --on contract:${e.artifact ?? "…"} · satisfied when ${e.from} lands it.`,
-    blocking: `bsc-blocked --on #${e.to} · ${e.to} hard-waits on ${e.from}'s issue.`,
+    // #3931: these used to advertise `bsc-blocked --on`, a command removed with #1039 and never
+    // replaced — an agent that tried to run it got "command not found". Enforcement is now the LAUNCH
+    // gate: `${e.to}` is not started until `${e.from}` lands, and a started worker never parks.
+    handoff:  `${e.to} starts once ${e.from} lands contract:${e.artifact ?? "…"} (launch gate).`,
+    blocking: `${e.to} is held at launch until ${e.from}'s work lands (launch gate).`,
     shared:   "co-owned interface — both streams notified on change.",
     review:   `${e.to}'s output reviewed before merge (role/flow gate).`,
     notify:   `event only — pings ${e.to}, never blocks.`,

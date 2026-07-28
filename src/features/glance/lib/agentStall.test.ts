@@ -174,3 +174,59 @@ describe("applyFleetLiveStatus — quarantine is a first-class node state (#3916
     expect(applyFleetLiveStatus(nodes, "proj", base)).toEqual(applyFleetLiveStatus(nodes, "proj", { ...base, quarantined: {} }));
   });
 });
+
+describe("applyFleetLiveStatus — held by the dependency gate (#3931)", () => {
+  const node = (id: string): GRawNode => ({ id, slug: id, role: "service", health: "idle", activity: "idle" });
+  const base = { paneStatus: {}, waiting: [], now: Date.now() };
+
+  it("a held stream explains itself instead of rendering as an anonymous dark node", () => {
+    const [n] = applyFleetLiveStatus([node("play-screen")], "proj", {
+      ...base,
+      livePaneIds: new Set(),
+      held: { "play-screen": { reason: "waiting on game-modes to land", deadlocked: false } },
+    });
+    expect(n.health).toBe("off");            // still no session — that part was never wrong
+    expect(n.activity).toBe("waiting");
+    expect(n.reason).toBe("waiting on game-modes to land");
+  });
+
+  it("a DEADLOCKED stream is an error — it can never start on its own", () => {
+    const [n] = applyFleetLiveStatus([node("a")], "proj", {
+      ...base,
+      livePaneIds: new Set(),
+      held: { a: { reason: "dependency cycle — cannot start (waiting on b)", deadlocked: true } },
+    });
+    expect(n.health).toBe("error");
+    expect(n.reason).toContain("cycle");
+  });
+
+  it("a held stream that is somehow LIVE reports its real live state, not the stale hold", () => {
+    // The held map is computed asynchronously; a stream released between the probe and the render must
+    // not be painted as waiting.
+    const [n] = applyFleetLiveStatus([node("a")], "proj", {
+      ...base,
+      livePaneIds: new Set(["proj:a"]),
+      paneStatus: { "proj:a": "run" },
+      held: { a: { reason: "waiting on b to land", deadlocked: false } },
+    });
+    expect(n.health).toBe("healthy");
+    expect(n.activity).toBe("building");
+  });
+
+  it("QUARANTINE outranks a hold — it is the state the user must act on", () => {
+    const [n] = applyFleetLiveStatus([node("a")], "proj", {
+      ...base,
+      livePaneIds: new Set(),
+      quarantined: { "proj:a": { summary: "denied command" } },
+      held: { a: { reason: "waiting on b to land", deadlocked: false } },
+    });
+    expect(n.health).toBe("error");
+    expect(n.reason).toBe("denied command");
+  });
+
+  it("no held map ⇒ the pre-#3931 behaviour is unchanged", () => {
+    const [n] = applyFleetLiveStatus([node("a")], "proj", { ...base, livePaneIds: new Set() });
+    expect(n.health).toBe("off");
+    expect(n.reason).toBeUndefined();
+  });
+});

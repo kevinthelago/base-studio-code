@@ -89,6 +89,13 @@ export interface FleetLiveSignals {
    *  (grep found no handling outside `resumeProject`'s comments), so a hard-paused worker read as a plain
    *  `off` node — indistinguishable from one that was simply never launched. */
   quarantined?: Record<string, { summary?: string }>;
+  /** HELD streams (#3931) — the dependency gate refused to start these because an upstream has not
+   *  landed. Keyed by STREAM id (not pane id: there is no pane, that is the point). Same argument as
+   *  quarantine: a held stream has no session, so it fell through to a plain `off` node and was
+   *  indistinguishable from one that was never planned — the user could not tell "waiting its turn"
+   *  from "broken". A `deadlocked` stream is an ERROR (it can never start on its own); an ordinary
+   *  held one stays `off` but now carries the reason that explains itself. */
+  held?: Record<string, { reason: string; deadlocked: boolean }>;
 }
 
 /**
@@ -123,6 +130,20 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
         health: "error" as GHealth,
         activity: "idle" as GActivity,
         reason: q.summary?.trim() || "quarantined by the warden",
+      };
+    }
+    // HELD BY THE DEPENDENCY GATE (#3931) — checked before the plain `off` fall-through for exactly the
+    // reason quarantine is: a held stream has no pane, so it would render as an anonymous dark node and
+    // the user would have no way to tell "waiting on its upstream" from "never planned". A DEADLOCK is
+    // an error the user must fix (the plan's `dependsOn` has a cycle, so it can never start on its own);
+    // an ordinary hold is not a fault, so it keeps `off` health and just explains itself.
+    const h = sig.held?.[n.id];
+    if (h && !sig.livePaneIds.has(paneId)) {
+      return {
+        ...n,
+        health: (h.deadlocked ? "error" : "off") as GHealth,
+        activity: "waiting" as GActivity,
+        reason: h.reason,
       };
     }
     // NOT LAUNCHED — there is no session behind this node. That is `off`, not `idle`: the two states

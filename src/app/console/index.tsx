@@ -9,6 +9,8 @@ import { shouldAdvanceOnReply } from "@/app/console/lib/consoleFocus";
 import type { ViewKey } from "@/app/console/panes/viewDefs";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useCoordinator } from "./useCoordinator";
+import { useFleetGate } from "@/shared/lib/fleet/useFleetGate";
+import { resumeProjectFleet } from "@/features/glance";
 import { useDirectorPump } from "./useDirectorPump";
 import { useFaultTriage } from "./useFaultTriage";
 import { useKitDispatch } from "./useKitDispatch";
@@ -29,10 +31,19 @@ function resolvePaneName(
   return names[tabIdx]?.[paneIdx] ?? `console-${tabIdx + 1}-${paneIdx + 1}`;
 }
 
+/** The launch pump's actuator (#3931). The build tab is matched by the stable project KEY, so the name
+ *  here is only a fallback tab title and never selects the wrong tab. */
+const fleetGateLaunch = (projectKey: string) => resumeProjectFleet({ projectName: projectKey, projectKey });
+
 export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number } = {}) {
   // #199: the always-on coordinator — auto-wakes ready parked panes when enabled.
   // Mounted here because ConsoleWorkspace stays mounted across every screen (#187).
   useCoordinator();
+  // #3931 slice 3 — the launch pump: a stream HELD by the dependency gate starts as soon as its
+  // upstreams land. Event-driven on the coord log (a worker finishing writes there first), so it
+  // costs nothing while the fleet is quiet. Mounted here for the same reason the coordinator is:
+  // ConsoleWorkspace stays mounted across every screen, so the fleet keeps advancing off-screen.
+  useFleetGate(fleetGateLaunch);
   useFaultTriage(); // #2265 — poll runtime faults; route a deduped, rate-limited fix per the auto-triage toggle
   useKitDispatch(); // #2277 — drain queued kit-change dispatches to the rails per the kit auto-dispatch toggle
   useStudioNetworkPump(); // #2940 — fulfil `bsc-commission`s: lazy-launch the target studio, inject the task, deliver the id back
