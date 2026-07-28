@@ -136,6 +136,13 @@ html, body {
   font-family:var(--mono); font-size:11px; color:var(--fg-muted);
   -webkit-user-select:none; -webkit-app-region:drag;
 }
+/* The detached window's ONE bar (#3925): its tab + the window controls share the strip, browser-style.
+   The strip's EMPTY area is the OS drag region so the window can still be moved; the tabs and the
+   controls opt out, or they could be neither clicked nor dragged. */
+.tabstrip.chrome-bar{ -webkit-app-region: drag; padding-right: 0; }
+.tabstrip.chrome-bar [data-tab], .tabstrip.chrome-bar .tabstrip-trailing{ -webkit-app-region: no-drag; }
+.tabstrip-trailing{ margin-left: auto; display: flex; align-items: center; }
+
 .tl-title{ font-size:11px; letter-spacing:0.04em; white-space:nowrap; }
 
 /* titlebar — macOS: lights left, title centered */

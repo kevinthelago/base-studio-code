@@ -7,9 +7,8 @@
 // The gesture is an INVERSION of tear-off, not new machinery: `TabBar` fires `onTearOff` when a tab is
 // dropped outside its strip, and here that means the tab is leaving THIS window — i.e. going home. Users
 // already learned the gesture; only its direction and its preview wording change.
-import { Titlebar } from "@/app/chrome/Titlebar";
+import { WindowControls } from "@/app/chrome/Titlebar";
 import { TabBar } from "@/shared/ui/layouts/TabBar";
-import { Box } from "@/shared/ui/layout/Box";
 import { emitDockBack } from "@/shared/lib/core/dockBack";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -32,16 +31,19 @@ async function dockBack(page: string, section: string): Promise<void> {
  * `label` is the section's human name; `page`/`section` identify it to the main window.
  */
 export function DetachedTabStrip({ page, section, label }: { page: string; section: string; label: string }) {
+  // ONE bar (#3925): the tab and the window controls share the strip, browser-style. The separate
+  // titlebar is gone, and with it the `page · section` breadcrumb — this window shows a single expected
+  // page, so naming it twice was noise. The strip's empty area stays an OS drag region (`.chrome-bar`),
+  // so the window is still movable by its bar.
   return (
-    <Box className="detached-chrome">
-      <Titlebar workspace={`${page} · ${label}`} />
-      <TabBar
-        tabs={[{ id: section, label }]}
-        activeId={section}
-        onSelect={() => {}}
-        onTearOff={() => void dockBack(page, section)}
-        tearOffHint="↙ release to dock back into the main window"
-      />
-    </Box>
+    <TabBar
+      className="chrome-bar"
+      tabs={[{ id: section, label }]}
+      activeId={section}
+      onSelect={() => {}}
+      onTearOff={() => void dockBack(page, section)}
+      tearOffHint="↙ release to dock back into the main window"
+      trailing={<WindowControls />}
+    />
   );
 }
