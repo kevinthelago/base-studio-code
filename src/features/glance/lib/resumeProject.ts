@@ -19,7 +19,8 @@ import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { buildWorkerScope } from "@/features/planner/fleet/workerScope";
 import { parseDependencyManifest, depsForRepo } from "@/features/planner/issues/dependencies";
-import { partitionByDeps, heldReason, type LandedEvidence } from "@/shared/lib/fleet/streamGate";
+import { partitionByDeps, heldReason, sessionDoneStreams, type LandedEvidence } from "@/shared/lib/fleet/streamGate";
+import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 
 export interface ResumeResult {
   ok: boolean;
@@ -190,14 +191,19 @@ export async function resumeProjectFleet(opts: {
   //     `fleet_landed_streams` is the durable evidence: one `git branch --merged HEAD` per repo. See
   //     streamGate.ts for why the issue-keyed and session-keyed latches are BOTH empty on every live
   //     project and would hang the fleet if trusted alone.
-  const mergedBranches = await safeInvoke<string[]>("fleet_landed_streams", { projectKey }, []);
+  const [mergedBranches, coord] = await Promise.all([
+    safeInvoke<string[]>("fleet_landed_streams", { projectKey }, []),
+    readCoordState(),
+  ]);
   const evidence: LandedEvidence = {
     doneIssues: doneIssueRefs((dbIssues ?? []) as PlanIssue[]),
     mergedBranches: new Set(mergedBranches ?? []),
-    // Tier 3 (a live session reporting done) has no producer yet — the launch pump that watches the
-    // coord log is #3931 slice 3. An empty set is the honest value: it withholds evidence rather than
-    // inventing it, so a stream is held until tier 1 or 2 can vouch for its upstream.
-    sessionDone: new Set<string>(),
+    // Tier 3: a worker that finished its lane parks in MAINTENANCE (#1957, `bsc-maintain`) — the one
+    // per-session completion signal that is actually populated in the live log (34 events, each keyed
+    // `<projectKey>:<streamId>`). `readCoordState` returns null on a read failure, in which case tier 3
+    // contributes nothing and tiers 1-2 still decide: a failed read must withhold evidence, never
+    // fabricate it, or a transient log error would release the whole fleet at once.
+    sessionDone: sessionDoneStreams(coord?.state.maintaining ?? [], projectKey),
   };
   const gate = partitionByDeps(launchPlan.streams, evidence);
   // A landed stream relaunches into MAINTENANCE rather than build. This is the same rule

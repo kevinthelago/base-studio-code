@@ -149,3 +149,31 @@ export function heldReason(h: HeldStream): string {
     ? `waiting on ${list} to land`
     : `waiting on ${h.waitingOn.length} upstreams to land (${list})`;
 }
+
+/**
+ * Tier 3's producer: the stream ids of a project's sessions that reported DONE (#3931 slice 3).
+ *
+ * A worker that finishes its lane parks in maintenance (#1957) by emitting `bsc-maintain`, which the
+ * coord replay folds into `CoordState.maintaining`. That is the one per-session completion signal that
+ * is actually populated in the live log — unlike `landed`, whose payload refs are free text and whose
+ * emitting session is dropped by the parse. Entries are pane ids (`<projectKey>:<streamId>`), so this
+ * keeps only the rows for THIS project and strips the prefix back to a stream id.
+ *
+ * Matching is on the exact `<projectKey>:` prefix, and only the FIRST separator is consumed — a triage
+ * pane (`<key>:<repo>:triage`) therefore yields `<repo>:triage`, which is not a stream id and simply
+ * never matches a `dependsOn` entry. Pure.
+ */
+export function sessionDoneStreams(
+  maintaining: ReadonlyArray<{ session: string }>,
+  projectKey: string,
+): Set<string> {
+  const prefix = `${projectKey}:`;
+  const out = new Set<string>();
+  for (const m of maintaining) {
+    if (m.session.startsWith(prefix)) {
+      const id = m.session.slice(prefix.length);
+      if (id) out.add(id);
+    }
+  }
+  return out;
+}
