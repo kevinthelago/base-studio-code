@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planWarden, summarizeTrips, parseAuditCommands, type WardenSession } from "./warden";
+import { planWarden, summarizeTrips, parseAuditCommands, type WardenSession, zipWorktreeChanges } from "./warden";
 import { roleCapability } from "../session/sessionRoles";
 import { DEFAULT_FLOW } from "@/features/planner/fleet/agentFlow";
 
@@ -65,5 +65,29 @@ describe("planWarden", () => {
   it("an auto-pr worker opening its PR is not a trip", () => {
     const ok = session("t0p1", { commands: ["git push origin api", "gh pr create --title done"] });
     expect(planWarden([ok], new Set())).toEqual([]);
+  });
+});
+
+describe("zipWorktreeChanges (#3908) — the batched worktree read must not misattribute files", () => {
+  it("maps each pane to its OWN index", () => {
+    const m = zipWorktreeChanges(["a", "b", "c"], [["1.ts"], ["2.ts"], ["3.ts"]]);
+    expect(m.get("a")).toEqual(["1.ts"]);
+    expect(m.get("b")).toEqual(["2.ts"]);
+    expect(m.get("c")).toEqual(["3.ts"]);
+  });
+
+  it("degrades a missing/short entry to NO file signal — never a neighbour's files", () => {
+    // A truncated batch (backend hiccup) must leave the tail with no evidence rather than shifting
+    // results up a slot, which would quarantine the wrong worker.
+    const m = zipWorktreeChanges(["a", "b", "c"], [["1.ts"]]);
+    expect(m.get("a")).toEqual(["1.ts"]);
+    expect(m.get("b")).toEqual([]);
+    expect(m.get("c")).toEqual([]);
+    // Every requested pane is still present — the warden iterates panes, not results.
+    expect([...m.keys()]).toEqual(["a", "b", "c"]);
+  });
+
+  it("an empty fleet zips to an empty map", () => {
+    expect(zipWorktreeChanges([], []).size).toBe(0);
   });
 });
