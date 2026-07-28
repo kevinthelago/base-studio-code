@@ -24,6 +24,7 @@ pub mod emit;
 pub mod general_node;
 pub mod harvest;
 pub mod kit;
+pub mod tests_harvest;
 
 use serde_json::Value;
 
