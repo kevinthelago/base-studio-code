@@ -41,7 +41,7 @@ import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import { parseNodeUrn, LIBRARY_SEGMENT } from "@/shared/lib/graph/nodeUrn";
 import { resolveComponentLibraryRefs } from "./lib/libraryComposition";
 import { layoutComposition, NODE_W, NODE_H } from "./lib/compositionLayout";
-import { analyzeGraphHealth, analyzeMotion, HEALTH_SEVERITY, HEALTH_BADGE, type HealthCategory } from "./lib/graphHealth";
+import { analyzeGraphHealth, analyzeMotion, isActionProp, HEALTH_SEVERITY, HEALTH_BADGE, type HealthCategory } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
@@ -70,7 +70,7 @@ type PreviewTheme = "dark" | "light";
 import type { KitThemeRecord } from "./lib/themes";
 import "./designStudio.css";
 
-type Tab = "overview" | "source" | "usage" | "history";
+type Tab = "overview" | "source" | "tests" | "usage" | "history";
 type Viewport = "sm" | "md" | "auto";
 
 // Cross-graph library band (#3116) — the fenced top band of algorithm nodes a kit's components `require`.
@@ -810,8 +810,14 @@ function Inspector(p: InspProps) {
           {/* detail tabs */}
           <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <Box className="ds-tabs">
-              {(["overview", "source", "usage", "history"] as Tab[]).map((t) => (
-                <Box as="button" key={t} role="tab" aria-selected={p.tab === t} className={`ds-tab${p.tab === t ? " on" : ""}`} onClick={() => p.setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</Box>
+              {(["overview", "source", "tests", "usage", "history"] as Tab[]).map((t) => (
+                <Box as="button" key={t} role="tab" aria-selected={p.tab === t} className={`ds-tab${p.tab === t ? " on" : ""}`} onClick={() => p.setTab(t)}>
+                  {t[0].toUpperCase() + t.slice(1)}
+                  {/* The COUNT rides the Tests label (#3884) — the one tab whose emptiness is a finding, so
+                      "how many" is worth seeing without opening it. Absent when there are none: a bare "0"
+                      reads as a broken badge, and the empty panel says it better. */}
+                  {t === "tests" && !!sel.tests?.length && <Text mono size={10} tone="dim" style={{ marginLeft: 4 }}>{sel.tests.length}</Text>}
+                </Box>
               ))}
               <Box style={{ flex: 1 }} />
               <Text mono size="xxs" tone="dim">{sel.name}.tsx</Text>
@@ -824,6 +830,7 @@ function Inspector(p: InspProps) {
                   <Code maxHeight={9999} wrap={false}>{sel.srcText}</Code>
                 </Box>
               )}
+              {p.tab === "tests" && <InspectorTests sel={sel} />}
               {p.tab === "usage" && (
                 <Box style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
                   <GuideCard tone="success" title="✓ When to use" items={sel.whenUse} glyph="→" />
@@ -898,6 +905,44 @@ function InspectorOverview({ sel, allVariants, activeVariant, composes, onSelect
  *  rev, writer, when, optional note, and the fields that changed. The Rust stamp boundary records these on
  *  every `bsc ui` write (`bsc ui log <id>` reads the same log), so a session can review a component's past
  *  before editing it. Legacy records (never written since #3568) fall back to the single provenance stamp. */
+/** The Tests tab body (#3884) — the node's `tests` manifest (#3878), each entry name + source.
+ *
+ *  The empty state is the DOCTOR'S verdict, not generic prose: an interactive node (one with an action
+ *  prop) with no tests is exactly what `no-tests` flags, and a display-only node is expected to have none.
+ *  It reads `isActionProp` from `graphHealth` rather than re-deriving "interactive", so the tab can never
+ *  tell the user something the check disagrees with. */
+function InspectorTests({ sel }: { sel: ComponentRecord }) {
+  const tests = sel.tests ?? [];
+  const interactive = sel.props.some(isActionProp);
+  return (
+    <Box style={{ padding: "14px 14px 16px" }} data-testid="ds-tests">
+      <Text mono size="xxs" tone="dim" as="div" style={{ letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 10 }}>
+        Tests{tests.length ? ` · ${tests.length}` : ""}
+      </Text>
+      {tests.length ? (
+        <Box style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {tests.map((t, i) => (
+            <Box key={`${t.name}-${i}`}>
+              <Text size={11.5} weight={600} as="div" style={{ marginBottom: 5 }}>{t.name}</Text>
+              <Code maxHeight={9999} wrap={false}>{t.src}</Code>
+            </Box>
+          ))}
+        </Box>
+      ) : (
+        <Box className="ds-inspbox">
+          <Box className="ds-insprow">
+            <Text size={11.5} tone={interactive ? "danger" : "dim"} as="div" style={{ lineHeight: 1.5 }}>
+              {interactive
+                ? `No tests. ${sel.name} is interactive — it exposes ${sel.props.filter(isActionProp).map((p) => p.name).join(", ")} — so bsc ui doctor reports it as no-tests.`
+                : "No tests. This component exposes no action props, so the no-tests check stays silent for it — pin a non-trivial render anyway if it has one."}
+            </Text>
+          </Box>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 function InspectorHistory({ sel }: { sel: ComponentRecord }) {
   // Stored oldest-first; the log reads newest-first (mirrors record::log_value).
   const entries: ChangeEntry[] = useMemo(() => [...(sel.history ?? [])].reverse(), [sel.history]);
