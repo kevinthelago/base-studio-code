@@ -43,7 +43,9 @@ pub(crate) fn plan_launch(
 /// (a loud red warning + nearest-existing-ancestor fallback when it's `cwd_missing`, nothing when
 /// `cwd` is empty), install the OSC-7 cwd + `__bsc_state` run/idle markers and the `claude()`
 /// wrapper (`claude_fn`), source the bsc-* helpers from `rc_bash` into the interactive shell,
-/// wire `PROMPT_COMMAND`, clear the screen, and append the optional `launch` command — EXCEPT when
+/// wire `PROMPT_COMMAND`, clear the screen AND its scrollback (`3J`, #3938 — `2J` alone pushes the erased
+/// rows into scrollback, leaving a screenful of blank lines above the prompt), and append the optional
+/// `launch` command — EXCEPT when
 /// the cwd is missing (#2438): the launch is suppressed, since it would start the agent in the
 /// fallback ancestor (for a fleet worktree that's the parent of EVERY worktree) with no role gate
 /// (`ensure_session_settings` wrote into the missing configured path), and the agent's TUI would
@@ -83,13 +85,22 @@ pub(super) fn build_bash_init_line(
     // covers non-interactive subshells (the agent's Bash tool), so a human typing
     // `bsc-checkpoint` in the console pane would otherwise not have it.
     let helpers_src = format!("source \"{}\" 2>/dev/null; ", rc_bash);
+    // #3937: an inert warning shell must NOT report its cwd. `__bsc_osc7` echoes `$(pwd)`, which the
+    // frontend writes straight back into `paneCwds` — so a session sitting in the fallback ancestor
+    // OVERWRITES the pane's configured cwd with that ancestor. For a fleet worker that ancestor is
+    // `worktrees/<key>`, the parent of EVERY worktree: the stored cwd then both exists and is wrong, so
+    // `cwd_missing` reads false on every later launch, the warning vanishes, and the agent really does
+    // start in the app's own data directory with no repo and no role gate. Self-corrupting and
+    // unrecoverable, since nothing re-derives the path afterwards. Withholding the report keeps the
+    // configured cwd intact, so the pane fixes itself the moment its worktree is back.
+    let osc7 = if cwd_missing { "" } else { "__bsc_osc7; " };
     format!(
         "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
          __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
          {claude_fn}\
          {helpers_src}\
-         PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
-         __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
+         PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}{osc7}__bsc_state idle\"; \
+         {osc7}__bsc_state idle; printf '\\033[2J\\033[3J\\033[H'{init_suffix}\n"
     )
 }
 
@@ -111,7 +122,7 @@ mod tests {
         assert!(line.contains("claude() { :; }; "), "claude() wrapper injected");
         assert!(line.contains("source \"/home/u/.base-studio-code/bsc-env.sh\" 2>/dev/null; "), "helpers sourced");
         assert!(line.contains("__bsc_osc7; __bsc_state idle"), "OSC7 + state markers wired");
-        assert!(line.ends_with("printf '\\033[2J\\033[H'; claude --continue\n"), "clear then launch suffix: {line}");
+        assert!(line.ends_with("printf '\\033[2J\\033[3J\\033[H'; claude --continue\n"), "clear then launch suffix: {line}");
     }
 
     #[test]
@@ -119,7 +130,7 @@ mod tests {
         let line = build_bash_init_line("", false, "", None, "claude() { :; }; ", "/rc.sh");
         assert!(!line.contains("cd \""), "no cd when cwd is empty: {line}");
         // No launch ⇒ the line ends right after the screen clear, no `;` suffix.
-        assert!(line.ends_with("printf '\\033[2J\\033[H'\n"), "no launch suffix: {line}");
+        assert!(line.ends_with("printf '\\033[2J\\033[3J\\033[H'\n"), "no launch suffix: {line}");
     }
 
     #[test]
@@ -136,8 +147,8 @@ mod tests {
         assert!(line.contains("the agent was NOT started"), "warning states the launch suppression: {line}");
         assert!(!line.contains("claude --continue"), "launch suppressed when the cwd is missing: {line}");
         // The warning is the POST-clear suffix — printing it earlier gets wiped by the final
-        // `printf '\033[2J\033[H'` screen clear (#2438).
-        let clear = line.find("printf '\\033[2J\\033[H'").expect("clears the screen");
+        // `printf '\033[2J\033[3J\033[H'` screen clear (#2438).
+        let clear = line.find("printf '\\033[2J\\033[3J\\033[H'").expect("clears the screen");
         let warn = line.find("WARNING").expect("warns");
         assert!(warn > clear, "warning must print after the screen clear: {line}");
     }
@@ -155,7 +166,7 @@ mod tests {
              CLAUDE_FN;\
              source \"/rc\" 2>/dev/null; \
              PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND; }__bsc_osc7; __bsc_state idle\"; \
-             __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'; claude\n"
+             __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[3J\\033[H'; claude\n"
         );
     }
 
@@ -195,5 +206,38 @@ mod tests {
     fn plan_launch_no_prompt_uses_init_then_bare_shell() {
         assert_eq!(plan_launch(None, Some(INIT), true, false, false), LaunchPlan::Init(INIT.to_string()));
         assert_eq!(plan_launch(Some(""), None, false, false, true), LaunchPlan::None);
+    }
+
+    /// #3937: the fallback shell must NOT report its cwd. `__bsc_osc7` echoes `$(pwd)`, the frontend
+    /// writes that straight back into `paneCwds`, and for a fleet worker the fallback ancestor is
+    /// `worktrees/<key>` — the parent of every worktree. Reporting it overwrites the pane's real,
+    /// merely-missing path with one that EXISTS and is wrong, after which `cwd_missing` reads false
+    /// forever and the agent genuinely launches in the app's data dir with no repo and no role gate.
+    #[test]
+    fn a_missing_cwd_shell_never_reports_its_fallback_dir() {
+        let line = build_bash_init_line("/c/gone/networkmonitor--auth", true, "/c/gone", Some(INIT), "", "/rc");
+        assert!(!line.contains("__bsc_osc7; __bsc_state idle"), "no osc7 report when the cwd is missing: {line}");
+        assert!(line.contains("PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND; }__bsc_state idle\""),
+            "PROMPT_COMMAND keeps the state marker but drops the cwd report: {line}");
+        // The helper is still DEFINED (harmless, and a human can call it) — only the automatic
+        // reporting is withheld.
+        assert!(line.contains("__bsc_osc7() {"), "the function is still defined: {line}");
+    }
+
+    /// The healthy path is unchanged: a real cwd still reports, or the app loses cwd tracking entirely.
+    #[test]
+    fn a_present_cwd_still_reports_over_osc7() {
+        let line = build_bash_init_line("/c/wt/networkmonitor--auth", false, "/c/wt/networkmonitor--auth", Some(INIT), "", "/rc");
+        assert!(line.contains("}__bsc_osc7; __bsc_state idle\""), "PROMPT_COMMAND reports the cwd: {line}");
+        assert!(line.contains("__bsc_osc7; __bsc_state idle; printf"), "and reports once up front: {line}");
+    }
+
+    /// #3938: `2J` alone pushes the erased rows into xterm.js's SCROLLBACK, so every session opened
+    /// with a screenful of blank lines above the prompt and the first real line scrolled far up.
+    /// `3J` drops the scrollback as well.
+    #[test]
+    fn the_screen_clear_also_clears_scrollback() {
+        let line = build_bash_init_line("/c/wt/x", false, "/c/wt/x", Some(INIT), "", "/rc");
+        assert!(line.contains("printf '\\033[2J\\033[3J\\033[H'"), "clears screen AND scrollback: {line}");
     }
 }

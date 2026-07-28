@@ -12,12 +12,14 @@
 
 import { useAppStore } from "@/store";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { log } from "@/shared/lib/core/log";
 import { bscJson } from "@/shared/lib/core/bsc";
 import { parseFleetFile, withDerivedStreamIssues, type FleetPlan } from "@/features/planner/fleet/planFleet";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
 import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { buildWorkerScope } from "@/features/planner/fleet/workerScope";
+import { isAgentWorktreeCwd } from "@/shared/lib/core/projectPaths";
 import { parseDependencyManifest, depsForRepo } from "@/features/planner/issues/dependencies";
 import { partitionByDeps, heldReason, sessionDoneStreams, type LandedEvidence } from "@/shared/lib/fleet/streamGate";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
@@ -249,8 +251,15 @@ export async function resumeProjectFleet(opts: {
     const paneId = paneOf(st.id);
     if (store.quarantinedPanes[paneId]) return;          // quarantine is surfaced, never rebuilt
     const cwd = store.paneCwds[paneId];
-    if (cwd && await safeInvoke<boolean>("dir_exists", { path: cwd }, true)) {
-      worktreePaths[st.id] = cwd;                        // still there — reuse it verbatim
+    // #3937: reuse a persisted cwd ONLY when it still looks like this agent's own worktree. "The
+    // directory exists" is not enough: while a worktree was missing the pane's shell sat in the
+    // fallback ancestor (`worktrees/<key>`) and OSC 7 reported that ancestor back into `paneCwds`,
+    // so the stored path became one that both exists and is wrong — and an existence check passes
+    // for it forever. The shape check re-derives instead, which repairs an already-poisoned pane.
+    if (cwd && st.repo && !isAgentWorktreeCwd(cwd, st.repo, st.id)) {
+      log.warn(`resume: ${paneId} had a cwd outside its own worktree (${cwd}) — re-deriving (#3937)`);
+    } else if (cwd && await safeInvoke<boolean>("dir_exists", { path: cwd }, true)) {
+      worktreePaths[st.id] = cwd;                        // still there and still ours — reuse verbatim
       return;
     }
     if (!st.repo) { unrecoverable.add(paneId); return; } // no repo ⇒ no worktree is possible

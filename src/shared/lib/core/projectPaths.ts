@@ -180,3 +180,21 @@ export function deriveTabIdentity(
   }
   return null;
 }
+
+/**
+ * Does `cwd` look like the worktree that BELONGS to this agent — i.e. does its last path segment equal
+ * `<repoShort>--<agentSlug>` (#3937)?
+ *
+ * A fleet worker's cwd is fully derivable from its identity, so a persisted value that does not match
+ * is not a cwd worth reusing — it is a corrupted one. That is not hypothetical: while a worktree was
+ * missing, the pane's shell sat in the fallback ancestor (`worktrees/<key>`) and OSC 7 reported that
+ * ancestor back into `paneCwds`, overwriting the real path with one that both exists and is wrong. A
+ * plain "does the directory exist?" check passes for it forever; this shape check does not.
+ *
+ * Pure, separator-agnostic, and tolerant of a trailing separator.
+ */
+export function isAgentWorktreeCwd(cwd: string, fullName: string, agentId: string): boolean {
+  if (!cwd) return false;
+  const tail = cwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
+  return tail === `${repoShortName(fullName)}--${worktreeSlug(agentId)}`;
+}
