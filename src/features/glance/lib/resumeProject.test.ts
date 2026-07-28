@@ -1,7 +1,7 @@
 // planResumeLaunch (#glance-resume) — the progress-gated stream partition a Glance project-resume runs.
 // Pure, so it's exhaustively unit-testable without any Tauri/store IO.
 import { describe, it, expect } from "vitest";
-import { planResumeLaunch } from "./resumeProject";
+import { planResumeLaunch, partitionResumable } from "./resumeProject";
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
 
 function stream(over: Partial<AgentStream> = {}): AgentStream {
@@ -51,5 +51,58 @@ describe("planResumeLaunch (#glance-resume)", () => {
     expect(launchPlan.streams).toHaveLength(0);
     expect(noRepo).toEqual(["api"]);
     expect(launchPlan.director.enabled).toBe(true);
+  });
+});
+
+describe("partitionResumable (#3916) — resume what can run, SURFACE what can't", () => {
+  const none = { quarantined: {}, missingWorktreePanes: new Set<string>() };
+  const streams = [{ id: "api" }, { id: "ui" }, { id: "db" }];
+
+  it("resumes every stream when nothing is blocked", () => {
+    const { resumable, blocked } = partitionResumable(streams, "proj", none);
+    expect(resumable.map((s) => s.id)).toEqual(["api", "ui", "db"]);
+    expect(blocked).toEqual([]);
+  });
+
+  it("BLOCKS a quarantined session and carries the warden's summary — never silently resumes it", () => {
+    const { resumable, blocked } = partitionResumable(streams, "proj", {
+      ...none,
+      quarantined: { "proj:ui": { summary: "wrote outside its lane" } },
+    });
+    expect(resumable.map((s) => s.id)).toEqual(["api", "db"]);
+    expect(blocked).toEqual([{ streamId: "ui", paneId: "proj:ui", reason: "wrote outside its lane" }]);
+  });
+
+  it("falls back to a readable reason when the quarantine has no summary", () => {
+    const { blocked } = partitionResumable([{ id: "ui" }], "proj", { ...none, quarantined: { "proj:ui": {} } });
+    expect(blocked[0].reason).toBe("quarantined by the warden");
+  });
+
+  it("BLOCKS a stream whose worktree is gone — #3614: never spawn into a missing cwd", () => {
+    const { resumable, blocked } = partitionResumable(streams, "proj", {
+      ...none,
+      missingWorktreePanes: new Set(["proj:db"]),
+    });
+    expect(resumable.map((s) => s.id)).toEqual(["api", "ui"]);
+    expect(blocked[0]).toMatchObject({ streamId: "db", paneId: "proj:db" });
+    expect(blocked[0].reason).toMatch(/worktree/i);
+  });
+
+  it("quarantine outranks a missing worktree — the warden's reason is the one to act on", () => {
+    const { blocked } = partitionResumable([{ id: "ui" }], "proj", {
+      quarantined: { "proj:ui": { summary: "denied command" } },
+      missingWorktreePanes: new Set(["proj:ui"]),
+    });
+    expect(blocked).toHaveLength(1);
+    expect(blocked[0].reason).toBe("denied command");
+  });
+
+  it("an all-blocked fleet resumes nothing (the caller reports, it does not launch)", () => {
+    const { resumable, blocked } = partitionResumable(streams, "proj", {
+      quarantined: { "proj:api": {}, "proj:ui": {}, "proj:db": {} },
+      missingWorktreePanes: new Set(),
+    });
+    expect(resumable).toEqual([]);
+    expect(blocked).toHaveLength(3);
   });
 });
