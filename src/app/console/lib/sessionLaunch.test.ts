@@ -502,7 +502,7 @@ describe("resolveEffectiveInitCmd", () => {
 
   it("resumes a crashed claude pane (restore requested), but never a manual console", () => {
     const positional = mkStore({ paneWasClaude: { t0p0: true }, restoreRequested: { t0p0: true } });
-    expect(resolveEffectiveInitCmd(positional, "t0p0", true, undefined, undefined, provider)).toBe("claude --continue");
+    expect(resolveEffectiveInitCmd(positional, "t0p0", true, undefined, undefined, provider)).toBe("claude --continue 2>/dev/null || claude");
 
     // A manual pane (man:…) suppresses both auto-resume and restore (#1176), even after an unclean shutdown.
     const manual = mkStore({ paneWasClaude: { "man:tab:p0": true }, autoResumeClaude: true, uncleanShutdown: true, restoreRequested: { "man:tab:p0": true } });
@@ -511,7 +511,7 @@ describe("resolveEffectiveInitCmd", () => {
 
   it("silently auto-resumes a non-manual claude pane after an unclean shutdown when opted in", () => {
     const s = mkStore({ paneWasClaude: { t0p1: true }, autoResumeClaude: true, uncleanShutdown: true });
-    expect(resolveEffectiveInitCmd(s, "t0p1", true, undefined, undefined, provider)).toBe("claude --continue");
+    expect(resolveEffectiveInitCmd(s, "t0p1", true, undefined, undefined, provider)).toBe("claude --continue 2>/dev/null || claude");
   });
 });
 

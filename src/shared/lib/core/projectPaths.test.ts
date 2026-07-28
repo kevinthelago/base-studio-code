@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  isAgentWorktreeCwd,
+  agentWorktreeCwd,
   sanitizeProjectKey,
   projectSlug,
   repoShortName,
@@ -165,5 +167,45 @@ describe("findByTitle (#380/#444 — one title matcher)", () => {
   it("returns the first match when several share a title", () => {
     const dups = [{ id: "a", title: "Dup" }, { id: "b", title: "dup" }];
     expect(findByTitle(dups, "DUP", p => p.title)?.id).toBe("a");
+  });
+});
+
+describe("isAgentWorktreeCwd (#3937)", () => {
+  const REPO = "kevinthelago/networkmonitor";
+
+  it("accepts the agent's own worktree", () => {
+    expect(isAgentWorktreeCwd("C:\\wt\\network-monitor\\networkmonitor--auth", REPO, "auth")).toBe(true);
+  });
+
+  it("accepts it with either separator and a trailing slash", () => {
+    expect(isAgentWorktreeCwd("/c/wt/network-monitor/networkmonitor--auth/", REPO, "auth")).toBe(true);
+  });
+
+  it("REJECTS the worktrees container — the poisoned value OSC 7 wrote back", () => {
+    // The whole point: this directory EXISTS, so `dir_exists` passes for it forever and the pane
+    // relaunches into the app's data dir on every resume. Only a shape check catches it.
+    expect(isAgentWorktreeCwd("C:/Users/k/.base-studio-code/worktrees/network-monitor", REPO, "auth")).toBe(false);
+  });
+
+  it("rejects ANOTHER agent's worktree", () => {
+    expect(isAgentWorktreeCwd("/c/wt/network-monitor/networkmonitor--other", REPO, "auth")).toBe(false);
+  });
+
+  it("rejects a different repo's worktree for the same agent id", () => {
+    expect(isAgentWorktreeCwd("/c/wt/p/otherrepo--auth", REPO, "auth")).toBe(false);
+  });
+
+  it("rejects an empty cwd", () => {
+    expect(isAgentWorktreeCwd("", REPO, "auth")).toBe(false);
+  });
+
+  it("agrees with what agentWorktreeCwd builds — the two must not drift", () => {
+    const built = agentWorktreeCwd("C:\\base", "network-monitor", REPO, "auth");
+    expect(isAgentWorktreeCwd(built, REPO, "auth")).toBe(true);
+  });
+
+  it("handles an agent id needing slug sanitisation", () => {
+    const built = agentWorktreeCwd("/base", "p", REPO, "feat/thing x");
+    expect(isAgentWorktreeCwd(built, REPO, "feat/thing x")).toBe(true);
   });
 });
