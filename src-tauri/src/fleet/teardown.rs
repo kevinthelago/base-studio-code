@@ -204,7 +204,7 @@ pub(crate) fn worktree_is_disposable(clone: &Path, wt: &Path) -> bool {
 ///
 /// Best-effort, pure over `base_dir` for testability; never removes a dirty worktree. Returns the
 /// number of worktree directories reclaimed.
-pub(crate) fn gc_worktrees_impl(base_dir: &Path) -> Vec<String> {
+pub(crate) fn gc_worktrees_impl(base_dir: &Path, has_fleet: &dyn Fn(&str) -> bool) -> Vec<String> {
     let root = base_dir.join("worktrees");
     let Ok(rd) = std::fs::read_dir(&root) else { return Vec::new() };
     let mut removed: Vec<String> = Vec::new();
@@ -214,6 +214,17 @@ pub(crate) fn gc_worktrees_impl(base_dir: &Path) -> Vec<String> {
         }
         let key = entry.file_name().to_string_lossy().into_owned();
         let hub_gone = !base_dir.join("projects").join(&key).exists();
+        // #3932: a project that still has a PLANNED FLEET is resumable, so its worktrees are working
+        // state, not garbage — skip the merged+clean reclaim for it. Without this the GC and the
+        // resume rebuilder fight: `ensure_worktree` re-adds a worktree on its existing branch, which
+        // is by definition CLEAN (nothing has run in it yet) and MERGED (that work landed long ago),
+        // so `worktree_is_disposable` immediately reclaims it again. Observed live: 7 worktrees
+        // rebuilt at 20:47 were down to 2 by 21:15, with 118 "configured cwd does not exist" errors
+        // across four resume attempts. The ORPHAN arm still applies — a project whose hub is gone has
+        // no fleet to resume, and that reclaim is what keeps abandoned projects from accumulating.
+        if !hub_gone && has_fleet(&key) {
+            continue;
+        }
         let Ok(wts) = std::fs::read_dir(entry.path()) else { continue };
         for w in wts.flatten() {
             let wt = w.path();
@@ -251,7 +262,13 @@ pub(crate) fn gc_worktrees_impl(base_dir: &Path) -> Vec<String> {
 /// Boot entry point: GC stale worktrees against the real base dir (#worktree-disk). Off the
 /// synchronous boot path.
 pub(crate) fn gc_worktrees_on_boot() -> Vec<String> {
-    gc_worktrees_impl(&crate::bsc_base_dir())
+    // A project with a fleet in plan.db is resumable — its worktrees are spared (#3932). `fleet_for`
+    // reads without creating a db, so probing a project that never had one is harmless.
+    gc_worktrees_impl(&crate::bsc_base_dir(), &|key| {
+        crate::project::plan_db::fleet_for(key)
+            .and_then(|f| f.get("streams").and_then(|s| s.as_array()).map(|a| !a.is_empty()))
+            .unwrap_or(false)
+    })
 }
 
 // ── Tauri commands ──────────────────────────────────────────────────────────────
@@ -373,7 +390,9 @@ mod tests {
         assert!(no_window(&mut oc).status().unwrap().success());
         fs::remove_dir_all(base.join("projects").join("gone")).unwrap(); // hub gone
 
-        let removed = gc_worktrees_impl(&base);
+        // No project has a planned fleet here, so the #3932 guard is inert and the
+        // original merged+clean / orphan behaviour must hold exactly as before.
+        let removed = gc_worktrees_impl(&base, &|_| false);
 
         assert!(!merged.exists(), "merged+clean worktree reclaimed");
         assert!(ahead.exists(), "unmerged worktree with work kept");
@@ -384,6 +403,32 @@ mod tests {
         // caller/boot reconciliation can see exactly which fleet workers were dropped.
         assert!(removed.iter().any(|r| r.as_str() == "gone/api--x"), "orphan identity in the reclaimed set: {removed:?}");
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn gc_spares_a_worktree_whose_project_still_has_a_fleet() {
+        // #3932: a rebuilt worktree is CLEAN (nothing has run in it) and MERGED (its branch landed
+        // long ago), so `worktree_is_disposable` says "reclaim" — and the resume rebuilder immediately
+        // re-adds it. That loop cost 118 "configured cwd does not exist" errors across four resume
+        // attempts, with 7 rebuilt worktrees down to 2 within half an hour. A project that still has a
+        // planned fleet is RESUMABLE, so its worktrees are working state and must survive the GC.
+        let base = unique_dir("bsc-teardown", "gc-fleet");
+        let clone = base.join("projects").join("proj").join("web");
+        init_clone(&clone);
+        let wt = base.join("worktrees").join("proj").join("web--merged");
+        let mut c = std::process::Command::new("git");
+        c.args(["-C", &clone.to_string_lossy(), "worktree", "add", "-b", "merged", &wt.to_string_lossy()]);
+        assert!(no_window(&mut c).status().unwrap().success());
+
+        // Same worktree, same git state — only the fleet predicate differs.
+        let removed = gc_worktrees_impl(&base, &|key| key == "proj");
+        assert!(wt.exists(), "a fleeted project's worktree is spared even when merged+clean");
+        assert!(removed.is_empty(), "nothing reclaimed for a resumable project (got {removed:?})");
+
+        // Without a fleet the same worktree IS disposable — the guard narrows the GC, never disables it.
+        let removed2 = gc_worktrees_impl(&base, &|_| false);
+        assert!(!wt.exists(), "no fleet ⇒ the merged+clean reclaim still applies");
+        assert_eq!(removed2.len(), 1, "exactly the one worktree (got {removed2:?})");
     }
 
     /// detach_node_modules_junction removes ONLY the junction link, never the shared target's
