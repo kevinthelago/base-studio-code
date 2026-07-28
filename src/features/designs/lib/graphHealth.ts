@@ -76,8 +76,12 @@ function isErrorProp(p: PropSpec): boolean {
 
 /** Is `p` an ACTION prop — an event/callback the component fires (`onClick`/`onChange`/…: name starts
  *  with `on` + a function type)? Its presence marks the component INTERACTIVE, so `no-analytics` (#3810)
- *  expects an events manifest. Mirrors `is_action_prop` (graph_health.rs). */
-function isActionProp(p: PropSpec): boolean {
+ *  expects an events manifest and `no-tests` (#3878) expects tests. Mirrors `is_action_prop`
+ *  (graph_health.rs).
+ *
+ *  Exported (#3884) so the inspector's Tests tab reads "interactive ⇒ untested is a gap" from the SAME
+ *  predicate the finding uses. A second copy in the UI would drift from the check it claims to explain. */
+export function isActionProp(p: PropSpec): boolean {
   const t = (p.type || "").toLowerCase();
   return p.name.length > 2 && p.name.toLowerCase().startsWith("on") && t.includes("=>");
 }

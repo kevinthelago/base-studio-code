@@ -44,6 +44,13 @@ export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
     rules: c.rules,
     shapes: c.shapes,
     animations: c.animations, // #2942 — MOTION binding (the kit-animation names it plays); rides verbatim
+    // #3810 / #3878 — the node's ANALYTICS events and its TESTS, the other two manifests it carries as
+    // data. They ride verbatim like `animations`: this projection is an ALLOWLIST, so a field missing here
+    // is dropped on every hydrate, and the seed round-trip below (`seed === load(push(seed))`) would break
+    // for any record carrying one. Both were declared as contracts before anything populated them, so the
+    // gap was invisible until the inspector's Tests tab (#3884) went to read them.
+    analytics: c.analytics,
+    tests: c.tests,
     spec: c.spec, // #3569 — a page/layout node's renderable GeneralNode skeleton; rides verbatim so the host can render from the store
     seedHash: c.seedHash, // #2483 — must ride the allowlist or the refresh baseline is lost on write-through
     // #3164/#3568 — provenance + change history, surfaced by the inspector History tab. SERVER-MANAGED:
