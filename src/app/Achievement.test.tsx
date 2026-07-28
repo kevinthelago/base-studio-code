@@ -5,7 +5,10 @@ import { Achievements } from "./Achievement";
 
 // The generic, registry-driven achievement toast. The super-user achievement (trigger
 // `liveAgents > 10`) stands in for "any achievement" here.
-const ALT = /Claude Super User achievement unlocked/i;
+// #3939: the toast is a real card now, not an <img> of a pre-rendered banner — so it is found by its
+// TITLE TEXT rather than alt text. That is the point of the change: the wording comes from the
+// registry, so a new achievement is one JSON file rather than a hand-rendered bitmap.
+const TITLE = /Claude Super User/i;
 
 describe("Achievements", () => {
   beforeEach(() => {
@@ -17,7 +20,7 @@ describe("Achievements", () => {
 
   it("stays hidden until an achievement's trigger fires", () => {
     render(<Achievements />);
-    expect(screen.queryByAltText(ALT)).toBeNull();
+    expect(screen.queryByText(TITLE)).toBeNull();
   });
 
   it("swipes in and records the unlock when a trigger crosses", async () => {
@@ -26,7 +29,7 @@ describe("Achievements", () => {
     // await the toast via findBy rather than wrapping the store write in act() (which is flaky here).
     useAppStore.setState({ liveAgents: 11 });
     // The toast image appears …
-    expect(await screen.findByAltText(ALT)).toBeTruthy();
+    expect(await screen.findByText(TITLE)).toBeTruthy();
     // … and the unlock is persisted (once-ever) in the store.
     expect(typeof useAppStore.getState().achievements["super-user"]).toBe("number");
   });
@@ -37,6 +40,6 @@ describe("Achievements", () => {
     render(<Achievements />);
     useAppStore.setState({ liveAgents: 11 });
     // unlockAchievement is idempotent → returns false → no toast.
-    expect(screen.queryByAltText(ALT)).toBeNull();
+    expect(screen.queryByText(TITLE)).toBeNull();
   });
 });
