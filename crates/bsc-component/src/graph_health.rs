@@ -3676,8 +3676,14 @@ mod tests {
     #[test]
     fn render_error_findings_distinguishes_a_build_failure_from_a_render_throw() {
         let comps = vec![
-            json!({ "id": "workspaceshellpage", "name": "WorkspaceShellPage", "kitId": "harvested" }),
-            json!({ "id": "bsc-dropdown", "name": "BscDropdown", "kitId": "harvested" }),
+            // Both carry a NON-EMPTY srcText on purpose: #3737 drops a persisted preview-error for a
+            // component whose current srcText is empty (an empty spec can't have a live render error), so
+            // a spec-only fixture here would be filtered as stale and this test would never reach the
+            // build-vs-render prose it exists to pin.
+            json!({ "id": "workspaceshellpage", "name": "WorkspaceShellPage", "kitId": "harvested",
+                    "srcText": "export const WorkspaceShellPage = () => null;" }),
+            json!({ "id": "bsc-dropdown", "name": "BscDropdown", "kitId": "harvested",
+                    "srcText": "export const BscDropdown = () => null;" }),
         ];
         let errors = vec![
             // A `build:`-prefixed message (#3549) — the scan records esbuild failures too now.
