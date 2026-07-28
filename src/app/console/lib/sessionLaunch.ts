@@ -384,8 +384,11 @@ export function resolveEffectiveInitCmd(
       startupPrompt,
       // #3928: the fleet/triage resume flag — a manual console never sets it, so #1041's
       // "a clean quit does NOT auto-resume" stays intact for those.
-      continueSession: manual ? false : !!s.paneContinue[paneId],
-      paneWasClaude: !!s.paneWasClaude[paneId],
+      // #3934: optional-chained — this sits directly on the pane-launch path, where a missing map
+      // does not degrade the launch, it ABORTS it. The real store always populates both; a caller
+      // holding a partial slice used to throw here before the launch command was ever resolved.
+      continueSession: manual ? false : !!s.paneContinue?.[paneId],
+      paneWasClaude: !!s.paneWasClaude?.[paneId],
       autoResumeClaude: manual ? false : s.autoResumeClaude,
       // Crash recovery (#1041): resume only after an unclean shutdown (silent, if opted in) or a
       // banner "restore" click — never on a clean restart, and never for a manual console.
