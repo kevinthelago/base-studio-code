@@ -245,6 +245,22 @@ The report names the theme's `group` — its design-group binding (#2749) — so
 which group's contract it resolved against. Compact JSON by default; --pretty indents.",
     },
     CmdDoc {
+        name: "tests",
+        summary: "the per-node TEST manifest — harvest each component's colocated test file onto its node (#3907)",
+        usage: "USAGE:
+  bsc ui tests harvest [<root>] [--kit K] [--pretty]
+
+Pairs each record with its COLOCATED test (`<src-without-ext>.test.tsx`, else `.test.ts`) under <root>
+(default `.`) and prints the records that HAVE one, with `tests` populated. READ-ONLY — pipe into `set`:
+
+  bsc ui tests harvest --kit base-studio-code | bsc ui set --by tests-harvest
+
+MIRROR, not source: the files stay authoritative; this copies them onto the node so the graph is
+queryable and `bsc ui doctor`'s `no-tests` is honest. ONE ENTRY PER FILE, verbatim — a test's meaning
+lives partly outside its `it()` blocks (imports, beforeEach, mocks), so a per-test split would drop it.
+A record with no colocated test is OMITTED, never given an empty `tests`.",
+    },
+    CmdDoc {
         name: "harvest",
         summary: "scan a repo and surface reusable COMPONENT candidates for the library (#3471)",
         usage: "USAGE:
@@ -375,6 +391,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("resolve") => cmd_resolve(&args[1..]),
         Some("emit") => cmd_emit(&args[1..], prog),
         Some("harvest") => cmd_harvest(&args[1..]),
+        Some("tests") => crate::tests_harvest::run(&args[1..], prog),
         Some("env") => cmd_env(&args[1..]),
         Some("changes") => cmd_changes(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
@@ -2935,7 +2952,8 @@ mod tests {
     #[test]
     fn harvest_is_in_the_help_catalog() {
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "harvest");
-        for needle in ["<repo-dir>", "--kit", "--worthy-only", "buildable", "composes", "CLOSURE"] {
+        // `<repo-dir-or-file>` since #3722 made a single FILE a valid target; the needle was never updated.
+        for needle in ["<repo-dir-or-file>", "--kit", "--worthy-only", "buildable", "composes", "CLOSURE"] {
             assert!(d.contains(needle), "harvest help mentions {needle}");
         }
     }
