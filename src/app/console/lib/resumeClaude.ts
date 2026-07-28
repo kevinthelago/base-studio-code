@@ -19,18 +19,29 @@
 export function resolveInitCmd(args: {
   explicit: string | undefined;
   startupPrompt: string | undefined;
+  /** The pane was launched by a fleet/triage RESUME (`paneContinue`, #3928) — it should pick its
+   *  conversation back up. Distinct from the crash-recovery flags below: this is an explicit,
+   *  user-initiated resume of a session we know existed, not a guess after an unclean shutdown. */
+  continueSession: boolean;
   paneWasClaude: boolean;
   autoResumeClaude: boolean;
   wasUncleanShutdown: boolean;
   restoreRequested: boolean;
 }): string {
-  const { explicit, startupPrompt, paneWasClaude, autoResumeClaude, wasUncleanShutdown, restoreRequested } = args;
+  const { explicit, startupPrompt, continueSession, paneWasClaude, autoResumeClaude, wasUncleanShutdown, restoreRequested } = args;
   // Explicit overrides win unconditionally — caller knows best.
   if (explicit && explicit.length > 0) return explicit;
   // Triage / fleet launches claude via the prompt-baked path; layering an
   // init_cmd on top would spawn a second claude before the first finishes
   // initialising.
   if (startupPrompt !== undefined) return "";
+  // #3928: an explicit fleet/triage RESUME. Without this the flag died in the gap between layers —
+  // `fleetStartProject` set `paneContinue`, `TerminalView` forwarded it as `continueSession`, and
+  // `plan_launch` then discarded it, because it only reads that flag on the PROMPT arm. A resume
+  // carries no startup prompt (that's a kickoff), so the plan fell through to `None` and the pane
+  // came up as a bare bash shell: `has_history=true · resumed=false`. Every fleet relaunch was
+  // silently starting cold. Placed AFTER the startupPrompt branch so a kickoff still wins.
+  if (continueSession && paneWasClaude) return "claude --continue";
   // The resume path — crash recovery only (#1041): a clean quit does NOT auto-resume.
   if (paneWasClaude && (restoreRequested || (autoResumeClaude && wasUncleanShutdown))) {
     return "claude --continue";

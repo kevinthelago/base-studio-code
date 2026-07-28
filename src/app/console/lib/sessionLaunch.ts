@@ -382,6 +382,9 @@ export function resolveEffectiveInitCmd(
     return resolveInitCmd({
       explicit: initCmd,
       startupPrompt,
+      // #3928: the fleet/triage resume flag — a manual console never sets it, so #1041's
+      // "a clean quit does NOT auto-resume" stays intact for those.
+      continueSession: manual ? false : !!s.paneContinue[paneId],
       paneWasClaude: !!s.paneWasClaude[paneId],
       autoResumeClaude: manual ? false : s.autoResumeClaude,
       // Crash recovery (#1041): resume only after an unclean shutdown (silent, if opted in) or a
