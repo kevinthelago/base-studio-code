@@ -173,6 +173,25 @@ function importSpecifiers(source: string): string[] {
   return [...specs];
 }
 
+/** The identifiers an `import` statement BINDS in `source` — the names inside `{ … }`, a default binding,
+ *  and a `* as X` namespace. Used by `reimplemented-component` (#3892) to skip a node that legitimately
+ *  imports the name it also mentions, so only a genuine local RE-DECLARATION is flagged.
+ *
+ *  Deliberately loose: it scans each `import … from` header and takes every identifier that is not a
+ *  keyword. Over-collecting only ever SUPPRESSES a finding, the safe direction for a check whose false
+ *  positives are worse than its misses. Rust twin: `imported_identifiers`. */
+function importedIdentifiers(source: string): Set<string> {
+  const out = new Set<string>();
+  const headerRe = /^[ \t]*import\b([\s\S]*?)\bfrom\s*["']/gm;
+  let m: RegExpExecArray | null;
+  while ((m = headerRe.exec(source))) {
+    for (const id of m[1].match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? []) {
+      if (id !== "type" && id !== "as") out.add(id);
+    }
+  }
+  return out;
+}
+
 /** Is `spec` an ABSOLUTE URL — a `scheme:` prefix (the first `:` sits before any `/`, e.g. `https:`,
  *  `http:`, `data:`)? Such a specifier resolves DIRECTLY in the preview iframe (the import-map's own
  *  values ARE esm.sh URLs), so it needs no import-map entry and is never an unresolvable bare import
@@ -225,7 +244,7 @@ export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
   | "stubbed-import" // #3696 — a bare npm import rendered via a local shim/stub (sev 1, not an error)
   | "hardcoded-color" // #3704 — hardcodes color literals + no theme token (not wired to the theme, sev 1)
-  | "reimplementation" | "orphan" | "unwired-prop" | "phantom-compose"
+  | "reimplementation" | "reimplemented-component" | "orphan" | "unwired-prop" | "phantom-compose"
   // MOTION checks (#3163, `bsc ui doctor --motion` / `analyzeMotion`) — mechanical faults an author used to
   // hand-diagnose: a dead animation-selector hook, a stroke-dash draw with no pathLength, a CSS-transform
   // keyframe fighting an SVG transform ATTRIBUTE, and a cross-component keyframe-name collision.
@@ -261,6 +280,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "stubbed-import": 1,
   "hardcoded-color": 1,
   reimplementation: 3,
+  "reimplemented-component": 3,
   orphan: 2,
   "unwired-prop": 2,
   "phantom-compose": 2,
@@ -299,6 +319,7 @@ export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string
   "stubbed-import": { glyph: "◍", label: "imports a non-curated package — renders via a local shim/stub (approximate, not the real package)" },
   "hardcoded-color": { glyph: "▦", label: "hardcodes colors + no theme token — won't follow the active theme; wire it to var(--…) tokens" },
   reimplementation: { glyph: "♻", label: "reimplements a library node — compose it via @bsc/… instead of re-coding it" },
+  "reimplemented-component": { glyph: "⧉", label: "re-declares a component that already exists — the preview renders the local stub, not the real node" },
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
   "phantom-compose": { glyph: "⇢", label: "phantom composes — declares a composition its source never renders (a false graph edge)" },
@@ -549,6 +570,31 @@ export function analyzeGraphHealth(
     const one = recoded.length === 1;
     findings.push({ category: "reimplementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
       why: `${c.name} re-codes ${one ? "a library node that already exists" : "library nodes that already exist"}: ${list} — compose ${one ? "it" : "them"} from the library instead of re-coding (compose, don't recreate)` });
+  }
+
+  // reimplemented-component (#3892) — the SAME "compose, don't recreate" guardrail as above, one dimension
+  // over: an own-source component that DECLARES a name which is already a COMPONENT NODE in this graph.
+  // The algorithm version has existed since #3118; the component version did not, which is how 36 of 74
+  // harvested records came to carry a local `function Box` while a `Box` node sat in the same kit. They
+  // render — as a STUB Box, not the kit's — so the page looks right and every later revision iterates on
+  // the reduced copy (the #3833 failure mode). Provenance is PROMOTION, not harvest: `bsc ui harvest`
+  // reports such a candidate as `buildable: false` with the exact unresolved specifiers and never stubs
+  // them; this catches the hand "resolution" that fakes the import to satisfy buildability.
+  // Conservative like its sibling: exact whole-identifier declaration, own-module source, never self, and
+  // skipped when the source already imports that identifier. Rust twin: graph_health.rs.
+  const nodeNames = new Set(comps.map((c) => c.name));
+  for (const c of comps) {
+    const src = ownModuleSource(c, comps);
+    if (!src) continue;
+    const imported = importedIdentifiers(src);
+    const recoded = [...nodeNames]
+      .filter((name) => name !== c.name && declaresSymbol(src, name) && !imported.has(name))
+      .sort();
+    if (recoded.length === 0) continue;
+    const list = recoded.map((n) => `\`${n}\``).join(", ");
+    const one = recoded.length === 1;
+    findings.push({ category: "reimplemented-component", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
+      why: `${c.name} declares ${list} locally, but ${one ? "that name is" : "those names are"} already ${one ? "a node" : "nodes"} in this graph — the preview renders the LOCAL copy, so this node looks correct while composing a stub instead of the real component` });
   }
 
   // unwired-prop — a component that declares props its own source never references (a declared interface
