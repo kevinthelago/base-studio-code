@@ -11,6 +11,7 @@ describe("resolveInitCmd", () => {
   const base = {
     explicit: undefined as string | undefined,
     startupPrompt: undefined as string | undefined,
+    continueSession: false,
     paneWasClaude: true,
     autoResumeClaude: true,
     wasUncleanShutdown: false,
@@ -46,5 +47,42 @@ describe("resolveInitCmd", () => {
 
   it("an explicit initCmd wins over everything — internal callers know best", () => {
     expect(resolveInitCmd({ ...base, explicit: "echo hi", startupPrompt: "triage", restoreRequested: true })).toBe("echo hi");
+  });
+});
+
+describe("resolveInitCmd — fleet/triage resume (#3928)", () => {
+  const base = {
+    explicit: undefined as string | undefined,
+    startupPrompt: undefined as string | undefined,
+    continueSession: false,
+    paneWasClaude: true,
+    autoResumeClaude: false,
+    wasUncleanShutdown: false,
+    restoreRequested: false,
+  };
+
+  it("RESUMES an explicitly-continued fleet pane on a clean restart — the #3928 regression", () => {
+    // Without this the flag died between layers: `paneContinue` was set and forwarded to Rust, but
+    // `plan_launch` only reads it on the PROMPT arm, so a resume (which carries no startup prompt)
+    // fell through to LaunchPlan::None — a bare bash shell, `has_history=true · resumed=false`.
+    expect(resolveInitCmd({ ...base, continueSession: true })).toBe("claude --continue");
+  });
+
+  it("does NOT continue a pane that never ran claude — there is no conversation to resume", () => {
+    expect(resolveInitCmd({ ...base, continueSession: true, paneWasClaude: false })).toBe("");
+  });
+
+  it("a KICKOFF still wins — the prompt-baked path must not become a --continue", () => {
+    // A startup prompt means claude launches WITH that prompt; layering --continue on top would
+    // spawn a second claude before the first finished initialising.
+    expect(resolveInitCmd({ ...base, continueSession: true, startupPrompt: "kickoff" })).toBe("");
+  });
+
+  it("an explicit init_cmd still outranks everything", () => {
+    expect(resolveInitCmd({ ...base, continueSession: true, explicit: "npm run dev" })).toBe("npm run dev");
+  });
+
+  it("leaves #1041 intact — no continueSession, clean quit ⇒ still dormant", () => {
+    expect(resolveInitCmd({ ...base, autoResumeClaude: true })).toBe("");
   });
 });
