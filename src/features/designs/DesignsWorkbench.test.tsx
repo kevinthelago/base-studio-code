@@ -172,6 +172,75 @@ describe("DesignsWorkbench (#2308)", () => {
     expect(screen.getByText(firstReactUi.src)).toBeTruthy();
   });
 
+  describe("the Tests tab (#3884)", () => {
+    /** Focus `name` and open its Tests tab. */
+    function openTests(name: string) {
+      render(<DesignsWorkbench />);
+      fireEvent.click(graphNode(name));
+      fireEvent.click(screen.getByRole("tab", { name: /^Tests/ }));
+    }
+
+    it("lists each test the node carries — name + source", () => {
+      const target = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
+      useAppStore.setState({
+        components: SEED_COMPONENTS.map((c) => c.id === target.id
+          ? { ...c, tests: [{ name: "calls onSelect with the clicked row", src: "it('fires', () => { expectSomething(); });" }] }
+          : c),
+      });
+      openTests(target.name);
+      expect(screen.getByText("calls onSelect with the clicked row")).toBeTruthy();
+      expect(screen.getByText(/expectSomething/)).toBeTruthy();
+    });
+
+    it("reads an untested INTERACTIVE node as the `no-tests` gap it is, naming its action props", () => {
+      // The empty state must agree with the doctor: an action prop makes the node interactive, which is
+      // exactly what `no-tests` flags. Give the node one and assert the tab says so.
+      const target = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
+      useAppStore.setState({
+        components: SEED_COMPONENTS.map((c) => c.id === target.id
+          ? { ...c, tests: [], props: [{ name: "onPick", type: "(id: string) => void", req: false, desc: "" }] }
+          : c),
+      });
+      openTests(target.name);
+      expect(screen.getByText(/no-tests/)).toBeTruthy();
+      expect(screen.getByText(/onPick/)).toBeTruthy();
+    });
+
+    it("stays quiet for a DISPLAY-ONLY node — no action prop, so the check does not fire", () => {
+      const target = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
+      useAppStore.setState({
+        components: SEED_COMPONENTS.map((c) => c.id === target.id
+          ? { ...c, tests: [], props: [{ name: "label", type: "string", req: true, desc: "" }] }
+          : c),
+      });
+      openTests(target.name);
+      // It still NAMES the check (so the reader knows which one is silent) — what must not appear is the
+      // gap verdict the interactive case carries.
+      expect(screen.getByText(/stays silent/)).toBeTruthy();
+      expect(screen.queryByText(/reports it as no-tests/)).toBeNull();
+    });
+
+    it("carries the COUNT on the tab label", () => {
+      const target = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
+      useAppStore.setState({
+        components: SEED_COMPONENTS.map((c) => c.id === target.id
+          ? { ...c, tests: [{ name: "a", src: "1" }, { name: "b", src: "2" }] }
+          : c),
+      });
+      render(<DesignsWorkbench />);
+      fireEvent.click(graphNode(target.name));
+      expect(screen.getByRole("tab", { name: /^Tests\s*2$/ })).toBeTruthy();
+    });
+
+    it("omits the count at zero — a bare `0` reads as a broken badge", () => {
+      const target = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
+      useAppStore.setState({ components: SEED_COMPONENTS.map((c) => (c.id === target.id ? { ...c, tests: [] } : c)) });
+      render(<DesignsWorkbench />);
+      fireEvent.click(graphNode(target.name));
+      expect(screen.getByRole("tab", { name: "Tests" })).toBeTruthy();
+    });
+  });
+
   it("shows the when-to-use / when-not guidance on the Usage tab", () => {
     render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
