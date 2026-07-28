@@ -287,6 +287,35 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(fs[0].why).toContain("@bsc/algorithms/fibonacci"); // names the library import to compose instead
   });
 
+  it("flags a node that RE-DECLARES a component that already exists in the graph (#3892)", () => {
+    // The harvested-kit failure: a record carries `function Box` while a `Box` node sits in the same
+    // graph, so the preview renders the STUB — the node looks correct while composing nothing real.
+    const box = comp("Box", "primitive", 9, [], {
+      source: "export function Box({children}){ return <div>{children}</div>; }",
+    });
+    const face = comp("AgentFace", "composite", 2, ["Box"], {
+      source: "function Box({children}){ return <div>{children}</div>; }\nexport function AgentFace(){ return <Box>hi</Box>; }",
+    });
+    const fs = analyzeGraphHealth([box, face]);
+    const f = fs.find((x) => x.category === "reimplemented-component");
+    expect(f, `flagged: ${JSON.stringify(fs)}`).toBeTruthy();
+    expect(f!.severity).toBe(3);
+    expect(f!.nodeNames).toEqual(["AgentFace"]);
+    expect(f!.why).toContain("`Box`");
+    // The node that OWNS the name is never flagged for declaring itself.
+    expect(fs.some((x) => x.category === "reimplemented-component" && x.nodeNames[0] === "Box")).toBe(false);
+  });
+
+  it("does NOT flag a re-declaration once the real component is IMPORTED (#3892)", () => {
+    const box = comp("Box", "primitive", 9, [], {
+      source: "export function Box({children}){ return <div>{children}</div>; }",
+    });
+    const face = comp("AgentFace", "composite", 2, ["Box"], {
+      source: 'import { Box } from "@/shared/ui/layout/Box";\nexport function AgentFace(){ return <Box>hi</Box>; }',
+    });
+    expect(analyzeGraphHealth([box, face]).some((f) => f.category === "reimplemented-component")).toBe(false);
+  });
+
   it("does NOT flag a component that imports the library algorithm (#3118)", () => {
     // Imports + uses the library node (declares no local `fibonacci`) — already composing, and the library
     // ref resolves, so it's clean overall.

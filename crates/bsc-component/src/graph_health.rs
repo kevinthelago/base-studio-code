@@ -51,7 +51,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
     /// `unresolvable-import` | `stubbed-import` (#3696, sev-1) | `hardcoded-color` (#3704, sev-1) |
-    /// `reimplementation` | `orphan` | `unwired-prop` | `phantom-compose` | `no-empty-state` |
+    /// `reimplementation` | `reimplemented-component` (#3892, sev-3) | `orphan` | `unwired-prop` | `phantom-compose` | `no-empty-state` |
     /// `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `no-tests` (#3878) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
@@ -830,6 +830,43 @@ fn contains_word(haystack: &str, needle: &str) -> bool {
 /// Whether `source` DECLARES the symbol `name` — a `function`/`const`/`let`/`var`/`class` binding of it
 /// (`export function Foo` / `const Foo =` / …), not a mere reference. Distinguishes a module that DEFINES
 /// the component from a bare usage snippet that only calls it. Mirrors `declaresSymbol` (graphHealth.ts).
+/// The identifiers an `import` statement BINDS in `source` — the names inside `{ … }`, a default binding,
+/// and a `* as X` namespace. Used by `reimplemented-component` (#3892) to skip a node that legitimately
+/// imports the name it also mentions, so only a genuine local RE-DECLARATION is flagged.
+///
+/// Deliberately loose: it scans the header text of each `import … from` and takes every identifier that is
+/// not a keyword. Over-collecting only ever SUPPRESSES a finding, which is the safe direction for a check
+/// whose false positives are worse than its misses.
+fn imported_identifiers(source: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for line_start in source.match_indices("import ").map(|(i, _)| i) {
+        // Only a real statement start (line-initial, bar whitespace) — not `.import` or a string body.
+        let before = source[..line_start].chars().rev().take_while(|c| !matches!(c, '\n')).all(char::is_whitespace);
+        if !before {
+            continue;
+        }
+        let rest = &source[line_start..];
+        let Some(from_at) = rest.find(" from ") else { continue };
+        let header = &rest[..from_at];
+        let mut ident = String::new();
+        for c in header.chars() {
+            if c.is_alphanumeric() || c == '_' || c == '$' {
+                ident.push(c);
+            } else {
+                if !ident.is_empty() && !matches!(ident.as_str(), "import" | "type" | "as") {
+                    out.insert(std::mem::take(&mut ident));
+                } else {
+                    ident.clear();
+                }
+            }
+        }
+        if !ident.is_empty() && !matches!(ident.as_str(), "import" | "type" | "as") {
+            out.insert(ident);
+        }
+    }
+    out
+}
+
 fn declares_symbol(source: &str, name: &str) -> bool {
     ["function ", "const ", "let ", "var ", "class "].iter().any(|kw| {
         let needle = format!("{kw}{name}");
@@ -1612,6 +1649,61 @@ fn analyze_kit(
                 suggested_action: format!(
                     "acceptable for most native/app packages; if {} needs its REAL behaviour in the preview, add it to the curated externals (src-tauri/data/ui/preview-importmap.json)",
                     fmt(&stubbed)
+                ),
+            });
+        }
+    }
+
+    // ── reimplemented-component (severity 3, #3892): the SAME "compose, don't recreate" guardrail as
+    // `reimplementation` below, one dimension over — an own-source component that DECLARES a name which is
+    // already a COMPONENT NODE in this graph. The algorithm version has existed since #3118; the component
+    // version did not, which is how 36 of 74 harvested records came to carry a local `function Box` while a
+    // `Box` node sat in the same kit. They render — as a STUB Box, not the kit's — so the page looks right
+    // and every later revision iterates on the reduced copy (the #3833 failure mode).
+    //
+    // The provenance is promotion, not harvest: `bsc ui harvest` reports such a candidate as
+    // `buildable: false` with the exact unresolved specifiers and never stubs them. This catches the hand
+    // "resolution" that satisfies buildability by faking the import.
+    //
+    // Conservative, matching its sibling: EXACT whole-identifier declaration, on the source the preview
+    // builds, never self, and SKIPPED when the source already imports that identifier (a component may
+    // legitimately re-export or alias). Mirrors graphHealth.ts.
+    {
+        let node_names: BTreeSet<&str> = nodes.iter().map(|n| n.name.as_str()).collect();
+        for n in nodes {
+            let Some(src) = own_module_source(n, &kit_targets) else {
+                continue;
+            };
+            let imported = imported_identifiers(src);
+            let mut recoded: Vec<&str> = node_names
+                .iter()
+                .copied()
+                .filter(|name| *name != n.name.as_str())
+                .filter(|name| declares_symbol(src, name) && !imported.contains(*name))
+                .collect();
+            if recoded.is_empty() {
+                continue;
+            }
+            recoded.sort_unstable();
+            let list = recoded.iter().map(|x| format!("`{x}`")).collect::<Vec<_>>().join(", ");
+            let one = recoded.len() == 1;
+            out.push(Finding {
+                category: "reimplemented-component",
+                severity: 3,
+                kit: kit.to_string(),
+                node_ids: vec![n.id.clone()],
+                node_names: vec![n.name.clone()],
+                why: format!(
+                    "`{}` declares {} locally, but {} already {} in this graph — the preview renders the LOCAL copy, so this node looks correct while composing a stub instead of the real component",
+                    n.name,
+                    list,
+                    if one { "that name is" } else { "those names are" },
+                    if one { "a node" } else { "nodes" },
+                ),
+                suggested_action: format!(
+                    "import the real {} instead of re-declaring {} — if the import could not be resolved at promotion, register it as a platform module rather than stubbing it (`bsc ui harvest` flags an unclosable candidate as buildable:false for exactly this reason)",
+                    if one { "component" } else { "components" },
+                    if one { "it" } else { "them" },
                 ),
             });
         }
@@ -2682,6 +2774,42 @@ mod tests {
         assert!(!t.iter().any(|(n, _)| n == "fibonacci.ts"), "the extension-bearing id is not a candidate");
         assert!(t.iter().all(|(_, seg)| *seg == "algorithms"), "every candidate is an algorithm — sounds excluded: {t:?}");
         assert!(!t.iter().any(|(n, _)| n == "click"), "a sound cue id is not a reimplementation candidate");
+    }
+
+    #[test]
+    fn flags_a_node_that_re_declares_a_component_that_already_exists_and_clears_on_an_import() {
+        // The harvested-kit failure (#3892): a record carries `function Box` while a `Box` node sits in the
+        // same graph, so the preview renders the STUB and the node looks correct while composing nothing
+        // real. `used` > 0 on both so neither is a dead-root orphan.
+        let comps = [
+            json!({ "id":"box", "name":"Box", "kitId":"react-ui", "role":"primitive", "used":9,
+                    "srcText":"export function Box({children}){ return <div>{children}</div>; }" }),
+            json!({ "id":"agentface", "name":"AgentFace", "kitId":"react-ui", "role":"composite", "used":2,
+                    "composes":["Box"],
+                    "srcText":"function Box({children}){ return <div>{children}</div>; }
+export function AgentFace(){ return <Box>hi</Box>; }" }),
+        ];
+        let fs = analyze(&comps);
+        let f = fs.iter().find(|f| f.category == "reimplemented-component").expect("flagged: {fs:?}");
+        assert_eq!(f.severity, 3);
+        assert_eq!(f.node_names, ["AgentFace"]);
+        assert!(f.why.contains("`Box`"), "names the re-declared component");
+        assert!(f.suggested_action.contains("register it as a platform module"), "points at the real fix");
+        // The node that legitimately OWNS the name is never flagged for declaring itself.
+        assert!(!fs.iter().any(|f| f.category == "reimplemented-component" && f.node_names == ["Box"]));
+
+        // …and IMPORTING it instead clears the finding — the whole point of the guardrail.
+        let fixed = [
+            comps[0].clone(),
+            json!({ "id":"agentface", "name":"AgentFace", "kitId":"react-ui", "role":"composite", "used":2,
+                    "composes":["Box"],
+                    "srcText":"import { Box } from \"@/shared/ui/layout/Box\";
+export function AgentFace(){ return <Box>hi</Box>; }" }),
+        ];
+        assert!(
+            !analyze(&fixed).iter().any(|f| f.category == "reimplemented-component"),
+            "importing the real component clears it"
+        );
     }
 
     #[test]
