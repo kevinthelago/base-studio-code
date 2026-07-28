@@ -95,11 +95,13 @@
    must sit inline in the group header, or it lands outside the row and reads as a missing glyph. */
 .ds-healthpanel .ds-health { position: static; width: 15px; height: 15px; flex: none; }
 .ds-healthgroup + .ds-healthgroup { border-top: 1px solid var(--border-soft, var(--border)); }
-.ds-healthgrouphead { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 6px; background: none; border: 1px solid transparent; border-radius: 6px; cursor: pointer; text-align: left; }
+.ds-healthgrouphead { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 6px; background: none; border: 1px solid transparent; border-radius: 6px; cursor: pointer; text-align: left; color: var(--fg); }
 .ds-healthgrouphead:hover { background: var(--bg-soft); border-color: var(--border); }
 .ds-healthgrouphead:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ds-healthgroupdesc { padding: 0 4px 6px; line-height: 1.4; }
-.ds-healthrow { display: block; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+/* `color` is NOT optional here: a <button> does not inherit it — it takes the `buttontext` system
+   colour — so without this the whole worklist renders washed out against the elevated panel (#3890). */
+.ds-healthrow { display: block; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 4px 8px; cursor: pointer; color: var(--fg); }
 .ds-healthrow:hover { background: var(--bg-soft); border-color: var(--border); }
 .ds-healthrow:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
