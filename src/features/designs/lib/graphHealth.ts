@@ -582,14 +582,19 @@ export function analyzeGraphHealth(
   // them; this catches the hand "resolution" that fakes the import to satisfy buildability.
   // Conservative like its sibling: exact whole-identifier declaration, own-module source, never self, and
   // skipped when the source already imports that identifier. Rust twin: graph_health.rs.
-  const nodeNames = new Set(comps.map((c) => c.name));
   for (const c of comps) {
     const src = ownModuleSource(c, comps);
     if (!src) continue;
     const imported = importedIdentifiers(src);
-    const recoded = [...nodeNames]
-      .filter((name) => name !== c.name && declaresSymbol(src, name) && !imported.has(name))
-      .sort();
+    // SAME-FILE siblings are not stubs (#3895): several nodes are routinely extracted from ONE module
+    // (`AgentFace` and `TeamsCanvas` both come from TeamsCanvas.tsx), so that module's closure legitimately
+    // CONTAINS both declarations — flagging them would demand an import of the file from itself.
+    const recoded = [...new Set(
+      comps
+        .filter((t) => t.name !== c.name && !(t.src === c.src && !!c.src))
+        .map((t) => t.name)
+        .filter((name) => declaresSymbol(src, name) && !imported.has(name)),
+    )].sort();
     if (recoded.length === 0) continue;
     const list = recoded.map((n) => `\`${n}\``).join(", ");
     const one = recoded.length === 1;
