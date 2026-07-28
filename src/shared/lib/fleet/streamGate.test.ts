@@ -4,6 +4,7 @@ import {
   deadlockedStreams,
   partitionByDeps,
   heldReason,
+  sessionDoneStreams,
   type GateStream,
   type LandedEvidence,
 } from "./streamGate";
@@ -186,5 +187,44 @@ describe("heldReason", () => {
   it("calls a cycle a cycle so it is never mistaken for ordinary waiting", () => {
     expect(heldReason({ streamId: "a", waitingOn: ["b"], deadlocked: true }))
       .toBe("dependency cycle — cannot start (waiting on b)");
+  });
+});
+
+describe("sessionDoneStreams — tier 3's producer", () => {
+  it("keeps only this project's sessions and strips the key prefix", () => {
+    const maintaining = [
+      { session: "cli-typer:app-shell" },
+      { session: "cli-typer:play-screen" },
+      { session: "other-proj:app-shell" },
+    ];
+    expect([...sessionDoneStreams(maintaining, "cli-typer")].sort()).toEqual(["app-shell", "play-screen"]);
+  });
+
+  it("consumes only the FIRST separator, so a triage pane never poses as a stream", () => {
+    // Pane ids are `<key>:<stream>` but ALSO `<key>:<repo>:triage`. Splitting greedily would yield the
+    // repo name, which could collide with a real stream id and falsely satisfy its dependents.
+    expect([...sessionDoneStreams([{ session: "proj:web:triage" }], "proj")]).toEqual(["web:triage"]);
+  });
+
+  it("does not match a project whose key is a PREFIX of another", () => {
+    expect(sessionDoneStreams([{ session: "cli-typer-2:a" }], "cli-typer").size).toBe(0);
+  });
+
+  it("ignores a bare key with no stream part", () => {
+    expect(sessionDoneStreams([{ session: "proj:" }], "proj").size).toBe(0);
+  });
+
+  it("an empty maintaining list yields nothing", () => {
+    expect(sessionDoneStreams([], "proj").size).toBe(0);
+  });
+
+  it("feeds the gate — a maintaining upstream releases its dependent", () => {
+    // The end-to-end shape on cli-typer: 6 workers parked in maintenance with unmerged branches, which
+    // is the ONLY evidence available for them (0 issues, branch not merged).
+    const g: GateStream[] = [{ id: "up" }, { id: "down", dependsOn: ["up"] }];
+    const before = partitionByDeps(g, ev());
+    expect(before.held.map((h) => h.streamId)).toEqual(["down"]);
+    const after = partitionByDeps(g, ev({ sessionDone: sessionDoneStreams([{ session: "p:up" }], "p") }));
+    expect(after.ready.map((s) => s.id)).toEqual(["down"]);
   });
 });

@@ -102,7 +102,8 @@ export function FlowTab({ wakePane, profileFor }: FlowTabProps) {
 
       {idle && !err && (
         <Text as="div" className="hint" mono size={11.5} style={{ padding: "8px 2px" }}>
-          The fleet is flowing. Parked sessions appear here when a worker runs <code>bsc-blocked --on &lt;ref&gt;</code>.
+          The fleet is flowing. Sessions appear here when a worker pauses for you (<code>bsc-wait</code>)
+          or asks the director a question (<code>bsc-ask</code>).
         </Text>
       )}
 
