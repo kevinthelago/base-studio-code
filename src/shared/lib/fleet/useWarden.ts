@@ -17,7 +17,7 @@ import { useAppStore } from "@/store";
 import { roleCapability } from "../session/sessionRoles";
 import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "../core/llmConfig";
 import { oneShotComplete } from "../core/claudeComplete";
-import { planWarden, parseAuditCommands, type WardenSession } from "./warden";
+import { planWarden, parseAuditCommands, zipWorktreeChanges, type WardenSession } from "./warden";
 import { buildJudgePrompt, parseJudgeVerdict, selectForJudging } from "./wardenJudge";
 import { completedWorkerPanes, doneIssueRefs } from "./streamCompletion";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
@@ -31,8 +31,14 @@ const JUDGE_EVERY = 5;  // run the LLM spot-check ~every 5 ticks (~30s), one wor
 /** Panes mid-quarantine, so a slow kill+push doesn't double-fire across ticks. */
 type InFlight = { current: Set<string> };
 
-/** Gather one live worker's trusted activity + anchor, or null if it can't be evaluated. */
-async function buildSession(paneId: string): Promise<WardenSession | null> {
+/** Gather one live worker's trusted activity + anchor, or null if it can't be evaluated.
+ *
+ *  #3908: PURE of I/O now — the two reads it used to make per pane are hoisted to ONE per sweep by
+ *  {@link sweepInputs} and passed in. Both were fan-out waste at fleet scale: `read_worktree_changes`
+ *  spawns two git subprocesses (~78 per sweep at 39 panes, stalling the command queue ~11s), and the
+ *  audit tail takes no pane argument at all — every worker was re-reading the SAME log, filtered
+ *  per-pane only afterwards by `parseAuditCommands`. */
+function buildSession(paneId: string, auditLines: string[], changesByPane: Map<string, string[]>): WardenSession | null {
   const st = useAppStore.getState();
   const stream = st.fleetPaneStreams[paneId];
   if (!stream) return null;
@@ -41,8 +47,7 @@ async function buildSession(paneId: string): Promise<WardenSession | null> {
   const cwd = st.paneCwds[paneId];
   if (!cwd) return null;
 
-  const changedFiles = await safeInvoke<string[]>("read_worktree_changes", { cwd }, []);
-  const auditLines = await logsTail("audit", 500);
+  const changedFiles = changesByPane.get(paneId) ?? [];
   return {
     paneId,
     anchor: {
@@ -58,6 +63,31 @@ async function buildSession(paneId: string): Promise<WardenSession | null> {
       commands: parseAuditCommands(auditLines ?? [], paneId, st.wardenSince[paneId] ?? 0),
     },
   };
+}
+
+/**
+ * The reads a whole warden sweep shares, fetched ONCE (#3908) — the fix for the fan-out that stalled
+ * the command queue ~11s at 39 panes.
+ *
+ * `logsTail("audit", …)` takes no pane argument, so one read serves every worker (`parseAuditCommands`
+ * does the per-pane filtering). `read_worktree_changes_batch` replaces N git-spawning invokes with one,
+ * index-aligned to the cwds we send. Targets mirror `buildSession`'s own guards so the batch never
+ * pays for a pane that would be discarded anyway.
+ */
+async function sweepInputs(paneIds: string[]): Promise<{ auditLines: string[]; changesByPane: Map<string, string[]> }> {
+  const st = useAppStore.getState();
+  const targets = paneIds.filter((p) => {
+    const stream = st.fleetPaneStreams[p];
+    return !!stream && (st.paneRoles[p] ?? "worker") === "worker" && !!st.paneCwds[p];
+  });
+  const cwds = targets.map((p) => st.paneCwds[p] as string);
+  const [auditLines, changes] = await Promise.all([
+    logsTail("audit", 500),
+    cwds.length ? safeInvoke<string[][]>("read_worktree_changes_batch", { cwds }, []) : Promise.resolve<string[][]>([]),
+  ]);
+  // Index-aligned zip (pure + unit-tested in warden.ts): a short/failed batch degrades each missing
+  // pane to "no file signal", exactly as a failed single read did — never another worker's files.
+  return { auditLines: auditLines ?? [], changesByPane: zipWorktreeChanges(targets, changes ?? []) };
 }
 
 /** Hard-pause a worker: kill the PTY FIRST (a hijacked session can't be trusted to stop itself),
@@ -134,9 +164,14 @@ export function useWarden(): void {
     const fresh = useAppStore.getState();
     const quarantined = new Set([...Object.keys(fresh.quarantinedPanes), ...inFlight.current]);
     // Skip completed workers entirely — they must not be (re)quarantined while standing by.
-    const sessions = (await Promise.all(panes.filter((p) => !completed.has(p)).map(buildSession)))
-      .filter((s): s is WardenSession => s !== null);
+    const live = panes.filter((p) => !completed.has(p));
+    // #3908: TWO invokes per sweep, not two per pane. Was `Promise.all(live.map(buildSession))`, which
+    // fired N git-spawning `read_worktree_changes` plus N identical audit tails at once.
+    const { auditLines, changesByPane } = await sweepInputs(live);
     if (isCancelled()) return;
+    const sessions = live
+      .map((p) => buildSession(p, auditLines, changesByPane))
+      .filter((s): s is WardenSession => s !== null);
 
     // Layer 1 — deterministic hard-pause (every tick, free).
     for (const trip of planWarden(sessions, quarantined)) {
