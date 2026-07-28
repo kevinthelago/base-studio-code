@@ -336,6 +336,7 @@ pub fn run() {
             observability::logs::append_coord_woke,
             observability::collector::collector_info,
             observability::collector::project_liveness,
+            observability::collector::fault_rows_batch,
             git_hooks::read_git_hooks,
             perf::perf_get_config,
             perf::perf_set_config,
