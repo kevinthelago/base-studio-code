@@ -70,3 +70,17 @@ export function parseAuditCommands(lines: string[], paneId: string, since = 0): 
   }
   return cmds;
 }
+
+/**
+ * Zip a batched `read_worktree_changes_batch` result back onto the panes it was requested for (#3908).
+ *
+ * The batch is INDEX-ALIGNED to the cwds sent, so this is the one place a fleet-wide perf fix could
+ * silently corrupt the warden's evidence: a short, long, or misordered result must never attribute
+ * one worker's changed files to another — that would quarantine the wrong session. A missing entry
+ * degrades to "no file signal", exactly as a failed single-pane read did before batching.
+ */
+export function zipWorktreeChanges(panes: string[], changes: readonly (string[] | undefined)[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  panes.forEach((p, i) => out.set(p, changes[i] ?? []));
+  return out;
+}
