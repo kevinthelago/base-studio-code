@@ -129,6 +129,13 @@ export function hasCodeElision(src: string): boolean {
       while (i < n && b[i] !== c) i += b[i] === "\\" ? 2 : 1;
       i += 1;
     } else if (c === ELISION) {
+      // An ellipsis DIRECTLY after a word character is PROSE, not an elision marker (#3897). JSX TEXT
+      // (`>Loading projects…</Text>`) is not quoted, so the string-skip above misses it — ProjectsPage read
+      // as "a sketch, not compilable code" over three UI labels while the app mounted it fine. A real
+      // marker sits in code position (`{ … }`, or alone on a line). Rust twin: `has_code_elision`.
+      let j = i - 1;
+      while (j >= 0 && /\s/.test(b[j])) j -= 1;
+      if (j >= 0 && /[A-Za-z0-9]/.test(b[j])) { i += 1; continue; }
       return true;
     } else {
       i += 1;

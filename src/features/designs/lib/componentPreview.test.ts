@@ -457,6 +457,15 @@ describe("hasCodeElision — an ellipsis in COPY is not an elision marker (#3486
     expect(hasCodeElision(`export function F() { ${E} }`)).toBe(true);
   });
 
+  it("ignores one in JSX TEXT — the #3897 false positive (unquoted, so the string-skip misses it)", () => {
+    // ProjectsPage was condemned as "a sketch, not compilable code" over three UI labels like this,
+    // while the runtime mounted it fine. JSX text is not a string literal, so the quote-skip never saw it.
+    expect(hasCodeElision(`export function F(){ return <p>Loading projects${E}</p>; }`)).toBe(false);
+    expect(hasCodeElision(`export const s = <b>syncing${E}</b>;`)).toBe(false);
+    // …and a marker in CODE position is still caught, including after a newline.
+    expect(hasCodeElision(`export function F(){\n  ${E}\n}`)).toBe(true);
+  });
+
   it("ignores one inside a string literal — the measured false positive", () => {
     expect(hasCodeElision(`<input placeholder="Select${E}" />`)).toBe(false);
     expect(hasCodeElision(`const s = 'Loading${E}'`)).toBe(false);
