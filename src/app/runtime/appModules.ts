@@ -38,6 +38,9 @@ import * as GithubProbe from "@/shared/lib/github/githubProbe";
 import * as GithubState from "@/shared/lib/github/githubState";
 import * as StatTile from "@/shared/ui/data/StatTile";
 import * as Pane from "@/shared/ui/overlay/Pane";
+// ── Project pane (#3901) — the shared primitives its components compose. ─────────────────────────────
+import * as BackButton from "@/shared/ui/controls/BackButton";
+import * as ModalCard from "@/shared/ui/overlay/ModalCard";
 // ── The tabbed-workspace shell a page composes (#3642): Screen + the page-tab + draft hooks ───────────
 import * as Screen from "@/shared/ui/layouts/Screen";
 import * as UsePageTabs from "@/shared/hooks/usePageTabs";
@@ -141,6 +144,10 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/github/githubState": GithubState,
   "@/shared/ui/data/StatTile": StatTile,
   "@/shared/ui/overlay/Pane": Pane,
+  // #3901 — the project pane's remaining shared leaves (BackButton on the stage footer, ModalCard for
+  // the MCP download modal). The other 13 specifiers it needs were already registered.
+  "@/shared/ui/controls/BackButton": BackButton,
+  "@/shared/ui/overlay/ModalCard": ModalCard,
   // The tabbed-workspace shell + its hooks a migrated page composes (#3642, Automations onward).
   "@/shared/ui/layouts/Screen": Screen,
   "@/shared/hooks/usePageTabs": UsePageTabs,
