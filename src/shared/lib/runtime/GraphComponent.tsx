@@ -19,11 +19,27 @@ import { ThemeProvider } from "@/shared/ui/kit";
 const compileCounts = new Map<string, number>();
 
 /** Catches a RENDER throw from the loaded component (load-time throws are caught by the effect below).
- *  Keyed by the caller so a new source remounts a fresh boundary (React boundaries don't self-reset). */
-class GraphErrorBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+ *  Keyed by the caller so a new source remounts a fresh boundary (React boundaries don't self-reset).
+ *
+ *  It LOGS what it caught (#3874). A load failure has always logged; a render throw did not, so the two
+ *  outcomes were indistinguishable from outside: the log said `mounted "projectspage"` while the screen
+ *  showed the fallback, and finding the cause meant patching this class by hand. A graph page that renders
+ *  its fallback is exactly when someone needs the reason, so it goes to the log with its stack. */
+class GraphErrorBoundary extends Component<{ id: string; fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError(): { failed: boolean } {
     return { failed: true };
+  }
+  componentDidCatch(error: unknown, info: { componentStack?: string | null }): void {
+    // One line per frame: the sink caps a single message, and a stack folded into one line gets truncated
+    // to uselessness — which is what the by-hand version of this hit first.
+    log.warn(`graph-loader: "${this.props.id}" RENDER THREW - falling back: ${String(error)}`, "graph-loader");
+    for (const frame of String((error as Error)?.stack ?? "").split("\n").slice(1, 9)) {
+      if (frame.trim()) log.warn(`graph-loader:   at ${frame.trim().slice(0, 200)}`, "graph-loader");
+    }
+    for (const frame of String(info?.componentStack ?? "").split("\n").slice(0, 8)) {
+      if (frame.trim()) log.warn(`graph-loader:   in ${frame.trim().slice(0, 160)}`, "graph-loader");
+    }
   }
   render(): ReactNode {
     return this.state.failed ? this.props.fallback : this.props.children;
@@ -84,7 +100,7 @@ export function GraphComponent({
   // (#3715). A "css"/absent component renders bare and follows the cascade, byte-identical to before.
   const el = <Loaded {...(props ?? {})} />;
   return (
-    <GraphErrorBoundary key={`${id}:${source?.length ?? 0}`} fallback={fallback}>
+    <GraphErrorBoundary key={`${id}:${source?.length ?? 0}`} id={id} fallback={fallback}>
       {themeSystem === "js" ? <ThemeProvider themeId={themeId}>{el}</ThemeProvider> : el}
     </GraphErrorBoundary>
   );

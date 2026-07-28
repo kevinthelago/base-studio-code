@@ -5,7 +5,7 @@ import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
-import { ProjectsList } from "./list/ProjectsList";
+import { ProjectsGraphHost } from "./ProjectsGraphHost";
 // #3874: the graph-hosted Projects page — built and gated, not yet mounted (see the FLIP POINTs below).
 export { ProjectsGraphHost } from "./ProjectsGraphHost";
 import { Planning } from "./session/Planning";
@@ -143,10 +143,9 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       {(!pageOverride || pageOverride === "projects") && (
         <Box style={{ display: mode === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
           {pageOverride ? (
-            // #3874 FLIP POINT (tear-off): swap for `<ProjectsGraphHost />` to render Projects from the
-            // components graph. Deferred until someone can watch a real browser — the loader's compile step
-            // is esbuild-wasm, browser-only, so no headless check can prove this page renders.
-            <ProjectsList />
+            // #3874: Projects renders FROM THE GRAPH (the `projectspage` node) — here on the tear-off
+            // path and below on the normal one. See ProjectsGraphHost.tsx.
+            <ProjectsGraphHost />
           ) : (
             <>
               {/* Planning — mounted once on first visit, then CSS-hidden (not lazy → no fallback) */}
@@ -154,8 +153,7 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
                 <Planning key={planningKey} visible={projectsView === "planning"} />
               </KeptMountedPage>
               <Box style={{ display: projectsView !== "planning" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
-                {/* #3874 FLIP POINT: swap for `<ProjectsGraphHost />` — see ProjectsGraphHost.tsx. */}
-                <ProjectsList />
+                <ProjectsGraphHost />
               </Box>
             </>
           )}
