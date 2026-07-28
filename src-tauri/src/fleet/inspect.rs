@@ -233,10 +233,27 @@ mod relocated_tests {
 /// set is directly comparable to `dependsOn` entries. Cost is ONE `git branch --merged HEAD` per repo —
 /// a set intersection — not one `merge-base` per stream: 1 subprocess for a 38-stream fleet.
 ///
-/// The result also contains the BASE branches (`main`, `develop`) — they are trivially their own
-/// ancestors. That is harmless: `landedStreams` only ever admits ids that are streams in the fleet, so a
-/// base-branch name can't satisfy a dep unless a stream is literally named `main`. Filtering here would
-/// need this command to know the base branch per repo for no gain.
+/// #3942 — MERGED IS NOT ENOUGH. `--merged HEAD` returns branches that are ancestors of OR EQUAL TO
+/// HEAD, and `ensure_worktree` creates every stream's branch AT HEAD. So a branch that has never
+/// received a commit came back as "merged", every stream read as finished, and the gate degraded to a
+/// no-op that launched all 38 workers (and would have told a genuinely fresh fleet its whole plan was
+/// already done). Measured: all 39 `network-monitor` branches pointed at ONE commit, which was HEAD.
+///
+/// The discriminator is the FIRST-PARENT chain. A branch tip sitting on it is a base commit — where the
+/// branch was created, not something the stream produced. A merged feature branch's tip is a
+/// side-branch commit, reachable from HEAD but not on its first-parent line.
+///
+///   · tip on the first-parent chain (incl. tip == HEAD) → pristine or a base commit → NOT landed
+///   · merged, tip off the chain                         → real work, now in HEAD    → LANDED
+///   · not merged (`ahead > 0`)                          → work in flight            → NOT landed
+///
+/// A fast-forward merge leaves the tip on the chain and so UNDER-reports. That is the safe direction:
+/// under-reporting only delays a launch (and tiers 1/3 still cover it), whereas over-reporting is what
+/// broke the gate outright.
+///
+/// The result also contains the BASE branches (`main`, `develop`) — harmless, since `landedStreams`
+/// only ever admits ids that are streams in the fleet (and after this change they are excluded anyway,
+/// being on their own first-parent chain).
 ///
 /// Tolerant by design: a hub that doesn't exist, a subdir that isn't a clone, or a git failure
 /// contributes nothing rather than failing the call. An empty result therefore means "no evidence of
@@ -254,14 +271,94 @@ pub(crate) fn fleet_landed_streams(project_key: String) -> Vec<String> {
         if !repo.join(".git").exists() {
             continue;
         }
-        // `--merged HEAD` asks git for the whole ancestor set in one pass. `--format` keeps the output
-        // bare (no `*` current-branch marker, no leading whitespace to trim).
-        for name in git_lines(&repo.to_string_lossy(), &["branch", "--merged", "HEAD", "--format=%(refname:short)"]) {
-            let n = name.trim();
-            if !n.is_empty() {
-                landed.insert(n.to_string());
+        let repo_str = repo.to_string_lossy().into_owned();
+        // The base line: every commit reachable from HEAD by first parents. A branch tip found here was
+        // never authored on that branch — it is the base commit the branch was cut from.
+        let base_line: std::collections::HashSet<String> =
+            git_lines(&repo_str, &["rev-list", "--first-parent", "HEAD"])
+                .into_iter()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
+        // One pass for the merged set WITH each tip's sha, so the filter needs no per-branch spawn.
+        for line in git_lines(&repo_str, &["for-each-ref", "--merged", "HEAD", "--format=%(objectname) %(refname:short)", "refs/heads"]) {
+            let Some((sha, name)) = line.trim().split_once(' ') else { continue };
+            let name = name.trim();
+            if name.is_empty() || base_line.contains(sha.trim()) {
+                continue; // pristine / base branch — no work of its own
             }
+            landed.insert(name.to_string());
         }
     }
     landed.into_iter().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let mut c = std::process::Command::new("git");
+        c.args(["-C", &dir.to_string_lossy()]).args(args);
+        assert!(no_window(&mut c).status().unwrap().success(), "git {args:?}");
+    }
+
+    /// #3942: `--merged HEAD` alone reported branches that never received a commit, because
+    /// `ensure_worktree` cuts each stream's branch AT HEAD and a branch at HEAD is trivially its own
+    /// ancestor. Every stream then read as finished, the dependency gate became a no-op, and all 38
+    /// workers launched. This drives real git through the states that must be told apart.
+    #[test]
+    fn only_branches_carrying_merged_work_count_as_landed() {
+        let _guard = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _home = crate::testutil::temp_home("landed");
+        let repo = crate::project_dir("proj").join("web");
+        fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["config", "user.email", "t@t.t"]);
+        git(&repo, &["config", "user.name", "t"]);
+        fs::write(repo.join("README.md"), "x").unwrap();
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-q", "-m", "init"]);
+
+        // (a) PRISTINE — cut at HEAD, never committed to. Exactly what every network-monitor stream
+        //     looked like, and what the old probe wrongly called landed.
+        git(&repo, &["branch", "pristine"]);
+
+        // (b) MERGED — real work, merged with --no-ff so the tip stays off the first-parent line.
+        git(&repo, &["checkout", "-q", "-b", "did-work"]);
+        fs::write(repo.join("feature.txt"), "y").unwrap();
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-q", "-m", "work"]);
+        git(&repo, &["checkout", "-q", "main"]);
+        git(&repo, &["merge", "-q", "--no-ff", "-m", "merge", "did-work"]);
+
+        // (c) IN FLIGHT — a commit that has NOT been merged.
+        git(&repo, &["checkout", "-q", "-b", "in-flight"]);
+        fs::write(repo.join("wip.txt"), "z").unwrap();
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-q", "-m", "wip"]);
+        git(&repo, &["checkout", "-q", "main"]);
+
+        // (d) PRISTINE, CUT LATER — at the post-merge HEAD. Still no work of its own, and its tip is a
+        //     base commit rather than HEAD's predecessor, so an `== HEAD` check alone would miss it.
+        git(&repo, &["branch", "pristine-late"]);
+
+        let landed = fleet_landed_streams("proj".to_string());
+        assert!(landed.contains(&"did-work".to_string()), "merged work is landed: {landed:?}");
+        assert!(!landed.contains(&"pristine".to_string()), "a branch cut at HEAD has landed NOTHING: {landed:?}");
+        assert!(!landed.contains(&"pristine-late".to_string()), "nor one cut at a later base commit: {landed:?}");
+        assert!(!landed.contains(&"in-flight".to_string()), "unmerged work is not landed: {landed:?}");
+        assert!(!landed.contains(&"main".to_string()), "the base branch is not a landed stream: {landed:?}");
+    }
+
+    /// A project with no hub (or no clone) yields nothing rather than failing — an empty result means
+    /// "no evidence", which the gate must treat as NOT satisfied.
+    #[test]
+    fn a_missing_hub_yields_no_evidence() {
+        let _guard = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _home = crate::testutil::temp_home("nohub");
+        assert!(fleet_landed_streams("ghost".to_string()).is_empty());
+    }
 }
