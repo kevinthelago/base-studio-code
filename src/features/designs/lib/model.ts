@@ -123,6 +123,18 @@ export interface AnalyticsEvent {
   props?: PropSpec[];
 }
 
+/** One test a component carries (#3878) — DATA, alongside the node, the same shape as an analytics event
+ *  one field over. `name` is the test's description; `src` is its source.
+ *
+ *  Tests travel WITH the node because once a component's source is a store record compiled at runtime, a
+ *  test file under `src/**` is no longer beside the thing it tests — and git stops being the record of what
+ *  ships. #3833 is what that costs: the Skills record ran on a preview-grade transcription for days, and the
+ *  page still looked right. */
+export interface ComponentTest {
+  name: string;
+  src: string;
+}
+
 export interface ComponentRecord {
   id: string;
   name: string;
@@ -170,6 +182,12 @@ export interface ComponentRecord {
    *  these nodes is instrumented by construction. Absent/empty ⇒ uninstrumented — the `no-analytics` doctor
    *  finding flags an INTERACTIVE component that lacks one. A shipped runtime does the emitting (slice 2). */
   analytics?: AnalyticsEvent[];
+  /** The component's TESTS (#3878) — carried as data on the node, like its analytics manifest. Absent/empty
+   *  ⇒ untested, which the `no-tests` doctor finding flags for a node that HAS an implementation (a
+   *  spec-only node is skipped: it already earns `no-implementation`, and one cause should not raise two
+   *  findings). What EXECUTES a graph-held test is deliberately still open — vitest reads files, so either
+   *  the graph emits them at test time or a runner compiles them the way the component loader does. */
+  tests?: ComponentTest[];
   /** A SUPPRESSION tombstone (#3725) — `true` marks this id as a PERMANENTLY removed packaged builtin, not
    *  a real component. `reconcileSeed` skips re-seeding it (the tombstone occupies the id) and the library
    *  excludes it; the Rust doctor skips it; `bsc ui suppress`/`unsuppress` write/clear it. Absent on every
