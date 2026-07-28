@@ -480,7 +480,15 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         ? `${blocked.length} session${blocked.length === 1 ? "" : "s"} not resumed — `
           + blocked.map((b) => `${b.streamId}: ${b.reason}`).join("; ")
         : null;
-      const okMsg = [res.note, blockedMsg].filter(Boolean).join(" · ") || null;
+      // #3931: streams HELD by the dependency gate are reported but NOT opened as errors — nothing is
+      // wrong with them, it simply isn't their turn. They launch on their own once their upstream lands,
+      // so naming them (and the first few ids) is the whole surface a resume owes the user.
+      const held = res.held ?? [];
+      const heldMsg = held.length > 0
+        ? `${held.length} held by dependencies — ${held.slice(0, 3).map((h) => h.streamId).join(", ")}`
+          + (held.length > 3 ? ` +${held.length - 3} more` : "")
+        : null;
+      const okMsg = [res.note, blockedMsg, heldMsg].filter(Boolean).join(" · ") || null;
       setResumeMsg(res.ok ? okMsg : (res.error ?? "Couldn't resume this project."));
     } finally {
       setResuming(false);
