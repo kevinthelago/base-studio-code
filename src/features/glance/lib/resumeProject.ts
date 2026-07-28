@@ -39,6 +39,25 @@ export interface BlockedStream {
 }
 
 /**
+ * Is there genuinely NOTHING for a project resume to start (#3923)? True only when every pane is already
+ * live or is quarantined — the two states a resume must not touch (a live one is running; a quarantined
+ * one is surfaced, never relaunched, #3916).
+ *
+ * This replaced a guard that bailed on the FIRST live pane, which made ▶ Resume permanently inert once a
+ * single node had been resumed on its own: the "turn them all back on" button just switched screens. A
+ * live pane is safe to include in the relaunch — `pty_create` reconnects to an existing session and
+ * returns before spawning, so it never re-sends `claude --continue` to a running agent.
+ */
+export function nothingToResume(
+  paneIds: readonly string[],
+  livePaneIds: ReadonlySet<string>,
+  quarantined: Record<string, unknown>,
+): boolean {
+  if (paneIds.length === 0) return false; // no tab yet ⇒ there IS work (build it)
+  return paneIds.every((pid) => livePaneIds.has(pid) || !!quarantined[pid]);
+}
+
+/**
  * Split the streams a resume WOULD launch into those that can actually run and those that cannot (#3916).
  * Pure — the IO (worktree existence) is probed by the caller and injected — so the whole rule is
  * exhaustively testable, like {@link planResumeLaunch} beside it.
