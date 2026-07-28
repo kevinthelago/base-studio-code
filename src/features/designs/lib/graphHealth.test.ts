@@ -306,6 +306,20 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(fs.some((x) => x.category === "reimplemented-component" && x.nodeNames[0] === "Box")).toBe(false);
   });
 
+  it("does NOT flag a sibling extracted from the SAME module (#3895)", () => {
+    // `AgentFace` and `TeamsCanvas` are both lifted from TeamsCanvas.tsx, so that module's closure
+    // legitimately CONTAINS both declarations — flagging it would demand importing the file from itself.
+    const face = comp("AgentFace", "primitive", 3, [], {
+      src: "src/features/teams/TeamsCanvas.tsx",
+      source: "export function AgentFace(){ return <i/>; }",
+    });
+    const canvas = comp("TeamsCanvas", "composite", 2, [], {
+      src: "src/features/teams/TeamsCanvas.tsx",
+      source: "function AgentFace(){ return <i/>; }\nexport function TeamsCanvas(){ return <AgentFace/>; }",
+    });
+    expect(analyzeGraphHealth([face, canvas]).some((f) => f.category === "reimplemented-component")).toBe(false);
+  });
+
   it("does NOT flag a re-declaration once the real component is IMPORTED (#3892)", () => {
     const box = comp("Box", "primitive", 9, [], {
       source: "export function Box({children}){ return <div>{children}</div>; }",
