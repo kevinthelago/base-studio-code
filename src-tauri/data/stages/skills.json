@@ -4,6 +4,7 @@
   "glyph": "✦",
   "gate": "skills selected",
   "deps": [],
+  "optional": true,
   "appliesWhen": {
     "signal": "needsSkills",
     "target": true
