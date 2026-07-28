@@ -13,9 +13,19 @@
  *    sessions dormant. Resume when the user clicked "restore" in the crash banner
  *    (`restoreRequested`), OR when they've opted into silent auto-resume
  *    (`autoResumeClaude`) AND the last shutdown was unclean (`wasUncleanShutdown`).
- *    The Rust side guards `--continue` against missing history (#124), so a stale flag
- *    falls back gracefully.
+ *    #3937: the `--continue` is emitted with a `|| claude` SHELL fallback. The Rust-side history
+ *    guard (#124) lives on `plan_launch`'s PROMPT arm only — the INIT arm (which is what an init
+ *    cmd like this takes) passes the string verbatim, so the guard never applied here despite this
+ *    doc once claiming it did. A `claude --continue` with no conversation exits 1 having written
+ *    ZERO bytes to stdout, which is why a resumed pane looked like a dead `$` prompt rather than a
+ *    failed command. The fallback starts a fresh session instead, and works regardless of who is
+ *    right about whether history exists.
  */
+
+/** `claude --continue`, degrading to a fresh session when there is no conversation to resume (#3937).
+ *  Mirrors the studio sessions' long-standing fallback; `launch.rs`'s own test constant already
+ *  assumed this shape. stderr is dropped because claude's "no session" error is expected here. */
+const CONTINUE_OR_FRESH = "claude --continue 2>/dev/null || claude";
 export function resolveInitCmd(args: {
   explicit: string | undefined;
   startupPrompt: string | undefined;
@@ -41,10 +51,10 @@ export function resolveInitCmd(args: {
   // carries no startup prompt (that's a kickoff), so the plan fell through to `None` and the pane
   // came up as a bare bash shell: `has_history=true · resumed=false`. Every fleet relaunch was
   // silently starting cold. Placed AFTER the startupPrompt branch so a kickoff still wins.
-  if (continueSession && paneWasClaude) return "claude --continue";
+  if (continueSession && paneWasClaude) return CONTINUE_OR_FRESH;
   // The resume path — crash recovery only (#1041): a clean quit does NOT auto-resume.
   if (paneWasClaude && (restoreRequested || (autoResumeClaude && wasUncleanShutdown))) {
-    return "claude --continue";
+    return CONTINUE_OR_FRESH;
   }
   return "";
 }
