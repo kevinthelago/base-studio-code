@@ -31,7 +31,13 @@ beforeEach(() => {
     if (cmd === "logs_done_panes") return Promise.resolve([]);     // no self-reported-done panes
     if (cmd === "logs_pane_activity") return Promise.resolve([]);  // no activity rows
     if (cmd === "logs_tail") return Promise.resolve([]);           // coord log empty
-    if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
+    // #3944: real `plan list --full` rows carry `stream` (plan.db's own column — `--stream X` is
+    // literally `WHERE stream = :stream`), and the idle sweep now reads once per PROJECT and filters
+    // by it in memory instead of querying once per pane. Without the field the filter selects nothing.
+    if (cmd === "bsc") return Promise.resolve(JSON.stringify([
+      { ref: "#1", status: "complete", stream: "api" },
+      { ref: "#2", status: "complete", stream: "api" },
+    ]));
     return Promise.resolve(undefined);
   });
   useAppStore.setState({
@@ -42,6 +48,28 @@ beforeEach(() => {
 });
 
 describe("useWorkerAutoEnd (#920 / #1379)", () => {
+  it("#3944: the idle sweep reads each project ONCE, not once per pane", async () => {
+    // The sweep used to spawn `bsc plan list --stream <id>` inside the pane loop, serially, on every
+    // change to any of THREE log streams — the bulk of 37 `bsc plan list`/min. Two worker panes on one
+    // project must now produce ONE project-wide read, not two per-stream reads.
+    useAppStore.setState({
+      paneRoles: { [WORKER]: "worker", "demo:web": "worker", [DIRECTOR]: "director" },
+      fleetPaneStreams: { [WORKER]: stream("api"), "demo:web": stream("web"), [DIRECTOR]: stream("director") },
+      tabs: [{ id: "t", name: "build", layout: "2×1", state: "idle", runId: 0, projectKey: "demo", paneIds: [DIRECTOR, WORKER, "demo:web"] }] as never,
+    });
+    renderHook(() => useWorkerAutoEnd());
+    await waitFor(() => expect(vi.mocked(invoke).mock.calls.some((c) => c[0] === "bsc")).toBe(true));
+
+    const planReads = vi.mocked(invoke).mock.calls.filter(
+      (c) => c[0] === "bsc" && (c[1] as { args?: string[] })?.args?.includes("list"),
+    );
+    // No call may carry --stream: that was the per-pane query this fix removed.
+    expect(planReads.every((c) => !(c[1] as { args: string[] }).args.includes("--stream"))).toBe(true);
+    // And the project is read at most once per sweep, however many panes it has.
+    const perProject = planReads.filter((c) => (c[1] as { projectKey?: string }).projectKey === "demo");
+    expect(perProject.length).toBeLessThanOrEqual(1);
+  });
+
   it("subscribes to pty_exit for worker panes only (not the director)", async () => {
     renderHook(() => useWorkerAutoEnd());
     await waitFor(() => expect(handlers[`pty_exit_${WORKER}`]).toBeTypeOf("function"));
@@ -78,7 +106,13 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     vi.mocked(invoke).mockImplementation((cmd: string, _payload?: unknown) => {
       if (cmd === "logs_done_panes") return Promise.resolve([WORKER]);
       if (cmd === "logs_pane_activity" || cmd === "logs_tail") return Promise.resolve([]); // coord/activity empty
-      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
+      // #3944: real `plan list --full` rows carry `stream` (plan.db's own column — `--stream X` is
+    // literally `WHERE stream = :stream`), and the idle sweep now reads once per PROJECT and filters
+    // by it in memory instead of querying once per pane. Without the field the filter selects nothing.
+    if (cmd === "bsc") return Promise.resolve(JSON.stringify([
+      { ref: "#1", status: "complete", stream: "api" },
+      { ref: "#2", status: "complete", stream: "api" },
+    ]));
       return Promise.resolve(undefined);
     });
     renderHook(() => useWorkerAutoEnd());
@@ -112,7 +146,13 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
       // Idle since epoch 1ms ⇒ idleMs is huge, well past the close-nudge window.
       if (cmd === "logs_pane_activity") return Promise.resolve([{ pane: WORKER, state: "idle", at: 1 }]);
       if (cmd === "logs_done_panes" || cmd === "logs_tail") return Promise.resolve([]); // done + coord (no ask/wait) empty
-      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
+      // #3944: real `plan list --full` rows carry `stream` (plan.db's own column — `--stream X` is
+    // literally `WHERE stream = :stream`), and the idle sweep now reads once per PROJECT and filters
+    // by it in memory instead of querying once per pane. Without the field the filter selects nothing.
+    if (cmd === "bsc") return Promise.resolve(JSON.stringify([
+      { ref: "#1", status: "complete", stream: "api" },
+      { ref: "#2", status: "complete", stream: "api" },
+    ]));
       return Promise.resolve(undefined);
     });
     renderHook(() => useWorkerAutoEnd());
@@ -129,7 +169,13 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     vi.mocked(invoke).mockImplementation((cmd: string, _payload?: unknown) => {
       if (cmd === "logs_done_panes") return Promise.resolve([WORKER]); // worker self-reported done
       if (cmd === "logs_pane_activity" || cmd === "logs_tail") return Promise.resolve([]);
-      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
+      // #3944: real `plan list --full` rows carry `stream` (plan.db's own column — `--stream X` is
+    // literally `WHERE stream = :stream`), and the idle sweep now reads once per PROJECT and filters
+    // by it in memory instead of querying once per pane. Without the field the filter selects nothing.
+    if (cmd === "bsc") return Promise.resolve(JSON.stringify([
+      { ref: "#1", status: "complete", stream: "api" },
+      { ref: "#2", status: "complete", stream: "api" },
+    ]));
       return Promise.resolve(undefined);
     });
     renderHook(() => useWorkerAutoEnd());

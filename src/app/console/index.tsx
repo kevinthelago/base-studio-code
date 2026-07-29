@@ -10,6 +10,7 @@ import type { ViewKey } from "@/app/console/panes/viewDefs";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useCoordinator } from "./useCoordinator";
 import { useFleetGate } from "@/shared/lib/fleet/useFleetGate";
+import { usePaneActivityFeed } from "./lib/usePaneActivityFeed";
 import { resumeProjectFleet } from "@/features/glance";
 import { useDirectorPump } from "./useDirectorPump";
 import { useFaultTriage } from "./useFaultTriage";
@@ -38,6 +39,10 @@ const fleetGateLaunch = (projectKey: string) => resumeProjectFleet({ projectName
 export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number } = {}) {
   // #199: the always-on coordinator — auto-wakes ready parked panes when enabled.
   // Mounted here because ConsoleWorkspace stays mounted across every screen (#187).
+  // #3944: ONE read of the pane-activity table per activity-log change, shared by every pane.
+  // Mounted here (not per pane) because the table is global — a per-pane subscription meant N
+  // identical full-table invokes per write, the single largest slice of invoke time.
+  usePaneActivityFeed();
   useCoordinator();
   // #3931 slice 3 — the launch pump: a stream HELD by the dependency gate starts as soon as its
   // upstreams land. Event-driven on the coord log (a worker finishing writes there first), so it
