@@ -61,13 +61,18 @@ describe("the built-in blueprint library (#645/#3785)", () => {
     expect(deployment.enabled).toBe(true);
   });
 
-  it("the default blueprint's UI stage is optional; source/mcps/automations/skills are present + required (#3785)", () => {
+  it("the default blueprint's UI + skills stages are optional; source/mcps/automations are required (#3785/#3905)", () => {
     const def = makeBlueprints().find((b) => b.id === "default")!;
     // ui (and market) stay optional — hidden until the project needs them.
     expect(def.sections.find((s) => s.key === "ui")!.optional).toBe(true);
-    // #3785: Default absorbed Complete's advanced stages. source/mcps/automations/skills are now
-    // non-optional sections (hidden-by-default via appliesWhen signals, not the `optional` flag).
-    for (const key of ["source", "mcps", "automations", "skills"]) {
+    // #3905: skills JOINED them. It was non-optional, so its gate blocked triage on any project that
+    // had attached no skills — and there is nothing to confirm on an empty stage. It self-enables
+    // instead: `needsSkills || projectSkillCount > 0` in usePlanGates, so attaching any skill brings
+    // the stage back. Optional here means "not a gate", not "unreachable".
+    expect(def.sections.find((s) => s.key === "skills")!.optional).toBe(true);
+    // #3785: Default absorbed Complete's advanced stages. These stay non-optional — hidden by default
+    // via their `appliesWhen` signals rather than the `optional` flag.
+    for (const key of ["source", "mcps", "automations"]) {
       const sec = def.sections.find((s) => s.key === key);
       expect(sec, `default has ${key}`).toBeTruthy();
       expect(sec!.optional, `${key} is not optional`).not.toBe(true);
