@@ -31,6 +31,11 @@ pub const ENDED_SIGNAL: &str = "signal";
 pub const ENDED_MAX_TURNS: &str = "max-turns";
 pub const ENDED_BUDGET: &str = "budget";
 pub const ENDED_STOP: &str = "stop";
+/// #3961: the app died mid-loop (crash / kill / force-quit). Distinct from `stop` on purpose — a user
+/// halting a loop and a crash killing one are different facts, and the record should say which. Every
+/// other reason describes a loop that reached a DECISION (a sentinel fired, a ceiling was hit, someone
+/// called stop); a crash reaches none of them, which is why the row used to just stay `open` forever.
+pub const ENDED_INTERRUPTED: &str = "interrupted";
 
 /// The default turn ceiling when `--max-turns` is omitted — a signal-less loop with no budget still halts,
 /// so an accidental `--until false` is never an unbounded run. Explicitly disable with `--max-turns 0`.
@@ -300,6 +305,31 @@ impl Store {
         Ok(n > 0)
     }
 
+    /// Loops still `open` — the ones an unclean shutdown stranded (#3961).
+    ///
+    /// A crash leaves a loop `open` with no way to progress: its participants died with the app, and
+    /// `watch` blocks until a turn that will never come. The CALLER decides these are stranded (it
+    /// knows whether the last shutdown was unclean); this only answers "what was still running?", so
+    /// the store never has to guess about process liveness.
+    pub fn open_loops(&self) -> rusqlite::Result<Vec<Loop>> {
+        self.list(&Filter { open_only: true, project: None, limit: None })
+    }
+
+    /// Close `ids` as INTERRUPTED, returning how many actually changed (#3961).
+    ///
+    /// Guarded on `status = 'open'`, so an already-closed loop is never rewritten — a loop that ended
+    /// properly must keep the reason it ended with, even if it appears in a stale caller's id list.
+    pub fn mark_interrupted(&self, ids: &[i64], now: i64) -> rusqlite::Result<usize> {
+        let mut n = 0;
+        for id in ids {
+            n += self.conn.execute(
+                "UPDATE loops SET status = 'closed', ended_by = ?2, updated_at = ?3                  WHERE id = ?1 AND status = 'open'",
+                params![id, ENDED_INTERRUPTED, now],
+            )?;
+        }
+        Ok(n)
+    }
+
     /// Internal: mark a loop closed with a reason.
     fn close(&self, id: i64, why: &str, now: i64) -> rusqlite::Result<()> {
         self.conn.execute(
@@ -490,5 +520,69 @@ mod tests {
         assert_eq!(s.list(&Filter::default()).unwrap().len(), 2);
         assert_eq!(s.list(&Filter { open_only: true, ..Default::default() }).unwrap().len(), 1);
         assert_eq!(s.list(&Filter { project: Some("proj".into()), ..Default::default() }).unwrap().len(), 1);
+    }
+
+    // ── #3961: a crash-stranded loop ────────────────────────────────────────────────────────────
+    //
+    // Every other `ended_by` describes a loop that reached a DECISION — a sentinel fired, a ceiling
+    // was hit, someone called stop. A crash reaches none of them, so the row stayed `open` forever and
+    // `watch` blocked on a turn that would never come.
+
+    fn seeded() -> Store {
+        let s = Store::open_in_memory().unwrap();
+        for who in ["a1", "a2", "a3"] {
+            s.create(&NewLoop { a: who.into(), b: "designer".into(), seed: "go".into(),
+                until: None, max_turns: None, budget: None, project: None }, 1000).unwrap();
+        }
+        s
+    }
+
+    #[test]
+    fn open_loops_returns_only_the_ones_still_running() {
+        let s = seeded();
+        s.stop(2, 2000).unwrap();
+        let open: Vec<i64> = s.open_loops().unwrap().into_iter().map(|l| l.id).collect();
+        assert_eq!(open.len(), 2, "the stopped loop is not open: {open:?}");
+        assert!(!open.contains(&2));
+    }
+
+    #[test]
+    fn mark_interrupted_closes_with_its_own_reason_not_stop() {
+        // The whole point of the new constant: a user halting a loop and a crash killing one are
+        // different facts, and the record has to say which.
+        let s = seeded();
+        let n = s.mark_interrupted(&[1, 3], 5000).unwrap();
+        assert_eq!(n, 2);
+        for id in [1, 3] {
+            let lp = s.get(id).unwrap().unwrap();
+            assert!(!lp.is_open(), "loop {id} closed");
+            assert_eq!(lp.ended_by.as_deref(), Some(ENDED_INTERRUPTED), "reason is interrupted, not stop");
+        }
+    }
+
+    #[test]
+    fn an_already_closed_loop_keeps_the_reason_it_ended_with() {
+        // A loop that ended properly must never be rewritten, even if a stale caller passes its id —
+        // otherwise a clean `--until` completion would be relabelled a crash.
+        let s = seeded();
+        s.stop(2, 2000).unwrap();
+        let n = s.mark_interrupted(&[1, 2, 3], 5000).unwrap();
+        assert_eq!(n, 2, "only the two that were still open changed");
+        assert_eq!(s.get(2).unwrap().unwrap().ended_by.as_deref(), Some(ENDED_STOP));
+    }
+
+    #[test]
+    fn reaping_nothing_is_a_no_op() {
+        let s = seeded();
+        for id in [1, 2, 3] { s.stop(id, 2000).unwrap(); }
+        assert!(s.open_loops().unwrap().is_empty());
+        assert_eq!(s.mark_interrupted(&[1, 2, 3], 5000).unwrap(), 0);
+    }
+
+    #[test]
+    fn interrupted_is_distinct_from_every_other_end_reason() {
+        for other in [ENDED_SIGNAL, ENDED_MAX_TURNS, ENDED_BUDGET, ENDED_STOP] {
+            assert_ne!(ENDED_INTERRUPTED, other);
+        }
     }
 }

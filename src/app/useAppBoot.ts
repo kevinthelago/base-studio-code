@@ -111,7 +111,15 @@ export function useAppBoot() {
     // Crash recovery (#1041): learn once whether the previous shutdown was unclean — gates the
     // restore banner + session auto-resume (a clean quit leaves sessions dormant).
     invoke<boolean>("was_unclean_shutdown")
-      .then((v) => useAppStore.getState().setUncleanShutdown(v))
+      .then((v) => {
+        useAppStore.getState().setUncleanShutdown(v);
+        // #3961: the same signal, asked of the LOOP store. A loop in flight when the app died is never
+        // reconciled — nothing closes it, so it stays `open` forever and a participant's `bsc loop
+        // watch` blocks on a turn that will never come. Only an UNCLEAN shutdown implies that; after a
+        // clean quit an open loop is legitimately dormant, so this is gated exactly like the session
+        // restore. `--dry-run` only COUNTS them; nothing is written until the user acts on the banner.
+        if (v) void useAppStore.getState().probeInterruptedLoops();
+      })
       .catch(() => { /* command absent (e.g. tests) — leave false */ });
     // Skills library (#1338 ph2): hydrate from the global skills.db so the desktop UI, the planner,
     // and every live `bsc-skill` session share ONE library. Reconciles the code-owned packaged set

@@ -575,11 +575,51 @@ function KitChangesBanner() {
   );
 }
 
+
+/**
+ * Interrupted-loop banner (#3961). A `bsc loop` in flight when the app DIES is never reconciled: the
+ * store keeps it `open`, and a participant's `bsc loop watch` blocks on a turn that will never come.
+ * Every other `ended_by` describes a loop that reached a DECISION (a sentinel fired, a ceiling was hit,
+ * someone called stop); a crash reaches none of them.
+ *
+ * Gated on the SAME unclean-shutdown signal as the session restore above — after a clean quit an open
+ * loop is legitimately dormant, not stranded. The boot probe only COUNTS (`reap --dry-run`); closing
+ * them is the user's call, and records `ended_by=interrupted` rather than `stop` so the row stays
+ * truthful about why it ended. Dismissing writes nothing — they reappear after the next crash.
+ */
+function InterruptedLoopBanner() {
+  const loops = useAppStore((s) => s.interruptedLoops);
+  const reap = useAppStore((s) => s.reapInterruptedLoops);
+  const dismiss = useAppStore((s) => s.dismissInterruptedLoops);
+
+  if (loops.length === 0) return null;
+  const n = loops.length;
+  const named = loops.slice(0, 2).map((l) => `${l.a}↔${l.b}`).join(", ");
+
+  return (
+    <Banner
+      variant="bar"
+      tone="warn"
+      onDismiss={dismiss}
+      right={
+        <Button variant="primary" onClick={() => { void reap(); }}>
+          Close {n}
+        </Button>
+      }
+    >
+      {n} loop{n === 1 ? "" : "s"} ({named}{n > 2 ? `, +${n - 2}` : ""}) {n === 1 ? "was" : "were"}{" "}
+      <b>interrupted</b> when the app stopped unexpectedly — {n === 1 ? "it is" : "they are"} still open,
+      so anything waiting on a turn will wait forever.
+    </Banner>
+  );
+}
+
 export function AppBanners() {
   return (
     <Box className="app-banner-stack">
       <KitChangesBanner />
       <CrashRecoveryBanner />
+      <InterruptedLoopBanner />
       <SessionRecoveryBanner />
       <QuarantineBanner />
       <SandboxSetupBanner />
