@@ -168,7 +168,7 @@ webview2-com = "0.38"
 # (Dependabot's 0.61 → 0.62 bump, #3446, broke this — Tauri/webview2-com still resolve 0.61, so 0.62
 # split our COM types (IStream/HGLOBAL/core::Result in shot/mod.rs) from webview2-com's. Do NOT bump
 # ahead of a Tauri/wry bump that moves the whole tree to 0.62.)
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
