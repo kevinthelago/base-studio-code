@@ -1,5 +1,74 @@
 use crate::prelude::*;
 
+/// The default integration branch when a project's plan declares no environment ladder (#3963).
+pub(crate) const DEFAULT_INTEGRATION_BRANCH: &str = "develop";
+
+/// The branch worker branches are cut from, derived from the plan's environment ladder (#3963).
+///
+/// `deploy.environments` is an ordered ladder — `[dev → feature/*, staging → develop, prod → main]`.
+/// The integration branch is the last CONCRETE branch before the final (production) rung:
+///
+///   [feature/*, develop, main]  →  develop     (globs are patterns, not branches)
+///   [develop, main]             →  develop
+///   [main]                      →  None        (a single rung has nothing to integrate INTO)
+///
+/// Globs are skipped because `feature/*` names a pattern workers match, not a branch anything can be
+/// cut from. Returns None when the ladder is missing or degenerate, and the caller falls back to
+/// [`DEFAULT_INTEGRATION_BRANCH`] — a default is right here, since every documented flow in this repo
+/// is `feature → develop → main` and a project that declares nothing still means that.
+///
+/// Pure (no db/fs) so the whole rule is unit-testable against a literal blob.
+pub(crate) fn integration_branch_from_deploy(deploy: &serde_json::Value) -> Option<String> {
+    let envs = deploy.get("environments")?.as_array()?;
+    let concrete: Vec<&str> = envs
+        .iter()
+        .filter_map(|e| e.get("branch").and_then(|b| b.as_str()))
+        .map(str::trim)
+        .filter(|b| !b.is_empty() && !b.contains('*'))
+        .collect();
+    // The last rung is production; the one before it is where work integrates.
+    (concrete.len() >= 2).then(|| concrete[concrete.len() - 2].to_string())
+}
+
+/// The integration branch for `project_key`, from its plan (falling back to the default).
+fn integration_branch(project_key: &str) -> String {
+    crate::project::plan_db::deploy_for(project_key)
+        .as_ref()
+        .and_then(integration_branch_from_deploy)
+        .unwrap_or_else(|| DEFAULT_INTEGRATION_BRANCH.to_string())
+}
+
+/// Ensure `branch` exists in `clone`, creating it at the clone's HEAD when absent (#3963).
+///
+/// Nothing in the pipeline created the integration branch: publish doesn't, the repo clone doesn't,
+/// `setup_workspaces` doesn't — and the director protocol merely ASSUMES it ("merge it into develop",
+/// "watch develop's CI"). So a fresh project had none, and every worker branch was cut from `main`,
+/// collapsing the `feature → develop → main` flow the plan defines into a single tier.
+///
+/// Idempotent and non-destructive: a repo that already has the branch is left exactly as it is —
+/// this never moves, resets, or checks it out. Returns whether the branch is usable as a base.
+fn ensure_integration_branch(clone_str: &str, branch: &str) -> bool {
+    let exists = |r: &str| git_ok(clone_str, &["rev-parse", "--verify", "--quiet", r]);
+    if exists(&format!("refs/heads/{branch}")) {
+        return true;
+    }
+    // Prefer the remote's copy when the branch exists upstream but was never fetched locally, so a
+    // second machine doesn't fork a divergent `develop` from its own HEAD.
+    let remote = format!("refs/remotes/origin/{branch}");
+    let created = if exists(&remote) {
+        git_ok(clone_str, &["branch", branch, &format!("origin/{branch}")])
+    } else {
+        git_ok(clone_str, &["branch", branch, "HEAD"])
+    };
+    if created {
+        log::info!("ensure_worktree: created integration branch `{branch}` in {clone_str}");
+    } else {
+        log::warn!("ensure_worktree: could not create integration branch `{branch}` in {clone_str} — worker branches will be cut from HEAD");
+    }
+    created
+}
+
+
 /// Create (idempotently) a git worktree for one fleet agent: an isolated checkout
 /// of `repo` on a branch named after the agent, at
 /// `~/.base-studio-code/worktrees/<key>/<repoShort>--<agentSlug>` — OUTSIDE the project
@@ -16,6 +85,7 @@ use crate::prelude::*;
 /// branch left over from a prior run is reused. Returns the worktree's absolute path
 /// (native form — mirrors `agentWorktreeCwd` so the launched pane's cwd matches).
 #[tauri::command]
+
 pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: String, scope_md: Option<String>) -> Result<String, String> {
     let _perf = PerfSpan::new("ensure_worktree");
     let clone = repo_dir(&project_key, &repo);
@@ -25,6 +95,14 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
     let slug  = worktree_slug(&agent_id);
     let wt    = worktrees_dir(&project_key).join(worktree_dir_name(&repo, &agent_id));
     let wt_str = wt.to_string_lossy().into_owned();
+    // #3963: guarantee the integration branch BEFORE any worktree exists, and cut worker branches from
+    // it. Ordering is the whole point — workers get their worktrees at fleet launch, concurrently with
+    // the director starting, so a branch created later cannot retroactively rebase 38 workers that are
+    // already sitting on `main`. Doing it here (rather than in the director's prose) makes it a code
+    // guarantee that runs exactly once per worktree creation, whoever triggers it.
+    let clone_str_pre = clone.to_string_lossy().into_owned();
+    let integration = integration_branch(&project_key);
+    let base = ensure_integration_branch(&clone_str_pre, &integration).then_some(integration);
     // A worktree's `.git` is a FILE pointing into the main repo; create it only if
     // it isn't there yet (reuse across re-runs).
     if !wt.join(".git").exists() {
@@ -32,7 +110,7 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
             std::fs::create_dir_all(parent).str_err()?;
         }
         let clone_str = clone.to_string_lossy().into_owned();
-        add_worktree_healing(&clone_str, &wt_str, &slug)
+        add_worktree_healing(&clone_str, &wt_str, &slug, base.as_deref())
             .map_err(|e| format!("ensure_worktree: {e} for {repo} / {agent_id}"))?;
         log::info!("ensure_worktree: {repo} agent {agent_id} → {wt_str}");
     }
@@ -75,7 +153,7 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
 ///
 /// Both healing actions are idempotent and harmless when nothing is wrong. git's stderr is surfaced
 /// verbatim if the retry still fails (#1568).
-fn add_worktree_healing(clone_str: &str, wt_str: &str, slug: &str) -> Result<(), String> {
+fn add_worktree_healing(clone_str: &str, wt_str: &str, slug: &str, base: Option<&str>) -> Result<(), String> {
     let branch_ref = format!("refs/heads/{slug}");
     let branch_exists = || git_ok(clone_str, &["rev-parse", "--verify", "--quiet", &branch_ref]);
     let run_add = |reuse: bool| -> std::io::Result<std::process::Output> {
@@ -84,7 +162,13 @@ fn add_worktree_healing(clone_str: &str, wt_str: &str, slug: &str) -> Result<(),
         if reuse {
             c.args([wt_str, slug]); // attach the existing branch
         } else {
-            c.args(["-b", slug, wt_str]); // create the branch at HEAD
+            // Cut from the INTEGRATION branch, not HEAD (#3963). HEAD is `main`, so every worker
+            // used to branch from production — which is why all 39 network-monitor branches sat on
+            // one commit and every PR would have targeted the wrong base.
+            match base {
+                Some(b) => c.args(["-b", slug, wt_str, b]),
+                None => c.args(["-b", slug, wt_str]),
+            };
         }
         run_output(&mut c)
     };
@@ -297,7 +381,7 @@ mod tests {
         assert!(!no_window(&mut plain).output().unwrap().status.success(), "dangling record should block a plain add");
         // The healing helper prunes the stale record and succeeds (probes `feat`, reuses it).
         let target = base.join("target");
-        add_worktree_healing(&clone.to_string_lossy(), &target.to_string_lossy(), "feat").unwrap();
+        add_worktree_healing(&clone.to_string_lossy(), &target.to_string_lossy(), "feat", None).unwrap();
         assert!(target.join(".git").exists(), "worktree created after self-heal");
         let _ = fs::remove_dir_all(&base);
     }
@@ -317,7 +401,7 @@ mod tests {
         fs::remove_dir_all(&target).unwrap();
         // First `-b ui-modes <target>` fails on the dangling path but creates the branch; prune
         // clears the record; re-probe finds ui-modes; the reuse form succeeds.
-        add_worktree_healing(&clone.to_string_lossy(), &target.to_string_lossy(), "ui-modes").unwrap();
+        add_worktree_healing(&clone.to_string_lossy(), &target.to_string_lossy(), "ui-modes", None).unwrap();
         assert!(target.join(".git").exists(), "worktree created after re-probe + reuse");
         let mut head = std::process::Command::new("git");
         head.args(["-C", &target.to_string_lossy(), "rev-parse", "--abbrev-ref", "HEAD"]);
@@ -350,7 +434,7 @@ mod tests {
                 let wt = base.join(format!("wt-{i}"));
                 let wt_str = wt.to_string_lossy().into_owned();
                 barrier.wait(); // release all threads into `git worktree add` simultaneously
-                add_worktree_healing(&clone_str, &wt_str, &slug).expect("add under contention");
+                add_worktree_healing(&clone_str, &wt_str, &slug, None).expect("add under contention");
                 assert!(wt.join(".git").exists(), "worktree {i} created");
                 std::fs::write(wt.join("work.txt"), "x").unwrap();
                 crate::fleet::teardown::remove_worktree_at(&clone_pb, &wt).expect("remove");
@@ -378,7 +462,7 @@ mod tests {
         // caller (and the prune+retry can't paper over it).
         let bogus = base.join("not-a-repo");
         fs::create_dir_all(&bogus).unwrap();
-        let err = add_worktree_healing(&bogus.to_string_lossy(), &base.join("wt").to_string_lossy(), "x")
+        let err = add_worktree_healing(&bogus.to_string_lossy(), &base.join("wt").to_string_lossy(), "x", None)
             .unwrap_err();
         assert!(err.starts_with("git worktree add failed:"), "carries the helper prefix: {err}");
         assert!(err.trim_end().len() > "git worktree add failed:".len(), "carries git's actual stderr: {err}");
@@ -468,6 +552,92 @@ mod tests {
         seed_union_merge_gitattributes(&dir);
         assert!(!dir.join(".gitattributes").exists());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ── #3963: the integration branch ───────────────────────────────────────────────────────────
+    //
+    // Nothing in the pipeline created it — publish doesn't, the clone doesn't, setup_workspaces
+    // doesn't — and the director protocol merely ASSUMES it ("merge it into develop"). So a fresh
+    // project had none and every worker branch was cut from `main`, collapsing feature → develop →
+    // main into a single tier. Both live plans DO declare the ladder; nothing read it.
+
+    fn deploy(envs: &[(&str, &str)]) -> serde_json::Value {
+        serde_json::json!({
+            "environments": envs.iter().map(|(n, b)| serde_json::json!({"name": n, "branch": b})).collect::<Vec<_>>()
+        })
+    }
+
+    #[test]
+    fn the_ladders_last_concrete_rung_before_prod_is_the_integration_branch() {
+        // network-monitor's real ladder — the glob is a PATTERN workers match, not a branch.
+        let nm = deploy(&[("dev", "feature/*"), ("staging", "develop"), ("prod", "main")]);
+        assert_eq!(integration_branch_from_deploy(&nm).as_deref(), Some("develop"));
+        // cli-typer's real ladder — two rungs, no glob.
+        let ct = deploy(&[("dev", "develop"), ("release", "main")]);
+        assert_eq!(integration_branch_from_deploy(&ct).as_deref(), Some("develop"));
+    }
+
+    #[test]
+    fn a_non_develop_ladder_is_honoured_rather_than_hardcoded() {
+        // The whole point of reading the plan: the name is the project's to choose.
+        let d = deploy(&[("dev", "feature/*"), ("qa", "integration"), ("prod", "release")]);
+        assert_eq!(integration_branch_from_deploy(&d).as_deref(), Some("integration"));
+    }
+
+    #[test]
+    fn a_degenerate_ladder_yields_none_so_the_caller_falls_back() {
+        // One rung has nothing to integrate INTO; all-globs has no branch at all.
+        assert_eq!(integration_branch_from_deploy(&deploy(&[("prod", "main")])), None);
+        assert_eq!(integration_branch_from_deploy(&deploy(&[("dev", "feature/*")])), None);
+        assert_eq!(integration_branch_from_deploy(&serde_json::json!({})), None);
+        assert_eq!(integration_branch_from_deploy(&deploy(&[])), None);
+    }
+
+    #[test]
+    fn blank_branches_are_skipped_not_treated_as_a_rung() {
+        let d = deploy(&[("dev", "  "), ("staging", "develop"), ("prod", "main")]);
+        assert_eq!(integration_branch_from_deploy(&d).as_deref(), Some("develop"));
+    }
+
+    #[test]
+    fn the_integration_branch_is_created_once_and_never_disturbed() {
+        let base = unique_dir("bsc-wt", "integ");
+        let clone = base.join("web");
+        init_repo_with_commit(&clone);
+        let cs = clone.to_string_lossy().into_owned();
+        let head_before = crate::git_run(&cs, &["rev-parse", "HEAD"]).unwrap();
+
+        assert!(ensure_integration_branch(&cs, "develop"), "created when absent");
+        assert!(crate::git_ok(&cs, &["rev-parse", "--verify", "--quiet", "refs/heads/develop"]));
+
+        // Advance develop, then re-run: an existing branch must never be moved or reset.
+        crate::git_ok(&cs, &["branch", "-f", "develop", "HEAD"]);
+        let develop_sha = crate::git_run(&cs, &["rev-parse", "develop"]).unwrap();
+        assert!(ensure_integration_branch(&cs, "develop"), "idempotent when present");
+        assert_eq!(crate::git_run(&cs, &["rev-parse", "develop"]).unwrap(), develop_sha, "not moved");
+        // And it never checks anything out — HEAD is where it was.
+        assert_eq!(crate::git_run(&cs, &["rev-parse", "HEAD"]).unwrap(), head_before);
+    }
+
+    #[test]
+    fn a_worker_branch_is_cut_from_the_integration_branch_not_head() {
+        // The defect this fixes: `-b <slug> <wt>` created the branch at HEAD (= main), so every
+        // worker built on production and every PR would have targeted the wrong base.
+        let base = unique_dir("bsc-wt", "cutfrom");
+        let clone = base.join("web");
+        init_repo_with_commit(&clone);
+        let cs = clone.to_string_lossy().into_owned();
+        assert!(ensure_integration_branch(&cs, "develop"));
+        // Move main FORWARD so main != develop and the base is observable.
+        std::fs::write(clone.join("only-on-main.txt"), "x").unwrap();
+        crate::git_ok(&cs, &["add", "."]);
+        crate::git_ok(&cs, &["commit", "-q", "-m", "main moves on"]);
+
+        let wt = base.join("wt");
+        add_worktree_healing(&cs, &wt.to_string_lossy(), "feat", Some("develop")).unwrap();
+        // The worker branch must descend from develop, and must NOT carry main's extra commit.
+        assert!(crate::git_ok(&cs, &["merge-base", "--is-ancestor", "develop", "feat"]), "cut from develop");
+        assert!(!wt.join("only-on-main.txt").exists(), "does not contain main-only work");
     }
 }
 
