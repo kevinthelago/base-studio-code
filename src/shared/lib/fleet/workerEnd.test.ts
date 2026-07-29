@@ -52,3 +52,31 @@ describe("classifyWorkerEnd (#920)", () => {
     expect(v.state).toBe("needs-attention");
   });
 });
+
+describe("OwnedIssue.stream — the per-project batch (#3944)", () => {
+  // The auto-end sweep used to spawn `bsc plan list --stream <id>` PER PANE, serially, on every change
+  // to any of three log streams. It now reads each project once and partitions in memory, so the
+  // filter that replaces the query has to be exact.
+  const all: OwnedIssue[] = [
+    { ref: "#1", status: "complete", stream: "auth" },
+    { ref: "#2", status: "open", stream: "auth" },
+    { ref: "#3", status: "complete", stream: "ui" },
+    { ref: "#4", status: "complete" },            // unassigned — belongs to no stream
+  ];
+
+  it("selects exactly the stream's own issues", () => {
+    expect(all.filter((i) => i.stream === "auth").map((i) => i.ref)).toEqual(["#1", "#2"]);
+  });
+
+  it("never attributes an UNASSIGNED issue to a stream", () => {
+    // If it did, a stream could read as incomplete (or complete) because of work it does not own —
+    // and the verdict drives an auto-close nudge, so a wrong answer ends a working agent.
+    expect(all.filter((i) => i.stream === "ui").map((i) => i.ref)).toEqual(["#3"]);
+  });
+
+  it("yields an empty set for a stream with no issues, which classifies as not-complete", () => {
+    const mine = all.filter((i) => i.stream === "ghost");
+    expect(mine).toEqual([]);
+    expect(classifyWorkerEnd(mine, emptyCoordState()).state).not.toBe("complete");
+  });
+});
