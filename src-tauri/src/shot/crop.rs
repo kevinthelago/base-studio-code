@@ -20,10 +20,12 @@ struct Rgba {
 /// Decode a PNG to RGBA8. `CapturePreview` emits RGBA8, but a PNG can legally be RGB/palette/16-bit —
 /// so normalise rather than assume, or a future WebView2 change silently corrupts every crop.
 fn decode_rgba(bytes: &[u8]) -> Result<Rgba, String> {
-    let mut decoder = png::Decoder::new(bytes);
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder.read_info().map_err(|e| format!("not a decodable PNG: {e}"))?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    // png 0.18 returns None when the frame's buffer size would overflow `usize`.
+    let size = reader.output_buffer_size().ok_or("PNG frame too large to decode")?;
+    let mut buf = vec![0u8; size];
     let info = reader.next_frame(&mut buf).map_err(|e| format!("cannot read PNG pixels: {e}"))?;
     buf.truncate(info.buffer_size());
 
@@ -116,7 +118,7 @@ pub fn crop_png(png_bytes: &[u8], rect: Rect, scale: f64) -> Result<(Vec<u8>, u3
 /// Dimensions of a PNG without decoding its pixels — for the whole-webview (no-crop) path, which
 /// still has to report `w`/`h` in the response.
 pub fn png_dimensions(png_bytes: &[u8]) -> Result<(u32, u32), String> {
-    let decoder = png::Decoder::new(png_bytes);
+    let decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
     let reader = decoder.read_info().map_err(|e| format!("not a decodable PNG: {e}"))?;
     let info = reader.info();
     Ok((info.width, info.height))
