@@ -1,3 +1,6 @@
+/** One loop left `open` by a crash — enough to name it in the banner (#3961). */
+export interface InterruptedLoop { id: number; a: string; b: string; seed?: string }
+
 // Console domain — navigation + the tabs/panes/focus core app state, plus the pane-lifecycle
 // value types (warden quarantine, auto-ended workers). Split from store/types (#1634).
 import type { Workspace } from "@/app/chrome/Rail";
@@ -209,6 +212,15 @@ export interface ConsoleState {
    *  quit leaves sessions dormant) + the restore banner. */
   uncleanShutdown: boolean;
   setUncleanShutdown: (v: boolean) => void;
+  /** Loops an unclean shutdown stranded (#3961) — counted at boot, cleared when the user acts.
+   *  Empty on a clean quit: an open loop is then legitimately dormant, not interrupted. */
+  interruptedLoops: InterruptedLoop[];
+  /** Count the stranded loops WITHOUT writing (`bsc loop reap --dry-run`). Boot-only, crash-gated. */
+  probeInterruptedLoops: () => Promise<void>;
+  /** Close them for real (`bsc loop reap`), recording `ended_by=interrupted`. */
+  reapInterruptedLoops: () => Promise<void>;
+  /** Dismiss the banner without writing — the loops stay open and reappear next crash. */
+  dismissInterruptedLoops: () => void;
   /** Crash recovery (#1041): panes the user clicked "restore" for — resume with `claude --continue`
    *  on remount, regardless of the autoResumeClaude setting. Transient. */
   restoreRequested: Record<string, boolean>;

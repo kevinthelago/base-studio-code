@@ -2,6 +2,8 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
+import type { InterruptedLoop } from "../types/console";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { unlock } from "@/shared/lib/core/achievements";
 import { type AgentProfile, PROFILES } from "@/features/security/lib/agentProfiles";
 import { DEFAULT_ACCENT } from "@/features/settings/lib/appearance";
@@ -17,7 +19,7 @@ import { newTabId } from "../helpers";
 import { setMapEntry, deleteMapEntry, deleteMapEntries, updateArrayItem } from "../updateHelpers";
 
 type ConsoleSlice = Pick<AppStore,
-  "activeWorkspace" | "setWorkspace" | "navigate" | "hasHydrated" | "setHasHydrated" | "tabs" | "activeTabIdx" | "paneMenuOpenIdx" | "focusedPaneIdx" | "fullscreenPaneIdx" | "consoleBroadcast" | "setConsoleBroadcast" | "focusQueue" | "focusTarget" | "setFocusTarget" | "enqueueFocus" | "removeFocus" | "clearFocusQueue" | "reconcileFocusQueue" | "advanceFocus" | "terminalFontSize" | "setTerminalFontSize" | "accent" | "setAccent" | "kitTheme" | "setKitTheme" | "soundNotifications" | "setSoundNotifications" | "ttsEnabled" | "setTtsEnabled" | "ttsRate" | "setTtsRate" | "ttsVoice" | "setTtsVoice" | "ttsVerbosity" | "setTtsVerbosity" | "keybindings" | "setKeybinding" | "resetKeybinding" | "resetAllKeybindings" | "paneViews" | "paneNames" | "paneCwds" | "paneWasClaude" | "uncleanShutdown" | "setUncleanShutdown" | "restoreRequested" | "restoreSessionsFromCrash" | "achievements" | "unlockAchievement" | "setPaneWasClaude" | "setPaneCwd" | "paneStatus" | "setPaneStatus" | "quarantinedPanes" | "markQuarantine" | "clearQuarantine" | "acknowledgeQuarantine" | "wardenSince" | "clearProjectQuarantine" | "endedPanes" | "markPaneEnded" | "clearEndedPanes" | "reopenPane" | "dormantPanes" | "paneLastActivity" | "idleReaper" | "reapPane" | "resumePane" | "resumePaneSession" | "setIdleReaperConfig" | "recomputeTabState" | "clearTabStatuses" | "paneInitCmds" | "setPaneInitCmd" | "paneStartupPromptDocs" | "paneCheckpointDocs" | "paneStartupPromptText" | "paneContinue" | "disabledPanes" | "setPaneDisabled" | "paneRoles" | "setPaneRole" | "agentProfiles" | "setAgentProfiles" | "updateAgentProfile" | "panePermsStale" | "clearPanePermsStale" | "paneRedrawNonce" | "requestPaneRedraw" | "paneProfiles" | "paneRoleGlobs" | "paneRepos" | "paneFlows" | "paneProviders" | "setPaneProvider" | "paneWslDistro" | "paneClaudeActive" | "setPaneClaudeActive" | "setPaneProfile" | "setActiveTab" | "addTab" | "closeTab" | "moveTab" | "renameTab" | "setTabState" | "setTabLayout" | "setPaneMenu" | "setFocusedPane" | "setFullscreenPane" | "focusedAgentName" | "setFocusedAgentName" | "setPaneView" | "setAllPanesView" | "setPaneName" | "liveAgents" | "bumpLiveAgents" | "paneDirectorDrive" | "paneDirectorMode" | "paneStream"
+  "activeWorkspace" | "setWorkspace" | "navigate" | "hasHydrated" | "setHasHydrated" | "tabs" | "activeTabIdx" | "paneMenuOpenIdx" | "focusedPaneIdx" | "fullscreenPaneIdx" | "consoleBroadcast" | "setConsoleBroadcast" | "focusQueue" | "focusTarget" | "setFocusTarget" | "enqueueFocus" | "removeFocus" | "clearFocusQueue" | "reconcileFocusQueue" | "advanceFocus" | "terminalFontSize" | "setTerminalFontSize" | "accent" | "setAccent" | "kitTheme" | "setKitTheme" | "soundNotifications" | "setSoundNotifications" | "ttsEnabled" | "setTtsEnabled" | "ttsRate" | "setTtsRate" | "ttsVoice" | "setTtsVoice" | "ttsVerbosity" | "setTtsVerbosity" | "keybindings" | "setKeybinding" | "resetKeybinding" | "resetAllKeybindings" | "paneViews" | "paneNames" | "paneCwds" | "paneWasClaude" | "uncleanShutdown" | "setUncleanShutdown" | "interruptedLoops" | "probeInterruptedLoops" | "reapInterruptedLoops" | "dismissInterruptedLoops" | "restoreRequested" | "restoreSessionsFromCrash" | "achievements" | "unlockAchievement" | "setPaneWasClaude" | "setPaneCwd" | "paneStatus" | "setPaneStatus" | "quarantinedPanes" | "markQuarantine" | "clearQuarantine" | "acknowledgeQuarantine" | "wardenSince" | "clearProjectQuarantine" | "endedPanes" | "markPaneEnded" | "clearEndedPanes" | "reopenPane" | "dormantPanes" | "paneLastActivity" | "idleReaper" | "reapPane" | "resumePane" | "resumePaneSession" | "setIdleReaperConfig" | "recomputeTabState" | "clearTabStatuses" | "paneInitCmds" | "setPaneInitCmd" | "paneStartupPromptDocs" | "paneCheckpointDocs" | "paneStartupPromptText" | "paneContinue" | "disabledPanes" | "setPaneDisabled" | "paneRoles" | "setPaneRole" | "agentProfiles" | "setAgentProfiles" | "updateAgentProfile" | "panePermsStale" | "clearPanePermsStale" | "paneRedrawNonce" | "requestPaneRedraw" | "paneProfiles" | "paneRoleGlobs" | "paneRepos" | "paneFlows" | "paneProviders" | "setPaneProvider" | "paneWslDistro" | "paneClaudeActive" | "setPaneClaudeActive" | "setPaneProfile" | "setActiveTab" | "addTab" | "closeTab" | "moveTab" | "renameTab" | "setTabState" | "setTabLayout" | "setPaneMenu" | "setFocusedPane" | "setFullscreenPane" | "focusedAgentName" | "setFocusedAgentName" | "setPaneView" | "setAllPanesView" | "setPaneName" | "liveAgents" | "bumpLiveAgents" | "paneDirectorDrive" | "paneDirectorMode" | "paneStream"
 >;
 
 export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = (set, get) => ({
@@ -131,6 +133,20 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
       // Crash recovery (#1041): the boot flag + the one-click restore.
       uncleanShutdown: false,
       setUncleanShutdown: (v: boolean) => set({ uncleanShutdown: v }),
+
+      // #3961 — loops an unclean shutdown stranded. `--dry-run` COUNTS without writing, so the boot
+      // probe never mutates the store behind the user's back; the write happens only when they act.
+      interruptedLoops: [],
+      probeInterruptedLoops: async () => {
+        const out = await bscJson<{ loops?: InterruptedLoop[] } | null>(
+          null, ["loop", "reap", "--dry-run", "--json"], null);
+        set({ interruptedLoops: out?.loops ?? [] });
+      },
+      reapInterruptedLoops: async () => {
+        await bscJson<unknown>(null, ["loop", "reap", "--json"], null);
+        set({ interruptedLoops: [] });
+      },
+      dismissInterruptedLoops: () => set({ interruptedLoops: [] }),
       restoreRequested: {},
       restoreSessionsFromCrash: () => {
         const s = get();
