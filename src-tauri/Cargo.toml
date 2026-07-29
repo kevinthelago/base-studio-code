@@ -49,7 +49,7 @@ rfd = "0.14"
 # dials the relay over real (CA-signed) TLS via rustls + webpki roots; `base64`
 # encodes the static public key for the pairing QR; `rand` mints room ids + PSKs.
 snow = "0.10"
-base64 = "0.22"
+base64 = "0.23"
 # PKCE (#1197 OAuth): SHA-256 of the verifier for the S256 code challenge.
 sha2 = "0.11"
 rand = "0.10"
