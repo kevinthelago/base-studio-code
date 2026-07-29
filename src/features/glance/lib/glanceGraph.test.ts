@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   buildGraph, focusSets, rollUpHealth, kitNodeId, usesKitEdgeId, NW, NH,
   libraryNodeId, requiresEdgeId, libIdOfNode, isLibraryNode, libraryGraphOf, isLibraryEdge, LIBRARY_META,
-  HEALTH_META, HEALTH_RANK,
+  HEALTH_META, HEALTH_RANK, ACTIVITY_META, nodeStateWord,
+  type GHealth, type GActivity,
   type GRawNode, type GRawEdge,
 } from "./glanceGraph";
 import { layoutBand } from "@/shared/lib/graph/crossGraph";
@@ -388,5 +389,50 @@ describe("off health status (#3239) — the user's manual deactivate", () => {
     const g = buildGraph([{ id: "a", role: "service", health: "off", activity: "building" }], []);
     expect(g.nodes[0].rollupHealth).toBe("off");
     expect(g.nodes[0].healthInherited).toBe(false);
+  });
+});
+
+describe("nodeStateWord (#3957)", () => {
+  const n = (health: GHealth, activity: GActivity, rollupHealth?: GHealth) =>
+    ({ health, activity, rollupHealth: rollupHealth ?? health });
+
+  it("a degraded node reads its HEALTH word, never its reason", () => {
+    // The bug: the slot is 108px/nowrap/ellipsis, so a reason didn't overflow — it truncated.
+    // "waiting on 2 upstreams to land (domain-model…" rendered as "waiting on 2 upstre…".
+    expect(nodeStateWord(n("warning", "building"))).toBe("warning");
+    expect(nodeStateWord(n("error", "idle"))).toBe("error");
+  });
+
+  it("a healthy node still reads its ACTIVITY word", () => {
+    expect(nodeStateWord(n("healthy", "building"))).toBe(ACTIVITY_META.building.label);
+    expect(nodeStateWord(n("idle", "waiting"))).toBe(ACTIVITY_META.waiting.label);
+  });
+
+  it("a deactivated node reads `off`, outranking any live status (#3239)", () => {
+    expect(nodeStateWord(n("healthy", "building", "off"))).toBe("off");
+    expect(nodeStateWord(n("error", "idle", "off"))).toBe("off");
+  });
+
+  it("a node degraded only by a DEPENDENCY keeps its own word", () => {
+    // `health` is the node's own axis; `rollupHealth` folds in dependencies. A healthy node must not
+    // read "warning" because something upstream is degraded — that is what the rollup DOT is for.
+    expect(nodeStateWord(n("healthy", "building", "warning"))).toBe(ACTIVITY_META.building.label);
+  });
+
+  it("only ever returns a FIXED label — never free text", () => {
+    // The real invariant. Not "one word": `ACTIVITY_META` legitimately carries "in review". What must
+    // never happen is a `reason` (or any other caller-supplied string) reaching this slot, because the
+    // slot truncates at 108px and free text becomes an unreadable fragment.
+    const known = new Set([
+      ...Object.values(HEALTH_META).map((m) => m.label),
+      ...Object.values(ACTIVITY_META).map((m) => m.label),
+    ]);
+    const healths: GHealth[] = ["idle", "healthy", "warning", "error", "off"];
+    const acts: GActivity[] = Object.keys(ACTIVITY_META) as GActivity[];
+    for (const h of healths) for (const a of acts) {
+      for (const roll of [undefined, ...healths]) {
+        expect(known).toContain(nodeStateWord(n(h, a, roll)));
+      }
+    }
   });
 });
