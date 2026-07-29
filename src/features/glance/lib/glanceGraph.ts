@@ -345,6 +345,29 @@ export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse:
   // #3239 — the user-deactivated node: a muted grey dot, never pulsing. The manual "turned off" state.
   off: { label: "off", color: "var(--graph-health-off)", pulse: false },
 };
+/**
+ * The node's bottom-right STATE WORD (#3957) — axis 2's one-word slot.
+ *
+ * Precedence: a user-deactivated node reads `off` (that wins over any live status, #3239); a node whose
+ * OWN health is degraded reads its health word (`warning`/`error`); otherwise its activity word.
+ *
+ * It deliberately does NOT return the node's `reason`. It used to: #2541 swapped the reason in "so the
+ * user sees WHY the dot changed", which worked while reasons were short fault titles. They aren't — 
+ * `applyStallHealth` appends a duration and #3931's `heldReason` names every unlanded upstream. The slot
+ * is 108px, nowrap, ellipsis, so a sentence never overflowed, it TRUNCATED:
+ * "waiting on 2 upstreams to land (domain-model…" rendered as "waiting on 2 upstre…", which reads as
+ * garbage rather than a status. The reason is still on hover (`title`) and in the inspector's REASON
+ * tile, both of which can actually display it.
+ *
+ * `rollupHealth` decides `off` (the deactivation is a rollup concern); `health` decides degraded (a node
+ * must not read `warning` because a DEPENDENCY is degraded). Pure.
+ */
+export function nodeStateWord(n: { health: GHealth; rollupHealth?: GHealth; activity: GActivity }): string {
+  if ((n.rollupHealth ?? n.health) === "off") return HEALTH_META.off.label;
+  if (n.health === "warning" || n.health === "error") return HEALTH_META[n.health].label;
+  return ACTIVITY_META[n.activity].label;
+}
+
 /** Axis 2 — ACTIVITY → the bottom-right lifecycle word (#2541). Colour is the health axis's job; this
  *  is just the label + whether it animates (a live app / building fleet reads as active). */
 export const ACTIVITY_META: Record<GActivity, { label: string; pulse: boolean }> = {
