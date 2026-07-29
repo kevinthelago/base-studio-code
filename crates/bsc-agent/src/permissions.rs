@@ -106,7 +106,10 @@ impl Permissions {
             "bash" => {
                 let cmd = args["command"].as_str().unwrap_or("");
                 // The always-on floor first — denied for every session regardless of `deny_bash`.
-                if bsc_util::dangerous::agent_dangerous_substrings().any(|p| cmd.contains(p)) {
+                // #3948: `dangerous_match` skips heredoc bodies written by `cat`/`tee` so writing a
+                // file that MENTIONS a dangerous command isn't treated as running one; a body fed to
+                // an interpreter is still scanned.
+                if bsc_util::dangerous::dangerous_match(cmd).is_some() {
                     return Err("permission denied: command matches the built-in dangerous-command denylist".into());
                 }
                 // #3483: program-name patterns match the PROGRAM token, not any substring of the

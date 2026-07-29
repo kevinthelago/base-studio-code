@@ -190,7 +190,11 @@ fn deny_reason(cmd: &str, env_denies: &str) -> Option<String> {
     if cmd.is_empty() {
         return None;
     }
-    if let Some(p) = bsc_util::dangerous::agent_dangerous_substrings().find(|&p| cmd.contains(p)) {
+    // #3948: `dangerous_match` excludes heredoc BODIES written by an inert reader (`cat`/`tee`), so
+    // the floor scans the COMMAND and not the FILE CONTENT it writes. A worker was blocked writing a
+    // Rust file whose doc comment illustrated an unsafe raw value with `rm -rf /`. A body piped into an
+    // interpreter (`bash <<EOF`) is still scanned — that one IS a command.
+    if let Some(p) = bsc_util::dangerous::dangerous_match(cmd) {
         return Some(format!("the built-in dangerous-command floor ('{p}')"));
     }
     // #3483: the session's role/user patterns are PROGRAM NAMES (`vi`, `ed`, `tee`), so they match the
