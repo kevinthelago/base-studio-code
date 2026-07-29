@@ -9,7 +9,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
+import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
 import { archetypeById, hueColor } from "@/features/teams";
@@ -284,10 +284,16 @@ export function GlanceCanvas(p: CanvasProps) {
         // The user-deactivated node (#3239): render it greyed + calm — the OFF health wins over the live
         // status word (a building/live node still reads "off") and mutes every activity pulse.
         const isOff = n.rollupHealth === "off";
-        // Axis 2 — ACTIVITY (#2541): the bottom-right word — but when this node's OWN health is degraded,
-        // swap in the REASON (the fault title) so the user sees WHY the dot changed; an OFF node reads "off".
+        // Axis 2 — ACTIVITY (#2541): the bottom-right word. A degraded node swaps in its HEALTH word
+        // (#3957) — `warning`/`error` — not its reason. This slot is one word wide (108px, nowrap,
+        // ellipsis), so a reason never overflowed; it TRUNCATED, and
+        // "waiting on 2 upstreams to land (domain-model…" rendered as "waiting on 2 upstre…", which
+        // reads as garbage rather than a status. Substituting the reason made sense when reasons were
+        // short fault titles, but `applyStallHealth` appends a duration and #3931's `heldReason` names
+        // every unlanded upstream. Nothing is lost: the dot carries the colour, the `title` below
+        // carries the full reason on hover, and GlanceInspector renders it in a REASON tile.
         const ownDegraded = n.health === "warning" || n.health === "error";
-        const bottomText = isOff ? "off" : ownDegraded && n.reason ? n.reason : ACTIVITY_META[n.activity].label;
+        const bottomText = nodeStateWord(n);
         const bottomColor = isOff || degraded ? health.color : "var(--fg-muted)";
         const bottomPulse = !isOff && !degraded && ACTIVITY_META[n.activity].pulse;
 
