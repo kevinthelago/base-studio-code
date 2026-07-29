@@ -30,7 +30,33 @@ pub(crate) fn read_worktree_changes(cwd: String) -> Vec<String> {
 /// yields an empty list rather than failing the batch.
 #[tauri::command]
 pub(crate) fn read_worktree_changes_batch(cwds: Vec<String>) -> Vec<Vec<String>> {
-    cwds.into_iter().map(read_worktree_changes).collect()
+    // #3954: run the probes CONCURRENTLY. This was `cwds.into_iter().map(...)` — serial — and each
+    // element spawns TWO git subprocesses. When the resume rebuilt network-monitor's worktrees the
+    // input grew to 47 cwds, i.e. ~94 serial spawns (~97ms each) inside ONE synchronous
+    // `#[tauri::command]`, which occupies a pool thread the whole time: a measured 9158ms mean, with
+    // `pty_write` stuck at 3280ms and `pty_resize` at 8279ms behind it. Batching (#3908) fixed the
+    // invoke COUNT but left the work serial, so it scaled straight back up with the fleet.
+    //
+    // Concurrency is capped: git is process-heavy, and an unbounded fan-out at 47 cwds would trade a
+    // queue stall for a spawn storm (#3871). Order is preserved by writing into indexed slots, which
+    // the caller's index-aligned zip depends on.
+    const MAX_CONCURRENT: usize = 8;
+    let mut out: Vec<Vec<String>> = vec![Vec::new(); cwds.len()];
+    for (chunk_idx, chunk) in cwds.chunks(MAX_CONCURRENT).enumerate() {
+        let base = chunk_idx * MAX_CONCURRENT;
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = chunk
+                .iter()
+                .map(|cwd| scope.spawn(move || read_worktree_changes(cwd.clone())))
+                .collect();
+            for (i, h) in handles.into_iter().enumerate() {
+                // A panicking probe degrades that ONE pane to "no file signal" — the same tolerance
+                // the single-cwd path has — rather than poisoning the whole sweep.
+                out[base + i] = h.join().unwrap_or_default();
+            }
+        });
+    }
+    out
 }
 
 /// #3614: does `path` exist as a host directory? Normalizes a git-bash cwd first (like `pty_create`),
