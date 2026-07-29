@@ -95,6 +95,15 @@ pub(crate) fn fleet_for(project_key: &str) -> Option<serde_json::Value> {
     open(project_key).ok().and_then(|s| s.fleet_get().ok().flatten())
 }
 
+/// The project's deploy config blob from plan.db, or None. Like [`fleet_for`] this does NOT create a
+/// db — the fleet launch probes every project, so it must never materialize an empty store.
+pub(crate) fn deploy_for(project_key: &str) -> Option<serde_json::Value> {
+    if !db_path(project_key).exists() {
+        return None;
+    }
+    open(project_key).ok().and_then(|s| s.deploy_get().ok().flatten())
+}
+
 /// Empty the project's plan store (issues + features) — backs "clear plan" (#plan-db). No-op when
 /// the db doesn't exist (don't create one just to clear it). Called from `clear_project_plan_files`
 /// so a reset isn't undone by the next poll re-reading the DB.
