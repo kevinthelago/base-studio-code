@@ -72,6 +72,84 @@ pub fn agent_dangerous_substrings() -> impl Iterator<Item = &'static str> {
     DANGEROUS_BASH.iter().filter_map(|d| d.agent_substring)
 }
 
+/// The first word of a shell segment, ignoring leading `env VAR=…` noise and redirections.
+fn first_word(seg: &str) -> &str {
+    seg.split_whitespace()
+        .find(|w| !w.contains('=') && !w.starts_with('<') && !w.starts_with('>'))
+        .unwrap_or("")
+}
+
+/// Commands that CONSUME a heredoc as data and never execute it. Anything else (`bash`, `sh`, `python`,
+/// an unknown program) keeps its heredoc body scanned — a body piped into an interpreter IS a command.
+const INERT_HEREDOC_READERS: [&str; 2] = ["cat", "tee"];
+
+/// The heredoc delimiter opened on `line` by an INERT reader, if any — e.g. `cat <<'EOF' > f` ⇒ `EOF`.
+/// Handles `<<`/`<<-` and a quoted (`'EOF'`, `"EOF"`) or bare delimiter.
+fn inert_heredoc_delimiter(line: &str) -> Option<String> {
+    let at = line.find("<<")?;
+    // The reader is the first word of the pipeline segment that opens the heredoc.
+    let seg = line[..at].rsplit(['|', ';', '&']).next().unwrap_or("");
+    let reader = first_word(seg);
+    if !INERT_HEREDOC_READERS.contains(&reader) {
+        return None;
+    }
+    let rest = line[at + 2..].trim_start().trim_start_matches('-').trim_start();
+    let word: String = rest
+        .chars()
+        .take_while(|c| !c.is_whitespace() && *c != '>' && *c != '|')
+        .collect();
+    let d = word.trim_matches(|c| c == '\'' || c == '"').to_string();
+    (!d.is_empty()).then_some(d)
+}
+
+/// Remove heredoc BODIES fed to a non-executing writer (`cat`/`tee`) so the floor scans the COMMAND and
+/// not the FILE CONTENT it writes (#3948).
+///
+/// A worker was blocked writing `crates/netcon-core/src/primitives.rs` because the Rust doc comment in
+/// the heredoc body illustrated an unsafe raw value with `rm -rf /`. Writing a file that MENTIONS a
+/// dangerous command is not running one, and the floor made a worker burn a turn rewriting its own
+/// source around a security rule that was never aimed at it.
+///
+/// The reader check is what keeps this safe: `cat <<EOF > f` writes data, while `bash <<EOF` EXECUTES
+/// it — only the former is exempted. The opening line, every redirection, and anything after the
+/// terminator are all still scanned.
+///
+/// This does NOT defeat a determined write-then-execute (`cat <<EOF > x.sh … EOF; bash x.sh`) — no
+/// substring floor can. Real containment is `bsc-confine` + the sandbox; this floor guards against
+/// obvious catastrophe and should not be paid for by blocking ordinary source writes.
+pub fn strip_inert_heredoc_bodies(cmd: &str) -> String {
+    if !cmd.contains("<<") {
+        return cmd.to_string();                       // fast path — no heredoc, nothing to strip
+    }
+    let mut out = String::with_capacity(cmd.len());
+    let mut skip_until: Option<String> = None;
+    for line in cmd.split_inclusive('\n') {
+        match &skip_until {
+            Some(delim) => {
+                // The terminator line ends the body; it is kept (it is just the delimiter word).
+                if line.trim_end_matches(['\r', '\n']).trim() == delim.as_str() {
+                    skip_until = None;
+                    out.push_str(line);
+                }
+                // else: body line — dropped from the scanned text.
+            }
+            None => {
+                out.push_str(line);
+                skip_until = inert_heredoc_delimiter(line);
+            }
+        }
+    }
+    out
+}
+
+/// The floor's verdict for `cmd`: the matched substring, or `None` to allow. Heredoc bodies written by
+/// an inert reader are excluded from the scan (#3948). The ONE entry point both harnesses use, so the
+/// Claude hook and the bsc-agent runtime cannot drift on what "dangerous" means.
+pub fn dangerous_match(cmd: &str) -> Option<&'static str> {
+    let scanned = strip_inert_heredoc_bodies(cmd);
+    agent_dangerous_substrings().find(|&p| scanned.contains(p))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +218,84 @@ mod tests {
                 "a dangerous-floor entry must render into at least one harness",
             );
         }
+    }
+
+    // ── #3948: the floor scans the COMMAND, not the file CONTENT it writes ───────────────────────
+    //
+    // A worker was blocked writing crates/netcon-core/src/primitives.rs because the Rust doc comment
+    // in the heredoc body illustrated an unsafe raw value with `rm -rf /`. The exemption is scoped by
+    // the READER: `cat`/`tee` consume a heredoc as data, an interpreter executes it.
+
+    #[test]
+    fn a_file_whose_content_mentions_a_dangerous_command_can_be_written() {
+        let cmd = "cat <<'RUSTEOF' > crates/netcon-core/src/primitives.rs\n\
+                   //! A raw string could carry `rm -rf /` all the way to a shell.\n\
+                   pub struct Command(String);\n\
+                   RUSTEOF";
+        assert_eq!(dangerous_match(cmd), None, "writing a file that MENTIONS the pattern is not running it");
+    }
+
+    #[test]
+    fn a_heredoc_piped_into_an_interpreter_is_still_floored() {
+        // The whole safety argument: `bash` EXECUTES its heredoc, so the body is a command.
+        for reader in ["bash", "sh", "zsh", "python"] {
+            let cmd = format!("{reader} <<'EOF'\nrm -rf /\nEOF");
+            assert_eq!(dangerous_match(&cmd), Some("rm -rf /"), "{reader} executes its heredoc body");
+        }
+    }
+
+    #[test]
+    fn a_real_dangerous_command_on_the_line_is_still_floored() {
+        assert_eq!(dangerous_match("rm -rf / --no-preserve-root"), Some("rm -rf /"));
+        assert_eq!(dangerous_match("sudo whoami"), Some("sudo "));
+        assert_eq!(dangerous_match("git push --force origin main"), Some("git push --force"));
+        assert_eq!(dangerous_match("gh auth token"), Some("gh auth token"));
+    }
+
+    #[test]
+    fn a_dangerous_command_after_the_terminator_is_still_floored() {
+        // Only the body is exempt — the scan resumes at the terminator. This is the obvious bypass
+        // attempt and it must not work.
+        let cmd = "cat <<'EOF' > f.txt\nharmless\nEOF\nrm -rf /";
+        assert_eq!(dangerous_match(cmd), Some("rm -rf /"));
+    }
+
+    #[test]
+    fn the_heredoc_opening_line_is_still_scanned() {
+        // Redirections and anything else on the opener are commands, not data.
+        let cmd = "cat <<'EOF' > /dev/null; sudo sh\nbody\nEOF";
+        assert_eq!(dangerous_match(cmd), Some("sudo "));
+    }
+
+    #[test]
+    fn tee_is_inert_too_and_bare_or_quoted_delimiters_both_work() {
+        for open in ["tee f <<EOF", "tee f <<'EOF'", "tee f <<\"EOF\"", "tee f <<-EOF"] {
+            let cmd = format!("{open}\nrm -rf /\nEOF");
+            assert_eq!(dangerous_match(&cmd), None, "{open} writes its body as data");
+        }
+    }
+
+    #[test]
+    fn an_unterminated_heredoc_does_not_swallow_the_rest_of_the_command() {
+        // A malformed/truncated command must not become a blanket exemption... but it also cannot
+        // resurrect a terminator that never arrives. Documented: everything after an unterminated
+        // inert heredoc is treated as body. The opener is still scanned, and `bsc-confine` +
+        // the sandbox remain the real containment.
+        let cmd = "cat <<'EOF' > f\nrm -rf /";
+        assert_eq!(dangerous_match(cmd), None);
+        // ...whereas the same shape with an interpreter is never exempt at all.
+        assert_eq!(dangerous_match("bash <<'EOF'\nrm -rf /"), Some("rm -rf /"));
+    }
+
+    #[test]
+    fn a_command_with_no_heredoc_is_returned_unchanged_by_the_stripper() {
+        let cmd = "echo hello && ls -la";
+        assert_eq!(strip_inert_heredoc_bodies(cmd), cmd);
+    }
+
+    #[test]
+    fn two_heredocs_in_one_command_are_each_bounded() {
+        let cmd = "cat <<'A' > x\nrm -rf /\nA\ncat <<'B' > y\nsudo sh\nB\ngit push --force";
+        assert_eq!(dangerous_match(cmd), Some("git push --force"), "both bodies exempt, the tail is not");
     }
 }
