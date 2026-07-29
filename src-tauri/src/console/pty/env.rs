@@ -217,12 +217,68 @@ pub(crate) fn stage_dev_sidecars() {
             continue; // not built yet — sidecar_status reports it missing
         };
         let dst = dir.join(&exe);
-        match std::fs::copy(&src, &dst) {
+        match stage_one(&src, &dst) {
             Ok(_) => log::info!("[startup] staged dev sidecar `{stem}` → {}", dst.display()),
-            Err(e) => log::warn!(
-                "[startup] could not stage `{stem}` to {} (a live session may hold it): {e}",
+            // #3959: ERROR, not warn. A failed stage does not degrade gracefully — `$BSC_BIN` keeps
+            // pointing at the STALE binary and every hook that names a newer subcommand is rejected by
+            // a `bsc` that has never heard of it (`bsc: unknown hook 'bash-supply'`), which surfaces
+            // much later and looks nothing like a staging problem.
+            Err(e) => log::error!(
+                "[startup] could not stage `{stem}` to {} — sessions will run a STALE sidecar: {e}",
                 dst.display()
             ),
+        }
+    }
+    sweep_superseded(&dir);
+}
+
+/// Copy `src` over `dst`, renaming a LOCKED `dst` out of the way first (#3959).
+///
+/// The staged copy exists precisely so a live session locks IT rather than `target/<profile>/bsc.exe`,
+/// which would break cargo's relink (#3457). That protection is also a deadlock: on Windows
+/// `fs::copy` cannot overwrite a file any process holds open, so the very lock the staging dir is
+/// designed to attract is what prevents the staging dir from ever being refreshed. A long-lived
+/// `bsc mcp` server guarantees it.
+///
+/// Windows lets you RENAME an open file — the handle follows the file — so the running session keeps
+/// its old copy (valid until it exits) while a fresh binary lands at the canonical path.
+fn stage_one(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    match std::fs::copy(src, dst) {
+        Ok(_) => return Ok(()),
+        // Only the "in use" case earns the rename dance; a permissions/disk error should surface as-is
+        // rather than leave a renamed-away binary behind.
+        Err(e) if !is_in_use(&e) => return Err(e),
+        Err(_) => {}
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let parked = dst.with_extension(format!("old-{stamp}"));
+    std::fs::rename(dst, &parked)?;
+    match std::fs::copy(src, dst) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            // Put it back — a missing sidecar is worse than a stale one.
+            let _ = std::fs::rename(&parked, dst);
+            Err(e)
+        }
+    }
+}
+
+/// Windows reports a locked file as `PermissionDenied` with OS error 32 (ERROR_SHARING_VIOLATION).
+fn is_in_use(e: &std::io::Error) -> bool {
+    e.raw_os_error() == Some(32) || e.kind() == std::io::ErrorKind::PermissionDenied
+}
+
+/// Drop `*.old-*` copies parked by an earlier [`stage_one`]. Best-effort: one still held by a live
+/// session simply stays until the next boot, which is the point of parking it rather than deleting.
+fn sweep_superseded(dir: &std::path::Path) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for entry in rd.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.contains(".old-") {
+            let _ = std::fs::remove_file(entry.path());
         }
     }
 }
@@ -654,6 +710,8 @@ mod tests {
         portable_git_bin_candidates, scratch_dir_for_cwd, session_env_with, shot_dir_for_cwd,
         session_skill_group_for_pane, sidecar_candidates, staged_sidecar_dir, BSC_SHIM_CMD,
         BSC_SHIM_SH,
+        // #3959 — the rename-then-copy staging path.
+        is_in_use, stage_one, sweep_superseded,
     };
     use crate::bsc_base_dir;
     use std::collections::HashMap;
@@ -956,5 +1014,84 @@ mod tests {
         // A plain repo somewhere on disk is not a project session.
         let elsewhere = std::path::Path::new("C:/code/some-repo");
         assert_eq!(plan_db_for_cwd(&elsewhere.to_string_lossy()), None);
+    }
+
+    // ── #3959: staging must survive a locked destination ────────────────────────────────────────
+    //
+    // The staged dir exists so a live session locks IT instead of `target/<profile>/bsc.exe` (#3457).
+    // That protection was also a deadlock: `fs::copy` cannot overwrite a file a process holds open, so
+    // the lock the dir is designed to attract prevented the dir from ever being refreshed — and the
+    // failure was a WARN, leaving `$BSC_BIN` on a stale binary that rejected newer hooks
+    // (`bsc: unknown hook 'bash-supply'`) long after the fact.
+
+    #[test]
+    fn stage_one_overwrites_an_unlocked_destination() {
+        let dir = crate::testutil::unique_dir("bsc-stage", "plain");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("src.bin");
+        let dst = dir.join("bsc.exe");
+        std::fs::write(&src, b"NEW").unwrap();
+        std::fs::write(&dst, b"OLD").unwrap();
+        stage_one(&src, &dst).unwrap();
+        assert_eq!(std::fs::read(&dst).unwrap(), b"NEW", "the fresh binary lands at the canonical path");
+        assert!(
+            std::fs::read_dir(&dir).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().contains(".old-")),
+            "no rename dance when the plain copy works",
+        );
+    }
+
+    #[test]
+    fn stage_one_creates_the_destination_when_absent() {
+        let dir = crate::testutil::unique_dir("bsc-stage", "absent");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("src.bin");
+        std::fs::write(&src, b"NEW").unwrap();
+        let dst = dir.join("bsc.exe");
+        stage_one(&src, &dst).unwrap();
+        assert_eq!(std::fs::read(&dst).unwrap(), b"NEW");
+    }
+
+    #[test]
+    fn a_missing_source_is_reported_not_swallowed() {
+        // A non-lock error must surface as-is rather than trigger the rename path and park the only
+        // good binary out of the way.
+        let dir = crate::testutil::unique_dir("bsc-stage", "nosrc");
+        std::fs::create_dir_all(&dir).unwrap();
+        let dst = dir.join("bsc.exe");
+        std::fs::write(&dst, b"OLD").unwrap();
+        assert!(stage_one(&dir.join("nope.bin"), &dst).is_err());
+        assert_eq!(std::fs::read(&dst).unwrap(), b"OLD", "the existing binary is left intact");
+    }
+
+    #[test]
+    fn os_error_32_is_classified_as_in_use() {
+        // ERROR_SHARING_VIOLATION is the Windows "another process has it open" code — the ONLY case
+        // that earns the rename dance.
+        assert!(is_in_use(&std::io::Error::from_raw_os_error(32)));
+        assert!(is_in_use(&std::io::Error::from(std::io::ErrorKind::PermissionDenied)));
+        assert!(!is_in_use(&std::io::Error::from(std::io::ErrorKind::NotFound)));
+    }
+
+    #[test]
+    fn sweep_drops_parked_copies_and_keeps_the_live_ones() {
+        let dir = crate::testutil::unique_dir("bsc-stage", "sweep");
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in ["bsc.exe", "bsc-agent.exe", "bsc.old-1784595461", "bsc-agent.old-1"] {
+            std::fs::write(dir.join(f), b"x").unwrap();
+        }
+        sweep_superseded(&dir);
+        assert!(dir.join("bsc.exe").exists(), "the live sidecar survives");
+        assert!(dir.join("bsc-agent.exe").exists(), "so does the agent");
+        assert!(!dir.join("bsc.old-1784595461").exists(), "a parked copy is swept");
+        assert!(!dir.join("bsc-agent.old-1").exists());
+    }
+
+    #[test]
+    fn a_parked_name_is_never_a_sidecar_candidate() {
+        // The parked file must not be resolvable as `$BSC_BIN`, or the sweep would be racing the
+        // resolver. `with_extension` drops `.exe`, so `bsc.old-<ts>` cannot match the `bsc.exe` lookup.
+        let parked = std::path::Path::new("/bin/bsc.exe").with_extension("old-123");
+        assert_eq!(parked.file_name().unwrap(), "bsc.old-123");
+        assert_ne!(parked.file_name().unwrap(), "bsc.exe");
     }
 }
