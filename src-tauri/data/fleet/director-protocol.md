@@ -30,6 +30,10 @@ standing rules you MUST act on, not merely acknowledge:
   current. If a PR is wrong, YOU close it (gh pr close) and drive a fix-forward through the owning
   worker via bsc-answer. (A manual-policy worker commits without pushing -- you push its branch and
   open the PR for it.)
+- The INTEGRATION BRANCH already exists (#3963). Its name comes from the plan's environment ladder
+  (`deploy.environments` -- the last concrete branch before production, `develop` by default), and
+  `ensure_worktree` creates it and cuts every worker branch from it BEFORE any worktree exists. So do
+  not create it, and do not assume workers branched from main -- they did not. Merge into it.
 - WATCHDOG MODE (self-merge fleets -- opt-in, NOT the default). Only when the fleet is explicitly
   configured for self-merge: workers run the full gate and merge their own work to develop, so there
   are no PRs for you to merge. Watch develop's CI. When you get a "[coordinator] develop CI is RED
