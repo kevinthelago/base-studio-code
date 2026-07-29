@@ -49,7 +49,7 @@ rfd = "0.14"
 # dials the relay over real (CA-signed) TLS via rustls + webpki roots; `base64`
 # encodes the static public key for the pairing QR; `rand` mints room ids + PSKs.
 snow = "0.10"
-base64 = "0.22"
+base64 = "0.23"
 # PKCE (#1197 OAuth): SHA-256 of the verifier for the S256 code challenge.
 sha2 = "0.11"
 rand = "0.10"
@@ -81,7 +81,7 @@ bsc-navigate = { path = "../crates/bsc-navigate" }
 bsc-debug = { path = "../crates/bsc-debug" }
 # PNG decode/encode for the --rect crop (CapturePreview hands back the WHOLE webview). `png` not
 # `image`: it is the only format CapturePreview emits, and it keeps the binary off a codec matrix.
-png = "0.17"
+png = "0.18"
 
 # Unified log engine (#1607/#1389): the pure scope-graph policy (`logs::scope`) shared by the desktop
 # `GraphLogger` and the `bsc log` CLI, so one config type + one matching rule govern both surfaces.
