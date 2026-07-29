@@ -7,6 +7,7 @@
 import { useEffect, useRef } from "react";
 import { useAppStore } from "@/store";
 import type { Workspace } from "@/app/registry";
+import { log } from "@/shared/lib/core/log";
 
 interface NavLoc {
   workspace: Workspace;
@@ -73,19 +74,42 @@ export function useNavHistory() {
       setGlanceDrill(target.workspace === "glance" ? target.drill : null);
       setTeamsDrill(target.teamsDrill);
     };
-    const onMouseUp = (e: MouseEvent) => {
-      if (e.button === 3) { e.preventDefault(); go(-1); }
-      else if (e.button === 4) { e.preventDefault(); go(1); }
+    // #3946: CAPTURE phase. These were bubble-phase, so any `stopPropagation` between the target and
+    // `window` silently swallowed the navigation — and the app has plenty of those (the Glance canvas,
+    // the morph overlays, xterm). Capture runs before every one of them, so this hook sees the event
+    // first no matter where the pointer is. `pointerup` is handled too: it carries the same `button`
+    // values and fires for devices that route through the pointer stack rather than legacy mouse events.
+    //
+    // A press is LOGGED once per button whether or not it navigates. That is the whole diagnostic: if a
+    // press produces no log line, the event never reached the DOM at all — Chromium can consume XBUTTON
+    // as a browser-level history accelerator on Windows — and no DOM listener can ever fix it. That case
+    // needs native input capture, which is a different fix, and this tells us which one we are in
+    // without guessing. jsdom cannot answer it and Playwright cannot synthesize X1/X2.
+    const seen = new Set<number>();
+    const handled = (e: MouseEvent | PointerEvent): boolean => {
+      if (e.button !== 3 && e.button !== 4) return false;
+      if (!seen.has(e.button)) {
+        seen.add(e.button);
+        log.info(`nav: mouse button ${e.button} (${e.button === 3 ? "back" : "forward"}) reached the DOM — binding is live`);
+      }
+      e.preventDefault();
+      return true;
     };
-    // Suppress the webview's native history nav on these buttons so this hook owns them.
-    const suppress = (e: MouseEvent) => { if (e.button === 3 || e.button === 4) e.preventDefault(); };
-    window.addEventListener("mouseup", onMouseUp);
-    window.addEventListener("mousedown", suppress);
-    window.addEventListener("auxclick", suppress);
+    const onUp = (e: MouseEvent) => { if (handled(e)) go(e.button === 3 ? -1 : 1); };
+    // Suppress the webview's native history nav on the other phases so this hook owns the gesture.
+    const suppress = (e: MouseEvent) => { handled(e); };
+    const opts = true; // capture
+    window.addEventListener("mouseup", onUp, opts);
+    window.addEventListener("pointerup", onUp as EventListener, opts);
+    window.addEventListener("mousedown", suppress, opts);
+    window.addEventListener("pointerdown", suppress as EventListener, opts);
+    window.addEventListener("auxclick", suppress, opts);
     return () => {
-      window.removeEventListener("mouseup", onMouseUp);
-      window.removeEventListener("mousedown", suppress);
-      window.removeEventListener("auxclick", suppress);
+      window.removeEventListener("mouseup", onUp, opts);
+      window.removeEventListener("pointerup", onUp as EventListener, opts);
+      window.removeEventListener("mousedown", suppress, opts);
+      window.removeEventListener("pointerdown", suppress as EventListener, opts);
+      window.removeEventListener("auxclick", suppress, opts);
     };
   }, [setWorkspace, setProjectsPageMode, setGlanceDrill, setTeamsDrill]);
 }
