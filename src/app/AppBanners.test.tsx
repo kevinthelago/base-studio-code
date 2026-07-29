@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { SessionRecoveryBanner, SandboxSetupBanner, PathExposeBanner } from "./AppBanners";
+import { SessionRecoveryBanner, SandboxSetupBanner, PathExposeBanner, AppBanners } from "./AppBanners";
 import { useAppStore } from "@/store";
 
 const DISCOVERED = [
@@ -174,5 +174,42 @@ describe("PathExposeBanner (#2734)", () => {
     // A fresh mount reads the persisted flag and stays hidden even though detection says not-configured.
     render(<PathExposeBanner />);
     await waitFor(() => expect(screen.queryByText("Add to PATH")).toBeNull());
+  });
+});
+
+describe("InterruptedLoopBanner (#3961)", () => {
+  beforeEach(() => useAppStore.setState({ interruptedLoops: [] }));
+
+  it("stays hidden when nothing was stranded", () => {
+    render(<AppBanners />);
+    expect(screen.queryByText(/interrupted/i)).toBeNull();
+  });
+
+  it("names the stranded loops and says why it matters", () => {
+    useAppStore.setState({ interruptedLoops: [{ id: 3, a: "driver", b: "designer" }] });
+    render(<AppBanners />);
+    // The consequence is the point: a participant's `watch` blocks on a turn that never comes.
+    expect(screen.getByText(/wait forever/i)).toBeTruthy();
+    expect(screen.getByText(/driver↔designer/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Close 1/ })).toBeTruthy();
+  });
+
+  it("summarises past two rather than listing every loop", () => {
+    useAppStore.setState({
+      interruptedLoops: [
+        { id: 1, a: "a", b: "z" }, { id: 2, a: "b", b: "z" },
+        { id: 3, a: "c", b: "z" }, { id: 4, a: "d", b: "z" },
+      ],
+    });
+    render(<AppBanners />);
+    expect(screen.getByText(/\+2/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Close 4/ })).toBeTruthy();
+  });
+
+  it("dismiss writes NOTHING — the loops stay open for the next boot to find", () => {
+    useAppStore.setState({ interruptedLoops: [{ id: 3, a: "driver", b: "designer" }] });
+    render(<AppBanners />);
+    fireEvent.click(screen.getByLabelText(/dismiss/i));
+    expect(useAppStore.getState().interruptedLoops).toEqual([]);
   });
 });
