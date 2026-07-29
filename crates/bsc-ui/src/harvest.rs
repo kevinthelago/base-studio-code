@@ -230,7 +230,7 @@ fn build_candidates(found: Vec<Found>, kit_id: &str) -> Vec<Candidate> {
             } else {
                 "composite"
             };
-            let (buildable, unbuildable_reasons) = buildability(&f.src_text, &imports, &in_set);
+            let (buildable, unbuildable_reasons) = buildability(&f.src_text, &imports, &in_set, &f.src);
             let mut c = Candidate {
                 id: component_id(&f.name),
                 name: f.name,
@@ -360,6 +360,7 @@ fn buildability(
     src_text: &str,
     imports: &[InternalImport],
     siblings: &SiblingIndex,
+    from_rel: &str,
 ) -> (bool, Vec<String>) {
     let mut why = Vec::new();
     if !src_text.contains("export ") {
@@ -371,7 +372,7 @@ fn buildability(
         why.push("contains an elision marker (`…`) — a sketch, not code".to_string());
     }
     let unresolved: BTreeSet<&str> =
-        imports.iter().filter(|i| !i.is_sibling(siblings)).map(|i| i.spec.as_str()).collect();
+        imports.iter().filter(|i| !i.is_sibling(siblings, from_rel)).map(|i| i.spec.as_str()).collect();
     if !unresolved.is_empty() {
         let list = unresolved.iter().map(|m| format!("`{m}`")).collect::<Vec<_>>().join(", ");
         why.push(format!("unresolved internal import(s): {list} — resolve or vendor them"));
@@ -379,10 +380,11 @@ fn buildability(
     (why.is_empty(), why)
 }
 
-/// One `@/…` import in a closure: the specifier and the names it imports. `names` holds the IMPORTED
-/// names (`import { Button as Btn }` imports `Button`) — the identity that matches a harvested component
-/// — and is EMPTY for a form whose bindings can't be attributed to named exports (`import * as X`, a
-/// bare side-effect import), which therefore never counts as a sibling import.
+/// One INTERNAL (`@/…` alias OR relative `./`/`../`) import in a closure: the specifier and the names it
+/// imports. `names` holds the IMPORTED names (`import { Button as Btn }` imports `Button`) — the identity
+/// that matches a harvested component — and is EMPTY for a form whose bindings can't be attributed to
+/// named exports (`import * as X`, a bare side-effect import), which therefore never counts as a sibling
+/// import.
 struct InternalImport {
     spec: String,
     names: Vec<String>,
@@ -433,16 +435,32 @@ impl InternalImport {
     /// specifier (`import { KeyValueList, type KeyValueItem } from "@/shared/ui/data/KeyValueList"`, a
     /// real and common shape here) come from that same vendored file. An `import * as X` is opaque
     /// (`names` empty) and never resolves, and nor does a specifier no harvested module answers to.
-    fn is_sibling(&self, siblings: &SiblingIndex) -> bool {
-        siblings.resolves(self.spec.trim_start_matches("@/"), &self.names)
+    ///
+    /// `from_rel` is the IMPORTING candidate's own harvested `src` — needed to resolve a RELATIVE
+    /// (`./`, `../`) specifier against the importer's directory (an `@/…` alias needs no such anchor).
+    /// Shares `bsc_component::graph_health::resolve_internal_base` — the exact join/collapse rule
+    /// `doctor` judges the same specifier by later, so harvest's `buildable` verdict can never disagree
+    /// with `doctor`'s over how a `./…` import resolves (the #4 gap: a promoted component that harvest
+    /// certified `buildable: true` reporting `no-implementation` in `doctor` with no way to tell why).
+    fn is_sibling(&self, siblings: &SiblingIndex, from_rel: &str) -> bool {
+        let Some(base) = bsc_component::graph_health::resolve_internal_base(&self.spec, from_rel) else {
+            return false;
+        };
+        siblings.resolves(&base, &self.names)
     }
 }
 
-/// The `@/…` imports of a module, with the names each binds. Parsed rather than line-scanned: a
-/// multi-line `import {\n  Button,\n} from "@/…";` has no line that both starts with `import ` and
-/// carries the specifier, so the line scan this replaced missed it entirely and silently called such a
-/// closure buildable. Relative (`./`) imports are out of scope here — the closure is built from ONE file,
-/// so it never emits one.
+/// The internal (`@/…` alias OR relative `./`/`../`) imports of a module, with the names each binds.
+/// Parsed rather than line-scanned: a multi-line `import {\n  Button,\n} from "@/…";` has no line that
+/// both starts with `import ` and carries the specifier, so the line scan this replaced missed it
+/// entirely and silently called such a closure buildable.
+///
+/// Relative imports USED to be skipped entirely here on the assumption that "the closure is built from
+/// ONE file, so it never emits one" — false in practice: the closure only inlines SAME-FILE helpers, so a
+/// component that genuinely imports a sibling MODULE via a relative path (`import { space } from
+/// "./space"`) keeps that import verbatim, and it was silently exempted from the buildability check —
+/// certifying `buildable: true` for a candidate `doctor`'s stricter, sibling-aware check then correctly
+/// flags `no-implementation` on (#4). Scanning `./`/`../` here too closes that gap.
 fn internal_imports(src_text: &str) -> Vec<InternalImport> {
     let mut out = Vec::new();
     let mut parser = Parser::new();
@@ -460,7 +478,7 @@ fn internal_imports(src_text: &str) -> Vec<InternalImport> {
         }
         let Some(raw) = field_text(child, "source", src) else { continue };
         let spec = raw.trim_matches(|c| c == '"' || c == '\'').to_string();
-        if !spec.starts_with("@/") {
+        if !bsc_component::graph_health::is_internal_specifier(&spec) {
             continue;
         }
         let (mut names, mut opaque) = (Vec::new(), false);
@@ -810,18 +828,26 @@ mod tests {
     }
 
     /// Buildability of a standalone module — no harvest around it, so it has no siblings to resolve
-    /// against (the pre-#3471 single-module judgement).
+    /// against (the pre-#3471 single-module judgement). `from_rel` is a placeholder path (its own
+    /// existing tests only exercise `@/…` specifiers, which resolve independently of it).
     fn buildability_of(src: &str) -> (bool, Vec<String>) {
-        buildability(src, &internal_imports(src), &SiblingIndex::default())
+        buildability(src, &internal_imports(src), &SiblingIndex::default(), "user/Standalone.tsx")
     }
 
-    /// Buildability of a module harvested alongside `siblings`, each given as `(name, src)`.
-    fn buildability_with(src: &str, siblings: &[(&str, &str)]) -> (bool, Vec<String>) {
+    /// Buildability of a module harvested alongside `siblings`, each given as `(name, src)`, as if this
+    /// module itself lived at `from_rel` — needed to resolve any RELATIVE (`./`, `../`) import in `src`.
+    fn buildability_with_at(src: &str, siblings: &[(&str, &str)], from_rel: &str) -> (bool, Vec<String>) {
         let mut idx = SiblingIndex::default();
         for (name, at) in siblings {
             idx.0.entry((*name).to_string()).or_default().push(module_base(at));
         }
-        buildability(src, &internal_imports(src), &idx)
+        buildability(src, &internal_imports(src), &idx, from_rel)
+    }
+
+    /// [`buildability_with_at`] for the common case — the module's own path doesn't matter because `src`
+    /// only imports by `@/…` alias (unaffected by `from_rel`).
+    fn buildability_with(src: &str, siblings: &[(&str, &str)]) -> (bool, Vec<String>) {
+        buildability_with_at(src, siblings, "user/Standalone.tsx")
     }
 
     #[test]
@@ -929,6 +955,42 @@ mod tests {
         // `import { KeyValueList, type KeyValueItem } from "@/shared/ui/data/KeyValueList"` accounts for
         // several of this repo's own pages.)
         assert!(buildability_with(&format!("import {{ Button, type ButtonProps }} from \"@/shared/ui/controls/Button\";{render}"), &harvest).0);
+    }
+
+    #[test]
+    fn a_relative_import_to_no_harvested_sibling_is_flagged_not_silently_forgiven() {
+        // #4: this is the exact class harvest used to be blind to — `internal_imports` only scanned
+        // `@/…` specifiers, so a component keeping a genuine RELATIVE import to a module that was never
+        // harvested (a real, common shape: `src/shared/ui/layout/Box.tsx` importing the sibling constants
+        // module `./space`) was certified `buildable: true` regardless. `doctor`'s stricter, sibling-aware
+        // check then correctly flagged it `no-implementation` once promoted — with harvest's own verdict
+        // giving no hint why. Scanning `./`/`../` here closes that gap.
+        let src = "import { space } from \"./space\";\nexport function Box() { return space; }";
+        let (ok, why) = buildability_with_at(src, &[], "src/shared/ui/layout/Box.tsx");
+        assert!(!ok, "an unresolved relative import is not buildable: {why:?}");
+        assert!(why.iter().any(|r| r.contains("`./space`")), "the reason NAMES the import: {why:?}");
+    }
+
+    #[test]
+    fn a_relative_import_landing_on_a_harvested_sibling_resolves() {
+        // The same import, but `space` WAS harvested (from the same directory) — a real composing sibling,
+        // resolved with the SAME join/collapse rule `doctor` uses (`graph_health::resolve_internal_base`),
+        // so harvest and doctor can never disagree over whether `./space` resolves.
+        let src = "import { space } from \"./space\";\nexport function Box() { return space; }";
+        let siblings = [("space", "src/shared/ui/layout/space.ts")];
+        let (ok, why) = buildability_with_at(src, &siblings, "src/shared/ui/layout/Box.tsx");
+        assert!(ok, "a harvested relative sibling resolves: {why:?}");
+        assert!(why.is_empty());
+    }
+
+    #[test]
+    fn a_parent_relative_import_resolves_against_the_importers_directory() {
+        // `../typography/Text` from `src/shared/ui/layout/Eyebrow.tsx` must resolve against
+        // `src/shared/ui/typography/Text.tsx` — exercising the `..` segment collapse, not just `./`.
+        let src = "import { Text } from \"../typography/Text\";\nexport function Eyebrow() { return <Text/>; }";
+        let siblings = [("Text", "src/shared/ui/typography/Text.tsx")];
+        let (ok, why) = buildability_with_at(src, &siblings, "src/shared/ui/layout/Eyebrow.tsx");
+        assert!(ok, "a `../` import resolves against the importer's own directory: {why:?}");
     }
 
     #[test]

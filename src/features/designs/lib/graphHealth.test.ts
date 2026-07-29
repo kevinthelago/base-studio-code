@@ -32,6 +32,21 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(analyzeGraphHealth([comp("Btn", "primitive", 9, [], { ...action, source: undefined, srcText: "<button/>", builtin: true })]).some((f) => f.category === "no-analytics")).toBe(false);
   });
 
+  it("names WHY a component is no-implementation, not merely that it is (bsc request #4)", () => {
+    // The finding used to state only THAT the preview couldn't build it, so the reader had to re-derive
+    // the cause by hand. Rust twin: `a_no_implementation_finding_names_why_it_is_unbuildable`.
+    const whyOf = (over: Partial<ComponentRecord>) =>
+      analyzeGraphHealth([comp("Sketch", "composite", 2, [], over)])
+        .find((f) => f.category === "no-implementation")?.why ?? "";
+
+    expect(whyOf({ source: "", srcText: "" })).toContain("no module source of its own");
+    expect(whyOf({ source: "", srcText: "function Sketch(){ return <i/>; }" })).toContain("declares no `export`");
+    expect(whyOf({ source: "", srcText: "export function Sketch(){ … }" })).toContain("code-elision marker");
+    expect(
+      whyOf({ source: "", srcText: 'import { z } from "@/features/nope/lib/gone";\nexport function Sketch(){ return <i>{z}</i>; }' }),
+    ).toContain("`@/features/nope/lib/gone`");
+  });
+
   it("flags an INTERACTIVE implemented component carrying no tests, and clears on a manifest (#3878)", () => {
     // Tests are a per-node data contract, the same shape as the analytics manifest one field over: once a
     // component's source is a store record compiled at runtime, a test file under src/** is no longer
