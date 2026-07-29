@@ -17,7 +17,7 @@ import { useAppStore } from "@/store";
 import { roleCapability } from "../session/sessionRoles";
 import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "../core/llmConfig";
 import { oneShotComplete } from "../core/claudeComplete";
-import { planWarden, parseAuditCommands, zipWorktreeChanges, type WardenSession } from "./warden";
+import { planWarden, parseAuditCommands, zipWorktreeChanges, wardenSweepTargets, livePaneIdsOf, type WardenSession } from "./warden";
 import { buildJudgePrompt, parseJudgeVerdict, selectForJudging } from "./wardenJudge";
 import { completedWorkerPanes, doneIssueRefs } from "./streamCompletion";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
@@ -163,8 +163,12 @@ export function useWarden(): void {
 
     const fresh = useAppStore.getState();
     const quarantined = new Set([...Object.keys(fresh.quarantinedPanes), ...inFlight.current]);
-    // Skip completed workers entirely — they must not be (re)quarantined while standing by.
-    const live = panes.filter((p) => !completed.has(p));
+    // #3954: probe only panes with a RUNNING session, and skip completed workers entirely (they must
+    // not be (re)quarantined while standing by). `panes` is the PLANNED roster — after the resume
+    // rebuilt network-monitor's worktrees that was 47 panes against 3 live terminals, and every pane
+    // costs two git subprocesses. A pane with no session cannot be drifting.
+    const liveIds = livePaneIdsOf(fresh.tabs, fresh.endedPanes, fresh.disabledPanes);
+    const live = wardenSweepTargets(panes, liveIds, completed);
     // #3908: TWO invokes per sweep, not two per pane. Was `Promise.all(live.map(buildSession))`, which
     // fired N git-spawning `read_worktree_changes` plus N identical audit tails at once.
     const { auditLines, changesByPane } = await sweepInputs(live);

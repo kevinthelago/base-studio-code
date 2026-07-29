@@ -84,3 +84,40 @@ export function zipWorktreeChanges(panes: string[], changes: readonly (string[] 
   panes.forEach((p, i) => out.set(p, changes[i] ?? []));
   return out;
 }
+
+/**
+ * The panes a warden sweep should actually probe (#3954): those with a RUNNING session.
+ *
+ * The sweep used to take the whole planned roster (`Object.keys(fleetPaneStreams)` minus completed
+ * streams). That is the set of streams the PLAN defines, not the set that is running — so once the
+ * resume rebuilt network-monitor's worktrees the sweep grew to 47 panes while only 3 terminals were
+ * live, and each pane costs two git subprocesses. ~94 serial spawns inside one synchronous command
+ * stalled the whole Tauri queue (`pty_write` measured at 3280ms, `pty_resize` at 8279ms).
+ *
+ * A pane with no session cannot be drifting: the warden watches what a RUNNING worker does to its
+ * worktree, and there is nothing to watch when nothing is running. Liveness is the same definition
+ * Glance and the launch pump use — present in a tab, and neither ended nor disabled — so all three
+ * agree on "does this session exist?".
+ *
+ * Pure; the caller injects the store slices.
+ */
+export function wardenSweepTargets(
+  panes: readonly string[],
+  live: ReadonlySet<string>,
+  completed: ReadonlySet<string>,
+): string[] {
+  return panes.filter((p) => live.has(p) && !completed.has(p));
+}
+
+/** The live pane set from the tab roster: in a tab, not ended, not disabled. Pure. */
+export function livePaneIdsOf(
+  tabs: readonly { paneIds?: string[] }[],
+  ended: Record<string, unknown>,
+  disabled: Record<string, unknown>,
+): Set<string> {
+  const out = new Set<string>();
+  for (const t of tabs) for (const p of t.paneIds ?? []) {
+    if (p && !ended[p] && !disabled[p]) out.add(p);
+  }
+  return out;
+}

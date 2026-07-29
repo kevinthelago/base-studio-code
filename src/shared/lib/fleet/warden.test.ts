@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planWarden, summarizeTrips, parseAuditCommands, type WardenSession, zipWorktreeChanges } from "./warden";
+import { planWarden, summarizeTrips, parseAuditCommands, type WardenSession, zipWorktreeChanges, wardenSweepTargets, livePaneIdsOf } from "./warden";
 import { roleCapability } from "../session/sessionRoles";
 import { DEFAULT_FLOW } from "@/features/planner/fleet/agentFlow";
 
@@ -89,5 +89,43 @@ describe("zipWorktreeChanges (#3908) — the batched worktree read must not misa
 
   it("an empty fleet zips to an empty map", () => {
     expect(zipWorktreeChanges([], []).size).toBe(0);
+  });
+});
+
+describe("wardenSweepTargets / livePaneIdsOf (#3954)", () => {
+  const tabs = [{ paneIds: ["p:a", "p:b", "p:director"] }];
+
+  it("probes ONLY panes with a running session", () => {
+    // The measured bug: the sweep took the planned roster (47 panes) while 3 terminals were live,
+    // and every pane costs two git subprocesses — ~94 serial spawns that stalled the whole queue.
+    const planned = ["p:a", "p:b", "p:c", "p:d", "p:e"];
+    const live = livePaneIdsOf(tabs, {}, {});
+    expect(wardenSweepTargets(planned, live, new Set())).toEqual(["p:a", "p:b"]);
+  });
+
+  it("still skips a COMPLETED worker even when it is live", () => {
+    // Completed workers stand by in maintenance and must never be (re)quarantined.
+    const live = livePaneIdsOf(tabs, {}, {});
+    expect(wardenSweepTargets(["p:a", "p:b"], live, new Set(["p:b"]))).toEqual(["p:a"]);
+  });
+
+  it("treats an ENDED or DISABLED pane as not live", () => {
+    expect([...livePaneIdsOf(tabs, { "p:a": true }, {})].sort()).toEqual(["p:b", "p:director"]);
+    expect([...livePaneIdsOf(tabs, {}, { "p:b": true })].sort()).toEqual(["p:a", "p:director"]);
+  });
+
+  it("a fleet with nothing running sweeps nothing — no git spawns at all", () => {
+    expect(wardenSweepTargets(["p:a", "p:b"], new Set(), new Set())).toEqual([]);
+  });
+
+  it("agrees with the Glance/pump liveness definition (in a tab, not ended, not disabled)", () => {
+    const multi = [{ paneIds: ["x:1"] }, { paneIds: ["y:1", undefined as unknown as string] }];
+    expect([...livePaneIdsOf(multi, {}, {})].sort()).toEqual(["x:1", "y:1"]);
+  });
+
+  it("a pane in the roster but in NO tab is not swept", () => {
+    // The exact shape of the bug: plan.db knows 38 streams, the tab holds 3.
+    const live = livePaneIdsOf([{ paneIds: ["p:a"] }], {}, {});
+    expect(wardenSweepTargets(["p:a", "p:b", "p:c"], live, new Set())).toEqual(["p:a"]);
   });
 });
