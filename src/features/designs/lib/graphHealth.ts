@@ -32,7 +32,7 @@ import reactUiArtifact from "@data/components/react-ui.json";
 import previewImportmap from "@data/ui/preview-importmap.json";
 import platformModules from "@data/ui/platform-modules.json";
 import { buildComposesEdges } from "./compositionLayout";
-import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, hasCodeElision, type KitArtifact } from "./componentPreview";
 import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
 import type { LibraryModuleResolver } from "./componentPreview";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
@@ -238,6 +238,40 @@ function isInternalSpecifier(spec: string): boolean {
  *  preview provides (`targets`)? Tries TS module-resolution order over the importer-relative base. A
  *  NON-internal spec returns `true` — not this check's concern (the bare-specifier check owns npm).
  *  Rust twin: `resolves_internal`. */
+/** Every reason the preview CANNOT build `source`, in the order `isPreviewBuildable` tests them — its
+ *  reason-first face.
+ *
+ *  A `no-implementation` finding used to state only THAT a component was unbuildable, leaving the reader
+ *  to re-derive the cause by hand (the gap `bsc request` #4 was filed for). The causes are already
+ *  computed to decide the predicate; naming them makes `bsc ui doctor` diagnosable on its own.
+ *
+ *  Returns EMPTY only when nothing is wrong — a component with no source at all is a STATED reason, not
+ *  an empty list. Rust twin: `no_implementation_reasons` (graph_health.rs); the two must move together.
+ *
+ *  Lives HERE rather than beside `isPreviewBuildable` in componentPreview.ts so the twins sit in the
+ *  mirrored files — graph_health.rs ↔ graphHealth.ts — which is where the parity tests look. (Both
+ *  modules are vendored into the packaged preview closure, so either placement regenerates
+ *  `react-ui.json`; placement is about parity, not artifact size.) */
+export function previewBuildFailures(
+  source: string,
+  fromRel: string,
+  resolvesToSibling: (spec: string, fromRel: string) => boolean,
+): string[] {
+  const s = source.trim();
+  if (!s) return ["it carries no module source of its own (neither `source` nor `srcText`)"];
+  const why: string[] = [];
+  if (!/\bexport\b/.test(s)) why.push("its source declares no `export`");
+  if (hasCodeElision(s)) why.push("its source contains a code-elision marker (`…`) — a sketch, not code");
+  const unresolved = [
+    ...new Set(importSpecifiers(s).filter((spec) => isInternalSpecifier(spec) && !resolvesToSibling(spec, fromRel))),
+  ].sort();
+  if (unresolved.length) {
+    const list = unresolved.map((u) => "`" + u + "`").join(", ");
+    why.push(`it imports ${list} — resolving to no kit component, runtime file or registered platform module`);
+  }
+  return why;
+}
+
 function resolvesInternal(spec: string, fromRel: string, targets: Set<string>): boolean {
   const base = resolveInternalBase(spec, fromRel);
   if (base === null) return true;
@@ -484,12 +518,28 @@ export function analyzeGraphHealth(
   // agree. A built-in resolves via the artifact roster (its source lives there even though the store
   // strips it, #2794); only a node in neither the artifact nor carrying its own module/`source` is
   // flagged (a user-authored spec, e.g. a `page` like GraphExplorerPage). Independent of used/role.
+  // The set an INTERNAL import may resolve against — the kit's own `src` paths, the loader's
+  // sibling-by-id form, and the graph-source primitives a component `provides`. Built here (rather than
+  // at its later `unresolvable-import` use) because the no-implementation reasons below need it too.
+  const internalTargets = new Set<string>([
+    ...INTERNAL_TARGETS,
+    ...comps.map((c) => c.src).filter(Boolean),
+    ...comps.map((c) => `components/${c.id}.tsx`), // #3897 — the loader's sibling-by-id form
+  ]);
+  // #43/#3660: a `@/X` import also resolves to the graph component that `provides` X (a graph-source
+  // primitive), exactly as the build does — so it's not falsely flagged an unresolvable internal import.
+  for (const c of comps) {
+    const base = c.provides ? resolveInternalBase(c.provides, "") : null;
+    if (base) internalTargets.add(`${base}.tsx`);
+  }
   for (const c of comps) {
     // Pass the kit as siblings so a composing user component (importing a sibling, #3112) builds and is
     // NOT falsely flagged — the exact set the live preview vendors.
     if (componentPreviewFiles(c, ARTIFACT, comps, libResolver) === null) {
+      const reasons = previewBuildFailures(c.srcText ?? "", c.src ?? "", (spec, fromRel) =>
+        PLATFORM_MODULES.has(spec) || resolvesInternal(spec, fromRel, internalTargets));
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
-        why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code)` });
+        why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code): ${reasons.join("; ")}` });
     }
   }
 
@@ -532,17 +582,6 @@ export function analyzeGraphHealth(
   //     is NEVER flagged; only a `@bsc/…/<missing>` is.
   // Only own-source components (`ownModuleSource`) — the source the preview actually builds. Rust twin:
   // the `unresolvable-import` loop in graph_health.rs.
-  const internalTargets = new Set<string>([
-    ...INTERNAL_TARGETS,
-    ...comps.map((c) => c.src).filter(Boolean),
-    ...comps.map((c) => `components/${c.id}.tsx`), // #3897 — the loader's sibling-by-id form
-  ]);
-  // #43/#3660: a `@/X` import also resolves to the graph component that `provides` X (a graph-source
-  // primitive), exactly as the build does — so it's not falsely flagged an unresolvable internal import.
-  for (const c of comps) {
-    const base = c.provides ? resolveInternalBase(c.provides, "") : null;
-    if (base) internalTargets.add(`${base}.tsx`);
-  }
   const fmtSpecs = (v: string[]) => v.map((s) => `\`${s}\``).join(", ");
   for (const c of comps) {
     const src = ownModuleSource(c, comps);
