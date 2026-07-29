@@ -13,6 +13,9 @@ export interface OwnedIssue {
   ref: string;
   /** open | in_progress | blocked | complete | verified | failed */
   status: string;
+  /** Owning fleet stream id (#3944). Present on `bsc plan list --full` rows; lets a caller read a
+   *  project's issues ONCE and partition by stream in memory instead of querying per stream. */
+  stream?: string;
 }
 
 export interface WorkerEndVerdict {

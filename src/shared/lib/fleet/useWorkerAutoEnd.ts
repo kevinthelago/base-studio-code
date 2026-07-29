@@ -130,6 +130,15 @@ export function useWorkerAutoEnd(): void {
     const coord = coordRes?.state ?? emptyCoordState();
     const s = useAppStore.getState();
     const now = Date.now();
+
+    // #3944: decide the candidate set FIRST, then read each project's issues ONCE.
+    //
+    // This used to spawn `bsc plan list --stream <id>` inside the loop — one subprocess per pane, awaited
+    // serially, on every change to any of THREE log streams (activity/coord/done). That was the bulk of
+    // 37 `bsc plan list`/min and ~10% of all invoke time. `useWarden`, in the next file over, already
+    // reads once per project and partitions in memory; this now matches it. `PlanIssue` carries `stream`,
+    // so the per-stream query bought nothing a filter can't do.
+    const candidates: Array<{ paneId: string; stream: { id: string }; projectKey: string; act: ActivityRow | undefined }> = [];
     for (const paneId of Object.keys(s.fleetPaneStreams)) {
       if (s.endedPanes[paneId] || (s.paneRoles[paneId] ?? "worker") !== "worker") continue;
       const act = activity.find((a) => a.pane === paneId);
@@ -140,8 +149,20 @@ export function useWorkerAutoEnd(): void {
       const stream = s.fleetPaneStreams[paneId];
       const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
       if (!projectKey || !stream) continue;
-      const issues = await bscJson<OwnedIssue[] | null>(projectKey, ["plan", "list", "--stream", stream.id, "--full", "--json"], null);
-      if (isCancelled() || !issues) continue;
+      candidates.push({ paneId, stream, projectKey, act });
+    }
+    if (candidates.length === 0) return;
+    // One read per DISTINCT project, concurrently — not one per pane, serially.
+    const byProject = new Map<string, OwnedIssue[] | null>();
+    await Promise.all([...new Set(candidates.map((c) => c.projectKey))].map(async (key) => {
+      byProject.set(key, await bscJson<OwnedIssue[] | null>(key, ["plan", "list", "--full", "--json"], null));
+    }));
+    if (isCancelled()) return;
+
+    for (const { paneId, stream, projectKey, act } of candidates) {
+      const all = byProject.get(projectKey);
+      if (!all) continue;                                   // read failed / no plan.db — same bail as before
+      const issues = all.filter((i) => i.stream === stream.id);
       const verdict = classifyWorkerEnd(issues.map((i) => ({ ref: i.ref, status: i.status })), coord);
       const action = decideWorkerAutoEnd({
         turnOpen: act?.state === "run",

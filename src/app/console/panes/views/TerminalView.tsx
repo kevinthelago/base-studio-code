@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke, safeInvoke } from "@/shared/lib/core/safeInvoke";
-import { logsPaneActivity } from "@/shared/lib/core/logsBridge";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -26,13 +25,13 @@ import {
   TERM_THEME,
 } from "@/app/console/lib/terminalConstants";
 import { useTerminalSession } from "@/app/console/useTerminalSession";
-import { useLogStream } from "@/shared/hooks/useLogStream";
 import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus } from "@/shared/lib/core/diagnostics";
 import { TerminalBanners } from "@/app/console/panes/views/TerminalBanners";
 import { tokenForRepo } from "@/shared/lib/github/repoCredentials";
 import { getProvider } from "@/app/console/lib/providers";
-import { type PaneActivity, isTurnOpenDebounced, paneActivityFor } from "@/app/console/lib/paneActivity";
+import { isTurnOpenDebounced, paneActivityFor } from "@/app/console/lib/paneActivity";
+import { usePaneActivity } from "@/app/console/lib/usePaneActivityFeed";
 
 interface TerminalViewProps {
   paneId: string;
@@ -637,11 +636,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // Event-driven (#3638): re-check this pane's turn state only when the activity log changes (plus
   // mount + a slow backstop), instead of polling every 1s. The debounce in `isTurnOpenDebounced` still
   // smooths the idle→run gap between turns.
-  useLogStream("activity", async (isCancelled) => {
-    const rows = await logsPaneActivity<PaneActivity>();
-    if (isCancelled()) return;
+  // #3944: reads the SHARED table instead of invoking per pane. `logs_pane_activity` returns every
+  // pane's row, so a per-pane subscription meant N identical full-table reads per activity-log write —
+  // 24% of all invoke time, and 16 reads per write at the 16-pane fleet, for one row each.
+  usePaneActivity((rows) => {
     turnOpenRef.current = isTurnOpenDebounced(paneActivityFor(rows, paneId), Date.now());
-  }, [paneId]);
+  });
 
   // Re-fit when this view becomes visible again (e.g. switching back from
   // files view, or coming back to a background tab). Also flush anything the
