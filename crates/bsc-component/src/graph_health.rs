@@ -632,7 +632,7 @@ fn internal_targets() -> &'static BTreeSet<String> {
 /// Is `spec` an INTERNAL first-party import — a `@/…` alias or a RELATIVE (`./`, `../`) path — as opposed
 /// to a bare npm specifier or an absolute path? These resolve against the kit's components + runtime
 /// closure, not the preview import-map. Mirrors `isInternalSpecifier` (TS).
-fn is_internal_specifier(spec: &str) -> bool {
+pub fn is_internal_specifier(spec: &str) -> bool {
     spec.starts_with("@/") || spec.starts_with("./") || spec.starts_with("../")
 }
 
@@ -640,7 +640,7 @@ fn is_internal_specifier(spec: &str) -> bool {
 /// `src/`-relative module BASE (no extension), or `None` when it isn't internal. `@/x` → `x`; a relative
 /// path is joined onto the importer's directory and `.`/`..` segments collapsed. Mirrors the closure
 /// walker's resolver (reactUiKit.gen.test.ts) and `resolveInternalBase` (TS).
-fn resolve_internal_base(spec: &str, from_rel: &str) -> Option<String> {
+pub fn resolve_internal_base(spec: &str, from_rel: &str) -> Option<String> {
     let segs: Vec<&str> = if let Some(rest) = spec.strip_prefix("@/") {
         rest.split('/').collect()
     } else if spec.starts_with("./") || spec.starts_with("../") {
@@ -713,6 +713,45 @@ fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<S
                 || platform_modules().contains(spec)
                 || resolves_internal(spec, from_rel, kit_targets)
         })
+}
+
+/// Every reason the preview CANNOT build `node` — the reason-first face of [`is_preview_buildable`],
+/// in the same order that predicate tests them.
+///
+/// A `no-implementation` finding used to state only THAT a component was unbuildable, so the reader had
+/// to re-derive the cause by hand — the gap `bsc request` #4 was filed for. The causes are already
+/// computed to decide the predicate; this names them so `bsc ui doctor --json` is diagnosable on its own.
+/// Mirrors `bsc_ui::harvest`'s `buildability`, which reports the same three defects at harvest time.
+///
+/// Returns EMPTY only when nothing is wrong, so a caller can treat non-empty as "unbuildable, and here
+/// is why" — a node with no source of its own is a stated reason, not an empty list.
+fn no_implementation_reasons(node: &Node, kit_targets: &BTreeSet<String>) -> Vec<String> {
+    let s = node.src_text.trim();
+    if s.is_empty() {
+        return vec!["it carries no module source of its own (neither `source` nor `srcText`)".to_string()];
+    }
+    let mut why = Vec::new();
+    if !contains_word(s, "export") {
+        why.push("its source declares no `export`".to_string());
+    }
+    if has_code_elision(s) {
+        why.push("its source contains a code-elision marker (`…`) — a sketch, not code".to_string());
+    }
+    let unresolved: BTreeSet<String> = import_specifiers(s)
+        .into_iter()
+        .filter(|spec| {
+            is_internal_specifier(spec)
+                && !platform_modules().contains(spec)
+                && !resolves_internal(spec, &node.src, kit_targets)
+        })
+        .collect();
+    if !unresolved.is_empty() {
+        why.push(format!(
+            "it imports {} — resolving to no kit component, runtime file or registered platform module",
+            unresolved.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    why
 }
 
 /// The component's OWN module source — its `source`, else a `srcText` that is a real module — or `None`
@@ -1417,8 +1456,9 @@ fn analyze_kit(
             node_ids: vec![n.id.clone()],
             node_names: vec![n.name.clone()],
             why: format!(
-                "`{}` has no buildable implementation — the preview can't render it (a spec, not code)",
-                n.name
+                "`{}` has no buildable implementation — the preview can't render it (a spec, not code): {}",
+                n.name,
+                no_implementation_reasons(n, &kit_targets).join("; ")
             ),
             suggested_action: format!(
                 "author a self-contained module for `{}` (its own `source`/`srcText`) or compose it from built-in kit components",
@@ -2883,6 +2923,41 @@ export function TeamsCanvas(){ return <AgentFace/>; }" }),
   …
 }"));
         assert!(has_code_elision("const cfg = { … };"));
+    }
+
+    #[test]
+    fn a_no_implementation_finding_names_why_it_is_unbuildable() {
+        // `bsc request` #4: the finding used to say only THAT a component was unbuildable, so the reader
+        // had to re-derive the cause. Each distinct defect must be NAMED in the `why`.
+        let missing_export = [json!({
+            "id":"a", "name":"A", "kitId":"react-ui", "role":"composite", "used":2,
+            "src":"src/features/a/A.tsx", "srcText":"function A(){ return <i/>; }"
+        })];
+        let why = |c: &[serde_json::Value]| {
+            analyze(c).into_iter().find(|f| f.category == "no-implementation").expect("flagged").why
+        };
+        assert!(why(&missing_export).contains("declares no `export`"), "{}", why(&missing_export));
+
+        let elided = [json!({
+            "id":"b", "name":"B", "kitId":"react-ui", "role":"composite", "used":2,
+            "src":"src/features/b/B.tsx", "srcText":"export function B(){ … }"
+        })];
+        assert!(why(&elided).contains("code-elision marker"), "{}", why(&elided));
+
+        let unresolved = [json!({
+            "id":"c", "name":"C", "kitId":"react-ui", "role":"composite", "used":2,
+            "src":"src/features/c/C.tsx",
+            "srcText":"import { z } from \"@/features/c/lib/nope\";
+export function C(){ return <i>{z}</i>; }"
+        })];
+        assert!(why(&unresolved).contains("`@/features/c/lib/nope`"), "{}", why(&unresolved));
+
+        // A record with NO source of its own states that, rather than reporting an empty reason list.
+        let sourceless = [json!({
+            "id":"d", "name":"D", "kitId":"react-ui", "role":"composite", "used":2,
+            "src":"src/features/d/D.tsx", "srcText":""
+        })];
+        assert!(why(&sourceless).contains("no module source of its own"), "{}", why(&sourceless));
     }
 
     #[test]
