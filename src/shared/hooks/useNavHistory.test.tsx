@@ -89,3 +89,52 @@ describe("useNavHistory", () => {
     hook.unmount();
   });
 });
+
+describe("useNavHistory — event delivery (#3946)", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      activeWorkspace: "projects", projectsPageMode: "projects", glanceDrill: null, teamsDrill: null,
+    });
+  });
+
+  /** Dispatch from a real element so the event actually propagates through a tree. */
+  const pressFrom = (el: Element, type: "mouseup" | "pointerup", button: 3 | 4) => {
+    act(() => { el.dispatchEvent(new MouseEvent(type, { button, bubbles: true })); });
+  };
+
+  it("navigates even when an ancestor calls stopPropagation — the capture-phase fix", () => {
+    // This is the bug: the listeners were BUBBLE phase, so anything between the target and `window`
+    // could swallow the gesture silently. The app is full of such handlers (Glance canvas, the morph
+    // overlays, xterm). Capture runs before all of them.
+    const host = document.createElement("div");
+    const child = document.createElement("div");
+    host.appendChild(child);
+    document.body.appendChild(host);
+    host.addEventListener("mouseup", (e) => e.stopPropagation());
+
+    renderHook(() => useNavHistory());
+    act(() => { useAppStore.setState({ activeWorkspace: "glance" }); });
+    expect(useAppStore.getState().activeWorkspace).toBe("glance");
+
+    pressFrom(child, "mouseup", 3);
+    expect(useAppStore.getState().activeWorkspace).toBe("projects");
+
+    host.remove();
+  });
+
+  it("also accepts pointerup, which carries the same button values", () => {
+    renderHook(() => useNavHistory());
+    act(() => { useAppStore.setState({ activeWorkspace: "glance" }); });
+    pressFrom(document.body, "pointerup", 3);
+    expect(useAppStore.getState().activeWorkspace).toBe("projects");
+  });
+
+  it("ignores the ordinary buttons — left/middle/right must never navigate", () => {
+    renderHook(() => useNavHistory());
+    act(() => { useAppStore.setState({ activeWorkspace: "glance" }); });
+    for (const button of [0, 1, 2]) {
+      act(() => { document.body.dispatchEvent(new MouseEvent("mouseup", { button, bubbles: true })); });
+    }
+    expect(useAppStore.getState().activeWorkspace).toBe("glance");
+  });
+});
