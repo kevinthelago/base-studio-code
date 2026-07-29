@@ -79,6 +79,22 @@ USAGE:
 The loops, newest first. --open shows only loops still accepting turns; --project filters by tag.",
     },
     CmdDoc {
+        name: "reap",
+        summary: "close loops an unclean shutdown stranded (crash / kill / force-quit)",
+        usage: "USAGE:
+  bsc loop reap [--dry-run] [--json]
+
+A loop in flight when the app DIES is never reconciled: nothing closes it, so it stays `open`
+forever and `watch` blocks on a turn that will never come. `reap` closes every still-open loop as
+`ended_by=interrupted` — a reason distinct from `stop`, because a user halting a loop and a crash
+killing one are different facts.
+
+--dry-run reports what WOULD be reaped without writing, which is how the boot banner counts them.
+
+Only meaningful after an UNCLEAN shutdown; the caller decides that (it knows whether the session
+lock survived). Run against a live app it would close loops that are legitimately running.",
+    },
+    CmdDoc {
         name: "stop",
         summary: "halt a loop out-of-band (the participants cannot)",
         usage: "\
@@ -106,6 +122,8 @@ struct Args {
     cost: Option<f64>,
     timeout: Option<i64>,
     open: bool,
+    /// #3961 `reap --dry-run`: report what WOULD be reaped, write nothing.
+    dry_run: bool,
     limit: Option<i64>,
     positional: Vec<String>,
 }
@@ -126,6 +144,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         cost: None,
         timeout: None,
         open: false,
+        dry_run: false,
         limit: None,
         positional: Vec::new(),
     };
@@ -136,6 +155,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--open" => a.open = true,
+            "--dry-run" => a.dry_run = true,   // #3961: reap COUNTS without writing
             "--db" => a.db = Some(val("--db")?),
             "--seed" => a.seed = Some(val("--seed")?),
             "--until" => a.until = Some(val("--until")?),
@@ -171,6 +191,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "watch" => cmd_watch(&args),
         "show" => cmd_show(&args),
         "list" => cmd_list(&args),
+        "reap" => cmd_reap(&args),
         "stop" => cmd_stop(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
@@ -282,6 +303,46 @@ fn cmd_stop(args: &Args) -> Result<(), String> {
     let halted = open_store(&args.db)?.stop(id, now_ms()).map_err(|e| format!("stopping loop: {e}"))?;
     println!("{}", if halted { format!("stopped loop {id}") } else { format!("loop {id} was already closed") });
     Ok(())
+}
+
+/// `reap` (#3961): close every still-open loop as INTERRUPTED, or just report them under --dry-run.
+///
+/// The store answers "what was still running?"; deciding those are stranded is the CALLER's job,
+/// because only the caller knows the last shutdown was unclean. That split keeps the store out of
+/// the business of guessing process liveness.
+fn cmd_reap(args: &Args) -> Result<(), String> {
+    let store = open_store(&args.db)?;
+    let open = store.open_loops().map_err(|e| format!("listing open loops: {e}"))?;
+    let dry = args.dry_run;
+    let ids: Vec<i64> = open.iter().map(|l| l.id).collect();
+    let reaped = if dry {
+        0
+    } else {
+        store.mark_interrupted(&ids, now_ms()).map_err(|e| format!("reaping loops: {e}"))?
+    };
+    if args.json || args.pretty {
+        let out = ReapOut { dry_run: dry, count: open.len(), reaped, loops: &open };
+        bsc_cli_util::emit(args.pretty, args.json, &out, String::new);
+        return Ok(());
+    }
+    if open.is_empty() {
+        println!("no open loops to reap");
+    } else if dry {
+        println!("{} open loop(s) would be reaped: {}", open.len(), ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "));
+    } else {
+        println!("reaped {reaped} interrupted loop(s): {}", ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "));
+    }
+    Ok(())
+}
+
+/// The `reap --json` payload — what was found, what was written, and the rows themselves so a caller
+/// can name the participants in a banner without a second read.
+#[derive(Serialize)]
+struct ReapOut<'a> {
+    dry_run: bool,
+    count: usize,
+    reaped: usize,
+    loops: &'a [Loop],
 }
 
 /// The `show --json` payload — the loop, its turns, and the running cost total.
