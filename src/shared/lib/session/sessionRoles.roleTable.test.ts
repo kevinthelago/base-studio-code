@@ -6,7 +6,7 @@ import { mergeRoleDefaults, roleCapability, type RoleCapability } from "./roleMo
 // #2027 P1). The role gate is least-privilege; a JSON edit that WIDENS a role's access (e.g. gives a
 // reviewer git:write, or hands a non-planner default write globs) must trip a test here, not ship.
 describe("role capability table (loaded from @data/permissions/role-capabilities.json)", () => {
-  it("has exactly the 14 roles with their intended github/git/code/net/ui tiers", () => {
+  it("has exactly the 15 roles with their intended github/git/code/net/ui tiers", () => {
     const tiers = Object.fromEntries(
       Object.values(ROLE_DEFAULTS).map((c) => [c.role, `${c.github}/${c.git}/${c.code}/${c.net}/${c.ui}`]),
     );
@@ -41,6 +41,12 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
       // UI kit. Its whole command surface is `bsc sound`, granted at launch via the restricted
       // allow-list. Identical posture to the architect/librarian.
       "sound-designer": "none/none/none/none/none",
+      // Integrator (#4023): the Integration Studio's session — `none` on github/git/code/ui like its
+      // studio siblings, with `bsc data connector` as its whole command surface via the restricted
+      // allow-list. THE ONE DEVIATION IS `net: "read"`, and it is deliberate: this role's work starts at
+      // the vendor's documentation, so it is the only studio allowed the web tools. Any edit that widens
+      // another axis here — or that quietly drops net back to none — must fail this test.
+      integrator: "none/none/none/read/none",
       // Marketer (#2431): read-only on git/GitHub, code:none — writes come solely from its
       // marketing-content carve-out (asserted below), never a code tier.
       marketer:   "read/read/none/read/read",
@@ -73,10 +79,10 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
     // The four RESTRICTED studio roles ship a `scratch/**` carve-out (#3373) — NOT project content: a
     // sealed staging dir inside their own workspace, the only way they can author at all now that a
     // heredoc cannot be allow-listed. Pinned exactly, so a widening past the staging dir fails here.
-    for (const role of ["designer", "architect", "librarian", "sound-designer"] as const) {
+    for (const role of ["designer", "architect", "librarian", "sound-designer", "integrator"] as const) {
       expect(ROLE_DEFAULTS[role].writeGlobs).toEqual(["scratch/**"]);
     }
-    const CARVED = ["planner", "documentor", "marketer", "designer", "architect", "librarian", "sound-designer"];
+    const CARVED = ["planner", "documentor", "marketer", "designer", "architect", "librarian", "sound-designer", "integrator"];
     for (const c of Object.values(ROLE_DEFAULTS)) {
       if (!CARVED.includes(c.role)) expect(c.writeGlobs).toEqual([]);
     }

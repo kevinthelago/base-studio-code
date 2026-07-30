@@ -15,14 +15,15 @@ import {
   ALGORITHMS_STUDIO_SESSION_ID,
   TEAMS_STUDIO_SESSION_ID,
   SOUND_STUDIO_SESSION_ID,
+  INTEGRATION_STUDIO_SESSION_ID,
 } from "@/shared/lib/session/systemSessions";
 
-/** The four app-owned studio sessions. (The DEBUG session is app-owned too but is full-capability and
+/** The five app-owned studio sessions. (The DEBUG session is app-owned too but is full-capability and
  *  Settings-toggled, so it keeps its own `DebugSessionMount` — see `@/features/debug`.) */
-export type StudioId = "designer" | "librarian" | "architect" | "soundDesigner";
+export type StudioId = "designer" | "librarian" | "architect" | "soundDesigner" | "integrator";
 
 /** Every studio id, in rail order. */
-export const STUDIO_IDS: readonly StudioId[] = ["designer", "librarian", "architect", "soundDesigner"];
+export const STUDIO_IDS: readonly StudioId[] = ["designer", "librarian", "architect", "soundDesigner", "integrator"];
 
 export interface StudioSessionDef {
   id: StudioId;
@@ -88,6 +89,21 @@ export const STUDIO_SESSIONS: Record<StudioId, StudioSessionDef> = {
     rosterName: "Sound Studio",
     pageKey: "projects",
     sectionId: "sounds",
+  },
+  integrator: {
+    id: "integrator",
+    paneId: INTEGRATION_STUDIO_SESSION_ID,
+    role: "integrator",
+    setupCommand: "setup_integrator_workspace",
+    dirKey: "integrations_dir",
+    personaId: "persona-integrator",
+    rosterName: "Integration Studio",
+    pageKey: "projects",
+    sectionId: "integrations",
+    // #4023: the studio ships with its playbook — the same secret-free probe→try→register procedure
+    // its spec describes, so the guidance rides with the session by construction rather than being
+    // re-derived per conversation.
+    defaultSkillIds: ["build-integration"],
   },
   architect: {
     id: "architect",
