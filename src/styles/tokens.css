@@ -31,6 +31,14 @@
   --graph-kind-service: #4fd6a0;
   --graph-kind-data: #b98bff;
   --graph-kind-client: #f2b155;
+  /* #4062 — project LIFECYCLE-INTENT hues: what a planning run is FOR, shown as the L0 project node's
+     accent chip. Their OWN group, not the --graph-category-* ones below, which are the
+     design-reconciliation vocabulary and mean something else entirely. */
+  --graph-lifecycle-greenfield: #16b3a7;
+  --graph-lifecycle-transform: #7b74f2;
+  --graph-lifecycle-harden: #b8862f;
+  --graph-lifecycle-maintain: #8b93a7;
+  --graph-lifecycle-harvest: #d05fa8;
   /* #4052 — no longer read by the Glance graph (its L0 lifecycle axis is gone). These stay because a
      SECOND consumer needs them: they are the KNOWN-category vocabulary `reconcile.ts` matches a
      blueprint's declared categories against (#2646), so dropping them would mark every category

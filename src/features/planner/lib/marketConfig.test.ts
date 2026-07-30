@@ -41,6 +41,15 @@ describe("rubric data contract (@data/market/rubric.json)", () => {
     expect(marketWeights(undefined)).toBe(MARKET_RUBRIC.weights.greenfield);
   });
 
+  it("the `harvest` lifecycle has NO rubric row yet and degrades to greenfield weights (#4062)", () => {
+    // Documented, not accidental. `harvest` was added to the lifecycle vocabulary for the L0 node
+    // chip; what a data-extraction project's market assessment should WEIGH is a product judgement
+    // that has not been made, and inventing one here would bury it. The fallback keeps the score
+    // computable meanwhile. Give `harvest` its own row in rubric.json to change this.
+    expect(MARKET_RUBRIC.weights.harvest).toBeUndefined();
+    expect(marketWeights("harvest")).toBe(MARKET_RUBRIC.weights.greenfield);
+  });
+
   it("marketDimensionMeta returns the rubric row (and a safe fallback for a stale rubric)", () => {
     expect(marketDimensionMeta("timing").label).toBe("Timing");
     expect(marketDimensionMeta("timing").blurb.length).toBeGreaterThan(0);
