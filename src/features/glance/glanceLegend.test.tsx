@@ -1,26 +1,24 @@
-// Drill-aware legend (#2561): at the root the project network keys HEALTH + ACTIVITY + EDGE; drilled,
+// Drill-aware legend (#2561): at the root the project network keys HEALTH + LIFECYCLE + EDGE; drilled,
 // it speaks the fleet's Org grammar (agent FUNCTION groups + relationship archetypes).
 //
-// The second column has moved twice. It was LIFECYCLE until #4052 deleted that dead axis; #4058
-// replaced it with ACTIVITY, then dropped the column entirely on the theory that L0 nodes would stop
-// showing the word; #4060 put the word back on the nodes and #4064 brought the column with it.
+// The second column keys LIFECYCLE because the lifecycle CHIP is coloured (#4062/#4066) — five accents
+// that mean nothing without a key. It briefly keyed ACTIVITY (#4064), a plain word with no colour
+// mapping, which taught nothing a reader could not already read off the card.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GlanceOverlays } from "./GlanceCanvas";
 
 describe("GlanceOverlays legend (#2561)", () => {
-  it("L0 (no drill): HEALTH + ACTIVITY + EDGE — the vocabularies an L0 node actually shows", () => {
+  it("L0 (no drill): HEALTH + LIFECYCLE + EDGE — keys the node's two COLOURED channels", () => {
     render(<GlanceOverlays />);
-    // #4052 — the LIFECYCLE column is GONE as a legend COLUMN. It keyed a category axis that no
-    // project ever carried: `resolveProjectCategory` always fell through to
-    // `isDraft ? greenfield : maintain`, so six rows rendered two values. (The lifecycle CHIP came
-    // back on the node in #4062, sourced from the planner's real classification — but it is a chip,
-    // not a colour key, so it earns no legend column.)
-    expect(screen.queryByText("LIFECYCLE")).toBeNull();
-    // #4064 — ACTIVITY keys axis 2's word, which every node carries at both levels.
-    expect(screen.getByText("ACTIVITY")).toBeTruthy();
-    expect(screen.getByText("building")).toBeTruthy();
-    expect(screen.getByText("waiting")).toBeTruthy();
+    // #4066 — LIFECYCLE, because the chip is coloured and its five accents need a key. The column
+    // that #4052 deleted keyed a DEAD axis (`resolveProjectCategory` always fell through to
+    // `isDraft ? greenfield : maintain`); this one keys the planner's real classification (#4062).
+    expect(screen.getByText("LIFECYCLE")).toBeTruthy();
+    expect(screen.getByText("greenfield")).toBeTruthy();
+    expect(screen.getByText("harvest")).toBeTruthy();
+    // ACTIVITY has no colour mapping, so it gets no column — the word on the card IS the whole signal.
+    expect(screen.queryByText("ACTIVITY")).toBeNull();
     expect(screen.queryByText("FUNCTION")).toBeNull();   // that is the L1 vocabulary
     expect(screen.getByText("HEALTH")).toBeTruthy();
     expect(screen.getByText("EDGE")).toBeTruthy();
