@@ -358,6 +358,21 @@ USAGE:
 Usually captured via the `bsc-learned` helper. Candidates de-dupe on a normalized mistake|rule key.",
     },
     CmdDoc {
+        name: "request",
+        summary: "worker->director change requests (the project ask lane; #4000)",
+        usage: "USAGE:
+  bsc plan request new \"<what you need>\" [--command \"<cmd that failed>\"] [--from <stream>]
+  bsc plan request list [--status open|claimed|resolved]      # the queue, OLDEST first
+  bsc plan request show <id>
+  bsc plan request claim <id>                                  # director takes it (exclusive)
+  bsc plan request resolve <id> --note \"<what you did>\"        # close it with the answer
+
+For an ask a worker cannot act on itself - no integration branch to target, a kickoff pointing at a
+path that does not exist. PROJECT-scoped (this plan.db), worked by the DIRECTOR; distinct from the
+global `bsc request` tooling queue, which project roles are denied. Pass --command: a request carrying
+the exact command that failed is actionable without a conversation.",
+    },
+    CmdDoc {
         name: "triage",
         summary: "per-repo triage-run markers + the since-marker issue delta (#1004)",
         usage: "\
@@ -457,6 +472,8 @@ struct Args {
     rule: Option<String>,
     cause: Option<String>,
     from: Option<String>,
+    /// The answer stamped on `request resolve <id> --note "<what was done>"` (#4000).
+    note: Option<String>,
     /// Automation fields (#2009) — `automations add <name> --command … [--schedule …] [--description …]`.
     command: Option<String>,
     schedule: Option<String>,
@@ -482,7 +499,7 @@ struct Args {
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let mut a = Args {
         prog: String::new(), json: false, db: None, positional: Vec::new(), status: None, stream: None,
-        rule: None, cause: None, from: None, command: None, schedule: None, description: None,
+        rule: None, cause: None, from: None, note: None, command: None, schedule: None, description: None,
         mode: None, path: None,
         full: false, fields: None, limit: None,
         since: None, pretty: false, force: false,
@@ -497,6 +514,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--rule" => a.rule = Some(it.next().ok_or("--rule needs a value")?),
             "--cause" => a.cause = Some(it.next().ok_or("--cause needs a value")?),
             "--from" => a.from = Some(it.next().ok_or("--from needs a value")?),
+            "--note" => a.note = Some(it.next().ok_or("--note needs a value")?),
             "--command" => a.command = Some(it.next().ok_or("--command needs a value")?),
             "--mode" => a.mode = Some(it.next().ok_or("--mode needs a value")?),
             "--path" => a.path = Some(it.next().ok_or("--path needs a value")?),
@@ -566,6 +584,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "skip" => nouns::cmd_skip(&args),
         "integration" => nouns::cmd_integration(&args),
         "lesson" => nouns::cmd_lesson(&args),
+        "request" => nouns::cmd_request(&args),
         "triage" => nouns::cmd_triage(&args),
         "stage" => hub::cmd_stage(&args),
         "automations" => hub::cmd_automations(&args),
@@ -693,6 +712,62 @@ fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
 
+    /// End-to-end through `run()` — the ONLY level that exercises `parse_args`, and therefore the only
+    /// level that can catch an unregistered flag. A store-level test calls `request_resolve(id, note)`
+    /// directly and passes happily while `--note` is rejected as an unknown flag at the CLI boundary;
+    /// that exact bug has shipped here before (`bsc loop reap --dry-run`).
+    #[test]
+    fn the_request_verbs_and_their_flags_are_registered() {
+        // A real file, because `run()` resolves a --db PATH — the in-memory store the unit tests use
+        // is not reachable through the CLI boundary this test exists to exercise.
+        let db = test_db_path("request-verbs");
+        let go = |a: Vec<&str>| {
+            let mut v: Vec<String> = a.into_iter().map(String::from).collect();
+            v.push("--db".into());
+            v.push(db.clone());
+            run(v, "bsc plan")
+        };
+
+        go(vec!["request", "new", "no develop branch to target",
+                "--command", "git push -u origin develop", "--from", "cli-platform"])
+            .expect("`new` with --command and --from");
+        go(vec!["request", "list", "--status", "open"]).expect("`list --status`");
+        go(vec!["request", "show", "1"]).expect("`show <id>`");
+        go(vec!["request", "claim", "1"]).expect("`claim <id>`");
+        go(vec!["request", "resolve", "1", "--note", "created develop from main"])
+            .expect("`resolve --note` — the flag a store-level test cannot check");
+
+        // Exclusivity and idempotence surface as CLI errors, not silent successes: two directors must
+        // never both believe they hold the same ask.
+        assert!(go(vec!["request", "claim", "1"]).is_err(), "a resolved request cannot be claimed");
+        assert!(go(vec!["request", "resolve", "1", "--note", "again"]).is_err(), "resolve is not repeatable");
+        assert!(go(vec!["request", "show", "999"]).is_err(), "an unknown id is an error");
+        assert!(go(vec!["request", "claim", "not-a-number"]).is_err(), "a non-numeric id is rejected");
+        assert!(go(vec!["request", "frobnicate"]).is_err(), "an unknown sub is an error");
+        let _ = std::fs::remove_file(&db);
+    }
+
+    /// A uniquely-named scratch db under the temp dir (mirrors the `plandb-busy-{pid}` convention in
+    /// `lib.rs`). Named per test as well as per process, so tests running as threads of one binary
+    /// cannot share a file.
+    fn test_db_path(name: &str) -> String {
+        let p = std::env::temp_dir().join(format!("plandb-cli-{}-{}.db", name, std::process::id()));
+        let _ = std::fs::remove_file(&p);
+        p.to_string_lossy().to_string()
+    }
+
+    /// A request must carry text — the director cannot act on an empty ask.
+    #[test]
+    fn a_request_with_no_text_is_rejected_at_the_cli() {
+        let db = test_db_path("request-empty");
+        let r = run(
+            vec!["request".into(), "new".into(), "--db".into(), db.clone()],
+            "bsc plan",
+        );
+        assert!(r.is_err(), "empty text is rejected");
+        let _ = std::fs::remove_file(&db);
+    }
+
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
         let ov = bsc_cli_util::help_overview("bsc plan", TAGLINE, COMMANDS);
@@ -700,7 +775,7 @@ mod tests {
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "snapshot", "feature", "repo",
             "fleet", "deploy", "deps", "market", "classify", "transformation", "mcp", "blueprint", "ui", "discovery",
-            "confirm", "skip", "integration", "lesson", "triage", "stage", "automations", "startup",
+            "confirm", "skip", "integration", "lesson", "request", "triage", "stage", "automations", "startup",
             "github-context", "artifact",
         ] {
             assert!(ov.contains(c), "overview lists {c}");
