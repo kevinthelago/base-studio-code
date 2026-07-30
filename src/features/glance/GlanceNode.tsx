@@ -21,6 +21,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { GNode } from "./lib/glanceGraph";
 import { GLANCE_NODE_ANIM_CLASSES, ensureGlanceNodeMotion } from "./glanceNodeMotion";
+import { progressFraction } from "./lib/streamProgress";
 
 /** Which live state the node's motion should express, or `null` for a still node. */
 export type GlanceNodeState = "building" | null;
@@ -48,6 +49,8 @@ export interface GlanceNodeProps {
   ownDegraded: boolean;
   /** The live motion state, or null. */
   state: GlanceNodeState;
+  /** Owned-issue completion (#4050), or 0 for "no bar". Presentational only. */
+  progress?: { done: number; total: number };
 }
 
 export function GlanceNode(p: GlanceNodeProps) {
@@ -65,7 +68,10 @@ export function GlanceNode(p: GlanceNodeProps) {
       data-node-state={p.state ?? undefined}
       style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${p.border}`,
         borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
-        boxShadow: p.boxShadow, transition: "border-color .15s, box-shadow .15s" }}>
+        boxShadow: p.boxShadow, transition: "border-color .15s, box-shadow .15s",
+        // `relative` so the progress bar can sit on the bottom edge; `overflow: hidden` keeps it inside
+        // the rounded corners.
+        position: "relative", overflow: "hidden" }}>
       <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
         {/* Axis-1 health DOT. Restored in #4040 with the glow gone — health is a colour, and without
             this the node had no colour surface for it at all. An INHERITED dot is dimmed and never
@@ -99,6 +105,19 @@ export function GlanceNode(p: GlanceNodeProps) {
           style={{ color: p.bottomColor, maxWidth: 108, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
             animation: p.bottomPulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }}>{p.bottomText}</Text>
       </Box>
+      {/* #4050 — owned-issue progress: a thin fill on the bottom edge, `done / total`.
+          Rendered only when the stream OWNS issues: an empty bar and a zero-progress bar say different
+          things, and drawing one for a node with no work would say the false one.
+          Coloured with the COMPLETE blue, so a full bar and the `complete` state agree by construction
+          rather than by coincidence. `pointer-events: none` so it never eats a click on the node. */}
+      {p.progress && p.progress.total > 0 && (
+        <Box aria-hidden title={`${p.progress.done}/${p.progress.total} issues complete`}
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 2, pointerEvents: "none",
+            background: "color-mix(in oklch, var(--fg-muted) 22%, transparent)" }}>
+          <Box style={{ width: `${progressFraction(p.progress) * 100}%`, height: "100%",
+            background: "var(--graph-health-complete)", transition: "width .3s ease" }} />
+        </Box>
+      )}
     </Box>
   );
 }

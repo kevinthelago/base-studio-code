@@ -24,7 +24,10 @@ export interface WorkerEndVerdict {
 }
 
 // plan.db issue lifecycle buckets (crates/plandb STATUSES).
-const TERMINAL_GOOD = new Set(["complete", "verified"]); // the worker did its part
+/** The worker did its part. EXPORTED (#4050) so the progress bar counts "done" the same way the
+ *  finished-verdict does — a second definition would eventually disagree with the card that says
+ *  "finished", and the two would drift silently. */
+export const TERMINAL_GOOD = new Set(["complete", "verified"]); // the worker did its part
 const STILL_RUNNING = new Set(["open", "in_progress"]);   // stopped early
 const TERMINAL_BAD = new Set(["blocked", "failed"]);      // needs attention
 
