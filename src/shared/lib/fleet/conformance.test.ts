@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkConformance, effectiveDeniedCommands, type StreamAnchor } from "./conformance";
+import { checkConformance, effectiveDeniedCommands, isAppSanctioned, type StreamAnchor, type SessionActivity } from "./conformance";
 import { roleCapability } from "../session/sessionRoles";
 import { DEFAULT_FLOW } from "@/features/planner/fleet/agentFlow";
 
@@ -98,5 +98,55 @@ describe("checkConformance — commands", () => {
     expect(v.onTask).toBe(false);
     expect(v.trips.map((t) => t.kind)).toEqual(["denied-command", "denied-command"]);
     expect(v.trips.map((t) => t.detail)).toEqual(["gh repo delete acme/api --yes", "gh pr merge 3"]);
+  });
+});
+
+describe("app-authored files are never lane drift (#3980)", () => {
+  const anchor = workerAnchor({ streamId: "auth", ownedGlobs: ["src/auth/**"] });
+  const act = (files: string[]): SessionActivity => ({ changedFiles: files, commands: [] });
+
+  it("does not trip on CLAUDE.local.md — the LAUNCHER writes it", () => {
+    // Measured: 18 of 22 quarantines were this one file. `ensure_worktree` places it in the worktree,
+    // and no stream's `owns` globs list it, so it could never be in lane for anyone.
+    expect(checkConformance(anchor, act(["CLAUDE.local.md"])).onTask).toBe(true);
+  });
+
+  it("does not trip on DECISIONS.md — bsc-note's own target", () => {
+    // The app installs `bsc-note` into every session; using it must not be drift.
+    expect(checkConformance(anchor, act(["DECISIONS.md"])).onTask).toBe(true);
+  });
+
+  it("still trips on a genuine out-of-lane SOURCE edit", () => {
+    const v = checkConformance(anchor, act(["src/billing/charge.ts"]));
+    expect(v.onTask).toBe(false);
+    expect(v.trips).toEqual([{ kind: "out-of-glob", detail: "src/billing/charge.ts" }]);
+  });
+
+  it("reports ONLY the real trip when an app file rides along", () => {
+    // The common shape: the launcher's write plus one actual stray edit. The exemption must not
+    // swallow the stray, and the stray must not re-flag the app file.
+    const v = checkConformance(anchor, act(["CLAUDE.local.md", "src/billing/charge.ts"]));
+    expect(v.trips).toEqual([{ kind: "out-of-glob", detail: "src/billing/charge.ts" }]);
+  });
+
+  it("in-lane work is unaffected", () => {
+    expect(checkConformance(anchor, act(["src/auth/login.ts"])).onTask).toBe(true);
+  });
+
+  it("agent-invented scratch is NOT exempt — that needs its own decision", () => {
+    // Deliberately excluded: a "looks like scratch" rule would widen silently and hole the check.
+    expect(checkConformance(anchor, act([".agentscratch.txt"])).onTask).toBe(false);
+    expect(checkConformance(anchor, act([".tmp-agent/algo_open_all.err"])).onTask).toBe(false);
+  });
+
+  it("matches on the basename, so a nested copy is still app-authored", () => {
+    expect(isAppSanctioned("some/dir/CLAUDE.local.md")).toBe(true);
+    expect(isAppSanctioned("CLAUDE.local.md")).toBe(true);
+  });
+
+  it("does not exempt a lookalike", () => {
+    // `CLAUDE.md` is the REPO's tracked guidance — editing it out of lane is real drift.
+    expect(isAppSanctioned("CLAUDE.md")).toBe(false);
+    expect(isAppSanctioned("src/DECISIONS.md.bak")).toBe(false);
   });
 });
