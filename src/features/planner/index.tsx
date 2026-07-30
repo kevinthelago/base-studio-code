@@ -53,7 +53,10 @@ export {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
   briefKey, pendingBriefPrompt,
   requestKey,
-  pendingRequestPrompt, DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
+  pendingRequestPrompt,
+  shouldRemind,
+  idleReminderPrompt,
+  ASK_REMINDER_MS, DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
 } from "./fleet/directorDrive";
 
 // Design Studio (#move-to-planner) — a single-page workspace folded in as the "designs" Planner tab.
