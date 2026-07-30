@@ -899,6 +899,7 @@ dependencies = [
  "bsc-cli-util",
  "bsc-sqlite-util",
  "bsc-util",
+ "plandb",
  "rusqlite",
  "serde",
  "serde_json",

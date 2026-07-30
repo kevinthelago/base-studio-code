@@ -2,7 +2,7 @@
 // assignment, planning-session context, triage + fleet launch. Split from store/types (#1634).
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
 import type { ProjectLink, ContractTarget } from "@/features/glance/lib/projectLinks";
-import type { GEdgeKind, GRole, GCategory, GHealth, GActivity } from "@/features/glance/lib/glanceGraph";
+import type { GEdgeKind, GRole, GHealth, GActivity } from "@/features/glance/lib/glanceGraph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { ReviewFinding } from "@/shared/lib/preview/previewReview";
 
@@ -74,8 +74,8 @@ export interface ProjectsState {
    *  project's node its curated colour/state on the Glance network (`infra/service/data/client` ·
    *  health `idle/healthy/warning/error` · activity `building/waiting/review/…`), else
    *  `useGlanceProjects` derives them. Lets a project (or a loaded demo) declare its own colouring. */
-  localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; category?: GCategory; health?: GHealth; activity?: GActivity; reason?: string }>;
-  addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number; role?: GRole; category?: GCategory; health?: GHealth; activity?: GActivity; reason?: string }) => void;
+  localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; health?: GHealth; activity?: GActivity; reason?: string }>;
+  addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number; role?: GRole; health?: GHealth; activity?: GActivity; reason?: string }) => void;
   /** Patch a draft record in place (#1222) — persists a title edit so it survives a reopen;
    *  keyed by the FROZEN key so the on-disk folder doesn't move. No-ops if the draft is gone. */
   updateDraftProject: (key: string, patch: Partial<{ title: string; pitch: string }>) => void;

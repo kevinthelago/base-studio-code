@@ -50,11 +50,12 @@ describe("buildGlanceData", () => {
     expect(g.rawEdges).toHaveLength(0);
   });
 
-  it("carries a project's LIFECYCLE category onto the node — no more hash-per-id tier (#2583)", () => {
-    const g = buildGlanceData([{ id: "p", name: "P", category: "transform" }]);
-    expect(g.rawNodes[0].category).toBe("transform");
-    // the same project id always yields the same node (was hash-derived role before) — deterministic
-    expect(buildGlanceData([{ id: "p", name: "P", category: "transform" }]).rawNodes[0]).toEqual(g.rawNodes[0]);
+  it("builds a deterministic node — the same project id always yields the same node (#2583/#4052)", () => {
+    // The lifecycle CATEGORY that used to be carried here is gone (#4052); what mattered about that
+    // test — no hash-per-id tier, so a node never changes shape between renders — is asserted directly.
+    const g = buildGlanceData([{ id: "p", name: "P" }]);
+    expect(g.rawNodes[0]).toEqual(buildGlanceData([{ id: "p", name: "P" }]).rawNodes[0]);
+    expect(g.rawNodes[0]).not.toHaveProperty("category");
   });
 
   it("carries a project's APP-TYPE onto the node — the contract endpoint-type discriminator (#3786/#3802)", () => {

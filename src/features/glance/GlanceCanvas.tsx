@@ -9,7 +9,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingPulse, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
+import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingPulse, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GActivity, type GHealth, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
 import { archetypeById, hueColor } from "@/features/teams";
@@ -24,7 +24,11 @@ const ERR = "var(--graph-health-error)";
 // `off` has no row (#4042): it is the ABSENCE of a live session — deactivated, never launched, or
 // structural furniture — and the node conveys it by dimming rather than by a colour, so a swatch would
 // key something nothing paints.
-const HEALTH_ROWS: GHealth[] = ["complete", "healthy", "warning", "error"];
+//
+// `modifying` (#4052) sits directly under `complete` because it IS complete's colour — the pair reads
+// "on its way" above "arrived", and only the swatch's motion separates them. Putting anything between
+// them would break that reading.
+const HEALTH_ROWS: GHealth[] = ["complete", "modifying", "healthy", "warning", "error"];
 
 // The neighbour-parting motion is driven off the SAME easing + duration as the panel's grow (the
 // `.glance-card` transition in glance.css) — keep these in sync — so the panel growing and the graph
@@ -32,11 +36,11 @@ const HEALTH_ROWS: GHealth[] = ["complete", "healthy", "warning", "error"];
 const MORPH_EASE = ".4s cubic-bezier(.22, .61, .36, 1)";
 
 const REST_N = 0.14, REST_E = 0.06;
-// Project-network (L0) legend rows. The accent buckets are the LIFECYCLE categories (#2583 — what KIND
-// of work each project is), NOT the old microservices tiers; EDGE labels come from EDGE_META so the
-// legend + connect picker stay in sync (#2561).
-const CATEGORY_ORDER: GCategory[] = ["greenfield", "transform", "harden", "maintain", "data", "script"];
-const ROLE_ROWS_L0: [string, string][] = CATEGORY_ORDER.map((c) => [CATEGORY_META[c].label, CATEGORY_META[c].color]);
+// Project-network (L0) second column: ACTIVITY (#4052). It replaces the LIFECYCLE categories, which
+// were removed with the L0 category axis — and it closes a gap that predates them: axis 2's word is on
+// every node at BOTH levels and had no legend anywhere. Rendered label-only, deliberately: activity
+// carries no colour (that is health's channel), so a swatch would invent a mapping that does not exist.
+const ACTIVITY_ROWS_L0: GActivity[] = ["idle", "planning", "building", "waiting", "review", "live", "complete"];
 const EDGE_ROWS_L0: [string, string, string][] = [
   [EDGE_META.api.label, EDGE_META.api.color, EDGE_META.api.dash],
   [EDGE_META.data.label, EDGE_META.data.color, EDGE_META.data.dash],
@@ -289,10 +293,12 @@ export function GlanceCanvas(p: CanvasProps) {
             </Box>
           );
         }
-        // A PROJECT (L0) node is accented by its LIFECYCLE category (#2583); a fleet-drill (L1) node has
-        // no category and keeps its function-group `role` colour.
-        const cat = n.category ? CATEGORY_META[n.category] : undefined;
-        const role = cat ? cat.color : ROLE_COLOR[n.role];
+        // #4052 — the lower-left accent chip is a FLEET (L1) thing only: it names the agent's function
+        // group. An L0 project has nothing to put there since the lifecycle axis was removed, and
+        // falling back to `role` would resurrect the hash-per-id microservices tier that the category
+        // axis replaced in the first place. So L0 leaves the slot empty and the row carries only the
+        // activity word.
+        const role = p.fleet ? ROLE_COLOR[n.role] : undefined;
         // Axis 1 — HEALTH (#2541): the top-left dot renders the ROLLED-UP health (worst of self + deps).
         const health = HEALTH_META[n.rollupHealth];
         const inherited = n.healthInherited;                 // lit only by a downstream dep → muted, no pulse
@@ -364,9 +370,11 @@ export function GlanceCanvas(p: CanvasProps) {
               boxShadow={boxShadow}
               healthColor={health.color}
               healthPulse={health.pulse}
+              healthPulseMs={health.pulseMs}
+              healthGlow={health.glow}
               inherited={!!inherited}
               roleColor={role}
-              roleLabel={cat ? cat.label : (n.roleLabel ?? n.role)}
+              roleLabel={p.fleet ? (n.roleLabel ?? n.role) : undefined}
               bottomText={bottomText}
               bottomColor={bottomColor}
               bottomPulse={bottomPulse}
@@ -411,7 +419,9 @@ export function GlanceCanvas(p: CanvasProps) {
  *  when a project is drilled, and the project-network vocabulary at the root. `archetypes` are the
  *  distinct archetype ids present in the drilled fleet. */
 export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boolean; archetypes?: string[] } = {}) {
-  const roleRows = drill ? ROLE_ROWS_L1 : ROLE_ROWS_L0;
+  // L1 keeps the agent FUNCTION buckets; L0 has no colour buckets left to key (#4052) and shows the
+  // ACTIVITY vocabulary instead.
+  const roleRows = drill ? ROLE_ROWS_L1 : null;
   const edgeRows: [string, string, string][] = drill
     ? [
         ...archetypes.map((a): [string, string, string] => {
@@ -436,21 +446,30 @@ export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boo
           <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {HEALTH_ROWS.map((h) => (
               <Box key={h} style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                <Box style={{ width: 8, height: 8, borderRadius: "50%", background: HEALTH_META[h].color, flex: "none" }} />
+                {/* The swatch ANIMATES when the state does (#4052) — otherwise `complete` and
+                    `modifying`, which deliberately share one blue, would be two identical dots and the
+                    legend would teach nothing about the pair. Motion is the whole difference on the
+                    node, so it has to be the difference here too. */}
+                <Box style={{ width: 8, height: 8, borderRadius: "50%", background: HEALTH_META[h].color, flex: "none",
+                  animation: HEALTH_META[h].pulse ? `glance-softpulse ${HEALTH_META[h].pulseMs ?? 1400}ms ease-in-out infinite` : "none" }} />
                 <Text as="span" mono size={10} tone="muted">{HEALTH_META[h].label}</Text>
               </Box>
             ))}
           </Box>
         </Box>
         <Box>
-          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>{drill ? "FUNCTION" : "LIFECYCLE"}</Text>
+          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>{drill ? "FUNCTION" : "ACTIVITY"}</Text>
           <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {roleRows.map(([label, color]) => (
-              <Box key={label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                <Box style={{ width: 9, height: 3, borderRadius: 2, background: color }} />
-                <Text as="span" mono size={10} tone="muted">{label}</Text>
-              </Box>
-            ))}
+            {roleRows
+              ? roleRows.map(([label, color]) => (
+                  <Box key={label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <Box style={{ width: 9, height: 3, borderRadius: 2, background: color }} />
+                    <Text as="span" mono size={10} tone="muted">{label}</Text>
+                  </Box>
+                ))
+              : ACTIVITY_ROWS_L0.map((a) => (
+                  <Text key={a} as="div" mono size={10} tone="muted">{ACTIVITY_META[a].label}</Text>
+                ))}
           </Box>
         </Box>
         <Box>

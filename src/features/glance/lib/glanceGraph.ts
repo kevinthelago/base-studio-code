@@ -20,19 +20,21 @@ import type { NodeGraph } from "@/shared/lib/graph/nodeUrn";
 import type { AppType } from "@/features/planner";
 
 export type GRole = "infra" | "service" | "data" | "client";
-/** A project's LIFECYCLE category (#2583) — what KIND of work it is, the app's real project vocabulary
- *  (mirrors `BlueprintCategory`). Drives a project (L0) node's accent colour + chip, REPLACING the
- *  microservices-tier `role` (which was hash-assigned per id and collided with the health palette). A
- *  fleet-drill (L1) node has no category and keeps its function-group `role` colouring. */
-export type GCategory = "greenfield" | "transform" | "harden" | "maintain" | "data" | "script";
 /** Axis 1 — HEALTH (#2541): the top-left dot colour + the attention/propagation signal. An escalation
  *  ladder that rolls UP the dependency chain (a node shows the worst of itself + everything it depends
- *  on). `idle`/`healthy` never propagate — only `warning`/`error` do. Sourced from the worst unresolved
+ *  on). `healthy` never propagates — only `warning`/`error` do. Sourced from the worst unresolved
  *  `bsc errors` FaultLevel; this REPLACES the old separate fault badge. `off` (#3239) is the one MANUAL
  *  value — the user has deactivated the node from its details pane; it renders greyed, wins over the live
  *  status ("if it's not idle then it should be off"), and — being rank 0 — never propagates and never
- *  inherits a downstream error (see {@link rollUpHealth}). */
-export type GHealth = "healthy" | "warning" | "error" | "off" | "complete";
+ *  inherits a downstream error (see {@link rollUpHealth}).
+ *
+ *  `modifying` (#4052) is the rung that was missing: `healthy` says nothing is WRONG and `complete` says
+ *  the work is DONE, but neither said the work is IN FLIGHT. It replaces the LIFECYCLE category axis,
+ *  which had degenerated to one boolean — across the local hubs NO project carried a discovered
+ *  lifecycle, so `resolveProjectCategory` always fell through to `isDraft ? greenfield : maintain`, and
+ *  six legend rows rendered two values. (The same degeneration removed the blueprint category in #3785.)
+ *  Now L0 projects read on the SAME two axes as fleet nodes instead of a third, mostly-dead one. */
+export type GHealth = "healthy" | "warning" | "error" | "off" | "complete" | "modifying";
 /**
  * Does this node carry the BUILDING pulse (#4015)?
  *
@@ -42,9 +44,9 @@ export type GHealth = "healthy" | "warning" | "error" | "off" | "complete";
  * static appearance at all.
  *
  * `fleet` gates it to the DRILLED fleet (L1). A project node on L0 must never animate, however busy
- * the project is. It is passed in rather than inferred from `n.category`, because a project whose
- * lifecycle was never classified has no category either — the inference would quietly animate exactly
- * the L0 nodes it was meant to exclude.
+ * the project is — an L0 project in flight says so on the health axis (`modifying`, #4052), which is
+ * still. The gate is an explicit flag rather than anything derived from the node, so a data change can
+ * never quietly start animating the L0 layer.
  *
  * Suppressed on a deactivated node (meant to read calm) and on an errored one (its own error pulse is
  * the thing to look at; two competing animations on one node read as noise).
@@ -245,17 +247,13 @@ export interface GNodePersona {
   comms?: GNodeComm[];
 }
 
-/** Severity rank for the health rollup — only `attention`/`warning`/`error` (rank ≥ 1) propagate up
- *  dependency edges; `idle` and `healthy` are both "no problem" (rank 0) and stay put.
- *
- *  `attention` (#4005) propagates at the same rank as `warning` — deliberately. Propagating is the
- *  point: a worker parked on a question is something the user must see WITHOUT drilling into the
- *  fleet, which is the whole job of the L0 cockpit. It does not outrank `error`, because a broken
- *  project is still the more urgent thing to look at. (Rank governs propagation only; the node's own
- *  state WORD is chosen by `nodeStateWord`, where attention deliberately does outrank warning.) */
+/** Severity rank for the health rollup — only `warning`/`error` (rank ≥ 1) propagate up dependency
+ *  edges; everything else is "no problem" (rank 0) and stays put. */
 // `complete` is rank 0 — finished is not a problem, so it must never propagate up a dependency edge
-// and light a parent that is perfectly fine.
-export const HEALTH_RANK: Record<GHealth, number> = { healthy: 0, complete: 0, warning: 1, error: 2, off: 0 };
+// and light a parent that is perfectly fine. `modifying` (#4052) is rank 0 for the same reason: work
+// being IN FLIGHT is the normal state of a live project, and a dependency that is merely busy must
+// never make its dependents look degraded.
+export const HEALTH_RANK: Record<GHealth, number> = { healthy: 0, complete: 0, modifying: 0, warning: 1, error: 2, off: 0 };
 
 /** A project node as supplied by the data adapter (before layout). */
 export interface GRawNode {
@@ -267,9 +265,6 @@ export interface GRawNode {
   /** Display name (defaults to id). */
   slug?: string;
   role: GRole;
-  /** Lifecycle category (#2583) — set for PROJECT (L0) nodes; drives the accent colour + chip in place
-   *  of `role`. Absent for fleet-drill (L1) nodes, which keep their function-group `role` colouring. */
-  category?: GCategory;
   /** Axis 1 — the node's OWN health (before the dependency rollup). #2541. */
   health: GHealth;
   /** Axis 2 — the lifecycle word shown bottom-right. #2541. */
@@ -362,24 +357,24 @@ export interface GraphModel {
 export const ROLE_COLOR: Record<GRole, string> = {
   infra: "var(--graph-kind-infra)", service: "var(--graph-kind-service)", data: "var(--graph-kind-data)", client: "var(--graph-kind-client)",
 };
-/** Lifecycle category → accent colour + label (#2583) — drives a PROJECT (L0) node's border + chip +
- *  legend. A palette DELIBERATELY distinct from the health colours (blue/green/orange/red) so the
- *  category channel and the health dot never blur. */
-export const CATEGORY_META: Record<GCategory, { label: string; color: string }> = {
-  greenfield: { label: "greenfield", color: "var(--graph-category-greenfield)" }, // teal — creating from a pitch
-  transform:  { label: "transform",  color: "var(--graph-category-transform)" }, // indigo — restructuring existing repos
-  harden:     { label: "harden",     color: "var(--graph-category-harden)" }, // bronze — improving/securing in place
-  maintain:   { label: "maintain",   color: "var(--graph-category-maintain)" }, // slate — keeping it running
-  data:       { label: "data",       color: "var(--graph-category-data)" }, // magenta — a data migration
-  script:     { label: "script",     color: "var(--graph-category-script)" }, // gold — a single-purpose invocable function (#2596)
-};
-/** Axis 1 — HEALTH → the top-left dot colour + whether it pulses (#2541). Blue = at rest, green =
- *  active & fine, orange = warning, red = error/fatal (pulses; the node to look at). */
-export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse: boolean }> = {
+/** Axis 1 — HEALTH → the top-left dot colour + whether it pulses (#2541). Blue = finished, green =
+ *  active & fine, orange = warning, red = error/fatal (pulses; the node to look at).
+ *
+ *  A pulse also has a CHARACTER (#4052), because two states now pulse for opposite reasons. `error`
+ *  is an ALARM — fast, and haloed so it carries across the graph. `modifying` is a BREATH — slower and
+ *  bare, so a busy project reads as alive without competing with a broken one for the eye. Both
+ *  fields default to the alarm shape, so `error` is untouched. */
+export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse: boolean; pulseMs?: number; glow?: boolean }> = {
   // #4034 — the worker FINISHED. Blue, the palette's most alive colour, which was previously spent
   // on `idle` (a resting node) while the state that had actually achieved something had none.
   // Never pulses: complete is STILL, the same reason its activity carries no motion (#4032).
   complete: { label: "complete", color: "var(--graph-health-complete)", pulse: false },
+  // #4052 — work IN FLIGHT. Deliberately COMPLETE'S OWN BLUE, separated by motion alone: modifying is
+  // "on its way to complete", so sharing the hue is the point, and still-vs-breathing carries the rest.
+  // Every hue freed by deleting the lifecycle palette crowded an existing health colour anyway (teal
+  // 19° from healthy, slate 7° from complete, violet 27°, pink 35°) — the same too-close-to-blue
+  // objection that ruled out a purple attention state. So this state costs the palette no new hue.
+  modifying: { label: "modifying", color: "var(--graph-health-modifying)", pulse: true, pulseMs: 2600, glow: false },
   healthy: { label: "healthy", color: "var(--graph-health-healthy)", pulse: false },
   warning: { label: "warning", color: "var(--graph-health-warning)", pulse: false },
   error: { label: "error", color: "var(--graph-health-error)", pulse: true },

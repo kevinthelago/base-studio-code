@@ -34,11 +34,16 @@ export interface GlanceNodeProps {
   /** Health dot colour + whether it pulses (axis 1). */
   healthColor: string;
   healthPulse: boolean;
+  /** Pulse CHARACTER (#4052) — an alarm (fast + haloed, `error`) vs a breath (slow + bare,
+   *  `modifying`). Both optional so the alarm stays the default and `error` renders unchanged. */
+  healthPulseMs?: number;
+  healthGlow?: boolean;
   /** Lit only by a DOWNSTREAM dep — dimmed, never pulses, so the eye lands on the fault's ORIGIN. */
   inherited: boolean;
-  /** The role/category accent for the lower-left label. */
-  roleColor: string;
-  roleLabel: string;
+  /** The lower-left FUNCTION chip — fleet (L1) nodes only (#4052). Both absent ⇒ the slot renders
+   *  nothing at all, which is how an L0 project node reads now that the lifecycle axis is gone. */
+  roleColor?: string;
+  roleLabel?: string;
   /** Axis-2 word + its colour, and whether it pulses (suppressed while the NODE itself animates). */
   bottomText: string;
   bottomColor: string;
@@ -79,8 +84,8 @@ export function GlanceNode(p: GlanceNodeProps) {
             (#2541). */}
         <Box title={`${n.rollupHealth}${p.inherited ? " (downstream)" : ""}`}
           style={{ width: 8, height: 8, borderRadius: "50%", background: p.healthColor, flex: "none", opacity: p.inherited ? 0.5 : 1,
-            boxShadow: p.healthPulse && !p.inherited ? `0 0 8px ${p.healthColor}` : "none",
-            animation: p.healthPulse && !p.inherited ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }} />
+            boxShadow: p.healthPulse && !p.inherited && p.healthGlow !== false ? `0 0 8px ${p.healthColor}` : "none",
+            animation: p.healthPulse && !p.inherited ? `glance-softpulse ${p.healthPulseMs ?? 1400}ms ease-in-out infinite` : "none" }} />
         <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
         {/* The APP-TYPE discriminator (#3786/#3802) — a subtle mono micro-label on the title line: what
             KIND of app this endpoint is (api/serverless/cli/…). Gated on a non-default classification,
@@ -92,7 +97,9 @@ export function GlanceNode(p: GlanceNodeProps) {
         )}
       </Box>
       <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
-        <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: p.roleColor }}>{p.roleLabel}</Text>
+        {p.roleLabel && (
+          <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: p.roleColor }}>{p.roleLabel}</Text>
+        )}
         <Box style={{ flex: 1 }} />
         {/* #4027 — the FINISHED marker. Static and to the LEFT of the word, so a completed node is
             legible at a glance without reading its label. */}
