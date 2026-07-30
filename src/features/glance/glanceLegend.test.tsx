@@ -1,27 +1,27 @@
-// Drill-aware legend (#2561): at the root the project network keys HEALTH + EDGE and NOTHING else
-// (#4058 — the LIFECYCLE column was a dead axis removed by #4052, and the ACTIVITY column that briefly
-// replaced it went too: a project node reads on its edges and its health); drilled, it speaks the
-// fleet's Org grammar (agent FUNCTION groups + relationship archetypes).
+// Drill-aware legend (#2561): at the root the project network keys HEALTH + ACTIVITY + EDGE; drilled,
+// it speaks the fleet's Org grammar (agent FUNCTION groups + relationship archetypes).
+//
+// The second column has moved twice. It was LIFECYCLE until #4052 deleted that dead axis; #4058
+// replaced it with ACTIVITY, then dropped the column entirely on the theory that L0 nodes would stop
+// showing the word; #4060 put the word back on the nodes and #4064 brought the column with it.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GlanceOverlays } from "./GlanceCanvas";
 
 describe("GlanceOverlays legend (#2561)", () => {
-  it("L0 (no drill): HEALTH + EDGE only — no second vocabulary column at all", () => {
+  it("L0 (no drill): HEALTH + ACTIVITY + EDGE — the vocabularies an L0 node actually shows", () => {
     render(<GlanceOverlays />);
-    // #4052 — the LIFECYCLE column is GONE. It keyed a category axis that no project ever carried:
-    // `resolveProjectCategory` always fell through to `isDraft ? greenfield : maintain`, so six rows
-    // rendered two values.
+    // #4052 — the LIFECYCLE column is GONE as a legend COLUMN. It keyed a category axis that no
+    // project ever carried: `resolveProjectCategory` always fell through to
+    // `isDraft ? greenfield : maintain`, so six rows rendered two values. (The lifecycle CHIP came
+    // back on the node in #4062, sourced from the planner's real classification — but it is a chip,
+    // not a colour key, so it earns no legend column.)
     expect(screen.queryByText("LIFECYCLE")).toBeNull();
-    expect(screen.queryByText("greenfield")).toBeNull();
-    // #4058 — and the ACTIVITY column that briefly replaced it is gone too: the L0 legend keys
-    // HEALTH + EDGE, which is what a project node is described by. (#4060: a LEGEND statement only —
-    // the nodes still carry their activity word.)
-    expect(screen.queryByText("ACTIVITY")).toBeNull();
-    expect(screen.queryByText("FUNCTION")).toBeNull();
-    expect(screen.queryByText("building")).toBeNull();
-    expect(screen.queryByText("waiting")).toBeNull();
-    // What DOES remain: the two axes a project node actually carries.
+    // #4064 — ACTIVITY keys axis 2's word, which every node carries at both levels.
+    expect(screen.getByText("ACTIVITY")).toBeTruthy();
+    expect(screen.getByText("building")).toBeTruthy();
+    expect(screen.getByText("waiting")).toBeTruthy();
+    expect(screen.queryByText("FUNCTION")).toBeNull();   // that is the L1 vocabulary
     expect(screen.getByText("HEALTH")).toBeTruthy();
     expect(screen.getByText("EDGE")).toBeTruthy();
     expect(screen.getByText("depends on")).toBeTruthy();
