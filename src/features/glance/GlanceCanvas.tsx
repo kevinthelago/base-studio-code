@@ -377,8 +377,15 @@ export function GlanceCanvas(p: CanvasProps) {
               <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
                 <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: role }}>{cat ? cat.label : (n.roleLabel ?? n.role)}</Text>
                 <Box style={{ flex: 1 }} />
+                {/* #4027 — the FINISHED marker. Static and to the LEFT of the word, so a completed node
+                    is legible at a glance without reading its label. Deliberately not animated: motion
+                    means "look at this", and a finished worker is the one state with nothing to do. */}
+                {n.activity === "complete" && !isOff && !degraded && (
+                  <Text as="span" mono size={10} weight={600} aria-hidden
+                    style={{ color: "var(--graph-health-healthy)", marginRight: 4, flex: "none" }}>✓</Text>
+                )}
                 {/* Axis-2 activity word, or the fault reason when degraded. */}
-                <Text as="span" mono size={10} weight={500} title={ownDegraded && n.reason ? n.reason : undefined}
+                <Text as="span" mono size={10} weight={500} title={ownDegraded && n.reason ? n.reason : n.activity === "complete" ? n.reason : undefined}
                   style={{ color: bottomColor, maxWidth: 108, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     animation: bottomPulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }}>{bottomText}</Text>
               </Box>

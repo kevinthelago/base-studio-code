@@ -65,7 +65,7 @@ export function showsBuildingPulse(
  *  fallback). `planning` surfaces ONLY when the user has re-opened the planner on an already-triaged
  *  project (a re-edit state). `waiting` = an EXPECTED blocked state (an agent parked for the user,
  *  `bsc-wait`) — calm, not alarming; it lives here, not on the health axis. */
-export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" | "live";
+export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" | "live" | "complete";
 /** A Glance edge's kind. The project-network contracts (`api`/`data`/`events`) plus the CROSS-GRAPH
  *  LIBRARY edges: `uses-kit` (a project consumes a `bsc ui` kit, #2571) and the generalized `requires`
  *  (#3119, epic #3114) — a project/page pulls in an ALGORITHM or a SOUND library node — plus the EXTERNAL
@@ -417,6 +417,13 @@ export const ACTIVITY_META: Record<GActivity, { label: string; pulse: boolean }>
   waiting: { label: "waiting", pulse: false },
   review: { label: "in review", pulse: false },
   live: { label: "live", pulse: true },
+  // #4027 — the worker FINISHED. On the lifecycle axis, not health: health is the perpendicular
+  // axis and already means something else, and "finished" is a lifecycle fact.
+  //
+  // Never pulses, deliberately — that completes the vocabulary: building BREATHES (#4015),
+  // attention RINGS (#4005), complete is STILL. Motion means "look at this"; a finished worker is
+  // the one state with nothing to do about it.
+  complete: { label: "complete", pulse: false },
 };
 /** Project-network (L0) edge kind → label · colour · dash · line width · the relationship "surface"
  *  blurb (#2561 relabel). The relationships a user draws between PROJECTS — a build/runtime **dependency**,
