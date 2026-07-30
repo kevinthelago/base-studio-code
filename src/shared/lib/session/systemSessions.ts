@@ -20,6 +20,9 @@ export const ALGORITHMS_STUDIO_SESSION_ID = "algorithms-studio:librarian";
 export const TEAMS_STUDIO_SESSION_ID = "teams-studio:architect";
 /** The Sound studio's app-owned sound-designer session (#3369, epic #3071 phase 4). */
 export const SOUND_STUDIO_SESSION_ID = "sound-studio:sound-designer";
+/** The Integration studio's app-owned integrator session (#4023) — builds and maintains the app's
+ *  integrations with existing applications/APIs through `bsc data connector`. */
+export const INTEGRATION_STUDIO_SESSION_ID = "integration-studio:integrator";
 /** The Debug studio's app-owned debugger session (#3298) — a full-capability session in the
  *  base-studio-code SOURCE tree that works the `bsc request` improvement queue (fixing `bsc ui`),
  *  hosted in its own OS window and toggled from Settings. */
@@ -37,10 +40,12 @@ export const STUDIO_SESSION_PANE_IDS: readonly string[] = [
   ALGORITHMS_STUDIO_SESSION_ID,
   TEAMS_STUDIO_SESSION_ID,
   SOUND_STUDIO_SESSION_ID,
+  INTEGRATION_STUDIO_SESSION_ID,
   DEBUG_STUDIO_SESSION_ID,
 ];
 
-/** Whether `id` is a fixed, app-owned studio session (designer / librarian / architect / sound-designer) — excluded from
+/** Whether `id` is a fixed, app-owned studio session (designer / librarian / architect / sound-designer /
+ *  integrator) — excluded from
  *  crash recovery the way the planner (`isPlanningPaneId`) is: re-created when its workspace opens, never
  *  restored from the recovery banner. */
 export function isStudioSessionPaneId(id: string): boolean {

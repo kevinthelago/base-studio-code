@@ -135,6 +135,17 @@
         "app-repo"
       ]
     },
+    "integrator": {
+      "role": "integrator",
+      "github": "none",
+      "git": "none",
+      "code": "none",
+      "net": "read",
+      "ui": "none",
+      "writeGlobs": [
+        "scratch/**"
+      ]
+    },
     "sound-designer": {
       "role": "sound-designer",
       "github": "none",
