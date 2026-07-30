@@ -14,9 +14,9 @@ describe("GlanceOverlays legend (#2561)", () => {
     // rendered two values.
     expect(screen.queryByText("LIFECYCLE")).toBeNull();
     expect(screen.queryByText("greenfield")).toBeNull();
-    // #4058 — and the ACTIVITY column that briefly replaced it is gone too. Health says everything the
-    // project network needs: the build state IS the lifecycle indicator, maintenance is inferred, and
-    // attention is grabbed by warning/error.
+    // #4058 — and the ACTIVITY column that briefly replaced it is gone too: the L0 legend keys
+    // HEALTH + EDGE, which is what a project node is described by. (#4060: a LEGEND statement only —
+    // the nodes still carry their activity word.)
     expect(screen.queryByText("ACTIVITY")).toBeNull();
     expect(screen.queryByText("FUNCTION")).toBeNull();
     expect(screen.queryByText("building")).toBeNull();
