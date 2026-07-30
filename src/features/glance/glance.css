@@ -4,12 +4,11 @@
 @keyframes glance-dashmove { to { stroke-dashoffset: -26; } }
 @keyframes glance-softpulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 
-/* #4015 — the BUILDING breath on a fleet WORKER node. A shallow opacity cycle (not the .45 floor the
-   status dot uses): a whole node dipping that far reads as broken rather than busy, and a row of them
-   doing it in unison is hard to look at. .78 is enough to register as motion while the node stays
-   fully legible. Slower than the dot too (1.8s vs 1.4s) so a fleet of them breathes rather than
-   flickers. A node parked in maintenance simply does not carry this animation. */
-@keyframes glance-buildpulse { 0%, 100% { opacity: 1; } 50% { opacity: .78; } }
+/* #4032 — the BUILDING breath moved to AUTHORED MOTION DATA
+   (`shared/ui/kit/glanceNodeAnimations.ts` → compiled by the kit-motion engine, injected by
+   `glanceNodeMotion.ts`). It lived here as a raw keyframe, which is exactly why the designer
+   could not reach it. `glance-softpulse` above stays: it drives the health DOT and the activity
+   WORD, which are not the node component. */50% { opacity: .78; } }
 
 /* The fenced UI-KIT band (#3007) — the kit nodes lifted into their own zone across the top of the graph,
    mirroring the Design Studio composition swimlanes (.ds-lane-*). The fill/stroke colour (KIT_COLOR) is
