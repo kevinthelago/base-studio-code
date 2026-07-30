@@ -23,9 +23,15 @@
   --graph-health-healthy: #4fd6a0;
   --graph-health-warning: #f2b155;
   --graph-health-error: #f2555f;
-  /* #4005 — "needs you": a request for a person, deliberately NOT the warning orange (a fault) or
-     the healthy green (nothing to do). Violet reads as attention without reading as damage. */
-  --graph-health-attention: #a78bfa;
+  /* #4005/#4044 — "needs you": a request for a PERSON. Warm, because warm is the register for
+     "someone is required" — but deliberately NOT on the fault ramp (warning amber -> error red),
+     because nothing is broken or degrading here. Landing between those two would read as "worse
+     than a warning, not quite an error", which is exactly wrong.
+     Pink sits PAST red rather than between the faults: the largest hue gap available on the warm
+     side, and clear of the violet it replaced (which sat next to `complete`'s blue — two cool
+     tones for two states that mean opposite things). Keeps the #f2 leading value the other warm
+     tones share, so it reads as family without joining the ramp. */
+  --graph-health-attention: #f26fb8;
   --graph-health-off: #6b7280; /* #3239 — a user-deactivated node: a neutral, desaturated grey */
   --graph-kind-infra: #5b9dff;
   --graph-kind-service: #4fd6a0;
