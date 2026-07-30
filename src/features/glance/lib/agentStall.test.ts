@@ -133,23 +133,23 @@ describe("applyFleetLiveStatus (#3252 — fleet-drill live agent status)", () =>
   // only then flip to `warning`. Both readings were wrong in the same way: green says "nothing to do"
   // about a session waiting on YOU, and orange says "something is degrading" about a normal hand-off.
   // It is a request, so it gets its own health from the first moment.
-  it("a launched agent parked on a bsc-wait reads ATTENTION immediately, with its reason", () => {
+  it("a launched agent parked on a bsc-wait reads HEALTHY + waiting, with its reason (#4046)", () => {
     const r = out({ livePaneIds: new Set([auth]), waiting: [{ session: auth, reason: "awaiting review", at: T0 - 60_000 }] });
-    expect(node(r, "auth")).toMatchObject({ health: "attention", activity: "waiting", reason: "awaiting review" });
+    expect(node(r, "auth")).toMatchObject({ health: "healthy", activity: "waiting", reason: "awaiting review" });
   });
 
-  it("an OVERSTAYED wait stays ATTENTION but adds the duration", () => {
+  it("an OVERSTAYED wait still reads waiting, and adds the duration", () => {
     // How long it has been waiting is still worth knowing — it is just no longer the thing that
     // makes it visible in the first place.
     const r = out({ livePaneIds: new Set([auth]), waiting: [{ session: auth, reason: "no instructions", at: T0 - 12 * 60_000 }] });
-    expect(node(r, "auth")).toMatchObject({ health: "attention", activity: "waiting", reason: "no instructions · 12m" });
+    expect(node(r, "auth")).toMatchObject({ health: "healthy", activity: "waiting", reason: "no instructions · 12m" });
   });
 
-  it("a pane STOPPED at a permission prompt reads ATTENTION (#4005)", () => {
+  it("a pane STOPPED at a permission prompt reads HEALTHY + waiting (#4005/#4046)", () => {
     // The signal nothing in the app could see before: not `run`, no `bsc-wait`, so it fell through to
     // plain `idle` and looked exactly like a session that had simply finished.
     const r = out({ livePaneIds: new Set([auth]), attention: new Set([auth]) });
-    expect(node(r, "auth")).toMatchObject({ health: "attention", activity: "waiting" });
+    expect(node(r, "auth")).toMatchObject({ health: "healthy", activity: "waiting" });
     expect(node(r, "auth").reason).toMatch(/permission/);
   });
 
@@ -300,7 +300,7 @@ describe("maintenance vs building (#4010)", () => {
 
   it("a bsc-wait still outranks maintenance — that one needs a person", () => {
     const r = run({ maintaining: new Set([auth]), waiting: [{ session: auth, reason: "awaiting review", at: T0 }] });
-    expect(r).toMatchObject({ health: "attention", activity: "waiting" });
+    expect(r).toMatchObject({ health: "healthy", activity: "waiting" });
   });
 
   it("quarantine still outranks maintenance", () => {

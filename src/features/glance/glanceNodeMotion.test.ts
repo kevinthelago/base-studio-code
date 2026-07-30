@@ -8,7 +8,6 @@ describe("glance-node motion is authored DATA (#4032)", () => {
     // designer could not reach it. The store held 254 component records and ZERO motion.
     expect(GLANCE_NODE_MOTION_CSS).toContain("@keyframes");
     expect(GLANCE_NODE_MOTION_CSS).toContain("bsc-glance-node-building");
-    expect(GLANCE_NODE_MOTION_CSS).toContain("bsc-glance-node-attention");
   });
 
   it("emits INFINITE for the state animations", () => {
@@ -22,7 +21,9 @@ describe("glance-node motion is authored DATA (#4032)", () => {
 
   it("binds each animation to its STATE, so the selector names the state", () => {
     expect(GLANCE_NODE_MOTION_CSS).toContain('[data-node-state="building"]');
-    expect(GLANCE_NODE_MOTION_CSS).toContain('[data-node-state="attention"]');
+    // #4046 removed the attention ring with its health state — waiting is an ACTIVITY, and the node
+    // reserves motion for the one state that still earns it.
+    expect(GLANCE_NODE_MOTION_CSS).not.toContain('[data-node-state="attention"]');
   });
 
   it("has NO complete animation — its stillness is the statement", () => {
