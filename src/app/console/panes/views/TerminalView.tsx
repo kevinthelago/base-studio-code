@@ -31,7 +31,9 @@ import { TerminalBanners } from "@/app/console/panes/views/TerminalBanners";
 import { tokenForRepo } from "@/shared/lib/github/repoCredentials";
 import { getProvider } from "@/app/console/lib/providers";
 import { isTurnOpenDebounced, paneActivityFor } from "@/app/console/lib/paneActivity";
+import { admitTerminal } from "@/app/console/lib/terminalAdmission";
 import { usePaneActivity } from "@/app/console/lib/usePaneActivityFeed";
+import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
 
 interface TerminalViewProps {
   paneId: string;
@@ -72,6 +74,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // the top lines render out of frame (#190). Until opened, output is buffered
   // (like a hidden pane) and flushed once we open at a real size.
   const openedRef = useRef(false);
+  // #3975: the focus effect below runs on a rAF and skips while `openedRef` is false. Now that open()
+  // waits for an admission slot, that effect can fire BEFORE the terminal exists and silently drop the
+  // focus. So `openIfReady` focuses on open when this pane is the focused one — the two orderings are
+  // now both handled, whichever wins the race. A ref because the mount effect's closure is stale.
+  const wantFocusRef = useRef(false);
   // Skips the first font-zoom effect run per (re)mount — the terminal is already
   // created at the current size, so we must not pty_resize before pty_create.
   const fontReadyRef = useRef(false);
@@ -166,6 +173,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // and pushes the top lines out of frame. Returns true once opened. After
     // opening, fit to the real size and flush anything buffered while we waited.
     let disposeClipboard: (() => void) | null = null; // copy-on-select + paste (#3157), armed once on open
+    // #3975: `term.open()` allocates the renderer and touches the DOM — the expensive part. A tab with
+    // 29 panes ran 29 of them in ONE frame, on the thread that paints the window: measured as a
+    // 6-second gap in the 2s perf sampler (nothing ran at all), with only ONE React render in the same
+    // window — so the cost is entirely outside React. Admission spreads them across frames.
+    //
+    // Hooked HERE rather than around the whole effect because this function is already the "not ready
+    // yet, open later" path (hidden panes defer to the ResizeObserver below), so the retry machinery
+    // and its cleanup are already correct and exercised. Gating admission is one more not-ready reason.
     function openIfReady(): boolean {
       if (openedRef.current) return true;
       if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return false;
@@ -173,8 +188,16 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       openedRef.current = true;
       disposeClipboard = attachTerminalClipboard(term, paneId);
       fitAddon.fit();
+      // #3994: the geometry is otherwise invisible. `pty_create` logs its cols/rows but `pty_resize`
+      // logs only on FAILURE, so there was no way to tell whether a terminal ends up matching its
+      // pane — which is exactly the question behind "it renders too many lines / there's a scrollbar".
+      // Logged once per open, with the container box AND the resulting grid, so the two can be
+      // compared: rows * cellHeight should land within one cell of the container's inner height.
+      log.info(`console[${paneId}] fit-on-open · box=${el.clientWidth}x${el.clientHeight}px · grid=${term.cols}x${term.rows}`);
       if (pendingRef.current.size() > 0) term.write(pendingRef.current.flush());
       term.scrollToBottom(); // show the latest output on (re)mount, no scrolling (#68)
+      // #3975: the focus effect may already have run and skipped (no terminal yet) — honour it now.
+      if (wantFocusRef.current) term.focus();
       return true;
     }
     // Visible/active tab: the container is already sized, so open right away.
@@ -308,6 +331,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // existing one (e.g. after a tab switch). On reconnect we send \n so bash
     // re-prints its prompt in the fresh terminal.
     requestAnimationFrame(async () => {
+      if (destroyed) return;
+      // #3992: ONE admission slot gates the whole heavy sequence — open + fit + pty_create — not just
+      // `term.open()`. #3975 gated the open alone, which inverted the ordering this path depends on:
+      // `pty_create` is called with `term.cols/term.rows`, and those are xterm's 80x24 DEFAULTS until
+      // the terminal has been opened and fitted. Every PTY came up 80x24 while the pane rendered at
+      // its real size. Gating here restores open-then-size AND bounds the pty_create burst, which is
+      // the concurrency limit deferred in #3991.
+      await admitTerminal();
       if (destroyed) return;
       // Open now if the pane became sizable between mount and this frame.
       openIfReady();
@@ -566,9 +597,32 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       if (!isNew) {
         // Reconnecting — Ctrl+L repaints the prompt without submitting a command
         fireInvoke("pty_write", { paneId, data: "\x0c" }, (e) => log.error(`console[${paneId}] repaint write failed: ${e}`));
-        // A reconnected Claude pane is already running its REPL (no fresh OSC-100 "run" to catch),
-        // so re-show the native input for it (#1149).
-        if (isClaudeProvider && useAppStore.getState().paneWasClaude[paneId]) useAppStore.getState().setPaneClaudeActive(paneId, true);
+        // #3998: ask what this pane is ACTUALLY doing rather than inferring it.
+        //
+        // This used to read `if (paneWasClaude[paneId]) setPaneClaudeActive(paneId, true)` — but
+        // `paneWasClaude` means "claude ran here at some point" (it is persisted, and set once on the
+        // first OSC-100 `run`), not "claude is running now". A pane whose agent had exited was
+        // therefore marked active on every reconnect, which is why bare shells kept reading as live in
+        // Glance and why nothing ever restarted them.
+        //
+        // Nothing corrected it afterwards either: the Ctrl+L above is readline's clear-screen, which
+        // redraws the prompt WITHOUT running PROMPT_COMMAND, so the `__bsc_state idle` marker that
+        // would have cleared the flag never re-fired.
+        //
+        // `ensureClaudeRunning` reports the truth and, for a pane found idle at a prompt, types the
+        // resume command in — the launch path that would normally do it is unreachable here, since
+        // `pty_create` has already returned `false`.
+        // `launchesClaude` already implies `isClaudeProvider` (line 427) — it is the "this pane is
+        // meant to be running an agent" condition, which is exactly when an idle shell is wrong.
+        if (launchesClaude) {
+          ensureClaudeRunning([paneId]).then((plan) => {
+            if (destroyed) return;
+            const outcome = plan.get(paneId);
+            // `started` is optimistic in the same way the launch branch above is: OSC-100 `run` can be
+            // missed on a cold start, and OSC-100 `idle` still clears the flag when claude exits.
+            useAppStore.getState().setPaneClaudeActive(paneId, outcome === "started" || outcome === "already-running");
+          }).catch((e) => log.error(`console[${paneId}] resume probe failed: ${e}`));
+        }
       }
     });
 
@@ -578,20 +632,42 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // also the primary trigger that opens a pane first mounted while hidden:
     // the display:none → grid transition fires the observer with real
     // dimensions, so openIfReady() runs with correct cell metrics.
+    // DEBOUNCED (#3996), mirroring `useScreenSession` — the planner/studio path this one predates.
+    // Two reasons, and the console needed both:
+    //   • SIZE. A grid relayout, a dock entrance grow, or a divider drag walks the container through
+    //     many intermediate sizes. Fitting on every callback means the terminal can settle on a
+    //     measurement taken mid-flight; if the container's last transient happens to equal its final
+    //     size the observer never fires again, and nothing ever corrects it. Coalescing measures the
+    //     SETTLED box. This also gates the OPEN, whose own fit(0) establishes the cell metrics — so a
+    //     pane can no longer be opened against a size it is about to leave.
+    //   • SAFETY (#2832). `fit()` reflows the buffer; doing that every frame while the PTY streams
+    //     races xterm's async write loop and throws "Cannot set properties of undefined (setting
+    //     'isWrapped')" from a later write — uncaught, and it takes the page down.
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     const ro = new ResizeObserver(() => {
-      if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (destroyed || el.offsetWidth === 0 || el.offsetHeight === 0) return;
         if (!openIfReady()) return;   // still couldn't open (raced back to 0 size)
         // Opened-or-already-open: fit to the current size and tell the backend.
         // (When this call is the one that opened, openIfReady already fit once;
         // a second fit is idempotent, and the resize propagates the dims.)
+        const before = `${term.cols}x${term.rows}`;
         fitAddon.fit();
+        const after = `${term.cols}x${term.rows}`;
+        // Only on a real change — a resize observer fires constantly and the log must stay readable.
+        if (after !== before) {
+          log.info(`console[${paneId}] refit · box=${el.clientWidth}x${el.clientHeight}px · grid=${before} → ${after}`);
+        }
         fireInvoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }, console.error);
-      }
+        term.refresh?.(0, term.rows - 1); // repaint the buffer cleanly at the settled size (#2837)
+      }, 90);
     });
     ro.observe(el);
 
     return () => {
       destroyed = true;
+      clearTimeout(resizeTimer); // #3996: a pending refit must not fire against a disposed terminal
       if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
       if (nudgeTimerRef.current) { clearTimeout(nudgeTimerRef.current); nudgeTimerRef.current = null; }
       if (autoNudgeTimerRef.current) { clearTimeout(autoNudgeTimerRef.current); autoNudgeTimerRef.current = null; }
@@ -689,6 +765,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // We focus even while a Claude session is active (#1239): keystrokes go straight to
   // Claude's own TUI input now that the native overlay is gone.
   useEffect(() => {
+    wantFocusRef.current = !!(focused && visible);
     if (focused && visible) {
       requestAnimationFrame(() => { if (openedRef.current) termRef.current?.focus(); });
     }

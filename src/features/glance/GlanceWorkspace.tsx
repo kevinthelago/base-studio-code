@@ -52,6 +52,7 @@ import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "./lib/useProjectFleet";
 import { useFleetHeld } from "./lib/useFleetHeld";
 import "./glance.css";
+import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
 
 // The agent-health watchdog (#2541) polls the coord log on a slow cadence — a stall is a minutes-scale
 // event, so per-second rebuilds aren't worth it.
@@ -137,6 +138,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const setPaneStatus = useAppStore((s) => s.setPaneStatus);
   // The per-pane run status — drives the fleet-drill agent nodes' live activity (#3252, `applyFleetLiveStatus`).
   const paneStatus = useAppStore((s) => s.paneStatus);
+  // #4005 — panes STOPPED waiting on the user (permission prompt / input wait), from the shared
+  // pane-activity read. Drives the `attention` health so a blocked session is visible without drilling.
+  const paneAttention = useAppStore((s) => s.paneAttention);
+  // Memoized so the fleet-status memo below is not invalidated by a fresh Set on every render.
+  const attentionPanes = useMemo(
+    () => new Set(Object.keys(paneAttention).filter((p) => paneAttention[p])),
+    [paneAttention],
+  );
   // #3916: quarantine is a FIRST-CLASS node state now — a warden hard-pause used to be invisible
   // here, so a killed worker read as a plain `off` node (indistinguishable from never-launched).
   const quarantinedPanes = useAppStore((s) => s.quarantinedPanes);
@@ -150,6 +159,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // cadence (kept out of render — `Date.now()` is impure) so a threshold crossing surfaces without a
   // coord change.
   const coord = useCoordLog();
+  // #4010 — sessions parked by `bsc-maintain`. Memoized for the same reason: a fresh Set each render
+  // would invalidate the fleet-status memo below on every tick.
+  const maintainingPanes = useMemo(
+    () => new Set(coord.state.maintaining.map((m) => m.session)),
+    [coord.state.maintaining],
+  );
+
   const [now, setNow] = useState(0);
   usePoll(async (isCancelled) => { if (!isCancelled()) setNow(Date.now()); }, STALL_POLL_MS, []);
   // Overlay order: base (merge+liveness) → STALL (waiting/warn) → FAULT (error) → OFF (#3239) last, so a
@@ -284,13 +300,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             rawNodes:
               drill === BASE_STUDIO_PROJECT_ID
                 ? applyStudioLiveStatus(fleetData.rawNodes, { debugSession, paneClaudeActive, paneStatus })
-                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams }),
+                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes }),
           }
         : fleetData,
     // `quarantinedPanes` + `heldStreams` belong here: without them the memo keeps a stale overlay, so a
     // newly quarantined worker (#3916) or a stream released by the gate (#3931) would not repaint until
     // some unrelated dep changed.
-    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams],
+    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams, attentionPanes, maintainingPanes],
   );
   const fleetModel = useMemo(() => (liveFleetData ? timedSync("buildGraph:glance-fleet", () => buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges)) : null), [liveFleetData]);
   // The ACTIVE graph — the drilled fleet (with live status), else the project network. Everything downstream
@@ -518,7 +534,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     }
     if (!canResume) return;
     const paneId = fleetPaneId(drill, nodeId);
-    if (livePaneIds.has(paneId)) { jumpToConsolePane(paneId); return; }
+    // #3998: `livePaneIds` is TAB MEMBERSHIP (a session cell exists), not "an agent is running" — see
+    // `glanceFleet.ts`. Jumping was therefore the whole of Resume for any pane still in its tab, which
+    // is every pane whose agent had quietly exited to a `$` prompt. Nothing remounts such a pane
+    // either (TerminalView is portal-hosted by paneId), so this is the only place that can revive it.
+    // Fire-and-forget: the probe decides whether anything is needed, and navigation shouldn't wait.
+    if (livePaneIds.has(paneId)) { void ensureClaudeRunning([paneId]); jumpToConsolePane(paneId); return; }
     setResumeMsg(null);
     if (resumePaneSession(paneId)) { jumpToConsolePane(paneId); return; }
     setResuming(true);

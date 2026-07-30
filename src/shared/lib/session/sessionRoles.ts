@@ -34,6 +34,8 @@ export {
   roleCapability,
   hasScopedWriteCarveOut,
   restrictedRoleCommands,
+  mayFileToolingRequest,
+  TOOLING_REQUEST_COMMAND,
   isRestrictedRole, HARVEST_ROOT_APP_REPO, HARVEST_ROOT_PROJECTS,
 } from "./roleModel";
 

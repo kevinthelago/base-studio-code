@@ -271,6 +271,40 @@ const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> 
   ],
 };
 
+/** The global tooling-request queue (`crates/bsc-request`, #3295) — the designer->debug channel,
+ *  drained by a FULL-CAPABILITY session that edits base-studio-code itself. */
+export const TOOLING_REQUEST_COMMAND = "bsc request";
+
+/**
+ * May this role reach the global tooling-request queue (#4000)?
+ *
+ * DERIVED from the grant table above rather than listed separately, so the allow and the deny cannot
+ * drift apart: a role that is granted `bsc request …` is allowed it, everything else is denied it.
+ * Adding the grant to a new role therefore lifts its deny automatically, and removing the grant
+ * re-denies it — there is no second list to remember.
+ *
+ * `debugger` is the one addition: it is the queue's CONSUMER (it reads, claims and resolves), and it
+ * has no `RESTRICTED_ROLE_COMMANDS` entry because it launches full-capability rather than confined.
+ *
+ * Everything else — `worker`, `director`, `triage`, `planner`, … — is a PROJECT role. Its lane is
+ * `bsc plan request`, which is scoped to its own project's plan.db. Escalation from there to the
+ * tooling queue is the director's move, made explicitly, not a side effect of any agent being able to
+ * run `bsc`.
+ */
+export function mayFileToolingRequest(role: SessionRole | null | undefined): boolean {
+  // The two roles named explicitly, because neither has a `RESTRICTED_ROLE_COMMANDS` entry to derive
+  // from — they are not confined roles:
+  //   · `debugger` is the queue's CONSUMER (reads, claims, resolves); it launches full-capability.
+  //   · `director` is the sanctioned ESCALATION point (#4001). A worker files a PROJECT request
+  //     (`bsc plan request`); when the director judges one to be a genuine tooling gap rather than
+  //     something it can fix, it forwards it here. That promotion is the whole reason the project lane
+  //     can stay closed to workers — and it is safe because the director is `code: none`, so it can
+  //     ASK for an app change but never make one. #4000 denied it as well; this is the deliberate
+  //     refinement that makes the two-lane design actually work end to end.
+  if (role === "debugger" || role === "director") return true;
+  return restrictedRoleCommands(role).some((c) => c.startsWith(TOOLING_REQUEST_COMMAND));
+}
+
 /**
  * The fixed store-CLI command prefixes a role auto-runs at launch, in ADDITION to its profile's
  * `allowedCommands` (#3095). Empty for a role with no fixed store surface. Returns a fresh array so

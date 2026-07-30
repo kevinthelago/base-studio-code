@@ -1,1 +1,1 @@
-bsc-activity() { st="$1"; cat >/dev/null 2>&1; l="${BSC_ACTIVITY_LOG:-}"; [ -z "$l" ] && return 0; case "$st" in run|idle) ;; *) return 0 ;; esac; ts="$(__bsc_now_ms)"; __bsc_logline "$l" '%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$st"; return 0; }
+bsc-activity() { st="$1"; cat >/dev/null 2>&1; l="${BSC_ACTIVITY_LOG:-}"; [ -z "$l" ] && return 0; case "$st" in run|idle|attn) ;; *) return 0 ;; esac; ts="$(__bsc_now_ms)"; __bsc_logline "$l" '%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$st"; return 0; }

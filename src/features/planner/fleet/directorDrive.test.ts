@@ -2,8 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeDirectorDrive, resolveDirectorDrive, decideDirectorAction,
   eventDirectorPrompt, DEFAULT_DIRECTOR_DRIVE, askKey, pendingAskPrompt,
-  briefKey, pendingBriefPrompt,
-} from "./directorDrive";
+  briefKey, pendingBriefPrompt, requestKey, pendingRequestPrompt } from "./directorDrive";
 
 const TS = "2026-06-01T00:00:00Z";
 const line = (session: string, kind: string, a = "", b = "") => `${TS}	${session}	${kind}	${a}	${b}`;
@@ -159,5 +158,45 @@ describe("planner brief surfacing (#2377, state-based)", () => {
     expect(p).toContain("bsc-assign");          // director routes the work onward
     expect(p).toMatch(/plan update/);
     expect(p).toMatch(/Do not ask the user/);
+  });
+});
+
+describe("pendingRequestPrompt / requestKey (#4001)", () => {
+  const req = (id: string, from: string, text: string) => ({ id, from, text, at: 1 });
+
+  it("keys on the row id, not session+time", () => {
+    // The id is what `request-resolved` carries, so keying on it is what makes the pump's
+    // surfaced-once guard prune exactly when the request is answered. A session@time key would
+    // never match the resolve event and would suppress the ask forever.
+    expect(requestKey({ id: "7" })).toBe("req:7");
+    expect(requestKey({ id: "7" })).not.toBe(requestKey({ id: "8" }));
+  });
+
+  it("names both of the director's moves, and the escalation verb", () => {
+    const p = pendingRequestPrompt([req("7", "cli-platform", "no develop branch")]);
+    expect(p).toContain("#7");
+    expect(p).toContain("cli-platform");
+    expect(p).toContain("no develop branch");
+    // Resolve — with the note, which is the answer the worker reads back.
+    expect(p).toContain("bsc plan request resolve");
+    expect(p).toContain("--note");
+    // Escalate — the director is the ONLY sanctioned path from the project lane to the tooling
+    // queue (#4000), so the prompt has to say the verb or the two-lane design has no exit.
+    expect(p).toContain("bsc request new");
+    // And it must not punt to the user; that is what leaves requests rotting.
+    expect(p).toContain("Do not ask the user");
+  });
+
+  it("lists every open request in one injection", () => {
+    // One injection per pane per tick — so a batch must carry all of them, not just the first.
+    const p = pendingRequestPrompt([req("1", "a", "first"), req("2", "b", "second")]);
+    expect(p).toContain("#1");
+    expect(p).toContain("#2");
+    expect(p).toContain("2 worker change-request(s)");
+  });
+
+  it("survives a request with no requester", () => {
+    // `from` defaults to $BSC_STREAM, which is unset for a non-fleet session.
+    expect(pendingRequestPrompt([req("3", "", "something")])).toContain("a worker");
   });
 });

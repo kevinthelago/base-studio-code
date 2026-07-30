@@ -18,7 +18,8 @@
 import { useEffect, useRef } from "react";
 import { logsPaneActivity } from "@/shared/lib/core/logsBridge";
 import { useLogStream } from "@/shared/hooks/useLogStream";
-import type { PaneActivity } from "./paneActivity";
+import { needsAttention, type PaneActivity } from "./paneActivity";
+import { useAppStore } from "@/store";
 import { log } from "@/shared/lib/core/log";
 
 type Listener = (rows: PaneActivity[]) => void;
@@ -62,6 +63,13 @@ export function usePaneActivityFeed(): void {
     const rows = await logsPaneActivity<PaneActivity>();
     if (isCancelled()) return;
     publishPaneActivity(rows);
+    // #4005: project the "stopped waiting on the user" rows into the store, so Glance can raise the
+    // `attention` health without importing the console shell (a feature must not import `app/`).
+    // Done HERE rather than per pane for the same reason this feed exists at all — one full-table
+    // read, one write, instead of N.
+    const attn: Record<string, boolean> = {};
+    for (const r of rows) if (needsAttention(r)) attn[r.pane] = true;
+    useAppStore.getState().setPaneAttention(attn);
   });
 }
 

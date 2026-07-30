@@ -17,8 +17,10 @@
  *  (`logs::PaneActivity` — plain snake_case, no serde rename, so the keys match the struct). */
 export interface PaneActivity {
   pane: string;
-  /** `"run"` — a turn is open (the agent is working); `"idle"` — the turn closed at a Stop. */
-  state: "run" | "idle";
+  /** `"run"` — a turn is open (the agent is working); `"idle"` — the turn closed at a Stop;
+   *  `"attn"` (#4005) — Claude Code fired `Notification`, i.e. it is STOPPED waiting on the user
+   *  (a permission prompt, or a long input idle). */
+  state: "run" | "idle" | "attn";
   /** Epoch-ms timestamp of the event. */
   at: number;
 }
@@ -32,6 +34,21 @@ export interface PaneActivity {
  */
 export function isTurnOpen(activity: PaneActivity | undefined): boolean {
   return activity?.state === "run";
+}
+
+/**
+ * Is this pane STOPPED waiting on the user (#4005)?
+ *
+ * Distinct from idle in the way that matters: an idle pane is finished, an `attn` pane is blocked and
+ * will stay blocked until a person acts. That is the most actionable state in the cockpit and, before
+ * this, the least visible one — a pane awaiting a permission prompt looked exactly like a quiet one.
+ *
+ * Deliberately NOT turn-open ({@link isTurnOpen} stays false): the agent is not working, so the
+ * silence timer should be free to settle the status dot as it always has. This adds a signal; it does
+ * not re-gate the existing one.
+ */
+export function needsAttention(activity: PaneActivity | undefined): boolean {
+  return activity?.state === "attn";
 }
 
 /**

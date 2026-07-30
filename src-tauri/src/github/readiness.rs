@@ -31,17 +31,49 @@ fn run_probe_shell(
     let shell = crate::platform::shell::resolve_shell();
     let mut cmd = std::process::Command::new(&shell);
     cmd.arg("-lc").arg(script);
+    // #3984: NORMALIZE the cwd, exactly as `pty_create` does. A git-bash-style path (`/c/Users/…`)
+    // is not something Windows `current_dir` accepts, so the spawn failed with ERROR_DIRECTORY (267)
+    // BEFORE the script ran — `run_probe_shell` then returned "", `interpret_preflight` found no
+    // markers, and every tool read as not-found. That is what produced a critical, blocking
+    // "install claude / install git" banner on a machine where both were installed and a login shell
+    // found them: the probe never started. Same rule the rest of the backend already follows.
+    let cwd = crate::to_native_path(cwd);
     if !cwd.is_empty() {
-        cmd.current_dir(cwd);
+        cmd.current_dir(&cwd);
     }
     let env_map = env.unwrap_or_default();
     for (k, v) in crate::console::pty::session_env(&env_map) {
         cmd.env(k, v);
     }
     match no_window(&mut cmd).output() {
-        Ok(out) => String::from_utf8_lossy(&out.stdout).into_owned(),
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+            // #3978: the probe reported `claude` + `git` MISSING while both were installed and a login
+            // shell found them by hand. A false negative here is a BLOCKING, critical verdict in the
+            // UI, so it trains the user to dismiss the one banner meant to stop them before an agent
+            // fails mid-task — and it left nothing to diagnose from. Log what the probe actually ran
+            // under whenever it comes back empty or short, which is exactly the failing shape:
+            // the resolved shell (`resolve_shell` prefers $SHELL, which need not be Git Bash — and
+            // `-lc` is meaningless to a non-POSIX shell), the child's PATH, and git's stderr.
+            if stdout.trim().is_empty() {
+                let path = cmd.get_envs()
+                    .find(|(k, _)| k.to_string_lossy().eq_ignore_ascii_case("PATH"))
+                    .and_then(|(_, v)| v.map(|s| s.to_string_lossy().into_owned()))
+                    .unwrap_or_else(|| "<inherited>".into());
+                log::error!(
+                    "{label} probe produced NO output — shell={shell} status={:?} stderr={} PATH={}",
+                    out.status.code(),
+                    String::from_utf8_lossy(&out.stderr).trim().chars().take(300).collect::<String>(),
+                    path.chars().take(600).collect::<String>(),
+                );
+            }
+            stdout
+        }
         Err(e) => {
-            log::warn!("{label} probe failed to spawn ({shell}): {e}");
+            // #3984: name the DIRECTORY too. #3982 logged the empty-output path but not this one, so
+            // a spawn failure said only "invalid" without saying invalid *what* — which left the
+            // actual cause (an un-normalized cwd) unnamed through a whole round of hypotheses.
+            log::error!("{label} probe failed to spawn ({shell}) in cwd={cwd:?}: {e}");
             String::new()
         }
     }

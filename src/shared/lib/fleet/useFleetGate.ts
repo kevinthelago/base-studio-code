@@ -42,24 +42,34 @@ export function gatedProjects(fleetPaneStreams: Record<string, unknown>): string
 }
 
 /**
- * Stream ids that are READY to start but have no live pane — the pump's action set.
+ * Stream ids the pump should launch: every READY stream that isn't quarantined.
  *
- * `ready` from the gate includes streams that are already running (a resume launched them last tick),
- * so subtracting the live panes is what makes the pump idempotent: it fires only for a stream that has
- * genuinely just been released. Pure.
+ * #3971 — this used to also subtract "live" panes, which broke recovery at exactly the moment it was
+ * needed. The liveness signal was tab membership (`in a tab && !ended && !disabled`), so at boot every
+ * persisted pane counted as live — including the 25 that had come up as BARE SHELLS (`init=<none>`,
+ * `LaunchPlan::None`, no agent). The pump skipped them as already-running and released 3 streams
+ * against a fleet with 13 dependency-free roots.
+ *
+ * That definition is right where it came from — Glance's node colouring and #3954's warden scoping
+ * both ask "does a session cell exist?" — and wrong here, where the question is "is an AGENT running?".
+ * A bare shell answers no.
+ *
+ * Rather than teach the pump to detect a bare shell, drop the filter: `resumeProject.ts` settled this
+ * in #3923 — "a live pane is safe to include in the relaunch: `pty_create` reconnects to an existing
+ * session and returns before spawning, so it never re-sends `claude --continue` to a running agent."
+ * The pump's actuator IS `resumeProjectFleet`, so it inherits that guarantee, and the caution I added
+ * had already been deliberately removed from that path.
+ *
+ * Repeat-firing is owned by the caller's `lastFired` fingerprint, which is the honest mechanism for it
+ * — not a liveness proxy that is wrong precisely when recovery matters. Quarantine still excludes: a
+ * quarantined worker is surfaced, never relaunched (#3916). Pure.
  */
 export function newlyLaunchable(
   ready: readonly GateStream[],
   projectKey: string,
-  livePaneIds: ReadonlySet<string>,
   quarantined: Record<string, unknown>,
 ): string[] {
-  return ready
-    .map((s) => s.id)
-    .filter((id) => {
-      const paneId = `${projectKey}:${id}`;
-      return !livePaneIds.has(paneId) && !quarantined[paneId];
-    });
+  return ready.map((s) => s.id).filter((id) => !quarantined[`${projectKey}:${id}`]);
 }
 
 /**
@@ -85,15 +95,6 @@ export function useFleetGate(launch: GateLauncher): void {
     // A failed read withholds evidence rather than fabricating it — the same rule the resume follows.
     // Firing on a null read would launch held streams on a transient log error.
     if (!coord || isCancelled()) return;
-    // "Live" mirrors the Glance definition (#3916): a pane that exists in a tab and has been neither
-    // ENDED nor disabled. `paneStatus` is an activity level (on/run/idle), not a liveness flag, so it
-    // would miss a mounted-but-quiet pane and the pump would relaunch a stream that is already running.
-    const livePaneIds = new Set<string>();
-    for (const t of st.tabs) {
-      for (const pid of t.paneIds ?? []) {
-        if (pid && !st.endedPanes[pid] && !st.disabledPanes[pid]) livePaneIds.add(pid);
-      }
-    }
 
     for (const projectKey of projects) {
       const fleet = st.planFleet[projectKey];
@@ -113,7 +114,7 @@ export function useFleetGate(launch: GateLauncher): void {
         sessionDone: sessionDoneStreams(coord.state.maintaining, projectKey),
       };
       const { ready } = partitionByDeps(fleet.streams, evidence);
-      const launchable = newlyLaunchable(ready, projectKey, livePaneIds, st.quarantinedPanes);
+      const launchable = newlyLaunchable(ready, projectKey, st.quarantinedPanes);
       const fingerprint = launchable.slice().sort().join(",");
       if (!fingerprint || lastFired.current[projectKey] === fingerprint) continue;
       lastFired.current[projectKey] = fingerprint;
