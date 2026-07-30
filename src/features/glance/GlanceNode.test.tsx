@@ -1,0 +1,65 @@
+import { describe, it, expect, afterEach } from "vitest";
+import { render, cleanup } from "@testing-library/react";
+import { GlanceNode } from "./GlanceNode";
+import { GLANCE_NODE_ANIM_CLASSES } from "./glanceNodeMotion";
+import type { GNode } from "./lib/glanceGraph";
+
+const node = (over: Partial<GNode> = {}): GNode => ({
+  id: "auth", slug: "auth", role: "service", health: "healthy", activity: "building",
+  rollupHealth: "healthy", x: 0, y: 0, ...over,
+} as GNode);
+
+const props = (n: GNode, state: "building" | "attention" | null) => ({
+  n, border: "var(--border)", boxShadow: "none", healthColor: "green", healthPulse: false,
+  inherited: false, roleColor: "blue", roleLabel: "build", bottomText: "building",
+  bottomColor: "var(--fg-muted)", bottomPulse: false, isOff: false, degraded: false,
+  ownDegraded: false, state,
+});
+
+describe("GlanceNode binds its states to authored motion (#4032)", () => {
+  afterEach(() => cleanup());
+
+  it("stamps the state so the compiled kit CSS can bind to it", () => {
+    // The selector in the motion data IS `[data-node-state="building"]`, so this attribute is the
+    // entire binding — no class bookkeeping in the component, and a designer reading the record can
+    // see which state each animation belongs to.
+    const { container } = render(<GlanceNode {...props(node(), "building")} />);
+    expect(container.querySelector('[data-node-state="building"]')).not.toBeNull();
+  });
+
+  it("carries the applying classes", () => {
+    const { container } = render(<GlanceNode {...props(node(), "building")} />);
+    const el = container.querySelector("[data-node-state]")!;
+    for (const cls of GLANCE_NODE_ANIM_CLASSES.split(" ")) expect(el.className).toContain(cls);
+  });
+
+  it("stamps NO state when the node is still", () => {
+    // A complete/idle node must not match either animation's selector — its stillness is the point.
+    const { container } = render(<GlanceNode {...props(node({ activity: "complete" }), null)} />);
+    expect(container.querySelector("[data-node-state]")).toBeNull();
+  });
+
+  it("shows the completion marker only for a complete node", () => {
+    const done = render(<GlanceNode {...props(node({ activity: "complete" }), null)} />);
+    expect(done.container.textContent).toContain("✓");
+    cleanup();
+    const busy = render(<GlanceNode {...props(node(), "building")} />);
+    expect(busy.container.textContent).not.toContain("✓");
+  });
+
+  it("hides the completion marker on a deactivated or degraded node", () => {
+    // `off` reads calm and a degraded node shows its fault word — neither should claim success.
+    const off = render(<GlanceNode {...{ ...props(node({ activity: "complete" }), null), isOff: true }} />);
+    expect(off.container.textContent).not.toContain("✓");
+    cleanup();
+    const bad = render(<GlanceNode {...{ ...props(node({ activity: "complete" }), null), degraded: true }} />);
+    expect(bad.container.textContent).not.toContain("✓");
+  });
+
+  it("renders the node's identity and its two label rows", () => {
+    const { container } = render(<GlanceNode {...props(node(), "building")} />);
+    expect(container.textContent).toContain("auth");     // slug
+    expect(container.textContent).toContain("build");    // role label
+    expect(container.textContent).toContain("building"); // activity word
+  });
+});
