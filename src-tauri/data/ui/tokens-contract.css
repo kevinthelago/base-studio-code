@@ -96,6 +96,11 @@
   --graph-kind-service: #4fd6a0;
   --graph-kind-data: #b98bff;
   --graph-kind-client: #f2b155;
+  --graph-lifecycle-greenfield: #16b3a7;
+  --graph-lifecycle-transform: #7b74f2;
+  --graph-lifecycle-harden: #b8862f;
+  --graph-lifecycle-maintain: #8b93a7;
+  --graph-lifecycle-harvest: #d05fa8;
   --graph-category-greenfield: #16b3a7;
   --graph-category-transform: #7b74f2;
   --graph-category-harden: #b8862f;
