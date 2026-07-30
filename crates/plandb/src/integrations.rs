@@ -16,7 +16,12 @@ use crate::Store;
 use rusqlite::params;
 
 /// A system this project integrates with, as declared during Discovery.
+// camelCase on the wire, like EVERY other plandb struct (`PlanIssue`/`PlanFeature`/`Lesson`/…). #4024
+// shipped this one without the attribute, so it emitted `base_url` while its siblings emitted camelCase
+// — corrected here, before anything consumed the odd one out. The CLI parser already accepted BOTH
+// spellings on input; this makes the OUTPUT agree with that and with the rest of the store.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlanIntegration {
     /// Stable slug — the id the Source pane and the Integrator both key off (`salesforce`, `stripe`).
     pub id: String,
@@ -179,5 +184,38 @@ mod tests {
         let s = Store::open_in_memory().unwrap();
         s.integration_set(&integ("   ", "runtime")).unwrap();
         assert!(s.integration_list(None).unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+
+    /// #4054: the JSON the Source pane reads must be camelCase, like every sibling struct. #4024
+    /// shipped without `rename_all`, emitting `base_url`; a consumer written against that would have
+    /// silently missed the field the moment it was corrected.
+    #[test]
+    fn serializes_camel_case_and_round_trips_both_spellings() {
+        let i = PlanIntegration {
+            id: "salesforce".into(),
+            direction: "source".into(),
+            base_url: Some("https://acme.my.salesforce.com".into()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&i).unwrap();
+        assert!(json.contains("\"baseUrl\""), "wire is camelCase: {json}");
+        assert!(!json.contains("\"base_url\""), "the snake spelling must not survive: {json}");
+        // And it reads its own output back unchanged.
+        assert_eq!(serde_json::from_str::<PlanIntegration>(&json).unwrap(), i);
+    }
+
+    /// Absent optionals stay ABSENT rather than serializing as null — a consumer checking
+    /// `if (row.docs)` must not be handed an explicit null where the field was simply never given.
+    #[test]
+    fn omits_absent_optionals_entirely() {
+        let json = serde_json::to_string(&PlanIntegration { id: "x".into(), ..Default::default() }).unwrap();
+        for absent in ["docs", "baseUrl", "auth", "purpose", "name"] {
+            assert!(!json.contains(absent), "{absent} must be omitted when unset: {json}");
+        }
     }
 }
