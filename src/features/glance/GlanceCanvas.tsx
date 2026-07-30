@@ -468,7 +468,11 @@ export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boo
           <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {roleRows.map(([label, color]) => (
               <Box key={label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                <Box style={{ width: 9, height: 3, borderRadius: 2, background: color }} />
+                {/* A DOT, not a bar (#4068). This column keys a NODE property — the lifecycle chip at
+                    L0, the agent's function group at L1 — and a short line reads as a RELATIONSHIP,
+                    which is precisely what the EDGE column directly below means and draws with real
+                    lines. Matching the health dot puts both node-property columns in one shape. */}
+                <Box style={{ width: 8, height: 8, borderRadius: "50%", background: color, flex: "none" }} />
                 <Text as="span" mono size={10} tone="muted">{label}</Text>
               </Box>
             ))}
