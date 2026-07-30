@@ -9,6 +9,7 @@ import type { Persona } from "@/features/personas";
 import {
   DEBUG_STUDIO_SESSION_ID, DESIGN_STUDIO_SESSION_ID,
   ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID, SOUND_STUDIO_SESSION_ID,
+  INTEGRATION_STUDIO_SESSION_ID,
 } from "@/shared/lib/session/systemSessions";
 import { buildOrgFleetData } from "./glanceFleet";
 import type { GlanceData, ProjectLite } from "./glanceData";
@@ -62,6 +63,7 @@ const STUDIO_NODE_SESSION: Record<string, string> = {
   librarian: ALGORITHMS_STUDIO_SESSION_ID,
   architect: TEAMS_STUDIO_SESSION_ID,
   "sound-designer": SOUND_STUDIO_SESSION_ID,
+  integrator: INTEGRATION_STUDIO_SESSION_ID,
   debugger: DEBUG_STUDIO_SESSION_ID,
 };
 export function studioPaneIdForNode(nodeId: string): string | null {

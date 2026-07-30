@@ -2,17 +2,19 @@
   "id": "org-planning-studio",
   "order": 3,
   "name": "Studio Network",
-  "blurb": "The app-owned studio sessions that collaborate during a planning session: the planner sources live visuals from the designer and algorithms from the librarian, the designer commissions the librarian to generate data for richer component previews, the architect designs the teams the plan runs on, and the sound-designer authors the sound kits. Each session stewards only its own library — the designer the bsc ui components, the librarian the bsc graph algorithms, the architect the teams, the sound-designer the bsc sound kits; the planner authors nothing. When the debug session is toggled on (Settings), the debugger joins and fixes the bsc ui tooling the designer reports (#2940/#3298).",
+  "blurb": "The app-owned studio sessions that collaborate during a planning session: the planner sources live visuals from the designer and algorithms from the librarian, the designer commissions the librarian to generate data for richer component previews, the architect designs the teams the plan runs on, the sound-designer authors the sound kits, and the integrator builds and maintains the integrations with existing applications and APIs. Each session stewards only its own library — the designer the bsc ui components, the librarian the bsc graph algorithms, the architect the teams, the sound-designer the bsc sound kits, the integrator the bsc data connector manifests; the planner authors nothing. When the debug session is toggled on (Settings), the debugger joins and fixes the bsc ui tooling the designer reports (#2940/#3298).",
   "positions": [
     { "nodeId": "planner",    "kind": "agent",    "personaId": "persona-planner",    "x": 384, "y": 48  },
     { "nodeId": "designer",   "kind": "agent",    "personaId": "persona-designer",   "x": 144, "y": 216 },
     { "nodeId": "librarian",  "kind": "agent",    "personaId": "persona-librarian",  "x": 624, "y": 216 },
     { "nodeId": "architect",  "kind": "agent",    "personaId": "persona-architect",  "x": 384, "y": 300 },
     { "nodeId": "sound-designer", "kind": "agent", "personaId": "persona-sound-designer", "x": 864, "y": 300 },
+    { "nodeId": "integrator", "kind": "agent", "personaId": "persona-integrator", "x": 1104, "y": 216 },
     { "nodeId": "library",    "kind": "resource", "label": "Component library",  "x": 144, "y": 396 },
     { "nodeId": "algorithms", "kind": "resource", "label": "Algorithm library",  "x": 624, "y": 396 },
     { "nodeId": "teams",      "kind": "resource", "label": "Teams library",      "x": 384, "y": 480 },
-    { "nodeId": "sounds",     "kind": "resource", "label": "Sound library",      "x": 864, "y": 480 }
+    { "nodeId": "sounds",     "kind": "resource", "label": "Sound library",      "x": 864, "y": 480 },
+    { "nodeId": "integrations", "kind": "resource", "label": "Integration library", "x": 1104, "y": 396 }
   ],
   "relationships": [
     { "id": "r-serves-designer",   "archetype": "serves",   "from": "designer",  "to": "planner",    "bow": -28 },
@@ -23,6 +25,8 @@
     { "id": "r-stewards-architect","archetype": "stewards", "from": "architect", "to": "teams",      "bow": 0   },
     { "id": "r-serves-architect",  "archetype": "serves",   "from": "architect", "to": "planner",    "bow": -40 },
     { "id": "r-serves-sound-designer",   "archetype": "serves",   "from": "sound-designer", "to": "planner", "bow": 40 },
-    { "id": "r-stewards-sound-designer", "archetype": "stewards", "from": "sound-designer", "to": "sounds",  "bow": 0  }
+    { "id": "r-stewards-sound-designer", "archetype": "stewards", "from": "sound-designer", "to": "sounds",  "bow": 0  },
+    { "id": "r-serves-integrator",       "archetype": "serves",   "from": "integrator",     "to": "planner", "bow": 46 },
+    { "id": "r-stewards-integrator",     "archetype": "stewards", "from": "integrator",     "to": "integrations", "bow": 0 }
   ]
 }

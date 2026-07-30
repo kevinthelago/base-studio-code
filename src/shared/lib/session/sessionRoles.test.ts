@@ -220,6 +220,7 @@ describe("roleDeniedCommands (launch wiring)", () => {
         if (cap.role === "architect") continue; // ui:"none" by design (#2755) — asserted in its own suite
         if (cap.role === "librarian") continue; // ui:"none" by design (#2787) — restricted knowledge-store session, like the architect
         if (cap.role === "sound-designer") continue; // ui:"none" by design (#3369) — a sound is a synthesis descriptor, not a UI kit
+        if (cap.role === "integrator") continue; // ui:"none" by design (#4023) — a connector manifest is not a UI kit
         if (cap.role === "curator") continue;   // ui:"write" by design (#3092) — the harvest actor OWNS the kit store
         if (cap.role === "debugger") continue;  // ui:"write" by design (#3322) — the app-maintenance session that FIXES `bsc ui`
         const denies = roleDeniedCommands(cap);
@@ -782,7 +783,7 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
 
   // Every studio surface is a loop PARTICIPANT (#3262): it can open a loop and converse in it.
   it("gives every restricted studio surface the loop participant verbs", () => {
-    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer"] as const) {
+    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer", "integrator"] as const) {
       expect(restrictedRoleCommands(role)).toEqual(expect.arrayContaining(LOOP));
     }
   });
@@ -792,7 +793,7 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
   // `"bsc loop"` prefix used to grant it: it expands to `Bash(bsc loop *)`, which matches `bsc loop stop`
   // — so a session could end the infinite loop it exists to run. Halting stays outside the conversation.
   it("never grants `bsc loop stop` — a participant cannot halt its own loop", () => {
-    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer"] as const) {
+    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer", "integrator"] as const) {
       const cmds = restrictedRoleCommands(role);
       expect(cmds).not.toContain("bsc loop stop");
       // The bare prefix is what silently re-grants `stop` via the `Bash(<cmd> *)` rule — it must not return.
@@ -819,7 +820,7 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
   });
 
   it("is empty for every unrestricted role and for an absent role", () => {
-    const restricted = new Set<SessionRole>(["curator", "designer", "librarian", "architect", "sound-designer"]);
+    const restricted = new Set<SessionRole>(["curator", "designer", "librarian", "architect", "sound-designer", "integrator"]);
     for (const role of Object.keys(ROLE_DEFAULTS) as SessionRole[]) {
       if (restricted.has(role)) continue;
       expect(restrictedRoleCommands(role)).toEqual([]);
@@ -829,7 +830,7 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
   });
 
   it("isRestrictedRole marks exactly the confined roles — they must never be flipped to bypass", () => {
-    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer"] as SessionRole[]) {
+    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer", "integrator"] as SessionRole[]) {
       expect(isRestrictedRole(role)).toBe(true);
     }
     for (const role of ["worker", "director", "planner", "triage", "reviewer"] as SessionRole[]) {

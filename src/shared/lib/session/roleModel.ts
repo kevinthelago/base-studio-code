@@ -94,7 +94,15 @@ export type SessionRole =
   // + `bsc graph` via the restricted allow-list — with `code: "none"` and `git: "read"` (to read the
   // landed repo it harvests from). It never touches project files or GitHub. Distinct from the
   // `librarian` (the standing Algorithms-Studio session): the curator is a FLEET post-landing actor.
-  | "curator";
+  | "curator"
+  // Integrator (#4023): the Integration Studio's session — builds and MAINTAINS an integration with an
+  // existing application or API. Its store surface is `bsc data connector` (the runtime REST connector
+  // presets), so like its studio siblings it is `none` on git/GitHub/code/ui with a `scratch/**` carve-out
+  // and launches `restrictedAllow`. THE ONE DIFFERENCE: `net: "read"`. Every other studio is `net: "none"`,
+  // but this role's work STARTS at the vendor's documentation — it cannot author a manifest for an API it
+  // is not allowed to read about. That widening is deliberate and is the only one: it reads docs and probes
+  // endpoints read-only, and still cannot write a repo file, reach git, or touch GitHub.
+  | "integrator";
 
 /** Access to a capability: none < read < write. */
 export type AccessTier = "none" | "read" | "write";
@@ -261,6 +269,9 @@ const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> 
     "bsc request list",
   ],
   librarian: ["bsc graph", ...LOOP_PARTICIPANT_COMMANDS, "bsc request new", "bsc request list"],
+  // #4023: the connector store IS the integration library — `probe`/`validate`/`try`/`map` are the
+  // authoring dev-loop and `add`/`remove`/`list`/`get` the store, all under the one prefix.
+  integrator: ["bsc data connector", ...LOOP_PARTICIPANT_COMMANDS, "bsc request new", "bsc request list"],
   "sound-designer": ["bsc sound", ...LOOP_PARTICIPANT_COMMANDS, "bsc request new", "bsc request list"],
   architect: [
     "bsc teams",
