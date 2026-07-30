@@ -85,6 +85,13 @@ export interface FleetLiveSignals {
    *  Nothing else in the app could see this state: such a pane is not `run` and has no `bsc-wait`, so
    *  it fell through to plain `idle` and looked identical to a session that had simply finished. */
   attention?: ReadonlySet<string>;
+  /** Sessions PARKED IN MAINTENANCE (#4010) — `bsc-maintain` (#1957): every owned issue is done, the
+   *  worker stays alive and ready for the director to dispatch into. Keyed by pane id.
+   *
+   *  Modelled explicitly rather than left to fall through to `idle`, because a parked session's TUI is
+   *  still alive: whether it reads `run` is a timing accident, and on the wrong side of that accident a
+   *  finished worker keeps the building outline forever. */
+  maintaining?: ReadonlySet<string>;
   /** Epoch now — injected (impure in render). */
   now: number;
   /** Stall threshold; a wait beyond it escalates to `warning`. Defaults to {@link STALL_WARN_MS}. */
@@ -178,6 +185,16 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
         activity: "waiting" as GActivity,
         reason: "stopped for you — permission prompt or awaiting input",
       };
+    }
+    // PARKED IN MAINTENANCE (#4010) — before the run->building branch, deliberately. A maintaining
+    // worker's session is still alive, so `paneStatus` may well read "run"; checked after, it would
+    // keep the building outline forever despite having finished everything it owns.
+    //
+    // It renders as the PLAIN node — no outline, no pulse — because there is nothing for anyone to do
+    // about it. The explanation rides in `reason`, which the hover title and the inspector's REASON
+    // tile both show, so the state is still discoverable without being loud.
+    if (sig.maintaining?.has(paneId)) {
+      return { ...n, health: "idle" as GHealth, activity: "idle" as GActivity, reason: "maintenance — owned issues complete, standing by for dispatch" };
     }
     if (sig.paneStatus[paneId] === "run") return { ...n, health: "healthy" as GHealth, activity: "building" as GActivity };
     // Launched, but not working: the session EXISTS and is quiet ⇒ `idle` on both axes. It used to read
