@@ -121,7 +121,7 @@ describe("studioSessionLive (#glance-resume)", () => {
 // node was ever found live. Invisible while unmatched nodes fell through to idle; #3415 made them read
 // `off`, pinning every studio node `off` however its session was doing.
 describe("applyStudioLiveStatus (#3421)", () => {
-  const node = (id: string) => ({ id, slug: id, role: "service" as const, roleLabel: id, health: "idle" as const, activity: "idle" as const });
+  const node = (id: string) => ({ id, slug: id, role: "service" as const, roleLabel: id, health: "off" as const, activity: "idle" as const });
   const sig = (over: Partial<{ debugSession: boolean; paneClaudeActive: Record<string, boolean>; paneStatus: Record<string, string | undefined> }> = {}) =>
     ({ debugSession: false, paneClaudeActive: {}, paneStatus: {}, ...over });
   const of = (nodes: ReturnType<typeof node>[], s: ReturnType<typeof sig>) =>
@@ -133,7 +133,7 @@ describe("applyStudioLiveStatus (#3421)", () => {
 
   it("a MOUNTED but quiet studio reads idle — the session exists, it just is not working", () => {
     const r = of([node("designer")], sig({ paneClaudeActive: { [DESIGN_STUDIO_SESSION_ID]: true } }));
-    expect(r).toEqual({ designer: { health: "idle", activity: "idle" } });
+    expect(r).toEqual({ designer: { health: "off", activity: "idle" } });
   });
 
   it("a WORKING studio reads healthy · building", () => {
@@ -157,13 +157,13 @@ describe("applyStudioLiveStatus (#3421)", () => {
   });
 
   it("the debugger follows the debugSession flag, not a pane status", () => {
-    expect(of([node("debugger")], sig({ debugSession: true })).debugger.health).toBe("idle");
+    expect(of([node("debugger")], sig({ debugSession: true })).debugger.health).toBe("off");
     expect(of([node("debugger")], sig({ debugSession: false })).debugger.health).toBe("off");
   });
 
   // A library has no session — forcing it `off` would misreport it as a dead one.
   it("leaves a node with no fixed session untouched (a library, the dynamic planner)", () => {
-    const lib = { ...node("algorithms"), health: "idle" as const };
+    const lib = { ...node("algorithms"), health: "off" as const };
     expect(applyStudioLiveStatus([lib], sig())).toEqual([lib]);
   });
 });

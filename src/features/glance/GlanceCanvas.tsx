@@ -13,9 +13,18 @@ import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRA
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
 import { archetypeById, hueColor } from "@/features/teams";
+import { GlanceNode } from "./GlanceNode";
 
 const ERR = "var(--graph-health-error)";
-const HEALTH_ROWS: GHealth[] = ["idle", "healthy", "warning", "error", "off"];
+// The legend lists the states a node can actually READ as. `complete` leads (#4048): the rest of the
+// column is a severity ramp — running clean → degraded → failing — and complete is the one entry that
+// is not on it at all. It is the terminal, best outcome, so it belongs at the top rather than tucked
+// between "fine" and "degrading".
+//
+// `off` has no row (#4042): it is the ABSENCE of a live session — deactivated, never launched, or
+// structural furniture — and the node conveys it by dimming rather than by a colour, so a swatch would
+// key something nothing paints.
+const HEALTH_ROWS: GHealth[] = ["complete", "healthy", "warning", "error"];
 
 // The neighbour-parting motion is driven off the SAME easing + duration as the panel's grow (the
 // `.glance-card` transition in glance.css) — keep these in sync — so the panel growing and the graph
@@ -349,47 +358,26 @@ export function GlanceCanvas(p: CanvasProps) {
               transform: push ? `translate(${push.dx}px, ${push.dy}px)` : undefined,
               // Part in lockstep with the panel's grow (MORPH_EASE), so the two are one motion (#2671).
               zIndex: selected ? 6 : isError && !inherited ? 5 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? offOpacity : REST_N) : offOpacity, transition: `opacity .18s ease, transform ${MORPH_EASE}` }}>
-            <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`,
-              borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
-              boxShadow, transition: "border-color .15s, box-shadow .15s",
-              // #4015 — a WORKER that is actively building breathes; one parked in maintenance sits
-              // still. That is the whole distinction, and an animation carries it without inventing a
-              // health state (a colour would have to compete with the health axis, which already means
-              // something else) and without touching the node's static appearance at all.
-              //
-              // Fleet-only: an L0 project node never animates, however busy the project is.
-              animation: pulseBuilding ? "glance-buildpulse 1.8s ease-in-out infinite" : undefined }}>
-              <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {/* Axis-1 health dot. Error pulses at the ORIGIN; an inherited dot is dimmed (no pulse). */}
-                <Box title={`${n.rollupHealth}${inherited ? " (downstream)" : ""}`}
-                  style={{ width: 8, height: 8, borderRadius: "50%", background: health.color, flex: "none", opacity: inherited ? 0.5 : 1,
-                    boxShadow: health.pulse && !inherited ? `0 0 8px ${health.color}` : "none", animation: health.pulse && !inherited ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }} />
-                <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
-                {/* The APP-TYPE discriminator (#3786/#3802) — a subtle mono micro-label on the title line: what
-                    KIND of app this endpoint is (api/serverless/cli/…). Gated on a non-default classification,
-                    so an unclassified project (appType absent, or "application") renders byte-identical. */}
-                {n.appType && n.appType !== "application" && (
-                  <Text as="span" mono size={8.5} title={`app type: ${n.appType}`}
-                    style={{ flex: "none", textTransform: "uppercase", letterSpacing: ".4px", color: "var(--fg-muted)", opacity: 0.7,
-                      border: "1px solid var(--border-soft)", borderRadius: 4, padding: "1px 4px", lineHeight: 1.3 }}>{n.appType}</Text>
-                )}
-              </Box>
-              <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
-                <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: role }}>{cat ? cat.label : (n.roleLabel ?? n.role)}</Text>
-                <Box style={{ flex: 1 }} />
-                {/* #4027 — the FINISHED marker. Static and to the LEFT of the word, so a completed node
-                    is legible at a glance without reading its label. Deliberately not animated: motion
-                    means "look at this", and a finished worker is the one state with nothing to do. */}
-                {n.activity === "complete" && !isOff && !degraded && (
-                  <Text as="span" mono size={10} weight={600} aria-hidden
-                    style={{ color: "var(--graph-health-healthy)", marginRight: 4, flex: "none" }}>✓</Text>
-                )}
-                {/* Axis-2 activity word, or the fault reason when degraded. */}
-                <Text as="span" mono size={10} weight={500} title={ownDegraded && n.reason ? n.reason : n.activity === "complete" ? n.reason : undefined}
-                  style={{ color: bottomColor, maxWidth: 108, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    animation: bottomPulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }}>{bottomText}</Text>
-              </Box>
-            </Box>
+            <GlanceNode
+              n={n}
+              border={border}
+              boxShadow={boxShadow}
+              healthColor={health.color}
+              healthPulse={health.pulse}
+              inherited={!!inherited}
+              roleColor={role}
+              roleLabel={cat ? cat.label : (n.roleLabel ?? n.role)}
+              bottomText={bottomText}
+              bottomColor={bottomColor}
+              bottomPulse={bottomPulse}
+              isOff={isOff}
+              degraded={degraded}
+              ownDegraded={ownDegraded}
+              // #4032 — which authored motion plays. Only `building` remains (#4046 removed the
+              // attention ring with its health state).
+              state={pulseBuilding ? "building" : null}
+              progress={n.progress}
+            />
           </Box>
         );
       })}

@@ -84,7 +84,8 @@ export function buildGlanceData(
     // as a benign default (the canvas colours L0 nodes by `category`); the old hash-per-id tier is GONE.
     role: p.role ?? "service",
     category: p.category,
-    health: p.health ?? "idle",     // #2541 axis 1 — resolved by the caller from faults/liveness
+    health: p.health ?? "off",      // #2541 axis 1 — resolved by the caller from faults/liveness;
+                                    // #4042: the default is `off` (nothing live behind it), not a second grey
     activity: p.activity ?? "idle", // #2551 axis 2 — RESTING default; `building` is derived from live agents, not a fallback
     reason: p.reason,                  // the fault title shown when health is degraded
     faults: p.faults,                  // #2265: unresolved runtime-fault count (inspector)
@@ -120,7 +121,7 @@ export function buildGlanceData(
       slug: kitName.get(kitId) ?? kitId,
       kind: "kit",
       role: "infra",   // a kit is a shared foundational dependency; `category` absent ⇒ the canvas draws it as a kit
-      health: "idle",  // a kit has no runtime health of its own — it never pulls a consumer's dot
+      health: "off",  // #4042 — a kit never RUNS, so it has no runtime health; `off` is now exactly that
       activity: "idle",
     });
     for (const projectKey of consumers) {
@@ -158,7 +159,7 @@ export function buildGlanceData(
           kind: "library",
           library: ref.graph,  // the band/legend/inspector colour + kind word (algorithm · sound)
           role: "infra",       // a shared foundational dependency, like a kit
-          health: "idle",      // a library node has no runtime health of its own
+          health: "off",      // #4042 — a library never runs; `off` = no live session behind this node
           activity: "idle",
         });
       }
@@ -202,7 +203,7 @@ export function buildGlanceData(
       kind: "mcp",
       role: "infra",   // an external contract is a shared foundational dependency; `category` absent ⇒ the canvas draws it as an mcp node
       appType: s.transport === "http" ? "api" : "serverless", // http endpoint ⇒ api · stdio (local) ⇒ serverless
-      health: "idle",  // an external contract has no runtime health of its own — it never pulls a consumer's dot
+      health: "off",  // #4042 — an external contract never runs; `off` = no live session behind this node
       activity: "idle",
     });
     for (const projectKey of consumers) {
@@ -233,7 +234,7 @@ export function buildGlanceData(
         kind: t.type,        // "mcp" | "service"
         role: "infra",       // an external contract is a shared foundational dependency
         appType: t.appType,  // the planner-declared endpoint type (absent ⇒ rendered plain)
-        health: "idle",      // an external contract has no runtime health of its own — never pulls a consumer's dot
+        health: "off",      // #4042 — an external contract never runs; `off` = no live session behind it
         activity: "idle",
       });
     }
