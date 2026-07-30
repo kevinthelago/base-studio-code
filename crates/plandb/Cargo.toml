@@ -23,3 +23,6 @@ bsc-data = { path = "../data", default-features = false }
 bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
 # Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `resolve_store_path` (--db→env→default).
 bsc-cli-util = { path = "../bsc-cli-util" }
+# Shared leaf helpers (#1646): the ONE civil-date formatter, so the coord timestamp cannot drift
+# from the `bsc-*` shell emitters that write the same log (#4021).
+bsc-util = { path = "../bsc-util" }
