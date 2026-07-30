@@ -353,15 +353,26 @@ fn full_bsc_rc_is_syntactically_valid_bash() {
 }
 
 #[test]
-fn bsc_defer_rc_embeds_the_externalized_directive() {
-    // #2145: the bsc-defer directive prose moved out of an inline const into the config-loaded
-    // data/fleet/defer-directive.md. Assert the assembled fragment still (a) carries the directive
-    // text, (b) keeps the JSON block-reason shape, and (c) ends with the mandatory trailing newline
-    // (#296) so it doesn't glue onto the next helper in the concatenated rc.
+fn bsc_defer_rc_passes_the_externalized_directives_to_the_binary() {
+    // #2145 put the directive prose in config-loaded data/fleet/*.md; #4021 moved the DECISION out of
+    // the shell into `bsc hook stop-defer`, because it now reads plan.db, joins the waiting queue, and
+    // keeps a counter — none of which belongs in a `case` statement (same argument `bsc-deny` made).
+    //
+    // So the block-reason JSON is no longer built here; the binary emits it (asserted in
+    // `crates/bsc/src/defer.rs`). What the fragment must still guarantee:
     let frag = super::bsc_defer_rc();
-    assert!(frag.contains("Do not stop."), "defer fragment lost the directive prose");
+    assert!(frag.contains("bsc hook stop-defer"), "defer fragment must delegate to the binary");
+    // (a) the CONFIG-RESOLVED prose still reaches the hook — the binary's compiled copy is only a
+    //     fallback, so losing this would silently ignore a user's override.
+    assert!(frag.contains("Do not stop."), "defer fragment lost the keep-going directive prose");
     assert!(frag.contains("enter MAINTENANCE"), "defer fragment lost the maintenance clause");
-    assert!(frag.contains(r#"{"decision":"block","reason":""#), "defer fragment lost the block-reason JSON shape");
+    assert!(frag.contains("bsc-ask"), "defer fragment lost the STUCK directive prose");
+    assert!(frag.contains("BSC_DEFER_DIRECTIVE=") && frag.contains("BSC_DEFER_STUCK="), "both directives are passed");
+    // (b) it is ONE line and single-quotable — a raw newline or `'` in the prose would terminate the
+    //     quoted string and break the whole concatenated rc.
+    assert_eq!(frag.matches('\n').count(), 1, "the fragment is a single line");
+    assert!(!frag[..frag.len() - 1].contains('\n'), "no raw newline inside the fragment");
+    // (c) the mandatory trailing newline (#296) so it doesn't glue onto the next helper.
     assert!(frag.ends_with('\n'), "defer fragment must end with a trailing newline (#296)");
 }
 
