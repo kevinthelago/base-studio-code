@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeDirectorDrive, resolveDirectorDrive, decideDirectorAction,
   eventDirectorPrompt, DEFAULT_DIRECTOR_DRIVE, askKey, pendingAskPrompt,
-  briefKey, pendingBriefPrompt, requestKey, pendingRequestPrompt, heartbeatDirectorPrompt } from "./directorDrive";
+  briefKey, pendingBriefPrompt, requestKey, pendingRequestPrompt, heartbeatDirectorPrompt, shouldRemind, idleReminderPrompt, ASK_REMINDER_MS, DEFAULT_HEARTBEAT_MS } from "./directorDrive";
 
 const TS = "2026-06-01T00:00:00Z";
 const line = (session: string, kind: string, a = "", b = "") => `${TS}	${session}	${kind}	${a}	${b}`;
@@ -220,5 +220,56 @@ describe("the sweep clears the waiting queue (#4015)", () => {
   it("rides on the event prompt too, not just the heartbeat", () => {
     // A `heartbeat`-drive director sweeps on a timer; an `event`-drive one only ever sees this tail.
     expect(eventDirectorPrompt([{ type: "landed", ref: { kind: "issue", number: 1 }, at: 1 }])).toContain("logs waiting");
+  });
+});
+
+describe("idle reminder (#4019)", () => {
+  const ask = (session: string, question: string) => ({ session, question, at: 1 });
+  const req = (id: string, text: string) => ({ id, from: "auth", text, at: 1 });
+  const base = { idle: true, pending: 1, now: 1_000_000, lastRemindAt: 0, everyMs: ASK_REMINDER_MS };
+
+  it("reminds an idle director that has never been reminded", () => {
+    expect(shouldRemind(base)).toBe(true);
+  });
+
+  it("does NOT interrupt a busy director", () => {
+    // The whole point is to spend the moment it has nothing else to do. Injecting mid-turn is what
+    // the once-only immediate delivery already does; this is the backstop, not a second interrupt.
+    expect(shouldRemind({ ...base, idle: false })).toBe(false);
+  });
+
+  it("says nothing when nothing is outstanding", () => {
+    expect(shouldRemind({ ...base, pending: 0 })).toBe(false);
+  });
+
+  it("rate-limits, then reminds again — a director that keeps ignoring it IS the failure", () => {
+    const justReminded = { ...base, lastRemindAt: base.now - 1000 };
+    expect(shouldRemind(justReminded)).toBe(false);
+    expect(shouldRemind({ ...justReminded, now: base.now + ASK_REMINDER_MS })).toBe(true);
+  });
+
+  it("nags faster than the heartbeat, because a worker is parked the whole time", () => {
+    expect(ASK_REMINDER_MS).toBeLessThan(DEFAULT_HEARTBEAT_MS);
+  });
+
+  it("names the verb for each kind and says a worker is parked", () => {
+    const p = idleReminderPrompt([ask("auth", "which pagination?")], [req("7", "no develop branch")]);
+    expect(p).toContain("auth");
+    expect(p).toContain("which pagination?");
+    expect(p).toContain("bsc-answer");
+    expect(p).toContain("#7");
+    expect(p).toContain("bsc plan request resolve");
+    // The cost of ignoring it, stated plainly — this is why it outranks whatever else it was doing.
+    expect(p).toContain("PARKED");
+    expect(p).toContain("Do not ask the user");
+  });
+
+  it("renders cleanly with only one kind outstanding", () => {
+    const onlyAsks = idleReminderPrompt([ask("auth", "q")], []);
+    expect(onlyAsks).toContain("bsc-answer");
+    expect(onlyAsks).not.toContain("request resolve");
+    const onlyReqs = idleReminderPrompt([], [req("3", "t")]);
+    expect(onlyReqs).toContain("request resolve");
+    expect(onlyReqs).not.toContain("bsc-answer");
   });
 });
