@@ -15,6 +15,7 @@ import { useAppStore } from "@/store";
 import {
   ingestCoordLog,
   answerWakePrompt,
+  assignWakePrompt,
   coordNotifications,
   buildProducerOf,
   producesFromPaneStreams,
@@ -22,7 +23,7 @@ import {
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { useLogStream } from "@/shared/hooks/useLogStream";
 import type { SessionMeta } from "@/features/tunnel";
-import { injectWake } from "@/shared/lib/fleet/coordinatorActuate";
+import { injectWake, actuateWake } from "@/shared/lib/fleet/coordinatorActuate";
 import { tunnelStatus, tunnelSetSessions } from "@/features/tunnel";
 import { log } from "@/shared/lib/core/log";
 
@@ -39,8 +40,13 @@ export function useCoordinator(): void {
     if (isCancelled()) return;
     const res = await readCoordState(1000);
     if (isCancelled() || !res) return;
-    const { state, ready, answered } = res;
+    const { state, ready, answered, assigned } = res;
     const now = Date.now();
+    // #4025 — project the declared-maintenance set into the store. This hook already reduces the
+    // whole coord log, so the alternative was a SECOND poll of the same file in the reaper.
+    useAppStore.getState().setPaneMaintaining(
+      Object.fromEntries(state.maintaining.map((m) => [m.session, true])),
+    );
 
     // A director answer (#369) always resumes the asking worker, recency-gated -- this is the
     // surviving wake path: deferring a worker's question to the director only works if its
@@ -50,6 +56,27 @@ export function useCoordinator(): void {
       if (now - a.at >= FRESH_MS) continue;
       inFlight.current.add(a.session);
       void injectWake(a.session, answerWakePrompt(a))
+        .finally(() => inFlight.current.delete(a.session));
+    }
+
+    // #4025 — DELIVER ASSIGNMENTS. `bsc-assign` has always produced an `AssignedWork` here and
+    // `assignWakePrompt` has always existed, but nothing consumed either: this hook destructured only
+    // `answered`. So the director protocol told the director to dispatch with `bsc-assign` in three
+    // places, the worker protocol promised workers it would "resume you automatically", and the wire
+    // between them was never connected.
+    //
+    // Delivered via `actuateWake` (kill + relaunch with the prompt BAKED IN), not `injectWake`
+    // (type into the live pane). That choice is what makes a REAPED worker reachable: a maintaining
+    // session's PTY is gone, so an injected prompt would be dropped by the backend ("write to missing
+    // session"). A relaunch works identically whether the pane is live, dormant, or reaped — and it
+    // is the same mechanism the fleet kickoff uses, so there is no readiness race to lose the
+    // assignment to.
+    for (const a of assigned) {
+      if (inFlight.current.has(a.session)) continue;
+      if (now - a.at >= FRESH_MS) continue;
+      inFlight.current.add(a.session);
+      void actuateWake(a.session, assignWakePrompt(a), useAppStore.getState().wakePane)
+        .then((ok) => { if (!ok) log.warn(`assign: no open tab hosts ${a.session} — assignment not delivered`); })
         .finally(() => inFlight.current.delete(a.session));
     }
 

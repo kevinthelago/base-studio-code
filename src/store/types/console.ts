@@ -309,6 +309,12 @@ export interface ConsoleState {
    *  prompt, or a long input idle. Fed from the ONE shared pane-activity read in ConsoleWorkspace, so
    *  Glance can raise the `attention` health without importing the console shell (features must not
    *  import `app/`). Transient — not persisted; it is re-derived from activity.log on every read. */
+  /** Panes that DECLARED maintenance (#4025) — `bsc-maintain`: everything they own is done and they
+   *  are standing by. Projected from `CoordState.maintaining` by the coordinator (the one reader that
+   *  already computes it) so the idle reaper and Glance can both see it without a second log poll.
+   *  Transient — re-derived from coord.log on every read. */
+  paneMaintaining: Record<string, boolean>;
+  setPaneMaintaining: (panes: Record<string, boolean>) => void;
   paneAttention: Record<string, boolean>;
   setPaneAttention: (panes: Record<string, boolean>) => void;
   paneClaudeActive: Record<string, boolean>;
