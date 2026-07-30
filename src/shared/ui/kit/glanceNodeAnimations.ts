@@ -51,22 +51,4 @@ export const GLANCE_NODE_ANIMATIONS: KitAnimation[] = [
       "100%": { opacity: "1" },
     },
   },
-  // ATTENTION — the node pulses a ring while it is blocked on a PERSON.
-  //
-  // Stronger and faster than the breath on purpose: this is the one state that needs someone, and
-  // before #4015 it was the LEAST prominent thing in the cockpit — a busy node was more visually
-  // insistent than a stuck one. `box-shadow` rather than a border so it cannot fight the border's
-  // existing precedence chain (selected → preview → off → error → cycle).
-  {
-    name: "attention",
-    selector: '[data-node-state="attention"]',
-    trigger: "always",
-    duration: "1400ms",
-    easing: "ease-in-out",
-    keyframes: {
-      "0%": { "box-shadow": "0 0 0 0 var(--graph-health-attention)" },
-      "60%": { "box-shadow": "0 0 0 4px transparent" },
-      "100%": { "box-shadow": "0 0 0 0 transparent" },
-    },
-  },
 ];

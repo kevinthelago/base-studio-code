@@ -193,12 +193,14 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
       const note = wait.reason?.trim() || "no instructions";
       const minutes = Math.max(1, Math.floor(elapsed / 60_000));
       const reason = elapsed >= warnMs ? `${note} · ${minutes}m` : note;
-      return { ...n, health: "attention" as GHealth, activity: "waiting" as GActivity, reason };
+      // #4046 — `healthy` health, `waiting` activity. Nothing is WRONG with a worker parked on a
+      // question; it is doing a thing called waiting. The reason string still says what it waits on.
+      return { ...n, health: "healthy" as GHealth, activity: "waiting" as GActivity, reason };
     }
     if (sig.attention?.has(paneId)) {
       return {
         ...n,
-        health: "attention" as GHealth,
+        health: "healthy" as GHealth,
         activity: "waiting" as GActivity,
         reason: "stopped for you — permission prompt or awaiting input",
       };

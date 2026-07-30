@@ -23,7 +23,7 @@ import type { GNode } from "./lib/glanceGraph";
 import { GLANCE_NODE_ANIM_CLASSES, ensureGlanceNodeMotion } from "./glanceNodeMotion";
 
 /** Which live state the node's motion should express, or `null` for a still node. */
-export type GlanceNodeState = "building" | "attention" | null;
+export type GlanceNodeState = "building" | null;
 
 export interface GlanceNodeProps {
   n: GNode;
