@@ -13,7 +13,14 @@ describe("GlanceOverlays legend (#2561)", () => {
     expect(screen.getByText("depends on")).toBeTruthy();
     expect(screen.getByText("data flow")).toBeTruthy();
     expect(screen.queryByText("API contract")).toBeNull();
-    expect(screen.getByText("off")).toBeTruthy(); // #3239: the HEALTH legend documents the deactivated state
+    // #4037 — `off` no longer has a colour SWATCH, because nothing paints it: a deactivated node is
+    // conveyed by dimming (#4034). The legend must still TEACH that, or the one state without a colour
+    // would also be the one state without an explanation — which is what #3239 added this row for.
+    expect(screen.queryByText("off")).toBeNull();
+    expect(screen.getByText("dimmed = off")).toBeTruthy();
+    // …and the two states that had no row at all until now.
+    expect(screen.getByText("complete")).toBeTruthy();
+    expect(screen.getByText("needs you")).toBeTruthy();
   });
 
   it("L1 (drill): FUNCTION groups + the Org archetypes present in the drilled fleet", () => {
