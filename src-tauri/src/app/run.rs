@@ -207,6 +207,7 @@ pub fn run() {
             oauth::github_device_poll,
             pty::pty_create,
             pty::pty_write,
+            pty::pty_pane_runtime,
             pty::pty_broadcast,
             pty::pty_resize,
             pty::pty_kill,

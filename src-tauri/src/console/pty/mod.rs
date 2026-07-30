@@ -14,6 +14,7 @@ use std::io::Write;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
+mod busy;
 mod env;
 mod launch;
 mod pump;
@@ -237,9 +238,48 @@ fn build_session_init_line(
 /// Returns `true` when a new session is created, `false` when reconnecting to
 /// an existing one (e.g. after a tab switch). The caller should send `\n` on
 /// reconnect so the shell re-displays its prompt in the fresh terminal.
+/// Create a pane's PTY session. ASYNC (#3989) so the blocking work — openpty, spawning the shell,
+/// writing the session rc + settings.json — runs on the BLOCKING pool instead of holding a command-pool
+/// thread. Measured before: 43 concurrent calls at a 14.1s mean, with `pty_write` (keystrokes) queued
+/// behind them at 3.1s. The work is unchanged; it simply stops monopolizing the queue every other
+/// command shares. Same shape `preflight` already uses.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn pty_create(
+pub(crate) async fn pty_create(
+    pane_id: String,
+    cols: u16,
+    rows: u16,
+    cwd: String,
+    init_cmd: Option<String>,
+    env: Option<std::collections::HashMap<String, String>>,
+    startup_prompt: Option<String>,
+    continue_session: Option<bool>,
+    startup_prompt_fresh_only: Option<bool>,
+    checkpoint_doc: Option<String>,
+    model: Option<String>,
+    provider_id: Option<String>,
+    wsl_distro: Option<String>,
+    wsl_user: Option<String>,
+    app: AppHandle,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // `PtyState` is a bare Mutex managed by Tauri, so it cannot move into the closure — but
+        // `AppHandle` is 'static and re-fetches it here, where it outlives the call.
+        let state = app.state::<PtyState>();
+        pty_create_inner(
+            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, startup_prompt_fresh_only, checkpoint_doc, model, provider_id, wsl_distro, wsl_user,
+            &app, &state,
+        )
+    })
+    .await
+    .map_err(|e| format!("pty_create task failed: {e}"))?
+}
+
+/// The real work, off the command pool (#3989). Blocking by nature: it opens a PTY, spawns a shell,
+/// writes the session's rc + settings, and registers the session — so it must NOT run as a synchronous
+/// `#[tauri::command]`, which holds a command-pool thread for its whole duration.
+#[allow(clippy::too_many_arguments)]
+fn pty_create_inner(
     pane_id: String,
     cols: u16,
     rows: u16,
@@ -264,8 +304,8 @@ pub(crate) fn pty_create(
     // its private mode-700 home isolates it from co-located agents (raw Bash can't cross Unix perms).
     // Derive + provision it first via `ensure_sandbox_user`. None ⇒ the distro's default `agent` user.
     wsl_user: Option<String>,
-    app: AppHandle,
-    state: State<'_, PtyState>,
+    app: &AppHandle,
+    state: &PtyState,
 ) -> Result<bool, String> {
     // If a session already exists for this pane (e.g. user switched tabs and
     // switched back), reconnect rather than recreating.
@@ -366,7 +406,7 @@ pub(crate) fn pty_create(
 
     // Box the shell into a Job Object (tree-kill), register its PID with the perf sampler, and author
     // the spawn in the crash-recovery ledger — all best-effort (see `attach_job_and_track`).
-    let job = attach_job_and_track(child.as_ref(), &pane_id, &app);
+    let job = attach_job_and_track(child.as_ref(), &pane_id, app);
 
     let mut writer = pair.master.take_writer()
         .map_err(|e| { log::error!("pty[{pane_id}] take_writer failed: {e}"); e.to_string() })?;
@@ -462,7 +502,7 @@ pub(crate) fn pty_create(
 
     // Tell the mobile tunnel this pane's grid size so it renders at the desktop width
     // (before pane_id is moved into the session map).
-    tunnel_set_pane_size(&app, &pane_id, cols, rows);
+    tunnel_set_pane_size(app, &pane_id, cols, rows);
 
     let active = {
         let mut map = state.0.lock().unwrap();
@@ -476,6 +516,56 @@ pub(crate) fn pty_create(
         log::warn!("pty: {active} concurrent sessions — high memory pressure (each spawns a claude process + terminal)");
     }
     Ok(true)
+}
+
+/// What a pane's PTY is actually doing right now (#3998).
+///
+/// The two flags are independent and the caller needs both: `live` without `busy` is a session
+/// sitting at a bash prompt — the state Resume has to notice and act on, and the one the frontend
+/// previously could not tell apart from a working agent.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PaneRuntime {
+    pane_id: String,
+    /// A PTY session exists for this pane (so `pty_create` would RECONNECT, not launch).
+    live: bool,
+    /// Its shell has at least one live descendant — something is running in it. See `busy.rs` for
+    /// why this is a descendant check rather than a hunt for a process named `claude`.
+    busy: bool,
+}
+
+/// Report the runtime state of each named pane, in the order asked.
+///
+/// Batched on purpose: the process walk behind `busy` is the expensive part, and a project-wide
+/// resume asks about every pane at once. Answering them together costs ONE walk instead of N.
+#[tauri::command]
+pub(crate) fn pty_pane_runtime(
+    pane_ids: Vec<String>,
+    state: State<'_, PtyState>,
+) -> Vec<PaneRuntime> {
+    // Collect the pids and DROP the lock before walking the process table — that walk takes
+    // milliseconds, and every `pty_write` / `pty_create` in the app contends on this same mutex.
+    // `live` is session PRESENCE, tracked separately from the pid: a session whose `process_id()`
+    // comes back None still occupies the map, and `pty_create` would still reconnect to it. Deriving
+    // `live` from the pid would report such a pane as absent and send the caller down the "mount will
+    // create it" path that reconnect has already ruled out.
+    let (live, pids): (Vec<bool>, Vec<Option<u32>>) = {
+        let sessions = state.0.lock().unwrap();
+        pane_ids
+            .iter()
+            .map(|id| match sessions.get(id) {
+                Some(s) => (true, s.child.process_id()),
+                None => (false, None),
+            })
+            .unzip()
+    };
+    let busy = busy::shells_with_descendants(&pids);
+    pane_ids
+        .into_iter()
+        .zip(live)
+        .zip(busy)
+        .map(|((pane_id, live), busy)| PaneRuntime { pane_id, live, busy })
+        .collect()
 }
 
 #[tauri::command]

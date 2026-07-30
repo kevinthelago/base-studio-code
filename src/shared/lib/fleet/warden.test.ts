@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { allChanges } from "./worktreeChanges";
 import { planWarden, summarizeTrips, parseAuditCommands, type WardenSession, zipWorktreeChanges, wardenSweepTargets, livePaneIdsOf } from "./warden";
 import { roleCapability } from "../session/sessionRoles";
 import { DEFAULT_FLOW } from "@/features/planner/fleet/agentFlow";
@@ -68,9 +69,12 @@ describe("planWarden", () => {
   });
 });
 
+/** #3983: the batch now returns tracked/untracked split; the lane check reads TRACKED. */
+const tc = (...tracked: string[]) => ({ tracked, untracked: [] });
+
 describe("zipWorktreeChanges (#3908) — the batched worktree read must not misattribute files", () => {
   it("maps each pane to its OWN index", () => {
-    const m = zipWorktreeChanges(["a", "b", "c"], [["1.ts"], ["2.ts"], ["3.ts"]]);
+    const m = zipWorktreeChanges(["a", "b", "c"], [tc("1.ts"), tc("2.ts"), tc("3.ts")]);
     expect(m.get("a")).toEqual(["1.ts"]);
     expect(m.get("b")).toEqual(["2.ts"]);
     expect(m.get("c")).toEqual(["3.ts"]);
@@ -79,7 +83,7 @@ describe("zipWorktreeChanges (#3908) — the batched worktree read must not misa
   it("degrades a missing/short entry to NO file signal — never a neighbour's files", () => {
     // A truncated batch (backend hiccup) must leave the tail with no evidence rather than shifting
     // results up a slot, which would quarantine the wrong worker.
-    const m = zipWorktreeChanges(["a", "b", "c"], [["1.ts"]]);
+    const m = zipWorktreeChanges(["a", "b", "c"], [tc("1.ts")]);
     expect(m.get("a")).toEqual(["1.ts"]);
     expect(m.get("b")).toEqual([]);
     expect(m.get("c")).toEqual([]);
@@ -127,5 +131,32 @@ describe("wardenSweepTargets / livePaneIdsOf (#3954)", () => {
     // The exact shape of the bug: plan.db knows 38 streams, the tab holds 3.
     const live = livePaneIdsOf([{ paneIds: ["p:a"] }], {}, {});
     expect(wardenSweepTargets(["p:a", "p:b", "p:c"], live, new Set())).toEqual(["p:a"]);
+  });
+});
+
+describe("the lane check reads TRACKED changes only (#3983)", () => {
+  it("untracked scratch is NOT a lane signal", () => {
+    // Measured: `algorithms` had 0 tracked changes and 21 untracked (.tmp-agent/*.log), `skills` 0
+    // and 10 (.agentscratch*.txt). Both were quarantined — PTY killed — for files that never entered
+    // the repo and could not collide at integration.
+    const m = zipWorktreeChanges(["a"], [{ tracked: [], untracked: [".agentscratch.txt", ".tmp-agent/x.log"] }]);
+    expect(m.get("a")).toEqual([]);
+  });
+
+  it("a tracked out-of-lane edit IS still a lane signal", () => {
+    const m = zipWorktreeChanges(["a"], [{ tracked: ["src/other/thing.ts"], untracked: [] }]);
+    expect(m.get("a")).toEqual(["src/other/thing.ts"]);
+  });
+
+  it("reports only the tracked half when a worker has both", () => {
+    // The self-correcting property: scratch stays invisible, real edits are seen. Commit the scratch
+    // and it becomes tracked — and trips then, still before integration.
+    const m = zipWorktreeChanges(["a"], [{ tracked: ["src/a/x.ts"], untracked: ["notes.txt"] }]);
+    expect(m.get("a")).toEqual(["src/a/x.ts"]);
+  });
+
+  it("allChanges() keeps the union for the UI's uncommitted-changes view", () => {
+    expect(allChanges({ tracked: ["a.ts"], untracked: ["b.txt"] })).toEqual(["a.ts", "b.txt"]);
+    expect(allChanges(undefined)).toEqual([]);
   });
 });

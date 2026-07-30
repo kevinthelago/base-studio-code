@@ -58,6 +58,27 @@ export interface CoordState {
    *  surface the result back to the requester. Appended + dedup by id; never auto-removed (the
    *  surfacing is guarded once-per-commission by the pump, like {@link ReceivedBrief}). */
   commissions: OpenCommission[];
+  /** OPEN project change-requests (#4000/#4001): a worker asked the DIRECTOR for something outside
+   *  its own worktree — an integration branch that does not exist, a kickoff path that is wrong. The
+   *  pump surfaces each to the director once; a matching `request-resolved` removes it, so unlike
+   *  {@link ReceivedBrief} this list genuinely empties. The durable record lives in the project's
+   *  plan.db (`bsc plan request`); this is only the delivery signal. */
+  requests: OpenRequest[];
+}
+
+/** A worker→director change request awaiting an answer (#4001). The `cmd` grounding is what makes it
+ *  actionable without a conversation: the exact command that failed. */
+export interface OpenRequest {
+  /** The plan.db row id — how the director resolves it (`bsc plan request resolve <id>`). */
+  id: string;
+  /** The requesting SESSION — the emitting pane id, from the coord line's session column. NOT the
+   *  plan.db row's `from`, which records the STREAM (`$BSC_STREAM`). Both identify the same worker;
+   *  the pane id is the more useful one here because it is what the director would `bsc-answer`. */
+  from: string;
+  /** What is being asked for. */
+  text: string;
+  /** When it was filed (epoch ms), for the surfaced-once key. */
+  at: number;
 }
 
 /** A structured plan update the planner streamed to a running director/issuer (#2377). The
@@ -190,6 +211,10 @@ export type CoordEvent =
   // Maintenance mode (#1957): a finished worker parks alive + ready instead of ending.
   | { type: "maintain"; session: string; note?: string; at: number }
   // Planner brief (#2377): the planner streams a mid-build plan update to a director/issuer.
+  // #4001 — the worker→director request lane. Both ends are events because the pump derives its
+  // pending set from the LOG: `request` opens one, `request-resolved` closes it.
+  | { type: "request"; session: string; id: string; text: string; at: number }
+  | { type: "request-resolved"; id: string; at: number }
   | { type: "brief"; from: string; target: string; body: string; ref?: CoordRef; id: string; at: number }
   // Studio network (#2940): a studio session commissions another to author an artifact; the target
   // delivers its id back. `commission` mirrors `brief`; `deliver` correlates by the commission id.

@@ -4,6 +4,7 @@
 // pure (no IPC, no store) so the "who trips" logic is unit-tested; the loop owns the side effects
 // (auto-pause + push).
 
+import type { WorktreeChanges } from "./worktreeChanges";
 import { checkConformance, type StreamAnchor, type SessionActivity, type ConformanceTrip } from "./conformance";
 
 /** One live worker the warden evaluates: its pane, its trusted anchor, and what it did. */
@@ -79,9 +80,18 @@ export function parseAuditCommands(lines: string[], paneId: string, since = 0): 
  * one worker's changed files to another — that would quarantine the wrong session. A missing entry
  * degrades to "no file signal", exactly as a failed single-pane read did before batching.
  */
-export function zipWorktreeChanges(panes: string[], changes: readonly (string[] | undefined)[]): Map<string, string[]> {
+export function zipWorktreeChanges(
+  panes: string[],
+  changes: readonly (WorktreeChanges | undefined)[],
+): Map<string, string[]> {
   const out = new Map<string, string[]>();
-  panes.forEach((p, i) => out.set(p, changes[i] ?? []));
+  // #3983: the LANE check reads TRACKED changes only. An untracked file has not entered the repo, is
+  // not picked up by the lane's `git add`, and cannot collide at integration — which is the only harm
+  // the lane exists to prevent. Merging the two lists made a `.agentscratch.txt` indistinguishable
+  // from an out-of-lane source edit, and the warden killed four workers that had ZERO tracked changes
+  // between them. Self-correcting rather than permissive: commit out-of-lane source and it becomes
+  // tracked, and trips then — still before integration.
+  panes.forEach((p, i) => out.set(p, changes[i]?.tracked ?? []));
   return out;
 }
 

@@ -4,8 +4,7 @@ import {
   libraryNodeId, requiresEdgeId, libIdOfNode, isLibraryNode, libraryGraphOf, isLibraryEdge, LIBRARY_META,
   HEALTH_META, HEALTH_RANK, ACTIVITY_META, nodeStateWord,
   type GHealth, type GActivity,
-  type GRawNode, type GRawEdge,
-} from "./glanceGraph";
+  type GRawNode, type GRawEdge, showsBuildingRing } from "./glanceGraph";
 import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import { buildGlanceData } from "./glanceData";
 
@@ -434,5 +433,32 @@ describe("nodeStateWord (#3957)", () => {
         expect(known).toContain(nodeStateWord(n(h, a, roll)));
       }
     }
+  });
+});
+
+describe("showsBuildingRing (#4010)", () => {
+  const ctx = { isOff: false, selected: false, isError: false };
+
+  it("rings a building node and nothing else", () => {
+    expect(showsBuildingRing({ activity: "building" }, ctx)).toBe(true);
+    for (const a of ["idle", "planning", "waiting", "review", "live"] as const) {
+      expect(showsBuildingRing({ activity: a }, ctx)).toBe(false);
+    }
+  });
+
+  it("drops the ring when the node parks into maintenance", () => {
+    // Maintenance is modelled as plain `idle` (agentStall), so losing the ring falls straight out of
+    // the activity — which is exactly why the rule keys on activity rather than on a separate flag.
+    expect(showsBuildingRing({ activity: "idle" }, ctx)).toBe(false);
+  });
+
+  it("yields to selection and error, which draw their own rings", () => {
+    // Two concentric outlines read as noise, not as more information.
+    expect(showsBuildingRing({ activity: "building" }, { ...ctx, selected: true })).toBe(false);
+    expect(showsBuildingRing({ activity: "building" }, { ...ctx, isError: true })).toBe(false);
+  });
+
+  it("stays off a deactivated node, which is meant to read calm", () => {
+    expect(showsBuildingRing({ activity: "building" }, { ...ctx, isOff: true })).toBe(false);
   });
 });

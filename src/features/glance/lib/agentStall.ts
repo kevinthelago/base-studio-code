@@ -80,6 +80,18 @@ export interface FleetLiveSignals {
   paneStatus: Record<string, string>;
   /** Parked `bsc-wait` sessions (from `CoordState.waiting`). */
   waiting: WaitLite[];
+  /** Panes STOPPED at a permission prompt / input wait (#4005) — Claude Code's `Notification` hook,
+   *  recorded as `bsc-activity attn` and read back from `bsc logs pane-activity`. Keyed by pane id.
+   *  Nothing else in the app could see this state: such a pane is not `run` and has no `bsc-wait`, so
+   *  it fell through to plain `idle` and looked identical to a session that had simply finished. */
+  attention?: ReadonlySet<string>;
+  /** Sessions PARKED IN MAINTENANCE (#4010) — `bsc-maintain` (#1957): every owned issue is done, the
+   *  worker stays alive and ready for the director to dispatch into. Keyed by pane id.
+   *
+   *  Modelled explicitly rather than left to fall through to `idle`, because a parked session's TUI is
+   *  still alive: whether it reads `run` is a timing accident, and on the wrong side of that accident a
+   *  finished worker keeps the building outline forever. */
+  maintaining?: ReadonlySet<string>;
   /** Epoch now — injected (impure in render). */
   now: number;
   /** Stall threshold; a wait beyond it escalates to `warning`. Defaults to {@link STALL_WARN_MS}. */
@@ -151,15 +163,38 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
     // merely quiet, and its empty log view looked like a broken log rather than an absent session.
     // `off` = no session exists · `idle` = a session exists but is not working · `healthy` = working.
     if (!sig.livePaneIds.has(paneId)) return { ...n, health: "off" as GHealth, activity: "idle" as GActivity };
+    // BLOCKED ON A PERSON (#4005) — a `bsc-wait` park, or a session stopped at a permission prompt.
+    //
+    // A wait used to read `healthy` (green, calm) for ten minutes and only then flip to `warning`.
+    // Both readings were wrong in the same way: green says "nothing to do" about a session that is
+    // waiting on YOU, and orange says "something is degrading" about a normal hand-off. It is neither
+    // — it is a request, so it gets its own health. The elapsed-time note is kept, because how long it
+    // has been waiting is still worth knowing; it is just no longer the thing that makes it visible.
     const wait = waitByPane.get(paneId);
     if (wait) {
       const elapsed = sig.now - wait.at;
-      if (elapsed >= warnMs) {
-        const minutes = Math.max(1, Math.floor(elapsed / 60_000));
-        const note = wait.reason?.trim() || "no instructions";
-        return { ...n, health: "warning" as GHealth, activity: "waiting" as GActivity, reason: `${note} · ${minutes}m` };
-      }
-      return { ...n, health: "healthy" as GHealth, activity: "waiting" as GActivity }; // fresh pause — calm
+      const note = wait.reason?.trim() || "no instructions";
+      const minutes = Math.max(1, Math.floor(elapsed / 60_000));
+      const reason = elapsed >= warnMs ? `${note} · ${minutes}m` : note;
+      return { ...n, health: "attention" as GHealth, activity: "waiting" as GActivity, reason };
+    }
+    if (sig.attention?.has(paneId)) {
+      return {
+        ...n,
+        health: "attention" as GHealth,
+        activity: "waiting" as GActivity,
+        reason: "stopped for you — permission prompt or awaiting input",
+      };
+    }
+    // PARKED IN MAINTENANCE (#4010) — before the run->building branch, deliberately. A maintaining
+    // worker's session is still alive, so `paneStatus` may well read "run"; checked after, it would
+    // keep the building outline forever despite having finished everything it owns.
+    //
+    // It renders as the PLAIN node — no outline, no pulse — because there is nothing for anyone to do
+    // about it. The explanation rides in `reason`, which the hover title and the inspector's REASON
+    // tile both show, so the state is still discoverable without being loud.
+    if (sig.maintaining?.has(paneId)) {
+      return { ...n, health: "idle" as GHealth, activity: "idle" as GActivity, reason: "maintenance — owned issues complete, standing by for dispatch" };
     }
     if (sig.paneStatus[paneId] === "run") return { ...n, health: "healthy" as GHealth, activity: "building" as GActivity };
     // Launched, but not working: the session EXISTS and is quiet ⇒ `idle` on both axes. It used to read

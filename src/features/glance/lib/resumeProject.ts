@@ -23,6 +23,7 @@ import { isAgentWorktreeCwd } from "@/shared/lib/core/projectPaths";
 import { parseDependencyManifest, depsForRepo } from "@/features/planner/issues/dependencies";
 import { partitionByDeps, heldReason, sessionDoneStreams, type LandedEvidence } from "@/shared/lib/fleet/streamGate";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
+import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
 
 export interface ResumeResult {
   ok: boolean;
@@ -308,6 +309,18 @@ export async function resumeProjectFleet(opts: {
   // falls back to a bscBaseDir-derived guess.
   const roster = store.fleetStartProject(projectName, launchPlan, projectKey, { hubPath: hubPath || undefined, worktreePaths });
   publishFleetRoster(projectKey, roster);
+
+  // 6. Revive any pane whose PTY is still alive but idle (#3998).
+  //
+  //    `fleetStartProject` issues no Tauri commands — it bumps the tab's `runId` and rewrites store
+  //    state. That re-keys the pane SLOTS, but `TerminalView` is portal-hosted by `paneId`, so a pane
+  //    that never left the tab does not remount, never calls `pty_create`, and never runs the
+  //    `claude --continue` this resume just resolved for it. Panes that DID unmount (ended/dormant,
+  //    cleared in 3b above) remount and are handled by the reconnect branch in `TerminalView`.
+  //
+  //    Awaited so the caller's `ok` genuinely means the resume was attempted; the probe itself is one
+  //    batched call regardless of how many panes are listed.
+  await ensureClaudeRunning([...resumableIds].map(paneOf));
   const notes = [gateNote, held.length > 0
     ? `${held.length} stream${held.length === 1 ? "" : "s"} held — waiting on an upstream to land`
     : undefined].filter(Boolean);
