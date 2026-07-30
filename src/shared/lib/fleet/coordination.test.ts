@@ -533,7 +533,7 @@ describe("cycle / deadlock detection", () => {
   // Park `session` blocked on each of `on` (as session: refs).
   const block = (session: string, ...on: string[]): Waiter =>
     ({ session, deps: on.map(sess), registeredAt: 0 });
-  const state = (...waiters: Waiter[]) => ({ latches: {}, waiters, waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [] });
+  const state = (...waiters: Waiter[]) => ({ latches: {}, waiters, waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [], requests: [] });
 
   it("parses + keys the session ref grammar", () => {
     expect(parseRef("session:t0p2")).toEqual({ kind: "session", id: "t0p2" });
@@ -571,7 +571,7 @@ describe("cycle / deadlock detection", () => {
 
   it("a satisfied dep breaks the edge, so it is no longer a deadlock", () => {
     const s = { latches: { "session:B": { state: "satisfied" as const, source: "merged" as const, at: 1 } },
-                waiters: [block("A", "B"), block("B", "A")], waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [] };
+                waiters: [block("A", "B"), block("B", "A")], waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [], requests: [] };
     // B's dep on A still stands, but A's dep on B is satisfied -> A->B edge gone -> no ring.
     expect(detectDeadlocks(s)).toEqual([]);
   });
@@ -583,7 +583,7 @@ describe("cycle / deadlock detection", () => {
         { session: "A", deps: [{ kind: "issue" as const, number: 2 }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [],
+      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [], requests: [],
     };
     expect(detectDeadlocks(s)).toEqual([]);
   });
@@ -596,7 +596,7 @@ describe("cycle / deadlock detection", () => {
         { session: "A", deps: [{ kind: "contract" as const, name: "Y" }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [],
+      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [], requests: [],
     };
     const producerOf = buildProducerOf([
       { session: "A", issues: ["#1"] },
@@ -667,7 +667,7 @@ describe("buildProducerOf — plan-derived resolver (#199 AC#7)", () => {
         { session: "A", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [],
+      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [], requests: [],
     };
     const producerOf = buildProducerOf([
       { session: "A", issues: ["#1"], owns: ["src/db/**"] },
@@ -701,7 +701,7 @@ describe("producesFromPaneStreams — pane-id bridge for the resolver (#199 AC#7
         { session: "t0p1", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
         { session: "t0p2", deps: [{ kind: "issue" as const, number: 7 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [],
+      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [], requests: [],
     };
     const paneStreams = {
       t0p1: { id: "db",  name: "DB",  repo: "o/r", owns: ["src/db/**"],  issues: ["#7"], dependsOn: [] },
@@ -750,7 +750,7 @@ describe("coordNotifications — mobile push payloads (#366)", () => {
 
   it("emits a deadlocked notification for a wait-for cycle and outranks stalled", () => {
     // A<->B deadlock; the same refs are unsatisfied (no producer can clear them).
-    const s = { latches: {}, waiters: [w("A", [sess("B")]), w("B", [sess("A")])], waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [] };
+    const s = { latches: {}, waiters: [w("A", [sess("B")]), w("B", [sess("A")])], waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [], requests: [] };
     const notes = coordNotifications(s);
     expect(notes.map((n) => n.kind)).toEqual(["deadlocked", "deadlocked"]);
     expect(notes.map((n) => n.session).sort()).toEqual(["A", "B"]);
@@ -759,7 +759,7 @@ describe("coordNotifications — mobile push payloads (#366)", () => {
 
   it("a deadlocked-AND-failed session reports deadlocked only (most severe wins)", () => {
     // A waits on session:B (the deadlock edge) and on a failed issue. One notification.
-    let s: CoordState = { latches: {}, waiters: [w("A", [sess("B"), issue(9)]), w("B", [sess("A")])], waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [] };
+    let s: CoordState = { latches: {}, waiters: [w("A", [sess("B"), issue(9)]), w("B", [sess("A")])], waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [], requests: [] };
     s = fail(s, issue(9), "nope", 1).state;
     const notes = coordNotifications(s);
     const byId = Object.fromEntries(notes.map((n) => [n.session, n.kind]));
@@ -1061,5 +1061,51 @@ describe("verification jury (#394)", () => {
     const ev = parseCoordLine(["2026-06-03T00:00:00Z", "juror-1", "verdict", "#42", "reject", "AC not met", "true"].join("\t"));
     expect(ev).toMatchObject({ type: "verdict", juror: "juror-1", target: "#42", verdict: "reject", reason: "AC not met", relevant: true });
     expect(parseCoordLine(["2026-06-03T00:00:00Z", "j", "verdict", "#42", "maybe"].join("\t"))).toBeNull(); // invalid verdict
+  });
+});
+
+describe("worker→director change requests (#4001)", () => {
+  const line = (kind: string, session: string, ...rest: string[]) =>
+    ["2026-07-30T12:00:00Z", session, kind, ...rest].join("\t");
+
+  it("opens a request and carries its id, requester and text", () => {
+    const s = ingestCoordLog([line("request", "cli-platform", "7", "no develop branch to target")]).state;
+    expect(s.requests).toHaveLength(1);
+    expect(s.requests[0]).toMatchObject({ id: "7", from: "cli-platform", text: "no develop branch to target" });
+  });
+
+  it("removes it when the director resolves it", () => {
+    // This is what lets the pump PRUNE its surfaced-once key. Without it the request would be
+    // surfaced once and then block its own key forever, so a re-file would never reach the director.
+    const s = ingestCoordLog([
+      line("request", "cli-platform", "7", "no develop branch"),
+      line("request-resolved", "director", "7", "created develop from main"),
+    ]).state;
+    expect(s.requests).toEqual([]);
+  });
+
+  it("resolves only the request named, leaving other asks open", () => {
+    const s = ingestCoordLog([
+      line("request", "a", "1", "first"),
+      line("request", "b", "2", "second"),
+      line("request-resolved", "director", "1", "done"),
+    ]).state;
+    expect(s.requests.map((r) => r.id)).toEqual(["2"]);
+  });
+
+  it("dedupes a replayed log rather than doubling the ask", () => {
+    // The coord log is re-read in full on every tick, so every event is seen many times.
+    const l = line("request", "a", "3", "same ask");
+    expect(ingestCoordLog([l, l, l]).state.requests).toHaveLength(1);
+  });
+
+  it("ignores a request with no id — it could never be resolved", () => {
+    expect(ingestCoordLog([line("request", "a", "", "orphan")]).state.requests).toEqual([]);
+    expect(ingestCoordLog([line("request-resolved", "director", "")]).state.requests).toEqual([]);
+  });
+
+  it("survives a resolve for a request it never saw opened", () => {
+    // A log rotation can drop the opening event; the close must not throw or resurrect anything.
+    expect(ingestCoordLog([line("request-resolved", "director", "99", "x")]).state.requests).toEqual([]);
   });
 });

@@ -22,6 +22,7 @@ import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
   briefKey, pendingBriefPrompt,
+  requestKey, pendingRequestPrompt,
   DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
 } from "@/features/planner";
 
@@ -49,7 +50,7 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
     // (restart-safe). Both surface state-based (not edge events) and are guarded once-per-pane.
     const { lines, state } = res;
     const pendingAsks = state.asking;
-    const pendingKeys = new Set([...pendingAsks.map(askKey), ...state.briefs.map(briefKey)]);
+    const pendingKeys = new Set([...pendingAsks.map(askKey), ...state.briefs.map(briefKey), ...state.requests.map(requestKey)]);
     for (const k of [...surfaced.current]) {
       const bar = k.indexOf("|");
       if (bar >= 0 && !pendingKeys.has(k.slice(bar + 1))) surfaced.current.delete(k);
@@ -81,6 +82,20 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
           for (const b of freshBriefs) surfaced.current.add(paneId + "|" + briefKey(b));
           inFlight.current.add(paneId);
           void injectPrompt(paneId, pendingBriefPrompt(freshBriefs))
+            .catch(() => {})
+            .finally(() => inFlight.current.delete(paneId));
+          continue; // one injection per pane per tick
+        }
+
+        // 1c) Deliver open worker CHANGE REQUESTS (#4001) the same must-not-drop way. Unlike a brief
+        // (append-only, never auto-cleared) a request genuinely closes: `request-resolved` removes it
+        // from `state.requests`, which prunes the surfaced key above — so a later re-file of the same
+        // ask surfaces again instead of being suppressed forever by a stale key.
+        const freshRequests = state.requests.filter((r) => !surfaced.current.has(paneId + "|" + requestKey(r)));
+        if (freshRequests.length > 0) {
+          for (const r of freshRequests) surfaced.current.add(paneId + "|" + requestKey(r));
+          inFlight.current.add(paneId);
+          void injectPrompt(paneId, pendingRequestPrompt(freshRequests))
             .catch(() => {})
             .finally(() => inFlight.current.delete(paneId));
           continue; // one injection per pane per tick
