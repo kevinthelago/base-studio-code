@@ -498,12 +498,29 @@ describe("mergeDbIntoDrafts — the durable projects DB is a source, the store m
     expect(out["studio-code"].title).toBe("studio code");
   });
 
-  // Anything past planning arrives via the PUBLISHED side; admitting it here would double-count it.
-  it("admits only drafted/planning rows", () => {
+  // The FOLLOW-UP defect. The first cut admitted only drafted/planning — copied from `mergeDbDrafts`,
+  // which feeds a DRAFTS-ONLY list where created/published render in other sections. Glance has no
+  // other section, so a `created` project belonged to no source at all and vanished from the graph.
+  // A triaged project whose state had advanced drafted → created hit exactly this.
+  it("admits a `created` project — it belongs to no other Glance source", () => {
+    const out = mergeDbIntoDrafts({}, [db("studio-code", "created", { title: "studio code" })]);
+    expect(out["studio-code"]).toMatchObject({ title: "studio code" });
+  });
+
+  // `published` stays out: mergeGlanceProjects already overrides a draft with the published entry on a
+  // key collision, and the drafts map doubles as the `isDraft` signal for resolveProjectCategory — a
+  // published project in here would default to `greenfield` rather than `maintain`.
+  it("admits every non-published state and excludes published", () => {
     const out = mergeDbIntoDrafts({}, [
-      db("a", "drafted"), db("b", "planning"), db("c", "published"), db("d", "created"),
+      db("a", "drafted"), db("b", "planning"), db("c", "created"), db("d", "published"),
     ]);
-    expect(Object.keys(out).sort()).toEqual(["a", "b"]);
+    expect(Object.keys(out).sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("keeps a published project OUT of the isDraft signal, so its category stays maintain", () => {
+    const out = mergeDbIntoDrafts({}, [db("shipped", "published")]);
+    expect(out.shipped).toBeUndefined();
+    expect(resolveProjectCategory(undefined, undefined, out.shipped !== undefined)).toBe("maintain");
   });
 
   // A DB row has no column for the curated axes, so merging it must not flatten a demo project's
@@ -565,6 +582,24 @@ describe("mergeDbIntoDrafts — the durable projects DB is a source, the store m
       mockBridge([{ key: "studio-code", title: "studio code", pitch: "", state: "drafted", createdAt: 1, updatedAt: 2 }]);
       const { result } = renderHook(() => useGlanceProjects());
       await waitFor(() => expect(result.current.some((p) => p.id === "studio-code")).toBe(true));
+    });
+
+    // The end-to-end shape of the follow-up defect, at the level the user actually sees: triaging
+    // advances the row to `created`, and the graph must still show it. The pure-fn test above covers
+    // the filter; this covers the filter AS WIRED, which is where the first fix looked fine and wasn't.
+    //
+    // NOTE the distinct key. `dbProjectsCache` is module-level (deliberately — it survives the Rail's
+    // unmount/remount), so it also survives BETWEEN TESTS: reusing `studio-code` here let the previous
+    // test's cached `drafted` row satisfy this one, and the assertion passed even with the narrow
+    // filter restored. A unique key per hook test is what makes the assertion mean anything.
+    it("renders a node once triage has advanced the row to `created` (#3966)", async () => {
+      useAppStore.setState({
+        localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null,
+        triagedProjects: { "triaged-created": 1785349752066 },
+      });
+      mockBridge([{ key: "triaged-created", title: "Triaged Created", pitch: "", state: "created", createdAt: 1784918799301, updatedAt: 1785349712038 }]);
+      const { result } = renderHook(() => useGlanceProjects());
+      await waitFor(() => expect(result.current.some((p) => p.id === "triaged-created")).toBe(true));
     });
 
     it("keeps rendering the store cache when the bridge is unreachable", async () => {
