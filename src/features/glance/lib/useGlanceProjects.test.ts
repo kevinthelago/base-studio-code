@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGlanceProjects, mergeGlanceProjects, mergeDbIntoDrafts, applyLiveness, applyDormantHealth, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, resolveProjectCategory } from "./useGlanceProjects";
+import { useGlanceProjects, applyModifyingHealth, mergeGlanceProjects, mergeDbIntoDrafts, applyLiveness, applyDormantHealth, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged } from "./useGlanceProjects";
 import type { DbProject } from "@/features/planner";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
@@ -154,18 +154,49 @@ describe("mergeGlanceProjects — draft/published dedup (#2339/#2409); GitHub no
     expect(merged[0].id).toBe("Beautiful_Emails"); // no canonical folder exists → keep the legacy key
   });
 
-  it("carries a draft's declared lifecycle category onto the node (#2583)", () => {
-    const merged = mergeGlanceProjects({ x: { title: "X", pitch: "", createdAt: 1, category: "harden" } }, []);
-    expect(merged[0].category).toBe("harden");
-  });
 });
 
-describe("resolveProjectCategory — lifecycle category, replacing the hash tier (#2583)", () => {
-  it("prefers a declared category, then the blueprint category, then the status heuristic", () => {
-    expect(resolveProjectCategory("harden", "greenfield", false)).toBe("harden");   // declared wins
-    expect(resolveProjectCategory(undefined, "transform", true)).toBe("transform");  // blueprint next
-    expect(resolveProjectCategory(undefined, undefined, true)).toBe("greenfield");   // a draft is being created
-    expect(resolveProjectCategory(undefined, undefined, false)).toBe("maintain");    // a published/worked project is in upkeep
+describe("applyModifyingHealth — work IN FLIGHT (#4052)", () => {
+  const base: ProjectLite[] = [
+    { id: "fleet", name: "Fleet", health: "healthy", activity: "building" },
+    { id: "issues", name: "Issues", health: "off", activity: "idle" },
+    { id: "quiet", name: "Quiet", health: "off", activity: "idle" },
+  ];
+
+  it("lights a project from EITHER signal alone — a live fleet, or open issues", () => {
+    const out = applyModifyingHealth(base, new Set(["fleet"]), new Set(["issues"]));
+    expect(out.find((p) => p.id === "fleet")?.health).toBe("modifying");
+    expect(out.find((p) => p.id === "issues")?.health).toBe("modifying");
+    // Neither signal ⇒ untouched. Requiring BOTH would have made this mean "building", which the
+    // ACTIVITY axis already says.
+    expect(out.find((p) => p.id === "quiet")?.health).toBe("off");
+  });
+
+  it("lifts the DERIVED dormant `off` — a paused project with unfinished work is not 'nothing here'", () => {
+    // applyDormantHealth greys everything with no live session; without this, the open-issues signal
+    // could never show at all. (The user's MANUAL off is applyOffHealth, applied outermost.)
+    const out = applyModifyingHealth(base, new Set(), new Set(["issues"]));
+    expect(out.find((p) => p.id === "issues")?.health).toBe("modifying");
+  });
+
+  it("never masks a problem — warning and error survive untouched", () => {
+    const degraded: ProjectLite[] = [
+      { id: "w", name: "W", health: "warning", activity: "building" },
+      { id: "e", name: "E", health: "error", activity: "building" },
+    ];
+    const out = applyModifyingHealth(degraded, new Set(["w", "e"]), new Set(["w", "e"]));
+    expect(out.map((p) => p.health)).toEqual(["warning", "error"]);
+  });
+
+  it("upgrades `complete` — work RESUMING on a finished project is the transition worth showing", () => {
+    const done: ProjectLite[] = [{ id: "d", name: "D", health: "complete", activity: "complete" }];
+    expect(applyModifyingHealth(done, new Set(["d"]), new Set())[0].health).toBe("modifying");
+    // …and a finished project with nothing in flight STAYS complete.
+    expect(applyModifyingHealth(done, new Set(), new Set())[0].health).toBe("complete");
+  });
+
+  it("returns the input untouched when neither signal has anything", () => {
+    expect(applyModifyingHealth(base, new Set(), new Set())).toBe(base);
   });
 });
 
@@ -517,10 +548,12 @@ describe("mergeDbIntoDrafts — the durable projects DB is a source, the store m
     expect(Object.keys(out).sort()).toEqual(["a", "b", "c"]);
   });
 
-  it("keeps a published project OUT of the isDraft signal, so its category stays maintain", () => {
+  it("keeps a published project OUT of the drafts map — the merge already covers it", () => {
+    // `mergeGlanceProjects` overrides a draft with the published entry on a key collision, so admitting
+    // it here would buy nothing. (It also used to feed the `isDraft` signal for the lifecycle category,
+    // which #4052 removed.)
     const out = mergeDbIntoDrafts({}, [db("shipped", "published")]);
     expect(out.shipped).toBeUndefined();
-    expect(resolveProjectCategory(undefined, undefined, out.shipped !== undefined)).toBe("maintain");
   });
 
   // A DB row has no column for the curated axes, so merging it must not flatten a demo project's

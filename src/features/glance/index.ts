@@ -3,13 +3,13 @@
 export { GlanceWorkspace } from "./GlanceWorkspace";
 export {
   buildGraph, focusSets, edgeGeom, rollUpHealth,
-  ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, HEALTH_RANK, EDGE_META,
+  ROLE_COLOR, HEALTH_META, ACTIVITY_META, HEALTH_RANK, EDGE_META,
   KIT_COLOR, KIT_NODE_PREFIX, kitNodeId, kitIdOfNode, usesKitEdgeId,
   // Cross-graph library dimension (#3119, epic #3114) — the generalized band-node API B/C wires real
   // `requires` deps into (algorithms/sounds), alongside the kept `uses-kit`/`kit` names.
   ALGO_COLOR, SOUND_COLOR, LIBRARY_META, LIBRARY_NODE_PREFIX, libraryNodeId, libIdOfNode, requiresEdgeId,
   isLibraryNode, libraryGraphOf, isLibraryEdge,
-  type GraphModel, type GNode, type GEdge, type GRawNode, type GRawEdge, type GRole, type GCategory, type GHealth, type GActivity, type GEdgeKind, type GNodeKind, type GLibraryGraph,
+  type GraphModel, type GNode, type GEdge, type GRawNode, type GRawEdge, type GRole, type GHealth, type GActivity, type GEdgeKind, type GNodeKind, type GLibraryGraph,
 } from "./lib/glanceGraph";
 export { buildGlanceData, SAMPLE_GRAPH, type GlanceData, type ProjectLite, type KitLite } from "./lib/glanceData";
 // #2498: the mobile store projector mirrors the SAME project/fault/fleet sources the Glance

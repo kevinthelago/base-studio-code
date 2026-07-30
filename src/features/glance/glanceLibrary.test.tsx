@@ -16,7 +16,7 @@ const SOUND = libraryNodeId("sound", "chime");
 
 // A route-planner app requiring one algorithm + one sound cue — the logistics example from the epic.
 const rawNodes: GRawNode[] = [
-  { id: "route-planner", slug: "Route Planner", role: "service", category: "greenfield", health: "off", activity: "idle" },
+  { id: "route-planner", slug: "Route Planner", role: "service", health: "off", activity: "idle" },
   { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "off", activity: "idle" },
   { id: SOUND, slug: "Chime", kind: "library", library: "sound", role: "infra", health: "off", activity: "idle" },
 ];

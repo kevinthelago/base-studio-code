@@ -17,6 +17,18 @@ pub fn is_valid_status(s: &str) -> bool {
     STATUSES.contains(&s)
 }
 
+/// The statuses that mean THE WORKER DID ITS PART (#4052) — the Rust half of the frontend's
+/// `TERMINAL_GOOD`. Both must name the same set: `bsc project progress` counts "done" with this, the
+/// graph's progress bar counts it with that, and a silent disagreement would put a bar and a
+/// "finished" card on the same node saying different things. One definition per language, no more.
+pub const DONE_STATUSES: &[&str] = &["complete", "verified"];
+
+/// True when `s` means the work is finished (see {@link DONE_STATUSES}). An UNKNOWN status is
+/// deliberately not-done: a typo must never silently inflate a completion count.
+pub fn is_done_status(s: &str) -> bool {
+    DONE_STATUSES.contains(&s)
+}
+
 fn default_status() -> String {
     "open".into()
 }
