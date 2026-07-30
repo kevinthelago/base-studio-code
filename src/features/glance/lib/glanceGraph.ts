@@ -32,7 +32,7 @@ export type GCategory = "greenfield" | "transform" | "harden" | "maintain" | "da
  *  value — the user has deactivated the node from its details pane; it renders greyed, wins over the live
  *  status ("if it's not idle then it should be off"), and — being rank 0 — never propagates and never
  *  inherits a downstream error (see {@link rollUpHealth}). */
-export type GHealth = "healthy" | "warning" | "error" | "off" | "attention" | "complete";
+export type GHealth = "healthy" | "warning" | "error" | "off" | "complete";
 /**
  * Does this node carry the BUILDING pulse (#4015)?
  *
@@ -255,7 +255,7 @@ export interface GNodePersona {
  *  state WORD is chosen by `nodeStateWord`, where attention deliberately does outrank warning.) */
 // `complete` is rank 0 — finished is not a problem, so it must never propagate up a dependency edge
 // and light a parent that is perfectly fine.
-export const HEALTH_RANK: Record<GHealth, number> = { healthy: 0, complete: 0, attention: 1, warning: 1, error: 2, off: 0 };
+export const HEALTH_RANK: Record<GHealth, number> = { healthy: 0, complete: 0, warning: 1, error: 2, off: 0 };
 
 /** A project node as supplied by the data adapter (before layout). */
 export interface GRawNode {
@@ -379,11 +379,6 @@ export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse:
   healthy: { label: "healthy", color: "var(--graph-health-healthy)", pulse: false },
   warning: { label: "warning", color: "var(--graph-health-warning)", pulse: false },
   error: { label: "error", color: "var(--graph-health-error)", pulse: true },
-  // #4005 — "a person has to act": parked on a `bsc-wait`, holding an unanswered question, or stopped
-  // at a permission prompt. Its own colour on purpose: it is neither a fault (`error`) nor a
-  // degradation (`warning`) but a REQUEST, and painting it orange taught the user to read a normal
-  // hand-off as something being broken. Pulses, because unlike a warning it does not resolve itself.
-  attention: { label: "needs you", color: "var(--graph-health-attention)", pulse: true },
   // #3239 — the user-deactivated node: a muted grey dot, never pulsing. The manual "turned off" state.
   // #4042 — `off` now means "NO LIVE SESSION behind this node", which covers all three ways that
   // happens: the user deactivated it, it was never launched, or it is structural furniture (a kit, a
@@ -413,9 +408,6 @@ export function nodeStateWord(n: { health: GHealth; rollupHealth?: GHealth; acti
   // that IS the signal; spending the one word slot on it meant a node that was off AND complete read
   // "off" and lost the more useful fact. The dimming carries deactivation, the word carries what the
   // node IS.
-  // #4005: attention outranks BOTH degraded words. A worker that is mildly degraded AND blocked on
-  // you is, actionably, blocked on you — reading `warning` there hid the hand-off completely.
-  if (n.health === "attention") return HEALTH_META.attention.label;
   if (n.health === "warning" || n.health === "error") return HEALTH_META[n.health].label;
   return ACTIVITY_META[n.activity].label;
 }

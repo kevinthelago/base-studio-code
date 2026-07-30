@@ -22,7 +22,9 @@ describe("GlanceOverlays legend (#2561)", () => {
     expect(screen.queryByText("dimmed = off")).toBeNull();
     // …and the two states that had no row at all until now.
     expect(screen.getByText("complete")).toBeTruthy();
-    expect(screen.getByText("needs you")).toBeTruthy();
+    // #4046 — `needs you` is gone from HEALTH: waiting on a person is an ACTIVITY, and the node says
+    // so with its word. The legend keys health only.
+    expect(screen.queryByText("needs you")).toBeNull();
   });
 
   it("L1 (drill): FUNCTION groups + the Org archetypes present in the drilled fleet", () => {
