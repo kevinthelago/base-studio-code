@@ -31,6 +31,7 @@ import { TerminalBanners } from "@/app/console/panes/views/TerminalBanners";
 import { tokenForRepo } from "@/shared/lib/github/repoCredentials";
 import { getProvider } from "@/app/console/lib/providers";
 import { isTurnOpenDebounced, paneActivityFor } from "@/app/console/lib/paneActivity";
+import { admitTerminal } from "@/app/console/lib/terminalAdmission";
 import { usePaneActivity } from "@/app/console/lib/usePaneActivityFeed";
 
 interface TerminalViewProps {
@@ -72,6 +73,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // the top lines render out of frame (#190). Until opened, output is buffered
   // (like a hidden pane) and flushed once we open at a real size.
   const openedRef = useRef(false);
+  // #3975: set on unmount so a terminal still queued for an admission slot is never opened after its
+  // pane is gone. A ref (not a local) because the admission callback outlives the effect closure.
+  const cancelledRef = useRef(false);
+  // #3975: the focus effect below runs on a rAF and skips while `openedRef` is false. Now that open()
+  // waits for an admission slot, that effect can fire BEFORE the terminal exists and silently drop the
+  // focus. So `openIfReady` focuses on open when this pane is the focused one — the two orderings are
+  // now both handled, whichever wins the race. A ref because the mount effect's closure is stale.
+  const wantFocusRef = useRef(false);
   // Skips the first font-zoom effect run per (re)mount — the terminal is already
   // created at the current size, so we must not pty_resize before pty_create.
   const fontReadyRef = useRef(false);
@@ -133,6 +142,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // (Re)mounting: re-arm the skip so the font-zoom effect doesn't fire against
     // a terminal whose PTY hasn't been created yet.
     fontReadyRef.current = false;
+    cancelledRef.current = false;   // #3975: re-arm admission for this mount
 
     const term = new Terminal({
       theme: TERM_THEME,
@@ -166,15 +176,39 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // and pushes the top lines out of frame. Returns true once opened. After
     // opening, fit to the real size and flush anything buffered while we waited.
     let disposeClipboard: (() => void) | null = null; // copy-on-select + paste (#3157), armed once on open
+    // #3975: `term.open()` allocates the renderer and touches the DOM — the expensive part. A tab with
+    // 29 panes ran 29 of them in ONE frame, on the thread that paints the window: measured as a
+    // 6-second gap in the 2s perf sampler (nothing ran at all), with only ONE React render in the same
+    // window — so the cost is entirely outside React. Admission spreads them across frames.
+    //
+    // Hooked HERE rather than around the whole effect because this function is already the "not ready
+    // yet, open later" path (hidden panes defer to the ResizeObserver below), so the retry machinery
+    // and its cleanup are already correct and exercised. Gating admission is one more not-ready reason.
+    let admitted = false;
+    let awaitingSlot = false;
     function openIfReady(): boolean {
       if (openedRef.current) return true;
       if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return false;
+      if (!admitted) {
+        if (!awaitingSlot) {
+          awaitingSlot = true;
+          void admitTerminal().then(() => {
+            awaitingSlot = false;
+            if (cancelledRef.current) return;   // unmounted while queued — never open a dead pane
+            admitted = true;
+            openIfReady();
+          });
+        }
+        return false;
+      }
       term.open(el);
       openedRef.current = true;
       disposeClipboard = attachTerminalClipboard(term, paneId);
       fitAddon.fit();
       if (pendingRef.current.size() > 0) term.write(pendingRef.current.flush());
       term.scrollToBottom(); // show the latest output on (re)mount, no scrolling (#68)
+      // #3975: the focus effect may already have run and skipped (no terminal yet) — honour it now.
+      if (wantFocusRef.current) term.focus();
       return true;
     }
     // Visible/active tab: the container is already sized, so open right away.
@@ -592,6 +626,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
     return () => {
       destroyed = true;
+      cancelledRef.current = true;   // #3975: a queued admission must not open an unmounted pane
       if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
       if (nudgeTimerRef.current) { clearTimeout(nudgeTimerRef.current); nudgeTimerRef.current = null; }
       if (autoNudgeTimerRef.current) { clearTimeout(autoNudgeTimerRef.current); autoNudgeTimerRef.current = null; }
@@ -689,6 +724,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // We focus even while a Claude session is active (#1239): keystrokes go straight to
   // Claude's own TUI input now that the native overlay is gone.
   useEffect(() => {
+    wantFocusRef.current = !!(focused && visible);
     if (focused && visible) {
       requestAnimationFrame(() => { if (openedRef.current) termRef.current?.focus(); });
     }
