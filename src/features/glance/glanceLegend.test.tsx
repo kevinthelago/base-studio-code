@@ -17,7 +17,9 @@ describe("GlanceOverlays legend (#2561)", () => {
     // conveyed by dimming (#4034). The legend must still TEACH that, or the one state without a colour
     // would also be the one state without an explanation — which is what #3239 added this row for.
     expect(screen.queryByText("off")).toBeNull();
-    expect(screen.getByText("dimmed = off")).toBeTruthy();
+    // #4042 — the `dimmed = off` row is gone with the `idle` state: `off` is now the ONE neutral
+    // (deactivated, never launched, or structural), and it has no swatch because nothing paints it.
+    expect(screen.queryByText("dimmed = off")).toBeNull();
     // …and the two states that had no row at all until now.
     expect(screen.getByText("complete")).toBeTruthy();
     expect(screen.getByText("needs you")).toBeTruthy();

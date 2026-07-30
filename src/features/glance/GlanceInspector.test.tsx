@@ -7,7 +7,7 @@ import { buildGraph, type GRawNode } from "./lib/glanceGraph";
 
 const NODES: GRawNode[] = [
   { id: "director", slug: "director", role: "infra", roleLabel: "director", health: "healthy", activity: "building" },
-  { id: "api", slug: "api", role: "service", roleLabel: "worker", health: "idle", activity: "idle" },
+  { id: "api", slug: "api", role: "service", roleLabel: "worker", health: "off", activity: "idle" },
 ];
 const model = buildGraph(NODES, []);
 

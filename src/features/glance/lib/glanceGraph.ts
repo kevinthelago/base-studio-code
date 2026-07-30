@@ -32,7 +32,7 @@ export type GCategory = "greenfield" | "transform" | "harden" | "maintain" | "da
  *  value — the user has deactivated the node from its details pane; it renders greyed, wins over the live
  *  status ("if it's not idle then it should be off"), and — being rank 0 — never propagates and never
  *  inherits a downstream error (see {@link rollUpHealth}). */
-export type GHealth = "idle" | "healthy" | "warning" | "error" | "off" | "attention" | "complete";
+export type GHealth = "healthy" | "warning" | "error" | "off" | "attention" | "complete";
 /**
  * Does this node carry the BUILDING pulse (#4015)?
  *
@@ -255,7 +255,7 @@ export interface GNodePersona {
  *  state WORD is chosen by `nodeStateWord`, where attention deliberately does outrank warning.) */
 // `complete` is rank 0 — finished is not a problem, so it must never propagate up a dependency edge
 // and light a parent that is perfectly fine.
-export const HEALTH_RANK: Record<GHealth, number> = { idle: 0, healthy: 0, complete: 0, attention: 1, warning: 1, error: 2, off: 0 };
+export const HEALTH_RANK: Record<GHealth, number> = { healthy: 0, complete: 0, attention: 1, warning: 1, error: 2, off: 0 };
 
 /** A project node as supplied by the data adapter (before layout). */
 export interface GRawNode {
@@ -372,7 +372,6 @@ export const CATEGORY_META: Record<GCategory, { label: string; color: string }> 
 /** Axis 1 — HEALTH → the top-left dot colour + whether it pulses (#2541). Blue = at rest, green =
  *  active & fine, orange = warning, red = error/fatal (pulses; the node to look at). */
 export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse: boolean }> = {
-  idle: { label: "idle", color: "var(--graph-health-idle)", pulse: false },
   // #4034 — the worker FINISHED. Blue, the palette's most alive colour, which was previously spent
   // on `idle` (a resting node) while the state that had actually achieved something had none.
   // Never pulses: complete is STILL, the same reason its activity carries no motion (#4032).
@@ -386,6 +385,10 @@ export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse:
   // hand-off as something being broken. Pulses, because unlike a warning it does not resolve itself.
   attention: { label: "needs you", color: "var(--graph-health-attention)", pulse: true },
   // #3239 — the user-deactivated node: a muted grey dot, never pulsing. The manual "turned off" state.
+  // #4042 — `off` now means "NO LIVE SESSION behind this node", which covers all three ways that
+  // happens: the user deactivated it, it was never launched, or it is structural furniture (a kit, a
+  // library, an external contract) that never runs at all. Those used to be `idle`, a second grey
+  // that looked identical to this one — and the dimming has always actually meant this.
   off: { label: "off", color: "var(--graph-health-off)", pulse: false },
 };
 /**
@@ -537,14 +540,14 @@ export function rollUpHealth(
     // so an off node never lights up because of a dependency. (`off` is rank 0, so it also never
     // propagates OUT — a node depending on an off node is unaffected.)
     if (own.get(start) === "off") return "off";
-    let worst = own.get(start) ?? "idle";
+    let worst: GHealth = own.get(start) ?? "off";
     const seen = new Set<string>([start]);
     const stack = [...(deps.get(start) ?? [])];
     while (stack.length) {
       const id = stack.pop()!;
       if (seen.has(id)) continue;
       seen.add(id);
-      const h = own.get(id) ?? "idle";
+      const h: GHealth = own.get(id) ?? "off";   // #4042: no own health ⇒ nothing live behind it
       if (HEALTH_RANK[h] > HEALTH_RANK[worst]) worst = h;
       for (const d of deps.get(id) ?? []) stack.push(d);
     }
@@ -553,7 +556,7 @@ export function rollUpHealth(
   const out = new Map<string, { health: GHealth; inherited: boolean }>();
   for (const n of nodes) {
     const eff = worstFrom(n.id);
-    out.set(n.id, { health: eff, inherited: HEALTH_RANK[eff] > HEALTH_RANK[own.get(n.id) ?? "idle"] });
+    out.set(n.id, { health: eff, inherited: HEALTH_RANK[eff] > HEALTH_RANK[own.get(n.id) ?? "off"] });
   }
   return out;
 }
