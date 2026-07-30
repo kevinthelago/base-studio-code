@@ -77,6 +77,21 @@ Newest-first by default; --oldest keeps the file's chronological order (the coor
 desktop's per-stream log readers (#2144).",
     },
     CmdDoc {
+        name: "waiting",
+        summary: "every session BLOCKED ON A HUMAN (the queue to clear)",
+        usage: "\nUSAGE:
+  bsc logs waiting [--json]
+
+Every session waiting on a person, oldest first — the queue, not a feed. Four kinds:
+  wait        parked by `bsc-wait`               → answer with `bsc-answer <pane>`
+  ask         an unanswered `bsc-ask` question   → answer with `bsc-answer <pane>`
+  request     an open change request (#4001)     → `bsc plan request resolve <id> --note ...`
+  permission  stopped at a permission prompt     → needs the USER, not the director
+
+Re-derived from the whole log each call, so it is correct across an app restart. Empty output means
+nothing is blocked.",
+    },
+    CmdDoc {
         name: "pane-activity",
         summary: "each pane's latest run/idle turn state",
         usage: "\
@@ -281,6 +296,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 .ok_or("usage: bsc logs tail <stream> [--limit N] [--oldest]")?;
             let lines = crate::tail_raw(&dir, &stream, a.limit.unwrap_or(1000), a.oldest);
             emit(a.pretty, a.json, &lines, || lines.join("\n"));
+        }
+        // Every session blocked on a human (#4015) — the queue the director sweeps.
+        "waiting" => {
+            let rows = crate::waiting::waiting(&dir);
+            emit(a.pretty, a.json, &rows, || {
+                let mut lines = vec!["pane	kind	id	detail".to_string()];
+                for w in &rows {
+                    lines.push(format!("{}	{}	{}	{}", w.pane, w.kind, w.id, w.detail));
+                }
+                lines.join("
+")
+            });
         }
         // Each pane's latest run/idle turn state (#1184).
         "pane-activity" => {

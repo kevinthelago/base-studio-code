@@ -52,7 +52,14 @@ function refLabel(ref: CoordRef): string {
 const DIRECTOR_ACTION =
   "Review the open PRs on the build branches and merge the green ones; for each, run " +
   "`bsc-merged <ref>` (then `bsc-closed <ref>` when you close its issue) so any parked " +
-  "workers wake. Unblock anyone blocked or waiting, and keep the milestones/board current. " +
+  // #4015: "unblock anyone blocked or waiting" used to be unactionable prose — the director had no
+  // way to SEE who was blocked. `bsc logs waiting` is that queue (parked waits, unanswered asks, open
+  // change requests, and panes stopped at a permission prompt), so the sweep names the command and
+  // what to do with each kind. The pump already surfaces asks and requests as they arrive; this is
+  // the backstop for ones that landed mid-turn or before this director launched.
+  "workers wake. Then run `$BSC_BIN logs waiting` and clear the queue: answer a `wait`/`ask` with " +
+  "`bsc-answer <pane>`, close a `request` with `bsc plan request resolve <id> --note \"<what you did>\"`. " +
+  "A `permission` row needs the USER, not you — leave it. Keep the milestones/board current. " +
   "If nothing needs doing, say so and stop.";
 
 /** Build the event-driven injection summarizing the fresh worker events. Single line. */

@@ -17,6 +17,7 @@
 
 pub mod cli;
 pub mod scope;
+pub mod waiting;
 
 use std::path::{Path, PathBuf};
 

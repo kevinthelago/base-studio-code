@@ -4,7 +4,7 @@ import {
   libraryNodeId, requiresEdgeId, libIdOfNode, isLibraryNode, libraryGraphOf, isLibraryEdge, LIBRARY_META,
   HEALTH_META, HEALTH_RANK, ACTIVITY_META, nodeStateWord,
   type GHealth, type GActivity,
-  type GRawNode, type GRawEdge, showsBuildingRing } from "./glanceGraph";
+  type GRawNode, type GRawEdge, showsBuildingPulse } from "./glanceGraph";
 import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import { buildGlanceData } from "./glanceData";
 
@@ -436,29 +436,30 @@ describe("nodeStateWord (#3957)", () => {
   });
 });
 
-describe("showsBuildingRing (#4010)", () => {
-  const ctx = { isOff: false, selected: false, isError: false };
+describe("showsBuildingPulse (#4015)", () => {
+  const ctx = { fleet: true, isOff: false, isError: false };
 
-  it("rings a building node and nothing else", () => {
-    expect(showsBuildingRing({ activity: "building" }, ctx)).toBe(true);
+  it("pulses a building WORKER and nothing else", () => {
+    expect(showsBuildingPulse({ activity: "building" }, ctx)).toBe(true);
     for (const a of ["idle", "planning", "waiting", "review", "live"] as const) {
-      expect(showsBuildingRing({ activity: a }, ctx)).toBe(false);
+      expect(showsBuildingPulse({ activity: a }, ctx)).toBe(false);
     }
   });
 
-  it("drops the ring when the node parks into maintenance", () => {
-    // Maintenance is modelled as plain `idle` (agentStall), so losing the ring falls straight out of
-    // the activity — which is exactly why the rule keys on activity rather than on a separate flag.
-    expect(showsBuildingRing({ activity: "idle" }, ctx)).toBe(false);
+  it("stops when the worker parks into maintenance", () => {
+    // Maintenance resolves to plain `idle` (agentStall), so the pulse stopping falls straight out of
+    // the activity — which is why this keys on activity rather than on a separate flag.
+    expect(showsBuildingPulse({ activity: "idle" }, ctx)).toBe(false);
   });
 
-  it("yields to selection and error, which draw their own rings", () => {
-    // Two concentric outlines read as noise, not as more information.
-    expect(showsBuildingRing({ activity: "building" }, { ...ctx, selected: true })).toBe(false);
-    expect(showsBuildingRing({ activity: "building" }, { ...ctx, isError: true })).toBe(false);
+  it("NEVER animates an L0 project node, however busy the project is", () => {
+    // The reason this is a prop and not `n.category`: an unclassified project has no category either,
+    // so inferring would animate exactly the L0 nodes it was meant to exclude.
+    expect(showsBuildingPulse({ activity: "building" }, { ...ctx, fleet: false })).toBe(false);
   });
 
-  it("stays off a deactivated node, which is meant to read calm", () => {
-    expect(showsBuildingRing({ activity: "building" }, { ...ctx, isOff: true })).toBe(false);
+  it("yields to error and stays off a deactivated node", () => {
+    expect(showsBuildingPulse({ activity: "building" }, { ...ctx, isError: true })).toBe(false);
+    expect(showsBuildingPulse({ activity: "building" }, { ...ctx, isOff: true })).toBe(false);
   });
 });

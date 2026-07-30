@@ -24,10 +24,6 @@
   --graph-health-error: #f2555f;
   /* #4005 — "needs you": a request for a person, deliberately NOT the warning orange (a fault) or
      the healthy green (nothing to do). Violet reads as attention without reading as damage. */
-  /* #4010 — the BUILDING outline: a node actively working wears a ring; parking into maintenance
-     drops it. Derived from the healthy green (building IS the healthy working state) and held well
-     under full strength so a busy fleet reads as busy rather than as alarming. */
-  --graph-building-ring: color-mix(in oklch, var(--graph-health-healthy) 55%, transparent);
   --graph-health-attention: #a78bfa;
   --graph-health-off: #6b7280; /* #3239 — a user-deactivated node: a neutral, desaturated grey */
   --graph-kind-infra: #5b9dff;
