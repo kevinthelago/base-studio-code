@@ -32,7 +32,7 @@ export type GCategory = "greenfield" | "transform" | "harden" | "maintain" | "da
  *  value — the user has deactivated the node from its details pane; it renders greyed, wins over the live
  *  status ("if it's not idle then it should be off"), and — being rank 0 — never propagates and never
  *  inherits a downstream error (see {@link rollUpHealth}). */
-export type GHealth = "idle" | "healthy" | "warning" | "error" | "off" | "attention";
+export type GHealth = "idle" | "healthy" | "warning" | "error" | "off" | "attention" | "complete";
 /**
  * Does this node carry the BUILDING pulse (#4015)?
  *
@@ -253,7 +253,9 @@ export interface GNodePersona {
  *  fleet, which is the whole job of the L0 cockpit. It does not outrank `error`, because a broken
  *  project is still the more urgent thing to look at. (Rank governs propagation only; the node's own
  *  state WORD is chosen by `nodeStateWord`, where attention deliberately does outrank warning.) */
-export const HEALTH_RANK: Record<GHealth, number> = { idle: 0, healthy: 0, attention: 1, warning: 1, error: 2, off: 0 };
+// `complete` is rank 0 — finished is not a problem, so it must never propagate up a dependency edge
+// and light a parent that is perfectly fine.
+export const HEALTH_RANK: Record<GHealth, number> = { idle: 0, healthy: 0, complete: 0, attention: 1, warning: 1, error: 2, off: 0 };
 
 /** A project node as supplied by the data adapter (before layout). */
 export interface GRawNode {
@@ -371,6 +373,10 @@ export const CATEGORY_META: Record<GCategory, { label: string; color: string }> 
  *  active & fine, orange = warning, red = error/fatal (pulses; the node to look at). */
 export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse: boolean }> = {
   idle: { label: "idle", color: "var(--graph-health-idle)", pulse: false },
+  // #4034 — the worker FINISHED. Blue, the palette's most alive colour, which was previously spent
+  // on `idle` (a resting node) while the state that had actually achieved something had none.
+  // Never pulses: complete is STILL, the same reason its activity carries no motion (#4032).
+  complete: { label: "complete", color: "var(--graph-health-complete)", pulse: false },
   healthy: { label: "healthy", color: "var(--graph-health-healthy)", pulse: false },
   warning: { label: "warning", color: "var(--graph-health-warning)", pulse: false },
   error: { label: "error", color: "var(--graph-health-error)", pulse: true },
@@ -400,7 +406,10 @@ export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse:
  * must not read `warning` because a DEPENDENCY is degraded). Pure.
  */
 export function nodeStateWord(n: { health: GHealth; rollupHealth?: GHealth; activity: GActivity }): string {
-  if ((n.rollupHealth ?? n.health) === "off") return HEALTH_META.off.label;
+  // #4034 — no `off` WORD. A deactivated node is already dimmed in place (`offOpacity`, #3239) and
+  // that IS the signal; spending the one word slot on it meant a node that was off AND complete read
+  // "off" and lost the more useful fact. The dimming carries deactivation, the word carries what the
+  // node IS.
   // #4005: attention outranks BOTH degraded words. A worker that is mildly degraded AND blocked on
   // you is, actionably, blocked on you — reading `warning` there hid the hand-off completely.
   if (n.health === "attention") return HEALTH_META.attention.label;
