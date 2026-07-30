@@ -56,17 +56,27 @@ const NO_DB_PROJECTS: DbProject[] = [];
  * is absent from it FOREVER, while `projects.db` still has the row and every other surface still shows
  * it. That is how a triaged, openable project had no Glance node at all.
  *
- * The union direction mirrors `mergeDbDrafts` (the Projects page's equivalent), so the two surfaces
- * agree by construction: only `drafted`/`planning` rows are drafts (anything further along arrives via
- * the published side and would double-count), the CACHE wins on fields it has — it carries the curated
- * axes the DB row has no column for — and the DB fills what the cache is missing, including whole rows.
+ * The CACHE wins on fields it has — it carries the curated axes the DB row has no column for — and the
+ * DB fills what the cache is missing, including whole rows.
+ *
+ * STATE FILTER — deliberately WIDER than `mergeDbDrafts` (the Projects page's equivalent), and the
+ * first cut of this function got that wrong. That helper feeds a DRAFTS-ONLY list, where `created` and
+ * `published` projects are excluded because they render in other sections of the same page. Glance has
+ * no other section: its node set is drafts ∪ local-published ∪ GitHub-published, so a `created` project
+ * — one that has been scaffolded but never published — belongs to NO source and silently vanishes from
+ * the graph. That is what happened to a triaged project whose state had advanced `drafted` → `created`.
+ *
+ * `published` stays out on purpose, for two reasons: `mergeGlanceProjects` already overrides a draft
+ * with the published entry on a key collision (so admitting it buys nothing), and the drafts map IS the
+ * `isDraft` signal for {@link resolveProjectCategory} — a published project in here would default to
+ * `greenfield` instead of `maintain`.
  *
  * Pure + exported for direct unit testing, like {@link mergeGlanceProjects}.
  */
 export function mergeDbIntoDrafts(drafts: DraftMap, dbRows: DbProject[]): DraftMap {
   const out: DraftMap = { ...drafts };
   for (const r of Array.isArray(dbRows) ? dbRows : []) {
-    if (r.state !== "drafted" && r.state !== "planning") continue;
+    if (r.state === "published") continue;
     const ex = out[r.key];
     out[r.key] = ex
       // Keep every curated axis (role/category/health/activity/reason) — the DB row has none of them,
