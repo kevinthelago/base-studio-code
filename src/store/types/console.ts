@@ -305,6 +305,12 @@ export interface ConsoleState {
   paneWslDistro: Record<string, string>;
   /** Whether a Claude session is the running program in each pane (#1158) — transient. Drives the
    *  native console input (which replaces Claude's prompt) and hides the pane's status footer. */
+  /** Panes STOPPED waiting on the USER (#4005) — Claude Code fired `Notification`: a permission
+   *  prompt, or a long input idle. Fed from the ONE shared pane-activity read in ConsoleWorkspace, so
+   *  Glance can raise the `attention` health without importing the console shell (features must not
+   *  import `app/`). Transient — not persisted; it is re-derived from activity.log on every read. */
+  paneAttention: Record<string, boolean>;
+  setPaneAttention: (panes: Record<string, boolean>) => void;
   paneClaudeActive: Record<string, boolean>;
   setPaneClaudeActive: (paneId: string, active: boolean) => void;
   setPaneProfile: (paneId: string, profileId: string | null) => void;

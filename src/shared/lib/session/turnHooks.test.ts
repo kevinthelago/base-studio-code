@@ -31,3 +31,20 @@ describe("TURN_ACCOUNTING_HOOKS", () => {
     for (const h of TURN_ACCOUNTING_HOOKS) expect(h.matcher).toBe("");
   });
 });
+
+describe("the Notification hook (#4005)", () => {
+  it("registers Notification → bsc-activity attn", () => {
+    // The one signal that tells the app a session is STOPPED at a permission prompt. Without this
+    // entry the whole attention state has no source for its most important case: under the default
+    // allow-list posture ANY non-allow-listed command prompts, and the user could not tell which pane.
+    expect(TURN_ACCOUNTING_HOOKS).toContainEqual({ event: "Notification", matcher: "", command: "bsc-activity attn" });
+  });
+
+  it("keeps the turn boundaries that CLEAR it", () => {
+    // Notification only ever fires. Clearing is the next turn boundary superseding the row, so a pane
+    // does not stay flagged forever after one prompt.
+    const commands = TURN_ACCOUNTING_HOOKS.filter((h) => h.command.startsWith("bsc-activity"));
+    expect(commands).toContainEqual({ event: "UserPromptSubmit", matcher: "", command: "bsc-activity run" });
+    expect(commands).toContainEqual({ event: "Stop", matcher: "", command: "bsc-activity idle" });
+  });
+});
