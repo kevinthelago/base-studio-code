@@ -23,6 +23,7 @@ pub(crate) const ALL_TABLES: &[&str] = &[
     "blueprint",
     "ui",
     "discovery",
+    "integrations",
     "confirmed_stages",
     "skipped_stages",
     "triage_runs",
@@ -103,6 +104,17 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
          );
          CREATE TABLE IF NOT EXISTS mcp (
             name        TEXT PRIMARY KEY,
+            position    INTEGER NOT NULL DEFAULT 0,
+            updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS integrations (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL DEFAULT '',
+            direction   TEXT NOT NULL DEFAULT 'runtime',
+            docs        TEXT,
+            base_url    TEXT,
+            auth        TEXT,
+            purpose     TEXT,
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
          );
