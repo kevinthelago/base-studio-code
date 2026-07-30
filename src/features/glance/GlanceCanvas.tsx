@@ -9,7 +9,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, LIFECYCLE_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingPulse, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GActivity, type GHealth, type GLibraryGraph } from "./lib/glanceGraph";
+import { ROLE_COLOR, LIFECYCLE_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingPulse, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
 import { archetypeById, hueColor } from "@/features/teams";
@@ -36,13 +36,15 @@ const HEALTH_ROWS: GHealth[] = ["complete", "modifying", "healthy", "warning", "
 const MORPH_EASE = ".4s cubic-bezier(.22, .61, .36, 1)";
 
 const REST_N = 0.14, REST_E = 0.06;
-// The L0 second column: ACTIVITY (#4064). It keys axis 2's word, which every node carries at BOTH
-// levels and which had no legend anywhere until now — #4058 removed this column on the theory that the
-// nodes would stop showing the word, but #4060 put the word back and the column had to follow.
+// The L0 second column: LIFECYCLE (#4066). The lifecycle chip (#4062) is a COLOURED label on every
+// classified node — five accents that mean nothing without a key, which is exactly what a legend is
+// for. (#4064 briefly put ACTIVITY here instead: a plain word with no colour mapping, so the column
+// taught nothing a reader could not already read off the card.)
 //
-// Rendered label-only, deliberately: activity carries no colour (that is health's channel), so a
-// swatch would invent a mapping that does not exist.
-const ACTIVITY_ROWS_L0: GActivity[] = ["idle", "planning", "building", "waiting", "review", "live", "complete"];
+// Derived from LIFECYCLE_META rather than a second hand-maintained list, so the legend cannot drift
+// from what the nodes actually paint.
+const LIFECYCLE_ROWS_L0: [string, string][] =
+  Object.values(LIFECYCLE_META).map((m) => [m.label, m.color]);
 const EDGE_ROWS_L0: [string, string, string][] = [
   [EDGE_META.api.label, EDGE_META.api.color, EDGE_META.api.dash],
   [EDGE_META.data.label, EDGE_META.data.color, EDGE_META.data.dash],
@@ -424,8 +426,8 @@ export function GlanceCanvas(p: CanvasProps) {
  *  when a project is drilled, and the project-network vocabulary at the root. `archetypes` are the
  *  distinct archetype ids present in the drilled fleet. */
 export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boolean; archetypes?: string[] } = {}) {
-  // L1 keeps the agent FUNCTION buckets; L0 keys the ACTIVITY vocabulary instead (#4064).
-  const roleRows = drill ? ROLE_ROWS_L1 : null;
+  // L1 keys the agent FUNCTION buckets; L0 keys the LIFECYCLE accents (#4066).
+  const roleRows = drill ? ROLE_ROWS_L1 : LIFECYCLE_ROWS_L0;
   const edgeRows: [string, string, string][] = drill
     ? [
         ...archetypes.map((a): [string, string, string] => {
@@ -462,18 +464,14 @@ export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boo
           </Box>
         </Box>
         <Box>
-          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>{drill ? "FUNCTION" : "ACTIVITY"}</Text>
+          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>{drill ? "FUNCTION" : "LIFECYCLE"}</Text>
           <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {roleRows
-              ? roleRows.map(([label, color]) => (
-                  <Box key={label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <Box style={{ width: 9, height: 3, borderRadius: 2, background: color }} />
-                    <Text as="span" mono size={10} tone="muted">{label}</Text>
-                  </Box>
-                ))
-              : ACTIVITY_ROWS_L0.map((a) => (
-                  <Text key={a} as="div" mono size={10} tone="muted">{ACTIVITY_META[a].label}</Text>
-                ))}
+            {roleRows.map(([label, color]) => (
+              <Box key={label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <Box style={{ width: 9, height: 3, borderRadius: 2, background: color }} />
+                <Text as="span" mono size={10} tone="muted">{label}</Text>
+              </Box>
+            ))}
           </Box>
         </Box>
         <Box>
