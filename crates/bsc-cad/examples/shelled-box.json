@@ -1,0 +1,5 @@
+{
+  "op": "shell",
+  "thickness": 2,
+  "node": { "op": "box", "size": [30, 30, 30] }
+}

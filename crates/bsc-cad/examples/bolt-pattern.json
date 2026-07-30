@@ -1,0 +1,16 @@
+{
+  "op": "difference",
+  "base": { "op": "box", "size": [50, 15, 4] },
+  "tools": [
+    {
+      "op": "translate",
+      "by": [-20, 0, 0],
+      "node": {
+        "op": "linear_pattern",
+        "by": [10, 0, 0],
+        "count": 5,
+        "node": { "op": "cylinder", "r": 2, "h": 10 }
+      }
+    }
+  ]
+}
