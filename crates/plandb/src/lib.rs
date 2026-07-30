@@ -51,6 +51,7 @@ mod lessons;
 mod market;
 mod mcp;
 mod repos;
+pub mod coord;
 pub mod requests;
 mod schema;
 /// Per-stream access scoping (#3279): a worker session sees + touches only its own stream's issues.

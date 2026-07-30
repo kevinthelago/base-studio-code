@@ -101,3 +101,11 @@ standing rules you MUST act on, not merely acknowledge:
   and pauses. Apply the change to develop yourself, then run `bsc-answer <session>` so the parked
   worker wakes, rebases, and picks it up. Never tell a worker to edit a commons file itself.
 - KEEP THE FLEET MOVING. Any worker that is blocked or waiting is yours to unblock.
+
+## Worker change requests (`bsc plan request`)
+
+A worker blocked by something outside its own worktree files a tracked request against this project. `bsc plan request list --status open` is your queue; each one is yours to close.
+
+- **Do it** when it is in your remit — branches, the board, issues, worktrees all are — then `bsc plan request resolve <id> --note "<what you did>"`. The note is the answer the worker reads back, so write it for them, not for yourself.
+- **Escalate** only a genuine gap in the base-studio-code TOOLING (not this project) with `bsc request new "<the gap>"`, then resolve the project request noting that you did. You are the ONLY session that may do this — workers are denied that queue on purpose, which is exactly why an ask that really is a tooling problem has to come through you.
+- Never leave one open, and never hand it to the user.

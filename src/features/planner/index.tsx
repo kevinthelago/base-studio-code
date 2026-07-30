@@ -51,7 +51,9 @@ export { addDbProject } from "./list/projectsDbBridge";
 export { listDbProjects, type DbProject } from "./list/projectsDbBridge";
 export {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
-  briefKey, pendingBriefPrompt, DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
+  briefKey, pendingBriefPrompt,
+  requestKey,
+  pendingRequestPrompt, DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
 } from "./fleet/directorDrive";
 
 // Design Studio (#move-to-planner) — a single-page workspace folded in as the "designs" Planner tab.

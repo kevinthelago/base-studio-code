@@ -51,6 +51,16 @@ export function parseCoordLine(line: string): CoordEvent | null {
       const target = (rest[0] ?? "").trim();
       return target ? { type: "answer", target, answer: rest[1] ?? "", at } : null;
     }
+    // #4001: `bsc plan request new|resolve` emit these from the CLI (not a shell helper) because the
+    // notification has to carry the id the store just assigned. payload = <id> TAB <text|note>.
+    case "request": {
+      const id = (rest[0] ?? "").trim();
+      return id ? { type: "request", session, id, text: rest[1] ?? "", at } : null;
+    }
+    case "request-resolved": {
+      const id = (rest[0] ?? "").trim();
+      return id ? { type: "request-resolved", id, at } : null;
+    }
     case "issue": {
       // payload = <title> \t <body?> \t <suggested?> \t <id?>
       const title = (rest[0] ?? "").trim();
@@ -139,7 +149,7 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
     case "woke": {
       // `maintaining` is carried (not cleared): once a worker enters maintenance it STAYS a
       // maintenance worker across dispatches — auto-end permanently skips it (that IS the mode).
-      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session), issues: s.issues, maintaining: s.maintaining, briefs: s.briefs, commissions: s.commissions }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
+      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session), issues: s.issues, maintaining: s.maintaining, briefs: s.briefs, commissions: s.commissions, requests: s.requests }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "ask": {
       const asking = [
@@ -167,6 +177,23 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
           waiting: s.waiting.filter((w) => w.session !== e.target),
         },
         woken: [], ready: false, stalled: [], answered, assigned: [],
+      };
+    }
+    case "request": {
+      // Dedup by id so a replayed log doesn't double it — the same guard `issue` uses.
+      const requests = [
+        ...s.requests.filter((r) => r.id !== e.id),
+        { id: e.id, from: e.session, text: e.text, at: e.at },
+      ];
+      return { state: { ...s, requests }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
+    }
+    case "request-resolved": {
+      // The director answered it. Removing it here is what lets the pump's surfaced-once guard be
+      // PRUNED, so a later re-file of the same ask surfaces again rather than being suppressed
+      // forever by a stale key.
+      return {
+        state: { ...s, requests: s.requests.filter((r) => r.id !== e.id) },
+        woken: [], ready: false, stalled: [], answered: [], assigned: [],
       };
     }
     case "issue": {

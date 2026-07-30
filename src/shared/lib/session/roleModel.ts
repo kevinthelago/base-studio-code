@@ -292,7 +292,16 @@ export const TOOLING_REQUEST_COMMAND = "bsc request";
  * run `bsc`.
  */
 export function mayFileToolingRequest(role: SessionRole | null | undefined): boolean {
-  if (role === "debugger") return true;
+  // The two roles named explicitly, because neither has a `RESTRICTED_ROLE_COMMANDS` entry to derive
+  // from — they are not confined roles:
+  //   · `debugger` is the queue's CONSUMER (reads, claims, resolves); it launches full-capability.
+  //   · `director` is the sanctioned ESCALATION point (#4001). A worker files a PROJECT request
+  //     (`bsc plan request`); when the director judges one to be a genuine tooling gap rather than
+  //     something it can fix, it forwards it here. That promotion is the whole reason the project lane
+  //     can stay closed to workers — and it is safe because the director is `code: none`, so it can
+  //     ASK for an app change but never make one. #4000 denied it as well; this is the deliberate
+  //     refinement that makes the two-lane design actually work end to end.
+  if (role === "debugger" || role === "director") return true;
   return restrictedRoleCommands(role).some((c) => c.startsWith(TOOLING_REQUEST_COMMAND));
 }
 
