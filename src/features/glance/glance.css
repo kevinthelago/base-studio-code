@@ -8,7 +8,7 @@
    (`shared/ui/kit/glanceNodeAnimations.ts` → compiled by the kit-motion engine, injected by
    `glanceNodeMotion.ts`). It lived here as a raw keyframe, which is exactly why the designer
    could not reach it. `glance-softpulse` above stays: it drives the health DOT and the activity
-   WORD, which are not the node component. */50% { opacity: .78; } }
+   WORD, which are not the node component. */
 
 /* The fenced UI-KIT band (#3007) — the kit nodes lifted into their own zone across the top of the graph,
    mirroring the Design Studio composition swimlanes (.ds-lane-*). The fill/stroke colour (KIT_COLOR) is
