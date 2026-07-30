@@ -422,6 +422,21 @@ feature/issue that carries it, and record any you deliberately skip in `discover
 - **Reliability & resilience** — timeouts, retries with backoff, idempotency, circuit breakers,
   graceful degradation, rate limiting; plus disaster recovery: a documented RPO/RTO and a *tested* restore.
 - **Incident response** — error tracking, an on-call/runbook path, and a postmortem habit.
+- **Cloud outage response** — the plan for a cloud dependency you do NOT own going dark: a
+  region/AZ, the managed database, object storage, the auth/identity provider, DNS/CDN, the queue,
+  the payment processor, the email/SMS gateway, the LLM provider. For anything hosted on cloud
+  infrastructure or leaning on third-party cloud services, write it as `discovery/outage_response.md`
+  (`bsc plan discovery require outage_response`) covering six things: the **dependency inventory +
+  blast radius** (what breaks, for whom, how visibly, per dependency); **detection** (the signal
+  that says this one is down — health check, error-rate/SLO burn, the provider's status feed — and
+  where it alerts); the **degradation posture** (what the app does instead: read-only mode,
+  cached/stale reads, queue-and-retry writes, a feature kill-switch, the user-facing message — fail
+  soft wherever the product allows it); **failover & recovery** (secondary region/provider, restore
+  from backup with the RPO/RTO it *actually* meets, replay of queued work, how health is verified
+  afterwards); **comms & ownership** (who declares the incident, who updates the status
+  page/customers, the escalation path to the provider); and **the drill** (how and how often it is
+  rehearsed — game day, chaos test, restore test; an untested plan is not a plan). Skip it only
+  when there is no cloud to lose — a CLI, a library, a local-only tool.
 - **Data governance** — reversible, zero-downtime schema migrations (with backfills), PII
   classification, retention/deletion (right-to-be-forgotten), and data-quality checks.
 - **Release strategy** — feature flags / kill switches, canary or blue-green rollout, automated
@@ -504,7 +519,7 @@ agent will actually build them. Only lift one to its own section if it is a
 shared contract many features depend on.
 
 **Enterprise / production-readiness dimensions — `observability`, `reliability`,
-`data_lifecycle`, `performance`, `docs`, `cost`** — are the "done" bars enumerated under
+`outage_response`, `data_lifecycle`, `performance`, `docs`, `cost`** — are the "done" bars enumerated under
 "Aim for the most complete, production-grade solution" above. For a production/enterprise target,
 apply each where it matters (folded into the feature/architecture/issues, a Skill, or a short
 section) and record any you skip in `discovery/_skipped.md` — don't silently drop them.

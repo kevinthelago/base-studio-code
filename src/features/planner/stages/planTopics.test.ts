@@ -11,6 +11,7 @@ import {
   FEATURES_KEY,
 } from "./planTopics";
 import { FLEET_KEY } from "../fleet/planFleet";
+import discoveryStage from "@data/stages/discovery.json";
 
 describe("parseTopicKey", () => {
   it("treats a bare key as a project-tier section", () => {
@@ -136,6 +137,22 @@ describe("KNOWN_DIMENSIONS", () => {
     const keys = KNOWN_DIMENSIONS.map(d => d.key);
     expect(new Set(keys).size).toBe(keys.length);
   });
+
+  it("carries the cloud outage response dimension right after reliability (#3989)", () => {
+    const keys = KNOWN_DIMENSIONS.map(d => d.key);
+    expect(keys).toContain("outage_response");
+    // It reads as the resilience pair to `reliability` — keep them adjacent in the checklist so the
+    // planner walks them together.
+    expect(keys.indexOf("outage_response")).toBe(keys.indexOf("reliability") + 1);
+    expect(titleForTopic("outage_response")).toBe("Cloud outage response");
+  });
+
+  it("does NOT gate the stage on the outage plan — a CLI has no cloud to lose (#3989)", () => {
+    // The baseline required-set is the same file's `requires` array; outage_response is required
+    // PER PROJECT via `bsc plan discovery require`, never for everyone.
+    expect(discoveryStage.requires).not.toContain("outage_response");
+    expect(discoveryStage.requires).toContain("goal"); // sanity: we read the right array
+  });
 });
 
 describe("canonicalTopicKey", () => {
@@ -151,6 +168,15 @@ describe("canonicalTopicKey", () => {
     expect(canonicalTopicKey("Data model")).toBe("schema");
     expect(canonicalTopicKey("Users & personas")).toBe("users");
   });
+  it("lands every way the planner titles the outage plan on one key (#3989)", () => {
+    for (const variant of [
+      "Cloud outage response", "cloud-outage-response", "Outage response",
+      "Cloud outage response plan", "Outage_response_plan", "Cloud outage", "Outage",
+    ]) {
+      expect(canonicalTopicKey(variant)).toBe("outage_response");
+    }
+  });
+
   it("passes canonical keys and unknown custom topics through unchanged", () => {
     expect(canonicalTopicKey("stack")).toBe("stack");
     expect(canonicalTopicKey("goal")).toBe("goal");
