@@ -89,4 +89,14 @@ describe("the lifecycle vocabulary is written down three times — keep them in 
       expect(directive, `discovery.json must offer \`${l}\``).toContain(`\`${l}\``);
     }
   });
+
+  it("keeps `harden` and `transform` from overlapping (#4064)", () => {
+    // `studio-code` was classified `harden` — a restructure, not a security pass. The old wording,
+    // "improve an existing codebase in place", covered almost any work on an existing repo, so it
+    // competed with `transform` and won on anything short of a full rewrite. The directive must now
+    // say what `harden` actually is and which way to break the tie.
+    expect(directive).toMatch(/SECURITY \/ ROBUSTNESS \/ RELIABILITY pass/);
+    expect(directive, "the tie-break must be explicit").toMatch(/could read as both `transform` and `harden`/);
+    expect(directive).not.toContain("improve an existing codebase in place");
+  });
 });
