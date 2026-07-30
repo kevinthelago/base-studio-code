@@ -52,6 +52,7 @@ import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "./lib/useProjectFleet";
 import { useFleetHeld } from "./lib/useFleetHeld";
 import "./glance.css";
+import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
 
 // The agent-health watchdog (#2541) polls the coord log on a slow cadence — a stall is a minutes-scale
 // event, so per-second rebuilds aren't worth it.
@@ -518,7 +519,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     }
     if (!canResume) return;
     const paneId = fleetPaneId(drill, nodeId);
-    if (livePaneIds.has(paneId)) { jumpToConsolePane(paneId); return; }
+    // #3998: `livePaneIds` is TAB MEMBERSHIP (a session cell exists), not "an agent is running" — see
+    // `glanceFleet.ts`. Jumping was therefore the whole of Resume for any pane still in its tab, which
+    // is every pane whose agent had quietly exited to a `$` prompt. Nothing remounts such a pane
+    // either (TerminalView is portal-hosted by paneId), so this is the only place that can revive it.
+    // Fire-and-forget: the probe decides whether anything is needed, and navigation shouldn't wait.
+    if (livePaneIds.has(paneId)) { void ensureClaudeRunning([paneId]); jumpToConsolePane(paneId); return; }
     setResumeMsg(null);
     if (resumePaneSession(paneId)) { jumpToConsolePane(paneId); return; }
     setResuming(true);
