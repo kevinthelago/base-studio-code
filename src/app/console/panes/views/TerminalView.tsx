@@ -608,8 +608,22 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // also the primary trigger that opens a pane first mounted while hidden:
     // the display:none → grid transition fires the observer with real
     // dimensions, so openIfReady() runs with correct cell metrics.
+    // DEBOUNCED (#3996), mirroring `useScreenSession` — the planner/studio path this one predates.
+    // Two reasons, and the console needed both:
+    //   • SIZE. A grid relayout, a dock entrance grow, or a divider drag walks the container through
+    //     many intermediate sizes. Fitting on every callback means the terminal can settle on a
+    //     measurement taken mid-flight; if the container's last transient happens to equal its final
+    //     size the observer never fires again, and nothing ever corrects it. Coalescing measures the
+    //     SETTLED box. This also gates the OPEN, whose own fit(0) establishes the cell metrics — so a
+    //     pane can no longer be opened against a size it is about to leave.
+    //   • SAFETY (#2832). `fit()` reflows the buffer; doing that every frame while the PTY streams
+    //     races xterm's async write loop and throws "Cannot set properties of undefined (setting
+    //     'isWrapped')" from a later write — uncaught, and it takes the page down.
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     const ro = new ResizeObserver(() => {
-      if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (destroyed || el.offsetWidth === 0 || el.offsetHeight === 0) return;
         if (!openIfReady()) return;   // still couldn't open (raced back to 0 size)
         // Opened-or-already-open: fit to the current size and tell the backend.
         // (When this call is the one that opened, openIfReady already fit once;
@@ -622,12 +636,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           log.info(`console[${paneId}] refit · box=${el.clientWidth}x${el.clientHeight}px · grid=${before} → ${after}`);
         }
         fireInvoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }, console.error);
-      }
+        term.refresh?.(0, term.rows - 1); // repaint the buffer cleanly at the settled size (#2837)
+      }, 90);
     });
     ro.observe(el);
 
     return () => {
       destroyed = true;
+      clearTimeout(resizeTimer); // #3996: a pending refit must not fire against a disposed terminal
       if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
       if (nudgeTimerRef.current) { clearTimeout(nudgeTimerRef.current); nudgeTimerRef.current = null; }
       if (autoNudgeTimerRef.current) { clearTimeout(autoNudgeTimerRef.current); autoNudgeTimerRef.current = null; }
