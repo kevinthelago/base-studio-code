@@ -407,9 +407,15 @@ describe("nodeStateWord (#3957)", () => {
     expect(nodeStateWord(n("idle", "waiting"))).toBe(ACTIVITY_META.waiting.label);
   });
 
-  it("a deactivated node reads `off`, outranking any live status (#3239)", () => {
-    expect(nodeStateWord(n("healthy", "building", "off"))).toBe("off");
-    expect(nodeStateWord(n("error", "idle", "off"))).toBe("off");
+  it("a deactivated node keeps its own word — the DIMMING says it is off (#4034)", () => {
+    // #3239 spent the node's one word slot on "off". But a deactivated node is already dimmed in place
+    // (`offOpacity`), so the word was redundant — and it cost the more useful fact: a node that was off
+    // AND complete read "off" and lost the completion entirely. The dimming carries deactivation now;
+    // the word carries what the node IS.
+    expect(nodeStateWord(n("healthy", "building", "off"))).toBe(ACTIVITY_META.building.label);
+    expect(nodeStateWord(n("healthy", "complete", "off"))).toBe(ACTIVITY_META.complete.label);
+    // A node that is off AND genuinely degraded still reports the fault — that outranks activity.
+    expect(nodeStateWord(n("error", "idle", "off"))).toBe(HEALTH_META.error.label);
   });
 
   it("a node degraded only by a DEPENDENCY keeps its own word", () => {

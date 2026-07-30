@@ -17,6 +17,7 @@
 // off → error → cycle → focus), the health rollup, push offsets. Those are graph CONCERNS, not node
 // presentation, and threading them out would have made this a worse component, not a more reusable
 // one. This owns the card's body: its states, its dot, its two label rows.
+import type React from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { GNode } from "./lib/glanceGraph";
@@ -65,7 +66,23 @@ export function GlanceNode(p: GlanceNodeProps) {
       data-node-state={p.state ?? undefined}
       style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${p.border}`,
         borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
-        boxShadow: p.boxShadow, transition: "border-color .15s, box-shadow .15s" }}>
+        boxShadow: p.boxShadow, transition: "border-color .15s, box-shadow .15s",
+        // #4034 — the glow reads its colour from HERE, so one animation serves every health state and
+        // retuning the palette never touches the motion. `position/overflow` keep the wash inside the
+        // node's rounded corners.
+        ["--node-health" as string]: p.healthColor,
+        position: "relative", overflow: "hidden" } as React.CSSProperties}>
+      {/* #4034 — the health glow: a radial wash at the top-left, pulsing + growing, animated by the
+          authored `health-glow` kit animation. Suppressed on a deactivated node, which is meant to read
+          calm — the one place the node is deliberately inert. `pointer-events: none` so it never eats a
+          click meant for the node. */}
+      {!p.isOff && (
+        <Box data-node-glow aria-hidden style={{
+          position: "absolute", top: 0, left: 0, width: 120, height: 120, pointerEvents: "none",
+          transformOrigin: "0% 0%", borderRadius: "inherit",
+          background: "radial-gradient(circle at 0% 0%, var(--node-health) 0%, transparent 68%)",
+        }} />
+      )}
       <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
         {/* Axis-1 health dot. Error pulses at the ORIGIN; an inherited dot is dimmed (no pulse). */}
         <Box title={`${n.rollupHealth}${p.inherited ? " (downstream)" : ""}`}

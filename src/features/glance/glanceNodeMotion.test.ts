@@ -28,8 +28,10 @@ describe("glance-node motion is authored DATA (#4032)", () => {
   it("has NO complete animation — its stillness is the statement", () => {
     // building BREATHES, attention RINGS, complete is STILL. The absence is deliberate, so a designer
     // adding one is making a change rather than filling a gap.
-    expect(GLANCE_NODE_ANIMATIONS.map((a) => a.name)).toEqual(["building", "attention"]);
-    expect(GLANCE_NODE_MOTION_CSS).not.toContain("complete");
+    // Asserted as a PROPERTY, not an exact list: the list grew in #4034 (the health glow), and pinning
+    // it meant a green test failing for an unrelated addition while saying nothing about `complete`.
+    expect(GLANCE_NODE_ANIMATIONS.some((a) => a.name === "complete")).toBe(false);
+    expect(GLANCE_NODE_MOTION_CSS).not.toContain('[data-node-state="complete"]');
   });
 
   it("keeps the breath shallower and slower than the status dot", () => {
@@ -51,5 +53,35 @@ describe("glance-node motion is authored DATA (#4032)", () => {
     const els = doc.querySelectorAll("#bsc-glance-node-animations");
     expect(els).toHaveLength(1);
     expect(els[0].textContent).toBe(GLANCE_NODE_MOTION_CSS);
+  });
+});
+
+describe("the health glow (#4034)", () => {
+  it("is authored data, not another hand-rolled keyframe", () => {
+    const glow = GLANCE_NODE_ANIMATIONS.find((a) => a.name === "health-glow");
+    expect(glow).toBeDefined();
+    expect(glow!.trigger).toBe("always");
+  });
+
+  it("is NOT state-scoped — one definition serves every health state", () => {
+    // Its colour comes from `--node-health`, a custom property the node sets from its own health. A
+    // per-state animation would mean N near-identical definitions and a palette change touching motion.
+    const glow = GLANCE_NODE_ANIMATIONS.find((a) => a.name === "health-glow")!;
+    expect(glow.selector).toBe("[data-node-glow]");
+    expect(glow.selector).not.toContain("data-node-state");
+  });
+
+  it("animates only compositor-friendly properties", () => {
+    // This is the one animation that may run on EVERY node in a large graph at once. Animating the
+    // gradient itself (or any layout property) would repaint each frame.
+    const glow = GLANCE_NODE_ANIMATIONS.find((a) => a.name === "health-glow")!;
+    const props = new Set(Object.values(glow.keyframes).flatMap((d) => Object.keys(d)));
+    expect([...props].sort()).toEqual(["opacity", "transform"]);
+  });
+
+  it("stays subtle — it is ambient, not an alert", () => {
+    const glow = GLANCE_NODE_ANIMATIONS.find((a) => a.name === "health-glow")!;
+    const peak = Number(glow.keyframes["50%"].opacity);
+    expect(peak).toBeLessThan(0.5);
   });
 });
