@@ -381,8 +381,90 @@ pub(crate) fn cmd_discovery(args: &Args) -> Result<(), String> {
             emit_json_or_lines(args.json, &required, "(no required discovery topics)", |_, t| t.clone());
             Ok(())
         }
+        // `discovery integration set|list|remove` (#4024) — the integrations the user declared during
+        // Discovery, as DATA. Nested under `discovery` deliberately: this IS discovery output, and the
+        // top-level `bsc plan integration` noun is already taken by the DEPRECATED connector alias
+        // (#1721 → `bsc data connector`). Two different things — a connector MANIFEST is how you talk to
+        // a system; this is which systems the project needs and why — so they must not share a name.
+        "integration" => cmd_discovery_integration(args, &s),
         other => Err(unknown_sub(args, "discovery", other)),
     }
+}
+
+/// The `discovery integration` sub-noun. Writes take JSON on stdin (one object or an array), matching
+/// every other structured write in this CLI, so declaring an integration completely is ONE call.
+fn cmd_discovery_integration(args: &Args, s: &crate::Store) -> Result<(), String> {
+    match args.positional.get(2).map(String::as_str).unwrap_or("") {
+        "set" => {
+            let v: serde_json::Value = bsc_sqlite_util::read_stdin_json_one("integration JSON")?;
+            let rows: Vec<serde_json::Value> = match &v {
+                serde_json::Value::Array(a) => a.clone(),
+                other => vec![other.clone()],
+            };
+            // Validate the WHOLE batch before anything persists, so a typo in item 3 cannot leave a
+            // half-declared set that reads as complete.
+            let parsed: Vec<crate::PlanIntegration> = rows
+                .iter()
+                .map(parse_integration)
+                .collect::<Result<_, _>>()?;
+            for i in &parsed {
+                s.integration_set(i).map_err(|e| e.to_string())?;
+            }
+            let ids: Vec<String> = parsed.iter().map(|i| i.id.clone()).collect();
+            emit_set_result(args.json, &ids, "declared");
+            Ok(())
+        }
+        "list" => {
+            let direction = args.direction.as_deref();
+            if let Some(d) = direction {
+                check_direction(d)?;
+            }
+            let rows = s.integration_list(direction).map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &rows, "(no integrations declared)", |_, i| {
+                let name = if i.name.is_empty() { i.id.clone() } else { format!("{} ({})", i.name, i.id) };
+                let purpose = i.purpose.as_deref().unwrap_or("");
+                format!("{:<8} {name}{}{purpose}", i.direction, if purpose.is_empty() { "" } else { " — " })
+            });
+            Ok(())
+        }
+        "remove" => {
+            let id = args
+                .positional
+                .get(3)
+                .ok_or("usage: bsc plan discovery integration remove <id>")?;
+            s.integration_remove(id).map_err(|e| e.to_string())?;
+            emit_set_result(args.json, &[id], "removed");
+            Ok(())
+        }
+        other => Err(unknown_sub(args, "discovery integration", other)),
+    }
+}
+
+/// Parse one declared-integration JSON object. `id` is required (it is what both downstream surfaces
+/// key off); `direction` must be one of [`crate::DIRECTIONS`] — a typo would file the integration in a
+/// bucket nothing reads, which is worse than a loud reject.
+fn parse_integration(v: &serde_json::Value) -> Result<crate::PlanIntegration, String> {
+    let str_of = |k: &str| v.get(k).and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty());
+    let id = str_of("id").ok_or("integration JSON needs a non-empty \"id\"")?;
+    let direction = str_of("direction").unwrap_or(crate::DEFAULT_DIRECTION);
+    check_direction(direction)?;
+    Ok(crate::PlanIntegration {
+        id: id.to_string(),
+        name: str_of("name").unwrap_or_default().to_string(),
+        direction: direction.to_string(),
+        docs: str_of("docs").map(str::to_string),
+        base_url: str_of("baseUrl").or_else(|| str_of("base_url")).map(str::to_string),
+        auth: str_of("auth").map(str::to_string),
+        purpose: str_of("purpose").map(str::to_string),
+    })
+}
+
+/// Reject an unknown `direction` by name, listing the two that exist.
+fn check_direction(d: &str) -> Result<(), String> {
+    if crate::DIRECTIONS.contains(&d) {
+        return Ok(());
+    }
+    Err(format!("unknown direction '{d}' — use one of: {}", crate::DIRECTIONS.join(" | ")))
 }
 
 /// `confirm` — the durable stage-confirmation set (#2256). `add <stage> [<fingerprint>]` confirms a
@@ -705,4 +787,67 @@ fn request_id(args: &Args, verb: &str) -> Result<i64, String> {
         .ok_or_else(|| format!("usage: bsc plan request {verb} <id>"))?
         .parse::<i64>()
         .map_err(|_| format!("request id must be a number (usage: bsc plan request {verb} <id>)"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{check_direction, parse_integration};
+
+    /// #4024: `id` is what BOTH downstream surfaces key off — a row without one is unreachable, so it
+    /// must be a loud reject rather than a stored blank.
+    #[test]
+    fn an_integration_without_an_id_is_rejected() {
+        for bad in [serde_json::json!({}), serde_json::json!({ "id": "" }), serde_json::json!({ "id": "   " })] {
+            assert!(parse_integration(&bad).is_err(), "{bad} must be rejected");
+        }
+    }
+
+    /// A mistyped direction would file the integration in a bucket nothing reads — invisible to both
+    /// the Source pane and the Integrator. Reject it, and name the two that exist.
+    #[test]
+    fn an_unknown_direction_is_rejected_and_lists_the_valid_ones() {
+        let err = parse_integration(&serde_json::json!({ "id": "x", "direction": "inbound" })).unwrap_err();
+        assert!(err.contains("inbound"), "the error quotes what was given: {err}");
+        assert!(err.contains("source") && err.contains("runtime"), "and lists both valid values: {err}");
+        assert!(check_direction("source").is_ok() && check_direction("runtime").is_ok());
+    }
+
+    #[test]
+    fn an_omitted_direction_defaults_to_runtime() {
+        let i = parse_integration(&serde_json::json!({ "id": "stripe" })).unwrap();
+        assert_eq!(i.direction, crate::DEFAULT_DIRECTION);
+        assert_eq!(i.direction, "runtime");
+    }
+
+    /// The base URL arrives as `baseUrl` from an agent writing JSON, but `base_url` is the field name
+    /// in the store and in every Rust struct around it. Accept both rather than silently dropping the
+    /// value — a dropped base URL means `bsc data connector probe` has nothing to start from.
+    #[test]
+    fn accepts_both_camel_and_snake_base_url() {
+        let camel = parse_integration(&serde_json::json!({ "id": "a", "baseUrl": "https://x" })).unwrap();
+        let snake = parse_integration(&serde_json::json!({ "id": "b", "base_url": "https://x" })).unwrap();
+        assert_eq!(camel.base_url.as_deref(), Some("https://x"));
+        assert_eq!(snake.base_url.as_deref(), Some("https://x"));
+    }
+
+    #[test]
+    fn parses_a_full_declaration_and_trims_every_field() {
+        let i = parse_integration(&serde_json::json!({
+            "id": "  salesforce  ", "name": " Salesforce ", "direction": "source",
+            "docs": " https://developer.salesforce.com ", "auth": " OAuth2 ", "purpose": " migrate accounts ",
+        }))
+        .unwrap();
+        assert_eq!((i.id.as_str(), i.name.as_str(), i.direction.as_str()), ("salesforce", "Salesforce", "source"));
+        assert_eq!(i.docs.as_deref(), Some("https://developer.salesforce.com"));
+        assert_eq!(i.purpose.as_deref(), Some("migrate accounts"));
+    }
+
+    /// An empty string must read as ABSENT, not as a stored blank — `""` for `docs` would send the
+    /// Integrator to a documentation URL that does not exist.
+    #[test]
+    fn blank_optional_fields_are_absent_not_empty() {
+        let i = parse_integration(&serde_json::json!({ "id": "a", "docs": "  ", "purpose": "" })).unwrap();
+        assert_eq!(i.docs, None);
+        assert_eq!(i.purpose, None);
+    }
 }

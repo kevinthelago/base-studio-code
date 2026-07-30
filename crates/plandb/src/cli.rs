@@ -309,6 +309,21 @@ USAGE:
   bsc plan discovery unrequire <topic>...   # drop topic(s) from the required set
   bsc plan discovery list                   # show the required topic set
 
+  bsc plan discovery integration set        # declare integration(s) from JSON on stdin (object or array)
+  bsc plan discovery integration list [--direction source|runtime]
+  bsc plan discovery integration remove <id>
+
+An INTEGRATION is an existing application or API this project integrates with, declared during the
+Discovery `integrations` topic. `direction` is `source` (data migrates FROM it — this is what the
+Source pane offers) or `runtime` (the built app talks to it while running); it cannot be inferred
+later, so it is asked for, not guessed. Fields: id (required) · name · direction · docs · baseUrl ·
+auth (the SCHEME in prose, never a secret) · purpose.
+  e.g.  echo '{\"id\":\"stripe\",\"name\":\"Stripe\",\"direction\":\"runtime\",
+              \"docs\":\"https://docs.stripe.com/api\",\"purpose\":\"charge cards\"}' \\
+          | bsc plan discovery integration set
+NOT `bsc plan integration` — that is the DEPRECATED connector-manifest alias (#1721 → `bsc data
+connector`). A manifest is HOW to talk to a system; this is WHICH systems the project needs and why.
+
 Prose lives in discovery/<topic>.md; these files gate on GENERATION (written, not confirmed).",
     },
     CmdDoc {
@@ -478,6 +493,8 @@ struct Args {
     command: Option<String>,
     schedule: Option<String>,
     description: Option<String>,
+    /// `discovery integration list --direction source|runtime` (#4024) — the declared-integration filter.
+    direction: Option<String>,
     /// Startup-script fields (#2010) — `startup add <repo> --mode dev|triage --path <relpath>`.
     mode: Option<String>,
     path: Option<String>,
@@ -500,7 +517,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let mut a = Args {
         prog: String::new(), json: false, db: None, positional: Vec::new(), status: None, stream: None,
         rule: None, cause: None, from: None, note: None, command: None, schedule: None, description: None,
-        mode: None, path: None,
+        mode: None, path: None, direction: None,
         full: false, fields: None, limit: None,
         since: None, pretty: false, force: false,
     };
@@ -517,6 +534,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--note" => a.note = Some(it.next().ok_or("--note needs a value")?),
             "--command" => a.command = Some(it.next().ok_or("--command needs a value")?),
             "--mode" => a.mode = Some(it.next().ok_or("--mode needs a value")?),
+            "--direction" => a.direction = Some(it.next().ok_or("--direction needs a value")?),
             "--path" => a.path = Some(it.next().ok_or("--path needs a value")?),
             "--schedule" => a.schedule = Some(it.next().ok_or("--schedule needs a value")?),
             "--description" => a.description = Some(it.next().ok_or("--description needs a value")?),
