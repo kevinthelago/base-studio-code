@@ -282,7 +282,7 @@ describe("buildOrgFleetData cyclical archetype (#2578 — iteration loops)", () 
 });
 
 describe("withPreviewNode (#2623 — the finished-app preview node)", () => {
-  const base = { rawNodes: [{ id: "api", role: "service" as const, health: "idle" as const, activity: "idle" as const }], rawEdges: [], sample: false };
+  const base = { rawNodes: [{ id: "api", role: "service" as const, health: "off" as const, activity: "idle" as const }], rawEdges: [], sample: false };
 
   it("adds a distinct preview node ONLY when the project is complete", () => {
     expect(withPreviewNode(base, false).rawNodes.some((n) => n.preview)).toBe(false); // still building → no node

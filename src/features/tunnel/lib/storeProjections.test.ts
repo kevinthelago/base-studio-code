@@ -33,7 +33,7 @@ const fleet: FleetPlan = {
 describe("buildGlancePayload", () => {
   const projects: ProjectLite[] = [
     { id: "demo", name: "Demo", role: "service", health: "healthy", activity: "building" },
-    { id: "other", name: "Other", role: "client", health: "idle", activity: "building" },
+    { id: "other", name: "Other", role: "client", health: "off", activity: "building" },
   ];
   const personas = [{ id: "backend-dev", role: "worker" }, { id: "lead", role: "director" }];
 
@@ -48,7 +48,7 @@ describe("buildGlancePayload", () => {
     });
     expect(out.projects[0]).toMatchObject({ id: "demo", health: "error", reason: "boom", faults: 3 });
     expect(out.projects[1].faults).toBeUndefined();
-    expect(out.projects[1].health).toBe("idle"); // no fault → untouched
+    expect(out.projects[1].health).toBe("off"); // no fault → untouched
     expect(out.links).toHaveLength(1);
     expect(out.drill).toBe("demo");
     // The L1 fleet is DERIVED from the fleets map at the drilled key.
