@@ -21,6 +21,10 @@ export interface ReaperPane {
   focused: boolean;
   /** Already dormant (reaped) — skip; nothing to reap twice. */
   dormant: boolean;
+  /** DECLARED maintenance (#4025): this worker emitted `bsc-maintain` — everything it owns is done
+   *  and it is standing by for the director to dispatch into. Distinct from ordinary idling, which is
+   *  why it gets its own rule below rather than a shorter `workerIdleMs`. */
+  maintaining?: boolean;
 }
 
 export interface ReaperConfig {
@@ -67,6 +71,19 @@ export function isReapable(pane: ReaperPane, cfg: ReaperConfig, nowMs: number): 
   if (pane.dormant) return false;       // already reaped
   if (pane.focused) return false;       // the user is watching it
   if (pane.status === "run") return false; // mid-turn — never interrupt active work
+  // DECLARED MAINTENANCE (#4025) — reaped IMMEDIATELY, with no threshold.
+  //
+  // `workerIdleMs` is null by default because a worker "idles legitimately (parked on a dep / the
+  // director)" — you cannot tell that apart from a worker that is done, so the safe answer was to reap
+  // neither. Maintenance removes the ambiguity: the worker has SAID everything it owns is complete and
+  // it is standing by. That is the one idle state where the PTY holds nothing worth keeping — measured
+  // at ~413 MB per parked `claude.exe`, 13.7 GB across 34 of them.
+  //
+  // Deliberately NOT expressed as a shorter `workerIdleMs`: that would also reap a worker parked on a
+  // real question, which is exactly the case the null default protects. And no grace period — a
+  // dispatch relaunches with the assignment baked in (`actuateWake`), so a reaped maintainer is
+  // reachable, which is what makes immediate reaping free rather than a trade.
+  if (pane.maintaining) return true;
   const threshold = thresholdFor(pane.role, cfg);
   if (threshold === null) return false; // this role is never reaped under the config
   return nowMs - pane.lastActivityMs >= threshold;

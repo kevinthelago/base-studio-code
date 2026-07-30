@@ -11,7 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "@/shared/lib/session/checkpoint";
 import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, findProjectTabIdx, worktreeSlug } from "@/shared/lib/core/projectPaths";
-import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId } from "@/app/console/lib/paneIdentity";
+import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
 import { clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/paneStatus";
 import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
 import { resolveDirectorDrive } from "@/features/planner/fleet/directorDrive";
@@ -120,17 +120,26 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
       setGithubBoardTab: (t) => set({ githubBoardTab: t }),
       closeGithubBoard: () => set({ githubBoardOpen: false }),
       wakePane: (paneId, prompt) => {
-        const m = /^t(\d+)p\d+$/.exec(paneId);
-        if (!m) return false;
-        const tabIdx = Number(m[1]);
         let ok = false;
         set((st) => {
-          if (tabIdx < 0 || tabIdx >= st.tabs.length || st.disabledPanes[paneId]) return {};
+          // #4025: resolve the owning tab by IDENTITY, as `resumePaneSession` already does. This used
+          // to parse `^t(\d+)p\d+$` out of the pane id — the positional scheme pane identity replaced.
+          // Measured on the live coord log: 0 positional ids, 273 identity ids. So it returned false
+          // for EVERY session, and since `actuateWake` kills the PTY first, the inbox Wake button
+          // killed a parked worker and never brought it back (skipping the `woke` event too, so the
+          // log did not even record it).
+          const owner = findPaneOwnerTab(st.tabs, paneId);
+          if (!owner || st.disabledPanes[paneId]) return {};
           ok = true;
           return {
             paneStartupPromptText: setMapEntry(st.paneStartupPromptText, paneId, prompt),
             paneContinue: setMapEntry(st.paneContinue, paneId, false),
-            tabs: st.tabs.map((t, i) => (i === tabIdx ? { ...t, runId: (t.runId ?? 0) + 1 } : t)),
+            // A reaped/dormant pane renders the DormantConsole PLACEHOLDER, not a terminal — so the
+            // runId bump alone would remount a card with no PTY behind it and the baked prompt would
+            // never run. Clearing it is what lets a wake reach a session that was reclaimed.
+            dormantPanes: deleteMapEntry(st.dormantPanes, paneId),
+            endedPanes: deleteMapEntry(st.endedPanes, paneId),
+            tabs: st.tabs.map((t, i) => (i === owner.tabIdx ? { ...t, runId: (t.runId ?? 0) + 1 } : t)),
           };
         });
         return ok;

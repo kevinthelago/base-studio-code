@@ -29,6 +29,7 @@ export function useIdleReaper(): void {
       lastActivityMs: s.paneLastActivity[paneId] ?? now,
       focused: paneId === focusedKey,
       dormant: !!s.dormantPanes[paneId],
+      maintaining: !!s.paneMaintaining[paneId],
     }));
     for (const paneId of panesToReap(panes, s.idleReaper, now)) {
       fireInvoke("pty_kill", { paneId });
