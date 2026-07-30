@@ -29,6 +29,10 @@ import type { GRole, GCategory, GHealth, GActivity } from "./glanceGraph";
 import type { ProjectLite } from "./glanceData";
 import type { GlanceFault } from "./useGlanceFaults";
 import { projectKeyOfSession } from "./agentStall";
+// #3966: the SAME durable-projects bridge the Projects page reads, so the two surfaces cannot
+// disagree about which local projects exist. Type-only + the reader; the bridge already degrades to
+// `null` when it is unreachable, which we treat as "keep the cache".
+import { listDbProjects, type DbProject } from "@/features/planner";
 
 // #2541 — GitHub board status NO LONGER drives a Glance node's status. The old `ghStatus` (open ⇒
 // planning, shipped ⇒ done) is gone; health + activity are derived from runtime signals only.
@@ -39,6 +43,39 @@ type DraftMap = Record<string, { title: string; pitch: string; createdAt: number
 
 /** Stable empty published set — a fresh `[]` each render would needlessly re-run the merge memo. */
 const NO_PUBLISHED: GhProject[] = [];
+
+/** Stable empty DB set — same memo-stability reason as {@link NO_PUBLISHED}. */
+const NO_DB_PROJECTS: DbProject[] = [];
+
+/**
+ * Union the durable projects DB into the store's draft map (#3966).
+ *
+ * `localDraftProjects` is a persisted CACHE, written by `addDraftProject` at creation time — and it is
+ * reset wholesale by `resetProjectData` and delete/rekey-scoped by `projectScopedMaps`. So a project
+ * that predates the map, survives a reset, or is created by a path that never calls `addDraftProject`
+ * is absent from it FOREVER, while `projects.db` still has the row and every other surface still shows
+ * it. That is how a triaged, openable project had no Glance node at all.
+ *
+ * The union direction mirrors `mergeDbDrafts` (the Projects page's equivalent), so the two surfaces
+ * agree by construction: only `drafted`/`planning` rows are drafts (anything further along arrives via
+ * the published side and would double-count), the CACHE wins on fields it has — it carries the curated
+ * axes the DB row has no column for — and the DB fills what the cache is missing, including whole rows.
+ *
+ * Pure + exported for direct unit testing, like {@link mergeGlanceProjects}.
+ */
+export function mergeDbIntoDrafts(drafts: DraftMap, dbRows: DbProject[]): DraftMap {
+  const out: DraftMap = { ...drafts };
+  for (const r of Array.isArray(dbRows) ? dbRows : []) {
+    if (r.state !== "drafted" && r.state !== "planning") continue;
+    const ex = out[r.key];
+    out[r.key] = ex
+      // Keep every curated axis (role/category/health/activity/reason) — the DB row has none of them,
+      // so a spread-with-DB-second would silently strip a demo project's authored colouring.
+      ? { ...ex, title: ex.title || r.title, pitch: ex.pitch || r.pitch, createdAt: ex.createdAt || r.createdAt }
+      : { title: r.title, pitch: r.pitch, createdAt: r.createdAt || r.updatedAt || 0 };
+  }
+  return out;
+}
 
 /** A published hub from the LOCAL inventory (#2445): `key` is the hub FOLDER key — the same key the
  *  drill / `planFleet` / `fleetPaneStreams` resolve against — with the `.title` display name. */
@@ -52,6 +89,11 @@ interface LocalProjectWire { key: string; title: string; published: boolean }
 // nodes immediately, then refreshes. (The GitHub-side equivalent is the PERSISTED `githubState`
 // store field, #2446.)
 let localPublishedCache: LocalPublishedLite[] | null = null;
+
+// The last-fetched durable projects DB rows (#3966) — module-level for the same reason as
+// `localPublishedCache`: the Rail unmounts/remounts the Glance workspace on every leave/return, and a
+// revisit should render the full node set immediately rather than flashing a cache-only graph first.
+let dbProjectsCache: DbProject[] | null = null;
 
 /**
  * Merge local drafts with published GitHub projects into the Glance node set, keyed by the PLAN key so each
@@ -333,6 +375,22 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
     return () => { cancelled = true; };
   }, [enabled]);
 
+  // #3966: the durable project list, from the same bridge the Projects page uses. `listDbProjects`
+  // returns null on ANY failure (bridge absent, old bundled `bsc` without the verb, bad payload) — we
+  // keep the previous rows in that case, so a degraded environment falls back to the store cache
+  // exactly as before rather than dropping nodes.
+  const [dbProjects, setDbProjects] = useState<DbProject[]>(() => dbProjectsCache ?? NO_DB_PROJECTS);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    void listDbProjects().then((rows) => {
+      if (cancelled || !rows) return;
+      dbProjectsCache = rows;
+      setDbProjects(rows);
+    });
+    return () => { cancelled = true; };
+  }, [enabled]);
+
   // githubGraphql (not a raw invoke) so the read goes through the backend TTL cache (#2447):
   // a Glance revisit within the window is served with no network call. Past the window, the
   // light updatedAt probe (#2448) diffs against the persisted records first — when no board
@@ -380,6 +438,10 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
     () => new Set(Object.entries(drafts).filter(([, d]) => d.health || d.activity).map(([k]) => k)),
     [drafts],
   );
+  // #3966: the draft set the graph is actually built from — the store cache UNIONED with the durable
+  // projects DB. Computed once and used for BOTH the merge and the `isDraft` signal below, so a
+  // DB-only project is a draft for colouring purposes exactly as a cached one is.
+  const effectiveDrafts = useMemo(() => mergeDbIntoDrafts(drafts, dbProjects), [drafts, dbProjects]);
   return useMemo(
     // Merge (drafts + local published + GitHub published), FILTER to triaged/working projects (#2541 —
     // a draft/plan never shows), then overlay activity from real signals: liveness → `live` (#2263),
@@ -389,9 +451,9 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
       applyRunningActivity(
         applyLiveness(
           filterTriaged(
-            mergeGlanceProjects(drafts, effectivePublished, localPublished).map((p) => ({
+            mergeGlanceProjects(effectiveDrafts, effectivePublished, localPublished).map((p) => ({
               ...p,
-              category: resolveProjectCategory(p.category, planClassification[p.id]?.lifecycle, drafts[p.id] !== undefined),
+              category: resolveProjectCategory(p.category, planClassification[p.id]?.lifecycle, effectiveDrafts[p.id] !== undefined),
               appType: planClassification[p.id]?.appType, // #3786/#3802 — the contract endpoint-type discriminator (absent ⇒ plain)
             })),
             triagedProjects,
@@ -403,6 +465,6 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
       activeKeys,
       curatedKeys,
     ),
-    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification],
+    [effectiveDrafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification],
   );
 }
