@@ -16,11 +16,15 @@ import { archetypeById, hueColor } from "@/features/teams";
 import { GlanceNode } from "./GlanceNode";
 
 const ERR = "var(--graph-health-error)";
-// The legend lists the states a node can actually READ as, in the order you meet them: working →
-// finished → needs you → degraded → failing. `off` has no row (#4042): it is the ABSENCE of a live
-// session — deactivated, never launched, or structural furniture — and the node conveys it by dimming
-// rather than by a colour, so a swatch would key something nothing paints.
-const HEALTH_ROWS: GHealth[] = ["healthy", "complete", "warning", "error"];
+// The legend lists the states a node can actually READ as. `complete` leads (#4048): the rest of the
+// column is a severity ramp — running clean → degraded → failing — and complete is the one entry that
+// is not on it at all. It is the terminal, best outcome, so it belongs at the top rather than tucked
+// between "fine" and "degrading".
+//
+// `off` has no row (#4042): it is the ABSENCE of a live session — deactivated, never launched, or
+// structural furniture — and the node conveys it by dimming rather than by a colour, so a swatch would
+// key something nothing paints.
+const HEALTH_ROWS: GHealth[] = ["complete", "healthy", "warning", "error"];
 
 // The neighbour-parting motion is driven off the SAME easing + duration as the panel's grow (the
 // `.glance-card` transition in glance.css) — keep these in sync — so the panel growing and the graph
