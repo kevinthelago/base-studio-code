@@ -303,7 +303,19 @@ export function GlanceCanvas(p: CanvasProps) {
         const ownDegraded = n.health === "warning" || n.health === "error";
         const bottomText = nodeStateWord(n);
         const bottomColor = isOff || degraded ? health.color : "var(--fg-muted)";
-        const bottomPulse = !isOff && !degraded && ACTIVITY_META[n.activity].pulse;
+        // #4015 — the BUILDING pulse, gated to fleet (L1) nodes. Suppressed on a deactivated node
+        // (which is meant to read calm) and on an errored one (its own error pulse is the thing to
+        // look at; two competing animations on one node read as noise).
+        const pulseBuilding = showsBuildingPulse(n, { fleet: !!p.fleet, isOff, isError });
+        // #4018 — the activity WORD stops pulsing once the whole NODE does. Two opacity animations,
+        // one inside the other, on the same beat: the word is the smaller, weaker cue and it just
+        // muddies the node breath that has replaced it.
+        //
+        // Gated on `pulseBuilding` rather than switching `ACTIVITY_META.building.pulse` off, because
+        // that flag is global: an L0 PROJECT node does NOT get the node pulse (it is fleet-only), so
+        // flipping it there would silently strip the only motion an L0 building node has — a change
+        // to the project network, which is exactly what this work is not meant to touch.
+        const bottomPulse = !isOff && !degraded && !pulseBuilding && ACTIVITY_META[n.activity].pulse;
 
         const selected = p.selNodeId === n.id;
         const inFocus = focus ? focus.nodes.has(n.id) : true;
@@ -323,10 +335,6 @@ export function GlanceCanvas(p: CanvasProps) {
           : hazardCycle ? `color-mix(in oklch, ${ERR} 55%, transparent)`
           : loopHue ? `color-mix(in oklch, ${loopHue} 55%, transparent)`
           : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
-        // #4015 — the BUILDING pulse, gated to fleet (L1) nodes. Suppressed on a deactivated node
-        // (which is meant to read calm) and on an errored one (its own error pulse is the thing to
-        // look at; two competing animations on one node read as noise).
-        const pulseBuilding = showsBuildingPulse(n, { fleet: !!p.fleet, isOff, isError });
         const boxShadow = selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)"
           : isError && !inherited ? `0 0 0 3px color-mix(in oklch, ${ERR} 22%, transparent), 0 2px 8px rgba(0,0,0,.45)`
           : "0 2px 8px rgba(0,0,0,.45)";
