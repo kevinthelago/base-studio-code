@@ -70,24 +70,33 @@ fn load_shell(name: &str) -> String {
     s
 }
 
-/// The `bsc-defer` Stop hook (#369): fires when a fleet WORKER tries to end its turn. If it has already
-/// been re-prompted once (`stop_hook_active`), it allows the stop; otherwise it returns a `block`
-/// decision that pushes the worker to keep going or defer a real question to the director via `bsc-ask`
-/// — never to sit waiting on the user.
+/// The `bsc-defer` Stop hook (#369, rebuilt in #4021): fires when a fleet WORKER tries to end its turn.
 ///
-/// The DIRECTIVE prose (the block `reason`) is externalized to `data/fleet/defer-directive.md` (#2145,
-/// epic #2027 tail) — config-dir-overridable + in the export bundle — while the Stop-hook shell wrapper
-/// stays here as code. The fragment keeps its trailing newline (#296); the directive is JSON-string-
-/// embedded (`"` and `\` are escaped) and MUST be a single line without a raw `'`.
+/// It is now a ONE-LINE wrapper around `bsc hook stop-defer`, for the reason `bsc-deny` already gives:
+/// the decision is backed by the binary rather than fragile shell JSON-parsing. And this decision needs
+/// real inputs — it reads the stream's open issues from plan.db, checks whether the pane is already
+/// blocked on a human, and keeps a bounce counter. None of that belongs in a `case` statement.
+///
+/// What CHANGED behaviourally: the old wrapper bounced exactly ONCE (`stop_hook_active`) and then let
+/// the worker stop forever. Measured cost: 20 panes idle with work outstanding, unreachable by anything
+/// in the app. The hook now bounces while work remains, and only releases a worker that is finished,
+/// parked on a person, or genuinely stuck (and it announces that last one). See `crates/bsc/src/defer.rs`.
+///
+/// The DIRECTIVE prose stays externalized + config-overridable (#2145) and is passed through as env,
+/// since the binary cannot resolve the user's config dir. Both directives are JSON/shell constrained
+/// the same way as before: single line, no raw `'` (they are single-quoted here).
 pub(crate) fn bsc_defer_rc() -> String {
-    let directive = crate::platform::config::load_str("fleet/defer-directive.md");
-    let directive = directive.trim().replace('\\', "\\\\").replace('"', "\\\""); // backslash first
-    let mut s = String::new();
-    s.push_str(r#"bsc-defer() { j="$(cat)"; case "$j" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 0 ;; esac; printf '%s' '{"decision":"block","reason":""#);
-    s.push_str(&directive);
-    s.push_str(r#""}'; }"#);
-    s.push('\n');
-    s
+    let keep = one_line_sq(&crate::platform::config::load_str("fleet/defer-directive.md"));
+    let stuck = one_line_sq(&crate::platform::config::load_str("fleet/defer-stuck-directive.md"));
+    format!("bsc-defer() {{ BSC_DEFER_DIRECTIVE='{keep}' BSC_DEFER_STUCK='{stuck}' bsc hook stop-defer; }}\n")
+}
+
+/// Flatten prose to ONE single-quotable shell line: newlines collapse to spaces and any raw `'` is
+/// dropped. A stray quote would terminate the surrounding single-quoted string and break the whole rc
+/// (#296 territory) — stripping is the safe direction, since the directive is guidance prose whose
+/// exact punctuation is not load-bearing.
+fn one_line_sq(s: &str) -> String {
+    s.trim().replace(['\n', '\r'], " ").replace('\'', "")
 }
 
 /// The trusted native-build allowlist (#3795, epic #2433) — the packages whose install lifecycle

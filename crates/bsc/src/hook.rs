@@ -12,6 +12,12 @@ pub fn run(args: &[String]) -> Result<(), String> {
     match args.first().map(String::as_str).unwrap_or("") {
         "bash-deny" => bash_deny(),
         "bash-supply" => bash_supply(),
+        // #4021 — the fleet worker Stop hook. Both directives are externalized prose, loaded the
+        // same way `bsc_defer_rc` used to load the keep-going one.
+        "stop-defer" => crate::defer::stop_defer(
+            &defer_prose("BSC_DEFER_DIRECTIVE", crate::defer::KEEP_GOING_DEFAULT),
+            &defer_prose("BSC_DEFER_STUCK", crate::defer::STUCK_DEFAULT),
+        ),
         "" | "help" | "-h" | "--help" => {
             print!(
                 "bsc hook — internal PreToolUse deny hooks (#1916)\n\n\
@@ -24,6 +30,16 @@ pub fn run(args: &[String]) -> Result<(), String> {
             Ok(())
         }
         other => Err(format!("unknown hook '{other}'\n\nrun `bsc hook help`")),
+    }
+}
+
+/// The Stop-hook directive prose (#4021). Prefers the env the session's rc exports — that value is
+/// the CONFIG-RESOLVED one (`platform::config::load_str`, user-overridable per #2145) — and falls back
+/// to the copy compiled into this binary, so the hook still works in a session whose rc predates it.
+fn defer_prose(var: &str, fallback: &str) -> String {
+    match std::env::var(var) {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => fallback.trim().to_string(),
     }
 }
 

@@ -6,6 +6,7 @@
 
 use std::process::ExitCode;
 
+mod defer;
 mod hook;
 
 /// One row per top-level command for the `bsc help` overview. The detailed per-command help comes
