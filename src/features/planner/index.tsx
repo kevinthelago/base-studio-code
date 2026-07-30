@@ -46,6 +46,9 @@ export { flowPermissionRules, flowGrantedPushCommands } from "./fleet/flowPermis
 // #2995: the durable projects-DB bridge — the app shell's boot migration upserts every cached draft
 // into the DB through this (reached via the barrel, not a deep path, per the app import boundary).
 export { addDbProject } from "./list/projectsDbBridge";
+// #3966: Glance needs the durable project list too — it was reading the persisted `localDraftProjects`
+// cache, which misses any project the cache never got, so a real project could have no graph node.
+export { listDbProjects, type DbProject } from "./list/projectsDbBridge";
 export {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
   briefKey, pendingBriefPrompt, DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
