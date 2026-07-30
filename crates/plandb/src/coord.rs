@@ -38,32 +38,6 @@ fn clean(s: &str) -> String {
     s.chars().map(|c| if c == '\t' || c == '\n' || c == '\r' { ' ' } else { c }).collect()
 }
 
-/// UTC timestamp in the shell helpers' shape (`date -u +%Y-%m-%dT%H:%M:%SZ`).
-///
-/// Hand-rolled from the epoch rather than pulling a date crate: `plandb` has no time dependency and
-/// this is the only place in the crate that needs one. Civil-date conversion is the standard
-/// days-from-epoch algorithm; it is only ever read by a human, since the pump keys on the log line.
-fn now_utc() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
-    let (h, mi, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
-    // Howard Hinnant's civil_from_days.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
-}
-
 /// Append one coord record. Best-effort: any failure is swallowed, because a coordination
 /// notification must never break the store write it accompanies.
 pub fn emit(kind: &str, a: &str, b: &str) {
@@ -72,7 +46,7 @@ pub fn emit(kind: &str, a: &str, b: &str) {
         return;
     }
     let pane = std::env::var("BSC_AUDIT_PANE").unwrap_or_else(|_| "?".into());
-    let line = format!("{}\t{}\t{}\t{}\t{}\n", now_utc(), clean(&pane), kind, clean(a), clean(b));
+    let line = format!("{}\t{}\t{}\t{}\t{}\n", bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms()), clean(&pane), kind, clean(a), clean(b));
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
         let _ = f.write_all(line.as_bytes());
     }
@@ -90,9 +64,12 @@ mod tests {
         assert!(!clean("multi\nline\tbody").contains('\n'));
     }
 
+    /// The coord log is parsed positionally by BOTH the frontend reducer and `bsc logs waiting`, so a
+    /// timestamp in the wrong shape corrupts every consumer. Pinned here even though the formatting is
+    /// now the shared helper's job (#4021 dropped a hand-rolled duplicate of it that lived here).
     #[test]
     fn the_timestamp_matches_the_shell_emitters_shape() {
-        let ts = now_utc();
+        let ts = bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms());
         assert_eq!(ts.len(), 20, "YYYY-MM-DDTHH:MM:SSZ");
         assert!(ts.ends_with('Z'));
         assert_eq!(ts.as_bytes()[4], b'-');
