@@ -211,7 +211,9 @@ pub struct PaneActivity {
 }
 
 /// The latest turn-boundary state per pane from `activity.log`, newest pane first (#1184 / #2144). A
-/// later line for a pane supersedes earlier ones; only `run`/`idle` states are kept (malformed/short
+/// later line for a pane supersedes earlier ones; only `run`/`idle`/`attn` states are kept — `attn`
+/// (#4005) is Claude Code's `Notification` hook: the session is STOPPED waiting on the user (a permission
+/// prompt, or a long input idle), which is neither working nor done. (Malformed/short
 /// lines and unknown states are already dropped by the stream parser or filtered here). Missing log ⇒
 /// empty, so the frontend cleanly falls back to its silence-timer behavior.
 pub fn pane_activity(dir: &Path) -> Vec<PaneActivity> {
@@ -219,7 +221,7 @@ pub fn pane_activity(dir: &Path) -> Vec<PaneActivity> {
     let mut latest: HashMap<String, (usize, String, u64)> = HashMap::new();
     for (i, e) in read_stream(dir, "activity").into_iter().enumerate() {
         let state = e.summary.trim().to_string();
-        if e.session.is_empty() || (state != "run" && state != "idle") {
+        if e.session.is_empty() || (state != "run" && state != "idle" && state != "attn") {
             continue;
         }
         latest.insert(e.session.clone(), (i, state, e.ts_ms.max(0) as u64));
