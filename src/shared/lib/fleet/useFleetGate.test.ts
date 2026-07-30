@@ -17,28 +17,34 @@ describe("gatedProjects", () => {
   });
 });
 
-describe("newlyLaunchable", () => {
+describe("newlyLaunchable (#3971)", () => {
   const ready: GateStream[] = [{ id: "a" }, { id: "b" }, { id: "c" }];
 
-  it("returns the ready streams that have no live pane", () => {
-    expect(newlyLaunchable(ready, "p", new Set(["p:a"]), {})).toEqual(["b", "c"]);
-  });
-
-  it("is a no-op once every ready stream is running — the idempotence the pump relies on", () => {
-    // Without this the pump would re-launch the whole fleet on every coord-log line.
-    expect(newlyLaunchable(ready, "p", new Set(["p:a", "p:b", "p:c"]), {})).toEqual([]);
+  it("launches every ready stream — a pane cell is NOT evidence an agent is running", () => {
+    // The regression this fixes: the pump subtracted "live" panes using tab membership, so at boot
+    // all 29 persisted panes counted as live — including the 25 that had come up as BARE SHELLS
+    // (`init=<none>`). It released 3 streams against a fleet with 13 dependency-free roots.
+    expect(newlyLaunchable(ready, "p", {})).toEqual(["a", "b", "c"]);
   });
 
   it("never launches a quarantined stream", () => {
-    // Quarantine is surfaced, never relaunched (#3916). The gate must not smuggle one back in.
-    expect(newlyLaunchable(ready, "p", new Set(), { "p:b": { summary: "denied" } })).toEqual(["a", "c"]);
+    // Quarantine is surfaced, never relaunched (#3916) — the one exclusion that survives.
+    expect(newlyLaunchable(ready, "p", { "p:b": { summary: "denied" } })).toEqual(["a", "c"]);
   });
 
-  it("scopes pane ids by project — another project's live pane does not suppress this one", () => {
-    expect(newlyLaunchable(ready, "p", new Set(["other:a"]), {})).toEqual(["a", "b", "c"]);
+  it("scopes quarantine by project — another project's pane does not suppress this one", () => {
+    expect(newlyLaunchable(ready, "p", { "other:a": { summary: "x" } })).toEqual(["a", "b", "c"]);
   });
 
   it("nothing ready ⇒ nothing launchable", () => {
-    expect(newlyLaunchable([], "p", new Set(), {})).toEqual([]);
+    expect(newlyLaunchable([], "p", {})).toEqual([]);
+  });
+
+  it("relaunching an already-running stream is safe, so it is not filtered out", () => {
+    // `resumeProjectFleet` is the actuator and `pty_create` reconnects to an existing session before
+    // spawning (#3923), so including a live pane never re-sends `--continue`. Repeat-firing is the
+    // caller's `lastFired` fingerprint's job — not a liveness proxy that is wrong at boot.
+    const twice = [newlyLaunchable(ready, "p", {}), newlyLaunchable(ready, "p", {})];
+    expect(twice[0]).toEqual(twice[1]);
   });
 });
