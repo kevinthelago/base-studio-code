@@ -6,7 +6,7 @@
 // `sessionRoles.ts`.
 
 import type { AccessTier, RoleCapability } from "./roleModel";
-import { DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, hasScopedWriteCarveOut, isRestrictedRole } from "./roleModel";
+import { DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, hasScopedWriteCarveOut, isRestrictedRole, mayFileToolingRequest, TOOLING_REQUEST_COMMAND } from "./roleModel";
 
 // ── Launch wiring: write-tool permission rules ──────────────────────────────────
 
@@ -169,6 +169,16 @@ export function roleDeniedCommands(cap: RoleCapability): string[] {
   // dir the design intended.
   const carveOutWritesViaShell = hasScopedWriteCarveOut(cap) && !isRestrictedRole(cap.role);
   if (cap.code === "none" && !carveOutWritesViaShell) out.push(...FILE_WRITE_DENY);
+  // The global tooling-request queue (#4000). `bsc` sits in the permission model's `mandatory` tier —
+  // ALWAYS allowed, every role, every posture — so without this deny any worker could file straight
+  // into the queue a full-capability session drains to edit base-studio-code itself. Not granting it
+  // is not enough; only a deny keeps it out, because the hook is the sole layer that fires under
+  // bypass (where `permissions.deny` is ignored).
+  //
+  // The pattern carries a SPACE, which matters: `deny_matches` (bsc-util/src/deny.rs) treats a bare
+  // program name as a program-TOKEN match, but keeps substring semantics for anything else — so
+  // "bsc request" matches `bsc request new …` while a bare "bsc" would have denied the entire CLI.
+  if (!mayFileToolingRequest(cap.role)) out.push(TOOLING_REQUEST_COMMAND);
   return out;
 }
 

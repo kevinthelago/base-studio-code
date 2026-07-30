@@ -12,6 +12,8 @@ import {
   matchGlob,
   canWritePath,
   roleDeniedCommands,
+  mayFileToolingRequest,
+  TOOLING_REQUEST_COMMAND,
   roleWriteRules,
   roleDeniedTools,
   bscAgentPerms,
@@ -235,9 +237,12 @@ describe("roleDeniedCommands (launch wiring)", () => {
       expect(denies).not.toContain("bsc ui set");
     });
 
-    it("ui: write (the designer tier) denies nothing on the store", () => {
+    it("ui: write (the designer tier) denies nothing on the UI store", () => {
       const denies = roleDeniedCommands(roleCapability("worker", { ui: "write" }));
-      expect(denies.some((d) => d.startsWith("bsc"))).toBe(false);
+      // Scoped to the UI store, which is what this tier governs. It used to assert no `bsc*` deny at
+      // all, but that over-reached: #4000 denies project roles `bsc request` (the global TOOLING
+      // queue) on an unrelated axis, and a worker granted ui:write is still a project role.
+      expect(denies.some((d) => d.startsWith("bsc ui") || d.startsWith("bsc component"))).toBe(false);
     });
 
     it("flows through to bscAgentPerms deny_bash so the tier binds a bsc-agent session too", () => {
@@ -855,5 +860,50 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     const a = restrictedRoleCommands("curator");
     a.push("bsc plan");
     expect(restrictedRoleCommands("curator")).toEqual(["bsc ui", "bsc graph", ...LOOP]);
+  });
+});
+
+describe("the global tooling-request queue is denied to project roles (#4000)", () => {
+  // `bsc` is in the permission model's `mandatory` tier — ALWAYS allowed, every role, every posture.
+  // So `bsc request` is reachable from any session that can run bash, and NOT granting it is not
+  // enough: only an explicit deny keeps a project worker out of the queue a full-capability session
+  // drains to edit base-studio-code itself.
+  const PROJECT_ROLES = ["worker", "director", "triage", "planner", "reviewer", "documentor"] as const;
+
+  it.each(PROJECT_ROLES)("denies %s the tooling queue", (role) => {
+    expect(roleDeniedCommands(roleCapability(role))).toContain(TOOLING_REQUEST_COMMAND);
+  });
+
+  it("does NOT deny the roles that legitimately file tooling requests", () => {
+    // These are granted `bsc request new` via RESTRICTED_ROLE_COMMANDS; denying it would break the
+    // designer->debug channel (#3298) that the whole store exists for.
+    for (const role of ["designer", "librarian", "sound-designer", "architect"] as const) {
+      expect(roleDeniedCommands(roleCapability(role))).not.toContain(TOOLING_REQUEST_COMMAND);
+    }
+  });
+
+  it("does not deny the debugger, which is the queue's consumer", () => {
+    // It reads/claims/resolves. It has no RESTRICTED_ROLE_COMMANDS entry because it launches
+    // full-capability rather than confined, so it is the one role the derivation names explicitly.
+    expect(mayFileToolingRequest("debugger")).toBe(true);
+  });
+
+  it("derives the allow-list from the grants, so the two cannot drift", () => {
+    // The property that keeps this maintainable: a role may file iff it is GRANTED the command.
+    // Add the grant to a role and its deny lifts automatically; remove it and the deny returns.
+    for (const role of ["designer", "architect"] as const) {
+      expect(restrictedRoleCommands(role).some((c) => c.startsWith(TOOLING_REQUEST_COMMAND))).toBe(true);
+      expect(mayFileToolingRequest(role)).toBe(true);
+    }
+    expect(mayFileToolingRequest("worker")).toBe(false);
+    expect(mayFileToolingRequest(null)).toBe(false);
+  });
+
+  it("uses a pattern the deny matcher treats as a phrase, not a program name", () => {
+    // Load-bearing: `deny_matches` matches a BARE program name against the program token, but keeps
+    // substring semantics for anything containing other characters. A bare "bsc" would have denied
+    // the entire CLI — every store, every session. The space is what scopes it to the one subcommand.
+    expect(TOOLING_REQUEST_COMMAND).toContain(" ");
+    expect(TOOLING_REQUEST_COMMAND).toBe("bsc request");
   });
 });

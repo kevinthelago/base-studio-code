@@ -158,6 +158,33 @@ mod tests {
         assert!(deny_matches(":(){ :|:& };:", ":(){"), "the fork bomb fragment still matches");
     }
 
+    /// The #4000 worker deny, end to end through the matcher that actually enforces it.
+    ///
+    /// The TS side only knows it emitted the string; THIS is the half that decides whether a command
+    /// is blocked. Both halves matter and neither can see the other, so the pattern is pinned here as
+    /// well as at the producer.
+    #[test]
+    fn the_tooling_request_deny_blocks_the_subcommand_without_denying_the_whole_cli() {
+        // Blocked: the global tooling queue a project role must not reach.
+        assert!(deny_matches("bsc request new \"tooling is broken\"", "bsc request"));
+        assert!(deny_matches("bsc request list", "bsc request"));
+        // And it cannot be laundered through a shell, like any other deny.
+        assert!(deny_matches(r#"sh -c "bsc request new x""#, "bsc request"));
+
+        // NOT blocked: everything else the CLI does. `bsc` is in the permission model's `mandatory`
+        // tier because the whole plan/fleet workflow runs on it — a deny that caught the bare program
+        // would take every store down with it, which is why the pattern carries a space.
+        for allowed in [
+            "bsc plan request new \"no develop branch\"",   // the PROJECT lane — the whole point
+            "bsc plan list",
+            "bsc skill get x",
+            "bsc logs tail",
+            "bsc ui harvest src/shared/ui",
+        ] {
+            assert!(!deny_matches(allowed, "bsc request"), "{allowed} must still run");
+        }
+    }
+
     #[test]
     fn command_programs_reads_the_program_of_each_segment() {
         assert_eq!(command_programs("bsc ui harvest src/shared/ui"), vec!["bsc"]);
