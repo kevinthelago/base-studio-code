@@ -48,6 +48,27 @@ Prints one row per local project under ~/.base-studio-code/projects/ — its key
 published, and its absolute path. TSV by default; --json emits an array of { key, published, path }.",
     },
     CmdDoc {
+        name: "progress",
+        summary: "issue counts (done/total) for EVERY local project, in one read (#4052)",
+        usage: "\
+USAGE:
+  bsc project progress [--json]
+
+Prints one row per local project that has a plan store - its key, how many of its issues are done
+(complete|verified) and how many it has in total. TSV by default; --json emits an array of
+{ key, done, total }.
+
+The plan store is plans/<key>.db, NOT projects/<key>/plan.db - it was relocated out of the hub in
+#2996 so it survives folder churn.
+
+A project with no plan store, or whose store has no issues table yet, is OMITTED entirely: absent
+and \"0 of 0\" are different facts, and only the caller knows which one it wants to render.
+
+This exists so a caller wanting every project's progress makes ONE process spawn instead of one per
+project. Opening N SQLite files inside one process costs milliseconds; spawning N processes has
+repeatedly cost this app whole seconds (#3908 / #3912 / #3944 / #3954).",
+    },
+    CmdDoc {
         name: "published",
         summary: "read or set a project's .published marker",
         usage: "\
@@ -164,6 +185,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 
     match cmd.as_str() {
         "list" => cmd_list(&args),
+        "progress" => cmd_progress(&args),
         "published" => cmd_published(&args, prog),
         "link" => cmd_link(&args, prog),
         "github-state" => cmd_github_state(&args, prog),
@@ -192,6 +214,82 @@ fn cmd_list(args: &Args) -> Result<(), String> {
                 if p.published { "published" } else { "unpublished" },
                 p.path.to_string_lossy()
             );
+        }
+    }
+    Ok(())
+}
+
+/// One project's issue completion, as counts (#4052). Counts, never a ratio — a caller can render
+/// "3/7" as readily as a bar, and neither has to reconstruct the other.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ProjectProgress {
+    pub key: String,
+    pub done: usize,
+    pub total: usize,
+}
+
+/// Count one plan.db's issues as `(done, total)`. `None` when the file has no readable `issues`
+/// table — a hub scaffolded but never planned, which is ABSENT rather than empty (see `cmd_progress`).
+///
+/// Read-only + `busy_timeout`'d through the shared opener, because a live fleet is writing these very
+/// rows while this reads them; a plain `open` would surface a transient lock as a hard error and
+/// blank a project that is merely busy.
+fn count_issues(db: &std::path::Path) -> Option<(usize, usize)> {
+    if !db.is_file() {
+        return None;
+    }
+    let conn = bsc_sqlite_util::open_db(db).ok()?;
+    let mut stmt = conn.prepare("SELECT status, COUNT(*) FROM issues GROUP BY status").ok()?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).ok()?;
+    let (mut done, mut total) = (0usize, 0usize);
+    for row in rows.flatten() {
+        let (status, n) = (row.0, row.1.max(0) as usize);
+        total += n;
+        // An unknown status counts toward the DENOMINATOR only — `is_done_status` is deliberately
+        // conservative, so a typo can never inflate a completion count.
+        if plandb::is_done_status(&status) {
+            done += n;
+        }
+    }
+    Some((done, total))
+}
+
+/// The per-project plan store for `key`: `plans/<key>.db`.
+///
+/// The plan store was RELOCATED OUT of the hub (#2996) so it survives folder churn — reading
+/// `projects/<key>/plan.db` finds nothing on any current install (those hubs hold `error.db` only) and
+/// would make this command silently report no work anywhere.
+fn plan_db_for(key: &str) -> Option<std::path::PathBuf> {
+    bsc_util::bsc_base_dir().map(|b| b.join("plans").join(format!("{key}.db")))
+}
+
+/// Every local project's issue counts, in one pass. Walks the projects dir; a project whose plan store
+/// is missing or unreadable is dropped, so the result answers "what do we actually know".
+pub fn collect_progress() -> Vec<ProjectProgress> {
+    list_projects()
+        .into_iter()
+        .filter_map(|p| {
+            let (done, total) = count_issues(&plan_db_for(&p.key)?)?;
+            Some(ProjectProgress { key: p.key, done, total })
+        })
+        .collect()
+}
+
+/// `progress` — issue counts for every local project in ONE spawn (#4052). TSV `key\tdone\ttotal`,
+/// or `--json` as an array of `{ key, done, total }`.
+fn cmd_progress(args: &Args) -> Result<(), String> {
+    let rows = collect_progress();
+    if args.json {
+        let arr: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|r| serde_json::json!({ "key": r.key, "done": r.done, "total": r.total }))
+            .collect();
+        println!("{}", serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into()));
+    } else if rows.is_empty() {
+        println!("(no local projects with a plan store)");
+    } else {
+        for r in &rows {
+            println!("{}\t{}\t{}", r.key, r.done, r.total);
         }
     }
     Ok(())
@@ -391,6 +489,70 @@ mod tests {
     #[test]
     fn parse_args_rejects_an_unknown_flag() {
         assert!(parse_args(vec!["list".into(), "--nope".into()]).is_err());
+    }
+
+    /// Write a throwaway plan.db carrying exactly `statuses`, one issue each.
+    fn plan_db_with(dir: &std::path::Path, statuses: &[&str]) -> std::path::PathBuf {
+        let db = dir.join("plan.db");
+        let conn = bsc_sqlite_util::open_db(&db).unwrap();
+        conn.execute("CREATE TABLE issues (ref TEXT, status TEXT)", []).unwrap();
+        for (i, s) in statuses.iter().enumerate() {
+            conn.execute("INSERT INTO issues (ref, status) VALUES (?1, ?2)", (format!("#{i}"), s))
+                .unwrap();
+        }
+        db
+    }
+
+    #[test]
+    fn count_issues_counts_done_as_complete_or_verified() {
+        let dir = std::env::temp_dir().join(format!("bsc-progress-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = plan_db_with(&dir, &["open", "in_progress", "complete", "verified", "blocked", "failed"]);
+        assert_eq!(count_issues(&db), Some((2, 6)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn count_issues_treats_an_unknown_status_as_not_done() {
+        // The denominator must still grow — a typo may not silently shrink the total and flatter the bar.
+        let dir = std::env::temp_dir().join(format!("bsc-progress-unk-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = plan_db_with(&dir, &["complete", "kompleet"]);
+        assert_eq!(count_issues(&db), Some((1, 2)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn count_issues_is_none_without_a_db_or_an_issues_table() {
+        let dir = std::env::temp_dir().join(format!("bsc-progress-none-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Missing file ⇒ None (ABSENT, which the caller renders differently from "0 of 0").
+        assert_eq!(count_issues(&dir.join("plan.db")), None);
+        // Present but never planned ⇒ also None, not Some((0, 0)).
+        let db = dir.join("plan.db");
+        bsc_sqlite_util::open_db(&db).unwrap().execute("CREATE TABLE other (x INT)", []).unwrap();
+        assert_eq!(count_issues(&db), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plan_db_for_resolves_the_central_store_not_the_hub() {
+        // #2996 relocated plan.db OUT of the hub. Reading `projects/<key>/plan.db` finds nothing on any
+        // current install (hubs hold error.db only), which would make `progress` report no open work
+        // ANYWHERE — a silent, always-empty answer rather than a visible failure.
+        let p = plan_db_for("my-app").unwrap();
+        assert!(p.ends_with(std::path::Path::new("plans/my-app.db")), "got {p:?}");
+        assert!(!p.to_string_lossy().contains("projects"), "must not read the hub: {p:?}");
+    }
+
+    #[test]
+    fn count_issues_reports_zero_done_for_an_all_open_project() {
+        // Distinct from None: this project IS planned, it just has not started. `0 of 5` is a fact.
+        let dir = std::env::temp_dir().join(format!("bsc-progress-open-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = plan_db_with(&dir, &["open", "open", "open", "open", "open"]);
+        assert_eq!(count_issues(&db), Some((0, 5)));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

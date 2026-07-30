@@ -19,6 +19,9 @@ bsc-cli-util = { path = "../bsc-cli-util" }
 # connection plumbing (`conn`, #1863) + `read_stdin_json_one`/`print_json` — the durable projects
 # store (#2995) mirrors the plandb/compliance house pattern.
 bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# The per-project plan store (#4052) — `progress` reads each hub's plan.db issue counts. Depended on
+# for `is_done_status` so "done" has ONE definition on the Rust side rather than a third copy here.
+plandb = { path = "../plandb" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # `bundled` compiles SQLite from source (matches src-tauri/plandb/compliance) for cross-platform reliability.

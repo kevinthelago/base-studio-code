@@ -34,13 +34,19 @@ export interface GlanceNodeProps {
   /** Health dot colour + whether it pulses (axis 1). */
   healthColor: string;
   healthPulse: boolean;
+  /** Pulse CHARACTER (#4052) — an alarm (fast + haloed, `error`) vs a breath (slow + bare,
+   *  `modifying`). Both optional so the alarm stays the default and `error` renders unchanged. */
+  healthPulseMs?: number;
+  healthGlow?: boolean;
   /** Lit only by a DOWNSTREAM dep — dimmed, never pulses, so the eye lands on the fault's ORIGIN. */
   inherited: boolean;
-  /** The role/category accent for the lower-left label. */
-  roleColor: string;
-  roleLabel: string;
-  /** Axis-2 word + its colour, and whether it pulses (suppressed while the NODE itself animates). */
-  bottomText: string;
+  /** The lower-left FUNCTION chip — fleet (L1) nodes only (#4052). Both absent ⇒ the slot renders
+   *  nothing at all, which is how an L0 project node reads now that the lifecycle axis is gone. */
+  roleColor?: string;
+  roleLabel?: string;
+  /** Axis-2 word + its colour, and whether it pulses (suppressed while the NODE itself animates).
+   *  ABSENT on an L0 project node (#4058), which reads on health + edges alone. */
+  bottomText?: string;
   bottomColor: string;
   bottomPulse: boolean;
   /** The user-deactivated / degraded reads, which suppress the completion marker. */
@@ -77,10 +83,13 @@ export function GlanceNode(p: GlanceNodeProps) {
             this the node had no colour surface for it at all. An INHERITED dot is dimmed and never
             pulses, so the eye lands on the ORIGIN of a fault rather than everything downstream
             (#2541). */}
-        <Box title={`${n.rollupHealth}${p.inherited ? " (downstream)" : ""}`}
+        {/* The reason rides on the DOT (#4058). It used to be the activity word's `title`, which an L0
+            project node no longer renders — without this, hovering a degraded project would explain
+            nothing and the reason would live only in the inspector. */}
+        <Box title={`${n.rollupHealth}${p.inherited ? " (downstream)" : ""}${n.reason ? ` — ${n.reason}` : ""}`}
           style={{ width: 8, height: 8, borderRadius: "50%", background: p.healthColor, flex: "none", opacity: p.inherited ? 0.5 : 1,
-            boxShadow: p.healthPulse && !p.inherited ? `0 0 8px ${p.healthColor}` : "none",
-            animation: p.healthPulse && !p.inherited ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }} />
+            boxShadow: p.healthPulse && !p.inherited && p.healthGlow !== false ? `0 0 8px ${p.healthColor}` : "none",
+            animation: p.healthPulse && !p.inherited ? `glance-softpulse ${p.healthPulseMs ?? 1400}ms ease-in-out infinite` : "none" }} />
         <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
         {/* The APP-TYPE discriminator (#3786/#3802) — a subtle mono micro-label on the title line: what
             KIND of app this endpoint is (api/serverless/cli/…). Gated on a non-default classification,
@@ -91,20 +100,32 @@ export function GlanceNode(p: GlanceNodeProps) {
               border: "1px solid var(--border-soft)", borderRadius: 4, padding: "1px 4px", lineHeight: 1.3 }}>{n.appType}</Text>
         )}
       </Box>
-      <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
-        <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: p.roleColor }}>{p.roleLabel}</Text>
-        <Box style={{ flex: 1 }} />
-        {/* #4027 — the FINISHED marker. Static and to the LEFT of the word, so a completed node is
-            legible at a glance without reading its label. */}
-        {n.activity === "complete" && !p.isOff && !p.degraded && (
-          <Text as="span" mono size={10} weight={600} aria-hidden
-            style={{ color: "var(--graph-health-healthy)", marginRight: 4, flex: "none" }}>✓</Text>
-        )}
-        {/* Axis-2 activity word, or the fault reason when degraded. */}
-        <Text as="span" mono size={10} weight={500} title={p.ownDegraded && n.reason ? n.reason : n.activity === "complete" ? n.reason : undefined}
-          style={{ color: p.bottomColor, maxWidth: 108, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            animation: p.bottomPulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }}>{p.bottomText}</Text>
-      </Box>
+      {/* The axis-2 row — FLEET (L1) nodes only (#4058). An L0 project node carries just two things:
+          its EDGES (how it interacts with other projects) and its HEALTH (the state of the project).
+          The activity word restated, in the weaker channel, what the dot already says: the build state
+          IS the lifecycle indicator (`modifying`), maintenance is INFERRED from a project that is
+          running clean and unmodified, and attention is grabbed by `warning`/`error`. With no label and
+          no word the whole row is empty, so it is not rendered at all rather than left as dead space. */}
+      {(p.roleLabel || p.bottomText) && (
+        <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
+          {p.roleLabel && (
+            <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: p.roleColor }}>{p.roleLabel}</Text>
+          )}
+          <Box style={{ flex: 1 }} />
+          {/* #4027 — the FINISHED marker. Static and to the LEFT of the word, so a completed node is
+              legible at a glance without reading its label. */}
+          {p.bottomText && n.activity === "complete" && !p.isOff && !p.degraded && (
+            <Text as="span" mono size={10} weight={600} aria-hidden
+              style={{ color: "var(--graph-health-healthy)", marginRight: 4, flex: "none" }}>✓</Text>
+          )}
+          {/* Axis-2 activity word, or the fault reason when degraded. */}
+          {p.bottomText && (
+            <Text as="span" mono size={10} weight={500} title={p.ownDegraded && n.reason ? n.reason : n.activity === "complete" ? n.reason : undefined}
+              style={{ color: p.bottomColor, maxWidth: 108, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                animation: p.bottomPulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }}>{p.bottomText}</Text>
+          )}
+        </Box>
+      )}
       {/* #4050 — owned-issue progress: a thin fill on the bottom edge, `done / total`.
           Rendered only when the stream OWNS issues: an empty bar and a zero-progress bar say different
           things, and drawing one for a node with no work would say the false one.

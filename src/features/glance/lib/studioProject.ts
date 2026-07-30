@@ -25,7 +25,6 @@ export const BASE_STUDIO_PROJECT: ProjectLite = {
   id: BASE_STUDIO_PROJECT_ID,
   name: "base-studio-code",
   role: "infra",
-  category: "maintain",
   health: "off",
   activity: "idle",
 };

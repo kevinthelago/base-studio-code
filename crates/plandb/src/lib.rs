@@ -71,7 +71,7 @@ pub use artifacts::Artifact;
 pub use assignments::{Automation, StartupScript};
 pub use features::PlanFeature;
 pub use integrations::{PlanIntegration, DEFAULT_DIRECTION, DIRECTIONS};
-pub use issues::{is_valid_status, IssueSummary, PlanIssue, STATUSES};
+pub use issues::{is_done_status, is_valid_status, IssueSummary, PlanIssue, DONE_STATUSES, STATUSES};
 pub use lessons::Lesson;
 pub use requests::Request;
 pub use sessions::FleetSession;

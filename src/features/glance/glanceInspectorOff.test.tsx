@@ -7,7 +7,7 @@ import { GlanceInspector } from "./GlanceInspector";
 import { buildGraph, type GRawNode } from "./lib/glanceGraph";
 
 const node = (health: GRawNode["health"]): GRawNode => ({
-  id: "a", slug: "alpha", role: "service", category: "greenfield", health, activity: "building",
+  id: "a", slug: "alpha", role: "service", health, activity: "building",
 });
 const modelWith = (health: GRawNode["health"]) => buildGraph([node(health)], []);
 
