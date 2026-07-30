@@ -242,9 +242,11 @@ describe("buildSessionSettings", () => {
     // FS confinement (bsc-confine, #158) + the dangerous-command floor (bsc-deny, #1916) are the
     // DEFAULT denies — present even with no role/profile — alongside the always-on turn-activity
     // hooks. The audit/scope/taint hooks stay gated.
+    // #4005 adds `bsc-activity attn` (the Notification hook) to the always-on turn set — it sits with
+    // the other turn-activity hooks because it IS one: the same log, cleared by the same boundaries.
     expect(cmds(out)).toEqual([
-      "bsc-confine", "bsc-deny", "bsc-activity run", "bsc-activity idle", "bsc-activity idle",
-      "bsc-tokens", "bsc-tokens",
+      "bsc-confine", "bsc-deny", "bsc-activity run", "bsc-activity attn", "bsc-activity idle",
+      "bsc-activity idle", "bsc-tokens", "bsc-tokens",
     ]);
     // ...and the confinement config is write-protected on every pane, so the agent can't edit
     // `.claude/**` to remove the hook or widen its own permissions (#1916).
@@ -301,8 +303,9 @@ describe("buildSessionSettings", () => {
     expect(c).toEqual(expect.arrayContaining(["bsc-audit", "bsc-mcp", "bsc-confine", "bsc-deny", "bsc-scope", "bsc-taint", "bsc-supply", "bsc-defer"]));
     // turn-activity hooks stay together (after bsc-defer) so a worker's Stop still records idle, and
     // the cost hooks (#3452) trail them — both must fire on Stop even though bsc-defer blocks the stop.
-    expect(c.slice(-5)).toEqual([
-      "bsc-activity run", "bsc-activity idle", "bsc-activity idle", "bsc-tokens", "bsc-tokens",
+    expect(c.slice(-6)).toEqual([
+      "bsc-activity run", "bsc-activity attn", "bsc-activity idle", "bsc-activity idle",
+      "bsc-tokens", "bsc-tokens",
     ]);
     // role denies flow through; Task is denied for a worker (sub-agent block #1036).
     const cap = roleCapability("worker", { writeGlobs: [] });
