@@ -265,6 +265,10 @@ export interface GRawNode {
   /** Display name (defaults to id). */
   slug?: string;
   role: GRole;
+  /** The DISCOVERED lifecycle intent (#4062) — the L0 project node's accent chip. Absent for an
+   *  unclassified project (⇒ no chip; see {@link LIFECYCLE_META}) and for fleet-drill (L1) nodes,
+   *  which show their function group there instead. */
+  lifecycle?: string;
   /** Axis 1 — the node's OWN health (before the dependency rollup). #2541. */
   health: GHealth;
   /** Axis 2 — the lifecycle word shown bottom-right. #2541. */
@@ -352,6 +356,29 @@ export interface GraphModel {
    *  stability. */
   kitBand?: { y0: number; y1: number };
 }
+
+/**
+ * Project LIFECYCLE INTENT → accent colour + label (#4062) — the L0 project node's lower-left chip.
+ *
+ * The vocabulary is `Lifecycle` (`planner/lib/classifyConfig.ts`), DISCOVERED per project by the
+ * planner at the Discovery stage (`bsc plan classify set`). Typed structurally rather than importing
+ * the planner's type, so the graph model stays free of a cross-feature value import.
+ *
+ * ── NO DEFAULT, EVER ────────────────────────────────────────────────────────────────────────────
+ * A project with no discovered lifecycle renders NOTHING here. This is the entire lesson of #4052,
+ * which deleted the previous incarnation: `resolveProjectCategory` ended in `isDraft ? greenfield :
+ * maintain`, so every unclassified project wore a confident label and six of them carried one bit of
+ * real information between them. `lifecycleOf`'s `?? "greenfield"` default exists for STAGE GATING,
+ * where a missing value must not hide a stage — it is exactly wrong for display, where a blank slot
+ * is honest and a defaulted label is a lie that looks like data.
+ */
+export const LIFECYCLE_META: Record<string, { label: string; color: string }> = {
+  greenfield: { label: "greenfield", color: "var(--graph-lifecycle-greenfield)" }, // build from a pitch
+  transform:  { label: "transform",  color: "var(--graph-lifecycle-transform)" },  // restructure existing repos
+  harden:     { label: "harden",     color: "var(--graph-lifecycle-harden)" },     // improve in place
+  maintain:   { label: "maintain",   color: "var(--graph-lifecycle-maintain)" },   // keep a shipped system running
+  harvest:    { label: "harvest",    color: "var(--graph-lifecycle-harvest)" },    // extract data out of sources (#4062)
+};
 
 /** Role → accent colour (drives the node left-border + role chip + legend). */
 export const ROLE_COLOR: Record<GRole, string> = {

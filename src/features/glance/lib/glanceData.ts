@@ -20,7 +20,7 @@ export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample
  *  resolved (#2541): `health` (idle/healthy/warning/error) and `activity` (the lifecycle word), with an
  *  optional `reason` (the fault title) shown when health is degraded. `appType` (#3786) is the project's
  *  application architecture — the contract endpoint-type discriminator, absent ⇒ read as "application". */
-export interface ProjectLite { id: string; name: string; role?: GRole; health?: GHealth; activity?: GActivity; reason?: string; faults?: number; appType?: AppType }
+export interface ProjectLite { id: string; name: string; role?: GRole; lifecycle?: string; health?: GHealth; activity?: GActivity; reason?: string; faults?: number; appType?: AppType }
 
 /** A UI kit as the adapter needs it (#2571) — id + display name, so a kit node reads the kit's NAME
  *  (falling back to the id). The store's `Kit[]` is structurally assignable, so the caller passes it as-is. */
@@ -80,10 +80,12 @@ export function buildGlanceData(
   const rawNodes: GRawNode[] = projects.map((p) => ({
     id: p.id,
     slug: p.name || p.id,
-    // #4052 — the lifecycle CATEGORY axis is gone; an L0 project reads on health ⟂ activity, the same
-    // two axes as a fleet node. `role` survives as the curated-only accent (a demo project may declare
-    // one); the default is benign and the old hash-per-id tier is GONE.
+    // `role` survives as the curated-only accent (a demo project may declare one); the default is
+    // benign and the old hash-per-id tier is GONE.
     role: p.role ?? "service",
+    // #4062 — the DISCOVERED lifecycle intent, passed through UNDEFAULTED: an unclassified project
+    // must render no chip at all rather than a confident guess (the #4052 lesson).
+    lifecycle: p.lifecycle,
     health: p.health ?? "off",      // #2541 axis 1 — resolved by the caller from faults/liveness;
                                     // #4042: the default is `off` (nothing live behind it), not a second grey
     activity: p.activity ?? "idle", // #2551 axis 2 — RESTING default; `building` is derived from live agents, not a fallback

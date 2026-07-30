@@ -210,6 +210,17 @@
       ]
     },
     {
+      "group": "graph-lifecycle",
+      "governs": "project LIFECYCLE-INTENT hues (#4062) — what a planning run is FOR, shown as the L0 project node's accent chip. Its OWN group rather than graph-category, which is the design-reconciliation vocabulary (KNOWN_GRAPH_CATEGORIES) and means something else. Deliberately distinct from the graph-health hues so the chip and the health dot never blur.",
+      "tokens": [
+        { "key": "greenfield", "name": "--graph-lifecycle-greenfield", "type": "color", "value": "#16b3a7", "governs": "greenfield — build from a pitch (teal)" },
+        { "key": "transform", "name": "--graph-lifecycle-transform", "type": "color", "value": "#7b74f2", "governs": "transform — restructure existing repos (indigo)" },
+        { "key": "harden", "name": "--graph-lifecycle-harden", "type": "color", "value": "#b8862f", "governs": "harden — improve an existing codebase in place (bronze)" },
+        { "key": "maintain", "name": "--graph-lifecycle-maintain", "type": "color", "value": "#8b93a7", "governs": "maintain — keep a shipped system running (slate)" },
+        { "key": "harvest", "name": "--graph-lifecycle-harvest", "type": "color", "value": "#d05fa8", "governs": "harvest — extract data out of existing sources (magenta)" }
+      ]
+    },
+    {
       "group": "graph-category",
       "governs": "graph CATEGORY hues — the KNOWN-category vocabulary for design reconciliation (#2646/#2650). No longer read by the Glance graph, whose L0 lifecycle axis was removed in #4052; these keys are what `KNOWN_GRAPH_CATEGORIES` matches a blueprint's declared categories against, so an unknown one gets a generated colour instead. Emptying this group would make EVERY category missing.",
       "tokens": [

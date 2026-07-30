@@ -484,6 +484,9 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
               mergeGlanceProjects(effectiveDrafts, effectivePublished, localPublished).map((p) => ({
                 ...p,
                 appType: planClassification[p.id]?.appType, // #3786/#3802 — the contract endpoint-type discriminator (absent ⇒ plain)
+                // #4062 — the discovered lifecycle intent. NOT `lifecycleOf`: that applies the
+                // stage-gating default, and an unclassified project must show no chip at all.
+                lifecycle: planClassification[p.id]?.lifecycle,
               })),
               triagedProjects,
             ),

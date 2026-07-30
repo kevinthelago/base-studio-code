@@ -544,8 +544,11 @@ pub const APP_TYPES: [&str; 9] = [
 
 /// The lifecycle-intent taxonomy (#3784) — what the planning run is FOR. Lifecycle left the
 /// blueprint model in #3785, so discovery is its only home. Mirrors `LIFECYCLES` in
-/// `src/features/planner/lib/classifyConfig.ts`.
-pub const LIFECYCLES: [&str; 4] = ["greenfield", "transform", "harden", "maintain"];
+/// `src/features/planner/lib/classifyConfig.ts`; keep the two in lockstep, or the planner can write
+/// a value this validator accepts and the app cannot render (or the reverse).
+///
+/// `harvest` (#4062) — the project exists to EXTRACT DATA FROM SOURCES.
+pub const LIFECYCLES: [&str; 5] = ["greenfield", "transform", "harden", "maintain", "harvest"];
 
 /// Validate a project classification blob (#3783/#3784/#3806): a JSON object whose optional `uiMode`
 /// is "custom"|"external", whose optional `appType`/`lifecycle` are taxonomy tokens, and whose
@@ -1818,6 +1821,15 @@ mod tests {
         for l in LIFECYCLES {
             assert!(validate_classify_config(&json!({ "lifecycle": l })).is_ok(), "lifecycle {l}");
         }
+    }
+
+    #[test]
+    fn classify_accepts_the_harvest_lifecycle_by_name() {
+        // #4062. The loop above only proves the array validates itself; this pins the TOKEN, so
+        // dropping `harvest` from LIFECYCLES fails here rather than silently shrinking the vocabulary
+        // the planner is told to write.
+        assert!(validate_classify_config(&json!({ "lifecycle": "harvest" })).is_ok());
+        assert!(LIFECYCLES.contains(&"harvest"));
     }
 
     #[test]
