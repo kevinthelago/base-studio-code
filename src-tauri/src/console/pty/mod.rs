@@ -237,9 +237,48 @@ fn build_session_init_line(
 /// Returns `true` when a new session is created, `false` when reconnecting to
 /// an existing one (e.g. after a tab switch). The caller should send `\n` on
 /// reconnect so the shell re-displays its prompt in the fresh terminal.
+/// Create a pane's PTY session. ASYNC (#3989) so the blocking work — openpty, spawning the shell,
+/// writing the session rc + settings.json — runs on the BLOCKING pool instead of holding a command-pool
+/// thread. Measured before: 43 concurrent calls at a 14.1s mean, with `pty_write` (keystrokes) queued
+/// behind them at 3.1s. The work is unchanged; it simply stops monopolizing the queue every other
+/// command shares. Same shape `preflight` already uses.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn pty_create(
+pub(crate) async fn pty_create(
+    pane_id: String,
+    cols: u16,
+    rows: u16,
+    cwd: String,
+    init_cmd: Option<String>,
+    env: Option<std::collections::HashMap<String, String>>,
+    startup_prompt: Option<String>,
+    continue_session: Option<bool>,
+    startup_prompt_fresh_only: Option<bool>,
+    checkpoint_doc: Option<String>,
+    model: Option<String>,
+    provider_id: Option<String>,
+    wsl_distro: Option<String>,
+    wsl_user: Option<String>,
+    app: AppHandle,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // `PtyState` is a bare Mutex managed by Tauri, so it cannot move into the closure — but
+        // `AppHandle` is 'static and re-fetches it here, where it outlives the call.
+        let state = app.state::<PtyState>();
+        pty_create_inner(
+            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, startup_prompt_fresh_only, checkpoint_doc, model, provider_id, wsl_distro, wsl_user,
+            &app, &state,
+        )
+    })
+    .await
+    .map_err(|e| format!("pty_create task failed: {e}"))?
+}
+
+/// The real work, off the command pool (#3989). Blocking by nature: it opens a PTY, spawns a shell,
+/// writes the session's rc + settings, and registers the session — so it must NOT run as a synchronous
+/// `#[tauri::command]`, which holds a command-pool thread for its whole duration.
+#[allow(clippy::too_many_arguments)]
+fn pty_create_inner(
     pane_id: String,
     cols: u16,
     rows: u16,
@@ -264,8 +303,8 @@ pub(crate) fn pty_create(
     // its private mode-700 home isolates it from co-located agents (raw Bash can't cross Unix perms).
     // Derive + provision it first via `ensure_sandbox_user`. None ⇒ the distro's default `agent` user.
     wsl_user: Option<String>,
-    app: AppHandle,
-    state: State<'_, PtyState>,
+    app: &AppHandle,
+    state: &PtyState,
 ) -> Result<bool, String> {
     // If a session already exists for this pane (e.g. user switched tabs and
     // switched back), reconnect rather than recreating.
@@ -366,7 +405,7 @@ pub(crate) fn pty_create(
 
     // Box the shell into a Job Object (tree-kill), register its PID with the perf sampler, and author
     // the spawn in the crash-recovery ledger — all best-effort (see `attach_job_and_track`).
-    let job = attach_job_and_track(child.as_ref(), &pane_id, &app);
+    let job = attach_job_and_track(child.as_ref(), &pane_id, app);
 
     let mut writer = pair.master.take_writer()
         .map_err(|e| { log::error!("pty[{pane_id}] take_writer failed: {e}"); e.to_string() })?;
@@ -462,7 +501,7 @@ pub(crate) fn pty_create(
 
     // Tell the mobile tunnel this pane's grid size so it renders at the desktop width
     // (before pane_id is moved into the session map).
-    tunnel_set_pane_size(&app, &pane_id, cols, rows);
+    tunnel_set_pane_size(app, &pane_id, cols, rows);
 
     let active = {
         let mut map = state.0.lock().unwrap();
