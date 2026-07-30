@@ -260,6 +260,10 @@ export const HEALTH_RANK: Record<GHealth, number> = { healthy: 0, complete: 0, w
 /** A project node as supplied by the data adapter (before layout). */
 export interface GRawNode {
   id: string;
+  /** Owned-issue completion (#4050) — `done / total` for this node's stream. Absent for a node with no
+   *  stream, or before the first read lands. PRESENTATIONAL ONLY: it never feeds health or activity,
+   *  so a stale or missing read can never change what state the node reports. */
+  progress?: { done: number; total: number };
   /** Display name (defaults to id). */
   slug?: string;
   role: GRole;

@@ -50,6 +50,8 @@ import { useGlanceFaults } from "./lib/useGlanceFaults";
 import { applyStallHealth, applyFleetLiveStatus, liveWaits } from "./lib/agentStall";
 import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "./lib/useProjectFleet";
+import { useStreamProgress } from "./lib/useStreamProgress";
+import { withStreamProgress } from "./lib/streamProgress";
 import { useFleetHeld } from "./lib/useFleetHeld";
 import "./glance.css";
 import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
@@ -221,6 +223,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // drilled project node id, held in the STORE so the app-wide nav history (mouse back/forward) can
   // drive it (see useNavHistory).
   const drill = useAppStore((s) => s.glanceDrill);
+  // #4050 — per-stream owned-issue completion for the DRILLED project. One read, partitioned in
+  // memory; null while not drilled, so nothing polls at the project-network level.
+  const streamDone = useStreamProgress(drill ?? null);
+
   const setDrill = useAppStore((s) => s.setGlanceDrill);
   // The MORPH is a first-class viewer of an app-owned studio session (#3357): opening a studio node starts
   // its session (lazily) and holds the idle reaper off for as long as the morph is open, exactly like its
@@ -300,13 +306,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             rawNodes:
               drill === BASE_STUDIO_PROJECT_ID
                 ? applyStudioLiveStatus(fleetData.rawNodes, { debugSession, paneClaudeActive, paneStatus })
-                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes, ended: endedPanes }),
+                : applyFleetLiveStatus(withStreamProgress(fleetData.rawNodes, streamDone), drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes, ended: endedPanes }),
           }
         : fleetData,
     // `quarantinedPanes` + `heldStreams` belong here: without them the memo keeps a stale overlay, so a
     // newly quarantined worker (#3916) or a stream released by the gate (#3931) would not repaint until
     // some unrelated dep changed.
-    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams, attentionPanes, maintainingPanes, endedPanes],
+    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams, attentionPanes, maintainingPanes, endedPanes, streamDone],
   );
   const fleetModel = useMemo(() => (liveFleetData ? timedSync("buildGraph:glance-fleet", () => buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges)) : null), [liveFleetData]);
   // The ACTIVE graph — the drilled fleet (with live status), else the project network. Everything downstream
