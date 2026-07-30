@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyDormantHealth, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, resolveProjectCategory } from "./useGlanceProjects";
+import { useGlanceProjects, mergeGlanceProjects, mergeDbIntoDrafts, applyLiveness, applyDormantHealth, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, resolveProjectCategory } from "./useGlanceProjects";
+import type { DbProject } from "@/features/planner";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
 import type { ProjectLite } from "./glanceData";
@@ -479,5 +480,106 @@ describe("local published inventory seeds Glance (#2445)", () => {
     const { result } = renderHook(() => useGlanceProjects());
     await waitFor(() => expect(result.current.some((p) => p.id === "restored-app")).toBe(true));
     expect(result.current.some((p) => p.id === "just-a-draft")).toBe(false);
+  });
+});
+
+describe("mergeDbIntoDrafts — the durable projects DB is a source, the store map is a cache (#3966)", () => {
+  const db = (key: string, state: string, over: Partial<DbProject> = {}): DbProject => ({
+    key, title: key, pitch: "", blueprint: null, category: null, state,
+    createdAt: 10, updatedAt: 20, ...over,
+  });
+
+  // THE regression. `studio-code` was in projects.db, open in the planner and triaged, yet had no
+  // Glance node — because `localDraftProjects` (a persisted cache written only by `addDraftProject`,
+  // and reset wholesale by `resetProjectData`) never got the entry, and Glance read only that map.
+  it("adds a project the store cache never got", () => {
+    const out = mergeDbIntoDrafts({}, [db("studio-code", "drafted", { title: "studio code" })]);
+    expect(Object.keys(out)).toEqual(["studio-code"]);
+    expect(out["studio-code"].title).toBe("studio code");
+  });
+
+  // Anything past planning arrives via the PUBLISHED side; admitting it here would double-count it.
+  it("admits only drafted/planning rows", () => {
+    const out = mergeDbIntoDrafts({}, [
+      db("a", "drafted"), db("b", "planning"), db("c", "published"), db("d", "created"),
+    ]);
+    expect(Object.keys(out).sort()).toEqual(["a", "b"]);
+  });
+
+  // A DB row has no column for the curated axes, so merging it must not flatten a demo project's
+  // authored colouring — a naive `{...cached, ...dbRow}` would strip role/health/activity.
+  it("keeps the cache's curated axes and preferred fields when both sides have the key", () => {
+    const cached = {
+      demo: { title: "Demo", pitch: "cached pitch", createdAt: 5, role: "service" as const, health: "warning" as const, activity: "review" as const },
+    };
+    const out = mergeDbIntoDrafts(cached, [db("demo", "drafted", { title: "DB Title", pitch: "db pitch" })]);
+    expect(out.demo).toMatchObject({
+      title: "Demo", pitch: "cached pitch", createdAt: 5,
+      role: "service", health: "warning", activity: "review",
+    });
+  });
+
+  // The DB fills only what the cache is actually missing.
+  it("fills blank cache fields from the DB row", () => {
+    const out = mergeDbIntoDrafts({ demo: { title: "", pitch: "", createdAt: 0 } }, [
+      db("demo", "drafted", { title: "From DB", pitch: "db pitch", createdAt: 77 }),
+    ]);
+    expect(out.demo).toMatchObject({ title: "From DB", pitch: "db pitch", createdAt: 77 });
+  });
+
+  // The bridge returns null when it's unreachable (web shell, tests, an old bundled `bsc` with no
+  // `project db` verb). The hook keeps its previous rows; the pure fn must not choke on an empty set.
+  it("is a no-op on an empty or non-array db set, preserving the cache", () => {
+    const cached = { demo: { title: "Demo", pitch: "p", createdAt: 1 } };
+    expect(mergeDbIntoDrafts(cached, [])).toEqual(cached);
+    expect(mergeDbIntoDrafts(cached, null as unknown as DbProject[])).toEqual(cached);
+  });
+
+  it("does not mutate the store map it was handed", () => {
+    const cached = { demo: { title: "Demo", pitch: "p", createdAt: 1 } };
+    mergeDbIntoDrafts(cached, [db("other", "drafted")]);
+    expect(Object.keys(cached)).toEqual(["demo"]);
+  });
+
+  // The pure-fn tests above CANNOT see whether the hook actually calls the merge — bypassing the
+  // `effectiveDrafts` memo leaves all of them green. (That is precisely how the #1102 regression test
+  // stayed green while its bug shipped: it asserted its own helper call, not the production path.)
+  // These drive the real hook through the real `bsc project db list` bridge.
+  describe("hook wiring — the graph itself, not just the helper", () => {
+    /** Answer the two invokes the hook makes: the local hub inventory and the `bsc` bridge. */
+    const mockBridge = (rows: unknown) =>
+      vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+        if (cmd === "list_local_projects") return [];
+        const argv = (args as { args?: string[] } | undefined)?.args;
+        if (cmd === "bsc" && argv?.join(" ") === "project db list --json") {
+          return JSON.stringify(rows);
+        }
+        return null;
+      });
+
+    it("renders a node for a triaged project that exists ONLY in projects.db (#3966)", async () => {
+      useAppStore.setState({
+        localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null,
+        triagedProjects: { "studio-code": 1 },
+      });
+      mockBridge([{ key: "studio-code", title: "studio code", pitch: "", state: "drafted", createdAt: 1, updatedAt: 2 }]);
+      const { result } = renderHook(() => useGlanceProjects());
+      await waitFor(() => expect(result.current.some((p) => p.id === "studio-code")).toBe(true));
+    });
+
+    it("keeps rendering the store cache when the bridge is unreachable", async () => {
+      useAppStore.setState({
+        localDraftProjects: { cached: { title: "Cached", pitch: "", createdAt: 1 } },
+        planFleet: {}, githubToken: "", githubState: null, triagedProjects: { cached: 1 },
+      });
+      // `bsc` throwing is the old-binary / web-shell case — listDbProjects returns null.
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === "list_local_projects") return [];
+        if (cmd === "bsc") throw new Error("no bsc bridge");
+        return null;
+      });
+      const { result } = renderHook(() => useGlanceProjects());
+      await waitFor(() => expect(result.current.some((p) => p.id === "cached")).toBe(true));
+    });
   });
 });
