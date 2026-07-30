@@ -517,3 +517,14 @@ textarea.input{ height:auto; min-height:64px; padding:8px 10px; resize:vertical;
   white-space: nowrap;
   border: 0;
 }
+
+/* ── Terminal viewport (#3994) ──────────────────────────────────────────────────────────────────
+   xterm ships `.xterm-viewport { overflow-y: scroll }` — a PERMANENT scrollbar, shown whether or
+   not there is anything to scroll. Its own comment says it is for macOS scrollbar opacity; on a
+   themed dark pane it just reads as a stuck scrollbar in every terminal, and it steals ~15px of
+   width from the fit. `auto` shows it only when there IS scrollback, which is the behaviour the
+   pane wants. This repo carried NO `.xterm` overrides, so the default went unchallenged. */
+.app .xterm .xterm-viewport {
+  overflow-y: auto;
+  background-color: transparent;   /* xterm hardcodes #000; let the pane's own background show */
+}
