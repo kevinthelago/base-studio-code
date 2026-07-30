@@ -382,6 +382,24 @@ export function nodeStateWord(n: { health: GHealth; rollupHealth?: GHealth; acti
   return ACTIVITY_META[n.activity].label;
 }
 
+/**
+ * Does this node wear the BUILDING outline (#4010)?
+ *
+ * The ring answers "is this node actively working" from the node's SHAPE, so a fleet at work is legible
+ * without reading every label — and a worker that parks into maintenance (`bsc-maintain`) drops back to
+ * `idle` and loses it, which is the distinction it exists to draw.
+ *
+ * Suppressed while selected or in error: both already draw their own ring, and two concentric outlines
+ * read as noise rather than as more information. Also suppressed on a deactivated node, which is meant
+ * to read calm.
+ *
+ * Pure + exported so the rule is testable — the ring itself is an inline `boxShadow`, which jsdom
+ * renders but does not compute, so the DECISION is what gets pinned.
+ */
+export function showsBuildingRing(n: { activity: GActivity }, ctx: { isOff: boolean; selected: boolean; isError: boolean }): boolean {
+  return n.activity === "building" && !ctx.isOff && !ctx.selected && !ctx.isError;
+}
+
 /** Axis 2 — ACTIVITY → the bottom-right lifecycle word (#2541). Colour is the health axis's job; this
  *  is just the label + whether it animates (a live app / building fleet reads as active). */
 export const ACTIVITY_META: Record<GActivity, { label: string; pulse: boolean }> = {

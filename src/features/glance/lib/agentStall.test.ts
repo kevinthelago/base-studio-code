@@ -262,3 +262,47 @@ describe("applyFleetLiveStatus — held by the dependency gate (#3931)", () => {
     expect(n.reason).toBeUndefined();
   });
 });
+
+describe("maintenance vs building (#4010)", () => {
+  const PROJ = "proj";
+  const nodes: GRawNode[] = [{ id: "auth", slug: "auth", role: "service", health: "idle", activity: "idle" }];
+  const auth = fleetPaneId(PROJ, "auth");
+  const run = (over: Partial<FleetLiveSignals>) =>
+    applyFleetLiveStatus(nodes, PROJ, { livePaneIds: new Set([auth]), paneStatus: {}, waiting: [], now: T0, ...over })[0];
+
+  it("a working session reads building — the state that wears the outline", () => {
+    expect(run({ paneStatus: { [auth]: "run" } })).toMatchObject({ health: "healthy", activity: "building" });
+  });
+
+  it("a PARKED session reads plain idle even while its pane still reads run", () => {
+    // The whole point. A maintaining worker's TUI is still alive, so `paneStatus` may well be "run";
+    // checked after the run->building branch it would keep the building outline forever despite having
+    // finished everything it owns.
+    const r = run({ paneStatus: { [auth]: "run" }, maintaining: new Set([auth]) });
+    expect(r).toMatchObject({ health: "idle", activity: "idle" });
+    expect(r.reason).toMatch(/maintenance/);
+  });
+
+  it("keeps the explanation on the node so the plain rendering is not information-free", () => {
+    // It renders as the plain node deliberately — nothing for anyone to do — but hover and the
+    // inspector's REASON tile still say why it is quiet.
+    expect(run({ maintaining: new Set([auth]) }).reason).toMatch(/standing by/);
+  });
+
+  it("a bsc-wait still outranks maintenance — that one needs a person", () => {
+    const r = run({ maintaining: new Set([auth]), waiting: [{ session: auth, reason: "awaiting review", at: T0 }] });
+    expect(r).toMatchObject({ health: "attention", activity: "waiting" });
+  });
+
+  it("quarantine still outranks maintenance", () => {
+    const r = run({ maintaining: new Set([auth]), quarantined: { [auth]: { summary: "warden" } } });
+    expect(r).toMatchObject({ health: "error" });
+  });
+
+  it("maintenance on an unlaunched node stays off — there is no session to park", () => {
+    const r = applyFleetLiveStatus(nodes, PROJ, {
+      livePaneIds: new Set(), paneStatus: {}, waiting: [], now: T0, maintaining: new Set([auth]),
+    })[0];
+    expect(r).toMatchObject({ health: "off", activity: "idle" });
+  });
+});

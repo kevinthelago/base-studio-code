@@ -9,7 +9,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
+import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingRing, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
 import { archetypeById, hueColor } from "@/features/teams";
@@ -315,8 +315,20 @@ export function GlanceCanvas(p: CanvasProps) {
           : hazardCycle ? `color-mix(in oklch, ${ERR} 55%, transparent)`
           : loopHue ? `color-mix(in oklch, ${loopHue} 55%, transparent)`
           : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
+        // The BUILDING outline (#4010) — a ring that says "this node is actively working", so a fleet at
+        // work is legible from node shapes instead of by reading every label. A worker that parks into
+        // MAINTENANCE (`bsc-maintain`) drops back to plain `idle` and loses the ring, which is the
+        // distinction being drawn.
+        //
+        // It lives on `boxShadow`, not `border`: `border` already carries a contested precedence chain
+        // (selected -> preview -> off -> error -> hazard-cycle -> loop-hue) that exists to express faults
+        // and selection, and taking it over would displace one of those. Shadows compose, so the ring
+        // sits under them instead of fighting them — and it is suppressed outright while selected or in
+        // error, since both draw their own ring and two concentric outlines just read as noise.
+        const buildingRing = showsBuildingRing(n, { isOff, selected, isError });
         const boxShadow = selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)"
           : isError && !inherited ? `0 0 0 3px color-mix(in oklch, ${ERR} 22%, transparent), 0 2px 8px rgba(0,0,0,.45)`
+          : buildingRing ? "0 0 0 2px var(--graph-building-ring), 0 2px 8px rgba(0,0,0,.45)"
           : "0 2px 8px rgba(0,0,0,.45)";
         // Pushed clear of the open terminal panel, if it overlaps (#2662) — the panel makes room.
         const push = pushMap.get(n.id);
