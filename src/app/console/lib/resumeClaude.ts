@@ -51,7 +51,20 @@ export function resolveInitCmd(args: {
   // carries no startup prompt (that's a kickoff), so the plan fell through to `None` and the pane
   // came up as a bare bash shell: `has_history=true · resumed=false`. Every fleet relaunch was
   // silently starting cold. Placed AFTER the startupPrompt branch so a kickoff still wins.
-  if (continueSession && paneWasClaude) return CONTINUE_OR_FRESH;
+  // #3986: `continueSession` ALONE. This used to require `paneWasClaude` too, which deadlocked: that
+  // flag is set only when claude actually starts (the `claude()` wrapper's OSC 100 `run`), so a pane
+  // where claude had never started could never be resumed INTO claude — the gate blocked the launch,
+  // the launch was what would have set the flag. Measured: 77 of 78 fleet panes had no
+  // `paneWasClaude`, i.e. Resume could not start an agent in any of them, which is the whole of the
+  // "sessions come up as bare shells" thread.
+  //
+  // Safe to drop on both sides. `continueSession` comes from `paneContinue`, set by
+  // `fleetStartProject` for FLEET panes, and the call site already forces it false for a manual
+  // console (`manual ? false : …`) — so the guard excluded nothing a manual pane needed. And
+  // CONTINUE_OR_FRESH degrades on its own (`--continue … || claude`, #3937), so a pane with no prior
+  // conversation starts fresh rather than failing: `paneWasClaude` was guarding a case the command
+  // already handles.
+  if (continueSession) return CONTINUE_OR_FRESH;
   // The resume path — crash recovery only (#1041): a clean quit does NOT auto-resume.
   if (paneWasClaude && (restoreRequested || (autoResumeClaude && wasUncleanShutdown))) {
     return CONTINUE_OR_FRESH;
