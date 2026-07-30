@@ -283,7 +283,9 @@ describe("maintenance vs building (#4010)", () => {
     // The WORD changed in #4027 — `complete`, not `idle`. Standing by having finished everything and
     // merely being quiet are different facts, and they used to render identically.
     const r = run({ paneStatus: { [auth]: "run" }, maintaining: new Set([auth]) });
-    expect(r).toMatchObject({ health: "idle", activity: "complete" });
+    // #4034 — health is `complete` (blue) too now, not `idle` (grey). A finished worker and a resting
+    // one are different states and used to share a colour.
+    expect(r).toMatchObject({ health: "complete", activity: "complete" });
     expect(r.reason).toMatch(/maintenance/);
   });
 

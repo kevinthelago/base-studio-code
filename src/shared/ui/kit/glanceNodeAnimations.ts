@@ -65,4 +65,27 @@ export const GLANCE_NODE_ANIMATIONS: KitAnimation[] = [
       "100%": { "box-shadow": "0 0 0 0 transparent" },
     },
   },
+  // HEALTH GLOW (#4034) — a soft radial wash at the node's top-left that pulses and grows, in the
+  // node's HEALTH colour.
+  //
+  // The colour is `var(--node-health)`, a custom property the node sets from its own health — NOT a
+  // per-state animation. One definition therefore serves every state, and retuning the motion is
+  // independent of retuning the palette. It is also why there is no `[data-node-state]` selector here:
+  // this one is not state-scoped, it applies to the glow layer the node always renders.
+  //
+  // `transform: scale` + `opacity` only, so it is compositor-friendly — this is the one animation that
+  // may be running on every node in a large graph at once, and animating the gradient itself (or any
+  // layout property) would repaint each frame.
+  {
+    name: "health-glow",
+    selector: "[data-node-glow]",
+    trigger: "always",
+    duration: "3200ms",
+    easing: "ease-in-out",
+    keyframes: {
+      "0%": { opacity: "0.20", transform: "scale(0.82)" },
+      "50%": { opacity: "0.42", transform: "scale(1.06)" },
+      "100%": { opacity: "0.20", transform: "scale(0.82)" },
+    },
+  },
 ];

@@ -63,3 +63,28 @@ describe("GlanceNode binds its states to authored motion (#4032)", () => {
     expect(container.textContent).toContain("building"); // activity word
   });
 });
+
+describe("the health glow layer (#4034)", () => {
+  afterEach(() => cleanup());
+
+  it("renders a glow carrying the node's health colour via a custom property", () => {
+    const { container } = render(<GlanceNode {...{ ...props(node(), "building"), healthColor: "var(--graph-health-complete)" }} />);
+    const glow = container.querySelector("[data-node-glow]");
+    expect(glow).not.toBeNull();
+    // The colour is threaded as a CSS var on the CARD, so the one authored animation serves every state.
+    const card = container.querySelector("[data-node-state]") as HTMLElement;
+    expect(card.style.getPropertyValue("--node-health")).toBe("var(--graph-health-complete)");
+  });
+
+  it("does NOT glow a deactivated node — that one is meant to read calm", () => {
+    const { container } = render(<GlanceNode {...{ ...props(node(), null), isOff: true }} />);
+    expect(container.querySelector("[data-node-glow]")).toBeNull();
+  });
+
+  it("keeps the glow out of the hit path", () => {
+    // It sits above the card body; eating a click meant for the node would break selection.
+    const { container } = render(<GlanceNode {...props(node(), "building")} />);
+    const glow = container.querySelector("[data-node-glow]") as HTMLElement;
+    expect(glow.style.pointerEvents).toBe("none");
+  });
+});
