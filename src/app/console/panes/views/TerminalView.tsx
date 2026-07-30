@@ -73,9 +73,6 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // the top lines render out of frame (#190). Until opened, output is buffered
   // (like a hidden pane) and flushed once we open at a real size.
   const openedRef = useRef(false);
-  // #3975: set on unmount so a terminal still queued for an admission slot is never opened after its
-  // pane is gone. A ref (not a local) because the admission callback outlives the effect closure.
-  const cancelledRef = useRef(false);
   // #3975: the focus effect below runs on a rAF and skips while `openedRef` is false. Now that open()
   // waits for an admission slot, that effect can fire BEFORE the terminal exists and silently drop the
   // focus. So `openIfReady` focuses on open when this pane is the focused one — the two orderings are
@@ -142,7 +139,6 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // (Re)mounting: re-arm the skip so the font-zoom effect doesn't fire against
     // a terminal whose PTY hasn't been created yet.
     fontReadyRef.current = false;
-    cancelledRef.current = false;   // #3975: re-arm admission for this mount
 
     const term = new Terminal({
       theme: TERM_THEME,
@@ -184,23 +180,9 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // Hooked HERE rather than around the whole effect because this function is already the "not ready
     // yet, open later" path (hidden panes defer to the ResizeObserver below), so the retry machinery
     // and its cleanup are already correct and exercised. Gating admission is one more not-ready reason.
-    let admitted = false;
-    let awaitingSlot = false;
     function openIfReady(): boolean {
       if (openedRef.current) return true;
       if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return false;
-      if (!admitted) {
-        if (!awaitingSlot) {
-          awaitingSlot = true;
-          void admitTerminal().then(() => {
-            awaitingSlot = false;
-            if (cancelledRef.current) return;   // unmounted while queued — never open a dead pane
-            admitted = true;
-            openIfReady();
-          });
-        }
-        return false;
-      }
       term.open(el);
       openedRef.current = true;
       disposeClipboard = attachTerminalClipboard(term, paneId);
@@ -342,6 +324,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // existing one (e.g. after a tab switch). On reconnect we send \n so bash
     // re-prints its prompt in the fresh terminal.
     requestAnimationFrame(async () => {
+      if (destroyed) return;
+      // #3992: ONE admission slot gates the whole heavy sequence — open + fit + pty_create — not just
+      // `term.open()`. #3975 gated the open alone, which inverted the ordering this path depends on:
+      // `pty_create` is called with `term.cols/term.rows`, and those are xterm's 80x24 DEFAULTS until
+      // the terminal has been opened and fitted. Every PTY came up 80x24 while the pane rendered at
+      // its real size. Gating here restores open-then-size AND bounds the pty_create burst, which is
+      // the concurrency limit deferred in #3991.
+      await admitTerminal();
       if (destroyed) return;
       // Open now if the pane became sizable between mount and this frame.
       openIfReady();
@@ -626,7 +616,6 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
     return () => {
       destroyed = true;
-      cancelledRef.current = true;   // #3975: a queued admission must not open an unmounted pane
       if (quietTimerRef.current) { clearTimeout(quietTimerRef.current); quietTimerRef.current = null; }
       if (nudgeTimerRef.current) { clearTimeout(nudgeTimerRef.current); nudgeTimerRef.current = null; }
       if (autoNudgeTimerRef.current) { clearTimeout(autoNudgeTimerRef.current); autoNudgeTimerRef.current = null; }

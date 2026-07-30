@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vite
 import { render, cleanup, waitFor } from "@testing-library/react";
 import { TerminalView } from "./TerminalView";
 import { useAppStore } from "@/store";
+import { invoke } from "@tauri-apps/api/core";
 
 /**
  * #1239: the native console-input overlay (#1158) is reverted for Claude CLI sessions, so Claude's
@@ -22,7 +23,10 @@ vi.mock("@xterm/xterm", () => {
     options: Record<string, unknown> = {};
     parser = { registerOscHandler: vi.fn() };
     loadAddon = vi.fn();
-    open = vi.fn();
+    // #3992: `open()` is when xterm measures real cell metrics, so the mock models that — before it
+    // runs, `cols`/`rows` are the 80x24 DEFAULTS. `pty_create` is called with those fields, so this is
+    // what lets a test tell "sized" from "not yet sized".
+    open = vi.fn(() => { this.cols = 120; this.rows = 40; });
     write = vi.fn();
     scrollToBottom = vi.fn();
     onData = vi.fn(() => ({ dispose: vi.fn() }));
@@ -90,5 +94,24 @@ describe("TerminalView — Claude CLI native input reverted (#1239)", () => {
     // handled whichever way the race falls — but the assertion has to await the frame.
     render(<TerminalView paneId={PANE} visible focused />);
     await waitFor(() => expect(focusSpy).toHaveBeenCalled());
+  });
+});
+
+describe("PTY geometry (#3992)", () => {
+  it("passes the terminal's measured size to pty_create, not the raw defaults", () => {
+    // NOT a regression guard, and I checked rather than assuming: this test still passes when the
+    // broken #3975 ordering is restored, because jsdom has no layout — `openIfReady`'s
+    // `offsetWidth === 0` branch and the frame ordering it gates are both unobservable here. The
+    // decisive check for #3992 is the runtime log line `pty[…] created · <cols>x<rows>`: 80x24 there
+    // means the invoke beat the fit. Kept because it does pin the contract that `pty_create` reads
+    // the terminal's dimensions rather than hardcoding any, which is the thing that made the
+    // ordering matter in the first place.
+    render(<TerminalView paneId={PANE} visible focused />);
+    return waitFor(() => {
+      const call = vi.mocked(invoke).mock.calls.find((c) => c[0] === "pty_create");
+      expect(call, "pty_create was invoked").toBeTruthy();
+      const args = call![1] as { cols: number; rows: number };
+      expect({ cols: args.cols, rows: args.rows }).toEqual({ cols: 120, rows: 40 });
+    });
   });
 });
