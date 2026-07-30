@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeDirectorDrive, resolveDirectorDrive, decideDirectorAction,
   eventDirectorPrompt, DEFAULT_DIRECTOR_DRIVE, askKey, pendingAskPrompt,
-  briefKey, pendingBriefPrompt, requestKey, pendingRequestPrompt } from "./directorDrive";
+  briefKey, pendingBriefPrompt, requestKey, pendingRequestPrompt, heartbeatDirectorPrompt } from "./directorDrive";
 
 const TS = "2026-06-01T00:00:00Z";
 const line = (session: string, kind: string, a = "", b = "") => `${TS}	${session}	${kind}	${a}	${b}`;
@@ -198,5 +198,27 @@ describe("pendingRequestPrompt / requestKey (#4001)", () => {
   it("survives a request with no requester", () => {
     // `from` defaults to $BSC_STREAM, which is unset for a non-fleet session.
     expect(pendingRequestPrompt([req("3", "", "something")])).toContain("a worker");
+  });
+});
+
+describe("the sweep clears the waiting queue (#4015)", () => {
+  it("names the query and what to do with each kind", () => {
+    // "Unblock anyone blocked or waiting" was unactionable prose — the director had no way to SEE who
+    // was blocked. The sweep now names the command and the verb for each kind it returns.
+    const p = heartbeatDirectorPrompt();
+    expect(p).toContain("logs waiting");
+    expect(p).toContain("bsc-answer");
+    expect(p).toContain("bsc plan request resolve");
+  });
+
+  it("tells the director to LEAVE permission rows alone", () => {
+    // A permission prompt needs the USER — the director cannot approve on their behalf, and a
+    // director that tries will sit there re-reading a row it can never clear.
+    expect(heartbeatDirectorPrompt()).toMatch(/permission.*USER/);
+  });
+
+  it("rides on the event prompt too, not just the heartbeat", () => {
+    // A `heartbeat`-drive director sweeps on a timer; an `event`-drive one only ever sees this tail.
+    expect(eventDirectorPrompt([{ type: "landed", ref: { kind: "issue", number: 1 }, at: 1 }])).toContain("logs waiting");
   });
 });
