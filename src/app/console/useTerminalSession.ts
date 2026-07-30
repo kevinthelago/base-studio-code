@@ -22,7 +22,13 @@ export function useTerminalSession(paneId: string, initialCwd?: string) {
 
   function retryReadiness() {
     const cwd = initialCwd ?? "";
-    if (!cwd) return;
+    // #3984: say so rather than returning silently. A no-op retry is indistinguishable from one that
+    // ran and got the same verdict — which is exactly how the button read while the probe was failing
+    // to spawn (#3984): it fired 15 times a boot and looked dead every time.
+    if (!cwd) {
+      log.warn(`console[${paneId}] readiness retry skipped — this pane has no cwd, so there is nothing to probe`);
+      return;
+    }
     const ghToken = tokenForRepo(
       useAppStore.getState().paneRepos[paneId],
       useAppStore.getState().repoGithubTokens,

@@ -31,8 +31,15 @@ fn run_probe_shell(
     let shell = crate::platform::shell::resolve_shell();
     let mut cmd = std::process::Command::new(&shell);
     cmd.arg("-lc").arg(script);
+    // #3984: NORMALIZE the cwd, exactly as `pty_create` does. A git-bash-style path (`/c/Users/…`)
+    // is not something Windows `current_dir` accepts, so the spawn failed with ERROR_DIRECTORY (267)
+    // BEFORE the script ran — `run_probe_shell` then returned "", `interpret_preflight` found no
+    // markers, and every tool read as not-found. That is what produced a critical, blocking
+    // "install claude / install git" banner on a machine where both were installed and a login shell
+    // found them: the probe never started. Same rule the rest of the backend already follows.
+    let cwd = crate::to_native_path(cwd);
     if !cwd.is_empty() {
-        cmd.current_dir(cwd);
+        cmd.current_dir(&cwd);
     }
     let env_map = env.unwrap_or_default();
     for (k, v) in crate::console::pty::session_env(&env_map) {
@@ -63,7 +70,10 @@ fn run_probe_shell(
             stdout
         }
         Err(e) => {
-            log::error!("{label} probe failed to spawn ({shell}): {e}");
+            // #3984: name the DIRECTORY too. #3982 logged the empty-output path but not this one, so
+            // a spawn failure said only "invalid" without saying invalid *what* — which left the
+            // actual cause (an un-normalized cwd) unnamed through a whole round of hypotheses.
+            log::error!("{label} probe failed to spawn ({shell}) in cwd={cwd:?}: {e}");
             String::new()
         }
     }
