@@ -31,10 +31,13 @@ export interface GlanceNodeProps {
   /** Precomputed by the canvas — the border precedence chain it owns. */
   border: string;
   boxShadow: string;
-  /** Health dot colour + whether it pulses (axis 1). */
+  /** The node's health colour (axis 1). Drives the GLOW via `--node-health` — the 8px dot it used to
+   *  paint was removed in #4037, since the glow already carries the colour and carrying it twice made
+   *  the node busier without saying more. */
   healthColor: string;
-  healthPulse: boolean;
-  /** Lit only by a downstream dep — dimmed, never pulses. */
+  /** Lit only by a DOWNSTREAM dep. Dims the glow, so the eye still lands on the origin of a fault
+   *  rather than on everything the fault touches (#2541) — the distinction the dot's opacity used to
+   *  make, preserved on the surface that replaced it. */
   inherited: boolean;
   /** The role/category accent for the lower-left label. */
   roleColor: string;
@@ -78,6 +81,7 @@ export function GlanceNode(p: GlanceNodeProps) {
           click meant for the node. */}
       {!p.isOff && (
         <Box data-node-glow aria-hidden style={{
+          opacity: p.inherited ? 0.45 : 1,
           // Wider than the node is tall (NH 66) and over half its width (NW 186), so the wash reads as
           // lighting the corner rather than as a dot in it. `overflow: hidden` on the card clips it to the
           // rounded corner, so oversizing costs nothing visually.
@@ -87,11 +91,6 @@ export function GlanceNode(p: GlanceNodeProps) {
         }} />
       )}
       <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {/* Axis-1 health dot. Error pulses at the ORIGIN; an inherited dot is dimmed (no pulse). */}
-        <Box title={`${n.rollupHealth}${p.inherited ? " (downstream)" : ""}`}
-          style={{ width: 8, height: 8, borderRadius: "50%", background: p.healthColor, flex: "none", opacity: p.inherited ? 0.5 : 1,
-            boxShadow: p.healthPulse && !p.inherited ? `0 0 8px ${p.healthColor}` : "none",
-            animation: p.healthPulse && !p.inherited ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }} />
         <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
         {/* The APP-TYPE discriminator (#3786/#3802) — a subtle mono micro-label on the title line: what
             KIND of app this endpoint is (api/serverless/cli/…). Gated on a non-default classification,
