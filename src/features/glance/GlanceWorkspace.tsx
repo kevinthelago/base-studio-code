@@ -159,6 +159,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // cadence (kept out of render — `Date.now()` is impure) so a threshold crossing surfaces without a
   // coord change.
   const coord = useCoordLog();
+  // #4010 — sessions parked by `bsc-maintain`. Memoized for the same reason: a fresh Set each render
+  // would invalidate the fleet-status memo below on every tick.
+  const maintainingPanes = useMemo(
+    () => new Set(coord.state.maintaining.map((m) => m.session)),
+    [coord.state.maintaining],
+  );
+
   const [now, setNow] = useState(0);
   usePoll(async (isCancelled) => { if (!isCancelled()) setNow(Date.now()); }, STALL_POLL_MS, []);
   // Overlay order: base (merge+liveness) → STALL (waiting/warn) → FAULT (error) → OFF (#3239) last, so a
@@ -293,13 +300,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             rawNodes:
               drill === BASE_STUDIO_PROJECT_ID
                 ? applyStudioLiveStatus(fleetData.rawNodes, { debugSession, paneClaudeActive, paneStatus })
-                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes }),
+                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes }),
           }
         : fleetData,
     // `quarantinedPanes` + `heldStreams` belong here: without them the memo keeps a stale overlay, so a
     // newly quarantined worker (#3916) or a stream released by the gate (#3931) would not repaint until
     // some unrelated dep changed.
-    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams, attentionPanes],
+    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams, attentionPanes, maintainingPanes],
   );
   const fleetModel = useMemo(() => (liveFleetData ? timedSync("buildGraph:glance-fleet", () => buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges)) : null), [liveFleetData]);
   // The ACTIVE graph — the drilled fleet (with live status), else the project network. Everything downstream
