@@ -14,7 +14,13 @@ import { invoke } from "@tauri-apps/api/core";
 
 // xterm can't initialize in jsdom (open() needs real DOM measurements), so stub the Terminal +
 // FitAddon with spies. focusSpy is hoisted so the mock factory can close over it.
-const { focusSpy } = vi.hoisted(() => ({ focusSpy: vi.fn() }));
+// `fits`/`refreshes` are the #3996 debounce probes — every FitAddon/Terminal the component builds
+// registers its spies here, so a test can count how many fits a burst of resize callbacks produced.
+const { focusSpy, fits, refreshes } = vi.hoisted(() => ({
+  focusSpy: vi.fn(),
+  fits: [] as ReturnType<typeof vi.fn>[],
+  refreshes: [] as ReturnType<typeof vi.fn>[],
+}));
 
 vi.mock("@xterm/xterm", () => {
   class Terminal {
@@ -34,6 +40,8 @@ vi.mock("@xterm/xterm", () => {
     dispose = vi.fn();
     attachCustomKeyEventHandler = vi.fn();
     getSelection = vi.fn(() => "");
+    refresh = vi.fn();
+    constructor() { refreshes.push(this.refresh); }
   }
   return { Terminal };
 });
@@ -41,6 +49,7 @@ vi.mock("@xterm/xterm", () => {
 vi.mock("@xterm/addon-fit", () => {
   class FitAddon {
     fit = vi.fn();
+    constructor() { fits.push(this.fit); }
   }
   return { FitAddon };
 });
@@ -113,5 +122,67 @@ describe("PTY geometry (#3992)", () => {
       const args = call![1] as { cols: number; rows: number };
       expect({ cols: args.cols, rows: args.rows }).toEqual({ cols: 120, rows: 40 });
     });
+  });
+});
+
+describe("resize coalescing (#3996)", () => {
+  // A grid relayout, a dock grow, or a divider drag walks the container through many intermediate
+  // sizes. Fitting on EVERY callback let a terminal settle on a size measured mid-flight — and if the
+  // last transient happened to equal the final box, the observer never fired again to correct it,
+  // which is the "too many rows for the pane" symptom. `useScreenSession` (the planner path) already
+  // coalesced to the settled size; this pins the same behaviour for the console.
+  //
+  // Unlike the #3992 test above, this one IS a real regression guard — debouncing is pure timer logic,
+  // so jsdom's missing layout does not blind it.
+  let fire: (() => void) | undefined;
+
+  beforeEach(() => {
+    fire = undefined;
+    fits.length = 0;
+    refreshes.length = 0;
+    vi.useFakeTimers();
+    // Capturing stub — the file-wide one in beforeAll never invokes its callback.
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(private cb: () => void) { fire = () => this.cb(); }
+      observe() {}
+      unobserve() {}
+      disconnect() { fire = undefined; }
+    });
+  });
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("fits once for a burst of resize callbacks, not once per callback", () => {
+    render(<TerminalView paneId={PANE} visible focused />);
+    const fit = fits[fits.length - 1];
+    expect(fire, "the component observed its container").toBeTruthy();
+
+    // Warm-up. Under fake timers the admission-gated open (#3992) has not resolved yet, so THIS
+    // settled callback is the one that opens the terminal — and `open()` fits once on its own,
+    // independently of the observer. Spend that here so the burst below counts only refits.
+    fire!();
+    vi.advanceTimersByTime(90);
+
+    fit.mockClear();
+    for (let i = 0; i < 5; i++) fire!();
+    expect(fit, "no fit until the burst settles").not.toHaveBeenCalled();
+    vi.advanceTimersByTime(90);
+    expect(fit, "five callbacks cost one settled fit").toHaveBeenCalledTimes(1);
+
+    // #2837: the buffer is repainted at the size it actually ended up.
+    expect(refreshes[refreshes.length - 1]).toHaveBeenCalled();
+  });
+
+  it("drops a pending refit when the pane unmounts", () => {
+    const { unmount } = render(<TerminalView paneId={PANE} visible focused />);
+    const fit = fits[fits.length - 1];
+    fire!();
+    vi.advanceTimersByTime(90); // warm-up (see above)
+    fit.mockClear();
+    fire!();
+    unmount();
+    vi.advanceTimersByTime(90);
+    // Firing against a disposed terminal is what threw the uncaught #2832 error.
+    expect(fit, "no fit after dispose").not.toHaveBeenCalled();
   });
 });
