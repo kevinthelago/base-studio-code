@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ACTIVITY_META } from "./glanceGraph";
 import { applyStallHealth, applyFleetLiveStatus, liveWaits, projectKeyOfSession, STALL_WARN_MS, type WaitLite, type FleetLiveSignals } from "./agentStall";
 import type { ProjectLite } from "./glanceData";
 import type { GRawNode } from "./glanceGraph";
@@ -274,12 +275,15 @@ describe("maintenance vs building (#4010)", () => {
     expect(run({ paneStatus: { [auth]: "run" } })).toMatchObject({ health: "healthy", activity: "building" });
   });
 
-  it("a PARKED session reads plain idle even while its pane still reads run", () => {
-    // The whole point. A maintaining worker's TUI is still alive, so `paneStatus` may well be "run";
-    // checked after the run->building branch it would keep the building outline forever despite having
+  it("a PARKED session does not read as building, even while its pane still reads run", () => {
+    // The #4010 point, unchanged: a maintaining worker's TUI is still alive, so `paneStatus` may well
+    // be "run"; checked after the run->building branch it would keep breathing forever despite having
     // finished everything it owns.
+    //
+    // The WORD changed in #4027 — `complete`, not `idle`. Standing by having finished everything and
+    // merely being quiet are different facts, and they used to render identically.
     const r = run({ paneStatus: { [auth]: "run" }, maintaining: new Set([auth]) });
-    expect(r).toMatchObject({ health: "idle", activity: "idle" });
+    expect(r).toMatchObject({ health: "idle", activity: "complete" });
     expect(r.reason).toMatch(/maintenance/);
   });
 
@@ -304,5 +308,56 @@ describe("maintenance vs building (#4010)", () => {
       livePaneIds: new Set(), paneStatus: {}, waiting: [], now: T0, maintaining: new Set([auth]),
     })[0];
     expect(r).toMatchObject({ health: "off", activity: "idle" });
+  });
+});
+
+describe("a finished worker reads COMPLETE (#4027)", () => {
+  const PROJ = "proj";
+  const nodes: GRawNode[] = [{ id: "auth", slug: "auth", role: "service", health: "idle", activity: "idle" }];
+  const auth = fleetPaneId(PROJ, "auth");
+  const run = (over: Partial<FleetLiveSignals>) =>
+    applyFleetLiveStatus(nodes, PROJ, { livePaneIds: new Set([auth]), paneStatus: {}, waiting: [], now: T0, ...over })[0];
+
+  it("an ENDED-done worker reads complete, NOT off", () => {
+    // The trap: `livePaneIds` excludes ended panes, so without a branch above the off fall-through a
+    // worker that completed every issue renders identically to one that never launched.
+    const r = applyFleetLiveStatus(nodes, PROJ, {
+      livePaneIds: new Set(), paneStatus: {}, waiting: [], now: T0,
+      ended: { [auth]: { state: "done" } },
+    })[0];
+    expect(r.activity).toBe("complete");
+    expect(r.health).not.toBe("off");
+  });
+
+  it("a MAINTAINING worker reads complete, not idle", () => {
+    // Standing by having finished everything vs merely being quiet are different facts; they used to
+    // render as the same word.
+    expect(run({ maintaining: new Set([auth]) })).toMatchObject({ activity: "complete" });
+  });
+
+  it("an ending that WANTS A PERSON does not read complete", () => {
+    // `needs-attention` / `blocked` are endings too — but endings that need someone, so they keep
+    // falling through to the states that say so rather than being dressed up as success.
+    for (const state of ["needs-attention", "blocked"]) {
+      const r = applyFleetLiveStatus(nodes, PROJ, {
+        livePaneIds: new Set(), paneStatus: {}, waiting: [], now: T0, ended: { [auth]: { state } },
+      })[0];
+      expect(r.activity).not.toBe("complete");
+    }
+  });
+
+  it("a never-launched worker still reads off — the distinction the branch exists to protect", () => {
+    const r = applyFleetLiveStatus(nodes, PROJ, { livePaneIds: new Set(), paneStatus: {}, waiting: [], now: T0 })[0];
+    expect(r).toMatchObject({ health: "off", activity: "idle" });
+  });
+
+  it("quarantine still outranks complete", () => {
+    const r = run({ maintaining: new Set([auth]), quarantined: { [auth]: { summary: "warden" } } });
+    expect(r).toMatchObject({ health: "error" });
+  });
+
+  it("complete never pulses — motion means 'look at this', and this needs nothing", () => {
+    expect(ACTIVITY_META.complete.pulse).toBe(false);
+    expect(ACTIVITY_META.complete.label).toBe("complete");
   });
 });

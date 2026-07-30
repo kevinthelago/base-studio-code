@@ -15,7 +15,7 @@ import { TelemetryView } from "@/app/console/panes/views/TelemetryView";
 import { useAppStore } from "@/store";
 import type { PaneTokenUsage } from "@/app/console/lib/usePaneTokenUsage";
 import type { ViewKey } from "@/app/console/panes/viewDefs";
-import { DisabledConsole, EndedConsole, DormantConsole } from "./consoleStates";
+import { DisabledConsole, EndedConsole, DormantConsole, CompletedConsole } from "./consoleStates";
 
 export interface PaneAtProps {
   i: number;
@@ -76,6 +76,10 @@ export const PaneAt = memo(function PaneAt({
   // its renderer buffer + the dead session) and show a resume placeholder; resuming clears
   // the flag, remounting TerminalView, which spawns a fresh PTY (--continue resumes it).
   const dormant = useAppStore((s) => !!s.dormantPanes[pid]);
+  // #4027 — declared maintenance: this worker finished everything it owns. Distinct from `dormant`
+  // (reaped for idleness) even though a completed worker is now both, because the CARD differs: one
+  // reports what the worker did, the other reports a memory optimisation.
+  const maintaining = useAppStore((s) => !!s.paneMaintaining[pid]);
   const resumePane = useAppStore((s) => s.resumePane);
   // Auto-ended (#920): the worker finished and its PTY exited; show a resting card (state from
   // plan.db) instead of a dead terminal. Persisted, so it survives a restart; reopen relaunches.
@@ -114,6 +118,11 @@ export const PaneAt = memo(function PaneAt({
         <DisabledConsole onEnable={() => onToggleDisable(tabIdx, i)} />
       ) : ended ? (
         <EndedConsole info={ended} onReopen={() => reopenPane(pid)} />
+      ) : maintaining ? (
+        /* #4027 — a worker that FINISHED. Checked before `dormant` because a completed worker is
+           reaped immediately (#4025), so it is dormant too — and `DormantConsole` would report a
+           memory optimisation ("reaped after idle") where the answer is what the worker did. */
+        <CompletedConsole cwd={cwd ?? ""} repo={paneRepoFull ?? ""} onWake={() => resumePane(pid)} />
       ) : dormant ? (
         <DormantConsole onResume={() => resumePane(pid)} />
       ) : (
