@@ -63,6 +63,10 @@ const KEY_ALIASES: Record<string, string> = {
   "data schema": "schema", personas: "users",
   versioning: "release", releases: "release", "release schedule": "release",
   "versioning and release schedule": "release", "release plan": "release",
+  // #3989 — the outage plan is prose-titled in a dozen ways; land them all on the one key.
+  "outage response": "outage_response", "outage": "outage_response",
+  "cloud outage": "outage_response", "cloud outage response plan": "outage_response",
+  "outage response plan": "outage_response",
 };
 /**
  * Map a section key/stem the planner may have written as a display title or alias (e.g.
