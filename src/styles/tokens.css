@@ -18,7 +18,11 @@
 
   /* domain / categorical — the graph data-viz palette (#2607); consumed by the glance kit,
      bindable by a theme. Kept in lockstep with style-descriptor.json (styleDescriptor.appTokens test). */
-  --graph-health-idle: #5b9dff;
+  /* #4034 — GREY for idle. Blue is the most alive colour in the palette and was being spent on the
+     RESTING state, while `complete` (which actually achieved something) had none of its own. */
+  --graph-health-idle: #8a94a6;
+  /* #4034 — BLUE for complete: the worker finished everything it owns. */
+  --graph-health-complete: #5b9dff;
   --graph-health-healthy: #4fd6a0;
   --graph-health-warning: #f2b155;
   --graph-health-error: #f2555f;
