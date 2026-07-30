@@ -6,10 +6,10 @@
 // wore a confident label. The no-default rule is therefore the load-bearing assertion here, not a
 // nicety — if it regresses, the axis is dead again in exactly the same way.
 import { describe, it, expect } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { GlanceCanvas } from "./GlanceCanvas";
+import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { buildGraph, LIFECYCLE_META } from "./lib/glanceGraph";
 import { LIFECYCLES } from "@/features/planner/lib/classifyConfig";
 
@@ -55,6 +55,16 @@ describe("the L0 lifecycle chip (#4062)", () => {
     // colourless label with an undefined accent.
     const { container } = renderGraph({ ...project, lifecycle: "sideways" });
     expect(container.textContent).not.toContain("sideways");
+  });
+
+  it("the legend keys EVERY lifecycle the nodes can paint (#4066)", () => {
+    // The legend rows are derived from LIFECYCLE_META, so this is really a guard on that derivation
+    // surviving a refactor into a hand-maintained list — which is how a legend silently stops
+    // explaining a colour that is still on screen.
+    render(<GlanceOverlays />);
+    for (const m of Object.values(LIFECYCLE_META)) {
+      expect(screen.getByText(m.label), `legend must key "${m.label}"`).toBeTruthy();
+    }
   });
 
   it("gives every lifecycle its OWN accent, distinct from the health palette", () => {
