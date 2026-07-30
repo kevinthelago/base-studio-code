@@ -644,6 +644,9 @@ pub(crate) fn cmd_request(args: &Args) -> Result<(), String> {
             let id = s
                 .request_new(&text, args.command.as_deref().unwrap_or(""), from)
                 .map_err(|e| e.to_string())?;
+            // Announce it (#4001). The pump re-derives its pending set from the LOG, so a request
+            // that is stored but not announced is invisible to the director forever.
+            crate::coord::emit(crate::coord::KIND_REQUEST, &id.to_string(), &text);
             println!("{}", if args.json { serde_json::to_string(&id).unwrap_or_default() } else { id.to_string() });
             Ok(())
         }
@@ -683,6 +686,9 @@ pub(crate) fn cmd_request(args: &Args) -> Result<(), String> {
             if !s.request_resolve(id, &note).map_err(|e| e.to_string())? {
                 return Err(format!("request {id} is already resolved"));
             }
+            // Both ENDS must be announced: the pump decides "still pending" from the log, so without
+            // this a resolved request would be re-surfaced to the director on every tick.
+            crate::coord::emit(crate::coord::KIND_REQUEST_RESOLVED, &id.to_string(), &note);
             if !args.json {
                 println!("{id} resolved");
             }

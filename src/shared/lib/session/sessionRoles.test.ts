@@ -868,7 +868,10 @@ describe("the global tooling-request queue is denied to project roles (#4000)", 
   // So `bsc request` is reachable from any session that can run bash, and NOT granting it is not
   // enough: only an explicit deny keeps a project worker out of the queue a full-capability session
   // drains to edit base-studio-code itself.
-  const PROJECT_ROLES = ["worker", "director", "triage", "planner", "reviewer", "documentor"] as const;
+  // #4001: the DIRECTOR is deliberately no longer in this list — it is the sanctioned escalation
+  // point, and is safe to trust with it because `code: none` means it can ask for an app change but
+  // never make one. Every other project role stays denied.
+  const PROJECT_ROLES = ["worker", "triage", "planner", "reviewer", "documentor"] as const;
 
   it.each(PROJECT_ROLES)("denies %s the tooling queue", (role) => {
     expect(roleDeniedCommands(roleCapability(role))).toContain(TOOLING_REQUEST_COMMAND);
@@ -880,6 +883,15 @@ describe("the global tooling-request queue is denied to project roles (#4000)", 
     for (const role of ["designer", "librarian", "sound-designer", "architect"] as const) {
       expect(roleDeniedCommands(roleCapability(role))).not.toContain(TOOLING_REQUEST_COMMAND);
     }
+  });
+
+  it("lets the director escalate, which is what keeps the worker lane closed (#4001)", () => {
+    // A worker files a PROJECT request; the director promotes a genuine tooling gap by filing here.
+    // Without this the two-lane design has no exit and a real tooling problem would be stuck.
+    expect(mayFileToolingRequest("director")).toBe(true);
+    expect(roleDeniedCommands(roleCapability("director"))).not.toContain(TOOLING_REQUEST_COMMAND);
+    // …and the worker still cannot, which is the boundary that matters.
+    expect(mayFileToolingRequest("worker")).toBe(false);
   });
 
   it("does not deny the debugger, which is the queue's consumer", () => {
