@@ -67,8 +67,13 @@ export function usePaneActivityFeed(): void {
     // `attention` health without importing the console shell (a feature must not import `app/`).
     // Done HERE rather than per pane for the same reason this feed exists at all — one full-table
     // read, one write, instead of N.
+    //
+    // `rows` is defensively guarded (#4019): `logsPaneActivity` returns whatever the bridge gave back,
+    // and a failed//empty read yields a non-array. Iterating that throws inside the log-stream
+    // callback — an UNHANDLED rejection that kills this tick and, because it is the ONE shared feed,
+    // takes every pane's turn-state tracking with it. `publishPaneActivity` above already tolerates it.
     const attn: Record<string, boolean> = {};
-    for (const r of rows) if (needsAttention(r)) attn[r.pane] = true;
+    for (const r of Array.isArray(rows) ? rows : []) if (needsAttention(r)) attn[r.pane] = true;
     useAppStore.getState().setPaneAttention(attn);
   });
 }

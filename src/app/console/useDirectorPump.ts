@@ -23,6 +23,7 @@ import {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
   briefKey, pendingBriefPrompt,
   requestKey, pendingRequestPrompt,
+  shouldRemind, idleReminderPrompt, ASK_REMINDER_MS,
   DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
 } from "@/features/planner";
 
@@ -36,6 +37,10 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
   // Per (pane|ask) keys already surfaced, pruned when the ask is no longer pending — so a
   // question is injected exactly once (not re-queued every 3s) until it is answered.
   const surfaced = useRef<Set<string>>(new Set());
+  // #4019 — when each pane was last REMINDED about outstanding asks/requests. Separate from the
+  // cursor's `lastInjectAt` (which paces notifications + the heartbeat) so a reminder is not
+  // starved by unrelated traffic, and vice versa.
+  const remindedAt = useRef<Map<string, number>>(new Map());
   useLogStream("coord", async (isCancelled) => {
     if (isCancelled()) return;
     const drives = useAppStore.getState().paneDirectorDrive;
@@ -96,6 +101,24 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
           for (const r of freshRequests) surfaced.current.add(paneId + "|" + requestKey(r));
           inFlight.current.add(paneId);
           void injectPrompt(paneId, pendingRequestPrompt(freshRequests))
+            .catch(() => {})
+            .finally(() => inFlight.current.delete(paneId));
+          continue; // one injection per pane per tick
+        }
+      }
+
+      // 1d) IDLE REMINDER (#4019) — the backstop for a delivery that did not take. Each ask/request is
+      // injected exactly once by the blocks above; if the director was mid-turn or simply did not act,
+      // nothing above will ever say it again, and the worker stays parked (measured: 44 asks, 20
+      // answers). So while the director is IDLE and anything is still outstanding, re-state it on a
+      // rate-limited cadence. Runs for every drive except off/manual — an `event` director has no
+      // heartbeat at all, which is precisely the case that went silent.
+      if (drive !== "off" && drive !== "manual") {
+        const pending = pendingAsks.length + state.requests.length;
+        if (shouldRemind({ idle, pending, now, lastRemindAt: remindedAt.current.get(paneId) ?? 0, everyMs: ASK_REMINDER_MS })) {
+          remindedAt.current.set(paneId, now);
+          inFlight.current.add(paneId);
+          void injectPrompt(paneId, idleReminderPrompt(pendingAsks, state.requests))
             .catch(() => {})
             .finally(() => inFlight.current.delete(paneId));
           continue; // one injection per pane per tick

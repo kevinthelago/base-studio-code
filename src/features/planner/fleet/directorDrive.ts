@@ -21,6 +21,13 @@ export const DEFAULT_DIRECTOR_DRIVE: DirectorDrive = "event";
 export const DEFAULT_HEARTBEAT_MS = 10 * 60 * 1000;
 export const INJECT_COOLDOWN_MS = 6000;
 
+/** How often an IDLE director is re-told about outstanding questions (#4019).
+ *
+ *  Shorter than {@link DEFAULT_HEARTBEAT_MS} on purpose: a worker is PARKED for every second of
+ *  this, so ten minutes of silence is ten minutes of a stalled agent. Long enough that a director
+ *  working through a batch is not interrupted mid-thought each time it draws breath. */
+export const ASK_REMINDER_MS = 3 * 60 * 1000;
+
 /** Coerce a raw fleet.json value into a known drive mode (default when unrecognized). */
 export function normalizeDirectorDrive(raw: unknown): DirectorDrive {
   if (typeof raw !== "string") return DEFAULT_DIRECTOR_DRIVE;
@@ -143,6 +150,44 @@ export function pendingRequestPrompt(requests: OpenRequest[]): string {
     .map((r) => `#${r.id} from ${r.from || "a worker"}: "${r.text}"`)
     .join("; ");
   return `[coordinator] ${requests.length} worker change-request(s) awaiting you: ${list}. For each: do the thing if it is yours (branches, board, issues, worktrees are all in your remit), then close it with bsc plan request resolve <id> --note "<what you did>" — the note is the answer the worker reads back. If it is genuinely a gap in the base-studio-code TOOLING rather than this project, escalate it with bsc request new "<gap>" and then resolve the project request noting that you did. Do not ask the user, and do not leave one open.`;
+}
+
+/**
+ * Should an idle director be re-told about outstanding work (#4019)?
+ *
+ * The pump delivers each ask/request exactly ONCE (its `surfaced` guard), which is right for not
+ * re-queueing every tick — but it makes a single missed delivery final. If the director was mid-turn,
+ * or simply did not act, nothing ever says it again and the worker waits forever. Measured: 44 asks
+ * against 20 answers.
+ *
+ * This is the backstop, and it is deliberately NOT wired into that guard: the immediate delivery stays
+ * exactly as it was. Gated on `idle` because the whole point is to spend the moment the director has
+ * nothing else to do, and rate-limited so a director that keeps ignoring it is nagged at a sane
+ * interval rather than on every tick.
+ */
+export function shouldRemind(inp: { idle: boolean; pending: number; now: number; lastRemindAt: number; everyMs: number }): boolean {
+  if (!inp.idle || inp.pending === 0) return false;
+  return inp.lastRemindAt === 0 || inp.now - inp.lastRemindAt >= inp.everyMs;
+}
+
+/**
+ * The reminder itself. Names the same verbs the sweep does, so the director never has to work out what
+ * to do with it, and states plainly that a worker is parked on each one — the cost of ignoring it.
+ */
+export function idleReminderPrompt(asks: AskingSession[], requests: OpenRequest[]): string {
+  const segs: string[] = [];
+  if (asks.length > 0) {
+    segs.push(`${asks.length} unanswered question(s): ` +
+      asks.map((a) => `${a.session} asks "${a.question}"`).join("; ") +
+      ` — answer each with \`bsc-answer <session>\` (pipe your one-line answer in on stdin)`);
+  }
+  if (requests.length > 0) {
+    segs.push(`${requests.length} open change request(s): ` +
+      requests.map((r) => `#${r.id} from ${r.from || "a worker"} "${r.text}"`).join("; ") +
+      ` — close each with \`bsc plan request resolve <id> --note "<what you did>"\``);
+  }
+  return `[coordinator] You are idle and this is still outstanding. ${segs.join(". ")}. ` +
+    `A worker is PARKED on every one of these until you respond, so clear them before anything else. Do not ask the user.`;
 }
 
 /** Coordination events the director should act on (worker-originated asks). Its own
