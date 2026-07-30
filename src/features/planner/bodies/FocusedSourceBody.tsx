@@ -31,6 +31,7 @@ import {
   deriveDataModel, proposeFromPitch,
   type SourceConfig, type RuntimeConnectorView,
 } from "../lib/sourceConfig";
+import { proposedSourceIds, connectFieldsFor, type DeclaredIntegration } from "../lib/sourceDiscovery";
 import { safeKey } from "../lib/dataModelDerivation";
 import { ScanViews } from "./ScanViews";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
@@ -71,24 +72,44 @@ export function SourceBody({ projectId, onInject }: {
   const planningPitch = useAppStore((s) => s.planningPitch);
   const cfg: SourceConfig = stored ?? defaultSourceConfig();
 
-  // Seed the "Confirm N sources" banner from the planner's pitch (#1349): on first open of a fresh
-  // config (nothing declared, nothing already proposed), scan the pitch for mentioned legacy systems
-  // and stage them as `proposed`. The existing banner + `confirmProposed` then declare them on a
-  // single click. Guarded per-project so re-renders and a later user edit (clearing `proposed`)
-  // don't re-seed.
+  // The integrations the user CONFIRMED during Discovery, filtered to migration sources (#4054).
+  // Polled rather than read once because Discovery runs alongside this pane — the planner may declare
+  // an integration while the Source stage is already on screen, and the proposal should follow.
+  const [declared, setDeclared] = useState<DeclaredIntegration[]>([]);
+  usePoll(async (isCancelled) => {
+    if (!pid) return;
+    const rows = await bscJson<DeclaredIntegration[]>(
+      pid, ["plan", "discovery", "integration", "list", "--direction", "source", "--json"], [],
+    );
+    if (!isCancelled()) setDeclared(Array.isArray(rows) ? rows : []);
+  }, 2500, [pid]);
+
+  // Seed the "Confirm N sources" banner: on first open of a fresh config (nothing declared, nothing
+  // already proposed), stage the proposals as `proposed`; the banner + `confirmProposed` then declare
+  // them on a single click. Guarded per-project so re-renders and a later user edit (clearing
+  // `proposed`) don't re-seed.
+  //
+  // #4054: DISCOVERY WINS. The pitch keyword scan (#1349) survives only as the fallback for a project
+  // whose Discovery predates #4024 or never worked the `integrations` topic — so whenever the user has
+  // actually said which systems they are migrating from, the banner reflects that decision instead of
+  // a guess. Seeding waits for the first poll to land, otherwise a project WITH declared integrations
+  // would be seeded from the pitch on the opening render and then never re-seeded (the guard fires
+  // once per project).
   const seededRef = useRef<Set<string>>(new Set());
+  const polledRef = useRef<Set<string>>(new Set());
+  useEffect(() => { if (pid) polledRef.current.add(pid); }, [pid, declared]);
   useEffect(() => {
-    if (!pid || seededRef.current.has(pid)) return;
+    if (!pid || seededRef.current.has(pid) || !polledRef.current.has(pid)) return;
     if ((stored?.sources.length ?? 0) > 0 || (stored?.proposed.length ?? 0) > 0) {
       seededRef.current.add(pid); // already declared/proposed — don't override
       return;
     }
-    const ids = proposeFromPitch(planningPitch);
+    const { ids } = proposedSourceIds(declared, proposeFromPitch(planningPitch));
     seededRef.current.add(pid);
     if (ids.length === 0) return;
     const base = stored ?? defaultSourceConfig();
     setPlanSourceConfig(pid, { ...base, proposed: ids });
-  }, [pid, planningPitch, stored, setPlanSourceConfig]);
+  }, [pid, planningPitch, declared, stored, setPlanSourceConfig]);
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -167,7 +188,13 @@ export function SourceBody({ projectId, onInject }: {
   }
 
   function confirmProposed() {
-    const add = proposedPending.map((id) => newDeclaredSource(id, `src-${id}-${++seq.current}`));
+    // #4054: carry through what Discovery already captured (base URL / docs) so an agent authoring
+    // this connector starts from the vendor reference the user gave, not a blank form. Only plain
+    // URLs cross — nothing secret exists on this path.
+    const add = proposedPending.map((id) => ({
+      ...newDeclaredSource(id, `src-${id}-${++seq.current}`),
+      fields: connectFieldsFor(id, declared),
+    }));
     persist({ ...cfg, proposed: [], sources: [...cfg.sources, ...add] });
     setExpanded((p) => { const n = new Set(p); add.forEach((s) => n.add(s.uid)); return n; });
   }
