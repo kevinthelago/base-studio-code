@@ -122,7 +122,7 @@ export const PaneAt = memo(function PaneAt({
         /* #4027 — a worker that FINISHED. Checked before `dormant` because a completed worker is
            reaped immediately (#4025), so it is dormant too — and `DormantConsole` would report a
            memory optimisation ("reaped after idle") where the answer is what the worker did. */
-        <CompletedConsole cwd={cwd ?? ""} repo={paneRepoFull ?? ""} onWake={() => resumePane(pid)} />
+        <CompletedConsole cwd={cwd ?? ""} repo={paneRepoFull ?? ""} />
       ) : dormant ? (
         <DormantConsole onResume={() => resumePane(pid)} />
       ) : (

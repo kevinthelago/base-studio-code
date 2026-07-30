@@ -74,7 +74,7 @@ export function DormantConsole({ onResume }: { onResume: () => void }) {
  * threaded in, because it is only ever wanted for a pane in this state.
  */
 export function CompletedConsole(
-  { cwd, repo, note, onWake }: { cwd: string; repo: string; note?: string; onWake: () => void },
+  { cwd, repo, note }: { cwd: string; repo: string; note?: string },
 ) {
   const [audit, setAudit] = useState<DoneAudit | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,9 +118,10 @@ export function CompletedConsole(
           )}
         </Stack>
       ) : null}
-      {/* Wake, not "resume": the session is gone, so this relaunches it — the same path a director
-          dispatch takes (#4025), which is why reclaiming it costs nothing. */}
-      <Button onClick={onWake}>wake</Button>
+      {/* #4029 — no wake button. A finished worker is woken by the DIRECTOR dispatching work into it
+          (`bsc-assign`, #4025), not by a person restarting it for no reason. Offering the button here
+          would be the same "relaunch a completed worker" action the resume paths just stopped doing. */}
+      <Text tone="dim" size={10}>the director wakes this worker when it dispatches work</Text>
     </Stack>
   );
 }
