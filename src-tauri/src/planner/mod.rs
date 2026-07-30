@@ -51,6 +51,45 @@ mod tests {
         assert!(d.to_lowercase().contains("generated, not confirmed"), "context files are generated, not confirmed");
     }
 
+    /// #3989: Discovery must produce a CLOUD OUTAGE RESPONSE PLAN for anything hosted on cloud
+    /// infrastructure — the failure a hosted app is most exposed to and least in control of. It is
+    /// a per-project require (a CLI has no cloud to lose), so the directive must carry BOTH the
+    /// require rule and the plan's shape, or the planner writes a vague paragraph or nothing.
+    #[test]
+    fn stage_directive_discovery_carries_the_cloud_outage_response_plan() {
+        // Read the EMBEDDED seed, not `stage_directive` — the latter prefers a local config-dir
+        // copy, and this asserts on the SHIPPED prose (same rule as `process_md` above).
+        let raw = crate::platform::config::embedded_str("stages/discovery.json");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("discovery.json parses");
+        let d = v["directive"].as_str().expect("discovery.json has a directive").to_string();
+        assert!(d.contains("discovery/outage_response.md"), "directive names the outage plan file");
+        assert!(
+            d.contains("require `outage_response`") || d.contains("requires `outage_response`"),
+            "directive gives the cloud-hosted require rule for outage_response",
+        );
+        // The six-part shape — each is the part a plan is useless without.
+        for part in ["blast radius", "degradation posture", "RPO/RTO", "drill"] {
+            assert!(d.contains(part), "outage plan must cover {part}");
+        }
+        assert!(d.to_lowercase().contains("detect"), "outage plan must cover detection");
+        assert!(d.to_lowercase().contains("failover"), "outage plan must cover failover");
+        // Not a universal require: it stays skippable for a project with no cloud dependency.
+        assert!(d.contains("_skipped.md"), "a no-cloud project records the skip");
+    }
+
+    /// The planning guide carries the same bar, so a planner reading the guide rather than the
+    /// stage directive still reaches the plan (#3989).
+    #[test]
+    fn planning_process_carries_the_cloud_outage_response_bar() {
+        let md = process_md();
+        assert!(md.contains("Cloud outage response"), "readiness bars include cloud outage response");
+        assert!(md.contains("outage_response"), "guide names the canonical dimension key");
+        assert!(
+            md.contains("bsc plan discovery require outage_response"),
+            "guide gives the require command",
+        );
+    }
+
     /// Features directive must steer the planner to write features.json (the artifact the
     /// Features pane + gate read), not the per-feature markdown sections (#815).
     #[test]
