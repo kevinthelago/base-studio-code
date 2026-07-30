@@ -73,8 +73,14 @@ describe("resolveInitCmd — fleet/triage resume (#3928)", () => {
     expect(resolveInitCmd({ ...base, continueSession: true })).toBe(CONTINUE_OR_FRESH);
   });
 
-  it("does NOT continue a pane that never ran claude — there is no conversation to resume", () => {
-    expect(resolveInitCmd({ ...base, continueSession: true, paneWasClaude: false })).toBe("");
+  it("DOES start a pane that never ran claude — the premise of the old guard is gone (#3986)", () => {
+    // This asserted `""` under #3928, on the reasoning "there is no conversation to resume". That was
+    // true when `--continue` was emitted bare and would exit 1 on a pane with no history. #3937 made
+    // the command degrade (`--continue … || claude`), so a missing conversation now starts a fresh
+    // session — and the guard became a deadlock instead of a safeguard: `paneWasClaude` is set only
+    // when claude STARTS, so requiring it blocked the launch that would have set it. 77 of 78 fleet
+    // panes were stuck there.
+    expect(resolveInitCmd({ ...base, continueSession: true, paneWasClaude: false })).toBe(CONTINUE_OR_FRESH);
   });
 
   it("a KICKOFF still wins — the prompt-baked path must not become a --continue", () => {
@@ -125,5 +131,51 @@ describe("resolveInitCmd — the --continue fallback (#3937)", () => {
 
   it("a kickoff (startupPrompt) still wins and emits nothing", () => {
     expect(resolveInitCmd({ ...base, startupPrompt: "go", continueSession: true, paneWasClaude: true })).toBe("");
+  });
+});
+
+describe("resume does not require a prior claude run (#3986)", () => {
+  const base = {
+    explicit: undefined as string | undefined,
+    startupPrompt: undefined as string | undefined,
+    continueSession: false,
+    paneWasClaude: false,
+    autoResumeClaude: false,
+    wasUncleanShutdown: false,
+    restoreRequested: false,
+  };
+
+  it("starts claude in a pane where it has NEVER run — the deadlock", () => {
+    // `paneWasClaude` is set only when claude actually starts, so requiring it meant the gate blocked
+    // the very launch that would have set it. Measured: 77 of 78 fleet panes had no `paneWasClaude`,
+    // i.e. Resume could not start an agent in any of them.
+    expect(resolveInitCmd({ ...base, continueSession: true, paneWasClaude: false }))
+      .toBe("claude --continue 2>/dev/null || claude");
+  });
+
+  it("still resumes a pane that HAS run claude", () => {
+    expect(resolveInitCmd({ ...base, continueSession: true, paneWasClaude: true }))
+      .toBe("claude --continue 2>/dev/null || claude");
+  });
+
+  it("a no-history pane starts FRESH rather than failing", () => {
+    // What made dropping the guard safe: the command degrades on its own (#3937).
+    expect(resolveInitCmd({ ...base, continueSession: true })).toContain("|| claude");
+  });
+
+  it("does nothing without continueSession — resume is opt-in per pane", () => {
+    expect(resolveInitCmd({ ...base, continueSession: false, paneWasClaude: true })).toBe("");
+  });
+
+  it("a kickoff still wins over resume", () => {
+    expect(resolveInitCmd({ ...base, startupPrompt: "go", continueSession: true })).toBe("");
+  });
+
+  it("CRASH recovery still requires paneWasClaude", () => {
+    // The flag stays where the question it answers is the real one: after an unclean shutdown, "was
+    // this ever a claude pane?" genuinely governs whether to restore it.
+    expect(resolveInitCmd({ ...base, paneWasClaude: false, restoreRequested: true })).toBe("");
+    expect(resolveInitCmd({ ...base, paneWasClaude: true, restoreRequested: true }))
+      .toBe("claude --continue 2>/dev/null || claude");
   });
 });
