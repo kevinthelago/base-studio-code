@@ -16,10 +16,11 @@ import { archetypeById, hueColor } from "@/features/teams";
 import { GlanceNode } from "./GlanceNode";
 
 const ERR = "var(--graph-health-error)";
-// #4037 — the legend now lists the states a node can actually READ as, in the order you meet them:
-// working → finished → needs you → degraded → failing → at rest. `off` is gone: a deactivated node is
-// conveyed by DIMMING (#4034), not by a colour, so a swatch for it would key a colour nothing paints.
-const HEALTH_ROWS: GHealth[] = ["healthy", "complete", "attention", "warning", "error", "idle"];
+// The legend lists the states a node can actually READ as, in the order you meet them: working →
+// finished → needs you → degraded → failing. `off` has no row (#4042): it is the ABSENCE of a live
+// session — deactivated, never launched, or structural furniture — and the node conveys it by dimming
+// rather than by a colour, so a swatch would key something nothing paints.
+const HEALTH_ROWS: GHealth[] = ["healthy", "complete", "attention", "warning", "error"];
 
 // The neighbour-parting motion is driven off the SAME easing + duration as the panel's grow (the
 // `.glance-card` transition in glance.css) — keep these in sync — so the panel growing and the graph
@@ -435,13 +436,6 @@ export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boo
                 <Text as="span" mono size={10} tone="muted">{HEALTH_META[h].label}</Text>
               </Box>
             ))}
-            {/* #4037 — `off` has no swatch because nothing paints it: a deactivated node is conveyed by
-                DIMMING (#4034). The legend still has to TEACH that, or the one state with no colour is
-                also the one state with no explanation. */}
-            <Box style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 2 }}>
-              <Box style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--fg-muted)", opacity: 0.3, flex: "none" }} />
-              <Text as="span" mono size={10} tone="dim">dimmed = off</Text>
-            </Box>
           </Box>
         </Box>
         <Box>

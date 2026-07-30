@@ -25,7 +25,7 @@ export const BASE_STUDIO_PROJECT: ProjectLite = {
   name: "base-studio-code",
   role: "infra",
   category: "maintain",
-  health: "idle",
+  health: "off",
   activity: "idle",
 };
 
@@ -153,6 +153,6 @@ export function applyStudioLiveStatus(nodes: GRawNode[], signals: StudioLiveSign
     }
     return signals.paneStatus[sid] === "run"
       ? { ...n, health: "healthy" as GHealth, activity: "building" as GActivity }
-      : { ...n, health: "idle" as GHealth, activity: "idle" as GActivity };
+      : { ...n, health: "off" as GHealth, activity: "idle" as GActivity };
   });
 }

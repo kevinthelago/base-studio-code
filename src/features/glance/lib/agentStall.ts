@@ -66,7 +66,7 @@ export function applyStallHealth(projects: ProjectLite[], waiting: WaitLite[], n
     if (elapsed < warnMs) return { ...p, activity: "waiting" }; // fresh, expected pause — stays calm
     const minutes = Math.max(1, Math.floor(elapsed / 60_000));
     const note = w.reason?.trim() || "no instructions";
-    const health: GHealth = worse(p.health ?? "idle", "warning") ? (p.health as GHealth) : "warning";
+    const health: GHealth = worse(p.health ?? "healthy", "warning") ? (p.health as GHealth) : "warning";
     return { ...p, activity: "waiting", health, reason: `${note} · ${minutes}m` };
   });
 }
@@ -219,6 +219,9 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
     // Launched, but not working: the session EXISTS and is quiet ⇒ `idle` on both axes. It used to read
     // `healthy` here ("subtly live"), which collided with a genuinely working session — and left `idle`
     // free to be misread as the no-session state. Health now tracks existence + work, not mere launch.
-    return { ...n, health: "idle" as GHealth, activity: "idle" as GActivity };
+    // #4042 — `healthy`, not `idle`: the session EXISTS and nothing is wrong, which is what healthy
+    // means. The activity word still says `idle`, so "at rest" is not lost — the two axes just stop
+    // saying the same thing twice.
+    return { ...n, health: "healthy" as GHealth, activity: "idle" as GActivity };
   });
 }

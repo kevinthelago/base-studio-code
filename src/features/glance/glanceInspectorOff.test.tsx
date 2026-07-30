@@ -15,7 +15,7 @@ describe("GlanceInspector — activate / deactivate control (#3239)", () => {
   it("an ACTIVE node shows 'Turn off'; clicking it deactivates (onToggleOff(true))", () => {
     const onToggleOff = vi.fn();
     render(
-      <GlanceInspector model={modelWith("idle")} selType="node" selId="a"
+      <GlanceInspector model={modelWith("healthy")} selType="node" selId="a"
         onSelectNode={() => {}} onClose={() => {}} offOn={false} onToggleOff={onToggleOff} />,
     );
     expect(screen.getByText("Node is active")).toBeTruthy();
@@ -36,7 +36,7 @@ describe("GlanceInspector — activate / deactivate control (#3239)", () => {
 
   it("omits the control when onToggleOff is absent (a drilled fleet node)", () => {
     render(
-      <GlanceInspector model={modelWith("idle")} selType="node" selId="a"
+      <GlanceInspector model={modelWith("healthy")} selType="node" selId="a"
         onSelectNode={() => {}} onClose={() => {}} />,
     );
     expect(screen.queryByText("Node is active")).toBeNull();
