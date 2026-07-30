@@ -27,11 +27,19 @@ export const APP_TYPES: AppType[] = ["application", "api", "serverless", "static
 /** The project's LIFECYCLE INTENT (#3784) — what this planning run is FOR. Discovered by the
  *  planner (existing repos to restructure ⇒ transform; from a pitch ⇒ greenfield; …) rather than
  *  chosen up front: lifecycle left the blueprint model in #3785, so discovery is its only home.
- *  Unset ⇒ read as "greenfield", the create-a-project default. */
-export type Lifecycle = "greenfield" | "transform" | "harden" | "maintain";
+ *  Unset ⇒ read as "greenfield", the create-a-project default — see {@link lifecycleOf}, and note
+ *  that DISPLAY must not apply that default (#4062).
+ *
+ *  `harvest` (#4062) — the project exists to EXTRACT DATA FROM SOURCES: pulling an existing system's
+ *  data out, rather than restructuring code (`transform`) or keeping something running (`maintain`).
+ *  The name is the app's established one for exactly this shape — `bsc ui harvest`, algorithm harvest,
+ *  both "extract from what already exists". */
+export type Lifecycle = "greenfield" | "transform" | "harden" | "maintain" | "harvest";
 
-/** The valid `Lifecycle` tokens, for the coerce below. */
-export const LIFECYCLES: Lifecycle[] = ["greenfield", "transform", "harden", "maintain"];
+/** The valid `Lifecycle` tokens, for the coerce below. Mirrored by `LIFECYCLES` in
+ *  `crates/plandb/src/validate.rs`, which rejects an unknown token at `bsc plan classify set` —
+ *  keep the two in lockstep or the planner can write a value the app cannot read. */
+export const LIFECYCLES: Lifecycle[] = ["greenfield", "transform", "harden", "maintain", "harvest"];
 
 /** The app types that carry a USER INTERFACE — the ones for which the `ui` stage is meaningful.
  *  Everything else (an API, serverless functions, a CLI, a library, an MCP server) has no screens

@@ -9,7 +9,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingPulse, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GLibraryGraph } from "./lib/glanceGraph";
+import { ROLE_COLOR, LIFECYCLE_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingPulse, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
 import { archetypeById, hueColor } from "@/features/teams";
@@ -294,12 +294,15 @@ export function GlanceCanvas(p: CanvasProps) {
             </Box>
           );
         }
-        // #4052 — the lower-left accent chip is a FLEET (L1) thing only: it names the agent's function
-        // group. An L0 project has nothing to put there since the lifecycle axis was removed, and
-        // falling back to `role` would resurrect the hash-per-id microservices tier that the category
-        // axis replaced in the first place. So L0 leaves the slot empty and the row carries only the
-        // activity word.
-        const role = p.fleet ? ROLE_COLOR[n.role] : undefined;
+        // The lower-left accent chip. At L1 it names the agent's FUNCTION group; at L0 it carries the
+        // project's DISCOVERED LIFECYCLE intent (#4062).
+        //
+        // An L0 project with no discovered lifecycle gets NOTHING — not a default, and never a
+        // fallback to `role`, which would resurrect the hash-per-id microservices tier. #4052 deleted
+        // the previous chip precisely because it always produced a value, so every unclassified
+        // project wore a confident label. Blank is the honest render.
+        const lifecycle = !p.fleet && n.lifecycle ? LIFECYCLE_META[n.lifecycle] : undefined;
+        const role = p.fleet ? ROLE_COLOR[n.role] : lifecycle?.color;
         // Axis 1 — HEALTH (#2541): the top-left dot renders the ROLLED-UP health (worst of self + deps).
         const health = HEALTH_META[n.rollupHealth];
         const inherited = n.healthInherited;                 // lit only by a downstream dep → muted, no pulse
@@ -375,7 +378,7 @@ export function GlanceCanvas(p: CanvasProps) {
               healthGlow={health.glow}
               inherited={!!inherited}
               roleColor={role}
-              roleLabel={p.fleet ? (n.roleLabel ?? n.role) : undefined}
+              roleLabel={p.fleet ? (n.roleLabel ?? n.role) : lifecycle?.label}
               bottomText={bottomText}
               bottomColor={bottomColor}
               bottomPulse={bottomPulse}
