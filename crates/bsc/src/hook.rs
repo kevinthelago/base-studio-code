@@ -77,6 +77,7 @@ fn bash_supply() -> Result<(), String> {
             Ok(report) => {
                 if let Some(reason) = supply_block_reason(&report, min) {
                     log_supply(&cmd, "block", &reason);
+                    record_supply_fault(&cmd, &reason); // #4008: light the project node
                     eprintln!("blocked: {reason} — #3799 supply-chain gate");
                     std::process::exit(2);
                 }
@@ -138,6 +139,64 @@ fn log_supply(cmd: &str, verdict: &str, reason: &str) {
     append_perm_log(&perm_log_line(ts, &pane, "supply", verdict, cmd, reason));
 }
 
+/// The errordb `stage` every supply-chain block is filed under, so `bsc errors list --stage supply` is
+/// the security view and the rows never mix with a generated app's runtime faults.
+const SUPPLY_STAGE: &str = "supply";
+
+/// Record a supply-chain BLOCK as a `warn` fault in the project's errordb (#4008) — the block's ONLY
+/// user-visible trace. Until now it left a single `perm.log` row that nothing reads unless you run
+/// `bsc logs perm`, so a gate firing on "an agent nearly installed malware" was silent (#4007 is the
+/// case where that silence also cost a worker its coordination message).
+///
+/// Nothing downstream is new: the desktop's `fault_rows_batch` already batches unresolved faults per
+/// project, Glance already polls them, and `applyFaultHealth` already maps a `warn` fault to the node's
+/// WARNING health with `title` as its reason line and `count` as its badge. `bsc errors resolve <fp>`
+/// clears it, so the user has a dismiss path a log line could never give them.
+///
+/// **Fail-open, always** — an unset/empty `$BSC_ERROR_DB`, an unopenable db, or a write error must never
+/// change the gate's decision or its exit code, exactly like [`append_perm_log`]. The block has already
+/// been decided by the time we get here; this is only how the user hears about it.
+fn record_supply_fault(cmd: &str, reason: &str) {
+    let path = std::env::var("BSC_ERROR_DB").unwrap_or_default();
+    let pane = std::env::var("BSC_AUDIT_PANE").unwrap_or_default();
+    write_supply_fault(&path, &pane, cmd, reason, now_ms() as i64);
+}
+
+/// The db-writing core of [`record_supply_fault`], with the environment passed IN so a test can drive a
+/// temp db without mutating process env. Every failure path is a silent no-op by design.
+fn write_supply_fault(db_path: &str, pane: &str, cmd: &str, reason: &str, ts: i64) {
+    if db_path.trim().is_empty() {
+        return; // no project store wired (a bare shell, or a session launched without one)
+    }
+    let Ok(store) = errordb::Store::open(std::path::Path::new(db_path)) else {
+        return;
+    };
+    let _ = store.record(&errordb::FaultInput {
+        stage: SUPPLY_STAGE.to_string(),
+        level: "warn".to_string(),
+        title: supply_fault_title(reason),
+        // The COMMAND rides on the event row, never the title — see `supply_fault_title`.
+        context: Some(clip(cmd)),
+        source_hint: (!pane.trim().is_empty()).then(|| clip(pane)),
+        ts,
+        ..Default::default()
+    });
+}
+
+/// The fault title for a supply block. Carries the PACKAGE + advisory (from `supply_block_reason`) and
+/// deliberately NOT the command: `record`'s fingerprint is `stage + title`, so a command in the title
+/// would split every attempt into its own fault and bury the node under near-duplicates. Keeping it to
+/// the reason means N attempts to install the same bad package collapse into one fault with `count = N`.
+/// Pure.
+fn supply_fault_title(reason: &str) -> String {
+    format!("supply-chain gate blocked an install: {}", clip(reason))
+}
+
+/// Flatten a free field to one line and cap it, so it can never break a TSV row or bloat a fault title.
+fn clip(s: &str) -> String {
+    s.replace(['\t', '\n', '\r'], " ").chars().take(160).collect()
+}
+
 /// Append one pane-tagged denial row — `ts·pane·gate·verdict·target·reason` — to `$BSC_PERM_LOG`
 /// (#1607 slice 2), matching the shape the shell deny hooks write via `__bsc_perm`, so a bash-deny
 /// block is visible to `bsc logs perm`/`session`. Best-effort. `gate` is `deny`; `target` is the command.
@@ -173,8 +232,7 @@ fn now_ms() -> u128 {
 /// Format one `perm.log` row (`ts·pane·gate·verdict·target·reason` + `\n`). Pure — every free field is
 /// stripped of tabs/newlines and capped so a single row can never break the TSV.
 fn perm_log_line(ts: u128, pane: &str, gate: &str, verdict: &str, cmd: &str, reason: &str) -> String {
-    let clean = |s: &str| s.replace(['\t', '\n'], " ").chars().take(160).collect::<String>();
-    format!("{ts}\t{pane}\t{}\t{}\t{}\t{}\n", clean(gate), clean(verdict), clean(cmd), clean(reason))
+    format!("{ts}\t{pane}\t{}\t{}\t{}\t{}\n", clip(gate), clip(verdict), clip(cmd), clip(reason))
 }
 
 /// The `deny`-gate row (`gate=deny`, `verdict=block`) — the bash-deny block's shape (unchanged).
@@ -211,7 +269,10 @@ fn deny_reason(cmd: &str, env_denies: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{deny_log_line, deny_reason, perm_log_line, supply_block_reason, supply_min_from};
+    use super::{
+        deny_log_line, deny_reason, perm_log_line, supply_block_reason, supply_fault_title, supply_min_from,
+        write_supply_fault,
+    };
     use cve::{Advisory, Ecosystem, Package, PackageReport, Severity};
 
     fn adv(id: &str, sev: Severity) -> Advisory {
@@ -332,5 +393,83 @@ cp";
         assert_eq!(f[4], "npm add evil");
         assert!(f[5].contains("MALICIOUS"));
         assert!(line.ends_with('\n'));
+    }
+
+    // ── #4008: a block also becomes a `warn` fault, which is what lights the project node ──
+
+    fn temp_db(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("bsc-supply-fault-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir.join("error.db")
+    }
+
+    fn faults(db: &std::path::Path) -> Vec<errordb::Fault> {
+        errordb::Store::open(db).expect("open").list(&errordb::Filter::default()).expect("list")
+    }
+
+    /// The block writes ONE `warn` fault, filed under the `supply` stage, naming the package and its
+    /// advisory — the shape `applyFaultHealth` turns into the node's warning + reason line.
+    #[test]
+    fn a_block_records_a_warn_fault_under_the_supply_stage() {
+        let db = temp_db("records");
+        write_supply_fault(
+            db.to_str().unwrap(),
+            "studio-code:skills",
+            "npm add evil",
+            "evil is a known-MALICIOUS package (MAL-2024-1)",
+            1782468000000,
+        );
+        let rows = faults(&db);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].stage, "supply");
+        assert_eq!(rows[0].level, "warn", "warn ⇒ the node reads WARNING, not error");
+        assert!(rows[0].title.contains("evil"), "title names the package: {}", rows[0].title);
+        assert!(rows[0].title.contains("MAL-2024-1"), "title names the advisory: {}", rows[0].title);
+        assert_eq!(rows[0].source_hint.as_deref(), Some("studio-code:skills"), "which session hit it");
+        assert!(rows[0].resolved_at.is_none(), "starts unresolved, so the badge counts it");
+        let _ = std::fs::remove_dir_all(db.parent().unwrap());
+    }
+
+    /// Repeat blocks of the SAME package collapse onto one fingerprint with a rising count — the title
+    /// must not carry the (varying) command, or the node drowns in near-duplicate faults.
+    #[test]
+    fn repeat_blocks_of_one_package_dedupe_into_a_count() {
+        let db = temp_db("dedupe");
+        let reason = "evil is a known-MALICIOUS package (MAL-2024-1)";
+        write_supply_fault(db.to_str().unwrap(), "k:a", "npm add evil", reason, 1);
+        write_supply_fault(db.to_str().unwrap(), "k:b", "npm add evil@2.0.0 --save-dev", reason, 2);
+        let rows = faults(&db);
+        assert_eq!(rows.len(), 1, "one package ⇒ one fault, not one per attempt");
+        assert_eq!(rows[0].count, 2);
+        // A DIFFERENT package is a different fault.
+        write_supply_fault(db.to_str().unwrap(), "k:a", "npm add other", "other is a known-MALICIOUS package (MAL-2024-2)", 3);
+        assert_eq!(faults(&db).len(), 2);
+        let _ = std::fs::remove_dir_all(db.parent().unwrap());
+    }
+
+    /// FAIL-OPEN: no store wired, or an unusable path, must be a silent no-op — never a panic, and
+    /// never anything that could change the gate's decision or exit code.
+    #[test]
+    fn recording_is_a_silent_no_op_without_a_usable_store() {
+        write_supply_fault("", "k:a", "npm add evil", "evil is a known-MALICIOUS package (MAL-2024-1)", 1);
+        write_supply_fault("   ", "k:a", "npm add evil", "evil is a known-MALICIOUS package (MAL-2024-1)", 1);
+        // A path whose parent is a FILE cannot be opened as a db.
+        let file = std::env::temp_dir().join(format!("bsc-supply-not-a-dir-{}", std::process::id()));
+        std::fs::write(&file, b"x").expect("seed file");
+        write_supply_fault(file.join("error.db").to_str().unwrap(), "k:a", "npm add evil", "reason", 1);
+        let _ = std::fs::remove_file(&file);
+    }
+
+    /// The title is stable and single-line: the fingerprint is `stage + title`, so a stray newline or
+    /// an unbounded reason would fracture dedup and bloat the node's reason text.
+    #[test]
+    fn the_fault_title_is_single_line_and_capped() {
+        let t = supply_fault_title("evil is a known-MALICIOUS package (MAL-2024-1)");
+        assert!(t.starts_with("supply-chain gate blocked an install: "));
+        assert!(t.ends_with("evil is a known-MALICIOUS package (MAL-2024-1)"));
+        assert_eq!(supply_fault_title("a\tb\nc\rd"), "supply-chain gate blocked an install: a b c d");
+        assert!(supply_fault_title(&"x".repeat(500)).len() < 260, "reason is capped");
+        // Same reason ⇒ same title ⇒ same fingerprint.
+        assert_eq!(supply_fault_title("r"), supply_fault_title("r"));
     }
 }
