@@ -9,7 +9,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingRing, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
+import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingPulse, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
 import { archetypeById, hueColor } from "@/features/teams";
@@ -59,6 +59,14 @@ interface CanvasProps {
   focus: { nodes: Set<string>; edges: Set<string> } | null;
   selNodeId: string | null;
   selEdgeId: string | null;
+  /** True while DRILLED INTO A FLEET (L1) — the graph is showing worker/director agents rather than
+   *  the project network. Only the fleet's own nodes carry a live session, so it gates the
+   *  building pulse (#4015): a PROJECT node on L0 must never animate.
+   *
+   *  An explicit prop rather than inferring from `n.category`: a project whose lifecycle was never
+   *  classified has no category either, so the inference would quietly animate exactly the L0 nodes
+   *  it was meant to exclude. */
+  fleet?: boolean;
   onHoverNode: (id: string | null) => void;
   onHoverEdge: (id: string | null) => void;
   onSelectNode: (id: string) => void;
@@ -315,20 +323,12 @@ export function GlanceCanvas(p: CanvasProps) {
           : hazardCycle ? `color-mix(in oklch, ${ERR} 55%, transparent)`
           : loopHue ? `color-mix(in oklch, ${loopHue} 55%, transparent)`
           : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
-        // The BUILDING outline (#4010) — a ring that says "this node is actively working", so a fleet at
-        // work is legible from node shapes instead of by reading every label. A worker that parks into
-        // MAINTENANCE (`bsc-maintain`) drops back to plain `idle` and loses the ring, which is the
-        // distinction being drawn.
-        //
-        // It lives on `boxShadow`, not `border`: `border` already carries a contested precedence chain
-        // (selected -> preview -> off -> error -> hazard-cycle -> loop-hue) that exists to express faults
-        // and selection, and taking it over would displace one of those. Shadows compose, so the ring
-        // sits under them instead of fighting them — and it is suppressed outright while selected or in
-        // error, since both draw their own ring and two concentric outlines just read as noise.
-        const buildingRing = showsBuildingRing(n, { isOff, selected, isError });
+        // #4015 — the BUILDING pulse, gated to fleet (L1) nodes. Suppressed on a deactivated node
+        // (which is meant to read calm) and on an errored one (its own error pulse is the thing to
+        // look at; two competing animations on one node read as noise).
+        const pulseBuilding = showsBuildingPulse(n, { fleet: !!p.fleet, isOff, isError });
         const boxShadow = selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)"
           : isError && !inherited ? `0 0 0 3px color-mix(in oklch, ${ERR} 22%, transparent), 0 2px 8px rgba(0,0,0,.45)`
-          : buildingRing ? "0 0 0 2px var(--graph-building-ring), 0 2px 8px rgba(0,0,0,.45)"
           : "0 2px 8px rgba(0,0,0,.45)";
         // Pushed clear of the open terminal panel, if it overlaps (#2662) — the panel makes room.
         const push = pushMap.get(n.id);
@@ -343,7 +343,14 @@ export function GlanceCanvas(p: CanvasProps) {
               zIndex: selected ? 6 : isError && !inherited ? 5 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? offOpacity : REST_N) : offOpacity, transition: `opacity .18s ease, transform ${MORPH_EASE}` }}>
             <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`,
               borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
-              boxShadow, transition: "border-color .15s, box-shadow .15s" }}>
+              boxShadow, transition: "border-color .15s, box-shadow .15s",
+              // #4015 — a WORKER that is actively building breathes; one parked in maintenance sits
+              // still. That is the whole distinction, and an animation carries it without inventing a
+              // health state (a colour would have to compete with the health axis, which already means
+              // something else) and without touching the node's static appearance at all.
+              //
+              // Fleet-only: an L0 project node never animates, however busy the project is.
+              animation: pulseBuilding ? "glance-buildpulse 1.8s ease-in-out infinite" : undefined }}>
               <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {/* Axis-1 health dot. Error pulses at the ORIGIN; an inherited dot is dimmed (no pulse). */}
                 <Box title={`${n.rollupHealth}${inherited ? " (downstream)" : ""}`}

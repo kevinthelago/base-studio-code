@@ -33,6 +33,32 @@ export type GCategory = "greenfield" | "transform" | "harden" | "maintain" | "da
  *  status ("if it's not idle then it should be off"), and — being rank 0 — never propagates and never
  *  inherits a downstream error (see {@link rollUpHealth}). */
 export type GHealth = "idle" | "healthy" | "warning" | "error" | "off" | "attention";
+/**
+ * Does this node carry the BUILDING pulse (#4015)?
+ *
+ * A worker actively building breathes; one parked in maintenance sits still. That is the whole
+ * distinction, and an animation carries it without inventing a health state — a colour would have to
+ * compete with the health axis, which already means something else — and without changing the node's
+ * static appearance at all.
+ *
+ * `fleet` gates it to the DRILLED fleet (L1). A project node on L0 must never animate, however busy
+ * the project is. It is passed in rather than inferred from `n.category`, because a project whose
+ * lifecycle was never classified has no category either — the inference would quietly animate exactly
+ * the L0 nodes it was meant to exclude.
+ *
+ * Suppressed on a deactivated node (meant to read calm) and on an errored one (its own error pulse is
+ * the thing to look at; two competing animations on one node read as noise).
+ *
+ * Pure + exported so the gating is testable — the animation is an inline style, and what matters is
+ * WHICH nodes get it, not the frames.
+ */
+export function showsBuildingPulse(
+  n: { activity: GActivity },
+  ctx: { fleet: boolean; isOff: boolean; isError: boolean },
+): boolean {
+  return ctx.fleet && !ctx.isOff && !ctx.isError && n.activity === "building";
+}
+
 /** Axis 2 — ACTIVITY (#2541): the bottom-right lifecycle word — what the project is doing right now.
  *  `idle` is the RESTING default (#2551): a triaged project with nothing running reads idle, NOT
  *  building — `building` means agents are ACTUALLY running (derived from live sessions, never a
@@ -380,24 +406,6 @@ export function nodeStateWord(n: { health: GHealth; rollupHealth?: GHealth; acti
   if (n.health === "attention") return HEALTH_META.attention.label;
   if (n.health === "warning" || n.health === "error") return HEALTH_META[n.health].label;
   return ACTIVITY_META[n.activity].label;
-}
-
-/**
- * Does this node wear the BUILDING outline (#4010)?
- *
- * The ring answers "is this node actively working" from the node's SHAPE, so a fleet at work is legible
- * without reading every label — and a worker that parks into maintenance (`bsc-maintain`) drops back to
- * `idle` and loses it, which is the distinction it exists to draw.
- *
- * Suppressed while selected or in error: both already draw their own ring, and two concentric outlines
- * read as noise rather than as more information. Also suppressed on a deactivated node, which is meant
- * to read calm.
- *
- * Pure + exported so the rule is testable — the ring itself is an inline `boxShadow`, which jsdom
- * renders but does not compute, so the DECISION is what gets pinned.
- */
-export function showsBuildingRing(n: { activity: GActivity }, ctx: { isOff: boolean; selected: boolean; isError: boolean }): boolean {
-  return n.activity === "building" && !ctx.isOff && !ctx.selected && !ctx.isError;
 }
 
 /** Axis 2 — ACTIVITY → the bottom-right lifecycle word (#2541). Colour is the health axis's job; this
