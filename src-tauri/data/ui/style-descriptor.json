@@ -195,7 +195,8 @@
         { "key": "complete", "name": "--graph-health-complete", "type": "color", "value": "#5b9dff", "governs": "complete — every owned issue finished" },
         { "key": "healthy", "name": "--graph-health-healthy", "type": "color", "value": "#4fd6a0", "governs": "healthy — running clean" },
         { "key": "warning", "name": "--graph-health-warning", "type": "color", "value": "#f2b155", "governs": "warning — degraded" },
-        { "key": "error", "name": "--graph-health-error", "type": "color", "value": "#f2555f", "governs": "error — failing (pulses)" }
+        { "key": "error", "name": "--graph-health-error", "type": "color", "value": "#f2555f", "governs": "error — failing (pulses)" },
+        { "key": "attention", "name": "--graph-health-attention", "type": "color", "value": "#f26fb8", "governs": "attention — blocked on a person" }
       ]
     },
     {
