@@ -271,6 +271,15 @@ pub(crate) fn write_worker_context(
     }
     let wt_local = wt.join("CLAUDE.local.md");
     let _ = std::fs::write(&wt_local, &md);
+    // #3965: exclude AT THE PLANT SITE. `clone_repo` already excludes this path, but that is a
+    // single write at clone time with nothing re-applying it — on a live clone two of its three
+    // entries were simply absent, so every worker in that repo quarantined on launch for
+    // "edited out-of-lane CLAUDE.local.md". This is #1102 (`.mcp.json`) a second time: the app
+    // plants an untracked file, `read_worktree_changes` counts untracked files as the worker's
+    // work, and the file sits outside every stream's owned globs. Repos that gitignore the path
+    // themselves masked it; nothing else did. Excluding here — beside the write, on a path that
+    // is rewritten every launch — keeps the two from drifting and self-heals existing clones.
+    git_exclude(wt, "CLAUDE.local.md");
     // Inline the blueprint's attached skills (#636) so each worker carries the same skill
     // context the planner had. skills.md lives at the hub (not in the worktree), so the
     // planner's "read skills.md" note doesn't help a worker — inline it instead.
@@ -686,6 +695,57 @@ mod relocated_tests {
         assert!(
             !changes.iter().any(|f| f == ".mcp.json"),
             "worktree .mcp.json must be git-excluded, but read_worktree_changes returned {changes:?}",
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Regression (#3965): #1102 was fixed for `.mcp.json` ONLY, and this test asserted only that
+    /// one path — so when `CLAUDE.local.md` hit the identical failure it sailed through green. The
+    /// app plants several untracked files in a worker's worktree; `read_worktree_changes` counts
+    /// untracked files as the worker's own work, and they sit outside every stream's owned globs,
+    /// so ANY of them that git can still see quarantines the worker for an edit it never made.
+    /// Live blast radius when `CLAUDE.local.md` was the one that leaked: 19 of 19 workers in the
+    /// affected repo, within the same second. Assert the whole planted set, not one member.
+    #[test]
+    fn launch_path_git_excludes_the_claude_local_it_plants() {
+        if std::process::Command::new("git").arg("--version").output().is_err() {
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("bsc-gx-all-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let main = base.join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            std::process::Command::new("git").arg("-C").arg(cwd).args(args).output().unwrap()
+        };
+        git(&main, &["init", "-q"]);
+        git(&main, &["config", "user.email", "t@t.t"]);
+        git(&main, &["config", "user.name", "t"]);
+        std::fs::write(main.join("README.md"), "x").unwrap();
+        git(&main, &["add", "-A"]);
+        git(&main, &["commit", "-qm", "init"]);
+
+        let wt = base.join("wt");
+        git(&main, &["worktree", "add", "-q", wt.to_str().unwrap()]);
+
+        // Drive the REAL launch path, not a hand-rolled write + exclude. The #1102 test above calls
+        // `git_exclude` itself, so it only ever proved that `git_exclude` works — it could not
+        // notice that the production path never called it for this file. Going through
+        // `write_worker_context` is what makes this a regression test rather than a restatement.
+        let hub = base.join("hub");
+        std::fs::create_dir_all(&hub).unwrap();
+        write_worker_context(&wt, &main, &hub, Some("owns: src/**"));
+        assert!(wt.join("CLAUDE.local.md").exists(), "launch path should have planted the file");
+
+        // The warden's trusted signal must not attribute the app's own file to the worker. Without
+        // the exclude at the plant site this lists "CLAUDE.local.md", it falls outside every stream's
+        // owned globs, and `checkConformance` trips `out-of-glob` → the pane is hard-paused.
+        let changes = read_worktree_changes(wt.to_string_lossy().into_owned());
+        assert!(
+            !changes.iter().any(|f| f == "CLAUDE.local.md"),
+            "app-planted CLAUDE.local.md must be git-excluded by the launch path — it quarantined \
+             19 of 19 workers when it was not — but read_worktree_changes returned {changes:?}",
         );
 
         let _ = std::fs::remove_dir_all(&base);
