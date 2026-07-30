@@ -71,11 +71,19 @@ pub struct PaneDescriptor {
     pub name: String,
     /// One of `running | idle | awaiting_input | error` (mobile `PaneStatus`).
     pub status: String,
-    /// What kind of session this pane is (#2497): one of
-    /// `console | worker | planner | designer | triage` (the fleet director rides as
-    /// `worker`). **Optional for backward compatibility** — a pre-v2 desktop omits it and a
-    /// pre-v2 mobile ignores it; absent ⇒ treat as `console`. Omitted from the wire when
-    /// `None` so v1 fixtures stay byte-stable.
+    /// What kind of session this pane is (#2497): `console | worker | planner | triage` plus one per
+    /// app-owned studio — `designer | architect | librarian | soundDesigner | integrator` (#4023). The
+    /// fleet director rides as `worker`.
+    ///
+    /// Deliberately an OPEN string, not an enum: the desktop grows a studio far more often than the
+    /// protocol version turns, so a new kind must never be a breaking wire change. **Optional for
+    /// backward compatibility** — a pre-v2 desktop omits it and a pre-v2 mobile ignores it; an absent
+    /// OR UNRECOGNISED kind ⇒ treat as `console`, which is what lets an older mobile render a studio it
+    /// has never heard of. Omitted from the wire when `None` so v1 fixtures stay byte-stable.
+    ///
+    /// (The list above is documentation, not validation — nothing parses against it. Keep it current
+    /// with `PaneKind` in `src/features/tunnel/lib/tunnel.ts`; it had already drifted behind three
+    /// studios before #4023.)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
 }

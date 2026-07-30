@@ -14,4 +14,5 @@ pub mod designer;
 pub mod architect;
 pub mod librarian;
 pub mod sound_designer;
+pub mod integrator;
 pub mod debug;
