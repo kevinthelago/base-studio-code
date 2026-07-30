@@ -90,6 +90,31 @@ mod tests {
         );
     }
 
+    /// #4024: Discovery must record integrations as DATA, not only prose — the Source pane and the
+    /// Integration Studio both read those rows and neither can read markdown. The `direction` split is
+    /// the load-bearing part: it cannot be recovered later, so the directive must demand it be ASKED.
+    #[test]
+    fn stage_directive_discovery_records_integrations_as_data() {
+        let raw = crate::platform::config::embedded_str("stages/discovery.json");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("discovery.json parses");
+        let d = v["directive"].as_str().expect("directive").to_string();
+        assert!(d.contains("bsc plan discovery integration set"), "directive names the capture verb");
+        for field in ["\"id\"", "direction", "docs", "baseUrl", "purpose"] {
+            assert!(d.contains(field), "directive names the {field} field");
+        }
+        // Both directions, and the instruction to ASK rather than infer.
+        assert!(d.contains("`source`") && d.contains("`runtime`"), "directive defines both directions");
+        assert!(d.to_lowercase().contains("never guess") || d.to_lowercase().contains("must ask"),
+                "direction must be asked, not inferred");
+        // The prose file is NOT replaced by the rows.
+        assert!(d.contains("discovery/integrations.md"), "the prose record survives alongside the data");
+        // Declaring nothing must stay valid, or the planner invents integrations to satisfy the step.
+        assert!(d.to_lowercase().contains("declaring nothing is a valid outcome"),
+                "an integration-free project must not be pushed to invent one");
+        // Must NOT steer at the deprecated connector alias (#1721) — a different store entirely.
+        assert!(d.contains("NOT `bsc plan integration`"), "directive disambiguates from the deprecated alias");
+    }
+
     /// Features directive must steer the planner to write features.json (the artifact the
     /// Features pane + gate read), not the per-feature markdown sections (#815).
     #[test]
