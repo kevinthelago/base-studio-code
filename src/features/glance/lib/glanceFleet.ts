@@ -142,7 +142,7 @@ export function buildOrgFleetData(org: Team, personas: Persona[]): GlanceData {
     // Rests at idle (#2551) — a planned position isn't "building" until its session is actually live.
     // A `resource` position (a library, not an agent) is marked so the canvas draws it distinctly (#3322)
     // instead of the persona-less "worker" fallback role reading as an agent node.
-    return { id: pos.nodeId, slug: pos.label ?? persona?.name ?? pos.nodeId, role: gRole(role), roleLabel: role, health: "idle" as const, activity: "idle" as const, persona: p, resource: pos.kind === "resource" || undefined };
+    return { id: pos.nodeId, slug: pos.label ?? persona?.name ?? pos.nodeId, role: gRole(role), roleLabel: role, health: "off" as const, activity: "idle" as const, persona: p, resource: pos.kind === "resource" || undefined };
   });
   const ids = new Set(rawNodes.map((n) => n.id));
   const rawEdges: GRawEdge[] = [];
@@ -239,8 +239,8 @@ export function buildFleetData(project: ProjectLite): GlanceData {
   const workers = 2 + (hashAbs(project.id) % 3); // 2..4
   const rawNodes: GRawNode[] = [
     { id: "director", slug: "director", role: "infra", roleLabel: "director", health: "healthy", activity: "building" },
-    { id: "reviewer", slug: "reviewer", role: "data", roleLabel: "reviewer", health: "idle", activity: "review" },
-    { id: "auditor", slug: "auditor", role: "data", roleLabel: "auditor", health: "idle", activity: "review" },
+    { id: "reviewer", slug: "reviewer", role: "data", roleLabel: "reviewer", health: "off", activity: "review" },
+    { id: "auditor", slug: "auditor", role: "data", roleLabel: "auditor", health: "off", activity: "review" },
   ];
   // The auditor ⟳ reviewer iteration loop (#2578): both directions so `mutualPairs` reads it as a cycle.
   const rawEdges: GRawEdge[] = [
@@ -249,7 +249,7 @@ export function buildFleetData(project: ProjectLite): GlanceData {
   ];
   for (let i = 1; i <= workers; i++) {
     const id = `worker-${i}`;
-    rawNodes.push({ id, slug: `worker ${i}`, role: "service", roleLabel: "worker", health: hashAbs(id + project.id) % 2 ? "healthy" : "idle", activity: "building" });
+    rawNodes.push({ id, slug: `worker ${i}`, role: "service", roleLabel: "worker", health: hashAbs(id + project.id) % 2 ? "healthy" : "off", activity: "building" });
     rawEdges.push({ from: id, to: "director", kind: "api", archetype: "manages" });   // the director manages the worker
     rawEdges.push({ from: "reviewer", to: id, kind: "data", archetype: "oversees" }); // the reviewer oversees the worker's output
   }

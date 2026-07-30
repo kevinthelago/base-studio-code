@@ -75,7 +75,7 @@ describe("buildGlanceData — UI-kit nodes (#2571)", () => {
       { projectKey: "app-b", kitId: "react-ui" },
     ], kits);
     const kitNode = g.rawNodes.find((n) => n.kind === "kit");
-    expect(kitNode).toMatchObject({ id: kitNodeId("react-ui"), kind: "kit", slug: "React UI", health: "idle", activity: "idle" });
+    expect(kitNode).toMatchObject({ id: kitNodeId("react-ui"), kind: "kit", slug: "React UI", health: "off", activity: "idle" });
     // exactly one kit node (two consumers of the SAME kit ⇒ one node)
     expect(g.rawNodes.filter((n) => n.kind === "kit")).toHaveLength(1);
     // one edge per consumer, project→kit, kind "uses-kit"
@@ -140,7 +140,7 @@ describe("buildGlanceData — cross-graph `requires` from REAL library refs (#31
 
     const lib = g.rawNodes.filter((n) => n.kind === "library");
     expect(lib).toEqual([
-      { id: FIB_NODE, slug: "fibonacci", kind: "library", library: "algo", role: "infra", health: "idle", activity: "idle" },
+      { id: FIB_NODE, slug: "fibonacci", kind: "library", library: "algo", role: "infra", health: "off", activity: "idle" },
     ]);
     expect(g.rawEdges.filter((e) => e.kind === "requires")).toEqual([
       { id: requiresEdgeId("route-planner", FIB_NODE), from: "route-planner", to: FIB_NODE, kind: "requires" },
@@ -206,7 +206,7 @@ describe("buildGlanceData — MCP contract nodes (#3786)", () => {
   it("adds ONE mcp node per scoped server + one project→mcp `uses-mcp` edge per consumer", () => {
     const g = buildGlanceData(projects, [], [], [], [], [server({ projects: ["app-a", "app-b"] })]);
     const mcp = g.rawNodes.find((n) => n.kind === "mcp");
-    expect(mcp).toMatchObject({ id: mcpNodeId("postgres"), kind: "mcp", slug: "Postgres", role: "infra", health: "idle", activity: "idle" });
+    expect(mcp).toMatchObject({ id: mcpNodeId("postgres"), kind: "mcp", slug: "Postgres", role: "infra", health: "off", activity: "idle" });
     expect(g.rawNodes.filter((n) => n.kind === "mcp")).toHaveLength(1); // two consumers of the SAME server ⇒ one node
     expect(g.rawEdges.filter((e) => e.kind === "uses-mcp")).toEqual([
       { id: usesMcpEdgeId("app-a", "postgres"), from: "app-a", to: mcpNodeId("postgres"), kind: "uses-mcp" },
@@ -262,7 +262,7 @@ describe("buildGlanceData — explicit external contracts (#3786 Phase 2)", () =
     ];
     const g = buildGlanceData(projects, links);
     expect(g.rawNodes.find((n) => n.kind === "service")).toMatchObject({
-      id: serviceNodeId("stripe"), kind: "service", slug: "Stripe", appType: "api", role: "infra", health: "idle", activity: "idle",
+      id: serviceNodeId("stripe"), kind: "service", slug: "Stripe", appType: "api", role: "infra", health: "off", activity: "idle",
     });
     expect(g.rawEdges).toEqual([
       { id: usesServiceEdgeId("app-a", "stripe"), from: "app-a", to: serviceNodeId("stripe"), kind: "uses-service" },

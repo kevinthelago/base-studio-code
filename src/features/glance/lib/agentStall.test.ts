@@ -8,7 +8,7 @@ import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 const T0 = 1_720_000_000_000; // a fixed "now" base
 const projects: ProjectLite[] = [
   { id: "alpha", name: "Alpha", health: "healthy", activity: "building" },
-  { id: "beta", name: "Beta", health: "idle", activity: "building" },
+  { id: "beta", name: "Beta", health: "off", activity: "building" },
 ];
 
 describe("projectKeyOfSession", () => {
@@ -92,8 +92,8 @@ describe("applyFleetLiveStatus (#3252 — fleet-drill live agent status)", () =>
   const PROJ = "proj";
   // A planned fleet at rest — director + one worker + the preview node, all seeded idle by buildOrgFleetData.
   const nodes: GRawNode[] = [
-    { id: "director", slug: "director", role: "infra", health: "idle", activity: "idle" },
-    { id: "auth", slug: "auth", role: "service", health: "idle", activity: "idle" },
+    { id: "director", slug: "director", role: "infra", health: "off", activity: "idle" },
+    { id: "auth", slug: "auth", role: "service", health: "off", activity: "idle" },
     { id: "__preview__", slug: "preview", role: "client", health: "healthy", activity: "live", preview: true },
   ];
   const dir = fleetPaneId(PROJ, "director"); // "proj:director"
@@ -119,10 +119,13 @@ describe("applyFleetLiveStatus (#3252 — fleet-drill live agent status)", () =>
     expect(node(r, "auth")).toMatchObject({ health: "healthy", activity: "building" });
   });
 
-  it("a launched but QUIET agent (between prompts) reads idle — it EXISTS but is not working", () => {
+  it("a launched but QUIET agent reads HEALTHY with an idle activity word (#4042)", () => {
+    // #4042 removed the `idle` HEALTH state: a session that exists with nothing wrong IS healthy, and
+    // the activity word already carries "at rest". Two axes, two facts, no overlap.
     const r = out({ livePaneIds: new Set([dir]) }); // launched, not running, not waiting
-    expect(node(r, "director")).toMatchObject({ health: "idle", activity: "idle" });
-    // ...and it is NOT the same as a node with no session at all — that one is `off`.
+    expect(node(r, "director")).toMatchObject({ health: "healthy", activity: "idle" });
+    // ...and it is still NOT the same as a node with NO session — that one is `off`, which is what the
+    // dimming conveys. This contrast is the whole reason both states exist.
     expect(node(r, "auth")).toMatchObject({ health: "off", activity: "idle" });
   });
 
@@ -209,7 +212,7 @@ describe("applyFleetLiveStatus — quarantine is a first-class node state (#3916
 });
 
 describe("applyFleetLiveStatus — held by the dependency gate (#3931)", () => {
-  const node = (id: string): GRawNode => ({ id, slug: id, role: "service", health: "idle", activity: "idle" });
+  const node = (id: string): GRawNode => ({ id, slug: id, role: "service", health: "off", activity: "idle" });
   const base = { paneStatus: {}, waiting: [], now: Date.now() };
 
   it("a held stream explains itself instead of rendering as an anonymous dark node", () => {
@@ -266,7 +269,7 @@ describe("applyFleetLiveStatus — held by the dependency gate (#3931)", () => {
 
 describe("maintenance vs building (#4010)", () => {
   const PROJ = "proj";
-  const nodes: GRawNode[] = [{ id: "auth", slug: "auth", role: "service", health: "idle", activity: "idle" }];
+  const nodes: GRawNode[] = [{ id: "auth", slug: "auth", role: "service", health: "off", activity: "idle" }];
   const auth = fleetPaneId(PROJ, "auth");
   const run = (over: Partial<FleetLiveSignals>) =>
     applyFleetLiveStatus(nodes, PROJ, { livePaneIds: new Set([auth]), paneStatus: {}, waiting: [], now: T0, ...over })[0];
@@ -315,7 +318,7 @@ describe("maintenance vs building (#4010)", () => {
 
 describe("a finished worker reads COMPLETE (#4027)", () => {
   const PROJ = "proj";
-  const nodes: GRawNode[] = [{ id: "auth", slug: "auth", role: "service", health: "idle", activity: "idle" }];
+  const nodes: GRawNode[] = [{ id: "auth", slug: "auth", role: "service", health: "off", activity: "idle" }];
   const auth = fleetPaneId(PROJ, "auth");
   const run = (over: Partial<FleetLiveSignals>) =>
     applyFleetLiveStatus(nodes, PROJ, { livePaneIds: new Set([auth]), paneStatus: {}, waiting: [], now: T0, ...over })[0];

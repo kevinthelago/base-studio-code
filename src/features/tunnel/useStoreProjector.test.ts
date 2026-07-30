@@ -17,7 +17,7 @@ vi.mock("./lib/alertHub", () => ({
 // The glance data hooks poll GitHub/errordb/plan.db — inert STABLE fixtures here (fresh arrays
 // each render would re-fire the glance effect); their behavior is the glance feature's tests.
 vi.mock("@/features/glance", () => {
-  const projects = [{ id: "demo", name: "Demo", role: "service", health: "idle", activity: "building" }];
+  const projects = [{ id: "demo", name: "Demo", role: "service", health: "off", activity: "building" }];
   const faults = { demo: { level: "error", title: "boom", count: 2 } };
   return {
     useGlanceProjects: () => projects,

@@ -64,8 +64,8 @@ describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", ()
 
 describe("filterTriaged — only triaged/working projects render (#2541)", () => {
   const projects: ProjectLite[] = [
-    { id: "worked", name: "Worked", health: "idle", activity: "building" },
-    { id: "just-a-draft", name: "Draft", health: "idle", activity: "planning" },
+    { id: "worked", name: "Worked", health: "off", activity: "building" },
+    { id: "just-a-draft", name: "Draft", health: "off", activity: "planning" },
   ];
 
   it("keeps a project whose key is marked triaged and drops one that is not", () => {
@@ -121,7 +121,7 @@ describe("mergeGlanceProjects — draft/published dedup (#2339/#2409); GitHub no
 
     expect(merged).toHaveLength(1);
     expect(merged[0].id).toBe("billing-service"); // projectSlug(title) — never the node id
-    expect(merged[0].health).toBe("idle");
+    expect(merged[0].health).toBe("off");
     expect(merged[0].activity).toBe("idle");  // rests at idle (#2551) until a runtime signal lights it up
   });
 
@@ -171,16 +171,16 @@ describe("resolveProjectCategory — lifecycle category, replacing the hash tier
 
 describe("applyLiveness — heartbeat → 'live' activity + healthy (#2263/#2541)", () => {
   const projects: ProjectLite[] = [
-    { id: "a", name: "A", health: "idle", activity: "planning" },
-    { id: "b", name: "B", health: "idle", activity: "building" },
-    { id: "c", name: "C", health: "idle", activity: "building" },
+    { id: "a", name: "A", health: "off", activity: "planning" },
+    { id: "b", name: "B", health: "off", activity: "building" },
+    { id: "c", name: "C", health: "off", activity: "building" },
   ];
 
   it("maps a live-keyed project to activity 'live' + health 'healthy' and leaves the rest untouched", () => {
     const out = applyLiveness(projects, new Set(["a", "b"]));
     expect(out.find((p) => p.id === "a")).toMatchObject({ activity: "live", health: "healthy" });
     expect(out.find((p) => p.id === "b")).toMatchObject({ activity: "live", health: "healthy" });
-    expect(out.find((p) => p.id === "c")).toMatchObject({ activity: "building", health: "idle" }); // not live → untouched
+    expect(out.find((p) => p.id === "c")).toMatchObject({ activity: "building", health: "off" }); // not live → untouched
   });
 
   it("returns the input untouched when nothing is live (liveness lapsed ⇒ prior axes intact)", () => {
@@ -191,8 +191,8 @@ describe("applyLiveness — heartbeat → 'live' activity + healthy (#2263/#2541
 
 describe("deriveBuildingKeys / applyRunningActivity — running agents → building (#2551)", () => {
   const projects: ProjectLite[] = [
-    { id: "alpha", name: "Alpha", health: "idle", activity: "idle" },
-    { id: "beta", name: "Beta", health: "idle", activity: "idle" },
+    { id: "alpha", name: "Alpha", health: "off", activity: "idle" },
+    { id: "beta", name: "Beta", health: "off", activity: "idle" },
   ];
 
   it("deriveBuildingKeys reads the LIVE panes + run/on pane statuses, keyed by the project prefix", () => {
@@ -227,7 +227,7 @@ describe("deriveBuildingKeys / applyRunningActivity — running agents → build
 describe("applyDormantHealth — no session and no live app reads `off`, not `idle` (#3429)", () => {
   const projects: ProjectLite[] = [
     { id: "alpha", name: "Alpha", health: "healthy", activity: "building" },
-    { id: "beta", name: "Beta", health: "idle", activity: "idle" },
+    { id: "beta", name: "Beta", health: "off", activity: "idle" },
   ];
 
   it("marks a project with nothing running as off · idle", () => {
@@ -258,7 +258,7 @@ describe("applyDormantHealth — no session and no live app reads `off`, not `id
 describe("applyFaultHealth — worst fault → warning/error + reason (#2541)", () => {
   const projects: ProjectLite[] = [
     { id: "a", name: "A", health: "healthy", activity: "live" },
-    { id: "b", name: "B", health: "idle", activity: "building" },
+    { id: "b", name: "B", health: "off", activity: "building" },
   ];
   const fault = (level: GlanceFault["level"], title: string, count = 1): GlanceFault => ({ level, title, count });
 
@@ -461,7 +461,7 @@ describe("local published inventory seeds Glance (#2445)", () => {
     const merged = mergeGlanceProjects({}, [], [{ key: "acme-crm", title: "Acme CRM" }]);
     expect(merged).toHaveLength(1);
     // The hub key IS the drill / fleetPaneStreams key — never a fabricated one. Rests at idle (#2551).
-    expect(merged[0]).toMatchObject({ id: "acme-crm", name: "Acme CRM", activity: "idle", health: "idle" });
+    expect(merged[0]).toMatchObject({ id: "acme-crm", name: "Acme CRM", activity: "idle", health: "off" });
   });
 
   it("a GitHub record OVERLAYS the local node — collapsing onto a LEGACY hub key via slug(title)", () => {
