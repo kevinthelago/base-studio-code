@@ -13,7 +13,11 @@
 // an `always` trigger — so nothing about the schema had to change to express them. Nobody had simply
 // authored one before: the store held 254 component records and ZERO motion.
 //
-// ── WHY THERE IS NO `complete` ENTRY ─────────────────────────────────────────────────────────────
+// ── WHY THERE IS NO `complete` ENTRY, AND NO AMBIENT GLOW ───────────────────────────────────────
+// #4040 removed a health glow that ran on EVERY node, all the time. It read as work happening, which
+// spent the node's strongest signal on the one thing carrying no information — motion means "look at
+// this", and if everything moves, nothing does. Health is a COLOUR (the dot); motion is reserved for
+// the two states that want you.
 // Its stillness IS the statement. The node vocabulary is: building BREATHES, attention RINGS, complete
 // is STILL — motion means "look at this", and a finished worker is the one state with nothing to do
 // about it. The absence of an entry is how that reads as data, so a designer adding one is making a
@@ -63,31 +67,6 @@ export const GLANCE_NODE_ANIMATIONS: KitAnimation[] = [
       "0%": { "box-shadow": "0 0 0 0 var(--graph-health-attention)" },
       "60%": { "box-shadow": "0 0 0 4px transparent" },
       "100%": { "box-shadow": "0 0 0 0 transparent" },
-    },
-  },
-  // HEALTH GLOW (#4034) — a soft radial wash at the node's top-left that pulses and grows, in the
-  // node's HEALTH colour.
-  //
-  // The colour is `var(--node-health)`, a custom property the node sets from its own health — NOT a
-  // per-state animation. One definition therefore serves every state, and retuning the motion is
-  // independent of retuning the palette. It is also why there is no `[data-node-state]` selector here:
-  // this one is not state-scoped, it applies to the glow layer the node always renders.
-  //
-  // `transform: scale` + `opacity` only, so it is compositor-friendly — this is the one animation that
-  // may be running on every node in a large graph at once, and animating the gradient itself (or any
-  // layout property) would repaint each frame.
-  {
-    name: "health-glow",
-    selector: "[data-node-glow]",
-    trigger: "always",
-    // Slow on purpose (#4034 follow-up): ambient, not a signal. At 3.2s it read as a throb; at 6s it is
-    // a drift you notice only when you look, which is what an always-on wash on every node should be.
-    duration: "6000ms",
-    easing: "ease-in-out",
-    keyframes: {
-      "0%": { opacity: "0.18", transform: "scale(0.78)" },
-      "50%": { opacity: "0.44", transform: "scale(1.18)" },
-      "100%": { opacity: "0.18", transform: "scale(0.78)" },
     },
   },
 ];

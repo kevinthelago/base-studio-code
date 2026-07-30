@@ -55,33 +55,3 @@ describe("glance-node motion is authored DATA (#4032)", () => {
     expect(els[0].textContent).toBe(GLANCE_NODE_MOTION_CSS);
   });
 });
-
-describe("the health glow (#4034)", () => {
-  it("is authored data, not another hand-rolled keyframe", () => {
-    const glow = GLANCE_NODE_ANIMATIONS.find((a) => a.name === "health-glow");
-    expect(glow).toBeDefined();
-    expect(glow!.trigger).toBe("always");
-  });
-
-  it("is NOT state-scoped — one definition serves every health state", () => {
-    // Its colour comes from `--node-health`, a custom property the node sets from its own health. A
-    // per-state animation would mean N near-identical definitions and a palette change touching motion.
-    const glow = GLANCE_NODE_ANIMATIONS.find((a) => a.name === "health-glow")!;
-    expect(glow.selector).toBe("[data-node-glow]");
-    expect(glow.selector).not.toContain("data-node-state");
-  });
-
-  it("animates only compositor-friendly properties", () => {
-    // This is the one animation that may run on EVERY node in a large graph at once. Animating the
-    // gradient itself (or any layout property) would repaint each frame.
-    const glow = GLANCE_NODE_ANIMATIONS.find((a) => a.name === "health-glow")!;
-    const props = new Set(Object.values(glow.keyframes).flatMap((d) => Object.keys(d)));
-    expect([...props].sort()).toEqual(["opacity", "transform"]);
-  });
-
-  it("stays subtle — it is ambient, not an alert", () => {
-    const glow = GLANCE_NODE_ANIMATIONS.find((a) => a.name === "health-glow")!;
-    const peak = Number(glow.keyframes["50%"].opacity);
-    expect(peak).toBeLessThan(0.5);
-  });
-});
