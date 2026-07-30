@@ -39,9 +39,31 @@ fn run_probe_shell(
         cmd.env(k, v);
     }
     match no_window(&mut cmd).output() {
-        Ok(out) => String::from_utf8_lossy(&out.stdout).into_owned(),
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+            // #3978: the probe reported `claude` + `git` MISSING while both were installed and a login
+            // shell found them by hand. A false negative here is a BLOCKING, critical verdict in the
+            // UI, so it trains the user to dismiss the one banner meant to stop them before an agent
+            // fails mid-task — and it left nothing to diagnose from. Log what the probe actually ran
+            // under whenever it comes back empty or short, which is exactly the failing shape:
+            // the resolved shell (`resolve_shell` prefers $SHELL, which need not be Git Bash — and
+            // `-lc` is meaningless to a non-POSIX shell), the child's PATH, and git's stderr.
+            if stdout.trim().is_empty() {
+                let path = cmd.get_envs()
+                    .find(|(k, _)| k.to_string_lossy().eq_ignore_ascii_case("PATH"))
+                    .and_then(|(_, v)| v.map(|s| s.to_string_lossy().into_owned()))
+                    .unwrap_or_else(|| "<inherited>".into());
+                log::error!(
+                    "{label} probe produced NO output — shell={shell} status={:?} stderr={} PATH={}",
+                    out.status.code(),
+                    String::from_utf8_lossy(&out.stderr).trim().chars().take(300).collect::<String>(),
+                    path.chars().take(600).collect::<String>(),
+                );
+            }
+            stdout
+        }
         Err(e) => {
-            log::warn!("{label} probe failed to spawn ({shell}): {e}");
+            log::error!("{label} probe failed to spawn ({shell}): {e}");
             String::new()
         }
     }
