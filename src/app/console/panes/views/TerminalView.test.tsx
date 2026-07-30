@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
-import { render, cleanup } from "@testing-library/react";
+import { render, cleanup, waitFor } from "@testing-library/react";
 import { TerminalView } from "./TerminalView";
 import { useAppStore } from "@/store";
 
@@ -84,8 +84,11 @@ describe("TerminalView — Claude CLI native input reverted (#1239)", () => {
     expect(heights).toContain("100%");
   });
 
-  it("focuses the terminal while a Claude session is active", () => {
+  it("focuses the terminal while a Claude session is active", async () => {
+    // #3975: `term.open()` now waits for an admission slot (one frame), so focus lands a frame later
+    // than it used to. `openIfReady` focuses on open when this pane wants focus, so the ordering is
+    // handled whichever way the race falls — but the assertion has to await the frame.
     render(<TerminalView paneId={PANE} visible focused />);
-    expect(focusSpy).toHaveBeenCalled();
+    await waitFor(() => expect(focusSpy).toHaveBeenCalled());
   });
 });
