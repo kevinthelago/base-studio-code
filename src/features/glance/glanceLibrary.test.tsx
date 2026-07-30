@@ -16,9 +16,9 @@ const SOUND = libraryNodeId("sound", "chime");
 
 // A route-planner app requiring one algorithm + one sound cue — the logistics example from the epic.
 const rawNodes: GRawNode[] = [
-  { id: "route-planner", slug: "Route Planner", role: "service", category: "greenfield", health: "idle", activity: "idle" },
-  { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "idle", activity: "idle" },
-  { id: SOUND, slug: "Chime", kind: "library", library: "sound", role: "infra", health: "idle", activity: "idle" },
+  { id: "route-planner", slug: "Route Planner", role: "service", category: "greenfield", health: "off", activity: "idle" },
+  { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "off", activity: "idle" },
+  { id: SOUND, slug: "Chime", kind: "library", library: "sound", role: "infra", health: "off", activity: "idle" },
 ];
 const rawEdges: GRawEdge[] = [
   { id: requiresEdgeId("route-planner", ALGO), from: "route-planner", to: ALGO, kind: "requires" },
@@ -49,8 +49,8 @@ describe("GlanceCanvas — cross-graph library nodes (#3119)", () => {
 
     const algoOnly = buildGraph(
       [
-        { id: "app", role: "service", health: "idle", activity: "idle" },
-        { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "idle", activity: "idle" },
+        { id: "app", role: "service", health: "off", activity: "idle" },
+        { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "off", activity: "idle" },
       ],
       [{ id: requiresEdgeId("app", ALGO), from: "app", to: ALGO, kind: "requires" }],
     );

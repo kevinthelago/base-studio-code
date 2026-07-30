@@ -18,13 +18,11 @@
 
   /* domain / categorical — the graph data-viz palette (#2607); consumed by the glance kit,
      bindable by a theme. Kept in lockstep with style-descriptor.json (styleDescriptor.appTokens test). */
-  --graph-health-idle: #5b9dff;
+  /* #4034 — BLUE for complete: the worker finished everything it owns. */
+  --graph-health-complete: #5b9dff;
   --graph-health-healthy: #4fd6a0;
   --graph-health-warning: #f2b155;
   --graph-health-error: #f2555f;
-  /* #4005 — "needs you": a request for a person, deliberately NOT the warning orange (a fault) or
-     the healthy green (nothing to do). Violet reads as attention without reading as damage. */
-  --graph-health-attention: #a78bfa;
   --graph-health-off: #6b7280; /* #3239 — a user-deactivated node: a neutral, desaturated grey */
   --graph-kind-infra: #5b9dff;
   --graph-kind-service: #4fd6a0;

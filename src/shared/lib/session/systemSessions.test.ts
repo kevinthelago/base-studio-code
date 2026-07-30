@@ -27,10 +27,10 @@ describe("isStudioSessionPaneId (#3137)", () => {
     }
   });
 
-  it("is exactly the five studios (a new studio must be added here to be excluded)", () => {
+  it("is exactly the six studios (a new studio must be added here to be excluded)", () => {
     expect([...STUDIO_SESSION_PANE_IDS].sort()).toEqual(
       ["algorithms-studio:librarian", "debug-studio:debugger", "design-studio:designer",
-       "sound-studio:sound-designer", "teams-studio:architect"],
+       "integration-studio:integrator", "sound-studio:sound-designer", "teams-studio:architect"],
     );
   });
 });

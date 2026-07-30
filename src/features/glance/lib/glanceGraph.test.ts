@@ -11,7 +11,7 @@ import { buildGlanceData } from "./glanceData";
 const NODES: GRawNode[] = [
   { id: "core", role: "infra", health: "healthy", activity: "live" },
   { id: "api", role: "service", health: "healthy", activity: "building" },
-  { id: "web", role: "client", health: "idle", activity: "building" },
+  { id: "web", role: "client", health: "healthy", activity: "building" },
 ];
 const EDGES: GRawEdge[] = [
   { from: "api", to: "core", kind: "api" },
@@ -34,7 +34,7 @@ describe("buildGraph (#2206)", () => {
 
   it("hard vs soft: api/data are hard, events are soft", () => {
     const g = buildGraph(
-      [{ id: "a", role: "service", health: "idle", activity: "building" }, { id: "b", role: "infra", health: "idle", activity: "building" }],
+      [{ id: "a", role: "service", health: "healthy", activity: "building" }, { id: "b", role: "infra", health: "healthy", activity: "building" }],
       [{ from: "a", to: "b", kind: "events" }],
     );
     expect(g.edges[0].hard).toBe(false);
@@ -42,7 +42,7 @@ describe("buildGraph (#2206)", () => {
 
   it("detects a mutual-dependency cycle and flags both edges + nodes", () => {
     const g = buildGraph(
-      [{ id: "x", role: "data", health: "idle", activity: "building" }, { id: "y", role: "data", health: "idle", activity: "building" }],
+      [{ id: "x", role: "data", health: "healthy", activity: "building" }, { id: "y", role: "data", health: "healthy", activity: "building" }],
       [{ from: "x", to: "y", kind: "data" }, { from: "y", to: "x", kind: "data" }],
     );
     expect(g.cyclePairs).toHaveLength(1);
@@ -65,7 +65,7 @@ describe("buildGraph (#2206)", () => {
   it("orders a layer by the barycenter of its neighbors (shared orderLayers, #2418 — parity baseline)", () => {
     // p1/p2 are layer-0 providers; c1/c3 depend on p2, c2 on p1. The pre-#2418 inline barycenter
     // (6 snapshot passes) settled the consumer column as [c2, c1, c3] — locked here as the parity order.
-    const nodes: GRawNode[] = ["p1", "p2", "c1", "c2", "c3"].map((id) => ({ id, role: "service" as const, health: "idle" as const, activity: "building" as const }));
+    const nodes: GRawNode[] = ["p1", "p2", "c1", "c2", "c3"].map((id) => ({ id, role: "service" as const, health: "healthy" as const, activity: "building" as const }));
     const edges: GRawEdge[] = [
       { from: "c1", to: "p2", kind: "api" },
       { from: "c2", to: "p1", kind: "api" },
@@ -82,9 +82,9 @@ describe("buildGraph — fenced UI-kit band (#3007)", () => {
   // Two projects, both consuming one shared kit — the kit is edged FROM each project via `uses-kit`.
   const KIT = "react-ui";
   const withKit: GRawNode[] = [
-    { id: "app-a", role: "service", health: "idle", activity: "idle" },
-    { id: "app-b", role: "service", health: "idle", activity: "idle" },
-    { id: kitNodeId(KIT), slug: "React UI", kind: "kit", role: "infra", health: "idle", activity: "idle" },
+    { id: "app-a", role: "service", health: "healthy", activity: "idle" },
+    { id: "app-b", role: "service", health: "healthy", activity: "idle" },
+    { id: kitNodeId(KIT), slug: "React UI", kind: "kit", role: "infra", health: "healthy", activity: "idle" },
   ];
   const kitEdges: GRawEdge[] = [
     { id: usesKitEdgeId("app-a", KIT), from: "app-a", to: kitNodeId(KIT), kind: "uses-kit" },
@@ -170,8 +170,8 @@ describe("cross-graph library band (#3119) — generalized from the UI-kit band"
   const ALGO = libraryNodeId("algo", "dijkstra"), SOUND = libraryNodeId("sound", "chime");
   const withLibs: GRawNode[] = [
     ...NODES,
-    { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "idle", activity: "idle" },
-    { id: SOUND, slug: "Chime", kind: "library", library: "sound", role: "infra", health: "idle", activity: "idle" },
+    { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "healthy", activity: "idle" },
+    { id: SOUND, slug: "Chime", kind: "library", library: "sound", role: "infra", health: "healthy", activity: "idle" },
   ];
   const libEdges: GRawEdge[] = [
     ...EDGES,
@@ -204,9 +204,9 @@ describe("cross-graph library band (#3119) — generalized from the UI-kit band"
     // test) so the perimeter-anchor router is unambiguous — the band sits straight above the project.
     const g = buildGraph(
       [
-        { id: "app", role: "service", health: "idle", activity: "idle" },
-        { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "idle", activity: "idle" },
-        { id: SOUND, slug: "Chime", kind: "library", library: "sound", role: "infra", health: "idle", activity: "idle" },
+        { id: "app", role: "service", health: "healthy", activity: "idle" },
+        { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "healthy", activity: "idle" },
+        { id: SOUND, slug: "Chime", kind: "library", library: "sound", role: "infra", health: "healthy", activity: "idle" },
       ],
       [
         { id: requiresEdgeId("app", ALGO), from: "app", to: ALGO, kind: "requires" },
@@ -227,9 +227,9 @@ describe("cross-graph library band (#3119) — generalized from the UI-kit band"
 
   it("holds MULTIPLE dimensions at once — a UI kit and an algorithm in the same band", () => {
     const nodes: GRawNode[] = [
-      { id: "app", role: "service", health: "idle", activity: "idle" },
-      { id: kitNodeId("react-ui"), slug: "React UI", kind: "kit", role: "infra", health: "idle", activity: "idle" },
-      { id: libraryNodeId("algo", "fib"), slug: "Fibonacci", kind: "library", library: "algo", role: "infra", health: "idle", activity: "idle" },
+      { id: "app", role: "service", health: "healthy", activity: "idle" },
+      { id: kitNodeId("react-ui"), slug: "React UI", kind: "kit", role: "infra", health: "healthy", activity: "idle" },
+      { id: libraryNodeId("algo", "fib"), slug: "Fibonacci", kind: "library", library: "algo", role: "infra", health: "healthy", activity: "idle" },
     ];
     const edges: GRawEdge[] = [
       { id: usesKitEdgeId("app", "react-ui"), from: "app", to: kitNodeId("react-ui"), kind: "uses-kit" },
@@ -269,7 +269,7 @@ describe("rollUpHealth (#2541) — warnings/errors propagate up the dependency c
 
   it("an error on a dependency surfaces on every dependent, marked inherited", () => {
     const r = rollUpHealth(
-      [{ id: "dep", health: "error" }, { id: "mid", health: "healthy" }, { id: "top", health: "idle" }],
+      [{ id: "dep", health: "error" }, { id: "mid", health: "healthy" }, { id: "top", health: "healthy" }],
       chain,
     );
     expect(r.get("dep")).toEqual({ health: "error", inherited: false }); // the origin — not inherited
@@ -279,15 +279,15 @@ describe("rollUpHealth (#2541) — warnings/errors propagate up the dependency c
 
   it("idle/healthy never propagate — a healthy dependency leaves the dependent's own resting state", () => {
     const r = rollUpHealth(
-      [{ id: "dep", health: "healthy" }, { id: "mid", health: "idle" }],
+      [{ id: "dep", health: "healthy" }, { id: "mid", health: "healthy" }],
       [{ from: "mid", to: "dep" }],
     );
-    expect(r.get("mid")).toEqual({ health: "idle", inherited: false });
+    expect(r.get("mid")).toEqual({ health: "healthy", inherited: false });
   });
 
   it("takes the WORST severity across dependencies (error beats warning)", () => {
     const r = rollUpHealth(
-      [{ id: "a", health: "warning" }, { id: "b", health: "error" }, { id: "top", health: "idle" }],
+      [{ id: "a", health: "warning" }, { id: "b", health: "error" }, { id: "top", health: "healthy" }],
       [{ from: "top", to: "a" }, { from: "top", to: "b" }],
     );
     expect(r.get("top")).toEqual({ health: "error", inherited: true });
@@ -295,7 +295,7 @@ describe("rollUpHealth (#2541) — warnings/errors propagate up the dependency c
 
   it("is cycle-safe (a↔b does not loop forever)", () => {
     const r = rollUpHealth(
-      [{ id: "a", health: "error" }, { id: "b", health: "idle" }],
+      [{ id: "a", health: "error" }, { id: "b", health: "healthy" }],
       [{ from: "a", to: "b" }, { from: "b", to: "a" }],
     );
     expect(r.get("a")!.health).toBe("error");
@@ -304,7 +304,7 @@ describe("rollUpHealth (#2541) — warnings/errors propagate up the dependency c
 
   it("is cycle-safe on a LONGER loop (a→b→c→a, the #2578 N-cycle vision)", () => {
     const r = rollUpHealth(
-      [{ id: "a", health: "warning" }, { id: "b", health: "idle" }, { id: "c", health: "idle" }],
+      [{ id: "a", health: "warning" }, { id: "b", health: "healthy" }, { id: "c", health: "healthy" }],
       [{ from: "a", to: "b" }, { from: "b", to: "c" }, { from: "c", to: "a" }],
     );
     // every node transitively reaches a's warning around the loop — and it terminates
@@ -315,7 +315,7 @@ describe("rollUpHealth (#2541) — warnings/errors propagate up the dependency c
 
   it("buildGraph flags a cyclical iterates loop as a cycle and still lays out (#2578)", () => {
     const g = buildGraph(
-      [{ id: "aud", role: "data", health: "idle", activity: "review" }, { id: "rev", role: "data", health: "idle", activity: "review" }],
+      [{ id: "aud", role: "data", health: "healthy", activity: "review" }, { id: "rev", role: "data", health: "healthy", activity: "review" }],
       [{ from: "aud", to: "rev", kind: "data", archetype: "iterates" }, { from: "rev", to: "aud", kind: "data", archetype: "iterates" }],
     );
     expect(g.edges.every((e) => e.isCycle)).toBe(true);
@@ -325,7 +325,7 @@ describe("rollUpHealth (#2541) — warnings/errors propagate up the dependency c
 
   it("buildGraph stamps rollupHealth + healthInherited onto every node", () => {
     const g = buildGraph(
-      [{ id: "dep", role: "data", health: "error", activity: "building" }, { id: "app", role: "client", health: "idle", activity: "building" }],
+      [{ id: "dep", role: "data", health: "error", activity: "building" }, { id: "app", role: "client", health: "healthy", activity: "building" }],
       [{ from: "app", to: "dep", kind: "api" }],
     );
     const app = g.nodes.find((n) => n.id === "app")!;
@@ -378,10 +378,10 @@ describe("off health status (#3239) — the user's manual deactivate", () => {
 
   it("an OFF node never propagates its state to a dependent (rank 0)", () => {
     const r = rollUpHealth(
-      [{ id: "muted", health: "off" }, { id: "app", health: "idle" }],
+      [{ id: "muted", health: "off" }, { id: "app", health: "healthy" }],
       [{ from: "app", to: "muted" }], // app depends on the off node
     );
-    expect(r.get("app")).toEqual({ health: "idle", inherited: false });
+    expect(r.get("app")).toEqual({ health: "healthy", inherited: false });
   });
 
   it("buildGraph stamps rollupHealth 'off' onto a deactivated node", () => {
@@ -404,12 +404,18 @@ describe("nodeStateWord (#3957)", () => {
 
   it("a healthy node still reads its ACTIVITY word", () => {
     expect(nodeStateWord(n("healthy", "building"))).toBe(ACTIVITY_META.building.label);
-    expect(nodeStateWord(n("idle", "waiting"))).toBe(ACTIVITY_META.waiting.label);
+    expect(nodeStateWord(n("healthy", "waiting"))).toBe(ACTIVITY_META.waiting.label);
   });
 
-  it("a deactivated node reads `off`, outranking any live status (#3239)", () => {
-    expect(nodeStateWord(n("healthy", "building", "off"))).toBe("off");
-    expect(nodeStateWord(n("error", "idle", "off"))).toBe("off");
+  it("a deactivated node keeps its own word — the DIMMING says it is off (#4034)", () => {
+    // #3239 spent the node's one word slot on "off". But a deactivated node is already dimmed in place
+    // (`offOpacity`), so the word was redundant — and it cost the more useful fact: a node that was off
+    // AND complete read "off" and lost the completion entirely. The dimming carries deactivation now;
+    // the word carries what the node IS.
+    expect(nodeStateWord(n("healthy", "building", "off"))).toBe(ACTIVITY_META.building.label);
+    expect(nodeStateWord(n("healthy", "complete", "off"))).toBe(ACTIVITY_META.complete.label);
+    // A node that is off AND genuinely degraded still reports the fault — that outranks activity.
+    expect(nodeStateWord(n("error", "idle", "off"))).toBe(HEALTH_META.error.label);
   });
 
   it("a node degraded only by a DEPENDENCY keeps its own word", () => {
@@ -426,7 +432,7 @@ describe("nodeStateWord (#3957)", () => {
       ...Object.values(HEALTH_META).map((m) => m.label),
       ...Object.values(ACTIVITY_META).map((m) => m.label),
     ]);
-    const healths: GHealth[] = ["idle", "healthy", "warning", "error", "off"];
+    const healths: GHealth[] = Object.keys(HEALTH_META) as GHealth[];   // #4042: derive, so a new/removed state is covered automatically
     const acts: GActivity[] = Object.keys(ACTIVITY_META) as GActivity[];
     for (const h of healths) for (const a of acts) {
       for (const roll of [undefined, ...healths]) {

@@ -32,7 +32,7 @@ export type GCategory = "greenfield" | "transform" | "harden" | "maintain" | "da
  *  value — the user has deactivated the node from its details pane; it renders greyed, wins over the live
  *  status ("if it's not idle then it should be off"), and — being rank 0 — never propagates and never
  *  inherits a downstream error (see {@link rollUpHealth}). */
-export type GHealth = "idle" | "healthy" | "warning" | "error" | "off" | "attention";
+export type GHealth = "healthy" | "warning" | "error" | "off" | "complete";
 /**
  * Does this node carry the BUILDING pulse (#4015)?
  *
@@ -253,11 +253,17 @@ export interface GNodePersona {
  *  fleet, which is the whole job of the L0 cockpit. It does not outrank `error`, because a broken
  *  project is still the more urgent thing to look at. (Rank governs propagation only; the node's own
  *  state WORD is chosen by `nodeStateWord`, where attention deliberately does outrank warning.) */
-export const HEALTH_RANK: Record<GHealth, number> = { idle: 0, healthy: 0, attention: 1, warning: 1, error: 2, off: 0 };
+// `complete` is rank 0 — finished is not a problem, so it must never propagate up a dependency edge
+// and light a parent that is perfectly fine.
+export const HEALTH_RANK: Record<GHealth, number> = { healthy: 0, complete: 0, warning: 1, error: 2, off: 0 };
 
 /** A project node as supplied by the data adapter (before layout). */
 export interface GRawNode {
   id: string;
+  /** Owned-issue completion (#4050) — `done / total` for this node's stream. Absent for a node with no
+   *  stream, or before the first read lands. PRESENTATIONAL ONLY: it never feeds health or activity,
+   *  so a stale or missing read can never change what state the node reports. */
+  progress?: { done: number; total: number };
   /** Display name (defaults to id). */
   slug?: string;
   role: GRole;
@@ -370,16 +376,18 @@ export const CATEGORY_META: Record<GCategory, { label: string; color: string }> 
 /** Axis 1 — HEALTH → the top-left dot colour + whether it pulses (#2541). Blue = at rest, green =
  *  active & fine, orange = warning, red = error/fatal (pulses; the node to look at). */
 export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse: boolean }> = {
-  idle: { label: "idle", color: "var(--graph-health-idle)", pulse: false },
+  // #4034 — the worker FINISHED. Blue, the palette's most alive colour, which was previously spent
+  // on `idle` (a resting node) while the state that had actually achieved something had none.
+  // Never pulses: complete is STILL, the same reason its activity carries no motion (#4032).
+  complete: { label: "complete", color: "var(--graph-health-complete)", pulse: false },
   healthy: { label: "healthy", color: "var(--graph-health-healthy)", pulse: false },
   warning: { label: "warning", color: "var(--graph-health-warning)", pulse: false },
   error: { label: "error", color: "var(--graph-health-error)", pulse: true },
-  // #4005 — "a person has to act": parked on a `bsc-wait`, holding an unanswered question, or stopped
-  // at a permission prompt. Its own colour on purpose: it is neither a fault (`error`) nor a
-  // degradation (`warning`) but a REQUEST, and painting it orange taught the user to read a normal
-  // hand-off as something being broken. Pulses, because unlike a warning it does not resolve itself.
-  attention: { label: "needs you", color: "var(--graph-health-attention)", pulse: true },
   // #3239 — the user-deactivated node: a muted grey dot, never pulsing. The manual "turned off" state.
+  // #4042 — `off` now means "NO LIVE SESSION behind this node", which covers all three ways that
+  // happens: the user deactivated it, it was never launched, or it is structural furniture (a kit, a
+  // library, an external contract) that never runs at all. Those used to be `idle`, a second grey
+  // that looked identical to this one — and the dimming has always actually meant this.
   off: { label: "off", color: "var(--graph-health-off)", pulse: false },
 };
 /**
@@ -400,10 +408,10 @@ export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse:
  * must not read `warning` because a DEPENDENCY is degraded). Pure.
  */
 export function nodeStateWord(n: { health: GHealth; rollupHealth?: GHealth; activity: GActivity }): string {
-  if ((n.rollupHealth ?? n.health) === "off") return HEALTH_META.off.label;
-  // #4005: attention outranks BOTH degraded words. A worker that is mildly degraded AND blocked on
-  // you is, actionably, blocked on you — reading `warning` there hid the hand-off completely.
-  if (n.health === "attention") return HEALTH_META.attention.label;
+  // #4034 — no `off` WORD. A deactivated node is already dimmed in place (`offOpacity`, #3239) and
+  // that IS the signal; spending the one word slot on it meant a node that was off AND complete read
+  // "off" and lost the more useful fact. The dimming carries deactivation, the word carries what the
+  // node IS.
   if (n.health === "warning" || n.health === "error") return HEALTH_META[n.health].label;
   return ACTIVITY_META[n.activity].label;
 }
@@ -528,14 +536,14 @@ export function rollUpHealth(
     // so an off node never lights up because of a dependency. (`off` is rank 0, so it also never
     // propagates OUT — a node depending on an off node is unaffected.)
     if (own.get(start) === "off") return "off";
-    let worst = own.get(start) ?? "idle";
+    let worst: GHealth = own.get(start) ?? "off";
     const seen = new Set<string>([start]);
     const stack = [...(deps.get(start) ?? [])];
     while (stack.length) {
       const id = stack.pop()!;
       if (seen.has(id)) continue;
       seen.add(id);
-      const h = own.get(id) ?? "idle";
+      const h: GHealth = own.get(id) ?? "off";   // #4042: no own health ⇒ nothing live behind it
       if (HEALTH_RANK[h] > HEALTH_RANK[worst]) worst = h;
       for (const d of deps.get(id) ?? []) stack.push(d);
     }
@@ -544,7 +552,7 @@ export function rollUpHealth(
   const out = new Map<string, { health: GHealth; inherited: boolean }>();
   for (const n of nodes) {
     const eff = worstFrom(n.id);
-    out.set(n.id, { health: eff, inherited: HEALTH_RANK[eff] > HEALTH_RANK[own.get(n.id) ?? "idle"] });
+    out.set(n.id, { health: eff, inherited: HEALTH_RANK[eff] > HEALTH_RANK[own.get(n.id) ?? "off"] });
   }
   return out;
 }

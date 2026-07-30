@@ -129,7 +129,7 @@ export function mergeGlanceProjects(
     // wins so a demo/tagged project keeps its curated colouring.
     byKey.set(id, {
       id, name: d.title, role: d.role, category: d.category,
-      health: d.health ?? "idle",
+      health: d.health ?? "off",
       activity: d.activity ?? "idle",
       reason: d.reason,
     });
@@ -155,7 +155,7 @@ export function mergeGlanceProjects(
     const key = draftKeyByTitle.get(tk) ?? lp.key;
     const prior = byKey.get(key);
     const d = drafts[key];
-    byKey.set(key, { id: key, name: lp.title, role: prior?.role, category: prior?.category ?? d?.category, health: d?.health ?? "idle", activity: d?.activity ?? "idle", reason: d?.reason });
+    byKey.set(key, { id: key, name: lp.title, role: prior?.role, category: prior?.category ?? d?.category, health: d?.health ?? "off", activity: d?.activity ?? "idle", reason: d?.reason });
     draftKeyByTitle.set(tk, key);
   }
   for (const p of published) {
@@ -166,7 +166,7 @@ export function mergeGlanceProjects(
     const titleKey = projectSlug(p.title);
     const key = draftKeyByTitle.get(titleKey) ?? titleKey;
     const prior = byKey.get(key);
-    byKey.set(key, { id: key, name: p.title, role: prior?.role, category: prior?.category, health: prior?.health ?? "idle", activity: prior?.activity ?? "idle", reason: prior?.reason });
+    byKey.set(key, { id: key, name: p.title, role: prior?.role, category: prior?.category, health: prior?.health ?? "off", activity: prior?.activity ?? "idle", reason: prior?.reason });
   }
   return [...byKey.values()];
 }
@@ -186,7 +186,7 @@ const LIVENESS_POLL_MS = 10_000;
  */
 export function applyLiveness(projects: ProjectLite[], liveKeys: ReadonlySet<string>): ProjectLite[] {
   if (liveKeys.size === 0) return projects;
-  return projects.map((p) => (liveKeys.has(p.id) ? { ...p, activity: "live", health: p.health === "idle" ? "healthy" : p.health } : p));
+  return projects.map((p) => (liveKeys.has(p.id) ? { ...p, activity: "live", health: p.health === "off" ? "healthy" : p.health } : p));
 }
 
 /**
@@ -198,7 +198,7 @@ export function applyLiveness(projects: ProjectLite[], liveKeys: ReadonlySet<str
  */
 export function applyRunningActivity(projects: ProjectLite[], buildingKeys: ReadonlySet<string>): ProjectLite[] {
   if (buildingKeys.size === 0) return projects;
-  return projects.map((p) => (buildingKeys.has(p.id) ? { ...p, activity: "building", health: p.health === "idle" ? "healthy" : p.health } : p));
+  return projects.map((p) => (buildingKeys.has(p.id) ? { ...p, activity: "building", health: p.health === "off" ? "healthy" : p.health } : p));
 }
 
 /** The set of project keys with a LIVE agent session (#2551): any launched pane that is still a live CELL
@@ -225,7 +225,7 @@ export function deriveBuildingKeys(
  * liveness has nothing running at all: it reads `off · idle`.
  *
  * Until this existed, L0 could only ESCALATE. Every overlay lifted a project off the merge default
- * (`health: "idle"`), and nothing ever established that there was nothing to lift — so "dormant" and
+ * (`health: "off"`, `idle` until #4042), and nothing ever established that there was nothing to lift — so "dormant" and
  * "has a session, currently quiet" both rendered `idle`, exactly the ambiguity #3415 removed at L1:
  *
  *   no session exists → `off` · a session exists but is quiet → `idle` · working → `healthy`

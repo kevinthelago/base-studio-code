@@ -40,6 +40,10 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   architect: "pf_review",
   librarian: "pf_review",
   "sound-designer": "pf_review",
+  // Integrator (#4023): the same studio treatment — read-only review is the closest packaged floor, and
+  // this mapping likewise only backs the generic role→profile UI surfaces. Its `net: "read"` widening
+  // comes from the ROLE capability, not from a profile, so nothing here needs to grant it.
+  integrator: "pf_review",
   // Debugger (#3322): the app's full-cap maintenance session WRITES code, so like the worker it launches
   // under the write-permitting Autonomous profile; its real launch (`DebugSessionMount` on TerminalHost,
   // #3326) renders bypass directly via the `isFullCapabilitySession` carve-out, so this only backs the

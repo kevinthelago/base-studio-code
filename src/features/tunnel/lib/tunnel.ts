@@ -32,7 +32,7 @@ export type PaneStatus = "running" | "idle" | "awaiting_input" | "error";
 // `soundDesigner` added #3369 (epic #3071 phase 4). ADDITIVE — no existing value changes meaning, so an
 // older mobile build simply sees a kind it does not label rather than mis-labelling a session. Still a
 // tunnel-contract change: mobile-studio-code should add the matching label in a follow-up.
-export type PaneKind = "console" | "worker" | "planner" | "designer" | "architect" | "librarian" | "soundDesigner" | "triage";
+export type PaneKind = "console" | "worker" | "planner" | "designer" | "architect" | "librarian" | "soundDesigner" | "integrator" | "triage";
 
 /** One mirrored pane in the list the mobile client renders (`pane_list`). */
 export interface PaneDescriptor {

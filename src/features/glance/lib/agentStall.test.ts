@@ -8,7 +8,7 @@ import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 const T0 = 1_720_000_000_000; // a fixed "now" base
 const projects: ProjectLite[] = [
   { id: "alpha", name: "Alpha", health: "healthy", activity: "building" },
-  { id: "beta", name: "Beta", health: "idle", activity: "building" },
+  { id: "beta", name: "Beta", health: "off", activity: "building" },
 ];
 
 describe("projectKeyOfSession", () => {
@@ -92,8 +92,8 @@ describe("applyFleetLiveStatus (#3252 — fleet-drill live agent status)", () =>
   const PROJ = "proj";
   // A planned fleet at rest — director + one worker + the preview node, all seeded idle by buildOrgFleetData.
   const nodes: GRawNode[] = [
-    { id: "director", slug: "director", role: "infra", health: "idle", activity: "idle" },
-    { id: "auth", slug: "auth", role: "service", health: "idle", activity: "idle" },
+    { id: "director", slug: "director", role: "infra", health: "off", activity: "idle" },
+    { id: "auth", slug: "auth", role: "service", health: "off", activity: "idle" },
     { id: "__preview__", slug: "preview", role: "client", health: "healthy", activity: "live", preview: true },
   ];
   const dir = fleetPaneId(PROJ, "director"); // "proj:director"
@@ -119,10 +119,13 @@ describe("applyFleetLiveStatus (#3252 — fleet-drill live agent status)", () =>
     expect(node(r, "auth")).toMatchObject({ health: "healthy", activity: "building" });
   });
 
-  it("a launched but QUIET agent (between prompts) reads idle — it EXISTS but is not working", () => {
+  it("a launched but QUIET agent reads HEALTHY with an idle activity word (#4042)", () => {
+    // #4042 removed the `idle` HEALTH state: a session that exists with nothing wrong IS healthy, and
+    // the activity word already carries "at rest". Two axes, two facts, no overlap.
     const r = out({ livePaneIds: new Set([dir]) }); // launched, not running, not waiting
-    expect(node(r, "director")).toMatchObject({ health: "idle", activity: "idle" });
-    // ...and it is NOT the same as a node with no session at all — that one is `off`.
+    expect(node(r, "director")).toMatchObject({ health: "healthy", activity: "idle" });
+    // ...and it is still NOT the same as a node with NO session — that one is `off`, which is what the
+    // dimming conveys. This contrast is the whole reason both states exist.
     expect(node(r, "auth")).toMatchObject({ health: "off", activity: "idle" });
   });
 
@@ -130,23 +133,23 @@ describe("applyFleetLiveStatus (#3252 — fleet-drill live agent status)", () =>
   // only then flip to `warning`. Both readings were wrong in the same way: green says "nothing to do"
   // about a session waiting on YOU, and orange says "something is degrading" about a normal hand-off.
   // It is a request, so it gets its own health from the first moment.
-  it("a launched agent parked on a bsc-wait reads ATTENTION immediately, with its reason", () => {
+  it("a launched agent parked on a bsc-wait reads HEALTHY + waiting, with its reason (#4046)", () => {
     const r = out({ livePaneIds: new Set([auth]), waiting: [{ session: auth, reason: "awaiting review", at: T0 - 60_000 }] });
-    expect(node(r, "auth")).toMatchObject({ health: "attention", activity: "waiting", reason: "awaiting review" });
+    expect(node(r, "auth")).toMatchObject({ health: "healthy", activity: "waiting", reason: "awaiting review" });
   });
 
-  it("an OVERSTAYED wait stays ATTENTION but adds the duration", () => {
+  it("an OVERSTAYED wait still reads waiting, and adds the duration", () => {
     // How long it has been waiting is still worth knowing — it is just no longer the thing that
     // makes it visible in the first place.
     const r = out({ livePaneIds: new Set([auth]), waiting: [{ session: auth, reason: "no instructions", at: T0 - 12 * 60_000 }] });
-    expect(node(r, "auth")).toMatchObject({ health: "attention", activity: "waiting", reason: "no instructions · 12m" });
+    expect(node(r, "auth")).toMatchObject({ health: "healthy", activity: "waiting", reason: "no instructions · 12m" });
   });
 
-  it("a pane STOPPED at a permission prompt reads ATTENTION (#4005)", () => {
+  it("a pane STOPPED at a permission prompt reads HEALTHY + waiting (#4005/#4046)", () => {
     // The signal nothing in the app could see before: not `run`, no `bsc-wait`, so it fell through to
     // plain `idle` and looked exactly like a session that had simply finished.
     const r = out({ livePaneIds: new Set([auth]), attention: new Set([auth]) });
-    expect(node(r, "auth")).toMatchObject({ health: "attention", activity: "waiting" });
+    expect(node(r, "auth")).toMatchObject({ health: "healthy", activity: "waiting" });
     expect(node(r, "auth").reason).toMatch(/permission/);
   });
 
@@ -209,7 +212,7 @@ describe("applyFleetLiveStatus — quarantine is a first-class node state (#3916
 });
 
 describe("applyFleetLiveStatus — held by the dependency gate (#3931)", () => {
-  const node = (id: string): GRawNode => ({ id, slug: id, role: "service", health: "idle", activity: "idle" });
+  const node = (id: string): GRawNode => ({ id, slug: id, role: "service", health: "off", activity: "idle" });
   const base = { paneStatus: {}, waiting: [], now: Date.now() };
 
   it("a held stream explains itself instead of rendering as an anonymous dark node", () => {
@@ -266,7 +269,7 @@ describe("applyFleetLiveStatus — held by the dependency gate (#3931)", () => {
 
 describe("maintenance vs building (#4010)", () => {
   const PROJ = "proj";
-  const nodes: GRawNode[] = [{ id: "auth", slug: "auth", role: "service", health: "idle", activity: "idle" }];
+  const nodes: GRawNode[] = [{ id: "auth", slug: "auth", role: "service", health: "off", activity: "idle" }];
   const auth = fleetPaneId(PROJ, "auth");
   const run = (over: Partial<FleetLiveSignals>) =>
     applyFleetLiveStatus(nodes, PROJ, { livePaneIds: new Set([auth]), paneStatus: {}, waiting: [], now: T0, ...over })[0];
@@ -283,7 +286,9 @@ describe("maintenance vs building (#4010)", () => {
     // The WORD changed in #4027 — `complete`, not `idle`. Standing by having finished everything and
     // merely being quiet are different facts, and they used to render identically.
     const r = run({ paneStatus: { [auth]: "run" }, maintaining: new Set([auth]) });
-    expect(r).toMatchObject({ health: "idle", activity: "complete" });
+    // #4034 — health is `complete` (blue) too now, not `idle` (grey). A finished worker and a resting
+    // one are different states and used to share a colour.
+    expect(r).toMatchObject({ health: "complete", activity: "complete" });
     expect(r.reason).toMatch(/maintenance/);
   });
 
@@ -295,7 +300,7 @@ describe("maintenance vs building (#4010)", () => {
 
   it("a bsc-wait still outranks maintenance — that one needs a person", () => {
     const r = run({ maintaining: new Set([auth]), waiting: [{ session: auth, reason: "awaiting review", at: T0 }] });
-    expect(r).toMatchObject({ health: "attention", activity: "waiting" });
+    expect(r).toMatchObject({ health: "healthy", activity: "waiting" });
   });
 
   it("quarantine still outranks maintenance", () => {
@@ -313,7 +318,7 @@ describe("maintenance vs building (#4010)", () => {
 
 describe("a finished worker reads COMPLETE (#4027)", () => {
   const PROJ = "proj";
-  const nodes: GRawNode[] = [{ id: "auth", slug: "auth", role: "service", health: "idle", activity: "idle" }];
+  const nodes: GRawNode[] = [{ id: "auth", slug: "auth", role: "service", health: "off", activity: "idle" }];
   const auth = fleetPaneId(PROJ, "auth");
   const run = (over: Partial<FleetLiveSignals>) =>
     applyFleetLiveStatus(nodes, PROJ, { livePaneIds: new Set([auth]), paneStatus: {}, waiting: [], now: T0, ...over })[0];
