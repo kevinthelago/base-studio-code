@@ -2,7 +2,7 @@
 //! DDL, and the additive/rename migrations — run by {@link crate::Store::open}. Split out of `lib.rs`
 //! so the schema is one file (mirrors how `crates/data` keeps one file per concern).
 
-use crate::{artifacts, lessons, sessions};
+use crate::{artifacts, lessons, requests, sessions};
 use rusqlite::Connection;
 
 /// Every plan-store table, in the order `clear()` truncates them — the single source of truth for the
@@ -29,6 +29,7 @@ pub(crate) const ALL_TABLES: &[&str] = &[
     "fleet_sessions",
     "transformations",
     "artifacts",
+    "requests",
 ];
 
 pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
@@ -164,6 +165,7 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // Planner OUTPUT artifacts (#2997) — durable planner content by (kind, name); owns its schema in
     // `artifacts`. Additive + unwired for now (the substrate for hub-file → plan.db content moves).
     conn.execute_batch(artifacts::ARTIFACTS_DDL)?;
+    conn.execute_batch(requests::REQUESTS_DDL)?;
     // Additive migrations for a plan.db created before a column existed (each errors if the column is
     // already present — ignored).
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN status TEXT NOT NULL DEFAULT 'open'", []);
