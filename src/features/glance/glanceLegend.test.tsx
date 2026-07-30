@@ -41,6 +41,21 @@ describe("GlanceOverlays legend (#2561)", () => {
     expect(screen.queryByText("needs you")).toBeNull();
   });
 
+  it("keys node properties with DOTS, and relationships with lines (#4068)", () => {
+    // The second column keys a NODE property (LIFECYCLE at L0, FUNCTION at L1). It used to draw a
+    // 9×3 bar, which reads as a RELATIONSHIP — exactly what the EDGE column below it means, and what
+    // that column draws with real <line> elements. Shape carries the distinction, so assert it.
+    const { container } = render(<GlanceOverlays />);
+    const swatch = [...container.querySelectorAll<HTMLElement>("div")].find((el) =>
+      el.style.background.includes("--graph-lifecycle-greenfield"),
+    );
+    expect(swatch, "no lifecycle swatch found").toBeTruthy();
+    expect(swatch!.style.borderRadius).toBe("50%");
+    expect(swatch!.style.width).toBe(swatch!.style.height);   // round, not a bar
+    // …and the edge rows are still lines.
+    expect(container.querySelector("svg line"), "EDGE rows must stay lines").toBeTruthy();
+  });
+
   it("L1 (drill): FUNCTION groups + the Org archetypes present in the drilled fleet", () => {
     render(<GlanceOverlays drill archetypes={["manages", "oversees"]} />);
     expect(screen.getByText("FUNCTION")).toBeTruthy();
