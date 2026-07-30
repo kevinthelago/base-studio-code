@@ -300,13 +300,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             rawNodes:
               drill === BASE_STUDIO_PROJECT_ID
                 ? applyStudioLiveStatus(fleetData.rawNodes, { debugSession, paneClaudeActive, paneStatus })
-                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes }),
+                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes, ended: endedPanes }),
           }
         : fleetData,
     // `quarantinedPanes` + `heldStreams` belong here: without them the memo keeps a stale overlay, so a
     // newly quarantined worker (#3916) or a stream released by the gate (#3931) would not repaint until
     // some unrelated dep changed.
-    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams, attentionPanes, maintainingPanes],
+    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams, attentionPanes, maintainingPanes, endedPanes],
   );
   const fleetModel = useMemo(() => (liveFleetData ? timedSync("buildGraph:glance-fleet", () => buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges)) : null), [liveFleetData]);
   // The ACTIVE graph — the drilled fleet (with live status), else the project network. Everything downstream
