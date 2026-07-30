@@ -358,6 +358,7 @@ export function GlanceCanvas(p: CanvasProps) {
               border={border}
               boxShadow={boxShadow}
               healthColor={health.color}
+              healthPulse={health.pulse}
               inherited={!!inherited}
               roleColor={role}
               roleLabel={cat ? cat.label : (n.roleLabel ?? n.role)}
