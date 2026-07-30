@@ -9,7 +9,7 @@ const node = (over: Partial<GNode> = {}): GNode => ({
   rollupHealth: "healthy", x: 0, y: 0, ...over,
 } as GNode);
 
-const props = (n: GNode, state: "building" | "attention" | null) => ({
+const props = (n: GNode, state: "building" | null) => ({
   n, border: "var(--border)", boxShadow: "none", healthColor: "green", healthPulse: false,
   inherited: false, roleColor: "blue", roleLabel: "build", bottomText: "building",
   bottomColor: "var(--fg-muted)", bottomPulse: false, isOff: false, degraded: false,

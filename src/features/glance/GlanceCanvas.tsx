@@ -20,7 +20,7 @@ const ERR = "var(--graph-health-error)";
 // finished → needs you → degraded → failing. `off` has no row (#4042): it is the ABSENCE of a live
 // session — deactivated, never launched, or structural furniture — and the node conveys it by dimming
 // rather than by a colour, so a swatch would key something nothing paints.
-const HEALTH_ROWS: GHealth[] = ["healthy", "complete", "attention", "warning", "error"];
+const HEALTH_ROWS: GHealth[] = ["healthy", "complete", "warning", "error"];
 
 // The neighbour-parting motion is driven off the SAME easing + duration as the panel's grow (the
 // `.glance-card` transition in glance.css) — keep these in sync — so the panel growing and the graph
@@ -369,10 +369,9 @@ export function GlanceCanvas(p: CanvasProps) {
               isOff={isOff}
               degraded={degraded}
               ownDegraded={ownDegraded}
-              // #4032 — which authored motion plays. `attention` outranks `building`: a worker that
-              // needs a person is more urgent than one that is merely working, and a node can be both
-              // (its pane reads "run" while its agent sits at a permission prompt).
-              state={n.health === "attention" && !isOff && !isError ? "attention" : pulseBuilding ? "building" : null}
+              // #4032 — which authored motion plays. Only `building` remains (#4046 removed the
+              // attention ring with its health state).
+              state={pulseBuilding ? "building" : null}
             />
           </Box>
         );
