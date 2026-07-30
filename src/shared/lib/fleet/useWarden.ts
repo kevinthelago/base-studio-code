@@ -17,6 +17,7 @@ import { useAppStore } from "@/store";
 import { roleCapability } from "../session/sessionRoles";
 import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "../core/llmConfig";
 import { oneShotComplete } from "../core/claudeComplete";
+import type { WorktreeChanges } from "./worktreeChanges";
 import { planWarden, parseAuditCommands, zipWorktreeChanges, wardenSweepTargets, livePaneIdsOf, type WardenSession } from "./warden";
 import { buildJudgePrompt, parseJudgeVerdict, selectForJudging } from "./wardenJudge";
 import { completedWorkerPanes, doneIssueRefs } from "./streamCompletion";
@@ -83,7 +84,7 @@ async function sweepInputs(paneIds: string[]): Promise<{ auditLines: string[]; c
   const cwds = targets.map((p) => st.paneCwds[p] as string);
   const [auditLines, changes] = await Promise.all([
     logsTail("audit", 500),
-    cwds.length ? safeInvoke<string[][]>("read_worktree_changes_batch", { cwds }, []) : Promise.resolve<string[][]>([]),
+    cwds.length ? safeInvoke<WorktreeChanges[]>("read_worktree_changes_batch", { cwds }, []) : Promise.resolve<WorktreeChanges[]>([]),
   ]);
   // Index-aligned zip (pure + unit-tested in warden.ts): a short/failed batch degrades each missing
   // pane to "no file signal", exactly as a failed single read did — never another worker's files.

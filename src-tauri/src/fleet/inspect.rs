@@ -11,12 +11,35 @@ use crate::prelude::*;
 /// rather than crashing. `cwd` is the session's worktree.
 #[tauri::command]
 pub(crate) fn read_worktree_changes(cwd: String) -> Vec<String> {
+    let c = worktree_changes(&cwd);
+    merge_change_lists(c.tracked, c.untracked)
+}
+
+/// A worktree's changes, kept SPLIT by whether git is tracking them (#3983).
+///
+/// The two are not the same risk and must not be merged before the warden sees them. The lane check
+/// exists to stop a worker's work COLLIDING AT INTEGRATION — and an untracked file has not entered the
+/// repo, is not picked up by the lane's `git add`, and cannot collide with anything. Merging them made
+/// a `.agentscratch.txt` indistinguishable from an out-of-lane source edit, and the warden killed four
+/// workers that had ZERO tracked changes between them.
+#[derive(serde::Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorktreeChanges {
+    /// Repo-relative paths git is tracking that differ from HEAD (staged + unstaged).
+    pub tracked: Vec<String>,
+    /// Paths git does not track and `.gitignore` does not cover — scratch, logs, temp output.
+    pub untracked: Vec<String>,
+}
+
+/// Collect one worktree's changes, split. Tolerant: any git failure yields empty lists.
+fn worktree_changes(cwd: &str) -> WorktreeChanges {
     if cwd.trim().is_empty() {
-        return Vec::new();
+        return WorktreeChanges::default();
     }
-    let tracked = git_lines(&cwd, &["diff", "--name-only", "HEAD"]);
-    let untracked = git_lines(&cwd, &["ls-files", "--others", "--exclude-standard"]);
-    merge_change_lists(tracked, untracked)
+    WorktreeChanges {
+        tracked: git_lines(cwd, &["diff", "--name-only", "HEAD"]),
+        untracked: git_lines(cwd, &["ls-files", "--others", "--exclude-standard"]),
+    }
 }
 
 /// BATCHED [`read_worktree_changes`] (#3908) — one invoke for the WHOLE fleet instead of one per
@@ -29,7 +52,7 @@ pub(crate) fn read_worktree_changes(cwd: String) -> Vec<String> {
 /// work but pays the command-queue cost ONCE. Same tolerance as the single version: a cwd that fails
 /// yields an empty list rather than failing the batch.
 #[tauri::command]
-pub(crate) fn read_worktree_changes_batch(cwds: Vec<String>) -> Vec<Vec<String>> {
+pub(crate) fn read_worktree_changes_batch(cwds: Vec<String>) -> Vec<WorktreeChanges> {
     // #3954: run the probes CONCURRENTLY. This was `cwds.into_iter().map(...)` — serial — and each
     // element spawns TWO git subprocesses. When the resume rebuilt network-monitor's worktrees the
     // input grew to 47 cwds, i.e. ~94 serial spawns (~97ms each) inside ONE synchronous
@@ -41,13 +64,13 @@ pub(crate) fn read_worktree_changes_batch(cwds: Vec<String>) -> Vec<Vec<String>>
     // queue stall for a spawn storm (#3871). Order is preserved by writing into indexed slots, which
     // the caller's index-aligned zip depends on.
     const MAX_CONCURRENT: usize = 8;
-    let mut out: Vec<Vec<String>> = vec![Vec::new(); cwds.len()];
+    let mut out: Vec<WorktreeChanges> = (0..cwds.len()).map(|_| WorktreeChanges::default()).collect();
     for (chunk_idx, chunk) in cwds.chunks(MAX_CONCURRENT).enumerate() {
         let base = chunk_idx * MAX_CONCURRENT;
         std::thread::scope(|scope| {
             let handles: Vec<_> = chunk
                 .iter()
-                .map(|cwd| scope.spawn(move || read_worktree_changes(cwd.clone())))
+                .map(|cwd| scope.spawn(move || worktree_changes(cwd)))
                 .collect();
             for (i, h) in handles.into_iter().enumerate() {
                 // A panicking probe degrades that ONE pane to "no file signal" — the same tolerance
@@ -226,7 +249,12 @@ mod relocated_tests {
             format!("{}/definitely--not--here--3908", env!("CARGO_MANIFEST_DIR")),
         ]);
         assert_eq!(out.len(), 3, "one entry per input cwd, in order");
-        assert!(out.iter().all(|v| v.is_empty()), "an unreadable cwd degrades to no file signal, never a failed batch");
+        // #3983: BOTH halves empty — an unreadable cwd degrades to no file signal, never a failed
+        // batch, and never a phantom tracked change that would quarantine a worker.
+        assert!(
+            out.iter().all(|c| c.tracked.is_empty() && c.untracked.is_empty()),
+            "an unreadable cwd degrades to no file signal, never a failed batch",
+        );
         // An empty fleet is a no-op, not an error.
         assert!(super::read_worktree_changes_batch(vec![]).is_empty());
     }
@@ -386,5 +414,39 @@ mod tests {
         let _guard = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _home = crate::testutil::temp_home("nohub");
         assert!(fleet_landed_streams("ghost".to_string()).is_empty());
+    }
+
+    /// #3983: the two lists must stay SEPARATE. The warden lane-checks `tracked` only — an untracked
+    /// file has not entered the repo, is not picked up by the lane's `git add`, and cannot collide at
+    /// integration, which is the only harm the lane exists to prevent. Merging them made a
+    /// `.agentscratch.txt` indistinguishable from an out-of-lane source edit, and four workers with
+    /// ZERO tracked changes between them had their PTYs killed for scratch.
+    #[test]
+    fn worktree_changes_keeps_tracked_and_untracked_apart() {
+        let _guard = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _home = crate::testutil::temp_home("wtchanges");
+        let repo = crate::project_dir("proj").join("web");
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["config", "user.email", "t@t.t"]);
+        git(&repo, &["config", "user.name", "t"]);
+        std::fs::write(repo.join("src.txt"), "v1").unwrap();
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-q", "-m", "init"]);
+
+        // A TRACKED edit + an UNTRACKED scratch file, the exact live shape.
+        std::fs::write(repo.join("src.txt"), "v2").unwrap();
+        std::fs::write(repo.join(".agentscratch.txt"), "notes").unwrap();
+
+        let c = super::worktree_changes(&repo.to_string_lossy());
+        assert_eq!(c.tracked, vec!["src.txt".to_string()], "only the tracked edit is a lane signal");
+        assert_eq!(c.untracked, vec![".agentscratch.txt".to_string()], "scratch stays on the untracked side");
+
+        // Committing the scratch moves it across — the self-correcting property: scratch that stays
+        // scratch never trips, scratch that gets committed does, still before integration.
+        git(&repo, &["add", ".agentscratch.txt"]);
+        let c2 = super::worktree_changes(&repo.to_string_lossy());
+        assert!(c2.tracked.contains(&".agentscratch.txt".to_string()), "committed scratch becomes a lane signal");
+        assert!(c2.untracked.is_empty());
     }
 }
