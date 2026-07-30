@@ -187,6 +187,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       openedRef.current = true;
       disposeClipboard = attachTerminalClipboard(term, paneId);
       fitAddon.fit();
+      // #3994: the geometry is otherwise invisible. `pty_create` logs its cols/rows but `pty_resize`
+      // logs only on FAILURE, so there was no way to tell whether a terminal ends up matching its
+      // pane — which is exactly the question behind "it renders too many lines / there's a scrollbar".
+      // Logged once per open, with the container box AND the resulting grid, so the two can be
+      // compared: rows * cellHeight should land within one cell of the container's inner height.
+      log.info(`console[${paneId}] fit-on-open · box=${el.clientWidth}x${el.clientHeight}px · grid=${term.cols}x${term.rows}`);
       if (pendingRef.current.size() > 0) term.write(pendingRef.current.flush());
       term.scrollToBottom(); // show the latest output on (re)mount, no scrolling (#68)
       // #3975: the focus effect may already have run and skipped (no terminal yet) — honour it now.
@@ -608,7 +614,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // Opened-or-already-open: fit to the current size and tell the backend.
         // (When this call is the one that opened, openIfReady already fit once;
         // a second fit is idempotent, and the resize propagates the dims.)
+        const before = `${term.cols}x${term.rows}`;
         fitAddon.fit();
+        const after = `${term.cols}x${term.rows}`;
+        // Only on a real change — a resize observer fires constantly and the log must stay readable.
+        if (after !== before) {
+          log.info(`console[${paneId}] refit · box=${el.clientWidth}x${el.clientHeight}px · grid=${before} → ${after}`);
+        }
         fireInvoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }, console.error);
       }
     });
