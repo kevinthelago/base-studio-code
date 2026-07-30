@@ -60,7 +60,19 @@ THE OP-TREE
   Primitives (mm):  box{size:[x,y,z]} · sphere{r} · cylinder{r,h}
   Transforms:       translate{by,node} · rotate{axis,angle,node} · scale{by,node}
   Booleans:         union{nodes} · difference{base,tools} · intersect{nodes}
-  Fillet:           smooth_union{k,nodes} — k is the blend radius in mm (SDF smooth-min)
+  Fillet blend:     smooth_union{k,nodes} — k is the blend radius in mm (SDF smooth-min)
+  Sketch-based:     extrude{profile,height} · revolve{profile} — profile is a closed 2D polygon,
+                    e.g. [[0,0],[10,0],[10,10],[0,10]] (mm, implicitly closed). extrude sweeps it
+                    along Z by height, centred on z=0; revolve sweeps it a full 360° about Z, reading
+                    the profile's first coordinate as the radius (keep it >= 0) and the second as Z.
+  Shell:            shell{thickness,node} — hollow node, keeping its outer surface fixed and
+                    removing material beyond thickness mm inward.
+  Pattern:          linear_pattern{by,count,node} · radial_pattern{axis,count,node} — count copies
+                    of node, spaced by [x,y,z] mm per step (linear) or evenly around a full turn
+                    about axis (radial).
+  Round fillet:     fillet{r,node} — round node's own convex edges/corners with radius r mm by
+                    dilating its whole surface outward (grows the envelope by r; a DIFFERENT op
+                    from smooth_union, which blends the seam between distinct solids instead).
 
   Describe WHAT THE PART IS, not vertices. A worked example ships at
   crates/bsc-cad/examples/bracket.json.

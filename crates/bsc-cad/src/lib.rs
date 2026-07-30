@@ -19,6 +19,7 @@ pub mod math;
 pub mod mesh;
 pub mod node;
 pub mod qef;
+pub mod sketch;
 pub mod stl;
 
 pub use gltf::{to_glb, to_gltf_json};
@@ -26,4 +27,5 @@ pub use math::{Aabb, Vec3};
 pub use mesh::{polygonize, polygonize_with, Mesh, Method};
 pub use node::Node;
 pub use qef::Qef;
+pub use sketch::Profile;
 pub use stl::to_binary_stl;

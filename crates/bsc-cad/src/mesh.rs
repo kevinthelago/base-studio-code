@@ -191,9 +191,21 @@ pub fn polygonize(node: &Node, resolution: usize) -> Mesh {
     polygonize_with(node, resolution, Method::DualContouring)
 }
 
+/// Extra padding, as a fraction of one cell, beyond the plain 2-cell margin — deliberately NOT a
+/// round number. A part authored with round mm dimensions at a round resolution (overwhelmingly the
+/// common case) can otherwise put a grid CORNER exactly on one of the part's own flat faces: its
+/// field value lands at exactly 0 (or a sub-epsilon floating-point wobble around it), an ambiguous
+/// sign that neighboring cells can resolve inconsistently, seeding near-duplicate vertices that break
+/// watertightness (observed on a revolve with round radii/heights at a round `--res`). This only needs
+/// to be big enough to push an exactly-aligned corner's field value to an unambiguous, clearly-signed
+/// value — many orders of magnitude below cell size, so it does not perturb genuine sharp-feature
+/// precision (dual contouring's corner/edge placement is exact to a small fraction of a cell; see
+/// `sharp_features_survive_on_non_grid_aligned_geometry`, whose tolerance a larger jitter would blow).
+const GRID_JITTER: f64 = 1e-4;
+
 /// Polygonize `node` with ~`resolution` cells along its longest axis using `method`. The bounds are
-/// padded by two cells so the surface is fully interior — every surface edge then has four adjacent
-/// cells, which is what makes the output watertight.
+/// padded by (slightly more than) two cells so the surface is fully interior — every surface edge
+/// then has four adjacent cells, which is what makes the output watertight.
 pub fn polygonize_with(node: &Node, resolution: usize, method: Method) -> Mesh {
     let empty = Mesh { positions: vec![], triangles: vec![] };
     let res = resolution.max(1);
@@ -202,7 +214,7 @@ pub fn polygonize_with(node: &Node, resolution: usize, method: Method) -> Mesh {
         return empty;
     }
     let cell = (bounds.size().max_component() / res as f64).max(1e-6);
-    let b = bounds.expand(cell * 2.0);
+    let b = bounds.expand(cell * (2.0 + GRID_JITTER));
     let size = b.size();
     let nx = ((size.x / cell).ceil() as usize + 1).max(2);
     let ny = ((size.y / cell).ceil() as usize + 1).max(2);
@@ -544,6 +556,101 @@ mod tests {
         let m = polygonize_with(&part, 48, Method::DualContouring);
         assert!(!m.is_empty());
         assert!(m.is_watertight(), "sharp concave features must not tear the mesh open");
+    }
+
+    #[test]
+    fn extrude_of_an_l_shaped_profile_meshes_watertight() {
+        // A concave profile (an L) is the case that stresses the ray-cast inside test, not just the
+        // easy convex square — #3425's acceptance: "Sketch→extrude produces a valid closed mesh".
+        let l_profile = vec![
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, 4.0],
+            [4.0, 4.0],
+            [4.0, 10.0],
+            [0.0, 10.0],
+        ];
+        let part = Node::Extrude { profile: l_profile, height: 6.0 };
+        let m = polygonize(&part, 40);
+        assert!(!m.is_empty(), "a concave profile must still mesh");
+        assert!(m.is_watertight(), "an extruded L stays a closed 2-manifold");
+        // Volume: 10x10 square minus the 6x6 notch, times 6 mm depth.
+        let expected = (10.0 * 10.0 - 6.0 * 6.0) * 6.0;
+        assert!((m.volume() - expected).abs() / expected < 0.1, "volume {} vs {expected}", m.volume());
+    }
+
+    #[test]
+    fn a_round_number_revolve_stays_watertight_despite_grid_alignment() {
+        // Regression for the GRID_JITTER fix: a plain rectangle profile with ROUND mm dimensions
+        // (radius 6, height 8) at a ROUND resolution used to put grid corners exactly on the part's
+        // own flat caps, producing near-duplicate vertices and an open mesh. This is the overwhelmingly
+        // common real case (a CAD spec authored in round millimetres), so it must just work.
+        let profile = vec![[0.0, -4.0], [6.0, -4.0], [6.0, 4.0], [0.0, 4.0]];
+        let m = polygonize(&Node::Revolve { profile }, 48);
+        assert!(!m.is_empty());
+        assert!(m.is_watertight(), "a round-dimensioned revolve must still close");
+    }
+
+    #[test]
+    fn revolve_of_a_bushing_profile_meshes_watertight() {
+        // #3425's acceptance: "Revolve produces a valid closed mesh". A stepped profile (a bushing
+        // with a shoulder) so the revolve sweeps more than a plain rectangle.
+        let profile = vec![[3.0, -5.0], [6.0, -5.0], [6.0, 2.0], [4.0, 2.0], [4.0, 5.0], [3.0, 5.0]];
+        let part = Node::Revolve { profile };
+        let m = polygonize(&part, 48);
+        assert!(!m.is_empty());
+        assert!(m.is_watertight(), "a revolved solid must close all the way around");
+    }
+
+    #[test]
+    fn a_shelled_box_meshes_watertight_with_two_surfaces() {
+        // #3426's acceptance: shell implemented with a test. A hollowed box polygonizes to TWO
+        // separate closed shells (outer + inner wall) — both must close, and the enclosed volume
+        // (outer minus inner) must reflect the wall thickness rather than a solid or a leaky mesh.
+        let solid = Node::Box { size: [20.0, 20.0, 20.0] };
+        let shell = Node::Shell { thickness: 2.0, node: Box::new(solid) };
+        let m = polygonize(&shell, 40);
+        assert!(!m.is_empty());
+        assert!(m.is_watertight(), "both the outer and inner wall must close");
+        // Outer 20mm cube (8000 mm3) minus the inner 16mm cube (4096 mm3) = 3904 mm3 of wall material.
+        let expected = 20.0f64.powi(3) - 16.0f64.powi(3);
+        assert!((m.volume() - expected).abs() / expected < 0.15, "wall volume {} vs {expected}", m.volume());
+    }
+
+    #[test]
+    fn a_linear_pattern_of_bolt_bosses_meshes_watertight() {
+        // #3426's acceptance: pattern implemented with a test. Three separate spheres, none touching,
+        // must still mesh into three independent watertight shells.
+        let unit = Node::Sphere { r: 3.0 };
+        let row = Node::LinearPattern { by: [10.0, 0.0, 0.0], count: 3, node: Box::new(unit) };
+        let m = polygonize(&row, 60);
+        assert!(!m.is_empty());
+        assert!(m.is_watertight(), "three disjoint copies must each close on their own");
+        let one_sphere = 4.0 / 3.0 * std::f64::consts::PI * 3.0f64.powi(3);
+        assert!((m.volume() - 3.0 * one_sphere).abs() / (3.0 * one_sphere) < 0.1);
+    }
+
+    #[test]
+    fn a_radial_pattern_of_slots_stays_watertight() {
+        // A ring of four bosses around Z, in a single mesh call.
+        let boss = Node::Translate { by: [10.0, 0.0, 0.0], node: Box::new(Node::Sphere { r: 2.0 }) };
+        let ring = Node::RadialPattern { axis: [0.0, 0.0, 1.0], count: 4, node: Box::new(boss) };
+        let m = polygonize(&ring, 60);
+        assert!(!m.is_empty());
+        assert!(m.is_watertight(), "every copy around the ring must close");
+    }
+
+    #[test]
+    fn a_filleted_box_meshes_watertight_and_grows_by_r() {
+        // #3426's acceptance: fillet implemented with a test, distinguishable from smooth_union by
+        // its effect on a SINGLE solid (smooth_union of one node is a no-op; Fillet is not).
+        let cube = Node::Box { size: [20.0, 20.0, 20.0] };
+        let rounded = Node::Fillet { r: 2.0, node: Box::new(cube) };
+        let m = polygonize(&rounded, 40);
+        assert!(!m.is_empty());
+        assert!(m.is_watertight(), "a rounded box must still be a closed 2-manifold");
+        // Volume grows past the plain 8000 mm3 cube (the whole envelope dilated outward by r=2).
+        assert!(m.volume() > 8000.0, "opRound must enlarge the part: {}", m.volume());
     }
 
     #[test]
