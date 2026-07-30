@@ -92,6 +92,12 @@ export interface FleetLiveSignals {
    *  still alive: whether it reads `run` is a timing accident, and on the wrong side of that accident a
    *  finished worker keeps the building outline forever. */
   maintaining?: ReadonlySet<string>;
+  /** Panes the auto-end marked FINISHED (#4027) — `bsc-done` → `endedPanes`, valued by the verdict
+   *  plan.db gave (`done` / `needs-attention` / `blocked`), not the worker's say-so. Keyed by pane id.
+   *
+   *  Needed here because `livePaneIds` EXCLUDES ended panes, so without this an ended worker falls
+   *  through to `off` — indistinguishable from one that never launched. */
+  ended?: Record<string, { state: string }>;
   /** Epoch now — injected (impure in render). */
   now: number;
   /** Stall threshold; a wait beyond it escalates to `warning`. Defaults to {@link STALL_WARN_MS}. */
@@ -158,6 +164,17 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
         reason: h.reason,
       };
     }
+    // FINISHED (#4027) — above the `off` fall-through on purpose, and for the same reason quarantine
+    // and held are: `livePaneIds` excludes ended panes, so a worker that completed every issue it owned
+    // would render as `off` — exactly what a NEVER-LAUNCHED node looks like. The one state that has
+    // earned a distinct reading would be the one state that loses it.
+    //
+    // Only a `done` verdict reads complete. `needs-attention` / `blocked` are endings too, but they are
+    // endings that want a person — they keep falling through to the states that say so.
+    const endState = sig.ended?.[paneId]?.state;
+    if (endState === "done") {
+      return { ...n, health: "idle" as GHealth, activity: "complete" as GActivity, reason: "every owned issue complete" };
+    }
     // NOT LAUNCHED — there is no session behind this node. That is `off`, not `idle`: the two states
     // were indistinguishable while both rendered idle, so a node with no session read as one that was
     // merely quiet, and its empty log view looked like a broken log rather than an absent session.
@@ -194,7 +211,9 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
     // about it. The explanation rides in `reason`, which the hover title and the inspector's REASON
     // tile both show, so the state is still discoverable without being loud.
     if (sig.maintaining?.has(paneId)) {
-      return { ...n, health: "idle" as GHealth, activity: "idle" as GActivity, reason: "maintenance — owned issues complete, standing by for dispatch" };
+      // #4027: `complete`, not `idle`. A worker standing by having finished everything it owns and one
+      // that happens to be quiet are different facts, and they used to render as the same word.
+      return { ...n, health: "idle" as GHealth, activity: "complete" as GActivity, reason: "maintenance — owned issues complete, standing by for dispatch" };
     }
     if (sig.paneStatus[paneId] === "run") return { ...n, health: "healthy" as GHealth, activity: "building" as GActivity };
     // Launched, but not working: the session EXISTS and is quiet ⇒ `idle` on both axes. It used to read
