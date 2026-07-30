@@ -17,7 +17,6 @@
 // off → error → cycle → focus), the health rollup, push offsets. Those are graph CONCERNS, not node
 // presentation, and threading them out would have made this a worse component, not a more reusable
 // one. This owns the card's body: its states, its dot, its two label rows.
-import type React from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { GNode } from "./lib/glanceGraph";
@@ -31,13 +30,10 @@ export interface GlanceNodeProps {
   /** Precomputed by the canvas — the border precedence chain it owns. */
   border: string;
   boxShadow: string;
-  /** The node's health colour (axis 1). Drives the GLOW via `--node-health` — the 8px dot it used to
-   *  paint was removed in #4037, since the glow already carries the colour and carrying it twice made
-   *  the node busier without saying more. */
+  /** Health dot colour + whether it pulses (axis 1). */
   healthColor: string;
-  /** Lit only by a DOWNSTREAM dep. Dims the glow, so the eye still lands on the origin of a fault
-   *  rather than on everything the fault touches (#2541) — the distinction the dot's opacity used to
-   *  make, preserved on the surface that replaced it. */
+  healthPulse: boolean;
+  /** Lit only by a DOWNSTREAM dep — dimmed, never pulses, so the eye lands on the fault's ORIGIN. */
   inherited: boolean;
   /** The role/category accent for the lower-left label. */
   roleColor: string;
@@ -69,28 +65,16 @@ export function GlanceNode(p: GlanceNodeProps) {
       data-node-state={p.state ?? undefined}
       style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${p.border}`,
         borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
-        boxShadow: p.boxShadow, transition: "border-color .15s, box-shadow .15s",
-        // #4034 — the glow reads its colour from HERE, so one animation serves every health state and
-        // retuning the palette never touches the motion. `position/overflow` keep the wash inside the
-        // node's rounded corners.
-        ["--node-health" as string]: p.healthColor,
-        position: "relative", overflow: "hidden" } as React.CSSProperties}>
-      {/* #4034 — the health glow: a radial wash at the top-left, pulsing + growing, animated by the
-          authored `health-glow` kit animation. Suppressed on a deactivated node, which is meant to read
-          calm — the one place the node is deliberately inert. `pointer-events: none` so it never eats a
-          click meant for the node. */}
-      {!p.isOff && (
-        <Box data-node-glow aria-hidden style={{
-          opacity: p.inherited ? 0.45 : 1,
-          // Wider than the node is tall (NH 66) and over half its width (NW 186), so the wash reads as
-          // lighting the corner rather than as a dot in it. `overflow: hidden` on the card clips it to the
-          // rounded corner, so oversizing costs nothing visually.
-          position: "absolute", top: 0, left: 0, width: 200, height: 160, pointerEvents: "none",
-          transformOrigin: "0% 0%", borderRadius: "inherit",
-          background: "radial-gradient(circle at 0% 0%, var(--node-health) 0%, transparent 78%)",
-        }} />
-      )}
+        boxShadow: p.boxShadow, transition: "border-color .15s, box-shadow .15s" }}>
       <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {/* Axis-1 health DOT. Restored in #4040 with the glow gone — health is a colour, and without
+            this the node had no colour surface for it at all. An INHERITED dot is dimmed and never
+            pulses, so the eye lands on the ORIGIN of a fault rather than everything downstream
+            (#2541). */}
+        <Box title={`${n.rollupHealth}${p.inherited ? " (downstream)" : ""}`}
+          style={{ width: 8, height: 8, borderRadius: "50%", background: p.healthColor, flex: "none", opacity: p.inherited ? 0.5 : 1,
+            boxShadow: p.healthPulse && !p.inherited ? `0 0 8px ${p.healthColor}` : "none",
+            animation: p.healthPulse && !p.inherited ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }} />
         <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
         {/* The APP-TYPE discriminator (#3786/#3802) — a subtle mono micro-label on the title line: what
             KIND of app this endpoint is (api/serverless/cli/…). Gated on a non-default classification,
