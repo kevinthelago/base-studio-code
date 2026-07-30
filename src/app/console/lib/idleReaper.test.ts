@@ -67,3 +67,46 @@ describe("idle reaper eligibility (#849)", () => {
     expect(DEFAULT_REAPER_CONFIG.workerIdleMs).toBeNull();
   });
 });
+
+describe("declared maintenance is reaped immediately (#4025)", () => {
+  const cfg = { enabled: true, idleMs: 30 * 60 * 1000, workerIdleMs: null, studioIdleMs: 30 * 60 * 1000 };
+  const NOW = 1_000_000;
+  const pane = (over: Partial<ReaperPane> = {}): ReaperPane => ({
+    paneId: "k:auth", status: "idle", role: "worker", lastActivityMs: NOW, focused: false, dormant: false, ...over,
+  });
+
+  it("reaps a maintaining worker with NO idle threshold", () => {
+    // lastActivityMs === now: it JUST declared maintenance and is already reapable. That is the point —
+    // it has said its work is done, so the PTY holds nothing worth keeping (~413 MB each).
+    expect(isReapable(pane({ maintaining: true }), cfg, NOW)).toBe(true);
+  });
+
+  it("still does NOT reap an ordinary idle worker", () => {
+    // The `workerIdleMs: null` default exists because a worker parked on a real question is
+    // indistinguishable from one that is done. Maintenance removes that ambiguity; nothing else does.
+    expect(isReapable(pane({ lastActivityMs: NOW - 10 * 60 * 60 * 1000 }), cfg, NOW)).toBe(false);
+  });
+
+  it("never reaps a maintaining worker that is mid-turn", () => {
+    // It re-entered maintenance but is working again (a dispatch landed). Killing it would cut off
+    // work in flight — the one thing reaping must never do.
+    expect(isReapable(pane({ maintaining: true, status: "run" }), cfg, NOW)).toBe(false);
+  });
+
+  it("never reaps the pane the user is watching, maintaining or not", () => {
+    expect(isReapable(pane({ maintaining: true, focused: true }), cfg, NOW)).toBe(false);
+  });
+
+  it("does not reap twice", () => {
+    expect(isReapable(pane({ maintaining: true, dormant: true }), cfg, NOW)).toBe(false);
+  });
+
+  it("respects the master switch", () => {
+    expect(isReapable(pane({ maintaining: true }), { ...cfg, enabled: false }, NOW)).toBe(false);
+  });
+
+  it("selects it through panesToReap alongside ordinary candidates", () => {
+    const out = panesToReap([pane({ maintaining: true }), pane({ paneId: "k:other" })], cfg, NOW);
+    expect(out).toEqual(["k:auth"]);
+  });
+});
