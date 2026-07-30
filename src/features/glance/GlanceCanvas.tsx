@@ -37,9 +37,11 @@ const MORPH_EASE = ".4s cubic-bezier(.22, .61, .36, 1)";
 
 const REST_N = 0.14, REST_E = 0.06;
 // L0 has NO second vocabulary column (#4058). The LIFECYCLE categories that used to fill it were a
-// dead axis (#4052), and the ACTIVITY words that briefly replaced them went the same way: a project
-// node reads on its EDGES and its HEALTH, nothing else. Activity survives at L1, where a worker's word
-// is doing real work.
+// dead axis (#4052), and the ACTIVITY words that briefly replaced them were not worth a column either:
+// the L0 legend keys HEALTH + EDGE, which is what a project node is described by.
+//
+// This is a statement about the LEGEND ONLY — #4060. The nodes still carry their activity word at both
+// levels; #4058 briefly stripped it from L0 and that was an overreach.
 const EDGE_ROWS_L0: [string, string, string][] = [
   [EDGE_META.api.label, EDGE_META.api.color, EDGE_META.api.dash],
   [EDGE_META.data.label, EDGE_META.data.color, EDGE_META.data.dash],
@@ -374,8 +376,7 @@ export function GlanceCanvas(p: CanvasProps) {
               inherited={!!inherited}
               roleColor={role}
               roleLabel={p.fleet ? (n.roleLabel ?? n.role) : undefined}
-              // #4058 — axis 2 is a FLEET (L1) thing now; an L0 project reads on health + edges alone.
-              bottomText={p.fleet ? bottomText : undefined}
+              bottomText={bottomText}
               bottomColor={bottomColor}
               bottomPulse={bottomPulse}
               isOff={isOff}

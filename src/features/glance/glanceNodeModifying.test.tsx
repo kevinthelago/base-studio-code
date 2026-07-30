@@ -10,8 +10,8 @@ import { GlanceNode } from "./GlanceNode";
 import { HEALTH_META, buildGraph, type GHealth } from "./lib/glanceGraph";
 
 /** Render one node card at `health`, with the canvas's own HEALTH_META-derived pulse props.
- *  Defaults to an L0 PROJECT node — no function chip, no axis-2 word (#4058); pass `roleLabel` /
- *  `bottomText` to get the fleet (L1) shape. */
+ *  Defaults to an L0 PROJECT node — no function chip (that is fleet-only, #4052) but WITH its axis-2
+ *  word, which every node carries at both levels. */
 function renderNode(
   health: GHealth,
   opts: { roleLabel?: string; bottomText?: string; activity?: "building" | "complete"; reason?: string } = {},
@@ -34,12 +34,12 @@ function renderNode(
       inherited={false}
       roleColor={opts.roleLabel ? "var(--graph-kind-service)" : undefined}
       roleLabel={opts.roleLabel}
-      bottomText={opts.bottomText}
+      bottomText={opts.bottomText ?? (opts.activity ?? "building")}
       bottomColor="var(--fg-muted)"
       bottomPulse={false}
       isOff={false}
       degraded={false}
-      ownDegraded={false}
+      ownDegraded={health === "warning" || health === "error"}
       state={null}
     />,
   );
@@ -83,10 +83,10 @@ describe("GlanceNode — the `modifying` health state (#4052)", () => {
 
   it("renders NO lower-left chip for an L0 project — the lifecycle axis is gone", () => {
     // Falling back to `role` here would have resurrected the hash-per-id microservices tier that the
-    // category axis replaced, so the slot has to be genuinely empty, not defaulted.
+    // category axis replaced, so the slot has to be genuinely empty, not defaulted. (The axis-2 WORD
+    // beside it is unaffected — #4060.)
     const { container } = renderNode("modifying");
     expect(container.textContent).not.toContain("SERVICE");
-    expect(container.textContent).not.toContain("service");
     expect(container.textContent).not.toContain("greenfield");
     expect(container.textContent).not.toContain("maintain");
   });
@@ -97,38 +97,33 @@ describe("GlanceNode — the `modifying` health state (#4052)", () => {
   });
 });
 
-// #4058 — an L0 project node carries its EDGES and its HEALTH, nothing else. The activity word said, in
-// the weaker channel, what the dot already says.
-describe("GlanceNode — axis 2 is a FLEET-only row (#4058)", () => {
-  it("renders NO activity word on an L0 project node", () => {
+// #4060 — #4058 stripped the axis-2 word from L0 project nodes. That was an overreach: the intent was
+// to clean up the LEGEND, not the nodes. These lock the word in place so the mistake cannot recur.
+describe("GlanceNode — the axis-2 word stays on L0 project nodes (#4060)", () => {
+  it("renders the activity word on an L0 project node", () => {
     const { container } = renderNode("modifying");
-    expect(container.textContent).not.toContain("building");
+    expect(container.textContent).toContain("building");
   });
 
-  it("renders no ✓ marker either, even for a completed project", () => {
-    // The ✓ is axis-2 furniture; with no word to sit beside it there is nothing for it to mark.
+  it("renders the ✓ marker for a completed project", () => {
     const { container } = renderNode("complete", { activity: "complete" });
-    expect(container.textContent).not.toContain("✓");
-  });
-
-  it("drops the whole row when it would be empty — no dead space under the title", () => {
-    const { container } = renderNode("modifying");
-    // Title row + progress track only; the axis-2 row is not rendered at all.
-    expect(container.textContent?.trim()).toBe("alpha");
-  });
-
-  it("keeps the word AND the ✓ for a fleet (L1) node", () => {
-    const { container } = renderNode("complete", { roleLabel: "worker", bottomText: "complete", activity: "complete" });
-    expect(container.textContent).toContain("complete");
     expect(container.textContent).toContain("✓");
   });
 
-  it("moves the fault REASON onto the health dot, so a degraded L0 node still explains itself", () => {
-    // The reason used to be the activity word's `title`. With no word, hovering would have explained
-    // nothing and the reason would live only in the inspector.
-    const { container } = renderNode("warning", { reason: "2 unresolved faults" });
-    const dot = container.querySelector<HTMLElement>('[title*="2 unresolved faults"]');
-    expect(dot).toBeTruthy();
-    expect(dot!.getAttribute("title")).toContain("warning");
+  it("keeps the fault REASON on the word, where hovering finds it", () => {
+    // #4058 moved this onto the health dot because the word had gone. With the word back, the reason
+    // belongs to it again — and the dot's title returns to naming the health state alone.
+    const { container } = renderNode("warning", { bottomText: "warning", reason: "2 unresolved faults" });
+    const word = container.querySelector<HTMLElement>('[title="2 unresolved faults"]');
+    expect(word).toBeTruthy();
+    expect(word!.textContent).toBe("warning");
+    expect(container.querySelector('[title="warning"]')).toBeTruthy(); // the dot, reason-free
+  });
+
+  it("still renders both halves of the row for a fleet (L1) node", () => {
+    const { container } = renderNode("complete", { roleLabel: "worker", bottomText: "complete", activity: "complete" });
+    expect(container.textContent).toContain("worker");
+    expect(container.textContent).toContain("complete");
+    expect(container.textContent).toContain("✓");
   });
 });
