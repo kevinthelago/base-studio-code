@@ -1,22 +1,28 @@
-// Drill-aware legend (#2561): the ACTIVITY/EDGE columns speak the project-network vocabulary at the
-// root (#4052 replaced the LIFECYCLE column — the dead category axis — with the ACTIVITY vocabulary,
-// which had no legend at either level) and the fleet's Org grammar (agent FUNCTION groups +
-// relationship archetypes) when drilled.
+// Drill-aware legend (#2561): at the root the project network keys HEALTH + EDGE and NOTHING else
+// (#4058 — the LIFECYCLE column was a dead axis removed by #4052, and the ACTIVITY column that briefly
+// replaced it went too: a project node reads on its edges and its health); drilled, it speaks the
+// fleet's Org grammar (agent FUNCTION groups + relationship archetypes).
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GlanceOverlays } from "./GlanceCanvas";
 
 describe("GlanceOverlays legend (#2561)", () => {
-  it("L0 (no drill): project-network vocabulary — ACTIVITY + the relabelled 'depends on' edge (never 'API contract')", () => {
+  it("L0 (no drill): HEALTH + EDGE only — no second vocabulary column at all", () => {
     render(<GlanceOverlays />);
     // #4052 — the LIFECYCLE column is GONE. It keyed a category axis that no project ever carried:
     // `resolveProjectCategory` always fell through to `isDraft ? greenfield : maintain`, so six rows
-    // rendered two values. Its slot now teaches the ACTIVITY words instead.
+    // rendered two values.
     expect(screen.queryByText("LIFECYCLE")).toBeNull();
-    expect(screen.getByText("ACTIVITY")).toBeTruthy();
-    expect(screen.getByText("building")).toBeTruthy();
-    expect(screen.getByText("waiting")).toBeTruthy();
     expect(screen.queryByText("greenfield")).toBeNull();
+    // #4058 — and the ACTIVITY column that briefly replaced it is gone too. Health says everything the
+    // project network needs: the build state IS the lifecycle indicator, maintenance is inferred, and
+    // attention is grabbed by warning/error.
+    expect(screen.queryByText("ACTIVITY")).toBeNull();
+    expect(screen.queryByText("FUNCTION")).toBeNull();
+    expect(screen.queryByText("building")).toBeNull();
+    expect(screen.queryByText("waiting")).toBeNull();
+    // What DOES remain: the two axes a project node actually carries.
+    expect(screen.getByText("HEALTH")).toBeTruthy();
     expect(screen.getByText("EDGE")).toBeTruthy();
     expect(screen.getByText("depends on")).toBeTruthy();
     expect(screen.getByText("data flow")).toBeTruthy();
