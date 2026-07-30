@@ -80,12 +80,14 @@ export const GLANCE_NODE_ANIMATIONS: KitAnimation[] = [
     name: "health-glow",
     selector: "[data-node-glow]",
     trigger: "always",
-    duration: "3200ms",
+    // Slow on purpose (#4034 follow-up): ambient, not a signal. At 3.2s it read as a throb; at 6s it is
+    // a drift you notice only when you look, which is what an always-on wash on every node should be.
+    duration: "6000ms",
     easing: "ease-in-out",
     keyframes: {
-      "0%": { opacity: "0.20", transform: "scale(0.82)" },
-      "50%": { opacity: "0.42", transform: "scale(1.06)" },
-      "100%": { opacity: "0.20", transform: "scale(0.82)" },
+      "0%": { opacity: "0.18", transform: "scale(0.78)" },
+      "50%": { opacity: "0.44", transform: "scale(1.18)" },
+      "100%": { opacity: "0.18", transform: "scale(0.78)" },
     },
   },
 ];

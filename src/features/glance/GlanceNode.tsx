@@ -78,9 +78,12 @@ export function GlanceNode(p: GlanceNodeProps) {
           click meant for the node. */}
       {!p.isOff && (
         <Box data-node-glow aria-hidden style={{
-          position: "absolute", top: 0, left: 0, width: 120, height: 120, pointerEvents: "none",
+          // Wider than the node is tall (NH 66) and over half its width (NW 186), so the wash reads as
+          // lighting the corner rather than as a dot in it. `overflow: hidden` on the card clips it to the
+          // rounded corner, so oversizing costs nothing visually.
+          position: "absolute", top: 0, left: 0, width: 200, height: 160, pointerEvents: "none",
           transformOrigin: "0% 0%", borderRadius: "inherit",
-          background: "radial-gradient(circle at 0% 0%, var(--node-health) 0%, transparent 68%)",
+          background: "radial-gradient(circle at 0% 0%, var(--node-health) 0%, transparent 78%)",
         }} />
       )}
       <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
