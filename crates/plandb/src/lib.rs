@@ -51,6 +51,7 @@ mod lessons;
 mod market;
 mod mcp;
 mod repos;
+pub mod requests;
 mod schema;
 /// Per-stream access scoping (#3279): a worker session sees + touches only its own stream's issues.
 /// `pub` so the app/bridge can reuse the same pure rules the `bsc plan` CLI enforces.
@@ -69,6 +70,7 @@ pub use assignments::{Automation, StartupScript};
 pub use features::PlanFeature;
 pub use issues::{is_valid_status, IssueSummary, PlanIssue, STATUSES};
 pub use lessons::Lesson;
+pub use requests::Request;
 pub use sessions::FleetSession;
 
 use rusqlite::{params, Connection};

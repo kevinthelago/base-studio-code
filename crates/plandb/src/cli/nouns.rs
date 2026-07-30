@@ -621,3 +621,82 @@ fn render_feature(f: &PlanFeature) -> String {
     }
     out
 }
+
+/// `bsc plan request …` (#4000) — the worker→director change-request lane.
+///
+/// Note which verbs exist and which do not. There is no `remove`: a request is a contract between two
+/// agents, and letting the requester delete it would let a worker withdraw an ask the director is
+/// already acting on. Closure is `resolve`, which keeps the row and the answer.
+pub(crate) fn cmd_request(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `request new "<text>" [--command <cmd>] [--from <stream>]` — file an ask; prints the id.
+        // `--command` is the grounding: the exact command that failed.
+        "new" | "add" => {
+            let text = args.positional.get(2).cloned().unwrap_or_default();
+            // Attribution defaults to the filing session's own stream (`$BSC_STREAM`, #3279) so the
+            // director knows WHO asked without the agent having to remember to say. Same env-trust
+            // model as the rest of the runtime CLI: it prevents the ask arriving anonymous, and is not
+            // a defense against an agent that passes a different `--from`.
+            let env_stream = crate::scope::env_stream();
+            let from = args.from.as_deref().or(env_stream.as_deref()).unwrap_or("");
+            let id = s
+                .request_new(&text, args.command.as_deref().unwrap_or(""), from)
+                .map_err(|e| e.to_string())?;
+            println!("{}", if args.json { serde_json::to_string(&id).unwrap_or_default() } else { id.to_string() });
+            Ok(())
+        }
+        // `request list [--status open|claimed|resolved]` — the queue, oldest first (JSON).
+        "list" => {
+            let items = s.request_list(args.status.as_deref().unwrap_or("")).map_err(|e| e.to_string())?;
+            print_json(&serde_json::to_value(&items).unwrap_or_default(), args.pretty);
+            Ok(())
+        }
+        "show" | "get" => {
+            let id = request_id(args, "show")?;
+            let got = s.request_get(id).map_err(|e| e.to_string())?;
+            match got {
+                Some(r) => {
+                    print_json(&serde_json::to_value(&r).unwrap_or_default(), args.pretty);
+                    Ok(())
+                }
+                None => Err(format!("no request with id '{id}'")),
+            }
+        }
+        // Claiming is exclusive, so a non-move is reported as an error rather than a silent success —
+        // otherwise two directors would both believe they hold the same ask.
+        "claim" => {
+            let id = request_id(args, "claim")?;
+            if !s.request_claim(id).map_err(|e| e.to_string())? {
+                return Err(format!("request {id} is not open (already claimed or resolved)"));
+            }
+            if !args.json {
+                println!("{id} claimed");
+            }
+            Ok(())
+        }
+        // `request resolve <id> --note "<what was done>"` — the note is the answer the requester reads.
+        "resolve" => {
+            let id = request_id(args, "resolve")?;
+            let note = args.note.clone().or_else(|| args.positional.get(3).cloned()).unwrap_or_default();
+            if !s.request_resolve(id, &note).map_err(|e| e.to_string())? {
+                return Err(format!("request {id} is already resolved"));
+            }
+            if !args.json {
+                println!("{id} resolved");
+            }
+            Ok(())
+        }
+        other => Err(unknown_sub(args, "request", other)),
+    }
+}
+
+/// The `<id>` positional shared by the by-id request verbs, parsed with a usage-shaped error.
+fn request_id(args: &Args, verb: &str) -> Result<i64, String> {
+    args.positional
+        .get(2)
+        .ok_or_else(|| format!("usage: bsc plan request {verb} <id>"))?
+        .parse::<i64>()
+        .map_err(|_| format!("request id must be a number (usage: bsc plan request {verb} <id>)"))
+}
