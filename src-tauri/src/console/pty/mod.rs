@@ -14,6 +14,7 @@ use std::io::Write;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
+mod busy;
 mod env;
 mod launch;
 mod pump;
@@ -515,6 +516,56 @@ fn pty_create_inner(
         log::warn!("pty: {active} concurrent sessions — high memory pressure (each spawns a claude process + terminal)");
     }
     Ok(true)
+}
+
+/// What a pane's PTY is actually doing right now (#3998).
+///
+/// The two flags are independent and the caller needs both: `live` without `busy` is a session
+/// sitting at a bash prompt — the state Resume has to notice and act on, and the one the frontend
+/// previously could not tell apart from a working agent.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PaneRuntime {
+    pane_id: String,
+    /// A PTY session exists for this pane (so `pty_create` would RECONNECT, not launch).
+    live: bool,
+    /// Its shell has at least one live descendant — something is running in it. See `busy.rs` for
+    /// why this is a descendant check rather than a hunt for a process named `claude`.
+    busy: bool,
+}
+
+/// Report the runtime state of each named pane, in the order asked.
+///
+/// Batched on purpose: the process walk behind `busy` is the expensive part, and a project-wide
+/// resume asks about every pane at once. Answering them together costs ONE walk instead of N.
+#[tauri::command]
+pub(crate) fn pty_pane_runtime(
+    pane_ids: Vec<String>,
+    state: State<'_, PtyState>,
+) -> Vec<PaneRuntime> {
+    // Collect the pids and DROP the lock before walking the process table — that walk takes
+    // milliseconds, and every `pty_write` / `pty_create` in the app contends on this same mutex.
+    // `live` is session PRESENCE, tracked separately from the pid: a session whose `process_id()`
+    // comes back None still occupies the map, and `pty_create` would still reconnect to it. Deriving
+    // `live` from the pid would report such a pane as absent and send the caller down the "mount will
+    // create it" path that reconnect has already ruled out.
+    let (live, pids): (Vec<bool>, Vec<Option<u32>>) = {
+        let sessions = state.0.lock().unwrap();
+        pane_ids
+            .iter()
+            .map(|id| match sessions.get(id) {
+                Some(s) => (true, s.child.process_id()),
+                None => (false, None),
+            })
+            .unzip()
+    };
+    let busy = busy::shells_with_descendants(&pids);
+    pane_ids
+        .into_iter()
+        .zip(live)
+        .zip(busy)
+        .map(|((pane_id, live), busy)| PaneRuntime { pane_id, live, busy })
+        .collect()
 }
 
 #[tauri::command]

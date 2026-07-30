@@ -22,10 +22,11 @@
  *    right about whether history exists.
  */
 
-/** `claude --continue`, degrading to a fresh session when there is no conversation to resume (#3937).
- *  Mirrors the studio sessions' long-standing fallback; `launch.rs`'s own test constant already
- *  assumed this shape. stderr is dropped because claude's "no session" error is expected here. */
-const CONTINUE_OR_FRESH = "claude --continue 2>/dev/null || claude";
+// #3998: the command itself now lives in `shared/lib/session/ensureClaudeRunning`, because a resume
+// can reach a pane by either of two routes — this mount-time launch path, or a direct write into an
+// already-live shell (the launch path is unreachable for a pane whose PTY exists). Both must emit the
+// byte-identical command, so there is one definition.
+import { CONTINUE_OR_FRESH } from "@/shared/lib/session/ensureClaudeRunning";
 export function resolveInitCmd(args: {
   explicit: string | undefined;
   startupPrompt: string | undefined;

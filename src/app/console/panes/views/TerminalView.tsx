@@ -33,6 +33,7 @@ import { getProvider } from "@/app/console/lib/providers";
 import { isTurnOpenDebounced, paneActivityFor } from "@/app/console/lib/paneActivity";
 import { admitTerminal } from "@/app/console/lib/terminalAdmission";
 import { usePaneActivity } from "@/app/console/lib/usePaneActivityFeed";
+import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
 
 interface TerminalViewProps {
   paneId: string;
@@ -596,9 +597,32 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       if (!isNew) {
         // Reconnecting — Ctrl+L repaints the prompt without submitting a command
         fireInvoke("pty_write", { paneId, data: "\x0c" }, (e) => log.error(`console[${paneId}] repaint write failed: ${e}`));
-        // A reconnected Claude pane is already running its REPL (no fresh OSC-100 "run" to catch),
-        // so re-show the native input for it (#1149).
-        if (isClaudeProvider && useAppStore.getState().paneWasClaude[paneId]) useAppStore.getState().setPaneClaudeActive(paneId, true);
+        // #3998: ask what this pane is ACTUALLY doing rather than inferring it.
+        //
+        // This used to read `if (paneWasClaude[paneId]) setPaneClaudeActive(paneId, true)` — but
+        // `paneWasClaude` means "claude ran here at some point" (it is persisted, and set once on the
+        // first OSC-100 `run`), not "claude is running now". A pane whose agent had exited was
+        // therefore marked active on every reconnect, which is why bare shells kept reading as live in
+        // Glance and why nothing ever restarted them.
+        //
+        // Nothing corrected it afterwards either: the Ctrl+L above is readline's clear-screen, which
+        // redraws the prompt WITHOUT running PROMPT_COMMAND, so the `__bsc_state idle` marker that
+        // would have cleared the flag never re-fired.
+        //
+        // `ensureClaudeRunning` reports the truth and, for a pane found idle at a prompt, types the
+        // resume command in — the launch path that would normally do it is unreachable here, since
+        // `pty_create` has already returned `false`.
+        // `launchesClaude` already implies `isClaudeProvider` (line 427) — it is the "this pane is
+        // meant to be running an agent" condition, which is exactly when an idle shell is wrong.
+        if (launchesClaude) {
+          ensureClaudeRunning([paneId]).then((plan) => {
+            if (destroyed) return;
+            const outcome = plan.get(paneId);
+            // `started` is optimistic in the same way the launch branch above is: OSC-100 `run` can be
+            // missed on a cold start, and OSC-100 `idle` still clears the flag when claude exits.
+            useAppStore.getState().setPaneClaudeActive(paneId, outcome === "started" || outcome === "already-running");
+          }).catch((e) => log.error(`console[${paneId}] resume probe failed: ${e}`));
+        }
       }
     });
 
