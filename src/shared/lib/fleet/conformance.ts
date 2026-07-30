@@ -72,9 +72,38 @@ export function effectiveDeniedCommands(cap: RoleCapability, flow?: AgentFlow): 
   return Array.from(new Set([...roleDenies, ...pushDenies]));
 }
 
+/**
+ * Files the APP authors, or explicitly instructs the agent to write (#3980). Never a worker's drift,
+ * so never a lane trip.
+ *
+ * This is not a convenience carve-out — without it the warden punishes workers for the launch path's
+ * own writes. Measured: 22 quarantined sessions, 20 of them for exactly these two files. The warden
+ * KILLS the PTY when it quarantines, so each one was a dead session.
+ *
+ *  · `CLAUDE.local.md` — written by `ensure_worktree` → `write_worker_context`. It is the worker's own
+ *    scope doc, placed in the worktree by the launcher. No stream's `owns` globs list it, because it
+ *    is not the worker's file to claim — so it can never be in lane, for anyone.
+ *  · `DECISIONS.md`    — `bsc-note`'s default target (`$BSC_DECISIONS_DOC`), a helper the app installs
+ *    into every session via `BASH_ENV`. Using documented tooling must not be drift.
+ *
+ * A NAMED list, deliberately, not a pattern: a pattern like "dotfiles" or "looks like scratch" would
+ * widen silently and hole the drift check. Agent-invented scratch (`.agentscratch.txt`, `.tmp-agent/…`)
+ * is NOT here — that is the agent's own choice rather than the app's instruction, and it needs its own
+ * decision rather than being swept in.
+ */
+export const APP_SANCTIONED_FILES: readonly string[] = ["CLAUDE.local.md", "DECISIONS.md"];
+
+/** Whether the app itself owns this path (basename match — these live at the worktree root, but a
+ *  nested copy is equally app-authored). Pure. */
+export function isAppSanctioned(file: string): boolean {
+  const base = file.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
+  return APP_SANCTIONED_FILES.includes(base);
+}
+
 /** Whether a changed file falls inside the stream's lane (its owned globs). A lane-less stream
- *  (no owned globs) imposes no file constraint. */
+ *  (no owned globs) imposes no file constraint. App-authored files are always in lane (#3980). */
 function inLane(file: string, ownedGlobs: string[]): boolean {
+  if (isAppSanctioned(file)) return true;
   return ownedGlobs.length === 0 || ownedGlobs.some((g) => matchGlob(g, file));
 }
 
