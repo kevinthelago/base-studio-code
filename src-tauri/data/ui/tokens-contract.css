@@ -88,6 +88,7 @@
 
   /* domain / categorical tokens — data-viz palettes (graph status/kind/category/edge); the contract vocabulary a kit consumes and a theme binds (#2607) */
   --graph-health-complete: #5b9dff;
+  --graph-health-modifying: #5b9dff;
   --graph-health-healthy: #4fd6a0;
   --graph-health-warning: #f2b155;
   --graph-health-error: #f2555f;

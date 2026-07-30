@@ -285,6 +285,18 @@ describe("rollUpHealth (#2541) — warnings/errors propagate up the dependency c
     expect(r.get("mid")).toEqual({ health: "healthy", inherited: false });
   });
 
+  it("`modifying` never propagates — a busy dependency must not make its dependents look degraded (#4052)", () => {
+    // Rank 0, the same as `complete`: work being in flight is the NORMAL state of a live project, and a
+    // dependency that is merely busy is not a problem anyone has to act on.
+    expect(HEALTH_RANK.modifying).toBe(0);
+    const r = rollUpHealth(
+      [{ id: "dep", health: "modifying" }, { id: "top", health: "healthy" }],
+      [{ from: "top", to: "dep" }],
+    );
+    expect(r.get("top")).toEqual({ health: "healthy", inherited: false });
+    expect(r.get("dep")).toEqual({ health: "modifying", inherited: false }); // keeps its own state
+  });
+
   it("takes the WORST severity across dependencies (error beats warning)", () => {
     const r = rollUpHealth(
       [{ id: "a", health: "warning" }, { id: "b", health: "error" }, { id: "top", health: "healthy" }],

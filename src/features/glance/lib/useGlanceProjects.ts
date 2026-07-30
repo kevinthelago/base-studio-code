@@ -20,12 +20,13 @@ import { useAppStore } from "@/store";
 import { githubGraphql } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { toMinimalGhProjects, minimalToGhProject, filterRecordsToLocal } from "@/shared/lib/github/githubState";
+import { useProjectProgress } from "./useProjectProgress";
 import { fetchProjectsWithProbe } from "@/shared/lib/github/githubProbe";
 import { PROJECTS_QUERY, type GhProject } from "@/features/planner/list/published/publishedModel";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import type { GRole, GCategory, GHealth, GActivity } from "./glanceGraph";
+import type { GRole, GHealth, GActivity } from "./glanceGraph";
 import type { ProjectLite } from "./glanceData";
 import type { GlanceFault } from "./useGlanceFaults";
 import { projectKeyOfSession } from "./agentStall";
@@ -39,7 +40,7 @@ import { listDbProjects, type DbProject } from "@/features/planner";
 
 /** Store shapes the merge reads — mirrored structurally so the pure fn stays decoupled from the slices.
  *  A draft MAY declare curated axes (#2284/#2541) — a demo/tagged project keeps its authored colouring. */
-type DraftMap = Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; category?: GCategory; health?: GHealth; activity?: GActivity; reason?: string }>;
+type DraftMap = Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; health?: GHealth; activity?: GActivity; reason?: string }>;
 
 /** Stable empty published set — a fresh `[]` each render would needlessly re-run the merge memo. */
 const NO_PUBLISHED: GhProject[] = [];
@@ -66,10 +67,8 @@ const NO_DB_PROJECTS: DbProject[] = [];
  * — one that has been scaffolded but never published — belongs to NO source and silently vanishes from
  * the graph. That is what happened to a triaged project whose state had advanced `drafted` → `created`.
  *
- * `published` stays out on purpose, for two reasons: `mergeGlanceProjects` already overrides a draft
- * with the published entry on a key collision (so admitting it buys nothing), and the drafts map IS the
- * `isDraft` signal for {@link resolveProjectCategory} — a published project in here would default to
- * `greenfield` instead of `maintain`.
+ * `published` stays out on purpose: `mergeGlanceProjects` already overrides a draft with the published
+ * entry on a key collision, so admitting it buys nothing.
  *
  * Pure + exported for direct unit testing, like {@link mergeGlanceProjects}.
  */
@@ -79,7 +78,7 @@ export function mergeDbIntoDrafts(drafts: DraftMap, dbRows: DbProject[]): DraftM
     if (r.state === "published") continue;
     const ex = out[r.key];
     out[r.key] = ex
-      // Keep every curated axis (role/category/health/activity/reason) — the DB row has none of them,
+      // Keep every curated axis (role/health/activity/reason) — the DB row has none of them,
       // so a spread-with-DB-second would silently strip a demo project's authored colouring.
       ? { ...ex, title: ex.title || r.title, pitch: ex.pitch || r.pitch, createdAt: ex.createdAt || r.createdAt }
       : { title: r.title, pitch: r.pitch, createdAt: r.createdAt || r.updatedAt || 0 };
@@ -128,7 +127,7 @@ export function mergeGlanceProjects(
     // agents → building (#2551), bsc-wait → waiting, faults → warning/error (#2541). A declared value
     // wins so a demo/tagged project keeps its curated colouring.
     byKey.set(id, {
-      id, name: d.title, role: d.role, category: d.category,
+      id, name: d.title, role: d.role,
       health: d.health ?? "off",
       activity: d.activity ?? "idle",
       reason: d.reason,
@@ -155,7 +154,7 @@ export function mergeGlanceProjects(
     const key = draftKeyByTitle.get(tk) ?? lp.key;
     const prior = byKey.get(key);
     const d = drafts[key];
-    byKey.set(key, { id: key, name: lp.title, role: prior?.role, category: prior?.category ?? d?.category, health: d?.health ?? "off", activity: d?.activity ?? "idle", reason: d?.reason });
+    byKey.set(key, { id: key, name: lp.title, role: prior?.role, health: d?.health ?? "off", activity: d?.activity ?? "idle", reason: d?.reason });
     draftKeyByTitle.set(tk, key);
   }
   for (const p of published) {
@@ -166,7 +165,7 @@ export function mergeGlanceProjects(
     const titleKey = projectSlug(p.title);
     const key = draftKeyByTitle.get(titleKey) ?? titleKey;
     const prior = byKey.get(key);
-    byKey.set(key, { id: key, name: p.title, role: prior?.role, category: prior?.category, health: prior?.health ?? "off", activity: prior?.activity ?? "idle", reason: prior?.reason });
+    byKey.set(key, { id: key, name: p.title, role: prior?.role, health: prior?.health ?? "off", activity: prior?.activity ?? "idle", reason: prior?.reason });
   }
   return [...byKey.values()];
 }
@@ -199,6 +198,45 @@ export function applyLiveness(projects: ProjectLite[], liveKeys: ReadonlySet<str
 export function applyRunningActivity(projects: ProjectLite[], buildingKeys: ReadonlySet<string>): ProjectLite[] {
   if (buildingKeys.size === 0) return projects;
   return projects.map((p) => (buildingKeys.has(p.id) ? { ...p, activity: "building", health: p.health === "off" ? "healthy" : p.health } : p));
+}
+
+/**
+ * Overlay the `modifying` HEALTH state (#4052) — the project has work IN FLIGHT.
+ *
+ * Two signals, either sufficient:
+ *   · a LIVE FLEET — an agent session is running against the project right now (`activeKeys`);
+ *   · OPEN ISSUES — its plan store has issues that are not yet done (`openIssueKeys`).
+ *
+ * Either alone is real. A fleet running on a fully-closed board is still modifying the project; a
+ * project with eight open issues and nothing running is mid-build, just paused. Requiring both would
+ * have made `modifying` mean "building", which the ACTIVITY axis already says — and says better,
+ * because it clears the moment the panes close. `modifying` is the durable fact and survives a restart.
+ *
+ * DOES NOT outrank a problem. `warning`/`error` are left exactly as they are: a project can be busy and
+ * broken at the same time, and the broken half is the one the user has to see. (Both are applied later
+ * anyway — `applyStallHealth`/`applyFaultHealth` in the workspace — so they also win by ordering.)
+ *
+ * DOES lift the DERIVED `off`. Dormancy (`applyDormantHealth`) greys every project with no live session,
+ * which would otherwise swallow the open-issues signal whole — a paused project with unfinished planned
+ * work is not "nothing here". Only the derived resting state is lifted: the user's MANUAL off toggle
+ * (#3239) is `applyOffHealth`, applied outermost in `GlanceWorkspace`, so a deactivated node still goes
+ * grey no matter what this returns. That layering is what makes lifting `off` here safe.
+ *
+ * `complete` → `modifying` is deliberate: work having RESUMED on a finished project is precisely the
+ * transition worth showing, and leaving it blue-and-still would say the opposite.
+ *
+ * Pure + exported for direct unit testing, like the other overlays here.
+ */
+export function applyModifyingHealth(
+  projects: ProjectLite[],
+  activeKeys: ReadonlySet<string>,
+  openIssueKeys: ReadonlySet<string>,
+): ProjectLite[] {
+  if (activeKeys.size === 0 && openIssueKeys.size === 0) return projects;
+  return projects.map((p) => {
+    if (p.health === "warning" || p.health === "error") return p;
+    return activeKeys.has(p.id) || openIssueKeys.has(p.id) ? { ...p, health: "modifying" } : p;
+  });
 }
 
 /** The set of project keys with a LIVE agent session (#2551): any launched pane that is still a live CELL
@@ -317,26 +355,6 @@ export function filterTriaged(projects: ProjectLite[], triaged: Record<string, n
   return projects.filter((p) => triaged[p.id] !== undefined);
 }
 
-/**
- * Resolve a project's LIFECYCLE category (#2583) — what KIND of work it is, the app's real project
- * vocabulary that REPLACES the meaningless hash-per-id microservices tier. Priority: a curated/declared
- * category (a demo/tagged project) wins, else the lifecycle the PLANNER DISCOVERED for the project
- * (`ClassifyConfig.lifecycle`), else a status heuristic — a draft is being CREATED (greenfield), a
- * published / already-worked project is in upkeep (maintain). Always yields a category so no L0 node
- * falls back to the old tier colouring. Pure.
- *
- * The middle term used to be the SEEDING BLUEPRINT's category, which #3785 removed from the blueprint
- * model — and which had degenerated to the same "greenfield" on every packaged blueprint, so it
- * coloured every node identically. Lifecycle is discovered per project now (#3784).
- */
-export function resolveProjectCategory(
-  declared: GCategory | undefined,
-  discoveredLifecycle: GCategory | undefined,
-  isDraft: boolean,
-): GCategory {
-  return declared ?? discoveredLifecycle ?? (isDraft ? "greenfield" : "maintain");
-}
-
 export function useGlanceProjects(enabled = true): ProjectLite[] {
   const drafts = useAppStore((s) => s.localDraftProjects);
   const triagedProjects = useAppStore((s) => s.triagedProjects);
@@ -358,14 +376,13 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   const paneStatus = useAppStore((s) => s.paneStatus);
   const githubState = useAppStore((s) => s.githubState);
   const setGithubState = useAppStore((s) => s.setGithubState);
-  // Lifecycle category (#2583/#3785): the lifecycle the planner DISCOVERED for each project, so a
-  // project node is coloured by what KIND of work it is (greenfield / transform / harden / maintain).
-  // Read off the classification below — lifecycle is no longer a blueprint field.
   // The per-project classification (#3786/#3802): the planner-set `appType` (application architecture) —
   // surfaced on each Glance project node as the contract endpoint-type discriminator. Absent for an
   // unclassified project ⇒ the node renders plain (no type badge).
   const planClassification = useAppStore((s) => s.planClassification);
   const liveKeys = useProjectLiveness(enabled);
+  // #4052 — the OPEN-ISSUES half of `modifying`, in ONE spawn for every project (never one per node).
+  const openIssueKeys = useProjectProgress(enabled);
 
   // The local published inventory (#2445): the on-disk hubs carrying `.published`, so a published
   // project has a Glance node even with no GitHub connection. Seeded from the module cache on a
@@ -457,24 +474,29 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
     // a draft/plan never shows), then overlay activity from real signals: liveness → `live` (#2263),
     // running agents → `building` (#2551); a project with nothing running at all reads `off` (#3429).
     // (Stall → `waiting`/warn and faults → error are overlaid later in the workspace.)
-    () => applyDormantHealth(
-      applyRunningActivity(
-        applyLiveness(
-          filterTriaged(
-            mergeGlanceProjects(effectiveDrafts, effectivePublished, localPublished).map((p) => ({
-              ...p,
-              category: resolveProjectCategory(p.category, planClassification[p.id]?.lifecycle, effectiveDrafts[p.id] !== undefined),
-              appType: planClassification[p.id]?.appType, // #3786/#3802 — the contract endpoint-type discriminator (absent ⇒ plain)
-            })),
-            triagedProjects,
+    // …then the `modifying` health state (#4052) LAST, so it can lift the resting `off` that dormancy
+    // just derived. It is the only overlay here that reads issue counts.
+    () => applyModifyingHealth(
+      applyDormantHealth(
+        applyRunningActivity(
+          applyLiveness(
+            filterTriaged(
+              mergeGlanceProjects(effectiveDrafts, effectivePublished, localPublished).map((p) => ({
+                ...p,
+                appType: planClassification[p.id]?.appType, // #3786/#3802 — the contract endpoint-type discriminator (absent ⇒ plain)
+              })),
+              triagedProjects,
+            ),
+            liveKeys,
           ),
-          liveKeys,
+          buildingKeys,
         ),
-        buildingKeys,
+        activeKeys,
+        curatedKeys,
       ),
       activeKeys,
-      curatedKeys,
+      openIssueKeys,
     ),
-    [effectiveDrafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification],
+    [effectiveDrafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification, openIssueKeys],
   );
 }
