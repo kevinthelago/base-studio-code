@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isTurnOpen, isTurnOpenDebounced, ACTIVITY_IDLE_GRACE_MS, paneActivityFor, type PaneActivity } from "./paneActivity";
+import { isTurnOpen, isTurnOpenDebounced, ACTIVITY_IDLE_GRACE_MS, paneActivityFor, type PaneActivity, needsAttention } from "./paneActivity";
 
 // The status-dot gate (#1184): the silence timer must NOT idle a pane whose turn is still open
 // (a UserPromptSubmit with no following Stop). These tests pin the pure decision the poller feeds
@@ -65,5 +65,32 @@ describe("paneActivityFor — per-pane lookup", () => {
     expect(paneActivityFor(rows, "t0p9")).toBeUndefined();
     expect(paneActivityFor([], "t0p1")).toBeUndefined();
     expect(paneActivityFor(undefined, "t0p1")).toBeUndefined();
+  });
+});
+
+describe("needsAttention (#4005)", () => {
+  const act = (state: "run" | "idle" | "attn", at = 0) => ({ pane: "p", state, at });
+
+  it("is true only for attn", () => {
+    expect(needsAttention(act("attn"))).toBe(true);
+    expect(needsAttention(act("run"))).toBe(false);
+    expect(needsAttention(act("idle"))).toBe(false);
+    expect(needsAttention(undefined)).toBe(false);
+  });
+
+  it("does NOT make the turn read as open", () => {
+    // An `attn` pane is STOPPED, not working. Treating it as turn-open would hold the status dot at
+    // "run" for a session that is doing nothing — the exact wrongful-run the #1184 gate exists to
+    // avoid, just from the other direction. This adds a signal; it must not re-gate the old one.
+    expect(isTurnOpen(act("attn"))).toBe(false);
+    expect(isTurnOpenDebounced(act("attn"), 10_000)).toBe(false);
+  });
+
+  it("is cleared by the ordinary turn boundaries", () => {
+    // The Notification hook only fires; nothing un-fires it. Clearing is the next UserPromptSubmit
+    // (`run`) or Stop (`idle`) superseding the row — without that a pane stays flagged forever after
+    // a single permission prompt.
+    expect(needsAttention(act("run"))).toBe(false);
+    expect(needsAttention(act("idle"))).toBe(false);
   });
 });

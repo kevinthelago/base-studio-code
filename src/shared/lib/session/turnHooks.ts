@@ -39,6 +39,16 @@ export interface SessionHook {
  */
 export const TURN_ACCOUNTING_HOOKS: SessionHook[] = [
   { event: "UserPromptSubmit", matcher: "", command: "bsc-activity run" },
+  // #4005 — Claude Code fires `Notification` when it needs the USER: most importantly "Claude needs
+  // your permission to use <tool>", which under the default allow-list posture (#2050) is any command
+  // outside `base.json`. That session is STOPPED, and until now nothing in the app could tell it apart
+  // from one that was merely quiet — so the user had no way to know WHICH pane was asking.
+  //
+  // `Notification` also fires after a long input idle. That is likewise "needs you", so it is a
+  // feature rather than a false positive. It is cleared by the ordinary turn boundaries below: the
+  // next UserPromptSubmit records `run`, a Stop records `idle`. Without that a pane would stay
+  // flagged forever after a single prompt.
+  { event: "Notification", matcher: "", command: "bsc-activity attn" },
   { event: "Stop", matcher: "", command: "bsc-activity idle" },
   { event: "SubagentStop", matcher: "", command: "bsc-activity idle" },
   { event: "Stop", matcher: "", command: "bsc-tokens" },
