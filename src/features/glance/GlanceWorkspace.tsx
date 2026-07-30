@@ -34,7 +34,7 @@ import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
 import { cellRect, placeByDirection, releaseCell, occupants, clampCell, DEFAULT_CELL, type CellSize, type MorphPlacement } from "./lib/morphGrid";
 import { fleetPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
-import { resumeProjectFleet, nothingToResume } from "./lib/resumeProject";
+import { resumeProjectFleet, nothingToResume, completedPanes } from "./lib/resumeProject";
 import { buildGraph, focusSets, isBandNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
 import { timedSync } from "@/shared/lib/core/perf";
 import { buildGlanceData } from "./lib/glanceData";
@@ -534,6 +534,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     }
     if (!canResume) return;
     const paneId = fleetPaneId(drill, nodeId);
+    // #4029 — a FINISHED worker is not restarted by a button. Relaunching one undoes the reclaim
+    // (#4025) and puts an agent back on the model for no reason; it is woken by the thing that has
+    // actual work for it, a director `bsc-assign`, which relaunches with the assignment baked in.
+    // Guarded here as well as in `partitionResumable` because this path bypasses it entirely.
+    if (completedPanes(useAppStore.getState()).has(paneId)) {
+      setResumeMsg("This worker is complete. The director wakes it when it dispatches work.");
+      return;
+    }
     // #3998: `livePaneIds` is TAB MEMBERSHIP (a session cell exists), not "an agent is running" — see
     // `glanceFleet.ts`. Jumping was therefore the whole of Resume for any pane still in its tab, which
     // is every pane whose agent had quietly exited to a `$` prompt. Nothing remounts such a pane

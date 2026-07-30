@@ -79,13 +79,41 @@ export function nothingToResume(
  *    that worker ended. Relaunching it would spawn a session into a NON-EXISTENT cwd — the burst of
  *    doomed sessions that jams the backend. Never launch it; report it.
  */
+/**
+ * The panes that FINISHED (#4029) — the two ways a worker ends well:
+ *   · `bsc-maintain` → `paneMaintaining` (declared: everything I own is done, standing by)
+ *   · `bsc-done` → `endedPanes` with a `done` VERDICT, which comes from plan.db owned-issue status
+ *     rather than the worker's say-so.
+ *
+ * `needs-attention` / `blocked` endings are deliberately NOT here: those are endings that want a
+ * person, so they stay resumable and keep reporting themselves.
+ *
+ * Exported so both the project resume and the single-node resume ask the same question — the
+ * single-node path had its own hole, and two independent notions of "finished" would drift.
+ */
+export function completedPanes(store: {
+  paneMaintaining: Record<string, boolean>;
+  endedPanes: Record<string, { state: string } | undefined>;
+}): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const [paneId, on] of Object.entries(store.paneMaintaining)) if (on) out.add(paneId);
+  for (const [paneId, info] of Object.entries(store.endedPanes)) if (info?.state === "done") out.add(paneId);
+  return out;
+}
+
 export function partitionResumable(
   streams: Array<{ id: string }>,
   projectKey: string,
-  probes: { quarantined: Record<string, { summary?: string } | undefined>; missingWorktreePanes: ReadonlySet<string> },
-): { resumable: Array<{ id: string }>; blocked: BlockedStream[] } {
+  probes: {
+    quarantined: Record<string, { summary?: string } | undefined>;
+    missingWorktreePanes: ReadonlySet<string>;
+    /** Panes that FINISHED (#4029) — declared maintenance, or auto-ended with a `done` verdict. */
+    completePanes?: ReadonlySet<string>;
+  },
+): { resumable: Array<{ id: string }>; blocked: BlockedStream[]; complete: Array<{ id: string }> } {
   const resumable: Array<{ id: string }> = [];
   const blocked: BlockedStream[] = [];
+  const complete: Array<{ id: string }> = [];
   for (const st of streams) {
     const paneId = `${projectKey}:${st.id}`;
     const q = probes.quarantined[paneId];
@@ -97,9 +125,21 @@ export function partitionResumable(
       blocked.push({ streamId: st.id, paneId, reason: "its worktree is gone and could not be rebuilt (no repo clone?)" });
       continue;
     }
+    // FINISHED (#4029) — left alone. Relaunching a worker that has completed everything it owns undoes
+    // the reclaim (#4025) and puts an agent back on the model for no reason. It is woken by the thing
+    // that has actual work for it: a director `bsc-assign`, which relaunches with the assignment baked
+    // in. That is the point of reclaiming it — it comes back FOR A REASON, not because a button was
+    // pressed.
+    //
+    // Its OWN bucket, not `blocked`: blocked means "needs attention" and is reported to the user as
+    // such, so filing completions there would make a healthy finished fleet look broken.
+    if (probes.completePanes?.has(paneId)) {
+      complete.push(st);
+      continue;
+    }
     resumable.push(st);
   }
-  return { resumable, blocked };
+  return { resumable, blocked, complete };
 }
 
 /**
@@ -270,16 +310,20 @@ export async function resumeProjectFleet(opts: {
     if (path) worktreePaths[st.id] = path;
     else unrecoverable.add(paneId);                      // clone missing / git failed — surface it
   }));
-  const { resumable, blocked } = partitionResumable(candidateStreams, projectKey, {
+  const { resumable, blocked, complete } = partitionResumable(candidateStreams, projectKey, {
     quarantined: store.quarantinedPanes,
     missingWorktreePanes: unrecoverable,
+    completePanes: completedPanes(store),
   });
   if (resumable.length === 0 && !launchPlan.director.enabled) {
     return {
       ok: false,
       error: blocked.length > 0
         ? `Nothing resumable — ${blocked.length} session${blocked.length === 1 ? "" : "s"} need attention.`
-        : "No workers to resume.",
+        : complete.length > 0
+          // Not an error state dressed as one: everything finished. Say that, and say what wakes them.
+          ? `Nothing to resume — all ${complete.length} worker(s) are complete. The director wakes one when it dispatches work.`
+          : "No workers to resume.",
       blocked,
       held,
     };
@@ -321,7 +365,9 @@ export async function resumeProjectFleet(opts: {
   //    Awaited so the caller's `ok` genuinely means the resume was attempted; the probe itself is one
   //    batched call regardless of how many panes are listed.
   await ensureClaudeRunning([...resumableIds].map(paneOf));
-  const notes = [gateNote, held.length > 0
+  const notes = [gateNote, complete.length > 0
+    ? `${complete.length} complete worker${complete.length === 1 ? "" : "s"} left alone — the director wakes them on dispatch`
+    : undefined, held.length > 0
     ? `${held.length} stream${held.length === 1 ? "" : "s"} held — waiting on an upstream to land`
     : undefined].filter(Boolean);
   return { ok: true, note: notes.length ? notes.join(". ") + "." : undefined, blocked, held };

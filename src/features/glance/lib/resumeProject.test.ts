@@ -1,7 +1,7 @@
 // planResumeLaunch (#glance-resume) — the progress-gated stream partition a Glance project-resume runs.
 // Pure, so it's exhaustively unit-testable without any Tauri/store IO.
 import { describe, it, expect } from "vitest";
-import { planResumeLaunch, partitionResumable, nothingToResume } from "./resumeProject";
+import { planResumeLaunch, partitionResumable, nothingToResume, completedPanes } from "./resumeProject";
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
 
 function stream(over: Partial<AgentStream> = {}): AgentStream {
@@ -129,5 +129,67 @@ describe("nothingToResume (#3923) — Resume must start every OFF node, not bail
 
   it("treats an empty/absent tab as work to do (build it), not as nothing", () => {
     expect(nothingToResume([], new Set(), q)).toBe(false);
+  });
+});
+
+describe("Resume leaves COMPLETED workers alone (#4029)", () => {
+  const PROJ = "proj";
+  const streams = [{ id: "auth" }, { id: "api" }, { id: "ui" }];
+  const probes = (over: Partial<Parameters<typeof partitionResumable>[2]> = {}) => ({
+    quarantined: {}, missingWorktreePanes: new Set<string>(), ...over,
+  });
+
+  it("does not relaunch a worker that finished", () => {
+    // Relaunching one undoes the reclaim (#4025) and puts a finished agent back on the model.
+    const r = partitionResumable(streams, PROJ, probes({ completePanes: new Set([`${PROJ}:auth`]) }));
+    expect(r.resumable.map((s) => s.id)).toEqual(["api", "ui"]);
+    expect(r.complete.map((s) => s.id)).toEqual(["auth"]);
+  });
+
+  it("reports complete SEPARATELY from blocked", () => {
+    // `blocked` is surfaced to the user as "N sessions need attention". A completed worker needs
+    // nothing, so filing it there would make a healthy finished fleet look broken.
+    const r = partitionResumable(streams, PROJ, probes({
+      completePanes: new Set([`${PROJ}:auth`]),
+      quarantined: { [`${PROJ}:api`]: { summary: "warden" } },
+    }));
+    expect(r.blocked.map((b) => b.streamId)).toEqual(["api"]);
+    expect(r.complete.map((s) => s.id)).toEqual(["auth"]);
+    expect(r.resumable.map((s) => s.id)).toEqual(["ui"]);
+  });
+
+  it("quarantine still outranks complete — that one the user must clear", () => {
+    const paneId = `${PROJ}:auth`;
+    const r = partitionResumable([{ id: "auth" }], PROJ, probes({
+      completePanes: new Set([paneId]), quarantined: { [paneId]: { summary: "warden" } },
+    }));
+    expect(r.blocked).toHaveLength(1);
+    expect(r.complete).toHaveLength(0);
+  });
+
+  it("is unchanged when nothing is complete", () => {
+    const r = partitionResumable(streams, PROJ, probes());
+    expect(r.resumable).toHaveLength(3);
+    expect(r.complete).toHaveLength(0);
+  });
+});
+
+describe("completedPanes (#4029)", () => {
+  it("counts both ways a worker ends WELL", () => {
+    const out = completedPanes({
+      paneMaintaining: { "k:auth": true, "k:off": false },
+      endedPanes: { "k:api": { state: "done" } },
+    });
+    expect([...out].sort()).toEqual(["k:api", "k:auth"]);
+  });
+
+  it("does NOT count an ending that wants a person", () => {
+    // needs-attention / blocked stay resumable and keep reporting themselves — dressing them as
+    // complete would hide the thing the user has to act on.
+    const out = completedPanes({
+      paneMaintaining: {},
+      endedPanes: { "k:a": { state: "needs-attention" }, "k:b": { state: "blocked" } },
+    });
+    expect([...out]).toEqual([]);
   });
 });
