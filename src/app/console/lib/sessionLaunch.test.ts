@@ -100,6 +100,25 @@ describe("buildAgentEnv", () => {
     expect(e?.BSC_SCOPE_GLOBS).toBe("scratch/**");
   });
 
+  it("gives the librarian the projects/ tree too, so it can reach mobile-studio-code (#4108)", () => {
+    // The Algorithms studio could only ever see `app-repo` — the EXTERNAL dev checkout — so it worked
+    // against paths outside application scope and could not find `mobile-studio-code` at all (measured:
+    // it ran `Glob mobile-studio-code` and came up empty), even though the repo is cloned at
+    // `~/.base-studio-code/projects/studio-code/mobile-studio-code`.
+    const s = mkStore({ paneRoles: { p: "librarian" }, appRepoRoot: "C:/src/base-studio-code", bscBaseDir: "C:/Users/k/.base-studio-code" });
+    const e = buildAgentEnv(s, "p", "claude", "");
+    expect(e?.BSC_HARVEST_ROOTS).toBe("C:/src/base-studio-code\nC:/Users/k/.base-studio-code/projects");
+    // The whole point of the grant is READ reach. It must not widen the write scope by one glob.
+    expect(e?.BSC_SCOPE_GLOBS).toBe("scratch/**");
+  });
+
+  it("still resolves nothing extra for the librarian before the base dir hydrates (#4108)", () => {
+    // `projects` depends on `bscBaseDir`. Pre-hydration it must contribute NOTHING rather than an
+    // empty or half-formed path — the same fail-closed rule the app-repo token follows.
+    const s = mkStore({ paneRoles: { p: "librarian" }, appRepoRoot: "C:/src/base-studio-code" });
+    expect(buildAgentEnv(s, "p", "claude", "")?.BSC_HARVEST_ROOTS).toBe("C:/src/base-studio-code");
+  });
+
   it("fails CLOSED when the symbolic root cannot be resolved (#3509)", () => {
     // A shipped binary has no source tree. An unresolvable token must contribute NOTHING rather
     // than emitting an empty entry, which the CLI would otherwise have to interpret.
