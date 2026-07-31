@@ -366,3 +366,48 @@ describe("durableLogSync — mirror render results to the durable log (#3540/#35
     expect(durableLogSync(undefined, { state: "empty", message: "" })).toBeNull();
   });
 });
+
+// #4092 — the scan's dependency invalidation never matched, so a fixed dependency left every consumer
+// holding a cached failure forever. The 16 components vendoring `ui-charts` kept a 2026-07-28 build
+// error that was nine minutes OLDER than the fix for it, and no re-scan could ever clear them.
+//
+// The old filter compared `build.files` keys against sibling RECORD `src` values. Measured on a real
+// `fleetpage` build those never coincide — record src is `src/shared/ui/charts/Charts.tsx`, the build
+// key is `shared/ui/charts.tsx` — so nothing ever folded into a signature.
+describe("the signature covers the vendored closure, not a path guess (#4092)", () => {
+  // The REAL shape: a `provides` component. Its module is keyed from the SPECIFIER
+  // (`shared/ui/dep.tsx`) while its record `src` is `src/shared/ui/dep/Dep.tsx` — so the old
+  // `sibSrcs.has(key)` filter could never match it, and no edit to it ever re-queued a consumer.
+  const dep: ComponentRecord = {
+    ...base,
+    id: "dep", name: "Dep",
+    src: "src/shared/ui/dep/Dep.tsx",
+    provides: "@/shared/ui/dep",
+    srcText: "export function Dep() { return <i />; }",
+  };
+  const consumer: ComponentRecord = {
+    ...base,
+    id: "consumer", name: "Consumer",
+    src: "consumer.tsx",
+    srcText: 'import { Dep } from "@/shared/ui/dep";\nexport function Consumer() { return <Dep />; }',
+  };
+  const artifact: KitArtifact = { components: [], runtime: {} };
+
+  it("re-queues a consumer when its DEPENDENCY changes", () => {
+    const before = scannableComponents([consumer, dep], artifact).find((s) => s.id === "consumer");
+    expect(before, "the consumer must be scannable at all").toBeTruthy();
+    const edited = { ...dep, srcText: "export function Dep() { return <b />; }" };
+    const after = scannableComponents([consumer, edited], artifact).find((s) => s.id === "consumer")!;
+    // THE regression: equal signatures mean `pendingScans` skips it and the stale verdict survives.
+    expect(after.sig).not.toBe(before!.sig);
+    expect(pendingScans([after], new Map([["consumer", before!.sig]]))).toHaveLength(1);
+  });
+
+  it("leaves a component that vendors nothing at sig === buildSignature(c)", () => {
+    // The pre-#3112 contract: no dependency ⇒ no extra signature material, so an unrelated edit
+    // cannot churn the whole kit through a rebuild.
+    const lone: ComponentRecord = { ...base, id: "lone", src: "lone.tsx", srcText: "export function Lone() { return <i />; }" };
+    const s = scannableComponents([lone], artifact).find((x) => x.id === "lone")!;
+    expect(s.sig).toBe(buildSignature(lone));
+  });
+});
