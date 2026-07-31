@@ -91,7 +91,6 @@ export function persistedState(s: AppStore) {
     fleetPaneStreams:     s.fleetPaneStreams,
     projectLocalRepos:    s.projectLocalRepos,
     localDraftProjects:   s.localDraftProjects,
-    triagedProjects:      s.triagedProjects,  // #2541: drafted→triaged marker; gates the Glance network
     projectLinks:         s.projectLinks,   // #2253: user-drawn Glance project relationships
     autoTriage:           s.autoTriage,   // #2265: per-project fault auto-triage toggle
     glanceOff:            s.glanceOff,   // #3239: per-node Glance off/deactivated toggle
@@ -142,7 +141,7 @@ export function persistedState(s: AppStore) {
     // row its cache held (cache-only rows: 0) before the copy was dropped.
     //   components (#3610) 592 KB  → hydrateComponents  · blueprints  395 KB → store/index.ts:202
     //   skills + skillGroups 71 KB → hydrateSkills      · personas     33 KB → hydratePersonas
-    //   teams                 6 KB → hydrateOrgs
+    //   teams                 6 KB → hydrateOrgs   · triagedProjects (#4088) → projects.db
     // The in-memory copies stay (synchronous reads are unaffected); only the disk copy is gone.
     kits:                  s.kits,       // #2269: the component kits (technology-scoped namespaces)
     kitUsage:              s.kitUsage,   // #2277: the consumer index (project→kit) — a fast-first-paint cache
