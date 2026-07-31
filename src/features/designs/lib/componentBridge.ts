@@ -78,6 +78,25 @@ export async function loadComponents(): Promise<ComponentRecord[] | null> {
   }
 }
 
+/**
+ * Load every component's GRAPH projection via `bsc ui list --graph` (#4072) — `null` when unreachable.
+ *
+ * The fast half of the Studio's two-phase hydration: 33 KB instead of `--full`'s 1.72 MB (77.6% of
+ * which is `srcText` no node reads), so the page paints instead of blocking up to 8s.
+ *
+ * Every record is stamped `lite` — the projection's empty `srcText`/`props` are DEFAULTS, not values,
+ * and consumers that need real source must wait for the full read rather than treat them as real.
+ */
+export async function loadComponentsGraph(): Promise<ComponentRecord[] | null> {
+  try {
+    const out = await bsc(null, ["ui", "list", "--graph"]);
+    const rows = JSON.parse(out) as Partial<ComponentRecord>[];
+    return rows.map((c) => ({ ...projectComponent(c), lite: true as const }));
+  } catch {
+    return null;
+  }
+}
+
 /** Load every kit via `bsc ui kit list --full`; `null` when unreachable. */
 export async function loadKits(): Promise<Kit[] | null> {
   try {

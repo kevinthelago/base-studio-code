@@ -102,6 +102,7 @@ const SPEC: CliSpec = CliSpec {
     tagline: TAGLINE,
     commands: COMMANDS,
     meta_fields: &["id", "name"],
+    graph_fields: &[],
 };
 
 /// The `sound` subcommand entrypoint: `args` is everything after `bsc sound`; `prog` is the display
