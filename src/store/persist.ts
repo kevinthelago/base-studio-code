@@ -119,7 +119,6 @@ export function persistedState(s: AppStore) {
     planClassification:    s.planClassification,
     uiScreens:             s.uiScreens,
     uiApproved:            s.uiApproved,
-    blueprints:            s.blueprints,
     activeBlueprintId:     s.activeBlueprintId,
     planFleet:             s.planFleet,
     planFleetTopology:     s.planFleetTopology,
@@ -127,19 +126,24 @@ export function persistedState(s: AppStore) {
     pinnedContext:         s.pinnedContext,
     mcpServers:            s.mcpServers,
     hooks:                 s.hooks,
-    skills:                s.skills,
     // Per-session skill choices keyed by stable identity (#1056) — persist so a
     // worker/triage session keeps its assigned skills across a restart.
     sessionSkillOverrides: s.sessionSkillOverrides,
     // Task groups + per-session group toggles (#skills-groups) — reusable skill bundles.
-    skillGroups:           s.skillGroups,
     sessionSkillGroups:    s.sessionSkillGroups,
-    personas:              s.personas,   // #2094: the agent-identity library (built-ins reconciled on load)
-    teams:                 s.teams,      // #2193/#2700: the persona-relationship graph (team) library (reconciled on load)
     demoActive:            s.demoActive, // #2272: a loaded demo state + its pre-demo backup survive restart
     demoBackup:            s.demoBackup,
     teamsZoom:             s.teamsZoom,  // #2199/#2700: per-team canvas zoom (view state)
-    // components: OMITTED (#3610) — 592 KB, re-hydrated from `bsc ui` at boot; see the doc comment above.
+    // OMITTED — every one of these is a `bsc`-owned library REPLACED from its store at boot, so a
+    // persisted copy is a second source that can only drift, and it is re-serialized on every store
+    // write. Measured before removal: app-state.json was 519 KB, of which these were 505 KB (96%);
+    // one Design Studio scan issued 110 store writes, i.e. ~57 MB of stringify+fsync on the main
+    // thread for a scan that touches `componentBuildStatus`. Each store was verified to hold every
+    // row its cache held (cache-only rows: 0) before the copy was dropped.
+    //   components (#3610) 592 KB  → hydrateComponents  · blueprints  395 KB → store/index.ts:202
+    //   skills + skillGroups 71 KB → hydrateSkills      · personas     33 KB → hydratePersonas
+    //   teams                 6 KB → hydrateOrgs
+    // The in-memory copies stay (synchronous reads are unaffected); only the disk copy is gone.
     kits:                  s.kits,       // #2269: the component kits (technology-scoped namespaces)
     kitUsage:              s.kitUsage,   // #2277: the consumer index (project→kit) — a fast-first-paint cache
     kitDispatches:         s.kitDispatches, // #2277: the pending fan-out queue — durable so the drain delivers it after a restart
