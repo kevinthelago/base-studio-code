@@ -69,6 +69,22 @@ project. Opening N SQLite files inside one process costs milliseconds; spawning 
 repeatedly cost this app whole seconds (#3908 / #3912 / #3944 / #3954).",
     },
     CmdDoc {
+        name: "triaged",
+        summary: "the Glance TRIAGED marker — list / set / clear (#4088)",
+        usage: "USAGE:
+  bsc project triaged list [--json]   # every triaged project + when (epoch ms)
+  bsc project triaged set <key>       # mark it triaged; prints the row
+  bsc project triaged clear <key>     # unmark it; prints the row
+
+The triaged marker gates the Glance project network (#2541): an UNTRIAGED project does not appear
+there at all. It is stamped by launching triage or a fleet, and now lives in projects.db so a live
+session can inspect and repair it — before #4088 it existed only inside the desktop's app-state.json,
+where no command could reach it, it was lost on an app-state reset, and a project missing from Glance
+could only be diagnosed by reading a raw zustand blob.
+
+`set` is IDEMPOTENT: an already-triaged project keeps its FIRST timestamp.",
+    },
+    CmdDoc {
         name: "published",
         summary: "read or set a project's .published marker",
         usage: "\
@@ -186,6 +202,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     match cmd.as_str() {
         "list" => cmd_list(&args),
         "progress" => cmd_progress(&args),
+        "triaged" => cmd_triaged(&args, prog),
         "published" => cmd_published(&args, prog),
         "link" => cmd_link(&args, prog),
         "github-state" => cmd_github_state(&args, prog),
@@ -293,6 +310,48 @@ fn cmd_progress(args: &Args) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// `triaged list|set|clear` — the Glance triaged marker (#4088).
+fn cmd_triaged(args: &Args, prog: &str) -> Result<(), String> {
+    let conn = store::open()?;
+    match args.positional.get(1).map(String::as_str).unwrap_or("list") {
+        "list" => {
+            let rows: Vec<serde_json::Value> = store::list(&conn)
+                .into_iter()
+                .filter_map(|r| r.triaged_at.map(|t| serde_json::json!({ "key": r.key, "triagedAt": t })))
+                .collect();
+            if args.json {
+                println!("{}", serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into()));
+            } else if rows.is_empty() {
+                println!("(no triaged projects)");
+            } else {
+                for r in &rows {
+                    println!("{}	{}", r["key"].as_str().unwrap_or(""), r["triagedAt"]);
+                }
+            }
+            Ok(())
+        }
+        verb @ ("set" | "clear") => {
+            let key = args
+                .positional
+                .get(2)
+                .ok_or_else(|| format!("usage: {prog} triaged {verb} <key>"))?;
+            let now = bsc_util::now_ms();
+            if verb == "set" {
+                store::set_triaged(&conn, key, now)?;
+            } else {
+                store::clear_triaged(&conn, key, now)?;
+            }
+            // Print the row either way — including the no-op cases (already triaged / not triaged),
+            // so a caller sees the resulting STATE rather than having to infer it from a bool.
+            let row = store::get(&conn, key)
+                .ok_or_else(|| format!("{prog} triaged {verb}: no such project '{key}'"))?;
+            bsc_sqlite_util::print_json(&row, false);
+            Ok(())
+        }
+        other => Err(format!("{prog} triaged: unknown verb '{other}' (list | set | clear)")),
+    }
 }
 
 /// `published get|set <key>` — read or set a project's in-place `.published` marker.
@@ -424,7 +483,11 @@ fn cmd_db(args: &Args, prog: &str) -> Result<(), String> {
             // Get-then-upsert so a NEW key stamps createdAt=now while an existing key keeps its
             // original createdAt (the upsert SQL also preserves it — this belt-and-suspenders keeps
             // the printed row correct even on the insert branch).
-            let created_at = store::get(&conn, &input.key).map(|r| r.created_at).unwrap_or(now);
+            let prior = store::get(&conn, &input.key);
+            let created_at = prior.as_ref().map(|r| r.created_at).unwrap_or(now);
+            // #4088 — carry the existing triaged marker through. The upsert SQL already preserves it
+            // on conflict; this keeps the INSERT branch and the printed row correct too.
+            let triaged_at = prior.as_ref().and_then(|r| r.triaged_at);
             let row = ProjectRow {
                 key: input.key,
                 title: input.title,
@@ -434,6 +497,7 @@ fn cmd_db(args: &Args, prog: &str) -> Result<(), String> {
                 state: input.state.unwrap_or_else(|| "drafted".into()),
                 created_at,
                 updated_at: now,
+                triaged_at,
             };
             store::upsert(&conn, &row)?;
             let stored = store::get(&conn, &row.key).ok_or("db add: row vanished after upsert")?;
@@ -691,6 +755,7 @@ mod tests {
                     state: "drafted".into(),
                     created_at: 1,
                     updated_at: 1,
+                    triaged_at: None,
                 },
             )
             .unwrap();

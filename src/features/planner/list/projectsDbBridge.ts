@@ -19,6 +19,10 @@ export interface DbProject {
   state: string;
   createdAt: number;
   updatedAt: number;
+  /** When the project was TRIAGED (epoch ms), `null` if never, ABSENT on a pre-#4088 binary (#4088).
+   *  Gates the Glance network — `projects.db` is the source; the store keeps an in-memory cache
+   *  hydrated from here. Optional so an older sidecar's payload still shape-gates cleanly. */
+  triagedAt?: number | null;
 }
 
 /** Shape-gate ONE raw list row into a {@link DbProject}, or `null` to drop it. `key` + `state` are the
@@ -38,6 +42,9 @@ function toDbProject(raw: unknown): DbProject | null {
     state: o.state,
     createdAt: typeof o.createdAt === "number" ? o.createdAt : 0,
     updatedAt: typeof o.updatedAt === "number" ? o.updatedAt : 0,
+    // Absent on a pre-#4088 binary — `null` reads as "not triaged", which is the safe default: it
+    // hides an unknown project from Glance rather than inventing a triage that never happened.
+    triagedAt: typeof o.triagedAt === "number" ? o.triagedAt : null,
   };
 }
 
@@ -83,4 +90,16 @@ export async function removeDbProject(key: string): Promise<void> {
  *  degrades silently. (Provided for completeness; the Phase-1 draft flow uses add/remove.) */
 export async function setDbProjectState(key: string, state: string): Promise<void> {
   await bscRun(null, ["project", "db", "state", key, state]);
+}
+
+/** Stamp a project TRIAGED in the durable store (#4088) — `bsc project triaged set`. Idempotent: an
+ *  already-triaged project keeps its first timestamp. Fire-and-forget; degrades silently when the
+ *  bridge or an older binary can't serve it, exactly like the other writers here. */
+export async function setDbTriaged(key: string): Promise<void> {
+  if (!key) return;
+  try {
+    await bscRun(null, ["project", "triaged", "set", key]);
+  } catch {
+    /* bridge unreachable — the in-memory marker still gates this session */
+  }
 }

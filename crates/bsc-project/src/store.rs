@@ -34,6 +34,14 @@ pub struct ProjectRow {
     pub category: Option<String>,
     /// The lifecycle state (`drafted` by default; e.g. `published`, `archived`).
     pub state: String,
+    /// When the project was TRIAGED (epoch millis), or `None` if it never was (#4088).
+    ///
+    /// This gates the whole Glance network (`filterTriaged`, #2541): an untriaged project is
+    /// invisible there. It used to live ONLY in the desktop's `app-state.json`, so no `bsc` command
+    /// could read or repair it, it died with an app-state reset, and diagnosing a missing node meant
+    /// reading a raw zustand blob. The desktop keeps an in-memory cache; THIS is the source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub triaged_at: Option<i64>,
     /// Creation time (epoch millis), stamped once at first insert and preserved across updates.
     pub created_at: i64,
     /// Last-update time (epoch millis).
@@ -78,11 +86,34 @@ pub fn ensure_schema(conn: &Connection) -> Result<(), String> {
             updated_at INTEGER NOT NULL
         );",
     )
-    .map_err(|e| format!("projects schema: {e}"))
+    .map_err(|e| format!("projects schema: {e}"))?;
+    add_column_if_missing(conn, "triaged_at", "INTEGER")
+}
+
+/// Add `<name> <ty>` to `projects` when it is not already there (#4088) — the store's first schema
+/// MIGRATION, so an existing projects.db upgrades IN PLACE instead of being recreated (which would
+/// drop every row and, for the triaged marker, make every project vanish from Glance at once).
+///
+/// SQLite has no `ADD COLUMN IF NOT EXISTS`, so this probes `pragma_table_info` first. Idempotent:
+/// safe on every open, which is when it runs.
+fn add_column_if_missing(conn: &Connection, name: &str, ty: &str) -> Result<(), String> {
+    let present: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('projects') WHERE name = ?1",
+            [name],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("projects schema probe: {e}"))?;
+    if present > 0 {
+        return Ok(());
+    }
+    conn.execute(&format!("ALTER TABLE projects ADD COLUMN {name} {ty}"), [])
+        .map(|_| ())
+        .map_err(|e| format!("projects schema add {name}: {e}"))
 }
 
 /// The column list every read selects, in `ProjectRow` field order.
-const COLS: &str = "key, title, pitch, blueprint, category, state, created_at, updated_at";
+const COLS: &str = "key, title, pitch, blueprint, category, state, created_at, updated_at, triaged_at";
 
 /// Map a full-`COLS` row into a [`ProjectRow`].
 fn row_to_project(r: &rusqlite::Row) -> rusqlite::Result<ProjectRow> {
@@ -95,19 +126,25 @@ fn row_to_project(r: &rusqlite::Row) -> rusqlite::Result<ProjectRow> {
         state: r.get(5)?,
         created_at: r.get(6)?,
         updated_at: r.get(7)?,
+        triaged_at: r.get(8)?,
     })
 }
 
 /// Insert or update a project by `key`. On a conflict the update touches every field EXCEPT
-/// `created_at` — the original creation time is preserved (only `updated_at` moves), so callers can
+/// `created_at` and `triaged_at` — both are stamped once and owned elsewhere. `triaged_at` (#4088)
+/// matters here in particular: the desktop upserts every project on boot to migrate drafts forward,
+/// and letting that carry a `None` through would UNTRIAGE every project on every launch, emptying
+/// the Glance network. It is written only by [`set_triaged`] / [`clear_triaged`].
+///
+/// The original creation time is preserved (only `updated_at` moves), so callers can
 /// pass any `created_at` on an update without clobbering it. Idempotent per `key`.
 ///
 /// # Errors
 /// The write fails.
 pub fn upsert(conn: &Connection, row: &ProjectRow) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO projects (key, title, pitch, blueprint, category, state, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "INSERT INTO projects (key, title, pitch, blueprint, category, state, created_at, updated_at, triaged_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
          ON CONFLICT(key) DO UPDATE SET
             title = excluded.title,
             pitch = excluded.pitch,
@@ -124,10 +161,38 @@ pub fn upsert(conn: &Connection, row: &ProjectRow) -> Result<(), String> {
             row.state,
             row.created_at,
             row.updated_at,
+            row.triaged_at,
         ],
     )
     .map_err(|e| format!("projects upsert: {e}"))?;
     Ok(())
+}
+
+/// Stamp `key` as TRIAGED at `now` (#4088) — the marker that admits a project to the Glance network.
+///
+/// IDEMPOTENT: an already-triaged project keeps its FIRST timestamp, so re-triaging never rewrites
+/// history (mirrors the desktop's `markProjectTriaged`, which this replaces as the source of truth).
+/// Returns whether a row was actually stamped — `false` means the key is absent or already triaged.
+pub fn set_triaged(conn: &Connection, key: &str, now: i64) -> Result<bool, String> {
+    let n = conn
+        .execute(
+            "UPDATE projects SET triaged_at = ?2, updated_at = ?2 WHERE key = ?1 AND triaged_at IS NULL",
+            params![key, now],
+        )
+        .map_err(|e| format!("projects set_triaged: {e}"))?;
+    Ok(n > 0)
+}
+
+/// Clear `key`'s triaged marker (#4088) — it leaves the Glance network again. Returns whether a row
+/// changed (`false` when the key is absent or was not triaged).
+pub fn clear_triaged(conn: &Connection, key: &str, now: i64) -> Result<bool, String> {
+    let n = conn
+        .execute(
+            "UPDATE projects SET triaged_at = NULL, updated_at = ?2 WHERE key = ?1 AND triaged_at IS NOT NULL",
+            params![key, now],
+        )
+        .map_err(|e| format!("projects clear_triaged: {e}"))?;
+    Ok(n > 0)
 }
 
 /// Look up one project by `key`, or `None` on a miss.
@@ -203,7 +268,73 @@ mod tests {
             state: "drafted".into(),
             created_at: created,
             updated_at: updated,
+            triaged_at: None,
         }
+    }
+
+    /// #4088 — the marker is stamped once and IDEMPOTENT: re-triaging must not rewrite history, since
+    /// the desktop calls its equivalent on every triage/fleet launch.
+    #[test]
+    fn set_triaged_stamps_once_and_clear_reverses_it() {
+        let conn = mem();
+        upsert(&conn, &row("alpha", "Alpha", 100, 100)).unwrap();
+        assert_eq!(get(&conn, "alpha").unwrap().triaged_at, None, "starts untriaged");
+
+        assert!(set_triaged(&conn, "alpha", 500).unwrap(), "first stamp lands");
+        assert_eq!(get(&conn, "alpha").unwrap().triaged_at, Some(500));
+
+        // A second stamp is a NO-OP and keeps the first timestamp.
+        assert!(!set_triaged(&conn, "alpha", 900).unwrap(), "second stamp is a no-op");
+        assert_eq!(get(&conn, "alpha").unwrap().triaged_at, Some(500), "keeps the FIRST time");
+
+        assert!(clear_triaged(&conn, "alpha", 1000).unwrap());
+        assert_eq!(get(&conn, "alpha").unwrap().triaged_at, None);
+        assert!(!clear_triaged(&conn, "alpha", 1100).unwrap(), "clearing twice is a no-op");
+    }
+
+    /// An UPSERT must not carry the marker away. The desktop upserts every project on boot to migrate
+    /// drafts forward, so a `None` flowing through here would untriage everything on every launch and
+    /// empty the Glance network — the exact failure this store move exists to make impossible.
+    #[test]
+    fn upsert_preserves_an_existing_triaged_marker() {
+        let conn = mem();
+        upsert(&conn, &row("alpha", "Alpha", 100, 100)).unwrap();
+        set_triaged(&conn, "alpha", 500).unwrap();
+
+        // A later upsert built WITHOUT the marker (triaged_at: None), as a boot migration would be.
+        let mut later = row("alpha", "Alpha renamed", 100, 700);
+        later.triaged_at = None;
+        upsert(&conn, &later).unwrap();
+
+        let stored = get(&conn, "alpha").unwrap();
+        assert_eq!(stored.triaged_at, Some(500), "the marker must survive an upsert");
+        assert_eq!(stored.title, "Alpha renamed", "…while the rest of the row still updates");
+    }
+
+    /// The store's first schema migration: an EXISTING projects.db (pre-#4088, no `triaged_at`) must
+    /// gain the column in place, keeping its rows. Recreating the table would drop every project.
+    #[test]
+    fn ensure_schema_adds_the_column_to_a_pre_existing_table() {
+        let conn = bsc_sqlite_util::open_in_memory_db().unwrap();
+        // The OLD schema, verbatim, without triaged_at.
+        conn.execute_batch(
+            "CREATE TABLE projects (
+                key TEXT PRIMARY KEY, title TEXT NOT NULL, pitch TEXT NOT NULL DEFAULT '',
+                blueprint TEXT, category TEXT, state TEXT NOT NULL DEFAULT 'drafted',
+                created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+             INSERT INTO projects (key,title,pitch,state,created_at,updated_at)
+                VALUES ('legacy','Legacy','',  'drafted', 1, 1);",
+        )
+        .unwrap();
+
+        ensure_schema(&conn).unwrap();
+        let stored = get(&conn, "legacy").expect("the pre-existing row must survive the migration");
+        assert_eq!(stored.triaged_at, None);
+
+        // Idempotent — ensure_schema runs on every open.
+        ensure_schema(&conn).unwrap();
+        assert!(get(&conn, "legacy").is_some());
+        assert!(set_triaged(&conn, "legacy", 42).unwrap(), "the new column is usable");
     }
 
     #[test]
