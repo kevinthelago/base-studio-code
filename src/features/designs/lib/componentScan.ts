@@ -109,6 +109,12 @@ export function scannableComponents(
   // kit switch changes which components build and must reach the scan, not just the live preview.
   libResolver: LibraryModuleResolver = libraryModuleResolver,
 ): ScannableComponent[] {
+  // The packaged artifact's own file keys — its component sources + its runtime closure. Computed ONCE
+  // (not per component): it is the same set for every build in this sweep, and `comps` can be hundreds.
+  const artifactKeys = new Set<string>([
+    ...(artifact.components ?? []).map((a) => a.src),
+    ...Object.keys(artifact.runtime ?? {}),
+  ]);
   const out: ScannableComponent[] = [];
   for (const c of comps) {
     // #4072 — a LITE record (graph projection) has an empty `srcText` by construction, not because the
@@ -120,12 +126,26 @@ export function scannableComponents(
     const siblings = comps.filter((s) => s.kitId === c.kitId && s.id !== c.id);
     const build = componentPreviewFiles(c, artifact, siblings, libResolver);
     if (!build) continue;
-    // Only VENDORED sibling files + any `@bsc/…` LIBRARY module (#3116) add info beyond `buildSignature(c)`:
-    // a built-in's whole-artifact file set isn't record-derived and a non-composing component vendors
-    // nothing, so both keep sig === buildSignature(c) exactly (the pre-#3112 contract); a composer folds in
-    // its siblings, and a library-importer folds in the vendored impl so an algorithm edit re-queues it.
-    const sibSrcs = new Set(siblings.map((s) => s.src).filter(Boolean));
-    const vendored = Object.keys(build.files).filter((k) => sibSrcs.has(k) || k.startsWith("@bsc/")).sort();
+    // Everything in the build that is NOT part of the packaged artifact is record-derived, and a change
+    // to any of it must re-queue this component — otherwise a fixed dependency leaves every consumer
+    // holding a cached failure forever (#4092).
+    //
+    // Derived by EXCLUDING the artifact's own keys rather than by matching sibling `src`, which is what
+    // this did before and what never once matched: `src` is a RECORD path
+    // (`src/shared/ui/charts/Charts.tsx`) while `build.files` is keyed by RESOLVED MODULE path
+    // (`shared/ui/charts.tsx`). Measured on a real `fleetpage` build, all five charts files came back
+    // NOMATCH — so #3112's invalidation was inert across the entire library, and the 16 components that
+    // vendor `ui-charts` kept a 2026-07-28 build failure nine minutes older than the fix for it.
+    //
+    // The artifact is a packaged constant (it changes only with the app build), so excluding it keeps
+    // the two contracts the old filter was reaching for: a built-in's whole-artifact file set does NOT
+    // fold in, and a component that vendors nothing still gets sig === buildSignature(c) exactly.
+    // The component's OWN module is excluded too — `buildSignature(c)` already carries it, and folding
+    // it in twice would break the no-dependency contract below.
+    const ownImpl = c.source || c.srcText || "";
+    const vendored = Object.keys(build.files)
+      .filter((k) => k !== build.entry && !artifactKeys.has(k) && build.files[k] !== ownImpl)
+      .sort();
     // Runtime data-state probes (#3191): a DATA component (collection prop) also gets an `empty`-state build
     // and a component with a LOADING prop a `loading`-state build, so the scan can render-confirm a BLANK
     // #root in that state. Same file set as loaded — only the sampled props differ (`samplePropValue` empties
