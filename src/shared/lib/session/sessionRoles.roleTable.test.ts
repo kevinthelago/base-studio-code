@@ -32,10 +32,13 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
       // included (unlike the designer it is not a UI-kit session). Its whole command surface is
       // `bsc teams` + `bsc persona`, granted at launch via the restricted allow-list.
       architect:  "none/none/none/none/none",
-      // Librarian (#2787): the Algorithms tab's knowledge-store session — `none` on EVERY axis, `ui`
-      // included (like the architect, it is not a UI-kit session). Its whole command surface is
-      // `bsc graph`, granted at launch via the restricted allow-list.
-      librarian:  "none/none/none/none/none",
+      // Librarian (#2787): the Algorithms tab's knowledge-store session — `none` on github/git/code/net.
+      // Its write surface is `bsc graph`, granted at launch via the restricted allow-list. THE ONE
+      // DEVIATION IS `ui: "read"` (#4090), and it is deliberate: it must be able to ask "is this harvest
+      // candidate already a component?" so the algorithms and component graphs partition the tree instead
+      // of both claiming it. `read` denies every mutating verb — the designer still owns that store — so
+      // an edit that widens this to `write` must fail this test.
+      librarian:  "none/none/none/none/read",
       // Sound-designer (#3369, epic #3071 phase 4): the Sounds tab's sound-kit authoring session —
       // `none` on EVERY axis, `ui` included: a sound is a synthesis descriptor in its own store, not a
       // UI kit. Its whole command surface is `bsc sound`, granted at launch via the restricted

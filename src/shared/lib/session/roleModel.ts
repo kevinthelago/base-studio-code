@@ -235,7 +235,7 @@ export function hasScopedWriteCarveOut(cap: RoleCapability): boolean {
  *  bespoke hook, a fleet launch, or the shared TerminalHost).
  *   • designer   — the `bsc ui` component surface (+ the deprecated `bsc component` alias), the
  *                  preview-only screenshot, the design loop, and the designer→debug request channel.
- *   • librarian  — the algorithms graph store.
+ *   • librarian  — the algorithms graph store, plus READ-ONLY lookup into the component store (#4090).
  *   • sound-designer — the sound-kit store (synthesis descriptors: primitives, voices, cues, kits).
  *   • architect  — the teams + persona (agent-identity) stores.
  *   • curator    — the post-landing harvest + graph-optimize actor (fleet-launched). */
@@ -268,7 +268,20 @@ const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> 
     "bsc request new",
     "bsc request list",
   ],
-  librarian: ["bsc graph", ...LOOP_PARTICIPANT_COMMANDS, "bsc request new", "bsc request list"],
+  // #4090: the two READ verbs of the component store, never the `bsc ui` prefix — that would also carry
+  // `set`/`remove`. The librarian curates the ALGORITHMS library and needs one question answered about
+  // the other graph — "is this candidate already a component?" — so the two harvests partition the tree
+  // instead of both claiming it (`bsc graph harvest` sweeps in React components today). Writes stay
+  // denied by `ui: "read"` (→ UI_WRITE_DENY), which is the half that makes read-only true: the grant
+  // table governs AUTO-RUN, not reachability.
+  librarian: [
+    "bsc graph",
+    "bsc ui list",
+    "bsc ui get",
+    ...LOOP_PARTICIPANT_COMMANDS,
+    "bsc request new",
+    "bsc request list",
+  ],
   // #4023: the connector store IS the integration library — `probe`/`validate`/`try`/`map` are the
   // authoring dev-loop and `add`/`remove`/`list`/`get` the store, all under the one prefix.
   integrator: ["bsc data connector", ...LOOP_PARTICIPANT_COMMANDS, "bsc request new", "bsc request list"],
