@@ -132,7 +132,7 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
     if claude_md.is_file() && !wt.join("CLAUDE.md").exists() {
         let _ = std::fs::copy(&claude_md, wt.join("CLAUDE.md"));
     }
-    write_worker_context(&wt, &clone, &project_dir(&project_key), scope_md.as_deref());
+    write_worker_context(&wt, &clone, &project_dir(&project_key), scope_md.as_deref(), &slug);
     Ok(wt_str)
 }
 
@@ -242,6 +242,9 @@ pub(crate) fn write_worker_context(
     clone: &std::path::Path,
     hub: &std::path::Path,
     scope_md: Option<&str>,
+    // The worktree BRANCH = the stream id = the feature slug (#4082) — the key the required-algorithm
+    // lookup uses. Empty for a caller with no stream (nothing is injected).
+    stream: &str,
 ) {
     let mut md = String::new();
     if let Some(scope) = scope_md {
@@ -286,6 +289,12 @@ pub(crate) fn write_worker_context(
     inject_skills(hub, &wt_local);
     // Point UI workers at the user's dropped Claude Design (#1373) — the agent self-selects relevance.
     inject_design_context(hub, &wt_local);
+    // Inline the reference implementations this feature declared it requires (#4082/#4080), so the
+    // worker reuses the library instead of re-deriving the same algorithm. Last, so it reads after the
+    // scope + protocol context rather than displacing them.
+    if !stream.trim().is_empty() {
+        inject_required_algorithms(hub, &wt_local, stream.trim());
+    }
 }
 
 /// Marker for the dropped-design section, used to keep `inject_design_context` idempotent.
@@ -324,6 +333,111 @@ pub(crate) fn inject_design_context(hub: &std::path::Path, wt_local: &std::path:
 /// Inline the hub's attached skills (`skills.md`, #636) into a worker's CLAUDE.local.md
 /// so the worker auto-loads the same skill context the planner had. Idempotent; a no-op
 /// when there are no attached skills (skills.md absent/empty).
+/// Marker for the required-algorithms section, keeping [`inject_required_algorithms`] idempotent.
+const ALGO_REFS_MARKER: &str = "## Reference implementations (required by this feature)";
+
+/// One resolved entry for the block: the id, plus the impl fields when the library actually has it.
+/// A `None` impl is a DANGLING id — surfaced, never silently dropped (#4080 deliberately does not
+/// validate ids at plan-write time, so this is the first place a typo becomes visible).
+pub(crate) struct AlgoRef {
+    pub id: String,
+    pub name: Option<String>,
+    pub tech: Option<String>,
+    pub summary: Option<String>,
+    pub code: Option<String>,
+}
+
+/// Render the worker's reference-implementation block (#4082). Pure — resolved refs → markdown — so the
+/// prose is testable without a store, a graph, or a worktree.
+///
+/// The worker CANNOT reach the library itself: the `worker` role's restricted surface has no
+/// `bsc graph`. Inlining is what makes the reference reachable at all — the same reasoning that put
+/// skills inline rather than leaving a "read skills.md" note a worker cannot follow (#636).
+///
+/// `None` for an empty list: most features require nothing, and an empty heading is noise.
+pub(crate) fn algo_refs_block(refs: &[AlgoRef]) -> Option<String> {
+    if refs.is_empty() {
+        return None;
+    }
+    let mut md = String::from(ALGO_REFS_MARKER);
+    md.push_str(
+        "\n\nThe plan says this feature needs the implementations below. They are the REFERENCE — use \
+         them rather than writing your own version of the same thing. Adapt names/types to fit this \
+         codebase, but do not re-derive the algorithm. If one genuinely does not fit the problem, say so \
+         and implement what does — a forced fit is worse than an honest re-implementation.\n",
+    );
+    for r in refs {
+        match (&r.name, &r.code) {
+            // Resolved WITH code — the useful case.
+            (Some(name), Some(code)) if !code.trim().is_empty() => {
+                md.push_str(&format!("\n### {name} (`{}`)\n", r.id));
+                if let Some(s) = r.summary.as_deref().filter(|s| !s.trim().is_empty()) {
+                    md.push_str(&format!("{}\n", s.trim()));
+                }
+                let lang = r.tech.as_deref().unwrap_or("");
+                md.push_str(&format!("\n```{lang}\n{}\n```\n", code.trim_end()));
+            }
+            // In the library but carrying no code (a primitive is DESCRIBED via `--ref`, not re-coded).
+            (Some(name), _) => {
+                md.push_str(&format!("\n### {name} (`{}`)\n", r.id));
+                let s = r.summary.as_deref().unwrap_or("no summary recorded").trim();
+                md.push_str(&format!("{s}\n_No stored code — this is a language primitive; use the platform's own._\n"));
+            }
+            // Not in the library at all.
+            (None, _) => {
+                md.push_str(&format!(
+                    "\n### `{}` — NOT FOUND in the algorithms library\n\
+                     The plan requires this id but nothing matches it. Implement the capability yourself \
+                     and mention the unresolved reference in your checkpoint, so the plan can be corrected.\n",
+                    r.id,
+                ));
+            }
+        }
+    }
+    Some(md)
+}
+
+/// Resolve a stream's required algorithms and inline them into its `CLAUDE.local.md` (#4082).
+///
+/// A feature IS a stream (`stream` defaults to the feature slug) and the worktree BRANCH is the stream
+/// id, so the branch slug is the lookup key. Both stores are read IN-PROCESS — `plandb` and `bsc-graph`
+/// are linked deps of this crate (the latter since #4078, precisely so a reader need not spawn a
+/// subprocess).
+///
+/// Best-effort at every step, like the injections around it: an unreachable plan.db, an unreadable
+/// graph, or a stream with no matching feature adds nothing and never aborts a launch.
+pub(crate) fn inject_required_algorithms(hub: &std::path::Path, wt_local: &std::path::Path, stream: &str) {
+    let Ok(store) = plandb::Store::open(&hub.join("plan.db")) else { return };
+    let Ok(Some(feature)) = store.feature_get(stream) else { return };
+    if feature.requires.is_empty() {
+        return;
+    }
+    let graph = bsc_graph::load();
+    let impls = bsc_graph::implementations_of(&graph);
+    let field = |v: &serde_json::Value, k: &str| {
+        v.get(k).and_then(serde_json::Value::as_str).map(str::to_string).filter(|s| !s.trim().is_empty())
+    };
+    let refs: Vec<AlgoRef> = feature
+        .requires
+        .iter()
+        .map(|id| {
+            let found = impls.iter().find(|im| im.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str()));
+            match found {
+                Some(im) => AlgoRef {
+                    id: id.clone(),
+                    name: field(im, "name").or_else(|| Some(id.clone())),
+                    tech: field(im, "tech"),
+                    summary: field(im, "summary"),
+                    code: field(im, "code"),
+                },
+                None => AlgoRef { id: id.clone(), name: None, tech: None, summary: None, code: None },
+            }
+        })
+        .collect();
+    let Some(block) = algo_refs_block(&refs) else { return };
+    let _ = append_block_once(wt_local, |cur| cur.contains(ALGO_REFS_MARKER), "\n\n", &format!("{block}\n"));
+}
+
 pub(crate) fn inject_skills(hub: &std::path::Path, wt_local: &std::path::Path) {
     let skills = std::fs::read_to_string(hub.join("skills.md")).unwrap_or_default();
     let trimmed = skills.trim();
@@ -735,7 +849,7 @@ mod relocated_tests {
         // `write_worker_context` is what makes this a regression test rather than a restatement.
         let hub = base.join("hub");
         std::fs::create_dir_all(&hub).unwrap();
-        write_worker_context(&wt, &main, &hub, Some("owns: src/**"));
+        write_worker_context(&wt, &main, &hub, Some("owns: src/**"), "");
         assert!(wt.join("CLAUDE.local.md").exists(), "launch path should have planted the file");
 
         // The warden's trusted signal must not attribute the app's own file to the worker. Without
@@ -785,14 +899,14 @@ mod relocated_tests {
         let hub = home.join("hub");
         for d in [&wt, &clone, &hub] { std::fs::create_dir_all(d).unwrap(); }
 
-        write_worker_context(&wt, &clone, &hub, Some("# scope: owns src/api/**"));
+        write_worker_context(&wt, &clone, &hub, Some("# scope: owns src/api/**"), "");
         let md = std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap();
         assert!(md.contains("# scope: owns src/api/**"), "keeps the worker scope");
         assert!(md.contains(INJECTION_RESISTANCE_MARKER), "appends the injection-resistance preamble");
         assert!(md.contains("untrusted data"), "carries the untrusted-input rule");
 
         // Re-running converges (the preamble isn't appended twice).
-        write_worker_context(&wt, &clone, &hub, Some("# scope: owns src/api/**"));
+        write_worker_context(&wt, &clone, &hub, Some("# scope: owns src/api/**"), "");
         let again = std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap();
         assert_eq!(again.matches(INJECTION_RESISTANCE_MARKER).count(), 1, "preamble appears once");
 
@@ -813,7 +927,7 @@ mod relocated_tests {
         std::fs::write(hub.join("skills.md"), "# Attached skills & knowledge\n\n### Auth\nUse OAuth.\n").unwrap();
 
         let scope = "# Your scope\n\nYou own `src/auth/**`. Issues: #12, #13.";
-        write_worker_context(&wt, &clone, &hub, Some(scope));
+        write_worker_context(&wt, &clone, &hub, Some(scope), "");
         let out = std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap();
 
         // Scope leads, then per-repo context, then protocol, then skills — in that order.
@@ -828,10 +942,148 @@ mod relocated_tests {
         assert!(!out.contains("Project Planner"), "must not carry the planner spec");
 
         // Idempotent: a second launch converges to identical content (protocol/skills not doubled).
-        write_worker_context(&wt, &clone, &hub, Some(scope));
+        write_worker_context(&wt, &clone, &hub, Some(scope), "");
         assert_eq!(out, std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap());
         assert_eq!(out.matches("## Fleet coordination protocol").count(), 1);
 
         std::fs::remove_dir_all(&home).ok();
+    }
+}
+
+#[cfg(test)]
+mod algo_ref_tests {
+    use super::*;
+    use crate::testutil::{temp_home, ENV_LOCK};
+
+    fn r(id: &str, name: Option<&str>, tech: Option<&str>, summary: Option<&str>, code: Option<&str>) -> AlgoRef {
+        AlgoRef {
+            id: id.into(),
+            name: name.map(str::to_string),
+            tech: tech.map(str::to_string),
+            summary: summary.map(str::to_string),
+            code: code.map(str::to_string),
+        }
+    }
+
+    /// Most features require nothing — an empty heading would be pure noise in every worker's context.
+    #[test]
+    fn no_refs_yields_no_block() {
+        assert!(algo_refs_block(&[]).is_none());
+    }
+
+    /// The useful case: the agent gets the actual code, fenced with the impl's tech so it highlights,
+    /// plus an instruction to USE it rather than re-derive it — that instruction IS the feature.
+    #[test]
+    fn a_resolved_ref_carries_its_code_and_the_reuse_instruction() {
+        let md = algo_refs_block(&[r(
+            "merge.rs",
+            Some("merge"),
+            Some("rust"),
+            Some("Interleave two sorted slices."),
+            Some("pub fn merge<T: Ord>(a: &[T], b: &[T]) -> Vec<T> { todo!() }"),
+        )])
+        .expect("a block");
+        assert!(md.contains("## Reference implementations (required by this feature)"));
+        assert!(md.contains("### merge (`merge.rs`)"));
+        assert!(md.contains("Interleave two sorted slices."), "the summary rides along");
+        assert!(md.contains("```rust"), "fenced with the impl's tech so it highlights");
+        assert!(md.contains("pub fn merge"), "THE CODE is what makes this worth doing");
+        assert!(md.contains("use them rather than writing your own"), "the reuse instruction");
+        // …and an escape hatch, so a bad match doesn't force a wrong implementation.
+        assert!(md.contains("does not fit"), "a forced fit is worse than an honest re-implementation");
+    }
+
+    /// A PRIMITIVE is described, never re-coded (`--ref` to the std path), so it has no stored code.
+    /// It should still appear — knowing the library considers it a primitive is the useful signal.
+    #[test]
+    fn a_ref_without_code_is_named_as_a_primitive_rather_than_dropped() {
+        let md = algo_refs_block(&[r("rust.vec", Some("Vec"), Some("rust"), Some("The growable array."), None)])
+            .expect("a block");
+        assert!(md.contains("### Vec (`rust.vec`)"));
+        assert!(md.contains("language primitive"), "says why there is no code");
+        assert!(!md.contains("```"), "no empty code fence");
+    }
+
+    /// #4080 deliberately does not validate ids at plan-write time, so THIS is the first place a typo
+    /// becomes visible. Silently dropping it would leave the worker believing the plan named nothing.
+    #[test]
+    fn a_dangling_id_is_reported_not_silently_dropped() {
+        let md = algo_refs_block(&[r("no-such-algo", None, None, None, None)]).expect("a block");
+        assert!(md.contains("`no-such-algo` — NOT FOUND"), "the id is named: {md}");
+        assert!(md.contains("mention the unresolved reference"), "so the plan can be corrected");
+    }
+
+    #[test]
+    fn a_mixed_set_renders_every_entry() {
+        let md = algo_refs_block(&[
+            r("merge.rs", Some("merge"), Some("rust"), None, Some("fn merge() {}")),
+            r("rust.vec", Some("Vec"), Some("rust"), None, None),
+            r("ghost", None, None, None, None),
+        ])
+        .expect("a block");
+        for expect in ["### merge", "### Vec", "`ghost` — NOT FOUND"] {
+            assert!(md.contains(expect), "missing {expect} in:\n{md}");
+        }
+    }
+
+    /// `write_worker_context` is rewritten on every launch and must converge — a second pass must not
+    /// append the section twice. Also pins the no-plan-db and empty-stream no-ops: every failure path
+    /// here is best-effort and must never abort a launch.
+    #[test]
+    fn injection_is_idempotent_and_a_missing_store_is_a_no_op() {
+        // temp_home repoints the process-global home, so it MUST hold the same lock the sibling
+        // injection tests take — without it this races them and fails an unrelated test.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("algorefs");
+        let hub = home.join("hub");
+        std::fs::create_dir_all(&hub).unwrap();
+        let wt_local = home.join("CLAUDE.local.md");
+        std::fs::write(&wt_local, "# plan\n").unwrap();
+
+        // No plan.db at the hub ⇒ silent no-op (never a panic, never an abort).
+        inject_required_algorithms(&hub, &wt_local, "sorter");
+        assert_eq!(std::fs::read_to_string(&wt_local).unwrap(), "# plan\n");
+
+        // A real store whose feature declares one required algorithm.
+        let store = plandb::Store::open(&hub.join("plan.db")).unwrap();
+        store
+            .feature_upsert(&plandb::PlanFeature {
+                slug: "sorter".into(),
+                name: "Sorter".into(),
+                requires: vec!["definitely-not-a-real-impl-4082".into()],
+                ..Default::default()
+            })
+            .unwrap();
+
+        inject_required_algorithms(&hub, &wt_local, "sorter");
+        let once = std::fs::read_to_string(&wt_local).unwrap();
+        assert!(once.contains("# plan"), "keeps the existing context");
+        assert!(once.contains(ALGO_REFS_MARKER), "the section is injected");
+
+        inject_required_algorithms(&hub, &wt_local, "sorter");
+        let twice = std::fs::read_to_string(&wt_local).unwrap();
+        assert_eq!(once, twice, "a second launch converges — the section appears exactly once");
+
+        // A stream with no matching feature adds nothing.
+        let before = twice.clone();
+        inject_required_algorithms(&hub, &wt_local, "no-such-stream");
+        assert_eq!(std::fs::read_to_string(&wt_local).unwrap(), before);
+    }
+
+    /// A feature that requires NOTHING must add no section — the common case.
+    #[test]
+    fn a_feature_with_no_requires_adds_nothing() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("algorefsnone");
+        let hub = home.join("hub");
+        std::fs::create_dir_all(&hub).unwrap();
+        let wt_local = home.join("CLAUDE.local.md");
+        std::fs::write(&wt_local, "# plan\n").unwrap();
+        let store = plandb::Store::open(&hub.join("plan.db")).unwrap();
+        store
+            .feature_upsert(&plandb::PlanFeature { slug: "plain".into(), name: "Plain".into(), ..Default::default() })
+            .unwrap();
+        inject_required_algorithms(&hub, &wt_local, "plain");
+        assert_eq!(std::fs::read_to_string(&wt_local).unwrap(), "# plan\n");
     }
 }
