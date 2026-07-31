@@ -297,6 +297,13 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
        // dependency (OSV via `bsc cve`). GATED (agent panes only) — the threat is compromised agents, not
        // the maintainer's manual console — and FAIL-OPEN, so an OSV outage never blocks the fleet.
        { event: "PreToolUse", matcher: "Bash", command: "bsc-supply" },
+       // Fork visibility (bsc-fork, #4106): a subagent is the ONE actor in this system with no pane,
+       // no roster row, no worktree and no branch — so a director that forks to do a worker's job does
+       // it entirely off the coordination channel. `audit.log` already records the call, but nothing
+       // reads that channel; this puts the fork where the inbox and Glance are looking. OBSERVE ONLY —
+       // it always exits 0. The boundary on what a fork may do is the role gate (a director is
+       // `code: none`), not this hook; making forks legible is a separate job from restricting them.
+       { event: "PreToolUse", matcher: "Agent|Task", command: "bsc-fork" },
        ...stopBounce]
     : hooks;
   // Skill telemetry (#406) follows the SKILLS, not the role gate: install the bsc-skill Pre/Post hooks

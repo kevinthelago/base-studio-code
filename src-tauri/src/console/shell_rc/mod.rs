@@ -47,7 +47,7 @@
 //                   ADD of a malicious/known-vulnerable package via OSV/`bsc cve`; fail-open). Gated panes only.
 //  * taint.sh     — bsc-taint (#1167): tainted-turn gate; return 2 on outward/destructive Bash within
 //                   $BSC_TAINT_WINDOW of ingesting untrusted input (WebFetch / curl / gh issue|pr view).
-//  * coord-emit.sh— __bsc_coord(+_log) + bsc-landed/merged/closed/failed/wait/maintain/ask/answer/issue/
+//  * coord-emit.sh— __bsc_coord(+_log) + bsc-landed/merged/closed/failed/wait/maintain/ask/answer/fork/issue/
 //                   assign/brief (#199/#376/#2377): the coordination emitters to $BSC_COORD_LOG.
 //                   bsc-brief is the PLANNER's runtime voice (planner→director/issuer); a coordination
 //                   write only — no code/git escalation of the plan-only role gate.
