@@ -3,7 +3,6 @@
   "name": "Stack",
   "kitId": "base-studio-code",
   "role": "layout",
-  "group": "shared/ui/layout",
   "provides": "@/shared/ui/layout/Stack",
   "srcText": "// Stack, AS GRAPH SOURCE (#3680, epic #3604) — a structural shared/ui layout primitive authored as DATA.\n// `provides: \"@/shared/ui/layout/Stack\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\n// Stack — a vertical flex column with a gap (#2056). The one primitive for the ~200 hand-rolled\r\n// `<div style={{ display: \"flex\", flexDirection: \"column\", gap: N }}>` divs across the app.\r\n//\r\n// Cross-axis default is the native `stretch` (align left unset), so converting an existing column\r\n// div is lossless — pass `align` only when the div set `alignItems`. Any extra div prop (className,\r\n// onClick, data-*, role, …) passes straight through, and a `style` override wins last.\r\n\r\nimport type { ReactNode, CSSProperties, ComponentPropsWithoutRef } from \"react\";\r\nimport { flexStyle, pad, type Space, type Align, type Justify } from \"@/shared/ui/layout/space\";\r\n\r\nexport interface StackProps extends Omit<ComponentPropsWithoutRef<\"div\">, \"children\"> {\r\n  children?: ReactNode;\r\n  /** Gap between children — a scale rung (\"sm\"/\"md\"/…) or raw px. */\r\n  gap?: Space;\r\n  /** Cross-axis (horizontal) alignment. Default = native `stretch`. */\r\n  align?: Align;\r\n  /** Main-axis (vertical) distribution. */\r\n  justify?: Justify;\r\n  /** Allow wrapping (rare for a column, but supported). */\r\n  wrap?: boolean;\r\n  /** Inner padding — a single `Space` (all sides) or `[block, inline]`. */\r\n  pad?: Space | [Space, Space];\r\n  /** Render as `inline-flex` instead of `flex`. */\r\n  inline?: boolean;\r\n  style?: CSSProperties;\r\n}\r\n\r\nexport function Stack({ children, gap, align, justify, wrap, pad: p, inline, style, ...rest }: StackProps) {\r\n  return (\r\n    <div\r\n      style={{\r\n        display: inline ? \"inline-flex\" : \"flex\",\r\n        flexDirection: \"column\",\r\n        ...flexStyle({ gap, align, justify, wrap }),\r\n        ...(p != null ? { padding: pad(p) } : {}),\r\n        ...style,\r\n      }}\r\n      {...rest}\r\n    >\r\n      {children}\r\n    </div>\r\n  );\r\n}\r\n",
   "composes": [],
@@ -57,5 +56,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/layout"
 }

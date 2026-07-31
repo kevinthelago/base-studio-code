@@ -15,7 +15,7 @@
 //! store's records.
 
 pub mod cli;
-pub mod group;
+pub mod folder;
 pub mod graph_health;
 pub mod motion;
 pub mod preview_errors;
@@ -25,4 +25,4 @@ pub mod similarity;
 pub mod syntax;
 pub mod usage;
 
-pub use group::group_from_src;
+pub use folder::folder_from_src;

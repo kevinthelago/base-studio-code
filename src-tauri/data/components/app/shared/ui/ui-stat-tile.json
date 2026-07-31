@@ -3,7 +3,6 @@
   "name": "StatTile",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/data",
   "provides": "@/shared/ui/data/StatTile",
   "srcText": "// StatTile, AS GRAPH SOURCE (#3660, epic #3604) — a pure leaf shared/ui primitive authored as DATA. Its\n// `provides: \"@/shared/ui/data/StatTile\"` makes the runtime loader vendor THIS source wherever a graph component imports\n// that specifier, so the primitive renders from the graph, not bundled code (registered code is the\n// fallback when no component provides it). Transcribed verbatim from the live .tsx; deps (Skeleton/Card/\n// math) stay registered code — a fresh compile is safe because the primitive holds no context or state.\nimport type { ReactNode, CSSProperties } from \"react\";\r\nimport { Card } from \"@/shared/ui/data/Card\";\r\nimport { Skeleton } from \"@/shared/ui/feedback/Skeleton\";\r\n\r\nexport interface StatTileProps {\r\n  /** The uppercase label. */\r\n  k: ReactNode;\r\n  /** The big value. */\r\n  v: ReactNode;\r\n  /** Optional sub-text under the value. */\r\n  sub?: ReactNode;\r\n  /** Value colour tone. */\r\n  tone?: \"success\" | \"accent\" | \"danger\";\r\n  /** An explicit value style (e.g. a dynamic colour) — overrides `tone`. */\r\n  vStyle?: CSSProperties;\r\n  /** Render the value (and sub) as shimmer placeholders while the metric's source loads (#2234). */\r\n  loading?: boolean;\r\n  className?: string;\r\n}\r\n\r\n/** StatTile — the one metric tile: a card with an uppercase label (`k`), a big value (`v`), and an\r\n *  optional `sub`. Replaces the `.card` + `.k`/`.v`/`.sub` idiom whose styling was re-declared per\r\n *  feature (`.summary`, `.hist-summary`, …); the value tone maps to a colour. */\r\nexport function StatTile({ k, v, sub, tone, vStyle, loading, className }: StatTileProps) {\r\n  return (\r\n    <Card className={\"stat-tile\" + (className ? ` ${className}` : \"\")}>\r\n      <div className=\"k\">{k}</div>\r\n      {loading\r\n        ? <div className=\"v\"><Skeleton h={20} w={56} radius={5} style={{ margin: \"3px 0\" }} /></div>\r\n        : <div className={\"v\" + (tone ? ` ${tone}` : \"\")} style={vStyle}>{v}</div>}\r\n      {sub != null && (\r\n        <div className=\"sub\">{loading ? <Skeleton h={9} w={72} radius={4} /> : sub}</div>\r\n      )}\r\n    </Card>\r\n  );\r\n}\r\n",
   "composes": [
@@ -54,5 +53,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/data"
 }

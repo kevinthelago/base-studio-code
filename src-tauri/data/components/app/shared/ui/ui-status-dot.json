@@ -3,7 +3,6 @@
   "name": "StatusDot",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/feedback",
   "provides": "@/shared/ui/feedback/StatusDot",
   "srcText": "// StatusDot, AS GRAPH SOURCE (#3660, epic #3604) — a pure leaf shared/ui primitive authored as DATA. Its\n// `provides: \"@/shared/ui/feedback/StatusDot\"` makes the runtime loader vendor THIS source wherever a graph component imports\n// that specifier, so the primitive renders from the graph, not bundled code (registered code is the\n// fallback when no component provides it). Transcribed verbatim from the live .tsx; deps (Skeleton/Card/\n// math) stay registered code — a fresh compile is safe because the primitive holds no context or state.\n// StatusDot (#1777) — one small colored status dot, replacing the hand-prepended `●` glyph and the\r\n// ad-hoc inline circle <span>s scattered across the app. Defaults to `currentColor` so dropping it\r\n// into a `.tag`/`.tag.green`/etc. inherits that element's color exactly (the `●` glyph did the same),\r\n// or pass a semantic `state` to use the shared `--state-*` tokens, or an explicit `color`.\r\nimport type { CSSProperties } from \"react\";\r\n\r\n/** Canonical activity states → their design token (tokens.css `--state-*`). */\r\nexport type DotState = \"run\" | \"wait\" | \"idle\" | \"stopped\";\r\n\r\nconst STATE_COLOR: Record<DotState, string> = {\r\n  run: \"var(--state-run)\",\r\n  wait: \"var(--state-wait)\",\r\n  idle: \"var(--state-idle)\",\r\n  stopped: \"var(--state-stopped)\",\r\n};\r\n\r\nexport interface StatusDotProps {\r\n  /** Semantic state → its `--state-*` token. Ignored when `color` is set. */\r\n  state?: DotState;\r\n  /** Explicit color. Defaults to `currentColor` (inherits the surrounding tag/text color). */\r\n  color?: string;\r\n  /** Diameter in px (default 6). */\r\n  size?: number;\r\n  /** Pulse animation — a live \"running\" indicator. */\r\n  pulse?: boolean;\r\n  /** Native tooltip; when set, the dot is exposed to AT, otherwise it's `aria-hidden`. */\r\n  title?: string;\r\n  style?: CSSProperties;\r\n}\r\n\r\nexport function StatusDot({ state, color, size = 6, pulse = false, title, style }: StatusDotProps) {\r\n  const background = color ?? (state ? STATE_COLOR[state] : \"currentColor\");\r\n  return (\r\n    <span\r\n      {...(title ? { title } : { \"aria-hidden\": true })}\r\n      style={{\r\n        display: \"inline-block\",\r\n        width: size,\r\n        height: size,\r\n        flex: `0 0 ${size}px`,\r\n        borderRadius: \"50%\",\r\n        background,\r\n        ...(pulse ? { animation: \"pulse 1.4s ease-in-out infinite\" } : {}),\r\n        ...style,\r\n      }}\r\n    />\r\n  );\r\n}\r\n",
   "composes": [],
@@ -45,5 +44,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/feedback"
 }

@@ -3,12 +3,12 @@
   "name": "GitHubPageModeStrip",
   "kitId": "base-studio-code",
   "role": "composite",
-  "group": "features/github",
   "srcText": "// GitHub → page-mode strip, AS GRAPH SOURCE (#3650, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the github lib/hook surface + planner board via the github\n// graph-platform, and the sibling views as @/components/* graph records). Behaviour runs here.\n// The GitHub page-mode strip (Summary · Projects · Repositories) shared across the\r\n// GitHub screen views (#1644 — extracted from GitHubSummary).\r\n\r\nimport { useAppStore } from \"@/store\";\r\nimport { Row } from \"@/shared/ui/layout/Row\";\r\nimport { Spacer } from \"@/shared/ui/layout/Spacer\";\r\nimport { Text } from \"@/shared/ui/typography/Text\";\r\n\r\nexport function GitHubPageModeStrip() {\r\n  const { githubPageMode, setGithubPageMode, githubUser } = useAppStore();\r\n  const modes = [\r\n    { k: \"summary\",  label: \"Summary\",      hint: \"all repos · analytics\" },\r\n    { k: \"projects\", label: \"Projects\",     hint: \"portfolio · analytics\" },\r\n    { k: \"repos\",    label: \"Repositories\", hint: \"progress · changes · CI\" },\r\n  ] as const;\r\n  return (\r\n    <Row className=\"mono\" gap={6} style={{\r\n      padding: \"0 24px\",\r\n      borderBottom: \"1px solid var(--border-soft)\",\r\n      background: \"var(--bg-panel)\",\r\n      fontSize: 11.5,\r\n      height: 34, flex: \"0 0 34px\",\r\n    }}>\r\n      {modes.map(m => {\r\n        const on = m.k === githubPageMode;\r\n        return (\r\n          <Row key={m.k} onClick={() => setGithubPageMode(m.k)} gap={8} style={{\r\n            padding: \"0 12px\", height: 34,\r\n            borderBottom: \"2px solid \" + (on ? \"var(--accent)\" : \"transparent\"),\r\n            color: on ? \"var(--accent)\" : \"var(--fg-muted)\",\r\n            cursor: \"pointer\",\r\n          }}>\r\n            {m.label}\r\n            {on && <Text as=\"span\" size={10} tone=\"dim\">· {m.hint}</Text>}\r\n          </Row>\r\n        );\r\n      })}\r\n      <Spacer />\r\n      <Row className=\"mono\" gap={8} style={{ fontSize: 10, color: \"var(--fg-dim)\" }}>\r\n        <Text as=\"span\" tone=\"success\">● connected</Text>\r\n        {githubUser && <><Text>·</Text><Text>{githubUser.login}</Text></>}\r\n      </Row>\r\n    </Row>\r\n  );\r\n}\r\n",
   "composes": [
     "Row",
     "Spacer",
     "Text"
   ],
-  "src": "src/features/github/GitHubPageModeStrip.tsx"
+  "src": "src/features/github/GitHubPageModeStrip.tsx",
+  "folder": "features/github"
 }

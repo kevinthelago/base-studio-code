@@ -688,7 +688,7 @@ export function DesignsWorkbench() {
                 {/* group indicator (#3048) — the component's purpose partition, read inline on the
                     existing role line. Truncates to one line (#3699) — a long group (features/planner/fleet)
                     must not wrap; the ×used count is kept, never squeezed off. */}
-                <Text size={10} tone="dim" title={c.group ? `${c.role} · ${c.group}` : c.role} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.role}{c.group ? <Text as="span" tone="muted"> · {c.group}</Text> : ""}</Text><Text mono size="xxs" tone="muted" style={{ flexShrink: 0, marginLeft: 6 }}>×{c.used}</Text>
+                <Text size={10} tone="dim" title={c.folder ? `${c.role} · ${c.folder}` : c.role} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.role}{c.folder ? <Text as="span" tone="muted"> · {c.folder}</Text> : ""}</Text><Text mono size="xxs" tone="muted" style={{ flexShrink: 0, marginLeft: 6 }}>×{c.used}</Text>
               </Box>
             </Box>
           );
@@ -755,8 +755,8 @@ function Inspector(p: InspProps) {
               <Text weight={600} size={16} style={{ letterSpacing: "-.01em" }}>{sel.name}</Text>
               <Text size={11.5} tone="muted" as="div" style={{ marginTop: 2 }}>{sel.role} · {p.kitName}</Text>
               {/* Folder breadcrumb (#3589) — WHERE this component lives in the kit's project tree. */}
-              {sel.group && (
-                <Text mono size={10} tone="dim" as="div" title="folder" style={{ marginTop: 1 }}>{sel.group}</Text>
+              {sel.folder && (
+                <Text mono size={10} tone="dim" as="div" title="folder" style={{ marginTop: 1 }}>{sel.folder}</Text>
               )}
             </Box>
             {/* THEME switcher (#2488/#2545) — a header-level control beside the component name (#3085):

@@ -3,7 +3,6 @@
   "name": "GitHubCIHealth",
   "kitId": "base-studio-code",
   "role": "composite",
-  "group": "features/github",
   "srcText": "// GitHub → CI health card, AS GRAPH SOURCE (#3650, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the github lib/hook surface + planner board via the github\n// graph-platform, and the sibling views as @/components/* graph records). Behaviour runs here.\n// CI health card — pass/fail matrix over the last 7 days per repo (#1644).\r\n\r\nimport { Text } from \"@/shared/ui/typography/Text\";\r\nimport { Row } from \"@/shared/ui/layout/Row\";\r\nimport { Stack } from \"@/shared/ui/layout/Stack\";\r\nimport { Grid } from \"@/shared/ui/layout/Grid\";\r\nimport { Box } from \"@/shared/ui/layout/Box\";\r\nimport { Card } from \"@/shared/ui/data/Card\";\r\nimport type { CiRow } from \"@/features/github/lib/githubSummary\";\r\nimport { CardEmpty, SkeletonRows } from \"@/shared/ui/feedback/CardStates\";\r\n\r\nexport function CIHealthCard({ matrix, loading }: {\r\n  matrix: CiRow[];\r\n  loading: boolean;\r\n}) {\r\n  if (loading && matrix.length === 0) {\r\n    return (\r\n      <Card style={{ padding: \"14px 16px\" }} title=\"CI health\" hint=\"last 7 days · all branches\" headMb={10}>\r\n        <SkeletonRows rows={4} h={14} />\r\n      </Card>\r\n    );\r\n  }\r\n  if (matrix.length === 0) {\r\n    return (\r\n      <Card style={{ padding: \"14px 16px\" }} title=\"CI health\" hint=\"last 7 days · all branches\" headMb={10}>\r\n        <CardEmpty icon=\"◉\" title=\"No CI runs found\" hint=\"Workflow runs across your repos surface here.\" />\r\n      </Card>\r\n    );\r\n  }\r\n  return (\r\n    <Card style={{ padding: \"14px 16px\" }} title=\"CI health\" hint=\"last 7 days · all branches\" headMb={10}>\r\n      <Stack gap={6}>\r\n        {matrix.map(({ name, days }) => (\r\n          <Grid key={name} cols=\"80px 1fr 28px\" gap={8} align=\"center\">\r\n            <Text mono size={10.5} tone=\"muted\" style={{ whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\" }}>{name}</Text>\r\n            <Row gap={4} align=\"stretch\">\r\n              {days.map((d, i) => (\r\n                <Box key={i} bg={d === null ? \"var(--bg-elev2)\" : d ? \"var(--success)\" : \"var(--danger)\"} radius={3} style={{\r\n                  flex: 1, height: 14,\r\n                  opacity: d === null ? 0.4 : 0.85,\r\n                }} />\r\n              ))}\r\n            </Row>\r\n            <Text mono size={10.5} tone=\"dim\" style={{ textAlign: \"right\" }}>\r\n              {days.filter(d => d === true).length}/{days.filter(d => d !== null).length}\r\n            </Text>\r\n          </Grid>\r\n        ))}\r\n      </Stack>\r\n    </Card>\r\n  );\r\n}\r\n",
   "composes": [
     "Box",
@@ -14,5 +13,6 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/github/GitHubCIHealth.tsx"
+  "src": "src/features/github/GitHubCIHealth.tsx",
+  "folder": "features/github"
 }

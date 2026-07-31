@@ -3,7 +3,6 @@
   "name": "RailSection",
   "kitId": "base-studio-code",
   "role": "layout",
-  "group": "shared/ui/layouts",
   "provides": "@/shared/ui/layouts/RailSection",
   "srcText": "// RailSection, AS GRAPH SOURCE (#3684, epic #3604) — a shared/ui overlay/layout container authored as DATA.\n// `provides: \"@/shared/ui/layouts/RailSection\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). CTX-free, so a fresh compile has no identity split. Transcribed verbatim.\n// RailSection (#2797) — one collapsible section in a left rail: a RailGroupHeader (label · count ·\r\n// disclosure caret) over its rows, hidden when collapsed. The shared building block that makes every\r\n// graph rail group the same way (Algorithms by kind, Teams by department, …). Controlled — the caller\r\n// owns the open state (see the `useRailSections` hook), so it survives re-renders + search filtering.\r\nimport type { ReactNode } from \"react\";\r\nimport { Box } from \"@/shared/ui/layout/Box\";\r\nimport { RailGroupHeader } from \"@/shared/ui/layouts/RailGroupHeader\";\r\n\r\nexport interface RailSectionProps {\r\n  /** The section label (uppercase mono micro-label). */\r\n  label: ReactNode;\r\n  /** Optional right-aligned member count. */\r\n  count?: ReactNode;\r\n  /** Whether the section is expanded. */\r\n  open: boolean;\r\n  /** Toggle handler. */\r\n  onToggle: () => void;\r\n  /** Optional right-aligned action beside the count (e.g. Skills' \"＋ New group\"). Renders INSIDE the\r\n   *  header toggle button, so it must stop propagation on click and be a non-`<button>` element. */\r\n  action?: ReactNode;\r\n  /** The section's rows (rendered only when `open`). */\r\n  children: ReactNode;\r\n}\r\n\r\n/** A collapsible left-rail section. See {@link RailSectionProps}. */\r\nexport function RailSection({ label, count, open, onToggle, action, children }: RailSectionProps) {\r\n  return (\r\n    <Box style={{ marginBottom: 4 }}>\r\n      <RailGroupHeader collapsible open={open} onToggle={onToggle} count={count} action={action}>{label}</RailGroupHeader>\r\n      {open && <Box>{children}</Box>}\r\n    </Box>\r\n  );\r\n}\r\n",
   "composes": [
@@ -48,5 +47,6 @@
       "req": true,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/layouts"
 }

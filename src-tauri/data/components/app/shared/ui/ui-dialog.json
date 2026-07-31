@@ -3,7 +3,6 @@
   "name": "Dialog",
   "kitId": "base-studio-code",
   "role": "layout",
-  "group": "shared/ui/overlay",
   "provides": "@/shared/ui/overlay/Dialog",
   "srcText": "// Dialog, AS GRAPH SOURCE (#3684, epic #3604) — a shared/ui overlay/layout container authored as DATA.\n// `provides: \"@/shared/ui/overlay/Dialog\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). CTX-free, so a fresh compile has no identity split. Transcribed verbatim.\nimport { ModalScrim } from \"@/shared/ui/overlay/ModalScrim\";\r\n\r\ninterface DialogProps {\r\n  title: string;\r\n  children: React.ReactNode;\r\n  actions: React.ReactNode;\r\n  onDismiss: () => void;\r\n  danger?: boolean;\r\n}\r\n\r\nexport function Dialog({ title, children, actions, onDismiss, danger }: DialogProps) {\r\n  return (\r\n    <ModalScrim onDismiss={onDismiss}>\r\n      <div\r\n        className=\"card\"\r\n        style={{\r\n          minWidth: 360, maxWidth: 500, padding: \"22px 24px\",\r\n          boxShadow: \"0 8px 32px oklch(0 0 0 / 0.5)\",\r\n          borderColor: danger ? \"var(--danger)\" : undefined,\r\n        }}\r\n      >\r\n        <h3 className=\"mono\" style={{\r\n          margin: \"0 0 10px\", fontSize: 14, fontWeight: 600,\r\n          color: danger ? \"var(--danger)\" : \"var(--fg)\",\r\n        }}>\r\n          {title}\r\n        </h3>\r\n        <div style={{ color: \"var(--fg-muted)\", fontSize: 12, lineHeight: 1.6, marginBottom: 20 }}>\r\n          {children}\r\n        </div>\r\n        <div style={{ display: \"flex\", gap: 8, justifyContent: \"flex-end\" }}>\r\n          {actions}\r\n        </div>\r\n      </div>\r\n    </ModalScrim>\r\n  );\r\n}\r\n",
   "composes": [
@@ -41,5 +40,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/overlay"
 }

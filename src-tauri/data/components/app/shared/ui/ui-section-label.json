@@ -3,7 +3,6 @@
   "name": "SectionLabel",
   "kitId": "base-studio-code",
   "role": "layout",
-  "group": "shared/ui/layout",
   "provides": "@/shared/ui/layout/SectionLabel",
   "srcText": "// SectionLabel, AS GRAPH SOURCE (#3680, epic #3604) — a structural shared/ui layout primitive authored as DATA.\n// `provides: \"@/shared/ui/layout/SectionLabel\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\nimport type { CSSProperties, ReactNode } from \"react\";\r\n\r\nexport interface SectionLabelProps {\r\n  children: ReactNode;\r\n  /** `md` (default): 10px / .06em — the common section/kv label. `sm`: 9px / .08em — the tighter\r\n   *  caption used in dense KPI/analytics tiles. A raw px number is also legal (dense .08em tracking) —\r\n   *  e.g. `size={9.5}`, the legacy `.ulabel` size (#2420). */\r\n  size?: \"sm\" | \"md\" | number;\r\n  /** `dim` (default, var(--fg-dim)) or `muted` (var(--fg-muted)). */\r\n  tone?: \"dim\" | \"muted\";\r\n  /** Optional right-aligned slot (#2420) — renders a space-between label row (label · right), the\r\n   *  repeated \"section header with a trailing note/control\" idiom. `style` then styles the ROW. */\r\n  right?: ReactNode;\r\n  className?: string;\r\n  style?: CSSProperties;\r\n}\r\n\r\n/** The uppercase mono micro-label — `fontFamily:var(--mono)` + `textTransform:uppercase` +\r\n *  letter-spacing + a dim/muted color — hand-rolled ~75× across the app. Collapses the four\r\n *  boilerplate style props into one primitive while keeping per-site spacing via `style` (#1837). */\r\nexport function SectionLabel({ children, size = \"md\", tone = \"dim\", right, className, style }: SectionLabelProps) {\r\n  const label: CSSProperties = {\r\n    fontSize: typeof size === \"number\" ? size : size === \"sm\" ? 9 : 10,\r\n    letterSpacing: size === \"md\" ? \".06em\" : \".08em\",\r\n    textTransform: \"uppercase\",\r\n    color: tone === \"muted\" ? \"var(--fg-muted)\" : \"var(--fg-dim)\",\r\n  };\r\n  if (right == null) {\r\n    return (\r\n      <div className={`${className ?? \"\"} mono`} style={{ ...label, ...style }}>\r\n        {children}\r\n      </div>\r\n    );\r\n  }\r\n  return (\r\n    <div className={className} style={{ display: \"flex\", alignItems: \"center\", justifyContent: \"space-between\", gap: 8, ...style }}>\r\n      <div className=\"mono\" style={label}>{children}</div>\r\n      {right}\r\n    </div>\r\n  );\r\n}\r\n",
   "composes": [],
@@ -45,5 +44,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/layout"
 }

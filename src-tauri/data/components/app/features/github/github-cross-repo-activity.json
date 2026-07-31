@@ -3,8 +3,8 @@
   "name": "GitHubCrossRepoActivity",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "features/github",
   "srcText": "// GitHub → cross-repo activity card, AS GRAPH SOURCE (#3650, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the github lib/hook surface + planner board via the github\n// graph-platform, and the sibling views as @/components/* graph records). Behaviour runs here.\n// Cross-repo activity feed — recent mapped events across all connected repos (#1644).\r\n// A thin wrapper over the shared <ActivityFeed>; only the hint, filter, and column width differ.\r\n\r\nimport { ActivityFeed } from \"@/shared/ui/data/ActivityFeed\";\r\nimport { EVENT_TONE, type CrossRepoEvent } from \"@/features/github/lib/githubSummary\";\r\n\r\nexport function CrossRepoActivity({ events, loading }: {\r\n  events: CrossRepoEvent[];\r\n  loading: boolean;\r\n}) {\r\n  return (\r\n    <ActivityFeed\r\n      items={events}\r\n      hint=\"across all connected repos\"\r\n      loading={loading}\r\n      tone={EVENT_TONE}\r\n      actionWidth={70}\r\n      right={\r\n        // eslint-disable-next-line no-restricted-syntax -- uncontrolled decorative filter select (no value/onChange) in a toolbar right slot; SelectField requires value/onChange + would change layout\r\n        <select className=\"input\" style={{ height: 24, width: 100, fontSize: 10.5 }}>\r\n          <option>all events</option><option>PRs only</option><option>commits</option>\r\n        </select>\r\n      }\r\n    />\r\n  );\r\n}\r\n",
   "composes": [],
-  "src": "src/features/github/GitHubCrossRepoActivity.tsx"
+  "src": "src/features/github/GitHubCrossRepoActivity.tsx",
+  "folder": "features/github"
 }

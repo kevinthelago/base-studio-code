@@ -3,7 +3,6 @@
   "name": "FillBar",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/data",
   "provides": "@/shared/ui/data/FillBar",
   "srcText": "// FillBar, AS GRAPH SOURCE (#3660, epic #3604) — a pure leaf shared/ui primitive authored as DATA. Its\n// `provides: \"@/shared/ui/data/FillBar\"` makes the runtime loader vendor THIS source wherever a graph component imports\n// that specifier, so the primitive renders from the graph, not bundled code (registered code is the\n// fallback when no component provides it). Transcribed verbatim from the live .tsx; deps (Skeleton/Card/\n// math) stay registered code — a fresh compile is safe because the primitive holds no context or state.\nimport type { CSSProperties } from \"react\";\r\nimport { Skeleton } from \"@/shared/ui/feedback/Skeleton\";\r\nimport { clamp } from \"@/shared/lib/core/math\";\r\n\r\nexport interface FillBarProps {\r\n  /** Fill fraction 0..1 (clamped). */\r\n  value: number;\r\n  /** Render LOADING (#2302): the track shimmers indeterminately instead of a fixed fill. */\r\n  loading?: boolean;\r\n  /** Fill color. Default `var(--accent)`. */\r\n  color?: string;\r\n  /** Track (background) color. Default `var(--bg-elev2)`. */\r\n  track?: string;\r\n  /** Bar height in px. Default 8. */\r\n  height?: number;\r\n  /** Pill radius (99) when true (default), square when false. */\r\n  rounded?: boolean;\r\n  className?: string;\r\n  /** Applied to the track element (e.g. flex sizing in a multi-segment row). */\r\n  style?: CSSProperties;\r\n}\r\n\r\n/** A horizontal track with an inner width-driven fill — the progress/allocation bar hand-rolled\r\n *  across the analytics tabs, contributor lists, and planner deploy/scan views (#1838). Compose\r\n *  several side-by-side for a multi-segment bar. */\r\nexport function FillBar({ value, loading, color = \"var(--accent)\", track = \"var(--bg-elev2)\", height = 8, rounded = true, className, style }: FillBarProps) {\r\n  const pct = clamp(value, 0, 1) * 100;\r\n  const radius = rounded ? 99 : 0;\r\n  if (loading) return <Skeleton w=\"100%\" h={height} radius={radius} style={{ ...style }} />;\r\n  return (\r\n    <div className={className} style={{ height, borderRadius: radius, background: track, overflow: \"hidden\", ...style }}>\r\n      <div style={{ height: \"100%\", width: `${pct}%`, background: color, borderRadius: radius }} />\r\n    </div>\r\n  );\r\n}\r\n",
   "composes": [
@@ -59,5 +58,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/data"
 }

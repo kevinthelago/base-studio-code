@@ -3,7 +3,6 @@
   "name": "Row",
   "kitId": "base-studio-code",
   "role": "layout",
-  "group": "shared/ui/layout",
   "provides": "@/shared/ui/layout/Row",
   "srcText": "// Row, AS GRAPH SOURCE (#3680, epic #3604) — a structural shared/ui layout primitive authored as DATA.\n// `provides: \"@/shared/ui/layout/Row\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\n// Row — a horizontal flex row with a gap (#2056). The one primitive for the ~150 hand-rolled\r\n// `<div style={{ display: \"flex\", alignItems: \"center\", gap: N }}>` divs across the app.\r\n//\r\n// Cross-axis default is `center` (the dominant intent for a row of controls/labels) — pass\r\n// `align=\"baseline\"`/`\"start\"`/… for the others, or `align=\"stretch\"` for the bare `flex + gap`\r\n// case that set no `alignItems`. Pair with <Spacer/> to push trailing items to the end. Any extra\r\n// div prop passes through; a `style` override wins last.\r\n\r\nimport type { ReactNode, CSSProperties, ComponentPropsWithoutRef } from \"react\";\r\nimport { flexStyle, pad, type Space, type Align, type Justify } from \"@/shared/ui/layout/space\";\r\n\r\nexport interface RowProps extends Omit<ComponentPropsWithoutRef<\"div\">, \"children\"> {\r\n  children?: ReactNode;\r\n  /** Gap between children — a scale rung (\"sm\"/\"md\"/…) or raw px. */\r\n  gap?: Space;\r\n  /** Cross-axis (vertical) alignment. Default = `center`. */\r\n  align?: Align;\r\n  /** Main-axis (horizontal) distribution. */\r\n  justify?: Justify;\r\n  /** Allow items to wrap onto multiple lines. */\r\n  wrap?: boolean;\r\n  /** Inner padding — a single `Space` (all sides) or `[block, inline]`. */\r\n  pad?: Space | [Space, Space];\r\n  /** Render as `inline-flex` instead of `flex`. */\r\n  inline?: boolean;\r\n  style?: CSSProperties;\r\n}\r\n\r\nexport function Row({ children, gap, align = \"center\", justify, wrap, pad: p, inline, style, ...rest }: RowProps) {\r\n  return (\r\n    <div\r\n      style={{\r\n        display: inline ? \"inline-flex\" : \"flex\",\r\n        ...flexStyle({ gap, align, justify, wrap }),\r\n        ...(p != null ? { padding: pad(p) } : {}),\r\n        ...style,\r\n      }}\r\n      {...rest}\r\n    >\r\n      {children}\r\n    </div>\r\n  );\r\n}\r\n",
   "composes": [],
@@ -57,5 +56,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/layout"
 }

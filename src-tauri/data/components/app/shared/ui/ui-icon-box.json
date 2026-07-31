@@ -3,9 +3,9 @@
   "name": "IconBox",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/data",
   "provides": "@/shared/ui/data/IconBox",
   "srcText": "// IconBox, AS GRAPH SOURCE (#3670, epic #3604) — a pure leaf shared/ui primitive authored as DATA. Its\n// `provides: \"@/shared/ui/data/IconBox\"` makes the runtime loader vendor THIS source wherever a graph component imports\n// that specifier (registered code is the fallback). Transcribed verbatim; deps stay registered code.\n// IconBox — the centered fixed-size icon/glyph square repeated across the planner modals + cards\r\n// (#1882). Dedups the width/height/flex/center/border-radius boilerplate; size, radius, background,\r\n// color, and the optional glyph styling (fontSize / fontWeight / border) stay props. Renders `mono`\r\n// so a letter/glyph child sits right (an <Icon> component child is unaffected).\r\nimport type { ReactNode, CSSProperties } from \"react\";\r\n\r\nexport function IconBox({\r\n  size = 30, radius = 7, background, color, fontSize, fontWeight = 700, border, className, style, children,\r\n}: {\r\n  size?: number;\r\n  radius?: number;\r\n  background?: string;\r\n  color?: string;\r\n  fontSize?: number;\r\n  fontWeight?: number;\r\n  /** A full `border` shorthand (e.g. `1px solid …`). */\r\n  border?: string;\r\n  className?: string;\r\n  style?: CSSProperties;\r\n  children: ReactNode;\r\n}) {\r\n  return (\r\n    <span\r\n      className={className}\r\n      style={{\r\n        width: size, height: size, flex: `0 0 ${size}px`,\r\n        display: \"flex\", alignItems: \"center\", justifyContent: \"center\",\r\n        borderRadius: radius, fontFamily: \"var(--mono)\", fontWeight,\r\n        ...(fontSize != null ? { fontSize } : {}),\r\n        ...(background != null ? { background } : {}),\r\n        ...(color != null ? { color } : {}),\r\n        ...(border != null ? { border } : {}),\r\n        ...style,\r\n      }}\r\n    >\r\n      {children}\r\n    </span>\r\n  );\r\n}\r\n",
   "composes": [],
-  "src": "src/shared/ui/data/IconBox.tsx"
+  "src": "src/shared/ui/data/IconBox.tsx",
+  "folder": "shared/ui/data"
 }

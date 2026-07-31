@@ -143,7 +143,7 @@ your edit. Read a record's current rev with `bsc ui log <id>`; --if-version take
 An optional `group` field is the component's FOLDER PATH within the kit — a nested, `/`-delimited path
 (`shared/ui/controls`, `features/github`) that organizes the kit like a completed project's folders
 (#3579). Orthogonal to `role` (the arch tier), organizational only (`composes` still resolves across the
-whole kit). `bsc ui regroup` re-derives it from `src` for the whole store; the harvest seeds it too.",
+whole kit). `bsc ui refolder` re-derives it from `src` for the whole store; the harvest seeds it too.",
     },
     CmdDoc {
         name: "remove",
@@ -469,11 +469,11 @@ the `bsc ui set` JSX syntax gate (#2928). Errors when the component or the point
 ui-scope MUTATION (#2470).",
     },
     CmdDoc {
-        name: "regroup",
+        name: "refolder",
         summary: "re-derive every component's `group` as a folder path from its `src` (#3579)",
         usage: "\
 USAGE:
-  bsc ui regroup [--kit <id>] [--dry-run] [--pretty]
+  bsc ui refolder [--kit <id>] [--dry-run] [--pretty]    # (`regroup` is a deprecated alias)
 
 Re-derives each stored component's `group` as a nested, `/`-delimited FOLDER PATH from its `src`
 (`src/shared/ui/controls/Button.tsx` → `shared/ui/controls`; a leading `src/` root is stripped, the
@@ -630,12 +630,15 @@ const COMPONENT_SPEC: CliSpec = CliSpec {
     dir_segment: "components",
     tagline: TAGLINE,
     commands: COMPONENT_COMMANDS,
-    meta_fields: &["id", "name", "kitId", "role", "group", "shapes"],
+    meta_fields: &["id", "name", "kitId", "role", "folder", "shapes"],
     // #4072 — exactly what the Design Studio's composition graph renders: the node card
     // (name/role/group/×used) plus `composes`, which `buildComposesEdges` turns into the edges.
     // Deliberately NOT `srcText` (77.6% of the full payload) / `tests` / `history` / `props`: the
     // graph reads none of them, and the page was blocking up to 8s fetching them.
-    graph_fields: &["id", "name", "kitId", "role", "group", "used", "composes"],
+    graph_fields: &["id", "name", "kitId", "role", "folder", "used", "composes"],
+    // #4107 slice B: `group` -> `folder`. 351 stored records predate the rename and there is no
+    // migration pass, so every projection reads the legacy key when the current one is absent.
+    field_aliases: &[("folder", "group")],
 };
 
 /// The kit collection's knobs. Lean `list` projects id/name/tech/style/stack.
@@ -647,6 +650,7 @@ const KIT_SPEC: CliSpec = CliSpec {
     commands: KIT_COMMANDS,
     meta_fields: &["id", "name", "tech", "style", "stack"],
     graph_fields: &[],
+    field_aliases: &[],
 };
 
 /// A non-blocking `kit set` advisory (#3040): the Design Studio places a kit in its rail by two axes —
@@ -692,7 +696,7 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("regroup") | Some("import") | Some("suppress") | Some("unsuppress")
+        Some("set") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("regroup") | Some("import") | Some("suppress") | Some("unsuppress")
     ) && next.map(String::as_str) != Some("help")
 }
 
@@ -957,8 +961,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `regroup` (#3579) re-derives every stored component's `group` as a nested folder path from its
         // `src` — a ui-scope MUTATION (gated above), so a kit organizes like a completed project's
         // folders. `regroup help` prints the doc; the scope gate already refused a read-scoped session.
-        Some("regroup") if args.get(1).map(String::as_str) != Some("help") => cmd_regroup(&args[1..]),
-        Some("regroup") => {
+        // `regroup` stays a DEPRECATED ALIAS: the verb is named in prose the designer/librarian may
+        // have memorised, and an unknown-command error is a worse migration than one extra match arm.
+        Some("refolder" | "regroup") if args.get(1).map(String::as_str) != Some("help") => cmd_refolder(&args[1..]),
+        Some("refolder" | "regroup") => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "regroup"));
             Ok(())
         }
@@ -1547,7 +1553,20 @@ fn cmd_merge(args: &[String]) -> Result<(), String> {
 /// with no usable `src` is left untouched. `--kit` scopes the pass to one kit; `--dry-run` reports the
 /// moves without writing. Prints `{ scanned, changed: [{ id, from, to }], applied }`. A ui-scope
 /// mutation, gated in [`run`].
-fn cmd_regroup(args: &[String]) -> Result<(), String> {
+/// A record's FOLDER, accepting the legacy key (#4107 slice B).
+///
+/// The store holds records written under `group`, and the component seed dir is skipped by
+/// `ensure_seeded`, so there is no config-mirror pass to migrate them. Every READ therefore accepts
+/// both names while every WRITE emits only `folder`: a record migrates the first time it is rewritten,
+/// and `bsc ui refolder` does the whole store in one pass. Nothing needs migrating before this ships.
+pub(crate) fn record_folder(rec: &serde_json::Value) -> Option<&str> {
+    rec.get("folder")
+        .or_else(|| rec.get("group"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty())
+}
+
+fn cmd_refolder(args: &[String]) -> Result<(), String> {
     let (mut dir, mut kit, mut dry, mut pretty) = (None::<String>, None::<String>, false, false);
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -1579,19 +1598,22 @@ fn cmd_regroup(args: &[String]) -> Result<(), String> {
         }
         scanned += 1;
         let src = rec.get("src").and_then(serde_json::Value::as_str).unwrap_or_default();
-        let Some(new_group) = crate::group_from_src(src) else { continue };
-        let old = rec.get("group").and_then(serde_json::Value::as_str).unwrap_or_default();
-        if old == new_group {
-            continue;
+        let Some(new_folder) = crate::folder_from_src(src) else { continue };
+        let old = record_folder(&rec).unwrap_or_default().to_string();
+        if old == new_folder && rec.get("group").is_none() {
+            continue;   // already correct AND already migrated off the legacy key
         }
         let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
-        changed.push(serde_json::json!({ "id": id, "from": old, "to": new_group }));
-        rec["group"] = serde_json::Value::String(new_group);
+        changed.push(serde_json::json!({ "id": id, "from": old, "to": new_folder }));
+        rec["folder"] = serde_json::Value::String(new_folder);
+        // Drop the legacy key so a rewritten record carries ONE name for its folder — otherwise a stale
+        // `group` lingers beside the new `folder` and the two can drift.
+        if let Some(o) = rec.as_object_mut() { o.remove("group"); }
         updated.push(rec);
     }
     let applied = if !dry && !updated.is_empty() {
         let writer = crate::record::resolve_writer(None);
-        set_stamped(&store, &updated, None, &writer, "component", Some("regroup: folder-path group from src"))?;
+        set_stamped(&store, &updated, None, &writer, "component", Some("refolder: folder path from src"))?;
         true
     } else {
         false
@@ -1624,10 +1646,12 @@ fn cmd_export(args: &[String]) -> Result<(), String> {
         let rec: serde_json::Value =
             serde_json::from_str(&raw).map_err(|e| format!("a stored component is not valid JSON: {e}"))?;
         let id = rec.get("id").and_then(serde_json::Value::as_str).ok_or("a stored component has no `id`")?;
-        // `group` is a `/`-delimited FOLDER PATH (#3579) → nest the file, so the tree mirrors the project.
-        let group = rec.get("group").and_then(serde_json::Value::as_str).unwrap_or("");
+        // `folder` is a `/`-delimited FOLDER PATH (#3579) → nest the file, so the tree mirrors the
+        // project. Read through `record_folder` so a record still carrying the legacy `group` key
+        // exports into the same tree rather than silently flattening to the root.
+        let folder = record_folder(&rec).unwrap_or("");
         let mut path = out_root.to_path_buf();
-        for seg in group.split('/').filter(|s| !s.is_empty()) {
+        for seg in folder.split('/').filter(|s| !s.is_empty()) {
             path.push(seg);
         }
         std::fs::create_dir_all(&path).map_err(|e| format!("cannot create {}: {e}", path.display()))?;
@@ -1911,7 +1935,7 @@ fn shape_index(raw: &[String], only: Option<&str>) -> serde_json::Value {
             let comps: Vec<serde_json::Value> = raw
                 .iter()
                 .filter(|j| json_has_shape(j, s))
-                .map(|j| bsc_json_store::cli::lean_meta(j, COMPONENT_SPEC.meta_fields))
+                .map(|j| bsc_json_store::cli::lean_meta_aliased(j, COMPONENT_SPEC.meta_fields, COMPONENT_SPEC.field_aliases))
                 .collect();
             serde_json::json!({ "shape": s, "desc": d, "components": comps })
         })
@@ -1975,7 +1999,7 @@ fn cmd_list_shape(args: &[String]) -> Result<(), String> {
     let out: Vec<serde_json::Value> = if full {
         selected.iter().filter_map(|j| serde_json::from_str(j).ok()).collect()
     } else {
-        selected.iter().map(|j| bsc_json_store::cli::lean_meta(j, COMPONENT_SPEC.meta_fields)).collect()
+        selected.iter().map(|j| bsc_json_store::cli::lean_meta_aliased(j, COMPONENT_SPEC.meta_fields, COMPONENT_SPEC.field_aliases)).collect()
     };
     let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
     println!("{}", json.map_err(|e| e.to_string())?);
@@ -3716,8 +3740,8 @@ mod tests {
     fn specs_are_the_two_collections_with_the_right_lean_fields() {
         assert_eq!(COMPONENT_SPEC.noun, "component");
         assert_eq!(COMPONENT_SPEC.dir_segment, "components");
-        // `group` (#3048) + `shapes` (#2475) ride the lean list projection so `list`/`list --shape` expose the axes.
-        assert_eq!(COMPONENT_SPEC.meta_fields, &["id", "name", "kitId", "role", "group", "shapes"]);
+        // `folder` (#3048/#4107) + `shapes` (#2475) ride the lean list projection so `list`/`list --shape` expose the axes.
+        assert_eq!(COMPONENT_SPEC.meta_fields, &["id", "name", "kitId", "role", "folder", "shapes"]);
         assert_eq!(KIT_SPEC.noun, "kit");
         assert_eq!(KIT_SPEC.dir_segment, "kits");
         assert_eq!(KIT_SPEC.meta_fields, &["id", "name", "tech", "style", "stack"]);
@@ -3727,7 +3751,7 @@ mod tests {
     }
 
     #[test]
-    fn regroup_rederives_group_from_src_and_skips_srcless_records() {
+    fn refolder_rederives_folder_from_src_and_skips_srcless_records() {
         use serde_json::json;
         let dir = tmp_store_dir("regroup");
         let store = open_component_store(&Some(dir.clone())).unwrap();
@@ -3736,7 +3760,7 @@ mod tests {
             .set(
                 "button",
                 &json!({ "id": "button", "name": "Button", "kitId": "harvested", "role": "primitive",
-                         "group": "controls", "src": "src/shared/ui/controls/Button.tsx" })
+                         "folder": "controls", "src": "src/shared/ui/controls/Button.tsx" })
                 .to_string(),
             )
             .unwrap();
@@ -3745,7 +3769,7 @@ mod tests {
             .set(
                 "box",
                 &json!({ "id": "box", "name": "Box", "kitId": "harvested", "role": "layout",
-                         "group": "shared/ui/layout", "src": "src/shared/ui/layout/Box.tsx" })
+                         "folder": "shared/ui/layout", "src": "src/shared/ui/layout/Box.tsx" })
                 .to_string(),
             )
             .unwrap();
@@ -3757,12 +3781,12 @@ mod tests {
             )
             .unwrap();
 
-        cmd_regroup(&["--dir".into(), dir.clone()]).unwrap();
+        cmd_refolder(&["--dir".into(), dir.clone()]).unwrap();
 
         let group_of = |id: &str| -> Option<String> {
             let raw = store.get(id).unwrap().unwrap();
             let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
-            v.get("group").and_then(serde_json::Value::as_str).map(str::to_owned)
+            record_folder(&v).map(str::to_owned)
         };
         assert_eq!(group_of("button").as_deref(), Some("shared/ui/controls"), "flat group → folder path");
         assert_eq!(group_of("box").as_deref(), Some("shared/ui/layout"), "already-correct group unchanged");
@@ -3770,7 +3794,7 @@ mod tests {
     }
 
     #[test]
-    fn regroup_kit_flag_scopes_the_pass_to_one_kit() {
+    fn refolder_kit_flag_scopes_the_pass_to_one_kit() {
         use serde_json::json;
         let dir = tmp_store_dir("regroup-kit");
         let store = open_component_store(&Some(dir.clone())).unwrap();
@@ -3778,7 +3802,7 @@ mod tests {
             .set(
                 "a",
                 &json!({ "id": "a", "name": "A", "kitId": "harvested", "role": "primitive",
-                         "group": "old", "src": "src/shared/ui/controls/A.tsx" })
+                         "folder": "old", "src": "src/shared/ui/controls/A.tsx" })
                 .to_string(),
             )
             .unwrap();
@@ -3786,20 +3810,20 @@ mod tests {
             .set(
                 "b",
                 &json!({ "id": "b", "name": "B", "kitId": "react-d3", "role": "composite",
-                         "group": "old", "src": "shared/ui/d3/charts/B.tsx" })
+                         "folder": "old", "src": "shared/ui/d3/charts/B.tsx" })
                 .to_string(),
             )
             .unwrap();
 
-        cmd_regroup(&["--dir".into(), dir.clone(), "--kit".into(), "harvested".into()]).unwrap();
+        cmd_refolder(&["--dir".into(), dir.clone(), "--kit".into(), "harvested".into()]).unwrap();
 
-        let group_of = |id: &str| -> String {
+        let folder_of = |id: &str| -> String {
             let raw = store.get(id).unwrap().unwrap();
             let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
-            v["group"].as_str().unwrap().to_owned()
+            record_folder(&v).unwrap().to_owned()
         };
-        assert_eq!(group_of("a"), "shared/ui/controls", "the targeted kit is regrouped");
-        assert_eq!(group_of("b"), "old", "a component in another kit is untouched");
+        assert_eq!(folder_of("a"), "shared/ui/controls", "the targeted kit is refoldered");
+        assert_eq!(folder_of("b"), "old", "a component in another kit is untouched");
     }
 
     #[test]
@@ -3952,7 +3976,7 @@ mod tests {
                 "list", "shapes", "get", "log", "set", "remove", "suppress", "unsuppress", "export", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
                 "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
-                "set-src", "patch", "regroup", "preview-props", "preview-errors", "preview-error"
+                "set-src", "patch", "refolder", "preview-props", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
@@ -4899,7 +4923,7 @@ mod tests {
         let store = tmp_component_store("stamp-getlist");
         let dir = store.dir().to_string_lossy().into_owned();
         let rec = serde_json::json!({
-            "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "group": "pages", "shapes": ["list"]
+            "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "folder": "pages", "shapes": ["list"]
         });
         set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None).unwrap();
 
@@ -4907,7 +4931,7 @@ mod tests {
         let meta = bsc_json_store::cli::lean_meta(&store.get("card").unwrap().unwrap(), COMPONENT_SPEC.meta_fields);
         assert_eq!(
             meta,
-            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "group": "pages", "shapes": ["list"] })
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "folder": "pages", "shapes": ["list"] })
         );
         // get / list / list --full still run clean end-to-end over a stamped store.
         assert!(run(vec!["get".into(), "card".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
@@ -4925,7 +4949,7 @@ mod tests {
         let store = tmp_component_store("graphproj");
         let dir = store.dir().to_string_lossy().into_owned();
         let rec = serde_json::json!({
-            "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "group": "pages",
+            "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "folder": "pages",
             "used": 12, "composes": ["Box", "Text"],
             // The weight the projection exists to leave behind:
             "srcText": "export function Card() { /* … a great many bytes … */ }",
@@ -4938,7 +4962,7 @@ mod tests {
             g,
             serde_json::json!({
                 "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout",
-                "group": "pages", "used": 12, "composes": ["Box", "Text"]
+                "folder": "pages", "used": 12, "composes": ["Box", "Text"]
             })
         );
         // The heavy fields are absent, not merely empty — that is the whole point.
@@ -5312,5 +5336,46 @@ mod tests {
             assert!(err.contains("read-only"), "merge refuses read-scoped: {err}");
             assert!(run(vec!["merge".into(), "help".into()], "bsc ui").is_ok(), "merge help reachable read-scoped");
         });
+    }
+
+    // ── #4107 slice B: the `group` -> `folder` rename ──
+
+    /// The store holds records written under `group` and there is no migration pass (the component seed
+    /// dir is skipped by `ensure_seeded`), so every READ must accept both names. Without this a rename
+    /// silently flattens 351 records to "unfoldered" — the failure looks like a kit that never had folders.
+    #[test]
+    fn record_folder_reads_the_legacy_group_key() {
+        use serde_json::json;
+        assert_eq!(record_folder(&json!({ "folder": "shared/ui" })), Some("shared/ui"));
+        assert_eq!(record_folder(&json!({ "group": "shared/ui" })), Some("shared/ui"), "legacy key still read");
+        // Both present ⇒ the CURRENT name wins, so a half-migrated record cannot regress to its old path.
+        assert_eq!(record_folder(&json!({ "folder": "new/path", "group": "old/path" })), Some("new/path"));
+        assert_eq!(record_folder(&json!({})), None);
+        // An empty value is "absent", never a `""` bucket — the record convention the doc pins.
+        assert_eq!(record_folder(&json!({ "folder": "" })), None);
+        assert_eq!(record_folder(&json!({ "group": "" })), None);
+    }
+
+    /// A refolder pass must MIGRATE a legacy record, not just re-derive it: it writes `folder` and drops
+    /// `group`, so the record ends up with exactly one name for its folder.
+    #[test]
+    fn refolder_migrates_a_legacy_record_off_the_group_key() {
+        use serde_json::json;
+        let dir = tmp_store_dir("refolder-legacy");
+        let store = open_component_store(&Some(dir.clone())).unwrap();
+        store
+            .set(
+                "button",
+                &json!({ "id": "button", "name": "Button", "kitId": "harvested", "role": "primitive",
+                         "group": "shared/ui/controls", "src": "src/shared/ui/controls/Button.tsx" })
+                .to_string(),
+            )
+            .unwrap();
+
+        run(vec!["refolder".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+
+        let rec: serde_json::Value = serde_json::from_str(&store.get("button").unwrap().unwrap()).unwrap();
+        assert_eq!(rec.get("folder").and_then(|v| v.as_str()), Some("shared/ui/controls"));
+        assert!(rec.get("group").is_none(), "the legacy key is dropped, so the two can never drift");
     }
 }
