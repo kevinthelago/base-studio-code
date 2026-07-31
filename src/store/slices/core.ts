@@ -3,13 +3,16 @@
 // provider config moved to the LlmSettings slice (#2715). Now: active-project / draft state + the
 // projects-page view state. Typed Pick<AppStore, …>.
 import type { StateCreator } from "zustand";
+// LEAF import, not the barrel (#3245): `src/store/**` importing `@/features/planner` creates a
+// module-init cycle — it broke five unrelated tunnel tests when this first went in as a barrel.
+import { setDbTriaged } from "@/features/planner/list/projectsDbBridge";
 import type { AppStore } from "../types";
 import { setMapEntry, deleteMapEntry } from "../updateHelpers";
 import { projectLinkId } from "@/features/glance/lib/projectLinks";
 import { loadProjectLinks, pushProjectLink, dropProjectLink } from "@/features/glance/lib/projectLinksBridge";
 
 type CoreSlice = Pick<AppStore,
-  "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "previewSources" | "setPreviewSource" | "previewBuilding" | "setPreviewBuilding" | "reviewFindings" | "setReviewFindings" | "teamsDrill" | "setTeamsDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "hydrateProjectLinks" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject" | "triagedProjects" | "markProjectTriaged"
+  "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "previewSources" | "setPreviewSource" | "previewBuilding" | "setPreviewBuilding" | "reviewFindings" | "setReviewFindings" | "teamsDrill" | "setTeamsDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "hydrateProjectLinks" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject" | "triagedProjects" | "markProjectTriaged" | "hydrateTriaged"
 >;
 
 export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) => ({
@@ -88,9 +91,25 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
         }),
       removeDraftProject: (key) =>
         set((s) => ({ localDraftProjects: deleteMapEntry(s.localDraftProjects, key) })),
-      // TRIAGED marker (#2541) — the durable drafted→triaged transition that gates the Glance network.
+      // TRIAGED marker (#2541) — the drafted→triaged transition that gates the Glance network.
       // Idempotent: keeps the first timestamp so re-triaging doesn't reset it.
+      //
+      // #4088 — `projects.db` is the SOURCE; this map is an in-memory cache hydrated at boot, exactly
+      // like skills/personas/teams. It used to live only in app-state.json, where no `bsc` command
+      // could read or repair it and an app-state reset silently emptied the Glance network.
       triagedProjects: {},
-      markProjectTriaged: (key) =>
-        set((s) => (!key || s.triagedProjects[key] ? {} : { triagedProjects: { ...s.triagedProjects, [key]: Date.now() } })),
+      markProjectTriaged: (key) => {
+        if (!key) return;
+        // Write through FIRST so the durable marker lands even if this session never persists again.
+        // `set` is idempotent server-side too, so a re-triage cannot rewrite the original timestamp.
+        void setDbTriaged(key);
+        set((s) => (s.triagedProjects[key] ? {} : { triagedProjects: { ...s.triagedProjects, [key]: Date.now() } }));
+      },
+      /** Replace the cache from `projects.db` (#4088), UNIONED with whatever is already in memory.
+       *
+       *  Union, not replace: a marker set in this session before hydration finished (or by a pre-#4088
+       *  app-state that has not migrated yet) must not be dropped on the floor — losing one makes a
+       *  worked project vanish from Glance, which is the exact bug this move exists to end. */
+      hydrateTriaged: (fromDb) =>
+        set((s) => ({ triagedProjects: { ...fromDb, ...s.triagedProjects } })),
 });
