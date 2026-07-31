@@ -382,6 +382,10 @@ fn buildability(
     // changes only whether the candidate is REPORTED buildable.
     let unresolved: BTreeSet<&str> = imports
         .iter()
+        // A SYNTACTICALLY type-only import is erased by the tsx loader before anything resolves (#4076),
+        // so the module it names need not be in the closure for the closure to compile. Counting it was
+        // simply wrong — 45 of this repo's 289 unbuildable candidates were blocked by nothing else.
+        .filter(|i| !i.type_only)
         .filter(|i| !i.is_sibling(siblings, from_rel))
         .filter(|i| !bsc_component::graph_health::is_registered_platform_module(&i.spec))
         .map(|i| i.spec.as_str())
@@ -401,6 +405,8 @@ fn buildability(
 struct InternalImport {
     spec: String,
     names: Vec<String>,
+    /// Syntactically type-only (#4076) — erased before the bundler resolves anything, so it never blocks.
+    type_only: bool,
 }
 
 /// The harvested set indexed for import resolution: component NAME → the module BASE(s) it was
@@ -496,9 +502,59 @@ fn internal_imports(src_text: &str) -> Vec<InternalImport> {
         }
         let (mut names, mut opaque) = (Vec::new(), false);
         collect_imported_names(child, src, &mut names, &mut opaque);
-        out.push(InternalImport { spec, names: if opaque { Vec::new() } else { names } });
+        let type_only = is_type_only_import(child, src);
+        out.push(InternalImport { spec, names: if opaque { Vec::new() } else { names }, type_only });
     }
     out
+}
+
+/// Is this import statement SYNTACTICALLY type-only — `import type { X } from "…"`, or a named clause
+/// whose every binding carries the inline `type` modifier (#4076)?
+///
+/// Such an import is ERASED by the tsx loader before anything resolves, so the module it names need not
+/// exist in the closure for the closure to compile. Calling it a blocker was simply wrong: it made 45 of
+/// this repo's 289 unbuildable candidates fail for an import that never reaches the bundler.
+///
+/// SYNTACTIC on purpose, never inferred from the target. `import { X } from "./y"` where `X` happens to
+/// be a type is NOT erasable — esbuild has no type information and keeps the import, so the module must
+/// resolve. Only the two forms above are safe, and both are visible in the parse.
+fn is_type_only_import(node: Node, src: &[u8]) -> bool {
+    // `import type { … } from "…"` — the `type` keyword sits directly in the statement, before the clause.
+    let mut c = node.walk();
+    for ch in node.children(&mut c) {
+        if ch.kind() == "import_clause" {
+            // A clause with a default or namespace binding is never type-only.
+            let mut cc = ch.walk();
+            let mut named = None;
+            for g in ch.children(&mut cc) {
+                match g.kind() {
+                    "named_imports" => named = Some(g),
+                    "identifier" | "namespace_import" => return false,
+                    _ => {}
+                }
+            }
+            let Some(named) = named else { return false };
+            let mut any = false;
+            let mut nc = named.walk();
+            for spec_node in named.children(&mut nc) {
+                if spec_node.kind() != "import_specifier" {
+                    continue;
+                }
+                any = true;
+                // tree-sitter puts the inline modifier in the specifier's own text (`type Foo`).
+                let text = spec_node.utf8_text(src).unwrap_or_default();
+                if !text.trim_start().starts_with("type ") {
+                    return false;
+                }
+            }
+            return any;
+        }
+        // The statement-level `type` keyword of `import type { … }`.
+        if ch.utf8_text(src).map(str::trim) == Ok("type") {
+            return true;
+        }
+    }
+    false
 }
 
 /// The names an import statement pulls from its module. `opaque` is set by a namespace import
@@ -1016,6 +1072,56 @@ mod tests {
         // `import { KeyValueList, type KeyValueItem } from "@/shared/ui/data/KeyValueList"` accounts for
         // several of this repo's own pages.)
         assert!(buildability_with(&format!("import {{ Button, type ButtonProps }} from \"@/shared/ui/controls/Button\";{render}"), &harvest).0);
+    }
+
+    #[test]
+    fn a_syntactically_type_only_import_does_not_block_the_closure() {
+        // #4076: the tsx loader ERASES `import type …` before it resolves anything, so the module it
+        // names need never be in the closure. Both spellings — the statement-level `type` keyword and
+        // the per-binding inline modifier — are erased whole.
+        let render = "\nexport const A = () => <b />;";
+        for src in [
+            format!("import type {{ Plan }} from \"@/features/nowhere/state\";{render}"),
+            format!("import {{ type Plan, type Stage }} from \"@/features/nowhere/state\";{render}"),
+            format!("import type * as N from \"@/features/nowhere/state\";{render}"),
+        ] {
+            let (ok, why) = buildability_of(&src);
+            assert!(ok, "an erased import is not a missing dependency: {why:?}\n{src}");
+        }
+    }
+
+    #[test]
+    fn a_value_import_of_the_same_module_still_blocks() {
+        // The rule is SYNTACTIC, never inferred from the target: harvest has no type information, and
+        // neither does esbuild. `import { Plan } from …` is kept by the loader even when `Plan` happens
+        // to be a type, so it must keep counting — otherwise the closure ships an unresolvable specifier.
+        let render = "\nexport const A = () => <b />;";
+        let (ok, why) = buildability_of(&format!("import {{ Plan }} from \"@/features/nowhere/state\";{render}"));
+        assert!(!ok, "a plain named import is not erasable");
+        assert!(why.iter().any(|r| r.contains("`@/features/nowhere/state`")), "{why:?}");
+        // A default or namespace binding is a runtime value by construction, and a MIXED clause keeps
+        // the statement — the erasable half doesn't excuse the half that survives.
+        for src in [
+            format!("import Plan from \"@/features/nowhere/state\";{render}"),
+            format!("import * as N from \"@/features/nowhere/state\";{render}"),
+            format!("import {{ run, type Plan }} from \"@/features/nowhere/state\";{render}"),
+        ] {
+            assert!(!buildability_of(&src).0, "still a runtime import:\n{src}");
+        }
+    }
+
+    #[test]
+    fn an_erased_import_is_still_a_composition_edge() {
+        // Erasure is a BUILDABILITY judgement only. A type-only import of a harvested sibling must not
+        // stop being reported as `composes` — the graph's edges describe the source, not the bundle.
+        let harvest = [("Button", "controls/Button.tsx")];
+        let src = "import type { ButtonProps } from \"@/features/nowhere/controls/Button\";\nexport const A = () => <b />;";
+        let (ok, why) = buildability_with(src, &harvest);
+        assert!(ok, "{why:?}");
+        assert!(
+            internal_imports(src).iter().any(|i| i.spec.ends_with("controls/Button")),
+            "the import is still SEEN — it is only exempt from blocking",
+        );
     }
 
     #[test]

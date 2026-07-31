@@ -78,6 +78,43 @@ function importSpecs(source: string): string[] {
   return [...specs];
 }
 
+/** Is `clause` — the text between an `import`/`export` keyword and its `from` — erased entirely by the
+ *  TypeScript loader? Two spellings qualify: the statement-level keyword (`import type { P } from …`,
+ *  `import type * as N from …`) and a named clause where EVERY binding carries the inline modifier
+ *  (`import { type P, type Q } from …`).
+ *
+ *  SYNTACTIC on purpose. A binding that merely happens to name a type (`import { P } from …`) is NOT
+ *  erasable — esbuild has no type information and keeps the import — so a MIXED clause (`{ run, type P }`)
+ *  keeps the statement and stays a real dependency. Rust twin: `clause_is_type_only`. */
+function clauseIsTypeOnly(clause: string): boolean {
+  const t = clause.trim();
+  // `type` must be its own word — `import { typeGuard }` is a value binding, not a type modifier.
+  const typePrefixed = (s: string) => /^type[\s{*]/.test(s);
+  if (typePrefixed(t)) return true;
+  if (!t.startsWith("{") || !t.endsWith("}")) return false;
+  const entries = t.slice(1, -1).split(",").map((e) => e.trim()).filter(Boolean);
+  // An empty clause (`import {} from "x"`) survives as a side-effect import, so it is NOT an erasure.
+  return entries.length > 0 && entries.every(typePrefixed);
+}
+
+/** The specifiers `source` imports ONLY under an erased (type-only) statement (#4076) — the loader drops
+ *  them before resolving anything, so they need no sibling, runtime file, library node or npm stub.
+ *
+ *  A specifier imported BOTH ways (`import type { P } from "./x"` beside `import { run } from "./x"`) is
+ *  absent: the value import survives, so the module is still a real dependency. Rust twin:
+ *  `erased_specifiers`. Exported so `graphHealth` applies the SAME rule the preview build does — if the
+ *  two drift, `doctor` accuses a component the preview renders happily (#3486). */
+export function erasedSpecs(source: string): Set<string> {
+  const erased = new Set<string>();
+  const kept = new Set<string>();
+  // `[^;]*?` keeps a clause from spanning a statement boundary and mis-attributing the next import.
+  const re = /\b(?:import|export)\b([^;]*?)\bfrom\s*["']([^"']+)["']/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source))) (clauseIsTypeOnly(m[1]) ? erased : kept).add(m[2]);
+  for (const spec of kept) erased.delete(spec);
+  return erased;
+}
+
 /** Is `spec` an INTERNAL first-party import — a `@/…` alias or a RELATIVE (`./`, `../`) path — as
  *  opposed to a bare npm specifier or an absolute path/URL? Only these resolve against sibling modules. */
 function isInternalSpec(spec: string): boolean {
@@ -183,8 +220,9 @@ export function isPreviewBuildable(
   if (!s) return false;
   if (!/\bexport\b/.test(s)) return false;
   if (hasCodeElision(s)) return false; // #3486: an ellipsis in COPY is not an elision marker
+  const erased = erasedSpecs(s); // #4076: dropped by the loader before it resolves anything
   for (const spec of importSpecs(s)) {
-    if (isInternalSpec(spec) && !resolvesToSibling(spec, fromRel)) return false;
+    if (isInternalSpec(spec) && !erased.has(spec) && !resolvesToSibling(spec, fromRel)) return false;
   }
   return true;
 }
