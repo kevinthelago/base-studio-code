@@ -134,6 +134,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         "role": c.role,
                         "composes": c.composes,
                         "code": c.code,
+                        // Provenance + facet (#4091) — a candidate you cannot trace to a file is not
+                        // reviewable, and one with no domain is invisible once stored (#3607).
+                        "src": c.src,
+                        "domain": c.domain,
                         "worthy": c.classification.worthy,
                         "score": c.classification.score,
                         "reasons": c.classification.reasons,
@@ -168,9 +172,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 let mut g = crate::load();
                 for item in &plan {
                     let c = &item.candidate;
+                    // `domain` + `src` ride along (#4091). Without a domain the record does not
+                    // surface in the graph UI at all (#3607), so a clean curate used to land work
+                    // nobody could see; `src` is the provenance that makes a re-harvest dedupable
+                    // and a record traceable to the file it came from.
                     let im = serde_json::json!({
                         "id": c.id, "tech": c.tech, "role": c.role, "name": c.name,
                         "composes": c.composes, "code": c.code,
+                        "domain": c.domain, "src": c.src,
                     });
                     crate::set_impl(&mut g, im)?;
                 }
@@ -184,6 +193,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         "name": it.candidate.name,
                         "tech": it.candidate.tech,
                         "role": it.candidate.role,
+                        "domain": it.candidate.domain,
+                        "src": it.candidate.src,
                         "action": if it.replaces.is_some() { "optimize" } else { "add" },
                         "replaces": it.replaces,
                     })
