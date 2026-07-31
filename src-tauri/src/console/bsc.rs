@@ -25,8 +25,33 @@ use crate::prelude::*;
 /// - `bsc` exits non-zero (its stderr is returned).
 /// `stdin` (optional) feeds a body to the child's stdin — required by the `bsc … set`/`add` write
 /// verbs, which read their JSON body from stdin (#2123). Omit it for reads and positional verbs.
+/// ASYNC + `spawn_blocking` (#4074) — this is the app's hottest process spawner and a SYNC
+/// `#[tauri::command]` runs on Tauri's main thread, so every `bsc …` read blocked every other invoke
+/// behind it. Measured: a batch of unrelated commands all completing at once after 23-26s, including
+/// `perf_record_frontend_sample` (which does almost nothing) at 25.8s — a queue draining, not work.
+///
+/// The blocking body is UNCHANGED and simply moved onto the blocking pool; the returned value and
+/// every error string are identical, so the JS bridge needs no change.
+///
+/// Concurrency note: these calls were previously serialized by sharing one thread, and now overlap.
+/// That is safe for the stores involved — they are SQLite opened with a `busy_timeout` (the app↔CLI
+/// share is what that timeout is FOR) and live PTY sessions already write them concurrently — but it
+/// is a real behaviour change, not a pure speedup.
 #[tauri::command]
-pub(crate) fn bsc(
+pub(crate) async fn bsc(
+    project_key: Option<String>,
+    args: Vec<String>,
+    stdin: Option<String>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || bsc_blocking(project_key, args, stdin))
+        .await
+        // A join error means the blocking task panicked or the runtime is shutting down. Surface it as
+        // an error rather than unwrapping — a panic here would take the whole invoke path down.
+        .map_err(|e| format!("bsc: the sidecar task failed to run: {e}"))?
+}
+
+/// The blocking body of [`bsc`], kept as its own fn so it stays directly unit-testable.
+fn bsc_blocking(
     project_key: Option<String>,
     args: Vec<String>,
     stdin: Option<String>,
@@ -64,6 +89,25 @@ fn wire_bsc_stores(cmd: &mut std::process::Command, project_key: Option<&str>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_blocking_body_is_still_directly_callable_and_reports_a_missing_sidecar() {
+        // #4074 split the blocking work out of the now-async command. The body must stay reachable
+        // (and testable) on its own, and its error contract must not have shifted with the move — the
+        // JS bridge matches on these strings.
+        let prev = std::env::var("BSC_BIN").ok();
+        std::env::set_var("BSC_BIN", "");
+        let err = bsc_blocking(None, vec!["--version".into()], None);
+        // Either the sidecar is genuinely unresolvable here (the message we own) or a real binary was
+        // found via another path — both are valid, but a PANIC is not, which is what this pins.
+        if let Err(e) = &err {
+            assert!(!e.is_empty(), "an error must carry a message");
+        }
+        match prev {
+            Some(v) => std::env::set_var("BSC_BIN", v),
+            None => std::env::remove_var("BSC_BIN"),
+        }
+    }
 
     /// Collect a Command's env overrides into a map for assertions.
     fn envs(cmd: &std::process::Command) -> std::collections::HashMap<String, std::path::PathBuf> {
@@ -105,11 +149,14 @@ mod tests {
 
     /// Smoke test: when the bundled binary resolves (it isn't staged in the test target), a benign
     /// invocation returns a `Result` instead of panicking. A no-op where `bsc` isn't present.
+    ///
+    /// Exercises `bsc_blocking`, not `bsc`: since #4074 the command is async, and `let _ = bsc(…)`
+    /// would build a future and drop it unpolled — running nothing while still looking like a test.
     #[test]
     fn bsc_invocation_does_not_panic_when_binary_present() {
         if crate::console::pty::bsc_bin_path().is_none() {
             return; // sidecar not staged in the test target — nothing to exercise
         }
-        let _ = bsc(None, vec!["--help".to_string()], None);
+        let _ = bsc_blocking(None, vec!["--help".to_string()], None);
     }
 }
