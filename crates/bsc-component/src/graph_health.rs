@@ -316,6 +316,19 @@ const PREVIEW_IMPORTMAP_JSON: &str = include_str!("../../../src-tauri/data/ui/pr
 /// the corruption `reimplemented-component` exists to catch (#3892/#3895).
 const PLATFORM_MODULES_JSON: &str = include_str!("../../../src-tauri/data/ui/platform-modules.json");
 
+/// Whether `spec` is a REGISTERED platform module — one the runtime module registry resolves, so a
+/// record importing it mounts in the app without the import being vendored anywhere.
+///
+/// Public so the HARVESTER shares this one predicate instead of growing a second copy of the registry
+/// (#4071). Harvest had exactly the blind spot #3897 fixed here: it resolved `@/…` against sibling `src`
+/// paths only, so 116 of its 351 unbuildable candidates were blocked wholly or partly by specifiers the
+/// runtime resolves fine. A false "unresolved import" is not merely noise — it is the pressure that makes
+/// the next author hand-stub the import to silence it, which is the corruption `reimplemented-component`
+/// exists to catch (#3892/#3895).
+pub fn is_registered_platform_module(spec: &str) -> bool {
+    platform_modules().contains(spec)
+}
+
 /// The registered platform specifiers, matched LITERALLY (exactly as the loader's `isAppModule` does).
 fn platform_modules() -> &'static BTreeSet<String> {
     static M: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
