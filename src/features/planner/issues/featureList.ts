@@ -27,6 +27,10 @@ export interface PlanFeature {
   data?: string;
   /** The fleet stream that owns it (defaults to the slug — a feature IS a stream). */
   stream?: string;
+  /** Algorithm impl ids from the GLOBAL `bsc graph` store this capability needs (#4080) — the plan →
+   *  algorithms-graph edge, so a worker is pointed at the reference implementation instead of re-coding
+   *  it. DECLARED intent (the planner names them at Features time), not derived fact. */
+  requires?: string[];
 }
 
 function str(v: unknown): string | undefined {
@@ -61,6 +65,9 @@ export function parseFeaturesFile(raw: string): PlanFeature[] {
       approach: str(o.approach),
       tools: strArray(o.tools),
       dependsOn: strArray(o.dependsOn ?? o.depends_on),
+      // Both spellings, like `dependsOn` — the store emits camelCase, but a hand-written or older
+      // payload may carry snake, and silently dropping it would lose the reference entirely.
+      requires: strArray(o.requires ?? o.requires_),
       data: str(o.data),
       stream: str(o.stream) ?? slug,
     });

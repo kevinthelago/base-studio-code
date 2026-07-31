@@ -44,6 +44,23 @@ pub struct PlanFeature {
     /// The fleet stream that owns it (defaults to the slug — a feature IS a stream).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream: Option<String>,
+    /// Algorithm impl ids from the GLOBAL `bsc graph` store that this capability needs (#4080) — the
+    /// plan → algorithms-graph edge, so a worker building this feature is pointed at the reference
+    /// implementation instead of re-coding it (the `reimplemented-component` problem, #3892, one layer
+    /// up and caught BEFORE the code is written).
+    ///
+    /// The feature points at the library; the library never learns about projects. Making the global
+    /// graph project-aware would be #3973's mistake in another costume — an estate-level store absorbing
+    /// detail that belongs inside one application. `requires` is also the name Glance already uses for a
+    /// project/page → algorithm-library edge (#3119), so the vocabulary matches at both altitudes.
+    ///
+    /// DECLARED intent, not derived fact: the planner names what the capability needs at Features time.
+    /// A curator-derived "what the landed code actually used" is the follow-on, and the gap between the
+    /// two is the interesting signal. NOT validated against the graph — the two stores are separate and
+    /// the graph may be unreachable when a plan is written, so a wrong id is a dangling reference, not a
+    /// corrupt plan.
+    #[serde(default)]
+    pub requires: Vec<String>,
 }
 
 /// kebab-case slug from a name (mirrors the frontend `slugify`).
@@ -80,8 +97,8 @@ impl Store {
             .conn
             .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM features", [], |r| r.get(0))?;
         self.conn.execute(
-            "INSERT INTO features (slug, name, behavior, phase, approach, data, stream, acceptance, tools, depends_on, position, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, strftime('%s','now'))
+            "INSERT INTO features (slug, name, behavior, phase, approach, data, stream, acceptance, tools, depends_on, requires, position, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%s','now'))
              ON CONFLICT(slug) DO UPDATE SET
                 name       = CASE WHEN excluded.name != ''                          THEN excluded.name       ELSE features.name       END,
                 behavior   = CASE WHEN COALESCE(excluded.behavior, '') != ''         THEN excluded.behavior   ELSE features.behavior   END,
@@ -92,11 +109,12 @@ impl Store {
                 acceptance = CASE WHEN excluded.acceptance != '[]'                   THEN excluded.acceptance ELSE features.acceptance END,
                 tools      = CASE WHEN excluded.tools != '[]'                        THEN excluded.tools      ELSE features.tools      END,
                 depends_on = CASE WHEN excluded.depends_on != '[]'                   THEN excluded.depends_on ELSE features.depends_on END,
+                requires   = CASE WHEN excluded.requires != '[]'                     THEN excluded.requires   ELSE features.requires   END,
                 updated_at = excluded.updated_at",
             params![
                 slug, feature.name, feature.behavior, phase_to_db(&feature.phase), feature.approach, feature.data,
                 feature.stream, arr_to_json(&feature.acceptance), arr_to_json(&feature.tools),
-                arr_to_json(&feature.depends_on), pos,
+                arr_to_json(&feature.depends_on), arr_to_json(&feature.requires), pos,
             ],
         )?;
         Ok(slug)
@@ -132,7 +150,7 @@ impl Store {
 }
 
 const FEATURE_COLS: &str =
-    "SELECT slug, name, behavior, phase, approach, data, stream, acceptance, tools, depends_on FROM features";
+    "SELECT slug, name, behavior, phase, approach, data, stream, acceptance, tools, depends_on, requires FROM features";
 
 fn row_to_feature(r: &rusqlite::Row) -> rusqlite::Result<PlanFeature> {
     Ok(PlanFeature {
@@ -146,6 +164,7 @@ fn row_to_feature(r: &rusqlite::Row) -> rusqlite::Result<PlanFeature> {
         acceptance: json_to_arr(&r.get::<_, String>(7)?),
         tools: json_to_arr(&r.get::<_, String>(8)?),
         depends_on: json_to_arr(&r.get::<_, String>(9)?),
+        requires: json_to_arr(&r.get::<_, String>(10)?),
     })
 }
 
@@ -243,5 +262,53 @@ mod tests {
         assert_eq!(s.feature_get("sketcher").unwrap().unwrap().phase, Some(serde_json::json!(2)));
         s.feature_upsert(&PlanFeature { slug: "sketcher".into(), behavior: Some("draw".into()), ..Default::default() }).unwrap();
         assert_eq!(s.feature_get("sketcher").unwrap().unwrap().phase, Some(serde_json::json!(2)), "phase survives a later edit");
+    }
+
+    /// #4080 — the plan → algorithms-graph edge. Same merge rule as every other array field: a
+    /// non-empty write overwrites, an omitted one keeps what is stored, so the titles-first flow can
+    /// declare `requires` in one pass and fill `behavior` in the next without losing either.
+    #[test]
+    fn feature_requires_round_trips_and_survives_a_later_detail_edit() {
+        let s = Store::open_in_memory().unwrap();
+        s.feature_upsert(&feat("Sketcher")).unwrap();
+        assert!(s.feature_get("sketcher").unwrap().unwrap().requires.is_empty(), "absent by default");
+
+        s.feature_upsert(&PlanFeature {
+            slug: "sketcher".into(),
+            requires: vec!["merge.rs".into(), "binary-search.ts".into()],
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            s.feature_get("sketcher").unwrap().unwrap().requires,
+            vec!["merge.rs".to_string(), "binary-search.ts".to_string()],
+        );
+
+        // A later detail edit that omits `requires` must NOT wipe it.
+        s.feature_upsert(&PlanFeature { slug: "sketcher".into(), behavior: Some("draw".into()), ..Default::default() }).unwrap();
+        assert_eq!(s.feature_get("sketcher").unwrap().unwrap().requires.len(), 2, "requires survives a later edit");
+
+        // …and a non-empty write DOES replace it (the planner correcting itself).
+        s.feature_upsert(&PlanFeature { slug: "sketcher".into(), requires: vec!["merge.rs".into()], ..Default::default() }).unwrap();
+        assert_eq!(s.feature_get("sketcher").unwrap().unwrap().requires, vec!["merge.rs".to_string()]);
+    }
+
+    /// It rides the camelCase wire like every sibling field, so `features.json` and the frontend model
+    /// see it without a translation layer.
+    #[test]
+    fn feature_requires_serializes_camel_case() {
+        let json = serde_json::to_string(&PlanFeature {
+            slug: "s".into(),
+            requires: vec!["merge.rs".into()],
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(json.contains("\"requires\":[\"merge.rs\"]"), "wire shape: {json}");
+        // And reads back.
+        let back: PlanFeature = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.requires, vec!["merge.rs".to_string()]);
+        // An older payload with no `requires` still parses (serde default) — no migration on the wire.
+        let old: PlanFeature = serde_json::from_str(r#"{"slug":"s","name":"S"}"#).unwrap();
+        assert!(old.requires.is_empty());
     }
 }

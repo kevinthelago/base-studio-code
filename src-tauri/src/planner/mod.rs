@@ -126,6 +126,30 @@ mod tests {
         assert!(d.contains("ONE feature"), "must mandate one-feature-at-a-time pacing");
     }
 
+    /// #4080: the Features stage must ask for `requires` — the algorithm ids a capability needs — or
+    /// the plan → algorithms-graph edge is a field nothing ever writes. Two guards matter beyond the
+    /// field name: the planner must LOOK UP ids rather than guess (a dangling reference helps nobody),
+    /// and declaring none must stay valid (else it invents a match to satisfy the step).
+    #[test]
+    fn stage_directive_features_asks_for_the_required_algorithms() {
+        let raw = crate::platform::config::embedded_str("stages/features.json");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("features.json parses");
+        let d = v["directive"].as_str().expect("directive");
+        assert!(d.contains("requires"), "directive names the field");
+        assert!(d.contains("bsc graph impl list"), "directive says how to LOOK UP an id");
+        let lower = d.to_lowercase();
+        assert!(lower.contains("only ids you actually found"), "guessing an id must be forbidden");
+        assert!(lower.contains("leave it out when nothing"), "declaring none must stay valid");
+        // The example payload shows the shape, not just the prose.
+        assert!(d.contains("\\\"requires\\\":") || d.contains("\"requires\":"), "the example payload carries it");
+        // And the per-feature substep — where the planner actually works — asks for it too.
+        let sub = v["substeps"].as_array().expect("substeps");
+        let per_feature = sub.iter().find(|s| s["key"] == "features").expect("the per-feature substep");
+        let p = per_feature["prompt"].as_str().unwrap_or_default();
+        assert!(p.contains("requires"), "the per-feature prompt names it");
+        assert!(p.contains("bsc graph impl list"), "the per-feature prompt says how to look one up");
+    }
+
     /// Skills directive authors via `bsc skill` + the per-session group, and points skill
     /// grounding at the planning guide's Research workflow (the how-to moved there, #1433).
     #[test]
