@@ -111,6 +111,11 @@ export function scannableComponents(
 ): ScannableComponent[] {
   const out: ScannableComponent[] = [];
   for (const c of comps) {
+    // #4072 — a LITE record (graph projection) has an empty `srcText` by construction, not because the
+    // component lacks source. Scanning it would record a build failure against a component that is
+    // fine, and cache that verdict under its signature. Skip until the full read replaces it; the
+    // effect re-runs on that swap, so nothing is permanently unscanned.
+    if (c.lite) continue;
     // Same-kit siblings so a composing user component's imported siblings vendor into its build (#3112).
     const siblings = comps.filter((s) => s.kitId === c.kitId && s.id !== c.id);
     const build = componentPreviewFiles(c, artifact, siblings, libResolver);

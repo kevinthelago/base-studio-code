@@ -41,16 +41,21 @@ const DATA_SHAPES: &[(&str, &str)] = &[
 const COMPONENT_COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "list",
-        summary: "every component's {id, name, kitId, role, group, shapes} (JSON)",
+        summary: "every component's {id, name, kitId, role, group, shapes} (JSON; --graph for the graph projection)",
         usage: "\
 USAGE:
-  bsc ui list [--shape <shape>] [--full] [--pretty] [--raw]
+  bsc ui list [--shape <shape>] [--graph] [--full] [--pretty] [--raw]
 
 Prints every component's { id, name, kitId, role, group, shapes } as JSON (compact; --pretty for indented).
 --shape filters to the components whose `shapes` field stamps <shape> — the kit's IDEAL renderings
 for that data shape (#2475/#3517; one of list · linked-list · tree · graph · table · key-value · series — see
 `bsc ui shapes`). --full emits the COMPLETE component objects (variants + props + composes + guidance
 + source + …) as a plain array — the full-fidelity read the desktop library hydration needs.
+--graph (#4072) emits { id, name, kitId, role, group, used, composes } — EXACTLY what the Design
+Studio's composition graph renders: the node card plus the field its edges derive from. It exists
+because --full is 1.72 MB over 321 components (77.6% of it `srcText`, which no node reads) and the
+page blocked up to 8s on it; the graph projection is 33 KB. Reach for --full only when you need a
+component's source/variants/props — and prefer `get <id>` for ONE component over the whole library.
 --raw (#3166) drops the JSON entirely and prints ONE id per line, raw UTF-8, LF-only — byte-clean for
 `for id in $(bsc ui list --raw)` / `while read id` (no CRLF or cp1252 traps; honors --shape, ignores --full/--pretty).",
     },
@@ -626,6 +631,11 @@ const COMPONENT_SPEC: CliSpec = CliSpec {
     tagline: TAGLINE,
     commands: COMPONENT_COMMANDS,
     meta_fields: &["id", "name", "kitId", "role", "group", "shapes"],
+    // #4072 — exactly what the Design Studio's composition graph renders: the node card
+    // (name/role/group/×used) plus `composes`, which `buildComposesEdges` turns into the edges.
+    // Deliberately NOT `srcText` (77.6% of the full payload) / `tests` / `history` / `props`: the
+    // graph reads none of them, and the page was blocking up to 8s fetching them.
+    graph_fields: &["id", "name", "kitId", "role", "group", "used", "composes"],
 };
 
 /// The kit collection's knobs. Lean `list` projects id/name/tech/style/stack.
@@ -636,6 +646,7 @@ const KIT_SPEC: CliSpec = CliSpec {
     tagline: KIT_TAGLINE,
     commands: KIT_COMMANDS,
     meta_fields: &["id", "name", "tech", "style", "stack"],
+    graph_fields: &[],
 };
 
 /// A non-blocking `kit set` advisory (#3040): the Design Studio places a kit in its rail by two axes —
@@ -4904,6 +4915,50 @@ mod tests {
         assert!(run(vec!["list".into(), "--full".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
         // doctor still parses the stamped records (the extra fields don't perturb graph health).
         assert!(run(vec!["doctor".into(), "--dir".into(), dir], "bsc ui").is_ok());
+    }
+
+    #[test]
+    fn graph_projection_carries_the_node_and_edge_fields_and_drops_the_payload() {
+        // #4072 — the Design Studio hydrated its graph with `--full`: 1.72 MB over 321 components, of
+        // which 77.6% is `srcText` that no node reads, and the page blocked up to 8s on it. The graph
+        // projection must carry the node card + `composes` (edges) and NOTHING heavy.
+        let store = tmp_component_store("graphproj");
+        let dir = store.dir().to_string_lossy().into_owned();
+        let rec = serde_json::json!({
+            "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "group": "pages",
+            "used": 12, "composes": ["Box", "Text"],
+            // The weight the projection exists to leave behind:
+            "srcText": "export function Card() { /* … a great many bytes … */ }",
+            "tests": ["a", "b"], "history": [{ "rev": 1 }], "props": { "title": "string" },
+        });
+        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None).unwrap();
+
+        let g = bsc_json_store::cli::lean_meta(&store.get("card").unwrap().unwrap(), COMPONENT_SPEC.graph_fields);
+        assert_eq!(
+            g,
+            serde_json::json!({
+                "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout",
+                "group": "pages", "used": 12, "composes": ["Box", "Text"]
+            })
+        );
+        // The heavy fields are absent, not merely empty — that is the whole point.
+        for heavy in ["srcText", "tests", "history", "props"] {
+            assert!(g.get(heavy).is_none(), "{heavy} must not ride the graph projection");
+        }
+        // And it runs clean end-to-end.
+        assert!(run(vec!["list".into(), "--graph".into(), "--dir".into(), dir], "bsc ui").is_ok());
+    }
+
+    #[test]
+    fn graph_projection_defaults_a_missing_used_rather_than_dropping_the_key() {
+        // Harvested records carry no `used` (274 of 321 locally). The key must still be present so the
+        // client's `typeof c.used === "number" ? c.used : 0` sees a stable shape.
+        let store = tmp_component_store("graphproj-nouse");
+        let rec = serde_json::json!({ "id": "b", "name": "Btn", "kitId": "k", "role": "control" });
+        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None).unwrap();
+        let g = bsc_json_store::cli::lean_meta(&store.get("b").unwrap().unwrap(), COMPONENT_SPEC.graph_fields);
+        assert_eq!(g.get("used"), Some(&serde_json::json!("")));
+        assert_eq!(g.get("composes"), Some(&serde_json::json!("")));
     }
 
     #[test]

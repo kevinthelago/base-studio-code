@@ -193,6 +193,16 @@ export interface ComponentRecord {
    *  excludes it; the Rust doctor skips it; `bsc ui suppress`/`unsuppress` write/clear it. Absent on every
    *  real record. */
   suppressed?: boolean;
+  /** LITE record (#4072) — hydrated from `bsc ui list --graph`, so it carries only what the graph
+   *  renders: the node card + `composes`. Its `srcText`/`props`/`variants` are EMPTY DEFAULTS, not
+   *  real values.
+   *
+   *  It exists so the Studio page can paint off a 33 KB read instead of blocking up to 8s on the
+   *  1.72 MB `--full` one. The marker is load-bearing rather than cosmetic: without it an empty
+   *  `srcText` is indistinguishable from a component that genuinely has none, so the preview would
+   *  claim "no implementation source yet" and the build scan would silently skip every component.
+   *  Cleared when the full read lands and replaces the record. */
+  lite?: boolean;
   /** The raw intrinsic this component REPLACES (`"button"`, `"input"`) — the authoring hint that
    *  derives the flagship anti-duplication lint rule ("use <Name> not a raw <wraps>"). Absent ⇒ none. */
   wraps?: string;
