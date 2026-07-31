@@ -80,6 +80,9 @@ fn serve(app: &tauri::AppHandle, dir: &std::path::Path, env: &bsc_appchan::Envel
 }
 
 /// Route one envelope to its verb. Returns the reply payload, or a stated error.
+#[allow(unused_imports)]
+use tauri::Manager;
+
 fn handle(app: &tauri::AppHandle, env: &bsc_appchan::Envelope) -> Result<serde_json::Value, String> {
     match env.kind.as_str() {
         bsc_shot::KIND => {
@@ -87,6 +90,13 @@ fn handle(app: &tauri::AppHandle, env: &bsc_appchan::Envelope) -> Result<serde_j
                 .map_err(|e| format!("malformed shot request: {e}"))?;
             let res = crate::shot::capture(app, &env.id, &req)?;
             serde_json::to_value(res).map_err(|e| e.to_string())
+        }
+        bsc_fleet::KIND => {
+            let req: bsc_fleet::FleetRequest = serde_json::from_value(env.payload.clone())
+                .map_err(|e| format!("malformed fleet request: {e}"))?;
+            let state = app.state::<crate::console::pty::PtyState>();
+            let panes = crate::console::pty::pane_liveness(req.pane_ids, &state);
+            serde_json::to_value(bsc_fleet::FleetResult { panes }).map_err(|e| e.to_string())
         }
         bsc_navigate::KIND => {
             let req: bsc_navigate::NavRequest = serde_json::from_value(env.payload.clone())

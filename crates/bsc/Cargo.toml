@@ -39,6 +39,7 @@ bsc-files = { path = "../bsc-files" }
 bsc-shot = { path = "../bsc-shot" }
 # `bsc navigate` — steer the running app to a view so a capture can target it (#3274, epic #3260).
 bsc-navigate = { path = "../bsc-navigate" }
+bsc-fleet = { path = "../bsc-fleet" }
 # Read-only inspection of the RUNNING app (#3437) — the third leg beside shot + navigate.
 bsc-debug = { path = "../bsc-debug" }
 # `bsc loop` — the conversation loop store: two participants exchange turns until a signal, or never (#3262, epic #3260).

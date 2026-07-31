@@ -568,6 +568,47 @@ pub(crate) fn pty_pane_runtime(
         .collect()
 }
 
+/// Per-pane liveness for `bsc fleet` (#4098), shaped as the CLI's wire type.
+///
+/// An EMPTY `pane_ids` means "every pane the app is tracking" — the CLI asks that way when there is no
+/// roster to narrow by, and only the app knows the full set.
+///
+/// Reuses the same one-walk batching as [`pty_pane_runtime`]: the descendant probe is the expensive
+/// part, so the pids are collected under the lock, the lock is DROPPED, and the walk happens once for
+/// all of them. It also reports the pid, which is the thing the original report had to leave the app
+/// and run `tasklist` to find.
+pub(crate) fn pane_liveness(pane_ids: Vec<String>, state: &PtyState) -> Vec<bsc_fleet::PaneLive> {
+    let (ids, pids): (Vec<String>, Vec<Option<u32>>) = {
+        let sessions = state.0.lock().unwrap();
+        let wanted: Vec<String> = if pane_ids.is_empty() {
+            sessions.keys().cloned().collect()
+        } else {
+            pane_ids
+        };
+        wanted
+            .into_iter()
+            .map(|id| {
+                let pid = sessions.get(&id).and_then(|s| s.child.process_id());
+                (id, pid)
+            })
+            .unzip()
+    };
+    //  is session PRESENCE and is NOT derived from the pid: a session whose  comes
+    // back None still occupies the map (see ), and reporting it as absent would be the
+    // same class of wrong answer this command exists to fix.
+    let live: Vec<bool> = {
+        let sessions = state.0.lock().unwrap();
+        ids.iter().map(|id| sessions.contains_key(id)).collect()
+    };
+    let busy = busy::shells_with_descendants(&pids);
+    ids.into_iter()
+        .zip(live)
+        .zip(busy)
+        .zip(pids)
+        .map(|(((pane_id, live), busy), pid)| bsc_fleet::PaneLive { pane_id, live, busy, pid })
+        .collect()
+}
+
 #[tauri::command]
 pub(crate) fn pty_write(
     pane_id: String,

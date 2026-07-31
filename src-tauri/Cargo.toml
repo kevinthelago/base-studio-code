@@ -77,6 +77,8 @@ bsc-shot = { path = "../crates/bsc-shot" }
 # The ONE bsc→app request channel + the navigate verb (#3274, epic #3260).
 bsc-appchan = { path = "../crates/bsc-appchan" }
 bsc-navigate = { path = "../crates/bsc-navigate" }
+# Real fleet liveness over the shared channel (#4098) — the app owns PtyState, so only it can answer.
+bsc-fleet = { path = "../crates/bsc-fleet" }
 # Read-only inspection of the live view answered by the appchan watcher (#3437).
 bsc-debug = { path = "../crates/bsc-debug" }
 # PNG decode/encode for the --rect crop (CapturePreview hands back the WHOLE webview). `png` not
