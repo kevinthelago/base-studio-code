@@ -32,6 +32,17 @@ pub struct CliSpec {
     /// each rendered as the stored string — or verbatim for a non-string value (e.g. the component
     /// store's `shapes` array, #2475) — and `""` when absent.
     pub meta_fields: &'static [&'static str],
+    /// The keys `list --graph` projects (#4072) — a store's GRAPH projection: exactly the fields a
+    /// graph view renders (its nodes + the field its edges derive from), and nothing else.
+    ///
+    /// It exists because the desktop hydrated its Design Studio graph with `--full`, which for 321
+    /// components is 1.72 MB — 77.6% of it `srcText`, which no node reads. The projection is 33 KB,
+    /// 1.9% of that, and the page blocked up to 8s on the difference.
+    ///
+    /// EMPTY (`&[]`) means the store has no graph view; `--graph` is then rejected rather than
+    /// silently falling back to {@link CliSpec::meta_fields}, which would hand a caller a shape that
+    /// looks right and is missing the fields its edges need.
+    pub graph_fields: &'static [&'static str],
 }
 
 /// Parsed global flags + leftover positional args.
@@ -45,6 +56,9 @@ struct Args {
     /// envelope/quoting. On `list` it prints one id per line; on `get` it prints the stored record raw
     /// (CR-stripped). Neutralizes the CRLF + cp1252 traps that broke shell audits. Ignored elsewhere.
     raw: bool,
+    /// `list --graph` (#4072): emit only the store's GRAPH projection — the fields a graph view
+    /// actually renders. Takes precedence over `--full` (both are JSON shapes; this is the narrower).
+    graph: bool,
     /// `set --file <name>` (#3373): read the payload from a BARE-NAMED file in `$BSC_SCRATCH` instead
     /// of stdin. The channel a restricted studio session must use — a heredoc cannot be allow-listed,
     /// since newlines are command separators, so its JSON body parses as its own unmatchable commands.
@@ -54,13 +68,14 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { dir: None, pretty: false, full: false, raw: false, file: None, positional: Vec::new() };
+    let mut a = Args { dir: None, pretty: false, full: false, graph: false, raw: false, file: None, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--dir" => a.dir = Some(it.next().ok_or("--dir needs a path")?),
             "--pretty" => a.pretty = true,
             "--full" => a.full = true,
+            "--graph" => a.graph = true,
             "--raw" => a.raw = true,
             "--file" => a.file = Some(it.next().ok_or("--file needs a bare filename in $BSC_SCRATCH")?),
             // `-h`/`--help` route to the help command (anywhere on the line).
@@ -132,6 +147,19 @@ pub fn run_hooked_validated(
                 // `--full`/`--pretty` (they're JSON shapes; raw is the non-JSON one).
                 let ids: Vec<String> = store.list().iter().filter_map(|j| id_field(j)).collect();
                 bsc_cli_util::print_raw_lines(&ids);
+            } else if args.graph {
+                // #4072 — the GRAPH projection: only what a graph view renders. Rejected (never
+                // silently widened to the lean meta) for a store that declares none, so a caller
+                // cannot get a plausible-looking shape whose edge field is missing.
+                if spec.graph_fields.is_empty() {
+                    return Err(format!(
+                        "{prog} list --graph: the {} store has no graph projection",
+                        spec.noun
+                    ));
+                }
+                let metas: Vec<Value> =
+                    store.list().iter().map(|j| lean_meta(j, spec.graph_fields)).collect();
+                print_json(&metas, args.pretty);
             } else if args.full {
                 // Full-fidelity read (#2143): every record's COMPLETE JSON object as a plain array.
                 // An unparseable file is skipped (matching the lenient lean path).
@@ -317,6 +345,32 @@ mod tests {
     }
 
     #[test]
+    fn graph_flag_parses_and_is_independent_of_full() {
+        // #4072 — `--graph` is its own JSON shape, not a modifier of `--full`.
+        let a = parse_args(vec!["list".into(), "--graph".into()]).unwrap();
+        assert!(a.graph && !a.full);
+        let a = parse_args(vec!["list".into(), "--full".into()]).unwrap();
+        assert!(a.full && !a.graph);
+    }
+
+    #[test]
+    fn graph_is_rejected_for_a_store_that_declares_no_projection() {
+        // The widget spec has `graph_fields: &[]`. It must ERROR rather than silently serving the lean
+        // meta — a caller handed a plausible shape whose edge field is missing would draw a graph with
+        // no edges and no error, which is the worst of both.
+        let dir = std::env::temp_dir().join(format!("bsc-graphflag-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let err = run(
+            vec!["list".into(), "--graph".into(), "--dir".into(), dir.to_string_lossy().into_owned()],
+            "bsc widget",
+            &widget_spec(),
+        )
+        .unwrap_err();
+        assert!(err.contains("no graph projection"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn parse_args_reads_flags_and_positionals() {
         let a = parse_args(vec![
             "set".into(),
@@ -459,6 +513,7 @@ mod tests {
             tagline: "the widget store",
             commands: TEST_COMMANDS,
             meta_fields: &["id", "name"],
+            graph_fields: &[],
         }
     }
 

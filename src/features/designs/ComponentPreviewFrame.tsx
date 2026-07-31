@@ -195,6 +195,13 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     setStatus("building");
     setError("");
     /* eslint-enable react-hooks/set-state-in-effect */
+    // #4072 — a LITE record carries the graph projection only; its source has not been read yet. Say
+    // so and wait: the full-fidelity read is already in flight and re-runs this effect when it lands.
+    // Falling through would blame the component for source the app simply has not fetched.
+    if (comp.lite) {
+      setStatus("building");
+      return;
+    }
     const build = componentPreviewFiles(comp, ARTIFACT, siblings, libResolver, previewState, previewData, liveStates);
     if (!build) {
       setStatus("error");

@@ -18,7 +18,7 @@ import { bsc, bscRun } from "@/shared/lib/core/bsc";
 import { kitUsageId, makeChange, planPropagation, dispatchKey } from "./lib/propagation";
 import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, reconcileKits } from "./lib/seed";
 import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "./lib/themes";
-import { loadComponents, loadKits, pushComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
+import { loadComponents, loadComponentsGraph, loadKits, pushComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
 import { loadThemes, pushTheme, dropTheme, loadVariants } from "./lib/themeBridge";
 import { loadKitUsage, pushKitUsage, dropKitUsage } from "./lib/kitUsageBridge";
 import { setActiveKitThemes, applyVariantsToRoot, applyContributionsToRoot, applyAnimationsToRoot, kitAnimations, type DesignContributionOverlay } from "@/shared/ui/kit";
@@ -230,6 +230,17 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     // #2975: auto-apply ON ⇒ no pending review queue. `kitDispatches` is persisted (durable across
     // restarts), so drop any queued requests on boot when the setting is enabled — they're ignored.
     if (get().autoApplyKitChanges && get().kitDispatches.length > 0) set({ kitDispatches: [] });
+    // ── PHASE 1 (#4072): paint from the GRAPH projection ────────────────────────────────────────
+    // `--full` is 1.72 MB over 321 components and measured up to 8040ms, which is what the Studio
+    // page blocked on; the projection is 33 KB. Rendering the graph needs nothing else, so set the
+    // records and let the page paint while phase 2 runs.
+    //
+    // NO reconcile here, deliberately. `reconcileComponents` decides which built-ins are stale and
+    // PUSHES the fixed copies back to the store — fed lite records it would write their empty
+    // `srcText` over real source. Phase 1 only ever sets state; phase 2 owns convergence.
+    const graph = await loadComponentsGraph();
+    if (graph?.length) set({ components: graph });
+    // ── PHASE 2: the full-fidelity read, off the critical path ──────────────────────────────────
     const [loadedC, loadedK] = await Promise.all([loadComponents(), loadKits()]);
     // Compile each KIT's MOTION library (#2942) into the managed <style> — on boot (useAppBoot calls
     // this) and on a `ui-touch` write (setAiFocused re-runs it), mirroring the variant apply.
