@@ -1,16 +1,39 @@
-// #3610 — the persisted snapshot must NOT carry the component library.
+// #3610 / #4086 — the persisted snapshot must NOT carry a `bsc`-owned library.
 //
-// `components` is a ~592 KB blob loaded fresh from `bsc ui` at boot (hydrateComponents). Zustand `persist`
-// re-`JSON.stringify`s the whole partialized snapshot on EVERY store write, so persisting `components`
-// re-serialized ~600 KB on the main thread on every unrelated tick — freezing the app. This guards that
-// it stays out (and that genuine UI/settings state stays in).
+// Zustand `persist` re-`JSON.stringify`s the whole partialized snapshot on EVERY store write. #3610
+// found `components` (~592 KB) riding along on every unrelated tick and freezing the app; #4086 found
+// the same shape in `blueprints` (395 KB), `skills` (71 KB), `personas` (33 KB) and `teams` (6 KB) —
+// together 96% of a 519 KB file. Each is REPLACED from its own SQLite store at boot, so the persisted
+// copy was a second source that could only drift.
+//
+// These guard that they stay out, and that genuine UI/settings state stays in.
 import { describe, it, expect } from "vitest";
 import { persistedState } from "./persist";
 import { useAppStore } from "@/store";
 
 describe("persistedState — the persist allowlist (#3610)", () => {
-  it("does NOT persist the component library (it re-hydrates from bsc at boot)", () => {
-    expect("components" in persistedState(useAppStore.getState())).toBe(false);
+  it("does NOT persist any bsc-owned library (each re-hydrates from its store at boot)", () => {
+    const snap = persistedState(useAppStore.getState());
+    // Paired with the hydrate that owns each one — a field may only be dropped BECAUSE something
+    // else restores it, so the pairing is the actual invariant.
+    for (const [field, owner] of [
+      ["components", "hydrateComponents"],
+      ["blueprints", "store/index.ts blueprint list --full"],
+      ["skills", "hydrateSkills"],
+      ["skillGroups", "hydrateSkills"],
+      ["personas", "hydratePersonas"],
+      ["teams", "hydrateOrgs"],
+    ]) {
+      expect(field in snap, `${field} must stay out of persist — ${owner} restores it`).toBe(false);
+    }
+  });
+
+  it("a fat bsc-owned library added to the store does NOT grow the persisted snapshot (#4086)", () => {
+    // The generalization of the #3610 proof: the heavy libraries no longer ride along on every write.
+    const before = JSON.stringify(persistedState(useAppStore.getState())).length;
+    const fat = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `x${i}`, body: "y".repeat(4000) }));
+    useAppStore.setState({ blueprints: fat(100) as never, skills: fat(30) as never, personas: fat(20) as never });
+    expect(JSON.stringify(persistedState(useAppStore.getState())).length).toBe(before);
   });
 
   it("a full 600 KB component library added to the store does NOT grow the persisted snapshot", () => {
@@ -31,7 +54,6 @@ describe("persistedState — the persist allowlist (#3610)", () => {
     for (const key of [
       "activeWorkspace", "tabs", "keybindings",           // shell / console UI
       "githubToken", "githubState",                        // github
-      "skills", "personas", "teams", "blueprints",         // libraries
       "planFleet", "planStages",                           // planner
       "kits", "kitUsage", "kitDispatches",                 // kit state (kept: small caches + durable queue)
     ]) {
