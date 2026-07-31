@@ -983,3 +983,54 @@ fn bsc_tokens_helper_appends_a_session_line() {
     let _ = std::fs::remove_dir_all(&dir);
     });
 }
+
+/// #4084 — FS confinement blocked every session's OWN agent-harness state, so memory failed SILENTLY
+/// (the read was refused and the session carried on without it): 15 blocks across 11 sessions in one
+/// perm.log, plus 12 on `tool-results/`.
+///
+/// Drives the REAL hook in a bash subshell, because the properties that matter are security ones and
+/// a hand-reasoned reading of the `case` globs is exactly how a hole gets shipped. The cross-session
+/// deny is the load-bearing case: the two-line version of this fix (allow all of `projects/**`) passes
+/// every other assertion here and leaks every project's memory.
+#[test]
+fn confine_allows_the_session_its_own_agent_state_and_nothing_elses() {
+    use std::process::{Command, Stdio};
+    use std::io::Write;
+    with_rc_subshell("confine", format!("{}{}", frag("shared.sh"), frag("confine.sh")), |RcSub { shell, dir, rc_bash }| {
+        let own = crate::to_bash_path(&dir.join("own-state").to_string_lossy());
+        let other = crate::to_bash_path(&dir.join("other-state").to_string_lossy());
+        let root = crate::to_bash_path(&dir.join("repo").to_string_lossy());
+
+        // `bsc-confine` reads the tool payload on stdin and returns 2 to BLOCK, 0 to allow.
+        let probe = |file: &str, tool: &str, state: Option<&str>| -> bool {
+            let mut c = Command::new(&shell);
+            c.arg("-c").arg("bsc-confine").env("BASH_ENV", &rc_bash).env("BSC_REPO_ROOT", &root);
+            match state {
+                Some(v) => { c.env("BSC_AGENT_STATE_DIR", v); }
+                None => { c.env_remove("BSC_AGENT_STATE_DIR"); }
+            }
+            let mut ch = c.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+            let body = format!(r#"{{"tool_name":"{tool}","file_path":"{file}"}}"#);
+            let _ = ch.stdin.take().unwrap().write_all(body.as_bytes());
+            ch.wait().unwrap().success() // true ⇒ allowed
+        };
+
+        // Its own memory + tool-results, READ and WRITE. Write matters: a read-only exemption would let
+        // an agent read what it saved before and never save anything new.
+        assert!(probe(&format!("{own}/memory/note.md"), "Read", Some(&own)), "own memory read");
+        assert!(probe(&format!("{own}/memory/note.md"), "Write", Some(&own)), "own memory WRITE");
+        assert!(probe(&format!("{own}/abc/tool-results/x.txt"), "Read", Some(&own)), "own tool-results");
+
+        // ANOTHER session's state stays blocked — the whole reason this is scoped, not a blanket allow.
+        assert!(!probe(&format!("{other}/memory/note.md"), "Read", Some(&own)), "cross-session leak");
+
+        // The rest of the confinement is untouched.
+        assert!(!probe("C:/Users/somebody/secrets.txt", "Read", Some(&own)), "arbitrary path");
+        assert!(probe(&format!("{root}/src/main.rs"), "Read", Some(&own)), "repo root");
+
+        // UNSET ⇒ byte-identical to before this change: the state dir is confined away again.
+        assert!(!probe(&format!("{own}/memory/note.md"), "Read", None), "unset must not widen anything");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    });
+}
