@@ -28,6 +28,22 @@ describe("parseFeaturesFile", () => {
     expect(f[1].dependsOn).toEqual(["kernel"]);
   });
 
+  // #4080 — the plan → algorithms-graph edge. Both spellings, because the store emits camelCase but a
+  // hand-written or older payload may carry snake, and silently dropping it loses the reference outright.
+  it("parses requires, tolerating both spellings (#4080)", () => {
+    const f = parseFeaturesFile(JSON.stringify([
+      { slug: "sorter", name: "Sorter", requires: ["merge.rs", "binary-search.ts"] },
+      { slug: "snake", name: "Snake", requires_: ["merge.rs"] },
+      { slug: "none", name: "None" },
+    ]));
+    expect(f[0].requires).toEqual(["merge.rs", "binary-search.ts"]);
+    expect(f[1].requires).toEqual(["merge.rs"]);
+    // Absent ⇒ `undefined`, the same convention every other array field here follows (`strArray`
+    // collapses absent AND empty to undefined). Deliberately NOT normalized to `[]` for this one field
+    // — a lone exception would be worse than the convention.
+    expect(f[2].requires).toBeUndefined();
+  });
+
   it("derives a slug from the name when missing, and an explicit stream wins", () => {
     const f = parseFeaturesFile(JSON.stringify([{ name: "Export to CSV", stream: "exporter" }]));
     expect(f[0].slug).toBe("export-to-csv");
