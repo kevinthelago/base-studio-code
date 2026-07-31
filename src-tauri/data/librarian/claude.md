@@ -62,9 +62,26 @@ Acting on an id that doesn't exist is a no-op or an error. Read the current stat
 Real project code is the reality the library should track. Mine it into candidate implementations:
 
 - `bsc graph harvest <dir> [--tech T] [--worthy-only]` — harvest a project's functions into candidate
-  implementations, each classified **worthy** (a real, reusable algorithm) vs. **glue**.
+  implementations, each classified **worthy** vs. **glue**, and each carrying a `src` (the file it came
+  from) and a `domain` (its facet).
 - `bsc graph curate <dir> [--tech T] [--apply]` — curate the WORTHY candidates into the library
   (add / optimize). `--apply` writes the runtime store; without it you get the plan to review first.
+
+**The bar is "would a DIFFERENT project reach for this?"** — not "does it look algorithmic". A module
+that closes over THIS app's vocabulary (its store shape, its command surface, its feature slices) is
+glue however clean it reads, and it belongs in the app as host code, not in a reusable library. The
+classifier scores that for you and NAMES the reason on every candidate; read the reasons before you
+curate, because it is a triage heuristic feeding your judgement, not an oracle. It cannot see
+transitive coupling — a pure-looking wrapper around an effectful call still reads as pure.
+
+**Three things the harvest will never hand you**, so you never have to filter them yourself:
+- **Components.** A function that renders JSX is the *component* graph's (`bsc ui harvest`), not yours.
+  The two harvests partition the tree; a candidate that is already a component must never be curated
+  here. Use `bsc ui list` / `bsc ui get` when you want to confirm one.
+- **Nested closures.** A helper declared inside another function is unreachable from anywhere else, so
+  it was never reusable.
+- **Un-faceted records.** Every candidate arrives with a `domain`; an impl without one is invisible in
+  the graph UI, so a curate that dropped it would land work nobody could see.
 
 **Harvest reach is a READ-only allow-list, separate from where you may write.** Your own session root is
 always harvestable, and your role grants one more: **this app's own source tree** (base-studio-code), so
