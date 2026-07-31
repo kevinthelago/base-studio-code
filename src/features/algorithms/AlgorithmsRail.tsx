@@ -19,7 +19,69 @@ import { useRailSections } from "@/shared/hooks/useRailSections";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
-import { groupImplsByLanguage, domainsOf, type KnowledgeGraph, type Tech } from "./lib/knowledge";
+import { groupImplsByLanguage, domainsOf, folderTree, type AlgoImpl, type AlgoFolderNode, type KnowledgeGraph, type Tech } from "./lib/knowledge";
+
+/** One impl row — the same shape at every tree depth, so a nested impl reads identically to a flat one. */
+function ImplRow({ im, depth, selected, onSelect }: {
+  im: AlgoImpl; depth: number; selected?: string | null; onSelect: (id: string) => void;
+}) {
+  return (
+    <RailRow
+      className="algo-implrow"
+      indent={depth}
+      active={im.id === selected}
+      onClick={() => onSelect(im.id)}
+      leading={<Box style={{ width: 8, height: 8, borderRadius: 2, background: im.role === "primitive" ? "var(--violet)" : "var(--accent)" }} />}
+      trailing={<Text as="span" mono size="xxs" tone="dim">{im.id}</Text>}
+    >
+      {im.name}
+    </RailRow>
+  );
+}
+
+/** A folder and everything under it (#4107) — recursive, so the tree is as deep as the source tree is.
+ *  Collapsed folders are cheap: their subtree is not rendered at all, which matters for a harvested
+ *  library where one language can carry hundreds of impls across dozens of folders. */
+function FolderNode({ node, depth, folders, selected, onSelect }: {
+  node: AlgoFolderNode; depth: number;
+  folders: { isOpen: (k: string) => boolean; toggle: (k: string) => void };
+  selected?: string | null; onSelect: (id: string) => void;
+}) {
+  const key = `folder:${node.path}`;
+  const open = folders.isOpen(key);
+  // The COUNT is the whole subtree, not just this folder's own impls — a collapsed folder still has to
+  // say how much is inside it, or a deep tree gives no sense of where the work lives.
+  const total = countImpls(node);
+  return (
+    <Box>
+      <RailRow
+        className="algo-folderhead"
+        caret={open}
+        indent={depth}
+        weight={500}
+        title={node.path}
+        onClick={() => folders.toggle(key)}
+        trailing={<Text as="span" mono size="xxs" tone="dim">{total}</Text>}
+      >
+        {node.name}
+      </RailRow>
+      {open && (
+        <>
+          {node.children.map((c) => (
+            <FolderNode key={c.path} node={c} depth={depth + 1} folders={folders} selected={selected} onSelect={onSelect} />
+          ))}
+          {node.impls.map((im) => (
+            <ImplRow key={im.id} im={im} depth={depth + 1} selected={selected} onSelect={onSelect} />
+          ))}
+        </>
+      )}
+    </Box>
+  );
+}
+
+function countImpls(n: AlgoFolderNode): number {
+  return n.impls.length + n.children.reduce((s, c) => s + countImpls(c), 0);
+}
 
 export function AlgorithmsRail({ graph, activeTech, selectedImpl, onSelectImpl, onSelectLang }: {
   graph: KnowledgeGraph;
@@ -73,6 +135,9 @@ export function AlgorithmsRail({ graph, activeTech, selectedImpl, onSelectImpl, 
         // A language with nothing in the active domain drops out of the filtered rail.
         if (activeDomain && inDomain.length === 0) return null;
         const rows = inDomain.filter((im) => match(im.name));
+        // Search + domain narrow the SET; the tree is built from what survives, so a filtered rail
+        // shows only the folders that still have something in them.
+        const tree = folderTree(rows);
         return (
           <Box key={g.key} style={{ marginBottom: 4 }}>
             <RailRow
@@ -89,18 +154,14 @@ export function AlgorithmsRail({ graph, activeTech, selectedImpl, onSelectImpl, 
             </RailRow>
             {open && (
               <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
-                {rows.map((im) => (
-                  <RailRow
-                    key={im.id}
-                    className="algo-implrow"
-                    indent={1}
-                    active={im.id === selectedImpl}
-                    onClick={() => onSelectImpl(im.id)}
-                    leading={<Box style={{ width: 8, height: 8, borderRadius: 2, background: im.role === "primitive" ? "var(--violet)" : "var(--accent)" }} />}
-                    trailing={<Text as="span" mono size="xxs" tone="dim">{im.id}</Text>}
-                  >
-                    {im.name}
-                  </RailRow>
+                {/* #4107: the nested FOLDER tree, mirroring the Components rail. A library harvested
+                    before folders existed has none, so `unfoldered` carries every impl and this renders
+                    exactly the flat list it always did — the change is additive, not a replacement. */}
+                {tree.roots.map((n) => (
+                  <FolderNode key={n.path} node={n} depth={1} folders={folders} selected={selectedImpl} onSelect={onSelectImpl} />
+                ))}
+                {tree.unfoldered.map((im) => (
+                  <ImplRow key={im.id} im={im} depth={1} selected={selectedImpl} onSelect={onSelectImpl} />
                 ))}
                 {rows.length === 0 && q && (
                   <Text size={11} tone="dim" as="div" style={{ padding: "6px 10px", fontStyle: "italic" }}>no matches</Text>
