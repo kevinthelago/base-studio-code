@@ -371,8 +371,21 @@ fn buildability(
     if bsc_component::graph_health::has_code_elision(src_text) {
         why.push("contains an elision marker (`…`) — a sketch, not code".to_string());
     }
-    let unresolved: BTreeSet<&str> =
-        imports.iter().filter(|i| !i.is_sibling(siblings, from_rel)).map(|i| i.spec.as_str()).collect();
+    // A REGISTERED platform module is NOT unresolved (#4071). The runtime module registry resolves these
+    // specifiers literally — the app mounts a record importing `@/store` or `@/shared/lib/core/format`
+    // without complaint — so counting them against buildability flagged 116 of 351 candidates for
+    // something that is not wrong. Same blind spot #3897 fixed in the doctor, one tool over, and the same
+    // predicate is reused rather than a second copy of the registry.
+    //
+    // The import STAYS in `src_text`, exactly as it does for a resolved sibling: it is the binding the JSX
+    // renders against, and the registry supplies it at load time. Nothing is vendored or stubbed — this
+    // changes only whether the candidate is REPORTED buildable.
+    let unresolved: BTreeSet<&str> = imports
+        .iter()
+        .filter(|i| !i.is_sibling(siblings, from_rel))
+        .filter(|i| !bsc_component::graph_health::is_registered_platform_module(&i.spec))
+        .map(|i| i.spec.as_str())
+        .collect();
     if !unresolved.is_empty() {
         let list = unresolved.iter().map(|m| format!("`{m}`")).collect::<Vec<_>>().join(", ");
         why.push(format!("unresolved internal import(s): {list} — resolve or vendor them"));
@@ -894,14 +907,57 @@ mod tests {
     #[test]
     fn an_unresolved_internal_import_is_flagged_never_silently_accepted() {
         // #3470: such a srcText USED to store with NO complaint (looks_buildable_module was false, so
-        // the syntax gate skipped entirely). Both the harvest and `bsc ui set` state it now. `Panel` imports a
-        // harvested sibling AND the app store — the store binding is a real dangling import.
-        let c = by_name("Panel");
-        assert!(!c.buildable, "a component with an unresolved @/ import is not buildable");
+        // the syntax gate skipped entirely). Both the harvest and `bsc ui set` state it now. `Gauge`
+        // imports a specifier that is neither a harvested sibling nor a registered platform module — so
+        // nothing resolves it, and it is a real dangling import.
+        //
+        // (This used to assert on `Panel`/`@/store`. #4071 reclassified that one: `@/store` IS in the
+        // runtime registry, so it resolves — see the test below. The honesty guarantee needed a fixture
+        // that is genuinely unresolvable, not one that merely looked it.)
+        let c = by_name("Gauge");
+        assert!(!c.buildable, "a component with a truly unresolved @/ import is not buildable");
         let why = c.unbuildable_reasons.join(" ");
-        assert!(why.contains("`@/store`"), "the reason NAMES the import: {why}");
-        // …and it does NOT condemn the sibling import alongside it.
-        assert!(!why.contains("controls/Button"), "a sibling import is not a defect: {why}");
+        assert!(why.contains("`@/features/nowhere/lib/missing`"), "the reason NAMES the import: {why}");
+    }
+
+    /// #4071 — the blind spot: the runtime module registry resolves these specifiers literally, so a
+    /// candidate importing one mounts fine in the app. Counting them against buildability flagged 116 of
+    /// 351 candidates in the app's own tree for something that is not wrong — and a false "unresolved
+    /// import" is what pressures the next author to hand-stub the import, the corruption
+    /// `reimplemented-component` exists to catch (#3892/#3895).
+    #[test]
+    fn a_registered_platform_module_resolves_like_a_sibling() {
+        // `Panel` imports a harvested sibling (`@/shared/ui/controls/Button`) AND `@/store`, a REGISTERED
+        // platform module. Both resolve, so it is buildable.
+        let c = by_name("Panel");
+        assert!(c.buildable, "registered platform module resolves: {:?}", c.unbuildable_reasons);
+        assert!(c.unbuildable_reasons.is_empty());
+        // The import STAYS in the closure — the registry supplies the binding at load time; nothing is
+        // vendored or stubbed. Dropping it would leave the JSX referencing a free identifier.
+        assert!(c.src_text.contains("@/store"), "the import is kept, not elided:\n{}", c.src_text);
+    }
+
+    #[test]
+    fn buildability_pins_each_import_class_independently() {
+        // Registered platform module ONLY ⇒ buildable.
+        let (ok, _) = buildability_of("import { useAppStore } from \"@/store\";\nexport function A() { return <i/>; }");
+        assert!(ok, "a registered platform module alone does not block");
+        // An UNREGISTERED alias ⇒ still blocked, and named.
+        let (bad, why) = buildability_of("import { x } from \"@/features/nowhere/lib/missing\";\nexport function B() { return <i/>; }");
+        assert!(!bad);
+        assert!(why.join(" ").contains("`@/features/nowhere/lib/missing`"));
+        // A RELATIVE sibling that is not in the set ⇒ still blocked (the 111-candidate class, untouched).
+        let (rel, relwhy) = buildability_of("import { s } from \"./bodyStyles\";\nexport function C() { return <i/>; }");
+        assert!(!rel, "a relative sibling outside the set still blocks");
+        assert!(relwhy.join(" ").contains("`./bodyStyles`"));
+        // MIXED — a registered module plus an unresolvable sibling ⇒ blocked, naming ONLY the real one.
+        let (mixed, mwhy) = buildability_of(
+            "import { useAppStore } from \"@/store\";\nimport { s } from \"./bodyStyles\";\nexport function D() { return <i/>; }",
+        );
+        assert!(!mixed);
+        let joined = mwhy.join(" ");
+        assert!(joined.contains("`./bodyStyles`"), "names the real blocker: {joined}");
+        assert!(!joined.contains("@/store"), "does not condemn the resolved one: {joined}");
     }
 
     #[test]
@@ -934,22 +990,27 @@ mod tests {
 
     #[test]
     fn only_imports_that_land_on_a_harvested_module_are_forgiven() {
+        // NB (#4071): these specifiers are deliberately NOT real app modules. This test is about SIBLING
+        // resolution, and a registered platform module now resolves by a different route — using a real
+        // one (it used `@/shared/ui/controls/Button` and `@/store`) would pass for the wrong reason and
+        // stop testing what it means to.
         let harvest = [("Button", "controls/Button.tsx")];
         let render = "\nexport const A = () => <Button />;";
         // The specifier names the harvested module (across roots — `controls/Button` is the tail of
-        // `@/shared/ui/controls/Button`).
-        assert!(buildability_with(&format!("import {{ Button }} from \"@/shared/ui/controls/Button\";{render}"), &harvest).0);
+        // `@/features/nowhere/controls/Button`).
+        assert!(buildability_with(&format!("import {{ Button }} from \"@/features/nowhere/controls/Button\";{render}"), &harvest).0);
         // Nothing of that name was harvested.
-        assert!(!buildability_with(&format!("import {{ Button }} from \"@/shared/ui/controls/Button\";{render}"), &[("Card", "data/Card.tsx")]).0);
-        // The name matches but the MODULE doesn't — the app store is not the harvested `Button` module,
-        // so this is the app-state import that must stay a defect (a name-only rule would forgive it).
-        let (ok, why) = buildability_with(&format!("import {{ Button, useAppStore }} from \"@/store\";{render}"), &harvest);
+        assert!(!buildability_with(&format!("import {{ Button }} from \"@/features/nowhere/controls/Button\";{render}"), &[("Card", "data/Card.tsx")]).0);
+        // The name matches but the MODULE doesn't — a state module is not the harvested `Button` module,
+        // so this must stay a defect (a name-only rule would forgive it).
+        let (ok, why) = buildability_with(&format!("import {{ Button, useThing }} from \"@/features/nowhere/state\";{render}"), &harvest);
         assert!(!ok, "a name match on the wrong module is not a sibling import");
-        assert!(why.iter().any(|r| r.contains("`@/store`")), "{why:?}");
+        assert!(why.iter().any(|r| r.contains("`@/features/nowhere/state`")), "{why:?}");
         // A near-miss path must not match on a bare substring.
         assert!(!buildability_with(&format!("import {{ Button }} from \"@/ui/IconButton\";{render}"), &harvest).0);
         // A namespace import can't be attributed to named exports, so it is never assumed to be a sibling.
-        assert!(!buildability_with(&format!("import * as Button from \"@/shared/ui/controls/Button\";{render}"), &harvest).0);
+        // (Unregistered specifier for the #4071 reason above — a registered one would resolve regardless.)
+        assert!(!buildability_with(&format!("import * as Button from \"@/features/nowhere/controls/Button\";{render}"), &harvest).0);
         // A type imported ALONGSIDE a harvested component resolves with it: the preview vendors the
         // module whole, so every binding on that specifier comes from the same file. (Real and common —
         // `import { KeyValueList, type KeyValueItem } from "@/shared/ui/data/KeyValueList"` accounts for
@@ -998,9 +1059,11 @@ mod tests {
         // The line scanner this replaced only looked at lines STARTING with `import `, so a wrapped
         // import statement carried its specifier on an invisible line and the closure was silently
         // called buildable.
-        let (ok, why) = buildability_of("import {\n  useAppStore,\n} from \"@/store\";\nexport const A = () => <b />;");
+        // The specifier is deliberately unregistered (#4071) — this test is about the SCANNER seeing a
+        // wrapped statement, not about which specifiers resolve.
+        let (ok, why) = buildability_of("import {\n  useThing,\n} from \"@/features/nowhere/state\";\nexport const A = () => <b />;");
         assert!(!ok, "a wrapped import is still an import");
-        assert!(why.iter().any(|r| r.contains("`@/store`")), "{why:?}");
+        assert!(why.iter().any(|r| r.contains("`@/features/nowhere/state`")), "{why:?}");
     }
 
     #[test]
