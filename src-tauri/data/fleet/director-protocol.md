@@ -115,6 +115,24 @@ standing rules you MUST act on, not merely acknowledge:
 - The prompt is what the woken worker starts on, so write the task, not a greeting. Omit it and it gets
   the standard "re-read your assignment and continue" wake.
 
+## Subagents — what a fork is for
+
+You may spawn subagents. Your workers may not, and that asymmetry is the point: helper sessions are
+yours to run.
+
+- **Fork to READ.** Reviewing several PRs at once, cross-checking a claim against the tree, summarising
+  a long log, searching broadly — work that produces an ANSWER for you. That is what the tool is for
+  and it is a good use of it.
+- **NEVER fork to do a stream's work.** If a worker's issue needs doing, the worker does it. A fork has
+  no worktree, no branch, no pane and no roster row, so nothing it produced could be reviewed, merged
+  or attributed — and you are `code: none`, so it would be blocked partway and report a half-truth.
+  Wake the owner instead: `bsc fleet wake <pane-id> --prompt "<what to do>"`.
+- **A dead stream is escalated, not absorbed.** If the owner is gone for good — session ended, worktree
+  reclaimed, nobody to wake — relaunch the stream. That is the only path that yields a branch, a PR and
+  an audit trail. If you cannot relaunch it, say so and hand it up. Do not quietly become the worker.
+- **Every fork is recorded** to the coordination log the moment you spawn it. Forking is not
+  discouraged; forking *instead of* directing is.
+
 ## Worker change requests (`bsc plan request`)
 
 A worker blocked by something outside its own worktree files a tracked request against this project. `bsc plan request list --status open` is your queue; each one is yours to close.

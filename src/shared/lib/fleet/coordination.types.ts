@@ -52,6 +52,10 @@ export interface CoordState {
    *  Appended (never auto-cleared); the director reconciles the plan and routes any carried
    *  `ref` onward via `bsc-assign`. */
   briefs: ReceivedBrief[];
+  /** Subagents a session has spawned (#4106). A fork has no pane, no roster row, no worktree and no
+   *  branch, so without this it is the one actor in the fleet nobody can see. Appended, never
+   *  auto-cleared — a fork is a fact about what a session DID, not a state that resolves. */
+  forks: SpawnedFork[];
   /** Open commissions in the studio network (#2940): a studio session (planner/designer) asked
    *  another (designer/librarian) to author an artifact. The pump routes each to the target studio
    *  session; a matching `deliver` sets `delivered` (the authored artifact's id) so the pump can
@@ -78,6 +82,24 @@ export interface OpenRequest {
   /** What is being asked for. */
   text: string;
   /** When it was filed (epoch ms), for the surfaced-once key. */
+  at: number;
+}
+
+/** A subagent a session spawned (#4106).
+ *
+ *  Recorded because a director forking to complete a worker's job is invisible otherwise — that is how
+ *  it went unnoticed until someone happened to be watching. Legitimate forks (a coordinator reviewing
+ *  several PRs in parallel, the designer's harvest fan-out) are recorded identically: the point is that
+ *  a fork is never silent, not that a fork is wrong. */
+export interface SpawnedFork {
+  /** Stable key (`<session>@<at>`) — dedupes a replayed log. */
+  id: string;
+  /** The pane that forked. */
+  session: string;
+  /** The task the fork was given, as the spawning session described it. */
+  description: string;
+  /** The requested agent type, when one was named (e.g. `general-purpose`). */
+  subagentType?: string;
   at: number;
 }
 
@@ -210,6 +232,9 @@ export type CoordEvent =
   | { type: "assign"; session: string; target: string; body: string; issueId?: string; title?: string; at: number }
   // Maintenance mode (#1957): a finished worker parks alive + ready instead of ending.
   | { type: "maintain"; session: string; note?: string; at: number }
+  // Fork (#4106): a session spawned a subagent. Emitted by a PreToolUse hook, so it is recorded
+  // whether or not the spawning session announces it.
+  | { type: "fork"; session: string; description: string; subagentType?: string; at: number }
   // Planner brief (#2377): the planner streams a mid-build plan update to a director/issuer.
   // #4001 — the worker→director request lane. Both ends are events because the pump derives its
   // pending set from the LOG: `request` opens one, `request-resolved` closes it.
