@@ -11,6 +11,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useHotkeys } from "./useHotkeys";
 import { useNavigateBridge } from "./useNavigateBridge";
+import { useFleetWakeBridge } from "./useFleetWakeBridge";
 import { useDebugChannel } from "./useDebugChannel";
 import { useDockBack } from "./useDockBack";
 import { useScheduler } from "@/features/automations";
@@ -47,6 +48,7 @@ export default function App() {
   // #3274: apply `bsc navigate` requests from the appchan watcher (Rust emits `bsc://navigate`), so an
   // external session can steer the app to a view before capturing it.
   useNavigateBridge();
+  useFleetWakeBridge();
   // #3437: answer `bsc debug` — read-only inspection of the live DOM + preview state, so a session can
   // ask what is actually on screen instead of inferring it from source.
   useDebugChannel();
