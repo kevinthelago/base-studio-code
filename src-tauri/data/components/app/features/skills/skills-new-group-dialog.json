@@ -3,7 +3,6 @@
   "name": "SkillsNewGroupDialog",
   "kitId": "base-studio-code",
   "role": "composite",
-  "group": "features/skills",
   "srcText": "// Skills → new task-group dialog, AS GRAPH SOURCE (#3654, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the skills lib/style surface via the skills graph-platform,\n// and the sibling views as @/components/* graph records). Behaviour runs here.\n// NewGroupDialog — the small modal for creating a named ⬡ task group (a reusable skill bundle).\r\nimport { useState } from \"react\";\r\nimport { ModalScrim } from \"@/shared/ui/overlay/ModalScrim\";\r\nimport { Box } from \"@/shared/ui/layout/Box\";\r\nimport { Row } from \"@/shared/ui/layout/Row\";\r\nimport { Text } from \"@/shared/ui/typography/Text\";\r\nimport { Button } from \"@/shared/ui/controls/Button\";\r\n\r\nexport function NewGroupDialog({ onCreate, onClose }: { onCreate: (name: string) => void; onClose: () => void }) {\r\n  const [name, setName] = useState(\"\");\r\n  return (\r\n    <ModalScrim onDismiss={onClose}>\r\n      <Box pad={18} bg=\"var(--bg-panel)\" border radius=\"lg\" style={{ width: 360, boxShadow: \"0 20px 60px rgba(0,0,0,.5)\" }}>\r\n        <Text as=\"div\" size={14} weight={600} style={{ marginBottom: 4 }}>New task group</Text>\r\n        <Text as=\"div\" size={11.5} tone=\"muted\" style={{ marginBottom: 12 }}>A named ⬡ bundle of skills you can toggle onto a session or fleet stream at once.</Text>\r\n        {/* eslint-disable-next-line no-restricted-syntax -- bespoke autofocus dialog input with Enter-to-submit and a layout-critical marginBottom that TextField's .field wrapper would displace */}\r\n        <input autoFocus className=\"input\" placeholder=\"e.g. Release day\" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === \"Enter\" && name.trim()) onCreate(name.trim()); }} style={{ width: \"100%\", marginBottom: 14 }} />\r\n        <Row align=\"stretch\" gap={8} justify=\"end\">\r\n          <Button onClick={onClose}>cancel</Button>\r\n          <Button variant=\"primary\" disabled={!name.trim()} onClick={() => onCreate(name.trim())}>create</Button>\r\n        </Row>\r\n      </Box>\r\n    </ModalScrim>\r\n  );\r\n}\r\n",
   "composes": [
     "Box",
@@ -12,5 +11,6 @@
     "Row",
     "Text"
   ],
-  "src": "src/features/skills/SkillsNewGroupDialog.tsx"
+  "src": "src/features/skills/SkillsNewGroupDialog.tsx",
+  "folder": "features/skills"
 }

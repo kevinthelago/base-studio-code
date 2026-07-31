@@ -42,12 +42,12 @@ describe("componentBridge → bsc ui (#2469)", () => {
 
   it("a component's #3048 `group` rides verbatim through loadComponents — absent stays absent", async () => {
     vi.mocked(bsc).mockResolvedValueOnce(JSON.stringify([
-      { id: "chart", name: "Chart", kitId: "react-ui", role: "composite", group: "data-viz" },
+      { id: "chart", name: "Chart", kitId: "react-ui", role: "composite", folder: "data-viz" },
       { id: "btn", name: "Button", kitId: "react-ui", role: "primitive" }, // no group ⇒ ungrouped
     ]));
     const comps = await loadComponents();
-    expect(comps?.[0].group).toBe("data-viz");
-    expect(comps?.[1].group).toBeUndefined();
+    expect(comps?.[0].folder).toBe("data-viz");
+    expect(comps?.[1].folder).toBeUndefined();
   });
 
   it("a component's #3878 `tests` + #3810 `analytics` manifests ride verbatim — absent stays absent (#3884)", async () => {

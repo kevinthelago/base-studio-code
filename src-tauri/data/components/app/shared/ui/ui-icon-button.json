@@ -3,7 +3,6 @@
   "name": "IconButton",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/controls",
   "provides": "@/shared/ui/controls/IconButton",
   "srcText": "// IconButton, AS GRAPH SOURCE (#3678, epic #3604) — a pure shared/ui control authored as DATA. Its\n// `provides: \"@/shared/ui/controls/IconButton\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\n// IconButton (#1753) — the one button for icon-glyph actions (close / remove / cancel), replacing the\r\n// five wrappers (`.x`, the misspelled-and-unstyled `.iconbtn`, `.btn ghost` at three sizes, `.mini`,\r\n// fully-inline) and two glyphs (`×` U+00D7 vs `✕` U+2715) the app had hand-rolled. Renders the\r\n// canonical close glyph by default; `aria-label` is REQUIRED so every icon button is accessible.\r\nimport type { ReactNode, CSSProperties, MouseEvent } from \"react\";\r\n\r\n/** The one canonical close/dismiss glyph. */\r\nexport const CLOSE_GLYPH = \"✕\";\r\n\r\nexport interface IconButtonProps {\r\n  /** Required — icon buttons have no text, so they must carry an accessible name. */\r\n  \"aria-label\": string;\r\n  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;\r\n  /** The glyph/icon; defaults to the canonical close glyph. */\r\n  children?: ReactNode;\r\n  /** Hit-area size: md = 24px (default, modal/panel/banner headers) · sm = 20px · xs = 16px (inline chip removers). */\r\n  size?: \"md\" | \"sm\" | \"xs\";\r\n  /** Red hover (destructive). */\r\n  danger?: boolean;\r\n  disabled?: boolean;\r\n  title?: string;\r\n  className?: string;\r\n  style?: CSSProperties;\r\n}\r\n\r\nexport function IconButton({\r\n  \"aria-label\": ariaLabel, onClick, children, size = \"md\", danger, disabled, title, className, style,\r\n}: IconButtonProps) {\r\n  const cls = [\"icon-btn\", size !== \"md\" && size, danger && \"danger\", className].filter(Boolean).join(\" \");\r\n  return (\r\n    <button type=\"button\" className={cls} aria-label={ariaLabel} title={title ?? ariaLabel} onClick={onClick} disabled={disabled} style={style}>\r\n      {children ?? CLOSE_GLYPH}\r\n    </button>\r\n  );\r\n}\r\n",
   "composes": [],
@@ -57,5 +56,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/controls"
 }

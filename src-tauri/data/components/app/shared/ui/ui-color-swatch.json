@@ -3,7 +3,6 @@
   "name": "ColorSwatch",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/controls",
   "provides": "@/shared/ui/controls/ColorSwatch",
   "srcText": "// ColorSwatch, AS GRAPH SOURCE (#3660, epic #3604) — a pure leaf shared/ui primitive authored as DATA. Its\n// `provides: \"@/shared/ui/controls/ColorSwatch\"` makes the runtime loader vendor THIS source wherever a graph component imports\n// that specifier, so the primitive renders from the graph, not bundled code (registered code is the\n// fallback when no component provides it). Transcribed verbatim from the live .tsx; deps (Skeleton/Card/\n// math) stay registered code — a fresh compile is safe because the primitive holds no context or state.\nimport type { CSSProperties } from \"react\";\r\n\r\nexport interface ColorSwatchProps {\r\n  /** The fill colour — any CSS colour, incl. `var()` / `color-mix()`. */\r\n  color: string;\r\n  /** Square side in px. Default 9. */\r\n  size?: number;\r\n  /** Corner radius in px. Default 2. */\r\n  radius?: number;\r\n  className?: string;\r\n  style?: CSSProperties;\r\n}\r\n\r\n/** ColorSwatch — the small rounded colour square used as a category / profile / legend indicator.\r\n *  Replaces the inline `<span style={{ width:9, height:9, borderRadius:2, background }} />` repeated\r\n *  across the app. `flex:0 0` keeps it from shrinking inside flex rows. */\r\nexport function ColorSwatch({ color, size = 9, radius = 2, className, style }: ColorSwatchProps) {\r\n  return (\r\n    <span\r\n      className={className}\r\n      style={{ display: \"inline-block\", width: size, height: size, borderRadius: radius, background: color, flex: `0 0 ${size}px`, ...style }}\r\n    />\r\n  );\r\n}\r\n",
   "composes": [],
@@ -39,5 +38,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/controls"
 }

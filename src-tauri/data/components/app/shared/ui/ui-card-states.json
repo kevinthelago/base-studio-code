@@ -3,7 +3,6 @@
   "name": "CardStates",
   "kitId": "base-studio-code",
   "role": "composite",
-  "group": "shared/ui/feedback",
   "provides": "@/shared/ui/feedback/CardStates",
   "srcText": "// CardStates, AS GRAPH SOURCE (#3670, epic #3604) — a pure leaf shared/ui primitive authored as DATA. Its\n// `provides: \"@/shared/ui/feedback/CardStates\"` makes the runtime loader vendor THIS source wherever a graph component imports\n// that specifier (registered code is the fallback). Transcribed verbatim; deps stay registered code.\n// Per-card loading + empty states, shared across dashboards (#3246 — consolidated from the GitHub\r\n// summary #2244, Fleet #2234, Insights #2243, and MCP/Hook analytics #2246/#2247 copies).\r\n//\r\n// A dashboard card keeps its frame + head; its BODY is one of three — a shimmer skeleton while its\r\n// source loads · a compact empty state when there's no data · the content. Shared here so a card's\r\n// body states don't each re-declare the pair.\r\nimport type { ReactNode } from \"react\";\r\nimport { Stack } from \"@/shared/ui/layout/Stack\";\r\nimport { EmptyState } from \"@/shared/ui/feedback/EmptyState\";\r\nimport { Skeleton } from \"@/shared/ui/feedback/Skeleton\";\r\n\r\n/** A compact empty state for a card body — the card frame + head stay; the body shows this. */\r\nexport function CardEmpty({ icon = \"○\", title, hint }: { icon?: ReactNode; title: string; hint?: string }) {\r\n  return <EmptyState size=\"sm\" iconVariant=\"dashed\" icon={icon} title={title} description={hint} style={{ padding: \"20px 12px\" }} />;\r\n}\r\n\r\n/** A stack of shimmer rows — a loading placeholder for a list/table/chart card body. */\r\nexport function SkeletonRows({ rows = 4, h = 30, gap = 6, radius = 6 }: { rows?: number; h?: number; gap?: number; radius?: number }) {\r\n  return (\r\n    <Stack gap={gap}>\r\n      {Array.from({ length: rows }).map((_, i) => <Skeleton key={i} h={h} radius={radius} />)}\r\n    </Stack>\r\n  );\r\n}\r\n",
   "composes": [
@@ -11,5 +10,6 @@
     "Skeleton",
     "Stack"
   ],
-  "src": "src/shared/ui/feedback/CardStates.tsx"
+  "src": "src/shared/ui/feedback/CardStates.tsx",
+  "folder": "shared/ui/feedback"
 }

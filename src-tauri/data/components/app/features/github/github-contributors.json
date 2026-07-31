@@ -3,7 +3,6 @@
   "name": "GitHubContributors",
   "kitId": "base-studio-code",
   "role": "composite",
-  "group": "features/github",
   "srcText": "// GitHub → contributors card, AS GRAPH SOURCE (#3650, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the github lib/hook surface + planner board via the github\n// graph-platform, and the sibling views as @/components/* graph records). Behaviour runs here.\n// Top-contributors card — commit counts across the sampled repos (#1644).\r\n\r\nimport { Avatar } from \"@/shared/ui/data/Avatar\";\r\nimport { Stack } from \"@/shared/ui/layout/Stack\";\r\nimport { Grid } from \"@/shared/ui/layout/Grid\";\r\nimport { Card } from \"@/shared/ui/data/Card\";\r\nimport { FillBar } from \"@/shared/ui/data/FillBar\";\r\nimport { Text } from \"@/shared/ui/typography/Text\";\r\nimport type { Contributor } from \"@/features/github/lib/githubSummary\";\r\nimport { CardEmpty, SkeletonRows } from \"@/shared/ui/feedback/CardStates\";\r\n\r\nexport function ContributorsCard({ contributors, loading }: {\r\n  contributors: Contributor[];\r\n  loading: boolean;\r\n}) {\r\n  const maxC = Math.max(...contributors.map(p => p.commits), 1);\r\n  return (\r\n    <Card\r\n      style={{ padding: \"14px 16px\" }}\r\n      title=\"Top contributors\"\r\n      hint={loading ? \"loading…\" : contributors.length > 0 ? `${contributors.length} contributors · all repos` : \"no data\"}\r\n      headMb={10}\r\n    >\r\n      {loading && contributors.length === 0 && <SkeletonRows rows={4} h={22} />}\r\n      {!loading && contributors.length === 0 && (\r\n        <CardEmpty icon=\"◍\" title=\"No contributor data yet\" hint=\"GitHub is still computing contributor stats.\" />\r\n      )}\r\n      <Stack gap={8}>\r\n        {contributors.map(p => (\r\n          <Grid key={p.login} cols=\"22px 1fr 1fr 80px\" gap={10} align=\"center\">\r\n            <Avatar login={p.login} />\r\n            <Text as=\"span\" mono size={11} style={{ color: \"var(--fg)\" }}>@{p.login}</Text>\r\n            <FillBar value={p.commits / maxC} height={5} />\r\n            <Text as=\"span\" mono size={10} tone=\"muted\" style={{ textAlign: \"right\" }}>{p.commits} commits</Text>\r\n          </Grid>\r\n        ))}\r\n      </Stack>\r\n    </Card>\r\n  );\r\n}\r\n",
   "composes": [
     "Avatar",
@@ -14,5 +13,6 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/github/GitHubContributors.tsx"
+  "src": "src/features/github/GitHubContributors.tsx",
+  "folder": "features/github"
 }
