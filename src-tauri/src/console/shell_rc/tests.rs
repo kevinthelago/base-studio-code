@@ -310,9 +310,14 @@ fn bsc_fleet_joins_roster_with_coord_state() {
     // an asking worker shows ask + the question
     let l2 = text.lines().find(|l| l.starts_with("t0p2")).unwrap_or("");
     assert!(l2.contains("ask") && l2.contains("should I merge?"), "ask: {l2:?}");
-    // a freshly-woken worker reads as active; a session with no events is idle
+    // a freshly-woken worker reads as active
     assert!(text.lines().find(|l| l.starts_with("t0p3")).unwrap_or("").contains("active"), "woke→active: {text}");
-    assert!(text.lines().find(|l| l.starts_with("t0p0")).unwrap_or("").contains("idle"), "director idle: {text}");
+    // #4098 — a session with NO events reads `-`, not `idle`. `idle` claimed a liveness this helper
+    // never checked: the roster is a launch manifest and the state column is coord.log activity, so a
+    // pane whose process exited an hour ago printed exactly what a live-but-quiet one did.
+    let l0 = text.lines().find(|l| l.starts_with("t0p0")).unwrap_or("");
+    assert!(!l0.contains("idle"), "silence must not read as idle: {l0:?}");
+    assert!(l0.contains("-"), "silence reads as unknown: {l0:?}");
     let _ = std::fs::remove_dir_all(&dir);
     });
 }
@@ -1030,6 +1035,50 @@ fn confine_allows_the_session_its_own_agent_state_and_nothing_elses() {
 
         // UNSET ⇒ byte-identical to before this change: the state dir is confined away again.
         assert!(!probe(&format!("{own}/memory/note.md"), "Read", None), "unset must not widen anything");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    });
+}
+
+/// #4098 — `bsc-fleet` never checked process liveness, yet printed `idle` for any pane the coord log
+/// had nothing for. Agents read that as "these sessions are running"; on studio-code it listed 14
+/// launched panes while 5 `claude.exe` existed system-wide. The roster is a LAUNCH MANIFEST, so the
+/// output was answering a different question than the one being asked of it.
+///
+/// Driven through real bash, because the whole thing is one awk pipeline and the property that matters
+/// is what a reader SEES.
+#[test]
+fn fleet_reports_silence_as_unknown_not_idle() {
+    use std::process::{Command, Stdio};
+    with_rc_subshell("fleet", frag("fleet.sh"), |RcSub { shell, dir, rc_bash }| {
+        let roster = dir.join("fleet.roster.tsv");
+        std::fs::write(
+            &roster,
+            "p:quiet\tquiet\trepo\tbr\tworker\np:asking\tasking\trepo\tbr\tworker\n",
+        )
+        .unwrap();
+        let log = dir.join("coord.log");
+        std::fs::write(&log, "2026-07-31T00:00:00Z\tp:asking\task\tthe director\n").unwrap();
+
+        let out = Command::new(&shell)
+            .arg("-c")
+            .arg("bsc-fleet")
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_FLEET_ROSTER", crate::to_bash_path(&roster.to_string_lossy()))
+            .env("BSC_COORD_LOG", crate::to_bash_path(&log.to_string_lossy()))
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+
+        // A silent pane must NOT read as a live-but-quiet session.
+        assert!(!text.contains("idle"), "silence must not print as `idle`:\n{text}");
+        assert!(text.contains("p:quiet"), "the pane is still listed:\n{text}");
+        // A pane the coord log DOES know about keeps its real state + target.
+        assert!(text.contains("ask"), "a real coord state still shows:\n{text}");
+        // And the reader is told what they are looking at.
+        assert!(text.contains("LAUNCH MANIFEST"), "the header must name the source:\n{text}");
+        assert!(text.contains("NOT process liveness"), "…and disclaim liveness:\n{text}");
 
         let _ = std::fs::remove_dir_all(&dir);
     });
