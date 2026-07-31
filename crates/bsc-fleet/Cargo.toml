@@ -1,0 +1,16 @@
+[package]
+name = "bsc-fleet"
+version = "0.1.0"
+edition = "2021"
+description = "Ask the RUNNING app which fleet panes are actually alive (#4098): the `bsc fleet` CLI + its request/result contract. `bsc-fleet` (the shell helper) reads a LAUNCH MANIFEST and can only report coord.log activity, so a pane whose process exited an hour ago printed the same as a live one; this reports real liveness. Tauri-free; rides the shared bsc-appchan transport."
+
+[lib]
+name = "bsc_fleet"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bsc-util = { path = "../bsc-util" }
+bsc-cli-util = { path = "../bsc-cli-util" }
+# The ONE bsc→app request channel — shared with `bsc shot`/`bsc navigate`, so there is no second transport.
+bsc-appchan = { path = "../bsc-appchan" }

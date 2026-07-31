@@ -506,6 +506,7 @@ dependencies = [
  "bsc-appchan",
  "bsc-data",
  "bsc-debug",
+ "bsc-fleet",
  "bsc-graph",
  "bsc-llm",
  "bsc-navigate",
@@ -702,6 +703,7 @@ dependencies = [
  "bsc-data",
  "bsc-debug",
  "bsc-files",
+ "bsc-fleet",
  "bsc-graph",
  "bsc-loop",
  "bsc-navigate",
@@ -821,6 +823,17 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "ignore",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-fleet"
+version = "0.1.0"
+dependencies = [
+ "bsc-appchan",
+ "bsc-cli-util",
+ "bsc-util",
  "serde",
  "serde_json",
 ]
