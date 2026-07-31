@@ -69,6 +69,7 @@ const SPEC: CliSpec = CliSpec {
     tagline: TAGLINE,
     commands: COMMANDS,
     meta_fields: &["id", "name"],
+    graph_fields: &[],
 };
 
 /// The `teams` subcommand entrypoint: `args` is everything after `bsc teams` (or the deprecated

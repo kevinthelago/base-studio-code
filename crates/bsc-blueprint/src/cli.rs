@@ -69,6 +69,7 @@ const SPEC: CliSpec = CliSpec {
     tagline: TAGLINE,
     commands: COMMANDS,
     meta_fields: &["id", "name"],
+    graph_fields: &[],
 };
 
 /// The `blueprint` subcommand entrypoint: `args` is everything after `bsc blueprint`; `prog` is the
