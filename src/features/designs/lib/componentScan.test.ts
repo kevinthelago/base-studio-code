@@ -51,6 +51,16 @@ describe("scannableComponents", () => {
     expect(out[0].states).toBeUndefined(); // a propless built-in has no data-state to render-probe
   });
 
+  it("excludes app-graph records (base-studio-code kit) — they preview live, not through this esbuild path (#3859)", () => {
+    const appPage: ComponentRecord = {
+      ...base, id: "mcppage", name: "McpWorkspace", kitId: "base-studio-code", role: "page",
+      src: "src/features/mcp/McpWorkspace.tsx", source: undefined,
+      srcText: 'import { useAppStore } from "@/store";\nexport function McpWorkspace(){ return null; }',
+    };
+    const out = scannableComponents([base, appPage], ARTIFACT);
+    expect(out.map((s) => s.id)).toEqual(["card"]); // the app-graph record never reaches the scan
+  });
+
   it("adds an empty-state probe for a data (collection) component and a loading-state probe for a loading one (#3191)", () => {
     const dataComp: ComponentRecord = {
       ...base, id: "chart", name: "Chart", src: "user/Chart.tsx",

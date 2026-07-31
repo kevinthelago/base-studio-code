@@ -434,28 +434,61 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(cats).not.toContain("unresolvable-import");
   });
 
-  it("flags a source-less user spec as no-implementation but never a built-in (#2839)", () => {
-    // BUILT-IN: source-less in the store (its artifact `source` is stripped, #2794) but its `src` is a
-    // real packaged react-ui component — buildable via the artifact roster, so NOT flagged.
-    const builtin = comp("Card", "primitive", 2, [], {
-      source: undefined, src: "shared/ui/data/Card.tsx",
-      srcText: 'import { Card } from "@/shared/ui/data/Card";\n<Card />',
+  it("flags a source-less user spec as no-implementation but never an own-sourced component (#2839, #3859)", () => {
+    // OWN SOURCE: an explicit `.source` is trusted directly — no artifact roster involved (#3859 dropped
+    // the packaged artifact from this check entirely; a real component is judged by its own module, not
+    // by whether its `src` happens to collide with a path in a committed snapshot).
+    const owned = comp("Card", "primitive", 2, [], {
+      src: "shared/ui/data/Card.tsx",
+      source: "export function Card(){ return <div/>; }",
     });
-    // USER SPEC: a `page` that's a design, not code — source-less, a usage-snippet srcText, and a `src`
-    // NOT in the artifact. The preview can't build it (componentPreviewFiles → null) → flagged.
+    // USER SPEC: a `page` that's a design, not code — source-less, a non-exporting usage-snippet srcText.
+    // The preview can't build it (componentPreviewFiles → null) → flagged.
     const spec = comp("GraphExplorerPage", "page", 1, [], {
       source: undefined, src: "user/pages/GraphExplorerPage.tsx",
       srcText: 'import { GraphExplorerPage } from "@/x";\n<GraphExplorerPage nodes={…} />',
     });
-    const flagged = analyzeGraphHealth([builtin, spec])
+    const flagged = analyzeGraphHealth([owned, spec])
       .filter((f) => f.category === "no-implementation")
       .flatMap((f) => f.nodeNames);
     expect(flagged).toContain("GraphExplorerPage");
     expect(flagged).not.toContain("Card");
     // The badge map picks it up (its most-severe category).
-    const map = nodeHealth([builtin, spec]);
+    const map = nodeHealth([owned, spec]);
     expect(map.get("GraphExplorerPage")).toBe("no-implementation");
     expect(map.get("Card")).toBeUndefined();
+  });
+
+  it("judges an APP-GRAPH record's buildability by the registry + kit siblings, never the packaged artifact (#3859)", () => {
+    // A `base-studio-code` kit record previews live through the runtime loader now — its buildability is
+    // no longer the sandboxed `componentPreviewFiles`/artifact path at all. Importing a REGISTERED
+    // platform module (the same real fixture #3897's test uses) and a sibling-by-id panel resolves clean.
+    const page = comp("McpWorkspace", "page", 4, [], {
+      kitId: "base-studio-code",
+      src: "src/features/mcp/McpWorkspace.tsx",
+      source: undefined,
+      srcText:
+        'import { badgeTone } from "@/features/security/lib/badgeTone";\n' +
+        'import { Panel } from "@/components/mcp-analytics";\n' +
+        "export function McpWorkspace(){ return <Panel>{badgeTone(1)}</Panel>; }",
+    });
+    const panel = comp("McpAnalyticsTab", "composite", 1, [], {
+      kitId: "base-studio-code", id: "mcp-analytics", src: "src/features/mcp/McpAnalyticsTab.tsx",
+      source: undefined, srcText: "export function McpAnalyticsTab(){ return <i/>; }",
+    });
+    const cats = analyzeGraphHealth([page, panel]).map((f) => f.category);
+    expect(cats).not.toContain("no-implementation");
+    expect(cats).not.toContain("unresolvable-import");
+  });
+
+  it("still flags an app-graph record with a genuinely unresolvable import (#3859)", () => {
+    const page = comp("BrokenPage", "page", 1, [], {
+      kitId: "base-studio-code", src: "src/features/x/BrokenPage.tsx", source: undefined,
+      srcText: 'import { z } from "@/features/nope/lib/gone";\nexport function BrokenPage(){ return <i>{z}</i>; }',
+    });
+    const f = analyzeGraphHealth([page]).find((x) => x.category === "no-implementation");
+    expect(f).toBeTruthy();
+    expect(f!.why).toContain("@/features/nope/lib/gone");
   });
 
   it("flags a component not wired to the theme as hardcoded-color (#3704)", () => {

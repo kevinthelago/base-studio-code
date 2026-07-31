@@ -30,6 +30,7 @@ import {
 } from "./componentPreview";
 import type { HealthCategory } from "./graphHealth";
 import { libraryModuleResolver } from "./libraryModules";
+import { BASE_STUDIO_CODE_KIT_ID } from "./seed";
 import type { ComponentRecord } from "./model";
 
 /** The two RUNTIME data-state health categories the scan render-confirms (#3191) — a subset of
@@ -100,7 +101,12 @@ export function buildSignature(c: ComponentRecord): string {
 
 /** The subset of `comps` that HAS buildable preview source (`componentPreviewFiles` non-null) — the scan
  *  targets. Components with no buildable source are deliberately excluded (they're the separate static
- *  `no-implementation` graph-health finding, not a build FAILURE), so this never double-reports them. */
+ *  `no-implementation` graph-health finding, not a build FAILURE), so this never double-reports them.
+ *
+ *  An APP-GRAPH record (`kitId === BASE_STUDIO_CODE_KIT_ID`) is ALSO excluded (#3859) — it no longer
+ *  previews through this esbuild-in-iframe path (it renders live via the runtime loader,
+ *  `GraphRecordPreviewFrame`), so building+running it here would be dead work: bundling every page in the
+ *  kit on every Studio visit for a build/runtime check nothing reads. */
 export function scannableComponents(
   comps: ComponentRecord[],
   artifact: KitArtifact,
@@ -111,6 +117,7 @@ export function scannableComponents(
 ): ScannableComponent[] {
   const out: ScannableComponent[] = [];
   for (const c of comps) {
+    if (c.kitId === BASE_STUDIO_CODE_KIT_ID) continue; // #3859 — live-hosted, not scanned here
     // Same-kit siblings so a composing user component's imported siblings vendor into its build (#3112).
     const siblings = comps.filter((s) => s.kitId === c.kitId && s.id !== c.id);
     const build = componentPreviewFiles(c, artifact, siblings, libResolver);
