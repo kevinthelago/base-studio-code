@@ -12,6 +12,7 @@ import type { PreviewReview } from "./usePreviewReview";
 import { ROLE_COLOR, LIFECYCLE_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingPulse, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
+import type { DockPlan } from "./GlanceChatDock";
 import { archetypeById, hueColor } from "@/features/teams";
 import { GlanceNode } from "./GlanceNode";
 
@@ -102,6 +103,10 @@ interface CanvasProps {
   onEndChat?: (nodeId: string) => void;
   /** A resize drag on any morph — resizes the grid's SHARED cell, so every open morph moves as one. */
   onResizeCell?: (w: number, h: number) => void;
+  /** Per-worker owned issues (#4102) — `planFor(nodeId)` yields that stream's Plan-screen data, or
+   *  undefined for a node that owns none (studio / debug sessions). Resolved ONCE at the workspace so
+   *  opening six morphs costs no extra queries. */
+  planFor?: (nodeId: string) => DockPlan | undefined;
   /** The PREVIEW node morphed open (#2623) — the finished app rendered IN the graph, at its node's
    *  world coords. `source` is null until the verify-build produces one. Null = none open. */
   preview?: { nodeId: string; name: string; source: PreviewSource | null; building?: boolean; onBuild?: () => void; review?: PreviewReview } | null;
@@ -406,6 +411,7 @@ export function GlanceCanvas(p: CanvasProps) {
         <GlanceStreamMorph
           key={c.paneId}
           node={c.node} slot={c.slot} paneId={c.paneId} name={c.name} role={c.role} zoom={p.zoom}
+          plan={p.planFor?.(c.nodeId)}
           onRect={reportRect(c.paneId)}
           onResizeCell={p.onResizeCell}
           onClose={() => p.onCloseChat!(c.nodeId)}
