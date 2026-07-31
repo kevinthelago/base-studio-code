@@ -180,6 +180,33 @@ pub(crate) fn bsc_bin_path() -> Option<std::path::PathBuf> {
     sidecar_bin_path("bsc")
 }
 
+/// The agent harness's own per-session state directory for a session running in `cwd` —
+/// `~/.claude/projects/<slug>/`, where `<slug>` is the cwd with `:` `\` `/` `.` each replaced by `-`.
+///
+/// That is where the harness keeps this session's `memory/` and `tool-results/`. It sits outside the
+/// repo root, so FS confinement (#158) blocked it and memory failed SILENTLY — the read was refused
+/// and the session continued without it (#4084).
+///
+/// `None` when the home dir is unresolvable or `cwd` is empty, in which case `$BSC_AGENT_STATE_DIR` is
+/// simply not set and confinement behaves exactly as it did before.
+///
+/// The slug rule is the harness's, mirrored here — verified against the real on-disk directories for a
+/// studio session, a fleet worker, and the desktop repo itself.
+pub(crate) fn agent_state_dir(cwd: &str) -> Option<std::path::PathBuf> {
+    if cwd.trim().is_empty() {
+        return None;
+    }
+    let slug: String = cwd
+        .chars()
+        .map(|c| if matches!(c, ':' | '\\' | '/' | '.') { '-' } else { c })
+        .collect();
+    let home = crate::platform::paths::home_dir();
+    if home.as_os_str().is_empty() {
+        return None;
+    }
+    Some(home.join(".claude").join("projects").join(slug))
+}
+
 /// Startup self-check (#1988): each bundled sidecar and where it resolved (`None` ⇒ missing). Logged
 /// loudly at boot (`app::run`) so a missing `bsc`/`bsc-agent` surfaces immediately, instead of only
 /// when a live session silently can't find `bsc` because `$BSC_BIN` was never set.
@@ -571,6 +598,16 @@ pub(super) fn wire_bsc_env(
     // the repo root. Set for every pane; only gated panes install the hook.
     if !cwd.is_empty() {
         cmd.env("BSC_REPO_ROOT", to_bash_path(cwd));
+        // #4084 — the session's OWN agent-harness state dir, which lives OUTSIDE the repo root by
+        // construction and was therefore confined away from the session it belongs to. Every agent had
+        // memory silently disabled: the read was refused and the session carried on without it (15
+        // blocks across 11 sessions in one perm.log, plus 12 on `tool-results/`).
+        //
+        // Scoped to THIS session's directory, never the whole `projects/` tree — the broad version is
+        // shorter and lets any agent read every other project's memory and transcripts.
+        if let Some(dir) = agent_state_dir(cwd) {
+            cmd.env("BSC_AGENT_STATE_DIR", to_bash_path(&dir.to_string_lossy()));
+        }
     }
     // bsc plan (#plan-db): point this session at its project's canonical plan store. $BSC_PLAN_DB is
     // the plan.db the `bsc plan` subcommand reads/writes (the unified `bsc` binary is staged once as
@@ -705,6 +742,39 @@ pub(super) fn wire_bsc_env(
 
 #[cfg(test)]
 mod tests {
+    /// #4084 — the slug must match the harness's own, or `$BSC_AGENT_STATE_DIR` points at a directory
+    /// that does not exist and memory stays broken while LOOKING fixed. These three are the REAL
+    /// on-disk directory names for a studio session, a fleet worker, and this repo.
+    #[test]
+    fn agent_state_dir_derives_the_harness_slug() {
+        let cases = [
+            (r"C:\Users\Kevin\.base-studio-code\design-studio", "C--Users-Kevin--base-studio-code-design-studio"),
+            (
+                r"C:\Users\Kevin\.base-studio-code\projects\network-monitor\networkmonitor",
+                "C--Users-Kevin--base-studio-code-projects-network-monitor-networkmonitor",
+            ),
+            (r"C:\Users\Kevin\Projects\rust\base-studio-code", "C--Users-Kevin-Projects-rust-base-studio-code"),
+        ];
+        for (cwd, want) in cases {
+            let got = super::agent_state_dir(cwd).expect("home dir resolves in tests");
+            assert_eq!(got.file_name().unwrap().to_string_lossy(), want, "slug for {cwd}");
+            assert!(got.to_string_lossy().replace('\\', "/").contains("/.claude/projects/"), "{got:?}");
+        }
+        // Forward slashes reach the same directory — the cwd arrives bash-form on some paths.
+        assert_eq!(
+            super::agent_state_dir("C:/Users/Kevin/Projects/rust/base-studio-code").unwrap().file_name().unwrap(),
+            super::agent_state_dir(r"C:\Users\Kevin\Projects\rust\base-studio-code").unwrap().file_name().unwrap(),
+        );
+    }
+
+    /// An empty cwd yields None, so `$BSC_AGENT_STATE_DIR` is simply never set and the confinement
+    /// behaves exactly as it did before (the hook treats an unset var as "no exemption").
+    #[test]
+    fn agent_state_dir_is_none_without_a_cwd() {
+        assert!(super::agent_state_dir("").is_none());
+        assert!(super::agent_state_dir("   ").is_none());
+    }
+
     use super::{
         bsc_shim_files, bundled_gh_dir, compose_path, is_build_output, plan_db_for_cwd,
         portable_git_bin_candidates, scratch_dir_for_cwd, session_env_with, shot_dir_for_cwd,

@@ -525,14 +525,31 @@ fn is_url_specifier(spec: &str) -> bool {
 /// loose — over-inclusion is harmless (the caller flags only BARE unresolved specifiers). Rust twin of
 /// `importSpecifiers` (TS).
 fn import_specifiers(source: &str) -> Vec<String> {
+    scan_imports(source).into_iter().map(|(spec, _)| spec).collect()
+}
+
+/// Every module specifier in `source` paired with whether its statement is SYNTACTICALLY type-only
+/// (#4076) — the shape [`import_specifiers`] and [`erased_specifiers`] are both built from.
+///
+/// Type-only-ness is tracked by remembering where the current `import`/`export` statement began and
+/// handing the clause between it and the `from` keyword to [`clause_is_type_only`].
+fn scan_imports(source: &str) -> Vec<(String, bool)> {
     let chars: Vec<char> = source.chars().collect();
     let n = chars.len();
     let mut i = 0;
     let mut out = Vec::new();
     let mut last_word = String::new();
+    // Where the clause of the statement in flight starts (just past its `import`/`export` keyword), and
+    // where the word being scanned began — together they bracket the clause when `from` is reached.
+    let mut clause_at: Option<usize> = None;
+    let mut word_at = 0usize;
     let is_id = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
     while i < n {
         let c = chars[i];
+        // `;` ends the statement — a clause must never leak across one into the next.
+        if c == ';' {
+            clause_at = None;
+        }
         if c == '/' && i + 1 < n && chars[i + 1] == '/' {
             i += 2;
             while i < n && chars[i] != '\n' {
@@ -555,15 +572,29 @@ fn import_specifiers(source: &str) -> Vec<String> {
                 i += 1;
             }
             if last_word == "from" || last_word == "import" {
-                out.push(chars[start..i.min(n)].iter().collect());
+                // The clause is what sits between the statement keyword and this `from` — for a bare
+                // `import "x"` there is none, and a side-effect import is never type-only.
+                let type_only = match clause_at {
+                    Some(at) if last_word == "from" && at <= word_at => {
+                        clause_is_type_only(&chars[at..word_at].iter().collect::<String>())
+                    }
+                    _ => false,
+                };
+                out.push((chars[start..i.min(n)].iter().collect(), type_only));
+                clause_at = None;
             }
             i += 1; // past the closing quote (or EOF)
             last_word.clear(); // a string is not an identifier
         } else if is_id(c) {
             let mut w = String::new();
+            word_at = i;
             while i < n && is_id(chars[i]) {
                 w.push(chars[i]);
                 i += 1;
+            }
+            // A new `import`/`export` opens a statement; its clause runs from just past the keyword.
+            if w == "import" || w == "export" {
+                clause_at = Some(i);
             }
             last_word = w;
         } else {
@@ -585,6 +616,55 @@ fn import_specifiers(source: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// Is `clause` — the text between an `import`/`export` keyword and its `from` — erased entirely by the
+/// TypeScript loader? Two spellings qualify: the statement-level keyword (`import type { P } from …`,
+/// `import type * as N from …`) and a named clause where EVERY binding carries the inline modifier
+/// (`import { type P, type Q } from …`).
+///
+/// SYNTACTIC on purpose. A binding that merely happens to name a type (`import { P } from …`) is NOT
+/// erasable — esbuild has no type information and keeps the import — so a mixed clause
+/// (`{ run, type P }`) keeps the statement and stays a real dependency. Verified against the very
+/// esbuild-wasm build the preview runs, not inferred from the docs. Twin of `clauseIsTypeOnly` (TS).
+fn clause_is_type_only(clause: &str) -> bool {
+    let t = clause.trim();
+    // `type` must be its own word — `import { typeGuard }` is a value binding, not a type modifier.
+    let type_prefixed = |s: &str| {
+        s.strip_prefix("type")
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_whitespace() || c == '{' || c == '*'))
+    };
+    if type_prefixed(t) {
+        return true;
+    }
+    let Some(inner) = t.strip_prefix('{').and_then(|s| s.strip_suffix('}')) else {
+        return false;
+    };
+    let mut entries = inner.split(',').map(str::trim).filter(|s| !s.is_empty()).peekable();
+    // An empty clause (`import {} from "x"`) imports nothing but is NOT a type-erasure — the statement
+    // survives as a side-effect import, so it must keep counting.
+    entries.peek().is_some() && entries.all(type_prefixed)
+}
+
+/// The specifiers `source` imports ONLY under an erased (type-only) statement (#4076). A specifier
+/// imported both ways — `import type { P } from "./x"` beside `import { run } from "./x"` — is absent:
+/// the value import survives the loader, so the module is still a real dependency.
+///
+/// This is what keeps `doctor` from accusing a component the preview builds happily: harvest stopped
+/// counting erased imports against buildability, so every resolution check here must agree, or the two
+/// drift in exactly the direction the [`is_preview_buildable`] note warns about (#3486).
+fn erased_specifiers(source: &str) -> BTreeSet<String> {
+    let mut erased: BTreeSet<String> = BTreeSet::new();
+    let mut kept: BTreeSet<String> = BTreeSet::new();
+    for (spec, type_only) in scan_imports(source) {
+        if type_only {
+            erased.insert(spec);
+        } else {
+            kept.insert(spec);
+        }
+    }
+    erased.retain(|s| !kept.contains(s));
+    erased
 }
 
 /// The set of packaged-artifact component `src` paths that ship a real implementation `source` — the
@@ -717,12 +797,15 @@ fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<S
     if s.is_empty() || !contains_word(s, "export") || has_code_elision(s) {
         return false;
     }
+    let erased = erased_specifiers(s);
     import_specifiers(s)
         .iter()
         // A REGISTERED platform module (#3897) resolves literally, like the loader's `isAppModule` — it is
         // neither an artifact path nor a sibling `src`, so without this it read as unbuildable.
         .all(|spec| {
             !is_internal_specifier(spec)
+                // Erased before resolution (#4076) — the loader never asks for it.
+                || erased.contains(spec)
                 || platform_modules().contains(spec)
                 || resolves_internal(spec, from_rel, kit_targets)
         })
@@ -750,10 +833,13 @@ fn no_implementation_reasons(node: &Node, kit_targets: &BTreeSet<String>) -> Vec
     if has_code_elision(s) {
         why.push("its source contains a code-elision marker (`…`) — a sketch, not code".to_string());
     }
+    let erased = erased_specifiers(s);
     let unresolved: BTreeSet<String> = import_specifiers(s)
         .into_iter()
         .filter(|spec| {
             is_internal_specifier(spec)
+                // Erased by the loader before it resolves anything (#4076) — never a missing dependency.
+                && !erased.contains(spec)
                 && !platform_modules().contains(spec)
                 && !resolves_internal(spec, &node.src, kit_targets)
         })
@@ -1665,7 +1751,12 @@ fn analyze_kit(
             continue;
         };
         let resolvable = resolvable_specifiers();
-        let specs = import_specifiers(src);
+        // Every classification below asks "can the preview provide this module?". A SYNTACTICALLY
+        // type-only import (#4076) is erased by the loader before it resolves anything, so it needs no
+        // kit component, no runtime file, no library node and no npm stub — drop it up front rather than
+        // exempting it three times. Harvest applies the same rule, and the two must not drift (#3486).
+        let erased = erased_specifiers(src);
+        let specs: Vec<String> = import_specifiers(src).into_iter().filter(|s| !erased.contains(s)).collect();
         // A `@bsc/…` LIBRARY reference (#3116) is bare-shaped but resolves against the algorithms store, NOT
         // the import-map — so it's excluded from `stubbed` and judged by `resolves_library` (a match ⇒ the
         // preview vendors its code ⇒ clean; a `@bsc/algorithms/<missing>` ⇒ flagged here).
@@ -2503,6 +2594,75 @@ mod tests {
         assert!(specs.contains(&"lucide-react".to_string()));
         assert!(!specs.contains(&"commented-out".to_string()), "a comment's string is not captured");
         assert!(!specs.contains(&"not-an-import".to_string()), "a plain string is not an import");
+    }
+
+    #[test]
+    fn erased_specifiers_names_the_type_only_imports_and_nothing_else() {
+        // #4076: both erasable spellings, plus every shape that must KEEP counting.
+        let e = erased_specifiers(
+            "import type { P } from \"./a\";\n\
+             import { type Q, type R } from \"./b\";\n\
+             import type * as N from \"./c\";\n\
+             import { run } from \"./d\";\n\
+             import { go, type S } from \"./e\";\n\
+             import Def from \"./f\";\n\
+             import * as All from \"./g\";\n\
+             import \"./h\";\n\
+             import { typeGuard } from \"./i\";\n\
+             import {} from \"./j\";\n\
+             export type { T } from \"./k\";",
+        );
+        for erased in ["./a", "./b", "./c", "./k"] {
+            assert!(e.contains(erased), "{erased} is erased by the loader: {e:?}");
+        }
+        for kept in ["./d", "./e", "./f", "./g", "./h", "./i", "./j"] {
+            assert!(!e.contains(kept), "{kept} survives the loader and must still count: {e:?}");
+        }
+        // Every specifier is still SEEN — erasure is a resolution exemption, not a blind spot.
+        let all = import_specifiers("import type { P } from \"./a\";\nimport { run } from \"./d\";");
+        assert!(all.contains(&"./a".to_string()) && all.contains(&"./d".to_string()), "{all:?}");
+    }
+
+    #[test]
+    fn a_specifier_imported_both_ways_is_not_erased() {
+        // The value import survives, so the module is still a real dependency — erasing on the strength
+        // of the type-only sibling statement would drop a module the bundle genuinely needs.
+        let e = erased_specifiers("import type { P } from \"./x\";\nimport { run } from \"./x\";");
+        assert!(!e.contains("./x"), "one surviving import is enough to keep it: {e:?}");
+    }
+
+    #[test]
+    fn a_type_only_import_is_not_an_unresolvable_import() {
+        // The doctor half of #4076. Harvest stopped counting erased imports against buildability, so this
+        // MUST agree — otherwise `doctor` reports an unresolvable-import on a component the preview
+        // renders happily, the exact class of false accusation #3486 was filed for.
+        let comps = [json!({
+            "id":"widget", "name":"Widget", "kitId":"k", "role":"composite", "used":1, "composes":[],
+            "src":"shared/ui/data/Widget.tsx",
+            "source":"import type { Plan } from \"@/nowhere/types\";\nimport { type A, type B } from \"../gone/types\";\nexport function Widget(){ return null; }"
+        })];
+        let fs = analyze(&comps);
+        assert!(
+            !fs.iter().any(|f| f.category == "unresolvable-import"),
+            "an erased import is not a missing dependency: {:?}",
+            fs.iter().map(|f| (&f.category, &f.why)).collect::<Vec<_>>(),
+        );
+        assert!(!fs.iter().any(|f| f.category == "no-implementation"), "and it still has an implementation");
+    }
+
+    #[test]
+    fn a_value_import_of_a_missing_module_is_still_unresolvable() {
+        // The guard on the test above: the exemption is SYNTACTIC, so the same specifier imported as a
+        // value stays a defect. Without this, `a_type_only_import_is_not_an_unresolvable_import` would
+        // still pass if the check were simply deleted.
+        let comps = [json!({
+            "id":"widget", "name":"Widget", "kitId":"k", "role":"composite", "used":1, "composes":[],
+            "src":"shared/ui/data/Widget.tsx",
+            "source":"import { Plan } from \"@/nowhere/types\";\nexport function Widget(){ return Plan; }"
+        })];
+        let fs = analyze(&comps);
+        let f = fs.iter().find(|f| f.category == "unresolvable-import").expect("still flagged");
+        assert!(f.why.contains("@/nowhere/types"), "names it: {}", f.why);
     }
 
     #[test]

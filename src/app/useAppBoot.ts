@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { addDbProject } from "@/features/planner";
+import { addDbProject, listDbProjects, setDbTriaged } from "@/features/planner";
 import { markBoot, logStartupTrace } from "@/shared/lib/core/startupTrace";
 import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";
 import { log } from "@/shared/lib/core/log";
@@ -29,6 +29,7 @@ export function useAppBoot() {
   const setBscBaseDir = useAppStore((s) => s.setBscBaseDir);
   // Guards the one-time draft→DB migration (#2995) so it fires exactly once per app session.
   const draftsMigratedToDb = useRef(false);
+  const triagedSyncedToDb = useRef(false);
   const worktreeReconciled = useRef(false);
 
   // Apply the chosen accent to the design-token CSS vars at the document root,
@@ -76,6 +77,36 @@ export function useAppBoot() {
     for (const [key, d] of Object.entries(drafts)) {
       void addDbProject({ key, title: d.title, pitch: d.pitch, state: "drafted" });
     }
+  }, [hasHydrated]);
+
+  // TRIAGED markers ↔ projects.db (#4088). The marker gates the whole Glance network (#2541), and it
+  // used to live ONLY in app-state.json — unreachable from `bsc`, lost on an app-state reset, and
+  // diagnosable only by reading a raw zustand blob. projects.db is the source now; this reconciles.
+  //
+  // BOTH directions, once, in this order:
+  //   ① push any marker the cache still holds that the DB has not got — the upgrade path, so a user
+  //     who triaged projects before #4088 does not watch them vanish from Glance on first launch;
+  //   ② union the DB's markers into the cache — the durable set wins for everything else, and a
+  //     marker set on another machine or repaired via `bsc project triaged set` shows up here.
+  //
+  // Gated on `hasHydrated` (persist is async — a mount-time read sees an empty map) and ref-guarded so
+  // it runs exactly once. Degrades silently: with no bridge the in-memory cache still gates the session.
+  useEffect(() => {
+    if (!hasHydrated || triagedSyncedToDb.current) return;
+    triagedSyncedToDb.current = true;
+    void (async () => {
+      const cached = useAppStore.getState().triagedProjects;
+      const rows = await listDbProjects();
+      if (!rows) return; // bridge unreachable — keep the cache as-is
+      const fromDb: Record<string, number> = {};
+      for (const r of rows) {
+        if (typeof r.triagedAt === "number") fromDb[r.key] = r.triagedAt;
+      }
+      for (const key of Object.keys(cached)) {
+        if (!(key in fromDb)) void setDbTriaged(key); // ① upgrade the pre-#4088 markers forward
+      }
+      useAppStore.getState().hydrateTriaged(fromDb); // ② durable set into the cache
+    })();
   }, [hasHydrated]);
 
   // Fleet worktree reconciliation (#3614): after hydrate, mark any persisted fleet worker whose worktree
