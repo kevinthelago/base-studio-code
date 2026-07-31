@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { clampCell } from "./lib/morphGrid";
-import { GlanceChatDock } from "./GlanceChatDock";
+import { GlanceChatDock, type DockPlan } from "./GlanceChatDock";
 import { NW, NH } from "./lib/glanceGraph";
 import type { MorphRect } from "./lib/glancePush";
 
@@ -39,7 +39,7 @@ const HANDLES: { dir: string; style: CSSProperties }[] = (() => {
   ];
 })();
 
-export function GlanceStreamMorph({ node, slot, paneId, name, role, zoom = 1, onRect, onResizeCell, onClose, onEnd }: {
+export function GlanceStreamMorph({ node, slot, paneId, name, role, plan, zoom = 1, onRect, onResizeCell, onClose, onEnd }: {
   /** The graph node this session belongs to — the card's origin + return box, in WORLD coords. */
   node: { x: number; y: number };
   /** The GRID SLOT this morph grows into (#3361), in world coords. For the FIRST opened node this is the
@@ -51,6 +51,8 @@ export function GlanceStreamMorph({ node, slot, paneId, name, role, zoom = 1, on
   paneId: string;
   name: string;
   role?: string;
+  /** This worker's owned issues (#4102) — forwarded to the dock's Plan screen. */
+  plan?: DockPlan;
   /** The graph's current zoom (`vp.view.scale`) — converts a screen-pixel resize drag into world units. */
   zoom?: number;
   /** Report the expanded world box (or null when collapsed/closed) so the canvas can push neighbours
@@ -194,7 +196,7 @@ export function GlanceStreamMorph({ node, slot, paneId, name, role, zoom = 1, on
         ...(resizing ? { transition: "none" } : null) }}
     >
       <Box className="glance-card-body">
-        <GlanceChatDock paneId={paneId} name={name} role={role} onClose={close} onEnd={onEnd} />
+        <GlanceChatDock paneId={paneId} name={name} role={role} plan={plan} onClose={close} onEnd={onEnd} />
       </Box>
       {open ? HANDLES.map((hnd) => (
         <Box

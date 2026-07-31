@@ -14,25 +14,38 @@ import { useEffect, useState } from "react";
 import { bscJson } from "@/shared/lib/core/bsc";
 import { usePoll } from "@/shared/hooks/usePoll";
 import type { OwnedIssue } from "@/shared/lib/fleet/workerEnd";
-import { streamProgress, type StreamProgress } from "./streamProgress";
+import { streamProgress, planDbDoneRefs, type StreamProgress } from "./streamProgress";
 
 /** Issue counts move at human speed — a worker closing one is a minutes-scale event, so a fast poll
  *  would spend spawns to re-read an unchanged answer. */
 export const PROGRESS_POLL_MS = 20_000;
 
-/** Per-stream `done / total` for `projectKey`, or an empty map when not drilled / no plan store. */
-export function useStreamProgress(projectKey: string | null): Map<string, StreamProgress> {
-  const [byStream, setByStream] = useState<Map<string, StreamProgress>>(new Map());
+/** What one poll of plan.db yields. #4102 added `doneRefs`: the same read now also feeds the
+ *  ref-based progress path, which needs to know WHICH issues are finished rather than just how many —
+ *  so plan.db statuses and the GitHub overlay can be unioned into one done-set. One read, two shapes;
+ *  a second hook over the same query would be the fan-out this file's header warns about. */
+export interface PlanDbProgress {
+  byStream: Map<string, StreamProgress>;
+  /** Refs of issues plan.db considers finished (`complete` | `verified`). */
+  doneRefs: Set<string>;
+}
+
+const EMPTY: PlanDbProgress = { byStream: new Map(), doneRefs: new Set() };
+
+/** Per-stream `done / total` for `projectKey` plus its done refs, or empty when not drilled / no plan
+ *  store. */
+export function useStreamProgress(projectKey: string | null): PlanDbProgress {
+  const [state, setState] = useState<PlanDbProgress>(EMPTY);
 
   // Clear on a project switch so the previous fleet's numbers never render against this one's nodes.
-  useEffect(() => { setByStream(new Map()); }, [projectKey]);
+  useEffect(() => { setState(EMPTY); }, [projectKey]);
 
   usePoll(async (isCancelled) => {
     if (!projectKey) return;
     const issues = await bscJson<OwnedIssue[] | null>(projectKey, ["plan", "list", "--full", "--json"], null);
     if (isCancelled() || !issues) return;   // read failed / no plan.db ⇒ keep the last good answer
-    setByStream(streamProgress(issues));
+    setState({ byStream: streamProgress(issues), doneRefs: planDbDoneRefs(issues) });
   }, PROGRESS_POLL_MS, [projectKey]);
 
-  return byStream;
+  return state;
 }
