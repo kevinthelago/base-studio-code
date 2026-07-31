@@ -127,7 +127,7 @@
       "git": "none",
       "code": "none",
       "net": "none",
-      "ui": "none",
+      "ui": "read",
       "writeGlobs": [
         "scratch/**"
       ],

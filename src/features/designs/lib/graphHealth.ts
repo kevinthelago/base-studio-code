@@ -32,7 +32,7 @@ import reactUiArtifact from "@data/components/react-ui.json";
 import previewImportmap from "@data/ui/preview-importmap.json";
 import platformModules from "@data/ui/platform-modules.json";
 import { buildComposesEdges } from "./compositionLayout";
-import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, hasCodeElision, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, hasCodeElision, erasedSpecs, type KitArtifact } from "./componentPreview";
 import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
 import type { LibraryModuleResolver } from "./componentPreview";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
@@ -262,8 +262,13 @@ export function previewBuildFailures(
   const why: string[] = [];
   if (!/\bexport\b/.test(s)) why.push("its source declares no `export`");
   if (hasCodeElision(s)) why.push("its source contains a code-elision marker (`…`) — a sketch, not code");
+  const erased = erasedSpecs(s); // #4076: erased by the loader, so never a missing dependency
   const unresolved = [
-    ...new Set(importSpecifiers(s).filter((spec) => isInternalSpecifier(spec) && !resolvesToSibling(spec, fromRel))),
+    ...new Set(
+      importSpecifiers(s).filter(
+        (spec) => isInternalSpecifier(spec) && !erased.has(spec) && !resolvesToSibling(spec, fromRel),
+      ),
+    ),
   ].sort();
   if (unresolved.length) {
     const list = unresolved.map((u) => "`" + u + "`").join(", ");
@@ -586,7 +591,11 @@ export function analyzeGraphHealth(
   for (const c of comps) {
     const src = ownModuleSource(c, comps);
     if (!src) continue;
-    const specs = importSpecifiers(src);
+    // Every classification below asks "can the preview provide this module?". A SYNTACTICALLY type-only
+    // import (#4076) is erased before anything resolves, so it needs no kit component, runtime file,
+    // library node or npm stub — drop it up front rather than exempting it three times.
+    const erasedHere = erasedSpecs(src);
+    const specs = importSpecifiers(src).filter((s) => !erasedHere.has(s));
     // A `@bsc/…` library spec is bare-shaped but resolves against the algorithms store, NOT the import-map
     // — so it's excluded from `stubbed` and judged by `libraryModuleResolver` (resolvable ⇒ vendored ⇒ clean).
     const library = specs.filter((s) => isLibrarySpec(s) && libResolver(s) === null).sort();

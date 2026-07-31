@@ -87,6 +87,8 @@ export interface ProjectsState {
   triagedProjects: Record<string, number>;
   /** Mark a project triaged (idempotent — keeps the first timestamp). */
   markProjectTriaged: (key: string) => void;
+  /** Union the durable triaged markers from projects.db into the cache (#4088). */
+  hydrateTriaged: (fromDb: Record<string, number>) => void;
   /**
    * Move every per-project store entry from `oldKey` to `newKey` (#2409) — the store half of the
    * one-time hub relink (`relink_project_hub`) that migrates a legacy-keyed project onto its
