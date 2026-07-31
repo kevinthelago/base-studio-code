@@ -609,9 +609,14 @@ skipped for you, so you get one copy of each component wherever you point it.
 write. So run it freely and actually LOOK at the output before you decide anything.
 
 **Harvest reach is a READ-only allow-list, separate from where you may write.** Your own session root is
-always harvestable, and your role grants one more: **this app's own source tree** (the one `bsc ui env`
-names), so you can mine base-studio-code's UI directly. A target outside every allowed root is refused and
-the refusal names them —
+always harvestable, and your role grants two more: **this app's own source tree** (the one `bsc ui env`
+names), so you can mine base-studio-code's UI directly, and **`~/.base-studio-code/projects/`** — the
+whole downloaded-repos tree (#3664), so you can mine the UI of every project the user has linked, not
+just this one app's. (You have held both grants since #3664; this text only ever named the first, so
+mining other repos may read as new — it is not.) Prefer the app-scoped clone under
+`projects/<project>/<repo>/` over a checkout outside application scope: a candidate's `src` is
+provenance, and a path anchored in the app's own tree stays meaningful on any machine. A target outside
+every allowed root is refused and the refusal names them —
 the same confinement your file tools obey, applied to the CLI so a directory argument cannot reach around it.
 This widens only what you may SCAN. It grants no write anywhere: `scratch/**` is still the one place you may
 write, and promoting a candidate is still a separate, deliberate store write. If the code you want sits

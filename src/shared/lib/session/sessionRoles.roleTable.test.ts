@@ -102,7 +102,7 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
   // `TypeError reading writeGlobs`, crashing the whole UI. `mergeRoleDefaults` floors on the embedded set.
   it("floor-merges a stale override onto the embedded roles so a newly-shipped role never vanishes (#2325)", () => {
     const cap = (role: string, writeGlobs: string[] = []): RoleCapability =>
-      ({ role, github: "read", git: "read", code: "none", net: "read", writeGlobs }) as RoleCapability;
+      ({ role, github: "read", git: "read", code: "none", net: "read", ui: "read", writeGlobs }) as RoleCapability;
     const embedded = { planner: cap("planner", ["*.md"]), documentor: cap("documentor", ["docs/**"]) };
     const staleOverride = { planner: cap("planner", ["*.md"]) }; // seeded before documentor existed — no documentor key
 
@@ -116,20 +116,63 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
     expect(customized.planner.writeGlobs).toEqual(["custom/**"]);
   });
 
-  // Regression for #2470 (the per-FIELD companion to #2325): `mergeRoleDefaults` floors missing
-  // ROLES, but an overlaid role OBJECT fully replaces the embedded one — so a stale config-dir
-  // override written BEFORE the `ui` axis shipped yields a merged entry with `ui: undefined`.
-  // Nothing may crash, and the gate must fail CLOSED (behave as `read`), never as a write grant.
-  it("a stale override missing the ui field defaults to read everywhere it's consumed (#2470)", () => {
+  // Regression for #4108: `config/` is seeded ONCE (`ensure_seeded` writes "only files that are ABSENT")
+  // and NEVER refreshed, so on every existing install the mirror is frozen at whatever shipped the day
+  // it was first run. A capability granted later is invisible forever. Measured: the librarian's
+  // `projects` harvest root landed in the packaged default and was dropped by a mirror still carrying
+  // `['app-repo']` — which is exactly why the Algorithms studio could not see mobile-studio-code.
+  it("a stale mirror cannot REVOKE a shipped harvest root (#4108)", () => {
+    const cap = (role: string, harvestRoots: string[]): RoleCapability =>
+      ({ role, github: "read", git: "read", code: "none", net: "read", ui: "read", writeGlobs: [], harvestRoots }) as RoleCapability;
+    const embedded = { librarian: cap("librarian", ["app-repo", "projects"]) };
+    const staleMirror = { librarian: cap("librarian", ["app-repo"]) };   // written before `projects` shipped
+
+    const merged = mergeRoleDefaults(embedded, staleMirror);
+    expect(merged.librarian.harvestRoots).toEqual(["app-repo", "projects"]);
+  });
+
+  it("a mirror may still ADD a harvest root the shipped default lacks (#4108)", () => {
+    const cap = (role: string, harvestRoots: string[]): RoleCapability =>
+      ({ role, github: "read", git: "read", code: "none", net: "read", ui: "read", writeGlobs: [], harvestRoots }) as RoleCapability;
+    const merged = mergeRoleDefaults(
+      { librarian: cap("librarian", ["app-repo"]) },
+      { librarian: cap("librarian", ["app-repo", "some-local-root"]) },
+    );
+    // Union, not replace — and no duplicate for the root both sides name.
+    expect(merged.librarian.harvestRoots).toEqual(["app-repo", "some-local-root"]);
+  });
+
+  it("does NOT floor write-bearing fields — a mirror may still narrow those (#4108)", () => {
+    // The asymmetry is deliberate: a harvest root is read-only scan reach the app decides, but
+    // silently WIDENING a write grant would be the opposite mistake.
+    const cap = (role: string, writeGlobs: string[]): RoleCapability =>
+      ({ role, github: "read", git: "read", code: "none", net: "read", ui: "read", writeGlobs }) as RoleCapability;
+    const merged = mergeRoleDefaults(
+      { documentor: cap("documentor", ["docs/**", "*.md"]) },
+      { documentor: cap("documentor", ["docs/**"]) },
+    );
+    expect(merged.documentor.writeGlobs).toEqual(["docs/**"]);
+  });
+
+  // Regression for #2470 (the per-FIELD companion to #2325): a stale config-dir override written
+  // BEFORE the `ui` axis shipped must never yield a write grant. Nothing may crash, and the gate must
+  // fail CLOSED (behave as `read`).
+  //
+  // #4108 fixed this a LAYER EARLIER: `mergeRoleDefaults` now merges per FIELD, so a missing field
+  // falls back to the embedded value instead of vanishing. This test therefore asserts the field
+  // survives the merge, AND keeps every consumer-level check below — those are the defence in depth
+  // that still has to hold for a capability built by hand rather than through the merge.
+  it("a stale override missing the ui field defaults to read everywhere it's consumed (#2470/#4108)", () => {
     // The pre-#2470 capability shape: role present, no `ui` field (what a stale override yields).
     const stale = {
       role: "worker", github: "read", git: "write", code: "write", net: "read", writeGlobs: [] as string[],
     } as RoleCapability;
     expect(stale.ui).toBeUndefined(); // the hazard under test
 
-    // First, prove the merge really produces that shape (an overlaid role object replaces wholesale).
+    // The merge now RESTORES the missing field from the embedded floor (#4108) rather than propagating
+    // the hole — the same protection that stops a stale mirror revoking a harvest root.
     const embedded = { worker: { ...stale, ui: "read" as const } };
-    expect(mergeRoleDefaults(embedded, { worker: stale }).worker.ui).toBeUndefined();
+    expect(mergeRoleDefaults(embedded, { worker: stale }).worker.ui).toBe("read");
 
     // The accessor prepends the field floor, so a capability built through it always carries a tier.
     expect(roleCapability("worker").ui).toBe("read");
