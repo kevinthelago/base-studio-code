@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { componentPreviewFiles, bootstrapSource, samplePropValue, isErrorProp, supportedStates, previewCycleStates, looksBuildableModule, isPreviewBuildable, hasCodeElision, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, bootstrapSource, samplePropValue, isErrorProp, supportedStates, previewCycleStates, looksBuildableModule, isPreviewBuildable, hasCodeElision, erasedSpecs, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord, PropSpec } from "./model";
 
 const prop = (name: string, type: string, req = false): PropSpec => ({ name, type, req, desc: "" });
@@ -230,6 +230,42 @@ describe("isPreviewBuildable (#3112)", () => {
   });
   it("allows a bare-library-only module (no internal imports)", () => {
     expect(isPreviewBuildable('import * as d3 from "d3";\nexport function F() {}', "f.tsx", () => false)).toBe(true);
+  });
+});
+
+describe("erasedSpecs — type-only imports are dropped before resolution (#4076)", () => {
+  it("names both erasable spellings and nothing that survives the loader", () => {
+    const e = erasedSpecs(
+      [
+        'import type { P } from "./a";',
+        'import { type Q, type R } from "./b";',
+        'import type * as N from "./c";',
+        'export type { T } from "./k";',
+        'import { run } from "./d";',
+        'import { go, type S } from "./e";',
+        'import Def from "./f";',
+        'import * as All from "./g";',
+        'import "./h";',
+        'import { typeGuard } from "./i";',
+        'import {} from "./j";',
+      ].join("\n"),
+    );
+    for (const erased of ["./a", "./b", "./c", "./k"]) expect(e.has(erased)).toBe(true);
+    // A mixed clause, a default/namespace binding, a side-effect import, a `typeGuard` VALUE binding and
+    // an empty clause all survive the loader, so each stays a real dependency.
+    for (const kept of ["./d", "./e", "./f", "./g", "./h", "./i", "./j"]) expect(e.has(kept)).toBe(false);
+  });
+
+  it("does not erase a specifier that is ALSO imported as a value", () => {
+    expect(erasedSpecs('import type { P } from "./x";\nimport { run } from "./x";').has("./x")).toBe(false);
+  });
+
+  it("makes a component whose only unresolved import is type-only preview-buildable", () => {
+    // The pair that must not drift: harvest stopped counting erased imports, so the preview predicate
+    // agrees — otherwise doctor reports a no-implementation the preview renders happily (#3486).
+    const never = () => false;
+    expect(isPreviewBuildable('import type { P } from "@/gone/types";\nexport const A = () => null;', "src/A.tsx", never)).toBe(true);
+    expect(isPreviewBuildable('import { P } from "@/gone/types";\nexport const A = () => null;', "src/A.tsx", never)).toBe(false);
   });
 });
 
