@@ -98,6 +98,12 @@ fn handle(app: &tauri::AppHandle, env: &bsc_appchan::Envelope) -> Result<serde_j
             let panes = crate::console::pty::pane_liveness(req.pane_ids, &state);
             serde_json::to_value(bsc_fleet::FleetResult { panes }).map_err(|e| e.to_string())
         }
+        bsc_fleet::WAKE_KIND => {
+            let req: bsc_fleet::WakeRequest = serde_json::from_value(env.payload.clone())
+                .map_err(|e| format!("malformed fleet wake request: {e}"))?;
+            let res = crate::fleet::wake::apply(app, &env.id, &req)?;
+            serde_json::to_value(res).map_err(|e| e.to_string())
+        }
         bsc_navigate::KIND => {
             let req: bsc_navigate::NavRequest = serde_json::from_value(env.payload.clone())
                 .map_err(|e| format!("malformed navigate request: {e}"))?;
