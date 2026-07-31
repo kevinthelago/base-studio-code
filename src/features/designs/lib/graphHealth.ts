@@ -25,16 +25,19 @@
 // HealthCategory union (with a severity + a badge) but are NOT produced here; the on-visit iframe scan
 // (componentScan.ts) render-confirms a blank empty/loading state and folds them into the graph badges.
 //
-// The no-implementation check reuses the EXACT preview logic (`componentPreviewFiles`, #2824/#2828):
-// the store strips a built-in's artifact `source` (#2794), so a built-in still builds from the packaged
-// artifact — only a node in NEITHER the artifact NOR carrying its own module/`source` is flagged.
-import reactUiArtifact from "@data/components/react-ui.json";
+// The no-implementation check mirrors what the preview actually does now (#3859, was `componentPreviewFiles`
+// against the packaged artifact, #2824/#2828): an APP-GRAPH record (`kitId === base-studio-code`) is judged
+// against the REGISTRY + its kit siblings — the same resolution its live `GraphComponent` host uses — since
+// it no longer builds through the sandboxed path at all. Everything else keeps building via
+// `componentPreviewFiles` (with an EMPTY artifact, #3859 — third-party/harvested/user-authored components
+// are self-contained by construction and never needed the retired artifact's bytes).
 import previewImportmap from "@data/ui/preview-importmap.json";
 import platformModules from "@data/ui/platform-modules.json";
 import { buildComposesEdges } from "./compositionLayout";
-import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, hasCodeElision, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, hasCodeElision, EMPTY_ARTIFACT } from "./componentPreview";
 import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
 import type { LibraryModuleResolver } from "./componentPreview";
+import { BASE_STUDIO_CODE_KIT_ID } from "./seed";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import { resolveInternalBase } from "@/shared/lib/preview/importPath";
 import type { ComponentRecord, PropSpec } from "./model";
@@ -111,9 +114,10 @@ function ownModuleSource(c: ComponentRecord, siblings: readonly ComponentRecord[
   const srcText = c.srcText ?? "";
   if (!srcText.trim()) return null;
   if (siblings.length) {
-    // Resolve `@/` the way `componentPreviewFiles` does (#43/#3660): a graph `provides` specifier, the
-    // packaged artifact runtime/built-ins, OR a sibling `src` base — so a graph-source primitive that
-    // composes siblings + app utilities is scanned as the real module it is (lockstep with the build).
+    // Resolve `@/` the way the record actually previews now (#43/#3660, #3859): a graph `provides`
+    // specifier, a REGISTERED platform module, OR a sibling `src`/id base — so a graph-source primitive
+    // that composes siblings + app utilities is scanned as the real module it is (lockstep with the build
+    // — an app-graph record builds this way for real; the sandboxed path vendors the same sibling closure).
     const providesSpecs = new Set([c, ...siblings].map((s) => s.provides?.trim()).filter(Boolean) as string[]);
     // `@/components/<node-id>` is the loader's SIBLING-BY-ID form (#3897) — how a migrated page pulls in
     // its panels. Injected as a synthetic target so the ordinary resolver finds it.
@@ -122,8 +126,7 @@ function ownModuleSource(c: ComponentRecord, siblings: readonly ComponentRecord[
       ...siblings.map((s) => `components/${s.id}.tsx`),
     ]);
     const resolves = (spec: string, fromRel: string): boolean =>
-      PLATFORM_MODULES.has(spec) || providesSpecs.has(spec)
-      || resolvesInternal(spec, fromRel, sibTargets) || resolvesInternal(spec, fromRel, INTERNAL_TARGETS);
+      PLATFORM_MODULES.has(spec) || providesSpecs.has(spec) || resolvesInternal(spec, fromRel, sibTargets);
     return isPreviewBuildable(srcText, c.src, resolves) ? srcText : null;
   }
   return looksBuildableModule(srcText) ? srcText : null;
@@ -277,20 +280,6 @@ function resolvesInternal(spec: string, fromRel: string, targets: Set<string>): 
   if (base === null) return true;
   return [".ts", ".tsx", "/index.ts", "/index.tsx"].some((ext) => targets.has(base + ext));
 }
-
-// The packaged kit artifact (each built-in's verbatim `source` + the `runtime` @/ closure) — the SAME
-// raw import ComponentPreviewFrame builds against. A built-in's `src` resolves here, so it's buildable
-// even though the store strips its `source` (#2794).
-const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
-
-/** The set an INTERNAL import can resolve to at preview time (#2954): every runtime-closure module PLUS
- *  every packaged built-in that ships a real `source` (a `composes` sibling `componentPreviewFiles`
- *  vendors). The exact files the preview writes for `@/`/relative resolution. Rust twin: `internal_targets`
- *  (the analyze pass also unions in the store's own component `src` paths for same-store siblings). */
-const INTERNAL_TARGETS = new Set<string>([
-  ...Object.keys(ARTIFACT.runtime ?? {}),
-  ...ARTIFACT.components.filter((c) => c.source).map((c) => c.src),
-]);
 
 export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
@@ -513,16 +502,11 @@ export function analyzeGraphHealth(
       why: `${g.length} components have identical source: ${names.join(", ")}` });
   }
 
-  // no-implementation — a component the Design Studio preview can't build (`componentPreviewFiles` →
-  // null): it's a spec, not code. Reuses the EXACT preview logic so the badge and the live preview
-  // agree. A built-in resolves via the artifact roster (its source lives there even though the store
-  // strips it, #2794); only a node in neither the artifact nor carrying its own module/`source` is
-  // flagged (a user-authored spec, e.g. a `page` like GraphExplorerPage). Independent of used/role.
-  // The set an INTERNAL import may resolve against — the kit's own `src` paths, the loader's
+  // no-implementation — a component the preview can't build: it's a spec, not code. Independent of
+  // used/role. The set an INTERNAL import may resolve against — the kit's own `src` paths, the loader's
   // sibling-by-id form, and the graph-source primitives a component `provides`. Built here (rather than
   // at its later `unresolvable-import` use) because the no-implementation reasons below need it too.
   const internalTargets = new Set<string>([
-    ...INTERNAL_TARGETS,
     ...comps.map((c) => c.src).filter(Boolean),
     ...comps.map((c) => `components/${c.id}.tsx`), // #3897 — the loader's sibling-by-id form
   ]);
@@ -532,12 +516,26 @@ export function analyzeGraphHealth(
     const base = c.provides ? resolveInternalBase(c.provides, "") : null;
     if (base) internalTargets.add(`${base}.tsx`);
   }
+  const resolvesForKit = (spec: string, fromRel: string): boolean =>
+    PLATFORM_MODULES.has(spec) || resolvesInternal(spec, fromRel, internalTargets);
   for (const c of comps) {
-    // Pass the kit as siblings so a composing user component (importing a sibling, #3112) builds and is
-    // NOT falsely flagged — the exact set the live preview vendors.
-    if (componentPreviewFiles(c, ARTIFACT, comps, libResolver) === null) {
-      const reasons = previewBuildFailures(c.srcText ?? "", c.src ?? "", (spec, fromRel) =>
-        PLATFORM_MODULES.has(spec) || resolvesInternal(spec, fromRel, internalTargets));
+    if (c.kitId === BASE_STUDIO_CODE_KIT_ID) {
+      // An APP-GRAPH record (#3859) is judged the way it actually previews now — live, through the
+      // runtime loader — so its buildability is the REGISTRY + its kit siblings, never the (retired)
+      // packaged artifact: reuses the exact resolution `resolvesForKit` already gives every other check.
+      const reasons = previewBuildFailures(c.srcText ?? "", c.src ?? "", resolvesForKit);
+      if (reasons.length) {
+        findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
+          why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code): ${reasons.join("; ")}` });
+      }
+      continue;
+    }
+    // Everything else still builds through the sandboxed preview path (`componentPreviewFiles`) — reuses
+    // the EXACT preview logic so the badge and the live preview agree. `EMPTY_ARTIFACT` (#3859): a
+    // third-party/harvested/user-authored component is self-contained by construction and never needed
+    // the retired artifact's bytes; a composing user component still resolves via its kit `siblings`.
+    if (componentPreviewFiles(c, EMPTY_ARTIFACT, comps, libResolver) === null) {
+      const reasons = previewBuildFailures(c.srcText ?? "", c.src ?? "", resolvesForKit);
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code): ${reasons.join("; ")}` });
     }

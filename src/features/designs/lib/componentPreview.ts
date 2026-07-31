@@ -43,6 +43,15 @@ export interface KitArtifact {
   runtime?: Record<string, string>;
 }
 
+/** A KitArtifact carrying no bytes (#3859) — the packaged `react-ui.json` artifact is no longer imported
+ *  under `src/features/designs/`: an app-graph record (`kitId === BASE_STUDIO_CODE_KIT_ID`) previews live
+ *  through the runtime loader (`GraphComponent`), never through this esbuild path, and everything else
+ *  (third-party / harvested / user-authored) is self-contained by construction — its `@/…` imports resolve
+ *  via the registered platform module list + its own kit siblings, not an artifact closure. Callers that
+ *  still take a `KitArtifact` param (the sandboxed-preview build) pass this so the parameter stays generic
+ *  without reaching for the retired 5 MB file. */
+export const EMPTY_ARTIFACT: KitArtifact = { components: [], runtime: {} };
+
 /** The in-memory file set + entry handed to the esbuild bundler for one component's preview. */
 export interface ComponentPreviewBuild {
   /** `src/`-relative path → source, PLUS the synthetic bootstrap entry (keyed {@link PREVIEW_ENTRY}). */

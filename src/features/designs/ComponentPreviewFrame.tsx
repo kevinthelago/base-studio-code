@@ -1,12 +1,11 @@
-// ComponentPreviewFrame (#2824) — the Design Studio's live preview. Builds the selected component's REAL
-// source with esbuild-wasm and renders it in a sandboxed iframe. This replaces the hand-drawn specimen
-// mocks + the real-component fixtures: EVERY component previews by actually building and running it —
-// the built-in kit (its verbatim source + dependency closure from the packaged artifact) AND
-// user-authored components built on any npm library (d3, three, …), which load from esm.sh in the iframe
-// with no install. The app's live styles are injected so built-ins render themed.
+// ComponentPreviewFrame (#2824) — the Design Studio's live preview, routed by what the record IS (#3859):
+// an app-graph record (the app's own pages/panels, `kitId === base-studio-code`) renders LIVE through the
+// runtime loader (real store, real hooks); everything else — third-party, harvested (#3301), or
+// user-authored — builds its REAL source with esbuild-wasm and renders it in a sandboxed iframe, loading
+// any npm library (d3, three, …) from esm.sh with no install. See {@link ComponentPreviewFrame}'s doc
+// comment for the full split.
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import reactUiArtifact from "@data/components/react-ui.json";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -16,17 +15,15 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/componentBundle";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { compileAnimationsCss, animClassName, type AnimationDef } from "@/shared/ui/kit";
-import { componentPreviewFiles, supportedStates, type KitArtifact, type PreviewState } from "./lib/componentPreview";
+import { componentPreviewFiles, supportedStates, EMPTY_ARTIFACT, type PreviewState } from "./lib/componentPreview";
 import { usePreviewData } from "./usePreviewData";
 import { recordPreviewError } from "./lib/componentBridge";
 import { registerPreviewFrame, unregisterPreviewFrame } from "./lib/previewRegistry";
 import { makeLibraryResolvers } from "./lib/libraryModules";
 import { useActiveSoundKit } from "./lib/useActiveSoundKit";
 import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
-
-// The packaged kit artifact carries each built-in's verbatim `source` + the `runtime` (@/) closure
-// (react-ui.json; the builtinKits SEED strips `source`, but this raw import keeps it — same bundle).
-const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
+import { BASE_STUDIO_CODE_KIT_ID } from "./lib/seed";
+import { GraphComponent } from "@/shared/lib/runtime/GraphComponent";
 
 // Page canvas aspect (#3139): a page-like preview renders in a viewport this many × the frame width tall,
 // then contain-scales to fit — so the header sits at the top and the whole page shows. ~1.15 keeps a
@@ -35,7 +32,207 @@ const PAGE_ASPECT = 1.15;
 
 type Status = "building" | "ready" | "error";
 
-export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", scrollY, zoomEngine, registerZoomApi, onNavigate, shotTarget }: {
+/**
+ * The Design Studio's live component preview (#2824, split by record kind in #3859).
+ *
+ * `componentLoader.ts` draws the line: the sandboxed build ISOLATES (a stubbed-React CDN iframe, no `@/`
+ * first-party imports, opaque origin), the runtime loader CONNECTS (imports stay external and resolve to
+ * the app's OWN running modules — the real store, real hooks, real Tauri IPC). An APP-GRAPH record
+ * (`kitId === base-studio-code` — the app's own pages/panels, migrated into the graph by epic #3604) has
+ * nothing to read inside an isolating sandbox, so it renders through {@link GraphRecordPreviewFrame} — the
+ * SAME path the live app mounts it with (Fleet/Settings/Skills/Security/MCP/GitHub/Automations already do
+ * this, #3604). Everything else — third-party, harvested (#3301), or user-authored — is self-contained by
+ * construction (bare npm specifiers via the preview import-map) and keeps building+running in
+ * {@link SandboxComponentPreviewFrame}, unchanged.
+ */
+export function ComponentPreviewFrame(props: {
+  comp: ComponentRecord;
+  /** The selected theme's light/dark surface (its `base`). */
+  theme: "dark" | "light";
+  /** The selected theme's id — the rebuild key (a same-`base` theme switch still retints). */
+  themeId: string;
+  /** The selected theme's semantic-token overrides, injected as `:root{…}` so the preview retints. */
+  themeVars: Record<string, string>;
+  width: number | string;
+  /** Frame height. Default 260 (the inspector thumbnail); the expanded try-on surface passes larger. */
+  height?: number | string;
+  /** When set, the thumbnail becomes a clickable affordance: hovering/focusing surfaces an "expand"
+   *  cue and activating it calls this — the Design Studio promotes the thumbnail to the full-canvas
+   *  theme try-on (#2834). Omit for the already-expanded surface (no self-expand). */
+  onExpand?: () => void;
+  /** A kit animation to PLAY on the vehicle beyond what the component binds (#2942) — the Animations
+   *  try-on: the studio passes the motion selected in the AnimationsMenu so it plays live here. Sandboxed
+   *  preview only — an app-graph record has no kit-animation binding concept. */
+  extraAnimation?: AnimationDef | null;
+  /** The data-state to preview (#3135): `loaded` (demo), `empty` (no data), or `loading` (skeleton).
+   *  Sandboxed preview only. */
+  previewState?: PreviewState;
+  /** Render a COMPONENT at natural size and let tall content scroll vertically instead of scaling it to
+   *  fit (#3190) — the expanded try-on. Sandboxed preview only. */
+  scrollY?: boolean;
+  /** Run the in-iframe pan/zoom ENGINE (#3190 crisp pass). Sandboxed preview only — a live-hosted app page
+   *  is regular DOM, not a composited iframe texture, so it has no engine to request. */
+  zoomEngine?: { initial?: number };
+  /** Receives the engine's +/−/fit control API (or `null` on teardown). Never called for an app-graph
+   *  record (no engine); the host's buttons already `?.`-guard a `null` api. */
+  registerZoomApi?: (api: { zoomIn: () => void; zoomOut: () => void; fit: () => void } | null) => void;
+  /** Enable Alt-hold inspect (#3596). Sandboxed preview only — the fiber-walk inspect layer is injected
+   *  into the iframe srcdoc; a live-hosted page has no such layer. */
+  onNavigate?: (name: string) => void;
+  /** #3308: mark THIS frame as the app's `"preview"` shot target. Supported by BOTH paths — it publishes
+   *  the frame's on-screen rect, independent of how the content inside is rendered. */
+  shotTarget?: boolean;
+}) {
+  if (props.comp.kitId === BASE_STUDIO_CODE_KIT_ID) {
+    return (
+      <GraphRecordPreviewFrame
+        comp={props.comp}
+        themeId={props.themeId}
+        width={props.width}
+        height={props.height}
+        onExpand={props.onExpand}
+        shotTarget={props.shotTarget}
+      />
+    );
+  }
+  return <SandboxComponentPreviewFrame {...props} />;
+}
+
+/**
+ * Live host for an APP-GRAPH record (#3859) — renders the REAL component through the runtime loader
+ * (`GraphComponent`): real store, real hooks, real Tauri IPC. This is the deliberate opposite of
+ * {@link SandboxComponentPreviewFrame} below — no esbuild-in-iframe build, no import map, no isolation —
+ * so it CAN mutate real app state (the accepted trade-off; the issue's "Open question" chose live-hosting
+ * over a deep-link stub because the alternative reintroduces a second render path). No zoom engine, no
+ * data-state switcher, no kit-animation try-on, no Alt-hold inspect: those are iframe-sandbox concepts
+ * with no live-DOM equivalent here — the page itself owns its own interaction, exactly as it does in the
+ * real app. Not registered in `previewRegistry` (#3437, `bsc debug frames`) — that registry's entry shape
+ * is iframe-shaped (`engineRequested`/`engineInSrcdoc`), and there is no sandbox boundary here to report.
+ */
+function GraphRecordPreviewFrame({ comp, themeId, width, height = 260, onExpand, shotTarget }: {
+  comp: ComponentRecord;
+  themeId: string;
+  width: number | string;
+  height?: number | string;
+  onExpand?: () => void;
+  shotTarget?: boolean;
+}) {
+  const [hint, setHint] = useState(false);
+  // Measure the frame so a page-like record can render at a natural viewport canvas and scale-to-fit
+  // (#3139) — mirrors the sandboxed frame's `canvas` memo. Safe to CSS-scale host-side here (unlike the
+  // iframe path, #3190): this is plain DOM, not a composited texture.
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [frame, setFrame] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setFrame({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const pageLike = comp.role === "page" || comp.role === "layout";
+  const canvas = useMemo(() => {
+    if (!pageLike || frame.w === 0 || frame.h === 0) return null;
+    const naturalW = frame.w;
+    const naturalH = Math.max(frame.h, Math.round(naturalW * PAGE_ASPECT));
+    const scale = Math.min(1, frame.w / naturalW, frame.h / naturalH);
+    return { naturalW, naturalH, scale };
+  }, [pageLike, frame.w, frame.h]);
+
+  // #3308: shot-target rect publishing — identical to the sandboxed frame's (DOM-position based, not
+  // iframe-content based, so it needs no sandbox-specific handling).
+  useEffect(() => {
+    if (!shotTarget) return;
+    const el = frameRef.current;
+    if (!el) return;
+    const publish = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return;
+      void safeInvoke("set_shot_target_rect", {
+        target: "preview",
+        rect: { x: Math.max(0, Math.floor(r.left)), y: Math.max(0, Math.floor(r.top)), w: Math.ceil(r.width), h: Math.ceil(r.height) },
+      }, undefined);
+    };
+    publish();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(publish) : null;
+    ro?.observe(el);
+    window.addEventListener("resize", publish);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", publish);
+      void safeInvoke("set_shot_target_rect", { target: "preview", rect: null }, undefined);
+    };
+  }, [shotTarget]);
+
+  const chrome: CSSProperties = {
+    border: "1px solid var(--border-soft)", borderRadius: 8,
+    background: "var(--bg-canvas, var(--bg))", overflow: "hidden",
+  };
+  const hostStyle: CSSProperties = canvas
+    ? {
+        ...chrome, position: "absolute", top: 0,
+        left: Math.round((frame.w - canvas.naturalW * canvas.scale) / 2),
+        width: canvas.naturalW, height: canvas.naturalH,
+        transform: `scale(${canvas.scale})`, transformOrigin: "top left",
+      }
+    : { ...chrome, position: "relative", flex: 1, width: "100%", height: "100%" };
+  return (
+    // eslint-disable-next-line no-restricted-syntax -- measured mount: mirrors the sandboxed frame (#3139)
+    <div ref={frameRef} style={{ position: "relative", width, maxWidth: "100%", height, display: "flex", overflow: "hidden", transition: "width .25s ease" }}>
+      <Box style={hostStyle}>
+        <GraphComponent
+          id={comp.id}
+          themeId={themeId}
+          fallback={
+            <Box style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <StatusDot color="var(--accent)" size={7} pulse />
+              <Text mono size="xxs" tone="muted">preview unavailable</Text>
+            </Box>
+          }
+        />
+      </Box>
+      {onExpand && (
+        <Box
+          as="button"
+          onClick={onExpand}
+          onMouseEnter={() => setHint(true)}
+          onMouseLeave={() => setHint(false)}
+          onFocus={() => setHint(true)}
+          onBlur={() => setHint(false)}
+          aria-label={`Expand ${comp.name} preview — try it across themes`}
+          title="Click to expand — preview this component across themes"
+          style={{
+            position: "absolute", inset: 0, zIndex: 2, cursor: "pointer", padding: 0, borderRadius: 8,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            border: hint ? "1px solid var(--accent)" : "1px solid transparent",
+            background: hint ? "color-mix(in srgb, var(--bg-canvas, var(--bg)) 52%, transparent)" : "transparent",
+            transition: "background .15s ease, border-color .15s ease",
+          }}
+        >
+          <Box style={{
+            display: "flex", alignItems: "center", gap: 7, padding: "6px 12px", borderRadius: 999,
+            border: "1px solid var(--border)", background: "var(--bg-elev, var(--bg-soft))",
+            boxShadow: "var(--shadow-md)", pointerEvents: "none",
+            opacity: hint ? 1 : 0, transform: hint ? "translateY(0)" : "translateY(5px)",
+            transition: "opacity .15s ease, transform .15s ease",
+          }}>
+            <Text as="span" size={12} weight={600}>⤢ Expand</Text>
+            <Text as="span" size={11} tone="muted">try themes</Text>
+          </Box>
+        </Box>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The sandboxed build-and-iframe preview (#2824) — builds a component's REAL source with esbuild-wasm and
+ * renders it in a sandboxed iframe: the built-in kit + user-authored components built on any npm library
+ * (d3, three, …), which load from esm.sh in the iframe with no install. The app's live styles are injected
+ * so built-ins render themed. Used for every record EXCEPT an app-graph one (#3859) — see
+ * {@link ComponentPreviewFrame}'s routing.
+ */
+function SandboxComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", scrollY, zoomEngine, registerZoomApi, onNavigate, shotTarget }: {
   comp: ComponentRecord;
   /** The selected theme's light/dark surface (its `base`). */
   theme: "dark" | "light";
@@ -195,7 +392,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     setStatus("building");
     setError("");
     /* eslint-enable react-hooks/set-state-in-effect */
-    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libResolver, previewState, previewData, liveStates);
+    const build = componentPreviewFiles(comp, EMPTY_ARTIFACT, siblings, libResolver, previewState, previewData, liveStates);
     if (!build) {
       setStatus("error");
       setError(
