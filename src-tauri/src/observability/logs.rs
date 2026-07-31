@@ -280,6 +280,22 @@ pub fn logs_usage(limit: usize) -> Vec<::logs::Usage> {
     ::logs::usage(&::logs::log_dir(), limit)
 }
 
+/// The algorithms knowledge graph, read IN-PROCESS — the drop-in for `bsc graph dump` (#4078).
+///
+/// `useKnowledgeGraph` polls this every 5s while the Algorithms page is mounted, and through the
+/// `bsc` bridge every tick was a process SPAWN — to read 84 KB, hash it, and throw the result away
+/// because nothing had changed, which is the overwhelmingly common case. Same mistake #3630 fixed for
+/// the log pollers and #4074 for the cost poll.
+///
+/// Calls `bsc_graph::load`, the CLI's own reader, so it resolves the same store (`BSC_GRAPH_STORE`,
+/// else `~/.base-studio-code/knowledge/algorithms.json`) and applies the same seed reconcile (#3198).
+/// A missing/unreadable store yields the packaged seed, exactly as the CLI does — so the page keeps
+/// rendering rather than blanking.
+#[tauri::command]
+pub fn graph_dump() -> serde_json::Value {
+    bsc_graph::load()
+}
+
 /// The latest turn-boundary state per pane (`run`/`idle`), newest pane first — the in-process drop-in
 /// for `bsc logs pane-activity --json` (#3630).
 #[tauri::command]
@@ -387,6 +403,29 @@ pub fn enforce_log_caps(app: tauri::AppHandle, state: tauri::State<LogState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn graph_dump_reads_the_cli_store_and_always_yields_a_graph() {
+        // #4078 — the command must resolve the SAME store the `bsc graph` CLI does (`BSC_GRAPH_STORE`,
+        // else the home path), or the page and the librarian would silently read different files. It
+        // calls `bsc_graph::load` for exactly that reason; this pins the behaviour that matters to the
+        // caller: a store pointed at nothing still yields the packaged seed rather than an error, so
+        // the Algorithms page keeps rendering.
+        let dir = std::env::temp_dir().join(format!("bsc-graphdump-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let missing = dir.join("nope.json");
+        let prev = std::env::var("BSC_GRAPH_STORE").ok();
+
+        std::env::set_var("BSC_GRAPH_STORE", &missing);
+        let g = graph_dump();
+        assert!(g.get("implementations").is_some_and(|v| v.is_array()), "must fall back to the seed: {g}");
+
+        match prev {
+            Some(v) => std::env::set_var("BSC_GRAPH_STORE", v),
+            None => std::env::remove_var("BSC_GRAPH_STORE"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let pid = std::process::id();

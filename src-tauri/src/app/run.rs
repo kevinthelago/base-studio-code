@@ -352,6 +352,7 @@ pub fn run() {
             logs::read_log_tail,
             logs::logs_tail,
             logs::logs_usage,
+            logs::graph_dump,
             logs::logs_pane_activity,
             logs::logs_done_panes,
             logs::clear_log,
