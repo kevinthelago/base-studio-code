@@ -214,11 +214,12 @@ describe("roleDeniedCommands (launch wiring)", () => {
       "bsc component set", "bsc component remove", "bsc component kit set", "bsc component kit remove",
     ];
 
+    // #4090 moved the LIBRARIAN into this loop (ui: "none" -> "read"), so it is now asserted here rather
+    // than skipped: it may look up components to settle the harvest partition, and may never write them.
     it("ui: read (every shipped role but the designer + architect) denies exactly the mutating verbs, leaving reads alone", () => {
       for (const cap of Object.values(ROLE_DEFAULTS)) {
         if (cap.role === "designer") continue;  // ui:"write" by design (#2471) — asserted in its own suite
         if (cap.role === "architect") continue; // ui:"none" by design (#2755) — asserted in its own suite
-        if (cap.role === "librarian") continue; // ui:"none" by design (#2787) — restricted knowledge-store session, like the architect
         if (cap.role === "sound-designer") continue; // ui:"none" by design (#3369) — a sound is a synthesis descriptor, not a UI kit
         if (cap.role === "integrator") continue; // ui:"none" by design (#4023) — a connector manifest is not a UI kit
         if (cap.role === "curator") continue;   // ui:"write" by design (#3092) — the harvest actor OWNS the kit store
@@ -776,9 +777,35 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
   it("pins each standing studio session's whole surface, byte-identical to its old launch hook", () => {
     expect(restrictedRoleCommands("designer")).toEqual(
       ["bsc ui", "bsc component", "bsc shot preview", ...LOOP, "bsc request new", "bsc request list"]);
-    expect(restrictedRoleCommands("librarian")).toEqual(["bsc graph", ...LOOP, "bsc request new", "bsc request list"]);
+    // #4090 added the two component READ verbs — enumerated, never the `bsc ui` prefix (which would also
+    // auto-run `set`/`remove`, the designer's store).
+    expect(restrictedRoleCommands("librarian")).toEqual(
+      ["bsc graph", "bsc ui list", "bsc ui get", ...LOOP, "bsc request new", "bsc request list"]);
     expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", ...LOOP, "bsc request new", "bsc request list"]);
     expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound", ...LOOP, "bsc request new", "bsc request list"]);
+  });
+
+  // #4090 — the librarian may LOOK UP a component and may never write one. Both halves are load-bearing
+  // and they come from different mechanisms, so both are asserted here: the grant table governs AUTO-RUN
+  // (so `bsc ui list`/`get` run without a prompt) while `ui: "read"` -> UI_WRITE_DENY is what actually
+  // keeps writes out — per #4000 a grant that is merely absent does not gate anything, since `bsc` sits
+  // in the permission model's always-allowed mandatory tier.
+  it("lets the librarian READ the component store and never write it (#4090)", () => {
+    const cmds = restrictedRoleCommands("librarian");
+    expect(cmds).toContain("bsc ui list");
+    expect(cmds).toContain("bsc ui get");
+    // The bare prefix would expand to `Bash(bsc ui *)` and auto-run the mutating verbs too.
+    expect(cmds).not.toContain("bsc ui");
+    expect(cmds).not.toContain("bsc component");
+
+    const denies = roleDeniedCommands(ROLE_DEFAULTS.librarian);
+    for (const verb of ["bsc ui set", "bsc ui remove", "bsc ui kit set", "bsc ui kit remove"]) {
+      expect(denies).toContain(verb);
+    }
+    // ...and the deny must not be so broad that it swallows the reads it was paired with (deny > allow).
+    expect(denies).not.toContain("bsc ui");
+    expect(denies).not.toContain("bsc ui list");
+    expect(denies).not.toContain("bsc ui get");
   });
 
   // Every studio surface is a loop PARTICIPANT (#3262): it can open a loop and converse in it.
