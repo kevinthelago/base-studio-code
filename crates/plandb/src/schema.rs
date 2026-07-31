@@ -68,6 +68,7 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             acceptance  TEXT NOT NULL DEFAULT '[]',
             tools       TEXT NOT NULL DEFAULT '[]',
             depends_on  TEXT NOT NULL DEFAULT '[]',
+            requires    TEXT NOT NULL DEFAULT '[]',
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
          );
@@ -182,6 +183,9 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // already present — ignored).
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN status TEXT NOT NULL DEFAULT 'open'", []);
     let _ = conn.execute("ALTER TABLE features ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'", []);
+    // #4080: the algorithm impl ids a feature needs — the plan → `bsc graph` edge. Additive like the two
+    // around it, so an existing plan.db picks it up in place with no data loss.
+    let _ = conn.execute("ALTER TABLE features ADD COLUMN requires TEXT NOT NULL DEFAULT '[]'", []);
     let _ = conn.execute("ALTER TABLE features ADD COLUMN phase TEXT", []);
     Ok(())
 }
@@ -214,5 +218,37 @@ mod tests {
         migrate(&conn).unwrap();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM discovery", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 2);
+    }
+
+    /// #4080 — an EXISTING plan.db (a features table with no `requires`) gains the column in place,
+    /// keeping its rows. Additive `ALTER TABLE … ADD COLUMN`, like `depends_on`/`phase` before it: the
+    /// `CREATE TABLE IF NOT EXISTS` in the batch is a no-op for a db that already has the table, so
+    /// without the ALTER an existing project would silently never see the new field.
+    #[test]
+    fn features_gains_requires_on_an_existing_db_without_losing_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        // A pre-#4080 features table — note: no `requires`.
+        conn.execute_batch(
+            "CREATE TABLE features (slug TEXT PRIMARY KEY, name TEXT NOT NULL, behavior TEXT, phase TEXT, \
+             approach TEXT, data TEXT, stream TEXT, acceptance TEXT NOT NULL DEFAULT '[]', \
+             tools TEXT NOT NULL DEFAULT '[]', depends_on TEXT NOT NULL DEFAULT '[]', \
+             position INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0); \
+             INSERT INTO features (slug, name, depends_on) VALUES ('kernel', 'Geometry kernel', '[\"maths\"]');",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        // The row survived, and the new column reads as the empty default rather than NULL.
+        let (name, dep, req): (String, String, String) = conn
+            .query_row("SELECT name, depends_on, requires FROM features WHERE slug = 'kernel'", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(name, "Geometry kernel");
+        assert_eq!(dep, "[\"maths\"]", "existing data is untouched");
+        assert_eq!(req, "[]", "the new column defaults to an empty list, never NULL");
+        // Idempotent — a second migrate on the already-migrated db is a no-op, not an error.
+        migrate(&conn).unwrap();
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM features", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
     }
 }
