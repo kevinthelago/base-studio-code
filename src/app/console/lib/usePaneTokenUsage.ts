@@ -1,11 +1,16 @@
-// Per-pane token + cost telemetry (#1181). Polls `bsc logs cost --full` over the `bsc` bridge
-// (#2144) — which parses each pane's latest Claude transcript for its `usage` totals AND its
-// `message.model` — and returns the latest rollup keyed by pane id. Feeds two surfaces: the header
-// model pill's "actual running model" (so it reflects what the CLI is really running, not just the
-// configured model) and the Telemetry · cost view.
+// Per-pane token + cost telemetry (#1181). Reads the latest rollup keyed by pane id — each pane's
+// latest Claude transcript parsed for its `usage` totals AND its `message.model`. Feeds two surfaces:
+// the header model pill's "actual running model" (so it reflects what the CLI is really running, not
+// just the configured model) and the Telemetry · cost view.
+//
+// IN-PROCESS since #4074 (`logs_usage`), not the `bsc` bridge. #3630 moved the hot pollers off the
+// bridge and left this one on it as "low-frequency" — but it polls every 4s, which made it the app's
+// single biggest process spawner (415 calls in a 27-minute window). Every spawn blocked Tauri's main
+// thread, so the invoke queue backed up to 25s and unrelated commands waited behind it. Same rows:
+// `logs_usage` calls the same `logs::cost::usage` the CLI's `cost` verb does.
 
 import { useState } from "react";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { usePoll } from "@/shared/hooks/usePoll";
 
 /** One pane's token + cost rollup, as serialized by `bsc logs cost --full` (`logs::cost::Usage` —
@@ -32,7 +37,7 @@ const EMPTY: Map<string, PaneTokenUsage> = new Map();
 export function usePaneTokenUsage(limit = 64): Map<string, PaneTokenUsage> {
   const [byPane, setByPane] = useState<Map<string, PaneTokenUsage>>(EMPTY);
   usePoll(async (isCancelled) => {
-    const rows = await bscJson<PaneTokenUsage[]>(null, ["logs", "cost", "--full", "--limit", String(limit), "--json"], []);
+    const rows = await safeInvoke<PaneTokenUsage[]>("logs_usage", { limit }, []);
     if (isCancelled()) return;
     const m = new Map<string, PaneTokenUsage>();
     for (const r of rows ?? []) m.set(r.pane, r);

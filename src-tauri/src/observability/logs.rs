@@ -254,8 +254,9 @@ pub fn read_log_tail(stream: String, limit: usize, app: tauri::AppHandle) -> Vec
 // streams IN-PROCESS via the already-linked `logs` crate — no spawn, no per-call DB/binary init — so
 // the hot polls cost a file read instead of a process. They resolve the log dir with `logs::log_dir`,
 // the exact resolver the `bsc logs` CLI uses (`$BSC_LOG_DIR`, else `~/.base-studio-code`), so they
-// read byte-for-byte the same files the subprocess did. Low-frequency `bsc logs …` reads (cost,
-// analytics one-shots) stay on the bridge.
+// read byte-for-byte the same files the subprocess did. #4074 brought `cost` across too — it was
+// filed here as "low-frequency" and is in fact polled every 4s, the app's biggest spawner. The
+// remaining analytics one-shots stay on the bridge.
 
 /// Newest `limit` raw lines of a unified `bsc logs` stream (`coord`/`audit`/`skill`/`hook`/`mcp`/`ui`/
 /// `perm`), read in-process (#3630) — the drop-in for `bsc logs tail <stream> --json`. `oldest` keeps
@@ -263,6 +264,20 @@ pub fn read_log_tail(stream: String, limit: usize, app: tauri::AppHandle) -> Vec
 #[tauri::command]
 pub fn logs_tail(stream: String, limit: usize, oldest: bool) -> Vec<String> {
     ::logs::tail_raw(&::logs::log_dir(), &stream, limit, oldest)
+}
+
+/// Per-pane token + cost rollup, newest pane first — the in-process drop-in for
+/// `bsc logs cost --full --limit N --json` (#4074), calling the SAME `logs::cost::usage` the CLI's
+/// `cost` verb does, so the rows are byte-identical.
+///
+/// #3630 moved the hot pollers in-process and left the cost read on the `bsc` bridge as
+/// "low-frequency". It is not: `usePaneTokenUsage` polls it every 4s, and it was the single biggest
+/// process spawner in the app — 415 calls in a 27-minute window, more than any other command. Each
+/// spawn blocked Tauri's main thread, so the invoke queue backed up to 25s and every other command,
+/// including trivial ones like `perf_record_frontend_sample`, waited behind it.
+#[tauri::command]
+pub fn logs_usage(limit: usize) -> Vec<::logs::Usage> {
+    ::logs::usage(&::logs::log_dir(), limit)
 }
 
 /// The latest turn-boundary state per pane (`run`/`idle`), newest pane first — the in-process drop-in

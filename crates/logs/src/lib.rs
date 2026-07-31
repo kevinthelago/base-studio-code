@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 pub mod cost;
 pub mod metrics;
-pub use cost::Cost;
+pub use cost::{usage, Cost, Usage};
 
 pub mod perf;
 pub use perf::PerfSample;
