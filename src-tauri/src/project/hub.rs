@@ -449,6 +449,9 @@ pub(crate) fn backfill_projects_db_from_hubs() {
             state: state.to_string(),
             created_at: lp.updated_at as i64, // best-effort: the hub's mtime as its origin time
             updated_at: bsc_util::now_ms(),
+            // Backfill only ever INSERTS (the loop `continue`s on an existing row), and discovering a
+            // hub on disk is not triage — the marker is `set_triaged`'s to write (#4088).
+            triaged_at: None,
         };
         if let Err(e) = bsc_project::store::upsert(&conn, &row) {
             log::warn!("backfill projects.db {:?}: {e}", lp.key);
@@ -517,6 +520,9 @@ pub(crate) fn materialize_hub(project_key: String) -> Result<String, String> {
                     state: state.into(),
                     created_at: now,
                     updated_at: now,
+                    // Reached only when `set_state` found no row, so this is an INSERT; materializing a
+                    // hub is not triage (#4088).
+                    triaged_at: None,
                 };
                 if let Err(e) = bsc_project::store::upsert(&conn, &row) {
                     log::warn!("materialize_hub({key}): projects.db insert failed: {e}");
@@ -842,6 +848,7 @@ mod relocated_tests {
             bsc_project::store::upsert(&conn, &bsc_project::store::ProjectRow {
                 key: key.into(), title: "Greenfield App".into(), pitch: String::new(),
                 blueprint: None, category: None, state: "drafted".into(), created_at: 1, updated_at: 1,
+                triaged_at: None,
             }).unwrap();
         }
         assert!(!project_dir(key).exists(), "no hub before materialize");
@@ -853,6 +860,39 @@ mod relocated_tests {
         assert!(!planning_workspace_dir(key).exists(), "ephemeral workspace retired");
         let conn = bsc_project::store::open().unwrap();
         assert_eq!(bsc_project::store::get(&conn, key).unwrap().state, "created", "state advanced to created");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn materialize_hub_never_untriages_an_already_triaged_project() {
+        // #4094 — the behavioural half of the `triaged_at` fallout. The compiler catches a missing field
+        // in the literal; it cannot catch passing the WRONG one. `triaged_at` gates the whole Glance
+        // network (#4088/#2541), so a materialize that carried a `None` onto an existing row would drop
+        // a project out of Glance at launch — silently, and only for projects already triaged.
+        //
+        // Two paths are pinned at once: `set_state` on the existing row (which must not touch the
+        // marker), and `upsert`'s ON CONFLICT (which deliberately omits `triaged_at`).
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("materialize-triaged");
+        let key = "triaged-app";
+        write_file(&planning_workspace_dir(key).join("goal.md"), "# Goal");
+        {
+            let conn = bsc_project::store::open().unwrap();
+            bsc_project::store::upsert(&conn, &bsc_project::store::ProjectRow {
+                key: key.into(), title: "Triaged App".into(), pitch: String::new(),
+                blueprint: None, category: None, state: "drafted".into(), created_at: 1, updated_at: 1,
+                triaged_at: None,
+            }).unwrap();
+            assert!(bsc_project::store::set_triaged(&conn, key, 4242).unwrap(), "stamped for the test");
+        }
+
+        materialize_hub(key.to_string()).unwrap();
+
+        let conn = bsc_project::store::open().unwrap();
+        let row = bsc_project::store::get(&conn, key).unwrap();
+        assert_eq!(row.triaged_at, Some(4242), "materializing a hub is not triage — the marker survives");
+        assert_eq!(row.state, "created", "and the state still advances");
 
         std::fs::remove_dir_all(&home).ok();
     }
