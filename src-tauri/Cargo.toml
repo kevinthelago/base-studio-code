@@ -130,12 +130,16 @@ llm = { path = "../crates/llm", package = "bsc-llm" }
 # is reached as the bundled `bsc` binary, not linked in. The in-crate `observability::logs` module
 # (user-facing log inventory/clear/export + `read_log_tail`) is unrelated and stays.
 
-# TEST-ONLY (#3391): the packaged librarian spec (`data/librarian/claude.md`) TEACHES the `bsc graph`
-# CLI, so its content test derives the expected verb/flag surface from `bsc_graph::cli::{VERBS,
-# IMPL_SUBVERBS, FLAGS}` instead of a second hand-written list. #2961 removed the concept-ontology
-# verbs; the spec and its test kept asserting them and agreed with each other while both disagreed
-# with the CLI. Dev-only, so this adds nothing to the shipped binary.
-[dev-dependencies]
+# The algorithms knowledge graph (#4078) — LINKED (was dev-only) so `graph_dump` reads the store
+# IN-PROCESS. The Algorithms page polls it every 5s, and routing that through the `bsc` bridge spawned
+# a subprocess per tick just to learn the graph had not changed; the same mistake #3630 and #4074
+# fixed for the log pollers. Linking the real crate (rather than reading the JSON with bare `std::fs`)
+# keeps ONE store-path resolver — `BSC_GRAPH_STORE`, else `~/.base-studio-code/knowledge/…` — so the
+# app and the CLI cannot drift onto different files.
+#
+# It ALSO still backs the test below (#3391): the packaged librarian spec (`data/librarian/claude.md`)
+# TEACHES the `bsc graph` CLI, so its content test derives the expected verb/flag surface from
+# `bsc_graph::cli::{VERBS, IMPL_SUBVERBS, FLAGS}` instead of a second hand-written list.
 bsc-graph = { path = "../crates/bsc-graph" }
 
 # Unix-only: process-group signalling so a PTY's whole tree (shell + claude + any

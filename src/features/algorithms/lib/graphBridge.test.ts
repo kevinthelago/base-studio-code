@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const bscJson = vi.fn();
-vi.mock("@/shared/lib/core/bsc", () => ({ bscJson: (...a: unknown[]) => bscJson(...a) }));
+// #4078 — the read moved IN-PROCESS (`graph_dump`), off the spawning `bsc` bridge. Mocking
+// `safeInvoke` rather than `bscJson` is the point: a revert to the bridge would fail these outright
+// instead of quietly restoring a process spawn every 5s.
+const safeInvoke = vi.fn();
+vi.mock("@/shared/lib/core/safeInvoke", () => ({ safeInvoke: (...a: unknown[]) => safeInvoke(...a) }));
 
 import { loadGraph } from "./graphBridge";
 
@@ -12,11 +15,11 @@ describe("graphBridge.loadGraph (#2856)", () => {
   // produced a second, unawaited rejected promise, and the resulting UNHANDLED rejection failed a test
   // whose assertion had actually passed.
   beforeEach(() => {
-    bscJson.mockReset();
+    safeInvoke.mockReset();
   });
 
-  it("builds the impl-only model from a valid `bsc graph dump` doc (#2961)", async () => {
-    bscJson.mockResolvedValue({
+  it("builds the impl-only model from a valid graph doc (#2961)", async () => {
+    safeInvoke.mockResolvedValue({
       implementations: [
         { id: "merge.rs", tech: "rust", role: "algorithm", name: "merge", composes: [], code: "fn merge() {}" },
       ],
@@ -24,27 +27,27 @@ describe("graphBridge.loadGraph (#2856)", () => {
     const g = await loadGraph();
     expect(g).not.toBeNull();
     expect(g!.implementations[0]).toMatchObject({ id: "merge.rs", role: "algorithm" });
-    // It called the dump verb, not project-scoped.
-    expect(bscJson).toHaveBeenCalledWith(null, ["graph", "dump"], null);
+    // It read IN-PROCESS (#4078) — never the spawning bridge.
+    expect(safeInvoke).toHaveBeenCalledWith("graph_dump", undefined, null);
   });
 
   it("accepts an empty implementations array", async () => {
-    bscJson.mockResolvedValue({ implementations: [] });
+    safeInvoke.mockResolvedValue({ implementations: [] });
     expect((await loadGraph())!.implementations).toEqual([]);
   });
 
   it("returns null when implementations isn't an array (degraded → keep the seed)", async () => {
-    bscJson.mockResolvedValue({ implementations: "nope" });
+    safeInvoke.mockResolvedValue({ implementations: "nope" });
     expect(await loadGraph()).toBeNull();
   });
 
-  it("returns null when the bridge yields null (unreachable / old bsc without the verb)", async () => {
-    bscJson.mockResolvedValue(null);
+  it("returns null when the read yields null (unavailable command / web shell)", async () => {
+    safeInvoke.mockResolvedValue(null);
     expect(await loadGraph()).toBeNull();
   });
 
-  it("returns null when the bridge throws", async () => {
-    bscJson.mockRejectedValue(new Error("no bridge"));
+  it("returns null when the read throws", async () => {
+    safeInvoke.mockRejectedValue(new Error("no command"));
     expect(await loadGraph()).toBeNull();
   });
 });
