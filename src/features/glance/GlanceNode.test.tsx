@@ -92,32 +92,6 @@ describe("the health dot (#4040 — restored with the glow removed)", () => {
   });
 });
 
-describe("the issue progress bar (#4050)", () => {
-  afterEach(() => cleanup());
-
-  it("renders a fill proportional to done/total", () => {
-    const { container } = render(<GlanceNode {...props(node({ progress: { done: 1, total: 4 } }), "building")} />);
-    const bar = container.querySelector('[title="1/4 issues complete"]');
-    expect(bar).not.toBeNull();
-    // #4118 nested the fill inside a TRACK so the count can sit beside it: bar → [track → fill, text].
-    const fill = bar!.firstElementChild!.firstElementChild as HTMLElement;
-    expect(fill.style.width).toBe("25%");
-  });
-
-  it("renders NO bar when the stream owns nothing", () => {
-    // An empty bar and a zero-progress bar say different things, and only one of them would be true.
-    const { container } = render(<GlanceNode {...props(node({ progress: { done: 0, total: 0 } }), null)} />);
-    expect(container.querySelector('[title$="issues complete"]')).toBeNull();
-  });
-
-  it("renders no bar when progress has not been read yet", () => {
-    const { container } = render(<GlanceNode {...props(node(), null)} />);
-    expect(container.querySelector('[title$="issues complete"]')).toBeNull();
-  });
-
-  it("keeps the bar out of the hit path", () => {
-    const { container } = render(<GlanceNode {...props(node({ progress: { done: 2, total: 2 } }), null)} />);
-    const bar = container.querySelector('[title="2/2 issues complete"]') as HTMLElement;
-    expect(bar.style.pointerEvents).toBe("none");
-  });
-});
+// The node's completion visual moved to `glanceNodeProgress.test.tsx` (#4123): the discrete bar these
+// tests pinned — a track, a proportional fill, a hit-path guard — no longer exists. The node ITSELF
+// fills now, so there is no overlay element to size or to keep out of the click path.
