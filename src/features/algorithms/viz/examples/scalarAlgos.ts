@@ -57,6 +57,43 @@ export function scalarToText(input: Record<string, number | string>): string {
 }
 
 /**
+ * Serialize an ARBITRARY scalar seed to `name=value` pairs — the seam a STORED trace-program uses (#4162).
+ *
+ * Deliberately not {@link scalarToText}: that renders `input.n` alone, which is right for the in-app
+ * fibonacci (whose single parameter IS n) and silently wrong for any other seed — a stored program seeded
+ * `{ start: 3, limit: 9 }` would render an EMPTY field and parse back as `{ n }`, animating something its
+ * author never wrote. A stored program can seed any variables, so its seam names them.
+ */
+export function scalarSeedToText(input: Record<string, number | string>): string {
+  return Object.entries(input)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(", ");
+}
+
+/**
+ * Parse `name=value` pairs into a scalar seed — the generic counterpart to {@link scalarSeedToText}.
+ * Numeric-looking values become numbers; everything else stays a string (a `TracedScalar` holds both).
+ * An EMPTY seed is valid — an algorithm may set every variable it uses.
+ *
+ * @throws Error (shown under the "your input" field) when a pair has no `=` or an empty name.
+ */
+export function parseScalarSeed(text: string): Record<string, number | string> {
+  const t = text.trim();
+  if (t.length === 0) return {};
+  const out: Record<string, number | string> = {};
+  for (const part of t.split(",")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) throw new Error(`"${part.trim()}" must be name=value (e.g. n=10)`);
+    const name = part.slice(0, eq).trim();
+    const raw = part.slice(eq + 1).trim();
+    if (!name) throw new Error(`"${part.trim()}" has no variable name`);
+    const num = Number(raw);
+    out[name] = raw !== "" && Number.isFinite(num) ? num : raw;
+  }
+  return out;
+}
+
+/**
  * Parse the "your input" text into a scalar seed — a single non-negative integer `n`. Throws a helpful
  * `Error` (shown under the field) on empty, non-numeric, negative, fractional, or unwatchably-large input.
  */
