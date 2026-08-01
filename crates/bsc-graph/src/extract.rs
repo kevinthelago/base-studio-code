@@ -64,12 +64,31 @@ pub struct CandidateTest {
 /// provenance field (#4091) doesn't turn every signature into an unreadable tuple.
 type Def = (String, String, String, String);
 
-/// Path segments we never descend into or parse — vendored deps, build output, VCS/tooling dirs.
-const SKIP_DIRS: &[&str] = &["node_modules", "target", ".git", ".claude", "dist", "build"];
+/// Path segments we never descend into or parse — vendored deps, build output, VCS/tooling dirs, and
+/// TEST TREES (#4136).
+///
+/// `tests`/`fixtures`/`__tests__` are here because a fixture is not production source, and treating one
+/// as such actively manufactures false provenance: `crates/bsc-graph/tests/fixtures/sample.rs` defines
+/// `merge`/`merge_sort`/`quick_sort`/`bfs` for the extractor's OWN tests, so a `relink` over `crates/`
+/// offered to point the four seeded classics at it. #4119 caught that by hand and skipped it; the walk
+/// should never surface it in the first place.
+const SKIP_DIRS: &[&str] = &[
+    "node_modules", "target", ".git", ".claude", "dist", "build",
+    "tests", "fixtures", "__tests__",
+];
 
 /// Test files carry no production implementation — skip them.
+///
+/// Rust was entirely unguarded before #4136 (only the TS suffixes were listed), so `*_test.rs` /
+/// `*_tests.rs` harvested as production. The `#[cfg(test)]` module INSIDE a production file is a
+/// separate concern the parser handles; this is the whole-file gate.
 fn is_test_file(name: &str) -> bool {
-    name.ends_with(".test.ts") || name.ends_with(".test.tsx") || name.ends_with(".spec.ts")
+    name.ends_with(".test.ts")
+        || name.ends_with(".test.tsx")
+        || name.ends_with(".spec.ts")
+        || name.ends_with(".spec.tsx")
+        || name.ends_with("_test.rs")
+        || name.ends_with("_tests.rs")
 }
 
 /// Normalize a function name to a candidate kebab-case id: split camelCase / PascalCase humps and
@@ -676,6 +695,33 @@ mod tests {
         assert!(cands.iter().all(|c| !c.code.trim().is_empty()));
         assert!(cands.iter().all(|c| c.tech == "typescript" || c.tech == "rust"));
         assert!(cands.iter().all(|c| c.role == "primitive" || c.role == "algorithm"));
+    }
+
+    #[test]
+    fn harvest_never_descends_into_a_test_tree() {
+        // #4136 — the REAL crate, not a synthetic tree. `crates/bsc-graph/tests/fixtures/sample.rs`
+        // defines merge/merge_sort/quick_sort/bfs for this extractor's own tests; harvesting it made
+        // `relink` offer to point the four SEEDED CLASSICS at a fixture (#4119 skipped that by hand).
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let cands = harvest(crate_root);
+        for c in &cands {
+            assert!(
+                !c.src.split('/').any(|seg| seg == "tests" || seg == "fixtures" || seg == "__tests__"),
+                "harvested {} from a test tree: {}",
+                c.name,
+                c.src,
+            );
+        }
+        // Not vacuous: this crate's own src/ still yields candidates.
+        assert!(!cands.is_empty(), "the crate's production source still harvests");
+    }
+
+    #[test]
+    fn an_explicit_test_root_is_still_honoured() {
+        // SKIP_DIRS gates DESCENT, not the root you point at — so the fixture-based tests above (which
+        // pass `tests/fixtures` directly) keep working. Locking the distinction in: it is the reason
+        // adding `fixtures` to SKIP_DIRS did not break every other test in this module.
+        assert!(!harvest(&fixtures()).is_empty());
     }
 
     #[test]
