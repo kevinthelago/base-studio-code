@@ -7,7 +7,7 @@
 //
 // A press that starts on a `[data-node]` element does NOT pan — the node owns that gesture — so a
 // canvas with draggable nodes (Org) and one with static nodes (Glance) share the same hook.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { clamp } from "@/shared/lib/core/math";
 
 export interface GraphView { tx: number; ty: number; scale: number }
@@ -63,6 +63,9 @@ export interface GraphViewport {
    *  viewport-relative via the live bounding rect, so the anchor is exact regardless of the forwarder's
    *  own geometry. */
   zoomAtClient: (factor: number, clientX: number, clientY: number) => void;
+  /** Ref callback for the WORLD LAYER element — the pan drag writes its transform directly (#4140).
+   *  Attach it alongside {@link worldTransform}; the two apply the same string. */
+  setWorld: (el: HTMLElement | null) => void;
   /** The `transform` style to spread onto the world layer. */
   worldTransform: React.CSSProperties;
 }
@@ -116,6 +119,12 @@ export function centerView(v: GraphView, cw: number, ch: number, wx: number, wy:
   return { scale: v.scale, tx: cw / 2 - wx * v.scale, ty: ch / 2 - wy * v.scale };
 }
 
+/** The `transform` a view renders as. Pure + exported so the imperative drag path and the React render
+ *  path can never disagree on the string — they are the same function (#4140). */
+export function viewTransform(v: GraphView): string {
+  return `translate(${v.tx}px,${v.ty}px) scale(${v.scale})`;
+}
+
 export function useGraphViewport(world: { w: number; h: number }, opts: GraphViewportOpts = {}): GraphViewport {
   const min = opts.min ?? 0.28;
   const max = opts.max ?? 2.6;
@@ -126,6 +135,26 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
   const vpRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef(view);
   useEffect(() => { viewRef.current = view; }, [view]);
+
+  // #4140: the WORLD LAYER, driven imperatively during a pan.
+  //
+  // The drag used to `setView` on every mousemove, so each pan frame re-rendered the whole graph
+  // subtree — 248 elements + 799 edges reconciled per EVENT, and mouse events outpace frames (a 500Hz
+  // mouse is ~8 per frame). Now the drag writes `style.transform` straight to this element and leaves
+  // React alone until mouseup.
+  //
+  // `viewRef` is the authority, not `view`: the layout effect below re-applies from it after EVERY
+  // render, so a re-render triggered mid-drag by something else cannot snap the transform back to the
+  // stale committed state. It runs before paint, so there is no flash.
+  const worldElRef = useRef<HTMLElement | null>(null);
+  const applyView = useCallback((v: GraphView) => {
+    if (worldElRef.current) worldElRef.current.style.transform = viewTransform(v);
+  }, []);
+  const setWorld = useCallback((el: HTMLElement | null) => {
+    worldElRef.current = el;
+    if (el) el.style.transform = viewTransform(viewRef.current);
+  }, []);
+  useLayoutEffect(() => { applyView(viewRef.current); });
   const worldRef = useRef(world);
   useEffect(() => { worldRef.current = world; }, [world.w, world.h]);
   // Latest content-bounds provider (read live at fit/restore time). Seeded from the first render and
@@ -250,12 +279,18 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
     const mm = (ev: MouseEvent) => {
       const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
       if (Math.abs(dx) + Math.abs(dy) > 4) { dragMoved.current = true; userMoved.current = true; }
-      setView((vv) => ({ ...vv, tx: start.tx + dx, ty: start.ty + dy }));
+      // #4140: NO setState here — mutate the authority and paint it directly. React learns the final
+      // position once, on mouseup.
+      viewRef.current = { ...viewRef.current, tx: start.tx + dx, ty: start.ty + dy };
+      applyView(viewRef.current);
     };
     const mu = () => {
       if (vpRef.current) vpRef.current.style.cursor = "grab";
       window.removeEventListener("mousemove", mm);
       window.removeEventListener("mouseup", mu);
+      // Commit the drag to React exactly once, so everything keyed on `view` (worldTransform, any
+      // consumer memo) converges on where the pan actually ended.
+      setView(viewRef.current);
       // Clear on the next tick so the click handler (which fires after mouseup) can still read it.
       setTimeout(() => { dragMoved.current = false; }, 0);
     };
@@ -277,7 +312,7 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
   }, [onWheel]);
 
   return {
-    view, setVp, onCanvasDown, fit, centerOn, zoomBy, zoomTo, zoomToCentered, dragMoved, panBy, zoomAtClient,
+    view, setVp, setWorld, onCanvasDown, fit, centerOn, zoomBy, zoomTo, zoomToCentered, dragMoved, panBy, zoomAtClient,
     worldTransform: { transform: `translate(${view.tx}px,${view.ty}px) scale(${view.scale})`, transformOrigin: "0 0" },
   };
 }

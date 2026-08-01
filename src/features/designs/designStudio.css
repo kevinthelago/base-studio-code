@@ -37,6 +37,16 @@
 
 /* ── graph ── */
 /* The viewport/world shell + dotted grid are the shared GraphCanvas (#2418); only the node card is ours. */
+/* #4140 — `content-visibility: auto` was TRIED HERE AND REJECTED, with evidence.
+   It implies `contain: paint`, which clips descendants to the padding box. The health / build-error /
+   empty-render badges are absolutely positioned at -8px, i.e. OUTSIDE that box. Measured in headless
+   Chromium (screenshot pixel-diff, with vs without): the ONLY pixels that changed were a 19x19 block at
+   exactly the badge's position, at full intensity — the badge is silently erased. Hit-testing does NOT
+   catch this: `elementFromPoint` still returns the badge, because it reads LAYOUT while the clip happens
+   at PAINT.
+   Making it safe needs a wrapper element per node (sized to include the badge gutter), which costs
+   +1000 DOM nodes at the target scale — a bad trade when JS viewport culling removes those nodes
+   outright. Deferred to the culling slice; do not re-add this rule without re-running that pixel diff. */
 .ds-node { position: absolute; cursor: pointer; border-radius: 11px; padding: 11px 13px; background: var(--bg-elev, var(--bg-soft)); border: 1px solid var(--border); box-shadow: 0 6px 20px rgba(0,0,0,.3); transition: border-color .12s; }
 /* Selection must NOT touch the background (#2491) — the node keeps its elevated surface; the solid
    accent ring + border alone carry the selected state. */
