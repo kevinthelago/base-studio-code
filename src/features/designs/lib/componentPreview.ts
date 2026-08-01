@@ -500,6 +500,154 @@ export function bootstrapSource(
   ].join("\n");
 }
 
+// ── Derived indexes (#4130) ─────────────────────────────────────────────────────────────────────────
+//
+// Buildability is asked once PER COMPONENT by `analyzeGraphHealth`, which used to answer it by calling
+// `componentPreviewFiles` and testing `=== null` — building and discarding a whole preview bundle to read
+// one boolean. Over the real 248-component kit that was 1297ms of the page's 1766ms mount, and ~870ms of
+// it was re-deriving the SAME module-constant artifact 248 times: `@data/components/react-ui.json` is
+// 741 runtime modules + 68 components, all re-seeded into a fresh object with a `stripExt` per key on
+// every call.
+//
+// So the artifact- and sibling-derived state is computed ONCE per input identity and cached in a WeakMap
+// (no lifetime management: the entry dies with the array/artifact it keys). `componentBuildable` then
+// answers the boolean off those indexes without materializing a file map or walking the import closure.
+
+/** The artifact-derived resolution state — depends ONLY on the artifact, which is a module constant. */
+interface ArtifactIndex {
+  /** `src` → the artifact component that HAS a source (the built-in lookup, replacing a linear scan). */
+  bySrc: Map<string, KitArtifact["components"][number]>;
+  /** Extension-stripped keys of the runtime closure + built-in sources — the internal-import target set. */
+  bases: Set<string>;
+}
+
+const artifactIndexes = new WeakMap<KitArtifact, ArtifactIndex>();
+
+/** {@link ArtifactIndex} for `artifact`, computed once per artifact object. */
+function artifactIndex(artifact: KitArtifact): ArtifactIndex {
+  const hit = artifactIndexes.get(artifact);
+  if (hit) return hit;
+  const bySrc = new Map<string, KitArtifact["components"][number]>();
+  const bases = new Set<string>();
+  for (const path of Object.keys(artifact.runtime ?? {})) bases.add(stripExt(path));
+  for (const c of artifact.components) {
+    if (!c.source) continue;
+    // LAST wins, matching `Object.keys` order over the object the seeding loops build.
+    bySrc.set(c.src, c);
+    bases.add(stripExt(c.src));
+  }
+  const idx: ArtifactIndex = { bySrc, bases };
+  artifactIndexes.set(artifact, idx);
+  return idx;
+}
+
+/** The sibling-derived resolution state. Every entry records its OWNER ids, because a component's own
+ *  contribution is scoped differently per lookup (`sibByBase` excludes it; the `provides` maps include
+ *  it) — owners let a cached, whole-array index answer both without rebuilding per component. */
+interface SiblingIndex {
+  /** import base (`src` minus extension) → ids of siblings publishing it. */
+  baseOwners: Map<string, string[]>;
+  /** a `@/…` specifier a sibling `provides` → the ids providing it. */
+  provideSpecOwners: Map<string, string[]>;
+  /** `${base}.tsx` for a provided specifier → the ids providing it. */
+  provideModOwners: Map<string, string[]>;
+}
+
+const siblingIndexes = new WeakMap<readonly ComponentRecord[], SiblingIndex>();
+
+/** Record `id` as an owner of `key`. */
+function addOwner(m: Map<string, string[]>, key: string, id: string): void {
+  const hit = m.get(key);
+  if (hit) hit.push(id);
+  else m.set(key, [id]);
+}
+
+/** {@link SiblingIndex} for `siblings`, computed once per array identity. Callers pass the SAME array
+ *  across a sweep (`analyzeGraphHealth` passes its `comps`), which is what makes the cache land. */
+function siblingIndex(siblings: readonly ComponentRecord[]): SiblingIndex {
+  const hit = siblingIndexes.get(siblings);
+  if (hit) return hit;
+  const idx: SiblingIndex = { baseOwners: new Map(), provideSpecOwners: new Map(), provideModOwners: new Map() };
+  for (const s of siblings) {
+    const impl = ownImplSource(s);
+    const sp = s.src?.trim();
+    if (impl && sp) addOwner(idx.baseOwners, stripExt(sp), s.id);
+    const spec = s.provides?.trim();
+    const base = spec ? resolveInternalBase(spec, "") : null;
+    if (spec && impl && base !== null) {
+      addOwner(idx.provideSpecOwners, spec, s.id);
+      addOwner(idx.provideModOwners, `${base}.tsx`, s.id);
+    }
+  }
+  return (siblingIndexes.set(siblings, idx), idx);
+}
+
+/** Does `key` have an owner OTHER than `exceptId`? — the "excluding the component itself" lookup. */
+function ownedByOther(m: Map<string, string[]>, key: string, exceptId: string): boolean {
+  const owners = m.get(key);
+  return owners !== undefined && owners.some((id) => id !== exceptId);
+}
+
+/** Is any key owned by someone other than `exceptId`? — the `size > 0` test, self-exclusive. */
+function anyOwnedByOther(m: Map<string, string[]>, exceptId: string): boolean {
+  for (const owners of m.values()) if (owners.some((id) => id !== exceptId)) return true;
+  return false;
+}
+
+/**
+ * Would {@link componentPreviewFiles} produce a build for `comp` — WITHOUT producing one?
+ *
+ * Exactly `componentPreviewFiles(comp, artifact, siblings) !== null`, and pinned to that by a test over
+ * the real library. It exists because callers that only need the verdict (graph health, `bsc ui doctor`'s
+ * frontend twin, any "is this a spec or an implementation" check) were paying for a full bundle —
+ * including the 5 MB artifact re-seed and the transitive sibling import walk — per component.
+ *
+ * `libResolver` is deliberately NOT a parameter: library vendoring happens AFTER the buildability
+ * decision in `componentPreviewFiles`, so it cannot affect the verdict.
+ */
+export function componentBuildable(
+  comp: ComponentRecord,
+  artifact: KitArtifact,
+  siblings: readonly ComponentRecord[] = [],
+): boolean {
+  const { bySrc, bases } = artifactIndex(artifact);
+  // BUILT-IN: present in the artifact with a source ⇒ always a build (the branch below never returns null).
+  if (comp.src && bySrc.has(comp.src)) return true;
+
+  const explicitSource = comp.source && comp.source.trim() ? comp.source : null;
+  const userSource = explicitSource ?? (comp.srcText && comp.srcText.trim() ? comp.srcText : null);
+  if (userSource === null) return false;
+  if (explicitSource !== null) return true; // an explicit `source` is trusted, imports unchecked
+
+  const path = comp.src?.trim() ? comp.src : `user/${comp.id || "component"}.tsx`;
+  const sib = siblingIndex(siblings);
+
+  // The component's OWN `provides` contribution — the maps are built over `[comp, ...siblings]`, so it
+  // participates alongside the cached sibling entries.
+  const ownSpec = comp.provides?.trim();
+  const ownImpl = ownImplSource(comp);
+  const ownBase = ownSpec ? resolveInternalBase(ownSpec, "") : null;
+  const ownProvides = ownSpec && ownImpl && ownBase !== null ? { spec: ownSpec, mod: `${ownBase}.tsx` } : null;
+
+  const hasProvideSpec = (spec: string) =>
+    (ownProvides?.spec === spec) || ownedByOther(sib.provideSpecOwners, spec, comp.id) || (sib.provideSpecOwners.get(spec)?.includes(comp.id) ?? false);
+  const hasProvideMod = (key: string) =>
+    (ownProvides?.mod === key) || (sib.provideModOwners.get(key)?.length ?? 0) > 0;
+  const hasSibBase = (base: string) => ownedByOther(sib.baseOwners, base, comp.id);
+
+  const resolvesInternal = (spec: string, fromRel: string): boolean => {
+    if (hasProvideSpec(spec)) return true;
+    const base = resolveInternalBase(spec, fromRel);
+    return base !== null && (bases.has(base) || hasProvideMod(`${base}.tsx`) || hasSibBase(base));
+  };
+
+  const providesModNonEmpty = ownProvides !== null || sib.provideModOwners.size > 0;
+  const canResolveInternal = providesModNonEmpty || anyOwnedByOther(sib.baseOwners, comp.id) || bases.size > 0;
+  return canResolveInternal
+    ? isPreviewBuildable(userSource, path, resolvesInternal)
+    : looksBuildableModule(userSource);
+}
+
 /**
  * Assemble the buildable files + entry for `comp`'s preview, or `null` when there's no buildable source.
  *
@@ -526,7 +674,10 @@ export function componentPreviewFiles(
   previewData: Record<string, string> = {},
   liveStates?: PreviewState[],
 ): ComponentPreviewBuild | null {
-  const inArtifact = comp.src ? artifact.components.find((c) => c.src === comp.src && c.source) : undefined;
+  // #4130: the built-in lookup + the internal-resolution base set come from the cached artifact index,
+  // so this and `componentBuildable` read the SAME derivation (and neither re-scans the artifact).
+  const artIdx = artifactIndex(artifact);
+  const inArtifact = comp.src ? artIdx.bySrc.get(comp.src) : undefined;
 
   if (inArtifact) {
     const files: Record<string, string> = {};
@@ -556,7 +707,7 @@ export function componentPreviewFiles(
   const files: Record<string, string> = {};
   for (const [p, src] of Object.entries(artifact.runtime ?? {})) files[p] = src; // (b) runtime closure
   for (const c of artifact.components) if (c.source) files[c.src] = c.source;     // (b) built-in sources
-  const artifactBases = new Set(Object.keys(files).map(stripExt));
+  const artifactBases = artIdx.bases; // #4130: cached — identical to stripExt over the seeded keys
 
   // (a) `provides` — a `@/X` specifier → a graph-source component's module, keyed at the mem path for `X`.
   const providesMod = new Map<string, string>(); // `${base}.tsx` → source
