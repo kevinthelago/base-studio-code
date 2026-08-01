@@ -574,3 +574,86 @@ use std::fmt;
         std::fs::remove_dir_all(&dir).ok();
     }
 }
+
+// ── CLI output capture (#4152) ──────────────────────────────────────────────────────────────────
+//
+// A WARM `bsc` has to hand each request its own output, but the CLI writes straight to stdout in ~311
+// places. Refactoring every one onto an injectable sink would be enormous — and unnecessary, because the
+// hot reads all funnel through a handful of SHARED helpers (`print_json` alone has 62 callers). Those
+// helpers route through here instead, so a verb becomes servable without touching its own code.
+//
+// THREAD-LOCAL on purpose. The capture must never leak between concurrent callers: a serve loop
+// capturing on its own thread cannot swallow output another thread is writing, and a normal one-shot run
+// (no sink set) prints exactly as it always did — byte for byte, which is what makes the two paths
+// interchangeable.
+
+use std::cell::RefCell;
+
+thread_local! {
+    /// The active capture buffer for THIS thread, or `None` when output goes to stdout as usual.
+    static OUT_SINK: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// Emit `s` followed by a newline — to the active capture sink, else stdout. The `println!` of the
+/// shared print helpers.
+pub fn emit_line(s: &str) {
+    emit_with(s, true);
+}
+
+/// Emit `s` with NO trailing newline — to the active capture sink, else stdout. The `print!` of the
+/// shared helpers (`print_raw`, whose whole point is byte-exact output for `$( )` capture).
+pub fn emit(s: &str) {
+    emit_with(s, false);
+}
+
+fn emit_with(s: &str, newline: bool) {
+    let captured = OUT_SINK.with(|sink| {
+        let mut sink = sink.borrow_mut();
+        if let Some(buf) = sink.as_mut() {
+            buf.push_str(s);
+            if newline {
+                buf.push('\n');
+            }
+            true
+        } else {
+            false
+        }
+    });
+    if !captured {
+        use std::io::Write;
+        let mut out = std::io::stdout();
+        let _ = if newline { writeln!(out, "{s}") } else { write!(out, "{s}") };
+    }
+}
+
+/// Run `f` with this thread's print-helper output captured, returning its result and everything emitted.
+///
+/// NESTS correctly: an inner capture takes only its own output and the outer buffer is restored intact,
+/// so a served verb that internally captures cannot swallow the request's own output. The sink is
+/// restored even if `f` panics only insofar as the guard runs — callers that catch panics should treat a
+/// captured buffer as undefined rather than partial.
+pub fn capture_output<R>(f: impl FnOnce() -> R) -> (R, String) {
+    let prev = OUT_SINK.with(|s| s.replace(Some(String::new())));
+    let result = f();
+    let captured = OUT_SINK.with(|s| s.replace(prev)).unwrap_or_default();
+    (result, captured)
+}
+
+/// Is output currently being captured on this thread? Lets a caller refuse to serve a verb it cannot
+/// capture, rather than letting stray output corrupt a protocol stream.
+pub fn is_capturing() -> bool {
+    OUT_SINK.with(|s| s.borrow().is_some())
+}
+
+/// Commands a WARM `bsc serve` process may answer (#4152).
+///
+/// READ-ONLY and PROJECT-LESS, both load-bearing: a write would need per-request store env a warm
+/// process cannot safely switch (env is process-global), and anything outside `bsc ui` either needs a
+/// project key or has not been shown to funnel its output through the capture helpers.
+///
+/// Defined HERE so the serve loop and the desktop client that routes to it cannot disagree — a client
+/// that sent something the server refuses would stall a call that should simply have been spawned.
+pub fn is_servable_warm(args: &[String]) -> bool {
+    const SUBS: &[&str] = &["list", "kit", "theme", "variants", "usage", "shapes", "get"];
+    args.first().is_some_and(|c| c == "ui") && args.get(1).is_some_and(|s| SUBS.contains(&s.as_str()))
+}

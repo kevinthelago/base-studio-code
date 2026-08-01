@@ -724,6 +724,7 @@ dependencies = [
  "mcp-rpc",
  "plandb",
  "research",
+ "serde",
  "serde_json",
  "skilldb",
  "usagedb",
@@ -776,6 +777,7 @@ dependencies = [
 name = "bsc-cli-util"
 version = "0.1.0"
 dependencies = [
+ "bsc-util",
  "serde",
  "serde_json",
 ]

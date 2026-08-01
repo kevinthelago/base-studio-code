@@ -59,7 +59,9 @@ fn top_help() -> String {
     s
 }
 
-fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
+mod serve;
+
+pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
     match cmd {
         "plan" => plandb::cli::run(rest, "bsc plan"),
         "errors" => errordb::cli::run(rest, "bsc errors"),
@@ -86,6 +88,8 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
             eprintln!("`bsc component` is deprecated; use `bsc ui`");
             bsc_component::cli::run(rest, "bsc component")
         }
+        // #4152: the WARM server - one process, many requests over line-delimited JSON.
+        "serve" => serve::run(),
         "ui" => bsc_ui::cli::run(rest, "bsc ui"),
         "logs" => logs::cli::run(rest, "bsc logs"),
         "metrics" => logs::metrics::run(rest, "bsc metrics"),
