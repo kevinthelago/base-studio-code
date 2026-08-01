@@ -16,6 +16,7 @@ import { log } from "@/shared/lib/core/log";
 import { bscJson } from "@/shared/lib/core/bsc";
 import { parseFleetFile, withDerivedStreamIssues, type FleetPlan } from "@/features/planner/fleet/planFleet";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
+import { resolveClosedRefs } from "./fleetIssueState";
 import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { buildWorkerScope } from "@/features/planner/fleet/workerScope";
@@ -152,8 +153,15 @@ export function partitionResumable(
 export function planResumeLaunch(
   fleet: FleetPlan,
   dbIssues: Array<{ ref?: string; stream?: string; status?: string }>,
+  /** Refs some OTHER evidence source reports finished — today the GitHub overlay (#4103), in each
+   *  stream's own ref spelling. Unioned with plan.db's terminal rows: either source calling a ref done
+   *  makes it done, because neither is complete on its own. plan.db knows only what a planner run
+   *  authored (nothing, for a hand-assembled fleet); GitHub knows only what a token could reach.
+   *  Optional so this stays PURE and exhaustively unit-testable. */
+  extraDone: ReadonlySet<string> = new Set(),
 ): { launchPlan: FleetPlan; maintenanceIds: Set<string>; noRepo: string[]; note?: string } {
-  const { active, maintenance } = pruneCompletedStreams(fleet.streams, doneIssueRefs(dbIssues as PlanIssue[]));
+  const done = new Set([...doneIssueRefs(dbIssues as PlanIssue[]), ...extraDone]);
+  const { active, maintenance } = pruneCompletedStreams(fleet.streams, done);
   const maintenanceIds = new Set(maintenance.map((s) => s.id));
   // A stream with no repo stays visible in the plan but can't get a worktree — drop it here and report it.
   const withRepo = [...active, ...maintenance].filter((st) => st.repo);
@@ -214,7 +222,13 @@ export async function resumeProjectFleet(opts: {
 
   // 2. Progress-gate against plan.db.
   const dbIssues = await bscJson<PlanIssue[]>(projectKey, ["plan", "list", "--full", "--json"], []);
-  const { launchPlan, maintenanceIds, noRepo, note: gateNote } = planResumeLaunch(resolvedFleet, dbIssues ?? []);
+  // #4103: plan.db's `issues` table is EMPTY for a fleet assembled outside a full planner run (measured:
+  // 40 streams, 0 issue rows), so `doneIssueRefs` returned nothing and NO stream ever read as complete —
+  // a relaunch restarted finished workers and maintenance mode (#1957) never engaged. The stream's own
+  // refs are the ownership record; GitHub says which are closed. One batched query per repo.
+  const closedRefs = await resolveClosedRefs(resolvedFleet.streams);
+  const { launchPlan, maintenanceIds, noRepo, note: gateNote } =
+    planResumeLaunch(resolvedFleet, dbIssues ?? [], closedRefs);
   if (launchPlan.streams.length === 0 && !launchPlan.director.enabled) {
     return {
       ok: false,
@@ -239,7 +253,7 @@ export async function resumeProjectFleet(opts: {
     readCoordState(),
   ]);
   const evidence: LandedEvidence = {
-    doneIssues: doneIssueRefs((dbIssues ?? []) as PlanIssue[]),
+    doneIssues: new Set([...doneIssueRefs((dbIssues ?? []) as PlanIssue[]), ...closedRefs]),
     mergedBranches: new Set(mergedBranches ?? []),
     // Tier 3: a worker that finished its lane parks in MAINTENANCE (#1957, `bsc-maintain`) — the one
     // per-session completion signal that is actually populated in the live log (34 events, each keyed
