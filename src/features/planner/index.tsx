@@ -8,6 +8,12 @@ import { Box } from "@/shared/ui/layout/Box";
 import { ProjectsGraphHost } from "./ProjectsGraphHost";
 // #3874: the graph-hosted Projects page — built and gated, not yet mounted (see the FLIP POINTs below).
 export { ProjectsGraphHost } from "./ProjectsGraphHost";
+// #4169: the page's platform registration, on the barrel because callers OUTSIDE a render need it. Every
+// other feature registers when its host MODULE evaluates, so importing the barrel is enough; this one
+// registers at first RENDER (the import cycle documented in ProjectsGraphHost), so shadow mode — which
+// mounts nothing — would read the whole planner-list surface as unbound without a way to call it. A
+// re-export binds, it does not call, so the cycle that forced render-time registration is untouched.
+export { registerProjectsPlatform } from "./list/graphPlatform";
 import { Planning } from "./session/Planning";
 import { TeamsPanel } from "@/features/teams";
 import { SoundsWorkspace } from "@/features/sounds";
