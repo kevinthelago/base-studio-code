@@ -63,6 +63,12 @@ import * as UsePaneTokenUsage from "@/app/console/lib/usePaneTokenUsage";
 import * as Bsc from "@/shared/lib/core/bsc";
 import * as ProjectPaths from "@/shared/lib/core/projectPaths";
 import * as UseCoordLog from "@/shared/lib/fleet/useCoordLog";
+// #4186 — the four the Console page reaches that no earlier graph page did: the launch gate and its hook,
+// the worker-audit reader behind the pane states, and the CI watcher. Feature-agnostic, so the shell's set.
+import * as LaunchGate from "@/shared/lib/fleet/launchGate";
+import * as UseFleetGate from "@/shared/lib/fleet/useFleetGate";
+import * as WorkerAudit from "@/shared/lib/fleet/workerAudit";
+import * as UseCiWatcher from "@/shared/lib/github/useCiWatcher";
 import * as CoordinationWakes from "@/shared/lib/fleet/coordinationWakes";
 // ── Additional shared UI + libs a migrated page composes (#3646, Security onward) ─────────────────────
 import * as StatusDot from "@/shared/ui/feedback/StatusDot";
@@ -238,6 +244,10 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/core/bsc": Bsc,
   "@/shared/lib/core/projectPaths": ProjectPaths,
   "@/shared/lib/fleet/useCoordLog": UseCoordLog,
+  "@/shared/lib/fleet/launchGate": LaunchGate,
+  "@/shared/lib/fleet/useFleetGate": UseFleetGate,
+  "@/shared/lib/fleet/workerAudit": WorkerAudit,
+  "@/shared/lib/github/useCiWatcher": UseCiWatcher,
   "@/shared/lib/fleet/coordinationWakes": CoordinationWakes,
 };
 

@@ -56,6 +56,20 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ensurePlatform: () => import("@/features/glance"),
   },
   {
+    pageId: "consolepage",
+    label: "Console",
+    rendersFrom: "graph",
+    modules: [
+      { recordId: "consolepage", file: "/src/app/console/index.tsx" },
+      { recordId: "console-pane-at", file: "/src/app/console/PaneAt.tsx" },
+      { recordId: "console-pane-shell", file: "/src/app/console/panes/PaneShell.tsx" },
+      { recordId: "console-pane-menu", file: "/src/app/console/panes/PaneMenu.tsx" },
+      { recordId: "console-states", file: "/src/app/console/consoleStates.tsx" },
+    ],
+    // The shell is not a feature and has no barrel — the host module IS the registration.
+    ensurePlatform: () => import("@/app/console/ConsoleGraphHost"),
+  },
+  {
     pageId: "glancepage",
     label: "Glance",
     rendersFrom: "graph",
@@ -162,6 +176,8 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
 const FILE_SOURCES = import.meta.glob<string>(
   [
     "/src/features/planner/list/ProjectsList.tsx",
+    "/src/app/console/{index,PaneAt,consoleStates}.tsx",
+    "/src/app/console/panes/{PaneShell,PaneMenu}.tsx",
     "/src/features/glance/Glance{Workspace,Canvas,Inspector,StreamMorph,PreviewMorph,Node,PlanScreen,ChatDock,SessionLog}.tsx",
     "/src/features/github/{index,Empty,GitHubSummary,Pulse,BranchGraph}.tsx",
     "/src/features/github/summary/{ActivityHeatmap,CIHealthCard,ContributorsCard,CrossRepoActivity,GitHubPageModeStrip,LanguageMix,OpenPRsCard,ReposGrid}.tsx",
