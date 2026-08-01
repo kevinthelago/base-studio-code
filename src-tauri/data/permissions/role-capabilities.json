@@ -132,7 +132,8 @@
         "scratch/**"
       ],
       "harvestRoots": [
-        "app-repo"
+        "app-repo",
+     "projects"
       ]
     },
     "integrator": {

@@ -30,7 +30,39 @@ const roleDefaultsMerged = mergeRoleDefaults(roleCapsEmbedded.roleDefaults, role
  *  MISSING a role still yields that role from the embedded floor (rather than `undefined` → the
  *  module-load `TypeError reading writeGlobs` that took down the UI). */
 export function mergeRoleDefaults<T>(embedded: Record<string, T>, overlaid: Record<string, T>): Record<string, T> {
-  return { ...embedded, ...overlaid };
+  const out: Record<string, T> = { ...embedded };
+  for (const [role, over] of Object.entries(overlaid)) {
+    const base = embedded[role];
+    if (!base || typeof base !== "object" || typeof over !== "object" || !over) {
+      out[role] = over;              // a role the shipped app doesn't know — the overlay owns it whole
+      continue;
+    }
+    // FIELD-level floor, not role-level (#4108). The role-level `{...embedded, ...overlaid}` above meant
+    // a mirror that HAS the role replaced its entry wholesale — so a mirror written before a field
+    // existed silently dropped it.
+    out[role] = { ...base, ...over, ...floorLists(base, over) } as T;
+  }
+  return out;
+}
+
+/** Fields where the SHIPPED value is a floor a stale mirror must not be able to revoke (#4108).
+ *
+ *  `config/` is seeded ONCE — `ensure_seeded` writes "only files that are ABSENT so a user edit is never
+ *  clobbered" — and never refreshed. So on every existing install the mirror is frozen at whatever the
+ *  app shipped the day it was first run, and a later capability grant is invisible forever. That is not
+ *  hypothetical: the librarian's `projects` harvest root (#4108) landed in the packaged default and was
+ *  dropped by a mirror still carrying `['app-repo']`, which is the whole reason the Algorithms studio
+ *  could not see `mobile-studio-code`.
+ *
+ *  UNION rather than replace, and ONLY for `harvestRoots`: a harvest root widens READ-only scan reach
+ *  that the shipped app decides (there is no UI to edit it), so a mirror can ADD one but never revoke
+ *  one. Write-bearing fields — `writeGlobs`, the access tiers — are deliberately NOT floored here: those
+ *  a user may legitimately narrow, and silently widening them would be the opposite mistake. */
+function floorLists(base: object, over: object): Record<string, unknown> {
+  const b = (base as { harvestRoots?: string[] }).harvestRoots;
+  const o = (over as { harvestRoots?: string[] }).harvestRoots;
+  if (!b?.length) return {};
+  return { harvestRoots: [...b, ...(o ?? []).filter((r) => !b.includes(r))] };
 }
 
 export type SessionRole =
