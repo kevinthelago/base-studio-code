@@ -24,7 +24,7 @@ describe("vizRunToDataset (#2940)", () => {
     const ds = vizRunToDataset(run);
     expect(ds).toEqual({ kind: "matrix", data: [[1, 3], [2, 4]] });
     // deep copy — mutating the result must not touch the frame
-    if (ds.kind === "matrix") ds.data[0][0] = 99;
+    if (ds?.kind === "matrix") ds.data[0][0] = 99;
     expect((run.frames[0] as { data: number[][] }).data[0][0]).toBe(1);
   });
 
@@ -58,5 +58,59 @@ describe("vizRunToDataset (#2940)", () => {
     expect(vizRunToDataset(arr)).toEqual({ kind: "array", data: [5, 6] });
     const g = { datatype: "graph", input: { nodes: [{ id: "x" }], edges: [] }, frames: [] } as unknown as VizRun;
     expect(vizRunToDataset(g)).toEqual({ kind: "graph", nodes: [{ id: "x" }], edges: [] });
+  });
+
+  // #4162 — the datatypes added alongside the stored-vizCode contract.
+  it("tree datatype nests the parent pointers into a forest", () => {
+    const run = {
+      datatype: "tree",
+      input: [50, 30, 70],
+      frames: [
+        { structure: "tree", nodes: [{ id: "n0", value: 50 }] },
+        {
+          structure: "tree",
+          nodes: [
+            { id: "n0", value: 50 },
+            { id: "n1", value: 30, parent: "n0" },
+            { id: "n2", value: 70, parent: "n0" },
+          ],
+        },
+      ],
+    } as unknown as VizRun;
+    expect(vizRunToDataset(run)).toEqual({
+      kind: "tree",
+      roots: [{ id: "n0", label: "50", children: [{ id: "n1", label: "30" }, { id: "n2", label: "70" }] }],
+    });
+  });
+
+  it("tree: an orphaned node is promoted to a root, never dropped", () => {
+    // A partial tree is still worth showing; losing a node would misrepresent what the algorithm did.
+    const run = {
+      datatype: "tree",
+      input: [1],
+      frames: [{ structure: "tree", nodes: [{ id: "a", value: 1 }, { id: "b", value: 2, parent: "gone" }] }],
+    } as unknown as VizRun;
+    expect(vizRunToDataset(run)).toEqual({
+      kind: "tree",
+      roots: [{ id: "a", label: "1" }, { id: "b", label: "2" }],
+    });
+  });
+
+  it("stack / scalar have NO bindable dataset rather than a coerced one", () => {
+    // A stack holds a mixed number/string sequence and a scalar run is a NAMED variable map — neither is
+    // one of the three dataset shapes. Coercing them to `array` would hand a component a plausible-looking
+    // dataset that means something else.
+    const stack = {
+      datatype: "stack",
+      input: "([)",
+      frames: [{ structure: "stack", data: ["(", "["] }],
+    } as unknown as VizRun;
+    const scalar = {
+      datatype: "scalar",
+      input: { n: 5 },
+      frames: [{ structure: "scalar", values: { n: 5, fib: 5 } }],
+    } as unknown as VizRun;
+    expect(vizRunToDataset(stack)).toBeUndefined();
+    expect(vizRunToDataset(scalar)).toBeUndefined();
   });
 });
