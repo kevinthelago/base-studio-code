@@ -39,8 +39,25 @@ pub struct Candidate {
     /// Neither `harvest` nor `curate` used to set one, and per #3607 an impl with no domain does not
     /// surface in the graph UI — so a clean `curate --apply` landed records nobody could see.
     pub domain: String,
+    /// The candidate's COLOCATED test file, carried at harvest time (#4126) — empty when it has none.
+    ///
+    /// Harvested WITH the candidate rather than by a later pass, so a `curate --apply` lands a node that
+    /// is already testable-by-declaration. The separate `bsc graph tests harvest` stays for the records
+    /// curated before this existed; a fresh harvest never needs it.
+    pub tests: Vec<CandidateTest>,
     /// The reusability classification (#2745 slice 2) — library-worthy vs. project glue, with reasons.
     pub classification: Classification,
+}
+
+/// One colocated test file carried on a candidate — the `{name, src}` shape a stored impl's `tests`
+/// array holds, identical to the component library's (#3907) so the two graphs read the same.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CandidateTest {
+    /// The file's first top-level `describe(…)` title, else its basename.
+    pub name: String,
+    /// The test file's contents, VERBATIM — one entry per FILE, never split per `it()`, because a
+    /// file's meaning lives partly in its imports, `beforeEach` and local helpers.
+    pub src: String,
 }
 
 /// One collected definition: `(name, tech, source text, root-relative path)`. Named so the extra
@@ -255,6 +272,66 @@ pub struct CurationItem {
     pub replaces: Option<String>,
 }
 
+/// One `relink` decision (#4119) — what recovering an impl's `src` would do, before anything is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RelinkOutcome {
+    /// Exactly one harvested file carries this id — recover its `src` and the folder it derives.
+    Link { id: String, src: String, folder: Option<String> },
+    /// The id maps to SEVERAL harvested files. Never guessed: see [`relink_plan`].
+    Ambiguous { id: String, candidates: Vec<String> },
+    /// Nothing harvested under this id — the source may be gone, renamed, or outside the scanned dir.
+    Unmatched { id: String },
+    /// Already carries `src`; left alone, so a re-run is a no-op.
+    AlreadyLinked { id: String },
+    /// A `primitive` — it DESCRIBES a language built-in via `--ref` and is never re-coded (#2972), so
+    /// it has no source file BY DESIGN. Skipped rather than counted a miss: reporting it unmatched
+    /// implies provenance is missing when its absence is the contract, and matching it against a
+    /// same-named function somewhere in the tree would invent one.
+    Primitive { id: String },
+}
+
+/// Plan the recovery of `src` on stored impls by matching them to a fresh harvest (#4119). Pure —
+/// APPLYING the plan (writing the store) is the caller's job, exactly like [`curation_plan`].
+///
+/// `by_id` maps a candidate id to the DISTINCT source paths harvested under it. More than one is
+/// **ambiguous and is never resolved by picking**: a candidate id is `<kebab(name)>.<ext>`, and bare
+/// function names collide freely across a real tree (`dismiss.ts`, `approve.ts`, `app.ts` all recur) —
+/// which is precisely why an id cannot serve as identity and why `src` is needed at all. Writing a
+/// plausibly-wrong provenance is worse than writing none: it would silently file the record under
+/// another module's folder and defeat the dedupe it exists to enable.
+pub fn relink_plan(
+    stored: &[serde_json::Value],
+    by_id: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+) -> Vec<RelinkOutcome> {
+    stored
+        .iter()
+        .map(|im| {
+            let id = im.get("id").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+            if im
+                .get("src")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|s| !s.trim().is_empty())
+            {
+                return RelinkOutcome::AlreadyLinked { id };
+            }
+            if im.get("role").and_then(serde_json::Value::as_str) == Some("primitive") {
+                return RelinkOutcome::Primitive { id };
+            }
+            match by_id.get(&id) {
+                None => RelinkOutcome::Unmatched { id },
+                Some(srcs) if srcs.len() > 1 => {
+                    RelinkOutcome::Ambiguous { id, candidates: srcs.iter().cloned().collect() }
+                }
+                Some(srcs) => {
+                    let src = srcs.iter().next().expect("non-empty").clone();
+                    let folder = bsc_util::folder_from_src(&src);
+                    RelinkOutcome::Link { id, src, folder }
+                }
+            }
+        })
+        .collect()
+}
+
 /// Plan the curation of worthy candidates into the library (#2745 slice 3): each becomes an `add`, or an
 /// `optimize` when an implementation with the same id is already stored (the harvested version replaces
 /// it — the "better version propagates"). Pure — APPLYING the plan (writing the store) is the caller's job.
@@ -292,6 +369,22 @@ pub fn harvest(dir: &Path) -> Vec<Candidate> {
     // Which (name, tech) pairs were actually harvested — so `composes` only links in-set candidates.
     let in_set: HashSet<(String, String)> =
         defs.iter().map(|(n, t, _, _)| (n.clone(), t.clone())).collect();
+    // Colocated tests, read ONCE PER FILE (#4126). Many candidates share one source — this repo's
+    // `sorts.test.ts` covers four impls and `graphAlgos.test.ts` five — so pairing per candidate would
+    // re-read the same file dozens of times across a 1780-candidate walk.
+    let mut test_cache: std::collections::BTreeMap<String, Vec<CandidateTest>> = Default::default();
+    for (_, _, _, src_rel) in &defs {
+        if test_cache.contains_key(src_rel) {
+            continue;
+        }
+        let found = bsc_util::test_path_for(dir, src_rel)
+            .and_then(|p| std::fs::read_to_string(&p).ok().map(|c| (p, c)))
+            .map(|(p, contents)| {
+                vec![CandidateTest { name: bsc_util::test_display_name(&p, &contents), src: contents }]
+            })
+            .unwrap_or_default();
+        test_cache.insert(src_rel.clone(), found);
+    }
     defs.into_iter()
         .map(|(name, tech, code, src_rel)| {
             let mut composes: Vec<String> = Vec::new();
@@ -316,6 +409,7 @@ pub fn harvest(dir: &Path) -> Vec<Candidate> {
                 name,
                 code,
                 domain: domain_of(&src_rel),
+                tests: test_cache.get(&src_rel).cloned().unwrap_or_default(),
                 src: src_rel,
                 classification: Classification::default(),
             };
@@ -593,6 +687,118 @@ mod tests {
             cands.iter().all(|c| c.name != "test_only_helper"),
             "inline #[test] fns / #[cfg(test)] mods are skipped",
         );
+    }
+
+    fn stored(id: &str, src: Option<&str>) -> serde_json::Value {
+        match src {
+            Some(sp) => serde_json::json!({ "id": id, "src": sp }),
+            None => serde_json::json!({ "id": id }),
+        }
+    }
+
+    fn index(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+        let mut m: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> = Default::default();
+        for (id, src) in pairs {
+            m.entry((*id).to_string()).or_default().insert((*src).to_string());
+        }
+        m
+    }
+
+    #[test]
+    fn harvest_carries_the_colocated_test_onto_every_candidate_from_that_file() {
+        // #4126 — tests ride in WITH the harvest, so a `curate --apply` lands a node that already
+        // declares its tests and no second pass is needed. The fixture dir has `sample.test.ts` beside
+        // `sample.ts`, so every candidate lifted from that file carries it.
+        let cands = harvest(&fixtures());
+        let from_ts: Vec<&Candidate> = cands.iter().filter(|c| c.src == "sample.ts").collect();
+        assert!(from_ts.len() > 1, "the fixture yields several candidates from one file");
+        for c in &from_ts {
+            assert_eq!(c.tests.len(), 1, "{} carries its colocated test", c.name);
+            assert!(c.tests[0].src.contains("#4126"), "verbatim file contents, not a path");
+        }
+        // ONE file covering SEVERAL candidates is carried onto EACH — this repo's `graphAlgos.test.ts`
+        // covers five impls, and per-impl attribution is not recoverable from the file.
+        assert_eq!(
+            from_ts[0].tests[0].name, from_ts[1].tests[0].name,
+            "siblings from one source share the identical entry",
+        );
+        // A candidate whose file has no sibling test carries none — never an empty-but-present claim.
+        assert!(
+            cands.iter().any(|c| c.tests.is_empty()),
+            "a source with no colocated test yields candidates with no tests",
+        );
+    }
+
+    #[test]
+    fn relink_recovers_src_and_derives_the_folder_in_one_pass() {
+        // #4119 — `folder` derives from `src`, so an impl without provenance is `srcless` and skipped
+        // by `refolder`. Recovering the two together means one pass, not a refolder chaser.
+        let plan = relink_plan(
+            &[stored("order-by-rank.ts", None)],
+            &index(&[("order-by-rank.ts", "shared/lib/algorithms/orderByRank.ts")]),
+        );
+        assert_eq!(
+            plan,
+            vec![RelinkOutcome::Link {
+                id: "order-by-rank.ts".into(),
+                src: "shared/lib/algorithms/orderByRank.ts".into(),
+                folder: Some("shared/lib/algorithms".into()),
+            }],
+        );
+    }
+
+    #[test]
+    fn relink_never_guesses_an_ambiguous_id() {
+        // A candidate id is `<kebab(name)>.<ext>`, and bare function names collide across a real tree.
+        // Picking one would file the record under ANOTHER module's folder and defeat the dedupe `src`
+        // exists to enable — so a multi-match is reported, never resolved.
+        let plan = relink_plan(
+            &[stored("dismiss.ts", None)],
+            &index(&[("dismiss.ts", "features/a/dismiss.ts"), ("dismiss.ts", "features/b/dismiss.ts")]),
+        );
+        match &plan[0] {
+            RelinkOutcome::Ambiguous { id, candidates } => {
+                assert_eq!(id, "dismiss.ts");
+                assert_eq!(candidates.len(), 2, "both files are named, so a human can settle it");
+            }
+            other => panic!("expected Ambiguous, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn relink_never_invents_provenance_for_a_primitive() {
+        // #2972 — a primitive DESCRIBES a language built-in via `--ref` and is never re-coded, so it
+        // has no source file by design. Matching it against a same-named function in the tree would
+        // manufacture provenance for something that legitimately has none.
+        let prim = serde_json::json!({ "id": "vec.rs", "role": "primitive" });
+        let plan = relink_plan(&[prim], &index(&[("vec.rs", "crates/whatever/vec.rs")]));
+        assert_eq!(plan, vec![RelinkOutcome::Primitive { id: "vec.rs".into() }]);
+    }
+
+    #[test]
+    fn relink_leaves_an_already_linked_impl_alone_and_reports_a_miss() {
+        // Idempotence: a re-run must change nothing. And an id nothing harvested is UNMATCHED, not an
+        // error — the source may be renamed, deleted, or simply outside the scanned dir.
+        let plan = relink_plan(
+            &[stored("kept.ts", Some("shared/lib/kept.ts")), stored("gone.ts", None)],
+            &index(&[("kept.ts", "somewhere/else/kept.ts")]),
+        );
+        assert_eq!(plan[0], RelinkOutcome::AlreadyLinked { id: "kept.ts".into() },
+            "an existing src is never overwritten, even when the harvest disagrees");
+        assert_eq!(plan[1], RelinkOutcome::Unmatched { id: "gone.ts".into() });
+    }
+
+    #[test]
+    fn relink_uses_the_shared_folder_derivation() {
+        // Both libraries must fold identically — same helper, so `shared/lib/algorithms/x.ts` and a
+        // component at the same path land in the same folder.
+        let plan = relink_plan(
+            &[stored("x.ts", None)],
+            &index(&[("x.ts", "src/shared/ui/controls/Button.tsx")]),
+        );
+        let RelinkOutcome::Link { folder, .. } = &plan[0] else { panic!("expected Link") };
+        assert_eq!(folder.as_deref(), bsc_util::folder_from_src("src/shared/ui/controls/Button.tsx").as_deref());
+        assert_eq!(folder.as_deref(), Some("shared/ui/controls"), "the leading `src/` root is stripped");
     }
 
     #[test]

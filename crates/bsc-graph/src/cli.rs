@@ -17,14 +17,14 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 9] =
-    ["impl", "harvest", "curate", "dump", "doctor", "refolder", "used-by", "merge", "help"];
+pub const VERBS: [&str; 11] =
+    ["impl", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "help"];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const IMPL_SUBVERBS: [&str; 3] = ["set", "remove", "list"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 19] = [
+pub const FLAGS: [&str; 20] = [
     "--pretty",
     "--all",
     "--id",
@@ -44,6 +44,7 @@ pub const FLAGS: [&str; 19] = [
     "--worthy-only",
     "--apply",
     "--fix",
+    "--dry-run",
 ];
 
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
@@ -148,6 +149,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         // reviewable, and one with no domain is invisible once stored (#3607).
                         "src": c.src,
                         "domain": c.domain,
+                        // The COLOCATED test, carried at harvest time (#4126) — so a curate lands a
+                        // node that already declares its tests, with no second pass.
+                        "tests": c.tests.iter().map(|t| serde_json::json!({ "name": t.name, "src": t.src })).collect::<Vec<_>>(),
                         "worthy": c.classification.worthy,
                         "score": c.classification.score,
                         "reasons": c.classification.reasons,
@@ -194,6 +198,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         "id": c.id, "tech": c.tech, "role": c.role, "name": c.name,
                         "composes": c.composes, "code": c.code,
                         "domain": c.domain, "src": c.src,
+                        // #4126 — tests ride in with the curation, so `bsc graph tests harvest` is only
+                        // ever needed for records curated before harvest carried them.
+                        "tests": c.tests.iter().map(|t| serde_json::json!({ "name": t.name, "src": t.src })).collect::<Vec<_>>(),
                     });
                     if let Some(f) = bsc_util::folder_from_src(&c.src) {
                         im["folder"] = Value::String(f);
@@ -256,6 +263,160 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 crate::save(&g)?;
             }
             emit(&serde_json::json!({ "moved": moved.len(), "srcless": srcless, "changes": moved }))
+        }
+        // `relink <dir>` (#4119) — recover `src` on impls curated before provenance existed, by matching
+        // them against a fresh harvest of `<dir>`.
+        //
+        // This is the PREREQUISITE `refolder` is blocked on: `folder` derives from `src`, so an impl
+        // without one is `srcless` and skipped, which is why a library curated before #4091 has no tree
+        // at all rather than a stale one.
+        //
+        // AMBIGUITY IS NEVER GUESSED. A candidate id is `<kebab(name)>.<ext>`, and bare function names
+        // collide freely across a real tree (`dismiss.ts`, `approve.ts`, `app.ts` all recur) — which is
+        // exactly why the id cannot serve as identity and why `src` is needed in the first place. An id
+        // matching more than one harvested file is reported and skipped; picking one would write a
+        // provenance that is plausibly wrong, which is worse than none.
+        //
+        // Idempotent: an impl that already carries `src` is left alone, so a re-run reports zero.
+        "relink" => {
+            let dir = positional
+                .get(1)
+                .ok_or("usage: bsc graph relink <dir> [--tech typescript|rust] [--dry-run] [--pretty]")?;
+            let tech = flag_value(&args, "--tech");
+            let dry = args.iter().any(|a| a == "--dry-run");
+
+            // id -> the distinct srcs harvested under it. More than one ⇒ ambiguous.
+            let mut by_id: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
+                std::collections::BTreeMap::new();
+            for c in crate::extract::harvest(std::path::Path::new(dir)) {
+                if tech.as_deref().is_some_and(|t| c.tech != t) {
+                    continue;
+                }
+                if !c.src.trim().is_empty() {
+                    by_id.entry(c.id).or_default().insert(c.src);
+                }
+            }
+
+            let mut g = crate::load();
+            let stored = crate::implementations_of(&g);
+            let plan = crate::extract::relink_plan(&stored, &by_id);
+
+            let by_stored_id: std::collections::BTreeMap<&str, &Value> = stored
+                .iter()
+                .map(|im| (im.get("id").and_then(Value::as_str).unwrap_or(""), im))
+                .collect();
+            let (mut linked, mut ambiguous, mut unmatched, mut had_src) = (Vec::new(), Vec::new(), 0usize, 0usize);
+            let mut primitives = 0usize;
+            for outcome in &plan {
+                match outcome {
+                    crate::extract::RelinkOutcome::Primitive { .. } => primitives += 1,
+                    crate::extract::RelinkOutcome::AlreadyLinked { .. } => had_src += 1,
+                    crate::extract::RelinkOutcome::Unmatched { .. } => unmatched += 1,
+                    crate::extract::RelinkOutcome::Ambiguous { id, candidates } => {
+                        ambiguous.push(serde_json::json!({ "id": id, "candidates": candidates }));
+                    }
+                    crate::extract::RelinkOutcome::Link { id, src, folder } => {
+                        if !dry {
+                            let Some(im) = by_stored_id.get(id.as_str()) else { continue };
+                            let mut next = (*im).clone();
+                            next["src"] = Value::String(src.clone());
+                            // Derive the folder in the same breath, through the SAME shared helper the
+                            // component library uses — so recovering provenance places the record in one
+                            // pass rather than needing a `refolder` chaser.
+                            if let Some(f) = folder {
+                                next["folder"] = Value::String(f.clone());
+                            }
+                            crate::set_impl(&mut g, next)?;
+                        }
+                        linked.push(serde_json::json!({ "id": id, "src": src, "folder": folder }));
+                    }
+                }
+            }
+            if !dry && !linked.is_empty() {
+                crate::save(&g)?;
+            }
+            emit(&serde_json::json!({
+                "dryRun": dry,
+                "linked": linked.len(),
+                "ambiguous": ambiguous.len(),
+                "unmatched": unmatched,
+                "alreadyLinked": had_src,
+                // Counted separately, never as a miss: a primitive has no source BY DESIGN (#2972).
+                "primitives": primitives,
+                "changes": linked,
+                "ambiguousIds": ambiguous,
+            }))
+        }
+        // `tests harvest <dir>` (#4126) — carry each impl's COLOCATED test file onto its node, the
+        // algorithms twin of `bsc ui tests harvest` (#3907), pairing through the SAME
+        // `bsc_util::test_path_for` so the two libraries cannot drift.
+        //
+        // MIRROR, not source. The files stay authoritative, checked in, and RUNNING. The graph cannot
+        // execute a test today, so making it the source would stake the suite on an executor that does
+        // not exist — a node's `tests` entry is inert metadata until `verify` lands (#4124). This buys
+        // doctor honesty and a queryable graph at zero risk to coverage.
+        //
+        // ONE ENTRY PER FILE, VERBATIM. A test file's meaning lives partly outside its `it()` blocks —
+        // imports, `beforeEach`, local helpers. Splitting per-`it` would silently drop that. A file that
+        // covers SEVERAL impls (this repo's `graphAlgos.test.ts` covers five) is carried onto each of
+        // them: the coverage is real for every one, and per-impl attribution is not recoverable from the
+        // file.
+        //
+        // TypeScript only. A Rust impl's tests are an inline `#[cfg(test)] mod tests`, not a sibling
+        // file, so path-pairing would report every Rust impl untested — see `bsc_util::test_path_for`.
+        "tests" => {
+            if positional.get(1).copied() != Some("harvest") {
+                return Err("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]".to_string());
+            }
+            let dir = positional
+                .get(2)
+                .ok_or("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]")?;
+            let dry = args.iter().any(|a| a == "--dry-run");
+            let root = std::path::Path::new(dir);
+            if !root.is_dir() {
+                return Err(format!("no such directory: {dir}"));
+            }
+            // A harvest hands back file CONTENTS, so it honours the same boundary the file tools do
+            // (#3475) — `bsc-confine` is blind to what this binary reads.
+            bsc_cli_util::require_harvestable_root(root)?;
+
+            let mut g = crate::load();
+            let (mut paired, mut no_src, mut no_test) = (Vec::new(), 0usize, 0usize);
+            for im in crate::implementations_of(&g) {
+                let Some(src) = im.get("src").and_then(Value::as_str).filter(|s| !s.trim().is_empty())
+                else {
+                    // No provenance ⇒ nothing to pair against. `relink` (#4119) is the fix, not a guess.
+                    no_src += 1;
+                    continue;
+                };
+                let Some(path) = bsc_util::test_path_for(root, src) else {
+                    no_test += 1;
+                    continue;
+                };
+                let Ok(contents) = std::fs::read_to_string(&path) else {
+                    no_test += 1;
+                    continue;
+                };
+                let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                let name = bsc_util::test_display_name(&path, &contents);
+                let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                if !dry {
+                    let mut next = im.clone();
+                    next["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
+                    crate::set_impl(&mut g, next)?;
+                }
+                paired.push(serde_json::json!({ "id": id, "name": name, "test": rel }));
+            }
+            if !dry && !paired.is_empty() {
+                crate::save(&g)?;
+            }
+            emit(&serde_json::json!({
+                "dryRun": dry,
+                "paired": paired.len(),
+                "noSrc": no_src,
+                "noColocatedTest": no_test,
+                "changes": paired,
+            }))
         }
         // `dump` — the whole graph document (the `implementations` tier), store-or-seed.
         "dump" => emit(&crate::load()),
@@ -367,7 +528,10 @@ fn help(prog: &str) -> String {
          {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
          {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
-  \n         {prog} doctor [--fix] [--pretty]               # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
+  \
+         {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
+  \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
+  \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>]   # upsert a language-kit impl (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder)\n  \
