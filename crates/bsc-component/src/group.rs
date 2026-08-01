@@ -15,16 +15,10 @@
 /// - `shared/ui/d3/charts/Bar.tsx`       → `Some("shared/ui/d3/charts")`
 /// - `src/Widget.tsx` / `Widget.tsx` / `""` → `None`
 pub fn group_from_src(src: &str) -> Option<String> {
-    let norm = src.trim().replace('\\', "/");
-    let (dir, _file) = norm.rsplit_once('/')?; // no directory ⇒ ungrouped
-    let segs: Vec<&str> = dir.split('/').filter(|s| !s.is_empty()).collect();
-    let start = usize::from(segs.first() == Some(&"src")); // strip a leading `src/` root segment
-    let path = segs[start..].join("/");
-    if path.is_empty() {
-        None
-    } else {
-        Some(path)
-    }
+    // #4107: the derivation MOVED to `bsc_util::folder_from_src` so the algorithms library shares it
+    // verbatim. Kept here as the component-side name until the `group` -> `folder` rename lands, so
+    // this crate's callers are untouched — but there is now exactly ONE implementation.
+    bsc_util::folder_from_src(src)
 }
 
 #[cfg(test)]

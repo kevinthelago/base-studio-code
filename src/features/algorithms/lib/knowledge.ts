@@ -55,6 +55,14 @@ export interface AlgoImpl {
   /** An algorithm's real, reusable implementation in `tech`. Optional for a primitive — a language
    *  built-in is described (`ref` + `summary`), not re-coded (#2972). */
   code?: string;
+  /** PROVENANCE (#4091/#4107) — the scanned-root-relative path of the file this was harvested from.
+   *  The Rust mirror is `AlgoImpl.src`. Absent on anything authored before it (every seeded impl). */
+  src?: string;
+  /** The FOLDER (#4107) — the nested, `/`-delimited path this impl organizes under, derived from
+   *  {@link src} by the SAME derivation components use (`bsc_util::folder_from_src`). Harvest is 1:1:
+   *  the folder mirrors where the code actually lives, so the library reads like the tree it came from.
+   *  Absent ⇒ the impl is UNFOLDERED and the rail lists it directly under its language. */
+  folder?: string;
   /** Optional DOMAIN facet (#3120) — the lightweight, cross-language collection this impl belongs to
    *  (e.g. "logistics", "graphics"). ADDITIVE + backward-compatible: impls authored before the facet
    *  existed have no `domain` and are simply absent from every domain collection, so nothing breaks. A
@@ -197,6 +205,62 @@ export function groupImplsByLanguage(graph: KnowledgeGraph): AlgoLangGroup[] {
     dot: TECH_META[tech]?.dot ?? "var(--fg-muted)",
     impls: [...kitImplsByRole(graph, tech, "primitive"), ...kitImplsByRole(graph, tech, "algorithm")],
   }));
+}
+
+/** One node of a language's FOLDER TREE (#4107) — a folder with its subfolders and the impls directly
+ *  inside it. Mirrors the Components rail's nested tree rather than the single language level the
+ *  Algorithms rail had, which left all 50 Rust impls flat in one folder. */
+export interface AlgoFolderNode {
+  /** The folder's own segment (`pty`), for display. */
+  name: string;
+  /** The full `/`-delimited path (`src-tauri/src/console/pty`) — a stable key + the open-state id. */
+  path: string;
+  children: AlgoFolderNode[];
+  /** Impls sitting DIRECTLY in this folder, not in a subfolder. */
+  impls: AlgoImpl[];
+}
+
+/**
+ * Build a language's nested folder tree from its impls' {@link AlgoImpl.folder} paths.
+ *
+ * Impls with no folder come back in `unfoldered` rather than being bucketed under a `""` node — the
+ * same choice the derivation makes when a path has no directory, and it keeps a seeded (pre-#4107)
+ * library rendering exactly as it does today instead of collapsing it under one blank folder.
+ *
+ * Pure, so the tree shape is testable without a render.
+ */
+export function folderTree(impls: readonly AlgoImpl[]): { roots: AlgoFolderNode[]; unfoldered: AlgoImpl[] } {
+  const roots: AlgoFolderNode[] = [];
+  const unfoldered: AlgoImpl[] = [];
+  const byPath = new Map<string, AlgoFolderNode>();
+
+  const ensure = (path: string): AlgoFolderNode => {
+    const hit = byPath.get(path);
+    if (hit) return hit;
+    const segs = path.split("/");
+    const name = segs[segs.length - 1] ?? path;
+    const node: AlgoFolderNode = { name, path, children: [], impls: [] };
+    byPath.set(path, node);
+    if (segs.length === 1) roots.push(node);
+    else ensure(segs.slice(0, -1).join("/")).children.push(node);
+    return node;
+  };
+
+  for (const im of impls) {
+    const folder = im.folder?.trim();
+    if (!folder) { unfoldered.push(im); continue; }
+    ensure(folder).impls.push(im);
+  }
+
+  // Stable order: folders alphabetically, impls primitives-then-name (the rail's existing convention).
+  const sortNode = (n: AlgoFolderNode) => {
+    n.children.sort((a, b) => a.name.localeCompare(b.name));
+    n.impls.sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === "primitive" ? -1 : 1));
+    n.children.forEach(sortNode);
+  };
+  roots.sort((a, b) => a.name.localeCompare(b.name));
+  roots.forEach(sortNode);
+  return { roots, unfoldered };
 }
 
 // ── The per-kit graph (#2863/#2958) — the kit's OWN graph: nodes are its implementations (a concept IS

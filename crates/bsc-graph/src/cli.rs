@@ -17,13 +17,14 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 8] = ["impl", "harvest", "curate", "dump", "doctor", "used-by", "merge", "help"];
+pub const VERBS: [&str; 9] =
+    ["impl", "harvest", "curate", "dump", "doctor", "refolder", "used-by", "merge", "help"];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const IMPL_SUBVERBS: [&str; 3] = ["set", "remove", "list"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 17] = [
+pub const FLAGS: [&str; 19] = [
     "--pretty",
     "--all",
     "--id",
@@ -37,6 +38,8 @@ pub const FLAGS: [&str; 17] = [
     "--tags",
     "--kind",
     "--viz-code",
+    "--src",
+    "--folder",
     "--composes",
     "--worthy-only",
     "--apply",
@@ -71,6 +74,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if let Some(code) = flag_value(&args, "--code") { im["code"] = Value::String(code); }
                 // The domain facet (#3120) — additive: only written when supplied, so existing impls are untouched.
                 if let Some(d) = flag_value(&args, "--domain") { im["domain"] = Value::String(d); }
+                // #4107: settable directly, but normally DERIVED — pass `--src` and the folder follows,
+                // so a hand-authored impl lands in the same tree a harvested one would.
+                if let Some(sp) = flag_value(&args, "--src") {
+                    if let Some(f) = bsc_util::folder_from_src(&sp) { im["folder"] = Value::String(f); }
+                    im["src"] = Value::String(sp);
+                }
+                if let Some(f) = flag_value(&args, "--folder") { im["folder"] = Value::String(f); }
                 if let Some(t) = flag_value(&args, "--tags") { im["tags"] = list_flag(Some(t.as_str())); }
                 // The kind facet (#3210) — the manipulation type that selects the live animation. Additive.
                 if let Some(k) = flag_value(&args, "--kind") { im["kind"] = Value::String(k); }
@@ -176,11 +186,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     // surface in the graph UI at all (#3607), so a clean curate used to land work
                     // nobody could see; `src` is the provenance that makes a re-harvest dedupable
                     // and a record traceable to the file it came from.
-                    let im = serde_json::json!({
+                    // `folder` (#4107) is derived from `src` by the SAME `bsc_util::folder_from_src`
+                    // components use, so harvest is 1:1 — the library organizes exactly like the tree
+                    // it came from. A candidate whose `src` yields no directory stays unfoldered rather
+                    // than being bucketed under "".
+                    let mut im = serde_json::json!({
                         "id": c.id, "tech": c.tech, "role": c.role, "name": c.name,
                         "composes": c.composes, "code": c.code,
                         "domain": c.domain, "src": c.src,
                     });
+                    if let Some(f) = bsc_util::folder_from_src(&c.src) {
+                        im["folder"] = Value::String(f);
+                    }
                     crate::set_impl(&mut g, im)?;
                 }
                 crate::save(&g)?;
@@ -201,6 +218,44 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 })
                 .collect();
             emit(&serde_json::json!({ "applied": apply, "curated": items.len(), "plan": items }))
+        }
+        // `refolder` (#4107) — re-derive every stored impl's `folder` from its `src`, mirroring
+        // `bsc ui regroup`. The backfill for a library curated before the folder existed: `src` has
+        // ridden along since #4091, so most records can be placed without a re-harvest. Idempotent —
+        // `folder_from_src` is a fixed point on an already-clean path, so only records that actually
+        // MOVED are rewritten, and a re-run reports zero.
+        "refolder" => {
+            let mut g = crate::load();
+            let mut moved = Vec::new();
+            let mut srcless = 0usize;
+            for im in crate::implementations_of(&g) {
+                let Some(src) = im.get("src").and_then(Value::as_str).filter(|s| !s.trim().is_empty())
+                else {
+                    // No provenance ⇒ nothing to derive from. Counted, not guessed at: inventing a
+                    // folder here is exactly the curated-taxonomy step this deliberately defers.
+                    srcless += 1;
+                    continue;
+                };
+                let next_folder = bsc_util::folder_from_src(src);
+                let cur = im.get("folder").and_then(Value::as_str);
+                if cur == next_folder.as_deref() {
+                    continue;
+                }
+                let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                let mut next = im.clone();
+                match &next_folder {
+                    Some(f) => next["folder"] = Value::String(f.clone()),
+                    None => {
+                        next.as_object_mut().map(|o| o.remove("folder"));
+                    }
+                }
+                crate::set_impl(&mut g, next)?;
+                moved.push(serde_json::json!({ "id": id, "from": cur, "to": next_folder }));
+            }
+            if !moved.is_empty() {
+                crate::save(&g)?;
+            }
+            emit(&serde_json::json!({ "moved": moved.len(), "srcless": srcless, "changes": moved }))
         }
         // `dump` — the whole graph document (the `implementations` tier), store-or-seed.
         "dump" => emit(&crate::load()),
@@ -311,10 +366,11 @@ fn help(prog: &str) -> String {
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
-         {prog} doctor [--fix] [--pretty]               # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
+         {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
+  \n         {prog} doctor [--fix] [--pretty]               # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>]   # upsert a language-kit impl (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>]   # upsert a language-kit impl (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder)\n  \
          {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n  \
          {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
