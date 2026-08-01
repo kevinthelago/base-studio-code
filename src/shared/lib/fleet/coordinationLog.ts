@@ -47,6 +47,14 @@ export function parseCoordLine(line: string): CoordEvent | null {
       return { type: "waiting", session, reason: rest[0] ?? "", checkpoint: rest[1]?.trim() || undefined, at };
     case "ask":
       return { type: "ask", session, question: rest[0] ?? "", checkpoint: rest[1]?.trim() || undefined, at };
+    // #4106: emitted by the `bsc-fork` PreToolUse hook, so it lands whether or not the spawning
+    // session chose to announce itself — the visibility cannot depend on the forker's cooperation.
+    case "fork": {
+      const description = (rest[0] ?? "").trim();
+      return description
+        ? { type: "fork", session, description, subagentType: rest[1]?.trim() || undefined, at }
+        : null;
+    }
     case "answer": {
       const target = (rest[0] ?? "").trim();
       return target ? { type: "answer", target, answer: rest[1] ?? "", at } : null;
@@ -149,7 +157,7 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
     case "woke": {
       // `maintaining` is carried (not cleared): once a worker enters maintenance it STAYS a
       // maintenance worker across dispatches — auto-end permanently skips it (that IS the mode).
-      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session), issues: s.issues, maintaining: s.maintaining, briefs: s.briefs, commissions: s.commissions, requests: s.requests }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
+      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session), issues: s.issues, maintaining: s.maintaining, briefs: s.briefs, forks: s.forks, commissions: s.commissions, requests: s.requests }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "ask": {
       const asking = [
@@ -236,6 +244,15 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
         state: { ...s, maintaining, waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session) },
         woken: [], ready: false, stalled: [], answered: [], assigned: [],
       };
+    }
+    case "fork": {
+      // Appended + deduped by id, like a brief: a replayed log must not multiply one fork. Never
+      // auto-cleared — this records what a session DID, which does not stop being true.
+      const forks = [...s.forks.filter((f) => f.id !== `${e.session}@${e.at}`), {
+        id: `${e.session}@${e.at}`, session: e.session, description: e.description,
+        subagentType: e.subagentType, at: e.at,
+      }];
+      return { state: { ...s, forks }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "brief": {
       // The planner pushed a mid-build plan update to the director/issuer (#2377). Append it
