@@ -21,3 +21,6 @@ bsc-brief() { tgt="$1"; [ $# -gt 0 ] && shift; ref=""; while [ $# -gt 0 ]; do ca
 # surfaces it to the requester. printf-joined (not literal tabs) so a spec containing `%` is safe.
 bsc-commission() { tgt="$1"; [ $# -gt 0 ] && shift; ref=""; while [ $# -gt 0 ]; do case "$1" in --ref) ref="${2-}"; shift 2 2>/dev/null || shift ;; *) shift ;; esac; done; tgt="$(printf '%s' "$tgt" | tr '\t\n' '  ')"; ref="$(printf '%s' "$ref" | tr '\t\n' '  ')"; b="$(cat | tr '\t\n' '  ')"; __bsc_coord_log "$(printf 'commission\t%s\t%s\t%s' "$tgt" "$b" "$ref")"; }
 bsc-deliver() { cid="$(printf '%s' "${1-}" | tr '\t\n' '  ')"; aid="$(printf '%s' "${2-}" | tr '\t\n' '  ')"; __bsc_coord deliver "$cid" "$aid"; }
+bsc-fork() { j="$(cat)"; d="$(printf '%s' "$j" | __bsc_jstr 'description' | tr '	
+' '  ' | cut -c1-160)"; st="$(printf '%s' "$j" | __bsc_jstr 'subagent_type' | tr '	
+' '  ' | cut -c1-40)"; [ -z "$d" ] && d="(no description)"; __bsc_coord fork "$d" "$st"; return 0; }
