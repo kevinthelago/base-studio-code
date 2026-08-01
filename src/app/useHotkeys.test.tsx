@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, cleanup, act } from "@testing-library/react";
 import { useHotkeys, stepIndex } from "./useHotkeys";
 import { useAppStore } from "@/store";
+import { setPageNav } from "@/shared/ui/layouts/pageNav";
 
 /**
  * #1218: the global hotkey listener used to run app-wide on the capture phase, sitting in front of
@@ -31,6 +32,8 @@ beforeEach(() => {
     consoleBroadcast: false,
     keybindings: {},
   });
+  // The page model is a module ref (#4170), not store state — reset it so it cannot leak between tests.
+  setPageNav(null);
 });
 
 afterEach(() => cleanup());
@@ -157,7 +160,8 @@ describe("useHotkeys — Ctrl+arrow page navigation (#4167)", () => {
   function withPages(active: string, select = vi.fn()) {
     // Off the Console page: that is where the always-on listener (which owns page nav) attaches, and
     // the Console workspace has no PageTabs at all.
-    useAppStore.setState({ activeWorkspace: "settings", pageNav: { ids: PAGES, active, select } });
+    useAppStore.setState({ activeWorkspace: "settings" });
+    setPageNav({ ids: PAGES, active, select });
     renderHook(() => useHotkeys());
     return select;
   }
@@ -186,14 +190,15 @@ describe("useHotkeys — Ctrl+arrow page navigation (#4167)", () => {
 
   it("does nothing when no tabbed workspace is on screen, or it holds one page", () => {
     const select = vi.fn();
-    useAppStore.setState({ activeWorkspace: "settings", pageNav: null });
+    useAppStore.setState({ activeWorkspace: "settings" });
+    setPageNav(null);
     renderHook(() => useHotkeys());
     const ev = pressKey({ code: "ArrowRight", ctrlKey: true });
     expect(ev.defaultPrevented).toBe(false);
     cleanup();
 
     // A single page has nowhere to step — it must not preventDefault either.
-    useAppStore.setState({ pageNav: { ids: ["only"], active: "only", select } });
+    setPageNav({ ids: ["only"], active: "only", select });
     renderHook(() => useHotkeys());
     expect(pressKey({ code: "ArrowRight", ctrlKey: true }).defaultPrevented).toBe(false);
     expect(select).not.toHaveBeenCalled();

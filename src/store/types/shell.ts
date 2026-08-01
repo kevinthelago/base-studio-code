@@ -28,19 +28,6 @@ export interface ShellState {
    *  transient (NOT persisted): each graph re-reports on mount, so it's always live. Empty = no entity. */
   crumbEntity: Record<string, string>;
   setCrumbEntity: (key: string, label: string) => void;
-  /** The Workspace's live PageTabs, published by the mounted `Screen` so the app shell's keyboard owner
-   *  (`useHotkeys`) can step them with Ctrl+←/→ (#4167).
-   *
-   *  This exists to INVERT a dependency, not to hold state: `Screen` lives in `shared/`, which may not
-   *  import value symbols from `features/` or `app/` (#1626/#1703) — so it cannot match a keybinding
-   *  itself. It publishes plain data + its own selector here instead, and the shell (which legitimately
-   *  knows every feature) does the matching. That also keeps ALL keyboard handling in one place.
-   *
-   *  Session-only transient (NOT persisted — it carries a live callback): exactly one Screen is mounted
-   *  at a time, it re-publishes on every change, and clears on unmount. `null` = no tabbed Workspace on
-   *  screen (the Console page, or a torn-off single Page). */
-  pageNav: { ids: string[]; active: string; select: (id: string) => void } | null;
-  setPageNav: (nav: { ids: string[]; active: string; select: (id: string) => void } | null) => void;
   /** Console tab ids currently shown in their own window (#430). Session-only
    *  (NOT persisted): hidden from this window's tab bar while detached, cleared
    *  on re-dock or app restart — so the tab returns to its persisted place. */

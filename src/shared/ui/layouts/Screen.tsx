@@ -1,7 +1,8 @@
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { TabBar, type TabItem } from "./TabBar";
+import { PageBoundary } from "./PageBoundary";
+import { setPageNav } from "./pageNav";
 import { Box } from "@/shared/ui/layout/Box";
-import { useAppStore } from "@/store";
 
 export interface ScreenProps {
   /** The persisted-ordered, detached-filtered visible page tabs (from `usePageTabs`). */
@@ -45,22 +46,21 @@ export function Screen({
   // Publishing rather than binding the keys here is a deliberate INVERSION: `shared/` may not import
   // value symbols from `features/` or `app/` (#1626/#1703), so this module cannot match a keybinding —
   // and duplicating the chord logic locally would leave it to drift. It hands over plain data + its own
-  // selector; `useHotkeys` (which legitimately knows every feature) does the matching, which also keeps
-  // every keyboard binding in ONE place.
+  // selector; `useHotkeys` does the matching, which also keeps every keyboard binding in ONE place.
+  //
+  // It goes to a MODULE REF, not the store (#4170). Store state made this a render loop: the Planner
+  // subscribes to the whole store and passes a fresh inline `setActive`, so each publish re-rendered it,
+  // which produced a new `select` identity, which published again. Nothing here needs reactivity — the
+  // hotkey handler reads at keydown time — so a ref removes the whole class of bug rather than guarding
+  // against it. No deps: the ref is rewritten on every render, which is free and cannot loop.
   //
   // `null` for a torn-off page: it renders a single Page and no bar, so there is nothing to step.
-  const setPageNav = useAppStore((s) => s.setPageNav);
-  const ids = useMemo(() => tabs.map((t) => t.id), [tabs]);
   useEffect(() => {
-    if (pageOverride) {
-      setPageNav(null);
-      return;
-    }
-    setPageNav({ ids, active, select: onSelect });
-    // Exactly one Screen is mounted at a time, so clearing on unmount cannot race another Workspace's
-    // publish — the next one publishes in its own effect.
-    return () => setPageNav(null);
-  }, [ids, active, onSelect, pageOverride, setPageNav]);
+    setPageNav(pageOverride ? null : { ids: tabs.map((t) => t.id), active, select: onSelect });
+  });
+  // Clear on unmount only. Exactly one Screen is mounted per window, so this cannot race the next
+  // Workspace's publish — that one runs in its own effect after this cleanup.
+  useEffect(() => () => setPageNav(null), []);
 
   return (
     <Box className={className ? `screen ${className}` : "screen"}>
@@ -74,8 +74,11 @@ export function Screen({
             onTearOff={onTearOff}
           />
         )}
+        {/* The body is boundaried, the strip is NOT (#4170): a page that fails to render must not take
+            the navigation with it — the tabs above stay clickable (and Ctrl+←/→ keeps working), so the
+            user can always leave a broken page. */}
         <Box className={bodyClassName ? `screen-body ${bodyClassName}` : "screen-body"}>
-          {children}
+          <PageBoundary page={pageOverride ?? active}>{children}</PageBoundary>
         </Box>
       </Box>
       {overlay}
