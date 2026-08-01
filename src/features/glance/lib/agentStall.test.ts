@@ -308,9 +308,26 @@ describe("maintenance vs building (#4010)", () => {
     expect(r).toMatchObject({ health: "error" });
   });
 
-  it("maintenance on an unlaunched node stays off — there is no session to park", () => {
+  // REVERSED in #4124. This asserted `off`/`idle` on the reading that a park needs a live session to
+  // park IN. But a `maintain` record cannot exist without one having run — `bsc-maintain` is emitted BY
+  // the worker — so "unlaunched" was never what this state meant. What it means is: it ran, it finished
+  // everything it owned, and its session has since been reclaimed (a standing-by session is the first
+  // thing a reaper or a restart takes). Rendering that as `off` made it identical to a node that never
+  // launched, which is how completion lost to idle on 34 panes.
+  //
+  // The park still does NOT outrank a `bsc-wait` or a quarantine — see the two tests above. Only the
+  // never-launched reading changed.
+  it("maintenance on a RECLAIMED node reads complete, not off (#4124)", () => {
     const r = applyFleetLiveStatus(nodes, PROJ, {
       livePaneIds: new Set(), paneStatus: {}, waiting: [], now: T0, maintaining: new Set([auth]),
+    })[0];
+    expect(r).toMatchObject({ health: "complete", activity: "complete" });
+  });
+
+  it("a node with NO maintain record and no session is still off", () => {
+    // The never-launched reading has to survive: absent evidence is not completion.
+    const r = applyFleetLiveStatus(nodes, PROJ, {
+      livePaneIds: new Set(), paneStatus: {}, waiting: [], now: T0,
     })[0];
     expect(r).toMatchObject({ health: "off", activity: "idle" });
   });
