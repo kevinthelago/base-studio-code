@@ -11,6 +11,7 @@ import { bscJson } from "@/shared/lib/core/bsc";
 import { useLogStream } from "@/shared/hooks/useLogStream";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
+import { resolveClosedRefs } from "./fleetIssueState";
 import { partitionByDeps, heldReason, sessionDoneStreams, type GateStream, type LandedEvidence } from "@/shared/lib/fleet/streamGate";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 
@@ -28,14 +29,17 @@ export function useFleetHeld(projectKey: string | null, streams: readonly GateSt
 
   useLogStream("coord", async (isCancelled) => {
     if (!projectKey || !streams || !hasDeps) { setHeld({}); return; }
-    const [merged, dbIssues, coord] = await Promise.all([
+    const [merged, dbIssues, coord, closedRefs] = await Promise.all([
       safeInvoke<string[]>("fleet_landed_streams", { projectKey }, []),
       bscJson<PlanIssue[]>(projectKey, ["plan", "list", "--full", "--json"], []),
       readCoordState(),
+      // #4103: plan.db's issue rows are empty for a hand-assembled fleet, so the done-set was empty and
+      // the gate held streams whose upstreams had actually landed. GitHub is the other evidence source.
+      resolveClosedRefs(streams),
     ]);
     if (isCancelled()) return;
     const evidence: LandedEvidence = {
-      doneIssues: doneIssueRefs(dbIssues ?? []),
+      doneIssues: new Set([...doneIssueRefs(dbIssues ?? []), ...closedRefs]),
       mergedBranches: new Set(merged ?? []),
       // A failed coord read contributes no session evidence rather than fabricating it — the same rule
       // the resume and the pump follow. Over-reporting held is safe here (it is display only); claiming
