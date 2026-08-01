@@ -32,7 +32,7 @@ import reactUiArtifact from "@data/components/react-ui.json";
 import previewImportmap from "@data/ui/preview-importmap.json";
 import platformModules from "@data/ui/platform-modules.json";
 import { buildComposesEdges } from "./compositionLayout";
-import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, hasCodeElision, erasedSpecs, type KitArtifact } from "./componentPreview";
+import { componentBuildable, looksBuildableModule, isPreviewBuildable, hasCodeElision, erasedSpecs, type KitArtifact } from "./componentPreview";
 import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
 import type { LibraryModuleResolver } from "./componentPreview";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
@@ -107,6 +107,23 @@ export function isActionProp(p: PropSpec): boolean {
  *  (the preview vendors them) — sibling-aware buildability keeps this in lockstep with the preview build,
  *  so the health checks scan exactly the source the preview compiles. */
 function ownModuleSource(c: ComponentRecord, siblings: readonly ComponentRecord[] = []): string | null {
+  // #4130: memoized per (siblings identity, record). `analyzeGraphHealth` asks the SAME question in five
+  // separate check loops, and the sibling-aware branch below rebuilds two ~750-entry Sets every time —
+  // roughly a million Set insertions per analysis on the real kit. Pure in its inputs, so caching the
+  // answer is exact; the entry dies with the array (and the record) it keys.
+  let per = ownSourceMemo.get(siblings);
+  if (!per) ownSourceMemo.set(siblings, (per = new WeakMap()));
+  const hit = per.get(c);
+  if (hit !== undefined) return hit;
+  const val = computeOwnModuleSource(c, siblings);
+  per.set(c, val);
+  return val;
+}
+
+const ownSourceMemo = new WeakMap<readonly ComponentRecord[], WeakMap<ComponentRecord, string | null>>();
+
+/** {@link ownModuleSource} without the memo — the original derivation. */
+function computeOwnModuleSource(c: ComponentRecord, siblings: readonly ComponentRecord[]): string | null {
   if (c.source && c.source.trim()) return c.source;
   const srcText = c.srcText ?? "";
   if (!srcText.trim()) return null;
@@ -139,6 +156,30 @@ function escapeRe(s: string): string {
  *  Rust twin: `declares_symbol`. */
 function declaresSymbol(source: string, name: string): boolean {
   return new RegExp(`\\b(?:function|const|let|var|class)\\s+${escapeRe(name)}\\b`).test(source);
+}
+
+/** Is `name` a plain JS identifier — the case {@link declaredSymbols} can answer by lookup? */
+const PLAIN_IDENT = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/** Every IDENTIFIER declared at `function`/`const`/`let`/`var`/`class` in `source` — ONE scan (#4130).
+ *
+ *  {@link declaresSymbol} compiles a fresh RegExp per candidate name, which the two "compose, don't
+ *  recreate" checks did once per (component × candidate): 248 × 248 = 61k regex constructions over full
+ *  source text on the real kit. Scanning once and testing set membership is the SAME predicate for any
+ *  plain-identifier name; a name that is not one (a display name carrying a space) falls back to
+ *  `declaresSymbol`, so the verdict is unchanged either way. */
+function declaredSymbols(source: string): Set<string> {
+  const set = new Set<string>();
+  const re = /\b(?:function|const|let|var|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source))) set.add(m[1]);
+  return set;
+}
+
+/** {@link declaresSymbol} bound to ONE source, answered from its {@link declaredSymbols} index. */
+function declaresFrom(source: string): (name: string) => boolean {
+  const declared = declaredSymbols(source);
+  return (name) => (PLAIN_IDENT.test(name) ? declared.has(name) : declaresSymbol(source, name));
 }
 
 /** The set of JSX element/component tag names OPENED in `source` — every `<Ident` that is not a closing
@@ -540,7 +581,10 @@ export function analyzeGraphHealth(
   for (const c of comps) {
     // Pass the kit as siblings so a composing user component (importing a sibling, #3112) builds and is
     // NOT falsely flagged — the exact set the live preview vendors.
-    if (componentPreviewFiles(c, ARTIFACT, comps, libResolver) === null) {
+    // #4130: the PREDICATE, not a discarded bundle. `componentBuildable` is exactly
+    // `componentPreviewFiles(...) !== null` (pinned by a test over the real library) but answers off the
+    // cached artifact/sibling indexes — this loop used to be 1297ms of a 1766ms page mount.
+    if (!componentBuildable(c, ARTIFACT, comps)) {
       const reasons = previewBuildFailures(c.srcText ?? "", c.src ?? "", (spec, fromRel) =>
         PLATFORM_MODULES.has(spec) || resolvesInternal(spec, fromRel, internalTargets));
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
@@ -638,7 +682,8 @@ export function analyzeGraphHealth(
     const src = ownModuleSource(c, comps);
     if (!src) continue;
     const specs = new Set(importSpecifiers(src));
-    const recoded = reimplTargets.filter((t) => declaresSymbol(src, t.name) && !specs.has(t.importSpec));
+    const declares = declaresFrom(src); // #4130: one scan, then a lookup per candidate
+    const recoded = reimplTargets.filter((t) => declares(t.name) && !specs.has(t.importSpec));
     if (recoded.length === 0) continue;
     const list = recoded.map((t) => `\`${t.name}\` (import \`${t.importSpec}\`)`).join(", ");
     const one = recoded.length === 1;
@@ -660,6 +705,7 @@ export function analyzeGraphHealth(
     const src = ownModuleSource(c, comps);
     if (!src) continue;
     const imported = importedIdentifiers(src);
+    const declares = declaresFrom(src); // #4130: one scan, then a lookup per sibling name
     // SAME-FILE siblings are not stubs (#3895): several nodes are routinely extracted from ONE module
     // (`AgentFace` and `TeamsCanvas` both come from TeamsCanvas.tsx), so that module's closure legitimately
     // CONTAINS both declarations — flagging them would demand an import of the file from itself.
@@ -667,7 +713,7 @@ export function analyzeGraphHealth(
       comps
         .filter((t) => t.name !== c.name && !(t.src === c.src && !!c.src))
         .map((t) => t.name)
-        .filter((name) => declaresSymbol(src, name) && !imported.has(name)),
+        .filter((name) => declares(name) && !imported.has(name)),
     )].sort();
     if (recoded.length === 0) continue;
     const list = recoded.map((n) => `\`${n}\``).join(", ");
