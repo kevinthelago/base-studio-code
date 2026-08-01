@@ -105,7 +105,7 @@ describe("GraphCanvas (#2208)", () => {
     expect(container.querySelectorAll(".resize-x")).toHaveLength(0);
   });
 
-  it("draws the infinite grid backdrop only when `grid` is set, tracking pan + zoom", () => {
+  it("draws the infinite grid backdrop only when `grid` is set", () => {
     const { container, rerender } = render(
       <GraphCanvas vp={fakeVp()} world={{ w: 10, h: 10 }} toolbar={null}>
         <span>WORLD</span>
@@ -114,18 +114,14 @@ describe("GraphCanvas (#2208)", () => {
     const hasGrid = () => [...container.querySelectorAll("div")].find((d) => d.style.backgroundImage.includes("radial-gradient"));
     // No grid by default.
     expect(hasGrid()).toBeUndefined();
-    // With grid on + a panned/zoomed viewport: the backdrop lives on the viewport (fills it, never
-    // stops at the world box), its dot SPACING scales with zoom, and its origin follows the pan — so
-    // it reads as world-aligned graph paper under the whole graph.
+    // With grid on, the backdrop lives on the VIEWPORT so it fills it and never stops at the world box.
+    // It no longer tracks pan/zoom (#4142) — see the static-grid block below for that contract.
     rerender(
       <GraphCanvas vp={fakeVp({ view: { tx: 40, ty: -25, scale: 2 } })} world={{ w: 10, h: 10 }} toolbar={null} grid gridSize={24}>
         <span>WORLD</span>
       </GraphCanvas>,
     );
-    const gridEl = hasGrid()!;
-    expect(gridEl).toBeTruthy();
-    expect(gridEl.style.backgroundSize).toBe("48px 48px");      // gridSize 24 × scale 2
-    expect(gridEl.style.backgroundPosition).toBe("40px -25px"); // pan (tx, ty)
+    expect(hasGrid()).toBeTruthy();
   });
 
   // #2230 — clicking the empty backdrop clears the selection.
@@ -166,5 +162,45 @@ describe("ZoomControls (#2208)", () => {
     fireEvent.click(screen.getByLabelText("zoom out"));
     expect(zoomBy).toHaveBeenNthCalledWith(1, 1.2);
     expect(zoomBy).toHaveBeenNthCalledWith(2, 1 / 1.2);
+  });
+});
+
+describe("the background grid is static (#4142)", () => {
+  // #4140 stopped the pan from committing per mousemove, so a grid keyed on `view` froze mid-drag and
+  // JUMPED on release. These pin the decoupling: the grid's style must not vary with the viewport.
+  const gridOf = (container: HTMLElement) =>
+    [...container.querySelectorAll("div")].find((d) => d.style.backgroundImage.includes("radial-gradient"));
+
+  it("renders identically whatever the pan and zoom are", () => {
+    const at = (view: { tx: number; ty: number; scale: number }) => {
+      const { container } = render(
+        <GraphCanvas vp={fakeVp({ view })} world={{ w: 500, h: 500 }} toolbar={null} grid gridSize={22}>
+          <div />
+        </GraphCanvas>,
+      );
+      const g = gridOf(container)!;
+      return { size: g.style.backgroundSize, pos: g.style.backgroundPosition };
+    };
+    const origin = at({ tx: 0, ty: 0, scale: 1 });
+    expect(origin.size).toBe("22px 22px");
+    // Panned far and zoomed right in — the grid must not budge or rescale.
+    expect(at({ tx: -940, ty: 380, scale: 2.4 })).toEqual(origin);
+    expect(at({ tx: 77, ty: -12, scale: 0.3 })).toEqual(origin);
+  });
+
+  it("still honours gridSize, so the decoupling did not hard-code the spacing", () => {
+    const { container } = render(
+      <GraphCanvas vp={fakeVp()} world={{ w: 500, h: 500 }} toolbar={null} grid gridSize={40}>
+        <div />
+      </GraphCanvas>,
+    );
+    expect(gridOf(container)!.style.backgroundSize).toBe("40px 40px");
+  });
+
+  it("omits the grid entirely when the page does not ask for one", () => {
+    const { container } = render(
+      <GraphCanvas vp={fakeVp()} world={{ w: 500, h: 500 }} toolbar={null}><div /></GraphCanvas>,
+    );
+    expect(gridOf(container)).toBeUndefined();
   });
 });
