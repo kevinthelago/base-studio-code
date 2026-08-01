@@ -396,7 +396,6 @@ export function GlanceCanvas(p: CanvasProps) {
               // #4032 — which authored motion plays. Only `building` remains (#4046 removed the
               // attention ring with its health state).
               state={pulseBuilding ? "building" : null}
-              progress={n.progress}
             />
           </Box>
         );

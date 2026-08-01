@@ -268,7 +268,41 @@ fn count_issues(db: &std::path::Path) -> Option<(usize, usize)> {
             done += n;
         }
     }
+    // #4118: a project whose `issues` table is EMPTY still owns work — the fleet's streams carry it as
+    // GitHub refs, which is the ONLY record for a fleet assembled outside a full planner run (measured:
+    // 40 streams, 56 refs, 0 issue rows). Reporting 0/0 there is not "no progress", it is "no data", and
+    // the two are indistinguishable to every caller: a total of 0 suppresses the bar entirely, so the
+    // project reads as owning nothing. Fall back to the refs so the DENOMINATOR is real.
+    //
+    // `done` stays 0 on this path on purpose. The refs are GitHub issue numbers and this is a local
+    // SQLite read with no network — claiming completion it cannot verify would be the one error worse
+    // than showing none. The frontend overlays real closed-ness (#4102/#4103) where it has a token.
+    if total == 0 {
+        return Some((0, count_stream_refs(&conn)));
+    }
     Some((done, total))
+}
+
+/// How many distinct issue refs this project's fleet streams OWN (#4118).
+///
+/// `fleet_streams.data` is a JSON blob per stream carrying `issues: ["#3898", …]`. De-duplicated across
+/// streams: two streams naming the same ref are one piece of work, and double-counting would inflate
+/// every denominator on the board.
+fn count_stream_refs(conn: &rusqlite::Connection) -> usize {
+    let Ok(mut stmt) = conn.prepare("SELECT data FROM fleet_streams") else { return 0 };
+    let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0)) else { return 0 };
+    let mut refs = std::collections::HashSet::new();
+    for raw in rows.flatten() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };
+        for r in v.get("issues").and_then(serde_json::Value::as_array).into_iter().flatten() {
+            if let Some(s) = r.as_str().map(|s| s.trim().trim_start_matches('#')) {
+                if !s.is_empty() {
+                    refs.insert(s.to_string());
+                }
+            }
+        }
+    }
+    refs.len()
 }
 
 /// The per-project plan store for `key`: `plans/<key>.db`.
