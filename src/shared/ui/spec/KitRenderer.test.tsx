@@ -74,4 +74,53 @@ describe("KitRenderer", () => {
     render(<KitRenderer node={demoSpec} on={{}} />);
     expect(() => fireEvent.click(screen.getByRole("button", { name: "Save" }))).not.toThrow();
   });
+
+  // #4172 — failure containment reachable FROM A SPEC. The designer composes data trees, so a boundary
+  // that only exists as an app-shell import is unreachable to it; registering the primitive is what makes
+  // "a broken page does not blank its host" something a DESIGNED page can carry.
+  describe("PageBoundary as a spec primitive (#4172)", () => {
+    const Boom = () => { throw new Error("child exploded"); };
+
+    it("validates as a spec node", () => {
+      expect(validateGeneralNode({
+        type: "PageBoundary",
+        props: { page: "reports", hint: "Use the sidebar to open another report." },
+        children: { type: "Text", children: "body" },
+      })).toEqual([]);
+    });
+
+    it("renders its children when nothing throws", () => {
+      render(<KitRenderer node={{
+        type: "PageBoundary",
+        props: { page: "reports" },
+        children: { type: "Text", children: "the real body" },
+      }} />);
+      expect(screen.getByText("the real body")).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("contains a throwing child, naming the page and the HOST's own recovery hint", () => {
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
+      // The real composition: the page wraps a SLOT the host fills — the seam a spec uses for anything
+      // it cannot express itself (a feature component owning hooks/state). Here the host fills it with a
+      // component that throws, which is exactly the case the boundary exists for.
+      render(
+        <KitRenderer
+          node={{
+            type: "PageBoundary",
+            props: { page: "reports", hint: "Use the sidebar." },
+            children: { type: "Slot", props: { name: "body" } },
+          }}
+          slots={{ body: <Boom /> }}
+        />,
+      );
+      const alert = screen.getByRole("alert");
+      expect(alert.textContent).toContain("child exploded");
+      expect(alert.textContent).toContain("reports");
+      // The hint is the HOST's, not this app's — #4172 moved it off the hard-coded Ctrl+←/→ wording.
+      expect(alert.textContent).toContain("Use the sidebar.");
+      expect(alert.textContent).not.toContain("Ctrl");
+      err.mockRestore();
+    });
+  });
 });
