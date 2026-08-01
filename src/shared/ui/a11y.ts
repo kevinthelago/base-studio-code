@@ -19,6 +19,11 @@ type Activate<T extends Element> = (e: MouseEvent<T>) => void;
  *  reach for [`clickable`] instead so the role/tabindex disappear when it's inert. */
 export function onEnterOrSpace<T extends Element = HTMLElement>(activate: Activate<T>) {
   return (e: KeyboardEvent<T>) => {
+    // MODIFIED presses are not activations (#4134). Without this, Shift+Enter (and Ctrl/Alt/Meta+Enter)
+    // activated any focused `clickable()` element — every rail row, card and toggle built on this bundle —
+    // and `preventDefault`ed a chord the user meant for something else. A real button behaves this way:
+    // Shift+Enter on one does not click it.
+    if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       activate(e as unknown as MouseEvent<T>);
