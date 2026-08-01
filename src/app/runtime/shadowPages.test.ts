@@ -47,7 +47,7 @@ describe("the shadow page catalogue", () => {
     // `rendersFrom` is the context every number in the report is read against — a `differs` verdict on a
     // graph-rendered page is a live problem, the same verdict on a file-rendered one is a not-yet. It is
     // decided in lazyWorkspaces.tsx (a graph host ⇒ graph), so it is read back from there rather than
-    // trusted: Settings has already been flipped BACK once (#3758) and would drift silently.
+    // trusted — a page CAN be flipped back, as Settings was (#3758, and its graph copy deleted in #4183).
     const workspaceSymbols = new Map(
       [...lazyWorkspacesSource.matchAll(/export const (\w+)\s*=\s*lazy\([\s\S]*?default:\s*m\.(\w+)\s*\}/g)]
         .map((m) => [m[1], m[2]] as const),
@@ -58,7 +58,6 @@ describe("the shadow page catalogue", () => {
       mcppage: "McpWorkspace",
       skillspage: "SkillsWorkspace",
       securitypage: "SecurityWorkspace",
-      settingspage: "SettingsWorkspace",
     };
     // Projects resolves to the planner's own workspace (which mounts the graph host inside it) and Fleet
     // is mounted by Glance, so neither is decidable from this file — they are excluded, not guessed.
@@ -68,7 +67,8 @@ describe("the shadow page catalogue", () => {
       const rendersFrom = resolved?.endsWith("GraphHost") ? "graph" : "file";
       expect(SHADOW_PAGES.find((p) => p.pageId === pageId)?.rendersFrom, `${pageId} renders from`).toBe(rendersFrom);
     }
-    expect(SHADOW_PAGES.find((p) => p.pageId === "settingspage")?.rendersFrom, "#3758 rolled Settings back")
-      .toBe("file");
+    // Settings is absent by design: rolled back in #3758 and its graph copy deleted in #4183, so it has
+    // no record to compare and nothing for the catalogue to carry. Pinned so its return is deliberate.
+    expect(SHADOW_PAGES.map((p) => p.pageId)).not.toContain("settingspage");
   });
 });

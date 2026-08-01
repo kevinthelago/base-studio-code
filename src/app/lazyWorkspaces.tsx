@@ -15,9 +15,9 @@ export const AutomationsWorkspace = lazy(() => import("@/features/automations").
 // MCP renders FROM THE GRAPH (#3656, epic #3604) — the graph host mounts the authored `mcppage` node; the
 // symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`) need no change.
 export const McpWorkspace         = lazy(() => import("@/features/mcp").then((m) => ({ default: m.McpGraphHost })));
-// Settings renders from the HAND-CODED pages (#3758) — restored from the graph-hosted version (#3658),
-// which stays dormant in the barrel (`SettingsGraphHost` + the `settingspage` graph records are unmounted,
-// not deleted). Flip the resolved default back to `m.SettingsGraphHost` to re-enable the graph version.
+// Settings renders from the HAND-CODED pages. It was migrated to the graph in #3658, rolled back by
+// preference in #3758, and the dormant graph path was DELETED in #4183 — a copy nobody renders only
+// rots. If Settings returns to the graph, regenerate it from the files of that day.
 export const SettingsWorkspace    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsWorkspace })));
 export const ProjectsWorkspace    = lazy(() => import("@/features/planner").then((m) => ({ default: m.ProjectsWorkspace })));
 // Skills renders FROM THE GRAPH (#3654, epic #3604) — the graph host mounts the authored `skillspage` node;

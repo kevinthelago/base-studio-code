@@ -80,12 +80,8 @@ function renderedLines(src: string): string[] {
  *  below, which fails if one of them starts passing. An exclusion nobody is forced to remove is how a
  *  guard quietly stops guarding. */
 const KNOWN_STALE: Record<string, string> = {
-  settingspage:
-    "the record has no Accessibility section (#3804 added it to the file). Settings renders from FILES " +
-    "since the #3758 roll-back, so this is DORMANT — and syncing it is not a copy-paste: the record would " +
-    "import `AccessibilityPage`, which is neither a graph sibling nor registered in the settings " +
-    "graph-platform, so the page would fail to load. That work belongs with re-enabling the graph " +
-    "Settings page, not here. See #4181.",
+  // (empty) — `settingspage` lived here until #4183 deleted the dormant graph Settings path outright.
+  // The hole closed by the page LEAVING, which is the better way for an exclusion to end.
 };
 
 /** Every catalogue module that HAS both copies — a page whose file was deleted (fleet, #3636) has no
