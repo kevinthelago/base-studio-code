@@ -1471,6 +1471,33 @@
       ]
     },
     {
+      "name": "PageBoundary",
+      "props": [
+        {
+          "name": "children",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "page",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "name": "hint",
+          "type": "string"
+        },
+        {
+          "name": "retryLabel",
+          "type": "string"
+        }
+      ]
+    },
+    {
       "name": "EmptyState",
       "props": [
         {
