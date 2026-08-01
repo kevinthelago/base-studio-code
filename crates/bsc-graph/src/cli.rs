@@ -166,15 +166,34 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "harvest" => {
             let dir = positional
                 .get(1)
-                .ok_or("usage: bsc graph harvest <dir> [--tech typescript|rust] [--worthy-only]")?;
+                .ok_or("usage: bsc graph harvest <dir-or-file> [--tech typescript|rust] [--worthy-only]")?;
             // #3475: a harvest hands back file CONTENTS, so it must honor the SAME boundary the
             // file tools do. `bsc-confine` only inspects Claude's file-tool payloads and is blind to
             // what this binary reads — without this, a confined studio session (the librarian is
             // limited to its own workspace) reads any path on disk through an allow-listed CLI.
-            bsc_cli_util::require_harvestable_root(std::path::Path::new(dir))?;
+            // `harvest help` asked for help, not for a directory named "help" — which the dir walk
+            // dutifully found nothing in, printing an empty harvest as the answer to a help request.
+            if *dir == "help" {
+                print!("{}", help(prog));
+                return Ok(());
+            }
+            let target = std::path::Path::new(dir);
+            // A missing path must SAY so. Previously the dir walk's `read_dir` failed silently on
+            // anything that was not a readable dir, so a typo and an empty tree were the same answer.
+            if !target.exists() {
+                return Err(format!("no such path: {dir}"));
+            }
+            bsc_cli_util::require_harvestable_root(target)?;
             let tech = flag_value(&args, "--tech");
             let worthy_only = args.iter().any(|a| a == "--worthy-only");
-            let candidates: Vec<Value> = crate::extract::harvest(std::path::Path::new(dir))
+            // #4161: a FILE target harvests just that module — the route `bsc ui harvest <file>`
+            // advertises. It used to fall into the dir walk and return a silent zero.
+            let harvested = if target.is_file() {
+                crate::extract::harvest_file(target)
+            } else {
+                crate::extract::harvest(target)
+            };
+            let candidates: Vec<Value> = harvested
                 .into_iter()
                 .filter(|c| tech.as_deref().is_none_or(|t| c.tech == t))
                 .filter(|c| !worthy_only || c.classification.worthy)
@@ -580,7 +599,7 @@ fn help(prog: &str) -> String {
          READ:\n  \
          {prog} impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
-         {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n  \
+         {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161)\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
          {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
   \
