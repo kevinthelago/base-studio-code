@@ -80,7 +80,5 @@
 /* The docked knowledge-librarian session (#2787) now renders through the shared SessionDock (#2808);
    its former `.algo-terminal`/`.algo-colhead`/`.algo-termhost` rules were removed with that extraction. */
 
-/* The optional domain filter (#3120) in the rail tools strip — stretch the dropdown to the rail width so
-   it lines up with the full-width search field above it. */
-.algo-domain-filter,
-.algo-domain-filter .dd-trigger { width: 100%; }
+/* The domain filter's `.algo-domain-filter` rule was removed with the dropdown itself (#4128) — the rail
+   is organized by the folder tree alone, matching the Components rail, and search is its one filter. */

@@ -17,23 +17,19 @@
 // MISSING FIELDS — kits without `tech`/`style` (user-authored, imported, pre-#2487) group into the
 // trailing "other" bucket on that axis. Never a crash.
 //
-// THE `group` AXIS UNDER A KIT (#3048) — a kit's components carry an ORTHOGONAL `group` (their purpose
-// partition: `data-viz` / `pages` / `forms` …). `groupComponentsByGroup` partitions ONE kit's
-// components into that level (group → its components), reusing the same first-appearance ordering +
-// forced-last "ungrouped" bucket as the kit `bucket()`. It returns `null` when NO component carries a
-// `group`, so the rail renders the flat list exactly as before (zero regression for group-less kits).
+// THE `folder` AXIS UNDER A KIT (#3048/#3582) — a kit's components carry a `/`-delimited folder path
+// derived from their `src`, so a kit browses like a completed project's folders. Building that tree is
+// NOT this module's job any more: since #4128 the nested-folder model is shared with the Algorithms rail
+// (`@/shared/lib/core/folderTree`), because two copies of "the same structure" had already drifted apart
+// on ungrouped-handling and ordering. `groupComponentsByFolder` is now the components-typed binding of
+// that one builder.
+import { buildFolderTree, folderItemCount, type FolderNode } from "@/shared/lib/core/folderTree";
 import type { Kit, ComponentRecord } from "./model";
 
-/** The bucket kits without a `tech`/`style` value — and components without a `group` — group under
- *  (always ordered last). */
+export { UNGROUPED_KEY, UNGROUPED_LABEL } from "@/shared/lib/core/folderTree";
+
+/** The bucket kits without a `tech`/`style` value group under (always ordered last). */
 export const OTHER_BUCKET = "other";
-
-/** The header label shown for the trailing bucket of components that carry no `group` (#3048). */
-export const UNGROUPED_LABEL = "ungrouped";
-
-/** The stable expand-state key of the trailing "ungrouped" folder (#3582). A sentinel, so it can never
- *  collide with a real single-segment folder path (a src folder is never literally named this). */
-export const UNGROUPED_KEY = "__ungrouped__";
 
 /** A kit row in the rail tree (only under a style that holds SEVERAL kits — see the module doc). */
 export interface KitLeaf {
@@ -110,99 +106,24 @@ export function groupKits(kits: Kit[]): KitTreeNode[] {
   }));
 }
 
-/** One node of a kit's FOLDER TREE (#3582) — a folder that mirrors a segment of the components' `group`
- *  path (`shared` → `ui` → `controls`). A folder can hold BOTH sub-`folders` (deeper path segments) AND
- *  direct `components` (those whose `group` path ends exactly here — e.g. a component grouped `shared/ui`
- *  sits directly under the `ui` folder alongside its `controls`/`data` subfolders). The trailing
- *  ungrouped bucket (`ungrouped === true`) is a flat folder of the components carrying no `group`. */
-export interface ComponentFolder {
-  /** Stable expand-state key — the folder's FULL path (`shared/ui/controls`), or {@link UNGROUPED_KEY}
-   *  for the ungrouped bucket. Unique within a kit. */
-  key: string;
-  /** Header label — the LAST path segment (`controls`), or {@link UNGROUPED_LABEL} for the ungrouped bucket. */
-  label: string;
-  /** Whether this is the forced-last bucket of components that carry no `group`. */
-  ungrouped: boolean;
-  /** Child folders (deeper path segments), in first-appearance order. */
-  folders: ComponentFolder[];
-  /** Components whose `group` path ENDS at this folder (its direct members). */
-  components: ComponentRecord[];
-}
+/** One folder of a kit's tree — the shared {@link FolderNode} bound to {@link ComponentRecord}. The
+ *  components-side NAME for the shared node (#4128), kept so importers read in kit vocabulary; the
+ *  SHAPE is the shared one, which is what makes the two library rails structurally identical. */
+export type ComponentFolder = FolderNode<ComponentRecord>;
 
 /** Total components under a folder, transitively (its own + every descendant's) — the header count. */
-export function folderComponentCount(f: ComponentFolder): number {
-  return f.components.length + f.folders.reduce((n, sub) => n + folderComponentCount(sub), 0);
-}
+export const folderComponentCount = folderItemCount<ComponentRecord>;
 
 /**
- * Partition ONE kit's components into a nested FOLDER TREE by their `group` path (#3048/#3582) — split
- * each `group` on `/` and nest (`shared/ui/controls` → `shared` › `ui` › `controls`), so a kit browses
- * like a completed project's folders. A component sits at the LEAF of its path; a folder can hold both
- * subfolders and direct components. Folders keep first-appearance order (of the passed, already-sorted
- * rows); the "ungrouped" bucket (components with no `group`) is forced LAST at the root, mirroring the
- * kit `bucket()` OTHER-last rule. `composes` is unaffected — it resolves across the whole kit, so
- * components in different folders still compose freely; this tree is organizational only.
+ * Partition ONE kit's components into a nested FOLDER TREE by their `folder` path (#3048/#3582) — the
+ * components-typed binding of the shared {@link buildFolderTree} (#4128).
  *
- * Returns `null` when NO component carries a `folder`, so the rail renders the flat component list EXACTLY
- * as before (zero regression for folderless kits). A depth-1 path (`forms`) yields a single root folder
- * with no subfolders — i.e. the old flat behavior is the shallow case of this tree.
+ * `composes` is unaffected — it resolves across the whole kit, so components in different folders still
+ * compose freely; this tree is organizational only.
+ *
+ * Returns `null` when NO component carries a `folder`, so the rail renders the flat component list
+ * exactly as it would without folders (zero regression for folderless kits).
  */
 export function groupComponentsByFolder(comps: readonly ComponentRecord[]): ComponentFolder[] | null {
-  if (!comps.some((c) => (c.folder ?? "").trim())) return null;
-
-  // Mutable builder: `children` is a Map so it preserves first-appearance insertion order.
-  interface Build {
-    key: string;
-    label: string;
-    ungrouped: boolean;
-    children: Map<string, Build>;
-    components: ComponentRecord[];
-  }
-  const mk = (key: string, label: string, ungrouped = false): Build => ({
-    key,
-    label,
-    ungrouped,
-    children: new Map(),
-    components: [],
-  });
-
-  const roots = new Map<string, Build>();
-  let ungrouped: Build | null = null;
-
-  for (const c of comps) {
-    const path = (c.folder ?? "").trim();
-    if (!path) {
-      ungrouped ??= mk(UNGROUPED_KEY, UNGROUPED_LABEL, true);
-      ungrouped.components.push(c);
-      continue;
-    }
-    const segs = path.split("/").map((s) => s.trim()).filter(Boolean);
-    let level = roots;
-    let node: Build | null = null;
-    let acc = "";
-    for (const seg of segs) {
-      acc = acc ? `${acc}/${seg}` : seg;
-      let child = level.get(seg);
-      if (!child) {
-        child = mk(acc, seg);
-        level.set(seg, child);
-      }
-      node = child;
-      level = child.children;
-    }
-    // `node` is non-null: a non-empty `path` yields at least one segment.
-    node!.components.push(c);
-  }
-
-  const freeze = (b: Build): ComponentFolder => ({
-    key: b.key,
-    label: b.label,
-    ungrouped: b.ungrouped,
-    folders: [...b.children.values()].map(freeze),
-    components: b.components,
-  });
-
-  const out = [...roots.values()].map(freeze);
-  if (ungrouped) out.push(freeze(ungrouped)); // forced last (mirrors the OTHER-last rule)
-  return out;
+  return buildFolderTree(comps, (c) => c.folder);
 }

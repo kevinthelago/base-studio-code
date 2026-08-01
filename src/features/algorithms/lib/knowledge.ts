@@ -4,6 +4,7 @@
 // PRIMITIVES (Vec, Iterator, …) with algorithms composing UP from them. There is NO abstract concept
 // layer — a node IS a concrete implementation. Loaded from the packaged seed
 // (@data/knowledge/algorithms.json — the SAME source `bsc graph` embeds).
+import { buildFolderTree, folderItemCount, type FolderNode } from "@/shared/lib/core/folderTree";
 import RAW from "@data/knowledge/algorithms.json";
 
 /** The languages a kit can be in (#2770). */
@@ -144,40 +145,6 @@ export function kitImplsByRole(graph: KnowledgeGraph, tech: Tech, role: ImplRole
   return graph.implementations.filter((im) => im.tech === tech && im.role === role);
 }
 
-// ── The domain facet (#3120) — a lightweight, cross-language collection tag. A domain (e.g. "logistics")
-// cross-cuts language, so a domain app can pull its relevant subset of the library. ADDITIVE: impls
-// without a `domain` are absent from every domain collection, so nothing that exists today breaks. Pure
-// lookups over `graph.implementations`, so the rail render + the tests share one model. ──
-
-/** The distinct domains present in the library, in a stable (alphabetical, case-insensitive) order.
- *  Impls without a `domain` contribute nothing; the result is empty when the library carries no domain
- *  facet (so the rail can hide the domain affordance entirely). Pure + deterministic. */
-export function domainsOf(graph: KnowledgeGraph): string[] {
-  const seen = new Set<string>();
-  for (const im of graph.implementations) {
-    const d = im.domain?.trim();
-    if (d) seen.add(d);
-  }
-  return [...seen].sort((a, b) => a.localeCompare(b));
-}
-
-/** Every implementation tagged with `domain`, in seed order — ACROSS languages, since a domain
- *  cross-cuts tech (the "all logistics algorithms" collection). Empty for a blank/unknown domain. Pure. */
-export function implsByDomain(graph: KnowledgeGraph, domain: string): AlgoImpl[] {
-  const d = domain.trim();
-  if (!d) return [];
-  return graph.implementations.filter((im) => im.domain === d);
-}
-
-/** A language kit's implementations tagged with `domain` (per-tech ∩ per-domain) — mirrors
- *  {@link kitImplsByRole}. Lets a caller narrow a single language folder to a domain collection while
- *  keeping the language-folder structure intact. Pure. */
-export function kitImplsByDomain(graph: KnowledgeGraph, tech: Tech, domain: string): AlgoImpl[] {
-  const d = domain.trim();
-  if (!d) return [];
-  return graph.implementations.filter((im) => im.tech === tech && im.domain === d);
-}
-
 // ── The language-folder rail model (#2899) — mirror the Designs rail (kitGroups.ts): each LANGUAGE is a
 // folder (like each technology is a folder in Components), its impls the rows. Pure, so the rail render +
 // tests share one model. ──
@@ -207,60 +174,43 @@ export function groupImplsByLanguage(graph: KnowledgeGraph): AlgoLangGroup[] {
   }));
 }
 
-/** One node of a language's FOLDER TREE (#4107) — a folder with its subfolders and the impls directly
- *  inside it. Mirrors the Components rail's nested tree rather than the single language level the
- *  Algorithms rail had, which left all 50 Rust impls flat in one folder. */
-export interface AlgoFolderNode {
-  /** The folder's own segment (`pty`), for display. */
-  name: string;
-  /** The full `/`-delimited path (`src-tauri/src/console/pty`) — a stable key + the open-state id. */
-  path: string;
-  children: AlgoFolderNode[];
-  /** Impls sitting DIRECTLY in this folder, not in a subfolder. */
-  impls: AlgoImpl[];
-}
+/** One folder of a language's tree — the shared {@link FolderNode} bound to {@link AlgoImpl}. Since
+ *  #4128 this is the SAME node the components rail renders, so the two libraries cannot drift apart on
+ *  what a folder is. */
+export type AlgoFolderNode = FolderNode<AlgoImpl>;
+
+/** Total impls under a folder, transitively — the folder header's count. */
+export const folderImplCount = folderItemCount<AlgoImpl>;
 
 /**
- * Build a language's nested folder tree from its impls' {@link AlgoImpl.folder} paths.
+ * Partition a language kit's impls into a nested FOLDER TREE by their {@link AlgoImpl.folder} path
+ * (#4107) — the algorithms-typed binding of the shared {@link buildFolderTree} (#4128), the same one
+ * `groupComponentsByFolder` binds for components.
  *
- * Impls with no folder come back in `unfoldered` rather than being bucketed under a `""` node — the
- * same choice the derivation makes when a path has no directory, and it keeps a seeded (pre-#4107)
- * library rendering exactly as it does today instead of collapsing it under one blank folder.
+ * Impls with no folder land in the trailing "ungrouped" bucket rather than spilling flat beside the
+ * tree, which is what the components rail has always done — before #4128 this side spilled them, and a
+ * mostly-unfoldered library (the seeded classics carry no `src` to derive a folder from) therefore read
+ * as a flat list with a few folders wedged on top.
  *
- * Pure, so the tree shape is testable without a render.
+ * Returns `null` when NO impl carries a folder, so a wholly unfoldered kit renders its flat list
+ * exactly as it would without folders at all.
  */
-export function folderTree(impls: readonly AlgoImpl[]): { roots: AlgoFolderNode[]; unfoldered: AlgoImpl[] } {
-  const roots: AlgoFolderNode[] = [];
-  const unfoldered: AlgoImpl[] = [];
-  const byPath = new Map<string, AlgoFolderNode>();
+export function folderTree(impls: readonly AlgoImpl[]): AlgoFolderNode[] | null {
+  return buildFolderTree(impls, (im) => im.folder);
+}
 
-  const ensure = (path: string): AlgoFolderNode => {
-    const hit = byPath.get(path);
-    if (hit) return hit;
-    const segs = path.split("/");
-    const name = segs[segs.length - 1] ?? path;
-    const node: AlgoFolderNode = { name, path, children: [], impls: [] };
-    byPath.set(path, node);
-    if (segs.length === 1) roots.push(node);
-    else ensure(segs.slice(0, -1).join("/")).children.push(node);
-    return node;
-  };
-
-  for (const im of impls) {
-    const folder = im.folder?.trim();
-    if (!folder) { unfoldered.push(im); continue; }
-    ensure(folder).impls.push(im);
-  }
-
-  // Stable order: folders alphabetically, impls primitives-then-name (the rail's existing convention).
-  const sortNode = (n: AlgoFolderNode) => {
-    n.children.sort((a, b) => a.name.localeCompare(b.name));
-    n.impls.sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === "primitive" ? -1 : 1));
-    n.children.forEach(sortNode);
-  };
-  roots.sort((a, b) => a.name.localeCompare(b.name));
-  roots.forEach(sortNode);
-  return { roots, unfoldered };
+/** Does an impl match a free-text rail query (name / id / folder path / tag, case-insensitive)? Mirrors
+ *  the components rail's `matchesQuery` (#3589) — the folder path matches too, so a query like
+ *  `viz/examples` filters the rail to a folder. Empty query → all. Pure. */
+export function matchesImpl(im: AlgoImpl, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    im.name.toLowerCase().includes(q) ||
+    im.id.toLowerCase().includes(q) ||
+    (im.folder ?? "").toLowerCase().includes(q) ||
+    (im.tags ?? []).some((t) => t.toLowerCase().includes(q))
+  );
 }
 
 // ── The per-kit graph (#2863/#2958) — the kit's OWN graph: nodes are its implementations (a concept IS
