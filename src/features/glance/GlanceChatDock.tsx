@@ -17,15 +17,34 @@ import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { GlanceSessionLog } from "./GlanceSessionLog";
+import { GlancePlanScreen, planScreenIssues } from "./GlancePlanScreen";
+import type { StreamProgress } from "./lib/streamProgress";
 
-type DockTab = "stream" | "logs";
+type DockTab = "stream" | "logs" | "plan";
+
+/** The worker's owned work (#4102), resolved once at the workspace and threaded down. Passed in rather
+ *  than fetched here on purpose: every open morph mounts its own dock, so a fetch at this level would be
+ *  one query per open node — the fan-out this feature was explicitly built to avoid. Undefined ⇒ the
+ *  node is not a fleet worker (a studio/debug session), so the Plan tab is omitted entirely. */
+export interface DockPlan {
+  /** Issue refs this worker owns, in PLAN order. */
+  refs: readonly string[];
+  /** ref (unprefixed) → closed. Empty when GitHub is unavailable. */
+  states: ReadonlyMap<string, boolean>;
+  progress?: StreamProgress;
+  /** The state overlay could not be fetched — the list still renders. */
+  unresolved?: boolean;
+  loading?: boolean;
+}
 
 export function GlanceChatDock({
-  paneId, name, role, onClose, onEnd,
+  paneId, name, role, plan, onClose, onEnd,
 }: {
   paneId: string;
   name: string;
   role?: string;
+  /** This worker's owned issues (#4102). Undefined ⇒ no Plan tab. */
+  plan?: DockPlan;
   /** Collapse the dock back into its node — the PTY stays ALIVE (the agent is untouched). */
   onClose: () => void;
   /** END the session — kill the PTY so a stuck / soft-locked agent is fully torn down and triage can
@@ -49,9 +68,11 @@ export function GlanceChatDock({
           <Text mono size="xs" tone="dim" style={{ flex: "none" }}>· live</Text>
         </Row>
         <Row gap="sm" align="center" style={{ flex: "none" }}>
-          {(["stream", "logs"] as DockTab[]).map((t) => (
+          {/* Plan sits beside Stream and Logs only when this node HAS a plan — a studio or debug
+              session owns no issues, and an always-empty tab would read as a bug. */}
+          {((plan ? ["stream", "logs", "plan"] : ["stream", "logs"]) as DockTab[]).map((t) => (
             <Button key={t} size="sm" variant={tab === t ? "primary" : "ghost"} onClick={() => setTab(t)}>
-              {t === "stream" ? "Stream" : "Logs"}
+              {t === "stream" ? "Stream" : t === "logs" ? "Logs" : "Plan"}
             </Button>
           ))}
           {/* END the session (#3049) — kills the PTY (distinct from the ✕, which only collapses the
@@ -83,6 +104,16 @@ export function GlanceChatDock({
         {tab === "logs" && (
           <Box style={{ position: "absolute", inset: 0 }}>
             <GlanceSessionLog paneId={paneId} />
+          </Box>
+        )}
+        {tab === "plan" && plan && (
+          <Box style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+            <GlancePlanScreen
+              issues={planScreenIssues(plan.refs, plan.states)}
+              progress={plan.progress}
+              unresolved={plan.unresolved}
+              loading={plan.loading}
+            />
           </Box>
         )}
       </Box>

@@ -52,6 +52,9 @@ import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "./lib/useProjectFleet";
 import { useStreamProgress } from "./lib/useStreamProgress";
 import { withStreamProgress } from "./lib/streamProgress";
+import { useFleetIssueState } from "./lib/useFleetIssueState";
+import type { DockPlan } from "./GlanceChatDock";
+import { fleetPlanProgress, unionDone, mergeStreamProgress } from "./lib/fleetPlanProgress";
 import { useFleetHeld } from "./lib/useFleetHeld";
 import "./glance.css";
 import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
@@ -64,6 +67,11 @@ const GLANCE_TABS: TabItem[] = [
   { id: "network", label: "Network", hint: "projects · dependencies" },
   { id: "fleet", label: "Fleet", hint: "agents · throughput" },
 ];
+
+/** A STABLE empty fleet (#4102). `?? []` would mint a new array every render, and the issue-state
+ *  overlay memoises its query on stream identity — a fresh array each time would rebuild the query
+ *  and refetch forever. */
+const NO_STREAMS: never[] = [];
 
 export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const planFleet = useAppStore((s) => s.planFleet);
@@ -225,7 +233,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const drill = useAppStore((s) => s.glanceDrill);
   // #4050 — per-stream owned-issue completion for the DRILLED project. One read, partitioned in
   // memory; null while not drilled, so nothing polls at the project-network level.
-  const streamDone = useStreamProgress(drill ?? null);
+  const planDbProgress = useStreamProgress(drill ?? null);
 
   const setDrill = useAppStore((s) => s.setGlanceDrill);
   // The MORPH is a first-class viewer of an app-owned studio session (#3357): opening a studio node starts
@@ -249,6 +257,41 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // #3931: which streams the dependency gate is holding, so their nodes explain themselves instead of
   // rendering as anonymous dark `off` nodes. Read-only — this never launches anything.
   const heldStreams = useFleetHeld(drill, effectiveFleet?.streams);
+
+  // #4102 — the issue-state overlay. Ownership comes from the fleet plan (local, always available);
+  // GitHub supplies only open/closed. One batched query per repo, and none at all when not drilled.
+  const fleetStreams = effectiveFleet?.streams ?? NO_STREAMS;
+  const fleetIssues = useFleetIssueState(fleetStreams);
+  // The bar's input: refs from the plan, done-ness from plan.db statuses UNION the GitHub overlay.
+  // #4050 read `total` from plan.db's issue rows, which are empty for a fleet assembled outside a full
+  // planner run — so every node reported `total: 0` and the (correct) `total > 0` guard hid the bar
+  // for good. Deriving `total` from what a stream OWNS is the fix; `mergeStreamProgress` keeps plan.db
+  // answering for any stream that owns no refs, so nothing that worked before regresses.
+  const streamDone = useMemo(
+    () => mergeStreamProgress(
+      fleetPlanProgress(fleetStreams, unionDone(planDbProgress.doneRefs, fleetIssues.done)),
+      planDbProgress.byStream,
+    ),
+    [fleetStreams, planDbProgress, fleetIssues.done],
+  );
+
+  // #4102 — the Plan screen's data for one node. A fleet node's id IS its stream id, so this is a map
+  // lookup rather than another join. Returns undefined for a node that is not a planned worker (the
+  // director, a studio session, the debugger), which is what omits the tab rather than showing an
+  // always-empty one.
+  const planFor = useCallback((nodeId: string): DockPlan | undefined => {
+    const stream = fleetStreams.find((st) => st.id === nodeId);
+    if (!stream) return undefined;
+    return {
+      refs: stream.issues ?? [],
+      states: fleetIssues.states,
+      progress: streamDone.get(nodeId),
+      // Only claim the overlay is missing once it has actually settled — saying so while the fetch is
+      // in flight would flash "connect GitHub" at a connected user.
+      unresolved: !fleetIssues.loading && fleetIssues.states.size === 0,
+      loading: fleetIssues.loading,
+    };
+  }, [fleetStreams, fleetIssues.states, fleetIssues.loading, streamDone]);
 
   const drillNode = drill ? projectModel.nodes.find((n) => n.id === drill) ?? null : null;
   // Name the drilled project in the titlebar crumb (#3041) — "" on the un-drilled network overview.
@@ -788,6 +831,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           onEndChat={endChat}
           // A resize on ANY morph drives the grid's shared cell, so they all resize together.
           onResizeCell={(w, h) => setCell(clampCell(w, h))}
+          planFor={planFor}
           preview={previewOn && drill ? {
             nodeId: PREVIEW_NODE_ID, name: drillNode?.slug ?? "app",
             source: previewSources[drill] ?? null,
