@@ -353,6 +353,61 @@ fn resolve_out(out: Option<&str>, shots: &std::path::Path, id: &str) -> String {
     }
 }
 
+/// The read-back failure, reported so it diagnoses ITSELF (#4163).
+///
+/// The app returns a path only AFTER a successful write, so a capture the caller then cannot read is a
+/// disagreement between the two processes about where that path IS — the class #3662 closed for the
+/// no-`--out` / relative-`--out` case. `the app reported <path> but it cannot be read: os error 2` named
+/// none of the state that decides it: what the caller ASKED for, the `$BSC_SHOT_DIR` it resolved that
+/// against, and the dir the APP resolved. A designer session lost every screenshot to this with nothing
+/// in the message to act on. All four now travel with the error, and when the two dirs differ the message
+/// says that is the likely cause rather than leaving it to be inferred.
+/// `mine` is the caller's own `$BSC_SHOT_DIR` — passed in rather than read here so this stays a pure
+/// formatter its tests can drive directly, without mutating process-global env under parallel tests.
+fn unreadable_report(
+    res: &ShotResult,
+    requested_out: Option<&str>,
+    mine: Option<&str>,
+    err: &std::io::Error,
+) -> String {
+    let mut s = format!("the app reported {} but it cannot be read: {err}\n", res.path);
+    s.push_str(&format!(
+        "  you asked for:        {}\n",
+        requested_out.unwrap_or("(nothing — the app picks <shots>/<id>.png)"),
+    ));
+    s.push_str(&format!(
+        "  your $BSC_SHOT_DIR:   {}\n",
+        mine.unwrap_or("(unset — the caller falls back to ~/.base-studio-code/shots)"),
+    ));
+    s.push_str(&format!(
+        "  the app's shots dir:  {}\n",
+        res.shots_dir.as_deref().unwrap_or("(not reported — the running app predates this field, #4163)"),
+    ));
+    // The specific, actionable diagnosis: the app resolved a DIFFERENT dir than the caller, so it wrote
+    // somewhere the caller never looks. Only stated when the two are actually known to differ.
+    match (res.shots_dir.as_deref(), mine) {
+        (Some(theirs), Some(ours)) if !same_dir(theirs, ours) => s.push_str(
+            "\nThe two dirs differ: the app resolved its own (it does not inherit this session's \
+             $BSC_SHOT_DIR), so the PNG is likely under the app's dir, not yours. Pass an ABSOLUTE \
+             --out to remove the ambiguity.\n",
+        ),
+        (Some(_), _) => s.push_str(
+            "\nBoth sides agree on the dir, so the path is not the disagreement — the file was written \
+             and then removed, or the app is not seeing the same filesystem as this shell (a sandboxed \
+             session). `bsc shot dir` shows what this shell resolves.\n",
+        ),
+        _ => {}
+    }
+    s
+}
+
+/// Do two dir strings name the same place, allowing for separator style and a trailing slash? A textual
+/// comparison would report `C:/x` and `C:\x\` as a divergence and send the reader down a false trail.
+fn same_dir(a: &str, b: &str) -> bool {
+    let norm = |s: &str| s.replace('\\', "/").trim_end_matches('/').to_ascii_lowercase();
+    norm(a) == norm(b)
+}
+
 /// One webview snapshot: request → wait → prove the PNG is real. Shared by the single capture and each
 /// burst frame. A capture that silently produced nothing (or a non-PNG) must NOT read as success — that
 /// is the failure this whole surface exists to avoid.
@@ -366,6 +421,7 @@ fn capture_one(
     target: Option<&str>,
     timeout: i64,
 ) -> Result<ShotResult, String> {
+    let req_out = out.clone();
     let req = ShotRequest { rect, out, target: target.map(String::from) };
     bsc_appchan::write_request(chan, id, KIND, now, &req)?;
     let reply = bsc_appchan::poll_reply(chan, id, timeout, POLL_INTERVAL_MS, || {
@@ -378,8 +434,10 @@ fn capture_one(
         )
     })?;
     let res: ShotResult = bsc_appchan::take_payload(reply).map_err(|e| format!("capture failed: {e}"))?;
+    // The caller's own dir, read here (once) so the report stays a pure formatter.
+    let mine = std::env::var("BSC_SHOT_DIR").ok().filter(|d| !d.trim().is_empty());
     let bytes = std::fs::read(&res.path)
-        .map_err(|e| format!("the app reported {} but it cannot be read: {e}", res.path))?;
+        .map_err(|e| unreadable_report(&res, req_out.as_deref(), mine.as_deref(), &e))?;
     if !is_png(&bytes) {
         return Err(format!("the app wrote {} but it is not a PNG ({} bytes)", res.path, bytes.len()));
     }
@@ -531,5 +589,72 @@ mod tests {
         // An absolute --out ⇒ honored as-is (the designer's known-good workaround stays valid).
         let abs = if cfg!(windows) { "C:\\elsewhere\\x.png" } else { "/elsewhere/x.png" };
         assert_eq!(resolve_out(Some(abs), shots, "abc"), abs);
+    }
+
+    /// A read-back failure to build a report from.
+    fn nofile() -> std::io::Error {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "The system cannot find the file specified")
+    }
+
+    #[test]
+    fn the_unreadable_report_names_every_input_that_decides_the_path() {
+        // #4163: `the app reported <path> but it cannot be read: os error 2` named NONE of the state that
+        // decides where the PNG went, so a designer session lost every screenshot with nothing to act on.
+        let res = ShotResult {
+            path: "C:/ws/design-studio/shots/x.png".into(),
+            w: 1,
+            h: 1,
+            shots_dir: Some("C:/Users/k/.base-studio-code/shots".into()),
+        };
+        let msg = unreadable_report(&res, Some("C:/ws/design-studio/shots/x.png"), Some("C:/ws/design-studio/shots"), &nofile());
+        // The four facts, all present.
+        assert!(msg.contains("C:/ws/design-studio/shots/x.png"), "the reported path: {msg}");
+        assert!(msg.contains("you asked for"), "what was requested: {msg}");
+        assert!(msg.contains("your $BSC_SHOT_DIR"), "the caller's dir: {msg}");
+        assert!(msg.contains("C:/Users/k/.base-studio-code/shots"), "the APP's dir: {msg}");
+        assert!(msg.contains("cannot find the file"), "the underlying os error survives: {msg}");
+    }
+
+    #[test]
+    fn the_unreadable_report_states_the_diagnosis_when_the_two_dirs_differ() {
+        let res = ShotResult {
+            path: "C:/app/shots/x.png".into(),
+            w: 1,
+            h: 1,
+            shots_dir: Some("C:/app/shots".into()),
+        };
+        // Differing dirs ⇒ the app resolved its own; say so, and say what to do about it.
+        let diverged = unreadable_report(&res, Some("C:/ws/shots/x.png"), Some("C:/ws/shots"), &nofile());
+        assert!(diverged.contains("two dirs differ"), "{diverged}");
+        assert!(diverged.contains("ABSOLUTE --out"), "it names the fix: {diverged}");
+
+        // Matching dirs ⇒ the path is NOT the disagreement; sending the reader after it would be a false
+        // trail, so the message rules it out instead.
+        // Same dir, written the OTHER way — separator style must not read as a divergence.
+        let agreed = unreadable_report(&res, Some("C:/app/shots/x.png"), Some(r"C:\app\shots\"), &nofile());
+        assert!(agreed.contains("Both sides agree"), "{agreed}");
+        assert!(!agreed.contains("two dirs differ"), "{agreed}");
+    }
+
+    #[test]
+    fn the_unreadable_report_survives_an_older_app_and_an_unset_caller_dir() {
+        // The CLI is routinely newer than the running app — the exact case being diagnosed. A missing
+        // field must READ as missing (and date the app), never render as an empty dir that looks resolved.
+        let legacy = ShotResult { path: "p.png".into(), w: 1, h: 1, shots_dir: None };
+        let msg = unreadable_report(&legacy, None, None, &nofile());
+        assert!(msg.contains("predates this field"), "an older app is named as such: {msg}");
+        assert!(msg.contains("unset"), "an unset caller dir says so: {msg}");
+        assert!(msg.contains("the app picks"), "a no---out request says what the app would choose: {msg}");
+        // With nothing to compare, it must not assert a diagnosis either way.
+        assert!(!msg.contains("two dirs differ") && !msg.contains("Both sides agree"), "{msg}");
+    }
+
+    #[test]
+    fn same_dir_ignores_separator_style_and_a_trailing_slash() {
+        // A textual compare would report these as a divergence and send the reader down a false trail.
+        assert!(same_dir("C:/ws/shots", "C:\\ws\\shots"));
+        assert!(same_dir("C:/ws/shots/", "C:/ws/shots"));
+        assert!(same_dir("C:/WS/Shots", "c:/ws/shots"));
+        assert!(!same_dir("C:/ws/shots", "C:/ws/other"));
     }
 }
