@@ -339,6 +339,82 @@ pub fn stat(path: &Path, count_lines: bool) -> Result<FileStat, String> {
     })
 }
 
+/// A file's text (the `read` command), plus the metadata that makes a windowed read honest about what
+/// it left out.
+#[derive(Serialize, Debug)]
+pub struct FileText {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
+    /// Total lines IN THE FILE — not in the returned window, so a caller can tell it got a slice.
+    pub lines: u64,
+    /// First line returned, 1-indexed inclusive.
+    pub from: u64,
+    /// Last line returned, 1-indexed inclusive. Equals `lines` for a whole-file read.
+    pub to: u64,
+    /// True when the window omits part of the file — the signal to ask for the rest.
+    pub windowed: bool,
+    pub text: String,
+}
+
+/// A file's text, optionally windowed to lines `from..=to` (both 1-indexed, inclusive).
+///
+/// The counterpart to [`stat`]: `stat` says how big a file is, this hands back what is in it. Exists so
+/// a session confined to the `bsc` surface can read a module that no harvest lifts — const/type modules
+/// like a `STATUS_META` table, which the component harvest skips (not a component) and the algorithms
+/// harvest skips (not a function), leaving them unreadable through any other verb (#4161).
+///
+/// # Errors
+/// Errors when `path` does not exist, is a directory, is not valid UTF-8, or holds NUL bytes (a binary
+/// file, whose bytes would be garbage in a caller's context — refused rather than dumped). Also errors
+/// when `from` exceeds `to`, or when `from` is past the end of the file: an empty result for an
+/// out-of-range window would read as "this file is empty".
+pub fn read(path: &Path, from: Option<u64>, to: Option<u64>) -> Result<FileText, String> {
+    let md = std::fs::metadata(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    if md.is_dir() {
+        return Err(format!("{} is a directory — `bsc files tree` lists it", path.display()));
+    }
+    let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    if bytes.contains(&0) {
+        return Err(format!(
+            "{} looks binary (contains NUL bytes) — refusing to print it; `bsc files stat` reports its size",
+            path.display()
+        ));
+    }
+    let body = String::from_utf8(bytes)
+        .map_err(|_| format!("{} is not valid UTF-8 — refusing to print it", path.display()))?;
+
+    let all: Vec<&str> = body.lines().collect();
+    let total = all.len() as u64;
+    let start = from.unwrap_or(1).max(1);
+    let end = to.unwrap_or(total).min(total);
+    if let (Some(f), Some(t)) = (from, to) {
+        if f > t {
+            return Err(format!("--from {f} is past --to {t}"));
+        }
+    }
+    // A window that starts past the end is an error, not an empty read: silently returning "" would be
+    // indistinguishable from an empty file, which is the misread this whole surface exists to avoid.
+    if start > total && total > 0 {
+        return Err(format!("--from {start} is past the end of the file ({total} lines)"));
+    }
+    let slice: Vec<&str> = if total == 0 {
+        Vec::new()
+    } else {
+        all[(start - 1) as usize..end as usize].to_vec()
+    };
+    let display = path.to_string_lossy().replace('\\', "/");
+    Ok(FileText {
+        lang: lang_for(&display),
+        path: display,
+        lines: total,
+        from: if total == 0 { 0 } else { start },
+        to: if total == 0 { 0 } else { end },
+        windowed: total > 0 && (start > 1 || end < total),
+        text: slice.join("\n"),
+    })
+}
+
 /// Which import syntax to look for. TS/JS/JSX/TSX share the ES-module family; a `.rs` query uses
 /// Rust's `use`/`mod`. Anything else (e.g. a `.css` module imported from JS) falls back to the
 /// ES-module rules, since that's how a stylesheet is referenced.
@@ -930,5 +1006,67 @@ mod tests {
         assert_eq!(classes_in_css_line(".a, .b {"), vec!["a".to_string(), "b".to_string()]);
         // A numeric fragment (e.g. from `1.5rem`) is not a class.
         assert!(classes_in_css_line("margin: 1.5rem;").is_empty());
+    }
+
+    #[test]
+    fn read_returns_the_whole_file_with_its_language() {
+        // #4161: the const/type module the harvests skip — this is the only verb that shows its content.
+        let root = scratch("read-whole");
+        let f = root.join("projectsFilter.ts");
+        fs::write(&f, "export const STATUS_META = {\n  live: 1,\n};\n").unwrap();
+        let r = read(&f, None, None).unwrap();
+        assert!(r.text.contains("STATUS_META"));
+        assert_eq!(r.lines, 3);
+        assert_eq!((r.from, r.to), (1, 3));
+        assert!(!r.windowed, "a whole-file read is not windowed");
+        assert_eq!(r.lang.as_deref(), Some("typescript"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_windows_by_line_and_reports_the_files_real_length() {
+        let root = scratch("read-window");
+        let f = root.join("a.ts");
+        fs::write(&f, "one\ntwo\nthree\nfour\nfive\n").unwrap();
+        let r = read(&f, Some(2), Some(3)).unwrap();
+        assert_eq!(r.text, "two\nthree");
+        // `lines` is the FILE's length, not the window's — so a slice can't read as the whole file.
+        assert_eq!(r.lines, 5);
+        assert_eq!((r.from, r.to), (2, 3));
+        assert!(r.windowed);
+        // An open-ended window still clamps to the end rather than erroring.
+        assert_eq!(read(&f, Some(4), None).unwrap().text, "four\nfive");
+        assert_eq!(read(&f, None, Some(1)).unwrap().text, "one");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_refuses_a_dir_a_binary_and_an_out_of_range_window() {
+        let root = scratch("read-refuse");
+        let f = root.join("a.ts");
+        fs::write(&f, "one\ntwo\n").unwrap();
+        // A directory routes to `tree` rather than dumping something.
+        assert!(read(&root, None, None).unwrap_err().contains("directory"));
+        // Binary content is refused, not printed as garbage.
+        let bin = root.join("logo.png");
+        fs::write(&bin, [0x89u8, b'P', b'N', b'G', 0x00, 0x01]).unwrap();
+        assert!(read(&bin, None, None).unwrap_err().contains("binary"));
+        // An out-of-range window is an ERROR — an empty result would read as "the file is empty".
+        assert!(read(&f, Some(9), None).unwrap_err().contains("past the end"));
+        assert!(read(&f, Some(2), Some(1)).unwrap_err().contains("past --to"));
+        assert!(read(&root.join("nope.ts"), None, None).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_handles_an_empty_file_without_claiming_a_window() {
+        let root = scratch("read-empty");
+        let f = root.join("empty.ts");
+        fs::write(&f, "").unwrap();
+        let r = read(&f, None, None).unwrap();
+        assert_eq!(r.lines, 0);
+        assert_eq!(r.text, "");
+        assert!(!r.windowed);
+        let _ = fs::remove_dir_all(&root);
     }
 }

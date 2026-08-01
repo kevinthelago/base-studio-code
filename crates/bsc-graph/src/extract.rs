@@ -385,6 +385,37 @@ pub fn harvest(dir: &Path) -> Vec<Candidate> {
     // Raw intra-project call edges (caller name → callee name, per tech), reused for `composes`.
     let mut raw: Vec<(String, String, String)> = Vec::new();
     walk_calls(dir, &mut raw);
+    build_candidates(defs, raw, dir)
+}
+
+/// Harvest a SINGLE file (#4161) — parse just `file` and lift its function definitions, `composes`
+/// resolved within the file. Mirrors [`crate::harvest`]'s single-file twin in `bsc ui`, so the same path
+/// works on both harvests.
+///
+/// Before this, the dir walk's `read_dir` simply failed on a file path and the harvest returned
+/// `{"candidates":[],"count":0}` — indistinguishable from "this file holds nothing worth harvesting".
+/// That silent zero was the trap: `bsc ui harvest <file>` prints a note routing the caller to
+/// `bsc graph harvest <that same file>`, so the advertised hand-off landed on an empty result every time.
+///
+/// The recorded `src` is the file's own name, matching `bsc_ui::harvest::harvest_file`; tests still pair,
+/// since the sibling `*.test.*` is resolved against the file's parent dir.
+pub fn harvest_file(file: &Path) -> Vec<Candidate> {
+    let mut defs: Vec<Def> = Vec::new();
+    let mut raw: Vec<(String, String, String)> = Vec::new();
+    if let Some((tech, src, tree)) = parse(file) {
+        let rel = file.file_name().and_then(|n| n.to_str()).unwrap_or("").replace('\\', "/");
+        collect_defs(tree.root_node(), &src, tech, false, &rel, &mut defs);
+        collect_calls(tree.root_node(), &src, tech, false, None, &mut raw);
+    }
+    let parent = file.parent().unwrap_or(Path::new("."));
+    build_candidates(defs, raw, parent)
+}
+
+/// Render harvested `defs` + raw call edges into candidates. Shared by the directory [`harvest`] and the
+/// single-file [`harvest_file`] so both resolve `composes`, tests, and classification identically.
+/// `test_root` is the dir colocated tests are resolved against.
+fn build_candidates(defs: Vec<Def>, raw: Vec<(String, String, String)>, test_root: &Path) -> Vec<Candidate> {
+    let dir = test_root;
     // Which (name, tech) pairs were actually harvested — so `composes` only links in-set candidates.
     let in_set: HashSet<(String, String)> =
         defs.iter().map(|(n, t, _, _)| (n.clone(), t.clone())).collect();
@@ -695,6 +726,34 @@ mod tests {
         assert!(cands.iter().all(|c| !c.code.trim().is_empty()));
         assert!(cands.iter().all(|c| c.tech == "typescript" || c.tech == "rust"));
         assert!(cands.iter().all(|c| c.role == "primitive" || c.role == "algorithm"));
+    }
+
+    #[test]
+    fn harvest_file_lifts_one_modules_functions_instead_of_returning_a_silent_zero() {
+        // #4161: `bsc ui harvest <file>` prints a note routing the caller to `bsc graph harvest <that
+        // same file>`. The dir walk's `read_dir` failed on a file path, so that advertised hand-off
+        // returned `{"candidates":[],"count":0}` every time — indistinguishable from "nothing here".
+        let file = fixtures().join("sample.rs");
+        let cands = harvest_file(&file);
+        assert!(!cands.is_empty(), "a single-file harvest lifts that module's functions");
+
+        // Same records the DIRECTORY form produces for that file — the file target is a narrowing, not
+        // a second extraction path.
+        let mut got: Vec<String> = cands.iter().map(|c| c.name.clone()).collect();
+        let mut want: Vec<String> =
+            harvest(&fixtures()).into_iter().filter(|c| c.src == "sample.rs").map(|c| c.name).collect();
+        got.sort_unstable();
+        want.sort_unstable();
+        assert_eq!(got, want, "a file target yields the same candidates the dir walk finds in it");
+
+        // `src` is the file's own name (the `bsc ui harvest_file` convention — no root to relativize
+        // against), and in-file `composes` still resolve.
+        assert!(cands.iter().all(|c| c.src == "sample.rs"));
+        let ms = cands.iter().find(|c| c.name == "merge_sort").expect("merge_sort harvested");
+        assert_eq!(ms.composes, vec!["merge.rs".to_string()]);
+
+        // A path that parses to nothing yields no candidates rather than erroring.
+        assert!(harvest_file(&fixtures().join("nope.rs")).is_empty());
     }
 
     #[test]

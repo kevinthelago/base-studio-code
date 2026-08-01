@@ -289,8 +289,10 @@ quietly degraded (a srcText with unresolved `@/…` imports otherwise stores wit
 
 Prints { candidates: [...], count }, plus (#3740) `functionalModules` + a `note` when the tree also holds
 functional/algorithmic modules (functions, hooks, utils) that are NOT components — those belong in the
-ALGORITHMS graph, so harvest them with `bsc graph harvest <dir>` instead (this surfaces + routes them so
-they aren't lost between the two harvests). --kit sets the kit candidates would join (default `harvested`
+ALGORITHMS graph, so harvest them with `bsc graph harvest <dir-or-file>` instead (this surfaces + routes
+them so they aren't lost between the two harvests). A module NEITHER harvest lifts — a const/type module
+such as a `STATUS_META` table, which is not a component and not a function — is read with `bsc files read
+<path>` (#4161); the note says so when a target yields nothing. --kit sets the kit candidates would join (default `harvested`
 — NOT an existing kit, since unreviewed candidates must not contaminate a curated one). --worthy-only keeps
 those the classifier scores net-positive. --out <name> (#3722) writes the JSON to a BARE-named file in
 $BSC_SCRATCH instead of stdout, then prints that path — use it when a large harvest would be truncated on
@@ -631,12 +633,10 @@ fn cmd_harvest(args: &[String]) -> Result<(), String> {
     // SKIPS — they belong in the ALGORITHMS graph, not the component graph. Route them to `bsc graph
     // harvest` so they aren't lost between the two harvests. Omitted entirely when the tree has none.
     let functional = crate::harvest::functional_module_names(path);
+    if let Some(note) = harvest_note(target, functional.len(), items.len(), is_file) {
+        payload["note"] = serde_json::json!(note);
+    }
     if !functional.is_empty() {
-        payload["note"] = serde_json::json!(format!(
-            "{} functional/algorithmic module(s) here are NOT components — harvest them into the algorithms \
-             graph with `bsc graph harvest {target}` (functions, hooks, and utils belong there).",
-            functional.len()
-        ));
         payload["functionalModules"] = serde_json::json!(functional);
     }
     let text = if pretty {
@@ -658,6 +658,33 @@ fn cmd_harvest(args: &[String]) -> Result<(), String> {
         None => println!("{text}"),
     }
     Ok(())
+}
+
+/// The harvest's routing `note` — what to run NEXT for the part of `target` this harvest did not lift.
+/// `None` when the harvest lifted components and nothing else needs saying.
+///
+/// #3740 routed functional/algorithmic modules to `bsc graph harvest`. #4161 adds the case that route
+/// never covered: a module that is NEITHER a component NOR a function — a const/type module like a
+/// `STATUS_META` table. Both harvests are silent on it by design, so a caller trying to vendor a
+/// component that imports one got an empty result and no next move (reported four times: designer
+/// requests #9, #28, #32, #51). `bsc files read` is that move.
+fn harvest_note(target: &str, functional: usize, candidates: usize, is_file: bool) -> Option<String> {
+    if functional > 0 {
+        return Some(format!(
+            "{functional} functional/algorithmic module(s) here are NOT components — harvest them into the \
+             algorithms graph with `bsc graph harvest {target}` (functions, hooks, and utils belong there). \
+             For a module NEITHER harvest lifts — a const/type module such as a STATUS_META table — read \
+             its text with `bsc files read <path>`."
+        ));
+    }
+    if is_file && candidates == 0 {
+        return Some(format!(
+            "no components and no functional modules here — if this is a const/type module (a metadata \
+             table, a shared types file), read its text with `bsc files read {target}`; neither harvest \
+             lifts a plain `export const`."
+        ));
+    }
+    None
 }
 
 /// `bsc ui env [--json]` (#3571) — surface the session-scoped environment a confined studio session
@@ -3020,6 +3047,39 @@ mod tests {
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "env");
         for needle in ["$BSC_HARVEST_ROOTS", "harvest", "--json"] {
             assert!(d.contains(needle), "env help mentions {needle}");
+        }
+    }
+
+    #[test]
+    fn harvest_note_routes_a_const_only_module_to_the_verb_that_can_read_it() {
+        // #4161: the const/type module case — `projectsFilter.ts`-shaped, no components, no functions.
+        // The whole report was `{"candidates":[],"count":0}` with no next move.
+        let note = harvest_note("projectsFilter.ts", 0, 0, true).expect("a fruitless file harvest says why");
+        assert!(note.contains("bsc files read"), "names the verb that works: {note}");
+        assert!(note.contains("projectsFilter.ts"), "names the target: {note}");
+
+        // Functional modules still route to the algorithms graph — and now ALSO name the const case,
+        // which is the half `bsc graph harvest` never covered.
+        let f = harvest_note("src/features/planner/list", 7, 0, false).expect("functional modules route");
+        assert!(f.contains("bsc graph harvest src/features/planner/list"));
+        assert!(f.contains("bsc files read"), "the const/type case is named too: {f}");
+
+        // A harvest that found components needs no routing note.
+        assert!(harvest_note("src/shared/ui", 0, 5, false).is_none());
+        assert!(harvest_note("Card.tsx", 0, 1, true).is_none());
+    }
+
+    #[test]
+    fn the_harvest_notes_suggested_command_is_not_the_one_that_returns_nothing() {
+        // The regression this issue exists for: #3740's note routed a FILE target to `bsc graph harvest
+        // <that file>`, which returned `{"candidates":[],"count":0}` because the dir walk cannot read a
+        // file — so the advertised hand-off was a dead end. A file target must never be sent there as
+        // its only option; `bsc files read` is always offered alongside.
+        for note in [
+            harvest_note("projectsFilter.ts", 7, 0, true).unwrap(),
+            harvest_note("projectsFilter.ts", 0, 0, true).unwrap(),
+        ] {
+            assert!(note.contains("bsc files read"), "every fruitless file harvest offers the read verb: {note}");
         }
     }
 }
