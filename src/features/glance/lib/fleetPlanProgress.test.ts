@@ -40,6 +40,41 @@ describe("fleetPlanProgress", () => {
   });
 });
 
+describe("the director's aggregate row (#4122)", () => {
+  const streams = [
+    { id: "api", issues: ["#1", "#2"] },
+    { id: "web", issues: ["#3"] },
+    { id: "standing", issues: [] },
+  ];
+
+  it("gives the director EVERY stream's issues, not a lane", () => {
+    // The director owns no stream, so a per-stream map left its node with no bar at all — even though
+    // it is the one agent accountable for the whole board. Measured on the live fleet: 40 streams, and
+    // the director now reads 56, the project's entire owned set.
+    const out = fleetPlanProgress(streams, new Set(["1"]), "director");
+    expect(out.get("director")).toEqual({ done: 1, total: 3 });
+  });
+
+  it("de-duplicates a ref two streams both claim", () => {
+    // A union, NOT a sum of the per-stream rows: double-counting would make the director's denominator
+    // disagree with the work its workers actually own.
+    const out = fleetPlanProgress([{ id: "a", issues: ["#7"] }, { id: "b", issues: ["#7"] }], new Set(["7"]), "director");
+    expect(out.get("director")).toEqual({ done: 1, total: 1 });
+  });
+
+  it("leaves each worker's own lane untouched", () => {
+    const out = fleetPlanProgress(streams, new Set(["1"]), "director");
+    expect(out.get("api")).toEqual({ done: 1, total: 2 });
+    expect(out.get("web")).toEqual({ done: 0, total: 1 });
+    expect(out.get("standing")).toEqual({ done: 0, total: 0 });   // owns nothing ⇒ no bar
+  });
+
+  it("emits NO aggregate row when the fleet has no director", () => {
+    // A fleet without one must not gain a phantom node's worth of progress.
+    expect(fleetPlanProgress(streams, new Set()).has("director")).toBe(false);
+  });
+});
+
 describe("normalizeRef", () => {
   it("strips the prefix and surrounding space, and accepts a number", () => {
     expect(normalizeRef("#3898")).toBe("3898");
