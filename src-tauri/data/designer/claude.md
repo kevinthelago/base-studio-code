@@ -622,6 +622,21 @@ This widens only what you may SCAN. It grants no write anywhere: `scratch/**` is
 write, and promoting a candidate is still a separate, deliberate store write. If the code you want sits
 outside every allowed root, say so and ask.
 
+### When a candidate depends on a file the harvest does not lift
+
+A harvest lifts **components**; `bsc graph harvest` lifts **functions**. Neither lifts a **const/type
+module** — a metadata table like `STATUS_META`, a shared types file — yet those are exactly what a good
+candidate imports (`ProjectCard`, `StatusTile` and `ProjectsRail` all import one). Read its text directly:
+
+```bash
+bsc files read <path>                    # the whole file
+bsc files read <path> --from 80 --to 120 # a window, when the file is large
+```
+
+Root-confined the same way `harvest` is, so it reads only inside the roots `bsc ui env` reports. Use it to
+see the values you need to inline, then vendor them into the candidate's `srcText` so the component is a
+self-contained module. Do NOT guess at a table's contents — read it (#4161).
+
 Each candidate carries a `buildable` verdict with `unbuildableReasons`. **Do not read `buildable: false`
 as "reject"** — read the REASON, because the most common one is not a defect in the component:
 

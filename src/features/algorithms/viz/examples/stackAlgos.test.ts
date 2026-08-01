@@ -5,7 +5,7 @@ import { describe, it, expect } from "vitest";
 import { TracedStack, runStackAlgorithm } from "../../lib/tracer";
 import type { StackFrame } from "../../lib/trace";
 import {
-  balancedParens, postfixEval, parseParensInput, parsePostfixInput, STACK_PROGRAMS, stackToText,
+  balancedParens, postfixEval, parseParensInput, parsePostfixInput, parseStackText, STACK_PROGRAMS, stackToText,
 } from "./stackAlgos";
 
 /** Run a program over a fresh stack and hand back both the verdict and the recorded frames. */
@@ -125,5 +125,17 @@ describe("runStackAlgorithm (#3220)", () => {
       expect(frames.length, key).toBeGreaterThan(2);
       expect(frames.every((f) => f.structure === "stack"), key).toBe(true);
     }
+  });
+
+  // #4162 — the seam a STORED stack program uses.
+  it("the generic stored seam checks only that there is something to trace", () => {
+    // By necessity, not by omission: the two shipped programs read different languages (brackets vs RPN),
+    // so a shared parser could validate no more than the intersection — and a stored program's own
+    // validation lives inside its `run`, the only place that knows which language it reads.
+    expect(parseStackText("  ([{}])  ")).toBe("([{}])");
+    expect(parseStackText("3 4 + 2 *")).toBe("3 4 + 2 *");
+    expect(() => parseStackText("   ")).toThrow(/Enter an expression/);
+    // Round-trips with the serializer, so a stored program's default input survives the field.
+    expect(parseStackText(stackToText("([)"))).toBe("([)");
   });
 });
