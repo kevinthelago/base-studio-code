@@ -36,6 +36,7 @@ import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
+import { batchEdges } from "./lib/edgeBatch";
 import { selectionNeighborhood } from "@/shared/lib/graph/selectionNeighborhood";
 import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import { parseNodeUrn, LIBRARY_SEGMENT } from "@/shared/lib/graph/nodeUrn";
@@ -379,9 +380,45 @@ export function DesignsWorkbench() {
   // GraphView wrapper (#2766) now that the graph IS the page's one GraphCanvas.
   const selId = sel?.id ?? "";
   const { incidentEdges, relatedNodes } = selectionNeighborhood(graph.edges, selId);
-  const orderedEdges = [...graph.edges].sort(
-    (a, b) => Number(incidentEdges.has(a.id)) - Number(incidentEdges.has(b.id)),
+  // #4150: the edge layer as MERGED paths. Three elements per edge (a `<g>` + a stroke path + a filled
+  // arrowhead) is ~2,400 elements at 248 components and ~9,600 at 1000; the non-highlighted bulk all
+  // draws identically and the layer is `pointer-events: none`, so it has neither per-edge styling nor
+  // behaviour to lose. The SELECTION-incident edges are held back and rendered individually — few, and
+  // the only ones whose appearance differs. Holding them back also paints them last, which is what the
+  // old per-render `orderedEdges` sort existed to do.
+  const edgeBatch = useMemo(
+    () => batchEdges(
+      graph.edges,
+      (e) => {
+        const a = graph.pos.get(e.from), b = graph.pos.get(e.to);
+        if (!a || !b) return null;
+        // The shared graph line-type (#2222) with PERIMETER-ANCHOR routing — the composition graph is a
+        // layered TOP-DOWN DAG (#2455); the anchor router leaves each card facing the other.
+        return graphEdge(
+          { x: a.x, y: a.y + bandShift, w: NODE_W, h: NODE_H },
+          { x: b.x, y: b.y + bandShift, w: NODE_W, h: NODE_H },
+        );
+      },
+      (e) => incidentEdges.has(e.id),
+    ),
+    [graph.edges, graph.pos, bandShift, incidentEdges],
   );
+  // The dashed `requires` edges into the library band (#3116/#3117) — one visual class, so they merge
+  // whole; none of them is ever highlighted.
+  const reqBatch = useMemo(
+    () => batchEdges(libComp.edges, (e) => {
+      const from = parseNodeUrn(e.fromUrn);
+      const compPos = from ? graph.pos.get(from.id) : undefined;
+      const libPos = bandPosByUrn.get(e.toUrn);
+      if (!compPos || !libPos) return null;
+      return graphEdge(
+        { x: compPos.x, y: compPos.y + bandShift, w: NODE_W, h: NODE_H },
+        { x: libPos.x, y: libPos.y, w: NODE_W, h: NODE_H },
+      );
+    }),
+    [libComp.edges, graph.pos, bandPosByUrn, bandShift],
+  );
+
   const EDGE_COLOR = "var(--border-strong, #3a434d)";
   const EDGE_HL = "var(--accent)";
 
@@ -605,35 +642,27 @@ export function DesignsWorkbench() {
               <line x1={0} y1={band.dividerY} x2={world.w} y2={band.dividerY} className="ds-band-fence" />
             </g>
           )}
-          {orderedEdges.map((e) => {
+          {/* #4150: the BULK — every non-highlighted edge as ONE stroke path + ONE arrowhead path. The
+              merged `d` is the exact concatenation of the per-edge subpaths, so this changes the element
+              count and nothing else. */}
+          {edgeBatch.d && <path className="ds-edge-bulk" d={edgeBatch.d} stroke={EDGE_COLOR} strokeWidth={1.5} fill="none" />}
+          {edgeBatch.arrow && <path className="ds-edge-bulk" d={edgeBatch.arrow} fill={EDGE_COLOR} />}
+          {/* Dashed `requires` edges into the band (#3116/#3117), merged the same way — one visual class. */}
+          {reqBatch.d && <path className="ds-req-edge" d={reqBatch.d} stroke="var(--info)" strokeWidth={1.5} strokeDasharray="5 4" fill="none" />}
+          {reqBatch.arrow && <path className="ds-req-edge" d={reqBatch.arrow} fill="var(--info)" />}
+          {/* The selection-incident edges stay individual: accent + thicker, and painted LAST so they sit
+              above the bulk (what the old per-render `orderedEdges` sort was for). */}
+          {edgeBatch.individual.map((e) => {
             const a = graph.pos.get(e.from), b = graph.pos.get(e.to);
             if (!a || !b) return null;
-            // The shared graph line-type (#2222) with PERIMETER-ANCHOR routing — the composition graph
-            // is a layered TOP-DOWN DAG (#2455); the anchor router leaves each card facing the other.
-            const g = graphEdge({ x: a.x, y: a.y + bandShift, w: NODE_W, h: NODE_H }, { x: b.x, y: b.y + bandShift, w: NODE_W, h: NODE_H });
-            const on = incidentEdges.has(e.id); // incident to the selection → accent + thicker (#2523)
-            const color = on ? EDGE_HL : EDGE_COLOR;
-            return (
-              <g key={e.id} className={on ? "ds-edge on" : "ds-edge"}>
-                <path d={g.d} stroke={color} strokeWidth={on ? 2.25 : 1.5} fill="none" />
-                <path d={g.arrow} fill={color} />
-              </g>
-            );
-          })}
-          {/* Dashed `requires` edges into the band (#3116/#3117): from a component UP to the library node it imports. */}
-          {libComp.edges.map((e) => {
-            const from = parseNodeUrn(e.fromUrn);
-            const compPos = from ? graph.pos.get(from.id) : undefined;
-            const libPos = bandPosByUrn.get(e.toUrn);
-            if (!compPos || !libPos) return null;
             const g = graphEdge(
-              { x: compPos.x, y: compPos.y + bandShift, w: NODE_W, h: NODE_H },
-              { x: libPos.x, y: libPos.y, w: NODE_W, h: NODE_H },
+              { x: a.x, y: a.y + bandShift, w: NODE_W, h: NODE_H },
+              { x: b.x, y: b.y + bandShift, w: NODE_W, h: NODE_H },
             );
             return (
-              <g key={e.id} className="ds-req-edge">
-                <path d={g.d} stroke="var(--info)" strokeWidth={1.5} strokeDasharray="5 4" fill="none" />
-                <path d={g.arrow} fill="var(--info)" />
+              <g key={e.id} className="ds-edge on">
+                <path d={g.d} stroke={EDGE_HL} strokeWidth={2.25} fill="none" />
+                <path d={g.arrow} fill={EDGE_HL} />
               </g>
             );
           })}
