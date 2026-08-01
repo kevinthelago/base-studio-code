@@ -420,3 +420,92 @@ mod folder_tests {
         assert_eq!(folder_from_src("shared/ui/data/KeyValueList.tsx").as_deref(), Some("shared/ui/data"));
     }
 }
+
+// ── colocated test pairing (#4125) — SHARED by both libraries ─────────────────────────────────
+// Moved here from `bsc_ui::tests_harvest` (#3907) when the algorithms library needed the same
+// pairing, for the reason `folder_from_src` lives here: two libraries deriving the same thing from
+// the same input must not drift. `bsc_ui::tests_harvest` delegates rather than keeping a copy.
+
+/// The colocated test path for a root-relative module `src`, if one exists under `root`.
+///
+/// `shared/lib/algorithms/orderByRank.ts` → `…/orderByRank.test.ts`. `None` for a `src` with no known
+/// extension (a DIRECTORY-shaped path — the #3892 harvest defect) or when no sibling test is on disk.
+///
+/// TypeScript only, deliberately: a Rust algorithm's tests are an INLINE `#[cfg(test)] mod tests`, not
+/// a sibling file, so pairing by path would silently report every Rust impl as untested. Extracting the
+/// inline block is a separate job with a separate shape.
+pub fn test_path_for(root: &std::path::Path, src: &str) -> Option<std::path::PathBuf> {
+    let (stem, _) =
+        [".tsx", ".ts", ".jsx", ".js"].iter().find_map(|e| src.strip_suffix(*e).map(|s| (s, *e)))?;
+    for ext in [".test.tsx", ".test.ts"] {
+        let p = root.join(format!("{stem}{ext}"));
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// A test file's display name: its FIRST top-level `describe("…")` title, else the file's basename.
+///
+/// The title is what a reader recognises; the basename is the honest fallback for a file that opens
+/// straight into `it(…)`.
+pub fn test_display_name(path: &std::path::Path, contents: &str) -> String {
+    if let Some(title) = first_describe_title(contents) {
+        return title;
+    }
+    path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// The string literal of the first `describe(` call — single, double, or backtick quoted.
+fn first_describe_title(src: &str) -> Option<String> {
+    let at = src.find("describe(")?;
+    let rest = &src[at + "describe(".len()..];
+    let mut chars = rest.char_indices().skip_while(|(_, c)| c.is_whitespace());
+    let (start, quote) = chars.next().filter(|(_, c)| matches!(c, '"' | '\'' | '`'))?;
+    let body = &rest[start + quote.len_utf8()..];
+    // A backslash escapes the next char, so an escaped quote does not close the literal.
+    let mut out = String::new();
+    let mut it = body.chars();
+    while let Some(c) = it.next() {
+        match c {
+            '\\' => {
+                if let Some(n) = it.next() {
+                    out.push(n);
+                }
+            }
+            c if c == quote => return Some(out),
+            c => out.push(c),
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod test_pairing_tests {
+    use super::{test_display_name, test_path_for};
+
+    #[test]
+    fn pairs_a_module_with_its_colocated_test_and_prefers_tsx() {
+        let dir = std::env::temp_dir().join("bsc-util-test-pairing");
+        let sub = dir.join("shared/lib/algorithms");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("orderByRank.test.ts"), "describe('orderByRank', () => {});").unwrap();
+        let p = test_path_for(&dir, "shared/lib/algorithms/orderByRank.ts").expect("paired");
+        assert!(p.ends_with("orderByRank.test.ts"));
+        // A directory-shaped src (no extension) pairs with nothing rather than guessing.
+        assert!(test_path_for(&dir, "shared/lib/algorithms").is_none());
+        // A Rust module never pairs by path — its tests are inline.
+        assert!(test_path_for(&dir, "crates/bsc-graph/src/extract.rs").is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn names_by_describe_title_else_the_basename() {
+        let p = std::path::Path::new("a/b/orderByRank.test.ts");
+        assert_eq!(test_display_name(p, "describe(\"orderByRank (#4091)\", () => {});"), "orderByRank (#4091)");
+        assert_eq!(test_display_name(p, "describe('single quoted', () => {});"), "single quoted");
+        // No describe ⇒ the basename, which is honest rather than empty.
+        assert_eq!(test_display_name(p, "it('bare', () => {});"), "orderByRank.test.ts");
+    }
+}
