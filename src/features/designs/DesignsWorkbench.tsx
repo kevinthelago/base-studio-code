@@ -41,10 +41,11 @@ import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import { parseNodeUrn, LIBRARY_SEGMENT } from "@/shared/lib/graph/nodeUrn";
 import { resolveComponentLibraryRefs } from "./lib/libraryComposition";
 import { layoutComposition, NODE_W, NODE_H } from "./lib/compositionLayout";
-import { analyzeGraphHealth, analyzeMotion, isActionProp, HEALTH_SEVERITY, HEALTH_BADGE, type HealthCategory } from "./lib/graphHealth";
+import { analyzeGraphHealth, analyzeMotion, isActionProp, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
+import { ComponentNode } from "./ComponentNode";
 import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, ROLE_COLOR, ROLES, type ComponentRecord, type ChangeEntry } from "./lib/model";
 import { timeAgo } from "@/shared/lib/core/format";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
@@ -262,11 +263,13 @@ export function DesignsWorkbench() {
     // until the user picks a node in the new kit.
     setKitId(id); setCompId(null); setExpanded((e) => ({ ...e, [id]: true })); setTab("overview");
   };
-  const selectComp = (c: ComponentRecord) => {
+  // #4132: STABLE across renders — it is the one callback all 248 memoized `ComponentNode`s take, so a
+  // fresh closure per render would re-render every node on every parent state change and defeat the memo.
+  const selectComp = useCallback((c: ComponentRecord) => {
     if (c.kitId !== kitId) setKitId(c.kitId);
     setCompId(c.id); setVariant(c.variants[0] ?? "default"); setTab("overview");
     setTryAnim(null); // a new vehicle clears the motion try-on (#2942)
-  };
+  }, [kitId, setKitId, setCompId]);
   // Select a PRESET as the component's motion (#3083): fold every inline binding into ONE motion preset
   // group with `name` as the default (`selectAnimationPreset`), so exactly the picked one plays — the
   // "pick a value to set the entire component's animation" model. Persist through the STANDARD
@@ -652,45 +655,22 @@ export function DesignsWorkbench() {
         })}
         {kitComps.map((c) => {
           const pos = graph.pos.get(c.id); if (!pos) return null;
-          // Full ring for the selection, softer ring for its related nodes (#2523); .on wins over .related.
-          const state = c.id === selId ? " on" : relatedNodes.has(c.id) ? " related" : "";
-          // AI live-focus (#2525): a DIFFERENT touched node pulses as `.working`; the user's `.on` wins if
-          // it's the SAME node, so an active selection is never overridden.
-          const working = c.id === (aiFocusedId ?? "") && c.id !== selId ? " working" : "";
-          const badge = nodeHealth.get(c.id); // graph-health category (#2680), if any
-          // Preview-error signal (#2838, #2908) — from the on-visit scan; ADDITIVE to the health badge
-          // above (different corner, own class) so the concurrent graph-health work reconciles cleanly.
-          // The scan reports a `build` failure (esbuild) OR a `runtime` throw (it now runs each build-clean
-          // component in a hidden iframe, #2908) — the tooltip names which.
-          const buildStatus = componentBuildStatus[c.id];
-          const buildError = buildStatus?.state === "error"
-            ? `Preview ${buildStatus.kind} error — ${buildStatus.message}`
-            : null;
-          // Empty-render signal (#2926) — built + mounted clean but produced no visible output.
-          const emptyRender = buildStatus?.state === "empty" ? buildStatus.message : null;
           return (
-            <Box key={c.id} data-node onClick={() => selectComp(c)} className={`ds-node${state}${working}${badge ? " unhealthy" : ""}`} style={{ left: pos.x, top: pos.y + bandShift, width: NODE_W }}>
-              {badge && (
-                <Text as="span" className={`ds-health ds-health-${badge}`} title={`${badge} — ${HEALTH_BADGE[badge].label}`}>{HEALTH_BADGE[badge].glyph}</Text>
-              )}
-              {buildError && (
-                <Text as="span" className="ds-buildfail" title={buildError}>✖</Text>
-              )}
-              {emptyRender && (
-                <Text as="span" className="ds-emptyrender" title={emptyRender}>▢</Text>
-              )}
-              <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, minWidth: 0 }}>
-                {/* name truncates to ONE line (#3699) — a long name (GitHubCrossRepoActivity) must fit the
-                    fixed-width node, not wrap + overflow. Full name on hover via `title`. */}
-                <RoleDot role={c.role} /><Text weight={600} size={13} title={c.name} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</Text>
-              </Box>
-              <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minWidth: 0 }}>
-                {/* group indicator (#3048) — the component's purpose partition, read inline on the
-                    existing role line. Truncates to one line (#3699) — a long group (features/planner/fleet)
-                    must not wrap; the ×used count is kept, never squeezed off. */}
-                <Text size={10} tone="dim" title={c.folder ? `${c.role} · ${c.folder}` : c.role} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.role}{c.folder ? <Text as="span" tone="muted"> · {c.folder}</Text> : ""}</Text><Text mono size="xxs" tone="muted" style={{ flexShrink: 0, marginLeft: 6 }}>×{c.used}</Text>
-              </Box>
-            </Box>
+            <ComponentNode
+              key={c.id}
+              c={c}
+              x={pos.x}
+              y={pos.y + bandShift}
+              // Full ring for the selection, softer ring for its related nodes (#2523); .on wins over .related.
+              // AI live-focus (#2525): a DIFFERENT touched node pulses as `.working`; the user's `.on` wins if
+              // it's the SAME node, so an active selection is never overridden.
+              selected={c.id === selId}
+              related={relatedNodes.has(c.id)}
+              working={c.id === (aiFocusedId ?? "") && c.id !== selId}
+              badge={nodeHealth.get(c.id)}
+              buildStatus={componentBuildStatus[c.id]}
+              onSelect={selectComp}
+            />
           );
         })}
         </>)}

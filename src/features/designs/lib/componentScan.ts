@@ -45,6 +45,18 @@ export type ComponentBuildStatus =
   | { state: "error"; kind: "build" | "runtime"; message: string }
   | { state: "empty"; message: string };
 
+/** One component's complete scan outcome — the unit the sweep BATCHES into the store (#4132).
+ *
+ *  Both halves travel together because they are produced together and consumed together: writing them
+ *  through two separate per-id setters cost two store commits per component (~496 for a 248-component
+ *  kit), each one re-rendering the whole graph. */
+export interface ComponentScanResult {
+  id: string;
+  status: ComponentBuildStatus;
+  /** The render-confirmed data-state blanks (#3191). `[]` is meaningful — it CLEARS a prior badge. */
+  stateBlanks: RuntimeStateCategory[];
+}
+
 /**
  * What the scan should mirror to the DURABLE preview-error log (`bsc ui preview-error`) for a component
  * whose status went `prior` → `next` (#3540) — so `bsc ui doctor` sees the COMPLETE errored set, not
