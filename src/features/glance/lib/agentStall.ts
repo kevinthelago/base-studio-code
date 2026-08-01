@@ -137,6 +137,24 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
   return nodes.map((n) => {
     if (n.preview) return n; // not an agent — its own healthy/live state stands
     const paneId = fleetPaneId(projectKey, n.id);
+    // FINISHED BY THE PLAN (#4124) — every issue this node owns is done.
+    //
+    // Completion was derived ONLY from runtime session signals: an `ended` verdict of `done`, or an
+    // explicit maintenance park. Both are ephemeral — they describe a session, and a session ends. The
+    // issues do not: a worker that finished its lane last week still finished it, whether or not
+    // anything is running now. So the two QUIET branches below (no session / live but idle) read this
+    // first, and a node whose work is done stops reporting `idle`, which is what a node with nothing to
+    // do also reports. Live-WORKING and blocked-on-a-person states still outrank it: what a session is
+    // doing right now is the more urgent fact, and a worker parked on a question is still parked.
+    // Two sources, because neither is complete alone. The PLAN says every owned issue is closed. A
+    // `maintain` record says the worker itself declared it finished and stood by (#1957) — durable
+    // evidence it got there, and for a fleet whose plan.db carries no issue rows it is the ONLY
+    // evidence. Measured: 34 panes have emitted `maintain`.
+    const finished =
+      (!!n.progress && n.progress.total > 0 && n.progress.done >= n.progress.total) ||
+      !!sig.maintaining?.has(paneId);
+    const asFinished = (reason: string) =>
+      ({ ...n, health: "complete" as GHealth, activity: "complete" as GActivity, reason });
     // QUARANTINE FIRST (#3916): the warden kills the PTY when it quarantines, so a quarantined pane is
     // never in `livePaneIds` and would otherwise fall through to `off` — reading as "never launched"
     // rather than "hard-paused, here is why". It must outrank every other state: this is the one the
@@ -175,11 +193,18 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
     if (endState === "done") {
       return { ...n, health: "complete" as GHealth, activity: "complete" as GActivity, reason: "every owned issue complete" };
     }
+
     // NOT LAUNCHED — there is no session behind this node. That is `off`, not `idle`: the two states
     // were indistinguishable while both rendered idle, so a node with no session read as one that was
     // merely quiet, and its empty log view looked like a broken log rather than an absent session.
     // `off` = no session exists · `idle` = a session exists but is not working · `healthy` = working.
-    if (!sig.livePaneIds.has(paneId)) return { ...n, health: "off" as GHealth, activity: "idle" as GActivity };
+    if (!sig.livePaneIds.has(paneId)) {
+      // #4124: `off` is "never launched". A worker that finished everything and whose session has since
+      // been reclaimed is not that, and rendering it identically loses the one state that was earned.
+      return finished
+        ? asFinished("every owned issue complete — no session running")
+        : { ...n, health: "off" as GHealth, activity: "idle" as GActivity };
+    }
     // BLOCKED ON A PERSON (#4005) — a `bsc-wait` park, or a session stopped at a permission prompt.
     //
     // A wait used to read `healthy` (green, calm) for ten minutes and only then flip to `warning`.
@@ -209,6 +234,10 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
     // worker's session is still alive, so `paneStatus` may well read "run"; checked after, it would
     // keep the building outline forever despite having finished everything it owns.
     //
+    // It stays BELOW the wait/attention branches: a park needs a person, standing-by does not. The
+    // RECLAIMED case (session gone) is handled at the liveness gate instead, via `finished` — putting
+    // this whole branch above that gate would have let maintenance outrank a `bsc-wait`.
+    //
     // It renders as the PLAIN node — no outline, no pulse — because there is nothing for anyone to do
     // about it. The explanation rides in `reason`, which the hover title and the inspector's REASON
     // tile both show, so the state is still discoverable without being loud.
@@ -224,6 +253,10 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
     // #4042 — `healthy`, not `idle`: the session EXISTS and nothing is wrong, which is what healthy
     // means. The activity word still says `idle`, so "at rest" is not lost — the two axes just stop
     // saying the same thing twice.
-    return { ...n, health: "healthy" as GHealth, activity: "idle" as GActivity };
+    // #4124: a live session with nothing left to do is COMPLETE, not merely quiet. `idle` is the word
+    // for "a session exists and is not working", which is true here but is the least of what is true.
+    return finished
+      ? asFinished("every owned issue complete")
+      : { ...n, health: "healthy" as GHealth, activity: "idle" as GActivity };
   });
 }
