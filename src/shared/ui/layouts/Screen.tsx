@@ -78,7 +78,12 @@ export function Screen({
             the navigation with it — the tabs above stay clickable (and Ctrl+←/→ keeps working), so the
             user can always leave a broken page. */}
         <Box className={bodyClassName ? `screen-body ${bodyClassName}` : "screen-body"}>
-          <PageBoundary page={pageOverride ?? active}>{children}</PageBoundary>
+          <PageBoundary
+            page={pageOverride ?? active}
+            hint="The other pages still work: pick one from the tabs above, or press Ctrl+← / Ctrl+→."
+          >
+            {children}
+          </PageBoundary>
         </Box>
       </Box>
       {overlay}

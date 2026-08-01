@@ -34,7 +34,7 @@ export type PrimitiveName =
   // data · charts (analytics primitives)
   | "StatCard" | "LineArea" | "Bars" | "Donut" | "HBars" | "Swimlane" | "Spark" | "Legend" | "StackedDayBars"
   // feedback
-  | "Banner" | "InlineError" | "EmptyState" | "StatusDot" | "Skeleton"
+  | "Banner" | "InlineError" | "EmptyState" | "StatusDot" | "Skeleton" | "PageBoundary"
   // #2421 gap-fill — data chips/feeds, the overlay pane, and the telemetry chart trio
   | "LabelChip" | "ActivityFeed" | "Pane" | "TelemetryPanel" | "ItemBars" | "SplitBar"
   // #2475 — the key-value record rendering (the property-list archetype of the row vocabulary)
@@ -626,6 +626,23 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "pad", type: "space", default: "[8, 12]", description: "Inner padding — a rung/px or a [block, inline] pair." },
       { name: "radius", type: "enum", values: ["sm", "md", "lg"], default: 4, description: "Corner radius rung (--r-*) or raw px." },
       { name: "borderFade", type: "number", default: 70, description: "Border tint — transparency % of --danger in the 1px border (some sites use 60)." },
+    ],
+  },
+  {
+    // #4172 — failure containment as a COMPOSABLE primitive. #4170 built this into the app's own Screen;
+    // registering it means a DESIGNED page can carry the same guarantee. Grouped with the other
+    // feedback surfaces because what it renders is an error state.
+    name: "PageBoundary", group: "feedback", importPath: "@/shared/ui/layouts/PageBoundary",
+    description:
+      "Contains a render failure to ONE page: catches an error thrown by its children and shows a " +
+      "recoverable fallback in their place, so a broken page cannot blank the surface hosting it. " +
+      "Wrap a page composition's body. Clears itself when `page` changes, so navigating away recovers.",
+    props: [
+      CHILDREN,
+      { name: "page", type: "string", required: true, description: "The page id — named in the fallback, and the reset key: changing it clears a caught error." },
+      { name: "title", type: "string", default: "This page didn’t load.", description: "Fallback headline." },
+      { name: "hint", type: "string", description: "How to recover, in the host's own words (e.g. which navigation to use). Defaults to a neutral line — say what YOUR app offers." },
+      { name: "retryLabel", type: "string", default: "Try again", description: "Label of the retry button, which re-renders the children." },
     ],
   },
   {

@@ -535,6 +535,13 @@ Each component record carries:
   it repoints every `composes`/`rules` reference then removes the duplicate, in one step. Decide the
   survivor with **`bsc ui used-by <id>`** (its graph usage — how many components compose it): merge the
   LESS-used into the more-used, so the load-bearing one stays. Find → measure → merge; keep the graph minimal.
+- **A page contains its own failures**: wrap a page composition's body in **`PageBoundary`** (#4172).
+  Without it, one throwing child blanks the whole surface hosting the page — including the navigation
+  the user needs to leave it. With it, the failure is contained to that page, the fallback names what
+  broke, and the rest of the app stays usable. Pass `hint` in the HOST app's own words (which navigation
+  to use); the default is deliberately neutral, because a fallback that tells you to press keys the app
+  does not have is worse than no hint. It only catches errors thrown during a child's RENDER — an
+  expected empty or error RESULT is still `EmptyState` / `InlineError` / `Banner`.
 - **Rules protect the kit**: when a component `wraps` an intrinsic or replaces a library, carry the
   matching rule so generated apps can't drift around it.
 - **Validate first**: run `bsc ui validate` on every spec before `bsc ui set`; never write a spec
