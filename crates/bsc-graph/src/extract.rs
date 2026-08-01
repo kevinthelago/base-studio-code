@@ -39,8 +39,25 @@ pub struct Candidate {
     /// Neither `harvest` nor `curate` used to set one, and per #3607 an impl with no domain does not
     /// surface in the graph UI — so a clean `curate --apply` landed records nobody could see.
     pub domain: String,
+    /// The candidate's COLOCATED test file, carried at harvest time (#4125b) — empty when it has none.
+    ///
+    /// Harvested WITH the candidate rather than by a later pass, so a `curate --apply` lands a node that
+    /// is already testable-by-declaration. The separate `bsc graph tests harvest` stays for the records
+    /// curated before this existed; a fresh harvest never needs it.
+    pub tests: Vec<CandidateTest>,
     /// The reusability classification (#2745 slice 2) — library-worthy vs. project glue, with reasons.
     pub classification: Classification,
+}
+
+/// One colocated test file carried on a candidate — the `{name, src}` shape a stored impl's `tests`
+/// array holds, identical to the component library's (#3907) so the two graphs read the same.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CandidateTest {
+    /// The file's first top-level `describe(…)` title, else its basename.
+    pub name: String,
+    /// The test file's contents, VERBATIM — one entry per FILE, never split per `it()`, because a
+    /// file's meaning lives partly in its imports, `beforeEach` and local helpers.
+    pub src: String,
 }
 
 /// One collected definition: `(name, tech, source text, root-relative path)`. Named so the extra
@@ -352,6 +369,22 @@ pub fn harvest(dir: &Path) -> Vec<Candidate> {
     // Which (name, tech) pairs were actually harvested — so `composes` only links in-set candidates.
     let in_set: HashSet<(String, String)> =
         defs.iter().map(|(n, t, _, _)| (n.clone(), t.clone())).collect();
+    // Colocated tests, read ONCE PER FILE (#4125b). Many candidates share one source — this repo's
+    // `sorts.test.ts` covers four impls and `graphAlgos.test.ts` five — so pairing per candidate would
+    // re-read the same file dozens of times across a 1780-candidate walk.
+    let mut test_cache: std::collections::BTreeMap<String, Vec<CandidateTest>> = Default::default();
+    for (_, _, _, src_rel) in &defs {
+        if test_cache.contains_key(src_rel) {
+            continue;
+        }
+        let found = bsc_util::test_path_for(dir, src_rel)
+            .and_then(|p| std::fs::read_to_string(&p).ok().map(|c| (p, c)))
+            .map(|(p, contents)| {
+                vec![CandidateTest { name: bsc_util::test_display_name(&p, &contents), src: contents }]
+            })
+            .unwrap_or_default();
+        test_cache.insert(src_rel.clone(), found);
+    }
     defs.into_iter()
         .map(|(name, tech, code, src_rel)| {
             let mut composes: Vec<String> = Vec::new();
@@ -376,6 +409,7 @@ pub fn harvest(dir: &Path) -> Vec<Candidate> {
                 name,
                 code,
                 domain: domain_of(&src_rel),
+                tests: test_cache.get(&src_rel).cloned().unwrap_or_default(),
                 src: src_rel,
                 classification: Classification::default(),
             };
@@ -668,6 +702,31 @@ mod tests {
             m.entry((*id).to_string()).or_default().insert((*src).to_string());
         }
         m
+    }
+
+    #[test]
+    fn harvest_carries_the_colocated_test_onto_every_candidate_from_that_file() {
+        // #4125b — tests ride in WITH the harvest, so a `curate --apply` lands a node that already
+        // declares its tests and no second pass is needed. The fixture dir has `sample.test.ts` beside
+        // `sample.ts`, so every candidate lifted from that file carries it.
+        let cands = harvest(&fixtures());
+        let from_ts: Vec<&Candidate> = cands.iter().filter(|c| c.src == "sample.ts").collect();
+        assert!(from_ts.len() > 1, "the fixture yields several candidates from one file");
+        for c in &from_ts {
+            assert_eq!(c.tests.len(), 1, "{} carries its colocated test", c.name);
+            assert!(c.tests[0].src.contains("#4125b"), "verbatim file contents, not a path");
+        }
+        // ONE file covering SEVERAL candidates is carried onto EACH — this repo's `graphAlgos.test.ts`
+        // covers five impls, and per-impl attribution is not recoverable from the file.
+        assert_eq!(
+            from_ts[0].tests[0].name, from_ts[1].tests[0].name,
+            "siblings from one source share the identical entry",
+        );
+        // A candidate whose file has no sibling test carries none — never an empty-but-present claim.
+        assert!(
+            cands.iter().any(|c| c.tests.is_empty()),
+            "a source with no colocated test yields candidates with no tests",
+        );
     }
 
     #[test]

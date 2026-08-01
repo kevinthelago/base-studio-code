@@ -25,53 +25,17 @@ pub struct HarvestedTest {
 
 /// The colocated test path for a `src/`-relative module path, if one exists under `root`.
 ///
-/// `src/shared/ui/data/Card.tsx` → `src/shared/ui/data/Card.test.tsx`. Returns `None` for a record with
-/// no `src`, a `src` that is a DIRECTORY-shaped path (no extension — the #3892 harvest defect), or when
-/// no sibling test file is on disk.
+/// Delegates to [`bsc_util::test_path_for`] (#4125). The pairing moved to the shared crate when the
+/// ALGORITHMS library needed the identical derivation — the same reason `folder_from_src` lives there:
+/// two libraries deriving the same thing from the same input must not drift apart.
 pub fn test_path_for(root: &Path, src: &str) -> Option<PathBuf> {
-    let (stem, _) = [".tsx", ".ts", ".jsx", ".js"].iter().find_map(|e| src.strip_suffix(*e).map(|s| (s, *e)))?;
-    for ext in [".test.tsx", ".test.ts"] {
-        let p = root.join(format!("{stem}{ext}"));
-        if p.is_file() {
-            return Some(p);
-        }
-    }
-    None
+    bsc_util::test_path_for(root, src)
 }
 
 /// The test file's display name: its FIRST top-level `describe("…")` title, else the file's basename.
-///
-/// The title is what a reader recognises ("analyzeGraphHealth (#2680, mirrors bsc ui doctor)"); the
-/// basename is the honest fallback for a file that opens straight into `it(…)`.
+/// Delegates to [`bsc_util::test_display_name`] (#4125).
 pub fn display_name(path: &Path, contents: &str) -> String {
-    if let Some(title) = first_describe_title(contents) {
-        return title;
-    }
-    path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
-}
-
-/// The string literal of the first `describe(` call — single, double, or backtick quoted.
-fn first_describe_title(src: &str) -> Option<String> {
-    let at = src.find("describe(")?;
-    let rest = &src[at + "describe(".len()..];
-    let mut chars = rest.char_indices().skip_while(|(_, c)| c.is_whitespace());
-    let (start, quote) = chars.next().filter(|(_, c)| matches!(c, '"' | '\'' | '`'))?;
-    let body = &rest[start + quote.len_utf8()..];
-    // A backslash escapes the next char, so an escaped quote does not close the literal.
-    let mut out = String::new();
-    let mut it = body.chars();
-    while let Some(c) = it.next() {
-        match c {
-            '\\' => {
-                if let Some(n) = it.next() {
-                    out.push(n);
-                }
-            }
-            c if c == quote => return Some(out),
-            c => out.push(c),
-        }
-    }
-    None
+    bsc_util::test_display_name(path, contents)
 }
 
 /// Harvest the colocated test for one record `src`, reading from `root`. `None` when there is no test.
