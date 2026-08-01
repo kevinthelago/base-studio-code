@@ -119,6 +119,11 @@ export function centerView(v: GraphView, cw: number, ch: number, wx: number, wy:
   return { scale: v.scale, tx: cw / 2 - wx * v.scale, ty: ch / 2 - wy * v.scale };
 }
 
+/** Set on the viewport for the duration of a pan (#4144). Its rule (graphCanvas.css) forces the grabbing
+ *  cursor across the whole subtree — a node's own `cursor: pointer` would otherwise win under the
+ *  pointer, since CSS `cursor` resolves per element rather than inheriting from the dragged ancestor. */
+export const PANNING_CLASS = "graph-panning";
+
 /** The `transform` a view renders as. Pure + exported so the imperative drag path and the React render
  *  path can never disagree on the string — they are the same function (#4140). */
 export function viewTransform(v: GraphView): string {
@@ -275,7 +280,13 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
     const v = viewRef.current;
     const start = { x: e.clientX, y: e.clientY, tx: v.tx, ty: v.ty };
     dragMoved.current = false;
-    if (vpRef.current) vpRef.current.style.cursor = "grabbing";
+    // #4144: the grabbing cursor has to cover the SUBTREE, not just the viewport. CSS `cursor` resolves
+    // per element — an ancestor cannot override it — so every `.ds-node` under the pointer kept
+    // resolving its own `cursor: pointer` and a drag across nodes read grabbing → pointer → grabbing.
+    // The class carries a `*` rule (graphCanvas.css) that wins for the duration of the pan.
+    // (Invisible before #4140: the per-mousemove re-render rewrote the style attribute and clobbered
+    // `grabbing` straight back to `grab`, so the drag cursor barely applied at all.)
+    if (vpRef.current) vpRef.current.classList.add(PANNING_CLASS);
     const mm = (ev: MouseEvent) => {
       const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
       if (Math.abs(dx) + Math.abs(dy) > 4) { dragMoved.current = true; userMoved.current = true; }
@@ -285,7 +296,7 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
       applyView(viewRef.current);
     };
     const mu = () => {
-      if (vpRef.current) vpRef.current.style.cursor = "grab";
+      if (vpRef.current) vpRef.current.classList.remove(PANNING_CLASS);
       window.removeEventListener("mousemove", mm);
       window.removeEventListener("mouseup", mu);
       // Commit the drag to React exactly once, so everything keyed on `view` (worldTransform, any
