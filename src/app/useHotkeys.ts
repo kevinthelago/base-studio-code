@@ -27,6 +27,34 @@ function screenForEvent(e: KeyboardEvent, bindings: Parameters<typeof matchesBin
   return null;
 }
 
+/** The next index after stepping `delta` from `from`, wrapping at both ends. Wrapping is what every
+ *  tabbed surface does; clamping would make "next" unreachable from the last page without reversing. */
+export function stepIndex(from: number, delta: number, length: number): number {
+  if (length <= 0) return -1;
+  return (((from + delta) % length) + length) % length;
+}
+
+/** Ctrl+← / Ctrl+→ → step the active Workspace's PAGES (#4167). Returns true when it handled the event.
+ *
+ *  Reads the `pageNav` the mounted `Screen` publishes (`shared/` cannot match a keybinding itself —
+ *  #1626/#1703 — so it hands over its tabs + selector and the shell does this half). No-ops when there
+ *  is no tabbed Workspace on screen, or when it holds fewer than two pages. */
+function stepPage(e: KeyboardEvent, bindings: Parameters<typeof matchesBinding>[1]): boolean {
+  const delta = matchesBinding(e, bindings, "page-next") ? 1
+    : matchesBinding(e, bindings, "page-prev") ? -1
+    : 0;
+  if (delta === 0) return false;
+  const nav = useAppStore.getState().pageNav;
+  if (!nav || nav.ids.length < 2) return false;
+  const from = nav.ids.indexOf(nav.active);
+  // An active id that is not in the visible set (mid-update, or a page just torn off) steps from the
+  // front rather than from -1, which would land on the LAST page for a "next".
+  const next = nav.ids[stepIndex(from < 0 ? 0 : from, delta, nav.ids.length)];
+  if (!next || next === nav.active) return false;
+  nav.select(next);
+  return true;
+}
+
 function keyToTermBytes(e: KeyboardEvent): string | null {
   const { key, ctrlKey, altKey, shiftKey } = e;
 
@@ -113,9 +141,16 @@ export function useHotkeys() {
     function onKeyDown(e: KeyboardEvent) {
       const t = e.target as HTMLElement;
       // Don't yank focus away while the user is typing in a field (matches the Console effect's guard).
+      // This is ALSO what keeps Ctrl+Arrow word-jump working in every embedded terminal: xterm focuses a
+      // `textarea.xterm-helper-textarea`, so the Planner's live session and the studio panes are exempt.
       if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) return;
-      const navTo = screenForEvent(e, useAppStore.getState().keybindings);
-      if (navTo) { e.preventDefault(); setWorkspace(navTo); }
+      const bindings = useAppStore.getState().keybindings;
+      const navTo = screenForEvent(e, bindings);
+      if (navTo) { e.preventDefault(); setWorkspace(navTo); return; }
+      // Ctrl+← / Ctrl+→ step the active Workspace's PAGES (#4167) — arrows, not digits, because the
+      // console selectors own every digit combination (Ctrl / Ctrl+Shift / Alt / Alt+Shift + a digit).
+      // `pageNav` is published by the mounted `Screen`; it is null on a Workspace with no page bar.
+      if (stepPage(e, bindings)) e.preventDefault();
     }
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);

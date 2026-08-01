@@ -16,9 +16,13 @@ export interface ScreenHotkey {
   label: string;
 }
 
-/** F2–F8 navigate the rail screens. The one definition both the handler and the reference derive from.
- *  (F1 → Console was removed with the console page's retirement, #2372/#2403.) */
+/** F1–F8 navigate the rail screens. The one definition both the handler and the reference derive from.
+ *  (F1 was Console until the console page's retirement, #2372/#2403; #4167 gave it to **Glance**, which
+ *  had no key at all even though it is where the app LANDS — `effectiveWorkspace` redirects
+ *  `console → glance` while the Console page is off, so you could key away from the default screen and
+ *  never key back.) */
 export const SCREEN_HOTKEYS: ScreenHotkey[] = [
+  { key: "F1", screen: "glance",     label: "Glance" },
   { key: "F2", screen: "projects",   label: "Planner" },
   { key: "F3", screen: "skills",     label: "Skills" },
   { key: "F4", screen: "automation", label: "Automations" },
@@ -61,7 +65,12 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       ...SCREEN_HOTKEYS.map((h): Shortcut => ({
         id: `screen-${h.screen}`, keys: [h.key], desc: `Go to ${h.label}`, scope: "Global",
       })),
-      { id: "tab-switch", keys: ["Ctrl", "1–9"], desc: "Switch to workspace tab by number", scope: "Global" },
+      // #4167 — the PAGE strip every Workspace shows (Screen + PageTabs). Deliberately arrows, not
+      // digits: the console selectors own the whole digit space across four leaders (Ctrl / Ctrl+Shift /
+      // Alt / Alt+Shift + a digit), so any digit family here would collide with one of them.
+      { id: "page-prev", keys: ["Ctrl", "←"], desc: "Previous page in this workspace", scope: "Global" },
+      { id: "page-next", keys: ["Ctrl", "→"], desc: "Next page in this workspace", scope: "Global" },
+      { id: "tab-switch", keys: ["Ctrl", "1–9"], desc: "Switch to console tab by number", scope: "Console" },
     ],
   },
   {

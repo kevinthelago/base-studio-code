@@ -18,7 +18,7 @@ Rail ──switches──▶ Workspace ──is a──▶ Screen ──shows on
 | L0 | **Rail** | The left-nav switcher. | `app/chrome/Rail.tsx` |
 | L1 | **Workspace** | A top-level rail destination (Console, Projects, Skills, GitHub, MCP, Automations, Permissions, Settings). The thing the Rail switches between. Components: `ConsoleWorkspace`, `SkillsWorkspace`, … | `app/registry.ts` (`Workspace` type, `WORKSPACES`) + each feature barrel |
 | L2a | **Screen** | The shared **root tabbed shell** a Workspace renders through: a `PageTabs` strip over one active `Page` body, in the `.screen / .screen-page / .screen-body` layout. Controlled — the Workspace owns the page-tab state via `usePageTabs`. | `shared/ui/layouts/Screen.tsx` |
-| L2b | **PageTabs** | The page-tab strip inside a Screen (select / reorder / tear-off). The model is `usePageTabs`; the rendering primitive is the generic `TabBar`. | `shared/hooks/usePageTabs.ts` + `shared/ui/layouts/TabBar.tsx` |
+| L2b | **PageTabs** | The page-tab strip inside a Screen (select / reorder / tear-off). The model is `usePageTabs`; the rendering primitive is the generic `TabBar`. Keyboard: **Ctrl+← / Ctrl+→** step pages (#4167) — `Screen` publishes `pageNav` to the store and `useHotkeys` matches the chord, because `shared/` may not import a feature's value symbols (#1626/#1703). | `shared/hooks/usePageTabs.ts` + `shared/ui/layouts/TabBar.tsx` |
 | L3 | **Page** | One tab's swappable body (e.g. Skills → Library / Lessons / Runs; Settings → General / Security / …). A torn-off Page renders alone via the `pageOverride` prop (no `PageTabs` strip). Components: `GeneralPage`, `SecurityPage`, … | inside each Workspace |
 
 ## Console's nested vocabulary (unchanged)
