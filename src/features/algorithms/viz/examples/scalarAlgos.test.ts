@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { TracedScalar } from "../../lib/tracer";
 import type { ScalarFrame } from "../../lib/trace";
-import { fibonacci, SCALAR_PROGRAMS, parseScalarInput, scalarToText } from "./scalarAlgos";
+import { fibonacci, SCALAR_PROGRAMS, parseScalarInput, parseScalarSeed, scalarToText, scalarSeedToText } from "./scalarAlgos";
 import { programVizForImpl } from "./registry";
 
 /** Run fibonacci for `n` and return its recorded trace. */
@@ -120,5 +120,25 @@ describe("the seeded fibonacci impls now resolve a visualization (#3220)", () =>
     const viz = programVizForImpl({ id: "fibonacci.rs" })!;
     const factory = await viz.input.make(viz.input.parse("12"));
     expect(last([...factory()] as ScalarFrame[]).values.fib).toBe(144);
+  });
+
+  // #4162 — the GENERIC seam a STORED scalar program uses. `scalarToText`/`parseScalarInput` render and
+  // read `n` alone, which is right for the in-app fibonacci and silently wrong for any other seed.
+  it("round-trips an ARBITRARY named-variable seed, which the single-n seam cannot", () => {
+    const seed = { start: 3, limit: 9, at: "a" };
+    expect(scalarSeedToText(seed)).toBe("start=3, limit=9, at=a");
+    expect(parseScalarSeed(scalarSeedToText(seed))).toEqual(seed);
+
+    // The bug it exists to avoid: the in-app seam renders this seed as EMPTY and reads it back as `n`.
+    expect(scalarToText(seed)).toBe("");
+
+    // fibonacci's own seed still round-trips, so a stored fibonacci behaves like the in-app one.
+    expect(parseScalarSeed(scalarSeedToText({ n: 10 }))).toEqual({ n: 10 });
+    // An empty seed is valid — an algorithm may set every variable it uses.
+    expect(parseScalarSeed("  ")).toEqual({});
+    // Non-numeric values stay strings; a malformed pair is a stated error, not a dropped variable.
+    expect(parseScalarSeed("at=n3")).toEqual({ at: "n3" });
+    expect(() => parseScalarSeed("n")).toThrow(/name=value/);
+    expect(() => parseScalarSeed("=10")).toThrow(/no variable name/);
   });
 });

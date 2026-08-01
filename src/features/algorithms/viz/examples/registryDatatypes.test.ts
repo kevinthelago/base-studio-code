@@ -10,7 +10,7 @@
 // draws it and an input seam that round-trips. A future datatype (linked-list, table — content-gated on
 // #2760) joins the DATATYPES table below and inherits the same guarantees.
 import { describe, it, expect } from "vitest";
-import { programVizForImpl } from "./registry";
+import { programVizForImpl, resolveVizExample } from "./registry";
 import { STACK_PROGRAMS } from "./stackAlgos";
 import { TREE_PROGRAMS } from "./treeAlgos";
 import { GRAPH_PROGRAMS } from "./graphAlgos";
@@ -63,5 +63,41 @@ describe("datatype axis reachability (#3220)", () => {
     expect(programVizForImpl({ id: "bst-inorder.ts" })).toBeDefined();
     expect(programVizForImpl({ id: "BST_INORDER" })).toBeDefined();
     expect(programVizForImpl({ id: "balanced-parens.rs" })).toBeDefined();
+  });
+
+  // #4162 — the SAME reachability question, one layer down: a STORED `vizCode` naming one of these
+  // datatypes used to throw at compile, so `tree`/`stack`/`scalar` were reachable only from an in-app
+  // module. Everything below runs the stored path end to end (compile → sandbox run → renderer pick).
+  const STORED = [
+    {
+      datatype: "tree",
+      renderer: "tree",
+      code: `({ datatype: "tree", input: [50, 30], seed: (v) => [{ id: "n0", value: v[0] }], run(t, v) { t.insert("n1", v[1], "n0"); t.compare("n0", "n1"); } })`,
+    },
+    {
+      datatype: "stack",
+      renderer: "stack",
+      code: `({ datatype: "stack", input: "([])", run(s, text) { for (const ch of text) { if (ch === "(" || ch === "[") s.push(ch); else s.pop(); } } })`,
+    },
+    {
+      datatype: "scalar",
+      renderer: "scalar",
+      code: `({ datatype: "scalar", input: { n: 5 }, run(s) { s.set("a", 0); s.add("a", Number(s.get("n"))); } })`,
+    },
+  ] as const;
+
+  it.each(STORED)("a STORED $datatype program resolves and carries the $renderer renderer (#4162)", async ({ renderer, code }) => {
+    const ex = await resolveVizExample(code);
+    expect(ex, renderer).toBeDefined();
+    expect(Object.keys(ex!.renderers), renderer).toContain(renderer);
+    expect([...ex!.factory()].length, renderer).toBeGreaterThan(1);
+    // The code column pairs with the animation — a stored program's source is real provenance.
+    expect(ex!.source, renderer).toBe(code);
+  });
+
+  it.each(STORED)("a STORED $datatype program's input seam round-trips", async ({ renderer, code }) => {
+    const ex = await resolveVizExample(code);
+    const rerun = await ex!.input.make(ex!.input.parse(ex!.input.default));
+    expect([...rerun()], renderer).toEqual([...ex!.factory()]);
   });
 });

@@ -6,15 +6,34 @@
 // CONTRACT — `vizCode` is a JS expression that evaluates to a self-describing descriptor:
 //
 //   ({
-//     datatype: "array",         // "array" | "matrix" | "graph" | "scene" — picks the runner + renderer(s) + input seam
-//     input: [5, 2, 9, 1, 6],    // the DEFAULT input (number[] | number[][] | GraphInput; a scene seeds on a GraphInput)
+//     datatype: "array",         // the structure — picks the runner + renderer(s) + input seam
+//     input: [5, 2, 9, 1, 6],    // the DEFAULT input, shaped per datatype (see below)
 //     run(a) { … },              // the real algorithm, written against the Traced<Structure> API
 //   })
+//
+// DATATYPES — one per shipped renderer, each with its own input shape:
+//
+//   array   number[]                        run(array)
+//   matrix  number[][]                      run(matrix)
+//   graph   { nodes, edges }                run(graph)
+//   tree    number[] (the values)           run(tree, values)   + optional seed(values) => TreeNode[]
+//   stack   string (the expression)         run(stack, input)   + optional mode: "stack" | "queue"
+//   scalar  { name: number|string }         run(scalar)
+//   scene   { nodes, edges } (seed graph)   run(scene, input)
 //
 // A `"scene"` (#3275) is the MULTI-STRUCTURE case: its `run(scene, input)` drives a `TracedScene`
 // (`scene.graph("g", …)` / `scene.array("dist", …)` / …), and it renders as synchronized panels — the
 // persisted-data twin of the in-app scene programs (`scenes.ts`). It seeds on a GraphInput (like the graph
 // datatype) and every structure renderer is registered so any panel it declares resolves.
+//
+// `tree`, `stack` and `scalar` (#4162) close the gap where three of the six shipped renderers were
+// reachable ONLY from an in-app program: `TracedTree`/`TracedStack`/`TracedScalar` and their views all
+// ship, `treeAlgos.ts`/`stackAlgos.ts`/`scalarAlgos.ts` drive them, but a STORED program naming one threw
+// at compile — so bst-insert, bst-inorder, balanced-parens and postfix-eval could not be authored as data
+// at all. Their descriptors carry the two extra fields the in-app `TreeProgram`/`StackProgram` interfaces
+// already prove are load-bearing: a tree's `seed` (build-from-empty vs walk-a-finished-tree — without it,
+// an in-order traversal replays the whole build as part of the walk) and a stack's `mode` (LIFO vs FIFO).
+// Both are OPTIONAL, so the simple case stays a three-field descriptor.
 //
 // It is self-contained (carries its own default input so the preview + "your input" field work) and does
 // NOT depend on `kind` — the descriptor names its own datatype, so nothing is inferred or guessed.
@@ -31,27 +50,57 @@ import {
   runAlgorithm,
   runMatrixAlgorithm,
   runGraphAlgorithm,
+  runTreeAlgorithm,
+  runStackAlgorithm,
+  runScalarAlgorithm,
   runScene,
   withSourceLoc,
   type GraphInput,
+  type StackMode,
   type TracedArray,
   type TracedMatrix,
   type TracedGraph,
+  type TracedTree,
+  type TracedStack,
+  type TracedScalar,
   type TracedScene,
+  type TreeNode,
 } from "../../lib/tracer";
 import type { Frame } from "../../lib/trace";
 import { instrumentVizCode, LOC_HOOK } from "./vizInstrument";
 
-/** The structure a stored trace-program drives — selects the runner, renderer(s), and input seam. `scene`
- *  is the multi-structure case (`run(scene, input)` over a TracedScene → synchronized panels). */
-export type VizDatatype = "array" | "matrix" | "graph" | "scene";
+/** The structure a stored trace-program drives — selects the runner, renderer(s), and input seam. One per
+ *  shipped renderer (#4162): `scene` is the multi-structure case (`run(scene, input)` over a TracedScene →
+ *  synchronized panels); the rest each drive their single `Traced<Structure>`. */
+export type VizDatatype = "array" | "matrix" | "graph" | "tree" | "stack" | "scalar" | "scene";
+
+/** Every datatype, as data — the single list `compileVizProgram`'s validation, the error message, and the
+ *  tests all read, so adding a datatype cannot leave one of them behind. */
+export const VIZ_DATATYPES: readonly VizDatatype[] = [
+  "array",
+  "matrix",
+  "graph",
+  "tree",
+  "stack",
+  "scalar",
+  "scene",
+] as const;
+
+/** A stored program's default input, per datatype — see the DATATYPES table at the top of this file. */
+export type VizInput = number[] | number[][] | GraphInput | string | Record<string, number | string>;
 
 /** A compiled, validated stored trace-program. `run` is typed per {@link datatype} by the caller (a
  *  `(structure) => void` over the matching Traced class, or a scene's `(scene, input) => void`); `input`
  *  is the datatype's default. */
 export interface VizProgramDescriptor {
   datatype: VizDatatype;
-  input: number[] | number[][] | GraphInput;
+  input: VizInput;
+  /** `tree` only — the nodes the tree holds BEFORE `run` (`seed(values)`). Omitted ⇒ the tree starts empty
+   *  and `run` builds it. This is what separates bst-insert (builds) from bst-inorder (walks a finished
+   *  tree); without it the traversal's trace would replay the whole build first. */
+  seed?: (values: number[]) => TreeNode[];
+  /** `stack` only — LIFO (default) or FIFO. */
+  mode?: StackMode;
   /** The exact source the program's frame {@link Frame.loc} ranges index into (#3250) — the TRIMMED
    *  `vizCode`, i.e. what was parsed and instrumented. Carried on the descriptor (rather than recomputed
    *  by the caller) so the code column always renders the string the offsets were measured against. */
@@ -77,6 +126,35 @@ function isGraphInput(v: unknown): v is GraphInput {
   if (typeof v !== "object" || v === null) return false;
   const g = v as Record<string, unknown>;
   return Array.isArray(g.nodes) && Array.isArray(g.edges);
+}
+
+/** True when `v` is a named-variable seed (the scalar-datatype input) — a plain object of numbers/strings.
+ *  An EMPTY object is valid: an algorithm may set every variable it uses (`{}` is the "no parameters" seed). */
+function isScalarSeed(v: unknown): v is Record<string, number | string> {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  return Object.values(v as Record<string, unknown>).every(
+    (x) => (typeof x === "number" && Number.isFinite(x)) || typeof x === "string",
+  );
+}
+
+/** Does `input` match `datatype`'s declared shape? The gate that keeps a mismatched program from rendering
+ *  an empty pane instead of failing. `tree` seeds on the VALUES (a `number[]`, like `array`) — the datatype
+ *  names itself, so two structures sharing an input shape is not an ambiguity to resolve. */
+function inputMatches(datatype: VizDatatype, input: unknown): boolean {
+  switch (datatype) {
+    case "array":
+    case "tree":
+      return isNumberArray(input);
+    case "matrix":
+      return isNumberGrid(input);
+    case "graph":
+    case "scene": // a scene seeds on a graph
+      return isGraphInput(input);
+    case "stack":
+      return typeof input === "string";
+    case "scalar":
+      return isScalarSeed(input);
+  }
 }
 
 /**
@@ -119,27 +197,36 @@ export function compileVizProgram(code: string): VizProgramDescriptor {
   }
   const d = raw as Record<string, unknown>;
 
-  const datatype = d.datatype;
-  if (datatype !== "array" && datatype !== "matrix" && datatype !== "graph" && datatype !== "scene") {
-    throw new Error(`vizCode.datatype must be "array" | "matrix" | "graph" | "scene" (got ${JSON.stringify(datatype)})`);
+  const datatype = d.datatype as VizDatatype;
+  if (!VIZ_DATATYPES.includes(datatype)) {
+    throw new Error(
+      `vizCode.datatype must be ${VIZ_DATATYPES.map((t) => `"${t}"`).join(" | ")} (got ${JSON.stringify(d.datatype)})`,
+    );
   }
   if (typeof d.run !== "function") {
     throw new Error("vizCode.run must be a function over the Traced structure");
   }
 
   const input = d.input;
-  const ok =
-    (datatype === "array" && isNumberArray(input)) ||
-    (datatype === "matrix" && isNumberGrid(input)) ||
-    ((datatype === "graph" || datatype === "scene") && isGraphInput(input)); // a scene seeds on a graph
-  if (!ok) {
+  if (!inputMatches(datatype, input)) {
     throw new Error(`vizCode.input does not match datatype "${datatype}" (expected ${INPUT_SHAPE[datatype]})`);
+  }
+  // The two OPTIONAL per-datatype fields. A wrong TYPE is rejected rather than ignored: a `seed` that is
+  // not a function, or a `mode` outside the two the tracer knows, is a program that does not do what its
+  // author wrote — and silently dropping it would animate the wrong thing with no complaint.
+  if (d.seed !== undefined && typeof d.seed !== "function") {
+    throw new Error('vizCode.seed must be a function (values) => TreeNode[] — the tree\'s starting nodes');
+  }
+  if (d.mode !== undefined && d.mode !== "stack" && d.mode !== "queue") {
+    throw new Error(`vizCode.mode must be "stack" | "queue" (got ${JSON.stringify(d.mode)})`);
   }
 
   return {
     datatype,
-    input: input as VizProgramDescriptor["input"],
+    input: input as VizInput,
     run: d.run as VizProgramDescriptor["run"],
+    seed: d.seed as VizProgramDescriptor["seed"],
+    mode: d.mode as StackMode | undefined,
     source: trimmed,
   };
 }
@@ -149,6 +236,9 @@ const INPUT_SHAPE: Record<VizDatatype, string> = {
   array: "a number[]",
   matrix: "a number[][]",
   graph: "a { nodes, edges } object",
+  tree: "a number[] (the values, in insertion order)",
+  stack: "a string (the expression to trace)",
+  scalar: "a { name: number | string } object (the initial variables)",
   scene: "a { nodes, edges } object (the scene's seed graph)",
 };
 
@@ -157,7 +247,7 @@ const INPUT_SHAPE: Record<VizDatatype, string> = {
  *  the Web Worker (#3233) posts them straight back to the main thread for replay. */
 export interface VizRun {
   datatype: VizDatatype;
-  input: number[] | number[][] | GraphInput;
+  input: VizInput;
   frames: Frame[];
   /** The trace-program source each frame's `loc` indexes into (#3250) — the trimmed `vizCode`. Travels
    *  back from the Worker alongside the frames so the code column and the highlights are always the same
@@ -179,13 +269,43 @@ export interface VizRun {
 export function runVizProgram(code: string, inputOverride?: unknown): VizRun {
   const d = compileVizProgram(code);
   const input = (inputOverride ?? d.input) as VizRun["input"];
-  const frames =
-    d.datatype === "array"
-      ? [...runAlgorithm(d.run as (a: TracedArray) => void, input as number[])()]
-      : d.datatype === "matrix"
-        ? [...runMatrixAlgorithm(d.run as (m: TracedMatrix) => void, input as number[][])()]
-        : d.datatype === "graph"
-          ? [...runGraphAlgorithm(d.run as (g: TracedGraph) => void, input as GraphInput)()]
-          : [...runScene(d.run as (scene: TracedScene, input: GraphInput) => void, input as GraphInput)()];
-  return { datatype: d.datatype, input, frames, source: d.source };
+  // A caller-supplied override skipped `compileVizProgram`'s shape check, so it is validated here — the
+  // "your input" seam parses text and could hand back a shape the descriptor's runner cannot accept.
+  if (!inputMatches(d.datatype, input)) {
+    throw new Error(`input does not match datatype "${d.datatype}" (expected ${INPUT_SHAPE[d.datatype]})`);
+  }
+  return { datatype: d.datatype, input, frames: [...framesFor(d, input)], source: d.source };
+}
+
+/** Run a compiled descriptor against its datatype's tracer. Split out of {@link runVizProgram} so the
+ *  dispatch is one exhaustive `switch` (a new datatype fails to compile until it is handled) rather than a
+ *  ternary chain whose final `else` silently absorbs anything unmatched. */
+function framesFor(d: VizProgramDescriptor, input: VizRun["input"]): Generator<Frame> {
+  switch (d.datatype) {
+    case "array":
+      return runAlgorithm(d.run as (a: TracedArray) => void, input as number[])();
+    case "matrix":
+      return runMatrixAlgorithm(d.run as (m: TracedMatrix) => void, input as number[][])();
+    case "graph":
+      return runGraphAlgorithm(d.run as (g: TracedGraph) => void, input as GraphInput)();
+    case "tree": {
+      // `run` takes the VALUES alongside the tree (matching the in-app `TreeProgram`): a build walks them,
+      // and a traversal of a seeded tree simply ignores them.
+      const values = input as number[];
+      const run = d.run as unknown as (t: TracedTree, values: number[]) => void;
+      return runTreeAlgorithm((t) => run(t, values), d.seed?.(values) ?? [])();
+    }
+    case "stack": {
+      const text = input as string;
+      const run = d.run as unknown as (s: TracedStack, input: string) => void;
+      return runStackAlgorithm((s) => run(s, text), d.mode ?? "stack")();
+    }
+    case "scalar":
+      return runScalarAlgorithm(
+        d.run as (s: TracedScalar) => void,
+        input as Record<string, number | string>,
+      )();
+    case "scene":
+      return runScene(d.run as (scene: TracedScene, input: GraphInput) => void, input as GraphInput)();
+  }
 }
