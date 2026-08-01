@@ -197,7 +197,15 @@ pub fn capture(app: &tauri::AppHandle, id: &str, req: &ShotRequest) -> Result<Sh
         std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
     std::fs::write(&out, &bytes).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
-    Ok(ShotResult { path: out.to_string_lossy().into_owned(), w, h })
+    // Report the dir THIS process resolved (#4163). The caller resolved `out` in its own env; when a
+    // capture then cannot be read back, the two dirs side by side name the divergence directly instead
+    // of leaving a bare `os error 2` to be guessed at.
+    Ok(ShotResult {
+        path: out.to_string_lossy().into_owned(),
+        w,
+        h,
+        shots_dir: Some(shots.to_string_lossy().into_owned()),
+    })
 }
 
 /// Snapshot the main window's webview as PNG bytes.
