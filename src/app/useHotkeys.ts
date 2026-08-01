@@ -15,6 +15,7 @@ import {
   type RebindableId,
 } from "@/features/settings";
 import { VIEW_ORDER } from "@/app/console/panes/viewDefs";
+import { getPageNav } from "@/shared/ui/layouts/pageNav";
 import type { Workspace } from "@/app/chrome/Rail";
 
 /** If `e` matches a screen-navigation F-key (per the active bindings), return the target workspace, else
@@ -36,15 +37,17 @@ export function stepIndex(from: number, delta: number, length: number): number {
 
 /** Ctrl+← / Ctrl+→ → step the active Workspace's PAGES (#4167). Returns true when it handled the event.
  *
- *  Reads the `pageNav` the mounted `Screen` publishes (`shared/` cannot match a keybinding itself —
- *  #1626/#1703 — so it hands over its tabs + selector and the shell does this half). No-ops when there
- *  is no tabbed Workspace on screen, or when it holds fewer than two pages. */
+ *  Reads the page model the mounted `Screen` publishes (`shared/` cannot match a keybinding itself —
+ *  #1626/#1703 — so it hands over its tabs + selector and the shell does this half). It is a module ref,
+ *  not store state (#4170): read at keydown time, it needs no reactivity, and routing it through the
+ *  store made an unstable `select` identity into an infinite render loop. No-ops when there is no tabbed
+ *  Workspace on screen, or when it holds fewer than two pages. */
 function stepPage(e: KeyboardEvent, bindings: Parameters<typeof matchesBinding>[1]): boolean {
   const delta = matchesBinding(e, bindings, "page-next") ? 1
     : matchesBinding(e, bindings, "page-prev") ? -1
     : 0;
   if (delta === 0) return false;
-  const nav = useAppStore.getState().pageNav;
+  const nav = getPageNav();
   if (!nav || nav.ids.length < 2) return false;
   const from = nav.ids.indexOf(nav.active);
   // An active id that is not in the visible set (mid-update, or a page just torn off) steps from the

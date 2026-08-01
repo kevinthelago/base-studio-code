@@ -276,6 +276,19 @@ const GUIDANCE: Record<string, Guidance> = {
     whenUse: ["A short static error string on a danger wash.", "A field- or section-level failure note."],
     whenNot: ["A dismissible page notice — use Banner.", "A blocking error — use Dialog."],
   },
+  PageBoundary: {
+    tags: ["feedback", "resilience"],
+    composes: ["Box", "Stack", "Text", "Button"], // the fallback is built from kit primitives
+    whenUse: [
+      "Around a PAGE composition's body, so a throwing child is contained to that page instead of blanking its host.",
+      "Anywhere a subtree's failure must not take the surrounding navigation down with it.",
+    ],
+    whenNot: [
+      "As a general try/catch — it only catches errors thrown during a child's RENDER, not in async callbacks.",
+      "Around a whole app — an app-level crash screen is a different job, and a page boundary would hide which page failed.",
+      "To show an expected empty or error RESULT — use EmptyState / InlineError / Banner; a boundary is for unexpected throws.",
+    ],
+  },
   Skeleton: {
     tags: ["feedback", "loading"], composes: ["Box"], // a Box with the shimmer atom (Skeleton.tsx)
     whenUse: ["A shape-matched loading placeholder while content loads.", "The loading state a content component renders for itself (#2302)."],
