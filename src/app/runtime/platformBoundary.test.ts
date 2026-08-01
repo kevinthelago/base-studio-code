@@ -76,7 +76,6 @@ describe("the platform-kernel boundary (#3858)", () => {
   });
 
   it("EVERY packaged record's first-party imports resolve", () => {
-    const srcPaths = new Set(RECORDS.map((r) => r.src).filter(Boolean) as string[]);
     const ids = new Set(RECORDS.map((r) => r.id));
     const provides = new Set(RECORDS.map((r) => r.provides?.trim()).filter(Boolean) as string[]);
     const unresolved: string[] = [];
@@ -84,13 +83,16 @@ describe("the platform-kernel boundary (#3858)", () => {
     for (const r of RECORDS) {
       for (const spec of importsOf(r.srcText ?? "")) {
         if (!spec.startsWith("@/")) continue; // bare npm specifiers are the import-map's concern
-        // The four ways a first-party specifier resolves at runtime, mirroring the loader:
+        // The THREE ways a first-party specifier resolves at runtime — exactly what `routeImport` +
+        // `makeRequire` do, and nothing more. There used to be a fourth: a record whose `src` matched the
+        // specifier's path counted as resolved. The LOADER HAS NO SUCH RULE — `src` is provenance
+        // metadata, not a resolution route — so the guard was passing specifiers that throw by name at
+        // runtime. #4185's real-Chromium harness caught four of them in Glance (GraphCanvas, TabBar,
+        // IconButton, previewReview) that this file had waved through, and #4188 removed the rule.
         if (isAppModule(spec)) continue;                                   // a registered platform module
         if (provides.has(spec)) continue;                                  // a graph component that PROVIDES it
         const id = spec.startsWith("@/components/") ? spec.slice("@/components/".length) : null;
         if (id && ids.has(id)) continue;                                   // a sibling BY ID
-        const base = spec.replace(/^@\//, "src/");
-        if ([".tsx", ".ts"].some((e) => srcPaths.has(base + e))) continue;  // a sibling by SRC PATH
         unresolved.push(`${r.id} → ${spec}`);
       }
     }

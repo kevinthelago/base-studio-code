@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <title>graph-page load harness (#4188)</title>
+  </head>
+  <body>
+    <!-- Nothing mounts: this proves every page record LOADS (compile → eval → component export) against the
+         real registry. Rendering needs the Tauri store, which a browser harness has not got — that half is
+         the live-verify step on a dev instance. -->
+    <div id="root"></div>
+    <script type="module" src="./graphPagesHarness.ts"></script>
+  </body>
+</html>
