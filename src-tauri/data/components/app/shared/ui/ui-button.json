@@ -3,7 +3,6 @@
   "name": "Button",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/controls",
   "provides": "@/shared/ui/controls/Button",
   "srcText": "// Button, AS GRAPH SOURCE (#3678, epic #3604) — a pure shared/ui control authored as DATA. Its\n// `provides: \"@/shared/ui/controls/Button\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\nimport type { ButtonHTMLAttributes } from \"react\";\r\n\r\nexport interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {\r\n  /** Background style — the `.btn` family. `default` = the quiet bg-elev secondary · `primary` =\r\n   *  the accent call-to-action · `ghost` = transparent. A DATA-DEFINED variant (#2569, authored via\r\n   *  `bsc ui component btn define-variant`) is any other lowercase string: it rides the same\r\n   *  class-name path (`.btn.<variant>`) that `applyVariantsToRoot`'s compiled CSS targets. */\r\n  variant?: \"default\" | \"primary\" | \"ghost\" | (string & {});\r\n  /** Danger color modifier (composes with `default`/`ghost`). */\r\n  danger?: boolean;\r\n  /** Hit size: `md` = 28px (default) · `sm` = 24px. */\r\n  size?: \"md\" | \"sm\";\r\n}\r\n\r\n/**\r\n * The shared button primitive (#1889) — a thin wrapper over the `.btn` class system in\r\n * `tokens.css`, so it rides the exact styles the app already ships (no visual divergence) and\r\n * stays the one place button look is defined. Reach for this instead of a hand-rolled\r\n * `<button style={{…}}>` or a CSSProperties helper. For icon-only buttons use `IconButton`; for the\r\n * back-chevron use `BackButton`. All native `<button>` attributes (onClick, disabled, title, type,\r\n * style for one-off positional tweaks, …) pass through.\r\n */\r\nexport function Button({\r\n  variant = \"default\", danger, size = \"md\", className, type = \"button\", ...rest\r\n}: ButtonProps) {\r\n  const cls = [\"btn\", variant !== \"default\" && variant, danger && \"danger\", size === \"sm\" && \"sm\", className]\r\n    .filter(Boolean)\r\n    .join(\" \");\r\n  return <button type={type} className={cls} {...rest} />;\r\n}\r\n",
   "composes": [],
@@ -27,5 +26,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/controls"
 }

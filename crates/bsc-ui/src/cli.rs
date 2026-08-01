@@ -397,7 +397,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
-        Some(v) if bsc_component::cli::command_docs().iter().any(|c| c.name == v) => {
+        // `regroup` is the DEPRECATED alias of `refolder` (#4107 slice B). It is deliberately absent
+        // from `command_docs()` — help must advertise one name — so it is matched here explicitly;
+        // otherwise this gate rejects it before the component dispatcher ever sees it.
+        Some(v) if v == "regroup" || bsc_component::cli::command_docs().iter().any(|c| c.name == v) => {
             bsc_component::cli::run(args, prog)
         }
         Some(other) => Err(bsc_cli_util::unknown_command(prog, TAGLINE, &merged, other)),
@@ -687,9 +690,9 @@ fn cmd_env(args: &[String]) -> Result<(), String> {
 
 /// One harvested candidate as the store's component-record shape (plus the harvest-only verdict
 /// fields), so a curator can pipe it straight into `bsc ui set` after review. Seeds `group` as the
-/// component's FOLDER PATH derived from `src` (#3579, [`bsc_component::group_from_src`]) so a fresh
+/// component's FOLDER PATH derived from `src` (#3579, [`bsc_component::folder_from_src`]) so a fresh
 /// harvest organizes like the project's folders; omitted (not `null`) when `src` yields no folder, per
-/// the "absent ⇒ ungrouped" record convention.
+/// the "absent ⇒ unfoldered" record convention.
 fn harvest_json(c: &crate::harvest::Candidate) -> serde_json::Value {
     let mut v = serde_json::json!({
         "id": c.id,
@@ -705,8 +708,8 @@ fn harvest_json(c: &crate::harvest::Candidate) -> serde_json::Value {
         "score": c.classification.score,
         "reasons": c.classification.reasons,
     });
-    if let Some(group) = bsc_component::group_from_src(&c.src) {
-        v["group"] = serde_json::Value::String(group);
+    if let Some(folder) = bsc_component::folder_from_src(&c.src) {
+        v["folder"] = serde_json::Value::String(folder);
     }
     v
 }
@@ -2893,10 +2896,10 @@ mod tests {
             classification: crate::harvest::Classification::default(),
         };
         let with_folder = harvest_json(&mk("src/shared/ui/controls/Button.tsx"));
-        assert_eq!(with_folder["group"], "shared/ui/controls", "group seeded as the folder path");
+        assert_eq!(with_folder["folder"], "shared/ui/controls", "seeded as the folder path");
         // No folder ⇒ the key is OMITTED (not `null`), matching the absent-⇒-ungrouped record convention.
         let no_folder = harvest_json(&mk("Button.tsx"));
-        assert!(no_folder.get("group").is_none(), "a folderless src emits no `group` key at all");
+        assert!(no_folder.get("folder").is_none(), "a folderless src emits no `folder` key at all");
     }
 
     #[test]

@@ -3,7 +3,6 @@
   "name": "DataTableRow",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/data",
   "provides": "@/shared/ui/data/DataTableRow",
   "srcText": "// DataTableRow, AS GRAPH SOURCE (#3670, epic #3604) — a pure leaf shared/ui primitive authored as DATA. Its\n// `provides: \"@/shared/ui/data/DataTableRow\"` makes the runtime loader vendor THIS source wherever a graph component imports\n// that specifier (registered code is the fallback). Transcribed verbatim; deps stay registered code.\nimport type { ReactNode } from \"react\";\r\n\r\nexport interface DataTableHeaderProps {\r\n  /** grid-template-columns — pass the SAME value as the rows so labels align over their columns. */\r\n  template: string;\r\n  /** The column-label cells. */\r\n  children: ReactNode;\r\n  className?: string;\r\n}\r\n\r\n/** DataTableHeader — the sticky column header for a <DataTableRow> table. */\r\nexport function DataTableHeader({ template, children, className }: DataTableHeaderProps) {\r\n  return (\r\n    <div className={\"dt-header\" + (className ? ` ${className}` : \"\")} style={{ gridTemplateColumns: template }}>\r\n      {children}\r\n    </div>\r\n  );\r\n}\r\n\r\nexport interface DataTableRowProps {\r\n  /** grid-template-columns — shared with the <DataTableHeader> so cells align under their labels. */\r\n  template: string;\r\n  /** The cell content, one node per column. */\r\n  children: ReactNode;\r\n  /** Row index — when provided, odd rows get a zebra-stripe background. */\r\n  index?: number;\r\n  selected?: boolean;\r\n  off?: boolean;\r\n  onClick?: () => void;\r\n  /** Fixed row height in px (default 37 via CSS). */\r\n  height?: number;\r\n  className?: string;\r\n  /** Extra attributes spread onto the row element — e.g. `{ \"data-skill-id\": id }` for targeting. */\r\n  attrs?: Record<string, string | number>;\r\n}\r\n\r\n/** DataTableRow — one columnar row of a data table: the columnar archetype of the row vocabulary\r\n *  (#1865; sibling: CardListRow). A shared `template` with the <DataTableHeader> aligns the columns;\r\n *  the row supplies zebra striping + hover + selection chrome. Cell content is the caller's, so any\r\n *  table (skills library, agent assignments, …) composes ONE row primitive rather than a bespoke one. */\r\nexport function DataTableRow({ template, children, index, selected, off, onClick, height, className, attrs }: DataTableRowProps) {\r\n  return (\r\n    <div\r\n      className={\r\n        \"dt-row\" +\r\n        (selected ? \" selected\" : \"\") +\r\n        (off ? \" off\" : \"\") +\r\n        (index != null && index % 2 ? \" odd\" : \"\") +\r\n        (className ? ` ${className}` : \"\")\r\n      }\r\n      style={{ gridTemplateColumns: template, ...(height != null ? { height: `${height}px` } : {}) }}\r\n      onClick={onClick}\r\n      {...attrs}\r\n    >\r\n      {children}\r\n    </div>\r\n  );\r\n}\r\n",
   "composes": [],
@@ -63,5 +62,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/data"
 }

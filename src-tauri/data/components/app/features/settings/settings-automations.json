@@ -3,12 +3,12 @@
   "name": "SettingsAutomationsPage",
   "kitId": "base-studio-code",
   "role": "composite",
-  "group": "features/settings",
   "srcText": "// Settings → Automations section, AS GRAPH SOURCE (#3658, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the setting cards + page helpers via the settings graph-\n// platform, and the sibling section pages as @/components/* graph records). Behaviour runs here.\nimport { useAppStore } from \"@/store\";\r\nimport { Card } from \"@/shared/ui/data/Card\";\r\nimport { Button } from \"@/shared/ui/controls/Button\";\r\nimport { Box } from \"@/shared/ui/layout/Box\";\r\nimport { SettingsPageHeader } from \"@/features/settings/pages/SettingsPageHeader\";\r\n\r\nconst prose: React.CSSProperties = { fontFamily: \"var(--sans)\", fontSize: 12, lineHeight: 1.6, color: \"var(--fg-muted)\" };\r\n\r\nexport function AutomationsPage() {\r\n  const setWorkspace = useAppStore((s) => s.setWorkspace);\r\n  return (\r\n    <Box style={{ maxWidth: 820 }}>\r\n      <SettingsPageHeader\r\n        title=\"Automations\"\r\n        description=\"How scheduled automations run against your console sessions.\"\r\n        descMb={22}\r\n      />\r\n\r\n      <Card title=\"Automations\">\r\n        <Box style={prose}>\r\n          <p style={{ margin: \"0 0 10px 0\" }}>\r\n            An <strong>automation</strong> is a cron-triggered rule that dispatches a command into a\r\n            specified console pane. An always-on background scheduler fires armed automations at their\r\n            next run time and records each run.\r\n          </p>\r\n          <p style={{ margin: \"0 0 14px 0\" }}>\r\n            Create schedules, arm or disarm them, choose the target pane and action, and review run\r\n            history on the Automations screen.\r\n          </p>\r\n          <Button onClick={() => setWorkspace(\"automation\")}>Open Automations →</Button>\r\n        </Box>\r\n      </Card>\r\n    </Box>\r\n  );\r\n}\r\n",
   "composes": [
     "Box",
     "Button",
     "Card"
   ],
-  "src": "src/features/settings/SettingsAutomationsPage.tsx"
+  "src": "src/features/settings/SettingsAutomationsPage.tsx",
+  "folder": "features/settings"
 }

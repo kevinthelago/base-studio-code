@@ -26,7 +26,11 @@ export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
     name: c.name ?? c.id!,
     kitId: c.kitId ?? "",
     role: (ROLES.includes(c.role as Role) ? c.role : "primitive") as Role,
-    group: c.group, // #3048 — the kit-purpose partition; rides verbatim (never defaulted), like tech/style on a kit
+    // #3048 — the folder path; rides verbatim (never defaulted), like tech/style on a kit. Reads the
+    // legacy `group` key too (#4107 slice B): the store holds records written under the old name, and
+    // this projection is the ONE place a raw record becomes a Component, so the fallback belongs here
+    // rather than scattered across every consumer.
+    folder: (c as { folder?: string; group?: string }).folder ?? (c as { group?: string }).group,
     version: c.version ?? "",
     used: typeof c.used === "number" ? c.used : 0,
     tags: c.tags ?? [],

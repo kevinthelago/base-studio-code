@@ -68,6 +68,7 @@ const SPEC: CliSpec = CliSpec {
     commands: COMMANDS,
     meta_fields: &["id", "name", "role"],
     graph_fields: &[],
+    field_aliases: &[],
 };
 
 /// The `persona` subcommand entrypoint: `args` is everything after `bsc persona`; `prog` is the

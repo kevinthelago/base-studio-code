@@ -3,7 +3,6 @@
   "name": "SearchField",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/controls",
   "provides": "@/shared/ui/controls/SearchField",
   "srcText": "// SearchField, AS GRAPH SOURCE (#3678, epic #3604) — a pure shared/ui control authored as DATA. Its\n// `provides: \"@/shared/ui/controls/SearchField\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\nimport type { CSSProperties, KeyboardEvent, ReactNode } from \"react\";\r\n\r\nexport interface SearchFieldProps {\r\n  value: string;\r\n  onChange: (value: string) => void;\r\n  placeholder?: string;\r\n  \"aria-label\"?: string;\r\n  /** Leading glyph. Defaults to the search icon; pass `null` to omit (e.g. a paste box). */\r\n  icon?: ReactNode;\r\n  /** Optional trailing slot — a result count, a `⌘K` kbd, etc. */\r\n  trailing?: ReactNode;\r\n  /** Container style overrides (bg, height, radius, flex/width) merged over the base look. */\r\n  style?: CSSProperties;\r\n  className?: string;\r\n  /** Input style overrides (e.g. a per-site font-size). */\r\n  inputStyle?: CSSProperties;\r\n  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;\r\n}\r\n\r\nconst boxBase: CSSProperties = {\r\n  display: \"flex\",\r\n  alignItems: \"center\",\r\n  gap: 8,\r\n  height: 32,\r\n  padding: \"0 11px\",\r\n  background: \"var(--bg-soft)\",\r\n  border: \"1px solid var(--border)\",\r\n  borderRadius: 8,\r\n};\r\n\r\nconst inputBase: CSSProperties = {\r\n  flex: 1,\r\n  minWidth: 0,\r\n  background: \"none\",\r\n  border: \"none\",\r\n  color: \"var(--fg)\",\r\n  fontSize: 12.5,\r\n  fontFamily: \"inherit\",\r\n  outline: \"none\",\r\n};\r\n\r\n/**\r\n * A small bordered search box: a leading `⌕` glyph, a bare `<input>`, and an\r\n * optional `trailing` slot. Consolidates the icon+borderless-input pattern that\r\n * was hand-rolled at several sites (#2708).\r\n */\r\nexport function SearchField({\r\n  value,\r\n  onChange,\r\n  placeholder,\r\n  icon = <span style={{ color: \"var(--fg-dim)\", fontSize: 13 }}>⌕</span>,\r\n  trailing,\r\n  style,\r\n  className,\r\n  inputStyle,\r\n  onKeyDown,\r\n  \"aria-label\": ariaLabel,\r\n}: SearchFieldProps) {\r\n  return (\r\n    <div className={className} style={{ ...boxBase, ...style }}>\r\n      {icon}\r\n      {/* eslint-disable-next-line no-restricted-syntax -- this primitive intentionally wraps a bare\r\n          borderless <input>; Field/TextField impose a labelled .field layout that doesn't fit an\r\n          inline search box. This is the ONE justified bare input, centralized here. */}\r\n      <input\r\n        value={value}\r\n        onChange={(e) => onChange(e.target.value)}\r\n        onKeyDown={onKeyDown}\r\n        placeholder={placeholder}\r\n        aria-label={ariaLabel}\r\n        style={{ ...inputBase, ...inputStyle }}\r\n      />\r\n      {trailing}\r\n    </div>\r\n  );\r\n}\r\n",
   "composes": [],
@@ -63,5 +62,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/controls"
 }

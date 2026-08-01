@@ -143,12 +143,12 @@ export function folderComponentCount(f: ComponentFolder): number {
  * kit `bucket()` OTHER-last rule. `composes` is unaffected — it resolves across the whole kit, so
  * components in different folders still compose freely; this tree is organizational only.
  *
- * Returns `null` when NO component carries a `group`, so the rail renders the flat component list EXACTLY
- * as before (zero regression for group-less kits). A depth-1 path (`forms`) yields a single root folder
+ * Returns `null` when NO component carries a `folder`, so the rail renders the flat component list EXACTLY
+ * as before (zero regression for folderless kits). A depth-1 path (`forms`) yields a single root folder
  * with no subfolders — i.e. the old flat behavior is the shallow case of this tree.
  */
 export function groupComponentsByFolder(comps: readonly ComponentRecord[]): ComponentFolder[] | null {
-  if (!comps.some((c) => (c.group ?? "").trim())) return null;
+  if (!comps.some((c) => (c.folder ?? "").trim())) return null;
 
   // Mutable builder: `children` is a Map so it preserves first-appearance insertion order.
   interface Build {
@@ -170,7 +170,7 @@ export function groupComponentsByFolder(comps: readonly ComponentRecord[]): Comp
   let ungrouped: Build | null = null;
 
   for (const c of comps) {
-    const path = (c.group ?? "").trim();
+    const path = (c.folder ?? "").trim();
     if (!path) {
       ungrouped ??= mk(UNGROUPED_KEY, UNGROUPED_LABEL, true);
       ungrouped.components.push(c);

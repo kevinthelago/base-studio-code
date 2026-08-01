@@ -3,7 +3,6 @@
   "name": "Banner",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/feedback",
   "provides": "@/shared/ui/feedback/Banner",
   "srcText": "// Banner, AS GRAPH SOURCE (#3670, epic #3604) — a pure leaf shared/ui primitive authored as DATA. Its\n// `provides: \"@/shared/ui/feedback/Banner\"` makes the runtime loader vendor THIS source wherever a graph component imports\n// that specifier (registered code is the fallback). Transcribed verbatim; deps stay registered code.\nimport type { ReactNode, CSSProperties } from \"react\";\r\n\r\nexport interface BannerProps {\r\n  /** Colour tone. Default \"neutral\". */\r\n  tone?: \"neutral\" | \"info\" | \"success\" | \"warn\" | \"danger\" | \"accent\";\r\n  /** Full-width app/screen bar (square, border-bottom) vs the default inline rounded callout. */\r\n  variant?: \"inline\" | \"bar\";\r\n  /** A leading icon/element. */\r\n  lead?: ReactNode;\r\n  /** Shorthand for a tone-colored status dot as the lead. */\r\n  dot?: boolean;\r\n  /** Tone-colored text (the louder \"status\" look) instead of the default muted text. */\r\n  loud?: boolean;\r\n  /** Right-aligned content — a caption or action buttons. */\r\n  right?: ReactNode;\r\n  /** Renders a trailing dismiss ✕; invoked on click. */\r\n  onDismiss?: () => void;\r\n  /** ARIA role — e.g. \"alert\" / \"status\" for announced banners. */\r\n  role?: string;\r\n  children: ReactNode;\r\n  className?: string;\r\n  style?: CSSProperties;\r\n}\r\n\r\n/** Banner — the one status strip. A toned, bordered row with an optional lead (icon or `dot`),\r\n *  content, a `right` slot, and an optional `onDismiss` ✕. The default is an inline rounded callout;\r\n *  `variant=\"bar\"` makes it a full-width top-of-app/screen banner. Replaces the per-feature inline\r\n *  callouts, the `Notice` status box (`dot`/`loud`/`right`), AND the hand-rolled app banners. */\r\nexport function Banner({\r\n  tone = \"neutral\", variant = \"inline\", lead, dot, loud, right, onDismiss, role, children, className, style,\r\n}: BannerProps) {\r\n  const cls = `banner tone-${tone}`\r\n    + (variant === \"bar\" ? \" bar\" : \"\")\r\n    + (loud ? \" loud\" : \"\")\r\n    + (className ? ` ${className}` : \"\");\r\n  return (\r\n    <div className={cls} role={role} style={style}>\r\n      {dot && <span className=\"banner-dot\" />}\r\n      {lead}\r\n      {children}\r\n      {/* Actions grouped into one block pushed right by `margin-left:auto` — NOT a separate `flex:1`\r\n          spacer, which would compete with a `flex:1` body for space and squeeze the text in a narrow\r\n          card. As one unit it can also wrap to its own row (see `.app-banner-stack`). */}\r\n      {(right != null || onDismiss) && (\r\n        <span className=\"banner-actions\">\r\n          {right}\r\n          {onDismiss && <button className=\"banner-x\" aria-label=\"Dismiss\" onClick={onDismiss}>✕</button>}\r\n        </span>\r\n      )}\r\n    </div>\r\n  );\r\n}\r\n",
   "composes": [],
@@ -75,5 +74,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/feedback"
 }

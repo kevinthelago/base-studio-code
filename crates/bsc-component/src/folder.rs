@@ -14,7 +14,7 @@
 /// - `src/shared/ui/controls/Button.tsx` → `Some("shared/ui/controls")`
 /// - `shared/ui/d3/charts/Bar.tsx`       → `Some("shared/ui/d3/charts")`
 /// - `src/Widget.tsx` / `Widget.tsx` / `""` → `None`
-pub fn group_from_src(src: &str) -> Option<String> {
+pub fn folder_from_src(src: &str) -> Option<String> {
     // #4107: the derivation MOVED to `bsc_util::folder_from_src` so the algorithms library shares it
     // verbatim. Kept here as the component-side name until the `group` -> `folder` rename lands, so
     // this crate's callers are untouched — but there is now exactly ONE implementation.
@@ -28,11 +28,11 @@ mod tests {
     #[test]
     fn strips_the_src_root_and_the_filename() {
         assert_eq!(
-            group_from_src("src/shared/ui/controls/Button.tsx").as_deref(),
+            folder_from_src("src/shared/ui/controls/Button.tsx").as_deref(),
             Some("shared/ui/controls")
         );
         assert_eq!(
-            group_from_src("src/features/github/summary/Card.tsx").as_deref(),
+            folder_from_src("src/features/github/summary/Card.tsx").as_deref(),
             Some("features/github/summary")
         );
     }
@@ -41,7 +41,7 @@ mod tests {
     fn keeps_a_path_that_has_no_src_root() {
         // react-d3's stored paths don't carry the `src/` prefix — the tree still nests correctly.
         assert_eq!(
-            group_from_src("shared/ui/d3/charts/Bar.tsx").as_deref(),
+            folder_from_src("shared/ui/d3/charts/Bar.tsx").as_deref(),
             Some("shared/ui/d3/charts")
         );
     }
@@ -49,25 +49,25 @@ mod tests {
     #[test]
     fn normalizes_windows_backslashes() {
         assert_eq!(
-            group_from_src("src\\shared\\ui\\layout\\Box.tsx").as_deref(),
+            folder_from_src("src\\shared\\ui\\layout\\Box.tsx").as_deref(),
             Some("shared/ui/layout")
         );
     }
 
     #[test]
-    fn a_component_with_no_folder_is_ungrouped() {
-        assert_eq!(group_from_src("Button.tsx"), None); // bare filename — no directory
-        assert_eq!(group_from_src("src/Widget.tsx"), None); // directly under the src root
-        assert_eq!(group_from_src(""), None);
-        assert_eq!(group_from_src("   "), None);
+    fn a_component_with_no_folder_is_unfoldered() {
+        assert_eq!(folder_from_src("Button.tsx"), None); // bare filename — no directory
+        assert_eq!(folder_from_src("src/Widget.tsx"), None); // directly under the src root
+        assert_eq!(folder_from_src(""), None);
+        assert_eq!(folder_from_src("   "), None);
     }
 
     #[test]
-    fn an_already_clean_group_path_is_a_fixed_point() {
+    fn an_already_clean_folder_path_is_a_fixed_point() {
         // Re-deriving from a path whose folder already equals the group returns that same folder — so
         // `regroup` is idempotent and only rewrites records whose group actually moved.
         assert_eq!(
-            group_from_src("shared/ui/data/KeyValueList.tsx").as_deref(),
+            folder_from_src("shared/ui/data/KeyValueList.tsx").as_deref(),
             Some("shared/ui/data")
         );
     }
