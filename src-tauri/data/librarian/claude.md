@@ -61,9 +61,10 @@ Acting on an id that doesn't exist is a no-op or an error. Read the current stat
 
 Real project code is the reality the library should track. Mine it into candidate implementations:
 
-- `bsc graph harvest <dir> [--tech T] [--worthy-only]` — harvest a project's functions into candidate
+- `bsc graph harvest <dir-or-file> [--tech T] [--worthy-only]` — harvest a project's functions into candidate
   implementations, each classified **worthy** vs. **glue**, and each carrying a `src` (the file it came
-  from) and a `domain` (its facet).
+  from) and a `domain` (its facet). A **file** target harvests just that module (#4161) — the narrowing
+  `bsc ui harvest <file>` routes you to when it finds functions it will not lift itself.
 - `bsc graph curate <dir> [--tech T] [--apply]` — curate the WORTHY candidates into the library
   (add / optimize). `--apply` writes the runtime store; without it you get the plan to review first.
 
@@ -164,8 +165,8 @@ way a designer ships a complete component:
 
 ```js
 ({
-  datatype: "array",          // "array" | "matrix" | "graph" — picks the renderer + input seam
-  input: [5, 2, 9, 1, 6, 3],  // the DEFAULT input (number[] | number[][] | { nodes, edges })
+  datatype: "array",          // the structure — picks the renderer + input seam (table below)
+  input: [5, 2, 9, 1, 6, 3],  // the DEFAULT input, shaped per datatype
   run(a) {                     // the real algorithm, written against the Traced<Structure> API
     for (let i = 1; i < a.length; i++) {
       let j = i;
@@ -185,16 +186,43 @@ way a designer ships a complete component:
 The animation is a BYPRODUCT of the real algorithm running — each op the `run` calls records a frame, so
 insertion sort's shifts look different from quick sort's partitions because they ARE different.
 
+**Every `datatype`, and the input each takes.** There are SEVEN — one per shipped renderer. This list is
+the whole set; a datatype outside it is rejected at compile with the valid names in the message.
+
+| `datatype` | `input` | `run` signature |
+|---|---|---|
+| `array` | `number[]` | `run(array)` |
+| `matrix` | `number[][]` | `run(matrix)` |
+| `graph` | `{ nodes, edges }` | `run(graph)` |
+| `tree` | `number[]` — the values | `run(tree, values)`, plus an optional `seed(values) => TreeNode[]` |
+| `stack` | `string` — the expression | `run(stack, input)`, plus an optional `mode: "stack" \| "queue"` |
+| `scalar` | `{ name: number \| string }` | `run(scalar)` |
+| `scene` | `{ nodes, edges }` — the seed graph | `run(scene, input)` — synchronized multi-structure panels |
+
 **The Traced<Structure> API `run` writes against, per `datatype`:**
 
-- **array** (`datatype: "array"`, input `number[]`): `compare(i,j)` → `sign(a[i]-a[j])`, `swap(i,j)`,
+- **array** (input `number[]`): `compare(i,j)` → `sign(a[i]-a[j])`, `swap(i,j)`,
   `set(i,v)`, `cursor(name, i|null)`, `mark(i, "sorted"|"pivot"|"min")`, `markSorted()`, `get(i)`,
   `length`. (`get` is a silent read — no frame.)
-- **matrix** (`datatype: "matrix"`, input `number[][]`): `read(r,c)`, `set(r,c,v)`,
+- **matrix** (input `number[][]`): `read(r,c)`, `set(r,c,v)`,
   `writeMany([{r,c,v}])`, `swap([r1,c1],[r2,c2])`, `region([r0,r1],[c0,c1], "label")`, `cursor`, `get`.
-- **graph** (`datatype: "graph"`, input `{ nodes:[{id,label?,x?,y?}], edges:[{from,to,weight?}] }`):
+- **graph** (input `{ nodes:[{id,label?,x?,y?}], edges:[{from,to,weight?}] }`):
   `neighbours(id)` / `outNeighbours(id)` / `inDegrees()`, `visit(id)`, `frontier(ids)`, `current(id)`,
   `relax(from, to)`, `path(ids)`, `mark(id, state)`, `coord(id)`.
+- **tree** (input `number[]`, the values): `insert(id, value, parent?)`, `remove(id)`,
+  `swap(a, b)` (exchanges VALUES — the heap sift), `compare(a, b)` → `sign(va - vb)`, `visit(id)`,
+  `mark(id, "current"|"path"|"target")`, `value(id)` (silent), `size`. Nodes are addressed by a STABLE
+  id; the parent pointers give the renderer the shape.
+  **`seed` is what separates BUILDING from WALKING**: omit it and the tree starts empty (an insert
+  algorithm builds it); supply `seed(values) => [{ id, value, parent? }]` and the tree starts finished,
+  so an in-order traversal animates the WALK instead of replaying the whole build first.
+- **stack** (input `string`, the expression): `push(v)`, `pop()`, `peek(i)`, `cursor(name, i|null)`,
+  `size`. `mode: "queue"` makes `pop` take from the FRONT (FIFO); the default `"stack"` is LIFO.
+  Your program owns its own input validation — the field only checks the text is non-blank, because
+  each stack algorithm reads a different language (brackets vs RPN).
+- **scalar** (input `{ name: number | string }`, the initial variables): `set(name, v)`,
+  `add(name, delta)` (the accumulate verb), `compare(name, v)`, `get(name)` (silent). The algorithm reads
+  its parameters straight out of the seeded state — `const n = Number(s.get("n"))`.
 
 If the reference `--code` is Rust (which can't run in the browser), the `--viz-code` is a JS
 trace-program of the SAME algorithm — that's the visualizable form.

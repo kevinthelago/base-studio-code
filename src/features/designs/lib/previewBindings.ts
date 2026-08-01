@@ -46,7 +46,10 @@ const WEEK = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
  * Shape a run's dataset into the component prop's value. Pure + total: an unusable dataset for the
  * requested adapter returns `null` (the caller then falls back to the component's own sample).
  */
-export function adaptDataset(ds: VizDataset, adapter: PreviewAdapterKind): unknown {
+export function adaptDataset(ds: VizDataset | undefined, adapter: PreviewAdapterKind): unknown {
+  // A run with no bindable dataset (a stack/scalar program, #4162) adapts to nothing — the same `null`
+  // every shape mismatch below returns, so the caller's existing empty-data path handles it unchanged.
+  if (!ds) return null;
   switch (adapter) {
     case "values":
       return ds.kind === "array" ? ds.data : null;

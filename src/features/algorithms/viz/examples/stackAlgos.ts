@@ -140,3 +140,20 @@ export const STACK_PROGRAMS: Record<string, StackProgram> = {
 export function stackToText(input: string): string {
   return input;
 }
+
+/**
+ * Parse the "your input" text for a STORED stack program (#4162) — the generic seam, which can only check
+ * that there is something to trace.
+ *
+ * This is the same reasoning that made {@link StackProgram} carry a per-program `parse`, applied to the
+ * stored case: a shared parser could only ever validate the INTERSECTION of every stack language, and for
+ * brackets vs RPN that intersection is "a non-empty string". A stored program's own validation lives inside
+ * its `run`, which is the only place that knows which language it reads.
+ *
+ * @throws Error (shown under the field) when the text is blank.
+ */
+export function parseStackText(text: string): string {
+  const t = text.trim();
+  if (t.length === 0) throw new Error("Enter an expression to trace");
+  return t;
+}

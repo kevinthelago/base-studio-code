@@ -30,8 +30,8 @@ import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "./sorts";
 import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./matrixTransforms";
 import { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./graphAlgos";
 import { SEARCH_PROGRAMS, parseSearchInput, searchToText, type SearchInput, type SearchProgram } from "./searches";
-import { SCALAR_PROGRAMS, parseScalarInput, scalarToText, type ScalarProgram } from "./scalarAlgos";
-import { STACK_PROGRAMS, stackToText, type StackProgram } from "./stackAlgos";
+import { SCALAR_PROGRAMS, parseScalarInput, parseScalarSeed, scalarToText, scalarSeedToText, type ScalarProgram } from "./scalarAlgos";
+import { STACK_PROGRAMS, parseStackText, stackToText, type StackProgram } from "./stackAlgos";
 import { TREE_PROGRAMS, parseTreeInput, treeToText, type TreeProgram } from "./treeAlgos";
 import { SCENE_PROGRAMS, type SceneProgram } from "./scenes";
 
@@ -274,6 +274,28 @@ const DATATYPE_SEAM = {
     hint: "An adjacency list — one node per line: a: b, c",
     serialize: (input: VizRun["input"]) => graphToText(input as GraphInput),
     parse: (text: string) => parseGraphInput(text),
+  },
+  // #4162 — the three renderers a stored program could not reach. Each reuses the family's own seam, so a
+  // stored program and its in-app twin take the same text and animate the same way.
+  tree: {
+    renderers: { tree: TreeView } as RendererRegistry,
+    hint: "Whole numbers to insert, comma-separated (e.g. 50, 30, 70)",
+    serialize: (input: VizRun["input"]) => treeToText(input as number[]),
+    parse: (text: string) => parseTreeInput(text),
+  },
+  stack: {
+    // The parse is only a non-blank check by necessity — each stack program reads its OWN language
+    // (brackets vs RPN), so a shared parser could validate nothing more (see `parseStackText`).
+    renderers: { stack: StackView } as RendererRegistry,
+    hint: "The expression to trace (e.g. ([]{}) or 3 4 + 2 *)",
+    serialize: (input: VizRun["input"]) => stackToText(input as string),
+    parse: (text: string) => parseStackText(text),
+  },
+  scalar: {
+    renderers: { scalar: ScalarView } as RendererRegistry,
+    hint: "The initial variables as name=value pairs (e.g. n=10)",
+    serialize: (input: VizRun["input"]) => scalarSeedToText(input as Record<string, number | string>),
+    parse: (text: string) => parseScalarSeed(text),
   },
   // A stored SCENE (#3275): every renderer registered (its panels can be any structure); seeds on a graph.
   scene: {
