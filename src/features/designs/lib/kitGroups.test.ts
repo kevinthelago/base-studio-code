@@ -129,8 +129,8 @@ describe("groupComponentsByFolder — the nested folder tree under a kit (#3048/
     expect(t!.map((x) => x.ungrouped)).toEqual([false, false, true]);
     expect(t!.every((x) => x.folders.length === 0)).toBe(true); // depth-1 ⇒ no subfolders
     // input order preserved within a folder.
-    expect(t!.find((x) => x.key === "data-viz")!.components.map((c) => c.id)).toEqual(["a", "d"]);
-    expect(t!.find((x) => x.ungrouped)!.components.map((c) => c.id)).toEqual(["b"]);
+    expect(t!.find((x) => x.key === "data-viz")!.items.map((c) => c.id)).toEqual(["a", "d"]);
+    expect(t!.find((x) => x.ungrouped)!.items.map((c) => c.id)).toEqual(["b"]);
   });
 
   it("nests a `/`-path into real subfolders — a component sits at the LEAF of its path", () => {
@@ -142,12 +142,12 @@ describe("groupComponentsByFolder — the nested folder tree under a kit (#3048/
     ])!;
     expect(t.map((f) => f.label)).toEqual(["shared", "features"]); // first-appearance order
     const shared = t.find((f) => f.key === "shared")!;
-    expect(shared.components).toEqual([]); // nothing lives directly in `shared`
+    expect(shared.items).toEqual([]); // nothing lives directly in `shared`
     const ui = shared.folders.find((f) => f.key === "shared/ui")!;
     expect(ui.folders.map((f) => f.label)).toEqual(["controls", "layout"]);
     const controls = ui.folders.find((f) => f.key === "shared/ui/controls")!;
-    expect(controls.components.map((c) => c.id)).toEqual(["btn", "field"]); // both leaves land here
-    expect(t.find((f) => f.key === "features")!.folders[0].components.map((c) => c.id)).toEqual(["card"]);
+    expect(controls.items.map((c) => c.id)).toEqual(["btn", "field"]); // both leaves land here
+    expect(t.find((f) => f.key === "features")!.folders[0].items.map((c) => c.id)).toEqual(["card"]);
   });
 
   it("a folder holds BOTH direct components and subfolders (a component grouped at an interior path)", () => {
@@ -156,7 +156,7 @@ describe("groupComponentsByFolder — the nested folder tree under a kit (#3048/
       comp("btn", "shared/ui/controls"),
     ])!;
     const ui = t[0].folders.find((f) => f.key === "shared/ui")!;
-    expect(ui.components.map((c) => c.id)).toEqual(["panel"]); // its own direct member
+    expect(ui.items.map((c) => c.id)).toEqual(["panel"]); // its own direct member
     expect(ui.folders.map((f) => f.label)).toEqual(["controls"]); // AND a subfolder
     expect(folderComponentCount(t[0])).toBe(2); // transitive count spans the subtree
   });

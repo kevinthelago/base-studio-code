@@ -5,7 +5,7 @@ import { describe, it, expect } from "vitest";
 import {
   KNOWLEDGE, TECHS, implById, usedByImpl,
   kitTechs, kitImpls, kitImplsByRole, kitGraph, groupImplsByLanguage, layoutKitGraph,
-  buildKnowledge, domainsOf, implsByDomain, kitImplsByDomain, type AlgoImpl,
+  matchesImpl, type AlgoImpl,
 } from "./knowledge";
 
 describe("KNOWLEDGE seed (impl-only, #2958)", () => {
@@ -130,65 +130,43 @@ describe("language kits (#2863) — a kit is every impl of one tech, grouped by 
   });
 });
 
-describe("domain facet (#3120) — a lightweight, cross-language collection tag", () => {
-  // A synthetic library with a domain facet across two languages, plus one untagged impl.
+describe("matchesImpl — the rail's one filter (#4128)", () => {
   const im = (o: Partial<AlgoImpl> & Pick<AlgoImpl, "id" | "tech">): AlgoImpl =>
     ({ role: "algorithm", name: o.id, composes: [], ...o });
-  const g = buildKnowledge({
-    implementations: [
-      im({ id: "dijkstra.rs", tech: "rust", domain: "logistics" }),
-      im({ id: "a-star.rs", tech: "rust", domain: "logistics" }),
-      im({ id: "route.ts", tech: "typescript", domain: "logistics" }),
-      im({ id: "blur.ts", tech: "typescript", domain: "graphics" }),
-      im({ id: "plain.rs", tech: "rust" }), // no domain — absent from every collection
-    ],
+
+  it("matches name, id, FOLDER PATH and tags — so a folder can be narrowed to by typing it", () => {
+    // The folder half is the point: the components rail's `matchesQuery` has matched the folder path
+    // since #3589, and with the domain dropdown gone (#4128) search is how this rail narrows too.
+    const dijkstra = im({ id: "dijkstra.rs", tech: "rust", name: "dijkstra", folder: "graphs/shortest-path", tags: ["greedy"] });
+    expect(matchesImpl(dijkstra, "dijk")).toBe(true);       // name
+    expect(matchesImpl(dijkstra, ".rs")).toBe(true);         // id
+    expect(matchesImpl(dijkstra, "shortest-path")).toBe(true); // folder path
+    expect(matchesImpl(dijkstra, "graphs/")).toBe(true);       // a partial path
+    expect(matchesImpl(dijkstra, "greedy")).toBe(true);        // tag
+    expect(matchesImpl(dijkstra, "quicksort")).toBe(false);
   });
 
-  it("existing impls without a domain load — the facet is absent, not defaulted (backward compatible)", () => {
-    // The facet stays OPTIONAL: a general-purpose sort belongs to no domain and is left untagged
-    // (#3134 tags only the impls a domain app would actually pull), so it carries neither key.
-    const ms = implById(KNOWLEDGE, "merge-sort.rs")!;
-    expect(ms.domain).toBeUndefined();
-    expect(ms.tags).toBeUndefined();
+  it("is case-insensitive, and an empty query matches everything", () => {
+    const plain = im({ id: "plain.rs", tech: "rust", name: "Plain" });
+    expect(matchesImpl(plain, "PLAIN")).toBe(true);
+    expect(matchesImpl(plain, "")).toBe(true);
+    expect(matchesImpl(plain, "   ")).toBe(true);
   });
 
-  it("the packaged seed ships domain collections, so the rail's domain filter is populated (#3134)", () => {
-    // #3120 shipped the facet but left the seed untagged, which HID the rail affordance out of the box.
-    // #3134 tags the seed, so `domainsOf` is non-empty and the "a logistics app pulls from its logistics
-    // algorithms" example is real without manual `bsc graph impl set --domain` curation.
-    expect(domainsOf(KNOWLEDGE)).toEqual(["fleet", "graphics", "logistics", "signal-processing"]);
-    expect(implsByDomain(KNOWLEDGE, "logistics").map((i) => i.id)).toEqual([
-      "bfs.rs", "dfs.rs", "dijkstra.rs", "a-star.rs", "topological-sort.rs",
-    ]);
-    expect(implsByDomain(KNOWLEDGE, "graphics").map((i) => i.id)).toEqual([
-      "transpose.ts", "rotate.ts", "reflect.ts",
-    ]);
-    // The Fleet page's dashboard algorithms form a discoverable "fleet" collection (#3607) — the
-    // 6 nodes harvested from it (#3462/#3465) were in the graph but ungrouped, so the rail showed
-    // no fleet collection at all until they were tagged.
-    expect(implsByDomain(KNOWLEDGE, "fleet").map((i) => i.id)).toEqual([
-      "llm-energy.ts", "precedence-resolve.ts", "windowed-tally.ts",
-      "stream-merge.ts", "order-by-rank.ts", "group-totals.ts",
-    ]);
-    // Primitives are language built-ins, never domain members.
-    expect(KNOWLEDGE.implementations.filter((i) => i.role === "primitive" && i.domain)).toEqual([]);
+  it("never crashes on an impl carrying neither folder nor tags (the seeded classics)", () => {
+    const seeded = im({ id: "merge-sort.rs", tech: "rust", name: "merge sort" });
+    expect(matchesImpl(seeded, "merge")).toBe(true);
+    expect(matchesImpl(seeded, "shared/ui")).toBe(false);
   });
+});
 
-  it("domainsOf lists the distinct domains present, stable-sorted, ignoring untagged impls", () => {
-    expect(domainsOf(g)).toEqual(["graphics", "logistics"]);
-  });
-
-  it("implsByDomain pulls a domain's impls ACROSS languages (the cross-cutting collection)", () => {
-    expect(implsByDomain(g, "logistics").map((i) => i.id)).toEqual(["dijkstra.rs", "a-star.rs", "route.ts"]);
-    expect(implsByDomain(g, "graphics").map((i) => i.id)).toEqual(["blur.ts"]);
-    // A blank/unknown domain is an empty collection (never the untagged impls).
-    expect(implsByDomain(g, "nope")).toEqual([]);
-    expect(implsByDomain(g, "  ")).toEqual([]);
-  });
-
-  it("kitImplsByDomain narrows a single language kit to a domain (per-tech ∩ per-domain)", () => {
-    expect(kitImplsByDomain(g, "rust", "logistics").map((i) => i.id)).toEqual(["dijkstra.rs", "a-star.rs"]);
-    expect(kitImplsByDomain(g, "typescript", "logistics").map((i) => i.id)).toEqual(["route.ts"]);
-    expect(kitImplsByDomain(g, "rust", "graphics")).toEqual([]); // graphics has no Rust impl
+describe("the domain facet is no longer an organizer (#4128)", () => {
+  it("keeps `domain` on the RECORD — the CLI still writes and filters it — while the rail ignores it", () => {
+    // #4128 removed the rail's domain dropdown and with it `domainsOf`/`implsByDomain`/`kitImplsByDomain`,
+    // which had no other consumer. The FIELD stays: `bsc graph impl set --domain` / `impl list --domain`
+    // still read it, and the harvest still derives one. What is gone is domain as a way the library is
+    // presented — the folder tree (a strictly richer derivation of the same `src`) is that.
+    const tagged = KNOWLEDGE.implementations.find((i) => i.domain);
+    expect(tagged?.domain).toBeTruthy();
   });
 });

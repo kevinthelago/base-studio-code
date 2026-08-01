@@ -5,31 +5,21 @@
 // through props. The rows/headers now render through the shared RailRow / RailGroupHeader nav primitives
 // (#2789); the `ds-grouphead`/`ds-kithead`/`ds-comprow` classes remain only as selector/test hooks (the
 // styling is the canonical shared look, no longer their own CSS).
+//
+// #4128 lifted the folder LEVEL out of here into `shared/`: the folder glyph + header row are now
+// `RailFolderRow`, and the tree they render is built by the shared `buildFolderTree`. Both are used
+// verbatim by the Algorithms rail, so the two library rails are the same rail rather than lookalikes.
 import { type ReactNode } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { RailRow } from "@/shared/ui/layouts/RailRow";
 import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
+import { RailFolderRow, RailFolderChildren } from "@/shared/ui/layouts/RailFolderRow";
 import { RoleDot } from "./kitChrome";
 import type { ComponentRecord, Kit } from "./lib/model";
 import { type KitTreeNode, type ComponentFolder, groupComponentsByFolder, folderComponentCount } from "./lib/kitGroups";
 import { byTier } from "./lib/compositionLayout";
-
-/** A small folder glyph for the rail's component-folder rows (#3632). Monochrome `currentColor`, so it
- *  inherits the RailRow's `--fg-muted → --fg` hover/select brighten — the leaf-vs-container cue that the
- *  dim uppercase micro-label lacked. Sized a touch larger than the leaf RoleDots so folders read as the
- *  tree's structure. The caret already carries open/closed, so one (closed-style) glyph covers both. */
-function FolderGlyph() {
-  return (
-    <svg
-      viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: "block", opacity: 0.8 }}
-    >
-      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
-    </svg>
-  );
-}
 
 interface RailTreeProps {
   /** The technology → style rail hierarchy (from `groupKits`). */
@@ -85,22 +75,20 @@ export function RailTree({ railTree, expanded, setExpanded, kitId, setKitId, com
       const open = expanded[fkey] ?? true;
       return (
         <Box key={f.key} className="ds-compfolder" style={{ marginBottom: 2 }}>
-          <RailRow
+          <RailFolderRow
             className="ds-compfolderhead"
-            caret={open}
-            weight={500}
-            onClick={() => setExpanded((e) => ({ ...e, [fkey]: !(e[fkey] ?? true) }))}
-            leading={<FolderGlyph />}
-            trailing={<Text mono size="xxs" tone="dim">{folderComponentCount(f)}</Text>}
-            title={f.ungrouped ? "components with no folder" : `folder: ${f.key}`}
-          >
-            {f.label}
-          </RailRow>
+            label={f.label}
+            count={folderComponentCount(f)}
+            open={open}
+            onToggle={() => setExpanded((e) => ({ ...e, [fkey]: !(e[fkey] ?? true) }))}
+            ungrouped={f.ungrouped}
+            path={f.key}
+          />
           {open && (
-            <Box style={{ paddingLeft: 6 }}>
+            <RailFolderChildren>
               {f.folders.map(renderFolder)}
-              {f.components.map(renderCompRow)}
-            </Box>
+              {f.items.map(renderCompRow)}
+            </RailFolderChildren>
           )}
         </Box>
       );
