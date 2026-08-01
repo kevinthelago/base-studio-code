@@ -8,7 +8,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { ComponentRecord, Kit } from "./lib/model";
-import type { ComponentBuildStatus, RuntimeStateCategory } from "./lib/componentScan";
+import type { ComponentBuildStatus, RuntimeStateCategory, ComponentScanResult } from "./lib/componentScan";
 import type { PreviewState } from "./lib/componentPreview";
 import type { KitConsumer, KitChange, Dispatch } from "./lib/propagation";
 import type { SeedNotice } from "./lib/seedRefresh";
@@ -171,6 +171,15 @@ export interface ComponentsSlice {
   componentStateHealth: Record<string, RuntimeStateCategory[]>;
   /** Record one component's data-state blanks — the scan's per-result write (upsert by id; `[]` clears). */
   setComponentStateHealth: (id: string, categories: RuntimeStateCategory[]) => void;
+
+  /** Apply a BATCH of scan results in ONE commit (#4132) — the scan's real write path.
+   *
+   *  The two per-result setters above wrote twice per component, so a 248-component sweep produced ~496
+   *  store commits, and the Studio (which subscribes to both maps) re-rendered its whole graph on each
+   *  one — the measured churn was 125 `[render] designs update` commits at ~24ms. Both maps move together
+   *  in a single `set` so a flush is one commit and one render, whatever its size. An empty batch is a
+   *  no-op rather than an identity-breaking commit. */
+  applyComponentScanResults: (results: readonly ComponentScanResult[]) => void;
 
   /** The OVERNIGHT designer-loop run (#3304, epic #3260) — `null` when off, which is ALWAYS the boot
    *  state: deliberately absent from `partialize`, so an autonomous token-spending run can never
@@ -422,6 +431,19 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
 
   setComponentStateHealth: (id, categories) =>
     set((s) => ({ componentStateHealth: { ...s.componentStateHealth, [id]: categories } })),
+
+  applyComponentScanResults: (results) => {
+    if (results.length === 0) return; // never commit an empty flush
+    set((s) => {
+      const componentBuildStatus = { ...s.componentBuildStatus };
+      const componentStateHealth = { ...s.componentStateHealth };
+      for (const r of results) {
+        componentBuildStatus[r.id] = r.status;
+        componentStateHealth[r.id] = r.stateBlanks;
+      }
+      return { componentBuildStatus, componentStateHealth };
+    });
+  },
 
   designerOvernight: null,
 

@@ -14,7 +14,7 @@ import { useAppStore } from "@/store";
 import { bundleComponent } from "@/shared/lib/preview/componentBundle";
 import { probeComponentRuntime } from "@/shared/lib/preview/componentRuntimeProbe";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
-import { scannableComponents, pendingScans, scanComponents, durableLogSync } from "./componentScan";
+import { scannableComponents, pendingScans, scanComponents, durableLogSync, type ComponentScanResult, type ComponentBuildStatus } from "./componentScan";
 import { recordPreviewError } from "./componentBridge";
 import { type KitArtifact, type LibraryModuleResolver } from "./componentPreview";
 import { libraryModuleResolver } from "./libraryModules";
@@ -28,6 +28,10 @@ const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
 /** How many component builds run at once — a small pool so the sweep stays local + non-blocking. Each
  *  build is a synchronous-ish esbuild-wasm pass; 3 keeps the UI responsive on a large kit. */
 const SCAN_CONCURRENCY = 3;
+
+/** How long results buffer before one batched store commit (#4132). Long enough that a burst of builds
+ *  collapses into a single render, short enough that badges still stream in visibly during a sweep. */
+const SCAN_FLUSH_MS = 150;
 
 /**
  * Scan the active kit's components for preview-build errors while `active`, recording each result in the
@@ -47,8 +51,7 @@ export function useComponentScan(
   // caller has project context. It is part of the build, so a kit switch re-queues the affected components.
   libResolver: LibraryModuleResolver = libraryModuleResolver,
 ): void {
-  const setStatus = useAppStore((s) => s.setComponentBuildStatus);
-  const setStateHealth = useAppStore((s) => s.setComponentStateHealth);
+  const applyResults = useAppStore((s) => s.applyComponentScanResults);
   // The signature we last recorded a result for, per component id — survives kit switches + revisits, so
   // an already-built component is never re-bundled unless its source changed.
   const scannedSigs = useRef<Map<string, string>>(new Map());
@@ -63,6 +66,26 @@ export function useComponentScan(
     const appCss = collectAppCss();
 
     let cancelled = false;
+
+    // #4132: BATCH the store writes. Results land one at a time (a throttled pool of esbuild passes), and
+    // writing each straight through cost two commits per component — ~496 for this kit — every one of
+    // which re-rendered the whole graph. Buffer them and flush on a short timer instead: the badges still
+    // appear progressively (a sweep takes seconds, the flush window is 150ms) but a visit now costs
+    // O(sweep-duration / 150ms) commits rather than O(2N).
+    let buffer: ComponentScanResult[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      flushTimer = null;
+      if (cancelled || buffer.length === 0) return;
+      const batch = buffer;
+      buffer = [];
+      applyResults(batch);
+    };
+    const enqueue = (result: ComponentScanResult) => {
+      buffer.push(result);
+      flushTimer ??= setTimeout(flush, SCAN_FLUSH_MS);
+    };
+
     void scanComponents(
       pending,
       bundleComponent,
@@ -76,18 +99,30 @@ export function useComponentScan(
         // prior status is still readable — `durableLogSync` records a runtime throw and clears a
         // now-resolved error (fire-and-forget; a missing `bsc` no-ops it). This is what makes
         // `bsc ui doctor` see the COMPLETE errored set, not only components a human opened.
-        const sync = durableLogSync(useAppStore.getState().componentBuildStatus[id], status);
-        setStatus(id, status);
+        // The durable-log diff still reads the PRIOR status, so it must consult the store PLUS anything
+        // already buffered but not yet flushed — otherwise a component scanned twice within one flush
+        // window would diff against a stale value.
+        // (a manual reverse scan — `findLast` is past this project's tsc lib target)
+        let pendingPrior: ComponentBuildStatus | undefined;
+        for (let i = buffer.length - 1; i >= 0; i--) if (buffer[i].id === id) { pendingPrior = buffer[i].status; break; }
+        const sync = durableLogSync(pendingPrior ?? useAppStore.getState().componentBuildStatus[id], status);
         if (sync !== null) void recordPreviewError(id, sync);
-        // Render-confirmed data-state blanks (#3191) — folded into the graph's health badges. Always write
-        // (even `[]`) so a fixed component clears its prior blank badge on re-scan.
-        setStateHealth(id, stateBlanks);
+        // Both halves go in one batched entry. `stateBlanks` is always carried (even `[]`) so a fixed
+        // component clears its prior blank badge on re-scan.
+        enqueue({ id, status, stateBlanks });
       },
       () => cancelled,
       // Runtime probe (#2908): run each build-clean component in a hidden iframe to catch a throw the
       // build can't see (e.g. a d3-force tick). Inconclusive/infra failures resolve ok — never a false badge.
       (js) => probeComponentRuntime(js, appCss),
     );
-    return () => { cancelled = true; };
-  }, [active, comps, artifact, libResolver, setStatus, setStateHealth]);
+    return () => {
+      // Flush what already landed BEFORE cancelling — those builds really happened, and dropping them
+      // would re-queue work whose signature was already marked scanned (a badge that never returns).
+      if (flushTimer) clearTimeout(flushTimer);
+      if (buffer.length) applyResults(buffer);
+      buffer = [];
+      cancelled = true;
+    };
+  }, [active, comps, artifact, libResolver, applyResults]);
 }
