@@ -55,6 +55,14 @@ pub struct ShotResult {
     pub path: String,
     pub w: u32,
     pub h: u32,
+    /// The shots dir the APP resolved, from ITS env (#4163). The CLI resolves `out` in the CALLER's env
+    /// (honoring the session's `$BSC_SHOT_DIR`); the app process has no such var, so when the two sides
+    /// disagree about where a PNG lives, this is the field that says so. Reported only in the read-back
+    /// failure — the one place the disagreement becomes visible.
+    ///
+    /// `None` from an app older than this field, which is itself diagnostic: it dates the running app.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shots_dir: Option<String>,
 }
 
 /// `~/.base-studio-code/shots/` — where the PNGs land. Overridable via `BSC_SHOT_DIR`.
@@ -101,12 +109,29 @@ mod tests {
 
     #[test]
     fn the_result_round_trips_and_an_error_wins_over_it() {
-        let ok = bsc_appchan::Reply::ok("a", &ShotResult { path: "p.png".into(), w: 8, h: 6 }, 1);
+        let ok =
+            bsc_appchan::Reply::ok("a", &ShotResult { path: "p.png".into(), w: 8, h: 6, shots_dir: None }, 1);
         let got: ShotResult = bsc_appchan::take_payload(ok).unwrap();
         assert_eq!((got.w, got.h), (8, 6));
 
         let bad = bsc_appchan::Reply::err("a", "unsupported on this platform yet", 1);
         assert_eq!(bsc_appchan::take_payload::<ShotResult>(bad).unwrap_err(), "unsupported on this platform yet");
+    }
+
+    #[test]
+    fn the_apps_shots_dir_rides_along_and_an_older_app_still_parses() {
+        // #4163: the field the read-back failure needs. It must be OPTIONAL on the wire — the CLI is
+        // routinely newer than the running app, which is precisely the situation being diagnosed.
+        let with = ShotResult { path: "p.png".into(), w: 1, h: 1, shots_dir: Some("C:/ws/shots".into()) };
+        let json = serde_json::to_string(&with).unwrap();
+        assert!(json.contains("shots_dir"));
+        assert_eq!(serde_json::from_str::<ShotResult>(&json).unwrap(), with);
+
+        // An older app's reply (no such key) parses, reporting `None` rather than failing the capture.
+        let legacy: ShotResult = serde_json::from_str(r#"{"path":"p.png","w":1,"h":1}"#).unwrap();
+        assert_eq!(legacy.shots_dir, None);
+        // …and an app that omits it is not made to send `null`.
+        assert!(!serde_json::to_string(&legacy).unwrap().contains("shots_dir"));
     }
 
     #[test]
