@@ -10,6 +10,7 @@ import { log } from "@/shared/lib/core/log";
 import { recordPtyData, bumpTerminals } from "@/shared/lib/core/perf";
 import { gateClaudeLaunch } from "@/shared/lib/fleet/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "@/app/console/lib/terminal";
+import { terminalKeyOverride } from "@/app/console/lib/terminalKeys";
 import { nudgeSizes } from "@/app/console/lib/terminalNudge";
 import { probeJumble } from "@/app/console/lib/jumbleProbe";
 import { paneCwdRecovery, isManualPaneId, sandboxUserIdentity } from "@/app/console/lib/paneIdentity";
@@ -149,6 +150,20 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       cursorBlink: true,
       cursorStyle: "bar",
       scrollback,
+    });
+
+    // #4134: Shift+Enter must INSERT A NEWLINE, not submit. xterm maps Enter to a bare CR and ignores
+    // modifiers, so the two were byte-identical in every terminal in the app. Claim the chord before
+    // xterm sees it and write the ESC+CR sequence an agent TUI expects (`terminalKeyOverride`); returning
+    // false stops xterm's default handling so the key is not ALSO sent as a plain CR.
+    //
+    // This deliberately bypasses the `onData` path below, which re-arms a claude session to "run" on a
+    // CR — correct here, since a newline is not a submit and must not flip the pane's status.
+    term.attachCustomKeyEventHandler((e) => {
+      const bytes = terminalKeyOverride(e);
+      if (bytes === null) return true; // not ours — xterm handles it exactly as before
+      fireInvoke("pty_write", { paneId, data: bytes }, console.error);
+      return false;
     });
 
     const fitAddon = new FitAddon();
