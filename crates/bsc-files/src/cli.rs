@@ -12,7 +12,7 @@
 //! Root resolution is standalone-friendly: `--root <path>` wins, else the current working directory
 //! (which, inside the app, is the session's repo/worktree — bash `cd`s there before launch).
 
-use crate::{build_tree, human_size, refs, render_refs, render_tree, stat, TreeOpts};
+use crate::{build_tree, human_size, read, refs, render_refs, render_tree, stat, TreeOpts};
 use bsc_cli_util::CmdDoc;
 use std::path::PathBuf;
 
@@ -49,6 +49,33 @@ USAGE:
 
 Reports a single file or directory's size, language (by extension), last-modified epoch, and — with
 --lines — its line count. <path> is resolved relative to the root.",
+    },
+    CmdDoc {
+        name: "read",
+        summary: "one file's text (the whole file, or a line window)",
+        usage: "\
+USAGE:
+  bsc files read <path> [--from <n>] [--to <n>] [--json|--pretty] [--root <p>]
+
+Prints a file's text. The counterpart to `stat`: `stat` says how big a file is, this hands back what is
+in it — for reading a module NO harvest lifts, chiefly const/type modules (a STATUS_META table, a shared
+types file). `bsc ui harvest` skips those (not components) and `bsc graph harvest` skips them (not
+functions), so without this there is no way to see their content and vendor a component that imports
+them (#4161).
+
+FLAGS:
+  --from <n>   first line to return (1-indexed, inclusive; default 1)
+  --to <n>     last line to return (1-indexed, inclusive; default: end of file)
+  --json       emit { path, lang, lines, from, to, windowed, text }
+  --pretty     the same, indented
+  --root <p>   resolve <path> against <p> (default: current directory)
+
+READ-ONLY and root-confined: the path must sit inside a root this session may read (the ones `bsc ui
+env` reports). A path outside every root is REFUSED with a stated error, never a silent empty read.
+
+`lines` is the total in the FILE, not in the returned window, and `windowed` is true whenever the window
+omits part of it — so a slice can never be mistaken for the whole file. A binary or non-UTF-8 file is
+refused rather than dumped.",
     },
     CmdDoc {
         name: "refs",
@@ -90,6 +117,8 @@ struct Args {
     lines: bool,
     root: Option<String>,
     depth: Option<usize>,
+    from: Option<u64>,
+    to: Option<u64>,
     positional: Vec<String>,
 }
 
@@ -111,6 +140,16 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
                 i += 1;
                 let v = raw.get(i).ok_or("--depth needs a number")?;
                 a.depth = Some(v.parse().map_err(|_| format!("--depth: not a number: {v}"))?);
+            }
+            "--from" => {
+                i += 1;
+                let v = raw.get(i).ok_or("--from needs a line number")?;
+                a.from = Some(v.parse().map_err(|_| format!("--from: not a number: {v}"))?);
+            }
+            "--to" => {
+                i += 1;
+                let v = raw.get(i).ok_or("--to needs a line number")?;
+                a.to = Some(v.parse().map_err(|_| format!("--to: not a number: {v}"))?);
             }
             // `-h`/`--help` route to the help command (anywhere on the line: `tree --help` ⇒ tree help).
             "-h" | "--help" => a.positional.insert(0, "help".into()),
@@ -138,6 +177,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     match cmd.as_str() {
         "tree" => cmd_tree(&args),
         "stat" => cmd_stat(&args),
+        "read" => cmd_read(&args),
         "refs" => cmd_refs(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
@@ -182,6 +222,26 @@ fn cmd_stat(args: &Args) -> Result<(), String> {
     let full = root.join(rel);
     let st = stat(&full, args.lines)?;
     bsc_cli_util::emit(args.pretty, args.json, &st, || st.lean());
+    Ok(())
+}
+
+/// `bsc files read <path>` — a file's text, optionally windowed.
+///
+/// Root-confined the same way the harvests are (#3475): this binary hands back file CONTENTS, and
+/// `bsc-confine` only inspects Claude's file-tool payloads — it is blind to what an allow-listed CLI
+/// reads. Without the gate, `read` would be a way for a confined session to read any path on disk.
+fn cmd_read(args: &Args) -> Result<(), String> {
+    let root = resolve_root(&args.root)?;
+    let rel = args.positional.get(1).ok_or("usage: bsc files read <path> [--from n] [--to n]")?;
+    let full = root.join(rel);
+    if !full.exists() {
+        return Err(format!("no such file: {}", full.display()));
+    }
+    bsc_cli_util::require_harvestable_root(&full)?;
+    let f = read(&full, args.from, args.to)?;
+    // Default output is the RAW text — a read whose plain form was a JSON blob would have to be
+    // unescaped by hand before it was usable as source.
+    bsc_cli_util::emit(args.pretty, args.json, &f, || f.text.clone());
     Ok(())
 }
 
@@ -250,6 +310,59 @@ mod tests {
         );
         assert!(miss.is_err());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parse_args_reads_the_read_line_window() {
+        let a = parse_args(vec![
+            "read".into(), "a.ts".into(), "--from".into(), "10".into(), "--to".into(), "20".into(),
+        ])
+        .unwrap();
+        assert_eq!(a.positional, vec!["read", "a.ts"]);
+        assert_eq!((a.from, a.to), (Some(10), Some(20)));
+        assert!(parse_args(vec!["read".into(), "a.ts".into(), "--from".into()]).is_err());
+        assert!(parse_args(vec!["read".into(), "a.ts".into(), "--to".into(), "x".into()]).is_err());
+    }
+
+    #[test]
+    fn run_read_is_confined_to_the_sessions_roots() {
+        // #4161: `read` hands back file CONTENTS, so it honors the same boundary the harvests do —
+        // `bsc-confine` inspects Claude's file-tool payloads and is blind to what this binary reads.
+        let base = std::env::temp_dir().join(format!("bsc-files-cli-read-{}", std::process::id()));
+        let inside = base.join("repo");
+        let outside = base.join("elsewhere");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&inside).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(inside.join("a.ts"), "export const A = 1;\n").unwrap();
+        std::fs::write(outside.join("secret.ts"), "export const SECRET = 1;\n").unwrap();
+        let root_arg = inside.to_string_lossy().into_owned();
+
+        // Confined to `inside`: a file within it reads…
+        bsc_cli_util::with_repo_root(Some(&root_arg), || {
+            assert!(run(vec!["read".into(), "a.ts".into(), "--root".into(), root_arg.clone()], "bsc files").is_ok());
+            // …and one outside every root is REFUSED with a stated error, not a silent empty read.
+            let out_arg = outside.to_string_lossy().into_owned();
+            let err = run(
+                vec!["read".into(), "secret.ts".into(), "--root".into(), out_arg],
+                "bsc files",
+            )
+            .unwrap_err();
+            assert!(err.contains("blocked"), "confinement must state the refusal: {err}");
+        });
+
+        // A missing path is an error, never an empty read.
+        assert!(run(vec!["read".into(), "nope.ts".into(), "--root".into(), root_arg], "bsc files").is_err());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn read_help_names_the_gap_it_closes() {
+        let one = bsc_cli_util::help_for("bsc files", TAGLINE, COMMANDS, "read");
+        assert!(one.contains("bsc files read"));
+        assert!(one.contains("--from"));
+        // The whole point: it is the verb for what NEITHER harvest lifts.
+        assert!(one.contains("harvest"), "help must say why this exists:\n{one}");
     }
 
     #[test]

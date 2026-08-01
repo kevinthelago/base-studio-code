@@ -61,9 +61,10 @@ Acting on an id that doesn't exist is a no-op or an error. Read the current stat
 
 Real project code is the reality the library should track. Mine it into candidate implementations:
 
-- `bsc graph harvest <dir> [--tech T] [--worthy-only]` — harvest a project's functions into candidate
+- `bsc graph harvest <dir-or-file> [--tech T] [--worthy-only]` — harvest a project's functions into candidate
   implementations, each classified **worthy** vs. **glue**, and each carrying a `src` (the file it came
-  from) and a `domain` (its facet).
+  from) and a `domain` (its facet). A **file** target harvests just that module (#4161) — the narrowing
+  `bsc ui harvest <file>` routes you to when it finds functions it will not lift itself.
 - `bsc graph curate <dir> [--tech T] [--apply]` — curate the WORTHY candidates into the library
   (add / optimize). `--apply` writes the runtime store; without it you get the plan to review first.
 
