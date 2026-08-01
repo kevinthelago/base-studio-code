@@ -16,6 +16,7 @@ default = ["data"]
 data = ["dep:bsc-data"]
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
 # The shared CLI scaffold (#1762): help dispatch + the unknown-command renderer.
 bsc-cli-util = { path = "../bsc-cli-util" }
 # The shared dangerous-command registry (#1844) + JSON parsing, for `bsc hook bash-deny` (#1916).

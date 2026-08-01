@@ -56,15 +56,31 @@ fn bsc_blocking(
     args: Vec<String>,
     stdin: Option<String>,
 ) -> Result<String, String> {
+    // #4152: try the WARM child first. It answers only project-less reads on the shared allow-list and
+    // returns `None` for anything else — including a dead or desynchronised child — so this is a pure
+    // fast path and the one-shot spawn below stays the fallback for everything.
+    if let Some(warm) = crate::console::bsc_warm::try_warm(project_key.as_deref(), &args) {
+        return warm;
+    }
     let bin = crate::console::pty::bsc_bin_path()
         .ok_or("bsc binary not found — the bundled sidecar is missing (BSC_BIN unset)")?;
     let mut cmd = std::process::Command::new(&bin);
     cmd.args(&args);
     wire_bsc_stores(&mut cmd, project_key.as_deref());
-    match stdin {
+    // #4152: time the CHILD alone. The frontend logs its own `[invoke] bsc …` round trip, and the
+    // difference between the two IS the app-side overhead (blocking-pool queueing, IPC, the timing
+    // wrapper) — measured at ~450ms/call, which is neither spawn (39ms) nor work (10ms). Without both
+    // numbers there is no way to tell which half a change moved.
+    let started = std::time::Instant::now();
+    let out = match stdin {
         Some(body) => run_capture_stdin(&mut cmd, body.as_bytes()),
         None => run_capture(&mut cmd),
+    };
+    let ms = started.elapsed().as_millis();
+    if ms >= 100 {
+        log::warn!("[bsc] child {} took {ms}ms", args.join(" "));
     }
+    out
 }
 
 /// Wire the per-project + global store env vars a one-shot `bsc` invocation resolves its DB from — the
@@ -76,7 +92,7 @@ fn bsc_blocking(
 /// a global-only subcommand doesn't point them at a bogus empty key); `BSC_SKILL_DB` is the one global
 /// skills store, set unconditionally — mirroring `wire_bsc_env` (per-project db is cwd-derived there,
 /// skill db is global).
-fn wire_bsc_stores(cmd: &mut std::process::Command, project_key: Option<&str>) {
+pub(crate) fn wire_bsc_stores(cmd: &mut std::process::Command, project_key: Option<&str>) {
     if let Some(key) = project_key.filter(|k| !k.is_empty()) {
         cmd.env("BSC_PLAN_DB", plan_db_path(key));
         cmd.env("BSC_ERROR_DB", error_db_path(key));

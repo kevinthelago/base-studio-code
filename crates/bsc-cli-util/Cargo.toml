@@ -9,5 +9,6 @@ description = "Shared scaffold for the base-studio-code state CLIs (#1762) — t
 name = "bsc_cli_util"
 
 [dependencies]
+bsc-util = { path = "../bsc-util" }
 serde = "1"
 serde_json = "1"

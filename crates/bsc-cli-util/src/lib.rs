@@ -151,6 +151,14 @@ where
 /// flush, swallowing any error (a broken pipe must not panic an embedded read). The single I/O sink
 /// [`print_raw`]/[`print_raw_lines`] share.
 fn write_stdout_bytes(bytes: &[u8]) {
+    // #4152: when a warm serve loop is capturing on this thread, the bytes go to its buffer instead of
+    // the real handle. `emit` takes a &str, and these bytes are UTF-8 by construction (`raw_line`
+    // normalizes a Rust String), so the lossy path is unreachable in practice — but it is lossy rather
+    // than a panic, because corrupting one response must never take the warm process down.
+    if bsc_util::is_capturing() {
+        bsc_util::emit(&String::from_utf8_lossy(bytes));
+        return;
+    }
     use std::io::Write;
     let mut out = std::io::stdout().lock();
     let _ = out.write_all(bytes);
