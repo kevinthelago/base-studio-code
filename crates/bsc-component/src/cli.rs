@@ -343,15 +343,31 @@ still REPORTED by `bsc ui doctor` — only the automatic removal is withheld. #2
         summary: "the whole-library duplicate report — exact + fuzzy NEAR-duplicates (name + contract distance), propose-only (#3544)",
         usage: "\
 USAGE:
-  bsc ui dupes [--kit K] [--threshold 0..1] [--json] [--pretty]
+  bsc ui dupes [--kit K] [--threshold 0..1] [--explain] [--json] [--pretty]
 
 The DEDUP surface. Reports the EXACT `duplicate` findings the per-kit analyzer emits (two components sharing
 a `wraps` intrinsic, or byte-identical source) PLUS the FUZZY near-duplicates it structurally misses —
 `Donut`≈`DonutChart`, `Bars`≈`BarChart`, `Legend`≈`ChartLegend`, and cross-kit `Card`/`Grid`/`KeyValueList`
 repeats a growing multi-kit library accumulates. Each near-duplicate is scored by NAME distance (normalized
 token-set + edit distance; `Chart`/`View`/`Bsc` affixes stripped, names singularized) and CONTRACT/body
-distance (prop-signature / variant / `composes` Jaccard + a source k-gram shingle overlap), combined
-0.5·name + 0.5·contract. Cross-kit by design — the whole point is consolidating overlapping kits into one.
+distance, combined 0.5·name + 0.5·contract. Cross-kit by design — the whole point is consolidating
+overlapping kits into one.
+
+CONTRACT TERMS (#4138): prop-signature · source shingles · `src` (same file — a strong PRIOR, not a verdict:
+several components are legitimately extracted from one module) · `folder` · `composes` · `shapes` ·
+`whenUse`/`whenNot` guidance · variants · tags · colocated `tests` · `wraps` · role. A term with NO signal on
+either side is DROPPED, never scored 0 — two prop-less primitives must not read as identical for both
+lacking props.
+
+A pair is contract-scored when its NAME is near OR it shares a hard co-location signal (same `src`, folder,
+`wraps`, `provides`, shape or test file). Before #4138 a dissimilar name alone skipped the pair entirely, so
+`Donut` vs `PieChart` — the duplicates you cannot grep for — were invisible unless byte-identical.
+
+Also reports `provides-collision`: several records overriding ONE platform specifier. Not a similarity
+score — the loader resolves it to one record, so the rest are dead overrides that still read as live.
+
+--explain prints each pair's per-term contributions (`term=value×weight→contribution`) and the terms dropped
+for lack of signal, so the ranking is auditable and the weights are tunable against real output.
 
 --threshold tunes the fuzzy bar (default 0.55); --kit scopes to ONE kit (which drops cross-kit near-dups);
 --json emits the findings array (LLM-consumable), each `{ category, severity, kit, nodeIds, nodeNames, why,
@@ -2139,6 +2155,7 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
 /// fuzzy bar (default [`crate::similarity::DEFAULT_THRESHOLD`]).
 fn cmd_dupes(args: &[String]) -> Result<(), String> {
     let (mut dir, mut kit, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut explain = false;
     let mut threshold = crate::similarity::DEFAULT_THRESHOLD;
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -2151,6 +2168,7 @@ fn cmd_dupes(args: &[String]) -> Result<(), String> {
                     .and_then(|s| s.parse::<f64>().ok())
                     .ok_or("--threshold needs a number in [0,1]")?;
             }
+            "--explain" => explain = true,
             "--json" => json = true,
             "--pretty" => pretty = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -2167,9 +2185,12 @@ fn cmd_dupes(args: &[String]) -> Result<(), String> {
             None => true,
         })
         .collect();
-    // Exact duplicates first (certain — shared wraps / byte-identical), then the ranked near-duplicates.
-    let mut findings: Vec<crate::graph_health::Finding> =
-        crate::graph_health::analyze(&comps).into_iter().filter(|f| f.category == "duplicate").collect();
+    // Conflicts first (#4138 — a `provides` collision has a definite answer), then exact duplicates
+    // (certain — shared wraps / byte-identical), then the ranked near-duplicates.
+    let mut findings: Vec<crate::graph_health::Finding> = crate::similarity::provides_collision_findings(&comps);
+    findings.extend(
+        crate::graph_health::analyze(&comps).into_iter().filter(|f| f.category == "duplicate"),
+    );
     findings.extend(crate::similarity::near_duplicate_findings(&comps, threshold));
     if json {
         let arr: Vec<serde_json::Value> = findings.iter().map(crate::graph_health::Finding::to_value).collect();
@@ -2182,9 +2203,35 @@ fn cmd_dupes(args: &[String]) -> Result<(), String> {
         return Ok(());
     }
     println!("{} duplicate / near-duplicate finding(s), most-similar first:", findings.len());
+    let by_id: std::collections::BTreeMap<&str, &serde_json::Value> = comps
+        .iter()
+        .filter_map(|c| c.get("id").and_then(serde_json::Value::as_str).map(|id| (id, c)))
+        .collect();
     for f in &findings {
         println!("  [{}] {} — {}", f.category, f.kit, f.why);
         println!("        → {}", f.suggested_action);
+        // #4138: WHY it ranked, not just that it did. Only a two-record finding has a pair to explain;
+        // a `provides` collision spanning three is a conflict, not a scored pair.
+        if !explain || f.node_ids.len() != 2 {
+            continue;
+        }
+        let (Some(a), Some(b)) = (by_id.get(f.node_ids[0].as_str()), by_id.get(f.node_ids[1].as_str())) else {
+            continue;
+        };
+        let Some(terms) = crate::similarity::explain_pair(a, b) else { continue };
+        let (mut scored, mut dropped) = (Vec::new(), Vec::new());
+        for t in &terms {
+            match t.value {
+                // A term with no signal on EITHER side is DROPPED, not scored 0 — naming them is half
+                // the point of the explanation, since an absent signal reads as disagreement otherwise.
+                None => dropped.push(t.label),
+                Some(v) => scored.push(format!("{}={v:.2}×{:.2}→{:.3}", t.label, t.weight, t.contribution())),
+            }
+        }
+        println!("        · terms: {}", scored.join("  "));
+        if !dropped.is_empty() {
+            println!("        · no signal (dropped): {}", dropped.join(", "));
+        }
     }
     Ok(())
 }
