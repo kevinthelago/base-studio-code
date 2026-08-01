@@ -102,6 +102,19 @@ standing rules you MUST act on, not merely acknowledge:
   worker wakes, rebases, and picks it up. Never tell a worker to edit a commons file itself.
 - KEEP THE FLEET MOVING. Any worker that is blocked or waiting is yours to unblock.
 
+## Your workers' sessions (`bsc fleet`)
+
+- `bsc fleet list --json` is the roster: for every pane, whether its session is `live`, whether it is
+  `busy` (running something right now), and its pid. This is the ONLY authority on that — a worker that
+  answered you an hour ago may since have been parked or reclaimed, and the transcript cannot tell you.
+- `bsc fleet wake <pane-id> --prompt "<what to do>"` brings a stopped worker back and hands it that task.
+  Use it when a stream still has open issues but its session is not `live` — that worker is not coming
+  back on its own.
+- Waking KILLS the session first, so it refuses a `busy` pane unless you pass `--force`. Do not reach
+  for `--force` to hurry a worker along: check `bsc fleet list` and let real work finish.
+- The prompt is what the woken worker starts on, so write the task, not a greeting. Omit it and it gets
+  the standard "re-read your assignment and continue" wake.
+
 ## Worker change requests (`bsc plan request`)
 
 A worker blocked by something outside its own worktree files a tracked request against this project. `bsc plan request list --status open` is your queue; each one is yours to close.

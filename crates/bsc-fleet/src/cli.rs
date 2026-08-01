@@ -1,6 +1,6 @@
 //! The `bsc fleet` subcommand (#4098) — real per-pane liveness, joined onto the roster.
 
-use crate::{FleetRequest, FleetResult, PaneLive, KIND};
+use crate::{FleetRequest, FleetResult, PaneLive, WakeRequest, WakeResult, KIND, WAKE_KIND};
 use bsc_cli_util::CmdDoc;
 
 const DEFAULT_TIMEOUT_MS: i64 = 8_000;
@@ -34,24 +34,48 @@ gap is the thing worth seeing.
 
 Requires the desktop app: liveness lives in its PTY state, not on disk. Errors plainly when it is not
 running rather than reporting everything as dead.",
+},
+CmdDoc {
+    name: "wake",
+    summary: "wake a parked/reaped worker — the director's lever over a stopped session",
+    usage: "USAGE:
+  bsc fleet wake <pane-id> [--prompt <text>] [--force] [--json|--pretty]
+
+Wakes a worker whose session was parked or reclaimed, and hands it a prompt to start on. Without
+--prompt the app supplies its standard change-request wake, so a director does not have to reproduce
+that prose to use the command.
+
+REFUSES a BUSY pane unless --force. Waking KILLS the PTY before relaunching, so interrupting a worker
+that is mid-task is a deliberate act, not something to do by accident. `bsc fleet list` shows which
+panes are busy.
+
+The reply carries whether the wake actually landed. A pane the app cannot resolve (or one the user
+disabled) reports an ERROR rather than success — the wake path kills first, so a false success would
+leave a dead worker behind a caller that believes it is running.
+
+Requires the desktop app: waking is frontend state, so only the app can do it.",
 }];
 
 struct Args {
     json: bool,
     pretty: bool,
     roster: Option<String>,
+    prompt: Option<String>,
+    force: bool,
     timeout_ms: Option<i64>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, pretty: false, roster: None, timeout_ms: None, positional: Vec::new() };
+    let mut a = Args { json: false, pretty: false, roster: None, prompt: None, force: false, timeout_ms: None, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--roster" => a.roster = Some(it.next().ok_or("--roster needs a path")?),
+            "--prompt" => a.prompt = Some(it.next().ok_or("--prompt needs text")?),
+            "--force" => a.force = true,
             "--timeout" => {
                 let v = it.next().ok_or("--timeout needs a value")?;
                 a.timeout_ms = Some(v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?);
@@ -102,8 +126,28 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     }
     match args.positional.first().map(String::as_str).unwrap_or("list") {
         "list" => cmd_list(&args),
+        "wake" => cmd_wake(&args, prog),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
+}
+
+fn cmd_wake(args: &Args, prog: &str) -> Result<(), String> {
+    let pane = args
+        .positional
+        .get(1)
+        .ok_or_else(|| format!("usage: {prog} wake <pane-id> [--prompt <text>] [--force]"))?;
+    let req = WakeRequest {
+        pane_id: pane.clone(),
+        prompt: args.prompt.clone().unwrap_or_default(),
+        force: args.force,
+    };
+    let timeout = args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+    let res: WakeResult = ask(WAKE_KIND, &req, timeout)?;
+    bsc_cli_util::emit(args.pretty, args.json, &res, || {
+        let note = if res.was_busy { " (interrupted a BUSY pane)" } else { "" };
+        format!("woke {}{note}", res.pane_id)
+    });
+    Ok(())
 }
 
 fn cmd_list(args: &Args) -> Result<(), String> {
@@ -145,12 +189,22 @@ fn print_row(pane: &str, stream: &str, role: &str, p: Option<&PaneLive>) {
 
 /// Drop the request, wait for the app's answer.
 fn send(req: &FleetRequest, timeout: i64) -> Result<FleetResult, String> {
+    ask(KIND, req, timeout)
+}
+
+/// The shared request/await for every verb here — one transport, so a new verb cannot drift onto a
+/// second one.
+fn ask<Q: serde::Serialize, R: serde::de::DeserializeOwned>(
+    kind: &str,
+    req: &Q,
+    timeout: i64,
+) -> Result<R, String> {
     let chan = bsc_appchan::chan_dir()?;
     let now = bsc_util::now_ms();
     let _ = bsc_appchan::sweep_stale(&chan, now, STALE_MS);
 
     let id = bsc_appchan::new_id(now);
-    bsc_appchan::write_request(&chan, &id, KIND, now, req)?;
+    bsc_appchan::write_request(&chan, &id, kind, now, req)?;
 
     let reply = bsc_appchan::poll_reply(&chan, &id, timeout, POLL_INTERVAL_MS, || {
         format!(

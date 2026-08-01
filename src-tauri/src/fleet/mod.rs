@@ -1,3 +1,4 @@
+pub(crate) mod wake;
 pub mod worktree;
 pub mod teardown;
 pub mod disk;
