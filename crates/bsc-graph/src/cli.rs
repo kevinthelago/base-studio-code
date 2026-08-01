@@ -24,7 +24,7 @@ pub const VERBS: [&str; 11] =
 pub const IMPL_SUBVERBS: [&str; 3] = ["set", "remove", "list"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 20] = [
+pub const FLAGS: [&str; 21] = [
     "--pretty",
     "--all",
     "--id",
@@ -35,6 +35,7 @@ pub const FLAGS: [&str; 20] = [
     "--ref",
     "--code",
     "--domain",
+    "--clear",
     "--tags",
     "--kind",
     "--viz-code",
@@ -68,7 +69,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 let tech = flag_value(&args, "--tech").ok_or("usage: bsc graph impl set … --tech <language>")?;
                 let role = flag_value(&args, "--role").ok_or("usage: bsc graph impl set … --role primitive|algorithm")?;
                 let name = flag_value(&args, "--name").ok_or("usage: bsc graph impl set … --name <name>")?;
-                let mut im = serde_json::json!({ "id": id, "tech": tech, "role": role, "name": name, "composes": list_flag(flag_value(&args, "--composes").as_deref()) });
+                // #4154: `composes` is included ONLY when supplied. It used to default to `[]` on every
+                // write, so a `--domain`-only edit blanked an impl's whole composes graph — the same
+                // destructive-default class as the full-record overwrite `set_impl` no longer does.
+                let mut im = serde_json::json!({ "id": id, "tech": tech, "role": role, "name": name });
+                if let Some(c) = flag_value(&args, "--composes") {
+                    im["composes"] = list_flag(Some(c.as_str()));
+                }
                 if let Some(s) = flag_value(&args, "--summary") { im["summary"] = Value::String(s); }
                 // A primitive DESCRIBES a language built-in via `--ref` (std path), rather than re-coding it (#2972).
                 if let Some(r) = flag_value(&args, "--ref") { im["ref"] = Value::String(r); }
@@ -90,6 +97,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // `--src` (the folder derives from it), `--folder`, or `--no-src` for a canonical
                 // algorithm that genuinely has no file in this repo. A PRIMITIVE is exempt by design —
                 // it DESCRIBES a language built-in via `--ref` and is never re-coded (#2972).
+                // #4154: with a merging write, a value can no longer be removed by omitting it — so
+                // removal becomes EXPLICIT. `--clear a,b` drops those fields from the stored record.
+                let cleared: Vec<String> = flag_value(&args, "--clear")
+                    .map(|v| v.split(',').map(|f| f.trim().to_string()).filter(|f| !f.is_empty()).collect())
+                    .unwrap_or_default();
+                for f in &cleared {
+                    im[f.as_str()] = Value::Null;
+                }
                 if !provenance_declared(&role, &im, args.iter().any(|a| a == "--no-src")) {
                     return Err(format!(
                         "impl set: algorithm '{id}' has no provenance — pass --src <path> (the folder                          derives from it), --folder <path>, or --no-src if it has no source in this repo.                          Without one it cannot be organized in the graph's folder tree (#4136)."
@@ -561,7 +576,7 @@ fn help(prog: &str) -> String {
   \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>]   # upsert a language-kit impl (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder)\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder)\n  \
          {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n  \
          {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
