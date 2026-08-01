@@ -82,6 +82,19 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     im["src"] = Value::String(sp);
                 }
                 if let Some(f) = flag_value(&args, "--folder") { im["folder"] = Value::String(f); }
+                // #4136: an ALGORITHM must declare its provenance, or explicitly declare it has none.
+                //
+                // The librarian curated 10 algorithms through this verb with no `--src`, so none could
+                // sit in the folder tree the rail organizes by — it did exactly what its spec said, and
+                // the CLI accepted a provenance-less record silently. Absence is now EXPLICIT: pass
+                // `--src` (the folder derives from it), `--folder`, or `--no-src` for a canonical
+                // algorithm that genuinely has no file in this repo. A PRIMITIVE is exempt by design —
+                // it DESCRIBES a language built-in via `--ref` and is never re-coded (#2972).
+                if !provenance_declared(&role, &im, args.iter().any(|a| a == "--no-src")) {
+                    return Err(format!(
+                        "impl set: algorithm '{id}' has no provenance — pass --src <path> (the folder                          derives from it), --folder <path>, or --no-src if it has no source in this repo.                          Without one it cannot be organized in the graph's folder tree (#4136)."
+                    ));
+                }
                 if let Some(t) = flag_value(&args, "--tags") { im["tags"] = list_flag(Some(t.as_str())); }
                 // The kind facet (#3210) — the manipulation type that selects the live animation. Additive.
                 if let Some(k) = flag_value(&args, "--kind") { im["kind"] = Value::String(k); }
@@ -502,6 +515,20 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 }
 
 /// The value following a `--flag`, if present.
+/// Has an `impl set` DECLARED where its code comes from (#4136)?
+///
+/// An `algorithm` must carry `src` (the folder derives from it), a `folder`, or an explicit `--no-src`
+/// for a canonical algorithm with no file in this repo. Absence must be stated rather than defaulted:
+/// the librarian curated 10 algorithms through this verb with none, so none could sit in the folder tree
+/// the rail organizes by, and nothing surfaced the omission.
+///
+/// A `primitive` is exempt BY DESIGN — it DESCRIBES a language built-in via `--ref` and is never
+/// re-coded (#2972), so it has no source to point at. Pure, so the rule is testable without touching the
+/// store (which `run` would otherwise write for real).
+fn provenance_declared(role: &str, im: &Value, no_src: bool) -> bool {
+    role != "algorithm" || no_src || im.get("src").is_some() || im.get("folder").is_some()
+}
+
 fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
 }
@@ -579,6 +606,44 @@ mod tests {
         for flag in FLAGS {
             assert!(help.contains(flag), "help omits `{flag}`");
         }
+    }
+
+    #[test]
+    fn impl_set_refuses_an_algorithm_with_no_provenance() {
+        // #4136 — the librarian curated 10 algorithms through this verb with no `--src`, so none could
+        // sit in the folder tree the rail organizes by. The CLI accepted them silently; now absence has
+        // to be DECLARED. The error must name the fix, since the librarian reads it and retries.
+        let base = |role: &str| vec![
+            "impl".to_string(), "set".into(),
+            "--tech".into(), "rust".into(),
+            "--id".into(), "probe-4136.rs".into(),
+            "--role".into(), role.into(),
+            "--name".into(), "probe".into(),
+            "--code".into(), "// x".into(),
+        ];
+        let err = run(base("algorithm"), "bsc graph").unwrap_err();
+        assert!(err.contains("no provenance"), "{err}");
+        assert!(err.contains("--src"), "names the flag to pass: {err}");
+        assert!(err.contains("--no-src"), "names the explicit opt-out: {err}");
+    }
+
+    #[test]
+    fn provenance_is_declared_by_src_folder_or_an_explicit_opt_out() {
+        let bare = serde_json::json!({ "id": "x.rs" });
+        let with_src = serde_json::json!({ "id": "x.rs", "src": "crates/x/src/lib.rs" });
+        let with_folder = serde_json::json!({ "id": "x.rs", "folder": "crates/x/src" });
+
+        // The refused shape — an algorithm with neither, and no opt-out.
+        assert!(!provenance_declared("algorithm", &bare, false));
+        // Each accepted shape, against the SAME record, so the rule is proven to turn on provenance
+        // alone rather than on some other difference between the calls.
+        assert!(provenance_declared("algorithm", &with_src, false));
+        assert!(provenance_declared("algorithm", &with_folder, false));
+        assert!(provenance_declared("algorithm", &bare, true)); // --no-src
+
+        // A PRIMITIVE describes a built-in via `--ref` and has no source by design (#2972) — the gate
+        // must never apply to it, or the whole primitive tier becomes unwritable.
+        assert!(provenance_declared("primitive", &bare, false));
     }
 
     #[test]
