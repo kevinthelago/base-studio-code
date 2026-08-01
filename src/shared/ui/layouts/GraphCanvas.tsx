@@ -80,7 +80,7 @@ export function GraphCanvas({
 }: GraphCanvasProps) {
   // Pull the plain viewport values out as locals — worldTransform is a computed style object, not a
   // ref, so reading it (and the callback refs) here keeps the render free of ref-access.
-  const { setVp, onCanvasDown, worldTransform, view } = vp;
+  const { setVp, setWorld, onCanvasDown, worldTransform, view } = vp;
   // The infinite grid lives on the viewport (untransformed) so it fills the whole visible area: the
   // dot SPACING scales with zoom (`gridSize * scale`) and the origin follows the pan (`tx,ty`), so it
   // stays aligned to world coords without ever stopping at the world box the content overflows.
@@ -145,9 +145,14 @@ export function GraphCanvas({
               texture rasterized at 100%, so zooming IN just stretches that texture → blurry cards/text
               (the HTML node divs; the SVG edges are vector, so they stayed crisp). Without it the
               browser re-rasterizes the layer at the settled zoom, so text is sharp at every level. */}
-          <Box style={{ position: "absolute", left: 0, top: 0, width: world.w, height: world.h, userSelect: "none", ...worldTransform }}>
+          {/* #4140: a raw div (like the viewport above) because `setWorld` needs a REAL DOM ref — Box
+              does not forward one — so a pan can write this element's transform DIRECTLY, with no React
+              render per mousemove. `worldTransform` stays for the initial/committed paint; both go
+              through `viewTransform`, so the two paths cannot disagree on the string. */}
+          {/* eslint-disable-next-line no-restricted-syntax -- needs a real DOM ref for the imperative pan transform (#4140) */}
+          <div ref={setWorld} style={{ position: "absolute", left: 0, top: 0, width: world.w, height: world.h, userSelect: "none", ...worldTransform }}>
             {children}
-          </Box>
+          </div>
           {overlays}
         </div>
 
