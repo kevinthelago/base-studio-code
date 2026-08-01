@@ -52,6 +52,14 @@ export function normalizeRef(ref: string | number): string {
 export function fleetPlanProgress(
   streams: readonly OwningStream[],
   doneRefs: ReadonlySet<string>,
+  /** When set, ALSO emit this node id carrying the union of EVERY stream's refs (#4122).
+   *
+   *  The director is not a stream — it owns no lane — so a per-stream map leaves its node with no
+   *  progress at all. But it is the one agent responsible for the whole board, so its bar is the
+   *  project's: every issue any worker owns, de-duplicated, because two streams naming one ref is one
+   *  piece of work and double-counting would make the director's denominator disagree with the sum of
+   *  its workers'. */
+  aggregateId?: string,
 ): Map<string, StreamProgress> {
   const done = new Set<string>();
   for (const r of doneRefs) done.add(normalizeRef(r));
@@ -64,6 +72,16 @@ export function fleetPlanProgress(
     let d = 0;
     for (const r of refs) if (done.has(r)) d += 1;
     out.set(s.id, { done: d, total: refs.size });
+  }
+
+  if (aggregateId) {
+    // Union across streams, then count — NOT a sum of the per-stream rows, which would double-count a
+    // ref two streams both claim.
+    const all = new Set<string>();
+    for (const s of streams) for (const r of s.issues) all.add(normalizeRef(r));
+    let d = 0;
+    for (const r of all) if (done.has(r)) d += 1;
+    out.set(aggregateId, { done: d, total: all.size });
   }
   return out;
 }
