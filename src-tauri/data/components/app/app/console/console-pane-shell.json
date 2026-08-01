@@ -1,0 +1,215 @@
+{
+  "id": "console-pane-shell",
+  "name": "PaneShell",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "// Console → a pane's chrome (header, view tabs, menu), AS GRAPH SOURCE (#4186, epic #3604). Transcribed from the live shell file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the console pane/lib/terminal surface via the console\n// graph-platform, and the sibling pane chrome as @/components/* graph records). Behaviour runs here.\nimport { useState, useRef, useEffect, useLayoutEffect, useCallback } from \"react\";\nimport { useClickOutside } from \"@/shared/hooks/useClickOutside\";\nimport { createPortal } from \"react-dom\";\nimport { type ViewKey, VIEW_DEFS } from \"@/app/console/panes/viewDefs\";\nimport { PaneMenu, type ModelId } from \"@/components/console-pane-menu\";\nimport { placeMenu, type MenuPlacement } from \"@/app/console/panes/menuPlacement\";\nimport { toModelId } from \"@/app/console/lib/modelDisplay\";\nimport { DEFAULT_MODEL_ID } from \"@/app/console/lib/models\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\n// The canonical pane-status vocabulary lives in lib/paneStatus (#435); re-exported\n// here so existing PaneShell importers keep their import path.\nexport type { PaneStatus } from \"@/app/console/lib/paneStatus\";\nimport type { PaneStatus } from \"@/app/console/lib/paneStatus\";\n\n// Session-state vocabulary → the footer/dot label + the themed state color (#1149). Our live\n// status is \"run\" | \"on\" | \"idle\"; a disabled pane arrives as \"idle\" but is labelled \"stopped\".\nconst STATE_META: Record<string, { label: string; color: string; pulse: boolean }> = {\n  run:  { label: \"running\", color: \"var(--state-run)\", pulse: true },\n  on:   { label: \"ready\",   color: \"var(--state-run)\", pulse: false },\n  idle: { label: \"idle\",    color: \"var(--state-idle)\", pulse: false },\n};\n\n// The provider hue (`PROV_COLOR`) + harness label that once tinted the header pill now live\n// inside `PaneMenu` (#1319) — the compact header trigger is tinted by SESSION STATUS, not\n// provider. They stay on PaneShell as the source the menu reads via props.\n\ninterface PaneShellProps {\n  agent: string;\n  status?: PaneStatus;\n  meta?: string;\n  model?: ModelId;\n  /** Repo this pane works in (short `name`, not `owner/name`) — shown after the agent name. */\n  repo?: string;\n  /** Current branch — shown in the footer. */\n  branch?: string;\n  /** Session role (worker/director/…) — shown as a header badge. */\n  role?: string;\n  /** LLM provider id — drives the model-pill dot color + the harness label. */\n  provider?: string;\n  /** The actual model the running CLI reports (#1181, from its transcript). When known it's shown\n   *  in the model pill instead of the configured `model`; absent ⇒ fall back to `model`. */\n  runningModel?: string;\n  /** Uncommitted-change count — a header badge when > 0. */\n  changes?: number;\n  /** Warning count — a header badge when > 0. */\n  warns?: number;\n  /** Session token + cost rollups — shown in the footer when known. */\n  tok?: string;\n  cost?: string;\n  /** A Claude session is live in this pane (from the OSC-100 run/idle signals). Drives the\n   *  model-pill \"running\" indicator (#1181). */\n  claudeActive?: boolean;\n  available?: ViewKey[];\n  active?: ViewKey;\n  banner?: React.ReactNode;\n  menuOpen?: boolean;\n  focused?: boolean;\n  fullscreen?: boolean;\n  disabled?: boolean;\n  /** Hidden but kept mounted (e.g. a non-maximized pane while another is fullscreen). */\n  hidden?: boolean;\n  onViewChange?: (view: ViewKey) => void;\n  onMenuToggle?: () => void;\n  onToggleFullscreen?: () => void;\n  onToggleDisable?: () => void;\n  /** Force a TUI repaint of this pane via a resize nudge (#1221). */\n  onRedraw?: () => void;\n  onFocus?: () => void;\n  onRename?: (name: string) => void;\n  onPickDirectory?: () => void;\n  onModel?: (model: ModelId) => void;\n  /** Adopt a persona onto this pane (#2094): stamps its role/model/start-prompt for the next launch. */\n  onPersona?: (personaId: string) => void;\n  children: React.ReactNode;\n}\n\nexport function PaneShell({\n  agent,\n  status = \"run\",\n  model = DEFAULT_MODEL_ID,\n  repo,\n  role,\n  provider,\n  changes = 0,\n  warns = 0,\n  claudeActive = false,\n  runningModel,\n  available = [\"console\", \"files\"],\n  active = \"console\",\n  banner,\n  menuOpen = false,\n  focused = false,\n  fullscreen = false,\n  disabled = false,\n  hidden = false,\n  onViewChange,\n  onMenuToggle,\n  onToggleFullscreen,\n  onToggleDisable,\n  onRedraw,\n  onFocus,\n  onRename,\n  onPickDirectory,\n  onModel,\n  onPersona,\n  children,\n}: PaneShellProps) {\n  const paneRef = useRef<HTMLDivElement>(null);\n  const menuButtonRef = useRef<HTMLButtonElement>(null);\n  const menuRef = useRef<HTMLDivElement>(null);\n  const [menuPos, setMenuPos] = useState<MenuPlacement | null>(null);\n\n  // Position the menu so it stays fully on-screen (#1374). We MEASURE the menu's actual size\n  // (the portal renders hidden first, so `menuRef` has real dimensions here) and hand it +\n  // the trigger rect to the pure `placeMenu`, which picks a top/left clamped into the viewport\n  // on all four sides and caps the height to the available space. Recomputes on resize while\n  // open. `useLayoutEffect` runs before paint, so the hidden→placed flip never flickers.\n  useLayoutEffect(() => {\n    if (!menuOpen) { setMenuPos(null); return; }\n    const compute = () => {\n      const btn = menuButtonRef.current?.getBoundingClientRect();\n      const menu = menuRef.current?.getBoundingClientRect();\n      if (!btn || !menu) return;\n      setMenuPos(placeMenu(\n        btn,\n        { width: menu.width, height: menu.height },\n        { width: window.innerWidth, height: window.innerHeight },\n      ));\n    };\n    compute();\n    window.addEventListener(\"resize\", compute);\n    return () => window.removeEventListener(\"resize\", compute);\n  }, [menuOpen]);\n\n  // Close the pane menu on outside click, but let the button's own click handler toggle it.\n  useClickOutside(menuRef, () => onMenuToggle?.(), menuOpen, menuButtonRef);\n\n  const [editingName, setEditingName] = useState(false);\n  const [draftName, setDraftName] = useState(agent);\n  const nameInputRef = useRef<HTMLInputElement>(null);\n\n  useEffect(() => {\n    if (editingName) nameInputRef.current?.select();\n  }, [editingName]);\n\n  const commitRename = useCallback(() => {\n    const trimmed = draftName.trim();\n    if (trimmed && trimmed !== agent) onRename?.(trimmed);\n    setEditingName(false);\n  }, [draftName, agent, onRename]);\n\n  useEffect(() => {\n    if (!focused) return;\n    const active = document.activeElement;\n    if (paneRef.current?.contains(active)) return;\n    const el = paneRef.current?.querySelector<HTMLElement>(\"textarea, input:not([type='hidden'])\");\n    el?.focus();\n  }, [focused]);\n\n  const sm = STATE_META[status] ?? STATE_META.idle;\n  // The compact header trigger (#1319) is the CURRENT VIEW's icon tinted by SESSION STATUS:\n  // accent + pulse when a session is live (`claudeActive`), the themed state color otherwise.\n  // The harness/provider/model the pill once spelled out now live inside `PaneMenu`.\n  const running = claudeActive;\n  const { Icon: ViewIcon } = VIEW_DEFS[active] ?? VIEW_DEFS.console;\n  const triggerColor = running ? \"var(--accent)\" : sm.color;\n\n  const chip = (txt: string, bg: string, col: string) => (\n    <Text mono size={9} style={{ padding: \"0 4px\", borderRadius: 5, background: bg, color: col }}>{txt}</Text>\n  );\n\n  return (\n    // eslint-disable-next-line no-restricted-syntax, jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- pane root needs a real DOM ref (focus + measure); onClick is focus-follows-click, the pane's controls are separately focusable\n    <div\n      ref={paneRef}\n      className={focused ? \"pane focused\" : \"pane\"}\n      onClick={onFocus}\n      style={{\n        height: \"100%\",\n        // Hidden panes stay mounted (xterm/PTY/scrollback preserved) — just not displayed.\n        display: hidden ? \"none\" : \"flex\",\n        flexDirection: \"column\",\n        position: \"relative\",\n        zIndex: menuOpen ? 10 : 1,\n      }}\n    >\n      {/* Head — the Console-Shell pane header (#1149, reworked #1319): the compact menu trigger\n          (current-view glyph tinted by status + ▾) at the far left · name · repo · badges, then\n          the role badge. Model/harness/view-switching all live inside the menu the trigger opens. */}\n      <Row gap={7} style={{\n        height: 36, flex: \"0 0 36px\", padding: \"0 10px\",\n        background: \"var(--bg-elev)\", borderBottom: \"1px solid var(--border-soft)\",\n      }}>\n\n        {/* Menu trigger (#1319) — the leftmost control, where the status dot used to be. A single\n            glyph = the CURRENT view's icon (console/files/branches/…) tinted by SESSION STATUS\n            (accent + pulse when live, the state color when idle) + a ▾. One compact control answers\n            \"what am I looking at\" + \"is it live\" and signals the menu (model · views · pane) opens. */}\n        {/* eslint-disable-next-line no-restricted-syntax -- bespoke menu-trigger needs a real DOM ref (measured placement) + status-tinted inline styling */}\n        <button\n          ref={menuButtonRef}\n          title=\"Model, screens & pane options\"\n          onClick={onMenuToggle}\n          style={{\n            display: \"flex\", alignItems: \"center\", gap: 4, height: 21, padding: \"0 7px\",\n            border: \"1px solid \" + (menuOpen ? \"var(--accent)\" : \"var(--border-soft)\"), borderRadius: 6,\n            background: menuOpen ? \"var(--bg-canvas)\" : \"var(--bg-elev2)\",\n            cursor: \"pointer\", flex: \"0 0 auto\",\n          }}\n        >\n          <ViewIcon\n            size={12}\n            style={{\n              color: triggerColor,\n              animation: running && sm.pulse ? \"pulse 1.6s ease-in-out infinite\" : \"none\",\n            }}\n          />\n          <Text mono size={10} style={{ color: menuOpen ? \"var(--accent-text)\" : \"var(--fg-dim)\" }}>▾</Text>\n        </button>\n\n        {/* Agent name — double-click to rename */}\n        {editingName ? (\n          // eslint-disable-next-line no-restricted-syntax -- bespoke inline rename input needs a real DOM ref (select-on-edit) + header-scoped styling\n          <input\n            ref={nameInputRef}\n            value={draftName}\n            onChange={(e) => setDraftName(e.target.value)}\n            onBlur={commitRename}\n            onKeyDown={(e) => {\n              if (e.key === \"Enter\") { e.preventDefault(); commitRename(); }\n              if (e.key === \"Escape\") { setDraftName(agent); setEditingName(false); }\n            }}\n            className=\"mono\"\n            style={{\n              fontSize: 12,\n              background: \"var(--bg-canvas)\", color: \"var(--fg)\",\n              border: \"1px solid var(--accent-dim)\", borderRadius: 3,\n              padding: \"1px 5px\", width: 130, outline: \"none\", flex: \"0 0 auto\",\n            }}\n          />\n        ) : (\n          <Text\n            mono\n            size={12.5}\n            weight={600}\n            onDoubleClick={() => { setDraftName(agent); setEditingName(true); }}\n            title={`${agent} · double-click to rename`}\n            style={{\n              color: \"var(--fg)\",\n              // Shrink + ellipsis (like the repo) so a long name truncates instead of pushing the\n              // role badge off the right edge — the worker/director tag stays visible (#header-overflow).\n              whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\", flex: \"0 1 auto\", minWidth: 0,\n            }}\n          >{agent}</Text>\n        )}\n\n        {/* Repo */}\n        {repo && (\n          <Text mono size={11} tone=\"dim\" style={{\n            whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\", flex: \"0 1 auto\", minWidth: 0,\n          }}>· {repo}</Text>\n        )}\n\n        {/* Change / warn badges */}\n        {changes > 0 && (\n          <Box as=\"span\" className=\"mono\" style={{ display: \"flex\", alignItems: \"center\", gap: 3, color: \"var(--fg-muted)\", fontSize: 10, flex: \"0 0 auto\" }}>\n            ±{chip(String(changes), \"var(--bg-elev2)\", \"var(--fg-muted)\")}\n          </Box>\n        )}\n        {warns > 0 && (\n          <Box as=\"span\" className=\"mono\" style={{ display: \"flex\", alignItems: \"center\", gap: 3, color: \"var(--state-wait)\", fontSize: 10, flex: \"0 0 auto\" }}>\n            ⚠{chip(String(warns), \"color-mix(in oklch, var(--danger), transparent 82%)\", \"var(--danger)\")}\n          </Box>\n        )}\n\n        {/* Spacer pushes the role badge to the right edge */}\n        <Box style={{ flex: 1, minWidth: 0 }} />\n\n        {/* Role badge */}\n        {role && (\n          <Box as=\"span\" className=\"mono\" pad={[0, 7]} bg={role === \"director\" ? \"var(--accent-soft)\" : \"var(--bg-elev2)\"} radius={6} style={{\n            height: 21, display: \"flex\", alignItems: \"center\",\n            color: role === \"director\" ? \"var(--accent-text)\" : \"var(--fg-muted)\",\n            fontSize: 10, fontWeight: 600, letterSpacing: \".03em\",\n            flex: \"0 0 auto\", whiteSpace: \"nowrap\",\n          }}>{role.toUpperCase()}</Box>\n        )}\n      </Row>\n\n      {banner}\n\n      {/* eslint-disable-next-line no-restricted-syntax -- host wrapper for the PTY terminal / view children (measured region) */}\n      <div style={{ flex: 1, minHeight: 0, display: \"flex\", flexDirection: \"column\", overflow: \"hidden\" }}>\n        {children}\n      </div>\n\n      {menuOpen && createPortal(\n        // eslint-disable-next-line no-restricted-syntax -- portal menu needs a real DOM ref for measured placement (Box isn't forwardRef)\n        <div ref={menuRef} style={{\n          position: \"fixed\",\n          // Hidden for the first (measure) pass, then placed; off-screen meanwhile so the\n          // hidden element can't catch clicks or show a flash at 0,0.\n          left: menuPos ? menuPos.left : -9999,\n          top: menuPos ? menuPos.top : -9999,\n          visibility: menuPos ? \"visible\" : \"hidden\",\n          zIndex: 1000,\n        }}>\n          <PaneMenu\n            agent={agent}\n            provider={provider} running={running}\n            model={model} runningModel={toModelId(runningModel)} active={active} available={available}\n            maxHeight={menuPos?.maxHeight}\n            fullscreen={fullscreen}\n            disabled={disabled}\n            onToggleFullscreen={onToggleFullscreen}\n            onToggleDisable={onToggleDisable}\n            onRedraw={onRedraw}\n            onPickDirectory={onPickDirectory}\n            onClose={onMenuToggle}\n            onRename={() => { setDraftName(agent); setEditingName(true); onMenuToggle?.(); }}\n            onViewChange={onViewChange}\n            onModel={onModel}\n            onPersona={onPersona}\n          />\n        </div>,\n        document.body\n      )}\n    </div>\n  );\n}\n",
+  "src": "src/app/console/panes/PaneShell.tsx",
+  "folder": "app/console",
+  "composes": [
+    "Box",
+    "PaneMenu",
+    "Row",
+    "Text"
+  ],
+  "props": [
+    {
+      "name": "agent",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "status",
+      "type": "PaneStatus",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "meta",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "model",
+      "type": "ModelId",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "repo",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "branch",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "role",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "provider",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "runningModel",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "changes",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "warns",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "tok",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "cost",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "claudeActive",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "available",
+      "type": "ViewKey[]",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "active",
+      "type": "ViewKey",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "banner",
+      "type": "React.ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "menuOpen",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "focused",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "fullscreen",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "disabled",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "hidden",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onViewChange",
+      "type": "(view: ViewKey) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onMenuToggle",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onToggleFullscreen",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onToggleDisable",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onRedraw",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onFocus",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onRename",
+      "type": "(name: string) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onPickDirectory",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onModel",
+      "type": "(model: ModelId) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onPersona",
+      "type": "(personaId: string) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "children",
+      "type": "React.ReactNode",
+      "req": true,
+      "desc": ""
+    }
+  ]
+}

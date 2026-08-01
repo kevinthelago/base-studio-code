@@ -1,0 +1,132 @@
+{
+  "id": "console-pane-menu",
+  "name": "PaneMenu",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "// Console → the pane hamburger menu, AS GRAPH SOURCE (#4186, epic #3604). Transcribed from the live shell file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the console pane/lib/terminal surface via the console\n// graph-platform, and the sibling pane chrome as @/components/* graph records). Behaviour runs here.\nimport { useState } from \"react\";\nimport { Maximize2, Minimize2, Power, PowerOff, RefreshCw } from \"lucide-react\";\nimport type { LucideIcon } from \"lucide-react\";\nimport { type ViewKey, VIEW_DEFS } from \"@/app/console/panes/viewDefs\";\nimport { type ModelId, MODELS } from \"@/app/console/lib/models\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { getProvider } from \"@/app/console/lib/providers\";\nimport { useAppStore } from \"@/store\";\n\n// Re-exported so existing `import { type ModelId } from \"@/components/console-pane-menu\"` call sites keep working\n// now that the catalog lives in the shared module (#…).\nexport type { ModelId };\n\n// LLM-provider → its themed hue + the harness it runs under. Moved here from the header pill\n// (#1319): the compact header trigger is tinted by session STATUS, so the provider identity now\n// surfaces inside the menu. Absent / \"claude\" ⇒ Claude Code (anthropic); else the bsc-agent shell.\nconst PROV_COLOR: Record<string, string> = {\n  claude: \"var(--prov-anthropic)\", anthropic: \"var(--prov-anthropic)\",\n  openai: \"var(--prov-openai)\", codex: \"var(--prov-openai)\",\n  gemini: \"var(--prov-google)\", google: \"var(--prov-google)\",\n  local: \"var(--prov-local)\", ollama: \"var(--prov-local)\",\n};\nconst harnessOf = (provider?: string) => {\n  if (!provider || provider === \"claude\" || provider === \"anthropic\") return \"Claude Code\";\n  if (provider === \"bsc-agent\") return \"bsc-agent\";\n  // A provider that launches its OWN CLI (Aider #1172, Gemini, Codex, Ollama, …) is labeled by its\n  // display name rather than mislabeled \"bsc-agent\"; an unregistered id falls back to bsc-agent.\n  return getProvider(provider)?.displayName ?? \"bsc-agent\";\n};\n\ninterface PaneMenuProps {\n  agent: string;\n  /** LLM provider id — drives the harness label + provider-hue dot in the menu header (#1319). */\n  provider?: string;\n  /** A session is live in this pane (`claudeActive`) — the menu header shows running vs idle. */\n  running?: boolean;\n  /** The model configured for this pane (what `claude --model` launches next). */\n  model: ModelId;\n  /** The model the CLI is ACTUALLY running right now (mapped from the transcript, #1181), when\n   *  known and a Claude family the menu offers. Drives the selected highlight so the menu\n   *  reflects reality; absent ⇒ fall back to the configured `model`. */\n  runningModel?: ModelId;\n  active: ViewKey;\n  available: ViewKey[];\n  /** Caps the menu height so it scrolls instead of clipping past the window edge. */\n  maxHeight?: number;\n  /** Whether this pane is currently maximized (fullscreen). */\n  fullscreen?: boolean;\n  /** Whether this pane's console is currently disabled (PTY stopped). */\n  disabled?: boolean;\n  onToggleFullscreen?: () => void;\n  onToggleDisable?: () => void;\n  /** Force a TUI repaint of this pane via a resize nudge (#1221) — un-jumbles the Claude CLI. */\n  onRedraw?: () => void;\n  /** Open the directory picker to change this pane's working dir (moved here from the header). */\n  onPickDirectory?: () => void;\n  onClose?: () => void;\n  onRename?: () => void;\n  onViewChange?: (view: ViewKey) => void;\n  /** Set this pane's model. Applies to `claude --model` on the pane's next launch. */\n  onModel?: (model: ModelId) => void;\n  /** Adopt a persona onto this pane (#2094): stamps role/model/start-prompt for the next launch. */\n  onPersona?: (personaId: string) => void;\n}\n\nexport function PaneMenu({\n  agent, provider, running, model, runningModel, active, available, maxHeight, fullscreen, disabled,\n  onToggleFullscreen, onToggleDisable, onRedraw, onClose, onRename, onViewChange, onModel, onPersona,\n}: PaneMenuProps) {\n  // The persona library (#2094) — read here so the picker doesn't need prop-drilling; onPersona\n  // (bound to this pane's id upstream) does the actual stamp.\n  const personas = useAppStore((s) => s.personas);\n  const provColor = PROV_COLOR[provider ?? \"claude\"] ?? \"var(--prov-local)\";\n  const harness = harnessOf(provider);\n  // Provider caveats (#1172): a limited provider (e.g. Aider — no permission gate, no MCP, limited\n  // telemetry) flags its gaps here so the picker never silently degrades the app's security model.\n  const limitations = provider ? getProvider(provider)?.limitations : undefined;\n  // The highlighted row reflects what's ACTUALLY running when known (#1181), else the\n  // configured model. Selecting a different row still sets the model for the next launch.\n  const selected = runningModel ?? model;\n  return (\n    <Box className=\"mono\" style={{\n      width: 268,\n      maxHeight,\n      background: \"var(--bg-panel)\",\n      border: \"1px solid var(--border)\",\n      borderRadius: 8,\n      boxShadow: \"0 18px 50px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02)\",\n      // Scroll vertically (capped by maxHeight) but keep rounded corners; the menu's\n      // own drop shadow is unaffected since overflow only clips descendants.\n      overflowX: \"hidden\", overflowY: \"auto\",\n      fontSize: 11,\n    }}>\n      {/* Header */}\n      <Box pad={[10, 12]} bg=\"var(--bg-elev)\" style={{ borderBottom: \"1px solid var(--border-soft)\",\n      }}>\n        <Row align=\"baseline\" gap={8}>\n          <Text size={12} weight={600} style={{ color: \"var(--fg)\" }}>{agent}</Text>\n          <Box as=\"span\" style={{ flex: 1 }} />\n          <Text\n            tone=\"dim\" size={10} style={{ cursor: \"pointer\" }}\n            onClick={onRename}\n          >rename</Text>\n        </Row>\n        {/* Harness + provider (#1319) — moved here from the header pill. The provider-hue dot + the\n            harness label that once sat in the header now identify the runtime inside the menu. */}\n        <Row gap={6} style={{ marginTop: 6 }}>\n          <Box as=\"span\" bg={provColor} style={{ width: 6, height: 6, borderRadius: \"50%\", flexShrink: 0}} />\n          <Text size={10} tone=\"muted\">{harness}</Text>\n          <Box as=\"span\" style={{ flex: 1 }} />\n          <Text size={9.5} style={{ color: running ? \"var(--accent)\" : \"var(--fg-dim)\" }}>\n            {running ? \"running\" : \"idle\"}\n          </Text>\n        </Row>\n        {/* Provider limitations (#1172): surfaced under the harness label when the selected provider\n            has caveats (Aider) — the app flags them rather than silently applying a degraded model. */}\n        {limitations && limitations.length > 0 && (\n          <Stack gap={2} style={{ marginTop: 6 }}>\n            {limitations.map((l) => (\n              <Text key={l} as=\"div\" size={9} tone=\"dim\" style={{ lineHeight: 1.35 }}>⚠ {l}</Text>\n            ))}\n          </Stack>\n        )}\n      </Box>\n\n      {/* Model */}\n      <MenuSection label=\"model\">\n        {MODELS.map((m) => {\n          const on = m.id === selected;\n          const isRunning = runningModel != null && m.id === runningModel;\n          return (\n            <MenuRow key={m.id} on={on} onClick={onModel ? () => { onModel(m.id); onClose?.(); } : undefined}>\n              <Box as=\"span\" bg={on ? \"var(--accent)\" : \"var(--border)\"} style={{\n                width: 6, height: 6, borderRadius: \"50%\", flexShrink: 0,\n              }} />\n              <Text style={{ color: on ? \"var(--accent)\" : \"var(--fg)\", flex: 1 }}>{m.id}</Text>\n              {isRunning && <Text tone=\"accent\" size={9} style={{ marginRight: 6 }}>running</Text>}\n              <Text tone=\"dim\" size={9.5} style={{ marginRight: 6 }}>{m.tone}</Text>\n              <Text tone=\"dim\" size={9.5} style={{ fontFamily: \"var(--sans)\" }}>{m.price}</Text>\n            </MenuRow>\n          );\n        })}\n        <Text as=\"div\" tone=\"dim\" size={9} style={{ padding: \"4px 8px 0\" }}>\n          applies on the pane's next launch (disable → enable to apply now)\n        </Text>\n      </MenuSection>\n\n      {/* Persona (#2094) — stamp a role + start prompt + model onto this pane, applied on its next\n          launch. Most natural on a manual console (the role is the user's to pick); a fleet pane\n          starts as worker/director but the user may re-stamp it here. */}\n      {onPersona && (\n        <MenuSection label=\"persona\">\n          {personas.map((p) => (\n            <MenuRow key={p.id} onClick={() => { onPersona(p.id); onClose?.(); }}>\n              <Box as=\"span\" bg=\"var(--border)\" style={{ width: 6, height: 6, borderRadius: \"50%\", flexShrink: 0 }} />\n              <Text style={{ color: \"var(--fg)\", flex: 1 }}>{p.name}</Text>\n              <Text tone=\"dim\" size={9.5} style={{ marginRight: 6 }}>{p.role}</Text>\n            </MenuRow>\n          ))}\n          <Text as=\"div\" tone=\"dim\" size={9} style={{ padding: \"4px 8px 0\" }}>\n            sets role · model · start prompt · relaunch to apply\n          </Text>\n        </MenuSection>\n      )}\n\n      {/* Views */}\n      <MenuSection label=\"view\">\n        {available.map((k) => {\n          const { Icon, label, hotkey } = VIEW_DEFS[k];\n          const on = k === active;\n          return (\n            <MenuRow key={k} on={on} onClick={() => { onViewChange?.(k); onClose?.(); }}>\n              <Icon size={12} style={{ flexShrink: 0, color: on ? \"var(--accent)\" : \"var(--fg-muted)\" }} />\n              <Text style={{ color: on ? \"var(--accent)\" : \"var(--fg)\", flex: 1 }}>{label}</Text>\n              {on && <Text tone=\"accent\" size={9.5} style={{ marginRight: 6 }}>current</Text>}\n              <Text tone=\"dim\" size={9.5}>{hotkey}</Text>\n            </MenuRow>\n          );\n        })}\n      </MenuSection>\n\n      {/* Pane actions */}\n      <MenuSection label=\"pane\" last>\n        <ActionRow\n          Icon={RefreshCw}\n          label=\"redraw / fix display\"\n          sub=\"repaint a jumbled terminal\"\n          onClick={() => { onRedraw?.(); onClose?.(); }}\n        />\n        <ActionRow\n          Icon={fullscreen ? Minimize2 : Maximize2}\n          label={fullscreen ? \"minimize pane\" : \"maximize pane\"}\n          sub={fullscreen ? \"back to grid\" : \"fill the tab\"}\n          onClick={() => { onToggleFullscreen?.(); onClose?.(); }}\n        />\n        <ActionRow\n          Icon={disabled ? Power : PowerOff}\n          label={disabled ? \"enable console\" : \"disable console\"}\n          sub={disabled ? \"restart session\" : \"stop session\"}\n          danger={!disabled}\n          onClick={() => { onToggleDisable?.(); onClose?.(); }}\n        />\n      </MenuSection>\n    </Box>\n  );\n}\n\nfunction MenuSection({ label, children, last }: { label: string; children: React.ReactNode; last?: boolean }) {\n  return (\n    <Box pad={[6, 6]} style={{ borderBottom: last ? \"0\" : \"1px solid var(--border-soft)\" }}>\n      <Text as=\"div\" tone=\"dim\" size={9.5} style={{\n        padding: \"4px 8px 6px\",\n        textTransform: \"uppercase\", letterSpacing: \".08em\",\n      }}>{label}</Text>\n      <Stack gap={1}>{children}</Stack>\n    </Box>\n  );\n}\n\nfunction MenuRow({ on, onClick, children }: { on?: boolean; onClick?: () => void; children: React.ReactNode }) {\n  const [hovered, setHovered] = useState(false);\n  const bg = on\n    ? \"color-mix(in oklch, var(--accent), transparent 90%)\"\n    : hovered ? \"var(--bg-elev2)\" : \"transparent\";\n  return (\n    <Row\n      gap={6}\n      onClick={onClick}\n      onMouseEnter={() => setHovered(true)}\n      onMouseLeave={() => setHovered(false)}\n      style={{\n        padding: \"6px 8px\",\n        borderRadius: 5, background: bg, cursor: \"pointer\",\n        transition: \"background 0.08s\",\n      }}\n    >{children}</Row>\n  );\n}\n\nfunction ActionRow({ Icon, label, sub, danger, onClick }: {\n  Icon: LucideIcon; label: string; sub: string; danger?: boolean; onClick?: () => void;\n}) {\n  const [hovered, setHovered] = useState(false);\n  return (\n    <Row\n      gap={8}\n      onClick={onClick}\n      onMouseEnter={() => setHovered(true)}\n      onMouseLeave={() => setHovered(false)}\n      style={{\n        padding: \"6px 8px\",\n        borderRadius: 5, cursor: \"pointer\",\n        background: hovered\n          ? danger ? \"color-mix(in oklch, var(--danger), transparent 88%)\" : \"var(--bg-elev2)\"\n          : \"transparent\",\n        transition: \"background 0.08s\",\n      }}\n    >\n      <Icon size={12} style={{ flexShrink: 0, color: danger ? \"var(--danger)\" : \"var(--fg-muted)\" }} />\n      <Text style={{ color: danger ? \"var(--danger)\" : \"var(--fg)\" }}>{label}</Text>\n      <Box as=\"span\" style={{ flex: 1 }} />\n      {sub && <Text size={9.5} tone=\"dim\">{sub}</Text>}\n    </Row>\n  );\n}\n",
+  "src": "src/app/console/panes/PaneMenu.tsx",
+  "folder": "app/console",
+  "composes": [
+    "Box",
+    "PaneMenu",
+    "Row",
+    "Stack",
+    "Text"
+  ],
+  "props": [
+    {
+      "name": "agent",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "provider",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "running",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "model",
+      "type": "ModelId",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "runningModel",
+      "type": "ModelId",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "active",
+      "type": "ViewKey",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "available",
+      "type": "ViewKey[]",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "maxHeight",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "fullscreen",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "disabled",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onToggleFullscreen",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onToggleDisable",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onRedraw",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onPickDirectory",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onClose",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onRename",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onViewChange",
+      "type": "(view: ViewKey) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onModel",
+      "type": "(model: ModelId) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onPersona",
+      "type": "(personaId: string) => void",
+      "req": false,
+      "desc": ""
+    }
+  ]
+}
