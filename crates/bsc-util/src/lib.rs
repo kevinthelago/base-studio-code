@@ -431,10 +431,19 @@ mod folder_tests {
 /// `shared/lib/algorithms/orderByRank.ts` → `…/orderByRank.test.ts`. `None` for a `src` with no known
 /// extension (a DIRECTORY-shaped path — the #3892 harvest defect) or when no sibling test is on disk.
 ///
-/// TypeScript only, deliberately: a Rust algorithm's tests are an INLINE `#[cfg(test)] mod tests`, not
-/// a sibling file, so pairing by path would silently report every Rust impl as untested. Extracting the
-/// inline block is a separate job with a separate shape.
+/// RUST pairs with ITSELF (#4146). Its tests are an INLINE `#[cfg(test)] mod tests` in the SAME file, so
+/// there is no sibling to find — and looking for one reported every Rust impl as untested, which made the
+/// Rust kit's coverage structurally dishonest (it could not tell "untested" from "tested where we do not
+/// look"). All 18 Rust impls carrying a `src` had an inline test module and none could ever pair.
+///
+/// The pointer form, not extraction: `tests` is a POINTER to where the tests live, and for Rust that is
+/// this file. `src == the impl's own src` is exactly what tells a reader the tests are inline, so the
+/// record stays honest without teaching this crate to parse Rust test blocks.
 pub fn test_path_for(root: &std::path::Path, src: &str) -> Option<std::path::PathBuf> {
+    if src.ends_with(".rs") {
+        let p = root.join(src);
+        return has_inline_rust_tests(&p).then_some(p);
+    }
     let (stem, _) =
         [".tsx", ".ts", ".jsx", ".js"].iter().find_map(|e| src.strip_suffix(*e).map(|s| (s, *e)))?;
     for ext in [".test.tsx", ".test.ts"] {
@@ -444,6 +453,17 @@ pub fn test_path_for(root: &std::path::Path, src: &str) -> Option<std::path::Pat
         }
     }
     None
+}
+
+/// Does `path` contain a real inline Rust test (#4146)?
+///
+/// BOTH markers are required. `#[cfg(test)]` alone also covers test-only `use` statements and helper
+/// modules, so keying on it would pair files that contain no test; `#[test]` is the marker of an actual
+/// test function. An unreadable file is not a test — never a pairing on a guess.
+fn has_inline_rust_tests(path: &std::path::Path) -> bool {
+    std::fs::read_to_string(path)
+        .map(|c| c.contains("#[cfg(test)]") && c.contains("#[test]"))
+        .unwrap_or(false)
 }
 
 /// A test file's display name: its FIRST top-level `describe("…")` title, else the file's basename.
@@ -507,5 +527,50 @@ mod test_pairing_tests {
         assert_eq!(test_display_name(p, "describe('single quoted', () => {});"), "single quoted");
         // No describe ⇒ the basename, which is honest rather than empty.
         assert_eq!(test_display_name(p, "it('bare', () => {});"), "orderByRank.test.ts");
+    }
+
+    #[test]
+    fn a_rust_impl_pairs_with_its_own_inline_test_module() {
+        // #4146 — Rust keeps its tests in the SAME file, so there is no sibling to find. Looking for one
+        // reported every Rust impl as untested and made the kit's coverage structurally dishonest.
+        let dir = std::env::temp_dir().join(format!("bsc-util-4146-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let tested = "pub fn f() {}
+#[cfg(test)]
+mod tests { #[test] fn t() {} }
+";
+        std::fs::write(dir.join("src/tested.rs"), tested).unwrap();
+        assert_eq!(test_path_for(&dir, "src/tested.rs"), Some(dir.join("src/tested.rs")));
+
+        // No test module at all -> unpaired. A self-pairing here would claim coverage that isn't there.
+        std::fs::write(dir.join("src/bare.rs"), "pub fn f() {}
+").unwrap();
+        assert_eq!(test_path_for(&dir, "src/bare.rs"), None);
+
+        // `#[cfg(test)]` WITHOUT a `#[test]` fn is a test-only helper/import, not a test.
+        std::fs::write(dir.join("src/helper.rs"), "pub fn f() {}
+#[cfg(test)]
+use std::fmt;
+").unwrap();
+        assert_eq!(test_path_for(&dir, "src/helper.rs"), None);
+
+        // A path that does not exist is never a pairing.
+        assert_eq!(test_path_for(&dir, "src/missing.rs"), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn typescript_pairing_is_unchanged_by_the_rust_arm() {
+        // The sibling lookup is the ONLY path for TS; #4146 must not have perturbed it.
+        let dir = std::env::temp_dir().join(format!("bsc-util-4146-ts-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("ui")).unwrap();
+        std::fs::write(dir.join("ui/Button.tsx"), "export const B = () => null;").unwrap();
+        assert_eq!(test_path_for(&dir, "ui/Button.tsx"), None, "no sibling yet");
+        std::fs::write(dir.join("ui/Button.test.tsx"), "describe('B', () => {});").unwrap();
+        assert_eq!(test_path_for(&dir, "ui/Button.tsx"), Some(dir.join("ui/Button.test.tsx")));
+        // A TS file is never self-paired, however much it looks like a test.
+        std::fs::write(dir.join("ui/Odd.ts"), "// #[cfg(test)] #[test]").unwrap();
+        assert_eq!(test_path_for(&dir, "ui/Odd.ts"), None);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

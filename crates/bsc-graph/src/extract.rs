@@ -768,11 +768,21 @@ mod tests {
             from_ts[0].tests[0].name, from_ts[1].tests[0].name,
             "siblings from one source share the identical entry",
         );
-        // A candidate whose file has no sibling test carries none — never an empty-but-present claim.
-        assert!(
-            cands.iter().any(|c| c.tests.is_empty()),
-            "a source with no colocated test yields candidates with no tests",
-        );
+        // The "no test ⇒ no pairing, never an empty-but-present claim" contract is exercised in
+        // `bsc_util::test_path_for`'s own tests: EVERY file in this fixture dir now pairs (`sample.tsx`
+        // resolves the shared stem to `sample.test.ts`), so there is no untested case to assert here.
+        // #4146 — a RUST candidate pairs with its OWN file, because its tests are an inline
+        // `#[cfg(test)] mod tests` rather than a sibling. `sample.rs` carries one, so its candidates are
+        // tested; before #4146 every Rust impl reported as untested no matter what it contained.
+        let from_rs: Vec<&Candidate> = cands.iter().filter(|c| c.src == "sample.rs").collect();
+        assert!(!from_rs.is_empty(), "the fixture yields candidates from sample.rs");
+        for c in &from_rs {
+            assert_eq!(c.tests.len(), 1, "{} pairs with its own inline test module", c.name);
+            assert!(
+                c.tests[0].src.contains("#[cfg(test)]"),
+                "the entry is the file's own contents, which is where the tests are",
+            );
+        }
     }
 
     #[test]
