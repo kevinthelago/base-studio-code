@@ -26,6 +26,15 @@ registerPlatformModules();
 markBoot("eval");
 const { default: App } = await import("./App");
 
+// #4169 shadow mode — build every page from the graph alongside the app, diff it against the files, and
+// report. It renders nothing; the sweep runs only when asked (`window.__bscShadow.run()`), so this just
+// installs the handle. DEV-only: the file half of each diff is a Vite `?raw` glob a dev server serves, and
+// gating the dynamic import on `import.meta.env.DEV` (statically `false` in a build) keeps the whole
+// module — and those raw sources — out of the production bundle.
+if (import.meta.env.DEV) {
+  void import("./runtime/shadowMode").then((m) => m.initShadowMode());
+}
+
 markBoot("render");
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
