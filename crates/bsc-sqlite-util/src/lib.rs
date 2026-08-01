@@ -40,7 +40,9 @@ pub fn print_json<T: serde::Serialize>(value: &T, pretty: bool) {
     } else {
         serde_json::to_string(value).unwrap_or_default()
     };
-    println!("{s}");
+    // #4152: through the shared emitter so a warm serve loop can capture it; identical to `println!`
+    // when nothing is capturing, which is what keeps the served and one-shot outputs byte-equal.
+    bsc_util::emit_line(&s);
 }
 
 /// Read JSON from stdin as a list of `T`, accepting **either** a single object **or** an array (the
