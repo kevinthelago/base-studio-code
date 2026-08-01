@@ -23,7 +23,7 @@ import {
 import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
 import { tintBg } from "./skillStyles";
 import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
-import { Checkbox } from "@/shared/ui/controls/Checkbox";
+import { Toggle } from "@/shared/ui/controls/Toggle";
 import { Button } from "@/shared/ui/controls/Button";
 import { SearchField } from "@/shared/ui/controls/SearchField";
 import { Box } from "@/shared/ui/layout/Box";
@@ -219,8 +219,9 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
             {/* Left rail — DRAG-RESIZABLE (#2816), the same pattern GraphCanvas uses (railResizable): a
                 sized wrapper + a `.resize-x` splitter. GraphRail fills the wrapper (its default flex:1). */}
             <Box style={{ flex: `0 0 ${railDrag.size}px`, width: railDrag.size, minWidth: 0, display: "flex", overflow: "hidden" }}>
-            // #3854: no `tools` — search moved to the list HEADER. `query` is still read here for the
-            // clear-all-filters footer below.
+            {/* #3854: no `tools` — search moved to the list HEADER. `query` is still read here for the
+                clear-all-filters footer below. (A `//` comment here is JSX TEXT, not a comment — it
+                rendered above the rail, #4179.) */}
             <GraphRail
               bodyPad="12px 10px 20px"
               footer={(activeFacetCount > 0 || query || groupFilter) ? (
@@ -259,10 +260,10 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 <RailSection key={f.key} label={f.title} count={f.options.length}
                   open={railSections.isOpen(f.key)} onToggle={() => railSections.toggle(f.key)}>
                   {f.options.map((o) => { const on = facetSel[f.key]?.has(o.value) ?? false; return (
-                    <RailRow key={o.value} onClick={() => toggleFacet(f.key, o.value)}
+                    <RailRow key={o.value} aria-pressed={on} onClick={() => toggleFacet(f.key, o.value)}
                       leading={<>
-                        <Checkbox checked={on} />
-                        {o.glyph && <Box as="span" style={{ fontFamily: "var(--mono)", fontSize: 11, color: o.color, width: 13, textAlign: "center" }}>{o.glyph}</Box>}
+                        <Toggle on={on} size="xs" />
+                        {o.glyph && <Box as="span" style={{ fontFamily: "var(--mono)", fontSize: 11, color: o.color, width: 13, textAlign: "center", marginLeft: 6 }}>{o.glyph}</Box>}
                       </>}
                       trailing={<Text as="span" mono size={10} tone="dim">{o.count}</Text>}>
                       <Box as="span" style={{ textTransform: "capitalize" }}>{o.label}</Box>
