@@ -111,10 +111,26 @@ Every write persists to the store (`~/.base-studio-code/knowledge/algorithms.jso
 reflects it:
 
 - `bsc graph impl set --tech <lang> --id <id> --role primitive|algorithm --name <name> [--code <c>]
-  [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b]
+  **`--src <path>`** [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b]
   [--kind sort|search|traversal|accumulate|transform] [--viz-code <js>]` — **upsert an implementation**
   (the same `--id` replaces in place). An `algorithm` carries real `--code`; a `primitive` DESCRIBES a
   built-in via `--ref` and is never re-coded.
+
+  **`--src` is how the library gets its structure.** The graph organizes implementations into a nested
+  FOLDER TREE mirroring the source layout — exactly like the component library — and that folder is
+  DERIVED from `--src` (the scanned-root-relative path the code came from). An algorithm stored without
+  it cannot be placed in the tree at all: it falls into a flat "ungrouped" bucket, invisible as part of
+  the module it belongs to. So when you lift an implementation out of a file, record the file:
+
+  ```
+  bsc graph impl set --tech rust --id tokenize.rs --role algorithm --name tokenize     --src crates/research/src/search.rs --code "$(cat scratch/tokenize.rs)" --summary "…"
+  ```
+
+  The command REFUSES an `algorithm` with no `--src`/`--folder` rather than storing an unplaceable
+  record. For a canonical algorithm with genuinely no file in this repo (a textbook `merge-sort`), say so
+  explicitly with `--no-src`. A `primitive` never needs any of this — it describes a built-in.
+
+  `bsc graph curate --apply` sets `--src` for you; this only matters on the hand-authored path.
 - `bsc graph impl remove <id>` — **delete an implementation** + scrub it from every `composes`.
 
 Steward toward one accurate, non-duplicated library: one algorithm per id, honest roles, real
