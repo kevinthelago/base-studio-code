@@ -37,6 +37,16 @@ export const PROJECT_PROGRESS_POLL_MS = 30_000;
  * failure doesn't make every project blink out of `modifying` and back.
  */
 export function useProjectProgress(enabled = true): ReadonlySet<string> {
+  return useProjectProgressRows(enabled).openKeys;
+}
+
+/** The same ONE read, exposing the COUNTS as well (#4118) — the L0 project nodes draw a `done/total`
+ *  bar from them, where before this hook's only consumer was the `modifying` colour and the numbers
+ *  were thrown away. Still one spawn for every project. */
+export function useProjectProgressRows(enabled = true): {
+  openKeys: ReadonlySet<string>;
+  byKey: ReadonlyMap<string, { done: number; total: number }>;
+} {
   const [rows, setRows] = useState<ProjectProgressRow[]>([]);
 
   // Stop accumulating when Glance is not mounted/enabled — and drop what we had, so a re-enable
@@ -52,7 +62,16 @@ export function useProjectProgress(enabled = true): ReadonlySet<string> {
     setRows(next);
   }, PROJECT_PROGRESS_POLL_MS, [enabled]);
 
-  return useMemo(() => openIssueKeys(rows), [rows]);
+  return useMemo(
+    () => ({
+      openKeys: openIssueKeys(rows),
+      // Only rows with real work: a `total` of 0 means "no data" as much as "nothing planned", and the
+      // node treats an absent entry and a 0/0 entry identically (no bar) — so omitting them keeps the
+      // map honest about what it actually knows.
+      byKey: new Map(rows.filter((r) => r.total > 0).map((r) => [r.key, { done: r.done, total: r.total }])),
+    }),
+    [rows],
+  );
 }
 
 /** The set of keys with unfinished work: `done < total`. `total === 0` is NOT open work — a planned

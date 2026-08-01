@@ -21,7 +21,6 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { GNode } from "./lib/glanceGraph";
 import { GLANCE_NODE_ANIM_CLASSES, ensureGlanceNodeMotion } from "./glanceNodeMotion";
-import { progressFraction } from "./lib/streamProgress";
 
 /** Which live state the node's motion should express, or `null` for a still node. */
 export type GlanceNodeState = "building" | null;
@@ -55,11 +54,54 @@ export interface GlanceNodeProps {
   /** The live motion state, or null. */
   state: GlanceNodeState;
   /** Owned-issue completion (#4050), or 0 for "no bar". Presentational only. */
-  progress?: { done: number; total: number };
+}
+
+/** How far past the fill edge the colour keeps bleeding, in percentage points (#4123).
+ *
+ *  This is the whole idea: the fill does not STOP anywhere. It thins out across this band, so the eye
+ *  reads "about this far along" and cannot read a boundary off it. Too small and it is a line with a
+ *  soft edge (a measurement); too large and a half-done node is indistinguishable from an empty one.
+ *  16 keeps the two ends legible at the node's ~186px width while leaving nothing crisp in between. */
+const FADE_PCT = 16;
+
+/**
+ * The node's background: its own completion, as a left-to-right wash that fades out (#4123).
+ *
+ * Returns the plain panel colour at zero — a node with no work, or none finished, must look exactly
+ * like a node that has never been measured. Inventing a visible 0% sliver would put a mark on every
+ * node in the graph and say nothing.
+ *
+ * Layered OVER `--bg-elev` rather than replacing it, so the node keeps its surface (and its contrast
+ * with the canvas) at every fill level.
+ */
+export function nodeFill(fill: number): string {
+  if (fill <= 0) return "var(--bg-elev)";
+  const tint = (pct: number) => `color-mix(in oklch, var(--graph-health-complete) ${pct}%, transparent)`;
+  const edge = Math.min(100, fill * 100);
+  const soft = Math.max(0, edge - FADE_PCT);
+  // Strongest at the origin, already thinning by the fade band, gone by the edge — an estimate with no
+  // boundary to misread. `100%` is clamped by `edge`, so a complete node is washed end to end.
+  return [
+    `linear-gradient(90deg, ${tint(20)} 0%, ${tint(11)} ${soft}%, transparent ${edge}%)`,
+    "var(--bg-elev)",
+  ].join(", ");
 }
 
 export function GlanceNode(p: GlanceNodeProps) {
   const { n } = p;
+  // Progress is the NODE'S OWN FILL (#4123) — not a bar drawn on it.
+  //
+  // It was a discrete widget twice over: a 2px hairline, then a 5px track with `done/total` beside it.
+  // Both were wrong for what this number IS. Completion here is COARSE — the refs are a planning
+  // artifact, "done" is whatever evidence happened to be reachable, and nobody sizes a decision off
+  // the third digit. A precise-looking readout on every node invites reading it precisely, and it
+  // competes with the health dot and activity word for the same glance.
+  //
+  // So the whole node fills, left to right, and the fill FADES rather than ending at a line — a soft
+  // edge reads as an estimate, a hard one reads as a measurement. The exact counts still exist, in the
+  // inspector, where someone has asked for them.
+  const progress = n.progress;
+  const fill = progress && progress.total > 0 ? Math.max(0, Math.min(1, progress.done / progress.total)) : 0;
   // Idempotent + cheap (one string compare after the first call). Done HERE rather than at the canvas
   // so the component carries its own motion: anything that renders a node gets the CSS, and nothing
   // has to remember to mount it.
@@ -71,7 +113,9 @@ export function GlanceNode(p: GlanceNodeProps) {
       // animation belongs to without any class bookkeeping here.
       className={GLANCE_NODE_ANIM_CLASSES}
       data-node-state={p.state ?? undefined}
-      style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${p.border}`,
+      // The exact numbers stay reachable on hover without occupying the node.
+      title={progress && progress.total > 0 ? `${progress.done}/${progress.total} issues complete` : undefined}
+      style={{ width: "100%", height: "100%", background: nodeFill(fill), border: `1px solid ${p.border}`,
         borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
         boxShadow: p.boxShadow, transition: "border-color .15s, box-shadow .15s",
         // `relative` so the progress bar can sit on the bottom edge; `overflow: hidden` keeps it inside
@@ -115,19 +159,6 @@ export function GlanceNode(p: GlanceNodeProps) {
           style={{ color: p.bottomColor, maxWidth: 108, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
             animation: p.bottomPulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }}>{p.bottomText}</Text>
       </Box>
-      {/* #4050 — owned-issue progress: a thin fill on the bottom edge, `done / total`.
-          Rendered only when the stream OWNS issues: an empty bar and a zero-progress bar say different
-          things, and drawing one for a node with no work would say the false one.
-          Coloured with the COMPLETE blue, so a full bar and the `complete` state agree by construction
-          rather than by coincidence. `pointer-events: none` so it never eats a click on the node. */}
-      {p.progress && p.progress.total > 0 && (
-        <Box aria-hidden title={`${p.progress.done}/${p.progress.total} issues complete`}
-          style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 2, pointerEvents: "none",
-            background: "color-mix(in oklch, var(--fg-muted) 22%, transparent)" }}>
-          <Box style={{ width: `${progressFraction(p.progress) * 100}%`, height: "100%",
-            background: "var(--graph-health-complete)", transition: "width .3s ease" }} />
-        </Box>
-      )}
     </Box>
   );
 }

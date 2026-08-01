@@ -179,6 +179,35 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
               : <Box />}
           </Grid>
 
+          {/* PROGRESS (#4118) — the focused worker's owned-issue completion, the same counts its node
+              draws. The node's bar is a glance; this is where the user comes for the number, so it
+              carries `done/total` plus the remaining count rather than a bare fill.
+              Absent when the stream owns no issues — the same rule the node follows: a bar for a node
+              with no work would state something false. */}
+          {n.progress && n.progress.total > 0 && (
+            <Box style={{ marginTop: 8 }}>
+              <StatTile k="PROGRESS" v={
+                <Box>
+                  <Row gap={8} align="baseline">
+                    <Text as="span" mono size={12.5} weight={600} style={{ color: "var(--graph-health-complete)" }}>
+                      {n.progress.done}/{n.progress.total}
+                    </Text>
+                    <Text as="span" mono size={11} tone="muted">
+                      {n.progress.done === n.progress.total
+                        ? "every owned issue closed"
+                        : `${n.progress.total - n.progress.done} open`}
+                    </Text>
+                  </Row>
+                  <Box aria-hidden style={{ marginTop: 6, height: 5, borderRadius: 3, overflow: "hidden",
+                    background: "color-mix(in oklch, var(--fg-muted) 26%, transparent)" }}>
+                    <Box style={{ width: `${(n.progress.done / n.progress.total) * 100}%`, height: "100%",
+                      borderRadius: 3, background: "var(--graph-health-complete)", transition: "width .3s ease" }} />
+                  </Box>
+                </Box>
+              } />
+            </Box>
+          )}
+
           {/* Activate / deactivate this node (#3239): the manual OFF toggle. Turning it off greys the node
               on the network (health `off`) over any live status; turning it on restores its derived status.
               Persisted, so it continues from the last session. Only on the L0 project network (onToggleOff
