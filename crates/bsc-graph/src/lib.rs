@@ -135,7 +135,22 @@ pub struct AlgoImpl {
     pub reference: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+    /// PROVENANCE (#4091/#4107) — the scanned-root-relative path of the file this was harvested from,
+    /// forward-slashed. `curate --apply` has written it since #4091, but the contract never declared it,
+    /// so it was untyped and undocumented; every impl in the live store predates it. It is what makes a
+    /// record traceable to its file, dedupable on re-harvest, and — via [`Self::folder`] — placeable in
+    /// a folder tree. Additive: an impl without it round-trips unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub src: Option<String>,
+    /// The FOLDER (#4107) — the nested, `/`-delimited path this impl organizes under, derived from
+    /// [`Self::src`] by `bsc_util::folder_from_src`, the SAME derivation components use. Harvest is 1:1:
+    /// the folder mirrors where the code actually lives, not a curated taxonomy. (Re-organizing the
+    /// library into an optimized graph is a separate pass on top of an accurate base.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
     /// The DOMAIN facet (#3120) — the cross-language collection this impl belongs to (e.g. "logistics").
+    /// Distinct from [`Self::folder`]: `domain_of` deliberately COLLAPSES a path to one segment
+    /// (`features/<x>` → `<x>`) for a cross-language filter, where the folder keeps the full nesting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain: Option<String>,
     /// Free-form tags (#3120) — additive keywords for cross-cutting collections.
@@ -1018,5 +1033,43 @@ mod tests {
         ]});
         let fs = doctor(&g);
         assert!(!fs.iter().any(|f| f.id == "sort.ts"), "sort.ts is fully covered by its in-app program — no findings");
+    }
+
+    // ── #4107 folder facet ──
+
+    /// An impl authored before the folder existed must survive a round trip untouched — the same
+    /// additive contract `domain`/`tags` established (#3120). If it did not, every seeded impl would
+    /// gain empty `src`/`folder` keys the moment anything re-saved the store.
+    #[test]
+    fn algo_impl_without_src_or_folder_round_trips_unchanged() {
+        let raw = serde_json::json!({
+            "id": "merge.rs", "tech": "rust", "role": "algorithm", "name": "merge",
+            "composes": ["rust.vec"],
+        });
+        let parsed: AlgoImpl = serde_json::from_value(raw.clone()).unwrap();
+        assert!(parsed.src.is_none() && parsed.folder.is_none());
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), raw, "no empty src/folder keys appear");
+    }
+
+    /// The folder is the SAME derivation components use — that is the whole point of putting it in
+    /// `bsc-util`. Pinned here so a change on either side has to break this test to diverge.
+    #[test]
+    fn the_algorithm_folder_is_the_component_derivation() {
+        assert_eq!(
+            bsc_util::folder_from_src("crates/bsc-graph/src/extract.rs").as_deref(),
+            Some("crates/bsc-graph/src"),
+        );
+        // Harvest is 1:1 — a crate scanned at its OWN root makes `src/` the root, so a file directly
+        // under it is unfoldered, exactly as a component directly under `src/` is.
+        assert_eq!(bsc_util::folder_from_src("src/cli.rs"), None);
+    }
+
+    /// `folder` and `domain` are different axes and must not be conflated: `domain_of` COLLAPSES a
+    /// path to one segment for the cross-language filter, the folder keeps the full nesting.
+    #[test]
+    fn folder_keeps_the_nesting_domain_collapses() {
+        let src = "src-tauri/src/console/pty/job.rs";
+        assert_eq!(bsc_util::folder_from_src(src).as_deref(), Some("src-tauri/src/console/pty"));
+        assert_ne!(crate::extract::domain_of(src), "src-tauri/src/console/pty");
     }
 }

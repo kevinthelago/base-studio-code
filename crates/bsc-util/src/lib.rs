@@ -355,3 +355,68 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+/// Derive a record's FOLDER — a nested, `/`-delimited path — from the source file it was harvested
+/// from (#3579 for components, #4107 for algorithms).
+///
+/// Both libraries organize like a real project's folders (`shared/ui/controls`, `features/github`), and
+/// both derive that from the same input, so this is ONE definition rather than two that can drift. It
+/// lives here for exactly the reason this crate exists: it was about to be copy-pasted into a second
+/// crate. `bsc-component` (harvest + `bsc ui regroup`) and `bsc-graph` (`curate` + `bsc graph refolder`)
+/// both call it, so a component and an algorithm harvested from the same tree land in the same folder.
+///
+/// Normalizes `\` to `/`, drops the filename, and strips a leading `src/` root (harvested paths carry
+/// it, some kits' don't) for a consistent tree. Returns `None` when `src` has no usable directory — a
+/// bare filename, an empty string, or a file directly under the `src/` root — so such a record is left
+/// UNFOLDERED rather than bucketed under `""`.
+///
+/// Examples:
+/// - `src/shared/ui/controls/Button.tsx` → `Some("shared/ui/controls")`
+/// - `crates/bsc-graph/src/extract.rs`   → `Some("crates/bsc-graph/src")`
+/// - `src/Widget.tsx` / `Widget.tsx` / `""` → `None`
+pub fn folder_from_src(src: &str) -> Option<String> {
+    let norm = src.trim().replace('\\', "/");
+    let (dir, _file) = norm.rsplit_once('/')?; // no directory ⇒ unfoldered
+    let segs: Vec<&str> = dir.split('/').filter(|s| !s.is_empty()).collect();
+    let start = usize::from(segs.first() == Some(&"src")); // strip a leading `src/` root segment
+    let path = segs[start..].join("/");
+    if path.is_empty() { None } else { Some(path) }
+}
+
+#[cfg(test)]
+mod folder_tests {
+    use super::folder_from_src;
+
+    #[test]
+    fn strips_the_src_root_and_the_filename() {
+        assert_eq!(folder_from_src("src/shared/ui/controls/Button.tsx").as_deref(), Some("shared/ui/controls"));
+        assert_eq!(folder_from_src("shared/ui/d3/charts/Bar.tsx").as_deref(), Some("shared/ui/d3/charts"));
+    }
+
+    #[test]
+    fn keeps_a_rust_crate_path_intact() {
+        // #4107: an algorithm harvested from a crate has no `src/` ROOT to strip — the `src` segment is
+        // interior. Only a LEADING one is dropped, so the crate path survives as the folder.
+        assert_eq!(folder_from_src("crates/bsc-graph/src/extract.rs").as_deref(), Some("crates/bsc-graph/src"));
+    }
+
+    #[test]
+    fn normalizes_windows_backslashes() {
+        assert_eq!(folder_from_src(r"src\shared\ui\layout\Box.tsx").as_deref(), Some("shared/ui/layout"));
+    }
+
+    #[test]
+    fn a_record_with_no_folder_is_unfoldered() {
+        assert_eq!(folder_from_src("Button.tsx"), None);
+        assert_eq!(folder_from_src("src/Widget.tsx"), None);
+        assert_eq!(folder_from_src(""), None);
+        assert_eq!(folder_from_src("   "), None);
+    }
+
+    #[test]
+    fn an_already_clean_folder_path_is_a_fixed_point() {
+        // Re-deriving from a path whose folder already equals it returns the same folder — so a
+        // `regroup`/`refolder` pass is idempotent and only rewrites records that actually moved.
+        assert_eq!(folder_from_src("shared/ui/data/KeyValueList.tsx").as_deref(), Some("shared/ui/data"));
+    }
+}
