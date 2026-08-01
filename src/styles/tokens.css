@@ -521,6 +521,9 @@ textarea.input{ height:auto; min-height:64px; padding:8px 10px; resize:vertical;
 .screen { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative; }
 .screen .screen-page { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .screen .screen-body { flex: 1; overflow: auto; min-width: 0; }
+/* #4170 — the page-scoped crash fallback. Sits INSIDE .screen-body, so the PageTabs strip above it is
+   untouched and the user can always navigate off a broken page. */
+.page-boundary { padding: 24px; max-width: 640px; }
 
 /* Visually-hidden but exposed to assistive tech (#3770) — the standard sr-only clip. Used by the ARIA
    live regions (shared/ui/feedback/LiveRegion) and any label a sighted user doesn't need to see. */
