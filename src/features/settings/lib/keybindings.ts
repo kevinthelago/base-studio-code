@@ -30,6 +30,9 @@ export const REBINDABLE_IDS = [
   "clear-input",
   "redraw-pane",
   "send-all-enter",
+  "page-prev",
+  "page-next",
+  "screen-glance",
   "screen-projects",
   "screen-skills",
   "screen-automation",
@@ -57,6 +60,11 @@ export const DEFAULT_BINDINGS: Record<RebindableId, string> = {
   "clear-input":        "Ctrl+Shift+Backspace",
   "redraw-pane":        "Ctrl+Shift+KeyR",
   "send-all-enter":     "Alt+Shift+Enter",
+  // #4167 — PAGE navigation. Arrows, not digits: every digit combination is already a console selector
+  // leader (Ctrl / Ctrl+Shift / Alt / Alt+Shift), so a digit family here could not avoid a collision.
+  "page-prev":          "Ctrl+ArrowLeft",
+  "page-next":          "Ctrl+ArrowRight",
+  "screen-glance":      "F1",
   "screen-projects":    "F2",
   "screen-skills":      "F3",
   "screen-automation":  "F4",
@@ -137,13 +145,18 @@ const CODE_LABELS: Record<string, string> = {
   Minus: "−",
 };
 
+const ARROW_CAPS: Record<string, string> = {
+  ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓",
+};
+
 /** A single `code` token → its key cap label (e.g. "KeyC" → "C", "Digit1" → "1",
  *  "Backspace" → "Backspace"). Modifier tokens pass through unchanged. */
 function codeToCap(token: string): string {
   if (token.startsWith("Key")) return token.slice(3);
   if (token.startsWith("Digit")) return token.slice(5);
   if (token.startsWith("Numpad")) return token.slice(6);
-  if (token.startsWith("Arrow")) return token.slice(5);
+  // Arrows render as their GLYPH (#4167) — "Ctrl ←" reads as a key cap where "Ctrl Left" reads as prose.
+  if (token.startsWith("Arrow")) return ARROW_CAPS[token] ?? token.slice(5);
   return CODE_LABELS[token] ?? token;
 }
 

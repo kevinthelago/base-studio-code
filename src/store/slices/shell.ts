@@ -9,7 +9,7 @@ import { setMapEntry } from "../updateHelpers";
 import { pickDemoable, mergeSnapshotInto } from "../appState";
 
 type ShellSlice = Pick<AppStore,
-  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "activePageTab" | "setActivePageTab" | "crumbEntity" | "setCrumbEntity" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "sandboxNudgeDismissCount" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig" | "demoActive" | "demoBackup" | "loadDemoState" | "clearDemoState"
+  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "activePageTab" | "setActivePageTab" | "crumbEntity" | "setCrumbEntity" | "pageNav" | "setPageNav" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "sandboxNudgeDismissCount" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig" | "demoActive" | "demoBackup" | "loadDemoState" | "clearDemoState"
 >;
 
 export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set) => ({
@@ -28,6 +28,20 @@ export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set
       // skip the write when the label is unchanged to avoid churning subscribers.
       setCrumbEntity: (key, label) =>
         set((s) => (s.crumbEntity[key] === label ? s : { crumbEntity: setMapEntry(s.crumbEntity, key, label) })),
+      // #4167 — the mounted Screen's live PageTabs, so the shell can step them by keyboard. Idempotent
+      // on the value triple: Screen re-publishes on every render, and an unguarded write would churn
+      // every subscriber on each one.
+      pageNav: null,
+      setPageNav: (nav) =>
+        set((s) => {
+          const cur = s.pageNav;
+          if (cur === nav) return s;
+          if (cur && nav && cur.active === nav.active && cur.select === nav.select &&
+              cur.ids.length === nav.ids.length && cur.ids.every((id, i) => id === nav.ids[i])) {
+            return s;
+          }
+          return { pageNav: nav };
+        }),
       detachedTabIds: [],
       setTabDetached: (id, detached) =>
         set((s) => ({

@@ -7,8 +7,9 @@ describe("shortcuts registry", () => {
     for (const h of SCREEN_HOTKEYS) {
       expect(SCREEN_KEY_MAP[h.key]).toBe(h.screen);
     }
-    // Spot-check the canonical F-key bindings. F1 → Console was retired (#2372/#2403).
-    expect(SCREEN_KEY_MAP.F1).toBeUndefined();
+    // Spot-check the canonical F-key bindings. F1 was Console until #2403 retired that page; #4167 gave
+    // it to Glance, which had no key at all despite being the screen the app lands on.
+    expect(SCREEN_KEY_MAP.F1).toBe("glance");
     expect(SCREEN_KEY_MAP.F2).toBe("projects");
     expect(SCREEN_KEY_MAP.F6).toBe("github");
     expect(SCREEN_KEY_MAP.F7).toBe("security");
