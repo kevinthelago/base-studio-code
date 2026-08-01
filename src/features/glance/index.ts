@@ -1,6 +1,10 @@
 // Glance feature (#2206, epic #2205) — the workspace project-network map (projects as nodes,
 // dependencies as edges, cross-project cycle hazards). Public API barrel.
 export { GlanceWorkspace } from "./GlanceWorkspace";
+// #4185: the graph-hosted workspace — what the rail actually mounts. The file component above stays
+// exported until its deletion slice, so existing tests keep their subject.
+export { GlanceGraphHost } from "./GlanceGraphHost";
+export { registerGlancePlatform } from "./graphPlatform";
 export {
   buildGraph, focusSets, edgeGeom, rollUpHealth,
   ROLE_COLOR, HEALTH_META, ACTIVITY_META, HEALTH_RANK, EDGE_META,

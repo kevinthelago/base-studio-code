@@ -1,0 +1,16 @@
+{
+  "id": "glance-session-log",
+  "name": "GlanceSessionLog",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "// Glance → the session log tail, AS GRAPH SOURCE (#4185, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the glance lib/hook surface via the glance graph-platform,\n// and the sibling components as @/components/* graph records). Behaviour runs here.\n// Glance session log (#2369) — the \"Logs\" tab of the agent stream dock. A compact, live timeline of a\n// session's tools/skills/mcp/hooks/denials/coord/activity, read the SAME way every log surface reads it:\n// `bsc logs session <paneId> --json` over the bsc bridge (#2144), shaped by the shared `sessionLog` lib\n// (no new parsing). Polled while open; newest first.\nimport { useState } from \"react\";\nimport { usePoll } from \"@/shared/hooks/usePoll\";\nimport { bscJson } from \"@/shared/lib/core/bsc\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport {\n  type SessionStory, filterEvents, eventTime, streamLabel, streamTone,\n} from \"@/shared/lib/logs/sessionLog\";\n\nexport function GlanceSessionLog({ paneId }: { paneId: string }) {\n  const [story, setStory] = useState<SessionStory | null>(null);\n  usePoll((isCancelled) =>\n    bscJson<SessionStory | null>(null, [\"logs\", \"session\", paneId, \"--json\"], null).then((s) => {\n      if (!isCancelled()) setStory(s);\n    }), 3000, [paneId]);\n\n  const events = filterEvents(story?.events ?? [], null); // newest first\n  const cost = story?.cost;\n\n  return (\n    <Box style={{ height: \"100%\", overflowY: \"auto\", padding: \"10px 14px\" }}>\n      {cost && (\n        <Row gap=\"md\" align=\"baseline\" style={{ marginBottom: 10 }}>\n          <Text mono size=\"xs\" tone=\"dim\">{cost.model}</Text>\n          <Text mono size=\"xs\" tone=\"dim\">{(cost.input + cost.output + cost.cache_creation + cost.cache_read).toLocaleString()} tok</Text>\n          <Text mono size=\"xs\" tone=\"dim\">${cost.cost_usd.toFixed(4)}</Text>\n        </Row>\n      )}\n      {events.length === 0 ? (\n        <Text tone=\"dim\" size=\"sm\">No log events yet — the agent hasn't emitted tool/skill/coord activity.</Text>\n      ) : (\n        <Stack gap=\"xs\">\n          {events.map((e, i) => (\n            <Row key={`${e.ts_ms}-${i}`} gap=\"sm\" align=\"baseline\">\n              <Text mono size=\"xs\" tone=\"dim\" style={{ flex: \"none\" }}>{eventTime(e.ts_ms)}</Text>\n              <Text mono size=\"xs\" weight={600} style={{ flex: \"none\", width: 58, color: streamTone(e.stream) }}>{streamLabel(e.stream)}</Text>\n              <Text size=\"sm\" style={{ flex: 1, minWidth: 0 }}>{e.summary}</Text>\n            </Row>\n          ))}\n        </Stack>\n      )}\n    </Box>\n  );\n}\n",
+  "src": "src/features/glance/GlanceSessionLog.tsx",
+  "folder": "features/glance",
+  "composes": [
+    "Box",
+    "Row",
+    "Stack",
+    "Text"
+  ],
+  "props": []
+}
