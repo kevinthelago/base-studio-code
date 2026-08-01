@@ -5,3 +5,10 @@
 .graph-drill-anim { animation: graph-drill-in 0.26s ease both; transform-origin: center; }
 @keyframes graph-drill-in { from { opacity: 0; transform: translateY(10px) scale(0.992); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .graph-drill-anim { animation: none; } }
+
+/* #4144 — while a pan is active every element must read the grabbing cursor, INCLUDING the nodes.
+   CSS `cursor` resolves per element (it is inherited, but a node sets its own `cursor: pointer`, which
+   wins under the pointer), so setting the cursor on the dragged viewport alone left a drag across a
+   248-node graph flickering grabbing → pointer → grabbing. The `*` rule is scoped to the duration of the
+   gesture: `useGraphViewport` adds this class on mousedown and removes it on mouseup. */
+.graph-panning, .graph-panning * { cursor: grabbing !important; }

@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { useRef, useState } from "react";
 import { render, fireEvent, act } from "@testing-library/react";
-import { useGraphViewport, viewTransform } from "./useGraphViewport";
+import { useGraphViewport, viewTransform, PANNING_CLASS } from "./useGraphViewport";
 
 /** A minimal graph: the viewport div + the world layer, wired exactly as GraphCanvas wires them. */
 function Harness({ onRender }: { onRender: () => void }) {
@@ -70,6 +70,32 @@ describe("pan is decoupled from React (#4140)", () => {
     // A post-commit re-render must keep the dragged position, not revert it.
     act(() => { fireEvent.click(getByTestId("rerender")); });
     expect(world.style.transform).toBe(viewTransform({ tx: 35, ty: 45, scale: 1 }));
+  });
+
+  it("marks the viewport as panning for the whole gesture, so the cursor covers the subtree (#4144)", () => {
+    // CSS `cursor` resolves per element, so a node's own `cursor: pointer` wins under the pointer and a
+    // drag across nodes flickered grabbing → pointer → grabbing. The class carries a `*` rule; what
+    // matters here is that it is present for exactly the duration of the gesture.
+    const { getByTestId } = render(<Harness onRender={() => {}} />);
+    const vp = getByTestId("vp");
+    expect(vp.classList.contains(PANNING_CLASS)).toBe(false);
+    fireEvent.mouseDown(vp, { clientX: 0, clientY: 0 });
+    expect(vp.classList.contains(PANNING_CLASS)).toBe(true);
+    fireEvent.mouseMove(window, { clientX: 40, clientY: 20 });
+    expect(vp.classList.contains(PANNING_CLASS)).toBe(true); // still panning mid-gesture
+    act(() => { fireEvent.mouseUp(window); });
+    expect(vp.classList.contains(PANNING_CLASS)).toBe(false);
+  });
+
+  it("clears the panning class even when the drag ends outside the viewport", () => {
+    // mouseup is bound to the WINDOW, so releasing off-canvas must still end the gesture — otherwise the
+    // whole app would be stuck showing the grabbing cursor.
+    const { getByTestId } = render(<Harness onRender={() => {}} />);
+    const vp = getByTestId("vp");
+    fireEvent.mouseDown(vp, { clientX: 0, clientY: 0 });
+    fireEvent.mouseMove(window, { clientX: 5000, clientY: 5000 });
+    act(() => { fireEvent.mouseUp(document.body); });
+    expect(vp.classList.contains(PANNING_CLASS)).toBe(false);
   });
 
   it("still discriminates a click from a drag (`dragMoved`)", () => {
