@@ -1,6 +1,7 @@
-import { type ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { TabBar, type TabItem } from "./TabBar";
 import { Box } from "@/shared/ui/layout/Box";
+import { useAppStore } from "@/store";
 
 export interface ScreenProps {
   /** The persisted-ordered, detached-filtered visible page tabs (from `usePageTabs`). */
@@ -39,6 +40,28 @@ export interface ScreenProps {
 export function Screen({
   tabs, active, onSelect, onReorder, onTearOff, pageOverride, className, bodyClassName, children, overlay,
 }: ScreenProps) {
+  // Publish the live PageTabs so the shell's keyboard owner can step them with Ctrl+←/→ (#4167).
+  //
+  // Publishing rather than binding the keys here is a deliberate INVERSION: `shared/` may not import
+  // value symbols from `features/` or `app/` (#1626/#1703), so this module cannot match a keybinding —
+  // and duplicating the chord logic locally would leave it to drift. It hands over plain data + its own
+  // selector; `useHotkeys` (which legitimately knows every feature) does the matching, which also keeps
+  // every keyboard binding in ONE place.
+  //
+  // `null` for a torn-off page: it renders a single Page and no bar, so there is nothing to step.
+  const setPageNav = useAppStore((s) => s.setPageNav);
+  const ids = useMemo(() => tabs.map((t) => t.id), [tabs]);
+  useEffect(() => {
+    if (pageOverride) {
+      setPageNav(null);
+      return;
+    }
+    setPageNav({ ids, active, select: onSelect });
+    // Exactly one Screen is mounted at a time, so clearing on unmount cannot race another Workspace's
+    // publish — the next one publishes in its own effect.
+    return () => setPageNav(null);
+  }, [ids, active, onSelect, pageOverride, setPageNav]);
+
   return (
     <Box className={className ? `screen ${className}` : "screen"}>
       <Box className="screen-page">

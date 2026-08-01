@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, cleanup, act } from "@testing-library/react";
-import { useHotkeys } from "./useHotkeys";
+import { useHotkeys, stepIndex } from "./useHotkeys";
 import { useAppStore } from "@/store";
 
 /**
@@ -57,14 +57,17 @@ describe("useHotkeys — Console-only listener (#1218)", () => {
     expect(ev.defaultPrevented).toBe(true);
   });
 
-  it("F1 no longer navigates — the console screen hotkey was removed (#2403)", () => {
+  it("F1 navigates to Glance — the key the retired console page freed up (#4167)", () => {
+    // F1 was Console until #2403 retired that page, and then belonged to nothing. Glance meanwhile had NO
+    // key at all despite being where the app lands (`effectiveWorkspace` sends console → glance while the
+    // Console page is off), so the default screen was the one screen you could not reach by keyboard.
     useAppStore.setState({ activeWorkspace: "settings" });
     renderHook(() => useHotkeys());
 
     const ev = pressKey({ code: "F1" });
 
-    expect(useAppStore.getState().activeWorkspace).toBe("settings");
-    expect(ev.defaultPrevented).toBe(false);
+    expect(useAppStore.getState().activeWorkspace).toBe("glance");
+    expect(ev.defaultPrevented).toBe(true);
   });
 
   it("is inert while a console pane is maximized", () => {
@@ -139,3 +142,102 @@ describe("useHotkeys — console hotkeys follow the Console-page toggle (#3575)"
     expect(useAppStore.getState().consoleBroadcast).toBe(true);
   });
 });
+
+// ── Ctrl+← / Ctrl+→ page navigation (#4167) ────────────────────────────────────────────────────────
+//
+// PageTabs — the strip every Workspace shows — had NO keyboard navigation at all. The binding is arrows
+// rather than digits because the console selectors already own every digit combination (Ctrl /
+// Ctrl+Shift / Alt / Alt+Shift + a digit), so a digit family could not avoid colliding with one.
+//
+// The MATCHING lives here rather than in `Screen` because `shared/` may not import value symbols from
+// features/app (#1626/#1703); Screen publishes `pageNav` and the shell steps it.
+describe("useHotkeys — Ctrl+arrow page navigation (#4167)", () => {
+  const PAGES = ["library", "runs", "logs"];
+
+  function withPages(active: string, select = vi.fn()) {
+    // Off the Console page: that is where the always-on listener (which owns page nav) attaches, and
+    // the Console workspace has no PageTabs at all.
+    useAppStore.setState({ activeWorkspace: "settings", pageNav: { ids: PAGES, active, select } });
+    renderHook(() => useHotkeys());
+    return select;
+  }
+
+  it("steps to the next and previous page", () => {
+    const select = withPages("runs");
+    const next = pressKey({ code: "ArrowRight", ctrlKey: true });
+    expect(select).toHaveBeenCalledWith("logs");
+    expect(next.defaultPrevented).toBe(true);
+
+    select.mockClear();
+    pressKey({ code: "ArrowLeft", ctrlKey: true });
+    expect(select).toHaveBeenCalledWith("library");
+  });
+
+  it("wraps at both ends rather than stopping", () => {
+    const last = withPages("logs");
+    pressKey({ code: "ArrowRight", ctrlKey: true });
+    expect(last).toHaveBeenCalledWith("library");
+    cleanup();
+
+    const first = withPages("library");
+    pressKey({ code: "ArrowLeft", ctrlKey: true });
+    expect(first).toHaveBeenCalledWith("logs");
+  });
+
+  it("does nothing when no tabbed workspace is on screen, or it holds one page", () => {
+    const select = vi.fn();
+    useAppStore.setState({ activeWorkspace: "settings", pageNav: null });
+    renderHook(() => useHotkeys());
+    const ev = pressKey({ code: "ArrowRight", ctrlKey: true });
+    expect(ev.defaultPrevented).toBe(false);
+    cleanup();
+
+    // A single page has nowhere to step — it must not preventDefault either.
+    useAppStore.setState({ pageNav: { ids: ["only"], active: "only", select } });
+    renderHook(() => useHotkeys());
+    expect(pressKey({ code: "ArrowRight", ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("does not fire while typing — which is also what keeps embedded TERMINALS working", () => {
+    // xterm focuses a `textarea.xterm-helper-textarea`, so this one guard preserves Ctrl+Arrow
+    // word-jump in the Planner's live session and every studio pane.
+    const select = withPages("runs");
+    for (const tag of ["textarea", "input"] as const) {
+      const el = document.createElement(tag);
+      document.body.appendChild(el);
+      act(() => {
+        el.dispatchEvent(new KeyboardEvent("keydown", { code: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
+      });
+      el.remove();
+    }
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("requires an EXACT Ctrl — Shift/Alt/Meta variants stay free for other bindings", () => {
+    const select = withPages("runs");
+    pressKey({ code: "ArrowRight", ctrlKey: true, shiftKey: true });
+    pressKey({ code: "ArrowRight", ctrlKey: true, altKey: true });
+    pressKey({ code: "ArrowRight", ctrlKey: true, metaKey: true });
+    pressKey({ code: "ArrowRight" });
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("follows a REBOUND chord", () => {
+    // Rebindable like the other single-chord actions, so the handler must read the LIVE override.
+    useAppStore.setState({ keybindings: { "page-next": "Alt+ArrowDown" } });
+    const select = withPages("runs");
+    pressKey({ code: "ArrowRight", ctrlKey: true });     // the default chord no longer matches
+    expect(select).not.toHaveBeenCalled();
+    pressKey({ code: "ArrowDown", altKey: true });        // the override does
+    expect(select).toHaveBeenCalledWith("logs");
+  });
+
+  it("stepIndex wraps in both directions", () => {
+    expect(stepIndex(0, -1, 3)).toBe(2);
+    expect(stepIndex(2, 1, 3)).toBe(0);
+    expect(stepIndex(1, 1, 3)).toBe(2);
+    expect(stepIndex(0, 1, 0)).toBe(-1);   // no pages ⇒ no target
+  });
+});
+

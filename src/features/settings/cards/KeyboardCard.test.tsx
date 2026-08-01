@@ -15,7 +15,7 @@ describe("KeyboardCard", () => {
     render(<KeyboardCard />);
     expect(screen.getByRole("heading", { name: "Keyboard" })).toBeInTheDocument();
     // A digit-range shortcut is shown read-only (no rebind button).
-    expect(screen.getByText("Switch to workspace tab by number")).toBeInTheDocument();
+    expect(screen.getByText("Switch to console tab by number")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Rebind Switch to workspace tab/ }),
     ).not.toBeInTheDocument();
@@ -80,7 +80,7 @@ describe("KeyboardCard", () => {
 
   it("rebinds a digit-range leader via the dropdown (#773 Tier 2)", () => {
     render(<KeyboardCard />);
-    const select = screen.getByRole("combobox", { name: /Leader for Switch to workspace tab by number/ });
+    const select = screen.getByRole("combobox", { name: /Leader for Switch to console tab by number/ });
     // Ctrl+Alt isn't a default for any range, so no conflict.
     fireEvent.change(select, { target: { value: "Ctrl+Alt" } });
     expect(useAppStore.getState().keybindings["tab-switch"]).toBe("Ctrl+Alt");
@@ -88,7 +88,7 @@ describe("KeyboardCard", () => {
 
   it("flags a leader conflict and leaves it unchanged", () => {
     render(<KeyboardCard />);
-    const select = screen.getByRole("combobox", { name: /Leader for Switch to workspace tab by number/ });
+    const select = screen.getByRole("combobox", { name: /Leader for Switch to console tab by number/ });
     // Ctrl+Shift is pane-select's leader → conflict.
     fireEvent.change(select, { target: { value: "Ctrl+Shift" } });
     expect(screen.getByText(/already used by/i)).toBeInTheDocument();
@@ -98,7 +98,7 @@ describe("KeyboardCard", () => {
   it("selecting the default leader clears the override", () => {
     useAppStore.setState({ keybindings: { "tab-switch": "Alt" } });
     render(<KeyboardCard />);
-    const select = screen.getByRole("combobox", { name: /Leader for Switch to workspace tab by number/ });
+    const select = screen.getByRole("combobox", { name: /Leader for Switch to console tab by number/ });
     fireEvent.change(select, { target: { value: "Ctrl" } }); // tab-switch's default
     expect(useAppStore.getState().keybindings["tab-switch"]).toBeUndefined();
   });
@@ -153,7 +153,12 @@ describe("KeyboardCard — console rows follow the Console-page toggle (#3575)",
     render(<KeyboardCard />);
 
     expect(screen.getByText("Navigation")).toBeTruthy();          // global nav stays
-    expect(screen.getByText("Switch to workspace tab by number")).toBeTruthy();
+    // The PAGE bindings are genuinely global — they fire on every workspace (#4167).
+    expect(screen.getByText("Next page in this workspace")).toBeTruthy();
+    // …but the console TAB row hides with the other Console-scoped rows: it is registered inside the
+    // console-gated effect, so with the page off it cannot fire, and advertising it as Global was the
+    // documentation half of the "tab hotkeys do nothing" report (#4167).
+    expect(screen.queryByText("Switch to console tab by number")).toBeNull();
     for (const group of consoleGroups) {
       expect(screen.queryByText(group.title)).toBeNull();         // console group titles gone
       for (const s of group.items) {
