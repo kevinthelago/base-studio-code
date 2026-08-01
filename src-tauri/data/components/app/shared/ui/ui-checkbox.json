@@ -3,7 +3,6 @@
   "name": "Checkbox",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/controls",
   "provides": "@/shared/ui/controls/Checkbox",
   "srcText": "// Checkbox, AS GRAPH SOURCE (#3678, epic #3604) — a pure shared/ui control authored as DATA. Its\n// `provides: \"@/shared/ui/controls/Checkbox\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\nimport type { KeyboardEvent } from \"react\";\r\n\r\nexport interface CheckboxProps {\r\n  checked: boolean;\r\n  /** When provided, the box is self-interactive (click + Space/Enter, `role=\"checkbox\"`). Omit when a\r\n   *  parent row already owns the toggle — the box is then presentational and the row handles the click. */\r\n  onChange?: () => void;\r\n  /** Box edge in px (default 14). The ✓ scales with it. */\r\n  size?: number;\r\n  disabled?: boolean;\r\n  className?: string;\r\n  \"aria-label\"?: string;\r\n}\r\n\r\n/**\r\n * The shared checkbox primitive (#1891) — the small ✓ square consolidated from the hand-rolled\r\n * `<span style={{…}}>` copies (skills facets + card select). Sibling to `Toggle` (pill switch) and\r\n * `SegmentedControl`. Presentational by default (a parent row toggles); pass `onChange` to make the\r\n * box itself interactive + keyboard-operable.\r\n */\r\nexport function Checkbox({ checked, onChange, size = 14, disabled, className, \"aria-label\": ariaLabel }: CheckboxProps) {\r\n  const interactive = !!onChange && !disabled;\r\n  const onKeyDown = interactive\r\n    ? (e: KeyboardEvent) => { if (e.key === \" \" || e.key === \"Enter\") { e.preventDefault(); onChange!(); } }\r\n    : undefined;\r\n  return (\r\n    <span\r\n      className={className}\r\n      role={interactive ? \"checkbox\" : undefined}\r\n      aria-checked={interactive ? checked : undefined}\r\n      aria-label={ariaLabel}\r\n      tabIndex={interactive ? 0 : undefined}\r\n      onClick={interactive ? () => onChange!() : undefined}\r\n      onKeyDown={onKeyDown}\r\n      style={{\r\n        width: size, height: size, flex: \"0 0 auto\", borderRadius: 4,\r\n        border: \"1px solid \" + (checked ? \"var(--accent)\" : \"var(--border)\"),\r\n        background: checked ? \"var(--accent)\" : \"transparent\",\r\n        color: \"var(--bg-canvas)\", fontSize: Math.round(size * 0.64),\r\n        display: \"flex\", alignItems: \"center\", justifyContent: \"center\",\r\n        cursor: interactive ? \"pointer\" : undefined, opacity: disabled ? 0.4 : undefined,\r\n      }}\r\n    >\r\n      {checked ? \"✓\" : \"\"}\r\n    </span>\r\n  );\r\n}\r\n",
   "composes": [],
@@ -39,5 +38,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/controls"
 }

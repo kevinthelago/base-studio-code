@@ -3,7 +3,6 @@
   "name": "Spacer",
   "kitId": "base-studio-code",
   "role": "layout",
-  "group": "shared/ui/layout",
   "provides": "@/shared/ui/layout/Spacer",
   "srcText": "// Spacer, AS GRAPH SOURCE (#3680, epic #3604) — a structural shared/ui layout primitive authored as DATA.\n// `provides: \"@/shared/ui/layout/Spacer\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\n// Spacer — flexible or fixed empty space inside a Row/Stack (#2056). Replaces the ~40 hand-rolled\r\n// `<div style={{ flex: 1 }} />` fillers that push trailing items to the far end of a row.\r\n//\r\n//   <Row>  <h3>Title</h3>  <Spacer/>  <Button/>  </Row>   → button pinned right\r\n//   <Row>  a  <Spacer size=\"md\"/>  b  </Row>              → a fixed 12px gap between a and b\r\n//\r\n// A fixed spacer (`size`) reserves a rigid box along the parent's main axis; the default\r\n// (sizeless) spacer greedily absorbs the remaining space.\r\n\r\nimport type { CSSProperties } from \"react\";\r\nimport { space, type Space } from \"@/shared/ui/layout/space\";\r\n\r\nexport interface SpacerProps {\r\n  /** A rigid spacer of this size (scale rung or raw px). Omit for a flexible (`flex:1`) spacer. */\r\n  size?: Space;\r\n  style?: CSSProperties;\r\n}\r\n\r\nexport function Spacer({ size, style }: SpacerProps) {\r\n  if (size != null) {\r\n    const n = space(size);\r\n    // `flex: 0 0 <n>` sizes it along the parent's main axis regardless of row/column direction.\r\n    return <div aria-hidden style={{ flex: `0 0 ${n}px`, ...style }} />;\r\n  }\r\n  return <div aria-hidden style={{ flex: 1, ...style }} />;\r\n}\r\n",
   "composes": [],
@@ -21,5 +20,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/layout"
 }

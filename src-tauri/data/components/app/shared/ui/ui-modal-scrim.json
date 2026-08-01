@@ -3,9 +3,9 @@
   "name": "ModalScrim",
   "kitId": "base-studio-code",
   "role": "layout",
-  "group": "shared/ui/overlay",
   "provides": "@/shared/ui/overlay/ModalScrim",
   "srcText": "// ModalScrim, AS GRAPH SOURCE (#3684, epic #3604) — a shared/ui overlay/layout container authored as DATA.\n// `provides: \"@/shared/ui/overlay/ModalScrim\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). CTX-free, so a fresh compile has no identity split. Transcribed verbatim.\n// ModalScrim (#1776) — the ONE centered-modal overlay. Fixed full-screen scrim (the `--scrim`\r\n// token) at the `--z-modal` layer, flex-centering its child card, with Escape + overlay-click\r\n// dismiss. Every modal/dialog renders its card inside this instead of hand-rolling a fixed overlay\r\n// with a per-file scrim colour and z-index. `<Dialog>` is built on it; custom-bodied modals wrap\r\n// their own card with it.\r\n//\r\n//  - onDismiss: called on Escape and on a click/mousedown that lands on the scrim itself (not the\r\n//    card). Pass `undefined` to make the modal non-dismissable (e.g. while a destructive op is busy).\r\n//  - align=\"start\" top-aligns the card (for tall, scrolling modals); default centers it.\r\n//  - blur adds the backdrop blur some modals used.\r\nimport { type ReactNode, type CSSProperties } from \"react\";\r\nimport { useModalDismiss, overlayDismiss } from \"@/shared/hooks/useModalDismiss\";\r\n\r\nexport function ModalScrim({ children, onDismiss, align = \"center\", blur = false, className = \"\", style }: {\r\n  children: ReactNode;\r\n  onDismiss?: () => void;\r\n  align?: \"center\" | \"start\";\r\n  blur?: boolean;\r\n  className?: string;\r\n  style?: CSSProperties;\r\n}) {\r\n  useModalDismiss(() => onDismiss?.(), { enabled: !!onDismiss });\r\n  const cls = [\"modal-scrim\", align === \"start\" ? \"start\" : \"\", blur ? \"blur\" : \"\", className].filter(Boolean).join(\" \");\r\n  return (\r\n    <div className={cls} onMouseDown={overlayDismiss(onDismiss)} style={style}>\r\n      {children}\r\n    </div>\r\n  );\r\n}\r\n",
   "composes": [],
-  "src": "src/shared/ui/overlay/ModalScrim.tsx"
+  "src": "src/shared/ui/overlay/ModalScrim.tsx",
+  "folder": "shared/ui/overlay"
 }

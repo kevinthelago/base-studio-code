@@ -3,7 +3,6 @@
   "name": "SegmentedControl",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "group": "shared/ui/controls",
   "provides": "@/shared/ui/controls/SegmentedControl",
   "srcText": "// SegmentedControl, AS GRAPH SOURCE (#3678, epic #3604) — a pure shared/ui control authored as DATA. Its\n// `provides: \"@/shared/ui/controls/SegmentedControl\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\nimport type { ReactNode } from \"react\";\r\n\r\nexport interface SegOption {\r\n  label: ReactNode;\r\n  /** Whether this option is currently active. */\r\n  on: boolean;\r\n  onClick: () => void;\r\n  /** On-state colour. Default \"accent\". */\r\n  tone?: \"accent\" | \"allow\" | \"ask\" | \"deny\";\r\n  /** Show a leading dot in the current colour. */\r\n  dot?: boolean;\r\n  title?: string;\r\n}\r\n\r\nexport interface SegmentedControlProps {\r\n  options: SegOption[];\r\n  /** \"padded\" (default) = gapped pill buttons in a padded container; \"joined\" = a tight shared-border bar. */\r\n  variant?: \"padded\" | \"joined\";\r\n  /** Button height: \"sm\" (22px, default) or \"md\" (24px). */\r\n  size?: \"sm\" | \"md\";\r\n  /** Optional leading label (e.g. \"scope\"). */\r\n  label?: ReactNode;\r\n  className?: string;\r\n}\r\n\r\n/** SegmentedControl — the one mutually-exclusive / multi-toggle button group: the control-vocabulary\r\n *  primitive that absorbs `.scope` · `.seg` · `.tri` · `.pill-group` (#1874). Each option owns its\r\n *  on-state + click, so it serves single-select and multi-select alike; `tone` covers the\r\n *  allow/ask/deny tri-states. */\r\nexport function SegmentedControl({ options, variant = \"padded\", size = \"sm\", label, className }: SegmentedControlProps) {\r\n  return (\r\n    <div className={\"seg-ctl\" + (className ? ` ${className}` : \"\")}>\r\n      {label != null && <span className=\"seg-ctl-label\">{label}</span>}\r\n      <div className={`seg-grp ${variant} size-${size}`}>\r\n        {options.map((o, i) => (\r\n          <button\r\n            key={i}\r\n            type=\"button\"\r\n            title={o.title}\r\n            className={\"seg-btn tone-\" + (o.tone ?? \"accent\") + (o.on ? \" on\" : \"\")}\r\n            onClick={o.onClick}\r\n          >\r\n            {o.dot && <span className=\"seg-dot\" />}\r\n            {o.label}\r\n          </button>\r\n        ))}\r\n      </div>\r\n    </div>\r\n  );\r\n}\r\n",
   "composes": [],
@@ -39,5 +38,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/controls"
 }

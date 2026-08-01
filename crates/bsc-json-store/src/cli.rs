@@ -43,6 +43,17 @@ pub struct CliSpec {
     /// silently falling back to {@link CliSpec::meta_fields}, which would hand a caller a shape that
     /// looks right and is missing the fields its edges need.
     pub graph_fields: &'static [&'static str],
+    /// Field RENAMES this collection has been through: `(current, legacy)` (#4107 slice B).
+    ///
+    /// A JSON document store has no schema migration — records are written once and read forever — so a
+    /// renamed field would otherwise project as absent (`""`) for every record predating the rename.
+    /// That does not read as a bug; it reads as data that was never there. The component store hit this
+    /// renaming `group` -> `folder` with 351 stored records.
+    ///
+    /// Applied by [`lean_meta`] on the way OUT: a projection prefers the current key and falls back to
+    /// the legacy one. Writes always emit the current name, so a record migrates the first time it is
+    /// rewritten and the alias is a read-side bridge, never a second source of truth.
+    pub field_aliases: &'static [(&'static str, &'static str)],
 }
 
 /// Parsed global flags + leftover positional args.
@@ -158,7 +169,7 @@ pub fn run_hooked_validated(
                     ));
                 }
                 let metas: Vec<Value> =
-                    store.list().iter().map(|j| lean_meta(j, spec.graph_fields)).collect();
+                    store.list().iter().map(|j| lean_meta_aliased(j, spec.graph_fields, spec.field_aliases)).collect();
                 print_json(&metas, args.pretty);
             } else if args.full {
                 // Full-fidelity read (#2143): every record's COMPLETE JSON object as a plain array.
@@ -171,7 +182,7 @@ pub fn run_hooked_validated(
                 print_json(&full, args.pretty);
             } else {
                 let metas: Vec<Value> =
-                    store.list().iter().map(|j| lean_meta(j, spec.meta_fields)).collect();
+                    store.list().iter().map(|j| lean_meta_aliased(j, spec.meta_fields, spec.field_aliases)).collect();
                 print_json(&metas, args.pretty);
             }
             Ok(())
@@ -280,10 +291,23 @@ pub fn id_of(v: &Value, noun: &str) -> Result<String, String> {
 /// so the `serde_json::Map` (BTreeMap) render is byte-identical to the old derived structs.
 /// Public so a wrapper's custom read verbs (e.g. `bsc ui list --shape`) project the SAME lean shape.
 pub fn lean_meta(json: &str, fields: &[&str]) -> Value {
+    lean_meta_aliased(json, fields, &[])
+}
+
+/// [`lean_meta`] with a collection's {@link CliSpec::field_aliases} applied — the projection prefers the
+/// current key and falls back to the legacy one, so a record written before a rename still projects its
+/// value instead of `""`.
+pub fn lean_meta_aliased(json: &str, fields: &[&str], aliases: &[(&str, &str)]) -> Value {
     let v: Value = serde_json::from_str(json).unwrap_or(Value::Null);
     let mut m = serde_json::Map::new();
     for f in fields {
-        let val = match v.get(*f) {
+        let looked_up = v.get(*f).or_else(|| {
+            aliases
+                .iter()
+                .find(|(cur, _)| cur == f)
+                .and_then(|(_, legacy)| v.get(*legacy))
+        });
+        let val = match looked_up {
             Some(Value::String(s)) => Value::String(s.clone()),
             Some(Value::Null) | None => Value::String(String::new()),
             Some(other) => other.clone(),
@@ -514,6 +538,7 @@ mod tests {
             commands: TEST_COMMANDS,
             meta_fields: &["id", "name"],
             graph_fields: &[],
+            field_aliases: &[],
         }
     }
 

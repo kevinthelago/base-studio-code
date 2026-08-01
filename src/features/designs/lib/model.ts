@@ -142,15 +142,16 @@ export interface ComponentRecord {
   role: Role;
   /** The component's FOLDER PATH within the kit (#3048/#3579) — a nested, `/`-delimited path
    *  (`shared/ui/controls`, `features/github`) that organizes the kit like a completed project's
-   *  folders, DERIVED from `src` (`group_from_src` in `bsc-component`; the harvest seeds it and
-   *  `bsc ui regroup` re-derives it for the whole store). ORTHOGONAL to {@link role} (the architectural
-   *  tier that drives the composition swimlanes): `group` answers "where does this live in the project",
+   *  folders, DERIVED from `src` (`folder_from_src`, shared with the algorithms library since #4107;
+   *  the harvest seeds it and `bsc ui refolder` re-derives it for the whole store). ORTHOGONAL to
+   *  {@link role} (the architectural tier that drives the composition swimlanes): `folder` answers
+   *  "where does this live in the project",
    *  `role` answers "what tier is it". ORGANIZATIONAL only — `composes` still resolves across the WHOLE
    *  kit, so components in DIFFERENT folders compose freely (kits never cross). Absent ⇒ the kit's
-   *  trailing "ungrouped" bucket (`kitGroups.ts`). OPTIONAL and NEVER defaulted — like
-   *  {@link Kit.tech}/`style`, an absent `group` must stay absent (never `""`) so a store copy keeps
+   *  trailing "unfoldered" bucket (`kitGroups.ts`). OPTIONAL and NEVER defaulted — like
+   *  {@link Kit.tech}/`style`, an absent `folder` must stay absent (never `""`) so a store copy keeps
    *  hashing to its recorded `seedHash` and the #2483 reconcile can refresh it. */
-  group?: string;
+  folder?: string;
   version: string;
   /** Times this component is used across the codebase (a reuse signal). */
   used: number;
@@ -275,7 +276,7 @@ export function matchesQuery(c: ComponentRecord, query: string): boolean {
   return (
     c.name.toLowerCase().includes(q) ||
     c.role.includes(q) ||
-    (c.group ?? "").toLowerCase().includes(q) ||
+    (c.folder ?? "").toLowerCase().includes(q) ||
     c.tags.some((t) => t.toLowerCase().includes(q))
   );
 }

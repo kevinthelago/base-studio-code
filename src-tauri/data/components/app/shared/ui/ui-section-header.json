@@ -3,7 +3,6 @@
   "name": "SectionHeader",
   "kitId": "base-studio-code",
   "role": "layout",
-  "group": "shared/ui/layout",
   "provides": "@/shared/ui/layout/SectionHeader",
   "srcText": "// SectionHeader, AS GRAPH SOURCE (#3680, epic #3604) — a structural shared/ui layout primitive authored as DATA.\n// `provides: \"@/shared/ui/layout/SectionHeader\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\nimport type { ReactNode, CSSProperties } from \"react\";\r\n\r\nexport interface SectionHeaderProps {\r\n  title: ReactNode;\r\n  /** Dimmed inline sub-text after the title. */\r\n  hint?: ReactNode;\r\n  /** Right-aligned dim mono text (e.g. a count) — wrapped in the meta style. */\r\n  meta?: ReactNode;\r\n  /** Right-aligned raw content (e.g. a search input or button) — overrides `meta`. */\r\n  right?: ReactNode;\r\n  titleStyle?: CSSProperties;\r\n  className?: string;\r\n}\r\n\r\n/** SectionHeader — the one uppercase section-title row: `title · hint · spacer · meta|right`.\r\n *  Absorbs the agents/mcp `.sec-head` (#1874). Planner's collapsible `.sec-head` (chev/count/hover)\r\n *  is a different component and is intentionally left alone. */\r\nexport function SectionHeader({ title, hint, meta, right, titleStyle, className }: SectionHeaderProps) {\r\n  return (\r\n    <div className={\"section-header\" + (className ? ` ${className}` : \"\")}>\r\n      <h3 style={titleStyle}>{title}</h3>\r\n      {hint != null && <span className=\"hint\">{hint}</span>}\r\n      {(right != null || meta != null) && <span className=\"sh-spacer\" />}\r\n      {right != null ? right : meta != null ? <span className=\"sh-meta\">{meta}</span> : null}\r\n    </div>\r\n  );\r\n}\r\n",
   "composes": [],
@@ -45,5 +44,6 @@
       "req": false,
       "desc": ""
     }
-  ]
+  ],
+  "folder": "shared/ui/layout"
 }

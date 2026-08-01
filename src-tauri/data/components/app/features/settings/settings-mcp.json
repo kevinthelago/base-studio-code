@@ -3,10 +3,10 @@
   "name": "SettingsMcpPage",
   "kitId": "base-studio-code",
   "role": "composite",
-  "group": "features/settings",
   "srcText": "// Settings → MCP section, AS GRAPH SOURCE (#3658, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the setting cards + page helpers via the settings graph-\n// platform, and the sibling section pages as @/components/* graph records). Behaviour runs here.\nimport { ClaudeConfigCard } from \"@/features/settings/cards/ClaudeConfigCard\";\r\nimport { Stack } from \"@/shared/ui/layout/Stack\";\r\n\r\nexport function McpPage() {\r\n  return (\r\n    <Stack gap={18} style={{ maxWidth: 820 }}>\r\n      <ClaudeConfigCard />\r\n    </Stack>\r\n  );\r\n}\r\n",
   "composes": [
     "Stack"
   ],
-  "src": "src/features/settings/SettingsMcpPage.tsx"
+  "src": "src/features/settings/SettingsMcpPage.tsx",
+  "folder": "features/settings"
 }

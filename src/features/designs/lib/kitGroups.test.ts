@@ -9,8 +9,8 @@ import { SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./seed";
 const kit = (id: string, tech?: string, style?: string): Kit =>
   ({ id, name: id, tech, style, stack: "", dot: "var(--accent)" });
 
-const comp = (id: string, group?: string): ComponentRecord =>
-  ({ id, name: id, kitId: "k", role: "primitive", group, version: "1", used: 0, tags: [],
+const comp = (id: string, folder?: string): ComponentRecord =>
+  ({ id, name: id, kitId: "k", role: "primitive", folder, version: "1", used: 0, tags: [],
      variants: ["default"], composes: [], props: [], whenUse: [], whenNot: [], src: "", srcText: "" });
 
 /** The kit ids of a node list, descending groups depth-first (order-preserving). */
