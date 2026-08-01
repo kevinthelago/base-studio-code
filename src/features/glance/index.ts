@@ -21,3 +21,6 @@ export { useProjectFleet } from "./lib/useProjectFleet";
 export { type ProjectLink } from "./lib/projectLinks";
 // #3931: the fleet resume is the launch pump's actuator (mounted in the app shell), so it is public API.
 export { resumeProjectFleet, nothingToResume, type ResumeResult, type BlockedStream } from "./lib/resumeProject";
+// #4103: the non-hook issue-state resolver — the fleet gates in OTHER features (the publish-time
+// prune) need it outside a render, and a feature is reached only through its barrel.
+export { resolveClosedRefs, type RefBearingStream } from "./lib/fleetIssueState";

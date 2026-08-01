@@ -18,6 +18,7 @@ import { buildWorkerScope, toWorkerUiPairing } from "../fleet/workerScope";
 import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { type PlanIssue } from "../issues/planIssues";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
+import { resolveClosedRefs } from "@/features/glance";
 import { withDerivedStreamIssues } from "../fleet/planFleet";
 import { teamRoleStreams } from "../fleet/teamFleet";
 import { recoverIssues, type GitHubIssueLike } from "../issues/recoverIssues";
@@ -157,7 +158,12 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // #1957: completed workers no longer skip — they relaunch INTO maintenance (alive + ready for the
       // director to dispatch new lane work), so launch BOTH active and maintenance streams. The
       // maintenance set drives a maintenance scope banner (buildWorkerScope) so they stand by, not rebuild.
-      const { active, maintenance } = pruneCompletedStreams(fullPlan.streams, doneIssueRefs(dbIssues));
+      // #4103: plan.db's issue rows can be empty for a fleet assembled outside a full planner run, in
+      // which case `doneIssueRefs` is empty and NO stream ever prunes as complete. GitHub's closed set
+      // is the other evidence source; either one calling a ref done makes it done.
+      const closedRefs = await resolveClosedRefs(fullPlan.streams);
+      const done = new Set([...doneIssueRefs(dbIssues), ...closedRefs]);
+      const { active, maintenance } = pruneCompletedStreams(fullPlan.streams, done);
       const maintenanceIds = new Set(maintenance.map(s => s.id));
       // #2611: a stream with no resolvable repo stays VISIBLE in the plan but can't spawn a worktree —
       // skip it here (rather than aborting the fail-closed launch on a broken ensure_worktree) and
