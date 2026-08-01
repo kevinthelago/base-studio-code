@@ -421,7 +421,7 @@ mod folder_tests {
     }
 }
 
-// ── colocated test pairing (#4125) — SHARED by both libraries ─────────────────────────────────
+// ── colocated test pairing (#4126) — SHARED by both libraries ─────────────────────────────────
 // Moved here from `bsc_ui::tests_harvest` (#3907) when the algorithms library needed the same
 // pairing, for the reason `folder_from_src` lives here: two libraries deriving the same thing from
 // the same input must not drift. `bsc_ui::tests_harvest` delegates rather than keeping a copy.

@@ -149,7 +149,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         // reviewable, and one with no domain is invisible once stored (#3607).
                         "src": c.src,
                         "domain": c.domain,
-                        // The COLOCATED test, carried at harvest time (#4125b) — so a curate lands a
+                        // The COLOCATED test, carried at harvest time (#4126) — so a curate lands a
                         // node that already declares its tests, with no second pass.
                         "tests": c.tests.iter().map(|t| serde_json::json!({ "name": t.name, "src": t.src })).collect::<Vec<_>>(),
                         "worthy": c.classification.worthy,
@@ -198,7 +198,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         "id": c.id, "tech": c.tech, "role": c.role, "name": c.name,
                         "composes": c.composes, "code": c.code,
                         "domain": c.domain, "src": c.src,
-                        // #4125b — tests ride in with the curation, so `bsc graph tests harvest` is only
+                        // #4126 — tests ride in with the curation, so `bsc graph tests harvest` is only
                         // ever needed for records curated before harvest carried them.
                         "tests": c.tests.iter().map(|t| serde_json::json!({ "name": t.name, "src": t.src })).collect::<Vec<_>>(),
                     });
@@ -347,7 +347,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 "ambiguousIds": ambiguous,
             }))
         }
-        // `tests harvest <dir>` (#4125) — carry each impl's COLOCATED test file onto its node, the
+        // `tests harvest <dir>` (#4126) — carry each impl's COLOCATED test file onto its node, the
         // algorithms twin of `bsc ui tests harvest` (#3907), pairing through the SAME
         // `bsc_util::test_path_for` so the two libraries cannot drift.
         //
@@ -530,7 +530,7 @@ fn help(prog: &str) -> String {
          {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
-  \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4125)
+  \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
   \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \

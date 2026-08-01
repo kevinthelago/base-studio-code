@@ -25,7 +25,7 @@ pub struct HarvestedTest {
 
 /// The colocated test path for a `src/`-relative module path, if one exists under `root`.
 ///
-/// Delegates to [`bsc_util::test_path_for`] (#4125). The pairing moved to the shared crate when the
+/// Delegates to [`bsc_util::test_path_for`] (#4126). The pairing moved to the shared crate when the
 /// ALGORITHMS library needed the identical derivation — the same reason `folder_from_src` lives there:
 /// two libraries deriving the same thing from the same input must not drift apart.
 pub fn test_path_for(root: &Path, src: &str) -> Option<PathBuf> {
@@ -33,7 +33,7 @@ pub fn test_path_for(root: &Path, src: &str) -> Option<PathBuf> {
 }
 
 /// The test file's display name: its FIRST top-level `describe("…")` title, else the file's basename.
-/// Delegates to [`bsc_util::test_display_name`] (#4125).
+/// Delegates to [`bsc_util::test_display_name`] (#4126).
 pub fn display_name(path: &Path, contents: &str) -> String {
     bsc_util::test_display_name(path, contents)
 }
