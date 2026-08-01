@@ -12,9 +12,6 @@ import { SkillsPage as SkillsSettingsPage } from "./pages/SkillsPage";
 import { AutomationsPage } from "./pages/AutomationsPage";
 import { McpPage } from "./pages/McpPage";
 
-// The graph-hosted workspace (#3658) — App.tsx renders this via the lazy SettingsWorkspace.
-export { SettingsGraphHost } from "./SettingsGraphHost";
-
 // #1545: public API for the app shell — appearance tokens + the keybinding/hotkey model the shell's
 // boot + hotkey hooks consume (through this barrel, not settings internals).
 export { accentVars } from "./lib/appearance";

@@ -137,24 +137,6 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ],
     ensurePlatform: () => import("@/features/security"),
   },
-  {
-    pageId: "settingspage",
-    label: "Settings",
-    // ROLLED BACK to the hand-coded pages (#3758). The graph records + host are still there, dormant —
-    // so this is the page whose shadow report matters most: it is the one that came back.
-    rendersFrom: "file",
-    modules: [
-      { recordId: "settingspage", file: "/src/features/settings/index.tsx" },
-      { recordId: "settings-general", file: "/src/features/settings/pages/GeneralPage.tsx" },
-      { recordId: "settings-planner", file: "/src/features/settings/pages/PlannerPage.tsx" },
-      { recordId: "settings-skills", file: "/src/features/settings/pages/SkillsPage.tsx" },
-      { recordId: "settings-automations", file: "/src/features/settings/pages/AutomationsPage.tsx" },
-      { recordId: "settings-mcp", file: "/src/features/settings/pages/McpPage.tsx" },
-      { recordId: "settings-github", file: "/src/features/settings/pages/GithubPage.tsx" },
-      { recordId: "settings-security", file: "/src/features/settings/pages/SecurityPage.tsx" },
-    ],
-    ensurePlatform: () => import("@/features/settings"),
-  },
 ];
 
 /** The file half of the diff, lazily. Keys are project-root-absolute paths, matching `ShadowModuleDef.file`.
@@ -169,8 +151,6 @@ const FILE_SOURCES = import.meta.glob<string>(
     "/src/features/mcp/{index,McpAnalytics}.tsx",
     "/src/features/skills/{index,SkillsViews,NewGroupDialog,SkillDrawer,SkillsDigest,LessonsTab,RunsTab}.tsx",
     "/src/features/security/{index,ProfilesTab,AssignmentsTab,ActivityTab,FlowTab}.tsx",
-    "/src/features/settings/index.tsx",
-    "/src/features/settings/pages/{GeneralPage,PlannerPage,SkillsPage,AutomationsPage,McpPage,GithubPage,SecurityPage}.tsx",
   ],
   { query: "?raw", import: "default" },
 );
