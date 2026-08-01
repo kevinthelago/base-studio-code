@@ -50,6 +50,15 @@ import * as LogsBridge from "@/shared/lib/core/logsBridge";
 import * as FleetData from "@/shared/data/fleet";
 import * as UseFleetLive from "@/shared/hooks/useFleetLive";
 import * as UsePoll from "@/shared/hooks/usePoll";
+// #4185 — the feature-agnostic surface the graph-loaded Glance cockpit reaches: the crumb hook, the
+// perf marker, the session-log tail, the preview source resolver, the claude-running guard, and the demo
+// snapshot. None of these are glance's own, so they belong to the shell's platform set, not a feature's.
+import * as UseCrumbEntity from "@/shared/hooks/useCrumbEntity";
+import * as Perf from "@/shared/lib/core/perf";
+import * as SessionLog from "@/shared/lib/logs/sessionLog";
+import * as PreviewSource from "@/shared/lib/preview/previewSource";
+import * as EnsureClaudeRunning from "@/shared/lib/session/ensureClaudeRunning";
+import * as DemoSnapshot from "@/store/demoSnapshot";
 import * as UsePaneTokenUsage from "@/app/console/lib/usePaneTokenUsage";
 import * as Bsc from "@/shared/lib/core/bsc";
 import * as ProjectPaths from "@/shared/lib/core/projectPaths";
@@ -86,6 +95,13 @@ import * as ModalScrim from "@/shared/ui/overlay/ModalScrim";
 import * as RailSection from "@/shared/ui/layouts/RailSection";
 import * as RailRow from "@/shared/ui/layouts/RailRow";
 import * as GraphRail from "@/shared/ui/layouts/GraphRail";
+// #4185 — the three the Glance cockpit reaches that no earlier graph page did: the canvas it draws the
+// project network on, the icon button its dock and inspector use, and the tab strip. Feature-agnostic, so
+// they belong to the shell's platform set.
+import * as TabBar from "@/shared/ui/layouts/TabBar";
+import * as IconButton from "@/shared/ui/controls/IconButton";
+import * as PreviewReview from "@/shared/lib/preview/previewReview";
+import * as GraphCanvas from "@/shared/ui/layouts/GraphCanvas";
 import * as UseRailSections from "@/shared/hooks/useRailSections";
 import * as UseDragResize from "@/shared/hooks/useDragResize";
 import * as SkillsData from "@/shared/data/skills";
@@ -183,6 +199,10 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/layouts/RailSection": RailSection,
   "@/shared/ui/layouts/RailRow": RailRow,
   "@/shared/ui/layouts/GraphRail": GraphRail,
+  "@/shared/ui/layouts/TabBar": TabBar,
+  "@/shared/ui/controls/IconButton": IconButton,
+  "@/shared/lib/preview/previewReview": PreviewReview,
+  "@/shared/ui/layouts/GraphCanvas": GraphCanvas,
   "@/shared/hooks/useRailSections": UseRailSections,
   "@/shared/hooks/useDragResize": UseDragResize,
   "@/shared/data/skills": SkillsData,
@@ -208,6 +228,12 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/useFleetLive": UseFleetLive,
   "@/shared/hooks/usePoll": UsePoll,
+  "@/shared/hooks/useCrumbEntity": UseCrumbEntity,
+  "@/shared/lib/core/perf": Perf,
+  "@/shared/lib/logs/sessionLog": SessionLog,
+  "@/shared/lib/preview/previewSource": PreviewSource,
+  "@/shared/lib/session/ensureClaudeRunning": EnsureClaudeRunning,
+  "@/store/demoSnapshot": DemoSnapshot,
   "@/app/console/lib/usePaneTokenUsage": UsePaneTokenUsage,
   "@/shared/lib/core/bsc": Bsc,
   "@/shared/lib/core/projectPaths": ProjectPaths,

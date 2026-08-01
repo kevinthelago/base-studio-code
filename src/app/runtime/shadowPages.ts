@@ -56,6 +56,23 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ensurePlatform: () => import("@/features/glance"),
   },
   {
+    pageId: "glancepage",
+    label: "Glance",
+    rendersFrom: "graph",
+    modules: [
+      { recordId: "glancepage", file: "/src/features/glance/GlanceWorkspace.tsx" },
+      { recordId: "glance-canvas", file: "/src/features/glance/GlanceCanvas.tsx" },
+      { recordId: "glance-inspector", file: "/src/features/glance/GlanceInspector.tsx" },
+      { recordId: "glance-stream-morph", file: "/src/features/glance/GlanceStreamMorph.tsx" },
+      { recordId: "glance-preview-morph", file: "/src/features/glance/GlancePreviewMorph.tsx" },
+      { recordId: "glance-node", file: "/src/features/glance/GlanceNode.tsx" },
+      { recordId: "glance-plan-screen", file: "/src/features/glance/GlancePlanScreen.tsx" },
+      { recordId: "glance-chat-dock", file: "/src/features/glance/GlanceChatDock.tsx" },
+      { recordId: "glance-session-log", file: "/src/features/glance/GlanceSessionLog.tsx" },
+    ],
+    ensurePlatform: () => import("@/features/glance"),
+  },
+  {
     pageId: "projectspage",
     label: "Projects",
     rendersFrom: "graph",
@@ -145,6 +162,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
 const FILE_SOURCES = import.meta.glob<string>(
   [
     "/src/features/planner/list/ProjectsList.tsx",
+    "/src/features/glance/Glance{Workspace,Canvas,Inspector,StreamMorph,PreviewMorph,Node,PlanScreen,ChatDock,SessionLog}.tsx",
     "/src/features/github/{index,Empty,GitHubSummary,Pulse,BranchGraph}.tsx",
     "/src/features/github/summary/{ActivityHeatmap,CIHealthCard,ContributorsCard,CrossRepoActivity,GitHubPageModeStrip,LanguageMix,OpenPRsCard,ReposGrid}.tsx",
     "/src/features/automations/{index,Schedules,History,HookAnalytics}.tsx",

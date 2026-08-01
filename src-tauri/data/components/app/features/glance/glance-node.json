@@ -1,0 +1,117 @@
+{
+  "id": "glance-node",
+  "name": "GlanceNode",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "// Glance → a project/library graph node, AS GRAPH SOURCE (#4185, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the glance lib/hook surface via the glance graph-platform,\n// and the sibling components as @/components/* graph records). Behaviour runs here.\n// The fleet/project NODE card (#4032) — extracted from the inline JSX in `GlanceCanvas`'s node map so\n// it is a real component the designer can reach, and so its live states are authored MOTION DATA\n// (`@/shared/ui/kit/glanceNodeAnimations`) rather than a raw keyframe in `glance.css` plus an inline\n// `boxShadow`.\n//\n// ── THE STATE VOCABULARY ────────────────────────────────────────────────────────────────────────\n// Three states, three motions, and the differences are deliberate:\n//   · building  BREATHES — the worker is working (#4015)\n//   · attention RINGS    — it is blocked on a PERSON, the one state that needs someone (#4005)\n//   · complete  is STILL — finished; motion means \"look at this\", and this needs nothing (#4027)\n//\n// The first two come from the compiled kit CSS, bound to `data-node-state`. The third is the ABSENCE\n// of an animation, which is why there is no `complete` entry in the motion data.\n//\n// ── WHAT STAYED IN THE CANVAS ───────────────────────────────────────────────────────────────────\n// Everything positional and model-derived: layout, the border precedence chain (selected → preview →\n// off → error → cycle → focus), the health rollup, push offsets. Those are graph CONCERNS, not node\n// presentation, and threading them out would have made this a worse component, not a more reusable\n// one. This owns the card's body: its states, its dot, its two label rows.\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport type { GNode } from \"@/features/glance/lib/glanceGraph\";\nimport { GLANCE_NODE_ANIM_CLASSES, ensureGlanceNodeMotion } from \"@/features/glance/glanceNodeMotion\";\n\n/** Which live state the node's motion should express, or `null` for a still node. */\nexport type GlanceNodeState = \"building\" | null;\n\nexport interface GlanceNodeProps {\n  n: GNode;\n  /** Precomputed by the canvas — the border precedence chain it owns. */\n  border: string;\n  boxShadow: string;\n  /** Health dot colour + whether it pulses (axis 1). */\n  healthColor: string;\n  healthPulse: boolean;\n  /** Pulse CHARACTER (#4052) — an alarm (fast + haloed, `error`) vs a breath (slow + bare,\n   *  `modifying`). Both optional so the alarm stays the default and `error` renders unchanged. */\n  healthPulseMs?: number;\n  healthGlow?: boolean;\n  /** Lit only by a DOWNSTREAM dep — dimmed, never pulses, so the eye lands on the fault's ORIGIN. */\n  inherited: boolean;\n  /** The lower-left FUNCTION chip — fleet (L1) nodes only (#4052). Both absent ⇒ the slot renders\n   *  nothing at all, which is how an L0 project node reads now that the lifecycle axis is gone. */\n  roleColor?: string;\n  roleLabel?: string;\n  /** Axis-2 word + its colour, and whether it pulses (suppressed while the NODE itself animates). */\n  bottomText: string;\n  bottomColor: string;\n  bottomPulse: boolean;\n  /** The user-deactivated / degraded reads, which suppress the completion marker. */\n  isOff: boolean;\n  degraded: boolean;\n  ownDegraded: boolean;\n  /** The live motion state, or null. */\n  state: GlanceNodeState;\n  /** Owned-issue completion (#4050), or 0 for \"no bar\". Presentational only. */\n}\n\n/** How far past the fill edge the colour keeps bleeding, in percentage points (#4123).\n *\n *  This is the whole idea: the fill does not STOP anywhere. It thins out across this band, so the eye\n *  reads \"about this far along\" and cannot read a boundary off it. Too small and it is a line with a\n *  soft edge (a measurement); too large and a half-done node is indistinguishable from an empty one.\n *  16 keeps the two ends legible at the node's ~186px width while leaving nothing crisp in between. */\nconst FADE_PCT = 16;\n\n/**\n * The node's background: its own completion, as a left-to-right wash that fades out (#4123).\n *\n * Returns the plain panel colour at zero — a node with no work, or none finished, must look exactly\n * like a node that has never been measured. Inventing a visible 0% sliver would put a mark on every\n * node in the graph and say nothing.\n *\n * Layered OVER `--bg-elev` rather than replacing it, so the node keeps its surface (and its contrast\n * with the canvas) at every fill level.\n */\nexport function nodeFill(fill: number): string {\n  if (fill <= 0) return \"var(--bg-elev)\";\n  const tint = (pct: number) => `color-mix(in oklch, var(--graph-health-complete) ${pct}%, transparent)`;\n  const edge = Math.min(100, fill * 100);\n  const soft = Math.max(0, edge - FADE_PCT);\n  // Strongest at the origin, already thinning by the fade band, gone by the edge — an estimate with no\n  // boundary to misread. `100%` is clamped by `edge`, so a complete node is washed end to end.\n  return [\n    `linear-gradient(90deg, ${tint(20)} 0%, ${tint(11)} ${soft}%, transparent ${edge}%)`,\n    \"var(--bg-elev)\",\n  ].join(\", \");\n}\n\nexport function GlanceNode(p: GlanceNodeProps) {\n  const { n } = p;\n  // Progress is the NODE'S OWN FILL (#4123) — not a bar drawn on it.\n  //\n  // It was a discrete widget twice over: a 2px hairline, then a 5px track with `done/total` beside it.\n  // Both were wrong for what this number IS. Completion here is COARSE — the refs are a planning\n  // artifact, \"done\" is whatever evidence happened to be reachable, and nobody sizes a decision off\n  // the third digit. A precise-looking readout on every node invites reading it precisely, and it\n  // competes with the health dot and activity word for the same glance.\n  //\n  // So the whole node fills, left to right, and the fill FADES rather than ending at a line — a soft\n  // edge reads as an estimate, a hard one reads as a measurement. The exact counts still exist, in the\n  // inspector, where someone has asked for them.\n  const progress = n.progress;\n  const fill = progress && progress.total > 0 ? Math.max(0, Math.min(1, progress.done / progress.total)) : 0;\n  // Idempotent + cheap (one string compare after the first call). Done HERE rather than at the canvas\n  // so the component carries its own motion: anything that renders a node gets the CSS, and nothing\n  // has to remember to mount it.\n  ensureGlanceNodeMotion();\n  return (\n    <Box\n      // The applying classes + the state attribute ARE the binding: the compiled kit CSS scopes each\n      // animation to `[data-node-state=\"…\"]`, so a designer reading the record sees which state each\n      // animation belongs to without any class bookkeeping here.\n      className={GLANCE_NODE_ANIM_CLASSES}\n      data-node-state={p.state ?? undefined}\n      // The exact numbers stay reachable on hover without occupying the node.\n      title={progress && progress.total > 0 ? `${progress.done}/${progress.total} issues complete` : undefined}\n      style={{ width: \"100%\", height: \"100%\", background: nodeFill(fill), border: `1px solid ${p.border}`,\n        borderRadius: 9, padding: \"10px 12px\", display: \"flex\", flexDirection: \"column\", justifyContent: \"center\",\n        boxShadow: p.boxShadow, transition: \"border-color .15s, box-shadow .15s\",\n        // `relative` so the progress bar can sit on the bottom edge; `overflow: hidden` keeps it inside\n        // the rounded corners.\n        position: \"relative\", overflow: \"hidden\" }}>\n      <Box style={{ display: \"flex\", alignItems: \"center\", gap: 8 }}>\n        {/* Axis-1 health DOT. Restored in #4040 with the glow gone — health is a colour, and without\n            this the node had no colour surface for it at all. An INHERITED dot is dimmed and never\n            pulses, so the eye lands on the ORIGIN of a fault rather than everything downstream\n            (#2541). */}\n        <Box title={`${n.rollupHealth}${p.inherited ? \" (downstream)\" : \"\"}`}\n          style={{ width: 8, height: 8, borderRadius: \"50%\", background: p.healthColor, flex: \"none\", opacity: p.inherited ? 0.5 : 1,\n            boxShadow: p.healthPulse && !p.inherited && p.healthGlow !== false ? `0 0 8px ${p.healthColor}` : \"none\",\n            animation: p.healthPulse && !p.inherited ? `glance-softpulse ${p.healthPulseMs ?? 1400}ms ease-in-out infinite` : \"none\" }} />\n        <Text as=\"span\" mono size={13} weight={600} style={{ whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\" }}>{n.slug}</Text>\n        {/* The APP-TYPE discriminator (#3786/#3802) — a subtle mono micro-label on the title line: what\n            KIND of app this endpoint is (api/serverless/cli/…). Gated on a non-default classification,\n            so an unclassified project (appType absent, or \"application\") renders byte-identical. */}\n        {n.appType && n.appType !== \"application\" && (\n          <Text as=\"span\" mono size={8.5} title={`app type: ${n.appType}`}\n            style={{ flex: \"none\", textTransform: \"uppercase\", letterSpacing: \".4px\", color: \"var(--fg-muted)\", opacity: 0.7,\n              border: \"1px solid var(--border-soft)\", borderRadius: 4, padding: \"1px 4px\", lineHeight: 1.3 }}>{n.appType}</Text>\n        )}\n      </Box>\n      {/* The axis-2 row. #4058 briefly stripped this from L0 project nodes; #4060 restored it — that\n          change was meant to clean up the LEGEND, not the nodes. The word stays on every node at both\n          levels; only the legend's L0 ACTIVITY column is gone. */}\n      <Box style={{ display: \"flex\", alignItems: \"center\", gap: 8, marginTop: 9 }}>\n        {p.roleLabel && (\n          <Text as=\"span\" mono size={10} style={{ textTransform: \"uppercase\", letterSpacing: \".5px\", color: p.roleColor }}>{p.roleLabel}</Text>\n        )}\n        <Box style={{ flex: 1 }} />\n        {/* #4027 — the FINISHED marker. Static and to the LEFT of the word, so a completed node is\n            legible at a glance without reading its label. */}\n        {n.activity === \"complete\" && !p.isOff && !p.degraded && (\n          <Text as=\"span\" mono size={10} weight={600} aria-hidden\n            style={{ color: \"var(--graph-health-healthy)\", marginRight: 4, flex: \"none\" }}>✓</Text>\n        )}\n        {/* Axis-2 activity word, or the fault reason when degraded. */}\n        <Text as=\"span\" mono size={10} weight={500} title={p.ownDegraded && n.reason ? n.reason : n.activity === \"complete\" ? n.reason : undefined}\n          style={{ color: p.bottomColor, maxWidth: 108, whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\",\n            animation: p.bottomPulse ? \"glance-softpulse 1.4s ease-in-out infinite\" : \"none\" }}>{p.bottomText}</Text>\n      </Box>\n    </Box>\n  );\n}\n",
+  "src": "src/features/glance/GlanceNode.tsx",
+  "folder": "features/glance",
+  "composes": [
+    "Box",
+    "Text"
+  ],
+  "props": [
+    {
+      "name": "n",
+      "type": "GNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "border",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "boxShadow",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "healthColor",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "healthPulse",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "healthPulseMs",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "healthGlow",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "inherited",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "roleColor",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "roleLabel",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "bottomText",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "bottomColor",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "bottomPulse",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "isOff",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "degraded",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "ownDegraded",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "state",
+      "type": "GlanceNodeState",
+      "req": true,
+      "desc": ""
+    }
+  ]
+}
