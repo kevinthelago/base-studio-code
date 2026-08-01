@@ -80,15 +80,20 @@ export function GraphCanvas({
 }: GraphCanvasProps) {
   // Pull the plain viewport values out as locals — worldTransform is a computed style object, not a
   // ref, so reading it (and the callback refs) here keeps the render free of ref-access.
-  const { setVp, setWorld, onCanvasDown, worldTransform, view } = vp;
-  // The infinite grid lives on the viewport (untransformed) so it fills the whole visible area: the
-  // dot SPACING scales with zoom (`gridSize * scale`) and the origin follows the pan (`tx,ty`), so it
-  // stays aligned to world coords without ever stopping at the world box the content overflows.
+  const { setVp, setWorld, onCanvasDown, worldTransform } = vp;
+  // The infinite grid lives on the viewport (untransformed) so it fills the whole visible area, and it is
+  // STATIC (#4142): a fixed dot field that neither pans nor scales.
+  //
+  // It used to track world coords by reading `view.tx/ty/scale`. #4140 stopped the drag from calling
+  // `setView` per mousemove — the world layer's transform is written imperatively and committed once, on
+  // mouseup — so a state-keyed grid stopped moving DURING the drag and then jumped when the commit
+  // landed. Pinning it to the viewport instead of the world removes the coupling outright rather than
+  // adding a second imperative write path for a parallax cue; it also drops the last reason this
+  // component reads `view` on the render path.
   const gridStyle: CSSProperties | undefined = grid ? {
     position: "absolute", inset: 0, pointerEvents: "none",
     backgroundImage: `radial-gradient(${gridColor} 1px, transparent 1px)`,
-    backgroundSize: `${gridSize * view.scale}px ${gridSize * view.scale}px`,
-    backgroundPosition: `${view.tx}px ${view.ty}px`,
+    backgroundSize: `${gridSize}px ${gridSize}px`,
   } : undefined;
   // Hooks always run (rules of hooks); the live size only drives a column when that side is resizable.
   const railDrag = useDragResize({ initial: railWidth, min: railMin, max: railMax, axis: "x" });
