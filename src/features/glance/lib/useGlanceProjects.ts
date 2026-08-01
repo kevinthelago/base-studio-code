@@ -20,7 +20,7 @@ import { useAppStore } from "@/store";
 import { githubGraphql } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { toMinimalGhProjects, minimalToGhProject, filterRecordsToLocal } from "@/shared/lib/github/githubState";
-import { useProjectProgress } from "./useProjectProgress";
+import { useProjectProgressRows } from "./useProjectProgress";
 import { fetchProjectsWithProbe } from "@/shared/lib/github/githubProbe";
 import { PROJECTS_QUERY, type GhProject } from "@/features/planner/list/published/publishedModel";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
@@ -227,6 +227,28 @@ export function applyRunningActivity(projects: ProjectLite[], buildingKeys: Read
  *
  * Pure + exported for direct unit testing, like the other overlays here.
  */
+/**
+ * Attach each project's issue completion to its node (#4118).
+ *
+ * The counts were already read — `useProjectProgress` has fetched them since #4052 — but only their
+ * BOOLEAN shadow was used (does this project have open issues, for the `modifying` colour) and the
+ * numbers were discarded. So an L0 project node had no progress at all, which is why the bars looked
+ * missing on the board even after the L1 drill worked: they had never existed at this level.
+ *
+ * A project absent from `byKey` is left untouched rather than given `0/0` — the node draws no bar for
+ * either, but only one of them is a claim.
+ */
+export function withProjectProgress<T extends { id: string; progress?: { done: number; total: number } }>(
+  projects: readonly T[],
+  byKey: ReadonlyMap<string, { done: number; total: number }>,
+): T[] {
+  if (byKey.size === 0) return [...projects];
+  return projects.map((p) => {
+    const hit = byKey.get(p.id);
+    return hit ? { ...p, progress: hit } : p;
+  });
+}
+
 export function applyModifyingHealth(
   projects: ProjectLite[],
   activeKeys: ReadonlySet<string>,
@@ -382,7 +404,7 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   const planClassification = useAppStore((s) => s.planClassification);
   const liveKeys = useProjectLiveness(enabled);
   // #4052 — the OPEN-ISSUES half of `modifying`, in ONE spawn for every project (never one per node).
-  const openIssueKeys = useProjectProgress(enabled);
+  const { openKeys: openIssueKeys, byKey: projectProgress } = useProjectProgressRows(enabled);
 
   // The local published inventory (#2445): the on-disk hubs carrying `.published`, so a published
   // project has a Glance node even with no GitHub connection. Seeded from the module cache on a
@@ -476,7 +498,7 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
     // (Stall → `waiting`/warn and faults → error are overlaid later in the workspace.)
     // …then the `modifying` health state (#4052) LAST, so it can lift the resting `off` that dormancy
     // just derived. It is the only overlay here that reads issue counts.
-    () => applyModifyingHealth(
+    () => withProjectProgress(applyModifyingHealth(
       applyDormantHealth(
         applyRunningActivity(
           applyLiveness(
@@ -499,7 +521,7 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
       ),
       activeKeys,
       openIssueKeys,
-    ),
-    [effectiveDrafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification, openIssueKeys],
+    ), projectProgress),
+    [effectiveDrafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification, openIssueKeys, projectProgress],
   );
 }

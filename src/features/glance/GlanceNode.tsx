@@ -55,11 +55,15 @@ export interface GlanceNodeProps {
   /** The live motion state, or null. */
   state: GlanceNodeState;
   /** Owned-issue completion (#4050), or 0 for "no bar". Presentational only. */
-  progress?: { done: number; total: number };
 }
 
 export function GlanceNode(p: GlanceNodeProps) {
   const { n } = p;
+  // #4118: the progress comes off the NODE. It was read as `p.progress` — a prop on
+  // `GlanceNodeProps` that no caller has ever passed — so it was `undefined` on every render and the
+  // bar has not drawn once since #4050. It type-checked because the phantom prop was DECLARED, which
+  // is why neither tsc nor a green suite caught it; that prop is now gone so the mistake cannot recur.
+  const progress = n.progress;
   // Idempotent + cheap (one string compare after the first call). Done HERE rather than at the canvas
   // so the component carries its own motion: anything that renders a node gets the CSS, and nothing
   // has to remember to mount it.
@@ -115,17 +119,32 @@ export function GlanceNode(p: GlanceNodeProps) {
           style={{ color: p.bottomColor, maxWidth: 108, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
             animation: p.bottomPulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }}>{p.bottomText}</Text>
       </Box>
-      {/* #4050 — owned-issue progress: a thin fill on the bottom edge, `done / total`.
+      {/* Owned-issue progress (#4050, made legible in #4118) — a bar on the bottom edge with its
+          `done/total` beside it.
+          It shipped as a 2px hairline, which is the width of a border: at any graph zoom below 1 it
+          rounds toward nothing, so the feature read as missing rather than empty. A progress bar the
+          user cannot see is not a progress bar. It is now 5px with the count rendered as text, because
+          the exact numbers are the thing worth knowing and a fill alone cannot say "3 of 7".
           Rendered only when the stream OWNS issues: an empty bar and a zero-progress bar say different
           things, and drawing one for a node with no work would say the false one.
           Coloured with the COMPLETE blue, so a full bar and the `complete` state agree by construction
           rather than by coincidence. `pointer-events: none` so it never eats a click on the node. */}
-      {p.progress && p.progress.total > 0 && (
-        <Box aria-hidden title={`${p.progress.done}/${p.progress.total} issues complete`}
-          style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 2, pointerEvents: "none",
-            background: "color-mix(in oklch, var(--fg-muted) 22%, transparent)" }}>
-          <Box style={{ width: `${progressFraction(p.progress) * 100}%`, height: "100%",
-            background: "var(--graph-health-complete)", transition: "width .3s ease" }} />
+      {progress && progress.total > 0 && (
+        <Box
+          aria-hidden
+          title={`${progress.done}/${progress.total} issues complete`}
+          style={{ position: "absolute", left: 8, right: 8, bottom: 5, display: "flex", alignItems: "center",
+            gap: 6, pointerEvents: "none" }}
+        >
+          <Box style={{ flex: 1, height: 5, borderRadius: 3, overflow: "hidden",
+            background: "color-mix(in oklch, var(--fg-muted) 26%, transparent)" }}>
+            <Box style={{ width: `${progressFraction(progress) * 100}%`, height: "100%", borderRadius: 3,
+              background: "var(--graph-health-complete)", transition: "width .3s ease" }} />
+          </Box>
+          <Text as="span" mono size={9} weight={600} style={{ flex: "none", lineHeight: 1,
+            color: "var(--graph-health-complete)" }}>
+            {progress.done}/{progress.total}
+          </Text>
         </Box>
       )}
     </Box>

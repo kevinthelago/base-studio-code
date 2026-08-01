@@ -20,7 +20,7 @@ export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample
  *  resolved (#2541): `health` (idle/healthy/warning/error) and `activity` (the lifecycle word), with an
  *  optional `reason` (the fault title) shown when health is degraded. `appType` (#3786) is the project's
  *  application architecture — the contract endpoint-type discriminator, absent ⇒ read as "application". */
-export interface ProjectLite { id: string; name: string; role?: GRole; lifecycle?: string; health?: GHealth; activity?: GActivity; reason?: string; faults?: number; appType?: AppType }
+export interface ProjectLite { id: string; name: string; role?: GRole; lifecycle?: string; health?: GHealth; activity?: GActivity; reason?: string; faults?: number; appType?: AppType; /** Issue completion (#4118) — carried onto the L0 node so a project shows the same bar a worker does. */ progress?: { done: number; total: number } }
 
 /** A UI kit as the adapter needs it (#2571) — id + display name, so a kit node reads the kit's NAME
  *  (falling back to the id). The store's `Kit[]` is structurally assignable, so the caller passes it as-is. */
@@ -89,6 +89,10 @@ export function buildGlanceData(
     health: p.health ?? "off",      // #2541 axis 1 — resolved by the caller from faults/liveness;
                                     // #4042: the default is `off` (nothing live behind it), not a second grey
     activity: p.activity ?? "idle", // #2551 axis 2 — RESTING default; `building` is derived from live agents, not a fallback
+    // #4118 — issue completion, so an L0 project node draws the same bar a drilled worker does. This
+    // list is EXPLICIT (not a spread), so a new field is dropped unless it is named here; that is how
+    // the bar could be wired end-to-end and still never appear on the board.
+    progress: p.progress,
     reason: p.reason,                  // the fault title shown when health is degraded
     faults: p.faults,                  // #2265: unresolved runtime-fault count (inspector)
     appType: p.appType,                // #3786/#3802: the contract endpoint-type discriminator (absent ⇒ "application", rendered plain)
