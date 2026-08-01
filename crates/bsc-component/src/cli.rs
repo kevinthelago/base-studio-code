@@ -44,7 +44,7 @@ const COMPONENT_COMMANDS: &[CmdDoc] = &[
         summary: "every component's {id, name, kitId, role, group, shapes} (JSON; --graph for the graph projection)",
         usage: "\
 USAGE:
-  bsc ui list [--shape <shape>] [--graph] [--full] [--pretty] [--raw]
+  bsc ui list [--kit <id>] [--shape <shape>] [--graph] [--full] [--pretty] [--raw]
 
 Prints every component's { id, name, kitId, role, group, shapes } as JSON (compact; --pretty for indented).
 --shape filters to the components whose `shapes` field stamps <shape> — the kit's IDEAL renderings
@@ -57,7 +57,7 @@ because --full is 1.72 MB over 321 components (77.6% of it `srcText`, which no n
 page blocked up to 8s on it; the graph projection is 33 KB. Reach for --full only when you need a
 component's source/variants/props — and prefer `get <id>` for ONE component over the whole library.
 --raw (#3166) drops the JSON entirely and prints ONE id per line, raw UTF-8, LF-only — byte-clean for
-`for id in $(bsc ui list --raw)` / `while read id` (no CRLF or cp1252 traps; honors --shape, ignores --full/--pretty).",
+`for id in $(bsc ui list --raw)` / `while read id` (no CRLF or cp1252 traps; honors --kit/--shape, ignores --full/--pretty).",
     },
     CmdDoc {
         name: "shapes",
@@ -1046,6 +1046,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
         // (the shared store CLI rejects unknown flags); a plain `list` still delegates unchanged.
         Some("list") if args.iter().any(|a| a == "--shape") => cmd_list_shape(&args[1..]),
+        // #4158 (designer request #44): `list --kit <id>` filters to ONE kit. Intercepted here for the
+        // same reason `--shape` is — the shared store CLI rejects unknown flags — and a plain `list`
+        // still delegates unchanged. Without it, comparing two kits' membership meant a full-store dump
+        // (tens of KB) and grepping the auto-persisted tool-output file for `kitId`.
+        Some("list") if args.iter().any(|a| a == "--kit") => cmd_list_kit(&args[1..]),
         // A plain `get <id>` (read) FOCUSES that component in the Design Studio preview (#3545) — a
         // `ui-focus`, so the preview follows Claude's working focus as it INSPECTS each node, not only
         // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
@@ -2019,6 +2024,57 @@ fn cmd_list_shape(args: &[String]) -> Result<(), String> {
     };
     let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
     println!("{}", json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `list --kit <id> [--full] [--raw] [--pretty] [--dir D]` (#4158) — the component list scoped to ONE kit.
+///
+/// Mirrors `list --shape`'s flag set and output contract exactly (`--raw` ids, `--full` whole records,
+/// else the aliased lean projection), so the only difference from a plain `list` is WHICH records it
+/// selects. Filtering here rather than in the shared store CLI keeps `kitId` — a components-only field —
+/// out of the generic dispatch every other store shares.
+fn cmd_list_kit(args: &[String]) -> Result<(), String> {
+    let (mut kit, mut dir) = (None::<String>, None::<String>);
+    let (mut pretty, mut full, mut raw) = (false, false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--kit" => kit = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--full" => full = true,
+            "--raw" => raw = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            _ => {}
+        }
+    }
+    let kit = kit.ok_or("--kit needs a value (see `bsc ui kit list`)")?;
+    let store = open_component_store(&dir)?;
+    let stored = store.list();
+    // An UNKNOWN kit yields an empty list rather than an error: "which components are in kit X" is a
+    // legitimate question to ask about a kit that turns out to have none.
+    let selected: Vec<&String> = stored
+        .iter()
+        .filter(|j| {
+            serde_json::from_str::<serde_json::Value>(j)
+                .ok()
+                .and_then(|v| v.get("kitId").and_then(|k| k.as_str().map(str::to_owned)))
+                .as_deref()
+                == Some(kit.as_str())
+        })
+        .collect();
+    if raw {
+        let ids: Vec<String> = selected.iter().filter_map(|j| bsc_json_store::cli::id_field(j)).collect();
+        bsc_cli_util::print_raw_lines(&ids);
+        return Ok(());
+    }
+    let out: Vec<serde_json::Value> = if full {
+        selected.iter().filter_map(|j| serde_json::from_str(j).ok()).collect()
+    } else {
+        selected.iter().map(|j| bsc_json_store::cli::lean_meta_aliased(j, COMPONENT_SPEC.meta_fields, COMPONENT_SPEC.field_aliases)).collect()
+    };
+    let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
     Ok(())
 }
 
@@ -5424,5 +5480,90 @@ mod tests {
         let rec: serde_json::Value = serde_json::from_str(&store.get("button").unwrap().unwrap()).unwrap();
         assert_eq!(rec.get("folder").and_then(|v| v.as_str()), Some("shared/ui/controls"));
         assert!(rec.get("group").is_none(), "the legacy key is dropped, so the two can never drift");
+    }
+}
+
+#[cfg(test)]
+mod list_kit_tests {
+    use super::*;
+
+    /// A store seeded with two kits, so the filter has something real to separate.
+    fn seeded() -> (tempdir_shim::Dir, String) {
+        let dir = tempdir_shim::Dir::new("bsc-4158");
+        let store = open_component_store(&Some(dir.path())).unwrap();
+        store.set("a1", r#"{"id":"a1","name":"A1","kitId":"alpha"}"#).unwrap();
+        store.set("a2", r#"{"id":"a2","name":"A2","kitId":"alpha"}"#).unwrap();
+        store.set("b1", r#"{"id":"b1","name":"B1","kitId":"beta"}"#).unwrap();
+        let p = dir.path();
+        (dir, p)
+    }
+
+    #[test]
+    fn list_kit_selects_only_that_kit_and_tolerates_an_unknown_one() {
+        // #4158 / designer request #44: comparing two kits' membership used to need a full-store dump
+        // and a grep of the auto-persisted tool-output file.
+        let (_d, path) = seeded();
+        let ids = |kit: &str| -> Vec<String> {
+            let store = open_component_store(&Some(path.clone())).unwrap();
+            store
+                .list()
+                .iter()
+                .filter(|j| {
+                    serde_json::from_str::<serde_json::Value>(j)
+                        .ok()
+                        .and_then(|v| v.get("kitId").and_then(|k| k.as_str().map(str::to_owned)))
+                        .as_deref()
+                        == Some(kit)
+                })
+                .filter_map(|j| bsc_json_store::cli::id_field(j))
+                .collect()
+        };
+        let mut alpha = ids("alpha");
+        alpha.sort();
+        assert_eq!(alpha, vec!["a1", "a2"]);
+        assert_eq!(ids("beta"), vec!["b1"]);
+        // An unknown kit is an EMPTY list, not an error — asking about a kit with no components is a
+        // legitimate question, and erroring would make "is it empty?" unanswerable.
+        assert!(ids("nope").is_empty());
+    }
+
+    #[test]
+    fn list_kit_requires_a_value() {
+        // A bare `--kit` has nothing to filter on; failing loudly beats silently listing everything.
+        assert!(cmd_list_kit(&["--kit".to_string()]).is_err());
+    }
+
+    #[test]
+    fn list_kit_rejects_an_unknown_flag() {
+        // Mirrors `list --shape`'s contract, so the two interceptions behave the same way.
+        assert!(cmd_list_kit(&["--kit".into(), "alpha".into(), "--nope".into()]).is_err());
+    }
+}
+
+/// A minimal scoped temp dir for the tests above — the crate has no dev-dependency on `tempfile`.
+#[cfg(test)]
+mod tempdir_shim {
+    pub struct Dir(std::path::PathBuf);
+    impl Dir {
+        pub fn new(tag: &str) -> Self {
+            let p = std::env::temp_dir().join(format!(
+                "{tag}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+            std::fs::create_dir_all(&p).ok();
+            Self(p)
+        }
+        pub fn path(&self) -> String {
+            self.0.to_string_lossy().into_owned()
+        }
+    }
+    impl Drop for Dir {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).ok();
+        }
     }
 }
