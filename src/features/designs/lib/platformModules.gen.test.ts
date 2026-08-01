@@ -26,6 +26,7 @@ import { registerGithubPlatform } from "@/features/github/graphPlatform";
 import { registerMcpPlatform } from "@/features/mcp/graphPlatform";
 import { registerSecurityPlatform } from "@/features/security/graphPlatform";
 import { registerSkillsPlatform } from "@/features/skills/graphPlatform";
+import { registerGlancePlatform } from "@/features/glance/graphPlatform";
 import { registerFleetPlatform } from "@/features/planner/fleet/graphPlatform";
 import { registerProjectsPlatform } from "@/features/planner/list/graphPlatform";
 import { registerPanePlatform } from "@/features/planner/pane/graphPlatform";
@@ -48,6 +49,7 @@ function currentSpecifiers(): string[] {
   registerMcpPlatform();
   registerSecurityPlatform();
   registerSkillsPlatform();
+  registerGlancePlatform();
   registerFleetPlatform();
   registerProjectsPlatform();
   registerPanePlatform();

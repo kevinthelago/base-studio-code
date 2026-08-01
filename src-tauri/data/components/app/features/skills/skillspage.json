@@ -7,7 +7,6 @@
   "composes": [
     "Box",
     "Button",
-    "Checkbox",
     "EmptyState",
     "GraphRail",
     "RailRow",
@@ -23,8 +22,10 @@
     "SkillsViews",
     "Stack",
     "TabBar",
-    "Text"
+    "Text",
+    "Toggle"
   ],
   "src": "src/features/skills/SkillsWorkspace.tsx",
-  "folder": "features/skills"
+  "folder": "features/skills",
+  "props": []
 }

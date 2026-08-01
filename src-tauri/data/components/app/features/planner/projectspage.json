@@ -7,16 +7,10 @@
   "composes": [
     "Box",
     "Button",
-    "DeleteProjectModal",
     "Dialog",
-    "Dropdown",
     "EmptyState",
     "Grid",
-    "InlineError",
     "ModalScrim",
-    "ProjectCard",
-    "ProjectSetupPage",
-    "ProjectsRail",
     "Row",
     "SearchField",
     "SegmentedControl",
@@ -25,5 +19,6 @@
     "Text"
   ],
   "src": "src/features/planner/list/ProjectsList.tsx",
-  "folder": "features/planner"
+  "folder": "features/planner",
+  "props": []
 }
