@@ -269,10 +269,17 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // answering for any stream that owns no refs, so nothing that worked before regresses.
   const streamDone = useMemo(
     () => mergeStreamProgress(
-      fleetPlanProgress(fleetStreams, unionDone(planDbProgress.doneRefs, fleetIssues.done)),
+      // #4122: the DIRECTOR node carries the whole board — every stream's issues unioned — because it
+      // is the one agent accountable for all of them rather than a lane. `fleetToOrg` gives its node the
+      // fixed id "director", which is what this keys.
+      fleetPlanProgress(
+        fleetStreams,
+        unionDone(planDbProgress.doneRefs, fleetIssues.done),
+        effectiveFleet?.director?.enabled ? "director" : undefined,
+      ),
       planDbProgress.byStream,
     ),
-    [fleetStreams, planDbProgress, fleetIssues.done],
+    [fleetStreams, planDbProgress, fleetIssues.done, effectiveFleet?.director?.enabled],
   );
 
   // #4102 — the Plan screen's data for one node. A fleet node's id IS its stream id, so this is a map
