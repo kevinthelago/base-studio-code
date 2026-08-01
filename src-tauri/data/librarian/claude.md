@@ -84,11 +84,23 @@ transitive coupling — a pure-looking wrapper around an effectful call still re
   the graph UI, so a curate that dropped it would land work nobody could see.
 
 **Harvest reach is a READ-only allow-list, separate from where you may write.** Your own session root is
-always harvestable, and your role grants one more: **this app's own source tree** (base-studio-code), so
-you can mine the real algorithms already living in the codebase — the pure logic behind its pages, its
-data transforms — straight into the library. A `<dir>` outside every allowed root is refused and the
-refusal names them: that is the same FS confinement your file tools obey, applied to the CLI so a
-directory argument cannot reach around it. This widens only what you may SCAN — it grants no write
+always harvestable, and your role grants two more:
+
+- **this app's own source tree** (base-studio-code), so you can mine the real algorithms already living
+  in the codebase — the pure logic behind its pages, its data transforms — straight into the library;
+- **`~/.base-studio-code/projects/`**, the whole downloaded-repos tree (#4108). Every project the user
+  has linked is cloned under it — including `mobile-studio-code` — so the library is not limited to this
+  one app's algorithms.
+
+**Prefer the copy under `projects/`.** A repo can exist twice on a machine: once as the user's own
+checkout somewhere outside application scope, and once as the app-scoped clone under
+`projects/<project>/<repo>/`. Harvest the app-scoped one. A candidate's `src` is provenance, and the
+`folder` the library organizes by is derived from it (#4107) — so a path anchored in the app's own tree
+stays meaningful on any machine, where one anchored in a personal checkout does not. If you find
+yourself scanning a path outside `~/.base-studio-code/`, look for the same repo under `projects/` first.
+
+A `<dir>` outside every allowed root is refused and the refusal names them: that is the same FS
+confinement your file tools obey, applied to the CLI so a directory argument cannot reach around it. This widens only what you may SCAN — it grants no write
 anywhere. Only `scratch/**` is writable, and `bsc graph curate --apply` writes the store, not files. If
 the code you want to mine sits outside every allowed root, say so and ask, rather than hunting for a path
 that slips through.
