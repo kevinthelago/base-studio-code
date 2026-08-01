@@ -2100,7 +2100,12 @@ mod tests {
         // Card landed mirroring the src/ layout, with NO first-party alias surviving, provenance-stamped.
         let card = std::fs::read_to_string(dir.join("shared/ui/data/Card.tsx")).expect("Card.tsx emitted");
         assert!(!card.contains("@/"), "emitted Card retains a @/ alias: {card}");
-        assert!(card.starts_with("// vendored from bsc/react-ui@"), "provenance stamp: {card}");
+        // The stamp is `bsc/studio`, NOT the packaged kit's own id: since #3720 `emit` resolves against
+        // the whole store, and an emitted cross-kit file did not come from `bsc/react-ui` (see
+        // `EmitKit::from_store`, which sets the merged view's id). Do not "correct" this back — the
+        // matching assertion in emit.rs expects the same id, and #4176 fixed this one for having been
+        // left behind.
+        assert!(card.starts_with("// vendored from bsc/studio@"), "provenance stamp: {card}");
         // Command surface: bare emit prints help; bad shapes error crisply.
         assert!(run(vec!["emit".into()], "bsc ui").is_ok(), "bare emit prints help");
         assert!(run(vec!["emit".into(), "component".into(), "nope".into(), d], "bsc ui").is_err(), "unknown id");
