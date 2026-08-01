@@ -9,6 +9,7 @@ function fakeVp(over: Partial<GraphViewport> = {}): GraphViewport {
   return {
     view: { tx: 0, ty: 0, scale: 1 },
     setVp: () => {},
+    setWorld: () => {},
     onCanvasDown: () => {},
     fit: () => {},
     centerOn: () => {},
