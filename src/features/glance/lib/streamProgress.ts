@@ -41,6 +41,20 @@ export function streamProgress(issues: readonly OwnedIssue[]): Map<string, Strea
   return out;
 }
 
+/**
+ * Refs of the issues plan.db considers FINISHED (#4102).
+ *
+ * Same `TERMINAL_GOOD` definition `streamProgress` counts with, exposed as refs so plan.db's evidence
+ * can be unioned with the GitHub overlay into one done-set (`unionDone`). Deliberately NOT a second
+ * notion of done-ness — `streamCompletion.ts` already made the point that a divergent definition
+ * eventually disagrees with the card that says "finished".
+ */
+export function planDbDoneRefs(issues: readonly OwnedIssue[]): Set<string> {
+  const out = new Set<string>();
+  for (const i of issues) if (TERMINAL_GOOD.has(i.status)) out.add(i.ref);
+  return out;
+}
+
 /** The fill fraction, clamped to 0..1. `total === 0` ⇒ 0 (and the caller should render NO bar at all —
  *  an empty bar and a zero-progress bar say different things, and only one of them is true). */
 export function progressFraction(p: StreamProgress | undefined): number {
