@@ -420,7 +420,11 @@ fn cmd_generate(args: &[String], prog: &str) -> Result<(), String> {
     let pretty = rest.iter().any(|a| a == "--pretty");
     let emit = |v: &serde_json::Value| -> Result<(), String> {
         let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
-        println!("{}", s.map_err(|e| e.to_string())?);
+        // #4152: through the shared emitter so a warm serve loop CAPTURES this into its response rather
+        // than leaking it onto the protocol stream. Identical to `println!` when nothing is capturing.
+        // These local closures bypassed `print_json`, which is what the byte-comparison against a
+        // one-shot run caught — the response came back empty while the payload appeared as a stray line.
+        bsc_util::emit_line(&s.map_err(|e| e.to_string())?);
         Ok(())
     };
     match sub {
@@ -1317,7 +1321,11 @@ fn cmd_component(args: &[String], prog: &str) -> Result<(), String> {
     }
     let emit = |v: &serde_json::Value| -> Result<(), String> {
         let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
-        println!("{}", s.map_err(|e| e.to_string())?);
+        // #4152: through the shared emitter so a warm serve loop CAPTURES this into its response rather
+        // than leaking it onto the protocol stream. Identical to `println!` when nothing is capturing.
+        // These local closures bypassed `print_json`, which is what the byte-comparison against a
+        // one-shot run caught — the response came back empty while the payload appeared as a stray line.
+        bsc_util::emit_line(&s.map_err(|e| e.to_string())?);
         Ok(())
     };
     match positional.get(1).map(String::as_str).unwrap_or("list-tokens") {
@@ -1581,7 +1589,11 @@ fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
     }
     let emit = |v: &serde_json::Value| -> Result<(), String> {
         let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
-        println!("{}", s.map_err(|e| e.to_string())?);
+        // #4152: through the shared emitter so a warm serve loop CAPTURES this into its response rather
+        // than leaking it onto the protocol stream. Identical to `println!` when nothing is capturing.
+        // These local closures bypassed `print_json`, which is what the byte-comparison against a
+        // one-shot run caught — the response came back empty while the payload appeared as a stray line.
+        bsc_util::emit_line(&s.map_err(|e| e.to_string())?);
         Ok(())
     };
     match verb {
@@ -1770,7 +1782,11 @@ fn cmd_kit(args: &[String], prog: &str) -> Result<(), String> {
     };
     let emit = |v: &serde_json::Value| -> Result<(), String> {
         let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
-        println!("{}", s.map_err(|e| e.to_string())?);
+        // #4152: through the shared emitter so a warm serve loop CAPTURES this into its response rather
+        // than leaking it onto the protocol stream. Identical to `println!` when nothing is capturing.
+        // These local closures bypassed `print_json`, which is what the byte-comparison against a
+        // one-shot run caught — the response came back empty while the payload appeared as a stray line.
+        bsc_util::emit_line(&s.map_err(|e| e.to_string())?);
         Ok(())
     };
     let kit_ref = |n: usize| -> Result<(&str, &str), String> {
