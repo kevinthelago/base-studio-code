@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Screen } from "./Screen";
+import { useAppStore } from "@/store";
 import type { TabItem } from "./TabBar";
 
 // The shared Screen shell (#1878): the root tabbed device a Workspace renders through —
@@ -38,4 +39,32 @@ describe("Screen shell", () => {
     // …but the page body is still there.
     expect(screen.getByText("runs body")).toBeTruthy();
   });
+
+  it("publishes its PageTabs for the shell's keyboard owner, and clears on unmount (#4167)", () => {
+    // Screen lives in shared/, which may not match a keybinding (#1626/#1703) — so it hands its tabs +
+    // selector to the store and `useHotkeys` steps them. This is the publish half of that inversion.
+    useAppStore.setState({ pageNav: null });
+    const onSelect = () => {};
+    const { unmount } = render(
+      <Screen tabs={PAGES} active="runs" onSelect={onSelect} onReorder={noop} onTearOff={noop}>
+        <div>body</div>
+      </Screen>,
+    );
+    expect(useAppStore.getState().pageNav).toMatchObject({ ids: ["library", "runs"], active: "runs" });
+    expect(useAppStore.getState().pageNav?.select).toBe(onSelect);
+
+    unmount();
+    expect(useAppStore.getState().pageNav).toBeNull();
+  });
+
+  it("publishes nothing for a torn-off page — one Page, no bar, nothing to step (#4167)", () => {
+    useAppStore.setState({ pageNav: null });
+    render(
+      <Screen tabs={PAGES} active="runs" onSelect={noop} onReorder={noop} onTearOff={noop} pageOverride="runs">
+        <div>body</div>
+      </Screen>,
+    );
+    expect(useAppStore.getState().pageNav).toBeNull();
+  });
 });
+
