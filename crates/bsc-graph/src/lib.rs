@@ -216,9 +216,40 @@ pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
     }
     let arr = ensure_array(g, "implementations");
     if let Some(existing) = arr.iter_mut().find(|x| x.get("id").and_then(Value::as_str) == Some(id.as_str())) {
-        *existing = im;
+        // MERGE, never replace (#4154). This was `*existing = im`, a whole-record overwrite — so any
+        // field the caller did not resupply was SILENTLY DELETED. The designer hit it twice: a
+        // domain-only edit wiped `transpose.ts`'s `folder` and `src` (request #49), and `tests` has no
+        // flag at all so every write dropped it, which stalled a reorg across 16 entries carrying real
+        // vitest suites (request #50). It also explains provenance vanishing from the live store during
+        // a concurrent librarian session while a backfill was running.
+        //
+        // Overlaying only the supplied keys makes a write additive: `--domain x` changes the domain and
+        // nothing else. Removing a value is now explicit — see `--clear` in the CLI — because a merge
+        // otherwise makes deletion impossible.
+        match (existing.as_object_mut(), im.as_object()) {
+            (Some(dst), Some(src)) => {
+                for (k, v) in src {
+                    // A NULL means "remove this field" — how `--clear` expresses a deletion that a
+                    // merging write can no longer express by omission.
+                    if v.is_null() {
+                        dst.remove(k);
+                    } else {
+                        dst.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            // A non-object on either side cannot be merged field-wise; replacing is the honest fallback
+            // rather than silently keeping a malformed record.
+            _ => *existing = im,
+        }
         Ok(true)
     } else {
+        // A NEW impl still needs the shape the model expects: `composes` is a required array, and the
+        // CLI now omits it unless `--composes` was given (so an edit cannot blank it).
+        let mut im = im;
+        if im.get("composes").is_none() {
+            im["composes"] = Value::Array(Vec::new());
+        }
         arr.push(im);
         Ok(false)
     }
@@ -1071,5 +1102,73 @@ mod tests {
         let src = "src-tauri/src/console/pty/job.rs";
         assert_eq!(bsc_util::folder_from_src(src).as_deref(), Some("src-tauri/src/console/pty"));
         assert_ne!(crate::extract::domain_of(src), "src-tauri/src/console/pty");
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn base() -> Value {
+        let mut g = json!({ "implementations": [] });
+        set_impl(&mut g, json!({
+            "id": "t.ts", "tech": "typescript", "role": "algorithm", "name": "t",
+            "composes": ["typescript.number"], "code": "// real",
+            "src": "features/x/t.ts", "folder": "features/x",
+            "tests": [{ "name": "t suite", "src": "…" }], "vizCode": "({})"
+        })).unwrap();
+        g
+    }
+    fn rec(g: &Value) -> Value {
+        implementations_of(g).into_iter().find(|i| i["id"] == "t.ts").unwrap().clone()
+    }
+
+    #[test]
+    fn a_partial_write_preserves_every_field_it_did_not_supply() {
+        // #4154 / requests #49 + #50: this used to be `*existing = im`, so a domain-only edit deleted
+        // `folder`, `src`, `tests` and `vizCode` outright. `tests` has no flag AT ALL, so every write
+        // dropped it — which stalled a reorg across 16 entries carrying real vitest suites.
+        let mut g = base();
+        set_impl(&mut g, json!({ "id": "t.ts", "tech": "typescript", "role": "algorithm", "name": "t", "domain": "d" })).unwrap();
+        let r = rec(&g);
+        assert_eq!(r["domain"], "d", "the supplied field is written");
+        assert_eq!(r["src"], "features/x/t.ts", "provenance survives");
+        assert_eq!(r["folder"], "features/x");
+        assert_eq!(r["tests"][0]["name"], "t suite", "the unflagged field survives");
+        assert_eq!(r["vizCode"], "({})");
+        assert_eq!(r["composes"][0], "typescript.number", "an omitted composes is not blanked");
+        assert_eq!(r["code"], "// real");
+    }
+
+    #[test]
+    fn a_supplied_field_still_overwrites() {
+        // Merging must not make a write inert — the whole point is that it changes what you asked for.
+        let mut g = base();
+        set_impl(&mut g, json!({ "id": "t.ts", "tech": "typescript", "role": "algorithm", "name": "t2", "code": "// new" })).unwrap();
+        let r = rec(&g);
+        assert_eq!(r["name"], "t2");
+        assert_eq!(r["code"], "// new");
+    }
+
+    #[test]
+    fn a_null_removes_the_field_so_deletion_is_still_possible() {
+        // With merge, omission can no longer mean removal — so `--clear` sends a null and this drops it.
+        let mut g = base();
+        set_impl(&mut g, json!({ "id": "t.ts", "tech": "typescript", "role": "algorithm", "name": "t", "vizCode": null })).unwrap();
+        let r = rec(&g);
+        assert!(r.get("vizCode").is_none(), "cleared outright, not left as a null");
+        assert_eq!(r["src"], "features/x/t.ts", "clearing one field touches no other");
+    }
+
+    #[test]
+    fn a_new_impl_still_gets_the_required_composes_array() {
+        // The CLI now omits `composes` unless supplied, so an INSERT must still land the shape the model
+        // expects rather than a record missing a required field.
+        let mut g = json!({ "implementations": [] });
+        let inserted = set_impl(&mut g, json!({ "id": "n.ts", "tech": "typescript", "role": "algorithm", "name": "n" })).unwrap();
+        assert!(!inserted, "a new id inserts");
+        let r = implementations_of(&g).into_iter().find(|i| i["id"] == "n.ts").unwrap().clone();
+        assert_eq!(r["composes"], json!([]));
     }
 }
