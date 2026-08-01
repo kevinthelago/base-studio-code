@@ -62,7 +62,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         //   impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b]
         //     (algorithm: real --code; primitive: DESCRIBE a language built-in via --ref, e.g. std::vec::Vec — never re-coded, #2972)
         //   impl remove <id>                             # delete an implementation + scrub it from every composes
-        //   impl list [--tech <t>] [--role r] [--domain <d>]  # a language kit's implementations, optionally a domain collection (#3120)
+        //   impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]  # a language kit's implementations, optionally a domain collection (#3120)
         "impl" => match positional.get(1).copied() {
             Some("set") => {
                 let id = flag_value(&args, "--id").ok_or("usage: bsc graph impl set --tech <lang> --id <id> --role primitive|algorithm --name <name> [--code <code>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate]")?;
@@ -130,6 +130,19 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     Err(format!("unknown implementation '{id}'"))
                 }
             }
+            // #4156 (designer request #47): read ONE impl by id. Without it, verifying a record before a
+            // write meant dumping a whole language kit — 52.7KB for Rust — which overflows the shell,
+            // gets truncated to a file OUTSIDE the session's confined FS roots, and so cannot be read
+            // back at all. The designer skipped correcting several entries rather than write blind.
+            Some("get") => {
+                let id = positional.get(2).copied().ok_or("usage: bsc graph impl get <id>")?;
+                match crate::implementations().into_iter().find(|im| im.get("id").and_then(Value::as_str) == Some(id)) {
+                    Some(im) => emit(&im),
+                    // `null` rather than an error: a miss is a normal answer to "does this exist?", and
+                    // it keeps the output parseable by the same reader as a hit.
+                    None => emit(&Value::Null),
+                }
+            }
             Some("list") => {
                 let tech = flag_value(&args, "--tech");
                 let role = flag_value(&args, "--role");
@@ -143,7 +156,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     .collect();
                 emit(&Value::Array(impls))
             }
-            _ => Err("usage: bsc graph impl set … | impl remove <id> | impl list [--tech <t>] [--role r] [--domain <d>]".to_string()),
+            _ => Err("usage: bsc graph impl set … | impl remove <id> | impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]".to_string()),
         },
         // `harvest <dir> [--tech typescript|rust] [--worthy-only]` — the extract-to-harvest feeder
         // (#2745): parse a project's real code and lift each function into a CANDIDATE library
@@ -565,7 +578,7 @@ fn help(prog: &str) -> String {
     format!(
         "{prog} — the Algorithms knowledge library (#2761/#2853/#2961) — IMPL-ONLY (a node IS its implementation)\n\n\
          READ:\n  \
-         {prog} impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120)\n  \
+         {prog} impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
@@ -621,6 +634,23 @@ mod tests {
         for flag in FLAGS {
             assert!(help.contains(flag), "help omits `{flag}`");
         }
+    }
+
+    #[test]
+    fn impl_get_reads_one_record_and_answers_null_for_a_miss() {
+        // #4156 / designer request #47: verifying a record before a write used to mean dumping a whole
+        // language kit (52.7KB for Rust), which overflows the shell and lands in a file OUTSIDE the
+        // session's confined roots — unreadable. The designer skipped corrections rather than write
+        // blind, so a per-id read is what makes a safe edit possible at all.
+        let seeded = crate::implementations();
+        let known = seeded.first().and_then(|im| im.get("id").and_then(serde_json::Value::as_str));
+        if let Some(id) = known {
+            assert!(run(vec!["impl".into(), "get".into(), id.into()], "bsc graph").is_ok());
+        }
+        // A miss is a normal answer, not an error — `null` keeps it parseable by the same reader.
+        assert!(run(vec!["impl".into(), "get".into(), "definitely-not-here.rs".into()], "bsc graph").is_ok());
+        // A missing id is a usage error, since there is nothing to look up.
+        assert!(run(vec!["impl".into(), "get".into()], "bsc graph").is_err());
     }
 
     #[test]
