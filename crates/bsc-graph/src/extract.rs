@@ -39,7 +39,7 @@ pub struct Candidate {
     /// Neither `harvest` nor `curate` used to set one, and per #3607 an impl with no domain does not
     /// surface in the graph UI — so a clean `curate --apply` landed records nobody could see.
     pub domain: String,
-    /// The candidate's COLOCATED test file, carried at harvest time (#4125b) — empty when it has none.
+    /// The candidate's COLOCATED test file, carried at harvest time (#4126) — empty when it has none.
     ///
     /// Harvested WITH the candidate rather than by a later pass, so a `curate --apply` lands a node that
     /// is already testable-by-declaration. The separate `bsc graph tests harvest` stays for the records
@@ -369,7 +369,7 @@ pub fn harvest(dir: &Path) -> Vec<Candidate> {
     // Which (name, tech) pairs were actually harvested — so `composes` only links in-set candidates.
     let in_set: HashSet<(String, String)> =
         defs.iter().map(|(n, t, _, _)| (n.clone(), t.clone())).collect();
-    // Colocated tests, read ONCE PER FILE (#4125b). Many candidates share one source — this repo's
+    // Colocated tests, read ONCE PER FILE (#4126). Many candidates share one source — this repo's
     // `sorts.test.ts` covers four impls and `graphAlgos.test.ts` five — so pairing per candidate would
     // re-read the same file dozens of times across a 1780-candidate walk.
     let mut test_cache: std::collections::BTreeMap<String, Vec<CandidateTest>> = Default::default();
@@ -706,7 +706,7 @@ mod tests {
 
     #[test]
     fn harvest_carries_the_colocated_test_onto_every_candidate_from_that_file() {
-        // #4125b — tests ride in WITH the harvest, so a `curate --apply` lands a node that already
+        // #4126 — tests ride in WITH the harvest, so a `curate --apply` lands a node that already
         // declares its tests and no second pass is needed. The fixture dir has `sample.test.ts` beside
         // `sample.ts`, so every candidate lifted from that file carries it.
         let cands = harvest(&fixtures());
@@ -714,7 +714,7 @@ mod tests {
         assert!(from_ts.len() > 1, "the fixture yields several candidates from one file");
         for c in &from_ts {
             assert_eq!(c.tests.len(), 1, "{} carries its colocated test", c.name);
-            assert!(c.tests[0].src.contains("#4125b"), "verbatim file contents, not a path");
+            assert!(c.tests[0].src.contains("#4126"), "verbatim file contents, not a path");
         }
         // ONE file covering SEVERAL candidates is carried onto EACH — this repo's `graphAlgos.test.ts`
         // covers five impls, and per-impl attribution is not recoverable from the file.
