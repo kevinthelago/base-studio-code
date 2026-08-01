@@ -131,6 +131,20 @@ reflects it:
   explicitly with `--no-src`. A `primitive` never needs any of this — it describes a built-in.
 
   `bsc graph curate --apply` sets `--src` for you; this only matters on the hand-authored path.
+
+  **Then PAIR THE TESTS.** `--src` gives the folder, but a node's `tests` need the filesystem — the
+  command has only a path, not a scanned root — so pairing is its own pass and curation is not finished
+  until you run it:
+
+  ```
+  bsc graph tests harvest <dir> --dry-run   # review
+  bsc graph tests harvest <dir>             # write
+  ```
+
+  Run it over EACH tree you curated from (`src`, `crates`, `src-tauri`), because the pairing is resolved
+  relative to the scanned root. A TypeScript impl pairs with its sibling `<name>.test.ts`; a RUST impl
+  pairs with its OWN file, since its tests are an inline `#[cfg(test)] mod tests` (#4146). An impl with
+  no test is left alone — never given an empty `tests`.
 - `bsc graph impl remove <id>` — **delete an implementation** + scrub it from every `composes`.
 
 Steward toward one accurate, non-duplicated library: one algorithm per id, honest roles, real
