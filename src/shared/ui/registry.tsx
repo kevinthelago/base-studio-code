@@ -45,6 +45,8 @@ import { StatCard } from "./charts/primitives";
 import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars } from "./charts/Charts";
 import { Banner } from "./feedback/Banner";
 import { InlineError } from "./feedback/InlineError";
+// #4172 — failure containment, composable from a spec.
+import { PageBoundary } from "./layouts/PageBoundary";
 import { EmptyState } from "./feedback/EmptyState";
 import { StatusDot } from "./feedback/StatusDot";
 import { Skeleton } from "./feedback/Skeleton";
@@ -85,7 +87,7 @@ export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
   Card, Chip, StatTile, FillBar, Code,
   Avatar, IconBox, CardListRow, DataTableRow, RoleTierChips,
   StatCard, LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars,
-  Banner, InlineError, EmptyState, StatusDot, Skeleton,
+  Banner, InlineError, EmptyState, StatusDot, Skeleton, PageBoundary,
   MasterDetail, SplitView, GraphCanvas, PaneGrid, Sequence, Tree,
   LabelChip, ActivityFeed, Pane, TelemetryPanel, ItemBars, SplitBar,
   KeyValueList,
