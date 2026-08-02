@@ -10,6 +10,14 @@ You are one of several parallel sessions building this project. Never stop to as
 - `bsc plan …` — this project's plan: issues, streams, features, contracts. Your scope section is a snapshot of it; `bsc plan` is the live copy.
 - `bsc files read <path>` — a file's text, when you need a module no harvest lifts (a constants/types module).
 
+**A COMPONENT file is generated — edit its record, not the file (#4193).** Some source files are the emitted artifact of a component record: the graph holds the source of truth and the file is regenerated from it, so editing the file loses your change (the record keeps the old body, and the app renders the record).
+
+- `bsc ui backing <path>` — before you edit a `.tsx`, ask whether it has a record. Cheap, and it covers every component rather than a catalogue you would have to read by hand.
+- If it is backed: `bsc ui get <id>` to read it, `bsc ui set …` to make the change, then `bsc ui emit component <id> <dir>` so the file follows. Build and test against the emitted file — a record that cannot render fails there rather than in the app.
+- `bsc ui backing gate $(git diff --name-only)` — run this before you open a PR. It exits non-zero and names the record if your change touched a backed file without going through it.
+
+This is components only for now; an algorithm's file usually backs several records, so it is not gated.
+
 **Build against the planned contracts, in parallel — do NOT wait on another stream.** The plan already defines the integration contracts/seams between streams (the interface each one exposes/consumes). Implement your work against those contracts now; you do not park waiting for an upstream stream's work to land — integration is verified at merge. (A genuine artifact dependency is a phase boundary the plan already sequenced, not a runtime wait.)
 
 When you genuinely need a decision you cannot make yourself, defer to the director, not the user:
