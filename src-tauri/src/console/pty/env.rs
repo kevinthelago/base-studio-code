@@ -554,9 +554,9 @@ pub(super) fn wire_bsc_env(
     // Install the bsc-* shell helpers via an rc file pointed to by BASH_ENV (so the
     // agent's non-interactive `bash -c` subshells get them) and sourced into the
     // interactive shell by the caller. The rc is universal — bsc-checkpoint (triage) and
-    // bsc-note / bsc-blocked (fleet assume-and-log) cost nothing in sessions that
+    // bsc-note (the fleet's assume-and-log journal) cost nothing in sessions that
     // don't use them. Per-session doc paths the helpers read are exposed as env
-    // vars when applicable; bsc-note/bsc-blocked default to a DECISIONS.md in cwd.
+    // vars when applicable; bsc-note defaults to a DECISIONS.md in cwd.
     let base = bsc_base_dir();
     let _ = std::fs::create_dir_all(&base);
     // Expose the triage checkpoint doc (resolved to an absolute, bash-style path) so the
