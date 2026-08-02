@@ -10,6 +10,8 @@
   "composes": [
     "Box",
     "EmptyState",
+    "RelationshipGraphView",
+    "RelationshipInspector",
     "Row",
     "SectionLabel",
     "Stack",

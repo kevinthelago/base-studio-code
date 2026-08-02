@@ -7,6 +7,7 @@
   "src": "src/features/planner/session/PlanningDialogs.tsx",
   "folder": "features/planner/session",
   "composes": [
+    "BlueprintUpdateModal",
     "Button",
     "Dialog",
     "McpDownloadModal"
