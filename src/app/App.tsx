@@ -17,7 +17,8 @@ import { useDockBack } from "./useDockBack";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 // #4186: Console renders FROM THE GRAPH — the host mounts the authored `consolepage` node. The file
-// component stays exported from the barrel until its deletion slice, so existing tests keep their subject.
+// component stays exported from the barrel and is NOT going away — both copies coexist, held identical by
+// the record↔file parity guard (`app/runtime/graphParity.test.ts`).
 import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { DebugSessionMount, RequestSessionsMount } from "@/features/debug";
