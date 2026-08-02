@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { act } from "react";
 import { PlannerComponentsPane } from "./PlannerComponentsPane";
 import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "./lib/reactUiKit";
 import { useAppStore } from "@/store";
@@ -26,22 +25,24 @@ describe("PlannerComponentsPane (#2314)", () => {
     fireEvent.click(screen.getByText("Chip").closest("button")!);
     expect(screen.getByText("✓ Use when")).toBeTruthy();
     expect(screen.getByText("✗ Avoid")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Pull into plan" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Open in studio/ })).toBeTruthy();
   });
 
-  it("Pull into plan flashes a toast that clears after the delay", () => {
-    vi.useFakeTimers();
-    try {
-      render(<PlannerComponentsPane />);
-      fireEvent.click(screen.getByText("Button").closest("button")!);
-      fireEvent.click(screen.getByRole("button", { name: "Pull into plan" }));
-      expect(screen.getByText(/added to the plan/)).toBeTruthy();
-      act(() => { vi.advanceTimersByTime(2000); });
-      expect(screen.queryByText(/added to the plan/)).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
+  it("offers NO hand-off of its own — the plan edge is the planner's to supply (#4267)", () => {
+    // This replaced a "Pull into plan" button that only flashed `"…" added to the plan` and wrote
+    // nothing, so the component never reached the fleet. A lens rendered outside the planner has no
+    // plan to write to, and must therefore offer no hand-off rather than a fake one.
+    render(<PlannerComponentsPane />);
+    fireEvent.click(screen.getByText("Button").closest("button")!);
+    expect(screen.queryByRole("button", { name: "Pull into plan" })).toBeNull();
+    expect(screen.queryByText(/added to the plan/)).toBeNull();
+  });
+
+  it("renders the planner-supplied pull control against the component's id (#4267)", () => {
+    render(<PlannerComponentsPane pullControl={(id) => <div data-testid="pull">{id}</div>} />);
+    fireEvent.click(screen.getByText("Button").closest("button")!);
+    // The id, not the display name — it is the store key a worker fetches with (#4191).
+    expect(screen.getByTestId("pull").textContent).toBeTruthy();
   });
 
   it("Open in studio hands off to the Planner's Design Studio tab (#move-to-planner)", () => {
