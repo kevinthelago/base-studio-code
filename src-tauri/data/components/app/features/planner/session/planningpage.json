@@ -11,6 +11,7 @@
     "PlanningDialogs",
     "PlanningHeader",
     "PlanningNotices",
+    "ProjectPane",
     "PublishProgressView",
     "SplitView"
   ],

@@ -86,6 +86,17 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "planning-publish-progress", file: "/src/features/planner/session/PublishProgressView.tsx" },
       { recordId: "planning-injection-gate", file: "/src/features/planner/session/InjectionGateBanner.tsx" },
       { recordId: "planning-github-structure", file: "/src/features/planner/session/GitHubStructureCard.tsx" },
+      // The focused project pane (#4227) — the plan half of this page. These are `provides` records, not
+      // `@/components/<id>` siblings, so the page composes them without naming a single one: it imports
+      // `@/features/planner/pane/ProjectPane` exactly as it did when that was a code module, and the
+      // resolver reaches the graph first. Listed here so they fall under the parity guard like the rest.
+      { recordId: "plan-pane", file: "/src/features/planner/pane/ProjectPane.tsx" },
+      { recordId: "plan-pane-shell", file: "/src/features/planner/pane/FocusedShell.tsx" },
+      { recordId: "plan-pane-bodies", file: "/src/features/planner/pane/FocusedBodies.tsx" },
+      { recordId: "plan-pane-stage-bar", file: "/src/features/planner/pane/PlanStageBar.tsx" },
+      { recordId: "plan-pane-rail", file: "/src/features/planner/pane/ProgressionRail.tsx" },
+      { recordId: "plan-pane-mcp-modal", file: "/src/features/planner/pane/McpDownloadModal.tsx" },
+      { recordId: "plan-pane-primitives", file: "/src/features/planner/pane/focusedPrimitives.tsx" },
     ],
     ensurePlatform: () => import("@/features/planner"),
   },
@@ -224,6 +235,7 @@ const FILE_SOURCES = import.meta.glob<string>(
   [
     "/src/features/planner/list/ProjectsList.tsx",
     "/src/features/planner/session/{Planning,PlanningHeader,PlanningNotices,PlanningDialogs,PublishProgressView,InjectionGateBanner,GitHubStructureCard}.tsx",
+    "/src/features/planner/pane/{ProjectPane,FocusedShell,FocusedBodies,PlanStageBar,ProgressionRail,McpDownloadModal,focusedPrimitives}.tsx",
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
     "/src/features/algorithms/{AlgorithmsWorkspace,AlgorithmsRail,AlgorithmsInspector,AlgorithmsKitGraph,LibrarianTerminal}.tsx",
     "/src/app/console/{index,PaneAt,consoleStates}.tsx",
