@@ -24,9 +24,15 @@ RUN apt-get update \
 # EVERY harness, not just `bsc-agent`. Claude Code is the default one, so Node + the CLI are baked in;
 # `gh` is what the director's entire GitHub surface (and every session's readiness probe, #297 S1) runs
 # on. Leave these out and the distro can only host `bsc-agent`, and "one posture" is unreachable.
+#
+# The rootfs is something a user has to download, so weight is a feature: the claude-code package
+# ships BOTH a glibc and a musl Linux build (~260 MB each). Debian is glibc, so the musl copy is dead
+# weight — dropping it takes the image from ~986 MB to ~730 MB. Tolerant `rm` (a future package that
+# stops shipping it just makes this a no-op).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm \
     && npm install -g @anthropic-ai/claude-code \
+    && rm -rf /usr/local/lib/node_modules/@anthropic-ai/claude-code/node_modules/@anthropic-ai/claude-code-linux-x64-musl \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
 

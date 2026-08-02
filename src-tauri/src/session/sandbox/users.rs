@@ -143,6 +143,7 @@ pub(crate) fn provision_user_script(user: &str) -> String {
          getent group \"$grp\" >/dev/null 2>&1 || groupadd \"$grp\"\n\
          id -u \"$u\" >/dev/null 2>&1 || useradd --create-home --shell /bin/bash -g \"$grp\" \"$u\"\n\
          usermod -aG \"$grp\" \"$u\"\n\
+         id -u agent >/dev/null 2>&1 && usermod -aG \"$grp\" agent || true\n\
          chmod 700 \"/home/$u\"\n\
          mkdir -p \"$shared\" \"$base\"\n\
          chgrp \"$grp\" \"$shared\" \"$base\"\n\
@@ -283,6 +284,16 @@ mod tests {
         assert!(s.contains("[ -e \"/home/$u/.base-studio-code\" ] ||"));
         // The symlink itself is chowned (-h) so the agent owns the link, not root.
         assert!(s.contains("chown -h \"$u\":\"$grp\" \"/home/$u/.base-studio-code\""));
+    }
+
+    #[test]
+    fn provision_script_admits_the_default_user_to_the_shared_group() {
+        // An ALREADY-IMPORTED distro predates the group, so its default `agent` user isn't a member —
+        // and `agent` is who the director/planner/triage sessions and the host-side hub writes run as.
+        // Without this, moving the hub into the group-shared dir would lock those out until the user
+        // rebuilt the rootfs. Tolerant (`|| true`) so a distro with no `agent` user still provisions.
+        let s = provision_user_script(&agent_user_name("proj:api-stream"));
+        assert!(s.contains("id -u agent >/dev/null 2>&1 && usermod -aG \"$grp\" agent || true"));
     }
 
     #[test]

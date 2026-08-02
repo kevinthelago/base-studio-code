@@ -27,6 +27,7 @@ RUN apt-get update \
 RUN apt-get update \
  && apt-get install -y --no-install-recommends nodejs npm \
  && npm install -g @anthropic-ai/claude-code \
+ && rm -rf /usr/local/lib/node_modules/@anthropic-ai/claude-code/node_modules/@anthropic-ai/claude-code-linux-x64-musl \
  && npm cache clean --force \
  && rm -rf /var/lib/apt/lists/*
 RUN install -m 0755 -d /etc/apt/keyrings \
