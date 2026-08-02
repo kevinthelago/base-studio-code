@@ -117,6 +117,33 @@ mod tests {
     }
 
     #[test]
+    fn features_commissions_the_librarian_for_a_missing_algorithm() {
+        // #4249: the two studios were ASYMMETRIC. The UI stage says "where a screen needs something the
+        // kit lacks, commission a general, always-applicable component"; Features said only "leave it out
+        // when nothing in the library applies" — a dead end that quietly hands the gap to a worker, which
+        // is the `reimplemented-component` problem (#3892) one layer up.
+        let (features, prompt) = packaged("features");
+        for (face, text) in [("directive", &features), ("prompt", &prompt)] {
+            assert!(text.contains("bsc graph impl list"),
+                "features {face} must look the library up FIRST (reuse-first): {text}");
+            assert!(text.contains("bsc-commission librarian"),
+                "features {face} must commission the librarian for an algorithm the library lacks: {text}");
+            // Reuse-first is an ORDER, not two sentences: look it up before you ask for a new one.
+            assert!(text.find("bsc graph impl list") < text.find("bsc-commission librarian"),
+                "features {face} must check the library BEFORE commissioning: {text}");
+        }
+        // The boundary the planner routes on: a component is UI (designer, `bsc ui`); an algorithm is
+        // computation (librarian, `bsc graph impl`). Without it the planner has two emitters and no rule.
+        assert!(features.contains("designer") && features.contains("librarian"),
+            "features directive must name BOTH studios: {features}");
+        assert!(features.contains("`bsc ui`") && features.contains("`bsc graph impl`"),
+            "features directive must name each studio's store, which is the boundary: {features}");
+        // An empty `requires` means "needs none" — never "the library was missing one".
+        assert!(features.contains("NEVER") || features.contains("never"),
+            "features directive must rule out an empty `requires` standing in for a gap: {features}");
+    }
+
+    #[test]
     fn discovery_asks_the_user_for_the_ui_mode() {
         // #4249: `uiMode` selects the ENTIRE UI pipeline — whether the designer is commissioned at all —
         // and discovery used to describe it with a default, phrased as a decision for the planner to make,
