@@ -16,16 +16,40 @@
  *  renders them (#4115). */
 export type UiMode = "custom" | "external";
 
-/** WHO RENDERS this project's UI at runtime (#4115) — a separate axis from {@link UiMode}, because
- *  the two are orthogonal:
+/** Where one class of a project's artifacts comes from (#4115) — `studio` = OUR data-driven stores,
+ *  `own` = the project's own stack. One shared vocabulary for every `*System` axis, so the answer
+ *  reads the same whichever surface is being asked about.
+ *
+ *  **These axes are a security boundary, not a routing preference.** `studio` means our host TAKES IN
+ *  and runs the project's artifacts — LLM-authored code, the same trust class the Design Studio's
+ *  opaque-origin sandbox was chosen for (#2824). Both surfaces execute it:
+ *
+ *  - **UI** — component/app code rendered in an iframe. `ComponentPreviewFrame` runs it at an OPAQUE
+ *    origin; the Glance frame still passes `allow-same-origin`, which leaves `parent.__TAURI_INTERNALS__`
+ *    (and through it the whole IPC surface) reachable from generated code — #3862, open.
+ *  - **Algorithms** — stored `vizCode` compiled with `new Function` and executed, confined to a
+ *    dedicated Web Worker with no DOM and no app state since #3233 (`vizWorker.ts`).
+ *
+ *  So the pair answers *"does our process run this project's code at all?"* — isolate-before-render is
+ *  only required, and only meaningful, where the answer is `studio`. Claiming `studio` for a project we
+ *  never host wastes the isolation; claiming `own` for one we DO host silently drops it. */
+export type SystemSource = "studio" | "own";
+
+/** The valid {@link SystemSource} tokens, shared by every `*System` axis. Mirrored by `SYSTEM_SOURCES`
+ *  in `crates/plandb/src/validate.rs`, which rejects an unknown token at `bsc plan classify set` —
+ *  keep the two in lockstep or the planner can write a value the app cannot read. */
+export const SYSTEM_SOURCES: SystemSource[] = ["studio", "own"];
+
+/** WHO RENDERS this project's UI at runtime — a separate axis from {@link UiMode}, because the two
+ *  are orthogonal:
  *
  *  |  | designs generated in-app | designs brought by the user |
  *  |---|---|---|
  *  | **renders from our graph** | `studio` + `custom` | `studio` + `external` |
  *  | **project owns rendering** | `own` + `custom` | `own` + `external` |
  *
- *  - `studio` — our data-driven system: the component graph IS the render source, so the build/publish
- *    pipeline, the host API, and per-node analytics (#3809) all apply.
+ *  - `studio` — the component graph IS the render source, so the build/publish pipeline, the host API,
+ *    per-node analytics (#3809) — and the render isolation above — all apply.
  *  - `own` — the project brings or keeps its own UI stack (Material UI, shadcn, an existing React
  *    codebase). None of the above applies to it.
  *
@@ -33,12 +57,22 @@ export type UiMode = "custom" | "external";
  *  produces OUR shell. Without this axis the planner designs a graph-rendered shell for a project that
  *  will never render one, and the fleet is told to build against a contract the project does not use —
  *  the common case for an existing codebase (`lifecycle: "transform"`, already the default there). */
-export type UiSystem = "studio" | "own";
+export type UiSystem = SystemSource;
 
-/** The valid `UiSystem` tokens. Mirrored by `UI_SYSTEMS` in `crates/plandb/src/validate.rs`, which
- *  rejects an unknown token at `bsc plan classify set` — keep the two in lockstep or the planner can
- *  write a value the app cannot read. */
-export const UI_SYSTEMS: UiSystem[] = ["studio", "own"];
+/** WHERE THIS PROJECT'S ALGORITHMS COME FROM — the twin of {@link UiSystem}, and the other half of the
+ *  executed surface (#4115).
+ *
+ *  - `studio` — the algorithms knowledge graph is the source: the librarian curates them, workers fetch
+ *    them with `bsc graph impl get`, and their stored `vizCode` is COMPILED AND RUN by our host to drive
+ *    the visualizations.
+ *  - `own` — the project writes its own computation. Nothing is fetched from the graph and nothing of
+ *    the project's is executed here.
+ *
+ *  Paired with `uiSystem` because the two studios split the whole artifact surface — the planner already
+ *  routes on exactly this line ("a component is UI (designer, `bsc ui`); an algorithm is computation
+ *  (librarian, `bsc graph impl`)"). Asking only about the UI would leave the executed half of the surface
+ *  unstated, which is the more dangerous half to be wrong about: it runs code rather than rendering it. */
+export type AlgorithmSystem = SystemSource;
 
 /** The project's APPLICATION ARCHITECTURE (#3802/#3784) — what KIND of app it is, the axis the
  *  Projects list facets by AND the axis that selects which stages run (#3784). A flat taxonomy
@@ -79,6 +113,9 @@ export interface ClassifyConfig {
   /** Who renders this project's UI at runtime (#4115). Unset → read as "studio", today's behaviour
    *  for every existing project — so adding the axis changes nothing until a planner sets it. */
   uiSystem?: UiSystem;
+  /** Where this project's algorithms come from (#4115) — the twin of `uiSystem`, covering the other
+   *  half of the surface our host executes. Unset → read as "studio", same non-regressing rule. */
+  algorithmSystem?: AlgorithmSystem;
   /** The project's application architecture (#3802/#3784). Unset → read as "application". */
   appType?: AppType;
   /** The project's lifecycle intent (#3784). Unset → read as "greenfield". */
@@ -103,7 +140,8 @@ export function coerceClassifyConfig(raw: unknown): ClassifyConfig | null {
   const r = raw as Record<string, unknown>;
   const cfg: ClassifyConfig = {};
   if (r.uiMode === "custom" || r.uiMode === "external") cfg.uiMode = r.uiMode;
-  if (typeof r.uiSystem === "string" && (UI_SYSTEMS as string[]).includes(r.uiSystem)) cfg.uiSystem = r.uiSystem as UiSystem;
+  if (typeof r.uiSystem === "string" && (SYSTEM_SOURCES as string[]).includes(r.uiSystem)) cfg.uiSystem = r.uiSystem as UiSystem;
+  if (typeof r.algorithmSystem === "string" && (SYSTEM_SOURCES as string[]).includes(r.algorithmSystem)) cfg.algorithmSystem = r.algorithmSystem as AlgorithmSystem;
   if (typeof r.appType === "string" && (APP_TYPES as string[]).includes(r.appType)) cfg.appType = r.appType as AppType;
   if (typeof r.lifecycle === "string" && (LIFECYCLES as string[]).includes(r.lifecycle)) cfg.lifecycle = r.lifecycle as Lifecycle;
   if (typeof r.needsMarket === "boolean") cfg.needsMarket = r.needsMarket;
@@ -132,14 +170,37 @@ export function uiSystemOf(cfg: ClassifyConfig | undefined | null): UiSystem {
   return cfg?.uiSystem ?? "studio";
 }
 
+/** Where this project's algorithms come from, with the unclassified default applied (#4115). */
+export function algorithmSystemOf(cfg: ClassifyConfig | undefined | null): AlgorithmSystem {
+  return cfg?.algorithmSystem ?? "studio";
+}
+
 /** Does this project render from OUR component graph (#4115)? The gate for everything that only
  *  applies to studio-rendered projects — kit pinning, the graph vocabulary in worker context, the
- *  build/publish pipeline, per-node analytics (#3809).
+ *  build/publish pipeline, per-node analytics (#3809), and the render isolation the preview frames owe
+ *  LLM-authored code (#2824/#3862).
  *
  *  Deliberately a predicate rather than call sites comparing strings: the consumers land across
  *  slices 3-5, and they should all ask one question. */
 export function rendersFromStudio(cfg: ClassifyConfig | undefined | null): boolean {
   return uiSystemOf(cfg) === "studio";
+}
+
+/** Does this project's computation come from OUR algorithms graph (#4115)? The twin gate — the
+ *  librarian, `bsc graph impl` in worker context, and the sandboxed `vizCode` execution (#3233). */
+export function computesFromStudio(cfg: ClassifyConfig | undefined | null): boolean {
+  return algorithmSystemOf(cfg) === "studio";
+}
+
+/** Does our HOST take in and run any of this project's artifacts (#4115)? True when EITHER system axis
+ *  is `studio` — the UI half is rendered in a frame, the algorithm half is compiled and executed.
+ *
+ *  This is the isolate-before-render question, and it is deliberately an OR: isolation is owed if any
+ *  one surface hosts project code, and a project that owns its UI can still draw its algorithms from the
+ *  graph. Reading only `uiSystem` would answer it wrongly for exactly that project — and the algorithm
+ *  half is the more dangerous one to get wrong, since it runs code rather than rendering it. */
+export function hostRunsProjectArtifacts(cfg: ClassifyConfig | undefined | null): boolean {
+  return rendersFromStudio(cfg) || computesFromStudio(cfg);
 }
 
 /** Does this project have screens to design? Drives whether the `ui` stage applies (#3784).
@@ -162,14 +223,18 @@ export function classifySignals(cfg: ClassifyConfig | undefined | null): Record<
   const appType = appTypeOf(cfg);
   const lifecycle = lifecycleOf(cfg);
   const uiSystem = uiSystemOf(cfg);
+  const algorithmSystem = algorithmSystemOf(cfg);
   const out: Record<string, boolean> = {
     hasUserInterface: appTypeHasUi(cfg),
-    // #4115: exposed as a signal so a stage's `appliesWhen` can key on it — a studio-only stage
-    // should not run for a project that owns its own rendering.
+    // #4115: exposed as signals so a stage's `appliesWhen` can key on them — a studio-only stage
+    // should not run for a project that owns that half of its stack.
     rendersFromStudio: rendersFromStudio(cfg),
+    computesFromStudio: computesFromStudio(cfg),
+    hostRunsProjectArtifacts: hostRunsProjectArtifacts(cfg),
   };
   for (const t of APP_TYPES) out[`appType:${t}`] = t === appType;
   for (const l of LIFECYCLES) out[`lifecycle:${l}`] = l === lifecycle;
-  for (const s of UI_SYSTEMS) out[`uiSystem:${s}`] = s === uiSystem;
+  for (const s of SYSTEM_SOURCES) out[`uiSystem:${s}`] = s === uiSystem;
+  for (const s of SYSTEM_SOURCES) out[`algorithmSystem:${s}`] = s === algorithmSystem;
   return out;
 }

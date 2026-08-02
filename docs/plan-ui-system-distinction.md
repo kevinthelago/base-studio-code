@@ -1,13 +1,32 @@
 # Plan — teaching the planner which projects use our data-driven UI
 
-**Status:** slices 1–2 landed; 3–5 held. Tracked as epic #4115.
+**Status:** slices 1–2 landed, as a PAIR of axes; 3–5 held. Tracked as epic #4115.
 
-- **1 · the axis — DONE.** `UiSystem` + `ClassifyConfig.uiSystem` + `uiSystemOf`/`rendersFromStudio`
-  (`src/features/planner/lib/classifyConfig.ts`), the `UI_SYSTEMS` lockstep twin in
-  `crates/plandb/src/validate.rs`, and the `classify_readiness` echo. Unset reads as `studio`.
-- **2 · the Discovery ask — DONE.** `src-tauri/data/stages/discovery.json` asks it, before `uiMode`,
-  guarded by `discovery_asks_who_renders_the_ui_and_separates_it_from_ui_mode`
+> **These axes are a security boundary, not a routing preference.** `studio` means our host takes the
+> project's LLM-authored artifacts IN and runs them — the UI half rendered in a frame, the algorithm
+> half compiled with `new Function` and executed. That is the same trust class the Design Studio's
+> opaque-origin sandbox was chosen for (#2824); the Glance frame still passes `allow-same-origin` and
+> leaves `parent.__TAURI_INTERNALS__` reachable (#3862, open), while stored `vizCode` is confined to a
+> dedicated Web Worker with no DOM and no app state (#3233). So the pair answers *"does our process run
+> this project's code at all?"* — isolate-before-render is owed exactly where the answer is `studio`.
+
+- **1 · the axes — DONE.** One shared vocabulary `SystemSource = "studio" | "own"` (`SYSTEM_SOURCES`)
+  behind **two** axes: `uiSystem` (who renders) and `algorithmSystem` (where the computation comes
+  from, and whose `vizCode` we execute) — plus `uiSystemOf`/`rendersFromStudio`,
+  `algorithmSystemOf`/`computesFromStudio`, and `hostRunsProjectArtifacts` (an OR over both — the
+  isolate-before-render question). `src/features/planner/lib/classifyConfig.ts`, with the
+  `SYSTEM_SOURCES` lockstep twin in `crates/plandb/src/validate.rs` and both echoed by
+  `classify_readiness`. Unset reads as `studio` on both.
+- **2 · the Discovery ask — DONE.** `src-tauri/data/stages/discovery.json` asks BOTH, separately and
+  before `uiMode`, guarded by `discovery_asks_both_system_axes_and_separates_them_from_ui_mode`
   (`src-tauri/src/planner/directives.rs`).
+
+**Why paired.** The two studios split the whole artifact surface, and the planner already routes on
+exactly that line — *a component is UI (designer, `bsc ui`); an algorithm is computation (librarian,
+`bsc graph impl`)*. Asking only about the UI would leave the **executed** half unstated, which is the
+more dangerous half to be wrong about: it runs code rather than rendering it. They also differ often —
+owning the UI while still drawing algorithms from the graph is a normal project — so a single combined
+answer would be wrong for it in one direction or the other.
 - **3–5 · held on purpose.** The UI-stage third surface, kit/fleet branching and downstream gating
   encode the host-API direction; per the issue they should not start until that is settled, or they
   bake in an answer still under discussion. **Nothing reads the axis yet** — that is the point of the
