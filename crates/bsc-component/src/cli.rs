@@ -108,26 +108,47 @@ USAGE:
   bsc ui log <id> [--kit] [--dir D] [--pretty]
 
 Prints the record's provenance AND its change history as JSON —
-{ id, rev, updatedAt, updatedBy, history: [ { rev, at, by, note?, changed } ] }. The top-level fields are
+{ id, rev, updatedAt, updatedBy, history: [ { rev, at, by, note?, changed, dropped? } ] }. The top-level fields are
 the current stamp (#3164): `rev` is the monotonically-increasing revision (a record never stamped, or a
 legacy one, reads as rev 0); `updatedAt` is the last write's ISO-8601 UTC timestamp; `updatedBy` is the
 writer tag (`bsc ui set --by <tag>` / $BSC_UI_WRITER, else \"unknown\"). `history` (#3568) is the per-write
 log, NEWEST-FIRST, one entry per write: its `rev`, `at` (ISO-8601), `by` (the writer), an optional `note`
 (`bsc ui set --note <text>`), and `changed` (the top-level fields that moved, `[\"created\"]` on the first
-write). Capped to the most recent 30 writes. Review it before editing so you know what changed and why.
+write). An entry also carries `dropped` (#4197) — the fields that write REMOVED — but ONLY when it
+removed some, so a destructive write is legible at a glance instead of hiding inside `changed`.
+Capped to the most recent 30 writes. Review it before editing so you know what changed and why.
 --kit logs a KIT record instead of a component. Read-only. Use the `rev` to guard your next write:
 `bsc ui set --if-version <rev>` refuses to overwrite if the record has moved on.",
     },
     CmdDoc {
         name: "set",
-        summary: "upsert from component JSON on stdin (stamps rev/updatedAt/updatedBy); prints id(s)",
+        summary: "MERGE component JSON from stdin into the record (stamps rev/updatedAt/updatedBy); prints id(s)",
         usage: "\
 USAGE:
-  bsc ui set [--by <tag>] [--note <text>] [--if-version <n>] [--pretty]   # component JSON (one object or an array) on stdin
-  bsc ui set --file <name> [--by <tag>] [--note <text>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name>
+  bsc ui set [--by <tag>] [--note <text>] [--if-version <n>] [--clear a,b] [--pretty]   # component JSON (one object or an array) on stdin
+  bsc ui set --file <name> [--by <tag>] [--note <text>] [--clear a,b] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name>
+  bsc ui set --replace …                                                                # verbatim WHOLE-record write (see below)
 
-Upserts each component by its (required, non-empty) \"id\" field, written verbatim. Prints the id(s)
-written — how an agent (or the pane) authors/updates a component in the shared kit.
+Upserts each component by its (required, non-empty) \"id\" field. Prints the id(s) written — how an
+agent (or the pane) authors/updates a component in the shared kit.
+
+A write is a MERGE (#4197): the fields you send are overlaid on the STORED record, and every field you
+did NOT send is PRESERVED. So `{\"id\":\"fleetpage\",\"srcText\":\"…\"}` changes the source and leaves the
+kit, role, `composes` edges, `src`/`folder` provenance and `props` exactly as they were. This matches
+`bsc graph impl set` (#4154) — the two stores answer a partial write identically. It used to REPLACE,
+which silently deleted every field a write did not restate; that cost a 16-entry reorg on the algorithms
+side, and here it can be unrecoverable (`fleetpage` has had no source file since #3636, so the record is
+the only copy of that UI).
+
+Removal is therefore EXPLICIT, two equivalent ways: --clear a,b removes those fields, or send JSON
+`null` as the field's value. `id` can never be removed (it is the store key). Each removal is recorded
+in the change history as `dropped` — separate from `changed` — so `bsc ui log <id>` tells a write that
+DELETED fields from one that merely edited them.
+
+--replace opts back into the verbatim whole-record write for a caller that genuinely holds the whole
+record: the app's write-through bridge, `bsc ui import`, and the seed reconcile's authoritative reset
+(which a merge would stop from ever converging back on the seed). It is the ONLY mode that can still
+delete a field by omission, so it WARNS on stderr naming each one. --clear with --replace is refused.
 
 --file <name> reads the SAME payload from a bare-named file in the session's $BSC_SCRATCH dir instead
 of stdin (#3373). It exists because a heredoc cannot be permitted in a restricted session: newlines are
@@ -590,7 +611,7 @@ UTF-8, LF-only — byte-clean for `while read id` / `$( )`.",
     CmdDoc {
         name: "set",
         summary: "upsert from kit JSON on stdin (stamps rev/updatedAt/updatedBy); prints id(s)",
-        usage: "USAGE:\n  bsc ui kit set [--by <tag>] [--note <text>] [--if-version <n>] [--pretty]   # kit JSON (object or array) on stdin\n  bsc ui kit set --file <name> [--by <tag>] [--note <text>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name> (#3373)\n\nUpserts each kit by its \"id\", written verbatim. Fields: { id, name, tech, style, stack?, dot } — tech + style place the kit in the rail (omit either ⇒ it shows as \"other/other\"); stack is a display label only. Every write stamps provenance (#3164): auto-bump `rev`, set `updatedAt` (ISO-8601 UTC) + `updatedBy` (--by / $BSC_UI_WRITER / \"unknown\"), and appends a change-history entry (#3568: --note is its summary; `bsc ui log <id> --kit` reads it). --if-version <n> rejects the write unless the kit's current rev is <n>.",
+        usage: "USAGE:\n  bsc ui kit set [--by <tag>] [--note <text>] [--if-version <n>] [--clear a,b] [--pretty]   # kit JSON (object or array) on stdin\n  bsc ui kit set --file <name> [--by <tag>] [--note <text>] [--clear a,b] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name> (#3373)\n  bsc ui kit set --replace …                                                               # verbatim WHOLE-record write\n\nUpserts each kit by its \"id\". Fields: { id, name, tech, style, stack?, dot } — tech + style place the kit in the rail (omit either ⇒ it shows as \"other/other\"); stack is a display label only. Like `bsc ui set`, a write MERGES over the stored record (#4197): unsupplied fields are PRESERVED, removal is explicit via --clear a,b (or a JSON `null`), and --replace opts back into the verbatim whole-record write the app bridge and the seed reconcile need. Every write stamps provenance (#3164): auto-bump `rev`, set `updatedAt` (ISO-8601 UTC) + `updatedBy` (--by / $BSC_UI_WRITER / \"unknown\"), and appends a change-history entry (#3568: --note is its summary; `bsc ui log <id> --kit` reads it; #4197: it also carries `dropped` when the write removed fields). --if-version <n> rejects the write unless the kit's current rev is <n>.",
     },
     CmdDoc {
         name: "remove",
@@ -1162,14 +1183,33 @@ fn read_set_items(noun: &str, file: Option<&str>) -> Result<Vec<serde_json::Valu
     })
 }
 
-/// The stamped, version-aware `set` core (#3164): for each item, read the current stored `rev`, enforce
-/// `--if-version` (reject a stale overwrite), stamp (`rev+1` + `updatedAt` + `updatedBy`), upsert, and
-/// fire the ui-touch hook. Returns the written ids in input order. Split out of [`cmd_set`] so the
-/// concurrency + stamping logic is unit-testable without a drivable stdin. `--if-version` takes a
-/// SINGLE record (a lone version number is meaningless across a batch).
-/// The warning for a write that REMOVES fields the stored record had (#4197) — `None` when it removes
-/// nothing, which is every full-record write (the app's `pushComponent`, `bsc ui import`, the seed
-/// reconcile), so the common path stays silent and the warning keeps its meaning.
+/// How a `set` combines the incoming record with the stored one (#4197).
+///
+/// The DEFAULT is a MERGE ([`crate::record::merge_over`]): unsupplied fields are preserved, and removal is
+/// explicit (`--clear a,b`, or a JSON `null` in the payload). That mirrors `bsc graph impl set` after
+/// #4154 — the two stores answer a partial write identically, which is the whole point: a worker told to
+/// "edit the RECORD, then re-emit" (#4193) must not lose the fields its edit never mentioned, and for a
+/// page whose source file is gone (`fleetpage`, since #3636) the record is the only copy.
+///
+/// `replace` (`--replace`) restores the verbatim whole-record write, which three callers genuinely need:
+/// the app's `pushComponent`/`pushKit` bridge, `bsc ui import`, and — the load-bearing one —
+/// `reconcileSeed`'s seed-authoritative path (#3723), which forces a diverged builtin back onto its seed
+/// copy. Under a merge that push could never converge: a store-only field would survive every reset, so
+/// the record's content hash would stay off the seed's and the reconcile would re-fire forever.
+#[derive(Clone, Copy, Debug, Default)]
+struct WritePlan<'a> {
+    replace: bool,
+    clear: &'a [String],
+}
+
+/// The warning for a write that removes a field WITHOUT BEING ASKED TO (#4197) — `None` for every
+/// merging write (which removes only what `--clear`/a `null` names) and for every `--replace` that
+/// restates the whole record, so the common paths stay silent and the warning keeps its meaning.
+///
+/// It exists for the one remaining way to lose data silently: `--replace` with a partial payload. An
+/// explicitly cleared field is NOT reported — the caller asked for it, and a warning about a deletion you
+/// just requested is the noise that trains people to ignore the real one (the removal is still recorded
+/// in the history's `dropped`, so `bsc ui log` shows it either way).
 ///
 /// PURE so the decision is under test rather than tangled in the write loop; the caller prints it. It
 /// names each field, because "this write is destructive" without a list is not actionable — the reader
@@ -1178,20 +1218,31 @@ fn destructive_write_warning(
     id: &str,
     noun: &str,
     prior: &serde_json::Value,
-    incoming: &serde_json::Value,
+    effective: &serde_json::Value,
+    clear: &[String],
 ) -> Option<String> {
-    let dropped = crate::record::dropped_fields(prior, incoming);
+    let dropped: Vec<String> = crate::record::dropped_fields(prior, effective)
+        .into_iter()
+        .filter(|f| !clear.iter().any(|c| c == f))
+        .collect();
     if dropped.is_empty() {
         return None;
     }
     Some(format!(
         "warning: this write REMOVES {} field(s) from {noun} '{id}': {}. \
-         `set` replaces the whole record — re-send them to keep them, or `bsc ui log {id}` to see what was there.",
+         --replace writes the record VERBATIM — drop --replace to MERGE (unsupplied fields are kept), \
+         re-send them, or `bsc ui log {id}` to see what was there.",
         dropped.len(),
         dropped.join(", "),
     ))
 }
 
+/// The merging, stamped, version-aware `set` core (#3164/#4197): for each item, read the current stored
+/// record, enforce `--if-version` (reject a stale overwrite), combine it with the stored one per `plan`
+/// (a MERGE unless `--replace`), stamp (`rev+1` + `updatedAt` + `updatedBy`), upsert, and fire the
+/// ui-touch hook. Returns the written ids in input order. Split out of [`cmd_set`] so the merge +
+/// concurrency + stamping logic is unit-testable without a drivable stdin. `--if-version` takes a
+/// SINGLE record (a lone version number is meaningless across a batch).
 fn set_stamped(
     store: &bsc_json_store::Store,
     items: &[serde_json::Value],
@@ -1199,6 +1250,7 @@ fn set_stamped(
     writer: &str,
     noun: &str,
     note: Option<&str>,
+    plan: WritePlan<'_>,
 ) -> Result<Vec<String>, String> {
     if if_version.is_some() && items.len() != 1 {
         return Err(format!(
@@ -1219,15 +1271,15 @@ fn set_stamped(
                 ));
             }
         }
-        // #4197: a `set` REPLACES the whole record, so a partial write deletes every field it did not
-        // restate. Say so, loudly, before the write lands. NOT fatal: the app's bridge and the seed
-        // reconcile legitimately write whole records, and refusing would break both — but a silent
-        // deletion is how #4154 cost a 16-entry reorg on the algorithms side, and here the record may be
-        // the ONLY copy (fleetpage has had no source file since #3636).
-        if let Some(msg) = destructive_write_warning(&id, noun, &prior, item) {
+        // #4197: a `set` MERGES over the stored record, so a write that restates only `srcText` keeps the
+        // kit, role, edges and provenance it never mentioned — the same semantics #4154 gave
+        // `bsc graph impl set`. `--replace` opts back into the verbatim whole-record write the app bridge
+        // and the seed reconcile need; only that path can still delete by omission, and it says so.
+        let mut stamped =
+            if plan.replace { item.clone() } else { crate::record::merge_over(&prior, item, plan.clear) };
+        if let Some(msg) = destructive_write_warning(&id, noun, &prior, &stamped, plan.clear) {
             eprintln!("{msg}");
         }
-        let mut stamped = item.clone();
         crate::record::stamp_with_history(&mut stamped, &prior, writer, &now, note);
         store.set(&id, &serde_json::to_string(&stamped).map_err(|e| format!("set: {e}"))?)?;
         bsc_util::emit_ui_activity(noun, &id);
@@ -1242,12 +1294,13 @@ fn set_stamped(
     Ok(ids)
 }
 
-/// `set [--by <tag>] [--note <text>] [--if-version <n>] [--dir D] [--pretty]` (#3164/#3568) — the
-/// STAMPING upsert for a collection. Parses the ui-write flags, reads the record(s) from stdin, runs the
-/// domain batch `validate` (the component srcText gate / the kit-axis nudge), then stamps + upserts each
-/// via [`set_stamped`], which also appends a change-history entry (`--note` is its summary; `bsc ui log
-/// <id>` reads the log). Prints the written id(s). Shared by the component and kit collections (`open` +
-/// `validate` + `noun` differ). Already ui-scope gated in [`run`].
+/// `set [--by <tag>] [--note <text>] [--if-version <n>] [--clear a,b] [--replace] [--dir D] [--pretty]`
+/// (#3164/#3568/#4197) — the STAMPING upsert for a collection. Parses the ui-write flags, reads the
+/// record(s) from stdin, runs the domain batch `validate` (the component srcText gate / the kit-axis
+/// nudge), then MERGES + stamps + upserts each via [`set_stamped`], which also appends a change-history
+/// entry (`--note` is its summary; `bsc ui log <id>` reads the log). Prints the written id(s). Shared by
+/// the component and kit collections (`open` + `validate` + `noun` differ). Already ui-scope gated in
+/// [`run`]. See [`WritePlan`] for the merge/`--replace` split.
 fn cmd_set(
     args: &[String],
     open: fn(&Option<String>) -> Result<bsc_json_store::Store, String>,
@@ -1256,11 +1309,21 @@ fn cmd_set(
 ) -> Result<(), String> {
     let (mut dir, mut pretty, mut by, mut if_version, mut file, mut note) =
         (None::<String>, false, None::<String>, None::<i64>, None::<String>, None::<String>);
+    let (mut replace, mut clear) = (false, Vec::<String>::new());
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--dir" => dir = it.next().cloned(),
             "--pretty" => pretty = true,
+            // #4197: the write MERGES, so a value can no longer be removed by omitting it — removal is
+            // explicit. Mirrors `bsc graph impl set --clear` (#4154) so the two stores read the same.
+            "--clear" => {
+                let raw = it.next().ok_or("--clear needs a comma-separated field list, e.g. --clear folder,src")?;
+                clear.extend(raw.split(',').map(str::trim).filter(|f| !f.is_empty()).map(str::to_string));
+            }
+            // #4197: opt back into the verbatim whole-record write — for the app bridge, `bsc ui import`,
+            // and `reconcileSeed`'s seed-authoritative reset, which a merge would stop from converging.
+            "--replace" => replace = true,
             // #3373: read the payload from a BARE-NAMED file in $BSC_SCRATCH instead of stdin, so a
             // restricted session can author multi-line records at all (a heredoc cannot be allow-listed
             // — newlines are command separators). Resolution + the traversal defence live in bsc-cli-util.
@@ -1283,6 +1346,15 @@ fn cmd_set(
             }
         }
     }
+    // The two are contradictory: `--replace` writes the payload verbatim, so there is nothing left for
+    // `--clear` to remove. Refusing beats silently honouring one of them.
+    if replace && !clear.is_empty() {
+        return Err(
+            "--clear and --replace contradict each other: --replace writes the record VERBATIM (a field \
+             absent from the payload is already gone), while --clear removes fields from a MERGE. Pick one."
+                .to_string(),
+        );
+    }
     let items = read_set_items(noun, file.as_deref())?;
     validate(&items)?;
     let store = open(&dir)?;
@@ -1292,7 +1364,8 @@ fn cmd_set(
         warn_cross_kit_collision(&store, &items);
     }
     let writer = crate::record::resolve_writer(by.as_deref());
-    let ids = set_stamped(&store, &items, if_version, &writer, noun, note.as_deref())?;
+    let plan = WritePlan { replace, clear: &clear };
+    let ids = set_stamped(&store, &items, if_version, &writer, noun, note.as_deref(), plan)?;
     let json = if pretty { serde_json::to_string_pretty(&ids) } else { serde_json::to_string(&ids) };
     println!("{}", json.map_err(|e| e.to_string())?);
     Ok(())
@@ -1698,7 +1771,12 @@ fn cmd_refolder(args: &[String]) -> Result<(), String> {
     }
     let applied = if !dry && !updated.is_empty() {
         let writer = crate::record::resolve_writer(None);
-        set_stamped(&store, &updated, None, &writer, "component", Some("refolder: folder path from src"))?;
+        // #4197: the write MERGES, so dropping the legacy `group` key above is no longer enough — a
+        // merge would carry the stored one straight back. Name it as an explicit clear, which is also
+        // what puts it in the record's history `dropped` instead of leaving the removal implicit.
+        let clear = ["group".to_string()];
+        let plan = WritePlan { replace: false, clear: &clear };
+        set_stamped(&store, &updated, None, &writer, "component", Some("refolder: folder path from src"), plan)?;
         true
     } else {
         false
@@ -5093,23 +5171,123 @@ mod tests {
         serde_json::from_str(&store.get(id).unwrap().unwrap()).unwrap()
     }
 
-    #[test]
-    fn a_partial_write_warns_about_every_field_it_would_delete() {
-        // The #4154 defect, in the component store: `set` REPLACES, so a write that restates only the
-        // source deletes the record's kit, role, edges and provenance-of-origin. The record here is a
-        // PAGE whose source file no longer exists (fleetpage, since #3636) — the case where the deletion
-        // is unrecoverable from the repo, and the reason this warning exists at all.
-        let prior = serde_json::json!({
+    /// The record #4197 exists for: a PAGE whose source file no longer exists (`fleetpage`, deleted by
+    /// #3636), so the store holds the only copy of that UI and a dropped field is unrecoverable.
+    fn fleetpage_record() -> serde_json::Value {
+        serde_json::json!({
             "id": "fleetpage", "name": "FleetPage", "kitId": "base-studio-code", "role": "page",
             "composes": ["Row", "Card"], "src": "src/features/planner/fleet/Fleet.tsx",
             "folder": "features/planner/fleet", "srcText": "old",
-            "rev": 4, "updatedAt": "2026-07-01T00:00:00Z", "updatedBy": "designer", "history": [],
-        });
-        let partial = serde_json::json!({ "id": "fleetpage", "srcText": "new" });
+            "props": { "title": "string" },
+        })
+    }
 
-        let msg = destructive_write_warning("fleetpage", "component", &prior, &partial)
-            .expect("a partial write over a rich record is destructive");
-        for field in ["composes", "folder", "kitId", "name", "role", "src"] {
+    #[test]
+    fn a_partial_write_merges_and_preserves_every_field_it_omitted() {
+        // THE regression test for #4197. `set` used to REPLACE, so the write below — the exact shape the
+        // worker protocol tells a fleet worker to make for a record-backed component file (#4193) —
+        // deleted the record's kit, role, composes edges, provenance and props. Against the old
+        // behaviour every `preserved` assertion fails; against the merge (the #4154 semantics, now shared
+        // with `bsc graph impl set`) only `srcText` moves.
+        let store = tmp_component_store("merge-partial");
+        let rich = fleetpage_record();
+        set_stamped(&store, std::slice::from_ref(&rich), None, "seed", "component", None, WritePlan::default()).unwrap();
+
+        let partial = serde_json::json!({ "id": "fleetpage", "srcText": "new" });
+        set_stamped(&store, std::slice::from_ref(&partial), None, "worker", "component", None, WritePlan::default()).unwrap();
+
+        let after = stored(&store, "fleetpage");
+        assert_eq!(after["srcText"], "new", "the supplied field is written");
+        for (field, expected) in [
+            ("name", serde_json::json!("FleetPage")),
+            ("kitId", serde_json::json!("base-studio-code")),
+            ("role", serde_json::json!("page")),
+            ("composes", serde_json::json!(["Row", "Card"])),
+            ("src", serde_json::json!("src/features/planner/fleet/Fleet.tsx")),
+            ("folder", serde_json::json!("features/planner/fleet")),
+            ("props", serde_json::json!({ "title": "string" })),
+        ] {
+            assert_eq!(after[field], expected, "the write never mentioned {field}, so it is preserved");
+        }
+        // The history reflects the truth: an EDIT, with nothing dropped.
+        let entry = after["history"].as_array().unwrap().last().unwrap();
+        assert_eq!(entry["changed"], serde_json::json!(["srcText"]), "only srcText moved: {entry}");
+        assert!(entry.get("dropped").is_none(), "a merging write removes nothing: {entry}");
+    }
+
+    #[test]
+    fn clear_removes_one_field_explicitly_and_leaves_the_rest_alone() {
+        // A merge makes removal-by-omission impossible, so removal is EXPLICIT — `--clear a,b`, exactly
+        // as `bsc graph impl set` spells it (#4154). The removal is recorded in the history's `dropped`.
+        let store = tmp_component_store("merge-clear");
+        let rich = fleetpage_record();
+        set_stamped(&store, std::slice::from_ref(&rich), None, "seed", "component", None, WritePlan::default()).unwrap();
+        let prior = stored(&store, "fleetpage");
+
+        let clear = ["folder".to_string()];
+        let edit = serde_json::json!({ "id": "fleetpage", "srcText": "new" });
+        let plan = WritePlan { replace: false, clear: &clear };
+        set_stamped(&store, std::slice::from_ref(&edit), None, "designer", "component", None, plan).unwrap();
+
+        let after = stored(&store, "fleetpage");
+        assert!(after.get("folder").is_none(), "the cleared field is gone");
+        assert_eq!(after["src"], "src/features/planner/fleet/Fleet.tsx", "its neighbours are untouched");
+        assert_eq!(after["composes"], serde_json::json!(["Row", "Card"]));
+        let entry = after["history"].as_array().unwrap().last().unwrap();
+        assert_eq!(entry["dropped"], serde_json::json!(["folder"]), "the removal is legible in `bsc ui log`: {entry}");
+        // An asked-for removal is NOT warned about — the caller requested it, and warning about a deletion
+        // you just asked for is the noise that trains people to ignore the real warning.
+        let effective = crate::record::merge_over(&prior, &edit, &clear);
+        assert!(destructive_write_warning("fleetpage", "component", &prior, &effective, &clear).is_none());
+    }
+
+    #[test]
+    fn a_null_value_removes_a_field_the_way_clear_does() {
+        // The payload-side spelling of a removal, mirroring `set_impl` (#4154) — `--clear` is sugar for it.
+        let store = tmp_component_store("merge-null");
+        let rich = fleetpage_record();
+        set_stamped(&store, std::slice::from_ref(&rich), None, "seed", "component", None, WritePlan::default()).unwrap();
+
+        let edit = serde_json::json!({ "id": "fleetpage", "composes": serde_json::Value::Null });
+        set_stamped(&store, std::slice::from_ref(&edit), None, "designer", "component", None, WritePlan::default()).unwrap();
+
+        let after = stored(&store, "fleetpage");
+        assert!(after.get("composes").is_none(), "a null value removes the field rather than storing null");
+        assert_eq!(after["role"], "page", "everything else survives");
+        let entry = after["history"].as_array().unwrap().last().unwrap();
+        assert_eq!(entry["dropped"], serde_json::json!(["composes"]));
+    }
+
+    #[test]
+    fn the_id_can_never_be_removed_by_a_null_or_a_clear() {
+        // `id` is the store KEY — a record that lost it is unreadable by every list/get/doctor path, so
+        // neither spelling of a removal may take it.
+        let prior = serde_json::json!({ "id": "card", "name": "Card" });
+        let nulled = serde_json::json!({ "id": serde_json::Value::Null, "name": "Card 2" });
+        assert_eq!(crate::record::merge_over(&prior, &nulled, &[])["id"], "card");
+        let cleared = crate::record::merge_over(&prior, &serde_json::json!({ "id": "card" }), &["id".to_string()]);
+        assert_eq!(cleared["id"], "card");
+    }
+
+    #[test]
+    fn a_replace_write_still_replaces_and_warns_about_every_field_it_deletes() {
+        // `--replace` is the ONE remaining way to delete by omission — it exists for the app bridge,
+        // `bsc ui import`, and the seed reconcile's authoritative reset (#3723), which a merge would stop
+        // from ever converging. Because it can still lose data, it says so, naming each field.
+        let store = tmp_component_store("replace-warns");
+        let rich = fleetpage_record();
+        set_stamped(&store, std::slice::from_ref(&rich), None, "seed", "component", None, WritePlan::default()).unwrap();
+        let prior = stored(&store, "fleetpage");
+
+        let partial = serde_json::json!({ "id": "fleetpage", "srcText": "new" });
+        let plan = WritePlan { replace: true, clear: &[] };
+        set_stamped(&store, std::slice::from_ref(&partial), None, "bridge", "component", None, plan).unwrap();
+        let after = stored(&store, "fleetpage");
+        assert!(after.get("kitId").is_none() && after.get("composes").is_none(), "--replace really replaces");
+
+        let msg = destructive_write_warning("fleetpage", "component", &prior, &partial, &[])
+            .expect("a partial --replace over a rich record is destructive");
+        for field in ["composes", "folder", "kitId", "name", "props", "role", "src"] {
             assert!(msg.contains(field), "the warning names {field}: {msg}");
         }
         // …and NOT the server-managed fields, which every write re-stamps regardless of the payload.
@@ -5121,12 +5299,28 @@ mod tests {
     }
 
     #[test]
+    fn clear_with_replace_is_refused_before_the_payload_is_read() {
+        // Contradictory: `--replace` writes the payload verbatim, so a field absent from it is already
+        // gone and there is nothing for `--clear` to remove. Refusing beats silently honouring one — and
+        // the refusal lands BEFORE stdin is touched, so it never half-writes.
+        let args: Vec<String> =
+            ["--replace", "--clear", "folder"].iter().map(|s| s.to_string()).collect();
+        let err = cmd_set(&args, open_component_store, validate_component_batch, "component").unwrap_err();
+        assert!(err.contains("--clear and --replace contradict"), "names the conflict: {err}");
+        // `--clear` still needs its value — a bare flag is a usage error, not an empty clear list.
+        let bare: Vec<String> = vec!["--clear".to_string()];
+        assert!(cmd_set(&bare, open_component_store, validate_component_batch, "component")
+            .unwrap_err()
+            .contains("--clear needs a comma-separated field list"));
+    }
+
+    #[test]
     fn a_full_record_write_is_silent() {
         // The common path — the app's `pushComponent`, `bsc ui import`, and the seed reconcile all send
-        // whole records. If those warned, the warning would mean nothing within a day.
+        // whole records (with `--replace`). If those warned, the warning would mean nothing within a day.
         let prior = serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui", "rev": 2 });
         let full = serde_json::json!({ "id": "button", "name": "Button v2", "kitId": "react-ui" });
-        assert!(destructive_write_warning("button", "component", &prior, &full).is_none());
+        assert!(destructive_write_warning("button", "component", &prior, &full, &[]).is_none());
     }
 
     #[test]
@@ -5138,13 +5332,14 @@ mod tests {
         let rich = serde_json::json!({
             "id": "card", "name": "Card", "kitId": "react-ui", "role": "composite", "composes": ["Row"],
         });
-        set_stamped(&store, std::slice::from_ref(&rich), None, "seed", "component", None).unwrap();
+        set_stamped(&store, std::slice::from_ref(&rich), None, "seed", "component", None, WritePlan::default()).unwrap();
         let first: serde_json::Value = stored(&store, "card");
         let entry = first["history"].as_array().unwrap().last().unwrap();
         assert!(entry.get("dropped").is_none(), "a create drops nothing: {entry}");
 
         let partial = serde_json::json!({ "id": "card", "name": "Card" });
-        set_stamped(&store, std::slice::from_ref(&partial), None, "designer", "component", None).unwrap();
+        let plan = WritePlan { replace: true, clear: &[] };
+        set_stamped(&store, std::slice::from_ref(&partial), None, "designer", "component", None, plan).unwrap();
         let after: serde_json::Value = stored(&store, "card");
         let entry = after["history"].as_array().unwrap().last().unwrap();
         let dropped: Vec<&str> =
@@ -5161,7 +5356,7 @@ mod tests {
         let rec = serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui" });
 
         // First write of a brand-new record → rev 1, updatedBy = the writer, updatedAt an ISO stamp.
-        let ids = set_stamped(&store, std::slice::from_ref(&rec), None, "alice", "component", None).unwrap();
+        let ids = set_stamped(&store, std::slice::from_ref(&rec), None, "alice", "component", None, WritePlan::default()).unwrap();
         assert_eq!(ids, vec!["button".to_string()]);
         let s = stored(&store, "button");
         assert_eq!(s["rev"], serde_json::json!(1), "a fresh record's first write is rev 1");
@@ -5172,7 +5367,7 @@ mod tests {
         assert_eq!(s["kitId"], "react-ui");
 
         // A second write of the same id bumps from the STORED rev (1 → 2), even though the payload carries none.
-        set_stamped(&store, std::slice::from_ref(&rec), None, "bob", "component", None).unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), None, "bob", "component", None, WritePlan::default()).unwrap();
         let s = stored(&store, "button");
         assert_eq!(s["rev"], serde_json::json!(2), "the second write bumps to rev 2");
         assert_eq!(s["updatedBy"], "bob", "attribution follows the latest writer");
@@ -5182,20 +5377,20 @@ mod tests {
     fn set_stamped_if_version_rejects_a_stale_write_and_allows_a_current_one() {
         let store = tmp_component_store("stamp-ifver");
         let rec = serde_json::json!({ "id": "chip", "name": "Chip" });
-        set_stamped(&store, std::slice::from_ref(&rec), None, "x", "component", None).unwrap(); // → rev 1
+        set_stamped(&store, std::slice::from_ref(&rec), None, "x", "component", None, WritePlan::default()).unwrap(); // → rev 1
 
         // --if-version 0 is STALE (current rev is 1): rejected with a clear message, nothing overwritten.
-        let err = set_stamped(&store, std::slice::from_ref(&rec), Some(0), "x", "component", None).unwrap_err();
+        let err = set_stamped(&store, std::slice::from_ref(&rec), Some(0), "x", "component", None, WritePlan::default()).unwrap_err();
         assert!(err.contains("version conflict") && err.contains("rev is 1"), "clear conflict message: {err}");
         assert_eq!(stored(&store, "chip")["rev"], serde_json::json!(1), "the stale write did NOT clobber");
 
         // --if-version 1 matches the current rev → the write lands and bumps to 2.
-        set_stamped(&store, std::slice::from_ref(&rec), Some(1), "x", "component", None).unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), Some(1), "x", "component", None, WritePlan::default()).unwrap();
         assert_eq!(stored(&store, "chip")["rev"], serde_json::json!(2));
 
         // --if-version guards a SINGLE record — a batch with a lone version number is a usage error.
         let batch = vec![serde_json::json!({ "id": "a" }), serde_json::json!({ "id": "b" })];
-        let err = set_stamped(&store, &batch, Some(1), "x", "component", None).unwrap_err();
+        let err = set_stamped(&store, &batch, Some(1), "x", "component", None, WritePlan::default()).unwrap_err();
         assert!(err.contains("--if-version") && err.contains("single"), "batch + version rejected: {err}");
     }
 
@@ -5209,7 +5404,7 @@ mod tests {
 
         // So --if-version 0 succeeds against it (backward-compatible), stamping it forward to rev 1.
         let rec = serde_json::json!({ "id": "legacy", "name": "Legacy v2" });
-        set_stamped(&store, std::slice::from_ref(&rec), Some(0), "migrator", "component", None).unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), Some(0), "migrator", "component", None, WritePlan::default()).unwrap();
         let s = stored(&store, "legacy");
         assert_eq!(s["rev"], serde_json::json!(1));
         assert_eq!(s["updatedBy"], "migrator");
@@ -5223,7 +5418,7 @@ mod tests {
         let rec = serde_json::json!({
             "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "folder": "pages", "shapes": ["list"]
         });
-        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None).unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None, WritePlan::default()).unwrap();
 
         // The lean projection is byte-for-byte the same — the stamp fields don't leak into it, the axes still project.
         let meta = bsc_json_store::cli::lean_meta(&store.get("card").unwrap().unwrap(), COMPONENT_SPEC.meta_fields);
@@ -5253,7 +5448,7 @@ mod tests {
             "srcText": "export function Card() { /* … a great many bytes … */ }",
             "tests": ["a", "b"], "history": [{ "rev": 1 }], "props": { "title": "string" },
         });
-        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None).unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None, WritePlan::default()).unwrap();
 
         let g = bsc_json_store::cli::lean_meta(&store.get("card").unwrap().unwrap(), COMPONENT_SPEC.graph_fields);
         assert_eq!(
@@ -5277,7 +5472,7 @@ mod tests {
         // client's `typeof c.used === "number" ? c.used : 0` sees a stable shape.
         let store = tmp_component_store("graphproj-nouse");
         let rec = serde_json::json!({ "id": "b", "name": "Btn", "kitId": "k", "role": "control" });
-        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None).unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None, WritePlan::default()).unwrap();
         let g = bsc_json_store::cli::lean_meta(&store.get("b").unwrap().unwrap(), COMPONENT_SPEC.graph_fields);
         assert_eq!(g.get("used"), Some(&serde_json::json!("")));
         assert_eq!(g.get("composes"), Some(&serde_json::json!("")));
@@ -5288,7 +5483,7 @@ mod tests {
         let store = tmp_component_store("stamp-log");
         let dir = store.dir().to_string_lossy().into_owned();
         let rec = serde_json::json!({ "id": "hero", "name": "Hero" });
-        set_stamped(&store, std::slice::from_ref(&rec), None, "ada", "component", None).unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), None, "ada", "component", None, WritePlan::default()).unwrap();
 
         // `log <id>` reads Ok over the stamped record (compact + --pretty); `log` of an absent id errors.
         assert!(run(vec!["log".into(), "hero".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
@@ -5324,10 +5519,10 @@ mod tests {
         // #3568: every write through the stamp boundary appends a capped history entry that Claude can review.
         let store = tmp_component_store("history");
         let v1 = serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui" });
-        set_stamped(&store, std::slice::from_ref(&v1), None, "designer", "component", Some("initial draft")).unwrap();
+        set_stamped(&store, std::slice::from_ref(&v1), None, "designer", "component", Some("initial draft"), WritePlan::default()).unwrap();
         // A second, real edit with a note — one field changes.
         let v2 = serde_json::json!({ "id": "button", "name": "Primary Button", "kitId": "react-ui" });
-        set_stamped(&store, std::slice::from_ref(&v2), None, "alice", "component", Some("rename")).unwrap();
+        set_stamped(&store, std::slice::from_ref(&v2), None, "alice", "component", Some("rename"), WritePlan::default()).unwrap();
 
         let s = stored(&store, "button");
         let hist = s["history"].as_array().expect("history is recorded");

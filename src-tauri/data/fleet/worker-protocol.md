@@ -14,6 +14,7 @@ You are one of several parallel sessions building this project. Never stop to as
 
 - `bsc ui backing <path>` — before you edit a `.tsx`, ask whether it has a record. Cheap, and it covers every component rather than a catalogue you would have to read by hand.
 - If it is backed: `bsc ui get <id>` to read it, `bsc ui set …` to make the change, then `bsc ui emit component <id> <dir>` so the file follows. Build and test against the emitted file — a record that cannot render fails there rather than in the app.
+- `bsc ui set` **merges** (#4197): send only the fields you are changing and the rest of the record is preserved. To REMOVE a field, say so — `--clear a,b` (or send the field as JSON `null`). Some pages have no source file at all, so the record is the only copy; a write that silently dropped what it did not restate would be unrecoverable.
 - `bsc ui backing gate $(git diff --name-only)` — run this before you open a PR. It exits non-zero and names the record if your change touched a backed file without going through it.
 
 This is components only for now; an algorithm's file usually backs several records, so it is not gated.

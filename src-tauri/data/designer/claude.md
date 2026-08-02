@@ -372,8 +372,15 @@ bsc ui set --file button.json --by designer --note "add error state"
 The history is SERVER-managed and capped (the most recent 30 writes) — you never author the `history`
 field yourself; you only supply the `--note`.
 
-- `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set [--by <tag>] [--note <text>]` (JSON on stdin
-  or `--file`, upsert by `id`) · `bsc ui log <id>` (its change history) · `bsc ui remove <id>` — the components.
+**A write MERGES (#4197).** The fields you send are overlaid on the stored record; every field you did
+NOT send is preserved. So a source-only edit keeps the component's kit, role, `composes` edges,
+`src`/`folder` and `props` untouched, and you never have to restate a record just to change one thing.
+Removal is therefore explicit — `--clear a,b`, or send that field as JSON `null`. Each removal is
+recorded in the history as `dropped`, separate from `changed`, so `bsc ui log <id>` shows at a glance
+whether a past write DELETED fields or merely edited them.
+
+- `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set [--by <tag>] [--note <text>] [--clear a,b]` (JSON on stdin
+  or `--file`, MERGING upsert by `id`) · `bsc ui log <id>` (its change history) · `bsc ui remove <id>` — the components.
 - `bsc ui rename <id> <NewName> [--by designer] [--note <why>]` — **rename a component in one command.**
   Never rename by hand (edit `name`, then chase every `composes`/`rules` reference, then re-`set`): this
   does it all in one sweep, and does it right. The `id` is FROZEN, so history/tokens/variants survive; the
