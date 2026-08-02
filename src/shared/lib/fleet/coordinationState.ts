@@ -6,10 +6,13 @@
 // waiter AND immediately checks the latch (proceed now if already satisfied); satisfy
 // events set the latch and return the waiters whose **all** deps are now satisfied.
 //
-// This module is pure (no PTY/store/IO) so it's exhaustively unit-testable. The wiring —
-// `bsc-blocked --on` -> register, the director's merge/close -> satisfy, and waking the
-// parked pane -- lands on top of it in later slices. `failed` is deliberately NOT a
-// satisfy: dependents stay blocked and surface as a stalled chain (finished != succeeded).
+// This module is pure (no PTY/store/IO) so it's exhaustively unit-testable. Half its wiring is live:
+// the completion emitters (`bsc-landed`/`merged`/`closed`/`failed`) -> satisfy, and the Flow tab wakes a
+// ready pane. The other half is not — registration used to come from a `bsc-blocked --on` shell helper,
+// and #1039 removed runtime dependency-wait outright rather than replacing it, so nothing declares
+// dependence mid-task any more; `streamGate.ts` decides the same question at LAUNCH instead, off the
+// plan's `dependsOn`. `failed` is deliberately NOT a satisfy: dependents stay blocked and surface as a
+// stalled chain (finished != succeeded).
 import type {
   CoordRef,
   SatisfySource,
@@ -21,7 +24,8 @@ export function emptyCoordState(): CoordState {
   return { latches: {}, waiters: [], waiting: [], asking: [], issues: [], maintaining: [], briefs: [], forks: [], commissions: [], requests: [] };
 }
 
-/** Canonical string key for a ref -- the `bsc-blocked --on <token>` wire form too. */
+/** Canonical string key for a ref -- and the wire form too: it is exactly the token the completion
+ *  emitters take as their argument (`bsc-landed '#42'`, `bsc-merged contract:X`). */
 export function refKey(ref: CoordRef): string {
   switch (ref.kind) {
     case "issue": return `#${ref.number}`;
@@ -32,9 +36,10 @@ export function refKey(ref: CoordRef): string {
   }
 }
 
-/** Parse a `bsc-blocked --on` token (`#42`, `contract:X`, `file:path`, `predicate:expr`)
- *  back into a ref. Returns null for an unrecognized/empty token. A bare `42` or `#42`
- *  is an issue; an unprefixed non-numeric token is treated as a predicate. */
+/** Parse a wire token (`#42`, `contract:X`, `file:path`, `predicate:expr`) back into a ref -- the
+ *  argument form of `bsc-landed`/`merged`/`closed`/`failed`, and of the dep columns in a pre-#1039
+ *  `blocked` line. Returns null for an unrecognized/empty token. A bare `42` or `#42` is an issue; an
+ *  unprefixed non-numeric token is treated as a predicate. */
 export function parseRef(token: string): CoordRef | null {
   const t = token.trim();
   if (!t) return null;
