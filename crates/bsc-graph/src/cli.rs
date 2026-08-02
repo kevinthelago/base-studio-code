@@ -23,8 +23,13 @@ pub const VERBS: [&str; 12] =
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const IMPL_SUBVERBS: [&str; 3] = ["set", "remove", "list"];
 
+/// The flags that take NO value. Needed by `reject_unknown_flags` to walk the argv correctly: a
+/// value-taking flag consumes the next token, so `--summary "--x"` must not read as the flag `--x`.
+pub const BOOL_FLAGS: [&str; 7] =
+    ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src"];
+
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 21] = [
+pub const FLAGS: [&str; 22] = [
     "--pretty",
     "--all",
     "--id",
@@ -46,9 +51,12 @@ pub const FLAGS: [&str; 21] = [
     "--apply",
     "--fix",
     "--dry-run",
+    "--no-src",
 ];
 
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    // Before anything reads a flag: an unknown one is an ERROR, never a silent no-op (#4154).
+    reject_unknown_flags(&args)?;
     let pretty = args.iter().any(|a| a == "--pretty");
     let positional: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
     let verb = positional.first().copied().unwrap_or("help");
@@ -105,7 +113,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 for f in &cleared {
                     im[f.as_str()] = Value::Null;
                 }
-                if !provenance_declared(&role, &im, args.iter().any(|a| a == "--no-src")) {
+                // Load BEFORE the gate (#4154): the check must see the STORED record. It used to inspect
+                // only this write's flags, so editing a record that ALREADY had `src`/`folder` was
+                // rejected unless the caller resupplied them — pushing every routine `--domain`/`--kind`
+                // edit into restating provenance, which is the exact shape that caused the loss the
+                // merge now prevents. It blocked 14 TypeScript + 3 fleet entries (designer request #52).
+                let mut g = crate::load();
+                let stored = crate::implementations_of(&g)
+                    .into_iter()
+                    .find(|x| x.get("id").and_then(Value::as_str) == Some(id.as_str()));
+                if !provenance_declared(&role, &im, stored.as_ref(), args.iter().any(|a| a == "--no-src")) {
                     return Err(format!(
                         "impl set: algorithm '{id}' has no provenance — pass --src <path> (the folder                          derives from it), --folder <path>, or --no-src if it has no source in this repo.                          Without one it cannot be organized in the graph's folder tree (#4136)."
                     ));
@@ -115,10 +132,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if let Some(k) = flag_value(&args, "--kind") { im["kind"] = Value::String(k); }
                 // The viz-code facet (#3218) — the algorithm's visualization as a JS trace-program. Additive.
                 if let Some(v) = flag_value(&args, "--viz-code") { im["vizCode"] = Value::String(v); }
-                let mut g = crate::load();
                 let replaced = crate::set_impl(&mut g, im.clone())?;
                 crate::save(&g)?;
-                emit(&serde_json::json!({ "ok": true, "action": if replaced { "updated" } else { "created" }, "impl": im }))
+                // Report the STORED record, not the write payload (#4154). Echoing `im` showed only the
+                // fields this call restated, so a `--domain`-only edit answered without `src`, `summary`
+                // or `tests` — which reads as "they were deleted". That is what the merge fix was
+                // measured against and judged still broken across three separate probes (request #52):
+                // the data was intact the whole time and the ACK was lying about it.
+                let saved = crate::implementations_of(&g)
+                    .into_iter()
+                    .find(|x| x.get("id").and_then(Value::as_str) == Some(id.as_str()))
+                    .unwrap_or(im);
+                emit(&serde_json::json!({ "ok": true, "action": if replaced { "updated" } else { "created" }, "impl": saved }))
             }
             Some("remove") => {
                 let id = positional.get(2).ok_or("usage: bsc graph impl remove <id>")?;
@@ -601,8 +626,59 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 /// A `primitive` is exempt BY DESIGN — it DESCRIBES a language built-in via `--ref` and is never
 /// re-coded (#2972), so it has no source to point at. Pure, so the rule is testable without touching the
 /// store (which `run` would otherwise write for real).
-fn provenance_declared(role: &str, im: &Value, no_src: bool) -> bool {
-    role != "algorithm" || no_src || im.get("src").is_some() || im.get("folder").is_some()
+/// Will the record carry provenance AFTER this write lands (#4136, corrected #4154)?
+///
+/// Considers the STORED record, not just the flags — the gate used to see only `im`, so a routine
+/// `--domain` edit on a record that already had `src` was refused unless provenance was restated.
+///
+/// A `--clear`ed field arrives as JSON `null`, which counts as ABSENT: clearing an algorithm's only
+/// provenance must FAIL the gate, not satisfy it by virtue of the key being present.
+fn provenance_declared(role: &str, im: &Value, stored: Option<&Value>, no_src: bool) -> bool {
+    if role != "algorithm" || no_src {
+        return true; // a primitive DESCRIBES a built-in via `--ref` (#2972); `--no-src` is the explicit none
+    }
+    ["src", "folder"].iter().any(|k| match im.get(*k) {
+        Some(Value::Null) => false,                                   // explicitly cleared by this write
+        Some(_) => true,                                              // supplied by this write
+        None => stored.and_then(|s| s.get(*k)).is_some_and(|v| !v.is_null()), // already on the record
+    })
+}
+
+/// Refuse an unknown `--flag` instead of ignoring it (#4154, designer request #52).
+///
+/// The designer passed `--tests <content>` — a flag this CLI has never had — got NO error, then read the
+/// record back and found no `tests` field. The reasonable conclusion was "the write dropped it", and that
+/// reading is what kept a fixed merge looking broken across three probes. Silence is the bug: a flag that
+/// does nothing must say so, because the alternative is the caller inferring a data-loss bug from it.
+///
+/// Walks the argv rather than scanning for `--`, so a VALUE that happens to start with `--`
+/// (`--summary "--foo"`) is not mistaken for a flag.
+fn reject_unknown_flags(args: &[String]) -> Result<(), String> {
+    let mut i = 0;
+    while i < args.len() {
+        let a = &args[i];
+        if let Some(stripped) = a.strip_prefix("--") {
+            if !FLAGS.contains(&a.as_str()) {
+                let near: Vec<&str> = FLAGS
+                    .iter()
+                    .copied()
+                    .filter(|f| f.contains(stripped) || stripped.contains(f.trim_start_matches("--")))
+                    .collect();
+                return Err(format!(
+                    "unknown flag '{a}'{}
+
+run `bsc graph help` for the flags this CLI reads.",
+                    if near.is_empty() { String::new() } else { format!(" — did you mean {}?", near.join(" | ")) },
+                ));
+            }
+            // A value-taking flag consumes the next token, which must not be re-read as a flag.
+            if !BOOL_FLAGS.contains(&a.as_str()) {
+                i += 1;
+            }
+        }
+        i += 1;
+    }
+    Ok(())
 }
 
 fn flag_value(args: &[String], flag: &str) -> Option<String> {
@@ -637,7 +713,7 @@ fn help(prog: &str) -> String {
   \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder)\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--no-src] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder)\n  \
          {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n  \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
@@ -807,17 +883,21 @@ mod tests {
         let with_src = serde_json::json!({ "id": "x.rs", "src": "crates/x/src/lib.rs" });
         let with_folder = serde_json::json!({ "id": "x.rs", "folder": "crates/x/src" });
 
+        // `None` for the stored record throughout: these cases are a CREATE, where the write's own
+        // flags are the only provenance there can be. The stored-record arm is covered in
+        // `set_gate_tests` (#4154) — that is the case this gate used to get wrong.
+
         // The refused shape — an algorithm with neither, and no opt-out.
-        assert!(!provenance_declared("algorithm", &bare, false));
+        assert!(!provenance_declared("algorithm", &bare, None, false));
         // Each accepted shape, against the SAME record, so the rule is proven to turn on provenance
         // alone rather than on some other difference between the calls.
-        assert!(provenance_declared("algorithm", &with_src, false));
-        assert!(provenance_declared("algorithm", &with_folder, false));
-        assert!(provenance_declared("algorithm", &bare, true)); // --no-src
+        assert!(provenance_declared("algorithm", &with_src, None, false));
+        assert!(provenance_declared("algorithm", &with_folder, None, false));
+        assert!(provenance_declared("algorithm", &bare, None, true)); // --no-src
 
         // A PRIMITIVE describes a built-in via `--ref` and has no source by design (#2972) — the gate
         // must never apply to it, or the whole primitive tier becomes unwritable.
-        assert!(provenance_declared("primitive", &bare, false));
+        assert!(provenance_declared("primitive", &bare, None, false));
     }
 
     #[test]
@@ -840,5 +920,90 @@ mod tests {
             "bsc graph"
         ))
         .is_ok());
+    }
+}
+
+#[cfg(test)]
+mod set_gate_tests {
+    use super::*;
+    use serde_json::json;
+
+    // ── the provenance gate sees the STORED record (#4154, designer request #52) ──────────────────
+    // 14 TypeScript + 3 fleet entries were blocked from routine domain/kind edits because the gate
+    // inspected only this write's flags. Restating provenance on every edit is the exact shape that
+    // caused the loss the merge now prevents, so the gate was pushing callers back toward it.
+
+    #[test]
+    fn an_edit_to_a_record_that_already_has_provenance_passes() {
+        let write = json!({ "id": "rotate.ts", "domain": "changed" });
+        let stored = json!({ "id": "rotate.ts", "src": "features/x/rotate.ts", "folder": "features/x" });
+        assert!(provenance_declared("algorithm", &write, Some(&stored), false));
+    }
+
+    #[test]
+    fn a_new_algorithm_with_no_provenance_anywhere_is_still_refused() {
+        let write = json!({ "id": "new.ts", "domain": "x" });
+        assert!(!provenance_declared("algorithm", &write, None, false));
+    }
+
+    /// `--clear src,folder` arrives as JSON null. A key that is PRESENT-but-null used to satisfy the
+    /// gate, so the one write that genuinely removes an algorithm's provenance was the one it waved
+    /// through.
+    #[test]
+    fn clearing_the_last_provenance_field_fails_the_gate() {
+        let write = json!({ "id": "x.ts", "src": null, "folder": null });
+        let stored = json!({ "id": "x.ts", "src": "a/x.ts", "folder": "a" });
+        assert!(!provenance_declared("algorithm", &write, Some(&stored), false));
+    }
+
+    #[test]
+    fn clearing_one_of_two_is_fine_the_other_still_carries_it() {
+        let write = json!({ "id": "x.ts", "src": null });
+        let stored = json!({ "id": "x.ts", "src": "a/x.ts", "folder": "a" });
+        assert!(provenance_declared("algorithm", &write, Some(&stored), false));
+    }
+
+    #[test]
+    fn a_primitive_is_exempt_and_no_src_is_the_explicit_none() {
+        assert!(provenance_declared("primitive", &json!({ "id": "p" }), None, false)); // #2972
+        assert!(provenance_declared("algorithm", &json!({ "id": "a" }), None, true));  // --no-src
+    }
+
+    // ── unknown flags are an error, not silence (#4154, designer request #52) ────────────────────
+
+    #[test]
+    fn an_unknown_flag_is_refused_rather_than_ignored() {
+        // `--tests` has never existed here. Ignoring it let the designer conclude, three times, that a
+        // working merge was deleting the field.
+        let args: Vec<String> = ["impl", "set", "--id", "x", "--tests", "…"].iter().map(|s| s.to_string()).collect();
+        let err = reject_unknown_flags(&args).unwrap_err();
+        assert!(err.contains("--tests"), "names the offending flag: {err}");
+    }
+
+    #[test]
+    fn a_value_that_looks_like_a_flag_is_not_read_as_one() {
+        // `--summary` takes a value, so the next token is consumed even when it starts with `--`.
+        let args: Vec<String> = ["impl", "set", "--summary", "--not-a-flag", "--pretty"].iter().map(|s| s.to_string()).collect();
+        assert!(reject_unknown_flags(&args).is_ok());
+    }
+
+    #[test]
+    fn a_bool_flag_does_not_swallow_the_token_after_it() {
+        // `--pretty` consumes nothing, so a BAD flag right after it must still be caught.
+        let args: Vec<String> = ["dump", "--pretty", "--bogus"].iter().map(|s| s.to_string()).collect();
+        assert!(reject_unknown_flags(&args).unwrap_err().contains("--bogus"));
+    }
+
+    #[test]
+    fn every_declared_flag_is_accepted() {
+        // Non-vacuity: a typo in FLAGS would make the walk reject a flag the CLI really reads.
+        for f in FLAGS {
+            let args = if BOOL_FLAGS.contains(&f) {
+                vec![f.to_string()]
+            } else {
+                vec![f.to_string(), "v".to_string()]
+            };
+            assert!(reject_unknown_flags(&args).is_ok(), "{f} should be accepted");
+        }
     }
 }
