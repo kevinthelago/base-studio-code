@@ -1,0 +1,86 @@
+{
+  "id": "projects-rail",
+  "name": "ProjectsRail",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/planner/list/ProjectsRail",
+  "srcText": "// Projects → the library rail, AS GRAPH SOURCE (#4232, epic #3604). Transcribed from the live feature file; the CSS import\n// is dropped (the host owns it) and specifiers are absolute. Its `provides: \"@/features/planner/list/ProjectsRail\"`\n// makes the runtime loader vendor THIS source wherever a graph component imports that specifier,\n// with the registered module as the fallback. Behaviour runs here.\n// ProjectsRail (#3802) — the Projects page's LEFT filter rail, modelled on the Skills library rail\n// (`features/skills/index.tsx`): a `SearchField` at the top over collapsible `RailSection`s of facet\n// rows — a Status facet AND an application-architecture Type facet (application · api · serverless\n// · static · desktop · mobile · cli · library), with a \"clear all filters\" footer. Emits the active\n// filters up (the composer owns the state so it survives re-renders). The drag-resize splitter + the\n// sized wrapper live in the parent (`ProjectsList`), the same split the Skills rail uses.\n//\n// Each facet's on/off state is drawn with the `Toggle` pill switch (#3826, `xs` = 24×14 — the same\n// height as the `Checkbox` it replaced, so row rhythm is unchanged). The Toggle is PRESENTATIONAL:\n// `RailRow` renders a `<button>` that owns the click, and an interactive control nested inside a\n// button is invalid — so the row carries `aria-pressed` and the switch is pure visual. Facets stay\n// multi-select; only the affordance changed.\nimport { GraphRail } from \"@/shared/ui/layouts/GraphRail\";\nimport { RailSection } from \"@/shared/ui/layouts/RailSection\";\nimport { RailRow } from \"@/shared/ui/layouts/RailRow\";\nimport { useRailSections } from \"@/shared/hooks/useRailSections\";\nimport { Toggle } from \"@/shared/ui/controls/Toggle\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { STATUS_FACETS, TYPE_FACETS, type ProjectStatus, type AppType } from \"@/features/planner/list/projectsFilter\";\n\nexport interface ProjectsRailProps {\n  query: string;\n  /** Selected status facet values (empty ⇒ all). */\n  statusSel: Set<ProjectStatus>;\n  toggleStatus: (s: ProjectStatus) => void;\n  /** Selected type (application-architecture) facet values (empty ⇒ all). */\n  typeSel: Set<AppType>;\n  toggleType: (t: AppType) => void;\n  /** Live per-status counts (facet badges). */\n  counts: Record<ProjectStatus, number>;\n  /** Live per-type counts (facet badges). */\n  typeCountsByCat: Record<AppType, number>;\n  /** Total item count (the \"All\" row badge). */\n  total: number;\n  /** Clear the status facet only (the Status \"All\" row). */\n  onClearStatus: () => void;\n  /** Clear the type facet only (the Type \"All\" row). */\n  onClearType: () => void;\n  /** Clear search + all facets (the footer). */\n  onClearFilters: () => void;\n}\n\nexport function ProjectsRail({\n  query, statusSel, toggleStatus, typeSel, toggleType,\n  counts, typeCountsByCat, total, onClearStatus, onClearType, onClearFilters,\n}: ProjectsRailProps) {\n  const railSections = useRailSections();\n  const anyFilter = statusSel.size > 0 || typeSel.size > 0 || query.trim().length > 0;\n\n  return (\n    // #3854: no `tools` — the search field moved to the list HEADER, where the primary control belongs.\n    // `query` is still read here for `anyFilter`, which drives the clear-all-filters footer.\n    <GraphRail\n      bodyPad=\"12px 10px 20px\"\n      footer={anyFilter ? (\n        <Box style={{ borderTop: \"1px solid var(--border-soft)\", padding: \"10px 12px\" }}>\n          <Box as=\"button\" onClick={onClearFilters} style={{ fontSize: 11, color: \"var(--fg-muted)\", background: \"none\", border: \"none\", cursor: \"pointer\", textDecoration: \"underline\", padding: 0 }}>\n            clear all filters\n          </Box>\n        </Box>\n      ) : undefined}\n    >\n      {/* Status — active / shipped / in progress / draft. */}\n      <RailSection\n        label=\"Status\"\n        count={STATUS_FACETS.length}\n        open={railSections.isOpen(\"status\")}\n        onToggle={() => railSections.toggle(\"status\")}\n      >\n        <RailRow\n          active={statusSel.size === 0}\n          onClick={onClearStatus}\n          leading={<Box as=\"span\" style={{ width: 13, textAlign: \"center\", color: statusSel.size === 0 ? \"var(--accent)\" : \"var(--fg-dim)\" }}>≡</Box>}\n          trailing={<Text as=\"span\" mono size={10} tone=\"dim\">{total}</Text>}\n        >\n          All\n        </RailRow>\n        {STATUS_FACETS.map((f) => {\n          const on = statusSel.has(f.value);\n          return (\n            <RailRow\n              key={f.value}\n              data-status={f.value}\n              active={on}\n              aria-pressed={on}\n              onClick={() => toggleStatus(f.value)}\n              leading={<>\n                <Toggle on={on} size=\"xs\" />\n                <Box as=\"span\" bg={f.dot} radius={99} style={{ width: 8, height: 8, flex: \"0 0 8px\", marginLeft: 6 }} />\n              </>}\n              trailing={<Text as=\"span\" mono size={10} tone=\"dim\">{counts[f.value]}</Text>}\n            >\n              <Box as=\"span\" style={{ textTransform: \"capitalize\" }}>{f.label}</Box>\n            </RailRow>\n          );\n        })}\n      </RailSection>\n\n      {/* Type — the application architecture (#3802): application · api · serverless · static ·\n          desktop · mobile · cli · library. From the project's classification, else its deploy plan. */}\n      <RailSection\n        label=\"Type\"\n        count={TYPE_FACETS.length}\n        open={railSections.isOpen(\"type\")}\n        onToggle={() => railSections.toggle(\"type\")}\n      >\n        <RailRow\n          active={typeSel.size === 0}\n          onClick={onClearType}\n          leading={<Box as=\"span\" style={{ width: 13, textAlign: \"center\", color: typeSel.size === 0 ? \"var(--accent)\" : \"var(--fg-dim)\" }}>≡</Box>}\n          trailing={<Text as=\"span\" mono size={10} tone=\"dim\">{total}</Text>}\n        >\n          All\n        </RailRow>\n        {TYPE_FACETS.map((f) => {\n          const on = typeSel.has(f.value);\n          return (\n            <RailRow\n              key={f.value}\n              data-type={f.value}\n              active={on}\n              aria-pressed={on}\n              onClick={() => toggleType(f.value)}\n              leading={<>\n                <Toggle on={on} size=\"xs\" />\n                <Box as=\"span\" bg={f.color} radius={99} style={{ width: 8, height: 8, flex: \"0 0 8px\", marginLeft: 6 }} />\n              </>}\n              trailing={<Text as=\"span\" mono size={10} tone=\"dim\">{typeCountsByCat[f.value]}</Text>}\n            >\n              <Box as=\"span\" style={{ textTransform: \"capitalize\" }}>{f.label}</Box>\n            </RailRow>\n          );\n        })}\n      </RailSection>\n    </GraphRail>\n  );\n}\n",
+  "src": "src/features/planner/list/ProjectsRail.tsx",
+  "folder": "features/planner/list",
+  "composes": [
+    "Box",
+    "GraphRail",
+    "RailRow",
+    "RailSection",
+    "Text",
+    "Toggle"
+  ],
+  "props": [
+    {
+      "name": "query",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "statusSel",
+      "type": "Set<ProjectStatus>",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "toggleStatus",
+      "type": "(s: ProjectStatus) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "typeSel",
+      "type": "Set<AppType>",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "toggleType",
+      "type": "(t: AppType) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "counts",
+      "type": "Record<ProjectStatus, number>",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "typeCountsByCat",
+      "type": "Record<AppType, number>",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "total",
+      "type": "number",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onClearStatus",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onClearType",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onClearFilters",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    }
+  ]
+}
