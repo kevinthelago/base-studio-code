@@ -109,8 +109,12 @@ export interface SeedNotice {
    *  `orphaned`: the built-in left the seed but the user's customized copy was kept.
    *  `reset-to-seed`: a SEED-AUTHORITATIVE record (an import-based page spec, #3723) had a diverged
    *  store copy FORCED back to the packaged seed. The store never wins for these, so a divergence is a
-   *  bug (a designer self-contained it for the preview sandbox), not a user edit — surfaced, not silent. */
-  kind: "updated-upstream" | "orphaned" | "reset-to-seed";
+   *  bug (a designer self-contained it for the preview sandbox), not a user edit — surfaced, not silent.
+   *  `unstamped`: the store copy carries NO `builtin` flag but a packaged seed of that id EXISTS, so the
+   *  reconcile treats it as user-authored and never refreshes it — while the app renders it (#4216). The
+   *  record is left exactly as it is (changing 44 pages at once is not a reconcile's call); this makes
+   *  the state visible so it can be judged per record. */
+  kind: "updated-upstream" | "orphaned" | "reset-to-seed" | "unstamped";
   type: SeedNoticeType;
   id: string;
   name: string;
@@ -180,7 +184,18 @@ export function reconcileSeed<T extends SeedRecord>(
     // (never dropped) so the block persists; `unsuppress` (remove it) lets the next hydrate re-seed.
     if (rec.suppressed) continue;
     if (!rec.builtin) {
-      records.push(rec); // user-authored — never touched
+      // #4216: an unstamped record with a packaged seed of the same id is NOT user-authored — it is a
+      // built-in whose stamp was lost (a pre-#4197 partial `bsc ui set` dropped `builtin`/`seedHash`).
+      // The reconcile has been skipping it ever since, so it never refreshes — while the app renders it,
+      // because this branch pushes the store copy straight into `records`. Say so.
+      //
+      // Behaviour is deliberately UNCHANGED: the store copy still wins. Deciding which side is right is
+      // a per-record judgement (the drift runs both ways — some store copies are far smaller than their
+      // seed, some far larger), and a reconcile that silently replaced 44 pages would be the worse bug.
+      if (seedById.has(rec.id)) {
+        notices.push({ kind: "unstamped", type, id: rec.id, name: displayName(rec) });
+      }
+      records.push(rec); // user-authored (or unstamped) — never touched
       continue;
     }
     const seeded = seedById.get(rec.id);
