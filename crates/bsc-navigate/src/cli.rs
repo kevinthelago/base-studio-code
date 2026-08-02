@@ -107,6 +107,7 @@ struct Args {
     timeout_ms: Option<i64>,
     json: bool,
     pretty: bool,
+    force: bool,
 }
 
 fn parse_args(args: Vec<String>) -> Result<Args, String> {
@@ -116,6 +117,7 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
         match tok.as_str() {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
+            "--force" => a.force = true,
             "--theme" => a.theme = Some(it.next().ok_or("--theme needs an id")?),
             "--state" => a.state = Some(it.next().ok_or("--state needs a value (loaded|empty|loading)")?),
             "--timeout" => {
@@ -131,7 +133,7 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
 
 /// Build the request for a parsed command line. Pure — the arg→intent mapping is the part worth testing
 /// without a running app.
-fn plan(cmd: &str, rest: &[String], theme: Option<String>, state: Option<String>) -> Result<NavRequest, String> {
+fn plan(cmd: &str, rest: &[String], theme: Option<String>, state: Option<String>, force: bool) -> Result<NavRequest, String> {
     // `--state` is a component render axis; it is only meaningful with `component`, and its value is
     // validated up front so a typo fails fast at the CLI rather than as a frontend ack error.
     if let Some(st) = &state {
@@ -151,16 +153,17 @@ fn plan(cmd: &str, rest: &[String], theme: Option<String>, state: Option<String>
                 component: Some(component.clone()),
                 theme,
                 state,
+                force,
                 ..Default::default()
             })
         }
         "workspace" => {
             let id = rest.first().ok_or("usage: bsc navigate workspace <id>")?;
-            Ok(NavRequest { workspace: Some(id.clone()), theme, ..Default::default() })
+            Ok(NavRequest { workspace: Some(id.clone()), theme, force, ..Default::default() })
         }
         "page" => {
             let id = rest.first().ok_or("usage: bsc navigate page <id>")?;
-            Ok(NavRequest { page: Some(id.clone()), theme, ..Default::default() })
+            Ok(NavRequest { page: Some(id.clone()), theme, force, ..Default::default() })
         }
         "theme" => {
             let id = rest.first().ok_or("usage: bsc navigate theme <id>")?;
@@ -182,7 +185,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         return Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, &cmd));
     }
 
-    let req = plan(&cmd, &args.positional[1..], args.theme.clone(), args.state.clone())?;
+    let req = plan(&cmd, &args.positional[1..], args.theme.clone(), args.state.clone(), args.force)?;
     let res = send(&req, args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS))?;
     bsc_cli_util::emit(args.pretty, args.json, &res, || lean(&res));
     Ok(())
@@ -239,7 +242,7 @@ mod tests {
 
     #[test]
     fn component_takes_kit_and_component_and_can_carry_a_theme() {
-        let r = plan("component", &s(&["react-d3", "Heatmap"]), Some("nord".into()), None).unwrap();
+        let r = plan("component", &s(&["react-d3", "Heatmap"]), Some("nord".into()), None, false).unwrap();
         assert_eq!(r.kit.as_deref(), Some("react-d3"));
         assert_eq!(r.component.as_deref(), Some("Heatmap"));
         assert_eq!(r.theme.as_deref(), Some("nord"));
@@ -252,34 +255,34 @@ mod tests {
     #[test]
     fn component_carries_a_valid_state_and_rejects_a_bad_one_or_a_misplaced_flag() {
         // A valid state rides on the component request.
-        let r = plan("component", &s(&["harvested", "mergequeue"]), None, Some("loading".into())).unwrap();
+        let r = plan("component", &s(&["harvested", "mergequeue"]), None, Some("loading".into()), false).unwrap();
         assert_eq!(r.component.as_deref(), Some("mergequeue"));
         assert_eq!(r.state.as_deref(), Some("loading"));
         // An unknown state value fails fast at the CLI, naming the allowed set.
-        let err = plan("component", &s(&["k", "c"]), None, Some("spinning".into())).unwrap_err();
+        let err = plan("component", &s(&["k", "c"]), None, Some("spinning".into()), false).unwrap_err();
         assert!(err.contains("loaded") && err.contains("empty") && err.contains("loading"), "{err}");
         // `--state` on a non-component command is refused (it is a component render axis).
-        assert!(plan("theme", &s(&["nord"]), None, Some("loading".into())).is_err());
+        assert!(plan("theme", &s(&["nord"]), None, Some("loading".into()), false).is_err());
     }
 
     #[test]
     fn component_without_both_args_is_a_usage_error_not_a_partial_request() {
-        assert!(plan("component", &s(&["react-d3"]), None, None).is_err());
-        assert!(plan("component", &s(&[]), None, None).is_err());
+        assert!(plan("component", &s(&["react-d3"]), None, None, false).is_err());
+        assert!(plan("component", &s(&[]), None, None, false).is_err());
     }
 
     #[test]
     fn workspace_page_and_theme_each_set_only_their_own_field() {
-        assert_eq!(plan("workspace", &s(&["glance"]), None, None).unwrap().workspace.as_deref(), Some("glance"));
-        assert_eq!(plan("page", &s(&["designs"]), None, None).unwrap().page.as_deref(), Some("designs"));
-        let t = plan("theme", &s(&["nord"]), None, None).unwrap();
+        assert_eq!(plan("workspace", &s(&["glance"]), None, None, false).unwrap().workspace.as_deref(), Some("glance"));
+        assert_eq!(plan("page", &s(&["designs"]), None, None, false).unwrap().page.as_deref(), Some("designs"));
+        let t = plan("theme", &s(&["nord"]), None, None, false).unwrap();
         assert_eq!(t.theme.as_deref(), Some("nord"));
         assert!(t.workspace.is_none() && t.page.is_none() && t.component.is_none());
     }
 
     #[test]
     fn show_asks_for_nothing_so_the_app_treats_it_as_a_read() {
-        let r = plan("show", &s(&[]), None, None).unwrap();
+        let r = plan("show", &s(&[]), None, None, false).unwrap();
         assert!(r.is_read_only(), "show must not mutate the view it is reporting");
     }
 
