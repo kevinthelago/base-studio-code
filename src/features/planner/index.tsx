@@ -16,7 +16,7 @@ export { ProjectsGraphHost } from "./ProjectsGraphHost";
 export { registerProjectsPlatform } from "./list/graphPlatform";
 import { Planning } from "./session/Planning";
 import { TeamsPanel } from "@/features/teams";
-import { SoundsWorkspace } from "@/features/sounds";
+import { SoundsGraphHost } from "@/features/sounds";
 import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
@@ -147,7 +147,7 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
           so it renders directly (no keep-mounted / single-owner tear-off dance). */}
       {mode === "sounds" && (
         <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
-          <SoundsWorkspace />
+          <SoundsGraphHost />
         </Box>
       )}
 
