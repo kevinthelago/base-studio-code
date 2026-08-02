@@ -22,6 +22,7 @@ import { WORKSPACES, type Workspace } from "@/app/registry";
 import { PROJECT_MODES } from "@/features/planner";
 import { log } from "@/shared/lib/core/log";
 import { applyNavigate, type NavRequest, type NavAck } from "./navigateBridge";
+import { installHumanPresence, humanPresent } from "./humanPresence";
 
 /**
  * Listen for `bsc://navigate` and apply it. Mounted once by the shell.
@@ -30,6 +31,10 @@ import { applyNavigate, type NavRequest, type NavAck } from "./navigateBridge";
  * `navigateBridge.ts`, so it is unit-testable without Tauri or a rendered app.
  */
 export function useNavigateBridge(): void {
+  // #4248: the presence listeners live with the bridge that consults them, so a build cannot ship the
+  // gate without the signal that feeds it (an always-absent human = the pre-#4248 behaviour, silently).
+  useEffect(() => installHumanPresence(), []);
+
   useEffect(() => {
     let disposed = false;
     const un = listen<NavRequest & { id: string }>("bsc://navigate", (e) => {
@@ -42,6 +47,7 @@ export function useNavigateBridge(): void {
           read: () => useAppStore.getState(),
           workspaces: WORKSPACES.map((w) => w.key as Workspace),
           pages: PROJECT_MODES.map((p: { id: string }) => p.id),
+          humanPresent,
         });
       } catch (err) {
         // A throw here would silently strand the Rust waiter. Turn it into a stated error instead.
