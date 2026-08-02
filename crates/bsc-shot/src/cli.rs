@@ -97,7 +97,12 @@ STEER FIRST
 
 NO COMPONENT SHOWN
   If the Design Studio isn't showing a component (no preview element registered), this errors clearly
-  rather than capturing the whole screen — navigate to a component and retry.",
+  rather than capturing the whole screen.
+
+  If `bsc navigate component` did not bring it on screen, the Studio is not the visible page and the
+  navigate DECLINED ON PURPOSE (#3599): a background follow-along does not steal the user's view. Do NOT
+  force it with `navigate page` / `--workspace` while someone is working — that is the yank #4248 is
+  about. Capture when the Studio is showing, or leave the frame for the unattended loop.",
     },
     CmdDoc {
         name: "frame",
@@ -121,7 +126,11 @@ reports), so you never pass coordinates — and you do not need `bsc debug` in y
 NOT MOUNTED
   If no preview for <component> is mounted, this errors and NAMES what is currently showing, rather
   than silently capturing the whole screen. Land it first:
-    bsc navigate component <kit> <component>",
+    bsc navigate component <kit> <component>
+
+  That navigate only switches the view when the Studio is ALREADY showing (#3599). If it did not, the
+  component is focused but off-screen and there is nothing to photograph — which is the correct outcome
+  while a human is on another page, not a reason to force the view over.",
     },
     CmdDoc {
         name: "pending",
