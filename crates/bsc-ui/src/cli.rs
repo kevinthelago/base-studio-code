@@ -402,6 +402,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `regroup` is the DEPRECATED alias of `refolder` (#4107 slice B). It is deliberately absent
         // from `command_docs()` — help must advertise one name — so it is matched here explicitly;
         // otherwise this gate rejects it before the component dispatcher ever sees it.
+        // #4223 — `backing relink <dir>` lives HERE, not in the mounted component CLI, because it needs
+        // the HARVEST: `bsc-ui` depends on `bsc-component`, so the component crate cannot reach back up
+        // for it. The pure planner (`bsc_component::backing::relink_plan`) stays down there where the
+        // rest of `backing` is; only the half that needs a harvest is intercepted.
+        Some("backing") if args.get(1).map(String::as_str) == Some("relink") => cmd_relink(&args[2..]),
         Some(v) if v == "regroup" || bsc_component::cli::command_docs().iter().any(|c| c.name == v) => {
             bsc_component::cli::run(args, prog)
         }
@@ -1974,6 +1979,139 @@ fn cmd_emit_css(args: &[String]) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+/// `bsc ui backing relink <dir> [--apply] [--kit K]` (#4223) — re-point STALE `src` values by matching
+/// records to a fresh harvest.
+///
+/// DRY-RUN BY DEFAULT. This rewrites provenance across many records at once, and the plan is the thing
+/// worth reading before it happens; `--apply` performs it.
+///
+/// The safety rule is inverted from `bsc graph relink` (#4119): that verb RECOVERS a missing `src`, so
+/// anything already carrying one is skipped. These records all HAVE an `src` — it is simply wrong — so
+/// the rule that matters is the opposite: a record whose `src` RESOLVES is never touched, however
+/// confident the harvest is. The harvest is evidence, not authority.
+fn cmd_relink(args: &[String]) -> Result<(), String> {
+    let (mut apply, mut kit, mut json, mut pretty) = (false, None::<String>, false, false);
+    let mut positional: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--apply" => apply = true,
+            "--kit" => kit = it.next().cloned(),
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => positional.push(other.to_string()),
+        }
+    }
+    let dir = positional
+        .first()
+        .ok_or("usage: bsc ui backing relink <dir> [--apply] [--kit K] — dry-run unless --apply")?;
+    let target = std::path::Path::new(dir);
+    if !target.is_dir() {
+        return Err(format!("not a directory: {dir}"));
+    }
+    // A harvest hands back file CONTENTS, so it honors the same boundary the other harvests do (#3475).
+    bsc_cli_util::require_harvestable_root(target)?;
+    let root = std::env::current_dir().map_err(|e| format!("cannot resolve the current directory: {e}"))?;
+
+    // name -> the DISTINCT paths harvested under it. NAME, not id: a record's `name` is the stable thing
+    // across a file rename, which is the event that produced these stale pointers.
+    let mut by_name: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> = Default::default();
+    // The harvest reports each candidate's `src` relative to the SCANNED DIR, but records store
+    // repo-root-relative paths — so a scan of `src` yields `features/x/Y.tsx` against a record's
+    // `src/features/x/Y.tsx`. Re-anchor before matching, or every proposal is a path that resolves no
+    // better than the one it replaces. (The planner's exists-guard catches this too; doing it here means
+    // the proposals are RIGHT rather than merely rejected.)
+    let prefix = target
+        .strip_prefix(&root)
+        .unwrap_or(target)
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/")
+        .trim_matches('/')
+        .to_string();
+    for c in crate::harvest::harvest(target, "") {
+        if c.src.trim().is_empty() {
+            continue;
+        }
+        let src = if prefix.is_empty() { c.src.clone() } else { format!("{prefix}/{}", c.src) };
+        by_name.entry(c.name).or_default().insert(src);
+    }
+
+    let store = bsc_json_store::Store::open_default("components", "component")?;
+    let records: Vec<serde_json::Value> = store
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .filter(|r| {
+            kit.as_deref()
+                .is_none_or(|k| r.get("kitId").and_then(serde_json::Value::as_str) == Some(k))
+        })
+        .collect();
+
+    let plan = bsc_component::backing::relink_plan(&records, &by_name, &root);
+    let (mut relink, mut ambiguous, mut unmatched, mut resolves) = (Vec::new(), Vec::new(), Vec::new(), 0usize);
+    let mut writes: Vec<serde_json::Value> = Vec::new();
+    for o in &plan {
+        match o {
+            bsc_component::backing::RelinkOutcome::Resolves { .. } => resolves += 1,
+            bsc_component::backing::RelinkOutcome::Unmatched { id, from } => {
+                unmatched.push(serde_json::json!({ "id": id, "src": from }))
+            }
+            bsc_component::backing::RelinkOutcome::Ambiguous { id, from, candidates } => {
+                ambiguous.push(serde_json::json!({ "id": id, "src": from, "candidates": candidates }))
+            }
+            bsc_component::backing::RelinkOutcome::Relink { id, from, to } => {
+                // A MERGING write of just these fields (#4197): `folder` derives from `src` the way every
+                // other write does, so a re-point places the record in one pass.
+                let mut w = serde_json::json!({ "id": id, "src": to });
+                if let Some(f) = bsc_component::folder_from_src(to) {
+                    w["folder"] = serde_json::Value::String(f);
+                }
+                writes.push(w);
+                relink.push(serde_json::json!({ "id": id, "from": from, "to": to }));
+            }
+        }
+    }
+
+    let applied = if apply && !writes.is_empty() {
+        bsc_component::cli::apply_relink(&store, &writes)?;
+        true
+    } else {
+        false
+    };
+    let payload = serde_json::json!({
+        "dir": dir, "applied": applied,
+        "relink": relink, "ambiguous": ambiguous, "unmatched": unmatched, "resolves": resolves,
+    });
+    bsc_cli_util::emit(pretty, json, &payload, || {
+        let mut out = format!(
+            "{} re-pointable · {} ambiguous · {} unmatched · {} already resolve
+",
+            relink.len(), ambiguous.len(), unmatched.len(), resolves
+        );
+        for r in relink.iter().take(20) {
+            out.push_str(&format!(
+                "  {}
+    {} ->
+    {}
+",
+                r["id"].as_str().unwrap_or(""), r["from"].as_str().unwrap_or(""), r["to"].as_str().unwrap_or("")
+            ));
+        }
+        if relink.len() > 20 {
+            out.push_str(&format!("  … and {} more
+", relink.len() - 20));
+        }
+        if !applied && !relink.is_empty() {
+            out.push_str("
+DRY RUN — pass --apply to write.
+");
+        }
+        out
+    });
+    Ok(())
 }
 
 #[cfg(test)]
