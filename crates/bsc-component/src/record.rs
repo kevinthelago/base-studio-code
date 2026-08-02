@@ -47,10 +47,37 @@ pub fn stamp(record: &mut Value, prior_rev: i64, writer: &str, now_iso: &str) {
     }
 }
 
+/// The fields this write REMOVES — present in the stored record, absent from the incoming one (#4197).
+///
+/// A `set` is a whole-record REPLACE, so a partial write silently deletes everything it does not restate.
+/// That is the defect #4154 fixed for the algorithms graph, where `impl set` was `*existing = im` and a
+/// domain-only edit deleted the code — it cost a 16-entry reorg before anyone noticed. The component store
+/// never got the same treatment, and it matters more here: `fleetpage` has no source file (#3636 deleted
+/// it), so its record is the only copy of that UI, and every page follows as the deletion track proceeds.
+///
+/// [`changed_fields`] already counts a removal as a change, but files it alongside ordinary edits — so in
+/// `bsc ui log` a destructive write and a routine one look identical. This separates them. Pure; the CLI
+/// decides what to do about a non-empty result (warn), and `stamp_with_history` records it distinctly.
+///
+/// The server-managed fields are excluded: `rev`/`updatedAt`/`updatedBy`/`history` are re-stamped on every
+/// write regardless of the payload, and `seedHash` is a derived reconcile value, not authored content —
+/// reporting any of them would fire on every single write and train people to ignore the warning.
+pub fn dropped_fields(prior: &Value, next: &Value) -> Vec<String> {
+    const SKIP: [&str; 5] = [REV, UPDATED_AT, UPDATED_BY, HISTORY, "seedHash"];
+    let (Some(p), Some(n)) = (prior.as_object(), next.as_object()) else { return vec![] };
+    p.keys()
+        .filter(|k| !SKIP.contains(&k.as_str()) && !n.contains_key(*k))
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 /// The top-level fields that DIFFER between the prior record and the new one — the auto-summary of a
 /// change (#3568). Excludes the provenance/history fields themselves and `seedHash` (a derived reconcile
 /// hash, not an authored change). A brand-new record (prior absent/empty at rev 0) → `["created"]`.
-/// Returns names sorted for a stable entry. Pure.
+/// Returns names sorted for a stable entry. Pure. A REMOVED field counts as a change here; see
+/// [`dropped_fields`] for the removals on their own, which is what makes a destructive write legible.
 pub fn changed_fields(prior: &Value, next: &Value) -> Vec<String> {
     const SKIP: [&str; 5] = [REV, UPDATED_AT, UPDATED_BY, HISTORY, "seedHash"];
     let Some(n) = next.as_object() else { return vec![] };
@@ -92,6 +119,14 @@ pub fn stamp_with_history(record: &mut Value, prior: &Value, writer: &str, now_i
         entry.insert("note".to_string(), Value::from(n));
     }
     entry.insert("changed".to_string(), Value::from(changed));
+    // #4197: removals recorded SEPARATELY from edits. `changed` counts a dropped field, but alongside
+    // ordinary edits — so in `bsc ui log` a write that deleted half a record and one that fixed a typo
+    // read the same. Only present when something was actually dropped, so an ordinary entry is unchanged
+    // and existing readers see no new noise.
+    let dropped = dropped_fields(prior, record);
+    if !dropped.is_empty() {
+        entry.insert("dropped".to_string(), Value::from(dropped));
+    }
     history.push(Value::Object(entry));
     let overflow = history.len().saturating_sub(HISTORY_CAP);
     if overflow > 0 {
