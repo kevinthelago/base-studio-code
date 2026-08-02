@@ -10,6 +10,9 @@
 //! feeder (mine reusable code from a project into the library) on top.
 
 pub mod cli;
+/// The store→file direction (#4192) — the twin of `bsc ui emit`, with the shared-`src` hazard
+/// that makes an algorithm emit deliberately unlike a component one.
+pub mod emit;
 pub mod extract;
 
 use serde_json::Value;

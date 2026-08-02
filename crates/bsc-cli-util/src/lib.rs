@@ -15,6 +15,10 @@
 //! the scaffold can't live in a SQLite-named crate. Tauri-free and dependency-light (`serde` /
 //! `serde_json`) so the small CLIs stay small.
 
+/// The vendored-file provenance contract (#4192) — the stamp + hash + `sync` verdicts shared by every
+/// `emit` surface, so `bsc ui emit` and `bsc graph emit` cannot drift into two look-alike formats.
+pub mod vendored;
+
 use serde::Serialize;
 use std::path::PathBuf;
 use std::process::ExitCode;

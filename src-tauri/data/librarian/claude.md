@@ -68,6 +68,30 @@ Real project code is the reality the library should track. Mine it into candidat
 - `bsc graph curate <dir> [--tech T] [--apply]` — curate the WORTHY candidates into the library
   (add / optimize). `--apply` writes the runtime store; without it you get the plan to review first.
 
+## Emit — the store BACK OUT to files (#4192)
+
+`harvest` brings code in; **`bsc graph emit` writes it back out**. The graph is the source of truth and an
+emitted file is the artifact, so a fix is made to the RECORD (`bsc graph impl set --code …`) and the file
+is re-emitted — never the other way round.
+
+- `bsc graph emit impl <id> <dir>` — one implementation as stamped, compilable source.
+- `bsc graph emit all <dir>` — the whole library.
+- `bsc graph emit sync <dir>` — re-emit every MANAGED file whose record moved; **warn and skip** every
+  hand-edited one rather than clobbering it. Prints `{ synced, upToDate, diverged, unknown }`.
+
+Each file carries a provenance stamp on line 1 (`// vendored from bsc/algorithms@<v> (sha256:…)`) whose
+hash covers the body — that fingerprint is how `sync` tells a file it may upgrade from one a human edited.
+
+**One record emits to ONE file, and never over the `src` it came from.** An algorithm is a function LIFTED
+OUT of a file, and that file usually holds others: `sorts.ts` backs four implementations, `install.rs`
+another four, plus imports and types no harvest ever lifted. Writing a record's code to its `src` would
+delete all of that. So each record emits to `<folder>/<id>` instead — its own file, nothing overwritten.
+
+Three classes are reported rather than emitted, each with its reason: a **primitive** (DESCRIBED via
+`--ref`, never re-coded), a record with **no `src`/`folder`** (no tree position — fix with
+`impl set --src`), and a record with **no code**. Read the skips; a run that emitted 102 of 118 is telling
+you about the other 16.
+
 **The bar is "would a DIFFERENT project reach for this?"** — not "does it look algorithmic". A module
 that closes over THIS app's vocabulary (its store shape, its command surface, its feature slices) is
 glue however clean it reads, and it belongs in the app as host code, not in a reusable library. The
