@@ -62,4 +62,37 @@ mod tests {
             assert!(md.contains(verb), "the protocol must name `{verb}`:\n{md}");
         }
     }
+
+    /// The WRITE half (#4254). Reading from the stores is only half the rule: a worker that reads a
+    /// record and then edits the FILE writes the copy while the record keeps the old body — the drift
+    /// #4246 measured at 22 modules.
+    ///
+    /// The protocol carved algorithms out ("components only for now"), justified by an algorithm's file
+    /// backing several records. That fact is true (34 of 63 share a `src`) but it only defeats a
+    /// file→record LOOKUP, which algorithms never need: a feature `requires` them by ID.
+    ///
+    /// And MAINTENANCE — the phase whose whole purpose is modifying the original document — never said
+    /// so, leaving a maintenance worker to do what any worker would and open the file.
+    #[test]
+    fn the_worker_protocol_states_the_write_rule_for_both_libraries() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-write-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        // Both surfaces name their WRITE verb, not just their read verb.
+        for verb in ["bsc ui set", "bsc graph impl set"] {
+            assert!(md.contains(verb), "the protocol must name the write verb `{verb}`:\n{md}");
+        }
+        // The algorithms carve-out must not come back.
+        assert!(
+            !md.contains("This is components only for now"),
+            "algorithms are no longer exempt from the record rule:\n{md}",
+        );
+        // Maintenance states WHAT it modifies. This is the phase the whole rule exists for.
+        assert!(
+            md.contains("MAINTENANCE you modify the ORIGINAL DOCUMENT"),
+            "maintenance must state that edits go to the record:\n{md}",
+        );
+    }
 }
