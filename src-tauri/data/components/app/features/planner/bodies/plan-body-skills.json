@@ -1,0 +1,17 @@
+{
+  "id": "plan-body-skills",
+  "name": "SkillsBody",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/planner/bodies/FocusedSkillsBody",
+  "srcText": "// Planner → the Skills stage body, AS GRAPH SOURCE (#4230, epic #3604). Transcribed from the live feature file. Its\n// `provides: \"@/features/planner/bodies/FocusedSkillsBody\"` makes the runtime loader vendor THIS source wherever a graph\n// component imports that specifier — so the stage-body switch reaches it from the graph without\n// knowing it, and the registered module stays as the fallback. Behaviour runs here.\n// Skills stage body (#1056, split from FocusedBodies.tsx #1757).\nimport type { PaneSkill } from \"@/features/planner/pane/projectPaneData\";\nimport { ListItemCard } from \"@/features/planner/bodies/bodyPrimitives\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { EmptyState } from \"@/shared/ui/feedback/EmptyState\";\n\nexport function SkillsBody({ skills }: { skills?: PaneSkill[] }) {\n  const list = skills ?? [];\n  if (list.length === 0) {\n    return <EmptyState iconVariant=\"dashed\" icon=\"◈\" title=\"No skills attached\" />;\n  }\n  // Skills authored by this planning session (#1056) render FIRST and highlighted, so freshly\n  // generated skills are obvious. Stable sort keeps each group's original order.\n  const ordered = [...list].sort((a, b) => Number(b.isNew ?? false) - Number(a.isNew ?? false));\n  return (\n    <Stack gap={5}>\n      {ordered.map((s) => (\n        <ListItemCard\n          key={s.name}\n          title={s.name}\n          meta={s.desc || undefined}\n          highlight={s.isNew}\n          badge={s.isNew && (\n            <Box as=\"span\" className=\"mono\" radius={4} bg=\"var(--accent)\" pad={[1, 5]} style={{\n              fontSize: 8.5, fontWeight: 600, letterSpacing: \".04em\",\n              color: \"var(--accent-text)\",\n            }}>NEW</Box>\n          )}\n        />\n      ))}\n    </Stack>\n  );\n}\n",
+  "src": "src/features/planner/bodies/FocusedSkillsBody.tsx",
+  "folder": "features/planner/bodies",
+  "composes": [
+    "BodyPrimitives",
+    "Box",
+    "EmptyState",
+    "Stack"
+  ],
+  "props": []
+}
