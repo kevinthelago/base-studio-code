@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   coerceClassifyConfig, appTypeOf, lifecycleOf, appTypeHasUi, classifySignals,
-  APP_TYPES, LIFECYCLES,
+  uiSystemOf, rendersFromStudio,
+  APP_TYPES, LIFECYCLES, UI_SYSTEMS,
 } from "./classifyConfig";
 
 describe("coerceClassifyConfig", () => {
@@ -20,6 +21,20 @@ describe("coerceClassifyConfig", () => {
   it("accepts every token in each published taxonomy", () => {
     for (const t of APP_TYPES) expect(coerceClassifyConfig({ appType: t })).toEqual({ appType: t });
     for (const l of LIFECYCLES) expect(coerceClassifyConfig({ lifecycle: l })).toEqual({ lifecycle: l });
+    for (const s of UI_SYSTEMS) expect(coerceClassifyConfig({ uiSystem: s })).toEqual({ uiSystem: s });
+  });
+
+  it("keeps uiSystem and uiMode as independent axes (#4115)", () => {
+    // The trap the axis exists to close: `external` is NOT "the project owns rendering" — it still
+    // means our pipeline renders a shell from files the user supplies. All four combinations are real.
+    expect(coerceClassifyConfig({ uiSystem: "own", uiMode: "external" }))
+      .toEqual({ uiSystem: "own", uiMode: "external" });
+    expect(coerceClassifyConfig({ uiSystem: "own", uiMode: "custom" }))
+      .toEqual({ uiSystem: "own", uiMode: "custom" });
+    // An unknown token is dropped, not coerced to a neighbour — a typo must not silently opt a
+    // project INTO a UI system it doesn't use.
+    expect(coerceClassifyConfig({ uiSystem: "owned" })).toEqual({});
+    expect(coerceClassifyConfig({ uiSystem: "external" })).toEqual({});
   });
 
   it("reads a non-object as null and an empty object as an empty config", () => {
@@ -38,6 +53,20 @@ describe("the unclassified defaults", () => {
       expect(lifecycleOf(cfg)).toBe("greenfield");
       expect(appTypeHasUi(cfg)).toBe(true);
     }
+  });
+
+  it("reads an unclassified project as studio-rendered — the axis is non-regressing (#4115)", () => {
+    // Every project that exists today renders from our system, so unset MUST read as "studio":
+    // that is what makes the axis additive with no migration and no backfill.
+    for (const cfg of [undefined, null, {}]) {
+      expect(uiSystemOf(cfg)).toBe("studio");
+      expect(rendersFromStudio(cfg)).toBe(true);
+    }
+    // …and an explicit `own` is the only thing that turns our pipeline off.
+    expect(rendersFromStudio({ uiSystem: "own" })).toBe(false);
+    expect(uiSystemOf({ uiSystem: "own" })).toBe("own");
+    // uiMode alone never opts a project out — the whole point of the separate axis.
+    expect(rendersFromStudio({ uiMode: "external" })).toBe(true);
   });
 });
 
@@ -74,12 +103,23 @@ describe("classifySignals", () => {
     const sig = classifySignals(undefined);
     expect(sig["appType:application"]).toBe(true);
     expect(sig["lifecycle:greenfield"]).toBe(true);
+    expect(sig["uiSystem:studio"]).toBe(true);
     expect(sig.hasUserInterface).toBe(true);
+    expect(sig.rendersFromStudio).toBe(true);
+  });
+
+  it("carries rendersFromStudio so a studio-only stage can drop for an `own` project (#4115)", () => {
+    expect(classifySignals({ uiSystem: "own" }).rendersFromStudio).toBe(false);
+    expect(classifySignals({ uiSystem: "own" })["uiSystem:own"]).toBe(true);
+    expect(classifySignals({ uiSystem: "own" })["uiSystem:studio"]).toBe(false);
+    // Independent of the screens question — an `own` project can still very much have a UI.
+    expect(classifySignals({ uiSystem: "own", appType: "application" }).hasUserInterface).toBe(true);
   });
 
   it("emits a boolean for every token, so an absent signal is never ambiguous", () => {
     const sig = classifySignals({ appType: "cli" });
     for (const t of APP_TYPES) expect(typeof sig[`appType:${t}`]).toBe("boolean");
     for (const l of LIFECYCLES) expect(typeof sig[`lifecycle:${l}`]).toBe("boolean");
+    for (const s of UI_SYSTEMS) expect(typeof sig[`uiSystem:${s}`]).toBe("boolean");
   });
 });
