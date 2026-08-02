@@ -283,8 +283,15 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   // turn-by-turn ONLY while an open loop exists — so an interactive studio session stops and hands back
   // instead of being told to power through a queue that isn't there. FS confinement (bsc-confine, #158)
   // is NOT gated — it's defaulted onto every pane below (#1916).
-  const stopBounce = role === "worker"
-    ? [{ event: "Stop", matcher: "", command: "bsc-defer" }]
+  // A fleet WORKER also gets the superseded gate (bsc-superseded, #4240): two actors can land the same
+  // issue — a director closes one directly, two streams overlap — and today the second worker finds out
+  // at MERGE time, after writing code and opening a conflicting PR. The completion is already ON the
+  // coordination wire (`bsc-landed`/`merged`/`closed`, each pane-tagged); it was just never delivered
+  // back INTO a session. This reads it before an edit and blocks ONCE per issue, then latches — so the
+  // worker is informed and moves on. Worker-only: a director coordinating is not doing the work.
+  const workerGates = role === "worker"
+    ? [{ event: "Stop", matcher: "", command: "bsc-defer" },
+       { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit", command: "bsc-superseded" }]
     : [];
   const gatedHooks = (cap || prof)
     ? [...hooks,
@@ -304,7 +311,7 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
        // it always exits 0. The boundary on what a fork may do is the role gate (a director is
        // `code: none`), not this hook; making forks legible is a separate job from restricting them.
        { event: "PreToolUse", matcher: "Agent|Task", command: "bsc-fork" },
-       ...stopBounce]
+       ...workerGates]
     : hooks;
   // Skill telemetry (#406) follows the SKILLS, not the role gate: install the bsc-skill Pre/Post hooks
   // whenever skills are present (incl. an ungated console with a per-session skill, #1056).

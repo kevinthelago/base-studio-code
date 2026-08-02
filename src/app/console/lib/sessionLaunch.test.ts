@@ -319,7 +319,7 @@ describe("buildSessionSettings", () => {
     const c = cmds(out);
     // bsc-supply (#3799) is a GATED hook — present on this agent pane, absent from the ungated pane
     // asserted above (the supply-chain add gate targets agents, not the maintainer's manual console).
-    expect(c).toEqual(expect.arrayContaining(["bsc-audit", "bsc-mcp", "bsc-confine", "bsc-deny", "bsc-scope", "bsc-taint", "bsc-supply", "bsc-defer"]));
+    expect(c).toEqual(expect.arrayContaining(["bsc-audit", "bsc-mcp", "bsc-confine", "bsc-deny", "bsc-scope", "bsc-taint", "bsc-supply", "bsc-defer", "bsc-superseded"]));
     // turn-activity hooks stay together (after bsc-defer) so a worker's Stop still records idle, and
     // the cost hooks (#3452) trail them — both must fire on Stop even though bsc-defer blocks the stop.
     expect(c.slice(-6)).toEqual([
@@ -330,6 +330,22 @@ describe("buildSessionSettings", () => {
     const cap = roleCapability("worker", { writeGlobs: [] });
     expect(out.deniedCommands).toEqual(expect.arrayContaining(roleDeniedCommands(cap)));
     expect(out.denyToolRules).toEqual(expect.arrayContaining(roleDeniedTools(cap)));
+  });
+
+  it("gates a worker's EDITS on the superseded notice, and only a worker's (#4240)", () => {
+    // Two actors can land the same issue; the completion is already on the coordination wire but never
+    // reached the session. This delivers it — on the mutating tools, because that is where the cost of
+    // not knowing is incurred (a conflicting PR), and before the edit rather than at Stop.
+    const worker = buildSessionSettings(mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } }), "p");
+    const gate = worker.hooks.find((h) => h.command === "bsc-superseded");
+    expect(gate).toBeDefined();
+    expect(gate!.event).toBe("PreToolUse");
+    expect(gate!.matcher).toBe("Edit|Write|MultiEdit|NotebookEdit");
+
+    // A DIRECTOR coordinates rather than doing the work, so it is not the actor at risk of duplicating
+    // it — and it is frequently the pane that emitted the completion in the first place.
+    const director = buildSessionSettings(mkStore({ paneRoles: { p: "director" }, paneFlows: { p: flow("none") } }), "p");
+    expect(cmds(director)).not.toContain("bsc-superseded");
   });
 
   it("lifts the flow's granted push commands from the role denies under an auto-pr flow (#304)", () => {

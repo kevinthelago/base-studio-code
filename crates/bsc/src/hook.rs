@@ -12,6 +12,9 @@ pub fn run(args: &[String]) -> Result<(), String> {
     match args.first().map(String::as_str).unwrap_or("") {
         "bash-deny" => bash_deny(),
         "bash-supply" => bash_supply(),
+        // #4240 — tell a fleet worker its issue was already finished by another pane. Blocks ONE edit
+        // per issue and latches, so it informs without ever trapping.
+        "superseded" => crate::superseded::superseded(),
         // #4021 — the fleet worker Stop hook. Both directives are externalized prose, loaded the
         // same way `bsc_defer_rc` used to load the keep-going one.
         "stop-defer" => crate::defer::stop_defer(
@@ -25,7 +28,9 @@ pub fn run(args: &[String]) -> Result<(), String> {
                  bsc hook bash-deny     # exit 2 if a Bash command hits the dangerous floor or a\n                         \
                  # $BSC_DENY_BASH pattern (reads the tool JSON on stdin)\n  \
                  bsc hook bash-supply   # exit 2 if a Bash command ADDS a malicious or known-vulnerable\n                         \
-                 # dependency (OSV via `bsc cve`; #3799). Fail-open (reads the tool JSON on stdin)\n"
+                 # dependency (OSV via `bsc cve`; #3799). Fail-open (reads the tool JSON on stdin)\n  \
+                 bsc hook superseded    # exit 2 ONCE when an issue in this worker's stream was already\n                         \
+                 # completed by ANOTHER pane (#4240). Fail-open\n"
             );
             Ok(())
         }
