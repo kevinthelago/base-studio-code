@@ -1,6 +1,17 @@
 # Plan — teaching the planner which projects use our data-driven UI
 
-**Status:** proposal, for review. Not implemented. Tracked as epic #4115.
+**Status:** slices 1–2 landed; 3–5 held. Tracked as epic #4115.
+
+- **1 · the axis — DONE.** `UiSystem` + `ClassifyConfig.uiSystem` + `uiSystemOf`/`rendersFromStudio`
+  (`src/features/planner/lib/classifyConfig.ts`), the `UI_SYSTEMS` lockstep twin in
+  `crates/plandb/src/validate.rs`, and the `classify_readiness` echo. Unset reads as `studio`.
+- **2 · the Discovery ask — DONE.** `src-tauri/data/stages/discovery.json` asks it, before `uiMode`,
+  guarded by `discovery_asks_who_renders_the_ui_and_separates_it_from_ui_mode`
+  (`src-tauri/src/planner/directives.rs`).
+- **3–5 · held on purpose.** The UI-stage third surface, kit/fleet branching and downstream gating
+  encode the host-API direction; per the issue they should not start until that is settled, or they
+  bake in an answer still under discussion. **Nothing reads the axis yet** — that is the point of the
+  hold, not an oversight.
 
 ## The problem
 
