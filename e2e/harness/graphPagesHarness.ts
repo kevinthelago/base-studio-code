@@ -72,7 +72,7 @@ async function loadAll(): Promise<PageResult[]> {
 }
 
 /**
- * RENDER a graph page — the capability the deletion track waits on (#4206).
+ * RENDER a graph page — behaviour coverage for the copy that actually ships (#4206).
  *
  * `loadAll` above proves a page COMPILES. This mounts one, so its behaviour can be asserted on the copy
  * that actually ships. Until now a migrated page's behaviour tests kept importing the bundled `.tsx`, which

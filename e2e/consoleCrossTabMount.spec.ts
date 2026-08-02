@@ -1,6 +1,6 @@
 // #186 asserted against the RENDERED GRAPH PAGE (#4206, epic #3604).
 //
-// This is the port that unblocks the deletion track. `src/app/console/panes/views/consoleCrossTabMount.
+// The graph copy had no behaviour coverage. `src/app/console/panes/views/consoleCrossTabMount.
 // test.tsx` guards the invariant that makes the Console migration safe — every tab's panes stay mounted
 // across a switch, so xterm and its scrollback survive; switching flips `display` on the same DOM nodes
 // rather than disposing them. It has been asserting that against `ConsoleWorkspace`, the bundled file,
