@@ -61,10 +61,16 @@ describe("the built-in blueprint library (#645/#3785)", () => {
     expect(deployment.enabled).toBe(true);
   });
 
-  it("the default blueprint's UI + skills stages are optional; source/mcps/automations are required (#3785/#3905)", () => {
+  it("the default blueprint's skills stage is optional; ui/source/mcps/automations are required (#3785/#3905/#4249)", () => {
     const def = makeBlueprints().find((b) => b.id === "default")!;
-    // ui (and market) stay optional — hidden until the project needs them.
-    expect(def.sections.find((s) => s.key === "ui")!.optional).toBe(true);
+    // #4249: `ui` LEFT the optional set. It carried both flags — `optional: true` AND
+    // `appliesWhen: requiresUi` — and they mean opposite things: `optional` makes a stage always
+    // applicable but skippable, while `appliesWhen` makes it `na` unless its signal fires. Carrying
+    // both meant a project that genuinely needs a UI could skip the whole in-app pipeline. Now
+    // `requiresUi` (= the stage is on AND the appType has screens) is the only thing deciding, so the
+    // stage is absent for a CLI/API/library and REQUIRED for an app — which is the point of migrating
+    // the Default blueprint onto the in-app designer.
+    expect(def.sections.find((s) => s.key === "ui")!.optional).not.toBe(true);
     // #3905: skills JOINED them. It was non-optional, so its gate blocked triage on any project that
     // had attached no skills — and there is nothing to confirm on an empty stage. It self-enables
     // instead: `needsSkills || projectSkillCount > 0` in usePlanGates, so attaching any skill brings
@@ -72,7 +78,7 @@ describe("the built-in blueprint library (#645/#3785)", () => {
     expect(def.sections.find((s) => s.key === "skills")!.optional).toBe(true);
     // #3785: Default absorbed Complete's advanced stages. These stay non-optional — hidden by default
     // via their `appliesWhen` signals rather than the `optional` flag.
-    for (const key of ["source", "mcps", "automations"]) {
+    for (const key of ["ui", "source", "mcps", "automations"]) {
       const sec = def.sections.find((s) => s.key === key);
       expect(sec, `default has ${key}`).toBeTruthy();
       expect(sec!.optional, `${key} is not optional`).not.toBe(true);
@@ -80,13 +86,15 @@ describe("the built-in blueprint library (#645/#3785)", () => {
   });
 
   it("refreshBuiltIns updates stale persisted built-ins but keeps user blueprints (#677)", () => {
-    // a stale persisted built-in (UI not yet optional) + a user blueprint
+    // a stale persisted built-in (a bare UI section) + a user blueprint
     const stale: Blueprint = { id: "default", name: "Default", desc: "old", origin: "built-in",
       sections: [{ uid: "x", key: "ui", name: "UI", glyph: "▣", icon: "design_services", hue: 350, gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false }] };
     const mine: Blueprint = { id: "mine", name: "Mine", desc: "", origin: "local", sections: [] };
     const out = refreshBuiltIns([stale, mine]);
-    // the built-in is refreshed from code → UI optional again
-    expect(out.find((b) => b.id === "default")!.sections.find((s) => s.key === "ui")!.optional).toBe(true);
+    // the built-in is refreshed from code → the UI section picks the packaged def back up, which
+    // since #4249 is NOT optional (`requiresUi` alone decides whether it applies).
+    expect(out.find((b) => b.id === "default")!.sections.find((s) => s.key === "ui")!.optional).not.toBe(true);
+    expect(out.find((b) => b.id === "default")!.sections.find((s) => s.key === "ui")!.appliesWhen?.signal).toBe("requiresUi");
     // the user blueprint's content is preserved (refreshBuiltIns now canonicalizes section keys, #1914,
     // so it's a content-equal copy rather than the same reference)
     expect(out.find((b) => b.id === "mine")).toStrictEqual(mine);
