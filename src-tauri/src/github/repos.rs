@@ -28,8 +28,8 @@ pub(crate) async fn clone_repo(project: String, full_name: String) -> Result<Str
     // settings) out of the clone's `git status`.
     git_exclude(&dest, "CLAUDE.local.md");
     git_exclude(&dest, ".claude/");
-    // The fleet assume-and-log journal (bsc-note / bsc-blocked) lives in the repo
-    // root; keep it out of the clone's `git status`.
+    // The fleet assume-and-log journal (bsc-note) lives in the repo root; keep it out
+    // of the clone's `git status`.
     git_exclude(&dest, "DECISIONS.md");
     log::info!("clone_repo: cloned {full_name} → {}", dest.display());
     Ok(dest.to_string_lossy().into_owned())

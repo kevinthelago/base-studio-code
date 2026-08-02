@@ -1,8 +1,14 @@
 // -- Event ingestion (#199 slice 2) ---------------------------------------------
-// `bsc-blocked --on <refs>` appends a TSV line to $BSC_COORD_LOG; the director's
-// merge/close will append satisfy lines later. `parseCoordLine` turns one line into a
-// typed event, `applyCoordEvent` folds it into the latch state, and `ingestCoordLog`
-// replays a whole log -- so the coordinator is just "read the log -> CoordState".
+// The `bsc-*` coordination emitters (`src-tauri/data/shell/coord-emit.sh`) each append one TSV line to
+// $BSC_COORD_LOG: `bsc-wait` (paused for the user), `bsc-ask`/`bsc-answer`, `bsc-issue`/`bsc-assign`,
+// `bsc-brief`, and the completion set `bsc-landed`/`merged`/`closed`/`failed`, which is what satisfies a
+// latch. `parseCoordLine` turns one line into a typed event, `applyCoordEvent` folds it into the latch
+// state, and `ingestCoordLog` replays a whole log -- so the coordinator is just "read the log ->
+// CoordState".
+//
+// The `blocked` kind has had NO emitter since #1039 removed runtime dependency-wait, and it got no
+// replacement: `dependsOn` is a planning-time hint, enforced at LAUNCH by `streamGate.ts`, and a started
+// worker never parks on an upstream. Parsing it stays so a log written before then still replays.
 import type {
   CoordRef,
   Waiter,

@@ -25,9 +25,13 @@ export interface ShadowPageDef {
   /** The graph page node's id — what `GraphComponent` mounts by. */
   pageId: string;
   label: string;
-  /** What the app renders for this page TODAY (see `src/app/lazyWorkspaces.tsx`). Settings is the one
-   *  page rolled BACK to files (#3758) after its graph version shipped, which is exactly the kind of
-   *  fact this report exists to keep honest. */
+  /** What the app renders for this page TODAY — read back from `src/app/lazyWorkspaces.tsx` by
+   *  `shadowPages.test.ts` rather than declared on trust, because it is the context every verdict is
+   *  read against: `differs` on a graph-rendered page is a live bug, the same verdict on a file-rendered
+   *  one is a not-yet. Every entry is `"graph"` today and the field still is not redundant — a page CAN
+   *  be flipped back, as Settings was (#3758). What Settings then showed is that a `"file"` entry is a
+   *  DECISION PENDING, not a resting state: a graph copy nothing renders only rots, so Settings' was
+   *  deleted outright (#4183) and the page left this catalogue rather than sitting here as `"file"`. */
   rendersFrom: RenderSource;
   modules: ShadowModuleDef[];
   /** Load the feature's injected platform surface, so the binding walk reads the registry the page would
