@@ -214,7 +214,10 @@ registry needs a \"url\". A rejected write leaves the stored manifest untouched.
 
 The planner's discovery output (#3783/#3784/#3806/#4115) that shapes the plan — recorded as the closing
 step of Discovery (there is no separate Configure stage). Fields, all optional: uiSystem (studio = our
-component graph renders the app, own = the project keeps its own UI stack), uiMode (custom = the
+component graph renders the app, own = the project keeps its own UI stack), algorithmSystem (studio =
+the algorithms graph supplies the computation and our host executes its vizCode, own = the project
+writes its own) — the two axes are independent and both say whether our host RUNS the project's code,
+uiMode (custom = the
 in-app designer preview, external = the Claude-Design drop-files intake — only meaningful when
 uiSystem is studio), appType, lifecycle, and the booleans
 needsMarket / needsSource / needsMcp / needsSkills / needsAutomations marking which optional stages
