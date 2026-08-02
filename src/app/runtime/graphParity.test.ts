@@ -129,9 +129,66 @@ const RECORD_PAIRS = [...RECORDS.values()]
   .filter((p) => p.file in RECORD_SOURCES)
   .sort((a, b) => a.recordId.localeCompare(b.recordId));
 
+/** …and the ones whose `src` names NO file (#4239). These are NOT compared — there is nothing to
+ *  compare against — but the filter above used to drop them SILENTLY, and a record outside the guard is
+ *  indistinguishable from a record that agrees with its file.
+ *
+ *  That is the exact failure `KNOWN_STALE` is written to avoid one paragraph up: *an exclusion nobody is
+ *  forced to remove is how a guard quietly stops guarding.* `KNOWN_STALE` is ratcheted — its members must
+ *  keep failing — while this exclusion was undeclared, uncounted, and joined the moment anyone renamed a
+ *  file, which is precisely when parity most needs checking. 30 of 160 records had accumulated in it.
+ *
+ *  So it is declared and pinned below instead. The `RECORD_PAIRS.length` non-vacuity check cannot serve:
+ *  it catches a TOTAL glob failure, not attrition — 130, 80 and 51 all satisfy it. */
+const UNRESOLVED = [...RECORDS.values()]
+  .map((r) => r as { id: string; src?: string })
+  .filter((r) => r.src && !catalogued.has(r.id) && !(`/${r.src}` in RECORD_SOURCES))
+  .map((r) => r.id)
+  .sort();
+
+/** The records currently outside the guard because their `src` resolves to nothing, pinned EXACTLY.
+ *
+ *  Two populations, and the distinction is the point:
+ *  - **Graph-only** — `fleet-*`, whose files were deleted in #3636. The record is the only copy, so there
+ *    is no baseline and never will be. The catalogue half states this explicitly as `file: null`; the
+ *    record half has no such marker, so their broken `src` is doing that job by accident.
+ *  - **Stale** — the rest. `github-*` is one rename wave (`GitHubOpenPRs.tsx` → the consolidated
+ *    `Pulse.tsx`, and friends) that #4223 measured from the store side; `bsc ui backing relink` re-points
+ *    exactly this shape.
+ *
+ *  Exact equality, not a count: a NEW unresolved record fails here (it cannot slip out of the guard), and
+ *  a REPAIRED one fails here too (forcing the entry out, so the list can only shrink deliberately). */
+const UNRESOLVED_PINNED: string[] = [
+  // GRAPH-ONLY (#3636): the FleetPage source files were deleted, so the record is the only copy and
+  // there is no baseline to compare against — permanent, and the same state the catalogue half declares
+  // as `file: null`. These four are why the exclusion needs to EXIST; `ui-icons` was why it needed to be
+  // VISIBLE (its `src` said `Icons.tsx` against a file named `icons.tsx` — one character, invisible on a
+  // case-insensitive filesystem, and Vite's glob keys are exact, so a record #4235 had just brought under
+  // the guard slipped straight back out of it. Fixed in this change rather than pinned).
+  "fleet-cost-energy",
+  "fleet-health",
+  "fleet-lessons",
+  "fleetpage",
+];
+
 const ALL_PAIRS = [...CATALOGUE_PAIRS, ...RECORD_PAIRS];
 const PAIRS = ALL_PAIRS.filter((p) => !(p.recordId in KNOWN_STALE));
 const STALE_PAIRS = ALL_PAIRS.filter((p) => p.recordId in KNOWN_STALE);
+
+describe("records outside the comparison are declared, not dropped (#4239)", () => {
+  it("matches the pinned set exactly", () => {
+    // Failing here is the DESIGNED outcome of two different events, and both want a human:
+    //   • an id APPEARED  → a record's `src` stopped resolving; it just left the guard silently.
+    //   • an id VANISHED  → it was repaired; drop it from the pin so the list can only shrink.
+    expect(UNRESOLVED).toEqual(UNRESOLVED_PINNED);
+  });
+
+  it("is a real exclusion list, not an artefact of a broken glob", () => {
+    // If `RECORD_SOURCES` ever stopped matching, EVERY record would land in UNRESOLVED and the pin above
+    // would fail with a wall of ids rather than pointing at the one that moved. Say so directly.
+    expect(UNRESOLVED.length).toBeLessThan(RECORD_PAIRS.length);
+  });
+});
 
 describe("every graph record renders what its source file renders", () => {
   it("covers the whole catalogue, minus the pages whose files are gone", () => {
