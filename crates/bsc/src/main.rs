@@ -8,6 +8,7 @@ use std::process::ExitCode;
 
 mod defer;
 mod hook;
+mod superseded;
 
 /// One row per top-level command for the `bsc help` overview. The detailed per-command help comes
 /// from each crate's own `CmdDoc` catalog (via `bsc <command> help`).

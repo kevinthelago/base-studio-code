@@ -45,6 +45,9 @@
 //                   floor + role/user denies that survive bypassPermissions). Backed by the bsc binary.
 //  * supply.sh    — bsc-supply (#3799): Bash PreToolUse hook → `bsc hook bash-supply` (blocks a dependency
 //                   ADD of a malicious/known-vulnerable package via OSV/`bsc cve`; fail-open). Gated panes only.
+//  * superseded.sh— bsc-superseded (#4240): PreToolUse edit gate → `bsc hook superseded`; exit 2 ONCE
+//                   when an issue in this WORKER's stream was already completed by another pane, read
+//                   off coord.log's landed/merged/closed events. Informs, latches, never traps.
 //  * taint.sh     — bsc-taint (#1167): tainted-turn gate; return 2 on outward/destructive Bash within
 //                   $BSC_TAINT_WINDOW of ingesting untrusted input (WebFetch / curl / gh issue|pr view).
 //  * coord-emit.sh— __bsc_coord(+_log) + bsc-landed/merged/closed/failed/wait/maintain/ask/answer/fork/issue/
@@ -164,6 +167,7 @@ pub(crate) fn all_bsc_rc() -> Vec<String> {
         load_shell("scope.sh"),
         load_shell("deny.sh"),
         load_shell("supply.sh"),
+        load_shell("superseded.sh"),
         load_shell("taint.sh"),
         load_shell("coord-emit.sh"),
         bsc_defer_rc(),
