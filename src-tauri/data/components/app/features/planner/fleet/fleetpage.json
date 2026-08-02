@@ -18,8 +18,10 @@
     "Row",
     "Skeleton",
     "Stack",
-    "Text"
+    "Text",
+    "WorkerDetail"
   ],
   "src": "src/features/planner/fleet/FleetPage.tsx",
-  "folder": "features/planner/fleet"
+  "folder": "features/planner/fleet",
+  "props": []
 }

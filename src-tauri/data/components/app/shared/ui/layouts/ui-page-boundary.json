@@ -1,0 +1,48 @@
+{
+  "id": "ui-page-boundary",
+  "name": "PageBoundary",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/shared/ui/layouts/PageBoundary",
+  "srcText": "// the per-page error boundary, AS GRAPH SOURCE (#4238, epic #3604) — one of the last reachable components that was not a\n// record. Its `provides: \"@/shared/ui/layouts/PageBoundary\"` makes the runtime loader vendor THIS\n// source wherever a graph component imports that specifier, with the registered module as the\n// fallback. Transcribed from the live feature file; the CSS import is dropped (the host owns the\n// stylesheet) and specifiers are absolute. Behaviour runs here.\nimport { Component, type ErrorInfo, type ReactNode } from \"react\";\nimport { log } from \"@/shared/lib/core/log\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Button } from \"@/shared/ui/controls/Button\";\n\nexport interface PageBoundaryProps {\n  children?: ReactNode;\n  /** The active page id — shown in the fallback, and the reset key: navigating to another page clears a\n   *  crash, so one bad render never strands the workspace behind a fallback. */\n  page: string;\n  /** The headline. Default: \"This page didn't load.\" */\n  title?: string;\n  /** How to recover, in the HOST's own words (#4172). The app shell passes its navigation (\"pick one from\n   *  the tabs above, or press Ctrl+← / Ctrl+→\"); a generated app names whatever its own affordance is.\n   *  Defaulted neutrally rather than hard-coded, because a boundary that tells you to press keys the app\n   *  does not have is worse than no hint at all. */\n  hint?: string;\n  /** The retry button's label. Default: \"Try again\". */\n  retryLabel?: string;\n}\n\ninterface State {\n  err: Error | null;\n  /** The page the error belongs to, so a NEW page renders normally instead of inheriting the fallback. */\n  crashedPage: string | null;\n}\n\n/**\n * A **page-scoped** error boundary (#4170) — the Page body's safety net, deliberately smaller in scope\n * than the app-wide `ErrorBoundary`, and a registered kit primitive (#4172) so a DESIGNED page can carry\n * the same containment instead of it living only in this app's shell.\n *\n * It composes from a data spec: every prop is plain data and the retry is internal, because a spec tree\n * cannot carry a function. Wrap a page composition's body with it and a throwing child is contained to\n * that page rather than blanking whatever hosts it.\n *\n * `Screen` renders the PageTabs strip and the Page body as siblings with no boundary between them, so a\n * render error in any body used to unmount the whole Workspace — the tab strip with it — leaving no way\n * to navigate off the broken page. The bar is exactly what you need when a page fails to load, so the\n * boundary goes AROUND THE BODY ONLY: the strip keeps rendering, click and Ctrl+←/→ keep working, and the\n * failure is contained to the one page that caused it.\n *\n * It catches errors thrown during render/lifecycle of the page body. Errors in async callbacks do not\n * propagate here (they are handled at their call sites), but a state change they cause that then crashes\n * a render IS caught.\n */\nexport class PageBoundary extends Component<PageBoundaryProps, State> {\n  state: State = { err: null, crashedPage: null };\n\n  static getDerivedStateFromError(err: Error): Partial<State> {\n    return { err };\n  }\n\n  componentDidCatch(err: Error, info: ErrorInfo) {\n    // Same structured sink + `safety` scope as the app boundary, so a contained page crash is still\n    // RECORDED rather than silently swallowed by the smaller blast radius.\n    log.error(\n      `PageBoundary [${this.props.page}] caught: ${err?.message ?? err}\\n${info?.componentStack ?? \"\"}`,\n      \"safety\",\n    );\n    this.setState({ crashedPage: this.props.page });\n  }\n\n  componentDidUpdate() {\n    // Navigating to another page clears the error — the whole point of keeping the bar alive is that the\n    // user can leave, and arriving somewhere else must not show the previous page's fallback.\n    if (this.state.err && this.state.crashedPage !== null && this.state.crashedPage !== this.props.page) {\n      this.setState({ err: null, crashedPage: null });\n    }\n  }\n\n  retry = () => this.setState({ err: null, crashedPage: null });\n\n  render() {\n    if (!this.state.err) return this.props.children;\n    return (\n      <Box className=\"page-boundary\" role=\"alert\">\n        <Stack gap={8}>\n          <Text weight={600}>{this.props.title ?? \"This page didn’t load.\"}</Text>\n          <Text tone=\"dim\" size={12}>\n            {this.props.page} — {this.state.err.message || \"render error\"}\n          </Text>\n          <Text tone=\"dim\" size={12}>\n            {this.props.hint ?? \"The other pages still work — open one of them to carry on.\"}\n          </Text>\n          <Box>\n            <Button onClick={this.retry}>{this.props.retryLabel ?? \"Try again\"}</Button>\n          </Box>\n        </Stack>\n      </Box>\n    );\n  }\n}\n",
+  "src": "src/shared/ui/layouts/PageBoundary.tsx",
+  "folder": "shared/ui/layouts",
+  "composes": [
+    "Box",
+    "Button",
+    "Stack",
+    "Text"
+  ],
+  "props": [
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "page",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "hint",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "retryLabel",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    }
+  ]
+}

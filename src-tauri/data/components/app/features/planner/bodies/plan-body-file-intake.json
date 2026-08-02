@@ -13,6 +13,7 @@
     "Row",
     "SectionLabel",
     "Stack",
+    "StageScreenFrame",
     "Text"
   ],
   "props": []
