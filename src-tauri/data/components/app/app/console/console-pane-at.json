@@ -1,0 +1,159 @@
+{
+  "id": "console-pane-at",
+  "name": "PaneAt",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "// Console → one grid cell: the pane and its view, AS GRAPH SOURCE (#4186, epic #3604). Transcribed from the live shell file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the console pane/lib/terminal surface via the console\n// graph-platform, and the sibling pane chrome as @/components/* graph records). Behaviour runs here.\n// PaneAt (#2128, extracted from console/index.tsx) — the memoized single-pane cell: reads the pane's\n// store-backed chrome (model/role/provider/repo/branch, claude-active) and renders the PaneShell with\n// its active view (TerminalView stays mounted across view switches so the PTY survives), or one of the\n// placeholder states (disabled / ended / dormant) from consoleStates. Memoized on its own props so a\n// focus/menu change only re-renders the two panes whose flag flipped, not all N. Behavior-preserving.\nimport { memo } from \"react\";\nimport { PaneShell } from \"@/components/console-pane-shell\";\nimport { TerminalSlot } from \"@/app/console/terminal/TerminalSlot\";\nimport { FilesView } from \"@/app/console/panes/views/FilesView\";\nimport { BranchesView } from \"@/app/console/panes/views/BranchesView\";\nimport { ChangesView } from \"@/app/console/panes/views/ChangesView\";\nimport { LogView } from \"@/app/console/panes/views/LogView\";\nimport { ToolsView } from \"@/app/console/panes/views/ToolsView\";\nimport { TelemetryView } from \"@/app/console/panes/views/TelemetryView\";\nimport { useAppStore } from \"@/store\";\nimport type { PaneTokenUsage } from \"@/app/console/lib/usePaneTokenUsage\";\nimport type { ViewKey } from \"@/app/console/panes/viewDefs\";\nimport { DisabledConsole, EndedConsole, DormantConsole, CompletedConsole } from \"@/components/console-states\";\n\nexport interface PaneAtProps {\n  i: number;\n  tabIdx: number;\n  /** Stable identity id for this pane (#1176) — resolved from the tab, not the grid position. */\n  paneId: string;\n  name: string;\n  view: ViewKey;\n  status: \"run\" | \"on\" | \"idle\";\n  cwd?: string;\n  initCmd?: string;\n  // Dispatchers take (tabIdx, paneIdx, …) so a single handler in ConsoleWorkspace\n  // can route events to the right tab. Stable across renders so the memo below\n  // holds; PaneAt binds its own (tabIdx, i) into the no-arg callbacks the chrome\n  // expects. Background-tab panes are mounted (display:none) so their PTY\n  // listeners stay live, and their callbacks must record against THEIR tab —\n  // not the currently-active one (#186).\n  onRename: (tabIdx: number, i: number, name: string) => void;\n  onMenuToggle: (tabIdx: number, i: number) => void;\n  onFocus: (tabIdx: number, i: number) => void;\n  onViewChange: (tabIdx: number, i: number, v: ViewKey) => void;\n  onPickDirectory: (tabIdx: number, i: number) => void;\n  onCwdChange: (tabIdx: number, i: number, path: string) => void;\n  onStatusChange: (tabIdx: number, i: number, status: \"run\" | \"idle\") => void;\n  onToggleFullscreen: (tabIdx: number, i: number) => void;\n  onToggleDisable: (tabIdx: number, i: number) => void;\n  onRedraw: (tabIdx: number, i: number) => void;\n  // Per-pane booleans (not the raw indices) so a focus/menu change only re-renders\n  // the two panes whose flag actually flipped — not all N.\n  menuOpen: boolean;\n  focused: boolean;\n  fullscreen: boolean;\n  disabled: boolean;\n  hidden: boolean;\n  usage?: PaneTokenUsage;\n}\n\nexport const PaneAt = memo(function PaneAt({\n  i, tabIdx, paneId: pid, name, view, status, cwd, initCmd,\n  onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange, onStatusChange,\n  onToggleFullscreen, onToggleDisable, onRedraw, menuOpen, focused, fullscreen, disabled, hidden, usage,\n}: PaneAtProps) {\n  const defaultModel = useAppStore((s) => s.defaultModel);\n  const paneModel = useAppStore((s) => s.paneModels[pid]);\n  const setPaneModel = useAppStore((s) => s.setPaneModel);\n  const applyPersonaToPane = useAppStore((s) => s.applyPersonaToPane);\n  // Header/footer chrome data (#1149) — read from the store where known; the header degrades\n  // gracefully when a field is absent (e.g. no role/branch assigned to an ad-hoc console).\n  const paneRole = useAppStore((s) => s.paneRoles[pid]);\n  const paneProvider = useAppStore((s) => s.paneProviders[pid]);\n  const paneRepoFull = useAppStore((s) => s.paneRepos[pid]);\n  const paneBranch = useAppStore((s) => s.paneStream[pid]?.branch);\n  // While a Claude session is active, the native console input replaces the status footer (#1158).\n  const claudeActive = useAppStore((s) => !!s.paneClaudeActive[pid]);\n  // Prefer the assigned repo's short name; fall back to the cwd's basename.\n  const repoShort = (paneRepoFull ?? cwd)?.split(/[\\\\/]/).filter(Boolean).pop();\n  // Idle-reaped (#849): the PTY was killed for idleness. Unmount the terminal (this frees\n  // its renderer buffer + the dead session) and show a resume placeholder; resuming clears\n  // the flag, remounting TerminalView, which spawns a fresh PTY (--continue resumes it).\n  const dormant = useAppStore((s) => !!s.dormantPanes[pid]);\n  // #4027 — declared maintenance: this worker finished everything it owns. Distinct from `dormant`\n  // (reaped for idleness) even though a completed worker is now both, because the CARD differs: one\n  // reports what the worker did, the other reports a memory optimisation.\n  const maintaining = useAppStore((s) => !!s.paneMaintaining[pid]);\n  const resumePane = useAppStore((s) => s.resumePane);\n  // Auto-ended (#920): the worker finished and its PTY exited; show a resting card (state from\n  // plan.db) instead of a dead terminal. Persisted, so it survives a restart; reopen relaunches.\n  const ended = useAppStore((s) => s.endedPanes[pid]);\n  const reopenPane = useAppStore((s) => s.reopenPane);\n  return (\n    <PaneShell\n      agent={name}\n      onRename={(n) => onRename(tabIdx, i, n)}\n      onMenuToggle={() => onMenuToggle(tabIdx, i)}\n      onToggleFullscreen={() => onToggleFullscreen(tabIdx, i)}\n      onToggleDisable={() => onToggleDisable(tabIdx, i)}\n      onRedraw={() => onRedraw(tabIdx, i)}\n      onFocus={() => onFocus(tabIdx, i)}\n      onPickDirectory={() => onPickDirectory(tabIdx, i)}\n      status={disabled ? \"idle\" : status}\n      model={paneModel ?? defaultModel}\n      onModel={(m) => setPaneModel(pid, m)}\n      onPersona={(personaId) => applyPersonaToPane(pid, personaId)}\n      runningModel={usage?.model}\n      repo={repoShort}\n      branch={paneBranch}\n      role={paneRole}\n      provider={paneProvider}\n      claudeActive={claudeActive}\n      available={[\"console\", \"files\", \"branches\", \"changes\", \"log\", \"tools\", \"telemetry\"]}\n      active={view}\n      menuOpen={menuOpen}\n      focused={focused}\n      fullscreen={fullscreen}\n      disabled={disabled}\n      hidden={hidden}\n      onViewChange={(v) => onViewChange(tabIdx, i, v)}\n    >\n      {disabled ? (\n        <DisabledConsole onEnable={() => onToggleDisable(tabIdx, i)} />\n      ) : ended ? (\n        <EndedConsole info={ended} onReopen={() => reopenPane(pid)} />\n      ) : maintaining ? (\n        /* #4027 — a worker that FINISHED. Checked before `dormant` because a completed worker is\n           reaped immediately (#4025), so it is dormant too — and `DormantConsole` would report a\n           memory optimisation (\"reaped after idle\") where the answer is what the worker did. */\n        <CompletedConsole cwd={cwd ?? \"\"} repo={paneRepoFull ?? \"\"} />\n      ) : dormant ? (\n        <DormantConsole onResume={() => resumePane(pid)} />\n      ) : (\n      <>\n      {/* The console cell is the PRIMARY slot: the app-level TerminalHost re-parents the pane's single\n          terminal into here, and sources its launch/cwd/status props from this claim (#2378). The terminal\n          survives view switches (hidden, not unmounted) and moves intact when the Glance dock borrows it. */}\n      <TerminalSlot\n        paneId={pid}\n        primary\n        visible={view === \"console\" && !hidden}\n        focused={focused}\n        initialCwd={cwd}\n        initCmd={initCmd}\n        onCwdChange={(path) => onCwdChange(tabIdx, i, path)}\n        onStatusChange={(s) => onStatusChange(tabIdx, i, s)}\n        onFocus={() => onFocus(tabIdx, i)}\n      />\n      {view === \"files\"    && <FilesView    small tree={[]} cwd={cwd} />}\n      {view === \"branches\" && <BranchesView small branches={[]} />}\n      {view === \"changes\"  && <ChangesView  small hunks={[]} />}\n      {view === \"log\"      && <LogView      small commits={[]} />}\n      {view === \"tools\"    && <ToolsView    small role={paneRole} />}\n      {view === \"telemetry\"&& <TelemetryView small usage={usage} />}\n      </>\n      )}\n    </PaneShell>\n  );\n});\n",
+  "src": "src/app/console/PaneAt.tsx",
+  "folder": "app/console",
+  "composes": [
+    "ConsoleStates",
+    "PaneShell"
+  ],
+  "props": [
+    {
+      "name": "i",
+      "type": "number",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "tabIdx",
+      "type": "number",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "paneId",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "view",
+      "type": "ViewKey",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "status",
+      "type": "\"run\" | \"on\" | \"idle\"",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "cwd",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "initCmd",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onRename",
+      "type": "(tabIdx: number, i: number, name: string) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onMenuToggle",
+      "type": "(tabIdx: number, i: number) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onFocus",
+      "type": "(tabIdx: number, i: number) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onViewChange",
+      "type": "(tabIdx: number, i: number, v: ViewKey) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onPickDirectory",
+      "type": "(tabIdx: number, i: number) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onCwdChange",
+      "type": "(tabIdx: number, i: number, path: string) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onStatusChange",
+      "type": "(tabIdx: number, i: number, status: \"run\" | \"idle\") => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onToggleFullscreen",
+      "type": "(tabIdx: number, i: number) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onToggleDisable",
+      "type": "(tabIdx: number, i: number) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onRedraw",
+      "type": "(tabIdx: number, i: number) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "menuOpen",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "focused",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "fullscreen",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "disabled",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "hidden",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "usage",
+      "type": "PaneTokenUsage",
+      "req": false,
+      "desc": ""
+    }
+  ]
+}
