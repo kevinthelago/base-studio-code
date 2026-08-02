@@ -74,7 +74,7 @@ const DesignsWorkbenchPage = lazy(() => import("@/features/designs").then((m) =>
 // knowledge-librarian session (#2787/#2827), so like Designs it must stay MOUNTED across tab switches
 // (else the librarian PTY is killed + relaunched) and be single-owner-gated for tear-off. Lazy for the
 // on-first-open chunk load.
-const AlgorithmsPage = lazy(() => import("@/features/algorithms").then((m) => ({ default: m.AlgorithmsWorkspace })));
+const AlgorithmsPage = lazy(() => import("@/features/algorithms").then((m) => ({ default: m.AlgorithmsGraphHost })));
 
 export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   // Re-resolve the active project's repos + plan on tab open / project change.

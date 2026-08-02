@@ -100,6 +100,10 @@ import * as DataTableRow from "@/shared/ui/data/DataTableRow";
 import * as ModalScrim from "@/shared/ui/overlay/ModalScrim";
 import * as RailSection from "@/shared/ui/layouts/RailSection";
 import * as RailRow from "@/shared/ui/layouts/RailRow";
+// #4219 — the two the Algorithms workspace reaches that no earlier graph page did: the folder row its
+// rail draws with, and the dock-entrance hook. Feature-agnostic, so the shell's platform set.
+import * as RailFolderRow from "@/shared/ui/layouts/RailFolderRow";
+import * as UseDockEntrance from "@/shared/hooks/useDockEntrance";
 import * as GraphRail from "@/shared/ui/layouts/GraphRail";
 // #4185 — the three the Glance cockpit reaches that no earlier graph page did: the canvas it draws the
 // project network on, the icon button its dock and inspector use, and the tab strip. Feature-agnostic, so
@@ -204,6 +208,8 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/overlay/ModalScrim": ModalScrim,
   "@/shared/ui/layouts/RailSection": RailSection,
   "@/shared/ui/layouts/RailRow": RailRow,
+  "@/shared/ui/layouts/RailFolderRow": RailFolderRow,
+  "@/shared/hooks/useDockEntrance": UseDockEntrance,
   "@/shared/ui/layouts/GraphRail": GraphRail,
   "@/shared/ui/layouts/TabBar": TabBar,
   "@/shared/ui/controls/IconButton": IconButton,
