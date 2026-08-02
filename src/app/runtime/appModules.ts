@@ -150,6 +150,8 @@ import * as SharedUiKit from "@/shared/ui/kit";
 import * as SharedUiA11y from "@/shared/ui/a11y";
 import * as PageBoundary from "@/shared/ui/layouts/PageBoundary";
 import * as PageNav from "@/shared/ui/layouts/pageNav";
+// #4238 — `PageBoundary` is a record now, and it logs what it catches.
+import * as CoreLog from "@/shared/lib/core/log";
 // #4224 — zustand's shallow comparator, which the Planning session selects with. A BARE specifier, and the
 // loader requires those registered exactly like a first-party one. `platformBoundary` used to skip bare
 // specifiers as "the import-map's concern"; the browser check caught this because the loader does not.
@@ -268,6 +270,7 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/a11y": SharedUiA11y,
   "@/shared/ui/layouts/PageBoundary": PageBoundary,
   "@/shared/ui/layouts/pageNav": PageNav,
+  "@/shared/lib/core/log": CoreLog,
   "zustand/react/shallow": ZustandShallow,
   "@/shared/ui/layouts/useGraphViewport": UseGraphViewport,
   "@/shared/lib/core/renderProfiler": RenderProfiler,

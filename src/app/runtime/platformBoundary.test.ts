@@ -32,6 +32,7 @@ import { registerFleetPlatform } from "@/features/planner/fleet/graphPlatform";
 import { registerProjectsPlatform } from "@/features/planner/list/graphPlatform";
 import { registerPanePlatform } from "@/features/planner/pane/graphPlatform";
 import { registerBodiesPlatform } from "@/features/planner/bodies/graphPlatform";
+import { registerPreviewPlatform } from "@/features/planner/preview/graphPlatform";
 import { isAppModule } from "@/shared/lib/runtime/moduleRegistry";
 
 interface SeedRecord {
@@ -77,6 +78,7 @@ beforeAll(() => {
   registerProjectsPlatform();
   registerPanePlatform();
   registerBodiesPlatform();
+  registerPreviewPlatform();
 });
 
 describe("the platform-kernel boundary (#3858)", () => {

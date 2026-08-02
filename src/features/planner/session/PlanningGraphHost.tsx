@@ -16,10 +16,13 @@ import { registerPanePlatform } from "../pane/graphPlatform";
 // their own. Three registration calls, one per directory that became graph source — each owned by the
 // directory it registers for, all called from the one host that mounts the page they compose.
 import { registerBodiesPlatform } from "../bodies/graphPlatform";
+// #4238: and the preview chain, once `PreviewPaneShell` became a record of its own.
+import { registerPreviewPlatform } from "../preview/graphPlatform";
 
 registerPlanningPlatform();
 registerPanePlatform();
 registerBodiesPlatform();
+registerPreviewPlatform();
 
 export function PlanningGraphHost({ visible }: { visible?: boolean } = {}) {
   return (
