@@ -1,0 +1,17 @@
+{
+  "id": "plan-body-collapsible-card",
+  "name": "CollapsibleCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/planner/bodies/collapsibleCard",
+  "srcText": "// Planner → the collapsible card, AS GRAPH SOURCE (#4230, epic #3604). Transcribed from the live feature file. Its\n// `provides: \"@/features/planner/bodies/collapsibleCard\"` makes the runtime loader vendor THIS source wherever a graph\n// component imports that specifier — so the stage-body switch reaches it from the graph without\n// knowing it, and the registered module stays as the fallback. Behaviour runs here.\n// CollapsibleCard — a generic framed, collapsible section card for the focused planner bodies\n// (#…). The whole header row toggles (chevron affordance, mirroring the deploy `Card` and the\n// repo/stream rows); collapsed by default so a pane of these reads as a tidy stack of headers the\n// user opens on demand. Unlike the numbered deploy `Card` (deployPrimitives), this takes a plain\n// icon + title, so it fits any section (coordination, shared deps, …).\nimport { useState } from \"react\";\nimport { MONO } from \"@/features/planner/bodies/bodyStyles\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Spacer } from \"@/shared/ui/layout/Spacer\";\n\nexport function CollapsibleCard({ title, hint, icon, iconTone, right, tone, defaultOpen = false, children }: {\n  title: string;\n  hint?: string;\n  /** A small leading glyph (e.g. \"◎\"). */\n  icon?: string;\n  /** Colour for the icon glyph only, leaving the border soft — for accenting a card (e.g. the\n   *  hero Kickoff card) without tinting its frame. Falls back to `tone`, then the dim default. */\n  iconTone?: string;\n  /** Right-aligned control/summary in the header row. */\n  right?: React.ReactNode;\n  /** Border accent color; defaults to the soft border. */\n  tone?: string;\n  defaultOpen?: boolean;\n  children: React.ReactNode;\n}) {\n  const [open, setOpen] = useState(defaultOpen);\n  return (\n    <Box radius=\"lg\" bg=\"var(--bg-panel)\" pad={[13, 14]} style={{\n      border: \"1px solid \" + (tone ? `color-mix(in oklch, ${tone}, transparent 78%)` : \"var(--border-soft)\"),\n    }}>\n      <Row\n        onClick={() => setOpen((o) => !o)}\n        gap={9}\n        style={{ marginBottom: open ? 12 : 0, cursor: \"pointer\", userSelect: \"none\" }}\n      >\n        {icon && (\n          <Box as=\"span\" radius={6} bg=\"var(--bg-elev)\" border=\"soft\" style={{\n            width: 20, height: 20, flex: \"0 0 20px\", display: \"flex\", alignItems: \"center\", justifyContent: \"center\",\n            fontFamily: MONO, fontSize: 11, color: iconTone ?? tone ?? \"var(--fg-dim)\",\n          }}>{icon}</Box>\n        )}\n        <Text as=\"span\" size={13} weight={600} style={{ fontFamily: \"var(--sans)\", color: \"var(--fg)\" }}>{title}</Text>\n        {hint && <Text as=\"span\" mono size={9.5} tone=\"dim\">{hint}</Text>}\n        <Spacer />\n        {right}\n        <Text as=\"span\" tone=\"dim\" mono size={11} style={{ width: 12, textAlign: \"center\" }}>{open ? \"▾\" : \"▸\"}</Text>\n      </Row>\n      {open && children}\n    </Box>\n  );\n}\n",
+  "src": "src/features/planner/bodies/collapsibleCard.tsx",
+  "folder": "features/planner/bodies",
+  "composes": [
+    "Box",
+    "Row",
+    "Spacer",
+    "Text"
+  ],
+  "props": []
+}

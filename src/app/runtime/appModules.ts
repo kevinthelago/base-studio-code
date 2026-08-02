@@ -136,6 +136,12 @@ import * as UseClickOutside from "@/shared/hooks/useClickOutside"; // TabBar (#3
 import * as ReactDOM from "react-dom";                             // TabBar: createPortal (#3684)
 import * as Eyebrow from "@/shared/ui/typography/Eyebrow";         // SessionDock (#3684)
 import * as LucideReact from "lucide-react";                       // icons: createLucideIcon (#3686)
+// #4230 — the three shared modules the planner's stage bodies reach that no earlier graph page did:
+// the expand/collapse hook the MCP, Features and Scan bodies share, the inline code block, and the
+// self-wired kit renderer the Transformations body embeds. Feature-agnostic, so the shell's set.
+import * as UseExpandable from "@/shared/hooks/useExpandable";
+import * as CodeMod from "@/shared/ui/data/Code";
+import * as SharedUiSpec from "@/shared/ui/spec";
 // #4224 — zustand's shallow comparator, which the Planning session selects with. A BARE specifier, and the
 // loader requires those registered exactly like a first-party one. `platformBoundary` used to skip bare
 // specifiers as "the import-map's concern"; the browser check caught this because the loader does not.
@@ -247,6 +253,9 @@ const PLATFORM: Record<string, unknown> = {
   "react-dom": ReactDOM,
   "@/shared/ui/typography/Eyebrow": Eyebrow,
   "lucide-react": LucideReact,
+  "@/shared/hooks/useExpandable": UseExpandable,
+  "@/shared/ui/data/Code": CodeMod,
+  "@/shared/ui/spec": SharedUiSpec,
   "zustand/react/shallow": ZustandShallow,
   "@/shared/ui/layouts/useGraphViewport": UseGraphViewport,
   "@/shared/lib/core/renderProfiler": RenderProfiler,

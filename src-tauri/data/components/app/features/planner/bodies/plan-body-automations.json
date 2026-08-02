@@ -1,0 +1,16 @@
+{
+  "id": "plan-body-automations",
+  "name": "AutomationsBody",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/planner/bodies/FocusedAutomationsBody",
+  "srcText": "// Planner → the Automations stage body, AS GRAPH SOURCE (#4230, epic #3604). Transcribed from the live feature file. Its\n// `provides: \"@/features/planner/bodies/FocusedAutomationsBody\"` makes the runtime loader vendor THIS source wherever a graph\n// component imports that specifier — so the stage-body switch reaches it from the graph without\n// knowing it, and the registered module stays as the fallback. Behaviour runs here.\n// Automations stage body (split from FocusedBodies.tsx #1757).\nimport type { PaneAutomation } from \"@/features/planner/pane/projectPaneData\";\nimport { ListItemCard } from \"@/features/planner/bodies/bodyPrimitives\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { EmptyState } from \"@/shared/ui/feedback/EmptyState\";\n\nexport function AutomationsBody({ automations }: { automations?: PaneAutomation[] }) {\n  const list = automations ?? [];\n  if (list.length === 0) {\n    return <EmptyState iconVariant=\"dashed\" icon=\"⏱\" title=\"No automations yet\" />;\n  }\n  return (\n    <Stack gap={5}>\n      {list.map((a) => (\n        <ListItemCard\n          key={a.name}\n          title={a.name}\n          meta={`${a.command}${a.schedule ? ` · ${a.schedule}` : \"\"}`}\n        />\n      ))}\n    </Stack>\n  );\n}\n",
+  "src": "src/features/planner/bodies/FocusedAutomationsBody.tsx",
+  "folder": "features/planner/bodies",
+  "composes": [
+    "BodyPrimitives",
+    "EmptyState",
+    "Stack"
+  ],
+  "props": []
+}

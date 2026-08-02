@@ -8,8 +8,19 @@
   "src": "src/features/planner/pane/FocusedBodies.tsx",
   "folder": "features/planner/pane",
   "composes": [
+    "AutomationsBody",
+    "DeploymentBody",
+    "DiscoveryBody",
     "EmptyState",
-    "FocusedStageBody"
+    "FeaturesBody",
+    "FileIntakePane",
+    "FocusedStageBody",
+    "MarketBody",
+    "McpsBody",
+    "SkillsBody",
+    "SourceBody",
+    "StreamsBody",
+    "TransformationsBody"
   ],
   "props": []
 }
