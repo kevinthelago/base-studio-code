@@ -1,0 +1,180 @@
+{
+  "id": "planning-header",
+  "name": "PlanningHeader",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "// Planning → the session header, AS GRAPH SOURCE (#4224, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the planner session's hooks via the planning graph-platform,\n// and the sibling views as @/components/* graph records). Behaviour runs here.\n// Planning page header, split out of Planning.tsx (decomposition pass).\n//\n// Pure presentation: the back button, the editable project title (published vs draft variants),\n// the drafting/expanding chip, the auto-planning progress line, and the restart / clear / triage\n// action buttons. No hooks, refs, or effects — every value and callback is supplied by Planning.tsx,\n// so extracting it does not change the parent's hook-call order.\nimport { BackButton } from \"@/shared/ui/controls/BackButton\";\nimport { Button } from \"@/shared/ui/controls/Button\";\nimport { Chip } from \"@/shared/ui/data/Chip\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { clamp } from \"@/shared/lib/core/math\";\nimport { canLaunchTriage, triageLockReason } from \"@/shared/lib/github/projectSync\";\n\nexport interface PlanningHeaderProps {\n  isExisting: boolean;\n  activeProjectNumber: number | string;\n  activeProjectName: string;\n  onBack: () => void;\n  // Published-title editing (#1226).\n  titleEdit: string | null;\n  setTitleEdit: (v: string | null) => void;\n  renameErr: string | null;\n  setRenameErr: (v: string | null) => void;\n  commitRename: () => void;\n  // Draft-title editing (#1222).\n  planningTitle: string;\n  setPlanningTitle: (v: string) => void;\n  draftTitleErr: string | null;\n  setDraftTitleErr: (v: string | null) => void;\n  commitDraftTitle: () => void;\n  // Auto-planning badge (#746).\n  autopilotRunning: boolean;\n  autopilotProgressPct: number;\n  // Actions.\n  handleRestart: () => void;\n  restarting: boolean;\n  onClearPlan: () => void;\n  // Triage launch gate (#444/#551).\n  published: boolean;\n  hasRepos: boolean;\n  hasFleet: boolean;\n  triaging: boolean;\n  planReady: boolean;\n  launchTriage: () => void;\n  /** Whether this project has been triaged (`triagedProjects[key]`, #2541) — the drafted→working\n   *  transition. Before triage the primary action is Triage; AFTER it, Generate Blueprint (#3785). */\n  triaged: boolean;\n  /** Promote the completed project's plan into a reusable blueprint (#3785) — the post-triage action. */\n  onGenerateBlueprint: () => void;\n}\n\nexport function PlanningHeader({\n  isExisting, activeProjectNumber, activeProjectName, onBack,\n  titleEdit, setTitleEdit, renameErr, setRenameErr, commitRename,\n  planningTitle, setPlanningTitle, draftTitleErr, setDraftTitleErr, commitDraftTitle,\n  autopilotRunning, autopilotProgressPct,\n  handleRestart, restarting, onClearPlan,\n  published, hasRepos, hasFleet, triaging, planReady, launchTriage,\n  triaged, onGenerateBlueprint,\n}: PlanningHeaderProps) {\n  return (\n    <Box style={{ padding: \"14px 24px 14px 12px\", display: \"flex\", alignItems: \"flex-start\", gap: 14 }}>\n      <Box style={{ flex: 1 }}>\n        <Row gap={10}>\n          <BackButton variant=\"icon\" onClick={onBack} aria-label=\"Back to Planner\" />\n          {isExisting\n            ? (\n              <>\n                <Text as=\"span\" mono size={10} tone=\"dim\">#{activeProjectNumber}</Text>\n                {/* Published title is editable (#1226): blur/Enter commits to the GitHub board + local name. */}\n                {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline editable title (borderless, width-to-text, no .field wrapper); TextField would change layout */}\n                <input\n                  value={titleEdit ?? activeProjectName}\n                  onChange={e => { setTitleEdit(e.target.value); if (renameErr) setRenameErr(null); }}\n                  onBlur={commitRename}\n                  onKeyDown={e => {\n                    if (e.key === \"Enter\") (e.target as HTMLInputElement).blur();\n                    else if (e.key === \"Escape\") { setTitleEdit(null); setRenameErr(null); }\n                  }}\n                  title={renameErr ?? activeProjectName}\n                  aria-label=\"Project title\"\n                  className=\"mono\"\n                  style={{\n                    background: \"none\", border: \"none\", outline: \"none\", padding: 0,\n                    margin: 0, fontSize: 16, fontWeight: 600,\n                    color: renameErr ? \"var(--danger)\" : \"var(--fg)\",\n                    // Size to the text, capped — a long name stops at the cap instead of pushing\n                    // the status pill away; minWidth:0 lets it shrink in a narrow pane.\n                    maxWidth: 282, minWidth: 0,\n                    width: clamp(((titleEdit ?? activeProjectName).length || 14) * 9.5 + 16, 56, 282),\n                  }}\n                />\n              </>\n            )\n            : (\n              // eslint-disable-next-line no-restricted-syntax -- bespoke inline editable title (borderless, width-to-text, no .field wrapper); TextField would change layout\n              <input\n                value={planningTitle}\n                onChange={e => { setPlanningTitle(e.target.value); if (draftTitleErr) setDraftTitleErr(null); }}\n                onBlur={commitDraftTitle}\n                onKeyDown={e => {\n                  if (e.key === \"Enter\") (e.target as HTMLInputElement).blur();\n                  else if (e.key === \"Escape\") (e.target as HTMLInputElement).blur();\n                }}\n                placeholder=\"project title…\"\n                title={draftTitleErr ?? undefined}\n                className=\"mono\"\n                style={{\n                  background: \"none\", border: \"none\", outline: \"none\",\n                  fontSize: 16, fontWeight: 600,\n                  color: draftTitleErr ? \"var(--danger)\" : planningTitle ? \"var(--fg)\" : \"var(--fg-dim)\",\n                  // Size to the text (snug), with a usable floor and a 400px cap so the status\n                  // pill sits right next to the title.\n                  width: clamp((planningTitle.length || 14) * 9.5 + 16, 56, 282),\n                  padding: 0,\n                }}\n              />\n            )\n          }\n          <Chip tone=\"accent\">● {isExisting ? \"expanding\" : \"drafting\"}</Chip>\n        </Row>\n        {autopilotRunning && (\n          <Text as=\"div\" size={12} tone=\"accent\" style={{ marginTop: 4 }}>\n            ⚙ auto-planning · {autopilotProgressPct}%\n          </Text>\n        )}\n      </Box>\n      <Button variant=\"ghost\" onClick={handleRestart} disabled={restarting}\n        title=\"Restart the planner session (re-spawns Claude)\">\n        {restarting ? \"restarting…\" : \"↺ restart\"}\n      </Button>\n      <Button variant=\"ghost\" danger onClick={onClearPlan} title=\"Wipe this project's plan and restart the planner (#664)\">\n        clear plan\n      </Button>\n      {/* The primary action follows the lifecycle: plan → TRIAGE (build the project) → then, once\n          it's been triaged, GENERATE BLUEPRINT (promote the plan for reuse, #3785). */}\n      {triaged ? (\n        <Button\n          variant=\"primary\"\n          onClick={onGenerateBlueprint}\n          disabled={!planReady}\n          title={planReady ? \"Save this project's plan as a reusable blueprint\" : \"Complete the plan first\"}\n        >\n          Generate Blueprint →\n        </Button>\n      ) : (() => {\n        // Full gate (#444/#551): plan complete + published + repos + fleet, not starting.\n        const gate = { published, hasRepos, hasFleet, busy: triaging, planReady };\n        return (\n          <Button\n            variant=\"primary\"\n            onClick={launchTriage}\n            disabled={!canLaunchTriage(gate)}\n            title={triageLockReason(gate) ?? \"Clone the repos and start a triage session\"}\n          >\n            {triaging ? \"starting triage…\" : \"Triage →\"}\n          </Button>\n        );\n      })()}\n    </Box>\n  );\n}\n",
+  "src": "src/features/planner/session/PlanningHeader.tsx",
+  "folder": "features/planner/session",
+  "composes": [
+    "Box",
+    "Button",
+    "Chip",
+    "Row",
+    "Text"
+  ],
+  "props": [
+    {
+      "name": "isExisting",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "activeProjectNumber",
+      "type": "number | string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "activeProjectName",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onBack",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "titleEdit",
+      "type": "string | null",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "setTitleEdit",
+      "type": "(v: string | null) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "renameErr",
+      "type": "string | null",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "setRenameErr",
+      "type": "(v: string | null) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "commitRename",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "planningTitle",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "setPlanningTitle",
+      "type": "(v: string) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "draftTitleErr",
+      "type": "string | null",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "setDraftTitleErr",
+      "type": "(v: string | null) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "commitDraftTitle",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "autopilotRunning",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "autopilotProgressPct",
+      "type": "number",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "handleRestart",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "restarting",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onClearPlan",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "published",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "hasRepos",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "hasFleet",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "triaging",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "planReady",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "launchTriage",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "triaged",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onGenerateBlueprint",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    }
+  ]
+}
