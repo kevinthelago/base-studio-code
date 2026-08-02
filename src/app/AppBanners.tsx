@@ -614,10 +614,80 @@ function InterruptedLoopBanner() {
   );
 }
 
+/**
+ * Seed-drift banner (#4216) — the reader `seedNotices` never had.
+ *
+ * `reconcileSeed` has always computed divergence verdicts (`updated-upstream`, `orphaned`,
+ * `reset-to-seed`, and now `unstamped`) and the store has always collected them. Nothing rendered them:
+ * every reference to `seedNotices` lived inside the designs slice itself, so the mechanism computed the
+ * right answer and dropped it on the floor. That is why 44 app records drifted from their seeds unnoticed
+ * while every guard we had — which reads the SEED, not the store copy the app renders — stayed green.
+ *
+ * Deliberately REPORT-ONLY. It offers no "fix all": the drift runs both directions (some store copies are
+ * far smaller than their seed, some far larger), so which side is right is a per-record judgement. A
+ * one-click bulk resolve would be the more dangerous bug.
+ */
+function SeedDriftBanner() {
+  const notices = useAppStore((s) => s.seedNotices);
+  const dismissSeedNotice = useAppStore((s) => s.dismissSeedNotice);
+  const [open, setOpen] = useState(false);
+
+  // `unstamped` is the state nothing was watching for; the rest are pre-existing verdicts that were
+  // equally invisible. Group so the count reads as "what kind of trouble", not just "how many".
+  const byKind = useMemo(() => {
+    const m = new Map<string, typeof notices>();
+    for (const n of notices) m.set(n.kind, [...(m.get(n.kind) ?? []), n]);
+    return [...m.entries()];
+  }, [notices]);
+
+  if (notices.length === 0) return null;
+  const n = notices.length;
+
+  return (
+    <>
+      <Banner
+        variant="bar"
+        tone="warn"
+        lead={<GitBranch size={14} />}
+        right={
+          <Button size="sm" variant="ghost" onClick={() => setOpen((v) => !v)}>
+            {open ? "Hide" : "Review"}
+          </Button>
+        }
+        // Dismissing acknowledges the whole set for this run; the notices are recomputed on the next
+        // hydrate, so this hides a known state rather than resolving it.
+        onDismiss={() => notices.forEach((it) => dismissSeedNotice(it.type, it.id))}
+      >
+        {n} record{n === 1 ? "" : "s"} differ{n === 1 ? "s" : ""} from the packaged seed — the app renders
+        the store copy. Review which side is right; this is not resolved automatically.
+      </Banner>
+      {open && (
+        <Box className="app-banner-detail">
+          <Stack gap={8}>
+            {byKind.map(([kind, items]) => (
+              <Stack key={kind} gap={4}>
+                <Text size={11} tone="dim" mono>
+                  {kind} · {items.length}
+                </Text>
+                <Row gap={4} wrap>
+                  {items.map((it) => (
+                    <Chip key={`${it.type}:${it.id}`}>{it.name || it.id}</Chip>
+                  ))}
+                </Row>
+              </Stack>
+            ))}
+          </Stack>
+        </Box>
+      )}
+    </>
+  );
+}
+
 export function AppBanners() {
   return (
     <Box className="app-banner-stack">
       <KitChangesBanner />
+      <SeedDriftBanner />
       <CrashRecoveryBanner />
       <InterruptedLoopBanner />
       <SessionRecoveryBanner />
