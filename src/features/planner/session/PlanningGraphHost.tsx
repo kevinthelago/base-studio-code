@@ -8,8 +8,13 @@
 import { GraphComponent } from "@/shared/lib/runtime/GraphComponent";
 import { GraphPageFallback } from "@/shared/lib/runtime/GraphPageFallback";
 import { registerPlanningPlatform } from "./graphPlatform";
+// #4227: the pane is `provides`-resolved from the graph, and the vendored pane reaches ~21 modules the
+// session itself never imports (the stage bodies, the preview chain). Registering them is the pane's own
+// job, but CALLING it is the host's — the loader asks for them while compiling this page.
+import { registerPanePlatform } from "../pane/graphPlatform";
 
 registerPlanningPlatform();
+registerPanePlatform();
 
 export function PlanningGraphHost({ visible }: { visible?: boolean } = {}) {
   return (
