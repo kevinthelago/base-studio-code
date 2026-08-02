@@ -297,6 +297,14 @@ Every session has a role bounding its capabilities (least privilege), applied at
 ### The fleet (`fleetStartProject`)
 One click fills a build tab:
 - **Director** at the project hub (`projects/<key>/`), kickoff `prompts/director-kickoff.md` — sees every repo + worktree; coordinates, never writes feature code.
+- **Workers read from the STORES, not from copies (#4191).** `bsc` is in the always-allowed mandatory
+  tier (`permissions/base.json`) and `worker` is a project role that never gets `restricted_allow`, so a
+  worker can read every store directly: `bsc graph impl get` (algorithms), `bsc ui get` (components),
+  `bsc plan` (this project's plan), `bsc files read`. The worker protocol states the precedence rule —
+  **the store wins over anything quoted into the context**, which is assembled once at launch while the
+  stores stay live. A feature's `requires` list is injected as ids + the fetch command, never as inlined
+  source: a quoted body is a second copy, and the copy is what a worker edits while the record keeps the
+  old one.
 - **Workers** each in their own **git worktree** (`~/.base-studio-code/worktrees/<key>/<repo>--<slug>/`, outside the hub per #844) on a **branch named after the stream id**, seeded with `CLAUDE.local.md` (the plan, copied in by `ensure_worktree`) and the stream's kickoff (`prompts/<id>-kickoff.md`, else `buildStreamPrompt`). Per-agent profile + flow applied.
 
 ### Per-agent flow at launch (#297)

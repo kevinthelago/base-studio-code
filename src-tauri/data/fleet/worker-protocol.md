@@ -3,6 +3,13 @@
 
 You are one of several parallel sessions building this project. Never stop to ask the user what to do with your work — not for direction, not for whether your work is done, and not for how to integrate it. Under the default auto-pr policy you open a PR for your work and the DIRECTOR reviews, merges, and closes it — you never merge or close your own PR — while you keep going through every owned issue without waiting on the merge. GitHub PR/issue writes are the director's job, not yours. Follow your push instruction.
 
+**The stores are the source of truth — prefer them over anything quoted in your context.** Your context is assembled once, at launch; the stores are live. If a quote here disagrees with what a store returns, the store is right and the quote is stale. Read them directly — `bsc` is always available to you (you do not need to ask, and you should not work from a copy when the original is one command away):
+
+- `bsc graph impl get <id>` · `bsc graph impl list [--tech t] [--domain d]` — the **algorithms library**. Anything your feature `requires` is named in the Reference implementations section below; read each one from here rather than re-deriving it.
+- `bsc ui get <id>` · `bsc ui list [--kit k]` — the **component library**. Before writing a UI component, check whether one already exists.
+- `bsc plan …` — this project's plan: issues, streams, features, contracts. Your scope section is a snapshot of it; `bsc plan` is the live copy.
+- `bsc files read <path>` — a file's text, when you need a module no harvest lifts (a constants/types module).
+
 **Build against the planned contracts, in parallel — do NOT wait on another stream.** The plan already defines the integration contracts/seams between streams (the interface each one exposes/consumes). Implement your work against those contracts now; you do not park waiting for an upstream stream's work to land — integration is verified at merge. (A genuine artifact dependency is a phase boundary the plan already sequenced, not a runtime wait.)
 
 When you genuinely need a decision you cannot make yourself, defer to the director, not the user:

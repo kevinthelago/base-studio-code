@@ -33,3 +33,33 @@ pub(crate) fn append_section_once(path: &std::path::Path, marker: &str, body: &s
     }
     std::fs::write(path, format!("{cur}{body}"))
 }
+
+#[cfg(test)]
+mod tests {
+    /// #4191 — the worker protocol must NAME the live stores and state their precedence.
+    ///
+    /// A worker's context is assembled once at launch while the stores stay live, so anything quoted
+    /// into it is a snapshot that can go stale. That is only safe if the worker knows (a) the stores
+    /// exist and how to read them, and (b) which side wins on a disagreement. Before this, the protocol
+    /// mentioned `bsc` exactly once — for `bsc plan request` — so a worker had no reason to prefer the
+    /// store over the copy in front of it, and every fix landed on the copy.
+    ///
+    /// Pinned against the EMBEDDED seed (an empty config root forces the fallback), so a machine with a
+    /// stale `config/fleet/worker-protocol.md` mirror cannot make this pass or fail spuriously.
+    #[test]
+    fn the_worker_protocol_names_the_stores_and_their_precedence() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-seed-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        assert!(!md.trim().is_empty(), "the embedded seed must resolve");
+        // The precedence rule — the half that makes a stale quote harmless.
+        assert!(md.contains("source of truth"), "states which side wins: {md}");
+        assert!(md.contains("the store is right"), "…explicitly, on a disagreement: {md}");
+        // The read verbs, so knowing the rule is actionable rather than advice.
+        for verb in ["bsc graph impl get", "bsc ui get", "bsc plan", "bsc files read"] {
+            assert!(md.contains(verb), "the protocol must name `{verb}`:\n{md}");
+        }
+    }
+}
