@@ -38,6 +38,15 @@ export interface NavRequest {
 export interface NavAck {
   id?: string;
   error?: string;
+  /** Set when a `component` intent focused the record but did NOT switch the view (#3599/#4248).
+   *
+   *  Without it the ack reports the CURRENT view and reads as an ordinary success — so a caller that
+   *  asked for a component, saw `workspace: "github"` come back, and had nothing to photograph concluded
+   *  the navigate had failed and forced the view with `navigate page designs`. That escalation, fired
+   *  every ~7s by the designer loop, IS the yank. Saying "declined, and why" is what makes the refusal
+   *  legible instead of looking like a bug to route around. */
+  declined?: string;
+
   workspace?: string;
   page?: string;
   kit?: string;
@@ -125,10 +134,17 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
   // when it's already showing, or when the request EXPLICITLY asked for a workspace/page (a deliberate
   // steer, not a background focus). Off-Studio, we still set the focus so it's there when the user opens
   // the Studio themselves — their current view is untouched.
+  let declined: string | undefined;
   if (comp) {
     if (wasShowingStudio || req.workspace !== undefined || req.page !== undefined) {
       s.setWorkspace(DESIGNS_WORKSPACE);
       s.setProjectsPageMode(DESIGNS_PAGE as AppStore["projectsPageMode"]);
+    } else {
+      // The #3599 refusal, stated (#4248). It is deliberate, so it must not read as a failure.
+      declined =
+        "focus set, view unchanged: the Design Studio is not the visible page and a background " +
+        "follow-along does not steal the user's view (#3599). Nothing is on screen to capture. Do not " +
+        "force it with `navigate page` while someone is working.";
     }
     // setDesignsKit CLEARS the component (a component belongs to one kit), so the kit must come first.
     s.setDesignsKit(comp.kitId);
@@ -137,11 +153,11 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
     s.setDesignsKit(req.kit);
   }
 
-  return landed(read);
+  return landed(read, declined);
 }
 
 /** Read the resulting view back OUT of the store — a FRESH read, never the pre-mutation snapshot. */
-function landed(read: () => AppStore): NavAck {
+function landed(read: () => AppStore, declined?: string): NavAck {
   const s = read();
   return {
     workspace: s.activeWorkspace,
@@ -150,5 +166,6 @@ function landed(read: () => AppStore): NavAck {
     component: s.designsCompId ?? undefined,
     theme: s.kitTheme || undefined,
     state: s.designsPreviewState || undefined,
+    declined,
   };
 }

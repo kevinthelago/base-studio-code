@@ -27,8 +27,12 @@ const COMMANDS: &[CmdDoc] = &[
 USAGE:
   bsc navigate component <kit> <component> [--theme <id>] [--state <s>] [--timeout <ms>] [--json|--pretty]
 
-Selects a component in the Design Studio and reports the view that landed. Also lands the workspace and
-page — you should not need to know which Workspace hosts the Studio to point at a component.
+Selects a component in the Design Studio and reports the view that landed.
+
+It lands the workspace and page ONLY when the Studio is already showing, or when you pass --workspace /
+--page explicitly (#3599). Off the Studio it sets the focus and LEAVES THE USER'S VIEW ALONE — a
+background follow-along must not yank someone off the page they are working on. The ack reports the view
+that actually landed, so check it rather than assuming.
 
   --theme <id>   also switch the kit theme, for a themed capture (pairs with `bsc ui theme`)
   --state <s>    render a preview DATA-STATE: loaded · empty · loading — so a capture targets a specific

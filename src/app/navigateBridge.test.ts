@@ -63,6 +63,12 @@ describe("navigateBridge — component (the case #3261 needed a human click for)
     expect(v.s.activeWorkspace).toBe("github");
     expect(v.s.projectsPageMode).toBe("projects");
     expect(ack.workspace).toBe("github");
+    // #4248: the refusal is STATED. Without this the ack reads as an ordinary success reporting the
+    // current view, so a caller with nothing to photograph concludes the navigate failed and forces the
+    // view with `navigate page designs` — the escalation that IS the yank.
+    expect(ack.declined).toContain("view unchanged");
+    expect(ack.declined).toContain("Do not force it");
+    expect(ack.declined).toContain("#3599"); // names the rule, so the refusal is checkable
   });
 
   it("#3599: an EXPLICIT workspace/page request still navigates (a deliberate steer, not a background focus)", () => {
@@ -71,6 +77,7 @@ describe("navigateBridge — component (the case #3261 needed a human click for)
     expect(ack.workspace).toBe("projects");
     expect(ack.page).toBe("designs");
     expect(ack.component).toBe("Heatmap");
+    expect(ack.declined, "an honoured steer declines nothing").toBeUndefined();
   });
 
   it("reports the view read back AFTER the mutations, not the request it was handed", () => {
