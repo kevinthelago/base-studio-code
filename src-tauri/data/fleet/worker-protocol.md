@@ -17,7 +17,11 @@ You are one of several parallel sessions building this project. Never stop to as
 - `bsc ui set` **merges** (#4197): send only the fields you are changing and the rest of the record is preserved. To REMOVE a field, say so — `--clear a,b` (or send the field as JSON `null`). Some pages have no source file at all, so the record is the only copy; a write that silently dropped what it did not restate would be unrecoverable.
 - `bsc ui backing gate $(git diff --name-only)` — run this before you open a PR. It exits non-zero and names the record if your change touched a backed file without going through it.
 
-This is components only for now; an algorithm's file usually backs several records, so it is not gated.
+**An ALGORITHM is the same rule, reached a different way (#4254).** Anything your feature `requires` is a record the planner commissioned from the librarian — you pulled it in by **id**, so a change to it belongs on that record exactly as it does for a component:
+
+- `bsc graph impl get <id>` to read it, `bsc graph impl set …` to change it, then re-emit so the file follows.
+- `bsc graph impl set` **merges** (#4154): send only the fields you are changing. `--clear a,b` removes one explicitly. It is the same contract as `bsc ui set`, so the two surfaces behave identically.
+- There is **no `backing` gate** for algorithms, and it is not needed: an algorithm's file usually backs SEVERAL records (34 of 63 share a `src`), so a file→record lookup is ambiguous by construction — while your `requires` list already names the id without one. Work from the id you pulled in, never from the path.
 
 **Build against the planned contracts, in parallel — do NOT wait on another stream.** The plan already defines the integration contracts/seams between streams (the interface each one exposes/consumes). Implement your work against those contracts now; you do not park waiting for an upstream stream's work to land — integration is verified at merge. (A genuine artifact dependency is a phase boundary the plan already sequenced, not a runtime wait.)
 
@@ -28,6 +32,8 @@ When you genuinely need a decision you cannot make yourself, defer to the direct
 - `echo "what you decided" | bsc-note` — for a micro-decision, pick the option that best serves the planned solution (a reversible one when you're genuinely unsure), record it, and move on; do not ask, and do not default to the minimal thing.
 
 If your push policy is auto-pr (the default), open a PR and the DIRECTOR reviews, merges, and closes it — never run gh pr merge or gh pr close on your own PR. (Only if your push policy is explicitly self-merge do you integrate your own work to develop — full gate -> rebase onto develop -> re-gate -> push — and open no PR.) Follow the push instruction in your kickoff. When you open a PR, stop -- CI runs and is watched for you; you will be told to continue (if it passed) or to fix the build and push (if it failed). Do not poll CI, close, merge, reopen, or duplicate the PR — the director owns its merge and close.
+
+**In MAINTENANCE you modify the ORIGINAL DOCUMENT.** Once a feature is live and verified, the components and algorithms it pulled in are still records — maintaining them means editing the RECORD and re-emitting, never patching the emitted file. That is what keeps the graph the source, and it is what fires the emit/testing/alert pipeline the designer watches. A file edit here is invisible to all of it: the record keeps the old body, and the app renders the record.
 
 **When every owned issue is complete, you ENTER MAINTENANCE — you do not end.** Do not run `bsc-done`. Instead pipe a one-line standing note into `bsc-maintain` (e.g. `echo "owned issues complete — standing by" | bsc-maintain`): this parks you alive and ready. Stay available; the director dispatches new or regressed work in your lane (`bsc-assign`) and resumes you automatically — pick it up, carry it through your normal loop, then re-enter maintenance the same way. You remain a live maintainer of your section, not a closed session.
 
