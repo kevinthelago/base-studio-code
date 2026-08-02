@@ -292,6 +292,28 @@ changes. A flat edge store at ~/.base-studio-code/kit-usage.json (like `bsc proj
 planning (a project seeded from a kit-bearing blueprint uses that kit).",
     },
     CmdDoc {
+        name: "backing",
+        summary: "which component record backs a file — and the gate that keeps edits going to the record",
+        usage: "USAGE:
+  bsc ui backing <path> [--json|--pretty]   # the record(s) whose `src` names this file
+  bsc ui backing gate <path>...             # exit 1 if ANY path is record-backed (the landing gate)
+
+The graph is the source of truth and a component's file is the EMITTED ARTIFACT, so a fix belongs in the
+record: edit it with `bsc ui set`, then `bsc ui emit component <id> <dir>` and the file follows. Editing
+the file directly loses the change — the record keeps the old body and the app renders the record (#4193).
+
+`backing <path>` answers whether a file has a record before you touch it. It reads the store's own `src`
+provenance, so it covers EVERY component, not only the pages in the migration catalogue. Prints
+`{ path, backed, records: [{ id, kitId, src }] }`.
+
+`backing gate <path>...` is the landing check: run it over the files your change touches (e.g.
+`git diff --name-only`). It exits 1 and names the record + the two fix commands for every backed path, and
+exits 0 when none are backed. Rejecting rather than warning is deliberate — a warning here becomes noise.
+
+SCOPE: components only. An algorithm record is a function LIFTED OUT of a file and several share one
+`src` (#4192), so a path-based gate cannot be honest about them yet.",
+    },
+    CmdDoc {
         name: "doctor",
         summary: "graph-health report — orphans, dead branches, duplicates, cycles, unbuildable + self-referential components (#2678)",
         usage: "\
@@ -858,6 +880,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_shapes(&args[1..])
+            }
+        }
+        // `backing` (#4193) — which record backs a file, and the landing gate built on it.
+        Some("backing") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "backing"));
+                Ok(())
+            } else {
+                cmd_backing(&args[1..])
             }
         }
         // `doctor` (#2678) is a custom read — the graph-health analyzer over the component store.
@@ -2101,6 +2132,75 @@ fn read_pinned_sound_kit(kit_ref: &str) -> Result<String, String> {
     store
         .artifact(id, version)?
         .ok_or_else(|| format!("sound kit '{kit_ref}' is not in the sound-kit store (`bsc sound release list`)"))
+}
+
+/// `bsc ui backing <path>` / `bsc ui backing gate <path>...` (#4193).
+///
+/// The read answers "does this file have a record?"; the gate turns that into a refusal, so a change that
+/// edited the artifact instead of the source cannot land quietly. Rejecting rather than warning is the
+/// point: a warning at landing time becomes noise and is ignored, and the drift it was meant to stop
+/// accumulates anyway.
+fn cmd_backing(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut json, mut pretty) = (None::<String>, false, false);
+    let mut positional: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => positional.push(other.to_string()),
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let records: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+
+    if positional.first().map(String::as_str) == Some("gate") {
+        let paths = &positional[1..];
+        if paths.is_empty() {
+            return Err("usage: bsc ui backing gate <path>... — pass the files your change touches (e.g. `git diff --name-only`)".into());
+        }
+        let mut blocked = Vec::new();
+        for p in paths {
+            for b in crate::backing::backing_for(&records, p) {
+                blocked.push(crate::backing::rejection(p, &b));
+            }
+        }
+        if blocked.is_empty() {
+            // Say so explicitly: a silent pass is indistinguishable from a gate that did not run.
+            println!("ok: none of the {} path(s) is component-backed", paths.len());
+            return Ok(());
+        }
+        return Err(blocked.join("
+
+"));
+    }
+
+    let path = positional
+        .first()
+        .ok_or("usage: bsc ui backing <path> | bsc ui backing gate <path>...")?;
+    let found = crate::backing::backing_for(&records, path);
+    let payload = serde_json::json!({
+        "path": crate::backing::normalize(path),
+        "backed": !found.is_empty(),
+        "records": found.iter()
+            .map(|b| serde_json::json!({ "id": b.id, "kitId": b.kit_id, "src": b.src }))
+            .collect::<Vec<_>>(),
+    });
+    bsc_cli_util::emit(pretty, json, &payload, || {
+        if found.is_empty() {
+            format!("{} — not component-backed", crate::backing::normalize(path))
+        } else {
+            found.iter()
+                .map(|b| format!("{} — component `{}` (kit `{}`)", crate::backing::normalize(path), b.id, b.kit_id))
+                .collect::<Vec<_>>()
+                .join("
+")
+        }
+    });
+    Ok(())
 }
 
 fn cmd_doctor(args: &[String]) -> Result<(), String> {
@@ -4078,7 +4178,7 @@ mod tests {
             vec![
                 "list", "shapes", "get", "log", "set", "remove", "suppress", "unsuppress", "export", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
+                "backing", "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "preview-errors", "preview-error"
             ]
         );
