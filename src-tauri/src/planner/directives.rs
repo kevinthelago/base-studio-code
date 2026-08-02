@@ -160,6 +160,29 @@ mod tests {
     }
 
     #[test]
+    fn discovery_asks_who_renders_the_ui_and_separates_it_from_ui_mode() {
+        // #4115: `uiSystem` decides whether OUR pipeline renders the app at all. It is a different
+        // question from `uiMode` (where the DESIGNS come from) and the trap is that uiMode looks
+        // sufficient — `external` still means we render the shell. Inferring it wrongly makes the
+        // plan design a graph-rendered shell for a project that will never render one.
+        let (disc, _) = packaged("discovery");
+        assert!(disc.contains("`uiSystem`"), "discovery must record who renders the UI: {disc}");
+        let clause = &disc[disc.find("`uiSystem`").expect("uiSystem clause")..];
+        let clause = &clause[..clause.len().min(900)];
+        assert!(clause.contains("ASK the user"), "the UI system is the user's call: {clause}");
+        assert!(clause.contains("studio") && clause.contains("own"),
+            "both values must be offered by name: {clause}");
+        // The distinction from uiMode is the whole point — state it, don't leave it to be inferred.
+        assert!(clause.contains("NOT the same question as `uiMode`"),
+            "the clause must separate uiSystem from uiMode explicitly: {clause}");
+        // Ask, never infer silently — but propose from evidence (a linked repo with a frontend).
+        assert!(clause.contains("frontend"), "propose `own` from an existing frontend: {clause}");
+        // It is asked BEFORE uiMode, because it governs whether uiMode means anything.
+        assert!(disc.find("`uiSystem`") < disc.find("`uiMode`"),
+            "uiSystem must be asked before uiMode — it decides whether uiMode matters");
+    }
+
+    #[test]
     fn collapsed_stage_directives_name_the_stage_and_cover_both_halves() {
         // #1914: the unified vocabulary collapsed the old fold split into single canonical defs.
         // `deployment` = "Deployment" (link repos + deploy); `streams` = the feature roadmap, the

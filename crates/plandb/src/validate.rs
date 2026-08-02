@@ -550,8 +550,17 @@ pub const APP_TYPES: [&str; 9] = [
 /// `harvest` (#4062) — the project exists to EXTRACT DATA FROM SOURCES.
 pub const LIFECYCLES: [&str; 5] = ["greenfield", "transform", "harden", "maintain", "harvest"];
 
-/// Validate a project classification blob (#3783/#3784/#3806): a JSON object whose optional `uiMode`
-/// is "custom"|"external", whose optional `appType`/`lifecycle` are taxonomy tokens, and whose
+/// WHO RENDERS the project's UI (#4115) — a separate axis from `uiMode`, which only says where the
+/// DESIGNS come from. `studio` = our component graph is the render source (the build/publish
+/// pipeline, the host API and per-node analytics all apply); `own` = the project brings or keeps its
+/// own UI stack and none of that applies to it.
+///
+/// Mirrors `UI_SYSTEMS` in `src/features/planner/lib/classifyConfig.ts`; keep the two in lockstep, or
+/// the planner can write a value this validator accepts and the app cannot read (or the reverse).
+pub const UI_SYSTEMS: [&str; 2] = ["studio", "own"];
+
+/// Validate a project classification blob (#3783/#3784/#3806/#4115): a JSON object whose optional
+/// `uiMode` is "custom"|"external", whose optional `appType`/`lifecycle`/`uiSystem` are taxonomy tokens, and whose
 /// optional `needsMarket`/`needsSource`/`needsMcp`/`needsSkills`/`needsAutomations` are booleans.
 /// Every field is optional (a partial or empty classification is valid); only a present-but-mistyped
 /// field is rejected, field-level (#2395) so an LLM author can self-correct.
@@ -568,9 +577,13 @@ pub fn validate_classify_config(v: &Value) -> Result<(), String> {
             errs.push(r#""uiMode" must be "custom" (in-app designer preview) or "external" (bring design files)"#.into());
         }
     }
-    // The two taxonomy axes. An unknown token is rejected with the full vocabulary, so the planner
-    // can correct itself without reading the source.
-    for (key, allowed) in [("appType", &APP_TYPES[..]), ("lifecycle", &LIFECYCLES[..])] {
+    // The taxonomy axes. An unknown token is rejected with the full vocabulary, so the planner can
+    // correct itself without reading the source.
+    for (key, allowed) in [
+        ("appType", &APP_TYPES[..]),
+        ("lifecycle", &LIFECYCLES[..]),
+        ("uiSystem", &UI_SYSTEMS[..]),
+    ] {
         if let Some(t) = v.get(key) {
             if !t.as_str().is_some_and(|s| allowed.contains(&s)) {
                 errs.push(format!(r#""{key}" must be one of: {}"#, allowed.join(", ")));
@@ -595,6 +608,7 @@ pub fn classify_readiness(v: &Value) -> String {
     let ui = v.get("uiMode").and_then(Value::as_str).unwrap_or("custom");
     let app_type = v.get("appType").and_then(Value::as_str).unwrap_or("application");
     let lifecycle = v.get("lifecycle").and_then(Value::as_str).unwrap_or("greenfield");
+    let ui_system = v.get("uiSystem").and_then(Value::as_str).unwrap_or("studio");
     let on = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
     let mut stages = Vec::new();
     if on("needsMarket") { stages.push("market"); }
@@ -603,7 +617,9 @@ pub fn classify_readiness(v: &Value) -> String {
     if on("needsSkills") { stages.push("skills"); }
     if on("needsAutomations") { stages.push("automations"); }
     let list = if stages.is_empty() { "none".to_string() } else { stages.join(", ") };
-    format!(" — {lifecycle} {app_type}; uiMode {ui}; optional stages: {list}")
+    // #4115: `uiSystem` is echoed BEFORE `uiMode`, because it governs whether uiMode means anything —
+    // for an `own` project our pipeline never renders, whichever surface the designs came from.
+    format!(" — {lifecycle} {app_type}; uiSystem {ui_system}; uiMode {ui}; optional stages: {list}")
 }
 
 // ── transformations (`bsc plan transformation add/update`) — the modification list (#2509) ──────
@@ -1824,6 +1840,28 @@ mod tests {
     }
 
     #[test]
+    fn classify_accepts_every_ui_system_and_rejects_a_near_miss() {
+        // #4115. `uiSystem` answers WHO RENDERS the project's UI; `uiMode` only says where the
+        // designs come from. Both tokens must validate…
+        for s in UI_SYSTEMS {
+            assert!(validate_classify_config(&json!({ "uiSystem": s })).is_ok(), "uiSystem {s}");
+        }
+        assert!(UI_SYSTEMS.contains(&"studio") && UI_SYSTEMS.contains(&"own"));
+        // …and the two axes must be independently settable, including the combination the axis
+        // exists for: the user brings design files AND keeps their own rendering stack.
+        assert!(validate_classify_config(&json!({ "uiSystem": "own", "uiMode": "external" })).is_ok());
+        // A near-miss is REJECTED rather than coerced — the issue's rejected alternative was a third
+        // `uiMode` value, so `"owned"` on the wrong field must not quietly pass.
+        let err = validate_classify_config(&json!({ "uiSystem": "owned" })).unwrap_err();
+        assert!(err.contains("uiSystem"), "{err}");
+        assert!(err.contains("studio") && err.contains("own"), "the error must list the vocabulary: {err}");
+        // Cross-contamination between the axes is rejected in both directions.
+        assert!(validate_classify_config(&json!({ "uiSystem": "external" })).is_err());
+        assert!(validate_classify_config(&json!({ "uiMode": "own" })).is_err());
+        assert!(validate_classify_config(&json!({ "uiSystem": 1 })).is_err());
+    }
+
+    #[test]
     fn classify_accepts_the_harvest_lifecycle_by_name() {
         // #4062. The loop above only proves the array validates itself; this pins the TOKEN, so
         // dropping `harvest` from LIFECYCLES fails here rather than silently shrinking the vocabulary
@@ -1864,5 +1902,17 @@ mod tests {
         let bare = classify_readiness(&json!({}));
         assert!(bare.contains("greenfield application"), "{bare}");
         assert!(bare.contains("optional stages: none"), "{bare}");
+    }
+
+    #[test]
+    fn classify_readiness_echoes_the_ui_system_ahead_of_the_ui_mode() {
+        // #4115: the planner reads this line back to confirm what it just recorded, so the axis that
+        // decides whether our pipeline renders at all has to be IN it — and ahead of `uiMode`, which
+        // only means something when the answer is `studio`.
+        let own = classify_readiness(&json!({ "uiSystem": "own", "uiMode": "external" }));
+        assert!(own.contains("uiSystem own"), "{own}");
+        assert!(own.find("uiSystem") < own.find("uiMode"), "{own}");
+        // Unset reports the read-as default rather than a blank, like every other axis.
+        assert!(classify_readiness(&json!({})).contains("uiSystem studio"));
     }
 }
