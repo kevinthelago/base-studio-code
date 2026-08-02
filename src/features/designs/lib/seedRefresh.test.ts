@@ -265,3 +265,40 @@ describe("reconcileSeed — suppression tombstones (#3725)", () => {
     expect(r.pushes.some((x) => x.id === "fleet")).toBe(false);
   });
 });
+
+// #4216 — the verdict for a record the reconcile has been skipping in silence.
+describe("reconcileSeed — unstamped built-ins (#4216)", () => {
+  const seedNew = stampSeedHash(comp({ version: "2.0.0" }));
+
+  // #4216 — the state nothing was watching for. A store copy with NO `builtin` flag but a packaged seed
+  // of that id is a built-in whose stamp was lost (a pre-#4197 partial `bsc ui set` dropped it). The
+  // reconcile skipped it silently ever since, so it never refreshed — while the app rendered it, because
+  // the unstamped branch pushes the store copy straight into `records`.
+  it("reports an UNSTAMPED record that still has a packaged seed, without changing what renders", () => {
+    // Same id as the seed, but no `builtin` — and deliberately different content, the real-world shape.
+    const unstamped = { ...comp({ version: "1.0.0" }), builtin: undefined };
+    const r = reconcileSeed([unstamped], [seedNew], "component");
+
+    // The verdict is surfaced…
+    expect(r.notices).toEqual([
+      { kind: "unstamped", type: "component", id: unstamped.id, name: expect.any(String) },
+    ]);
+    // …and NOTHING is changed by it. The store copy still wins, nothing is pushed, nothing is dropped.
+    // Deciding which side is right is a per-record judgement; a reconcile that silently replaced 44
+    // pages at once would be the worse bug.
+    expect(r.records).toEqual([unstamped]);
+    expect(r.pushes).toEqual([]);
+    expect(r.drops).toEqual([]);
+  });
+
+  it("stays silent for a genuinely user-authored record — one with no packaged seed", () => {
+    // The discrimination that keeps the notice useful: ~168 store records legitimately have no seed
+    // (designer-authored library components). Reporting those would bury the 44 that matter in noise.
+    const mine = { ...comp({ id: "my-own-thing", version: "1.0.0" }), builtin: undefined };
+    const r = reconcileSeed([mine], [seedNew], "component");
+    expect(r.notices).toEqual([]);
+    // It survives untouched. (`records` also gains `seedNew` — a packaged built-in the store lacks is
+    // re-seeded, which is the pre-existing behaviour and not what this case is about.)
+    expect(r.records).toContainEqual(mine);
+  });
+});
