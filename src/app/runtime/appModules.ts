@@ -144,6 +144,12 @@ import * as CodeMod from "@/shared/ui/data/Code";
 import * as SharedUiSpec from "@/shared/ui/spec";
 // #4232 — the kit barrel `ProjectSetupPage` composes the packaged UI kit from.
 import * as SharedUiKit from "@/shared/ui/kit";
+// #4235 - reconciling the drifted shared/ui records pulled in what the FILES had grown and the records
+// had not: `a11y` is #3775's `clickable()` keyboard-operability helper (Card, CardListRow, DataTableRow,
+// Toggle), and `Screen` gained a `PageBoundary` + its `pageNav` keyboard paging.
+import * as SharedUiA11y from "@/shared/ui/a11y";
+import * as PageBoundary from "@/shared/ui/layouts/PageBoundary";
+import * as PageNav from "@/shared/ui/layouts/pageNav";
 // #4224 — zustand's shallow comparator, which the Planning session selects with. A BARE specifier, and the
 // loader requires those registered exactly like a first-party one. `platformBoundary` used to skip bare
 // specifiers as "the import-map's concern"; the browser check caught this because the loader does not.
@@ -259,6 +265,9 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/data/Code": CodeMod,
   "@/shared/ui/spec": SharedUiSpec,
   "@/shared/ui/kit": SharedUiKit,
+  "@/shared/ui/a11y": SharedUiA11y,
+  "@/shared/ui/layouts/PageBoundary": PageBoundary,
+  "@/shared/ui/layouts/pageNav": PageNav,
   "zustand/react/shallow": ZustandShallow,
   "@/shared/ui/layouts/useGraphViewport": UseGraphViewport,
   "@/shared/lib/core/renderProfiler": RenderProfiler,

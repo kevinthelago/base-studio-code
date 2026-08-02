@@ -1,0 +1,67 @@
+{
+  "id": "ui-dropdown",
+  "name": "Dropdown",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/shared/ui/controls/Dropdown",
+  "srcText": "// Dropdown, AS GRAPH SOURCE (#4235, epic #3604) — one of the eight shared/ui components the batches\n// #3660-#3692 left behind: reached by packaged records, provided by none. Its\n// `provides: \"@/shared/ui/controls/Dropdown\"` makes the runtime loader vendor THIS source wherever a graph\n// component imports that specifier (the registered module is the fallback). Transcribed verbatim; the\n// CSS import is dropped (the host owns the stylesheet) and specifiers are absolute. Deps stay code.\n// Dropdown (#2675) — the app-themed single-select control that replaces a native <select>. A native\n// select's popup list is rendered by the OS (an unstyleable white system menu on Windows); this renders\n// the trigger + a floating listbox from divs on base-studio-code tokens, so the whole surface is on-brand.\n// Accessible: aria-haspopup=listbox / aria-expanded on the trigger, role=listbox/option with\n// aria-activedescendant, full keyboard nav (↑/↓/Home/End/Enter/Esc), and outside-click + Escape + scroll\n// dismiss. `field` (bordered, input-like) and `ghost` (borderless toolbar/title) variants; sm/md sizes.\nimport { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from \"react\";\n\nexport interface DropdownOption<T extends string = string> {\n  value: T;\n  label: ReactNode;\n  /** Optional leading node (a color dot, glyph, avatar). */\n  lead?: ReactNode;\n  disabled?: boolean;\n}\n\nexport interface DropdownProps<T extends string = string> {\n  value: T;\n  onChange: (value: T) => void;\n  options: DropdownOption<T>[];\n  /** Shown on the trigger when `value` matches no option. */\n  placeholder?: ReactNode;\n  /** `field` = bordered input-like control; `ghost` = borderless-until-hover (toolbars). Default `field`. */\n  variant?: \"field\" | \"ghost\";\n  /** Control height/scale. Default `md`. */\n  size?: \"sm\" | \"md\";\n  disabled?: boolean;\n  \"aria-label\"?: string;\n  className?: string;\n  /** Menu min width in px; defaults to the trigger width so the menu is at least as wide as the trigger. */\n  menuMinWidth?: number;\n}\n\ninterface MenuPos { left: number; top: number; minWidth: number }\n\n/** Scroll an element into view, tolerating jsdom (which doesn't implement scrollIntoView). */\nfunction scrollIntoViewSafe(el: HTMLElement | null | undefined) {\n  try { el?.scrollIntoView({ block: \"nearest\" }); } catch { /* jsdom / unsupported */ }\n}\n\nexport function Dropdown<T extends string = string>({\n  value, onChange, options, placeholder = \"Select…\",\n  variant = \"field\", size = \"md\", disabled, className, menuMinWidth,\n  \"aria-label\": ariaLabel,\n}: DropdownProps<T>) {\n  const [open, setOpen] = useState(false);\n  const [activeIndex, setActiveIndex] = useState(0);\n  const [pos, setPos] = useState<MenuPos>({ left: 0, top: 0, minWidth: 0 });\n  const triggerRef = useRef<HTMLButtonElement | null>(null);\n  const menuRef = useRef<HTMLDivElement | null>(null);\n  const baseId = useId();\n  const optId = (i: number) => `${baseId}-opt-${i}`;\n\n  const selected = options.find((o) => o.value === value);\n  const firstEnabled = (from: number, dir: 1 | -1): number => {\n    const n = options.length;\n    if (n === 0) return -1;\n    let j = from;\n    for (let k = 0; k < n; k++) {\n      if (options[j] && !options[j].disabled) return j;\n      j = (j + dir + n) % n;\n    }\n    return -1;\n  };\n\n  const close = useCallback((refocus = false) => {\n    setOpen(false);\n    if (refocus) triggerRef.current?.focus();\n  }, []);\n\n  const openMenu = () => {\n    if (disabled) return;\n    const t = triggerRef.current;\n    if (t) {\n      const r = t.getBoundingClientRect();\n      setPos({ left: r.left, top: r.bottom + 4, minWidth: menuMinWidth ?? r.width });\n    }\n    const cur = options.findIndex((o) => o.value === value);\n    setActiveIndex(cur >= 0 && !options[cur]?.disabled ? cur : firstEnabled(0, 1));\n    setOpen(true);\n  };\n\n  const select = (i: number) => {\n    const o = options[i];\n    if (!o || o.disabled) return;\n    onChange(o.value);\n    close(true);\n  };\n\n  // Refine placement after the menu mounts: flip above the trigger if it would overflow the viewport.\n  useLayoutEffect(() => {\n    if (!open) return;\n    const t = triggerRef.current, m = menuRef.current;\n    if (!t || !m) return;\n    const r = t.getBoundingClientRect();\n    const menuH = m.offsetHeight;\n    const flip = menuH > 0 && r.bottom + 4 + menuH > window.innerHeight && r.top - menuH - 4 > 0;\n    setPos({ left: r.left, top: flip ? r.top - menuH - 4 : r.bottom + 4, minWidth: menuMinWidth ?? r.width });\n  }, [open, menuMinWidth]);\n\n  // Move keyboard focus into the menu when it opens (drives the listbox key handling).\n  useLayoutEffect(() => { if (open) menuRef.current?.focus(); }, [open]);\n\n  // Keep the active option visible as the highlight moves.\n  useEffect(() => {\n    if (open) scrollIntoViewSafe(menuRef.current?.querySelector<HTMLElement>(`[data-idx=\"${activeIndex}\"]`));\n  }, [open, activeIndex]);\n\n  // A pan/scroll or resize under an open menu invalidates its anchored position — dismiss (no refocus).\n  useEffect(() => {\n    if (!open) return;\n    const dismiss = () => close(false);\n    window.addEventListener(\"scroll\", dismiss, true);\n    window.addEventListener(\"resize\", dismiss);\n    return () => {\n      window.removeEventListener(\"scroll\", dismiss, true);\n      window.removeEventListener(\"resize\", dismiss);\n    };\n  }, [open, close]);\n\n  const step = (dir: 1 | -1) => setActiveIndex((i) => {\n    const next = firstEnabled((i + dir + options.length) % options.length, dir);\n    return next >= 0 ? next : i;\n  });\n\n  const onTriggerKey = (e: React.KeyboardEvent) => {\n    if (e.key === \"ArrowDown\" || e.key === \"Enter\" || e.key === \" \") { e.preventDefault(); openMenu(); }\n  };\n\n  const onMenuKey = (e: React.KeyboardEvent) => {\n    switch (e.key) {\n      case \"ArrowDown\": e.preventDefault(); step(1); break;\n      case \"ArrowUp\": e.preventDefault(); step(-1); break;\n      case \"Home\": e.preventDefault(); setActiveIndex(firstEnabled(0, 1)); break;\n      case \"End\": e.preventDefault(); setActiveIndex(firstEnabled(options.length - 1, -1)); break;\n      case \"Enter\":\n      case \" \": e.preventDefault(); if (activeIndex >= 0) select(activeIndex); break;\n      case \"Escape\": e.preventDefault(); close(true); break;\n      case \"Tab\": close(false); break;\n    }\n  };\n\n  return (\n    <div className={className ? `dd ${className}` : \"dd\"}>\n      <button\n        ref={triggerRef}\n        type=\"button\"\n        className={`dd-trigger v-${variant} sz-${size}${open ? \" open\" : \"\"}`}\n        aria-haspopup=\"listbox\"\n        aria-expanded={open}\n        aria-label={ariaLabel}\n        disabled={disabled}\n        onClick={() => (open ? close(false) : openMenu())}\n        onKeyDown={onTriggerKey}\n      >\n        {selected?.lead != null && <span className=\"dd-lead\">{selected.lead}</span>}\n        <span className={selected ? \"dd-value\" : \"dd-value dd-placeholder\"}>{selected ? selected.label : placeholder}</span>\n        <svg className=\"dd-caret\" width={11} height={11} viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\">\n          <path d=\"M6 9l6 6 6-6\" stroke=\"currentColor\" strokeWidth={2.4} strokeLinecap=\"round\" strokeLinejoin=\"round\" />\n        </svg>\n      </button>\n\n      {open && (\n        <>\n          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- click-away backdrop; keyboard dismiss is Escape via the menu's onMenuKey */}\n          <div className=\"dd-backdrop\" onMouseDown={() => close(false)} />\n          <div\n            ref={menuRef}\n            className={`dd-menu sz-${size}`}\n            role=\"listbox\"\n            tabIndex={-1}\n            aria-activedescendant={activeIndex >= 0 ? optId(activeIndex) : undefined}\n            onKeyDown={onMenuKey}\n            style={{ position: \"fixed\", left: pos.left, top: pos.top, minWidth: pos.minWidth }}\n          >\n            {options.map((o, i) => (\n              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/interactive-supports-focus -- WAI-ARIA listbox option: roving focus via aria-activedescendant, keyboard handled at the listbox (onMenuKey)\n              <div\n                key={o.value}\n                id={optId(i)}\n                role=\"option\"\n                data-idx={i}\n                aria-selected={o.value === value}\n                aria-disabled={o.disabled || undefined}\n                className={`dd-option${o.value === value ? \" selected\" : \"\"}${i === activeIndex ? \" active\" : \"\"}${o.disabled ? \" disabled\" : \"\"}`}\n                onMouseEnter={() => { if (!o.disabled) setActiveIndex(i); }}\n                onMouseDown={(e) => e.preventDefault()}  // keep focus on the menu through the click\n                onClick={() => select(i)}\n              >\n                {o.lead != null && <span className=\"dd-lead\">{o.lead}</span>}\n                <span className=\"dd-option-label\">{o.label}</span>\n                {o.value === value && <span className=\"dd-check\" aria-hidden=\"true\">✓</span>}\n              </div>\n            ))}\n          </div>\n        </>\n      )}\n    </div>\n  );\n}\n",
+  "src": "src/shared/ui/controls/Dropdown.tsx",
+  "folder": "shared/ui/controls",
+  "composes": [],
+  "props": [
+    {
+      "name": "value",
+      "type": "T",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onChange",
+      "type": "(value: T) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "options",
+      "type": "DropdownOption<T>[]",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "placeholder",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "variant",
+      "type": "\"field\" | \"ghost\"",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "size",
+      "type": "\"sm\" | \"md\"",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "disabled",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "menuMinWidth",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    }
+  ]
+}
