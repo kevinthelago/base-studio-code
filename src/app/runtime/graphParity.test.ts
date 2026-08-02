@@ -81,17 +81,55 @@ function renderedLines(src: string): string[] {
  *  below, which fails if one of them starts passing. An exclusion nobody is forced to remove is how a
  *  guard quietly stops guarding. */
 const KNOWN_STALE: Record<string, string> = {
-  // (empty) — `settingspage` lived here until #4183 deleted the dormant graph Settings path outright.
-  // The hole closed by the page LEAVING, which is the better way for an exclusion to end.
+  // `ui-charts` cannot satisfy a one-file comparison BY CONSTRUCTION: it is three CTX-free source files
+  // concatenated behind one `provides` — `charts/Charts.tsx` + `primitives.tsx` + `telemetry.tsx` (#3690)
+  // — and `src` can only name one of them. This is the shape of exclusion the ratchet below is happy with:
+  // it will never be "fixed", so it will never start passing, and the reason does not decay.
+  "ui-charts": "the record concatenates 3 source files behind one `provides` (#3690); `src` names one",
+  // `settingspage` lived here until #4183 deleted the dormant graph Settings path outright. The hole
+  // closed by the page LEAVING, which is the better way for an exclusion to end.
 };
+
+/** The file half for records OUTSIDE the catalogue. Deliberately a separate glob from `shadowPages`'
+ *  `FILE_SOURCES`: that one is enumerated per page and pinned by a test that every globbed file is
+ *  declared, so a wide pattern there would fail by design. This one is lazy (no `eager`), so the breadth
+ *  costs nothing until a record actually names a path. */
+const RECORD_SOURCES = import.meta.glob<string>("/src/**/*.tsx", { query: "?raw", import: "default" });
+
+/** The file behind a pair, from either half. */
+async function sourceFor(file: string): Promise<string | null> {
+  const catalogued = await loadFileSource(file);
+  if (catalogued !== null) return catalogued;
+  const loader = RECORD_SOURCES[file];
+  return loader ? await loader() : null;
+}
 
 /** Every catalogue module that HAS both copies — a page whose file was deleted (fleet, #3636) has no
  *  baseline to compare against and is not a gap in the guard. */
-const ALL_PAIRS = SHADOW_PAGES.flatMap((page) =>
+const CATALOGUE_PAIRS = SHADOW_PAGES.flatMap((page) =>
   page.modules
     .filter((m): m is { recordId: string; file: string } => m.file !== null)
     .map((m) => ({ page: page.pageId, ...m })),
 );
+
+/** …AND every other packaged record whose `src` resolves to a real file (#4235). The catalogue is
+ *  page-shaped, so the 57 `shared/ui` records — the whole design system, authored as data — sat outside
+ *  this guard entirely. NINE of them had drifted, every one with the file as the newer copy: #3775's
+ *  keyboard-operability work (`clickable(onClick)`, role/tabIndex/Enter-Space) had reached `ui-card`,
+ *  `ui-data-table-row`, `ui-checkbox` and `ui-toggle` as FILES while the records still rendered a bare
+ *  `onClick`; `ui-graph-canvas` still rendered a `<Box>` where #4140 had switched the file to
+ *  `<div ref={setWorld}>` "because setWorld needs a REAL DOM ref", so the record never bound it at all.
+ *  A guard scoped to pages could not see any of it — which is the whole lesson of #4174/#4179 repeating
+ *  one level down. Coverage is now every record with a file, not every record on a page. */
+const catalogued = new Set(CATALOGUE_PAIRS.map((p) => p.recordId));
+const RECORD_PAIRS = [...RECORDS.values()]
+  .map((r) => r as { id: string; src?: string })
+  .filter((r) => r.src && !catalogued.has(r.id))
+  .map((r) => ({ page: "record", recordId: r.id, file: `/${r.src}` }))
+  .filter((p) => p.file in RECORD_SOURCES)
+  .sort((a, b) => a.recordId.localeCompare(b.recordId));
+
+const ALL_PAIRS = [...CATALOGUE_PAIRS, ...RECORD_PAIRS];
 const PAIRS = ALL_PAIRS.filter((p) => !(p.recordId in KNOWN_STALE));
 const STALE_PAIRS = ALL_PAIRS.filter((p) => p.recordId in KNOWN_STALE);
 
@@ -100,13 +138,16 @@ describe("every graph record renders what its source file renders", () => {
     // Non-vacuity for the SET: a catalogue that stopped resolving would make every case below vanish and
     // the suite would still be green — the same silent-pass this file exists to prevent, one level up.
     expect(PAIRS.length).toBeGreaterThan(30);
+    // …and the record half is real too (#4235): the 57 shared/ui records plus the feature-internal
+    // ones. A typo in the glob would silently drop every one of them and this file would stay green.
+    expect(RECORD_PAIRS.length).toBeGreaterThan(50);
     const graphOnly = SHADOW_PAGES.flatMap((p) => p.modules).filter((m) => m.file === null);
     expect(graphOnly.every((m) => m.recordId.startsWith("fleet")), "only fleet is graph-only today").toBe(true);
   });
 
   it.each(PAIRS)("$recordId ($page)", async ({ recordId, file }) => {
     const record = RECORDS.get(recordId);
-    const source = await loadFileSource(file);
+    const source = await sourceFor(file);
     // No provenance-header assertion: `projectspage` was authored by hand (#3874, the largest record at
     // ~25k chars) rather than by a `gen-*-graph.cjs` script, so it has none. The header is comment lines
     // either way, dropped below — the real non-vacuity guards are the line counts.
@@ -147,7 +188,7 @@ describe("every graph record renders what its source file renders", () => {
   // exclusion outlives its reason and the hole it leaves is invisible.
   it.each(STALE_PAIRS)("$recordId is still stale — drop its KNOWN_STALE entry once it is fixed", async ({ recordId, file }) => {
     const record = RECORDS.get(recordId);
-    const source = await loadFileSource(file);
+    const source = await sourceFor(file);
     expect(renderedLines(record?.srcText ?? ""), KNOWN_STALE[recordId])
       .not.toEqual(renderedLines(source ?? ""));
   });

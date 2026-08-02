@@ -9,6 +9,7 @@
   "composes": [
     "Box",
     "Chip",
+    "Eyebrow",
     "Row",
     "Stack",
     "Text"

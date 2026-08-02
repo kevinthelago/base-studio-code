@@ -9,6 +9,7 @@
   "composes": [
     "Box",
     "Button",
+    "Eyebrow",
     "GraphCanvas",
     "SoundsInspector",
     "SoundsKitGraph",

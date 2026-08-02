@@ -7,9 +7,11 @@
   "composes": [
     "Box",
     "Button",
+    "CardListRow",
     "Chip",
     "SectionHeader"
   ],
   "src": "src/features/security/SecurityAssignments.tsx",
-  "folder": "features/security"
+  "folder": "features/security",
+  "props": []
 }

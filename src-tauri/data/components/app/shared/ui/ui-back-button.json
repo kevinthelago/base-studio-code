@@ -1,0 +1,63 @@
+{
+  "id": "ui-back-button",
+  "name": "BackButton",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/shared/ui/controls/BackButton",
+  "srcText": "// BackButton, AS GRAPH SOURCE (#4235, epic #3604) — one of the eight shared/ui components the batches\n// #3660-#3692 left behind: reached by packaged records, provided by none. Its\n// `provides: \"@/shared/ui/controls/BackButton\"` makes the runtime loader vendor THIS source wherever a graph\n// component imports that specifier (the registered module is the fallback). Transcribed verbatim; the\n// CSS import is dropped (the host owns the stylesheet) and specifiers are absolute. Deps stay code.\n// One canonical back control (#1752) — replaces the ad-hoc text-arrow \"←\" strings that were scattered\n// across the planner. Always renders the `chevron_left` SVG (never the literal \"←\"), so every back\n// affordance looks the same.\n//\n//   variant=\"icon\"  — a boxed 30×30 chevron button (the planner-header design). `label` is ignored.\n//   variant=\"text\"  — a chevron + text label (e.g. \"portfolio\", \"fleet\", \"back\"). The call site keeps\n//                     its own look by passing `className`/`style` (e.g. \"nav-btn\", \"btn ghost\", or the\n//                     inline header-link style); this component only standardizes the glyph + layout.\nimport type { CSSProperties } from \"react\";\nimport { Ic } from \"@/shared/ui/icons\";\n\ninterface BackButtonProps {\n  onClick: () => void;\n  /** Required — back buttons must be screen-reader labelled (the bare chevron isn't). */\n  \"aria-label\": string;\n  variant?: \"icon\" | \"text\";\n  /** Text-variant label rendered after the chevron. */\n  label?: string;\n  disabled?: boolean;\n  className?: string;\n  style?: CSSProperties;\n  /** Chevron px size (defaults: 18 for icon, 14 for text). */\n  size?: number;\n  title?: string;\n}\n\nexport function BackButton({\n  onClick, \"aria-label\": ariaLabel, variant = \"text\", label, disabled, className, style, size, title,\n}: BackButtonProps) {\n  if (variant === \"icon\") {\n    return (\n      <button\n        type=\"button\"\n        onClick={onClick}\n        disabled={disabled}\n        aria-label={ariaLabel}\n        title={title ?? ariaLabel}\n        className={className}\n        style={{\n          width: 30, height: 30, flex: \"0 0 30px\",\n          display: \"inline-flex\", alignItems: \"center\", justifyContent: \"center\",\n          background: \"var(--bg-elev)\", border: \"1px solid var(--border)\",\n          borderRadius: \"var(--r-md)\", cursor: \"pointer\",\n          color: \"var(--fg)\", padding: 0, marginRight: 2,\n          ...style,\n        }}\n      ><Ic n=\"chevron_left\" size={size ?? 18} /></button>\n    );\n  }\n  return (\n    <button\n      type=\"button\"\n      onClick={onClick}\n      disabled={disabled}\n      aria-label={ariaLabel}\n      title={title}\n      className={className}\n      style={{ display: \"inline-flex\", alignItems: \"center\", gap: 4, ...style }}\n    >\n      <Ic n=\"chevron_left\" size={size ?? 14} />\n      {label}\n    </button>\n  );\n}\n",
+  "src": "src/shared/ui/controls/BackButton.tsx",
+  "folder": "shared/ui/controls",
+  "composes": [
+    "Icons"
+  ],
+  "props": [
+    {
+      "name": "onClick",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "variant",
+      "type": "\"icon\" | \"text\"",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "label",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "disabled",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "style",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "size",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    }
+  ]
+}
