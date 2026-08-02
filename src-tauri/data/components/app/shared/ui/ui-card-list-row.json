@@ -1,0 +1,91 @@
+{
+  "id": "ui-card-list-row",
+  "name": "CardListRow",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/shared/ui/data/CardListRow",
+  "srcText": "// CardListRow, AS GRAPH SOURCE (#4235, epic #3604) — one of the eight shared/ui components the batches\n// #3660-#3692 left behind: reached by packaged records, provided by none. Its\n// `provides: \"@/shared/ui/data/CardListRow\"` makes the runtime loader vendor THIS source wherever a graph\n// component imports that specifier (the registered module is the fallback). Transcribed verbatim; the\n// CSS import is dropped (the host owns the stylesheet) and specifiers are absolute. Deps stay code.\nimport type { ReactNode, CSSProperties } from \"react\";\nimport { clickable } from \"@/shared/ui/a11y\";\n\nexport interface CardListRowProps {\n  /** The 18px lead column — a status dot, icon, or avatar. */\n  lead?: ReactNode;\n  /** Primary label. */\n  title: ReactNode;\n  /** A pill rendered next to the title (left of the spacer). */\n  badge?: ReactNode;\n  /** A right-aligned element on the title line — a control or badge pushed to the right. */\n  titleAside?: ReactNode;\n  /** Secondary line under the title. */\n  subtitle?: ReactNode;\n  /** Full-width rich content below the header line (e.g. a wrapping chip list). */\n  body?: ReactNode;\n  /** The trailing (auto-width) column — chips, counts, controls, a toggle. */\n  trailing?: ReactNode;\n  /** Selection highlight. */\n  selected?: boolean;\n  /** Dimmed/disabled look. */\n  off?: boolean;\n  /** \"card\" (default) = bordered card; \"grouped\" = no border, top-separator, inherits the parent bg. */\n  variant?: \"card\" | \"grouped\";\n  /** A left-rail accent colour, shown when the row is `selected` (e.g. a profile colour). */\n  accent?: string;\n  onClick?: () => void;\n  className?: string;\n}\n\n/** CardListRow — the selectable card-list row: a `[lead · title+badge / subtitle · trailing]` bordered\n *  card. The card-list archetype of the row vocabulary (#1865); its sibling is <DataTableRow> for\n *  columnar tables. Every card-list (mcp servers/hooks, agent profiles, …) composes this with its own\n *  slot content, so the kit/SDK emits one row shape rather than N bespoke rows. */\nexport function CardListRow({ lead, title, badge, titleAside, subtitle, body, trailing, selected, off, variant = \"card\", accent, onClick, className }: CardListRowProps) {\n  return (\n    <div\n      className={\n        \"card-list-row\" +\n        (variant === \"grouped\" ? \" grouped\" : \"\") +\n        (body != null ? \" has-body\" : \"\") +\n        (accent != null ? \" has-accent\" : \"\") +\n        (onClick ? \" clickable\" : \"\") +\n        (selected ? \" selected\" : \"\") +\n        (off ? \" off\" : \"\") +\n        (className ? ` ${className}` : \"\")\n      }\n      style={accent != null ? ({ [\"--clr-accent\" as string]: accent } as CSSProperties) : undefined}\n      {...clickable(onClick)}\n    >\n      <div className=\"clr-lead\">{lead}</div>\n      <div className=\"clr-main\">\n        <div className=\"clr-line1\">\n          <span className=\"clr-name\">{title}</span>\n          {badge}\n          {titleAside != null && <><span className=\"clr-spacer\" />{titleAside}</>}\n        </div>\n        {subtitle != null && <div className=\"clr-desc\">{subtitle}</div>}\n        {body != null && <div className=\"clr-body\">{body}</div>}\n      </div>\n      {trailing != null && <div className=\"clr-aside\">{trailing}</div>}\n    </div>\n  );\n}\n",
+  "src": "src/shared/ui/data/CardListRow.tsx",
+  "folder": "shared/ui/data",
+  "composes": [],
+  "props": [
+    {
+      "name": "lead",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "title",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "badge",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "titleAside",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "subtitle",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "body",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "trailing",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "selected",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "off",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "variant",
+      "type": "\"card\" | \"grouped\"",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "accent",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onClick",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    }
+  ]
+}

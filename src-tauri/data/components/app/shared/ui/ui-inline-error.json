@@ -1,0 +1,51 @@
+{
+  "id": "ui-inline-error",
+  "name": "InlineError",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/shared/ui/feedback/InlineError",
+  "srcText": "// InlineError, AS GRAPH SOURCE (#4235, epic #3604) — one of the eight shared/ui components the batches\n// #3660-#3692 left behind: reached by packaged records, provided by none. Its\n// `provides: \"@/shared/ui/feedback/InlineError\"` makes the runtime loader vendor THIS source wherever a graph\n// component imports that specifier (the registered module is the fallback). Transcribed verbatim; the\n// CSS import is dropped (the host owns the stylesheet) and specifiers are absolute. Deps stay code.\n// InlineError — the small mono danger callout (#2138). A static, bordered, danger-toned box that\n// wraps a short error string in monospace. The pattern was pasted ~identically at every place that\n// surfaced a failed action or query (the delete-project modal, the published-projects list, the\n// board query banner), so it lives here once.\n//\n// This is deliberately its own primitive rather than a Banner tone: Banner is a status STRIP (louder\n// tint, optional lead/dismiss/right slots, a flex row), whereas this is a plain read-only callout —\n// danger-colored monospace text on the fixed 88%-transparent danger wash, no icon, no dismiss. The\n// only per-site knobs are padding, corner radius, and the border tint (60% vs 70%), all exposed so\n// each call site renders pixel-identical to the inline version it replaced. `style` passes through\n// for the per-site margin.\n\nimport type { CSSProperties, ReactNode } from \"react\";\nimport { Box, type Radius } from \"@/shared/ui/layout/Box\";\nimport type { Space } from \"@/shared/ui/layout/space\";\n\nexport interface InlineErrorProps {\n  /** The error message. */\n  children: ReactNode;\n  /** Inner padding — a rung/px or a [block, inline] pair. Default [8, 12]. */\n  pad?: Space | [Space, Space];\n  /** Corner radius — a rung (sm/md/lg → --r-*) or raw px. Default 4. */\n  radius?: Radius;\n  /** Border tint — the transparency % of --danger in the 1px border. Default 70 (some sites use 60). */\n  borderFade?: number;\n  className?: string;\n  style?: CSSProperties;\n}\n\n/** InlineError — the shared mono danger callout: monospace, danger-colored text on a translucent\n *  danger wash with a matching hairline border. Renders its message children; nothing else. */\nexport function InlineError({\n  children, pad = [8, 12], radius = 4, borderFade = 70, className, style,\n}: InlineErrorProps) {\n  return (\n    <Box\n      className={\"mono\" + (className ? ` ${className}` : \"\")}\n      pad={pad}\n      radius={radius}\n      bg=\"color-mix(in oklch, var(--danger), transparent 88%)\"\n      border={`color-mix(in oklch, var(--danger), transparent ${borderFade}%)`}\n      style={{ fontSize: 11, color: \"var(--danger)\", ...style }}\n    >\n      {children}\n    </Box>\n  );\n}\n",
+  "src": "src/shared/ui/feedback/InlineError.tsx",
+  "folder": "shared/ui/feedback",
+  "composes": [
+    "Box"
+  ],
+  "props": [
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "pad",
+      "type": "Space | [Space, Space]",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "radius",
+      "type": "Radius",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "borderFade",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "style",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    }
+  ]
+}

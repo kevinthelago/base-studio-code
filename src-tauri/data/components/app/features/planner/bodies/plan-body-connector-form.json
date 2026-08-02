@@ -11,6 +11,7 @@
     "Box",
     "Chip",
     "Grid",
+    "InlineError",
     "Row",
     "Stack",
     "Text"

@@ -1,0 +1,63 @@
+{
+  "id": "ui-code",
+  "name": "Code",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/shared/ui/data/Code",
+  "srcText": "// Code, AS GRAPH SOURCE (#4235, epic #3604) — one of the eight shared/ui components the batches\n// #3660-#3692 left behind: reached by packaged records, provided by none. Its\n// `provides: \"@/shared/ui/data/Code\"` makes the runtime loader vendor THIS source wherever a graph\n// component imports that specifier (the registered module is the fallback). Transcribed verbatim; the\n// CSS import is dropped (the host owns the stylesheet) and specifiers are absolute. Deps stay code.\n// Code — the one read-only monospace code/prompt block (#2102). A tiny framed `<pre>` that bakes in\n// the \"preStyle\" recipe re-declared verbatim across the app (the kickoff-prompt preview + lane-context\n// blocks in the focused agent editor, and their kin): a scrollable, mono, muted, canvas-tinted panel.\n//\n// It is DISPLAY-ONLY — it renders text/JSON/logs, never a syntax-highlighted or interactive block\n// (per-line diffs, the crash boundary's kit-free `<pre>`, and file viewers keep their own markup).\n// Every prop is opt-in: `maxHeight` caps the scroll height, `wrap` toggles soft-wrapping (on) vs a\n// horizontal scroll (`whiteSpace: \"pre\"`), `tone` picks the foreground color, and `className`/`style`\n// pass through with `style` winning last so any single value stays overridable.\n\nimport type { CSSProperties, ReactNode } from \"react\";\nimport { toneColor, type Tone } from \"@/shared/ui/typography/type\";\nimport { SkeletonText } from \"@/shared/ui/feedback/Skeleton\";\n\nexport interface CodeProps {\n  children?: ReactNode;\n  /** Render LOADING (#2302): shimmer lines inside the code frame. `loadingLines` tunes the count (default 4). */\n  loading?: boolean;\n  loadingLines?: number;\n  /** Max scroll height in px before the block scrolls (default 150). */\n  maxHeight?: number;\n  /** Soft-wrap long lines (`pre-wrap`, default) vs a horizontal scroll (`pre`). */\n  wrap?: boolean;\n  /** Foreground color tone (default \"muted\" → var(--fg-muted)). */\n  tone?: Tone;\n  className?: string;\n  style?: CSSProperties;\n}\n\nexport function Code({ children, loading, loadingLines = 4, maxHeight = 150, wrap = true, tone = \"muted\", className, style }: CodeProps) {\n  return (\n    <pre\n      className={className}\n      style={{\n        margin: 0,\n        maxHeight,\n        overflow: \"auto\",\n        whiteSpace: wrap ? \"pre-wrap\" : \"pre\",\n        wordBreak: \"break-word\",\n        fontFamily: \"var(--mono)\",\n        fontSize: 10,\n        lineHeight: 1.5,\n        color: toneColor(tone),\n        background: \"var(--bg-canvas)\",\n        border: \"1px solid var(--border-soft)\",\n        borderRadius: 5,\n        padding: \"8px 9px\",\n        ...style,\n      }}\n    >\n      {loading ? <SkeletonText lines={loadingLines} lineH={9} /> : children}\n    </pre>\n  );\n}\n",
+  "src": "src/shared/ui/data/Code.tsx",
+  "folder": "shared/ui/data",
+  "composes": [
+    "Skeleton"
+  ],
+  "props": [
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "loading",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "loadingLines",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "maxHeight",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "wrap",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "tone",
+      "type": "Tone",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "style",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    }
+  ]
+}
