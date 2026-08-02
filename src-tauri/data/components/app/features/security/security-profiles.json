@@ -9,6 +9,7 @@
     "Box",
     "Button",
     "Card",
+    "CardListRow",
     "Chip",
     "ColorSwatch",
     "IconBox",
@@ -20,5 +21,6 @@
     "Text"
   ],
   "src": "src/features/security/SecurityProfiles.tsx",
-  "folder": "features/security"
+  "folder": "features/security",
+  "props": []
 }

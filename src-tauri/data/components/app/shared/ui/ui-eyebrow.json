@@ -1,0 +1,45 @@
+{
+  "id": "ui-eyebrow",
+  "name": "Eyebrow",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/shared/ui/typography/Eyebrow",
+  "srcText": "// Eyebrow, AS GRAPH SOURCE (#4235, epic #3604) — one of the eight shared/ui components the batches\n// #3660-#3692 left behind: reached by packaged records, provided by none. Its\n// `provides: \"@/shared/ui/typography/Eyebrow\"` makes the runtime loader vendor THIS source wherever a graph\n// component imports that specifier (the registered module is the fallback). Transcribed verbatim; the\n// CSS import is dropped (the host owns the stylesheet) and specifiers are absolute. Deps stay code.\n// Eyebrow — the uppercase-mono micro-label (#2720). A thin wrapper over Text that fixes the\n// one recurring recipe: mono + dim + uppercase + letter-spacing. It replaces the per-feature\n// `.ds-eyebrow` / `.themes-eyebrow` CSS rules (which differed only in font-size), so `size`\n// keeps each site's exact px (9.5 vs 10). Any extra prop (className, as, title, …) passes through.\n\nimport type { ReactNode, ElementType, CSSProperties } from \"react\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport interface EyebrowProps {\n  children?: ReactNode;\n  /** Font size in px — keeps existing sites lossless (ds sites use 9.5, themes uses 10). */\n  size?: number;\n  /** The rendered element (default `\"span\"`). */\n  as?: ElementType;\n  className?: string;\n  style?: CSSProperties;\n  /** Any other prop passes straight through to Text. */\n  [key: string]: unknown;\n}\n\nexport function Eyebrow({ children, size = 10, as = \"span\", style, ...rest }: EyebrowProps) {\n  return (\n    <Text\n      mono\n      size={size}\n      tone=\"dim\"\n      as={as}\n      style={{ letterSpacing: \".08em\", textTransform: \"uppercase\", ...style }}\n      {...rest}\n    >\n      {children}\n    </Text>\n  );\n}\n",
+  "src": "src/shared/ui/typography/Eyebrow.tsx",
+  "folder": "shared/ui/typography",
+  "composes": [
+    "Text"
+  ],
+  "props": [
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "size",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "as",
+      "type": "ElementType",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "style",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    }
+  ]
+}

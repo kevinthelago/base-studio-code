@@ -9,6 +9,7 @@
   "folder": "features/planner/bodies",
   "composes": [
     "Box",
+    "Code",
     "EmptyState",
     "Row",
     "Spacer",

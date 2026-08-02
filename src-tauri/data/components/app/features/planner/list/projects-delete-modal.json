@@ -10,6 +10,7 @@
   "composes": [
     "Box",
     "Button",
+    "InlineError",
     "ModalScrim",
     "Row",
     "Text"

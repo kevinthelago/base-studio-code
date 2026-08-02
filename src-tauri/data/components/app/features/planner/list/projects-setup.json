@@ -8,6 +8,7 @@
   "src": "src/features/planner/list/ProjectSetupPage.tsx",
   "folder": "features/planner/list",
   "composes": [
+    "BackButton",
     "BlueprintCard",
     "Box",
     "Button",

@@ -8,6 +8,7 @@
   "src": "src/features/planner/pane/FocusedShell.tsx",
   "folder": "features/planner/pane",
   "composes": [
+    "BackButton",
     "Box",
     "Button",
     "ProgressionRail",
