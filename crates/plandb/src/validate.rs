@@ -550,14 +550,18 @@ pub const APP_TYPES: [&str; 9] = [
 /// `harvest` (#4062) — the project exists to EXTRACT DATA FROM SOURCES.
 pub const LIFECYCLES: [&str; 5] = ["greenfield", "transform", "harden", "maintain", "harvest"];
 
-/// WHO RENDERS the project's UI (#4115) — a separate axis from `uiMode`, which only says where the
-/// DESIGNS come from. `studio` = our component graph is the render source (the build/publish
-/// pipeline, the host API and per-node analytics all apply); `own` = the project brings or keeps its
-/// own UI stack and none of that applies to it.
+/// Where a class of the project's artifacts comes from (#4115) — the vocabulary shared by BOTH system
+/// axes: `uiSystem` (who renders) and `algorithmSystem` (where the computation comes from).
 ///
-/// Mirrors `UI_SYSTEMS` in `src/features/planner/lib/classifyConfig.ts`; keep the two in lockstep, or
-/// the planner can write a value this validator accepts and the app cannot read (or the reverse).
-pub const UI_SYSTEMS: [&str; 2] = ["studio", "own"];
+/// `studio` = our data-driven stores are the source, and our host TAKES IN and runs the project's
+/// artifacts — component code rendered in a frame, stored `vizCode` compiled and executed. That is
+/// LLM-authored code inside our blast radius, so these axes are a SECURITY boundary, not a routing
+/// preference: isolate-before-render is owed exactly where the answer is `studio`. `own` = the project
+/// keeps its own stack, and nothing of it is fetched or executed here.
+///
+/// Mirrors `SYSTEM_SOURCES` in `src/features/planner/lib/classifyConfig.ts`; keep the two in lockstep,
+/// or the planner can write a value this validator accepts and the app cannot read (or the reverse).
+pub const SYSTEM_SOURCES: [&str; 2] = ["studio", "own"];
 
 /// Validate a project classification blob (#3783/#3784/#3806/#4115): a JSON object whose optional
 /// `uiMode` is "custom"|"external", whose optional `appType`/`lifecycle`/`uiSystem` are taxonomy tokens, and whose
@@ -582,7 +586,8 @@ pub fn validate_classify_config(v: &Value) -> Result<(), String> {
     for (key, allowed) in [
         ("appType", &APP_TYPES[..]),
         ("lifecycle", &LIFECYCLES[..]),
-        ("uiSystem", &UI_SYSTEMS[..]),
+        ("uiSystem", &SYSTEM_SOURCES[..]),
+        ("algorithmSystem", &SYSTEM_SOURCES[..]),
     ] {
         if let Some(t) = v.get(key) {
             if !t.as_str().is_some_and(|s| allowed.contains(&s)) {
@@ -609,6 +614,7 @@ pub fn classify_readiness(v: &Value) -> String {
     let app_type = v.get("appType").and_then(Value::as_str).unwrap_or("application");
     let lifecycle = v.get("lifecycle").and_then(Value::as_str).unwrap_or("greenfield");
     let ui_system = v.get("uiSystem").and_then(Value::as_str).unwrap_or("studio");
+    let algo_system = v.get("algorithmSystem").and_then(Value::as_str).unwrap_or("studio");
     let on = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
     let mut stages = Vec::new();
     if on("needsMarket") { stages.push("market"); }
@@ -617,9 +623,13 @@ pub fn classify_readiness(v: &Value) -> String {
     if on("needsSkills") { stages.push("skills"); }
     if on("needsAutomations") { stages.push("automations"); }
     let list = if stages.is_empty() { "none".to_string() } else { stages.join(", ") };
-    // #4115: `uiSystem` is echoed BEFORE `uiMode`, because it governs whether uiMode means anything —
-    // for an `own` project our pipeline never renders, whichever surface the designs came from.
-    format!(" — {lifecycle} {app_type}; uiSystem {ui_system}; uiMode {ui}; optional stages: {list}")
+    // #4115: both system axes are echoed BEFORE `uiMode`, because they govern whether uiMode means
+    // anything — for an `own` project our pipeline never renders, whichever surface the designs came
+    // from — and because they are the security-relevant answer the planner must be able to re-read.
+    format!(
+        " — {lifecycle} {app_type}; uiSystem {ui_system}; algorithmSystem {algo_system}; \
+         uiMode {ui}; optional stages: {list}"
+    )
 }
 
 // ── transformations (`bsc plan transformation add/update`) — the modification list (#2509) ──────
@@ -1843,10 +1853,11 @@ mod tests {
     fn classify_accepts_every_ui_system_and_rejects_a_near_miss() {
         // #4115. `uiSystem` answers WHO RENDERS the project's UI; `uiMode` only says where the
         // designs come from. Both tokens must validate…
-        for s in UI_SYSTEMS {
+        for s in SYSTEM_SOURCES {
             assert!(validate_classify_config(&json!({ "uiSystem": s })).is_ok(), "uiSystem {s}");
+            assert!(validate_classify_config(&json!({ "algorithmSystem": s })).is_ok(), "algorithmSystem {s}");
         }
-        assert!(UI_SYSTEMS.contains(&"studio") && UI_SYSTEMS.contains(&"own"));
+        assert!(SYSTEM_SOURCES.contains(&"studio") && SYSTEM_SOURCES.contains(&"own"));
         // …and the two axes must be independently settable, including the combination the axis
         // exists for: the user brings design files AND keeps their own rendering stack.
         assert!(validate_classify_config(&json!({ "uiSystem": "own", "uiMode": "external" })).is_ok());
@@ -1859,6 +1870,20 @@ mod tests {
         assert!(validate_classify_config(&json!({ "uiSystem": "external" })).is_err());
         assert!(validate_classify_config(&json!({ "uiMode": "own" })).is_err());
         assert!(validate_classify_config(&json!({ "uiSystem": 1 })).is_err());
+    }
+
+    #[test]
+    fn classify_takes_the_two_system_axes_independently() {
+        // #4115: `uiSystem` and `algorithmSystem` are the two halves of the surface our host RUNS —
+        // component code rendered in a frame, stored vizCode compiled and executed. They differ often
+        // (own UI, studio algorithms is a normal project), so neither may imply the other.
+        assert!(validate_classify_config(&json!({ "uiSystem": "own", "algorithmSystem": "studio" })).is_ok());
+        assert!(validate_classify_config(&json!({ "uiSystem": "studio", "algorithmSystem": "own" })).is_ok());
+        // Same rejection discipline as its twin — the vocabulary is named so the planner self-corrects.
+        let err = validate_classify_config(&json!({ "algorithmSystem": "graph" })).unwrap_err();
+        assert!(err.contains("algorithmSystem"), "{err}");
+        assert!(err.contains("studio") && err.contains("own"), "{err}");
+        assert!(validate_classify_config(&json!({ "algorithmSystem": false })).is_err());
     }
 
     #[test]
@@ -1905,14 +1930,20 @@ mod tests {
     }
 
     #[test]
-    fn classify_readiness_echoes_the_ui_system_ahead_of_the_ui_mode() {
-        // #4115: the planner reads this line back to confirm what it just recorded, so the axis that
-        // decides whether our pipeline renders at all has to be IN it — and ahead of `uiMode`, which
-        // only means something when the answer is `studio`.
-        let own = classify_readiness(&json!({ "uiSystem": "own", "uiMode": "external" }));
+    fn classify_readiness_echoes_both_system_axes_ahead_of_the_ui_mode() {
+        // #4115: the planner reads this line back to confirm what it just recorded, so the axes that
+        // decide whether our platform renders and executes for this project at all have to be IN it —
+        // and ahead of `uiMode`, which only means something when the UI answer is `studio`.
+        let own = classify_readiness(&json!({
+            "uiSystem": "own", "algorithmSystem": "studio", "uiMode": "external"
+        }));
         assert!(own.contains("uiSystem own"), "{own}");
+        assert!(own.contains("algorithmSystem studio"), "{own}");
         assert!(own.find("uiSystem") < own.find("uiMode"), "{own}");
-        // Unset reports the read-as default rather than a blank, like every other axis.
-        assert!(classify_readiness(&json!({})).contains("uiSystem studio"));
+        assert!(own.find("algorithmSystem") < own.find("uiMode"), "{own}");
+        // Unset reports the read-as default rather than a blank, like every other axis — and BOTH
+        // axes report, so a project that owns one half can never read as owning neither.
+        let bare = classify_readiness(&json!({}));
+        assert!(bare.contains("uiSystem studio") && bare.contains("algorithmSystem studio"), "{bare}");
     }
 }
