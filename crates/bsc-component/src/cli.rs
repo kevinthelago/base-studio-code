@@ -1136,6 +1136,31 @@ fn read_set_items(noun: &str, file: Option<&str>) -> Result<Vec<serde_json::Valu
 /// fire the ui-touch hook. Returns the written ids in input order. Split out of [`cmd_set`] so the
 /// concurrency + stamping logic is unit-testable without a drivable stdin. `--if-version` takes a
 /// SINGLE record (a lone version number is meaningless across a batch).
+/// The warning for a write that REMOVES fields the stored record had (#4197) — `None` when it removes
+/// nothing, which is every full-record write (the app's `pushComponent`, `bsc ui import`, the seed
+/// reconcile), so the common path stays silent and the warning keeps its meaning.
+///
+/// PURE so the decision is under test rather than tangled in the write loop; the caller prints it. It
+/// names each field, because "this write is destructive" without a list is not actionable — the reader
+/// needs to know whether it dropped `srcText` or a `folder` tag.
+fn destructive_write_warning(
+    id: &str,
+    noun: &str,
+    prior: &serde_json::Value,
+    incoming: &serde_json::Value,
+) -> Option<String> {
+    let dropped = crate::record::dropped_fields(prior, incoming);
+    if dropped.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "warning: this write REMOVES {} field(s) from {noun} '{id}': {}. \
+         `set` replaces the whole record — re-send them to keep them, or `bsc ui log {id}` to see what was there.",
+        dropped.len(),
+        dropped.join(", "),
+    ))
+}
+
 fn set_stamped(
     store: &bsc_json_store::Store,
     items: &[serde_json::Value],
@@ -1162,6 +1187,14 @@ fn set_stamped(
                     "version conflict on {noun} '{id}': its current rev is {prior_rev}, not {n} — it changed since you read it. Re-read (`bsc ui log {id}`) and retry."
                 ));
             }
+        }
+        // #4197: a `set` REPLACES the whole record, so a partial write deletes every field it did not
+        // restate. Say so, loudly, before the write lands. NOT fatal: the app's bridge and the seed
+        // reconcile legitimately write whole records, and refusing would break both — but a silent
+        // deletion is how #4154 cost a 16-entry reorg on the algorithms side, and here the record may be
+        // the ONLY copy (fleetpage has had no source file since #3636).
+        if let Some(msg) = destructive_write_warning(&id, noun, &prior, item) {
+            eprintln!("{msg}");
         }
         let mut stamped = item.clone();
         crate::record::stamp_with_history(&mut stamped, &prior, writer, &now, note);
@@ -4958,6 +4991,68 @@ mod tests {
     /// Parse a stored record's verbatim JSON back to a `Value` (the read-back the assertions use).
     fn stored(store: &bsc_json_store::Store, id: &str) -> serde_json::Value {
         serde_json::from_str(&store.get(id).unwrap().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_partial_write_warns_about_every_field_it_would_delete() {
+        // The #4154 defect, in the component store: `set` REPLACES, so a write that restates only the
+        // source deletes the record's kit, role, edges and provenance-of-origin. The record here is a
+        // PAGE whose source file no longer exists (fleetpage, since #3636) — the case where the deletion
+        // is unrecoverable from the repo, and the reason this warning exists at all.
+        let prior = serde_json::json!({
+            "id": "fleetpage", "name": "FleetPage", "kitId": "base-studio-code", "role": "page",
+            "composes": ["Row", "Card"], "src": "src/features/planner/fleet/Fleet.tsx",
+            "folder": "features/planner/fleet", "srcText": "old",
+            "rev": 4, "updatedAt": "2026-07-01T00:00:00Z", "updatedBy": "designer", "history": [],
+        });
+        let partial = serde_json::json!({ "id": "fleetpage", "srcText": "new" });
+
+        let msg = destructive_write_warning("fleetpage", "component", &prior, &partial)
+            .expect("a partial write over a rich record is destructive");
+        for field in ["composes", "folder", "kitId", "name", "role", "src"] {
+            assert!(msg.contains(field), "the warning names {field}: {msg}");
+        }
+        // …and NOT the server-managed fields, which every write re-stamps regardless of the payload.
+        // Reporting those would fire on every single write and train the reader to ignore it.
+        for noise in ["rev", "updatedAt", "updatedBy", "history"] {
+            assert!(!msg.contains(&format!(" {noise},")) && !msg.contains(&format!(" {noise}.")),
+                "the warning does not cry wolf about {noise}: {msg}");
+        }
+    }
+
+    #[test]
+    fn a_full_record_write_is_silent() {
+        // The common path — the app's `pushComponent`, `bsc ui import`, and the seed reconcile all send
+        // whole records. If those warned, the warning would mean nothing within a day.
+        let prior = serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui", "rev": 2 });
+        let full = serde_json::json!({ "id": "button", "name": "Button v2", "kitId": "react-ui" });
+        assert!(destructive_write_warning("button", "component", &prior, &full).is_none());
+    }
+
+    #[test]
+    fn a_destructive_write_is_recorded_in_the_history_separately_from_edits() {
+        // `changed` already counts a removal, but files it next to ordinary edits — so `bsc ui log` could
+        // not tell "deleted half the record" from "fixed a typo". `dropped` is what makes that legible,
+        // and it is ABSENT on a non-destructive write so existing entries keep their shape.
+        let store = tmp_component_store("drop-history");
+        let rich = serde_json::json!({
+            "id": "card", "name": "Card", "kitId": "react-ui", "role": "composite", "composes": ["Row"],
+        });
+        set_stamped(&store, std::slice::from_ref(&rich), None, "seed", "component", None).unwrap();
+        let first: serde_json::Value = stored(&store, "card");
+        let entry = first["history"].as_array().unwrap().last().unwrap();
+        assert!(entry.get("dropped").is_none(), "a create drops nothing: {entry}");
+
+        let partial = serde_json::json!({ "id": "card", "name": "Card" });
+        set_stamped(&store, std::slice::from_ref(&partial), None, "designer", "component", None).unwrap();
+        let after: serde_json::Value = stored(&store, "card");
+        let entry = after["history"].as_array().unwrap().last().unwrap();
+        let dropped: Vec<&str> =
+            entry["dropped"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(dropped, vec!["composes", "kitId", "role"]);
+        // …and the fields really are gone from the stored record — the warning describes a real deletion,
+        // it does not merely predict one.
+        assert!(after.get("composes").is_none() && after.get("role").is_none());
     }
 
     #[test]
