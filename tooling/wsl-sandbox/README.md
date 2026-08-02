@@ -117,8 +117,11 @@ The filesystem definition, the provision/import path, and the launch rewiring (s
 the distro, with the hub + worktrees on its ext4) are all built. #4260 added the agent runtimes and
 made per-agent Linux users actually usable.
 
-**Still opt-in.** Making the sandbox the *only* posture needs one more thing this repo can't decide on
-its own: `provision_sandbox` requires the rootfs tarball to be staged at
-`~/.base-studio-code/wsl/bsc-agent-sandbox.tar` by a hand-run Docker build. Until the tarball ships
-with the installer, failing closed on an unprovisioned machine would mean no agent can launch until
-the user installs Docker — see #4260.
+**Still opt-in.** Making the sandbox the *only* posture needs a delivery route for the rootfs:
+`provision_sandbox` requires the tarball to be staged at
+`~/.base-studio-code/wsl/bsc-agent-sandbox.tar` by a hand-run Docker build. Failing closed before that
+exists would mean no agent can launch on a machine without Docker.
+
+Measured, with the runtimes baked in: **~730 MB** exported (from ~205 MB before; Claude Code alone is
+~260 MB after the musl prune). That is too heavy to bundle into the installer, so the likely route is
+fetching it on first provision from a release asset — see #4260.
