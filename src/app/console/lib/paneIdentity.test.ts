@@ -156,10 +156,16 @@ describe("paneIdentity (#1176)", () => {
       // Distinct workers ⇒ distinct identities ⇒ distinct users (isolation).
       expect(sandboxUserIdentity("payments:auth-ui", D)).not.toBe(sandboxUserIdentity("payments:checkout-stream", D));
     });
-    it("the director keeps the shared distro user even when sandboxed", () => {
-      expect(sandboxUserIdentity("payments:director", D)).toBeNull();
+    it("the DIRECTOR gets its own user too, isolated from every worker (#4260)", () => {
+      // The issue's requirement is that worker↔director be isolated by the OS, not just by the
+      // bsc-scope write hook. The director loses nothing: its cwd is the hub, which lives in the
+      // group-shared base every agent user can reach, not inside anyone's private home.
+      expect(sandboxUserIdentity("payments:director", D)).toBe("payments:director");
+      expect(sandboxUserIdentity("payments:director", D)).not.toBe(sandboxUserIdentity("payments:checkout-stream", D));
+      // Per project — two projects' directors are different agents, so different users.
+      expect(sandboxUserIdentity("payments:director", D)).not.toBe(sandboxUserIdentity("billing:director", D));
     });
-    it("non-worker sandboxed panes (triage / manual / planner / positional) keep the shared user", () => {
+    it("non-fleet sandboxed panes (triage / manual / planner / positional) keep the shared user", () => {
       expect(sandboxUserIdentity("payments:owner/web:triage", D)).toBeNull();
       expect(sandboxUserIdentity("man:tab-1:p0", D)).toBeNull();
       expect(sandboxUserIdentity("planning_payments", D)).toBeNull();
