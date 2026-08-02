@@ -17,7 +17,7 @@
 // is kept with an `orphaned` notice — the designer can delete it, or a hard reset can force-clear.)
 import type { ComponentRecord, Kit } from "./model";
 import { projectComponent } from "./componentBridge";
-import { reconcileSeed, stampSeedHash, type SeedReconcile } from "./seedRefresh";
+import { planRestamp, reconcileSeed, stampSeedHash, type RestampPlan, type SeedReconcile } from "./seedRefresh";
 
 /** The one packaged kit id — the base-studio-code app's own UI as a single graph (#3543). */
 export const BASE_STUDIO_CODE_KIT_ID = "base-studio-code";
@@ -74,6 +74,18 @@ export function reconcileComponents(loaded: ComponentRecord[]): SeedReconcile<Co
   // self-contained a page so it would render in the preview sandbox) is forced back to the seed instead
   // of kept — which is what silently shadowed Settings (#3658), then the whole app (#3723).
   return reconcileSeed(loaded, SEED_COMPONENTS, "component", { seedAuthoritative: (r) => r.role === "page" });
+}
+
+/**
+ * Plan the `unstamped` repair for components (#4207 — the rule and why the stamp carries the SEED's hash
+ * live on {@link planRestamp}). Passes the SAME `seedAuthoritative` predicate `reconcileComponents` uses,
+ * so `role: page` records are DEFERRED, never stamped: for a page the seed wins unconditionally (#3723),
+ * and stamping one would hand the seed copy straight over the store copy the app currently renders. On
+ * this repo those copies are substantively different (the store's `fleetpage` source is a third shorter
+ * than its seed), so that swap is a rendering change, not a repair.
+ */
+export function planComponentRestamp(loaded: ComponentRecord[]): RestampPlan<ComponentRecord> {
+  return planRestamp(loaded, SEED_COMPONENTS, { seedAuthoritative: (r) => r.role === "page" });
 }
 
 /** Reconcile loaded kits with the packaged built-in kits (see {@link reconcileComponents}). Drops every

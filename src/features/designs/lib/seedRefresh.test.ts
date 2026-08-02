@@ -3,7 +3,7 @@
 // stability + exclusions, and the kit-shaped variants of the same verdicts.
 import { describe, it, expect } from "vitest";
 import type { ComponentRecord, Kit } from "./model";
-import { fnv1a, stableStringify, seedHashOf, stampSeedHash, reconcileSeed } from "./seedRefresh";
+import { fnv1a, stableStringify, seedHashOf, stampSeedHash, reconcileSeed, planRestamp } from "./seedRefresh";
 
 /** A minimal component-shaped record. */
 const comp = (over: Partial<ComponentRecord> = {}): ComponentRecord => ({
@@ -300,5 +300,70 @@ describe("reconcileSeed — unstamped built-ins (#4216)", () => {
     // It survives untouched. (`records` also gains `seedNew` — a packaged built-in the store lacks is
     // re-seeded, which is the pre-existing behaviour and not what this case is about.)
     expect(r.records).toContainEqual(mine);
+  });
+});
+
+describe("planRestamp — repairing the unstamped (#4207)", () => {
+  // The packaged seed, and a store copy of the SAME id that lost its `builtin` flag to a pre-#4197
+  // partial write AND has since been independently edited (the real shape: harvests kept updating the
+  // store copy while the reconcile skipped it, so the two drifted apart in both directions).
+  const seeded = stampSeedHash(comp({ version: "2.0.0", name: "Button" }));
+  const unstamped = comp({ version: "1.0.0", name: "ButtonTab", builtin: undefined, seedHash: undefined });
+
+  it("stamps a record that a packaged seed exists for", () => {
+    const { stamps, deferred } = planRestamp([unstamped], [seeded]);
+    expect(stamps).toHaveLength(1);
+    expect(stamps[0].builtin).toBe(true);
+    expect(deferred).toEqual([]);
+  });
+
+  it("leaves the content completely untouched", () => {
+    const { stamps } = planRestamp([unstamped], [seeded]);
+    const { builtin: _b, seedHash: _h, ...after } = stamps[0];
+    const { builtin: _b2, seedHash: _h2, ...before } = unstamped;
+    expect(after).toEqual(before);
+  });
+
+  // THE design decision. Stamped with the SEED's hash the record reads as EDITED against an UNMOVED
+  // seed, which is the verdict that KEEPS the store copy. Stamped with its OWN hash it would read as
+  // pristine-and-stale — the REFRESH verdict — and the next hydrate would replace the store content
+  // with the seed's. This test is the difference between a repair and a silent data loss.
+  it("stamps with the SEED's hash, so the next reconcile KEEPS the store copy", () => {
+    const { stamps } = planRestamp([unstamped], [seeded]);
+    expect(stamps[0].seedHash).toBe(seeded.seedHash);
+    expect(stamps[0].seedHash).not.toBe(seedHashOf(unstamped));
+
+    const r = reconcileSeed(stamps, [seeded], "component");
+    expect(r.records).toEqual(stamps); // the store copy survived
+    expect(r.pushes).toEqual([]);
+    expect(r.notices).toEqual([]); // seed has not moved since — nothing to report yet
+  });
+
+  it("surfaces updated-upstream once the seed DOES move, which is the point of rejoining", () => {
+    const { stamps } = planRestamp([unstamped], [seeded]);
+    const seedMoved = stampSeedHash(comp({ version: "3.0.0", name: "Button" }));
+    const r = reconcileSeed(stamps, [seedMoved], "component");
+    expect(r.records).toEqual(stamps); // still kept — it is an edited built-in
+    expect(r.notices).toEqual([{ kind: "updated-upstream", type: "component", id: "button", name: "ButtonTab" }]);
+  });
+
+  it("never claims a record with no packaged seed — that is a genuinely user-authored one", () => {
+    const authored = comp({ id: "my-thing", builtin: undefined, seedHash: undefined });
+    expect(planRestamp([authored], [seeded]).stamps).toEqual([]);
+  });
+
+  it("skips records already in the reconcile path, and suppression tombstones", () => {
+    const tombstone = comp({ builtin: undefined, seedHash: undefined, suppressed: true });
+    expect(planRestamp([seeded, tombstone], [seeded]).stamps).toEqual([]);
+  });
+
+  // Stamping a seed-authoritative record arms the branch that forces the seed over the store BEFORE any
+  // content comparison — so the "repair" would change what the app renders. Defer, and say so.
+  it("defers a seed-authoritative record instead of stamping it", () => {
+    const page = comp({ id: "fleetpage", name: "FleetPage", role: "page", builtin: undefined, seedHash: undefined });
+    const seedPage = stampSeedHash(comp({ id: "fleetpage", name: "FleetPage", role: "page", version: "2.0.0" }));
+    const { stamps, deferred } = planRestamp([page], [seedPage], { seedAuthoritative: (r) => r.role === "page" });
+    expect(stamps).toEqual([]);
+    expect(deferred).toEqual([{ id: "fleetpage", name: "FleetPage", reason: "seed-authoritative" }]);
   });
 });

@@ -249,3 +249,75 @@ export function reconcileSeed<T extends SeedRecord>(
 
   return { records, pushes, drops, notices };
 }
+
+/** One record the re-stamp declines to touch, and why (#4207). */
+export interface RestampDeferral {
+  id: string;
+  name: string;
+  /** `seed-authoritative`: stamping would let the seed OVERWRITE the store copy on the next hydrate
+   *  (the `seedAuthoritative` branch of {@link reconcileSeed} fires before any content comparison), so
+   *  the repair would silently change what the app renders. That is a per-record judgement, not a
+   *  repair's call. */
+  reason: "seed-authoritative";
+}
+
+/** What {@link planRestamp} would do (#4207). */
+export interface RestampPlan<T extends SeedRecord> {
+  /** Records to write through, each carrying `builtin: true` + the SEED's content hash. Content is
+   *  otherwise untouched. */
+  stamps: T[];
+  /** Records left alone, with the reason. */
+  deferred: RestampDeferral[];
+}
+
+/**
+ * Plan the repair for the `unstamped` verdict (#4207): store records carrying NO `builtin` flag that a
+ * packaged seed of the same id exists for. A pre-#4197 partial `bsc ui set` dropped the flag, and
+ * `reconcileSeed` has treated them as user-authored ever since — so they never refresh, never surface a
+ * drift notice, and never received the #4107 `group`→`folder` migration, while the app renders them.
+ *
+ * **The stamp carries the SEED's hash, not the record's own** — that choice is the whole design, because
+ * it decides which side wins on the very next hydrate:
+ *
+ * - Stamped with its OWN content hash, the record reads as PRISTINE (`contentHash === seedHash`) and
+ *   STALE (`seedContentHash !== seedHash`), which is the REFRESH verdict: the seed copy replaces the
+ *   store copy. On this repo that would discard real content — the store's `automations-history` carries
+ *   the post-rename `HistoryTab`, its seed still says `AutomationsHistory`.
+ * - Stamped with the SEED's content hash, it reads as EDITED (content differs from the stamp) against an
+ *   UNMOVED seed — the "customized, seed unchanged" verdict, which keeps the store copy. Then the moment
+ *   the packaged seed genuinely moves, `updated-upstream` fires and the drift is visible from then on.
+ *
+ * So the repair is non-destructive by construction: it restores the record's MEMBERSHIP in the reconcile
+ * without adjudicating its content. Which side is right stays a per-record question — this only makes it
+ * a question the machinery can still ask.
+ *
+ * A record with no packaged seed is never stamped: that is the signature of a genuinely user-authored (or
+ * harvested) record, and mislabelling one as a built-in would hand its content to a future seed.
+ *
+ * @param loaded the store's records (from the bridge).
+ * @param seed   the packaged built-ins, seedHash-stamped.
+ * @param opts   `seedAuthoritative` — the same predicate {@link reconcileSeed} takes. Matching records
+ *               are DEFERRED rather than stamped; see {@link RestampDeferral}.
+ */
+export function planRestamp<T extends SeedRecord>(
+  loaded: T[],
+  seed: T[],
+  opts?: { seedAuthoritative?: (rec: T) => boolean },
+): RestampPlan<T> {
+  const seedById = new Map(seed.map((s) => [s.id, s]));
+  const stamps: T[] = [];
+  const deferred: RestampDeferral[] = [];
+
+  for (const rec of loaded) {
+    if (rec.suppressed || rec.builtin) continue; // a tombstone, or already in the reconcile path
+    const seeded = seedById.get(rec.id);
+    if (!seeded) continue; // no packaged seed ⇒ genuinely user-authored — never claim it
+    if (opts?.seedAuthoritative?.(rec)) {
+      deferred.push({ id: rec.id, name: displayName(rec), reason: "seed-authoritative" });
+      continue;
+    }
+    stamps.push({ ...rec, builtin: true, seedHash: seeded.seedHash ?? seedHashOf(seeded) });
+  }
+
+  return { stamps, deferred };
+}
