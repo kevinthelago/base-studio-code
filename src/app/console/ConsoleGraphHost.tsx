@@ -23,6 +23,18 @@ import { registerConsolePlatform } from "./graphPlatform";
 // when the graph page's compiled `require()` runs. Idempotent.
 registerConsolePlatform();
 
-export function ConsoleGraphHost() {
-  return <GraphComponent id="consolepage" fallback={<GraphPageFallback page="Console" icon="▣" />} />;
+/** `tabIdxOverride` is the TEAR-OFF path (#4200): a detached window renders exactly one tab, and says
+ *  which. It forwards through `GraphComponent`'s `props` — the same mechanism the other seven hosts use
+ *  for their `pageOverride`. #4186 shipped this host taking no props at all, which left `DetachedWindow`
+ *  on the file component while the main window rendered the graph: two copies of the same page on screen
+ *  in different windows, kept identical only by the parity guard. The override is a NUMBER here rather
+ *  than the `pageOverride` string every other page uses, which is why it did not match the pattern. */
+export function ConsoleGraphHost({ tabIdxOverride }: { tabIdxOverride?: number } = {}) {
+  return (
+    <GraphComponent
+      id="consolepage"
+      props={tabIdxOverride === undefined ? undefined : { tabIdxOverride }}
+      fallback={<GraphPageFallback page="Console" icon="▣" />}
+    />
+  );
 }
