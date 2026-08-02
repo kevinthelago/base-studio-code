@@ -104,7 +104,7 @@ export function FocusedStageBody({ stage, data, projectId, onLinkRepo, onView, o
     case "features":
       // #4265: the plan AND the library it should be built from — the stage where reuse-vs-commission
       // is decided is the stage that shows what there is to reuse.
-      return <FeaturesStageBody features={data?.features} />;
+      return <FeaturesStageBody features={data?.features} projectId={projectId} />;
     case "streams":
       // The unified `streams` stage (#1914 — the collapsed structure+permissions def). The plan +
       // relationship graph always shows; the fleet (coordination + the per-stream roster + shared

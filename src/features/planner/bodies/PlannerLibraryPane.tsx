@@ -11,6 +11,8 @@
 // Cross-feature imports go through the BARRELS (`@/features/designs`, `@/features/algorithms`), never a
 // deep path — this composes two features and owns neither.
 import { useState } from "react";
+import type { PlanFeature } from "@/features/planner/issues/featureList";
+import { PullIntoPlanControl } from "./PullIntoPlanControl";
 import { PlannerComponentsPane } from "@/features/designs";
 import { PlannerAlgorithmsPane } from "@/features/algorithms";
 import { Box } from "@/shared/ui/layout/Box";
@@ -29,8 +31,18 @@ const TABS: { value: LibraryTab; label: string }[] = [
  * @param initial — which half opens first. Defaults to components (the pre-existing surface), so the
  *   change is additive for anyone who knew where the kit lens lived.
  */
-export function PlannerLibraryPane({ initial = "components" }: { initial?: LibraryTab } = {}) {
+export function PlannerLibraryPane({
+  initial = "components", projectKey, features,
+}: { initial?: LibraryTab; projectKey?: string; features?: PlanFeature[] } = {}) {
   const [tab, setTab] = useState<LibraryTab>(initial);
+  // #4267: the plan -> library edge, injected into whichever lens is showing. Only when we actually
+  // have a project to write to — a lens with no plan behind it offers no hand-off rather than one
+  // that quietly goes nowhere (the toast-stub failure this replaces).
+  const pullControl = projectKey
+    ? (artifactId: string) => (
+        <PullIntoPlanControl projectKey={projectKey} features={features ?? []} artifactId={artifactId} />
+      )
+    : undefined;
   return (
     <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
       <Box style={{ padding: "8px 10px 0" }}>
@@ -41,7 +53,9 @@ export function PlannerLibraryPane({ initial = "components" }: { initial?: Libra
       {/* Only the active half mounts: the components pane assembles specimens and the algorithms pane
           polls the live graph, so keeping both alive would pay for a surface nobody is looking at. */}
       <Box style={{ display: "flex", flex: 1, minHeight: 0, flexDirection: "column" }}>
-        {tab === "components" ? <PlannerComponentsPane /> : <PlannerAlgorithmsPane />}
+        {tab === "components"
+          ? <PlannerComponentsPane pullControl={pullControl} />
+          : <PlannerAlgorithmsPane pullControl={pullControl} />}
       </Box>
     </Stack>
   );
