@@ -30,6 +30,14 @@ pub(crate) struct SandboxReadiness {
     pub socat: bool,
     /// Whether our sealed `bsc-agent-sandbox` distro (#1988) is already imported.
     pub agent_sandbox_installed: bool,
+    /// Which agent runtimes the imported sealed distro actually carries (#4260). `None` when it isn't
+    /// imported at all. A distro built before #4260 has `bsc`/`bsc-agent` but NOT `claude` or `gh` —
+    /// so it can only host the non-default harness, and a session launched into it would find no
+    /// `claude` to run and no `gh` for the director. Surfacing this is the precondition for ever
+    /// making the sandbox mandatory; an unreported gap is the "silent skip" failure shape.
+    pub agent_sandbox_runtimes: Option<SandboxRuntimes>,
+    /// One-line gap description when the imported distro is missing runtimes, else `None`.
+    pub agent_sandbox_gap: Option<String>,
     /// Whether the app can install the missing piece itself — Linux: a detected package manager for
     /// bubblewrap/socat; Windows: importing the sealed rootfs. Drives the one-click "Install" button.
     pub auto_installable: bool,
@@ -37,6 +45,44 @@ pub(crate) struct SandboxReadiness {
     pub ready: bool,
     /// One-line human explanation (+ the next action when not ready).
     pub detail: String,
+}
+
+/// The agent runtimes present inside the sealed distro (#4260). The cage has to host EVERY harness,
+/// not just the one it was originally built for: `claude` is the default harness and `gh` is the
+/// director's whole GitHub surface, so a distro missing either can host only part of the fleet.
+#[derive(Serialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SandboxRuntimes {
+    /// Claude Code — the DEFAULT harness (`fleetHarness ?? "claude"`).
+    pub claude: bool,
+    /// The model-agnostic agent runtime.
+    pub bsc_agent: bool,
+    /// The GitHub CLI — the director's writes + every session's readiness probe (#297 S1).
+    pub gh: bool,
+    /// git — worktrees.
+    pub git: bool,
+}
+
+/// Describe what an imported distro is missing, or `None` when it can host the whole fleet. Pure, so
+/// the wording + the "which gaps matter" judgement unit-test without a live distro.
+///
+/// Phrased as the ACTION, not just the diagnosis: the fix is rebuilding the rootfs from the current
+/// `tooling/wsl-sandbox/`, because a distro imported before #4260 predates the baked-in runtimes.
+pub(crate) fn evaluate_runtimes(r: &SandboxRuntimes) -> Option<String> {
+    let mut missing = Vec::new();
+    if !r.claude { missing.push("Claude Code (the default harness)"); }
+    if !r.gh { missing.push("`gh` (the director's GitHub surface)"); }
+    if !r.bsc_agent { missing.push("`bsc-agent`"); }
+    if !r.git { missing.push("`git`"); }
+    if missing.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "The imported `{AGENT_SANDBOX_DISTRO}` distro is missing {} — it predates the baked-in agent \
+         runtimes (#4260), so sessions launched into it can't run that half of the fleet. Rebuild the \
+         rootfs from tooling/wsl-sandbox/ and re-import it.",
+        missing.join(", "),
+    ))
 }
 
 /// Parse `wsl -l -v` into distros. Header row is `NAME STATE VERSION`; the default distro is marked
@@ -224,6 +270,10 @@ fn wsl_sandbox_status_inner() -> SandboxReadiness {
         None => (false, false),
     };
     let agent_sandbox_installed = distros.iter().any(|d| d.name == AGENT_SANDBOX_DISTRO);
+    // #4260: only probe the sealed distro's runtimes when it's actually imported — the probe is a wsl
+    // spawn, and asking an absent distro would cost one on every status poll for nothing.
+    let agent_sandbox_runtimes = agent_sandbox_installed.then(|| probe_runtimes(AGENT_SANDBOX_DISTRO));
+    let agent_sandbox_gap = agent_sandbox_runtimes.as_ref().and_then(evaluate_runtimes);
     let (ready, detail) = evaluate(wsl_installed, &distros, &sandbox_distro, bubblewrap, socat);
     SandboxReadiness {
         platform: platform.into(),
@@ -234,6 +284,8 @@ fn wsl_sandbox_status_inner() -> SandboxReadiness {
         bubblewrap,
         socat,
         agent_sandbox_installed,
+        agent_sandbox_runtimes,
+        agent_sandbox_gap,
         // WSL is present but the sandbox isn't ready → the app can import the sealed rootfs (#1988).
         auto_installable: wsl_installed && !ready,
         ready,
@@ -270,9 +322,68 @@ fn probe_deps(distro: &str) -> (bool, bool) {
     }
 }
 
+/// Probe which agent runtimes the sealed distro carries (#4260). Like [`probe_deps`] it ignores the
+/// exit status — `sh -lc` exits non-zero when the LAST probe misses, while the earlier `echo`s still
+/// report what IS present, so a single missing runtime must not blank the whole verdict.
+fn probe_runtimes(distro: &str) -> SandboxRuntimes {
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.args([
+        "-d",
+        distro,
+        "--",
+        "sh",
+        "-lc",
+        "command -v claude >/dev/null && echo CLAUDE; \
+         command -v bsc-agent >/dev/null && echo BSCAGENT; \
+         command -v gh >/dev/null && echo GH; \
+         command -v git >/dev/null && echo GIT",
+    ])
+    .env("WSL_UTF8", "1");
+    match run_output(&mut cmd) {
+        Ok(out) => {
+            let s = decode_wsl(&out.stdout);
+            SandboxRuntimes {
+                claude: s.contains("CLAUDE"),
+                bsc_agent: s.contains("BSCAGENT"),
+                gh: s.contains("GH"),
+                git: s.contains("GIT"),
+            }
+        }
+        // A distro that won't start reports nothing present, rather than silently claiming it's fine.
+        Err(_) => SandboxRuntimes::default(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_complete_distro_reports_no_gap() {
+        let full = SandboxRuntimes { claude: true, bsc_agent: true, gh: true, git: true };
+        assert_eq!(evaluate_runtimes(&full), None);
+    }
+
+    #[test]
+    fn a_pre_4260_distro_names_the_default_harness_and_gh() {
+        // Exactly the shape of a distro built before #4260 — the sidecars are there, the harness the
+        // fleet actually defaults to is not.
+        let old = SandboxRuntimes { claude: false, bsc_agent: true, gh: false, git: true };
+        let gap = evaluate_runtimes(&old).expect("a distro without claude/gh must report a gap");
+        assert!(gap.contains("Claude Code"), "{gap}");
+        assert!(gap.contains("gh"), "{gap}");
+        // It names the fix, not just the diagnosis.
+        assert!(gap.contains("tooling/wsl-sandbox"), "{gap}");
+        // And it doesn't accuse the distro of missing what it has.
+        assert!(!gap.contains("`bsc-agent`"), "{gap}");
+        assert!(!gap.contains("`git`"), "{gap}");
+    }
+
+    #[test]
+    fn an_unreachable_distro_reports_everything_missing_not_everything_fine() {
+        // The silent-skip failure shape: a probe that can't see anything must not read as "no gaps".
+        assert!(evaluate_runtimes(&SandboxRuntimes::default()).is_some());
+    }
 
     #[test]
     fn linux_install_command_per_pm_adds_both_deps() {

@@ -33,6 +33,16 @@ export function SandboxDependencyCard() {
         <Box style={{ flex: 1, minWidth: 0 }}>
           <b>{sandbox.ready ? "Active" : "Not set up"}</b>{" "}
           <Text tone="muted">— {sandbox.detail}</Text>
+          {/* #4260: a SEPARATE axis from `ready`. The Bash sandbox can be perfectly able to engage
+              while the sealed distro still can't host the fleet — one built before #4260 has the
+              sidecars but no `claude` (the default harness) and no `gh`. A session launched into it
+              would find nothing to run, so the gap is surfaced here rather than discovered mid-task. */}
+          {sandbox.agentSandboxGap && (
+            <Row align="start" gap={8} style={{ marginTop: 8 }}>
+              <StatusDot color="var(--warn, #d29922)" size={8} style={{ marginTop: 4 }} />
+              <Text tone="muted" size={11}>{sandbox.agentSandboxGap}</Text>
+            </Row>
+          )}
           {!sandbox.ready && sandbox.autoInstallable && (
             <Stack gap={6} style={{ marginTop: 8 }}>
               <Row gap={8} wrap>
