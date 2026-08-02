@@ -14,6 +14,8 @@
 //! Home, too, for the later consumer index (#2277) + the kit lint rules (#2279) — both ride on this
 //! store's records.
 
+/// Which record backs a given file (#4193) — the lookup behind `bsc ui backing` and the write gate.
+pub mod backing;
 pub mod cli;
 pub mod folder;
 pub mod graph_health;
