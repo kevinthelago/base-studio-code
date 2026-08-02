@@ -74,6 +74,22 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ensurePlatform: () => import("@/app/console/ConsoleGraphHost"),
   },
   {
+    pageId: "planningpage",
+    label: "Planning",
+    // The planner Screen mounts this one with `visible` and keeps it MOUNTED across tabs (#4224).
+    rendersFrom: "graph",
+    modules: [
+      { recordId: "planningpage", file: "/src/features/planner/session/Planning.tsx" },
+      { recordId: "planning-header", file: "/src/features/planner/session/PlanningHeader.tsx" },
+      { recordId: "planning-notices", file: "/src/features/planner/session/PlanningNotices.tsx" },
+      { recordId: "planning-dialogs", file: "/src/features/planner/session/PlanningDialogs.tsx" },
+      { recordId: "planning-publish-progress", file: "/src/features/planner/session/PublishProgressView.tsx" },
+      { recordId: "planning-injection-gate", file: "/src/features/planner/session/InjectionGateBanner.tsx" },
+      { recordId: "planning-github-structure", file: "/src/features/planner/session/GitHubStructureCard.tsx" },
+    ],
+    ensurePlatform: () => import("@/features/planner"),
+  },
+  {
     pageId: "algorithmspage",
     label: "Algorithms",
     // Planner-mounted, like Sounds — not a rail Workspace (#4219).
@@ -207,6 +223,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
 const FILE_SOURCES = import.meta.glob<string>(
   [
     "/src/features/planner/list/ProjectsList.tsx",
+    "/src/features/planner/session/{Planning,PlanningHeader,PlanningNotices,PlanningDialogs,PublishProgressView,InjectionGateBanner,GitHubStructureCard}.tsx",
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
     "/src/features/algorithms/{AlgorithmsWorkspace,AlgorithmsRail,AlgorithmsInspector,AlgorithmsKitGraph,LibrarianTerminal}.tsx",
     "/src/app/console/{index,PaneAt,consoleStates}.tsx",

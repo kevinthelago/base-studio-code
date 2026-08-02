@@ -1,0 +1,87 @@
+{
+  "id": "planning-dialogs",
+  "name": "PlanningDialogs",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "// Planning → the session's modals, AS GRAPH SOURCE (#4224, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the planner session's hooks via the planning graph-platform,\n// and the sibling views as @/components/* graph records). Behaviour runs here.\n// Planning page overlays, split out of Planning.tsx (decomposition pass).\n//\n// The plan-page modal stack: the blueprint-version-mismatch prompt, the MCP download-confirmation\n// queue, and the clear-plan confirmation. Each is conditionally rendered from state Planning.tsx\n// owns; this component is pure presentation (no hooks/refs), so it does not affect the parent's\n// hook-call order. (The self-rendering quarantine dialog stays in Planning.tsx — it is a ready-made\n// node, not a modal built here.)\nimport { Dialog } from \"@/shared/ui/overlay/Dialog\";\nimport { Button } from \"@/shared/ui/controls/Button\";\nimport { BlueprintUpdateModal } from \"@/features/planner/blueprints/BlueprintUpdateModal\";\nimport { McpDownloadModal, type McpDownloadItem } from \"@/features/planner/pane/McpDownloadModal\";\n\nexport interface PlanningDialogsProps {\n  // Blueprint version-mismatch prompt (#827/#1296).\n  showBlueprintModal: boolean;\n  restarting: boolean;\n  onBlueprintGoBack: () => void;\n  onBlueprintKeep: () => void;\n  onBlueprintRestart: () => void;\n  onBlueprintDismiss: () => void;\n  // MCP download-confirmation queue (#1474).\n  mcpDownloads: McpDownloadItem[];\n  onConfirmMcpDownloads: () => void;\n  onCancelMcpDownloads: () => void;\n  // Clear-plan confirmation (#664).\n  showClearConfirm: boolean;\n  onDismissClear: () => void;\n  onClearPlan: () => void;\n}\n\nexport function PlanningDialogs({\n  showBlueprintModal, restarting,\n  onBlueprintGoBack, onBlueprintKeep, onBlueprintRestart, onBlueprintDismiss,\n  mcpDownloads, onConfirmMcpDownloads, onCancelMcpDownloads,\n  showClearConfirm, onDismissClear, onClearPlan,\n}: PlanningDialogsProps) {\n  return (\n    <>\n      {showBlueprintModal && (\n        <BlueprintUpdateModal\n          busy={restarting}\n          onGoBack={onBlueprintGoBack}\n          onKeep={onBlueprintKeep}\n          onRestart={onBlueprintRestart}\n          onDismiss={onBlueprintDismiss}\n        />\n      )}\n\n      {mcpDownloads.length > 0 && (\n        <McpDownloadModal\n          items={mcpDownloads}\n          onConfirm={onConfirmMcpDownloads}\n          onCancel={onCancelMcpDownloads}\n        />\n      )}\n\n      {showClearConfirm && (\n        <Dialog\n          title=\"Clear this plan?\"\n          danger\n          onDismiss={onDismissClear}\n          actions={\n            <>\n              <Button onClick={onDismissClear}>cancel</Button>\n              <Button\n                style={{ borderColor: \"var(--danger)\", color: \"var(--danger)\" }}\n                onClick={onClearPlan}\n              >clear plan</Button>\n            </>\n          }\n        >\n          This wipes the entire plan for this project — sections, stage config, the fleet, and the\n          on-disk plan files — then restarts the planner with a blank slate. This can't be undone.\n        </Dialog>\n      )}\n    </>\n  );\n}\n",
+  "src": "src/features/planner/session/PlanningDialogs.tsx",
+  "folder": "features/planner/session",
+  "composes": [
+    "Button",
+    "Dialog"
+  ],
+  "props": [
+    {
+      "name": "showBlueprintModal",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "restarting",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onBlueprintGoBack",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onBlueprintKeep",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onBlueprintRestart",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onBlueprintDismiss",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "mcpDownloads",
+      "type": "McpDownloadItem[]",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onConfirmMcpDownloads",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onCancelMcpDownloads",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "showClearConfirm",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onDismissClear",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onClearPlan",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    }
+  ]
+}

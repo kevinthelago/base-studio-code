@@ -26,6 +26,7 @@ import { registerSkillsPlatform } from "@/features/skills/graphPlatform";
 import { registerGlancePlatform } from "@/features/glance/graphPlatform";
 import { registerSoundsPlatform } from "@/features/sounds/graphPlatform";
 import { registerAlgorithmsPlatform } from "@/features/algorithms/graphPlatform";
+import { registerPlanningPlatform } from "@/features/planner/session/graphPlatform";
 import { registerConsolePlatform } from "@/app/console/graphPlatform";
 import { registerFleetPlatform } from "@/features/planner/fleet/graphPlatform";
 import { registerProjectsPlatform } from "@/features/planner/list/graphPlatform";
@@ -69,6 +70,7 @@ beforeAll(() => {
   registerGlancePlatform();
   registerSoundsPlatform();
   registerAlgorithmsPlatform();
+  registerPlanningPlatform();
   registerConsolePlatform();
   registerFleetPlatform();
   registerProjectsPlatform();
@@ -88,7 +90,12 @@ describe("the platform-kernel boundary (#3858)", () => {
 
     for (const r of RECORDS) {
       for (const spec of importsOf(r.srcText ?? "")) {
-        if (!spec.startsWith("@/")) continue; // bare npm specifiers are the import-map's concern
+        // #4224: a BARE specifier is checked too. This used to `continue` — "the import-map's
+        // concern" — but the import map belongs to the PREVIEW; the loader's `makeRequire` demands
+        // every specifier be registered, first-party or not. `zustand/react/shallow` sailed past this
+        // guard and failed in the browser, which is the same shape as the `src`-path rule #4188
+        // removed: a check more permissive than the runtime it stands for.
+        if (spec.startsWith(".")) continue; // a relative path inside vendored source, already resolved
         // The THREE ways a first-party specifier resolves at runtime — exactly what `routeImport` +
         // `makeRequire` do, and nothing more. There used to be a fourth: a record whose `src` matched the
         // specifier's path counted as resolved. The LOADER HAS NO SUCH RULE — `src` is provenance

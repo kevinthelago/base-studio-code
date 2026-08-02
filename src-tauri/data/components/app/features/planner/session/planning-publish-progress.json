@@ -1,0 +1,42 @@
+{
+  "id": "planning-publish-progress",
+  "name": "PublishProgressView",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "// Planning → the publish progress view, AS GRAPH SOURCE (#4224, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the planner session's hooks via the planning graph-platform,\n// and the sibling views as @/components/* graph records). Behaviour runs here.\n// Publish-progress view for the plan panel, split out of Planning.tsx (decomposition pass).\n//\n// Rendered inside the plan-sections aside once publishing starts (publishPhase !== \"idle\"): a status\n// header (publishing / published / failed) with a \"back to plan\" escape once terminal, over the live\n// GitHubStructureCard whose nodes update as each object is created. Pure presentation — the aside's\n// measured layout stays in Planning.tsx; this is only its non-idle content.\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Spacer } from \"@/shared/ui/layout/Spacer\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { GitHubStructureCard, type GhStatusMap } from \"@/components/planning-github-structure\";\nimport type { GhStructure } from \"@/features/planner/github/ghStructure\";\nimport type { PublishPhase } from \"@/features/planner/session/usePlanPublish\";\n\nexport interface PublishProgressViewProps {\n  publishPhase: PublishPhase;\n  onBackToPlan: () => void;\n  structure: GhStructure;\n  status: GhStatusMap;\n}\n\nexport function PublishProgressView({ publishPhase, onBackToPlan, structure, status }: PublishProgressViewProps) {\n  return (\n    <>\n      {/* Publish progress header */}\n      <Row className=\"mono\" gap={8} style={{\n        padding: \"10px 18px\", borderBottom: \"1px solid var(--border-soft)\",\n        fontSize: 11,\n      }}>\n        <Text as=\"span\" style={{\n          color: publishPhase === \"done\"  ? \"var(--success)\"\n               : publishPhase === \"error\" ? \"var(--danger)\"\n               : \"var(--accent)\",\n        }}>\n          {publishPhase === \"running\" ? \"⟳ publishing…\"\n           : publishPhase === \"done\"  ? \"✓ published\"\n           : \"✗ publish failed\"}\n        </Text>\n        <Spacer />\n        {(publishPhase === \"done\" || publishPhase === \"error\") && (\n          // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled 'back to plan' button (mono, custom inline styling, not the .btn kit)\n          <button\n            className=\"mono\"\n            onClick={onBackToPlan}\n            style={{\n              padding: \"2px 8px\", borderRadius: 3, cursor: \"pointer\",\n              background: \"transparent\", border: \"1px solid var(--border-soft)\",\n              color: \"var(--fg-dim)\", fontSize: 10,\n            }}\n          >← back to plan</button>\n        )}\n      </Row>\n\n      {/* Live GitHub structure — each node updates as it is created */}\n      <Stack gap={10} style={{ flex: 1, minHeight: 0, overflow: \"auto\", padding: \"16px 18px\" }}>\n        <GitHubStructureCard structure={structure} status={status} />\n      </Stack>\n    </>\n  );\n}\n",
+  "src": "src/features/planner/session/PublishProgressView.tsx",
+  "folder": "features/planner/session",
+  "composes": [
+    "GitHubStructureCard",
+    "Row",
+    "Spacer",
+    "Stack",
+    "Text"
+  ],
+  "props": [
+    {
+      "name": "publishPhase",
+      "type": "PublishPhase",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onBackToPlan",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "structure",
+      "type": "GhStructure",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "status",
+      "type": "GhStatusMap",
+      "req": true,
+      "desc": ""
+    }
+  ]
+}

@@ -14,7 +14,10 @@ export { ProjectsGraphHost } from "./ProjectsGraphHost";
 // mounts nothing — would read the whole planner-list surface as unbound without a way to call it. A
 // re-export binds, it does not call, so the cycle that forced render-time registration is untouched.
 export { registerProjectsPlatform } from "./list/graphPlatform";
-import { Planning } from "./session/Planning";
+// #4224: same reason — the shadow catalogue reaches the planning surface through the barrel.
+export { registerPlanningPlatform } from "./session/graphPlatform";
+// #4224: the planning session renders FROM THE GRAPH; the file component stays for its tests.
+import { PlanningGraphHost } from "./session/PlanningGraphHost";
 import { TeamsPanel } from "@/features/teams";
 import { SoundsGraphHost } from "@/features/sounds";
 import { useProjectScan } from "./list/useProjectScan";
@@ -164,7 +167,7 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
             <>
               {/* Planning — mounted once on first visit, then CSS-hidden (not lazy → no fallback) */}
               <KeptMountedPage active={projectsView === "planning"}>
-                <Planning key={planningKey} visible={projectsView === "planning"} />
+                <PlanningGraphHost key={planningKey} visible={projectsView === "planning"} />
               </KeptMountedPage>
               <Box style={{ display: projectsView !== "planning" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
                 <ProjectsGraphHost />

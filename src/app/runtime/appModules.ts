@@ -34,6 +34,13 @@ import * as Dropdown from "@/shared/ui/controls/Dropdown";
 import * as InlineError from "@/shared/ui/feedback/InlineError";
 import * as DialogMod from "@/shared/ui/overlay/Dialog";
 import * as SafeInvoke from "@/shared/lib/core/safeInvoke";
+// #4224 — the four the Planning session reaches that no earlier graph page did: the completion probe,
+// the LLM config, the GitHub project sync, and the terminal constants the session's pane shares with
+// the console. Feature-agnostic (or app-owned), so the shell's platform set.
+import * as ClaudeComplete from "@/shared/lib/core/claudeComplete";
+import * as LlmConfig from "@/shared/lib/core/llmConfig";
+import * as ProjectSync from "@/shared/lib/github/projectSync";
+import * as TerminalConstants from "@/app/console/lib/terminalConstants";
 import * as GithubProbe from "@/shared/lib/github/githubProbe";
 import * as GithubState from "@/shared/lib/github/githubState";
 import * as StatTile from "@/shared/ui/data/StatTile";
@@ -129,6 +136,10 @@ import * as UseClickOutside from "@/shared/hooks/useClickOutside"; // TabBar (#3
 import * as ReactDOM from "react-dom";                             // TabBar: createPortal (#3684)
 import * as Eyebrow from "@/shared/ui/typography/Eyebrow";         // SessionDock (#3684)
 import * as LucideReact from "lucide-react";                       // icons: createLucideIcon (#3686)
+// #4224 — zustand's shallow comparator, which the Planning session selects with. A BARE specifier, and the
+// loader requires those registered exactly like a first-party one. `platformBoundary` used to skip bare
+// specifiers as "the import-map's concern"; the browser check caught this because the loader does not.
+import * as ZustandShallow from "zustand/react/shallow";
 import * as UseGraphViewport from "@/shared/ui/layouts/useGraphViewport"; // GraphCanvas/Tree (#3692)
 import * as RenderProfiler from "@/shared/lib/core/renderProfiler";       // GraphCanvas (#3692)
 import * as TreeLayout from "@/shared/ui/layouts/treeLayout";             // Tree (#3692)
@@ -166,6 +177,10 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/feedback/InlineError": InlineError,
   "@/shared/ui/overlay/Dialog": DialogMod,
   "@/shared/lib/core/safeInvoke": SafeInvoke,
+  "@/shared/lib/core/claudeComplete": ClaudeComplete,
+  "@/shared/lib/core/llmConfig": LlmConfig,
+  "@/shared/lib/github/projectSync": ProjectSync,
+  "@/app/console/lib/terminalConstants": TerminalConstants,
   "@/shared/lib/github/githubProbe": GithubProbe,
   "@/shared/lib/github/githubState": GithubState,
   "@/shared/ui/data/StatTile": StatTile,
@@ -232,6 +247,7 @@ const PLATFORM: Record<string, unknown> = {
   "react-dom": ReactDOM,
   "@/shared/ui/typography/Eyebrow": Eyebrow,
   "lucide-react": LucideReact,
+  "zustand/react/shallow": ZustandShallow,
   "@/shared/ui/layouts/useGraphViewport": UseGraphViewport,
   "@/shared/lib/core/renderProfiler": RenderProfiler,
   "@/shared/ui/layouts/treeLayout": TreeLayout,
