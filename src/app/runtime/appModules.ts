@@ -142,6 +142,8 @@ import * as LucideReact from "lucide-react";                       // icons: cre
 import * as UseExpandable from "@/shared/hooks/useExpandable";
 import * as CodeMod from "@/shared/ui/data/Code";
 import * as SharedUiSpec from "@/shared/ui/spec";
+// #4232 — the kit barrel `ProjectSetupPage` composes the packaged UI kit from.
+import * as SharedUiKit from "@/shared/ui/kit";
 // #4224 — zustand's shallow comparator, which the Planning session selects with. A BARE specifier, and the
 // loader requires those registered exactly like a first-party one. `platformBoundary` used to skip bare
 // specifiers as "the import-map's concern"; the browser check caught this because the loader does not.
@@ -256,6 +258,7 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/hooks/useExpandable": UseExpandable,
   "@/shared/ui/data/Code": CodeMod,
   "@/shared/ui/spec": SharedUiSpec,
+  "@/shared/ui/kit": SharedUiKit,
   "zustand/react/shallow": ZustandShallow,
   "@/shared/ui/layouts/useGraphViewport": UseGraphViewport,
   "@/shared/lib/core/renderProfiler": RenderProfiler,

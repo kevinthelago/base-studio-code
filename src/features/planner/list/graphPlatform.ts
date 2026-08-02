@@ -1,56 +1,68 @@
-// The projects page's graph-platform surface (#3874, epic #3604) — the planner-list internals a
-// graph-loaded Projects page imports but does NOT redraw: the card/rail/setup-page/modal components, the
-// draft + local-published + projects.db derivations, and the published model.
+// The projects page's graph-platform surface (#3874, regenerated #4232, epic #3604) — AUTO-GENERATED
+// by scripts/gen-projects-graph.cjs. DO NOT EDIT BY HAND: it is derived from the specifiers the
+// `projectspage` records actually carry, so it cannot drift from them.
 //
-// Registered HERE, inside the feature, because the shell must not reach a feature's internals (#1545). The
-// projects host calls this synchronously before the graph page loads. Mirrors the
-// fleet/automations/security/github/skills/mcp platforms.
+// Registered HERE, inside the feature, because the shell must not reach a feature's internals (#1545).
 //
-// WHY THESE ARE INJECTED RATHER THAN REDRAWN. Projects is the largest page in the app — `ProjectsList.tsx`
-// alone is ~31k chars against 13-26k for every completed page record, plus ~2,400 lines of siblings. #3833
-// is the cautionary tale: the Skills record shipped as a preview-grade TRANSCRIPTION (sample data, none of
-// the real wiring) and every revision after iterated on the reduced version for days, because the page still
-// LOOKED right. Injecting the siblings keeps their behaviour real by construction — the graph owns the
-// page's composition, not a hand-copied imitation of its parts.
+// ONE SPELLING PER MODULE NOW. This file used to register each sibling twice — the relative `./X` the
+// hand-authored page was transcribed with, and the absolute `@/features/planner/list/X` — because the
+// record could carry either. #4232 regenerated the page absolute, so the relative half is gone and
+// `platformBoundary` rejects a relative specifier in a record outright.
+//
+// The list's OWN components are registered too: each is `provides`-resolved from the graph first, and
+// the module behind it is the fallback for a record that will not load.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
-import * as ProjectCard from "./ProjectCard";
-import * as ProjectsRail from "./ProjectsRail";
-import * as ProjectSetupPage from "./ProjectSetupPage";
-import * as ReopenProjectModal from "./ReopenProjectModal";
-import * as Drafts from "./drafts";
-import * as LocalPublished from "./localPublished";
-import * as ProjectsDbBridge from "./projectsDbBridge";
-import * as ProjectsFilter from "./projectsFilter";
-import * as DeleteProjectModal from "./published/DeleteProjectModal";
-import * as PublishedModel from "./published/publishedModel";
-import * as PlanTopics from "../stages/planTopics";
+import * as Designs from "@/features/designs";
+import * as BlueprintModals from "@/features/planner/blueprints/BlueprintModals";
+import * as BlueprintCatalog from "@/features/planner/blueprints/blueprintCatalog";
+import * as BlueprintImporthelpers from "@/features/planner/blueprints/blueprintImport.helpers";
+import * as BlueprintShare from "@/features/planner/blueprints/blueprintShare";
+import * as Gist from "@/features/planner/lib/gist/gist";
+import * as BlueprintCard from "@/features/planner/list/BlueprintCard";
+import * as CloudBlueprints from "@/features/planner/list/CloudBlueprints";
+import * as ProjectCard from "@/features/planner/list/ProjectCard";
+import * as ProjectSetupPage from "@/features/planner/list/ProjectSetupPage";
+import * as ProjectsRail from "@/features/planner/list/ProjectsRail";
+import * as ReopenProjectModal from "@/features/planner/list/ReopenProjectModal";
+import * as BlueprintLibraryhelpers from "@/features/planner/list/blueprintLibrary.helpers";
+import * as Drafts from "@/features/planner/list/drafts";
+import * as LocalPublished from "@/features/planner/list/localPublished";
+import * as ProjectsDbBridge from "@/features/planner/list/projectsDbBridge";
+import * as ProjectsFilter from "@/features/planner/list/projectsFilter";
+import * as DeleteProjectModal from "@/features/planner/list/published/DeleteProjectModal";
+import * as PublishedModel from "@/features/planner/list/published/publishedModel";
+import * as ReopenProject from "@/features/planner/list/reopenProject";
+import * as PlanStageBar from "@/features/planner/pane/PlanStageBar";
+import * as Blueprints from "@/features/planner/stages/blueprints";
+import * as PlanTopics from "@/features/planner/stages/planTopics";
 
 let done = false;
 
-/** Register the projects page's injected graph-platform modules by the specifiers it imports. Idempotent.
- *
- *  Both spellings are registered for each sibling — the relative `./X` the source is authored with, and the
- *  absolute `@/features/planner/list/X` the loader may normalise to — so the record resolves whichever form
- *  its source carries. Registering a specifier twice is harmless; an UNRESOLVED one silently falls through
- *  to the external/code path, which is the failure this pairing exists to prevent. */
+/** Register the projects page's injected graph-platform modules. Idempotent. */
 export function registerProjectsPlatform(): void {
   if (done) return;
   done = true;
-  const mod: Record<string, unknown> = {
-    "ProjectCard": ProjectCard,
-    "ProjectsRail": ProjectsRail,
-    "ProjectSetupPage": ProjectSetupPage,
-    "ReopenProjectModal": ReopenProjectModal,
-    "drafts": Drafts,
-    "localPublished": LocalPublished,
-    "projectsDbBridge": ProjectsDbBridge,
-    "projectsFilter": ProjectsFilter,
-    "published/DeleteProjectModal": DeleteProjectModal,
-    "published/publishedModel": PublishedModel,
-  };
-  for (const [rel, value] of Object.entries(mod)) {
-    registerAppModule(`./${rel}`, value);
-    registerAppModule(`@/features/planner/list/${rel}`, value);
-  }
+  registerAppModule("@/features/designs", Designs);
+  registerAppModule("@/features/planner/blueprints/BlueprintModals", BlueprintModals);
+  registerAppModule("@/features/planner/blueprints/blueprintCatalog", BlueprintCatalog);
+  registerAppModule("@/features/planner/blueprints/blueprintImport.helpers", BlueprintImporthelpers);
+  registerAppModule("@/features/planner/blueprints/blueprintShare", BlueprintShare);
+  registerAppModule("@/features/planner/lib/gist/gist", Gist);
+  registerAppModule("@/features/planner/list/BlueprintCard", BlueprintCard);
+  registerAppModule("@/features/planner/list/CloudBlueprints", CloudBlueprints);
+  registerAppModule("@/features/planner/list/ProjectCard", ProjectCard);
+  registerAppModule("@/features/planner/list/ProjectSetupPage", ProjectSetupPage);
+  registerAppModule("@/features/planner/list/ProjectsRail", ProjectsRail);
+  registerAppModule("@/features/planner/list/ReopenProjectModal", ReopenProjectModal);
+  registerAppModule("@/features/planner/list/blueprintLibrary.helpers", BlueprintLibraryhelpers);
+  registerAppModule("@/features/planner/list/drafts", Drafts);
+  registerAppModule("@/features/planner/list/localPublished", LocalPublished);
+  registerAppModule("@/features/planner/list/projectsDbBridge", ProjectsDbBridge);
+  registerAppModule("@/features/planner/list/projectsFilter", ProjectsFilter);
+  registerAppModule("@/features/planner/list/published/DeleteProjectModal", DeleteProjectModal);
+  registerAppModule("@/features/planner/list/published/publishedModel", PublishedModel);
+  registerAppModule("@/features/planner/list/reopenProject", ReopenProject);
+  registerAppModule("@/features/planner/pane/PlanStageBar", PlanStageBar);
+  registerAppModule("@/features/planner/stages/blueprints", Blueprints);
   registerAppModule("@/features/planner/stages/planTopics", PlanTopics);
 }

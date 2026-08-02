@@ -97,7 +97,14 @@ describe("the platform-kernel boundary (#3858)", () => {
         // every specifier be registered, first-party or not. `zustand/react/shallow` sailed past this
         // guard and failed in the browser, which is the same shape as the `src`-path rule #4188
         // removed: a check more permissive than the runtime it stands for.
-        if (spec.startsWith(".")) continue; // a relative path inside vendored source, already resolved
+        // #4232: a RELATIVE specifier is not skipped either — it is REJECTED. The loader routes `./x`
+        // to the registry under that literal key, so it needs a registration exactly like an absolute
+        // one, and `provides` (which matches on the exact specifier) can never reach it. `projectspage`
+        // was the only record in the library that carried them — the one page transcribed by hand rather
+        // than by a generator — and `list/graphPlatform.ts` compensated by registering BOTH spellings of
+        // every sibling. Regenerating that record absolute retired the workaround, so the rule is now
+        // simply: records carry absolute specifiers.
+        if (spec.startsWith(".")) { unresolved.push(`${r.id} → ${spec} (relative — records must import absolutely)`); continue; }
         // The THREE ways a first-party specifier resolves at runtime — exactly what `routeImport` +
         // `makeRequire` do, and nothing more. There used to be a fourth: a record whose `src` matched the
         // specifier's path counted as resolved. The LOADER HAS NO SUCH RULE — `src` is provenance
