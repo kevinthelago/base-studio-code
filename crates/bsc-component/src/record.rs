@@ -47,13 +47,16 @@ pub fn stamp(record: &mut Value, prior_rev: i64, writer: &str, now_iso: &str) {
     }
 }
 
-/// The fields this write REMOVES — present in the stored record, absent from the incoming one (#4197).
+/// The fields this write REMOVES — present in the stored record, absent from the one being written
+/// (#4197). Call it with the EFFECTIVE record (post-[`merge_over`]), which is what actually lands.
 ///
-/// A `set` is a whole-record REPLACE, so a partial write silently deletes everything it does not restate.
+/// A merging `set` removes only what the write asked to remove (a `null`, or `--clear`), so this is
+/// normally empty. It is `--replace` — the verbatim whole-record write the app bridge and the seed
+/// reconcile need — that can still delete a field by omission, which is the case worth naming out loud.
 /// That is the defect #4154 fixed for the algorithms graph, where `impl set` was `*existing = im` and a
-/// domain-only edit deleted the code — it cost a 16-entry reorg before anyone noticed. The component store
-/// never got the same treatment, and it matters more here: `fleetpage` has no source file (#3636 deleted
-/// it), so its record is the only copy of that UI, and every page follows as the deletion track proceeds.
+/// domain-only edit deleted the code — it cost a 16-entry reorg before anyone noticed. It matters more
+/// here: `fleetpage` has no source file (#3636 deleted it), so its record is the only copy of that UI,
+/// and every page follows as the deletion track proceeds.
 ///
 /// [`changed_fields`] already counts a removal as a change, but files it alongside ordinary edits — so in
 /// `bsc ui log` a destructive write and a routine one look identical. This separates them. Pure; the CLI
@@ -71,6 +74,57 @@ pub fn dropped_fields(prior: &Value, next: &Value) -> Vec<String> {
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+/// The `id` field — the store key, so a merge never lets a payload (or `--clear`) remove it.
+const ID: &str = "id";
+
+/// The record a MERGING `set` actually writes (#4197): the STORED record with the incoming record's
+/// fields overlaid, so a write that restates only `srcText` KEEPS the kit, role, `composes` edges,
+/// `src`/`folder` provenance and `props` it never mentioned.
+///
+/// This is the [`bsc_graph`-side fix of #4154](https://github.com/kevinthelago/base-studio-code/issues/4154)
+/// applied to the component store — `impl set` was `*existing = im`, a whole-record overwrite, so a
+/// domain-only edit deleted the code and it cost a 16-entry reorg before anyone noticed. The two stores
+/// now answer a partial write the same way, which matters because the fleet's worker protocol routes
+/// EVERY edit of a record-backed component file through `bsc ui set` (#4193) and some pages (`fleetpage`,
+/// since #3636) have no source file left — the record is the only copy.
+///
+/// Removal is therefore EXPLICIT, exactly as it is for `bsc graph impl set`:
+///   - a JSON `null` value in the incoming record removes that field, and
+///   - `clear` (the CLI's `--clear a,b`) removes those fields regardless of the payload — it is applied
+///     LAST, so `--clear` wins over a value the same write supplied.
+///
+/// `id` is never removable by either route: it is the store key, and a record that lost it would be
+/// unreadable by every `list`/`get`/`doctor` path. The server-managed stamps need no special case —
+/// [`stamp_with_history`] re-writes `rev`/`updatedAt`/`updatedBy`/`history` after the merge either way.
+///
+/// A non-object on either side cannot be merged field-wise, so the incoming value wins — the same honest
+/// fallback `set_impl` takes, rather than silently keeping a malformed record. That also makes a CREATE
+/// (`prior` is `Value::Null`) fall out for free: there is nothing to preserve, so the incoming record is
+/// the record. Pure.
+pub fn merge_over(prior: &Value, incoming: &Value, clear: &[String]) -> Value {
+    let (Some(p), Some(n)) = (prior.as_object(), incoming.as_object()) else {
+        return incoming.clone();
+    };
+    let mut merged = p.clone();
+    for (k, v) in n {
+        if k == ID {
+            if !v.is_null() {
+                merged.insert(k.clone(), v.clone());
+            }
+        } else if v.is_null() {
+            merged.remove(k);
+        } else {
+            merged.insert(k.clone(), v.clone());
+        }
+    }
+    for f in clear {
+        if f != ID {
+            merged.remove(f.as_str());
+        }
+    }
+    Value::Object(merged)
 }
 
 /// The top-level fields that DIFFER between the prior record and the new one — the auto-summary of a
@@ -240,6 +294,60 @@ mod tests {
             log_value("card", &rec),
             json!({ "id": "card", "rev": 3, "updatedAt": "2026-07-16T09:00:00Z", "updatedBy": "designer", "history": [] }),
         );
+    }
+
+    #[test]
+    fn merge_over_preserves_every_field_the_write_did_not_restate() {
+        // #4197 / #4154: the write is ADDITIVE. A worker told to edit the RECORD of a component whose
+        // file is generated (#4193) sends only what it changed; nothing else may move.
+        let prior = json!({
+            "id": "fleetpage", "name": "FleetPage", "kitId": "base-studio-code", "role": "page",
+            "composes": ["Row", "Card"], "src": "src/features/planner/fleet/Fleet.tsx", "srcText": "old",
+            "rev": 4, "updatedAt": "2026-07-01T00:00:00Z", "updatedBy": "designer", "history": [{ "rev": 4 }],
+        });
+        let merged = merge_over(&prior, &json!({ "id": "fleetpage", "srcText": "new" }), &[]);
+        assert_eq!(merged["srcText"], "new", "the supplied field is overlaid");
+        assert_eq!(merged["kitId"], "base-studio-code");
+        assert_eq!(merged["role"], "page");
+        assert_eq!(merged["composes"], json!(["Row", "Card"]));
+        assert_eq!(merged["src"], "src/features/planner/fleet/Fleet.tsx");
+        // The server-managed fields ride through untouched here — `stamp_with_history` re-writes them
+        // right after, so the merge needs no special case for them.
+        assert_eq!(merged["rev"], json!(4));
+    }
+
+    #[test]
+    fn merge_over_removes_a_field_only_when_asked_by_null_or_clear() {
+        let prior = json!({ "id": "card", "name": "Card", "folder": "shared/ui", "src": "Card.tsx" });
+        // A JSON `null` value is a deletion, not a stored null (the `set_impl` spelling, #4154)…
+        let nulled = merge_over(&prior, &json!({ "id": "card", "folder": null }), &[]);
+        assert!(nulled.get("folder").is_none(), "null removes rather than stores null");
+        assert_eq!(nulled["src"], "Card.tsx", "its neighbours are untouched");
+        // …and `--clear a,b` is the flag form of the same thing.
+        let cleared = merge_over(&prior, &json!({ "id": "card" }), &["folder".into(), "src".into()]);
+        assert!(cleared.get("folder").is_none() && cleared.get("src").is_none());
+        assert_eq!(cleared["name"], "Card");
+        // `--clear` is applied LAST, so it beats a value the same write supplied.
+        let contradictory = merge_over(&prior, &json!({ "id": "card", "folder": "new" }), &["folder".into()]);
+        assert!(contradictory.get("folder").is_none(), "--clear wins over a supplied value");
+        // A blank clear list changes nothing.
+        assert_eq!(merge_over(&prior, &json!({ "id": "card" }), &[]), prior);
+    }
+
+    #[test]
+    fn merge_over_never_removes_the_id_and_falls_back_on_a_non_object() {
+        // `id` is the store key: a record that lost it is unreadable by list/get/doctor, so neither
+        // spelling of a removal may take it.
+        let prior = json!({ "id": "card", "name": "Card" });
+        assert_eq!(merge_over(&prior, &json!({ "id": null, "name": "C2" }), &[])["id"], "card");
+        assert_eq!(merge_over(&prior, &json!({ "id": "card" }), &["id".into()])["id"], "card");
+        // A CREATE (no prior) is the incoming record verbatim — there is nothing to preserve…
+        let fresh = json!({ "id": "new", "name": "New" });
+        assert_eq!(merge_over(&Value::Null, &fresh, &[]), fresh);
+        // …and a non-object on either side cannot be merged field-wise, so the incoming value wins
+        // (the honest fallback, rather than silently keeping a malformed record).
+        assert_eq!(merge_over(&json!([1, 2]), &fresh, &[]), fresh);
+        assert_eq!(merge_over(&prior, &json!("nope"), &[]), json!("nope"));
     }
 
     #[test]

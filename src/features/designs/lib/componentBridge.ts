@@ -119,17 +119,26 @@ export async function loadKits(): Promise<Kit[] | null> {
 }
 
 /** Write-through a component upsert (`bsc ui set`, JSON on stdin). Fire-and-forget; never throws
- *  (an old bundled `bsc` without the `ui` store verbs (#2469) degrades to cache-only). */
+ *  (an old bundled `bsc` without the `ui` store verbs (#2469) degrades to cache-only).
+ *
+ *  `--replace` is REQUIRED here (#4197). `bsc ui set` now MERGES — a partial write preserves what it
+ *  omits, so a fleet worker editing one field can no longer delete the rest of a record whose source
+ *  file is gone. The app is the opposite case: it holds the WHOLE record, and `reconcileSeed`'s
+ *  seed-authoritative reset (#3723) depends on the store copy being overwritten field-for-field. Under a
+ *  merge a store-only field would survive every reset, its content hash would stay off the seed's, and
+ *  the reconcile would re-fire forever instead of converging. */
 export async function pushComponent(component: ComponentRecord): Promise<void> {
-  try { await bscWrite(null, ["ui", "set"], component); } catch { /* store unreachable — cache-only */ }
+  try { await bscWrite(null, ["ui", "set", "--replace"], component); } catch { /* store unreachable — cache-only */ }
 }
 /** Write-through a component removal (`bsc ui remove <id>`). Never throws. */
 export async function dropComponent(id: string): Promise<void> {
   try { await bscRun(null, ["ui", "remove", id]); } catch { /* store unreachable — cache-only */ }
 }
-/** Write-through a kit upsert (`bsc ui kit set`). Never throws. */
+/** Write-through a kit upsert (`bsc ui kit set`). Never throws. `--replace` for the same reason
+ *  `pushComponent` needs it (#4197) — the app holds the whole record and the kit seed reconcile must be
+ *  able to force a diverged copy back. */
 export async function pushKit(kit: Kit): Promise<void> {
-  try { await bscWrite(null, ["ui", "kit", "set"], kit); } catch { /* store unreachable — cache-only */ }
+  try { await bscWrite(null, ["ui", "kit", "set", "--replace"], kit); } catch { /* store unreachable — cache-only */ }
 }
 /** Write-through a kit removal (`bsc ui kit remove <id>`). Never throws. */
 export async function dropKit(id: string): Promise<void> {
