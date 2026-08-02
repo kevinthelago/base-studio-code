@@ -12,9 +12,14 @@ import { registerPlanningPlatform } from "./graphPlatform";
 // session itself never imports (the stage bodies, the preview chain). Registering them is the pane's own
 // job, but CALLING it is the host's — the loader asks for them while compiling this page.
 import { registerPanePlatform } from "../pane/graphPlatform";
+// #4230: and the pane's stage bodies are `provides`-resolved in turn, reaching another 36 modules of
+// their own. Three registration calls, one per directory that became graph source — each owned by the
+// directory it registers for, all called from the one host that mounts the page they compose.
+import { registerBodiesPlatform } from "../bodies/graphPlatform";
 
 registerPlanningPlatform();
 registerPanePlatform();
+registerBodiesPlatform();
 
 export function PlanningGraphHost({ visible }: { visible?: boolean } = {}) {
   return (
