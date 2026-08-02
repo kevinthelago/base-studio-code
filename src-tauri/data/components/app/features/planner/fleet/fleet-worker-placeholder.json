@@ -1,0 +1,16 @@
+{
+  "id": "fleet-worker-placeholder",
+  "name": "WorkerDetailPlaceholder",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/planner/fleet/WorkerDetailPlaceholder",
+  "srcText": "// Fleet → the worker detail's empty state, AS GRAPH SOURCE (#4245, epic #3604) — the last three the frontier sweep named. Its\n// `provides: \"@/features/planner/fleet/WorkerDetailPlaceholder\"` makes the runtime loader vendor THIS source\n// wherever a graph component imports that specifier, with the registered module as the fallback.\n// Transcribed from the live feature file; the CSS import is dropped (the host owns the stylesheet)\n// and specifiers are absolute. Behaviour runs here.\n// An explicit \"not measured yet\" card for the WorkerDetail page (#499) — the\n// same honesty as Fleet's tokens card for analytics that aren't tracked per stream.\nimport { CardHead } from \"@/shared/ui/charts\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Card } from \"@/shared/ui/data/Card\";\n\nexport function Placeholder({ title, hint, body }: { title: string; hint: string; body: string }) {\n  return (\n    <Card>\n      <CardHead title={title} hint={hint} />\n      <Text as=\"div\" mono size={11} tone=\"dim\" style={{ lineHeight: 1.6 }}>{body}</Text>\n    </Card>\n  );\n}\n",
+  "src": "src/features/planner/fleet/WorkerDetailPlaceholder.tsx",
+  "folder": "features/planner/fleet",
+  "composes": [
+    "Card",
+    "Charts",
+    "Text"
+  ],
+  "props": []
+}

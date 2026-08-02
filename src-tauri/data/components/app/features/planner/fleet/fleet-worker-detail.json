@@ -17,7 +17,9 @@
     "Row",
     "Spacer",
     "Stack",
-    "Text"
+    "Text",
+    "WorkerDetailPlaceholder",
+    "WorkerModals"
   ],
   "props": []
 }
