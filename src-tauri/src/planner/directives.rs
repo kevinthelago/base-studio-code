@@ -160,26 +160,34 @@ mod tests {
     }
 
     #[test]
-    fn discovery_asks_who_renders_the_ui_and_separates_it_from_ui_mode() {
-        // #4115: `uiSystem` decides whether OUR pipeline renders the app at all. It is a different
-        // question from `uiMode` (where the DESIGNS come from) and the trap is that uiMode looks
-        // sufficient — `external` still means we render the shell. Inferring it wrongly makes the
-        // plan design a graph-rendered shell for a project that will never render one.
+    fn discovery_asks_both_system_axes_and_separates_them_from_ui_mode() {
+        // #4115: the system axes decide whether OUR platform supplies AND RUNS each half of the
+        // project — the component graph rendering its UI, the algorithms graph supplying (and our host
+        // EXECUTING) its computation. Different question from `uiMode` (where the DESIGNS come from),
+        // and the trap is that uiMode looks sufficient: `external` still means we render the shell.
         let (disc, _) = packaged("discovery");
-        assert!(disc.contains("`uiSystem`"), "discovery must record who renders the UI: {disc}");
-        let clause = &disc[disc.find("`uiSystem`").expect("uiSystem clause")..];
-        let clause = &clause[..clause.len().min(900)];
-        assert!(clause.contains("ASK the user"), "the UI system is the user's call: {clause}");
+        for axis in ["`uiSystem`", "`algorithmSystem`"] {
+            assert!(disc.contains(axis), "discovery must record {axis}: {disc}");
+        }
+        let clause = &disc[disc.find("`uiSystem`").expect("system-axis clause")..];
+        let clause = &clause[..clause.len().min(1600)];
+        assert!(clause.contains("ASK the user"), "the system axes are the user's call: {clause}");
         assert!(clause.contains("studio") && clause.contains("own"),
             "both values must be offered by name: {clause}");
         // The distinction from uiMode is the whole point — state it, don't leave it to be inferred.
         assert!(clause.contains("NOT the same question as `uiMode`"),
             "the clause must separate uiSystem from uiMode explicitly: {clause}");
-        // Ask, never infer silently — but propose from evidence (a linked repo with a frontend).
+        // Asked SEPARATELY: the axes differ often (own UI, studio algorithms), and collapsing them
+        // into one answer is exactly how the executed half ends up unstated.
+        assert!(clause.contains("SEPARATELY"),
+            "the two axes must be asked separately, not collapsed: {clause}");
+        // Ask, never infer silently — but propose from evidence (an existing frontend / core logic).
         assert!(clause.contains("frontend"), "propose `own` from an existing frontend: {clause}");
-        // It is asked BEFORE uiMode, because it governs whether uiMode means anything.
+        // Both are asked BEFORE uiMode, because they govern whether uiMode means anything.
         assert!(disc.find("`uiSystem`") < disc.find("`uiMode`"),
             "uiSystem must be asked before uiMode — it decides whether uiMode matters");
+        assert!(disc.find("`algorithmSystem`") < disc.find("`uiMode`"),
+            "algorithmSystem belongs with its twin, ahead of uiMode");
     }
 
     #[test]

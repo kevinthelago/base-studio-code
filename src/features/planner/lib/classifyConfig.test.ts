@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   coerceClassifyConfig, appTypeOf, lifecycleOf, appTypeHasUi, classifySignals,
-  uiSystemOf, rendersFromStudio,
-  APP_TYPES, LIFECYCLES, UI_SYSTEMS,
+  uiSystemOf, rendersFromStudio, algorithmSystemOf, computesFromStudio, hostRunsProjectArtifacts,
+  APP_TYPES, LIFECYCLES, SYSTEM_SOURCES,
 } from "./classifyConfig";
 
 describe("coerceClassifyConfig", () => {
@@ -21,7 +21,7 @@ describe("coerceClassifyConfig", () => {
   it("accepts every token in each published taxonomy", () => {
     for (const t of APP_TYPES) expect(coerceClassifyConfig({ appType: t })).toEqual({ appType: t });
     for (const l of LIFECYCLES) expect(coerceClassifyConfig({ lifecycle: l })).toEqual({ lifecycle: l });
-    for (const s of UI_SYSTEMS) expect(coerceClassifyConfig({ uiSystem: s })).toEqual({ uiSystem: s });
+    for (const s of SYSTEM_SOURCES) expect(coerceClassifyConfig({ uiSystem: s })).toEqual({ uiSystem: s });
   });
 
   it("keeps uiSystem and uiMode as independent axes (#4115)", () => {
@@ -35,6 +35,20 @@ describe("coerceClassifyConfig", () => {
     // project INTO a UI system it doesn't use.
     expect(coerceClassifyConfig({ uiSystem: "owned" })).toEqual({});
     expect(coerceClassifyConfig({ uiSystem: "external" })).toEqual({});
+  });
+
+  it("reads the two SYSTEM axes independently (#4115)", () => {
+    // They differ often — owning the UI while still drawing algorithms from the graph is a normal
+    // project, and it is exactly the case a single combined answer would get wrong.
+    expect(coerceClassifyConfig({ uiSystem: "own", algorithmSystem: "studio" }))
+      .toEqual({ uiSystem: "own", algorithmSystem: "studio" });
+    expect(coerceClassifyConfig({ uiSystem: "studio", algorithmSystem: "own" }))
+      .toEqual({ uiSystem: "studio", algorithmSystem: "own" });
+    for (const s of SYSTEM_SOURCES) {
+      expect(coerceClassifyConfig({ algorithmSystem: s })).toEqual({ algorithmSystem: s });
+    }
+    // Same discipline as its twin: a bad token is dropped, never coerced.
+    expect(coerceClassifyConfig({ algorithmSystem: "graph" })).toEqual({});
   });
 
   it("reads a non-object as null and an empty object as an empty config", () => {
@@ -67,6 +81,40 @@ describe("the unclassified defaults", () => {
     expect(uiSystemOf({ uiSystem: "own" })).toBe("own");
     // uiMode alone never opts a project out — the whole point of the separate axis.
     expect(rendersFromStudio({ uiMode: "external" })).toBe(true);
+  });
+
+  it("reads an unclassified project as studio for BOTH systems", () => {
+    for (const cfg of [undefined, null, {}]) {
+      expect(algorithmSystemOf(cfg)).toBe("studio");
+      expect(computesFromStudio(cfg)).toBe(true);
+      expect(hostRunsProjectArtifacts(cfg)).toBe(true);
+    }
+    expect(computesFromStudio({ algorithmSystem: "own" })).toBe(false);
+  });
+});
+
+describe("hostRunsProjectArtifacts — the isolate-before-render question (#4115)", () => {
+  // `studio` means our HOST takes the project's LLM-authored code in and runs it: UI rendered in a
+  // frame (opaque-origin in ComponentPreviewFrame; #3862 is the frame that still isn't), algorithms
+  // compiled with `new Function` and executed in the vizCode worker (#3233). So this must be an OR —
+  // isolation is owed if ANY one surface hosts project code.
+  it("is true when EITHER system is studio, not only when the UI is", () => {
+    expect(hostRunsProjectArtifacts({ uiSystem: "own", algorithmSystem: "studio" })).toBe(true);
+    expect(hostRunsProjectArtifacts({ uiSystem: "studio", algorithmSystem: "own" })).toBe(true);
+    expect(hostRunsProjectArtifacts({ uiSystem: "studio", algorithmSystem: "studio" })).toBe(true);
+  });
+
+  it("is false only when the project owns BOTH halves", () => {
+    expect(hostRunsProjectArtifacts({ uiSystem: "own", algorithmSystem: "own" })).toBe(false);
+  });
+
+  it("would answer wrongly if it read only the UI axis — the regression this guards", () => {
+    // The project that owns its UI but draws algorithms from the graph: reading `uiSystem` alone says
+    // "we host nothing", while its vizCode still executes here. That is the drop this predicate exists
+    // to prevent, and it's the more dangerous half — it runs code rather than rendering it.
+    const ownUiStudioAlgorithms = { uiSystem: "own", algorithmSystem: "studio" } as const;
+    expect(rendersFromStudio(ownUiStudioAlgorithms)).toBe(false);
+    expect(hostRunsProjectArtifacts(ownUiStudioAlgorithms)).toBe(true);
   });
 });
 
@@ -104,8 +152,10 @@ describe("classifySignals", () => {
     expect(sig["appType:application"]).toBe(true);
     expect(sig["lifecycle:greenfield"]).toBe(true);
     expect(sig["uiSystem:studio"]).toBe(true);
+    expect(sig["algorithmSystem:studio"]).toBe(true);
     expect(sig.hasUserInterface).toBe(true);
     expect(sig.rendersFromStudio).toBe(true);
+    expect(sig.computesFromStudio).toBe(true);
   });
 
   it("carries rendersFromStudio so a studio-only stage can drop for an `own` project (#4115)", () => {
@@ -116,10 +166,22 @@ describe("classifySignals", () => {
     expect(classifySignals({ uiSystem: "own", appType: "application" }).hasUserInterface).toBe(true);
   });
 
+  it("carries the algorithm axis and the combined host signal too (#4115)", () => {
+    const sig = classifySignals({ uiSystem: "own", algorithmSystem: "studio" });
+    expect(sig.computesFromStudio).toBe(true);
+    expect(sig["algorithmSystem:studio"]).toBe(true);
+    expect(sig["algorithmSystem:own"]).toBe(false);
+    // The two axes are independent signals, and the combined one is an OR over both.
+    expect(sig.rendersFromStudio).toBe(false);
+    expect(sig.hostRunsProjectArtifacts).toBe(true);
+    expect(classifySignals({ uiSystem: "own", algorithmSystem: "own" }).hostRunsProjectArtifacts).toBe(false);
+  });
+
   it("emits a boolean for every token, so an absent signal is never ambiguous", () => {
     const sig = classifySignals({ appType: "cli" });
     for (const t of APP_TYPES) expect(typeof sig[`appType:${t}`]).toBe("boolean");
     for (const l of LIFECYCLES) expect(typeof sig[`lifecycle:${l}`]).toBe("boolean");
-    for (const s of UI_SYSTEMS) expect(typeof sig[`uiSystem:${s}`]).toBe("boolean");
+    for (const s of SYSTEM_SOURCES) expect(typeof sig[`uiSystem:${s}`]).toBe("boolean");
+    for (const s of SYSTEM_SOURCES) expect(typeof sig[`algorithmSystem:${s}`]).toBe("boolean");
   });
 });

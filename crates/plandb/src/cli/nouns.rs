@@ -175,9 +175,9 @@ pub(crate) fn cmd_market(args: &Args) -> Result<(), String> {
 }
 
 /// `classify` — the project classification (one blob, #3783/#3784/#4115): the planner's discovery
-/// output that shapes the plan (who renders the UI, the UI mode, the taxonomy axes, and which
-/// optional stages the project needs). Validated at set-time; the echo mirrors the recorded
-/// uiSystem + uiMode + which optional stages are on.
+/// output that shapes the plan (who renders the UI, where its algorithms come from, the UI mode, the
+/// taxonomy axes, and which optional stages the project needs). Validated at set-time; the echo
+/// mirrors the recorded uiSystem + algorithmSystem + uiMode + which optional stages are on.
 pub(crate) fn cmd_classify(args: &Args) -> Result<(), String> {
     cmd_blob_noun(
         args, "classify", "classification JSON", "(no classification)",
