@@ -1244,6 +1244,18 @@ fn destructive_write_warning(
 /// ui-touch hook. Returns the written ids in input order. Split out of [`cmd_set`] so the merge +
 /// concurrency + stamping logic is unit-testable without a drivable stdin. `--if-version` takes a
 /// SINGLE record (a lone version number is meaningless across a batch).
+/// Apply a relink plan's writes (#4223) — a MERGING, stamped write of just `src`/`folder`.
+///
+/// Exported because the relink verb lives in `bsc-ui` (it needs the harvest, which sits a crate above
+/// this one), while the write must still go through the same stamped path every other component write
+/// uses — so a re-point bumps `rev`, records attribution, and lands in `bsc ui log` like any edit.
+pub fn apply_relink(store: &bsc_json_store::Store, writes: &[serde_json::Value]) -> Result<(), String> {
+    let writer = crate::record::resolve_writer(None);
+    set_stamped(store, writes, None, &writer, "component", Some("relink: re-point a stale src"),
+                WritePlan { replace: false, clear: &[] })?;
+    Ok(())
+}
+
 fn set_stamped(
     store: &bsc_json_store::Store,
     items: &[serde_json::Value],

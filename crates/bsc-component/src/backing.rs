@@ -13,6 +13,7 @@
 //! record" for them. A component record owns its file, which is what makes the question answerable here.
 
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One record that backs a path.
 #[derive(Debug, PartialEq, Eq)]
@@ -111,6 +112,77 @@ pub fn blind_spot_caveat(unresolvable: usize) -> String {
     format!(
         "note: {unresolvable} record(s) name a `src` that does not exist here, so this check cannot see          the files they back — a \"not backed\" answer is not conclusive for those.          List them with `bsc ui backing audit` (#4223)."
     )
+}
+
+/// What a relink would do to one record (#4223) — the component twin of `bsc graph relink`'s outcomes.
+///
+/// The difference that matters: `graph relink` RECOVERS a missing `src` (its `AlreadyLinked` arm skips
+/// anything that has one). These records all HAVE an `src`; it is simply wrong. Overwriting a value is a
+/// different risk from filling a blank, so the safety rule is inverted — a record whose `src` RESOLVES is
+/// never touched, no matter what a harvest suggests. The harvest is evidence, not authority.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RelinkOutcome {
+    /// `src` does not resolve and exactly one harvested component of that name does — re-point it.
+    Relink { id: String, from: String, to: String },
+    /// `src` does not resolve and SEVERAL harvested files carry that name. Never guessed: picking one
+    /// would silently bind the record to whichever the walk happened to reach first.
+    Ambiguous { id: String, from: String, candidates: Vec<String> },
+    /// `src` does not resolve and nothing harvested matches — the component may be gone, renamed beyond
+    /// recognition, or outside the scanned dir. Reported so it is a decision rather than a silence.
+    Unmatched { id: String, from: String },
+    /// `src` resolves. Left alone — a resolving pointer is the one thing this must never overwrite.
+    Resolves { id: String },
+}
+
+/// Plan the re-pointing of stale `src` values by matching records to a fresh harvest (#4223). Pure —
+/// APPLYING it (writing the store) is the caller's job, so a dry run and a real run share one planner.
+///
+/// `by_name` maps a component NAME to the distinct paths harvested under it. Name, not id, because the
+/// component graph composes by name and a record's `name` is the stable thing across a file rename —
+/// which is the exact event that produced these stale pointers.
+pub fn relink_plan(records: &[Value], by_name: &BTreeMap<String, BTreeSet<String>>, root: &std::path::Path) -> Vec<RelinkOutcome> {
+    let field = |v: &Value, k: &str| {
+        v.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).unwrap_or("").to_string()
+    };
+    let mut out = Vec::new();
+    for r in records {
+        let id = field(r, "id");
+        if id.is_empty() {
+            continue;
+        }
+        let from = field(r, "src");
+        // A record with no `src` at all is not this verb's business — `backing`/`audit` report it, and
+        // inventing provenance for it is the harvest-promotion decision, not a repair.
+        if from.is_empty() {
+            continue;
+        }
+        if root.join(&from).exists() {
+            out.push(RelinkOutcome::Resolves { id });
+            continue;
+        }
+        let name = field(r, "name");
+        match by_name.get(&name).map(|s| s.iter().cloned().collect::<Vec<_>>()) {
+            Some(paths) if paths.len() == 1 => {
+                let to = paths[0].clone();
+                // A harvest that proposes the SAME broken path tells us nothing — treat it as unmatched
+                // rather than reporting a no-op "relink" that would read as a fix.
+                //
+                // And the guard that makes this verb safe BY CONSTRUCTION: a proposed `to` must itself
+                // RESOLVE. The whole defect being repaired is a pointer that names no file, so swapping
+                // in a second unresolvable path would be the same bug wearing a fix's clothes. It caught
+                // a real one: the harvest reports paths relative to the SCANNED DIR, so a scan of `src`
+                // yields `features/x/Y.tsx` where records use `src/features/x/Y.tsx`.
+                if to == from || !root.join(&to).exists() {
+                    out.push(RelinkOutcome::Unmatched { id, from });
+                } else {
+                    out.push(RelinkOutcome::Relink { id, from, to });
+                }
+            }
+            Some(paths) => out.push(RelinkOutcome::Ambiguous { id, from, candidates: paths }),
+            None => out.push(RelinkOutcome::Unmatched { id, from }),
+        }
+    }
+    out
 }
 
 /// The rejection a worker sees when it edited a record-backed file (#4193).
@@ -243,5 +315,125 @@ mod tests {
         assert!(msg.contains("54 record"), "{msg}");
         assert!(msg.contains("not conclusive"), "says the answer cannot be trusted for those: {msg}");
         assert!(msg.contains("bsc ui backing audit"), "names how to see them: {msg}");
+    }
+
+    fn names(pairs: &[(&str, &[&str])]) -> BTreeMap<String, BTreeSet<String>> {
+        pairs.iter().map(|(n, ps)| ((*n).to_string(), ps.iter().map(|p| (*p).to_string()).collect())).collect()
+    }
+
+    /// The safety rule that separates this from `bsc graph relink`: those records have NO `src` and the
+    /// harvest fills it; these have a WRONG one. A resolving pointer is never overwritten, however
+    /// confident the harvest is — the harvest is evidence, not authority.
+    #[test]
+    fn a_resolving_src_is_never_overwritten_even_when_the_harvest_disagrees() {
+        let dir = std::env::temp_dir().join(format!("bsc-relink-a-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src/x")).unwrap();
+        std::fs::write(dir.join("src/x/Good.tsx"), "x").unwrap();
+
+        let recs = vec![json!({ "id": "good", "name": "Good", "src": "src/x/Good.tsx" })];
+        // The harvest found the same component somewhere else entirely.
+        let plan = relink_plan(&recs, &names(&[("Good", &["src/elsewhere/Good.tsx"])]), &dir);
+        assert_eq!(plan, vec![RelinkOutcome::Resolves { id: "good".into() }]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_stale_src_with_one_harvested_match_is_repointed() {
+        let dir = std::env::temp_dir().join(format!("bsc-relink-b-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // The real-world case: the file was renamed and the record kept the old path.
+        std::fs::create_dir_all(dir.join("src/features/automations")).unwrap();
+        std::fs::write(dir.join("src/features/automations/History.tsx"), "x").unwrap();
+        let recs = vec![json!({
+            "id": "automations-history",
+            "name": "AutomationsHistory",
+            "src": "src/features/automations/AutomationsHistory.tsx",
+        })];
+        let plan = relink_plan(
+            &recs,
+            &names(&[("AutomationsHistory", &["src/features/automations/History.tsx"])]),
+            &dir,
+        );
+        assert_eq!(
+            plan,
+            vec![RelinkOutcome::Relink {
+                id: "automations-history".into(),
+                from: "src/features/automations/AutomationsHistory.tsx".into(),
+                to: "src/features/automations/History.tsx".into(),
+            }],
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The guard that makes the verb safe by construction — and it is not hypothetical. The first live
+    /// dry run proposed 32 re-points whose targets were harvest-relative (`features/x/Y.tsx`) against
+    /// records holding repo-root paths (`src/features/x/Y.tsx`): every one would have swapped an
+    /// unresolvable pointer for a *different* unresolvable pointer, and read as 32 repairs.
+    #[test]
+    fn a_proposal_that_does_not_resolve_is_not_a_repair() {
+        let dir = std::env::temp_dir().join(format!("bsc-relink-f-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let recs = vec![json!({
+            "id": "automations-history",
+            "name": "AutomationsHistory",
+            "src": "src/features/automations/AutomationsHistory.tsx",
+        })];
+        // Harvest-relative, so it names no file from the root — the shape of the real near-miss.
+        let plan = relink_plan(
+            &recs,
+            &names(&[("AutomationsHistory", &["features/automations/History.tsx"])]),
+            &dir,
+        );
+        assert_eq!(
+            plan,
+            vec![RelinkOutcome::Unmatched {
+                id: "automations-history".into(),
+                from: "src/features/automations/AutomationsHistory.tsx".into(),
+            }],
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn several_matches_are_reported_not_picked() {
+        // Picking one would silently bind the record to whichever the walk reached first — the failure
+        // mode `graph relink` also refuses, for the same reason.
+        let dir = std::env::temp_dir().join(format!("bsc-relink-c-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let recs = vec![json!({ "id": "card", "name": "Card", "src": "src/gone/Card.tsx" })];
+        let plan = relink_plan(&recs, &names(&[("Card", &["src/a/Card.tsx", "src/b/Card.tsx"])]), &dir);
+        match &plan[0] {
+            RelinkOutcome::Ambiguous { id, candidates, .. } => {
+                assert_eq!(id, "card");
+                assert_eq!(candidates.len(), 2, "both are offered: {candidates:?}");
+            }
+            other => panic!("expected Ambiguous, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nothing_harvested_is_unmatched_and_a_same_path_suggestion_is_not_a_fix() {
+        let dir = std::env::temp_dir().join(format!("bsc-relink-d-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let recs = vec![
+            json!({ "id": "ghost", "name": "Ghost", "src": "src/gone/Ghost.tsx" }),
+            // The harvest proposes the SAME broken path — reporting that as a relink would read as a fix.
+            json!({ "id": "same", "name": "Same", "src": "src/gone/Same.tsx" }),
+        ];
+        let plan = relink_plan(&recs, &names(&[("Same", &["src/gone/Same.tsx"])]), &dir);
+        assert!(matches!(&plan[0], RelinkOutcome::Unmatched { id, .. } if id == "ghost"));
+        assert!(matches!(&plan[1], RelinkOutcome::Unmatched { id, .. } if id == "same"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_record_with_no_src_is_left_to_the_audit() {
+        // Inventing provenance for a record that never had any is a promotion decision, not a repair.
+        let dir = std::env::temp_dir().join(format!("bsc-relink-e-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let recs = vec![json!({ "id": "floating", "name": "Floating" })];
+        assert!(relink_plan(&recs, &names(&[("Floating", &["src/x/Floating.tsx"])]), &dir).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
