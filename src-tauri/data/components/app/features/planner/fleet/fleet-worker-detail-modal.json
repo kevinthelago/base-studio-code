@@ -1,0 +1,19 @@
+{
+  "id": "fleet-worker-detail-modal",
+  "name": "WorkerDetailModal",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/planner/fleet/WorkerDetailModal",
+  "srcText": "// Fleet → the worker detail modal frame, AS GRAPH SOURCE (#4245, epic #3604) — the last three the frontier sweep named. Its\n// `provides: \"@/features/planner/fleet/WorkerDetailModal\"` makes the runtime loader vendor THIS source\n// wherever a graph component imports that specifier, with the registered module as the fallback.\n// Transcribed from the live feature file; the CSS import is dropped (the host owns the stylesheet)\n// and specifiers are absolute. Behaviour runs here.\n// The modal shell used by the per-agent WorkerDetail page (#499) — a titled,\n// dismissable card floated over a scrim with an optional footer action row.\nimport { ModalScrim } from \"@/shared/ui/overlay/ModalScrim\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Spacer } from \"@/shared/ui/layout/Spacer\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { IconButton } from \"@/shared/ui/controls/IconButton\";\n\nexport function Modal({ title, children, onClose, footer }: {\n  title: string; children: React.ReactNode; onClose: () => void; footer?: React.ReactNode;\n}) {\n  return (\n    <ModalScrim onDismiss={onClose}>\n      <Box bg=\"var(--bg-panel)\" border radius=\"lg\" style={{ width: 440, maxWidth: \"90vw\", boxShadow: \"0 12px 40px rgba(0,0,0,0.5)\" }}>\n        <Row style={{ padding: \"12px 16px\", borderBottom: \"1px solid var(--border-soft)\" }}>\n          <Text as=\"h3\" style={{ margin: 0 }}>{title}</Text>\n          <Spacer />\n          <IconButton aria-label=\"close\" onClick={onClose} />\n        </Row>\n        <Box pad={16}>{children}</Box>\n        {footer && <Row justify=\"end\" align=\"stretch\" gap={8} style={{ padding: \"12px 16px\", borderTop: \"1px solid var(--border-soft)\" }}>{footer}</Row>}\n      </Box>\n    </ModalScrim>\n  );\n}\n",
+  "src": "src/features/planner/fleet/WorkerDetailModal.tsx",
+  "folder": "features/planner/fleet",
+  "composes": [
+    "Box",
+    "IconButton",
+    "ModalScrim",
+    "Row",
+    "Spacer",
+    "Text"
+  ],
+  "props": []
+}
