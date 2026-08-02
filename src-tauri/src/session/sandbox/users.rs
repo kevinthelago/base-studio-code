@@ -6,12 +6,23 @@
 //! literally cannot read Worker B's files (Unix perms deny it) even via raw Bash, without N separate
 //! rootfs. Chosen over one-distro-per-agent per the issue's cost/benefit table.
 //!
-//! Two shared things survive isolation (the issue's "real cost"):
-//!  1. **Coordination state** (`coord.log` / a shared `plan.db`) — lives in a **group-shared**,
-//!     setgid dir ([`SHARED_DIR`], mode `2770`, owned by [`AGENT_GROUP`]); every agent user is added
-//!     to that group so all can append coord events while their private homes stay `700`.
-//!  2. **The git object store** — left to the existing worktree layout (a follow-on decides shared
-//!     `.git` vs per-user clones; see the module doc's "needs a live distro" notes).
+//! Two shared things survive isolation (the issue's "real cost"), and #4260 settles the boundary the
+//! original landing deferred — **what is private is the code an agent edits; what is shared is
+//! everything agents must agree on**:
+//!  1. **Coordination + app state** ([`SHARED_BASE`], the one `~/.base-studio-code` every agent user
+//!     symlinks to) — `coord.log`, the project hub, `plan.db`, and the global `bsc` stores, inside a
+//!     **group-shared** setgid dir ([`SHARED_DIR`], mode `2770`, owned by [`AGENT_GROUP`]). Every
+//!     agent user joins that group, so all can read the stores and append coord events.
+//!  2. **The git object store** — ONE clone per repo under [`SHARED_BASE`] (`core.sharedRepository=group`),
+//!     with each agent's **worktree** created by that agent inside its own `700` home
+//!     ([`agent_worktrees_dir`]). N agents therefore cost one fetch, and still cannot read each
+//!     other's checkout.
+//!
+//! **Why the worktree location is load-bearing (#4260).** Before this, every hub, clone and worktree
+//! lived under `/home/agent` — which is mode `700` and owned by the distro's default user — while the
+//! session ran as `bsc-<slug>-<hash>`. A worker could not `cd` into its OWN worktree (verified on a
+//! live distro: `Permission denied`), so per-agent users could never actually be switched on. Putting
+//! each worktree in its owner's home is what makes the isolation real rather than nominal.
 //!
 //! Everything here is **pure** except [`ensure_sandbox_user`] (the one `wsl.exe`-touching command),
 //! so the naming / home / provisioning-script / spawn-arg logic unit-tests without a live distro.
@@ -34,6 +45,20 @@ pub(crate) const AGENT_GROUP: &str = "bsc-agents";
 /// agent's `700` home so shared state survives per-user isolation; `2770` + [`AGENT_GROUP`] ownership
 /// means new files inherit the group and stay unreadable to users outside it.
 pub(crate) const SHARED_DIR: &str = "/srv/bsc-shared";
+
+/// The ONE `~/.base-studio-code` every agent user resolves to — every per-agent home symlinks
+/// `.base-studio-code` here (#4260), so `bsc`'s home-derived paths (the global skills / components /
+/// algorithms stores, `coord.log`, the project hub + `plan.db`) are common ground across isolated
+/// agents. Without this, isolating agents by Linux user would silently give each one an EMPTY set of
+/// stores — and the worker protocol's "read from the store, not from a copy" (#4191) would break.
+pub(crate) const SHARED_BASE: &str = "/srv/bsc-shared/base";
+
+/// The private worktree root inside a per-agent user's `700` home — where that agent's checkouts live,
+/// unreadable to every other agent (#1994/#4260). Deliberately NOT under the shared base: the code an
+/// agent edits is exactly the thing isolation is for.
+pub(crate) fn agent_worktrees_dir(user: &str) -> String {
+    format!("{}/worktrees", agent_home(user))
+}
 
 /// FNV-1a (64-bit) hash of `s`. Hand-rolled because `std`'s `DefaultHasher` is explicitly NOT stable
 /// across releases — we need a hash that yields the SAME username for a given identity on every run
@@ -97,8 +122,14 @@ pub(crate) fn agent_user_name(identity: &str) -> String {
 /// non-root `agent`, and `useradd` needs root — hence [`ensure_sandbox_user`] passes `-u root`).
 ///
 /// Creates, if absent: the shared [`AGENT_GROUP`]; the per-agent user with a home + `/bin/bash` shell,
-/// joined to that group; the group-shared setgid [`SHARED_DIR`]. Then (always, idempotently)
-/// re-asserts group membership and `chmod 700` on the private home. Safe to run repeatedly.
+/// joined to that group; the group-shared setgid [`SHARED_DIR`] + [`SHARED_BASE`]; the agent's private
+/// [`agent_worktrees_dir`]; and the `~/.base-studio-code` → [`SHARED_BASE`] symlink that gives it the
+/// shared stores. Then (always, idempotently) re-asserts group membership and `chmod 700` on the
+/// private home. Safe to run repeatedly.
+///
+/// The symlink is created ONLY when nothing is there (`[ -e ]`), so a distro that still holds a real
+/// `~/.base-studio-code` directory is never clobbered — the migration is a rootfs rebuild, not a
+/// silent delete of an existing store.
 ///
 /// `user` is assumed already validated to `[a-z0-9-]` by [`agent_user_name`]; it is still embedded via
 /// a shell variable (not interpolated into a command word) so the script is robust regardless.
@@ -108,16 +139,23 @@ pub(crate) fn provision_user_script(user: &str) -> String {
          u={user}\n\
          grp={grp}\n\
          shared={shared}\n\
+         base={base}\n\
          getent group \"$grp\" >/dev/null 2>&1 || groupadd \"$grp\"\n\
          id -u \"$u\" >/dev/null 2>&1 || useradd --create-home --shell /bin/bash -g \"$grp\" \"$u\"\n\
          usermod -aG \"$grp\" \"$u\"\n\
+         id -u agent >/dev/null 2>&1 && usermod -aG \"$grp\" agent || true\n\
          chmod 700 \"/home/$u\"\n\
-         mkdir -p \"$shared\"\n\
-         chgrp \"$grp\" \"$shared\"\n\
-         chmod 2770 \"$shared\"\n",
+         mkdir -p \"$shared\" \"$base\"\n\
+         chgrp \"$grp\" \"$shared\" \"$base\"\n\
+         chmod 2770 \"$shared\" \"$base\"\n\
+         mkdir -p \"/home/$u/worktrees\"\n\
+         chown \"$u\":\"$grp\" \"/home/$u/worktrees\"\n\
+         [ -e \"/home/$u/.base-studio-code\" ] || ln -s \"$base\" \"/home/$u/.base-studio-code\"\n\
+         chown -h \"$u\":\"$grp\" \"/home/$u/.base-studio-code\"\n",
         user = user,
         grp = AGENT_GROUP,
         shared = SHARED_DIR,
+        base = SHARED_BASE,
     )
 }
 
@@ -222,6 +260,43 @@ mod tests {
     }
 
     #[test]
+    fn worktrees_live_inside_the_agents_own_home() {
+        // #4260: the regression that made per-agent users unusable was worktrees living under the
+        // DEFAULT user's 700 home, where their owner couldn't even cd into them. They must be under
+        // the agent's own home — and must NOT be under the group-shared base, which every agent reads.
+        let dir = agent_worktrees_dir("bsc-api-1a2b3c4d");
+        assert_eq!(dir, "/home/bsc-api-1a2b3c4d/worktrees");
+        assert!(dir.starts_with(&agent_home("bsc-api-1a2b3c4d")));
+        assert!(!dir.starts_with(SHARED_DIR), "a private worktree must not sit in the shared dir");
+        assert!(!dir.starts_with("/home/agent/"), "a worktree under the default user's 700 home is unreachable by its owner");
+    }
+
+    #[test]
+    fn provision_script_gives_the_agent_a_private_worktree_root_and_the_shared_stores() {
+        let s = provision_user_script(&agent_user_name("proj:api-stream"));
+        // The PRIVATE half: its own worktree root inside its own home, owned by it.
+        assert!(s.contains("mkdir -p \"/home/$u/worktrees\""));
+        assert!(s.contains("chown \"$u\":\"$grp\" \"/home/$u/worktrees\""));
+        // The SHARED half: ~/.base-studio-code resolves to the one shared base, so an isolated agent
+        // still reads the global bsc stores + coord.log (#4191) instead of an empty private set.
+        assert!(s.contains("ln -s \"$base\" \"/home/$u/.base-studio-code\""));
+        // Never clobber an existing real directory — migration is a rootfs rebuild, not a delete.
+        assert!(s.contains("[ -e \"/home/$u/.base-studio-code\" ] ||"));
+        // The symlink itself is chowned (-h) so the agent owns the link, not root.
+        assert!(s.contains("chown -h \"$u\":\"$grp\" \"/home/$u/.base-studio-code\""));
+    }
+
+    #[test]
+    fn provision_script_admits_the_default_user_to_the_shared_group() {
+        // An ALREADY-IMPORTED distro predates the group, so its default `agent` user isn't a member —
+        // and `agent` is who the director/planner/triage sessions and the host-side hub writes run as.
+        // Without this, moving the hub into the group-shared dir would lock those out until the user
+        // rebuilt the rootfs. Tolerant (`|| true`) so a distro with no `agent` user still provisions.
+        let s = provision_user_script(&agent_user_name("proj:api-stream"));
+        assert!(s.contains("id -u agent >/dev/null 2>&1 && usermod -aG \"$grp\" agent || true"));
+    }
+
+    #[test]
     fn provision_script_is_idempotent_and_locks_the_home() {
         let user = agent_user_name("proj:api-stream");
         let s = provision_user_script(&user);
@@ -235,10 +310,11 @@ mod tests {
         assert!(s.contains("--create-home"));
         // The user is (re-)added to the shared group so coordination state stays reachable.
         assert!(s.contains("usermod -aG \"$grp\" \"$u\""));
-        // The shared coord dir is setgid (2770) + group-owned.
+        // The shared coord dir + shared base are setgid (2770) + group-owned.
         assert!(s.contains(&format!("shared={SHARED_DIR}")));
-        assert!(s.contains("chmod 2770 \"$shared\""));
-        assert!(s.contains("chgrp \"$grp\" \"$shared\""));
+        assert!(s.contains(&format!("base={SHARED_BASE}")));
+        assert!(s.contains("chmod 2770 \"$shared\" \"$base\""));
+        assert!(s.contains("chgrp \"$grp\" \"$shared\" \"$base\""));
         // The derived (validated) user name is embedded.
         assert!(s.contains(&format!("u={user}")));
         // `set -e` so any provisioning step failing aborts the script.

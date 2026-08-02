@@ -77,14 +77,36 @@ fn wsl_exec(args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// Prefix `-u <user>` onto a distro invocation when a per-agent Linux user is given (#1994/#4260),
+/// else pass `args` through untouched (⇒ the distro's default `agent` user). `wsl.exe` accepts `-u`
+/// anywhere before the `--` separator, so prefixing composes with the callers' leading `-d <distro>`.
+fn with_user<'a>(user: Option<&'a str>, args: &[&'a str]) -> Vec<&'a str> {
+    let mut v = Vec::with_capacity(args.len() + 2);
+    if let Some(u) = user.filter(|u| !u.is_empty()) {
+        v.push("-u");
+        v.push(u);
+    }
+    v.extend_from_slice(args);
+    v
+}
+
+/// [`wsl_exec`] as a specific per-agent Linux user — the exec half of per-agent isolation: work that
+/// must land in an agent's own `700` home (its worktree) has to be done BY that agent, or the files
+/// end up owned by someone who cannot reach them (#4260).
+fn wsl_exec_as(user: Option<&str>, args: &[&str]) -> Result<String, String> {
+    wsl_exec(&with_user(user, args))
+}
+
 /// Run a `wsl.exe` command feeding `content` bytes on stdin (stdout discarded), returning `Ok(())` on a
 /// zero exit else the decoded, trimmed stderr. The binary-safe write half of the host↔distro bridge —
-/// stdin (not an arg) so raw bytes like `plan.db` traverse the pipe intact.
-fn wsl_exec_stdin(args: &[&str], content: &[u8]) -> Result<(), String> {
+/// stdin (not an arg) so raw bytes like `plan.db` traverse the pipe intact. `user` runs the write as a
+/// specific per-agent Linux user (the write twin of [`wsl_exec_as`]), so a file destined for an agent's
+/// private `700` home — its `CLAUDE.local.md` — is created by the owner that has to read it (#4260).
+fn wsl_exec_stdin(user: Option<&str>, args: &[&str], content: &[u8]) -> Result<(), String> {
     use std::io::Write;
     use std::process::Stdio;
     let mut child = std::process::Command::new("wsl.exe")
-        .args(args)
+        .args(with_user(user, args))
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -111,6 +133,20 @@ mod tests {
         // UTF-16LE "Ok" = 4F 00 6B 00; UTF-8 passes through.
         assert_eq!(decode_wsl(&[0x4F, 0x00, 0x6B, 0x00, 0x4F, 0x00, 0x6B, 0x00, 0x4F, 0x00]), "OkOkO");
         assert_eq!(decode_wsl(b"plain utf8"), "plain utf8");
+    }
+
+    #[test]
+    fn with_user_inserts_the_selector_before_the_separator() {
+        let base = ["-d", "bsc-agent-sandbox", "--", "sh", "-c", "id -un"];
+        // No user (or an empty one) ⇒ the distro's shared default `agent`, args untouched.
+        assert_eq!(with_user(None, &base), base.to_vec());
+        assert_eq!(with_user(Some(""), &base), base.to_vec());
+        // A per-agent user ⇒ `-u <user>` ahead of the `--`, so wsl parses it as a selector and not as
+        // an argument to the command being run.
+        let with = with_user(Some("bsc-api-1a2b3c4d"), &base);
+        assert_eq!(with[..2], ["-u", "bsc-api-1a2b3c4d"]);
+        assert!(with.iter().position(|a| *a == "-u").unwrap() < with.iter().position(|a| *a == "--").unwrap());
+        assert_eq!(&with[2..], base);
     }
 
     #[test]

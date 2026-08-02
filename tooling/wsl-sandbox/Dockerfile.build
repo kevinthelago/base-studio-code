@@ -19,12 +19,40 @@ RUN cargo build --release -p bsc --no-default-features \
 
 FROM debian:stable-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates git openssh-client procps \
+ && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client procps \
+ && rm -rf /var/lib/apt/lists/*
+# The agent runtimes (#4260) — kept byte-for-byte in step with ./Dockerfile. Claude Code is the DEFAULT
+# harness and `gh` is the director's whole GitHub surface, so a cage without them can only host
+# `bsc-agent` and can never be the one posture.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nodejs npm \
+ && npm install -g @anthropic-ai/claude-code \
+ && rm -rf /usr/local/lib/node_modules/@anthropic-ai/claude-code/node_modules/@anthropic-ai/claude-code-linux-x64-musl \
+ && npm cache clean --force \
+ && rm -rf /var/lib/apt/lists/*
+RUN install -m 0755 -d /etc/apt/keyrings \
+ && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends gh \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/bsc /usr/local/bin/bsc
 COPY --from=build /out/bsc-agent /usr/local/bin/bsc-agent
+# Per-agent isolation skeleton (#1994/#4260): private 700 homes, one setgid group dir for everything
+# agents must share, reached from each home by a ~/.base-studio-code symlink.
 RUN chmod +x /usr/local/bin/bsc /usr/local/bin/bsc-agent \
- && useradd --create-home --shell /bin/bash agent
+ && groupadd bsc-agents \
+ && useradd --create-home --shell /bin/bash -g bsc-agents agent \
+ && chmod 700 /home/agent \
+ && mkdir -p /srv/bsc-shared/base \
+ && chgrp -R bsc-agents /srv/bsc-shared \
+ && chmod 2770 /srv/bsc-shared /srv/bsc-shared/base \
+ && ln -s /srv/bsc-shared/base /home/agent/.base-studio-code \
+ && chown -h agent:bsc-agents /home/agent/.base-studio-code \
+ && install -d -o agent -g bsc-agents -m 700 /home/agent/worktrees
 # The seal (#1988): no /mnt/c, no interop, non-root default — baked in.
 COPY tooling/wsl-sandbox/wsl.conf /etc/wsl.conf
 USER agent
