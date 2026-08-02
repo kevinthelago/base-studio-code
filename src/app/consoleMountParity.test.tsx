@@ -22,7 +22,8 @@ const MOUNTS = [
 describe("the console is mounted from the graph in BOTH windows (#4200)", () => {
   it.each(MOUNTS)("$file renders ConsoleGraphHost", ({ source }) => {
     expect(source).toContain("<ConsoleGraphHost");
-    // …and not the file component, which stays exported for its tests until the deletion slice.
+    // …and not the file component, which stays exported for its tests. Both copies coexist by design; the
+    // parity guard is what keeps them from drifting apart.
     expect(source).not.toContain("<ConsoleWorkspace");
   });
 

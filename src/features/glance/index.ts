@@ -2,7 +2,7 @@
 // dependencies as edges, cross-project cycle hazards). Public API barrel.
 export { GlanceWorkspace } from "./GlanceWorkspace";
 // #4185: the graph-hosted workspace — what the rail actually mounts. The file component above stays
-// exported until its deletion slice, so existing tests keep their subject.
+// exported and is not going away — both copies coexist under the parity guard.
 export { GlanceGraphHost } from "./GlanceGraphHost";
 export { registerGlancePlatform } from "./graphPlatform";
 export {
