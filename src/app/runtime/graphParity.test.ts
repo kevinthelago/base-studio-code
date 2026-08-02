@@ -22,8 +22,9 @@
 // whose skeleton drifted; this compares code, so it also catches a hook body, a const, or a handler that
 // only one copy grew.
 //
-// A guard for a TRANSITIONAL state, not a permanent law: #4169 step 4 deletes each file once its graph
-// copy is provably safe to be the only one, and each pair leaves this check when its file does.
+// This is a PERMANENT guard, not a transitional one. Deleting a page's `.tsx` once its record renders was
+// once the plan; it is not being done — the two copies coexist, and this check is the whole reason that is
+// safe. A pair leaves it only if that page stops being sourced from the graph.
 import { describe, it, expect } from "vitest";
 import { SHADOW_PAGES, loadFileSource } from "./shadowPages";
 
