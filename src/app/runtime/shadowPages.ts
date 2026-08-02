@@ -174,7 +174,19 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     pageId: "projectspage",
     label: "Projects",
     rendersFrom: "graph",
-    modules: [{ recordId: "projectspage", file: "/src/features/planner/list/ProjectsList.tsx" }],
+    modules: [
+      { recordId: "projectspage", file: "/src/features/planner/list/ProjectsList.tsx" },
+      // The list's components (#4232) — `provides` records, like `pane/` and `bodies/`. Authoring them
+      // is what the page's regeneration to ABSOLUTE specifiers unlocked: `provides` matches the exact
+      // specifier a record imports, so while the page said `./ProjectCard` none of these was reachable.
+      { recordId: "projects-card", file: "/src/features/planner/list/ProjectCard.tsx" },
+      { recordId: "projects-rail", file: "/src/features/planner/list/ProjectsRail.tsx" },
+      { recordId: "projects-setup", file: "/src/features/planner/list/ProjectSetupPage.tsx" },
+      { recordId: "projects-blueprint-card", file: "/src/features/planner/list/BlueprintCard.tsx" },
+      { recordId: "projects-cloud-blueprints", file: "/src/features/planner/list/CloudBlueprints.tsx" },
+      { recordId: "projects-reopen-modal", file: "/src/features/planner/list/ReopenProjectModal.tsx" },
+      { recordId: "projects-delete-modal", file: "/src/features/planner/list/published/DeleteProjectModal.tsx" },
+    ],
     // The ONE page that does not register when its module evaluates: `ProjectsGraphHost` registers at
     // first RENDER, to break an import cycle (see its comment). Shadow mode renders nothing, so it must
     // call the registration itself — without this the whole planner-list surface reads as unbound, which
@@ -259,7 +271,8 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
  *  out of every component file in the app. */
 const FILE_SOURCES = import.meta.glob<string>(
   [
-    "/src/features/planner/list/ProjectsList.tsx",
+    "/src/features/planner/list/{ProjectsList,ProjectCard,ProjectsRail,ProjectSetupPage,BlueprintCard,CloudBlueprints,ReopenProjectModal}.tsx",
+    "/src/features/planner/list/published/DeleteProjectModal.tsx",
     "/src/features/planner/session/{Planning,PlanningHeader,PlanningNotices,PlanningDialogs,PublishProgressView,InjectionGateBanner,GitHubStructureCard}.tsx",
     "/src/features/planner/pane/{ProjectPane,FocusedShell,FocusedBodies,PlanStageBar,ProgressionRail,McpDownloadModal,focusedPrimitives}.tsx",
     // Named, not `bodies/*.tsx` — the glob is the file half of the parity diff, and a wildcard sweeps up

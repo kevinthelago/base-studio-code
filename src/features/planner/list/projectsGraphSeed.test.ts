@@ -41,7 +41,15 @@ describe("projectspage record (#3874)", () => {
     // to be. Pin the record against the actual file: same size (bar the stripped CSS import) and the same
     // distinctive internals, so a future reduction cannot pass quietly.
     expect(record.srcText.length).toBeGreaterThan(25_000);
-    expect(Math.abs(record.srcText.length - sourceText.length)).toBeLessThan(200);
+    // ONE-SIDED since #4232, and that is the honest shape of the check. The failure this guards against
+    // is a REDUCTION — a plausible-looking record far smaller than the source it claims to be — so the
+    // record may not be meaningfully shorter than the file. It is legitimately LONGER: the record carries
+    // a provenance header and its specifiers are absolute (`@/features/planner/list/ProjectCard` for
+    // `./ProjectCard`), which only ever adds. A symmetric window would have to be widened every time a
+    // specifier is renamed, and a guard you widen is a guard you stop reading. Structural drift is
+    // covered properly by the record↔file parity guard (`src/app/runtime/graphParity.test.ts`), which
+    // compares the two ignoring exactly those three things.
+    expect(sourceText.length - record.srcText.length).toBeLessThan(200);
     for (const marker of ["filterProjects", "mergeDbDrafts", "buildProjectItems", "ProjectsRail"]) {
       expect(record.srcText, `record retains ${marker}`).toContain(marker);
     }
