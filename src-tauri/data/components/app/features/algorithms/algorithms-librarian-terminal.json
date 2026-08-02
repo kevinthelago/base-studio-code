@@ -1,0 +1,13 @@
+{
+  "id": "algorithms-librarian-terminal",
+  "name": "LibrarianTerminal",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "// Algorithms → the librarian session terminal, AS GRAPH SOURCE (#4219, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the knowledge/viz surface via the algorithms graph-platform,\n// and the sibling views as @/components/* graph records). Behaviour runs here.\n// LibrarianTerminal (#2787/#3357) — the Algorithms tab's docked bottom panel showing the app-owned\n// knowledge-store librarian session. Renders the shared SessionDock shell (#2808).\n//\n// #3357: migrated off the bespoke single-mount xterm (`useLibrarianTerminal` → `useScreenSession`) onto the\n// shared TerminalHost, so this dock only drops a <TerminalSlot> and the host re-parents the one live\n// terminal into it — which is what lets the Glance `librarian` node MORPH into the running session. The\n// session's lifecycle (lazy start on first showing, warm across navigation, 30-minute idle reaper) is owned\n// by the studios feature.\nimport { SessionDock } from \"@/shared/ui/layouts/SessionDock\";\nimport { TerminalSlot } from \"@/app/console/terminal/TerminalSlot\";\nimport { STUDIO_SESSIONS, useStudioViewer, useStudioPageShowing } from \"@/features/studio-sessions\";\n\nexport function LibrarianTerminal({ height }: { height?: number }) {\n  // The Algorithms page is kept MOUNTED but CSS-hidden across page switches (#2827) — mounting is not\n  // \"on screen\", so the viewer count (and thus the reaper) keys off the shell's actual page state.\n  const showing = useStudioPageShowing(\"librarian\");\n  useStudioViewer(\"librarian\", showing);\n  return (\n    <SessionDock\n      testid=\"librarian-terminal\"\n      height={height}\n      title=\"◆ Knowledge librarian · the graph via bsc graph\"\n      subtitle=\"algorithms-studio · restricted\"\n    >\n      <TerminalSlot paneId={STUDIO_SESSIONS.librarian.paneId} visible={showing} focused={false} />\n    </SessionDock>\n  );\n}\n",
+  "src": "src/features/algorithms/LibrarianTerminal.tsx",
+  "folder": "features/algorithms",
+  "composes": [
+    "SessionDock"
+  ],
+  "props": []
+}
