@@ -130,6 +130,14 @@ export async function loadKits(): Promise<Kit[] | null> {
 export async function pushComponent(component: ComponentRecord): Promise<void> {
   try { await bscWrite(null, ["ui", "set", "--replace"], component); } catch { /* store unreachable — cache-only */ }
 }
+/** Write-through JUST the seed stamp on an existing record (#4207) — a MERGING `bsc ui set`, which is
+ *  the whole point: this is the one component write whose input came from READING the store, so a
+ *  `--replace` would push the bridge PROJECTION back over the stored record and silently drop any field
+ *  the projection does not carry. `pushComponent`'s `--replace` is correct for its case (the app holds
+ *  the whole record, authored from the seed) and wrong for this one. Never throws. */
+export async function stampComponent(id: string, seedHash: string): Promise<void> {
+  try { await bscWrite(null, ["ui", "set"], { id, builtin: true, seedHash }); } catch { /* store unreachable — cache-only */ }
+}
 /** Write-through a component removal (`bsc ui remove <id>`). Never throws. */
 export async function dropComponent(id: string): Promise<void> {
   try { await bscRun(null, ["ui", "remove", id]); } catch { /* store unreachable — cache-only */ }
