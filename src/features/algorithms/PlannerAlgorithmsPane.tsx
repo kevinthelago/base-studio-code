@@ -10,7 +10,7 @@
 // Reads the LIVE graph (`useKnowledgeGraph` polls `bsc graph dump`), not the packaged seed alone, so a
 // librarian curating in the background shows up here — the store is the source of truth, the seed is a
 // cache (the golden rule).
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
@@ -41,7 +41,9 @@ const CODE_PREVIEW_CHARS = 600;
 
 /** One inspected implementation: what the planner actually needs to decide "reuse this or commission a
  *  new one" — what it does, what it builds on, where it came from, and how it's faceted. */
-function ImplDetail({ impl, usedBy }: { impl: AlgoImpl; usedBy: AlgoImpl[] }) {
+function ImplDetail({ impl, usedBy, pullControl }: {
+  impl: AlgoImpl; usedBy: AlgoImpl[]; pullControl?: (artifactId: string) => ReactNode;
+}) {
   const facets: [string, string][] = [];
   if (impl.kind) facets.push(["kind", impl.kind]);
   if (impl.domain) facets.push(["domain", impl.domain]);
@@ -76,11 +78,16 @@ function ImplDetail({ impl, usedBy }: { impl: AlgoImpl; usedBy: AlgoImpl[] }) {
           {impl.code.slice(0, CODE_PREVIEW_CHARS)}{impl.code.length > CODE_PREVIEW_CHARS ? "\n…" : ""}
         </Box>
       )}
+      {/* #4267: the plan -> library edge. A render prop, so this lens never learns what a plan is —
+          the planner supplies the control, and the pane rendered anywhere else simply has none. */}
+      {pullControl?.(impl.id)}
     </Stack>
   );
 }
 
-export function PlannerAlgorithmsPane() {
+export function PlannerAlgorithmsPane(
+  { pullControl }: { pullControl?: (artifactId: string) => ReactNode } = {},
+) {
   const graph = useKnowledgeGraph();
   const navigate = useAppStore((s) => s.navigate);
 
@@ -167,7 +174,7 @@ export function PlannerAlgorithmsPane() {
                     </Text>
                   )}
                 </Row>
-                {isOpen && <ImplDetail impl={im} usedBy={usedByImpl(graph, im.id)} />}
+                {isOpen && <ImplDetail impl={im} usedBy={usedByImpl(graph, im.id)} pullControl={pullControl} />}
               </Box>
             );
           })

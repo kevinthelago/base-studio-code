@@ -4,7 +4,7 @@
 // inline-expand preview/props/guidance + pull-into-plan / request / open-in-studio hand-offs) or the
 // whole app assembled from the kit (highlighted, with a legend). Reuses the global `bsc ui`
 // store + the shared specimen renderer; "Open in studio" hands off to the Design Studio workspace (#2308).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -37,7 +37,9 @@ function Specimen({ comp, height }: { comp: ComponentRecord; scale?: number; hei
   );
 }
 
-export function PlannerComponentsPane() {
+export function PlannerComponentsPane(
+  { pullControl }: { pullControl?: (artifactId: string) => ReactNode } = {},
+) {
   const components = useAppStore((s) => s.components);
   const kits = useAppStore((s) => s.kits);
   const navigate = useAppStore((s) => s.navigate);
@@ -165,8 +167,14 @@ export function PlannerComponentsPane() {
                             <Text size={11} tone="muted" style={{ lineHeight: 1.5 }}>{c.whenNot[0] ?? "—"}</Text>
                           </Box>
                         </Box>
+                        {/* #4267: the real hand-off. This used to be a "Pull into plan" button that
+                            only flashed a toast — nothing was recorded, so nothing reached the fleet.
+                            The planner now supplies a control that writes the id onto a feature's
+                            `requires`, the plan → library edge workers actually read (#4191). */}
+                        {pullControl && (
+                          <Box style={{ padding: "8px 0 2px" }}>{pullControl(c.id)}</Box>
+                        )}
                         <Box className="pcp-actions">
-                          <Button variant="primary" size="sm" onClick={() => flash(`“${c.name}” added to the plan`)} style={{ flex: 1 }}>Pull into plan</Button>
                           <Button variant="ghost" size="sm" onClick={openInStudio}>Open in studio ↗</Button>
                         </Box>
                       </Box>
