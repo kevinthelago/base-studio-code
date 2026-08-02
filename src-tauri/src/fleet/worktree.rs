@@ -344,15 +344,25 @@ pub(crate) struct AlgoRef {
     pub name: Option<String>,
     pub tech: Option<String>,
     pub summary: Option<String>,
-    pub code: Option<String>,
+    /// Whether the record carries real `code` — NOT the code itself (#4191). The block points at the
+    /// store instead of quoting it, so the body never enters the worker's context; this only decides
+    /// which of the two resolved shapes to render (a real implementation vs a language `primitive`,
+    /// which is DESCRIBED via `--ref` and has no code by design, #2972).
+    pub has_code: bool,
 }
 
-/// Render the worker's reference-implementation block (#4082). Pure — resolved refs → markdown — so the
-/// prose is testable without a store, a graph, or a worktree.
+/// Render the worker's reference-implementation block (#4082, rewritten #4191). Pure — resolved refs →
+/// markdown — so the prose is testable without a store, a graph, or a worktree.
 ///
-/// The worker CANNOT reach the library itself: the `worker` role's restricted surface has no
-/// `bsc graph`. Inlining is what makes the reference reachable at all — the same reasoning that put
-/// skills inline rather than leaving a "read skills.md" note a worker cannot follow (#636).
+/// It POINTS AT the library; it does not quote it. #4082 inlined each implementation's source on the
+/// stated grounds that "the worker's restricted surface has no `bsc graph`" — which is not true: `bsc`
+/// is in the always-allowed mandatory tier (`permissions/base.json`), and only CONFINED studio roles get
+/// `restricted_allow` (the thing that suppresses it). `worker` is a project role with no such entry, so
+/// it has been able to read the library directly since #4000.
+///
+/// Quoting was therefore not reach — it was a second COPY, and the copy is what a worker edits: it fixes
+/// the inlined code's descendant in the repo file while the record keeps the old body. That is the drift
+/// #4169 measures on pages, arriving through the fleet. A pointer cannot drift.
 ///
 /// `None` for an empty list: most features require nothing, and an empty heading is noise.
 pub(crate) fn algo_refs_block(refs: &[AlgoRef]) -> Option<String> {
@@ -364,27 +374,34 @@ pub(crate) fn algo_refs_block(refs: &[AlgoRef]) -> Option<String> {
         "\n\nThe plan says this feature needs the implementations below. They are the REFERENCE — use \
          them rather than writing your own version of the same thing. Adapt names/types to fit this \
          codebase, but do not re-derive the algorithm. If one genuinely does not fit the problem, say so \
-         and implement what does — a forced fit is worse than an honest re-implementation.\n",
+         and implement what does — a forced fit is worse than an honest re-implementation.\n\n\
+         **Read each one from the library with the command under it.** The library is the source of \
+         truth: if anything quoted anywhere in your context disagrees with what the store returns, the \
+         store is right and the quote is stale.\n",
     );
     for r in refs {
-        match (&r.name, &r.code) {
-            // Resolved WITH code — the useful case.
-            (Some(name), Some(code)) if !code.trim().is_empty() => {
+        match &r.name {
+            // In the library, carrying real code — point at it.
+            Some(name) if r.has_code => {
                 md.push_str(&format!("\n### {name} (`{}`)\n", r.id));
                 if let Some(s) = r.summary.as_deref().filter(|s| !s.trim().is_empty()) {
                     md.push_str(&format!("{}\n", s.trim()));
                 }
-                let lang = r.tech.as_deref().unwrap_or("");
-                md.push_str(&format!("\n```{lang}\n{}\n```\n", code.trim_end()));
+                if let Some(t) = r.tech.as_deref().filter(|t| !t.trim().is_empty()) {
+                    md.push_str(&format!("_Language: {t}._\n"));
+                }
+                md.push_str(&format!("\n```\nbsc graph impl get {}\n```\n", r.id));
             }
             // In the library but carrying no code (a primitive is DESCRIBED via `--ref`, not re-coded).
-            (Some(name), _) => {
+            Some(name) => {
                 md.push_str(&format!("\n### {name} (`{}`)\n", r.id));
                 let s = r.summary.as_deref().unwrap_or("no summary recorded").trim();
-                md.push_str(&format!("{s}\n_No stored code — this is a language primitive; use the platform's own._\n"));
+                md.push_str(&format!(
+                    "{s}\n_No stored code — this is a language primitive; use the platform's own._\n"
+                ));
             }
             // Not in the library at all.
-            (None, _) => {
+            None => {
                 md.push_str(&format!(
                     "\n### `{}` — NOT FOUND in the algorithms library\n\
                      The plan requires this id but nothing matches it. Implement the capability yourself \
@@ -428,9 +445,10 @@ pub(crate) fn inject_required_algorithms(hub: &std::path::Path, wt_local: &std::
                     name: field(im, "name").or_else(|| Some(id.clone())),
                     tech: field(im, "tech"),
                     summary: field(im, "summary"),
-                    code: field(im, "code"),
+                    // Presence only — the body stays in the store (#4191).
+                    has_code: field(im, "code").is_some(),
                 },
-                None => AlgoRef { id: id.clone(), name: None, tech: None, summary: None, code: None },
+                None => AlgoRef { id: id.clone(), name: None, tech: None, summary: None, has_code: false },
             }
         })
         .collect();
@@ -955,13 +973,13 @@ mod algo_ref_tests {
     use super::*;
     use crate::testutil::{temp_home, ENV_LOCK};
 
-    fn r(id: &str, name: Option<&str>, tech: Option<&str>, summary: Option<&str>, code: Option<&str>) -> AlgoRef {
+    fn r(id: &str, name: Option<&str>, tech: Option<&str>, summary: Option<&str>, has_code: bool) -> AlgoRef {
         AlgoRef {
             id: id.into(),
             name: name.map(str::to_string),
             tech: tech.map(str::to_string),
             summary: summary.map(str::to_string),
-            code: code.map(str::to_string),
+            has_code,
         }
     }
 
@@ -971,33 +989,55 @@ mod algo_ref_tests {
         assert!(algo_refs_block(&[]).is_none());
     }
 
-    /// The useful case: the agent gets the actual code, fenced with the impl's tech so it highlights,
-    /// plus an instruction to USE it rather than re-derive it — that instruction IS the feature.
+    /// The useful case: the agent gets enough to decide the ref is relevant (name, id, summary, tech)
+    /// and the COMMAND that reads it from the library — plus the instruction to USE it rather than
+    /// re-derive it, which is what the feature is for.
     #[test]
-    fn a_resolved_ref_carries_its_code_and_the_reuse_instruction() {
+    fn a_resolved_ref_carries_its_fetch_command_and_the_reuse_instruction() {
         let md = algo_refs_block(&[r(
             "merge.rs",
             Some("merge"),
             Some("rust"),
             Some("Interleave two sorted slices."),
-            Some("pub fn merge<T: Ord>(a: &[T], b: &[T]) -> Vec<T> { todo!() }"),
+            true,
         )])
         .expect("a block");
         assert!(md.contains("## Reference implementations (required by this feature)"));
         assert!(md.contains("### merge (`merge.rs`)"));
         assert!(md.contains("Interleave two sorted slices."), "the summary rides along");
-        assert!(md.contains("```rust"), "fenced with the impl's tech so it highlights");
-        assert!(md.contains("pub fn merge"), "THE CODE is what makes this worth doing");
+        assert!(md.contains("_Language: rust._"), "the tech, so the worker knows what it will get");
+        assert!(md.contains("bsc graph impl get merge.rs"), "the command that READS it from the library");
         assert!(md.contains("use them rather than writing your own"), "the reuse instruction");
         // …and an escape hatch, so a bad match doesn't force a wrong implementation.
         assert!(md.contains("does not fit"), "a forced fit is worse than an honest re-implementation");
+    }
+
+    /// #4191 — the block POINTS AT the library; it never quotes it. Inlining made a second copy, and the
+    /// copy is what a worker edits: it fixes the repo file while the record keeps the old body. This is
+    /// the regression test for that, so a future "helpfully inline it again" cannot land silently.
+    #[test]
+    fn a_resolved_ref_never_carries_the_implementation_body() {
+        let md = algo_refs_block(&[r(
+            "merge.rs",
+            Some("merge"),
+            Some("rust"),
+            Some("Interleave two sorted slices."),
+            true,
+        )])
+        .expect("a block");
+        // The only fenced block is the COMMAND — no language-tagged source fence.
+        assert!(!md.contains("```rust"), "no source fence: {md}");
+        assert_eq!(md.matches("```").count(), 2, "exactly one fence, holding the command: {md}");
+        // And the precedence rule, which is what makes a stale quote elsewhere harmless.
+        assert!(md.contains("source of"), "states the library is authoritative: {md}");
+        assert!(md.contains("the store is right"), "…and that a disagreeing quote is stale: {md}");
     }
 
     /// A PRIMITIVE is described, never re-coded (`--ref` to the std path), so it has no stored code.
     /// It should still appear — knowing the library considers it a primitive is the useful signal.
     #[test]
     fn a_ref_without_code_is_named_as_a_primitive_rather_than_dropped() {
-        let md = algo_refs_block(&[r("rust.vec", Some("Vec"), Some("rust"), Some("The growable array."), None)])
+        let md = algo_refs_block(&[r("rust.vec", Some("Vec"), Some("rust"), Some("The growable array."), false)])
             .expect("a block");
         assert!(md.contains("### Vec (`rust.vec`)"));
         assert!(md.contains("language primitive"), "says why there is no code");
@@ -1008,7 +1048,7 @@ mod algo_ref_tests {
     /// becomes visible. Silently dropping it would leave the worker believing the plan named nothing.
     #[test]
     fn a_dangling_id_is_reported_not_silently_dropped() {
-        let md = algo_refs_block(&[r("no-such-algo", None, None, None, None)]).expect("a block");
+        let md = algo_refs_block(&[r("no-such-algo", None, None, None, false)]).expect("a block");
         assert!(md.contains("`no-such-algo` — NOT FOUND"), "the id is named: {md}");
         assert!(md.contains("mention the unresolved reference"), "so the plan can be corrected");
     }
@@ -1016,9 +1056,9 @@ mod algo_ref_tests {
     #[test]
     fn a_mixed_set_renders_every_entry() {
         let md = algo_refs_block(&[
-            r("merge.rs", Some("merge"), Some("rust"), None, Some("fn merge() {}")),
-            r("rust.vec", Some("Vec"), Some("rust"), None, None),
-            r("ghost", None, None, None, None),
+            r("merge.rs", Some("merge"), Some("rust"), None, true),
+            r("rust.vec", Some("Vec"), Some("rust"), None, false),
+            r("ghost", None, None, None, false),
         ])
         .expect("a block");
         for expect in ["### merge", "### Vec", "`ghost` — NOT FOUND"] {
