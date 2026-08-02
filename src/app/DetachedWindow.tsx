@@ -2,7 +2,7 @@ import { useState, Suspense } from "react";
 import { useAppStore } from "@/store";
 import { Titlebar } from "@/app/chrome/Titlebar";
 import { DetachedTabStrip } from "./DetachedTabStrip";
-import { ConsoleWorkspace } from "@/app/console";
+import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
 import { StudioSessionHosts } from "@/features/studio-sessions";
@@ -87,7 +87,7 @@ export function DetachedWindow() {
           <Box className="page">
             {hasHydrated && detachIdx >= 0 && (
               <Stack style={{ flex: 1, minHeight: 0 }}>
-                <ConsoleWorkspace tabIdxOverride={detachIdx} />
+                <ConsoleGraphHost tabIdxOverride={detachIdx} />
               </Stack>
             )}
           </Box>
