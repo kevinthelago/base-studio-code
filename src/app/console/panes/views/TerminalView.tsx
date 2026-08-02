@@ -538,15 +538,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // The sealed distro this pane spawns into (if any): the manual scratch shell, else an identity
       // pane's cage distro (paneWslDistro), else undefined for the normal host shell.
       const effectiveDistro = sandboxed ? "bsc-agent-sandbox" : (paneDistro || undefined);
-      // #1994: a sandboxed WORKER pane runs as its OWN provisioned Linux user — a locked-down (700)
-      // home isolates it from co-located agents (raw Bash can't cross Unix perms). Derive+provision the
-      // user (idempotent; a relaunch reuses the same home) and pass it to pty_create's `-u`. The
-      // director, non-worker panes, and non-sandboxed panes keep the distro's shared default user.
-      // A provisioning failure must NOT wedge the launch — log and fall back to the shared user.
-      // NOTE (remaining #1994 work): the worker's worktree is still created by the DEFAULT `agent`
-      // user under `/home/agent/...` (ensure_sandbox_worktree), so a per-agent user can read/traverse
-      // but not WRITE it. Full end-to-end isolation needs that worktree/clone owned by (or group-
-      // writable to) this user — the follow-on boundary decision (issue option a vs b).
+      // #1994: a sandboxed FLEET pane (worker or director) runs as its OWN provisioned Linux user — a
+      // locked-down (700) home isolates it from co-located agents (raw Bash can't cross Unix perms).
+      // Derive+provision the user (idempotent; a relaunch reuses the same home) and pass it to
+      // pty_create's `-u`. Triage/manual/planner panes and non-sandboxed panes keep the distro's
+      // shared default user. A provisioning failure must NOT wedge the launch — log and fall back.
+      // #4260 closed the boundary this note used to flag as open: the worktree is now created BY this
+      // user inside its own home (ensure_sandbox_worktree), off a group-shared clone, so the agent can
+      // actually read and write its own tree. Before that it was built under the default `agent` user's
+      // 700 home and its owner got `Permission denied` on its own cwd — per-agent users were unusable.
       let wslUser: string | undefined;
       const sandboxIdentity = sandboxUserIdentity(paneId, effectiveDistro);
       if (sandboxIdentity) {

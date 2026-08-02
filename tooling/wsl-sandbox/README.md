@@ -28,6 +28,38 @@ sandbox:
 
 So the distro *is* the boundary, from first boot.
 
+## What's inside (#4260)
+
+The cage has to host **every** harness, not just `bsc-agent` — Claude Code is the default one, and `gh`
+is the director's entire GitHub surface. So the rootfs bakes in:
+
+| | why |
+|---|---|
+| `git`, `openssh-client`, `ca-certificates`, `curl` | worktrees, remotes, HTTPS |
+| `bsc`, `bsc-agent` | the slim Linux sidecars (`bsc` without the DuckDB `data` feature) |
+| **Node + `@anthropic-ai/claude-code`** | the DEFAULT harness. Without it the sandbox could only run `bsc-agent`, which is why it stayed opt-in |
+| **`gh`** (GitHub's signed apt repo) | the director's GitHub writes + every session's readiness probe (#297 S1) |
+
+## Per-agent isolation layout (#1994 / #4260)
+
+Each fleet session runs as its own `bsc-<slug>-<hash>` Linux user, provisioned at launch by
+`ensure_sandbox_user`. The split is **private code, shared agreement**:
+
+```
+/home/<bsc-user>/                 700 — unreadable to every other agent
+  worktrees/<key>/<repo>--<slug>  the agent's OWN checkout (created BY it)
+  .base-studio-code -> /srv/bsc-shared/base
+/srv/bsc-shared/                  2770 root:bsc-agents, setgid
+  base/projects/<key>/            the hub: plan.db, sections, prompts
+  base/projects/<key>/<repo>/     ONE git object store per repo (core.sharedRepository=group)
+  base/…                          coord.log + the global bsc stores
+```
+
+> **Why the worktree location is load-bearing.** Every hub, clone and worktree used to live under
+> `/home/agent` — mode `700`, owned by the *default* user — while the session ran as `bsc-…`. A worker
+> could not `cd` into its own worktree (`Permission denied`, verified on a live distro), so per-agent
+> users could never be switched on. The worktree has to be in its owner's home.
+
 ## Building it
 
 ### Self-contained (recommended) — no pre-staged binaries
@@ -81,6 +113,12 @@ readiness is reported by `wsl_sandbox_status` (#1984).
 
 ## Status
 
-This is **Phase 0** of #1988 — the filesystem definition + the provision/import path. The launch
-rewiring that actually spawns the planner + triage sessions *into* this distro (path translation, the
-hub/worktrees on its ext4) is the next phase, and needs a real WSL2 box to validate.
+The filesystem definition, the provision/import path, and the launch rewiring (sessions spawn *into*
+the distro, with the hub + worktrees on its ext4) are all built. #4260 added the agent runtimes and
+made per-agent Linux users actually usable.
+
+**Still opt-in.** Making the sandbox the *only* posture needs one more thing this repo can't decide on
+its own: `provision_sandbox` requires the rootfs tarball to be staged at
+`~/.base-studio-code/wsl/bsc-agent-sandbox.tar` by a hand-run Docker build. Until the tarball ships
+with the installer, failing closed on an unprovisioned machine would mean no agent can launch until
+the user installs Docker — see #4260.
