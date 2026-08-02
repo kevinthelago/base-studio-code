@@ -7,6 +7,7 @@ import { usePoll } from "@/shared/hooks/usePoll";
 import { projectComplete } from "@/shared/lib/fleet/streamCompletion";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { useAppStore } from "@/store";
+import { checkStoreParity, explainDrift, type StoreDrift } from "@/app/runtime/storeParity";
 import {
   discoverSessions, reconcileSessions, type RecoverableSession,
 } from "@/app/console/lib/sessionRecovery";
@@ -627,6 +628,69 @@ function InterruptedLoopBanner() {
  * far smaller than their seed, some far larger), so which side is right is a per-record judgement. A
  * one-click bulk resolve would be the more dangerous bug.
  */
+/** Store<->file parity (#4246) — the ONLY guard on the copy the app actually mounts.
+ *
+ *  Every other check compares the SEED (`graphParity.test.ts` globs `@data/components/app/**`), while
+ *  `GraphComponent` renders `useAppStore(s => s.components).srcText`. Those coincide only for a record in
+ *  the reconcile path, and six page records carry no `builtin` — so `reconcileSeed` returns early and
+ *  `seedAuthoritative` (#3723), written to stop exactly this, is never reached. `skillspage` renders 9137
+ *  characters fewer than its seed; `automationspage` 4591 more.
+ *
+ *  It lives in the SHELL, not in the designs feature, for the layering reason and the honest one: this is
+ *  a fact about what the app mounts. A feature cannot import `app/runtime/shadowPages`, and the check has
+ *  no business being a store field that every consumer must remember to read.
+ *
+ *  DEV-only inside `checkStoreParity` — a packaged build has no source tree to compare against, so there
+ *  is nothing it could truthfully say. Cheap: text in, outline out; it compiles nothing and loads no
+ *  feature chunks (that is shadow mode's binding walk, which is why THAT one is on demand). */
+function StoreParityBanner() {
+  const components = useAppStore((s) => s.components);
+  const [drift, setDrift] = useState<StoreDrift[]>([]);
+  const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    // Re-checks whenever the store's components change — which is once per hydrate, and again after a
+    // designer edit. That is the right cadence: an edit is precisely when a record can start drifting.
+    void checkStoreParity(components).then((d) => { if (live) setDrift(d); });
+    return () => { live = false; };
+  }, [components]);
+
+  if (dismissed || drift.length === 0) return null;
+  const n = drift.length;
+
+  return (
+    <>
+      <Banner
+        variant="bar"
+        tone="warn"
+        lead={<GitBranch size={14} />}
+        right={
+          <Button size="sm" variant="ghost" onClick={() => setOpen((v) => !v)}>
+            {open ? "Hide" : "Review"}
+          </Button>
+        }
+        onDismiss={() => setDismissed(true)}
+      >
+        {n} rendered module{n === 1 ? "" : "s"} do{n === 1 ? "es" : ""} not match {n === 1 ? "its" : "their"} source
+        file — the app is mounting the store copy. No seed-side guard can see this.
+      </Banner>
+      {open && (
+        <Box className="app-banner-detail">
+          <Stack gap={4}>
+            {drift.map((d) => (
+              <Text key={`${d.pageId}:${d.recordId}`} size={11} tone="dim" mono>
+                {explainDrift(d)}
+              </Text>
+            ))}
+          </Stack>
+        </Box>
+      )}
+    </>
+  );
+}
+
 function SeedDriftBanner() {
   const notices = useAppStore((s) => s.seedNotices);
   const dismissSeedNotice = useAppStore((s) => s.dismissSeedNotice);
@@ -722,6 +786,7 @@ export function AppBanners() {
     <Box className="app-banner-stack">
       <KitChangesBanner />
       <SeedDriftBanner />
+      <StoreParityBanner />
       <CrashRecoveryBanner />
       <InterruptedLoopBanner />
       <SessionRecoveryBanner />
