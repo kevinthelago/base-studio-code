@@ -74,6 +74,19 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ensurePlatform: () => import("@/app/console/ConsoleGraphHost"),
   },
   {
+    pageId: "soundspage",
+    label: "Sounds",
+    // Not a rail Workspace — the planner Screen mounts this one as a tab (#4215).
+    rendersFrom: "graph",
+    modules: [
+      { recordId: "soundspage", file: "/src/features/sounds/SoundsWorkspace.tsx" },
+      { recordId: "sounds-rail", file: "/src/features/sounds/SoundsRail.tsx" },
+      { recordId: "sounds-inspector", file: "/src/features/sounds/SoundsInspector.tsx" },
+      { recordId: "sounds-kit-graph", file: "/src/features/sounds/SoundsKitGraph.tsx" },
+    ],
+    ensurePlatform: () => import("@/features/sounds"),
+  },
+  {
     pageId: "glancepage",
     label: "Glance",
     rendersFrom: "graph",
@@ -180,6 +193,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
 const FILE_SOURCES = import.meta.glob<string>(
   [
     "/src/features/planner/list/ProjectsList.tsx",
+    "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
     "/src/app/console/{index,PaneAt,consoleStates}.tsx",
     "/src/app/console/panes/{PaneShell,PaneMenu}.tsx",
     "/src/features/glance/Glance{Workspace,Canvas,Inspector,StreamMorph,PreviewMorph,Node,PlanScreen,ChatDock,SessionLog}.tsx",
