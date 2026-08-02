@@ -17,8 +17,8 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 11] =
-    ["impl", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "help"];
+pub const VERBS: [&str; 12] =
+    ["impl", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "emit", "help"];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const IMPL_SUBVERBS: [&str; 3] = ["set", "remove", "list"];
@@ -512,6 +512,35 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 emit(&serde_json::json!({ "findings": findings, "count": findings.len() }))
             }
         }
+        // `emit` (#4192) — the store→FILE direction, the twin of `bsc ui emit`. The graph is the source
+        // of truth and a file is the artifact, so maintenance edits the record then re-emits.
+        "emit" => {
+            let sub = positional.get(1).copied();
+            match sub {
+                Some("impl") => {
+                    let id = positional.get(2).ok_or("usage: bsc graph emit impl <id> <dir>")?;
+                    let dir = positional.get(3).ok_or("usage: bsc graph emit impl <id> <dir>")?;
+                    let plan = crate::emit::plan_one(&crate::load(), id)?;
+                    write_emit_plan(&plan, dir, emit)
+                }
+                Some("all") => {
+                    let dir = positional.get(2).ok_or("usage: bsc graph emit all <dir>")?;
+                    let plan = crate::emit::plan_all(&crate::load());
+                    write_emit_plan(&plan, dir, emit)
+                }
+                Some("sync") => {
+                    let dir = positional.get(2).ok_or("usage: bsc graph emit sync <dir>")?;
+                    emit_sync(dir, emit)
+                }
+                Some("help") | None => {
+                    print!("{}", help(prog));
+                    Ok(())
+                }
+                Some(other) => Err(format!(
+                    "unknown emit command '{other}' — want: impl <id> <dir> | all <dir> | sync <dir>"
+                )),
+            }
+        }
         // `used-by <id>` / `--all` (#3594) — the composes-inverse USAGE read (measure step of the optimize
         // loop; mirrors `bsc ui used-by`). A read.
         "used-by" => {
@@ -610,11 +639,92 @@ fn help(prog: &str) -> String {
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder)\n  \
          {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n  \
-         {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
+         {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
+           {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
          Implementation techs (#2770): typescript · rust — each `composes` other same-tech impls, rooted in the language's primitives.\n\
          The library is the per-language implementation tier; `harvest`/`curate` (#2745) mine a project's real code into candidate implementations.\n",
     )
+}
+
+/// Write every planned file under `dir` and report what was written AND what was declined (#4192).
+///
+/// The skips are reported, not swallowed: a run that emitted 29 of 105 records and said only "29 emitted"
+/// reads as success, when the interesting half is WHY the other 76 were left (a primitive, no provenance,
+/// no code). Each carries its reason.
+fn write_emit_plan(
+    plan: &crate::emit::EmitPlan,
+    dir: &str,
+    emit: impl Fn(&Value) -> Result<(), String>,
+) -> Result<(), String> {
+    let root = std::path::Path::new(dir);
+    for f in &plan.files {
+        let out = root.join(&f.path);
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        std::fs::write(&out, &f.content).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
+    }
+    emit(&serde_json::json!({
+        "emitted": plan.files.len(),
+        "dir": dir,
+        "files": plan.files.iter().map(|f| f.path.clone()).collect::<Vec<_>>(),
+        "skipped": plan.skipped.iter()
+            .map(|s| serde_json::json!({ "id": s.id, "reason": s.reason }))
+            .collect::<Vec<_>>(),
+    }))
+}
+
+/// `bsc graph emit sync <dir>` — re-emit MANAGED files whose record moved; skip hand-edited ones.
+///
+/// The same contract (and, since #4192, the same shared classifier) as `bsc ui emit sync`: a file whose
+/// body still matches its stamp is ours to upgrade; one that does not was edited by a human and is
+/// reported rather than clobbered.
+fn emit_sync(dir: &str, emit: impl Fn(&Value) -> Result<(), String>) -> Result<(), String> {
+    use bsc_cli_util::vendored::SyncVerdict;
+    let plan = crate::emit::plan_all(&crate::load());
+    let root = std::path::Path::new(dir);
+    let mut files: Vec<(String, String)> = Vec::new();
+    collect_emitted_files(root, root, &mut files)?;
+    let (mut synced, mut up_to_date, mut diverged, mut unknown) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for (rel, content) in &files {
+        match crate::emit::classify_file(&plan, rel, content) {
+            SyncVerdict::NotVendored => {}
+            SyncVerdict::UpToDate => up_to_date.push(rel.clone()),
+            SyncVerdict::Diverged => diverged.push(rel.clone()),
+            SyncVerdict::Unknown => unknown.push(rel.clone()),
+            SyncVerdict::Rewrite(fresh) => {
+                let out = root.join(rel);
+                std::fs::write(&out, &fresh).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
+                synced.push(rel.clone());
+            }
+        }
+    }
+    emit(&serde_json::json!({
+        "dir": dir, "synced": synced, "upToDate": up_to_date, "diverged": diverged, "unknown": unknown,
+    }))
+}
+
+/// Collect every file under `dir` as `(dir-relative POSIX path, content)`. Unreadable (binary) files are
+/// skipped — a stamp is a UTF-8 line comment, so a file we cannot read as text was never ours.
+fn collect_emitted_files(
+    root: &std::path::Path,
+    dir: &std::path::Path,
+    out: &mut Vec<(String, String)>,
+) -> Result<(), String> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Ok(()) };
+    let mut paths: Vec<std::path::PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+    paths.sort(); // order-stable output, so a sync report diffs cleanly run to run
+    for path in paths {
+        if path.is_dir() {
+            collect_emitted_files(root, &path, out)?;
+        } else if let Ok(content) = std::fs::read_to_string(&path) {
+            let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+            out.push((rel, content));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
