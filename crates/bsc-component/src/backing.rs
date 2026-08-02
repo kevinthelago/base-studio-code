@@ -76,6 +76,43 @@ pub fn backing_for(records: &[Value], path: &str) -> Vec<Backing> {
         .collect()
 }
 
+/// Every record whose `src` names a file that does NOT exist under `root` (#4223).
+///
+/// This is the gate's blind spot made visible. `backing_for` matches a path against each record's `src`;
+/// if that `src` is stale, the record backs a file the lookup can never find, and the gate answers
+/// "not component-backed" — a green light to edit the artifact directly, which is the exact outcome the
+/// gate exists to prevent. A false NEGATIVE here is far worse than a false positive.
+///
+/// Only meaningful when `root` is the repo the records describe; a caller running elsewhere would see
+/// every record as unresolvable, which is why the audit states its root and the gate only WARNS on it.
+pub fn unresolvable_src(records: &[Value], root: &std::path::Path) -> Vec<Backing> {
+    let field = |v: &Value, k: &str| {
+        v.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).unwrap_or("").to_string()
+    };
+    records
+        .iter()
+        .filter_map(|r| {
+            let src = field(r, "src");
+            if src.is_empty() || root.join(&src).exists() {
+                return None;
+            }
+            Some(Backing { id: field(r, "id"), kit_id: field(r, "kitId"), src })
+        })
+        .collect()
+}
+
+/// The caveat a `gate` run prints when part of the store cannot be checked.
+///
+/// A lookup that cannot see some records must not answer with confidence. Stated as a caveat rather than
+/// a failure because the gate's own verdict on the paths it CAN resolve is still correct and still worth
+/// enforcing — the unresolvable set is a separate problem, and blocking every commit on it would be
+/// punishing the wrong person.
+pub fn blind_spot_caveat(unresolvable: usize) -> String {
+    format!(
+        "note: {unresolvable} record(s) name a `src` that does not exist here, so this check cannot see          the files they back — a \"not backed\" answer is not conclusive for those.          List them with `bsc ui backing audit` (#4223)."
+    )
+}
+
 /// The rejection a worker sees when it edited a record-backed file (#4193).
 ///
 /// It names the file, the record, and BOTH commands — because the failure mode this gate exists for is
@@ -167,5 +204,44 @@ mod tests {
         assert!(msg.contains("bsc ui emit component button"), "the re-emit: {msg}");
         // It explains WHY, because the worker's failure was not knowing a record existed.
         assert!(msg.contains("source of truth"), "{msg}");
+    }
+
+    #[test]
+    fn unresolvable_src_finds_the_records_the_gate_cannot_see() {
+        // #4223: the gate answers from `src`. A record whose `src` names a missing file backs a path the
+        // lookup can never match, so the gate says "not backed" — a green light to edit the artifact.
+        let dir = std::env::temp_dir().join(format!("bsc-backing-{}", std::process::id()));
+        let real = dir.join("src/features/automations");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("History.tsx"), "export const X = 1;
+").unwrap();
+
+        let recs = vec![
+            // Stale: the file was renamed to History.tsx and the record never re-pointed.
+            json!({ "id": "automations-history", "kitId": "bsc", "src": "src/features/automations/AutomationsHistory.tsx" }),
+            // Fine: resolves.
+            json!({ "id": "ok", "kitId": "bsc", "src": "src/features/automations/History.tsx" }),
+            // No provenance at all — not this check's business.
+            json!({ "id": "floating", "kitId": "bsc" }),
+        ];
+        let bad = unresolvable_src(&recs, &dir);
+        assert_eq!(bad.len(), 1, "only the stale pointer: {bad:?}");
+        assert_eq!(bad[0].id, "automations-history");
+
+        // The consequence, pinned: the gate is blind for exactly that file.
+        assert!(backing_for(&recs, "src/features/automations/History.tsx").iter().any(|b| b.id == "ok"));
+        // …and nothing claims the path the stale record MEANT to name.
+        assert!(backing_for(&recs, "src/features/automations/AutomationsHistory.tsx")
+            .iter()
+            .all(|b| b.id == "automations-history"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_caveat_states_the_uncertainty_rather_than_failing_the_run() {
+        let msg = blind_spot_caveat(54);
+        assert!(msg.contains("54 record"), "{msg}");
+        assert!(msg.contains("not conclusive"), "says the answer cannot be trusted for those: {msg}");
+        assert!(msg.contains("bsc ui backing audit"), "names how to see them: {msg}");
     }
 }
