@@ -205,3 +205,64 @@ describe("navigateBridge — the other verbs", () => {
     expect(ack.component).toBeUndefined();
   });
 });
+
+describe("the presence gate (#4248)", () => {
+  const present = { humanPresent: () => true };
+  const away = { humanPresent: () => false };
+
+  /** THE bug. #3599 honoured an explicit `--page` as "a deliberate steer", but the designer's background
+   *  loop is made of explicit commands — it fired exactly this every ~7s to route around the component
+   *  refusal, pulling the user off Algorithms/Sounds/Teams while they worked. */
+  it("refuses a bare `page` steer while a human is using the app", () => {
+    const v = { ...makeVocab({ activeWorkspace: "projects", projectsPageMode: "algorithms" }), ...present };
+    const ack = applyNavigate({ page: "designs" }, v);
+    expect(v.s.projectsPageMode).toBe("algorithms"); // untouched
+    expect(ack.declined).toContain("someone is using the app");
+  });
+
+  it("refuses a workspace steer too", () => {
+    const v = { ...makeVocab({ activeWorkspace: "console" }), ...present };
+    applyNavigate({ workspace: "projects", page: "designs" }, v);
+    expect(v.s.activeWorkspace).toBe("console");
+  });
+
+  /** The case the steering exists for (#3260/#3263): nobody is there, so nothing is being taken. */
+  it("steers normally when nobody is present", () => {
+    const v = { ...makeVocab({ activeWorkspace: "console" }), ...away };
+    const ack = applyNavigate({ workspace: "projects", page: "designs" }, v);
+    expect(v.s.activeWorkspace).toBe("projects");
+    expect(ack.declined).toBeUndefined();
+  });
+
+  it("--force is the human-driven escape hatch", () => {
+    const v = { ...makeVocab({ activeWorkspace: "console" }), ...present };
+    const ack = applyNavigate({ workspace: "projects", page: "designs", force: true }, v);
+    expect(v.s.activeWorkspace).toBe("projects");
+    expect(ack.declined).toBeUndefined();
+  });
+
+  /** Refusing the VIEW must not refuse the WORK: the focus lands so the Studio shows the right component
+   *  the moment the user opens it — the same shape #3599 chose. */
+  it("still sets the focus it was asked for", () => {
+    const v = { ...makeVocab({ activeWorkspace: "github" }), ...present };
+    applyNavigate({ workspace: "projects", kit: "react-d3", component: "Heatmap" }, v);
+    expect(v.s.designsKitId).toBe("react-d3");
+    expect(v.s.designsCompId).toBe("Heatmap");
+    expect(v.s.activeWorkspace).toBe("github");
+  });
+
+  /** Omitting the probe must behave exactly as before this landed — an absent signal cannot silently
+   *  disable a gate, nor silently enable one. */
+  it("defaults to unattended when no probe is supplied", () => {
+    const v = makeVocab({ activeWorkspace: "console" });
+    applyNavigate({ workspace: "projects", page: "designs" }, v);
+    expect(v.s.activeWorkspace).toBe("projects");
+  });
+
+  it("a non-steering request is unaffected by presence", () => {
+    const v = { ...makeVocab({ activeWorkspace: "console" }), ...present };
+    const ack = applyNavigate({ theme: "nord" }, v);
+    expect(ack.declined).toBeUndefined();
+    expect(v.s.kitTheme).toBe("nord");
+  });
+});

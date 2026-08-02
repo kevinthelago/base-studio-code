@@ -38,6 +38,11 @@ pub const KIND: &str = "navigate";
 /// a component should not need to know which Workspace hosts the Design Studio this week.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NavRequest {
+    /// A HUMAN asked for this steer, so the presence gate does not apply (#4248). An agent's background
+    /// loop must not set it: the gate exists because a background steer takes the screen from whoever is
+    /// using the app, and `--force` is the one path that says a person wanted it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub force: bool,
     /// A rail destination (`registry.ts` `Workspace`): console · glance · projects · skills · automation
     /// · mcp · github · security · settings.
     #[serde(default, skip_serializing_if = "Option::is_none")]

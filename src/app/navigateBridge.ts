@@ -26,6 +26,8 @@ const NAV_STATES = ["loaded", "empty", "loading"] as const;
 
 /** What `bsc navigate` asks for. Every field optional; absent ⇒ leave it alone. Mirrors Rust `NavRequest`. */
 export interface NavRequest {
+  /** A human asked for this steer, so the presence gate does not apply (#4248). */
+  force?: boolean;
   workspace?: string;
   page?: string;
   kit?: string;
@@ -60,6 +62,10 @@ export interface NavAck {
  *  `read` is a LIVE getter, not a snapshot — see the contract note above. Passed in so this module stays
  *  pure and testable with a fake store. */
 export interface NavVocab {
+  /** Is a human at the keyboard right now (#4248)? Injected rather than imported so this module stays
+   *  pure and a test can drive both worlds. Defaults to "nobody is here" when omitted, which keeps every
+   *  existing caller (and the unattended loop) behaving exactly as before. */
+  humanPresent?: () => boolean;
   read: () => AppStore;
   workspaces: Workspace[];
   pages: string[];
@@ -122,6 +128,33 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
   // The preview DATA-STATE the Studio renders (#3717) — drives the same store value the state control
   // sets, so a `--state` navigate captures the intended render. Validated above, so the cast is sound.
   if (req.state !== undefined) s.setDesignsPreviewState(req.state as (typeof NAV_STATES)[number]);
+  // #4248: a view change is REFUSED while a person is using the app. #3599 gated only the `component`
+  // intent and honoured an explicit `--workspace`/`--page` as "a deliberate steer" — but an agent's
+  // background loop is made of explicit commands, so that line separated nothing. The designer simply
+  // followed its declined `navigate component` with `navigate page designs`, every ~7s.
+  //
+  // Presence is the line that does separate them: steering is right unattended (the overnight loop this
+  // was built for) and wrong when someone is working. `--force` remains for a human driving the app from
+  // their own terminal — explicit, and visible in the ack.
+  const steering = req.workspace !== undefined || req.page !== undefined;
+  const blockedByHuman = steering && !req.force && (vocab.humanPresent?.() ?? false);
+  if (blockedByHuman) {
+    // The focus still lands, so the Studio shows the right component the moment the user opens it —
+    // the same shape #3599 chose. Only the VIEW is left alone.
+    if (comp) {
+      s.setDesignsKit(comp.kitId);
+      s.setDesignsComp(comp.id);
+    } else if (req.kit !== undefined) {
+      s.setDesignsKit(req.kit);
+    }
+    if (req.theme !== undefined) s.setKitTheme(req.theme);
+    return landed(
+      read,
+      "view unchanged: someone is using the app right now, and a background steer does not take the " +
+        "screen from them (#4248). The focus is set, so it is there when they open the Studio. Pass " +
+        "--force only for a steer a HUMAN asked for.",
+    );
+  }
   if (req.workspace !== undefined) s.setWorkspace(req.workspace as Workspace);
   // Dispatch the page through the SAME per-workspace mechanism the UI uses (#3602) instead of hard-coding
   // one workspace's setter. The page vocab is still PROJECT_MODES (validated above), so for the projects
