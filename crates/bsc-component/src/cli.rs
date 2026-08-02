@@ -318,6 +318,7 @@ planning (a project seeded from a kit-bearing blueprint uses that kit).",
         usage: "USAGE:
   bsc ui backing <path> [--json|--pretty]   # the record(s) whose `src` names this file
   bsc ui backing gate <path>...             # exit 1 if ANY path is record-backed (the landing gate)
+  bsc ui backing audit [--json|--pretty]    # records whose `src` names a file that is NOT here (#4223)
 
 The graph is the source of truth and a component's file is the EMITTED ARTIFACT, so a fix belongs in the
 record: edit it with `bsc ui set`, then `bsc ui emit component <id> <dir>` and the file follows. Editing
@@ -2268,6 +2269,62 @@ fn cmd_backing(args: &[String]) -> Result<(), String> {
     let records: Vec<serde_json::Value> =
         store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
 
+    // #4223 — `audit` lists every record whose `src` names a file that is not here. That is the gate's
+    // blind spot: it matches paths against `src`, so a stale pointer makes the record invisible and the
+    // gate answers "not backed" for a file that IS backed.
+    if positional.first().map(String::as_str) == Some("audit") {
+        let root = std::env::current_dir().map_err(|e| format!("cannot resolve the current directory: {e}"))?;
+        let bad = crate::backing::unresolvable_src(&records, &root);
+        let payload = serde_json::json!({
+            "root": root.to_string_lossy().replace('\\', "/"),
+            "records": records.len(),
+            "unresolvable": bad.len(),
+            "stale": bad.iter()
+                .map(|b| serde_json::json!({ "id": b.id, "kitId": b.kit_id, "src": b.src }))
+                .collect::<Vec<_>>(),
+        });
+        bsc_cli_util::emit(pretty, json, &payload, || {
+            if bad.is_empty() {
+                return format!("ok: all {} record(s) name a `src` that exists here", records.len());
+            }
+            // GROUP BY KIT. A kit that describes a DIFFERENT project (a generated app, the react-d3
+            // library) legitimately names paths this repo does not have, so a flat total mixes real
+            // staleness with records that were never about this tree — and a number that cries wolf is
+            // one people stop reading. The kit you are standing in is the one whose count means "stale".
+            let mut by_kit: std::collections::BTreeMap<&str, Vec<&crate::backing::Backing>> = Default::default();
+            for b in &bad {
+                by_kit.entry(if b.kit_id.is_empty() { "(no kit)" } else { &b.kit_id }).or_default().push(b);
+            }
+            let mut out = format!(
+                "{} of {} record(s) name a `src` that does not exist here, by kit:
+",
+                bad.len(),
+                records.len()
+            );
+            for (kit, items) in &by_kit {
+                out.push_str(&format!("
+  {kit} — {} record(s)
+", items.len()));
+                for b in items.iter().take(12) {
+                    out.push_str(&format!("    {:<32} {}
+", b.id, b.src));
+                }
+                if items.len() > 12 {
+                    out.push_str(&format!("    … and {} more
+", items.len() - 12));
+                }
+            }
+            out.push_str(
+                "
+A kit describing ANOTHER project names paths this repo does not have — that is expected. 
+                 The gate is only blind where a kit meant to describe THIS tree points at a missing file.
+",
+            );
+            out
+        });
+        return Ok(());
+    }
+
     if positional.first().map(String::as_str) == Some("gate") {
         let paths = &positional[1..];
         if paths.is_empty() {
@@ -2278,6 +2335,13 @@ fn cmd_backing(args: &[String]) -> Result<(), String> {
             for b in crate::backing::backing_for(&records, p) {
                 blocked.push(crate::backing::rejection(p, &b));
             }
+        }
+        // #4223: the verdict is only as good as the store's `src` pointers. Say so when some cannot be
+        // resolved, on BOTH outcomes — a clean pass is exactly when a false negative does its damage.
+        let root = std::env::current_dir().unwrap_or_default();
+        let blind = crate::backing::unresolvable_src(&records, &root).len();
+        if blind > 0 {
+            eprintln!("{}", crate::backing::blind_spot_caveat(blind));
         }
         if blocked.is_empty() {
             // Say so explicitly: a silent pass is indistinguishable from a gate that did not run.
