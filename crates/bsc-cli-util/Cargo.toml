@@ -12,3 +12,6 @@ name = "bsc_cli_util"
 bsc-util = { path = "../bsc-util" }
 serde = "1"
 serde_json = "1"
+# The vendored-file provenance stamp (#4192) — ONE content-hash form shared by every `emit`
+# surface, so `bsc ui emit` and `bsc graph emit` cannot drift into two look-alike contracts.
+sha2 = "0.11"
