@@ -102,18 +102,22 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(comps?.[1].spec).toBeUndefined();
   });
 
-  it("writes component upsert/removal through the ui surface", async () => {
+  // #4197: `bsc ui set` MERGES by default (so a fleet worker's partial edit cannot delete the rest of a
+  // record whose source file is gone). The app is the opposite case — it holds the WHOLE record, and
+  // `reconcileSeed`'s seed-authoritative reset (#3723) only converges if the store copy is overwritten
+  // field-for-field, so the bridge must keep asking for the verbatim write.
+  it("writes component upsert/removal through the ui surface, replacing the whole record", async () => {
     const comp = { id: "c1" } as unknown as ComponentRecord;
     await pushComponent(comp);
-    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set"], comp);
+    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--replace"], comp);
     await dropComponent("c1");
     expect(bscRun).toHaveBeenCalledWith(null, ["ui", "remove", "c1"]);
   });
 
-  it("writes kit upsert/removal through the ui surface", async () => {
+  it("writes kit upsert/removal through the ui surface, replacing the whole record", async () => {
     const kit = { id: "k1" } as unknown as Kit;
     await pushKit(kit);
-    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "kit", "set"], kit);
+    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "kit", "set", "--replace"], kit);
     await dropKit("k1");
     expect(bscRun).toHaveBeenCalledWith(null, ["ui", "kit", "remove", "k1"]);
   });
