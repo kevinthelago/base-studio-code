@@ -1,0 +1,58 @@
+{
+  "id": "planning-notices",
+  "name": "PlanningNotices",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "// Planning → the notice stack, AS GRAPH SOURCE (#4224, epic #3604). Transcribed from the live feature file: the runtime\n// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui\n// design system + the store via appModules, the planner session's hooks via the planning graph-platform,\n// and the sibling views as @/components/* graph records). Behaviour runs here.\n// Planning page notices strip, split out of Planning.tsx (decomposition pass).\n//\n// Pure presentation: the triage error/skip notices, the feature-dependency-cycle warning, and the\n// \"recover from GitHub\" banner shown when the plan store is empty but the board has published\n// issues. No hooks/refs/effects — Planning.tsx supplies every value + callback.\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Banner } from \"@/shared/ui/feedback/Banner\";\n\nexport interface PlanningNoticesProps {\n  triageError: string | null;\n  triageNote: string | null;\n  featureCycle: string[];\n  recoverable: number;\n  recovering: boolean;\n  onRecover: () => void;\n  publishRepos: string[];\n}\n\nexport function PlanningNotices({\n  triageError, triageNote, featureCycle, recoverable, recovering, onRecover, publishRepos,\n}: PlanningNoticesProps) {\n  return (\n    <>\n      {triageError && (\n        <Banner variant=\"inline\" tone=\"danger\" loud style={{ margin: \"0 24px 8px\" }}>\n          ⚠ {triageError}\n        </Banner>\n      )}\n      {triageNote && !triageError && (\n        <Banner variant=\"inline\" tone=\"neutral\" style={{ margin: \"0 24px 8px\" }}>\n          ⏭ {triageNote}\n        </Banner>\n      )}\n      {featureCycle.length > 0 && (\n        <Banner variant=\"inline\" tone=\"danger\" loud style={{ margin: \"0 24px 8px\" }}>\n          ⚠ Feature dependency cycle: {featureCycle.join(\" → \")} — break it to complete the Features stage.\n        </Banner>\n      )}\n      {recoverable > 0 && (\n        <Row className=\"mono\" gap={10} style={{ padding: \"0 24px 8px\", fontSize: 12, color: \"var(--fg-muted)\" }}>\n          <Box as=\"span\">⤓ The plan store is empty — GitHub has {recoverable} published issue{recoverable === 1 ? \"\" : \"s\"} for {publishRepos.length === 1 ? \"this repo\" : \"these repos\"}.</Box>\n          {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled recover button (mono, custom inline styling, not the .btn kit) */}\n          <button\n            className=\"mono\"\n            onClick={onRecover}\n            disabled={recovering}\n            style={{\n              padding: \"3px 10px\", borderRadius: 6, border: \"1px solid var(--border-soft)\",\n              background: \"var(--bg-elev2)\", color: \"var(--fg)\", fontSize: 11,\n              cursor: recovering ? \"default\" : \"pointer\", opacity: recovering ? 0.6 : 1,\n            }}\n          >\n            {recovering ? \"Recovering…\" : \"Recover from GitHub\"}\n          </button>\n        </Row>\n      )}\n    </>\n  );\n}\n",
+  "src": "src/features/planner/session/PlanningNotices.tsx",
+  "folder": "features/planner/session",
+  "composes": [
+    "Banner",
+    "Box",
+    "Row"
+  ],
+  "props": [
+    {
+      "name": "triageError",
+      "type": "string | null",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "triageNote",
+      "type": "string | null",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "featureCycle",
+      "type": "string[]",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "recoverable",
+      "type": "number",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "recovering",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onRecover",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "publishRepos",
+      "type": "string[]",
+      "req": true,
+      "desc": ""
+    }
+  ]
+}

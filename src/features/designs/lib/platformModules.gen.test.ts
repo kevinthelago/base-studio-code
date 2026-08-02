@@ -29,6 +29,7 @@ import { registerSkillsPlatform } from "@/features/skills/graphPlatform";
 import { registerGlancePlatform } from "@/features/glance/graphPlatform";
 import { registerSoundsPlatform } from "@/features/sounds/graphPlatform";
 import { registerAlgorithmsPlatform } from "@/features/algorithms/graphPlatform";
+import { registerPlanningPlatform } from "@/features/planner/session/graphPlatform";
 import { registerConsolePlatform } from "@/app/console/graphPlatform";
 import { registerFleetPlatform } from "@/features/planner/fleet/graphPlatform";
 import { registerProjectsPlatform } from "@/features/planner/list/graphPlatform";
@@ -55,6 +56,7 @@ function currentSpecifiers(): string[] {
   registerGlancePlatform();
   registerSoundsPlatform();
   registerAlgorithmsPlatform();
+  registerPlanningPlatform();
   registerConsolePlatform();
   registerFleetPlatform();
   registerProjectsPlatform();
