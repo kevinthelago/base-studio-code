@@ -23,12 +23,14 @@ import { TransformationsBody } from "../bodies/TransformationsBody";
 import { AutomationsBody } from "../bodies/FocusedAutomationsBody";
 import { SkillsBody } from "../bodies/FocusedSkillsBody";
 import { McpsBody } from "../bodies/McpsBody";
-import { FeaturesBody } from "../bodies/FocusedFeaturesBody";
 import { StreamsBody } from "../bodies/StreamsBody";
 import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-// The Planner Components pane (#2314) — the body of the `test_ui` stage.
-import { PlannerComponentsPane } from "@/features/designs";
+// The project planner's LIBRARY surface (#4265) — the components lens (#2314) and the algorithms lens
+// together. Folded into the `features` stage, which every packaged blueprint carries; `test_ui` (which
+// none do, since #4249) keeps rendering it so a user blueprint carrying that stage still resolves.
+import { PlannerLibraryPane } from "../bodies/PlannerLibraryPane";
+import { FeaturesStageBody } from "../bodies/FeaturesStageBody";
 import { PreviewPaneShell } from "../preview/PreviewPaneShell";
 import { useAppStore } from "@/store";
 
@@ -100,7 +102,9 @@ export function FocusedStageBody({ stage, data, projectId, onLinkRepo, onView, o
         ? <FileIntakePane projectKey={projectId ?? ""} />
         : <PreviewPaneShell projectKey={projectId ?? ""} />;
     case "features":
-      return <FeaturesBody features={data?.features} />;
+      // #4265: the plan AND the library it should be built from — the stage where reuse-vs-commission
+      // is decided is the stage that shows what there is to reuse.
+      return <FeaturesStageBody features={data?.features} />;
     case "streams":
       // The unified `streams` stage (#1914 — the collapsed structure+permissions def). The plan +
       // relationship graph always shows; the fleet (coordination + the per-stream roster + shared
@@ -114,11 +118,10 @@ export function FocusedStageBody({ stage, data, projectId, onLinkRepo, onView, o
     case "skills":
       return <SkillsBody skills={data?.skills} />;
     case "test_ui":
-      // The Planner Components pane (#2314): the project-scoped lens on the proven-component library —
-      // a Components ⇄ Full UI toggle (inspect one component with pull-into-plan / open-in-studio
-      // hand-offs, or the whole app assembled from the kit). Reads the global library from the store,
-      // so it needs no stage data.
-      return <PlannerComponentsPane />;
+      // Legacy home of the components lens. #4249 retired this stage (no packaged blueprint carries
+      // it), so the library now lives on `features` — but a USER blueprint may still carry `test_ui`,
+      // and it gets the same both-libraries dock rather than a dead pane.
+      return <PlannerLibraryPane />;
     default:
       return <EmptyState iconVariant="dashed" icon="⋯" title="The planner documents this stage." />;
   }
