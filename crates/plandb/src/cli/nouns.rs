@@ -696,6 +696,12 @@ fn render_feature(f: &PlanFeature) -> String {
     if !f.tools.is_empty() {
         out.push_str(&format!("  tools: {}\n", f.tools.join(", ")));
     }
+    // #4267: the plan → library edge. It round-tripped and showed under `--json`, but was absent from
+    // the HUMAN view — so a session or a user reading a feature could not see which library records it
+    // is meant to be built from, which is the one thing `requires` exists to communicate.
+    if !f.requires.is_empty() {
+        out.push_str(&format!("  requires: {}\n", f.requires.join(", ")));
+    }
     if !f.acceptance.is_empty() {
         out.push_str("  acceptance:\n");
         for a in &f.acceptance {

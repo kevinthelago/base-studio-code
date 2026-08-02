@@ -24,7 +24,9 @@ const VIEWS: { value: View; label: string }[] = [
   { value: "library", label: "Library" },
 ];
 
-export function FeaturesStageBody({ features }: { features?: PlanFeature[] }) {
+export function FeaturesStageBody(
+  { features, projectId }: { features?: PlanFeature[]; projectId?: string },
+) {
   // Opens on the plan — the library is the reference you reach for, not the default view.
   const [view, setView] = useState<View>("features");
   return (
@@ -35,7 +37,9 @@ export function FeaturesStageBody({ features }: { features?: PlanFeature[] }) {
         />
       </Box>
       <Box style={{ display: "flex", flex: 1, minHeight: 0, flexDirection: "column", overflow: "auto" }}>
-        {view === "features" ? <FeaturesBody features={features} /> : <PlannerLibraryPane />}
+        {view === "features"
+          ? <FeaturesBody features={features} />
+          : <PlannerLibraryPane projectKey={projectId} features={features} />}
       </Box>
     </Stack>
   );
