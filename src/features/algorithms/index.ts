@@ -1,6 +1,9 @@
 // Public API barrel for the Algorithms knowledge-graph feature (#2761). The Workspace is the rail
 // destination; the pure model (`knowledge`) is re-exported for consumers.
 export { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
+// #4219: the graph-hosted workspace — what the planner mounts. The file component above stays exported;
+// both copies coexist under the record<->file parity guard.
+export { AlgorithmsGraphHost } from "./AlgorithmsGraphHost";
 export * from "./lib/knowledge";
 // The cross-graph adapter (#3116) — the algo-graph NodeLookup another pillar composes into its resolver.
 export { algoNodeLookup } from "./lib/crossGraphAdapter";

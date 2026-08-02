@@ -74,6 +74,20 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ensurePlatform: () => import("@/app/console/ConsoleGraphHost"),
   },
   {
+    pageId: "algorithmspage",
+    label: "Algorithms",
+    // Planner-mounted, like Sounds — not a rail Workspace (#4219).
+    rendersFrom: "graph",
+    modules: [
+      { recordId: "algorithmspage", file: "/src/features/algorithms/AlgorithmsWorkspace.tsx" },
+      { recordId: "algorithms-rail", file: "/src/features/algorithms/AlgorithmsRail.tsx" },
+      { recordId: "algorithms-inspector", file: "/src/features/algorithms/AlgorithmsInspector.tsx" },
+      { recordId: "algorithms-kit-graph", file: "/src/features/algorithms/AlgorithmsKitGraph.tsx" },
+      { recordId: "algorithms-librarian-terminal", file: "/src/features/algorithms/LibrarianTerminal.tsx" },
+    ],
+    ensurePlatform: () => import("@/features/algorithms"),
+  },
+  {
     pageId: "soundspage",
     label: "Sounds",
     // Not a rail Workspace — the planner Screen mounts this one as a tab (#4215).
@@ -194,6 +208,7 @@ const FILE_SOURCES = import.meta.glob<string>(
   [
     "/src/features/planner/list/ProjectsList.tsx",
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
+    "/src/features/algorithms/{AlgorithmsWorkspace,AlgorithmsRail,AlgorithmsInspector,AlgorithmsKitGraph,LibrarianTerminal}.tsx",
     "/src/app/console/{index,PaneAt,consoleStates}.tsx",
     "/src/app/console/panes/{PaneShell,PaneMenu}.tsx",
     "/src/features/glance/Glance{Workspace,Canvas,Inspector,StreamMorph,PreviewMorph,Node,PlanScreen,ChatDock,SessionLog}.tsx",

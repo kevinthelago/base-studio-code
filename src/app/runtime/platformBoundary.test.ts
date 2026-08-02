@@ -25,6 +25,7 @@ import { registerSecurityPlatform } from "@/features/security/graphPlatform";
 import { registerSkillsPlatform } from "@/features/skills/graphPlatform";
 import { registerGlancePlatform } from "@/features/glance/graphPlatform";
 import { registerSoundsPlatform } from "@/features/sounds/graphPlatform";
+import { registerAlgorithmsPlatform } from "@/features/algorithms/graphPlatform";
 import { registerConsolePlatform } from "@/app/console/graphPlatform";
 import { registerFleetPlatform } from "@/features/planner/fleet/graphPlatform";
 import { registerProjectsPlatform } from "@/features/planner/list/graphPlatform";
@@ -67,6 +68,7 @@ beforeAll(() => {
   registerSkillsPlatform();
   registerGlancePlatform();
   registerSoundsPlatform();
+  registerAlgorithmsPlatform();
   registerConsolePlatform();
   registerFleetPlatform();
   registerProjectsPlatform();
