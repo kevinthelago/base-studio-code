@@ -78,8 +78,10 @@ describe("blueprints — seed library", () => {
     expect(STAGE_DEFS.skills.gateRule?.require?.[0]?.signal).toBe("skillsAck");
   });
 
-  it("test_ui teaches the data-shape layout picker (#2475)", () => {
-    const def = STAGE_DEFS.test_ui;
+  it("the ui stage teaches the data-shape layout picker (#2475, moved from test_ui #4249)", () => {
+    // #4249: `test_ui` sat in NO blueprint while owning half the pipeline, so the kit query moved to
+    // `ui` — where the screens are actually specced and the designer is actually commissioned.
+    const def = STAGE_DEFS.ui;
     expect(def).toBeTruthy();
     // The seed teaches the flow: derive the data's shape, then query the kit's ideals via the two
     // read verbs — and treat an uncovered shape as a gap, never a forced fit.
@@ -96,9 +98,10 @@ describe("blueprints — seed library", () => {
   it("the layout stages close the schema → shape → component loop (#2478)", () => {
     // #2475 gave the planner "which component renders shape X" (`bsc ui shapes`). #2478 supplies the
     // OTHER half — "what shape IS this entity's data" — inferred from the canonical Data Model by
-    // `bsc data shapes` (crates/data `shape.rs`). Both stages that pick a layout must teach it, or the
-    // session is back to judging the taxonomy by hand.
-    for (const key of ["ui", "test_ui"]) {
+    // `bsc data shapes` (crates/data `shape.rs`). The stage that picks a layout must teach it, or the
+    // session is back to judging the taxonomy by hand. ONE stage since #4249 — `test_ui` carried a
+    // second copy of the whole loop while belonging to no blueprint.
+    for (const key of ["ui"]) {
       const def = STAGE_DEFS[key];
       expect(def, `${key} stage def exists`).toBeTruthy();
       for (const text of [def.prompt ?? "", def.directive ?? ""]) {
@@ -119,8 +122,11 @@ describe("blueprints — seed library", () => {
     }
   });
 
-  it("test_ui teaches the theme pairing + the swappable-CSS emission (#2489)", () => {
-    const def = STAGE_DEFS.test_ui;
+  it("the ui stage teaches the theme pairing + the swappable-CSS emission (#2489, moved from test_ui #4249)", () => {
+    // This was the sharpest consequence of `test_ui` being orphaned: it owned the ONLY path that
+    // records a project's {kit, theme} pair and emits its palette, so no generated project ever got a
+    // theme. Pairing is a step inside commissioning a UI, so it lives with the commission.
+    const def = STAGE_DEFS.ui;
     // Both faces of the seed teach the whole loop: enumerate themes, choose WITH the user, record
     // the {kit, theme} pair in plan.db, and emit the two-layer palette for the generated app.
     for (const text of [def.prompt ?? "", def.directive ?? ""]) {
