@@ -16,9 +16,9 @@ import type { DesignDirective } from "./lib/designerQueue";
 import { DEFAULT_MAX_TURNS, DRIVER, DESIGNER } from "./lib/designerLoopDrive";
 import { bsc, bscRun } from "@/shared/lib/core/bsc";
 import { kitUsageId, makeChange, planPropagation, dispatchKey } from "./lib/propagation";
-import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, reconcileKits } from "./lib/seed";
+import { SEED_COMPONENTS, SEED_KITS, planComponentRestamp, reconcileComponents, reconcileKits } from "./lib/seed";
 import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "./lib/themes";
-import { loadComponents, loadComponentsGraph, loadKits, pushComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
+import { loadComponents, loadComponentsGraph, loadKits, pushComponent, stampComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
 import { loadThemes, pushTheme, dropTheme, loadVariants } from "./lib/themeBridge";
 import { loadKitUsage, pushKitUsage, dropKitUsage } from "./lib/kitUsageBridge";
 import { setActiveKitThemes, applyVariantsToRoot, applyContributionsToRoot, applyAnimationsToRoot, kitAnimations, type DesignContributionOverlay } from "@/shared/ui/kit";
@@ -82,6 +82,12 @@ export interface ComponentsSlice {
   seedNotices: SeedNotice[];
   /** Dismiss one seed notice (by type + id). */
   dismissSeedNotice: (type: SeedNotice["type"], id: string) => void;
+  /** Repair the `unstamped` records (#4207): re-stamp every store copy that a packaged seed exists for
+   *  but which carries no `builtin` flag, so it rejoins the reconcile path. NON-DESTRUCTIVE — content is
+   *  untouched and the stamp carries the SEED's hash, which reads as "edited, seed unchanged" and keeps
+   *  the store copy (see `planRestamp`). `role: page` records are deferred, never stamped. Resolves to
+   *  the counts so the caller can report what happened. */
+  restampUnstamped: () => Promise<{ stamped: number; deferred: number }>;
 
   /** The consumer index (#2277) — which projects use which kit; the edges a kit CHANGE fans out over.
    *  A write-through cache over the global `bsc ui usage` store. */
@@ -313,6 +319,25 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
 
   dismissSeedNotice: (type, id) =>
     set((s) => ({ seedNotices: s.seedNotices.filter((n) => !(n.type === type && n.id === id)) })),
+
+  restampUnstamped: async () => {
+    // Plan against the STORE's records, not `get().components` — phase 1 of `hydrateComponents` paints
+    // from the lite graph projection, whose `srcText` is empty. Stamping from that would push a record
+    // whose hash describes content the store does not hold, and the very next reconcile would read the
+    // record as edited against its own stamp. Re-read at full fidelity.
+    const loaded = await loadComponents();
+    if (!loaded) return { stamped: 0, deferred: 0 }; // bridge unreachable — nothing to repair against
+    const plan = planComponentRestamp(loaded);
+    // `stampComponent`, not `pushComponent`: a MERGE of the two stamp fields. These records were READ
+    // from the store, so writing them back with `--replace` would push the bridge projection over the
+    // stored record and drop whatever the projection does not carry — the #4197 failure, committed by
+    // the very pass meant to repair its damage.
+    for (const c of plan.stamps) await stampComponent(c.id, c.seedHash!);
+    // Re-hydrate rather than patching state by hand: the stamped records now take a DIFFERENT branch of
+    // the reconcile, and its verdicts (including which notices survive) are the thing being repaired.
+    if (plan.stamps.length > 0) await get().hydrateComponents();
+    return { stamped: plan.stamps.length, deferred: plan.deferred.length };
+  },
 
   kitUsage: [],
 

@@ -452,3 +452,56 @@ describe("component change origin → propagation (#2277)", () => {
     expect(useAppStore.getState().kitDispatches).toHaveLength(0);
   });
 });
+
+describe("restampUnstamped — the #4207 repair", () => {
+  // A real packaged seed of each kind, so the test binds to the actual seed set rather than a fixture
+  // that could drift away from it.
+  const seedNonPage = SEED_COMPONENTS.find((c) => c.role !== "page")!;
+  const seedPage = SEED_COMPONENTS.find((c) => c.role === "page")!;
+
+  beforeEach(() => {
+    useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS });
+    vi.restoreAllMocks();
+  });
+
+  /** The store's copy of a packaged seed, with the stamp stripped — what a pre-#4197 partial write left. */
+  const unstamped = (from: ComponentRecord): ComponentRecord => {
+    const { builtin: _b, seedHash: _h, ...rest } = from;
+    return { ...rest, version: "0.0.1-store-edit" } as ComponentRecord;
+  };
+
+  it("stamps an unstamped record through the MERGING write, never the replacing one", async () => {
+    vi.spyOn(bridge, "loadComponents").mockResolvedValue([unstamped(seedNonPage)]);
+    vi.spyOn(bridge, "loadKits").mockResolvedValue(null);
+    const stamp = vi.spyOn(bridge, "stampComponent").mockResolvedValue(undefined);
+    const push = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
+
+    const r = await useAppStore.getState().restampUnstamped();
+
+    expect(r.stamped).toBe(1);
+    expect(stamp).toHaveBeenCalledWith(seedNonPage.id, seedNonPage.seedHash);
+    // `--replace` on THIS record would push the bridge PROJECTION over the stored one — the #4197
+    // failure, committed by the pass meant to repair it. (The re-hydrate that follows pushes the
+    // built-ins the mocked store lacks, which is the normal seed path and not this record.)
+    expect(push.mock.calls.map((c) => c[0].id)).not.toContain(seedNonPage.id);
+  });
+
+  it("defers a page rather than handing the seed authority over what renders", async () => {
+    vi.spyOn(bridge, "loadComponents").mockResolvedValue([unstamped(seedPage)]);
+    vi.spyOn(bridge, "loadKits").mockResolvedValue(null);
+    const stamp = vi.spyOn(bridge, "stampComponent").mockResolvedValue(undefined);
+
+    const r = await useAppStore.getState().restampUnstamped();
+
+    expect(r).toEqual({ stamped: 0, deferred: 1 });
+    expect(stamp).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op when the bridge is unreachable — nothing to repair against", async () => {
+    vi.spyOn(bridge, "loadComponents").mockResolvedValue(null);
+    const stamp = vi.spyOn(bridge, "stampComponent").mockResolvedValue(undefined);
+
+    expect(await useAppStore.getState().restampUnstamped()).toEqual({ stamped: 0, deferred: 0 });
+    expect(stamp).not.toHaveBeenCalled();
+  });
+});

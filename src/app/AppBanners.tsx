@@ -630,7 +630,27 @@ function InterruptedLoopBanner() {
 function SeedDriftBanner() {
   const notices = useAppStore((s) => s.seedNotices);
   const dismissSeedNotice = useAppStore((s) => s.dismissSeedNotice);
+  const restampUnstamped = useAppStore((s) => s.restampUnstamped);
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const repair = useCallback(async () => {
+    setBusy(true);
+    try {
+      const { stamped, deferred } = await restampUnstamped();
+      // Name the deferrals rather than reporting a bare count: they are the records the repair
+      // deliberately would not touch (pages, where the seed would win, #3723), and a "re-stamped 38" that
+      // silently omitted 6 would read as a complete repair.
+      setResult(
+        deferred > 0
+          ? `Re-stamped ${stamped}. ${deferred} page${deferred === 1 ? "" : "s"} left alone — the seed wins for pages, so stamping would replace what renders.`
+          : `Re-stamped ${stamped}.`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [restampUnstamped]);
 
   // `unstamped` is the state nothing was watching for; the rest are pre-existing verdicts that were
   // equally invisible. Group so the count reads as "what kind of trouble", not just "how many".
@@ -674,6 +694,20 @@ function SeedDriftBanner() {
                     <Chip key={`${it.type}:${it.id}`}>{it.name || it.id}</Chip>
                   ))}
                 </Row>
+                {kind === "unstamped" && (
+                  // The ONE verdict with a safe automatic repair (#4207). The others each need a human to
+                  // pick a side; this one does not, because it does not adjudicate content at all — it
+                  // restores the record's membership in the reconcile and leaves the content alone.
+                  <Row gap={8} align="center">
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={repair}>
+                      {busy ? "Re-stamping…" : `Re-stamp ${items.length}`}
+                    </Button>
+                    <Text size={11} tone="dim">
+                      {result ??
+                        "Marks these as packaged built-ins so seed updates reach them again. Content is not changed."}
+                    </Text>
+                  </Row>
+                )}
               </Stack>
             ))}
           </Stack>
