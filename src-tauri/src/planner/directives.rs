@@ -57,13 +57,29 @@ pub(crate) fn build_active_stages_md(stages: &[String]) -> String {
 mod tests {
     use super::*;
 
+    /// The PACKAGED stage prose — `(directive, prompt)` straight from the embedded seed.
+    ///
+    /// NOT `stage_directive`, which resolves the user's copy under the config dir first (#2027 P2) and
+    /// only falls back to the seed. That is right at runtime and wrong in a test: a machine with a stale
+    /// `config/stages/*.json` mirror asserts against ITS text, not the text we ship — which is how a
+    /// directive edit in `src-tauri/data/` can leave these tests passing on the old prose (#4249 found
+    /// this the slow way). Every assertion about what we SHIP reads the seed.
+    fn packaged(id: &str) -> (String, String) {
+        let raw = crate::platform::config::embedded_str(&format!("stages/{id}.json"));
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("stage json valid");
+        (
+            v["directive"].as_str().unwrap_or_default().to_string(),
+            v["prompt"].as_str().unwrap_or_default().to_string(),
+        )
+    }
+
     #[test]
     fn ui_directive_commissions_the_designer_reuse_first() {
         // #3783 (flips #1371/#1404): the UI stage now generates a live, navigable UI IN-APP — it
         // commissions the INTERNAL designer (reuse-first from the shared kit), rendered in the planner's
         // preview pane — instead of sending the user out to Claude Design. External design stays a
         // documented FALLBACK, so the intake-routing + kickoff still appear (retired fully in a later slice).
-        let ui = stage_directive("ui");
+        let (ui, _) = packaged("ui");
         // Primary path: internal designer commission, reuse-first, previewed as a navigable shell.
         assert!(ui.contains("bsc-commission designer"), "ui directive must commission the internal designer: {ui}");
         assert!(ui.contains("reuse-first"), "ui directive must source components reuse-first: {ui}");
@@ -78,6 +94,69 @@ mod tests {
         assert!(ui.contains("bsc data model get"), "ui directive must read the Data Model via `bsc data`: {ui}");
         assert!(!ui.contains("datamodel.json"), "the Data Model is in DuckDB now, not a datamodel.json file (#1446): {ui}");
         assert!(ui.contains("Platform Behavior Summary"), "ui directive must fold the captured behaviors into the screens: {ui}");
+
+        // #4249: `test_ui` was a fully-written stage in NO blueprint, and it owned the ONLY path that
+        // records a project's {kit, theme} pair and emits its palette — so no generated project ever got
+        // a theme. Those steps are part of commissioning a UI, not a separate phase, so they live here.
+        assert!(ui.contains("bsc ui shapes") && ui.contains("--shape"),
+            "ui directive must query the KIT for a screen's shape, not only derive the data's shape: {ui}");
+        assert!(ui.contains("bsc ui theme list") && ui.contains("bsc plan ui set"),
+            "ui directive must pair the app with a theme and record the {{kit, theme}} pair: {ui}");
+        assert!(ui.contains("bsc ui emit-css") && ui.contains("tokens.css") && ui.contains("theme.css"),
+            "ui directive must name the palette emission + its two files: {ui}");
+        assert!(ui.contains("bsc ui eslint-preset"),
+            "ui directive must bake the kit's lint enforcement into the generated app: {ui}");
+        // …and `test_ui` must POINT at `ui` rather than instruct these itself, or a project has two
+        // places its theme is settled. A substring BAN cannot express that — the pointer names those
+        // commands deliberately, to say where they moved — so assert the pointer instead.
+        let (test_ui, _) = packaged("test_ui");
+        assert!(test_ui.contains("**UI** stage owns the pipeline"),
+            "test_ui must hand the pipeline to `ui`, not carry a second copy (#4249): {test_ui}");
+        assert!(test_ui.contains("settles nothing"),
+            "test_ui must declare itself a reading stage: {test_ui}");
+    }
+
+    #[test]
+    fn features_commissions_the_librarian_for_a_missing_algorithm() {
+        // #4249: the two studios were ASYMMETRIC. The UI stage says "where a screen needs something the
+        // kit lacks, commission a general, always-applicable component"; Features said only "leave it out
+        // when nothing in the library applies" — a dead end that quietly hands the gap to a worker, which
+        // is the `reimplemented-component` problem (#3892) one layer up.
+        let (features, prompt) = packaged("features");
+        for (face, text) in [("directive", &features), ("prompt", &prompt)] {
+            assert!(text.contains("bsc graph impl list"),
+                "features {face} must look the library up FIRST (reuse-first): {text}");
+            assert!(text.contains("bsc-commission librarian"),
+                "features {face} must commission the librarian for an algorithm the library lacks: {text}");
+            // Reuse-first is an ORDER, not two sentences: look it up before you ask for a new one.
+            assert!(text.find("bsc graph impl list") < text.find("bsc-commission librarian"),
+                "features {face} must check the library BEFORE commissioning: {text}");
+        }
+        // The boundary the planner routes on: a component is UI (designer, `bsc ui`); an algorithm is
+        // computation (librarian, `bsc graph impl`). Without it the planner has two emitters and no rule.
+        assert!(features.contains("designer") && features.contains("librarian"),
+            "features directive must name BOTH studios: {features}");
+        assert!(features.contains("`bsc ui`") && features.contains("`bsc graph impl`"),
+            "features directive must name each studio's store, which is the boundary: {features}");
+        // An empty `requires` means "needs none" — never "the library was missing one".
+        assert!(features.contains("NEVER") || features.contains("never"),
+            "features directive must rule out an empty `requires` standing in for a gap: {features}");
+    }
+
+    #[test]
+    fn discovery_asks_the_user_for_the_ui_mode() {
+        // #4249: `uiMode` selects the ENTIRE UI pipeline — whether the designer is commissioned at all —
+        // and discovery used to describe it with a default, phrased as a decision for the planner to make,
+        // while the very next clause told it to ASK about the optional stages. A whole-pipeline choice is
+        // the user's; the planner may not infer it.
+        let (disc, _) = packaged("discovery");
+        assert!(disc.contains("`uiMode`"), "discovery still records the UI mode: {disc}");
+        let clause = &disc[disc.find("`uiMode`").expect("uiMode clause")..];
+        let clause = &clause[..clause.len().min(600)];
+        assert!(clause.contains("ASK the user"),
+            "discovery must ASK for the UI mode, not choose it: {clause}");
+        assert!(clause.contains("custom") && clause.contains("external"),
+            "both modes must still be offered by name: {clause}");
     }
 
     #[test]
@@ -289,7 +368,7 @@ mod tests {
     /// to judging the taxonomy by hand — which is exactly what #2478 removed.
     #[test]
     fn layout_stages_teach_the_schema_to_shape_to_component_loop() {
-        for id in ["ui", "test_ui"] {
+        for id in ["ui"] {
             let raw = crate::platform::config::embedded_str(&format!("stages/{id}.json"));
             let v: serde_json::Value = serde_json::from_str(&raw).expect("stage json valid");
             let prompt = v["prompt"].as_str().unwrap_or_default();
