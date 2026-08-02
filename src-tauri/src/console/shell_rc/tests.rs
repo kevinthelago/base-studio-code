@@ -335,6 +335,19 @@ fn bsc_supply_fragment_calls_the_supply_hook() {
 }
 
 #[test]
+fn bsc_superseded_fragment_calls_the_superseded_hook() {
+    // #4240: the completion-notice PreToolUse fragment defines `bsc-superseded` → `bsc hook superseded`,
+    // keeps its mandatory trailing newline (#296), and rides the one ordered concat the rc writer + the
+    // syntax guard both derive from.
+    assert_eq!(frag("superseded.sh"), "bsc-superseded() { bsc hook superseded; }
+");
+    assert!(
+        super::bsc_rc_body().contains("bsc-superseded() { bsc hook superseded; }"),
+        "the bsc-superseded helper must be in the concat body",
+    );
+}
+
+#[test]
 fn full_bsc_rc_is_syntactically_valid_bash() {
     // Regression for the rc-glue bug: every rc fragment must end with a newline so the
     // bsc-env.sh that pty_create writes keeps each helper on its own line. A missing
