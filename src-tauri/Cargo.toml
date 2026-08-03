@@ -38,7 +38,7 @@ reqwest = { version = "0.12", features = ["json", "blocking"] }
 # FCM push to the paired mobile app (#846): service-account OAuth2 needs an RS256-signed
 # JWT assertion. `jsonwebtoken` reads the service-account PEM private key directly and
 # signs the assertion; the access-token exchange + the FCM v1 POST reuse `reqwest`.
-jsonwebtoken = "10"
+jsonwebtoken = "11"
 portable-pty = "0.8"
 rfd = "0.14"
 
