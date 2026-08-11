@@ -1,0 +1,20 @@
+{
+  "id": "writebar",
+  "name": "WriteBar",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { type Dispatch, type SetStateAction } from \"react\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Spacer } from \"@/shared/ui/layout/Spacer\";\nimport { Button } from \"@/shared/ui/controls/Button\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport function WriteBar({\n  writeStatus, writeMsg, reading, writing, setReadTick, handleWrite,\n}: {\n  writeStatus: \"idle\" | \"ok\" | \"error\";\n  writeMsg: string;\n  reading: boolean;\n  writing: boolean;\n  setReadTick: Dispatch<SetStateAction<number>>;\n  handleWrite: () => void;\n}) {\n  return (\n    <Row gap={10} style={{\n      padding: \"10px 14px\",\n      background: \"var(--bg-panel)\", border: \"1px solid var(--border-soft)\", borderRadius: 8,\n    }}>\n      {writeStatus === \"ok\" && (\n        <Text as=\"span\" mono size={11} tone=\"success\">✓ {writeMsg}</Text>\n      )}\n      {writeStatus === \"error\" && (\n        <Text as=\"span\" mono size={11} tone=\"danger\">{writeMsg}</Text>\n      )}\n      {writeStatus === \"idle\" && (\n        <Text as=\"span\" mono size={11} tone=\"dim\">\n          CLAUDE.md and .claude/settings.json\n        </Text>\n      )}\n      <Spacer />\n      <Button\n        variant=\"ghost\"\n        style={{ height: 28, fontSize: 11 }}\n        disabled={reading}\n        onClick={() => setReadTick((n) => n + 1)}\n      >\n        {reading ? \"reading…\" : \"↺ read from disk\"}\n      </Button>\n      <Button\n        variant=\"primary\"\n        style={{ height: 28, fontSize: 11 }}\n        disabled={writing || reading}\n        onClick={handleWrite}\n      >\n        {writing ? \"writing…\" : \"↓ write to disk\"}\n      </Button>\n    </Row>\n  );\n}",
+  "src": "src/features/settings/cards/WriteBar.tsx",
+  "composes": [
+    "Button",
+    "Row",
+    "Spacer",
+    "Text"
+  ],
+  "tests": [
+    {
+      "name": "WriteBar",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { WriteBar } from \"./WriteBar\";\r\n\r\nfunction baseProps() {\r\n  return {\r\n    writeStatus: \"idle\" as \"idle\" | \"ok\" | \"error\",\r\n    writeMsg: \"\",\r\n    reading: false,\r\n    writing: false,\r\n    setReadTick: vi.fn(),\r\n    handleWrite: vi.fn(),\r\n  };\r\n}\r\n\r\ndescribe(\"WriteBar\", () => {\r\n  it(\"renders the idle hint and both action buttons\", () => {\r\n    render(<WriteBar {...baseProps()} />);\r\n    expect(screen.getByText(\"CLAUDE.md and .claude/settings.json\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"↺ read from disk\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"↓ write to disk\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"shows the success and error messages by status\", () => {\r\n    const { rerender } = render(<WriteBar {...baseProps()} writeStatus=\"ok\" writeMsg=\"Written to disk.\" />);\r\n    expect(screen.getByText(/Written to disk\\./)).toBeInTheDocument();\r\n    rerender(<WriteBar {...baseProps()} writeStatus=\"error\" writeMsg=\"boom\" />);\r\n    expect(screen.getByText(\"boom\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"bumps the read tick and triggers a write on click\", () => {\r\n    const props = baseProps();\r\n    render(<WriteBar {...props} />);\r\n    fireEvent.click(screen.getByText(\"↺ read from disk\"));\r\n    expect(props.setReadTick).toHaveBeenCalled();\r\n    fireEvent.click(screen.getByText(\"↓ write to disk\"));\r\n    expect(props.handleWrite).toHaveBeenCalled();\r\n  });\r\n});\r\n"
+    }
+  ]
+}

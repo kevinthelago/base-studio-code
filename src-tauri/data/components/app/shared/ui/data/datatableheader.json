@@ -1,0 +1,15 @@
+{
+  "id": "datatableheader",
+  "name": "DataTableHeader",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import type { ReactNode } from \"react\";\n\nexport interface DataTableHeaderProps {\n  template?: string;\n  children?: ReactNode;\n  className?: string;\n}\nexport function DataTableHeader({ template = \"1fr 80px\", children = <><span>Name</span><span>On</span></>, className }: DataTableHeaderProps) {\n  return (\n    <div className={\"dt-header\" + (className ? ` ${className}` : \"\")} style={{ display: \"grid\", gridTemplateColumns: template }}>\n      {children}\n    </div>\n  );\n}",
+  "src": "src/shared/ui/data/DataTableRow.tsx",
+  "composes": [],
+  "tests": [
+    {
+      "name": "DataTableRow",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { DataTableHeader, DataTableRow } from \"./DataTableRow\";\r\n\r\ndescribe(\"DataTableRow\", () => {\r\n  it(\"header + row share the template and render their cells\", () => {\r\n    const tmpl = \"1fr 80px\";\r\n    const { container } = render(\r\n      <div>\r\n        <DataTableHeader template={tmpl}><span>Name</span><span>On</span></DataTableHeader>\r\n        <DataTableRow template={tmpl}><span>alpha</span><span>yes</span></DataTableRow>\r\n      </div>,\r\n    );\r\n    const header = container.querySelector(\".dt-header\") as HTMLElement;\r\n    const row = container.querySelector(\".dt-row\") as HTMLElement;\r\n    expect(header.style.gridTemplateColumns).toBe(tmpl);\r\n    expect(row.style.gridTemplateColumns).toBe(tmpl);\r\n    expect(screen.getByText(\"Name\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"alpha\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"stripes odd rows, applies selected/off, fires onClick\", () => {\r\n    const onClick = vi.fn();\r\n    const { container, rerender } = render(\r\n      <DataTableRow template=\"1fr\" index={1} onClick={onClick}><span>r</span></DataTableRow>,\r\n    );\r\n    const row = () => container.querySelector(\".dt-row\") as HTMLElement;\r\n    expect(row().className).toContain(\"odd\");\r\n    fireEvent.click(row());\r\n    expect(onClick).toHaveBeenCalledOnce();\r\n    rerender(<DataTableRow template=\"1fr\" index={0} selected off><span>r</span></DataTableRow>);\r\n    expect(row().className).not.toContain(\"odd\");\r\n    expect(row().className).toContain(\"selected\");\r\n    expect(row().className).toContain(\"off\");\r\n  });\r\n});\r\n"
+    }
+  ]
+}

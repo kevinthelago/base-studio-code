@@ -1,0 +1,20 @@
+{
+  "id": "lessonskeleton",
+  "name": "LessonSkeleton",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Skeleton } from \"@/shared/ui/feedback/Skeleton\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Grid } from \"@/shared/ui/layout/Grid\";\nimport { Row } from \"@/shared/ui/layout/Row\";\n\nexport function LessonSkeleton() {\n  return (\n    <Grid gap={8} style={{ border: \"1px solid var(--border-soft)\", borderRadius: 6, padding: \"10px 12px\", background: \"var(--bg-elev)\" }}>\n      <Skeleton h={13} w=\"72%\" />\n      <Skeleton h={12} w=\"54%\" />\n      <Row gap={8}><Box as=\"span\" style={{ flex: 1 }} /><Skeleton w={56} h={22} /><Skeleton w={56} h={22} /></Row>\n    </Grid>\n  );\n}",
+  "src": "src/features/skills/LessonsTab.tsx",
+  "composes": [
+    "Box",
+    "Grid",
+    "Row",
+    "Skeleton"
+  ],
+  "tests": [
+    {
+      "name": "LessonsTab (#1362)",
+      "src": "// #1362 — the Pending-lessons review queue: renders candidates and confirms one into a project skill.\r\nimport { describe, it, expect, beforeEach, vi } from \"vitest\";\r\nimport { render, screen, fireEvent, waitFor } from \"@testing-library/react\";\r\nimport { invoke } from \"@tauri-apps/api/core\";\r\nimport { LessonsTab } from \"./LessonsTab\";\r\nimport { useAppStore } from \"@/store\";\r\nimport type { Lesson } from \"./lib/lessons\";\r\n\r\nconst LESSON: Lesson = {\r\n  id: \"L1\", mistake: \"Blind-deleted conflict markers\", cause: \"\", rule: \"Verify the build after resolving\",\r\n  provenance: \"pane t0p2\", status: \"pending\", seen: 2, createdAt: 0, updatedAt: 0,\r\n};\r\n\r\ndescribe(\"LessonsTab (#1362)\", () => {\r\n  beforeEach(() => {\r\n    vi.mocked(invoke).mockReset();\r\n    vi.mocked(invoke).mockResolvedValue(undefined);\r\n    useAppStore.setState({ skills: [], skillGroups: [] });\r\n  });\r\n\r\n  it(\"shows the no-project empty state when there's no active project\", () => {\r\n    render(<LessonsTab projectKey=\"\" />);\r\n    expect(screen.getByText(\"No active project\")).toBeTruthy();\r\n  });\r\n\r\n  it(\"renders the pending queue and confirms a lesson into a project-scoped skill\", async () => {\r\n    // Lessons now flow through the generic `bsc` bridge (#2114): `bsc plan lesson list` returns the\r\n    // JSON array as stdout; other verbs (confirm) return empty stdout.\r\n    const calls: Array<{ cmd: string; args: unknown }> = [];\r\n    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {\r\n      calls.push({ cmd, args });\r\n      if (cmd === \"bsc\") {\r\n        const a = (args as { args?: string[] }).args ?? [];\r\n        return a.includes(\"list\") ? JSON.stringify([LESSON]) : \"\";\r\n      }\r\n      return undefined;\r\n    });\r\n\r\n    render(<LessonsTab projectKey=\"proj-key\" projectName=\"Proj\" />);\r\n\r\n    // The candidate renders (mistake → rule + seen badge).\r\n    await waitFor(() => expect(screen.getByText(\"Blind-deleted conflict markers\")).toBeTruthy());\r\n    expect(screen.getByText(\"seen ×2\")).toBeTruthy();\r\n\r\n    fireEvent.click(screen.getByText(\"confirm\"));\r\n\r\n    // The verdict is recorded (`bsc plan lesson confirm L1`) AND a project-scoped skill is created.\r\n    await waitFor(() =>\r\n      expect(\r\n        calls.some(\r\n          (c) => c.cmd === \"bsc\" && ((c.args as { args?: string[] }).args ?? []).join(\" \") === \"plan lesson confirm L1\",\r\n        ),\r\n      ).toBe(true),\r\n    );\r\n    const skills = useAppStore.getState().skills;\r\n    const made = skills.find((s) => s.id === \"lesson-skill-L1\");\r\n    expect(made).toBeTruthy();\r\n    expect(made!.kind).toBe(\"review\");\r\n    expect(made!.projects).toEqual([\"proj-key\"]);\r\n  });\r\n});\r\n"
+    }
+  ]
+}

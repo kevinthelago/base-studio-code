@@ -1,0 +1,11 @@
+{
+  "id": "matrixview",
+  "name": "MatrixView",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\n\ninterface OpStateAttrs { \"data-op\"?: string; \"data-mark\"?: string; \"data-role\"?: string }\ninterface CellOp { op: string; at?: [number, number]; rows?: [number, number]; cols?: [number, number]; as?: string }\ninterface MatrixFrame { structure: \"matrix\"; data: number[][]; ops?: CellOp[] }\n\nfunction cellOpStateAttrs(ops: readonly CellOp[] | undefined, row: number, col: number): OpStateAttrs {\r\n  const attrs: OpStateAttrs = {};\r\n  for (const o of ops ?? []) {\r\n    if (o.at && o.at[0] === row && o.at[1] === col) {\r\n      attrs[\"data-op\"] = o.op;\r\n    } else if (\r\n      o.rows &&\r\n      o.cols &&\r\n      row >= o.rows[0] &&\r\n      row <= o.rows[1] &&\r\n      col >= o.cols[0] &&\r\n      col <= o.cols[1]\r\n    ) {\r\n      if (o.as) attrs[\"data-mark\"] = o.as;\r\n      else attrs[\"data-op\"] = \"region\";\r\n    }\r\n  }\r\n  return attrs;\r\n}\n\nexport function MatrixView({ frame = { structure: \"matrix\", data: [[1, 2, 3], [4, 5, 6], [7, 8, 9]], ops: [{ op: \"read\", at: [1, 1] }] } }: { frame?: MatrixFrame }) {\r\n  const { data, ops } = frame;\r\n  const cols = data[0]?.length ?? 0;\r\n\r\n  return (\r\n    <Box\r\n      className=\"matrix-view\"\r\n      role=\"grid\"\r\n      aria-label=\"matrix\"\r\n      style={{ gridTemplateColumns: `repeat(${cols}, var(--matrix-cell, 42px))` }}\r\n    >\r\n      {data.map((row, r) =>\r\n        row.map((v, c) => (\r\n          <Box\r\n            key={`${r}-${c}`}\r\n            className=\"matrix-cell mono\"\r\n            role=\"gridcell\"\r\n            {...cellOpStateAttrs(ops, r, c)}\r\n            title={String(v)}\r\n          >\r\n            {v}\r\n          </Box>\r\n        )),\r\n      )}\r\n    </Box>\r\n  );\r\n}",
+  "src": "src/features/algorithms/viz/renderers/MatrixView.tsx",
+  "composes": [
+    "Box"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "streamchip",
+  "name": "StreamChip",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport function StreamChip({\n  label,\n  tone,\n  count,\n  active,\n  onClick,\n}: {\n  label: string;\n  tone: string;\n  count: number;\n  active: boolean;\n  onClick: () => void;\n}) {\n  return (\n    <button\n      onClick={onClick}\n      className=\"mono\"\n      style={{\n        display: \"inline-flex\",\n        alignItems: \"center\",\n        gap: 6,\n        cursor: \"pointer\",\n        padding: \"3px 9px\",\n        borderRadius: 99,\n        fontSize: 10.5,\n        color: active ? \"var(--fg)\" : \"var(--fg-muted)\",\n        background: active ? `color-mix(in oklch, ${tone}, transparent 84%)` : \"var(--bg-panel)\",\n        border: `1px solid ${active ? tone : \"var(--border-soft)\"}`,\n      }}\n    >\n      <Box as=\"span\" bg={tone} radius={99} style={{ width: 7, height: 7 }} />\n      {label}\n      <Text as=\"span\" mono size={9.5} tone=\"dim\">{count}</Text>\n    </button>\n  );\n}",
+  "src": "src/features/settings/cards/SessionLogCard.tsx",
+  "composes": [
+    "Box",
+    "Text"
+  ]
+}

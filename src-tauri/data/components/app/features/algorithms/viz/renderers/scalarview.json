@@ -1,0 +1,12 @@
+{
+  "id": "scalarview",
+  "name": "ScalarView",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\ninterface OpStateAttrs { \"data-op\"?: string; \"data-mark\"?: string; \"data-role\"?: string }\ninterface ScalarFrame { structure: \"scalar\"; values: Record<string, number | string>; ops?: Record<string, { op: string }> }\n\nfunction scalarVarState(frame: ScalarFrame, name: string): OpStateAttrs {\r\n  const op = frame.ops?.[name];\r\n  return op ? { \"data-op\": op.op } : {};\r\n}\nexport function ScalarView({ frame = { structure: \"scalar\", values: { i: 0, sum: 42, done: \"false\" }, ops: { sum: { op: \"write\" } } } }: { frame?: ScalarFrame }) {\r\n  const names = Object.keys(frame.values).sort();\r\n\r\n  return (\r\n    <Box className=\"scalar-view\" role=\"group\" aria-label=\"scalar state\">\r\n      {names.length === 0 ? (\r\n        <Box className=\"scalar-empty\" aria-label=\"empty\">\r\n          (no variables)\r\n        </Box>\r\n      ) : (\r\n        names.map((name) => (\r\n          <Box\r\n            key={name}\r\n            className=\"scalar-chip\"\r\n            role=\"group\"\r\n            aria-label={name}\r\n            {...scalarVarState(frame, name)}\r\n            title={`${name} = ${frame.values[name]}`}\r\n          >\r\n            <Text as=\"span\" className=\"scalar-name mono\">\r\n              {name}\r\n            </Text>\r\n            <Text as=\"span\" className=\"scalar-val mono\">\r\n              {frame.values[name]}\r\n            </Text>\r\n          </Box>\r\n        ))\r\n      )}\r\n    </Box>\r\n  );\r\n}",
+  "src": "src/features/algorithms/viz/renderers/ScalarView.tsx",
+  "composes": [
+    "Box",
+    "Text"
+  ]
+}

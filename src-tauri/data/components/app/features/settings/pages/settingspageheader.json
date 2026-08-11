@@ -1,0 +1,18 @@
+{
+  "id": "settingspageheader",
+  "name": "SettingsPageHeader",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import type { ReactNode } from \"react\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport interface SettingsPageHeaderProps {\n  title: string;\n  description: ReactNode;\n  descMb?: number;\n}\nexport function SettingsPageHeader({ title, description, descMb = 4 }: SettingsPageHeaderProps) {\n  return (\n    <>\n      <Text as=\"h2\" mono size=\"xl\" weight={600} style={{ margin: \"0 0 4px\" }}>{title}</Text>\n      <Text as=\"p\" tone=\"muted\" size=\"md\" style={{ margin: `0 0 ${descMb}px` }}>{description}</Text>\n    </>\n  );\n}",
+  "src": "src/features/settings/pages/SettingsPageHeader.tsx",
+  "composes": [
+    "Text"
+  ],
+  "provides": "@/features/settings/pages/SettingsPageHeader",
+  "tests": [
+    {
+      "name": "SettingsPageHeader",
+      "src": "import { render, screen } from \"@testing-library/react\";\r\nimport { describe, it, expect } from \"vitest\";\r\nimport { SettingsPageHeader, SettingsSubHeader } from \"./SettingsPageHeader\";\r\n\r\ndescribe(\"SettingsPageHeader\", () => {\r\n  it(\"renders the title as a mono h2 and the description as a muted paragraph\", () => {\r\n    render(<SettingsPageHeader title=\"General\" description=\"Some copy here.\" />);\r\n    const heading = screen.getByRole(\"heading\", { level: 2, name: \"General\" });\r\n    expect(heading).toHaveClass(\"mono\");\r\n    const desc = screen.getByText(\"Some copy here.\");\r\n    expect(desc.tagName).toBe(\"P\");\r\n    expect(desc).toHaveStyle({ color: \"var(--fg-muted)\" });\r\n  });\r\n\r\n  it(\"defaults the description bottom margin to 4px and honours descMb\", () => {\r\n    const { rerender } = render(<SettingsPageHeader title=\"A\" description=\"d\" />);\r\n    expect(screen.getByText(\"d\")).toHaveStyle({ margin: \"0 0 4px\" });\r\n    rerender(<SettingsPageHeader title=\"A\" description=\"d\" descMb={22} />);\r\n    expect(screen.getByText(\"d\")).toHaveStyle({ margin: \"0 0 22px\" });\r\n  });\r\n\r\n  it(\"renders SettingsSubHeader as an uppercase mono h3\", () => {\r\n    render(<SettingsSubHeader>Appearance</SettingsSubHeader>);\r\n    const sub = screen.getByRole(\"heading\", { level: 3, name: \"Appearance\" });\r\n    expect(sub).toHaveClass(\"mono\");\r\n    expect(sub).toHaveStyle({ textTransform: \"uppercase\" });\r\n  });\r\n});\r\n"
+    }
+  ]
+}

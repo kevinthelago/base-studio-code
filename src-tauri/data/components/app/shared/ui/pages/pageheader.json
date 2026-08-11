@@ -1,0 +1,12 @@
+{
+  "id": "pageheader",
+  "name": "PageHeader",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import type { ReactNode } from \"react\";\nimport { SectionHeader } from \"@/shared/ui/layout/SectionHeader\";\n\nexport interface PageHeaderProps {\n  title?: ReactNode;\n  hint?: ReactNode;\n  toolbar?: ReactNode;\n  meta?: ReactNode;\n}\nexport function PageHeader({ title = \"Page title\", hint, toolbar, meta }: PageHeaderProps) {\n  return (\n    <div style={{ padding: \"10px 16px\", background: \"var(--bg-elev)\", flex: \"none\", borderBottom: \"1px solid var(--border-soft)\" }}>\n      <SectionHeader title={title} hint={hint} right={toolbar} meta={meta} />\n    </div>\n  );\n}",
+  "src": "src/shared/ui/pages/PageHeader.tsx",
+  "composes": [
+    "SectionHeader"
+  ],
+  "provides": "@/shared/ui/pages/PageHeader"
+}

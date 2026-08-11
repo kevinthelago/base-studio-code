@@ -1,0 +1,15 @@
+{
+  "id": "enveditor",
+  "name": "EnvEditor",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { IconButton } from \"@/shared/ui/controls/IconButton\";\nimport { Button } from \"@/shared/ui/controls/Button\";\nimport { Field, TextField } from \"@/shared/ui/controls/Field\";\nimport { Box } from \"@/shared/ui/layout/Box\";\n\nconst DEMO_ENV: Array<[string, string]> = [[\"NODE_ENV\", \"production\"]];\nexport function EnvEditor({ env = DEMO_ENV, onChange = () => {} }: { env?: Array<[string, string]>; onChange?: (env: Array<[string, string]>) => void }) {\n  return (\n    <Field label=\"environment\">\n      <Box className=\"kv-list\">\n        {env.map(([k, v], i) => (\n          <Box className=\"kv-row\" key={i}>\n            <input\n              className=\"input k\"\n              value={k}\n              onChange={ev => onChange(env.map((row, j) => j === i ? [ev.target.value, row[1]] : row))}\n            />\n            <input\n              className=\"input\"\n              value={v}\n              onChange={ev => onChange(env.map((row, j) => j === i ? [row[0], ev.target.value] : row))}\n            />\n            <IconButton aria-label=\"remove\" size=\"xs\" onClick={() => onChange(env.filter((_, j) => j !== i))} />\n          </Box>\n        ))}\n        <Button\n          variant=\"ghost\"\n          style={{ height: 24, fontSize: 10.5, width: \"fit-content\" }}\n          onClick={() => onChange([...env, [\"\", \"\"]])}\n        >+ env var</Button>\n      </Box>\n    </Field>\n  );\n}",
+  "src": "src/features/mcp/shared.tsx",
+  "composes": [
+    "Box",
+    "Button",
+    "Field",
+    "IconButton",
+    "TextField"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "itembars",
+  "name": "ItemBars",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import type { ReactNode } from \"react\";\nimport { FillBar } from \"@/shared/ui/data/FillBar\";\n\nexport interface ItemBarRow {\r\n  key: string;\r\n  label: string;\r\n  meta?: string;\r\n  /** The value shown at the right of the row (formatted string or number). */\r\n  value: ReactNode;\r\n  /** The bar fill fraction, 0..1. */\r\n  fraction: number;\r\n  /** Bar color (defaults to the FillBar accent). */\r\n  color?: string;\r\n}\nexport function ItemBars({ rows = [], empty }: { rows?: ItemBarRow[]; empty?: ReactNode }) {\r\n  return (\r\n    <div style={{ display: \"flex\", flexDirection: \"column\", gap: 13 }}>\r\n      {rows.length === 0 && (empty ?? <span className=\"hint\">No data recorded yet.</span>)}\r\n      {rows.map((r) => (\r\n        <div key={r.key}>\r\n          <div style={{ display: \"flex\", alignItems: \"baseline\", gap: 8, marginBottom: 5 }}>\r\n            <span className=\"mono\" style={{ fontSize: 11, color: \"var(--fg)\" }}>{r.label}</span>\r\n            {r.meta && <span className=\"mono\" style={{ fontSize: 9.5, color: \"var(--fg-dim)\" }}>{r.meta}</span>}\r\n            <div style={{ flex: 1 }} />\r\n            <span className=\"mono\" style={{ fontSize: 11, color: \"var(--fg-muted)\" }}>{r.value}</span>\r\n          </div>\r\n          <FillBar value={r.fraction} color={r.color} />\r\n        </div>\r\n      ))}\r\n    </div>\r\n  );\r\n}",
+  "src": "src/shared/ui/charts/telemetry.tsx",
+  "composes": [
+    "FillBar"
+  ],
+  "tests": [
+    {
+      "name": "telemetry primitives (#1826)",
+      "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { TelemetryPanel, ItemBars, SplitBar } from \"./telemetry\";\r\n\r\ndescribe(\"telemetry primitives (#1826)\", () => {\r\n  it(\"TelemetryPanel renders the title, hint, right slot, and body\", () => {\r\n    render(\r\n      <TelemetryPanel title=\"Calls per server\" hint=\"per server\" right={<span>legend</span>}>\r\n        <span>body</span>\r\n      </TelemetryPanel>,\r\n    );\r\n    expect(screen.getByText(\"Calls per server\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"per server\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"legend\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"body\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"ItemBars renders a row per item, and the empty slot when there are none\", () => {\r\n    const { rerender } = render(\r\n      <ItemBars rows={[{ key: \"a\", label: \"server-a\", meta: \"http\", value: 12, fraction: 0.5 }]} />,\r\n    );\r\n    expect(screen.getByText(\"server-a\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"http\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"12\")).toBeInTheDocument();\r\n\r\n    rerender(<ItemBars rows={[]} empty={<span>nothing here</span>} />);\r\n    expect(screen.getByText(\"nothing here\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"SplitBar shows the label + both labelled counts\", () => {\r\n    render(<SplitBar label=\"db\" a={7} b={2} aLabel=\"ok\" bLabel=\"err\" />);\r\n    expect(screen.getByText(\"db\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"7 ok\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"2 err\")).toBeInTheDocument();\r\n  });\r\n});\r\n"
+    }
+  ]
+}

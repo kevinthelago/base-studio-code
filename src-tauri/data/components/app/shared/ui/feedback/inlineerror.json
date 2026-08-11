@@ -1,0 +1,17 @@
+{
+  "id": "inlineerror",
+  "name": "InlineError",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import type { CSSProperties, ReactNode } from \"react\";\nimport { Box, type Radius } from \"@/shared/ui/layout/Box\";\nimport type { Space } from \"@/shared/ui/layout/space\";\n\nexport interface InlineErrorProps {\r\n  /** The error message. */\r\n  children: ReactNode;\r\n  /** Inner padding — a rung/px or a [block, inline] pair. Default [8, 12]. */\r\n  pad?: Space | [Space, Space];\r\n  /** Corner radius — a rung (sm/md/lg → --r-*) or raw px. Default 4. */\r\n  radius?: Radius;\r\n  /** Border tint — the transparency % of --danger in the 1px border. Default 70 (some sites use 60). */\r\n  borderFade?: number;\r\n  className?: string;\r\n  style?: CSSProperties;\r\n}\nexport function InlineError({\r\n  children, pad = [8, 12], radius = 4, borderFade = 70, className, style,\r\n}: InlineErrorProps) {\r\n  return (\r\n    <Box\r\n      className={\"mono\" + (className ? ` ${className}` : \"\")}\r\n      pad={pad}\r\n      radius={radius}\r\n      bg=\"color-mix(in oklch, var(--danger), transparent 88%)\"\r\n      border={`color-mix(in oklch, var(--danger), transparent ${borderFade}%)`}\r\n      style={{ fontSize: 11, color: \"var(--danger)\", ...style }}\r\n    >\r\n      {children}\r\n    </Box>\r\n  );\r\n}",
+  "src": "src/shared/ui/feedback/InlineError.tsx",
+  "composes": [
+    "Box"
+  ],
+  "tests": [
+    {
+      "name": "InlineError",
+      "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { InlineError } from \"./InlineError\";\r\n\r\ndescribe(\"InlineError\", () => {\r\n  it(\"renders its message children with the mono danger styling\", () => {\r\n    render(<InlineError>Something failed</InlineError>);\r\n    const el = screen.getByText(\"Something failed\");\r\n    expect(el).toBeInTheDocument();\r\n    expect(el).toHaveClass(\"mono\");\r\n    // Danger foreground + the fixed 88%-transparent danger wash + a hairline danger border.\r\n    expect(el.style.color).toContain(\"--danger\");\r\n    expect(el.style.background).toContain(\"--danger\");\r\n    expect(el.style.border).toContain(\"--danger\");\r\n    expect(el.style.fontSize).toBe(\"11px\");\r\n  });\r\n\r\n  it(\"applies the default padding and radius\", () => {\r\n    render(<InlineError>msg</InlineError>);\r\n    const el = screen.getByText(\"msg\");\r\n    expect(el.style.padding).toBe(\"8px 12px\");\r\n    expect(el.style.borderRadius).toBe(\"4px\");\r\n  });\r\n\r\n  it(\"honors the pad / radius / borderFade variant props\", () => {\r\n    render(<InlineError pad={[12, 16]} radius={6} borderFade={60}>wide</InlineError>);\r\n    const el = screen.getByText(\"wide\");\r\n    expect(el.style.padding).toBe(\"12px 16px\");\r\n    expect(el.style.borderRadius).toBe(\"6px\");\r\n    // The border tint reflects the requested transparency percentage.\r\n    expect(el.style.border).toContain(\"transparent 60%\");\r\n  });\r\n\r\n  it(\"merges a passthrough style (e.g. a per-site margin) and extra className\", () => {\r\n    render(<InlineError className=\"extra\" style={{ marginBottom: 14 }}>x</InlineError>);\r\n    const el = screen.getByText(\"x\");\r\n    expect(el).toHaveClass(\"mono\");\r\n    expect(el).toHaveClass(\"extra\");\r\n    expect(el.style.marginBottom).toBe(\"14px\");\r\n  });\r\n});\r\n"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "designerterminal",
+  "name": "DesignerTerminal",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Text } from \"@/shared/ui/typography/Text\";\nimport { SessionDock } from \"@/shared/ui/layouts/SessionDock\";\n\n// The real DesignerTerminal drops a <TerminalSlot> into SessionDock's body — the app-level\n// TerminalHost re-parents the ONE live PTY terminal into it (same non-presentational mount as\n// TerminalView's real internals, no design-time appearance of its own). This preview vendors the\n// genuinely visual part — the SessionDock shell — with a themed placeholder standing in for the\n// live terminal body.\nconst TERM_BG = \"#181a1f\";\nconst TERM_FG = \"#eeeae4\";\nconst TERM_DIM = \"#44474f\";\n\nexport function DesignerTerminal({ height = 220 }) {\n  return (\n    <SessionDock\n      testid=\"designer-terminal\"\n      height={height}\n      title=\"✦ Designer session · UI kits via bsc ui\"\n      subtitle=\"design-studio · restricted\"\n    >\n      <div style={{ height: \"100%\", background: TERM_BG, padding: \"6px 10px\", fontFamily: '\"JetBrains Mono\", monospace', fontSize: 12.5, lineHeight: 1.5 }}>\n        <Text as=\"div\" style={{ color: TERM_FG }}>$ bsc-agent designer</Text>\n        <Text as=\"div\" style={{ color: TERM_DIM }}>Standing by for kit changes...</Text>\n      </div>\n    </SessionDock>\n  );\n}",
+  "src": "src/features/designs/DesignerTerminal.tsx",
+  "composes": [
+    "SessionDock",
+    "Text"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "collapsiblecard",
+  "name": "CollapsibleCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useState, type ReactNode } from \"react\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Spacer } from \"@/shared/ui/layout/Spacer\";\n\nexport function CollapsibleCard({\n  title = \"Deploy\", hint, icon = \"\\u25CE\", iconTone, right, tone, defaultOpen = false, children = \"Card content goes here.\",\n}: {\n  title?: string; hint?: string; icon?: string; iconTone?: string; right?: ReactNode; tone?: string; defaultOpen?: boolean; children?: ReactNode;\n}) {\n  const [open, setOpen] = useState(defaultOpen);\n  return (\n    <Box radius=\"lg\" bg=\"var(--bg-panel)\" pad={[13, 14]} style={{\n      border: \"1px solid \" + (tone ? `color-mix(in oklch, ${tone}, transparent 78%)` : \"var(--border-soft)\"),\n    }}>\n      <Row gap={8} align=\"center\" style={{ cursor: \"pointer\" }} onClick={() => setOpen((o) => !o)}>\n        {icon && <Text as=\"span\" style={{ color: iconTone ?? tone ?? \"var(--fg-muted)\", fontSize: 14 }}>{icon}</Text>}\n        <Box>\n          <Text as=\"div\" weight={600} size={13}>{title}</Text>\n          {hint && <Text as=\"div\" size={10.5} tone=\"muted\" style={{ marginTop: 2 }}>{hint}</Text>}\n        </Box>\n        <Spacer />\n        {right}\n        <Text as=\"span\" size={10} tone=\"dim\" style={{ transform: open ? \"rotate(90deg)\" : \"none\", display: \"inline-block\" }}>{\"\\u25B8\"}</Text>\n      </Row>\n      {open && <Box style={{ marginTop: 10 }}>{children}</Box>}\n    </Box>\n  );\n}",
+  "src": "src/features/planner/bodies/collapsibleCard.tsx",
+  "composes": [
+    "Box",
+    "Row",
+    "Spacer",
+    "Text"
+  ]
+}

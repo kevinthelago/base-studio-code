@@ -1,0 +1,12 @@
+{
+  "id": "issuesecuritycard",
+  "name": "IssueSecurityCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useState } from \"react\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { ToggleRow } from \"@/components/togglerow\";\n\nexport function IssueSecurityCard() {\n  const [restrictToBscIssues, setRestrictToBscIssues] = useState(true);\n  return (\n    <Card title=\"Issue security\">\n      <ToggleRow\n        on={restrictToBscIssues}\n        onToggle={() => setRestrictToBscIssues(!restrictToBscIssues)}\n        title=\"Restrict to base-studio-code issues\"\n      >\n        Only fetch and act on issues from the base-studio-code repository.\n      </ToggleRow>\n    </Card>\n  );\n}",
+  "src": "src/features/settings/cards/IssueSecurityCard.tsx",
+  "composes": [
+    "Card",
+    "ToggleRow"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "consoleemptystate",
+  "name": "ConsoleEmptyState",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { LayoutGrid } from \"lucide-react\";\nimport { EmptyState } from \"@/shared/ui/feedback/EmptyState\";\nimport { Button } from \"@/shared/ui/controls/Button\";\n\nexport function ConsoleEmptyState({ onNew }: { onNew: () => void }) {\r\n  return (\r\n    <EmptyState\r\n      icon={<LayoutGrid size={26} />}\r\n      title=\"No workspaces\"\r\n      description=\"Create a workspace to start running agents in parallel.\"\r\n      actions={<Button variant=\"primary\" onClick={onNew}>New workspace</Button>}\r\n    />\r\n  );\r\n}",
+  "src": "src/app/console/ConsoleEmptyState.tsx",
+  "composes": [
+    "EmptyState",
+    "Button"
+  ]
+}

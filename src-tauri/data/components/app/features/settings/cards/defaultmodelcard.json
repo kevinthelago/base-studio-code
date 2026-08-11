@@ -1,0 +1,12 @@
+{
+  "id": "defaultmodelcard",
+  "name": "DefaultModelCard",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import { useState } from \"react\";\nimport { SelectField } from \"@/shared/ui/controls/Field\";\nimport { Card } from \"@/shared/ui/data/Card\";\n\n// Vendored from `@/app/console/lib/models` (unresolvable — the real MODELS catalog loads from\n// `@data/console/models.json`); representative sample data matching the real ModelId union.\nconst MODELS = [\n  { id: \"haiku-4.5\", tone: \"fast\", price: \"$\" },\n  { id: \"sonnet-4.5\", tone: \"balanced\", price: \"$$\" },\n  { id: \"opus-4.5\", tone: \"deep\", price: \"$$$\" },\n];\n\n// Preview-only stand-in for `useAppStore().defaultModel` / `setDefaultModel` (app-internal).\nexport function DefaultModelCard() {\n  const [defaultModel, setDefaultModel] = useState(\"sonnet-4.5\");\n\n  return (\n    <Card title=\"Default model\">\n      <SelectField\n        label=\"Model new consoles open with\"\n        value={defaultModel}\n        onChange={(v) => setDefaultModel(v)}\n        hint=\"Per-pane override is available from the pane hamburger menu.\"\n      >\n        {MODELS.map((m) => (\n          <option key={m.id} value={m.id}>{m.id} · {m.tone}</option>\n        ))}\n      </SelectField>\n    </Card>\n  );\n}",
+  "src": "src/features/settings/cards/DefaultModelCard.tsx",
+  "composes": [
+    "Card",
+    "SelectField"
+  ]
+}

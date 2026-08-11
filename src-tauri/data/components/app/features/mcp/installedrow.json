@@ -1,0 +1,14 @@
+{
+  "id": "installedrow",
+  "name": "InstalledRow",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { CardListRow } from \"@/shared/ui/data/CardListRow\";\nimport { Chip } from \"@/shared/ui/data/Chip\";\nimport { Box } from \"@/shared/ui/layout/Box\";\n\nfunction ToggleSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {\r\n  return (\r\n    <Box\r\n      className={\"toggle\" + (on ? \" on\" : \"\")}\r\n      title={on ? \"enabled\" : \"disabled\"}\r\n      onClick={ev => { ev.stopPropagation(); onToggle(); }}\r\n    />\r\n  );\r\n}\nexport function InstalledRow({ name, tagCls, tagLabel, desc, scopeChip, aside, on, selected, onSelect, onToggle }: {\r\n  name: string;\r\n  tagCls: string;\r\n  tagLabel: string;\r\n  desc: React.ReactNode;\r\n  scopeChip: React.ReactNode;\r\n  aside?: React.ReactNode;\r\n  on: boolean;\r\n  selected: boolean;\r\n  onSelect: () => void;\r\n  onToggle: () => void;\r\n}) {\r\n  return (\r\n    <CardListRow\r\n      selected={selected}\r\n      off={!on}\r\n      onClick={onSelect}\r\n      lead={<Box className={\"health \" + (on ? \"\" : \"off\")} />}\r\n      title={name || \"Untitled\"}\r\n      badge={<Chip tone={tagCls === \"green\" ? \"success\" : tagCls === \"info\" ? \"info\" : tagCls === \"amber\" ? \"accent\" : \"neutral\"}>{tagLabel}</Chip>}\r\n      subtitle={desc}\r\n      trailing={\r\n        <>\r\n          <Box className=\"row-stats\">\r\n            <Box className=\"row-chips\">{scopeChip}</Box>\r\n            <Box>—</Box>\r\n          </Box>\r\n          {aside}\r\n          <ToggleSwitch on={on} onToggle={onToggle} />\r\n        </>\r\n      }\r\n    />\r\n  );\r\n}",
+  "src": "src/features/mcp/shared.tsx",
+  "composes": [
+    "CardListRow",
+    "Box",
+    "Chip",
+    "ToggleSwitch"
+  ]
+}

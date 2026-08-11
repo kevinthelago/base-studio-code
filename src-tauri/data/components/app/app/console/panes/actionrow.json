@@ -1,0 +1,13 @@
+{
+  "id": "actionrow",
+  "name": "ActionRow",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useState } from \"react\";\nimport { Circle, type LucideIcon } from \"lucide-react\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport function ActionRow({ Icon = Circle, label = \"Action\", sub = \"\", danger, onClick }: {\n  Icon?: LucideIcon; label?: string; sub?: string; danger?: boolean; onClick?: () => void;\n}) {\n  const [hovered, setHovered] = useState(false);\n  return (\n    <Row\n      gap={8}\n      onClick={onClick}\n      onMouseEnter={() => setHovered(true)}\n      onMouseLeave={() => setHovered(false)}\n      style={{\n        padding: \"6px 8px\",\n        borderRadius: 5, cursor: \"pointer\",\n        background: hovered\n          ? danger ? \"color-mix(in oklch, var(--danger), transparent 88%)\" : \"var(--bg-elev2)\"\n          : \"transparent\",\n        transition: \"background 0.08s\",\n      }}\n    >\n      <Icon size={12} style={{ flexShrink: 0, color: danger ? \"var(--danger)\" : \"var(--fg-muted)\" }} />\n      <Text style={{ color: danger ? \"var(--danger)\" : \"var(--fg)\" }}>{label}</Text>\n      <Box as=\"span\" style={{ flex: 1 }} />\n      {sub && <Text size={9.5} tone=\"dim\">{sub}</Text>}\n    </Row>\n  );\n}",
+  "src": "src/app/console/panes/PaneMenu.tsx",
+  "composes": [
+    "Box",
+    "Row",
+    "Text"
+  ]
+}

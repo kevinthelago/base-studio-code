@@ -1,0 +1,13 @@
+{
+  "id": "agentscard",
+  "name": "AgentsCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Card } from \"@/shared/ui/data/Card\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport function AgentsCard() {\n  return (\n    <Box style={{ maxWidth: 820 }}>\n      <Text as=\"h2\" mono size=\"xl\" weight={600} style={{ margin: \"0 0 4px\" }}>Agents</Text>\n      <Text as=\"p\" tone=\"muted\" size=\"md\" style={{ margin: \"0 0 22px\" }}>\n        Default behavior applied to all Claude sessions.\n      </Text>\n\n      <Card title=\"Command permissions\">\n        <Text as=\"p\" tone=\"muted\" size=\"md\" style={{ margin: 0, lineHeight: 1.6 }}>\n          Auto-approved shell commands are now part of each agent's <strong>profile</strong> (managed on\n          the <strong>Permissions</strong> screen), alongside its tool and file-write posture. A session\n          auto-approves exactly its assigned profile's command list. <code className=\"mono\" style={{ fontSize: 11 }}>gh</code>,{\" \"}\n          <code className=\"mono\" style={{ fontSize: 11 }}>git</code>, and{\" \"}\n          <code className=\"mono\" style={{ fontSize: 11 }}>bsc-plan</code> are always enabled by\n          the backend. A curated set of dangerous commands is always blocked.\n        </Text>\n      </Card>\n\n      <Box style={{ height: 18 }} />\n      <Card style={{ opacity: 0.5 }} title=\"Default system prompt\">\n        <Text as=\"p\" tone=\"muted\" size=\"md\" style={{ margin: 0 }}>\n          Prepended to every new session's system prompt. · coming soon\n        </Text>\n      </Card>\n\n      <Box style={{ height: 12 }} />\n      <Card style={{ opacity: 0.5 }} title=\"Auto-context injection\">\n        <Text as=\"p\" tone=\"muted\" size=\"md\" style={{ margin: 0 }}>\n          Automatically inject relevant knowledge blocks based on the active repo's tech stack. · coming soon\n        </Text>\n      </Card>\n    </Box>\n  );\n}",
+  "src": "src/features/settings/cards/AgentsCard.tsx",
+  "composes": [
+    "Box",
+    "Card",
+    "Text"
+  ]
+}

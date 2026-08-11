@@ -1,0 +1,16 @@
+{
+  "id": "kitthemecard",
+  "name": "KitThemeCard",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import { useState } from \"react\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Button } from \"@/shared/ui/controls/Button\";\n\n// The real card also renders a live ThemeScope+SelfWiredKitRenderer preview of the SDK demo spec\n// (`@/shared/ui/kit`, `@/shared/ui/spec`). Omitted here: `@/shared/ui/kit`'s ThemeScope is the exact\n// broken module chain behind this session's known pre-existing AlgorithmsInspector failure (module not\n// found: shared/ui/theme / ThemeScope / ThemeProvider) — not fixable from this vendoring pass. The\n// picker row + description below is the genuinely achievable, presentational part.\n//\n// `kitThemes` is a preview-only stand-in for the store-hydrated theme collection (app-internal).\nconst KIT_THEMES = [\n  { id: \"default\", label: \"Default\", description: \"The base look — no overrides.\" },\n  { id: \"soft\", label: \"Soft\", description: \"Lower-contrast surfaces, gentler borders.\" },\n  { id: \"contrast\", label: \"Contrast\", description: \"Higher-contrast surfaces for readability.\" },\n  { id: \"warm\", label: \"Warm\", description: \"A warmer accent and panel tint.\" },\n];\n\nexport function KitThemeCard() {\n  const [kitTheme, setKitTheme] = useState(\"default\");\n  const active = KIT_THEMES.find((t) => t.id === kitTheme) ?? KIT_THEMES[0];\n\n  return (\n    <Card title=\"Kit theme\" hint=\"restyles every card, button, field & chip\">\n      <Stack gap=\"md\">\n        <Row gap=\"sm\" wrap>\n          {KIT_THEMES.map((t) => (\n            <Button\n              key={t.id}\n              variant={t.id === kitTheme ? \"primary\" : \"default\"}\n              title={t.description}\n              onClick={() => setKitTheme(t.id)}\n            >\n              {t.label}\n            </Button>\n          ))}\n        </Row>\n        <Text tone=\"dim\" size=\"sm\">{active.description}</Text>\n\n        <Box>\n          <Text tone=\"muted\" size=\"xs\" mono style={{ textTransform: \"uppercase\", letterSpacing: \".06em\" }}>\n            Preview\n          </Text>\n          <Box style={{ marginTop: 6, maxWidth: 340, padding: 14, border: \"1px dashed var(--border-soft)\", borderRadius: 8, color: \"var(--fg-dim)\", fontSize: 11.5 }}>\n            Live spec × theme preview renders here in the real app.\n          </Box>\n        </Box>\n      </Stack>\n    </Card>\n  );\n}",
+  "src": "src/features/settings/cards/KitThemeCard.tsx",
+  "composes": [
+    "Card",
+    "Row",
+    "Stack",
+    "Box",
+    "Text",
+    "Button"
+  ]
+}

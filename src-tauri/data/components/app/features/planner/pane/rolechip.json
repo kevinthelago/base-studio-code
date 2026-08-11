@@ -1,0 +1,11 @@
+{
+  "id": "rolechip",
+  "name": "RoleChip",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\n\ninterface Role { c: string; label: string }\nexport const ROLES: Record<string, Role> = {\n  planner:  { c: \"oklch(0.72 0.10 230)\", label: \"planner\" },\n  worker:   { c: \"oklch(0.80 0.14 70)\",  label: \"worker\" },\n  reviewer: { c: \"oklch(0.70 0.12 300)\", label: \"reviewer\" },\n  triage:   { c: \"oklch(0.72 0.10 195)\", label: \"triage\" },\n  tester:   { c: \"oklch(0.72 0.13 145)\", label: \"tester\" },\n  director: { c: \"oklch(0.70 0.14 350)\", label: \"director\" },\n};\nexport function RoleChip({ role, mute }: { role: string; mute?: boolean }) {\n  const R = ROLES[role] || { c: \"var(--fg-dim)\", label: role };\n  return (\n    <Box as=\"span\" className=\"role\" bg={`color-mix(in oklch, ${R.c}, transparent ${mute ? 90 : 84}%)`} style={{\n      color: R.c, border: `1px solid color-mix(in oklch, ${R.c}, transparent 72%)`,\n    }}>\n      <i style={{ background: R.c }} />{R.label}\n    </Box>\n  );\n}",
+  "src": "src/features/planner/pane/focusedPrimitives.tsx",
+  "composes": [
+    "Box"
+  ]
+}

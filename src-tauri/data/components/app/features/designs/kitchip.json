@@ -1,0 +1,11 @@
+{
+  "id": "kitchip",
+  "name": "KitChip",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import type { ReactNode } from \"react\";\nimport { ColorSwatch } from \"@/shared/ui/controls/ColorSwatch\";\n\nexport function KitChip({ label = \"react-ui\", dot = \"var(--accent)\", on = false, onClick, children }: {\n  label?: string;\n  dot?: string;\n  on?: boolean;\n  onClick?: () => void;\n  children?: ReactNode;\n}) {\n  return (\n    <button type=\"button\" className={\"chip tone-neutral size-sm\" + (on ? \" on\" : \"\")} onClick={onClick}\n      style={{ display: \"inline-flex\", alignItems: \"center\", gap: 6, cursor: \"pointer\", border: \"1px solid \" + (on ? \"var(--accent)\" : \"var(--border)\"), background: on ? \"color-mix(in oklch, var(--accent), transparent 88%)\" : \"transparent\" }}>\n      <ColorSwatch color={dot} size={6} />{label}{children}\n    </button>\n  );\n}",
+  "src": "src/features/designs/kitChrome.tsx",
+  "composes": [
+    "ColorSwatch"
+  ]
+}

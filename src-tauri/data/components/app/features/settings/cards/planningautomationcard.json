@@ -1,0 +1,13 @@
+{
+  "id": "planningautomationcard",
+  "name": "PlanningAutomationCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useState } from \"react\";\nimport { ToggleRow } from \"@/components/togglerow\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\n\nexport function PlanningAutomationCard() {\n  const [autoPlanWithClaude, setAutoPlanWithClaude] = useState(false);\n  const [autoCompleteGates, setAutoCompleteGates] = useState(false);\n  const [allowGateOverride, setAllowGateOverride] = useState(false);\n\n  return (\n    <Card title=\"Planning automation\">\n      <Stack gap={12}>\n        <ToggleRow\n          on={autoPlanWithClaude}\n          onToggle={() => setAutoPlanWithClaude(!autoPlanWithClaude)}\n          title=\"Automate planning with the LLM\"\n        >\n          Adds an <b>Auto-plan</b> control to the project planner: from your pitch, the model\n          answers its own discovery questions and drives the plan to a publishable state for\n          your review {\"\\u2014\"} it never auto-publishes to GitHub. Runs under the least-privilege\n          \"Planning Autopilot\" agent role. Requires an API key for the selected provider (above).\n        </ToggleRow>\n        <ToggleRow\n          on={autoCompleteGates}\n          onToggle={() => setAutoCompleteGates(!autoCompleteGates)}\n          title=\"Auto-advance planner gates\"\n        >\n          When a planning stage's sections are drafted and its gate is ready, confirm it\n          automatically instead of clicking <b>approve &amp; continue</b> each time. You still drive\n          the conversation {\"\\u2014\"} only the per-gate approval is automated. Off by default; steps aside\n          while Auto-plan is running.\n        </ToggleRow>\n        <ToggleRow\n          on={allowGateOverride}\n          onToggle={() => setAllowGateOverride(!allowGateOverride)}\n          title=\"Allow gate override\"\n        >\n          Lets you <b>advance past a planning stage whose gate isn't satisfied</b>. When on, a\n          blocked stage's advance button becomes a cautionary <b>override gate &amp; continue</b> you\n          can click to move on anyway. Off by default {\"\\u2014\"} only the user can override, never the planner.\n        </ToggleRow>\n      </Stack>\n    </Card>\n  );\n}",
+  "src": "src/features/settings/cards/PlanningAutomationCard.tsx",
+  "composes": [
+    "Card",
+    "Stack",
+    "ToggleRow"
+  ]
+}

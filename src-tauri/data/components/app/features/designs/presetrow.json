@@ -1,0 +1,12 @@
+{
+  "id": "presetrow",
+  "name": "PresetRow",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import { RailRow } from \"@/shared/ui/layouts/RailRow\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\ninterface KitAnimation { name: string; trigger?: \"mount\" | \"hover\" | \"always\"; default?: boolean }\n\nconst TRIGGER_GLYPH: Record<string, string> = { mount: \"▸\", hover: \"☝\", always: \"∞\" };\nexport function PresetRow({ a = { name: \"fade-in\", trigger: \"mount\", default: true }, active = true, onSelect = () => {} }: {\r\n  a?: KitAnimation;\r\n  active?: boolean;\r\n  onSelect?: (name: string) => void;\r\n}) {\r\n  const trigger = a.trigger ?? \"mount\";\r\n  return (\r\n    <RailRow\r\n      active={active}\r\n      onClick={() => onSelect?.(a.name)}\r\n      leading={\r\n        <Text as=\"span\" mono size=\"xs\" tone=\"dim\" title={`plays on ${trigger}`}>\r\n          {TRIGGER_GLYPH[trigger] ?? \"▸\"}\r\n        </Text>\r\n      }\r\n      trailing={\r\n        <Text as=\"span\" mono size=\"xxs\" tone={active ? \"accent\" : \"dim\"}>\r\n          {active ? \"active · \" : \"\"}{trigger}\r\n        </Text>\r\n      }\r\n      title={`${a.name} — ${active ? \"the active preset (plays on this component)\" : \"click to make this the component's motion\"} · plays on ${trigger}`}\r\n      data-anim-name={a.name}\r\n    >\r\n      {a.name}\r\n    </RailRow>\r\n  );\r\n}",
+  "src": "src/features/designs/AnimationsMenu.tsx",
+  "composes": [
+    "RailRow",
+    "Text"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "soundnotificationscard",
+  "name": "SoundNotificationsCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useState } from \"react\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { Toggle } from \"@/shared/ui/controls/Toggle\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\n// Vendored from `@/features/settings/pages/SettingsControls` — that file's `src` is claimed by TWO\n// stored components (togglerow AND settingsrow), an ambiguous many-to-one mapping the preview's\n// substitution resolver can't disambiguate, so a direct cross-import fails. Inlined instead.\nfunction ToggleRow({ on, onToggle, title, children }) {\n  return (\n    <Row gap={12}>\n      <Toggle on={on} onClick={onToggle} role=\"switch\" ariaChecked={on} />\n      <Box>\n        <Text as=\"div\" mono size={11.5} style={{ color: \"var(--fg)\", marginBottom: 2 }}>\n          {title}\n        </Text>\n        <Box className=\"hint\">{children}</Box>\n      </Box>\n    </Row>\n  );\n}\n\nexport function SoundNotificationsCard() {\r\n  const [soundNotifications, setSoundNotifications] = useState(false);\r\n  return (\r\n    <Card title=\"Notification sounds\" hint=\"opt-in — off by default\">\r\n      <ToggleRow\r\n        on={soundNotifications}\r\n        onToggle={() => setSoundNotifications(!soundNotifications)}\r\n        title=\"Play a sound on fleet events\"\r\n      >\r\n        Plays a short cue from the built-in <b>Signal</b> sound kit on key coordination events — a\r\n        landing or merge chimes <code>success</code>, a failure chimes <code>error</code>, and a worker\r\n        pausing for you chimes <code>notify</code>. Nothing plays until you enable it.\r\n      </ToggleRow>\r\n    </Card>\r\n  );\r\n}",
+  "src": "src/features/settings/cards/SoundNotificationsCard.tsx",
+  "composes": [
+    "Card",
+    "Toggle",
+    "Row",
+    "Box",
+    "Text"
+  ]
+}

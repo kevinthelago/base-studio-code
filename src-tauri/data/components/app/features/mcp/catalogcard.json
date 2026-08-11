@@ -1,0 +1,12 @@
+{
+  "id": "catalogcard",
+  "name": "CatalogCard",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport type { CatalogItem } from \"@/shared/data/mcpCatalog\";\n\nexport function CatalogCard({ item = { name: \"Example server\", by: \"first-party\", desc: \"A sample MCP server entry.\", icon: \"\\u2726\" } as CatalogItem, action }: { item?: CatalogItem; action?: React.ReactNode }) {\r\n  return (\r\n    <Box className=\"cat-card\">\r\n      <Box className=\"cat-head\">\r\n        <Box className=\"cat-icon\">{item.icon}</Box>\r\n        <Box style={{ flex: 1, minWidth: 0 }}>\r\n          <Text as=\"div\" className=\"cat-name\">{item.name}</Text>\r\n          <Text as=\"div\" className=\"cat-by\">{item.by}</Text>\r\n        </Box>\r\n      </Box>\r\n      <Text as=\"div\" className=\"cat-desc\">{item.desc}</Text>\r\n      {item.install && <Box className=\"hint\" style={{ marginTop: 6, fontSize: 10 }}>{item.install}</Box>}\r\n      <Box className=\"cat-foot\">\r\n        <Text as=\"span\" className=\"hint\">{item.by?.startsWith(\"@modelcontextprotocol\") ? \"official MCP\" : (item.by === \"first-party\" || item.link) ? \"first-party\" : \"third-party\"}</Text>\r\n        <Box className=\"spacer\" />\r\n        {action}\r\n      </Box>\r\n    </Box>\r\n  );\r\n}",
+  "src": "src/features/mcp/shared.tsx",
+  "composes": [
+    "Box",
+    "Text"
+  ]
+}

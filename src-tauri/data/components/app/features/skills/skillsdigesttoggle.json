@@ -1,0 +1,12 @@
+{
+  "id": "skillsdigesttoggle",
+  "name": "SkillsDigestToggle",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Text } from \"@/shared/ui/typography/Text\";\nimport { Button } from \"@/shared/ui/controls/Button\";\n\nexport function SkillsDigestToggle({ digestOpen, onToggle }: {\n  digestOpen: boolean;\n  onToggle: () => void;\n}) {\n  return (\n    <Button\n      variant=\"ghost\" size=\"sm\" onClick={onToggle}\n      title={digestOpen ? \"Hide the fleet digest\" : \"Show the fleet digest — stat tiles + the most-invoked leaderboard\"}\n      style={{ border: \"none\", padding: 0, height: \"auto\", color: \"var(--fg-dim)\", fontSize: 11, flex: \"none\" }}\n    >\n      <Text as=\"span\" size={9} style={{ display: \"inline-block\", transform: digestOpen ? \"rotate(90deg)\" : \"none\" }}>▸</Text>\n      <Text as=\"span\" mono size={9.5} style={{ textTransform: \"uppercase\", letterSpacing: \".08em\" }}>Fleet digest · 7d</Text>\n    </Button>\n  );\n}",
+  "src": "src/features/skills/SkillsDigest.tsx",
+  "composes": [
+    "Button",
+    "Text"
+  ]
+}

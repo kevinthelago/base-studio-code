@@ -1,0 +1,11 @@
+{
+  "id": "skeletonrows",
+  "name": "SkeletonRows",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Skeleton } from \"@/shared/ui/feedback/Skeleton\";\n\nexport function SkeletonRows({ rows = 4, h = 30, gap = 6, radius = 6 }: { rows?: number; h?: number; gap?: number; radius?: number }) {\r\n  return (\r\n    <Stack gap={gap}>\r\n      {Array.from({ length: rows }).map((_, i) => <Skeleton key={i} h={h} radius={radius} />)}\r\n    </Stack>\r\n  );\r\n}",
+  "src": "src/shared/ui/feedback/CardStates.tsx",
+  "composes": [
+    "Skeleton"
+  ]
+}
