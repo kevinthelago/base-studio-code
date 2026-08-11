@@ -16,6 +16,9 @@ export { ProjectsGraphHost } from "./ProjectsGraphHost";
 export { registerProjectsPlatform } from "./list/graphPlatform";
 // #4224: same reason — the shadow catalogue reaches the planning surface through the barrel.
 export { registerPlanningPlatform } from "./session/graphPlatform";
+// `record-link-debt`: the board leaves the GITHUB feature drills into. It calls this through the barrel,
+// which is the only planner path #1545 lets it reach — the registration itself stays inside the planner.
+export { registerPlannerGithubPlatform } from "./github/graphPlatform";
 // #4224: the planning session renders FROM THE GRAPH; the file component stays for its tests.
 import { PlanningGraphHost } from "./session/PlanningGraphHost";
 import { TeamsPanel } from "@/features/teams";

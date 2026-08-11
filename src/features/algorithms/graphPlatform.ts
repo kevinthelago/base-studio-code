@@ -11,6 +11,10 @@ import * as Knowledge from "./lib/knowledge";
 import * as UseKnowledgeGraph from "./useKnowledgeGraph";
 import * as VizPanel from "./viz/VizPanel";
 import * as UseVizForImpl from "./viz/useVizForImpl";
+// `record-link-debt` — the transport bar `vizpreview`/`vizstage` compose. It was registered nowhere, so
+// both records threw the loader's named error on mount. It stays code for the same reason VizPanel does:
+// it drives the instrumented executor's playhead, which is behaviour, not layout.
+import * as TracePlayer from "./viz/TracePlayer";
 // The librarian terminal is hosted by the studio-session surface — a cross-feature BARREL, which #1545
 // permits and the live file already imports.
 import * as StudioSessions from "@/features/studio-sessions";
@@ -25,5 +29,6 @@ export function registerAlgorithmsPlatform(): void {
   registerAppModule("@/features/algorithms/useKnowledgeGraph", UseKnowledgeGraph);
   registerAppModule("@/features/algorithms/viz/VizPanel", VizPanel);
   registerAppModule("@/features/algorithms/viz/useVizForImpl", UseVizForImpl);
+  registerAppModule("@/features/algorithms/viz/TracePlayer", TracePlayer);
   registerAppModule("@/features/studio-sessions", StudioSessions);
 }

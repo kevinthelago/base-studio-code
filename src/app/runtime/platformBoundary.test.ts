@@ -33,6 +33,7 @@ import { registerProjectsPlatform } from "@/features/planner/list/graphPlatform"
 import { registerPanePlatform } from "@/features/planner/pane/graphPlatform";
 import { registerBodiesPlatform } from "@/features/planner/bodies/graphPlatform";
 import { registerPreviewPlatform } from "@/features/planner/preview/graphPlatform";
+import { registerPlannerGithubPlatform } from "@/features/planner/github/graphPlatform";
 import { isAppModule } from "@/shared/lib/runtime/moduleRegistry";
 
 interface SeedRecord {
@@ -79,6 +80,7 @@ beforeAll(() => {
   registerPanePlatform();
   registerBodiesPlatform();
   registerPreviewPlatform();
+  registerPlannerGithubPlatform();
 });
 
 describe("the platform-kernel boundary (#3858)", () => {

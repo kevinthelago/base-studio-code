@@ -156,6 +156,18 @@ import * as CoreLog from "@/shared/lib/core/log";
 // loader requires those registered exactly like a first-party one. `platformBoundary` used to skip bare
 // specifiers as "the import-map's concern"; the browser check caught this because the loader does not.
 import * as ZustandShallow from "zustand/react/shallow";
+// `record-link-debt` — five of the six specifiers that were registered NOWHERE, so any record importing
+// one threw the loader's named error the moment something mounted it. Each of these five ALSO exists as a
+// record (`keyvaluelist`, `labelchip`, `sessionfailure`, `sessionreadinessbanner`), and the tempting fix
+// was to give those records a `provides` field instead. That is a TRAP: `resolveGraphSource` matches
+// `provides` GLOBALLY, so the record would override the bundled module for EVERY graph consumer — and all
+// four are drifted from their files. Registering the FILE resolves to the newer copy; the `provides` flip
+// (and the file's deletion) is `record-src-reconcile`'s move, once the fold has made the record newer.
+import * as KeyValueList from "@/shared/ui/data/KeyValueList"; // collection/pipeline/record/table/treeexplorer pages
+import * as LabelChip from "@/shared/ui/data/LabelChip";       // issuecard, detailpanel
+import * as SessionFailure from "@/app/SessionFailure";        // terminalbanners
+import * as SessionReadinessBanner from "@/app/SessionReadinessBanner"; // terminalbanners
+import * as TauriApp from "@tauri-apps/api/app"; // statusbar reads the app version — bare, like @tauri-apps/api/core
 import * as UseGraphViewport from "@/shared/ui/layouts/useGraphViewport"; // GraphCanvas/Tree (#3692)
 import * as RenderProfiler from "@/shared/lib/core/renderProfiler";       // GraphCanvas (#3692)
 import * as TreeLayout from "@/shared/ui/layouts/treeLayout";             // Tree (#3692)
@@ -295,6 +307,13 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/fleet/workerAudit": WorkerAudit,
   "@/shared/lib/github/useCiWatcher": UseCiWatcher,
   "@/shared/lib/fleet/coordinationWakes": CoordinationWakes,
+  // `record-link-debt` — see the import block above for why these register the file rather than
+  // `provides`-ing the record of the same name.
+  "@/shared/ui/data/KeyValueList": KeyValueList,
+  "@/shared/ui/data/LabelChip": LabelChip,
+  "@/app/SessionFailure": SessionFailure,
+  "@/app/SessionReadinessBanner": SessionReadinessBanner,
+  "@tauri-apps/api/app": TauriApp,
 };
 
 let done = false;

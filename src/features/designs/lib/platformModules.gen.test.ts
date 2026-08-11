@@ -36,6 +36,7 @@ import { registerProjectsPlatform } from "@/features/planner/list/graphPlatform"
 import { registerPanePlatform } from "@/features/planner/pane/graphPlatform";
 import { registerBodiesPlatform } from "@/features/planner/bodies/graphPlatform";
 import { registerPreviewPlatform } from "@/features/planner/preview/graphPlatform";
+import { registerPlannerGithubPlatform } from "@/features/planner/github/graphPlatform";
 import { registeredSpecifiers } from "@/shared/lib/runtime/moduleRegistry";
 
 const FILE = resolve(__dirname, "../../../../src-tauri/data/ui/platform-modules.json");
@@ -65,6 +66,7 @@ function currentSpecifiers(): string[] {
   registerPanePlatform();
   registerBodiesPlatform();
   registerPreviewPlatform();
+  registerPlannerGithubPlatform();
   return registeredSpecifiers();
 }
 
