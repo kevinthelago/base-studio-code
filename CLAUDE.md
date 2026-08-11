@@ -439,6 +439,11 @@ This is the same surface a fleet worker already uses, so there is one way to rea
 human or an agent is driving. `bsc plan` is in the always-allowed mandatory tier, so no session needs
 a permission grant to reach it.
 
+The issue says what to DO; the **change** (`bsc plan change`, below) says what was DONE. Both live in
+this same store, keyed by the same ref — so one name reaches the issue, the branch, the worktree and
+the change. **Every slice gets both.** An item worked without a change record leaves no gate evidence,
+no reviewer verdict, and no notes, which is the state this repo was in before the change table existed.
+
 Every migrated item keeps its old GitHub number in `ghNumber` as a **silent back-link** — the trail
 survives and a future `bsc plan sync` can reconcile, but nothing writes to GitHub in the meantime.
 
@@ -462,11 +467,19 @@ this repo already used; new items pick a descriptive slug.
 1. **Claim** the item: `bsc plan get <ref>` and confirm its acceptance criteria before writing code.
 2. **Branch** on its ref: `git worktree add wt-<short> -b <ref> develop`, and
    `bsc plan status <ref> in_progress`.
-3. **Implement** the minimum change, **with its tests in the same branch** (never after).
-4. **Gate** — every command below must pass (unchanged; see *Verify* under Parallel worktree agents).
-5. **Complete**: `bsc plan status <ref> complete` — the worker's half is done.
-6. **Verify**: whoever reviews confirms the acceptance criteria and moves it to `verified`, then
-   merges the branch into `develop` locally. `complete` ≠ done; `verified` is done.
+3. **Open the change**: `bsc plan change new <ref> --note "<title>" --description "<what and why>"` —
+   at the START, not the end, because the notes only have value while the reasoning is live.
+4. **Implement** the minimum change, **with its tests in the same branch** (never after). As you go,
+   `bsc plan change note <ref> "<what you learned>" --from <you>` for anything a future reader would
+   otherwise have to rediscover — a trap, a false lead, a decision and its reason.
+5. **Gate** — every command below must pass (unchanged; see *Verify* under Parallel worktree agents) —
+   and record what each one **actually did**: `bsc plan change gate <ref> typecheck pass`. A gate you
+   skipped is recorded as skipped, not omitted.
+6. **Complete**: `bsc plan status <ref> complete` — the worker's half is done.
+7. **Verify**: whoever reviews confirms the acceptance criteria and moves it to `verified`, then
+   merges the branch into `develop` locally, and stamps the change:
+   `bsc plan change status <ref> merged --command <merge-sha> --from <reviewer>`.
+   `complete` ≠ done; `verified` is done.
 
 `complete` and `verified` are deliberately distinct, and it is the same split the fleet already runs:
 the actor who did the work is not the actor who confirms it. Collapsing them would mean a change is
@@ -543,9 +556,21 @@ from the shared ancestor `node_modules` (#1669).
 > `git worktree remove` follows it and wipes the main install. Use the nested zero-install pattern (or a
 > real install), never a link.
 
-**2 · Implement** the minimum change to satisfy the item, **with its tests in the same branch** (never after).
+**2 · Open the change record** — the local PR, at the START of the work:
+```bash
+bsc plan change new <ref> --note "<title>" --description "<what and why>"
+```
 
-**3 · Verify — the gate (every command must pass). Unchanged, and still mandatory:**
+**3 · Implement** the minimum change to satisfy the item, **with its tests in the same branch** (never after).
+As you go, append what a future reader would otherwise have to rediscover — a trap, a false lead, a
+decision and the reason for it:
+```bash
+bsc plan change note <ref> "<what you learned>" --from <you>
+```
+A note is worth writing WHILE the reasoning is live; reconstructed afterwards it loses the only part
+that mattered.
+
+**4 · Verify — the gate (every command must pass). Unchanged, and still mandatory:**
 ```bash
 # Frontend (run when src/ changed)
 npm run typecheck                                   # tsc --noEmit, must be clean
@@ -559,20 +584,28 @@ cargo clippy --workspace --all-targets -- -D warnings   # --all-targets — --li
 cargo test --workspace                                  # or `-p <crate>` to scope a slow build
 ```
 
-**4 · Commit** on the branch — **never push**. End the message with the agreed `Co-Authored-By:` trailer.
+Record what each gate ACTUALLY did, as it runs — evidence, not a claim:
+```bash
+bsc plan change gate <ref> typecheck pass
+bsc plan change gate <ref> test not-run              # a skipped gate is recorded as skipped, never omitted
+```
 
-**5 · Mark it complete** — the worker's half is done, awaiting confirmation:
+**5 · Commit** on the branch — **never push**. End the message with the agreed `Co-Authored-By:` trailer.
+
+**6 · Mark it complete** — the worker's half is done, awaiting confirmation:
 ```bash
 bsc plan status <ref> complete
 ```
 Stop here. `complete` means "I did my part", not "this is done". The actor that wrote the change does
-not get to declare it correct.
+not get to declare it correct — and do NOT stamp the change `merged` or fill in `--from <reviewer>`
+yourself, for the same reason.
 
-**6 · Verify + integrate** (the reviewing actor, not the one who implemented): confirm each acceptance
+**7 · Verify + integrate** (the reviewing actor, not the one who implemented): confirm each acceptance
 criterion from `bsc plan get <ref>`, then
 ```bash
 bsc plan status <ref> verified
 git merge --no-ff <ref>                              # into local develop; NEVER pipe this into a chain
+bsc plan change status <ref> merged --command <merge-sha> --from <reviewer>
 git worktree remove --force wt-<short>               # real node_modules → safe; a junction is NOT
 git branch -d <ref>                                  # fails while the branch is checked out in a worktree
 ```
