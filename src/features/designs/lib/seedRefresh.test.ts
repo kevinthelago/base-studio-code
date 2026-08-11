@@ -3,7 +3,7 @@
 // stability + exclusions, and the kit-shaped variants of the same verdicts.
 import { describe, it, expect } from "vitest";
 import type { ComponentRecord, Kit } from "./model";
-import { fnv1a, stableStringify, seedHashOf, stampSeedHash, reconcileSeed, planRestamp } from "./seedRefresh";
+import { fnv1a, stableStringify, seedHashOf, stampSeedHash, reconcileSeed, planRestamp, applyStamps } from "./seedRefresh";
 
 /** A minimal component-shaped record. */
 const comp = (over: Partial<ComponentRecord> = {}): ComponentRecord => ({
@@ -365,5 +365,57 @@ describe("planRestamp — repairing the unstamped (#4207)", () => {
     const { stamps, deferred } = planRestamp([page], [seedPage], { seedAuthoritative: (r) => r.role === "page" });
     expect(stamps).toEqual([]);
     expect(deferred).toEqual([{ id: "fleetpage", name: "FleetPage", reason: "seed-authoritative" }]);
+  });
+});
+
+describe("applyStamps + the repair running INSIDE hydrate (auto-restamp)", () => {
+  it("replaces stamped records by id and leaves the rest alone", () => {
+    const a = comp({ id: "a", builtin: false });
+    const b = comp({ id: "b", builtin: false });
+    const stamped = { ...a, builtin: true, seedHash: "H" };
+    const out = applyStamps([a, b], [stamped]);
+    expect(out[0]).toBe(stamped);
+    expect(out[1], "an untouched record keeps its identity").toBe(b);
+  });
+
+  it("returns the SAME array reference when there is nothing to stamp", () => {
+    // The common case after the first repair — so hydrate pays nothing on every subsequent boot.
+    const loaded = [comp({ id: "a" })];
+    expect(applyStamps(loaded, [])).toBe(loaded);
+  });
+
+  it("a DIVERGED store copy survives the repair with its content intact", () => {
+    // The property the whole design rests on. The store copy differs from the seed; stamping with the
+    // SEED's hash makes it read as edited-against-an-unmoved-seed, which KEEPS the store copy. Stamping
+    // with its OWN hash would read as pristine-and-stale and hand the seed's content over the top.
+    const seeded = stampSeedHash(comp({ id: "history", srcText: "OLD seed body" }));
+    const store = comp({ id: "history", srcText: "NEW store body", builtin: false });
+
+    const plan = planRestamp([store], [seeded]);
+    expect(plan.stamps).toHaveLength(1);
+    expect(plan.stamps[0].seedHash).toBe(seeded.seedHash);
+
+    const reconciled = reconcileSeed(applyStamps([store], plan.stamps), [seeded], "component");
+    const kept = reconciled.records.find((r) => r.id === "history");
+    expect(kept?.srcText, "the store copy is kept — the repair restores membership, not content").toBe("NEW store body");
+  });
+
+  it("an IDENTICAL store copy is stamped and simply agrees with its seed — the 214-record case", () => {
+    // What promoting store-only records into the seed produced: a seed created for an id whose store
+    // copy carries no `builtin` flag, so it read as unstamped despite being byte-identical.
+    const seeded = stampSeedHash(comp({ id: "same", srcText: "body" }));
+    const store = comp({ id: "same", srcText: "body", builtin: false });
+    const plan = planRestamp([store], [seeded]);
+    const reconciled = reconcileSeed(applyStamps([store], plan.stamps), [seeded], "component");
+    expect(reconciled.records.find((r) => r.id === "same")?.srcText).toBe("body");
+    expect(reconciled.notices.filter((n) => n.kind === "unstamped"), "repaired ⇒ no notice").toEqual([]);
+  });
+
+  it("a record with NO packaged seed is never stamped — that is the user-authored signature", () => {
+    const mine = comp({ id: "mine", builtin: false });
+    expect(planRestamp([mine], []).stamps).toEqual([]);
+    // …and it still reaches the reconciled output, untouched.
+    const reconciled = reconcileSeed([mine], [], "component");
+    expect(reconciled.records.find((r) => r.id === "mine")).toBeTruthy();
   });
 });
