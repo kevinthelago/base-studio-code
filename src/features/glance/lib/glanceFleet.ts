@@ -20,6 +20,10 @@ const ROLE_TO_GROLE: Record<string, GRole> = {
   worker: "service",
   reviewer: "data", tester: "data", juror: "data",
   issuer: "client", triage: "client", documentor: "client", designer: "client",
+  // The AUTHORING studios join `designer` in the FLOW bucket: like it, they produce the material a build
+  // runs on (algorithms, teams, sounds, connectors) rather than the build itself. Without these entries
+  // `gRole` falls through to "service" and a librarian would draw as a worker.
+  librarian: "client", architect: "client", "sound-designer": "client", integrator: "client",
 };
 const gRole = (role?: string): GRole => (role && ROLE_TO_GROLE[role]) || "service";
 
@@ -28,11 +32,31 @@ const gRole = (role?: string): GRole => (role && ROLE_TO_GROLE[role]) || "servic
  *  and could in principle collide, which `fleetToOrg`'s `rel()` guard (`from === to`) would then hide. */
 export const PLANNER_NODE_ID = "planner";
 
+/** The app-owned studio sessions a project can declare (`FleetPlan.studios`) → the session role each
+ *  renders as. The ids match the Studio Network team's position ids, so a studio means the same thing
+ *  in a project's graph as it does in the studio network's own.
+ *
+ *  An id outside this map is IGNORED rather than rendered: a typo in the plan should cost that one node,
+ *  not put a phantom agent on the graph that no session can ever back. */
+const STUDIO_ROLES: Record<string, string> = {
+  designer: "designer",
+  librarian: "librarian",
+  architect: "architect",
+  "sound-designer": "sound-designer",
+  integrator: "integrator",
+};
+
+/** The declared studios that are real, de-duplicated, in a stable order. */
+export function resolveStudios(studios: readonly string[] | undefined): string[] {
+  return [...new Set(studios ?? [])].filter((s) => s in STUDIO_ROLES);
+}
+
 /** The session role for a position whose persona did not resolve. The fixed-id agents are known by
  *  their id — without this a planner falls through to `worker` and renders in the BUILD colour, which
  *  is exactly wrong for an ORCHESTRATE agent (`ROLE_TO_GROLE` already buckets `planner` as infra). */
 function fallbackRole(nodeId: string): string {
-  return nodeId === "director" || nodeId === PLANNER_NODE_ID ? nodeId : "worker";
+  if (nodeId === "director" || nodeId === PLANNER_NODE_ID) return nodeId;
+  return STUDIO_ROLES[nodeId] ?? "worker";
 }
 
 /** Fleet coordination kind → Org relationship ARCHETYPE (#2561, interim map until fleets are authored as
@@ -71,6 +95,14 @@ export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Team {
   if (!positions.some((p) => p.nodeId === PLANNER_NODE_ID)) {
     positions.push({ nodeId: PLANNER_NODE_ID, kind: "agent", personaId: "planner", label: "planner" });
   }
+  // The studio sessions this project DECLARES it uses (#glance-project-studio-sessions). Same collision
+  // guard as the planner: a stream already owning the id keeps it.
+  const studios = resolveStudios(fleet.studios);
+  for (const s of studios) {
+    if (!positions.some((p) => p.nodeId === s)) {
+      positions.push({ nodeId: s, kind: "agent", personaId: s, label: s });
+    }
+  }
   const posIds = new Set(positions.map((p) => p.nodeId));
   // Authored-team archetype overlay (#2572): a `persona→persona` pair the blueprint team wired with an
   // archetype OVERRIDES the coordination-derived archetype for that pair — so the authored design's
@@ -79,6 +111,7 @@ export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Team {
   const personaOf = new Map<string, string | undefined>(fleet.streams.map((s) => [s.id, s.persona]));
   personaOf.set("director", "director");
   personaOf.set(PLANNER_NODE_ID, "planner");
+  for (const s of resolveStudios(fleet.studios)) personaOf.set(s, s);
   const archOf = (from: string, to: string, derived: string): string => {
     const pf = personaOf.get(from), pt = personaOf.get(to);
     return (pf && pt && authored.get(`${pf}|${pt}`)) || derived;
@@ -98,6 +131,11 @@ export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Team {
   // director does. That makes the authority chain read in one direction end to end: the studios serve
   // the planner, the planner serves the director, the director manages the workers.
   if (fleet.director?.enabled) rel(PLANNER_NODE_ID, "director", archOf(PLANNER_NODE_ID, "director", "serves"));
+  // studio → planner, the SAME archetype + direction the Studio Network team already uses. This is what
+  // places them: Glance layers by dependency depth, `serves` puts the server at the lower (further-left)
+  // layer, so the studios land left of the planner, which is left of the director, with the workers
+  // right of it. The arrangement is a consequence of the archetype, not a layout rule.
+  for (const s of studios) rel(s, PLANNER_NODE_ID, archOf(s, PLANNER_NODE_ID, "serves"));
   for (const e of fleet.edges ?? []) rel(e.from, e.to, archOf(e.from, e.to, KIND_TO_ARCHETYPE[e.kind] ?? "peers"));        // producer → consumer
   for (const s of fleet.streams) for (const dep of s.dependsOn) rel(dep, s.id, archOf(dep, s.id, "peers"));                // upstream ↔ dependent
 
