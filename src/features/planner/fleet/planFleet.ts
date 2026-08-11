@@ -140,6 +140,17 @@ export interface FleetPlan {
   director: FleetDirector;
   /** Project-default integration strategy (#378). Unset ⇒ DEFAULT_STRATEGY. */
   strategy?: IntegrationStrategy;
+  /**
+   * The app-owned STUDIO sessions this project uses — `designer` · `librarian` · `architect` ·
+   * `sound-designer` · `integrator`. They serve the project's planner and render left of it in Glance.
+   *
+   * DECLARED, not derived. The obvious inference — a `ui.kit` pairing implies a designer, integrations
+   * imply an integrator, a feature's `requires` implies a librarian — reads EMPTY on the live studio-code
+   * plan (no ui pairing, no integrations, 0 of 40 features carrying `requires`), so it would show zero
+   * studios on the one project that demonstrably uses all of them. Absent means "not declared", never
+   * "not used": an empty list renders no studio nodes rather than guessing.
+   */
+  studios?: string[];
   /** Coordination topology (#…): director-orchestrated, peer mesh, or hybrid (per-edge). */
   topology?: Topology;
   /** Produced contracts/schemas one stream hands to others. */
