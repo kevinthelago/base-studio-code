@@ -38,30 +38,25 @@ describe("classifyImport (#3605)", () => {
   });
 });
 
-describe("routeImport — GRAPH-FIRST: resolver override · sibling vendored · else external (#3606/#3660)", () => {
-  it("a resolved specifier vendors (even one it OVERRIDES); everything unresolved → external (code fallback)", () => {
+describe("routeImport — everything is external now; graph-first moved to the require chain", () => {
+  it("leaves EVERY import external, including the graph specifiers it used to vendor", () => {
     registerAppModule("react", React);
-    registerAppModule("@/store", {});
-    registerAppModule("@/shared/ui/data/Chip", { Chip: () => null }); // the bundled platform Chip…
+    registerAppModule("@/shared/ui/data/Chip", { Chip: () => null }); // the bundled platform Chip
     const graph: Record<string, string> = {
-      "@/components/worker-board": "export const P = () => null;", //          …a graph SIBLING
-      "@/shared/ui/data/Chip": "export const Chip = () => null;", //           …a graph OVERRIDE of the platform Chip (#3660)
+      "@/components/worker-board": "export const P = () => null;", //  a graph SIBLING
+      "@/shared/ui/data/Chip": "export const Chip = () => null;", //   a graph OVERRIDE (#3660)
     };
     const resolve = (s: string) => graph[s] ?? null;
 
-    // GRAPH-FIRST (#3660): a component that PROVIDES a platform specifier overrides the registry → vendored,
-    // so a shared/ui primitive can render from the graph (DATA) rather than the bundled module.
-    expect(routeImport("@/shared/ui/data/Chip", resolve)).toEqual({ vendor: graph["@/shared/ui/data/Chip"] });
-    // a graph sibling the app resolves → vendored (its source bundles in)
-    expect(routeImport("@/components/worker-board", resolve)).toEqual({ vendor: graph["@/components/worker-board"] });
-    // an UNRESOLVED registered module → external → the registry (the code fallback, identical to pre-#3660)
+    // A record is a MODULE, not source to inline. Both of these used to return `{ vendor }`; they are
+    // now linked separately and resolved by `require`, which is what stops a page recompiling its whole
+    // subtree on every mount. GRAPH-FIRST (#3660) did not go away — it moved to `makeGraphRequire`,
+    // where the linked set is consulted before the registry (see graphModules.test.ts).
+    expect(routeImport("@/shared/ui/data/Chip", resolve)).toEqual({ external: true });
+    expect(routeImport("@/components/worker-board", resolve)).toEqual({ external: true });
     expect(routeImport("react", resolve)).toEqual({ external: true });
-    expect(routeImport("@/store", resolve)).toEqual({ external: true });
-    // a first-party path the resolver does NOT know → external (→ require throws a named error)
     expect(routeImport("@/components/missing", resolve)).toEqual({ external: true });
-    // a bare library → external
     expect(routeImport("d3", resolve)).toEqual({ external: true });
-    // no resolver at all → degrades to #3605 "everything external" (no override possible)
     expect(routeImport("@/shared/ui/data/Chip")).toEqual({ external: true });
   });
 });
