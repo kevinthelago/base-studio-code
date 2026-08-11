@@ -43,6 +43,16 @@ describe("the shadow page catalogue", () => {
     expect(fleet?.modules.every((m) => m.file === null)).toBe(true);
   });
 
+  it("declares mcppage as graph-only — its file copy was dead and was removed", () => {
+    // features/mcp/index.tsx SURVIVES as the feature barrel (lib re-exports + the still-unmigrated
+    // HooksView), so a file path here would resolve and diff — and report `differs` forever, because
+    // what it resolves to is no longer this page. A page whose file copy is gone declares `null`,
+    // which shadow mode reads as `no-file-baseline`. The sibling module keeps its real file.
+    const mcp = SHADOW_PAGES.find((p) => p.pageId === "mcppage");
+    expect(mcp?.modules.find((m) => m.recordId === "mcppage")?.file).toBeNull();
+    expect(mcp?.modules.find((m) => m.recordId === "mcp-analytics")?.file).toBe("/src/features/mcp/McpAnalytics.tsx");
+  });
+
   it("reports what each page renders from TODAY, matching the workspace wiring", () => {
     // `rendersFrom` is the context every number in the report is read against — a `differs` verdict on a
     // graph-rendered page is a live problem, the same verdict on a file-rendered one is a not-yet. It is

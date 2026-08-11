@@ -231,7 +231,11 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     label: "MCP",
     rendersFrom: "graph",
     modules: [
-      { recordId: "mcppage", file: "/src/features/mcp/index.tsx" },
+      // The file baseline is gone: index.tsx still exists, but only as the feature's barrel (lib
+      // re-exports + the unmigrated HooksView). Its McpWorkspace copy was dead — both shells mount
+      // the record through McpGraphHost — so it was removed. Diffing the record against what is
+      // left would report `differs` forever against a file that no longer claims to be this page.
+      { recordId: "mcppage", file: null },
       { recordId: "mcp-analytics", file: "/src/features/mcp/McpAnalytics.tsx" },
     ],
     ensurePlatform: () => import("@/features/mcp"),
