@@ -21,7 +21,9 @@
 // live-verify step on a dev instance.
 import { registerPlatformModules } from "@/app/runtime/appModules";
 import { SHADOW_PAGES } from "@/app/runtime/shadowPages";
-import { loadComponentFromSource } from "@/shared/lib/runtime/componentLoader";
+import { loadComponentFromSource, compileToCjs } from "@/shared/lib/runtime/componentLoader";
+import { verifyGraphRecord } from "@/shared/lib/runtime/verifyRecord";
+import { isAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import { GRAPH_SIBLING_PREFIX } from "@/shared/lib/runtime/graphResolver";
 
@@ -176,13 +178,54 @@ async function renderPage(
   }
 }
 
+
+export interface VerifyResult {
+  id: string;
+  ok: boolean;
+  compileError?: string;
+  unresolved?: string[];
+}
+
+/** LINK-VERIFY every packaged record — not just the pages `loadAll` walks.
+ *
+ *  `graphPages` proves ~12 pages mount; this asks the weaker-but-far-broader question of all ~383
+ *  records: does it compile, and does every specifier it requires resolve? A record that fails this is
+ *  one the loader would throw a named error on the moment something mounts it, and until now nothing
+ *  asked that of a record no page happens to reach.
+ *
+ *  Verification does not evaluate, so this sweep runs no module-init side effects. */
+async function verifyAll(): Promise<VerifyResult[]> {
+  registerPlatformModules();
+  // Register EVERY feature's platform surface first — a record's imports can only resolve against what
+  // the app has actually registered, and each page's `ensurePlatform` is how the app registers it.
+  for (const def of SHADOW_PAGES) {
+    try {
+      await def.ensurePlatform?.();
+    } catch {
+      /* a feature that cannot load is the page sweep's finding, not this one's */
+    }
+  }
+  const out: VerifyResult[] = [];
+  for (const r of RECORDS) {
+    if (!r.srcText) continue;
+    const v = await verifyGraphRecord(r.srcText, {
+      resolveSource: resolveGraphSource,
+      isRegistered: isAppModule,
+      compile: (src) => compileToCjs(src),
+    });
+    out.push({ id: r.id, ok: v.ok, compileError: v.compileError, unresolved: v.unresolved });
+  }
+  return out;
+}
+
 declare global {
   interface Window {
     __graphPagesHarness?: {
       loadAll: () => Promise<PageResult[]>;
+      verifyAll: () => Promise<VerifyResult[]>;
       renderPage: typeof renderPage;
     };
   }
 }
 
-window.__graphPagesHarness = { loadAll, renderPage };
+window.__graphPagesHarness = { loadAll, verifyAll, renderPage };
