@@ -125,7 +125,22 @@ export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Team {
     seen.add(k);
     relationships.push({ id: `r${relationships.length}`, archetype, from, to });
   };
-  if (fleet.director?.enabled) for (const s of fleet.streams) rel("director", s.id, archOf("director", s.id, "manages")); // manager → report
+  // manager → report, for every stream EXCEPT the planner. A fleet may carry a real stream whose id is
+  // `planner` (studio-code's "Project planning session" is one), and pairing `director manages planner`
+  // with the `planner serves director` edge below makes a MUTUAL PAIR — which `mutualPairs` classifies
+  // as a cycle, and cycle edges are handed to `layerDag` as the break set. Both edges then drop out of
+  // layering, the planner loses every constraint, and it lands among the workers to the RIGHT of the
+  // director — the opposite of the intent, reported in-app as `dependency cycle: director ⇄ Project
+  // planning session`.
+  //
+  // Excluding it is the right semantics regardless of the cycle: the planning session is not a worker in
+  // the director's lane. It hands the plan over and briefs it, which is exactly what `serves` says.
+  if (fleet.director?.enabled) {
+    for (const s of fleet.streams) {
+      if (s.id === PLANNER_NODE_ID) continue;
+      rel("director", s.id, archOf("director", s.id, "manages"));
+    }
+  }
   // planner → director (#glance-planner-node-per-project). `serves`, not `manages`: the planner hands
   // the plan over and briefs it at runtime (`bsc-brief`, #2377) but owns none of the execution — the
   // director does. That makes the authority chain read in one direction end to end: the studios serve

@@ -142,6 +142,36 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
     expect(org.relationships.some((r) => r.from === PLANNER_NODE_ID)).toBe(false);
   });
 
+  it("never makes the planner a director REPORT — that pair is a cycle", () => {
+    // Regression for the observed `dependency cycle: director ⇄ Project planning session`. A fleet can
+    // carry a real stream called `planner`; pairing `manages` with `serves` makes a mutual pair, which
+    // is handed to layerDag as the cycle-break set — so BOTH edges drop and the planner loses every
+    // layering constraint, landing among the workers on the wrong side of the director.
+    const withPlannerStream = fleetToOrg({
+      ...fleet,
+      streams: [
+        { id: "planner", name: "Project planning session", repo: "r", owns: [], issues: [], dependsOn: [] },
+        { id: "api", name: "API", repo: "r", owns: [], issues: [], dependsOn: [] },
+      ],
+    } as unknown as FleetPlan);
+    expect(withPlannerStream.relationships.some(
+      (r) => r.from === "director" && r.to === PLANNER_NODE_ID,
+    )).toBe(false);
+    // the serves edge survives — it is the constraint that puts the planner left
+    expect(withPlannerStream.relationships).toContainEqual(
+      expect.objectContaining({ from: PLANNER_NODE_ID, to: "director", archetype: "serves" }),
+    );
+    // no mutual pair between them in either direction
+    const between = withPlannerStream.relationships.filter(
+      (r) => (r.from === "director" && r.to === PLANNER_NODE_ID) || (r.from === PLANNER_NODE_ID && r.to === "director"),
+    );
+    expect(between).toHaveLength(1);
+    // every OTHER stream is still managed
+    expect(withPlannerStream.relationships).toContainEqual(
+      expect.objectContaining({ from: "director", to: "api", archetype: "manages" }),
+    );
+  });
+
   it("does not duplicate the node when a STREAM is itself called `planner`", () => {
     // Two positions sharing a nodeId would not read as a duplicate — `rel()` de-dupes by id, so it
     // would read as edges going missing. The real stream keeps the name; we add ours only if free.
