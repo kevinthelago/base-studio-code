@@ -25,6 +25,7 @@ import type * as Esbuild from "esbuild-wasm";
 import type { ComponentType } from "react";
 import { ensureEsbuild } from "@/shared/lib/preview/componentBundle";
 import { resolveAppModule, isAppModule, registeredSpecifiers } from "./moduleRegistry";
+import { evaluateEntry, linkGraphModules } from "./graphModules";
 
 /** Resolve a first-party specifier to another graph component's SOURCE (its `srcText`), so the loader can
  *  vendor siblings into one compile. Returns `null`/`undefined` when the specifier is NOT a graph component
@@ -51,47 +52,38 @@ export function classifyImport(spec: string, registered: (s: string) => boolean)
   return "library";
 }
 
-/** The esbuild namespace holding vendored graph-sibling sources (kept out of the filesystem resolver). */
-const GRAPH_NS = "graph-sibling";
-
 /**
- * Route ONE non-entry import (pure over the live registry + the injected resolver, so it's unit-testable
- * without esbuild — the real compile is browser-only). Three outcomes:
- *   - `{ external: true }` — a registered PLATFORM module (→ `require()`, resolved via the registry), OR a
- *     bare library / unresolved sibling (→ `require` throws a named error at eval time);
- *   - `{ vendor: source }` — a graph SIBLING the app resolved to source: bundle it in, recursively.
+ * Route ONE non-entry import. Everything is EXTERNAL now.
+ *
+ * A graph sibling used to be VENDORED into its parent's build here — esbuild pulled the sibling's
+ * source in and the page compiled as one module. Records are MODULES instead (`graphModules.ts`),
+ * linked separately and resolved by `require` at eval time. That is what stops a page recompiling its
+ * whole subtree on every mount, and what makes an edit to one leaf invalidate only that leaf.
+ *
+ * GRAPH-FIRST (#3660) is unchanged, just relocated: the require chain consults the linked graph
+ * modules BEFORE the app registry, so a record that PROVIDES a platform specifier still overrides the
+ * bundled module. The resolver is not consulted here any more — the linker owns that call.
+ *
+ * Kept as a named function (rather than inlined into the plugin) because it is the documented seam
+ * where import routing is decided, and a test pins that decision without touching esbuild.
  */
-export function routeImport(
-  path: string,
-  resolveGraphSource?: GraphSourceResolver,
-): { external: true } | { vendor: string } {
-  // GRAPH-FIRST (#3660): consult the resolver BEFORE the registry, so a graph component that PROVIDES a
-  // platform specifier (a shared/ui primitive authored as data) overrides the bundled module. An unmatched
-  // specifier (a registered module the graph doesn't override, a library, or an unresolved sibling) returns
-  // null → external → `makeRequire` resolves it via the registry or throws — identical to the pre-#3660
-  // behaviour, so this is inert until a component opts in with `provides`.
-  const source = resolveGraphSource?.(path);
-  return source != null ? { vendor: source } : { external: true };
+export function routeImport(path: string, resolveGraphSource?: GraphSourceResolver): { external: true } {
+  void path;
+  void resolveGraphSource;
+  return { external: true };
 }
 
-/** esbuild plugin applying [`routeImport`]: platform + libraries stay external (→ registry `require`),
- *  graph siblings are vendored into this build. Without a resolver it degrades to "everything external" —
- *  the single-component behaviour of #3605. */
+/** esbuild plugin applying [`routeImport`]: every non-entry import stays external, so the output is one
+ *  `require()` per import and the linker can read a module's dependencies straight off it. */
 function loaderPlugin(resolveGraphSource?: GraphSourceResolver): Esbuild.Plugin {
   return {
     name: "runtime-loader",
     setup(build) {
       build.onResolve({ filter: /.*/ }, (args) => {
         if (args.kind === "entry-point") return undefined;
-        const route = routeImport(args.path, resolveGraphSource);
-        return "vendor" in route
-          ? { path: args.path, namespace: GRAPH_NS, pluginData: { source: route.vendor } }
-          : { path: args.path, external: true };
+        void routeImport(args.path, resolveGraphSource);
+        return { path: args.path, external: true };
       });
-      build.onLoad({ filter: /.*/, namespace: GRAPH_NS }, (args) => ({
-        contents: (args.pluginData as { source: string }).source,
-        loader: "tsx",
-      }));
     },
   };
 }
@@ -99,7 +91,8 @@ function loaderPlugin(resolveGraphSource?: GraphSourceResolver): Esbuild.Plugin 
 /**
  * Compile graph `source` (a self-standing module string) to CommonJS. Exported for tests + the loader.
  * `jsx: "automatic"` emits `require("react/jsx-runtime")`, so that MUST be a registered platform module.
- * `resolveGraphSource` (optional) vendors sibling graph components into the same build (#3606).
+ * Every import is left EXTERNAL, so the output carries one `require()` per import — which is exactly
+ * what the linker reads to discover a record's dependencies (`graphModules.ts`).
  */
 export async function compileToCjs(source: string, resolveGraphSource?: GraphSourceResolver): Promise<string> {
   const esbuild = await ensureEsbuild();
@@ -122,7 +115,7 @@ export function makeRequire(): (specifier: string) => unknown {
     if (isAppModule(specifier)) return resolveAppModule(specifier);
     throw new Error(
       `runtime loader: import "${specifier}" is not a registered app module. ` +
-        `Register it (registerAppModule) or vendor it as a graph component. Available: ${registeredSpecifiers().join(", ")}`,
+        `Register it (registerAppModule) or author it as a graph record. Available: ${registeredSpecifiers().join(", ")}`,
     );
   };
 }
@@ -146,17 +139,22 @@ export function pickComponent(exports: Record<string, unknown>): ComponentType<R
 }
 
 /**
- * Load a component from its graph `source`: compile → eval against the live registry → pick the component.
- * `resolveGraphSource` (optional) vendors sibling graph components (#3606) — a page pulls in its panels.
- * Throws (compile error / unresolved import / no component export) — the host catches it. NOT memoized here;
- * the host memoizes per (id, source) so a store edit re-loads.
+ * Load a component from its graph `source`: LINK → EVAL → pick the component.
+ *
+ * The link phase compiles the entry and, transitively, every graph record it reaches — each one
+ * standalone and memoized by exact source, so a second mount of the same page compiles nothing and an
+ * edit to one record invalidates only that record. The eval phase runs a Node-style `require` over the
+ * linked set: graph module first (which is what preserves `provides` overrides, #3660), then the app
+ * registry, then a named error.
+ *
+ * Throws (compile error / unresolved import / no component export) — the host catches it and falls back.
  */
 export async function loadComponentFromSource(
   source: string,
   resolveGraphSource?: GraphSourceResolver,
 ): Promise<ComponentType<Record<string, unknown>>> {
-  const cjs = await compileToCjs(source, resolveGraphSource);
-  const exports = evalCjsModule(cjs, makeRequire());
+  const linked = await linkGraphModules(source, resolveGraphSource, (src) => compileToCjs(src));
+  const exports = evaluateEntry(linked, makeRequire());
   const comp = pickComponent(exports);
   if (!comp) throw new Error("runtime loader: the graph source exports no component (need a default export or an exported function)");
   return comp;
