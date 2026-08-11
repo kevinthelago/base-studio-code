@@ -141,16 +141,21 @@ export interface FleetPlan {
   /** Project-default integration strategy (#378). Unset ⇒ DEFAULT_STRATEGY. */
   strategy?: IntegrationStrategy;
   /**
-   * The app-owned STUDIO sessions this project uses — `designer` · `librarian` · `architect` ·
-   * `sound-designer` · `integrator`. They serve the project's planner and render left of it in Glance.
+   * The app-owned SYSTEM SESSIONS this project uses — `designer` · `librarian` · `architect` ·
+   * `sound-designer` · `integrator` (the fixed singletons named in `shared/lib/session/systemSessions`).
+   * They serve the project's planner and render left of it in Glance.
+   *
+   * Named "system sessions", NOT "studios": a **Studio** is already the export/import unit for the whole
+   * app library (studio snapshots), so overloading the word would make two unrelated things share a name
+   * in the same codebase.
    *
    * DECLARED, not derived. The obvious inference — a `ui.kit` pairing implies a designer, integrations
    * imply an integrator, a feature's `requires` implies a librarian — reads EMPTY on the live studio-code
    * plan (no ui pairing, no integrations, 0 of 40 features carrying `requires`), so it would show zero
-   * studios on the one project that demonstrably uses all of them. Absent means "not declared", never
-   * "not used": an empty list renders no studio nodes rather than guessing.
+   * sessions on the one project that demonstrably uses all of them. Absent means "not declared", never
+   * "not used": an empty list renders no session nodes rather than guessing.
    */
-  studios?: string[];
+  systemSessions?: string[];
   /** Coordination topology (#…): director-orchestrated, peer mesh, or hybrid (per-edge). */
   topology?: Topology;
   /** Produced contracts/schemas one stream hands to others. */
@@ -288,6 +293,13 @@ export function parseFleetFile(raw: string, repos: string[] = []): FleetPlan | n
     streams,
     director,
     strategy: normalizeStrategy(o.strategy),
+    // Carried through explicitly: this parser builds its result field-by-field, so a field that is not
+    // named here is silently dropped — which is exactly what made a declared list unable to render no
+    // matter what plan.db held. Filtered to strings and de-duplicated at the boundary; the graph drops
+    // ids it does not know, and doing the cheap half here keeps the stored value clean.
+    systemSessions: Array.isArray(o.systemSessions)
+      ? [...new Set(o.systemSessions.filter((s): s is string => typeof s === "string" && !!s.trim()).map((s) => s.trim()))]
+      : undefined,
     topology: o.topology !== undefined ? normalizeTopology(o.topology) : undefined,
     artifacts: parseArtifacts(o.artifacts),
     edges: parseEdges(o.edges),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID, PLANNER_NODE_ID, resolveStudios } from "./glanceFleet";
+import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID, PLANNER_NODE_ID, resolveSystemSessions } from "./glanceFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 import type { Team } from "@/features/teams";
@@ -186,9 +186,9 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
     expect(collide.relationships.some((r) => r.from === PLANNER_NODE_ID && r.to === PLANNER_NODE_ID)).toBe(false);
   });
 
-  // ── declared studio sessions ──────────────────────────────────────────────
-  it("renders ONLY the studios the project declares, each serving the planner", () => {
-    const org = fleetToOrg({ ...fleet, studios: ["designer", "librarian"] } as unknown as FleetPlan);
+  // ── declared system sessions ──────────────────────────────────────────────
+  it("renders ONLY the system sessions the project declares, each serving the planner", () => {
+    const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "librarian"] } as unknown as FleetPlan);
     expect(org.positions.map((p) => p.nodeId).sort())
       .toEqual(["api", "designer", "director", "librarian", "planner", "ui"]);
     for (const s of ["designer", "librarian"]) {
@@ -208,26 +208,26 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
     }
   });
 
-  it("ignores an unknown studio id rather than rendering a phantom agent", () => {
+  it("ignores an unknown system-session id rather than rendering a phantom agent", () => {
     // A typo should cost that one node, not put an agent on the graph no session can ever back.
-    const org = fleetToOrg({ ...fleet, studios: ["designer", "desiner", ""] } as unknown as FleetPlan);
+    const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "desiner", ""] } as unknown as FleetPlan);
     expect(org.positions.some((p) => p.nodeId === "desiner")).toBe(false);
     expect(org.positions.some((p) => p.nodeId === "designer")).toBe(true);
-    expect(resolveStudios(["designer", "desiner", "designer"])).toEqual(["designer"]); // de-duped too
+    expect(resolveSystemSessions(["designer", "desiner", "designer"])).toEqual(["designer"]); // de-duped too
   });
 
-  it("renders each studio in its own role, not as a worker", () => {
+  it("renders each system session in its own role, not as a worker", () => {
     const data = buildOrgFleetData(
-      fleetToOrg({ ...fleet, studios: ["librarian"] } as unknown as FleetPlan), [],
+      fleetToOrg({ ...fleet, systemSessions: ["librarian"] } as unknown as FleetPlan), [],
     );
     expect(data.rawNodes.find((n) => n.id === "librarian")).toMatchObject({ roleLabel: "librarian", role: "client" });
   });
 
-  it("places studios LEFT of the planner, planner left of the director, workers right", () => {
+  it("places system sessions LEFT of the planner, planner left of the director, workers right", () => {
     // The arrangement is a CONSEQUENCE of `serves`, not a layout rule — so assert the layering the real
     // chain produces. Glance inverts org relationships into `from depends on to`, then reverses again
     // for layerDag, so a `serves` edge puts the server at the lower (further-left) layer.
-    const org = fleetToOrg({ ...fleet, studios: ["designer", "librarian"] } as unknown as FleetPlan);
+    const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "librarian"] } as unknown as FleetPlan);
     const glance = buildOrgFleetData(org, []).rawEdges;               // already inverted once
     const rev = glance.map((e, i) => ({ id: `e${i}`, from: e.to, to: e.from })); // glanceGraph's reversal
     const ids = org.positions.map((p) => p.nodeId);
