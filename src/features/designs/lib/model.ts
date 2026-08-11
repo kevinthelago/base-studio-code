@@ -214,6 +214,18 @@ export interface ComponentRecord {
    *  override (a normal graph component, imported only as a `@/components/<id>` sibling). Graph-first with a
    *  code fallback: an unmatched specifier stays external (→ the registry), exactly as before. */
   provides?: string;
+  /** WHY this record's body deliberately differs from the file its {@link src} names (`record-src-reconcile`).
+   *
+   *  A record and its file disagree far more often than they are out of sync, and almost always ON PURPOSE:
+   *  a record is mounted by the Design Studio with NO props, so it gives its parameters demo defaults (and
+   *  often loading/error states) that the file — always called with real props — has no use for. Absent the
+   *  reason, the next sweep reads that as staleness and "refreshes" the record from the file, discarding
+   *  the richer copy. So the reason lives HERE, on the record, where a sweep reads it — never only in a
+   *  commit message. Present ⇒ the reconcile reports the record as `intentional` rather than `drifted`.
+   *
+   *  Reasons written by `scripts/reconcile-record-src.cjs --annotate` carry a trailing marker naming the
+   *  script, which is what lets a re-run refresh its OWN wording without ever clobbering a hand-written one. */
+  srcDivergence?: string;
   /** Which THEME SYSTEM this component renders under (#3715). `"css"` (default, absent) — the component
    *  consumes the theme through the CSS cascade (`--card-*` etc. resolved by `:root` / `<ThemeScope>`), as
    *  every component does today. `"js"` — the component renders to a NON-CSS surface (canvas / WebGL / a

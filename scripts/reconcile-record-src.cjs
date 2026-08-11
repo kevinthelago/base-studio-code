@@ -39,7 +39,13 @@ const ROOT = path.resolve(__dirname, "..");
 const SEED_DIR = path.join(ROOT, "src-tauri", "data", "components", "app");
 
 const APPLY = process.argv.includes("--apply");
+const ANNOTATE = process.argv.includes("--annotate");
 const AS_JSON = process.argv.includes("--json");
+
+/** How many substantive lines the FILE's definition may hold that the record's does not, before
+ *  "preview parameterization" stops being a full explanation. Above this the record may ALSO be behind,
+ *  and annotating it would bury real staleness under a reason that is true but incomplete. */
+const BEHIND_MAX = 8;
 
 /** Every packaged seed record, with the file it was read from so `--apply` can write it back. */
 function loadSeed() {
@@ -167,6 +173,78 @@ function symbolRegion(src, sym) {
   return src.slice(start);
 }
 
+/** The parameter list of a definition — everything between the first `(` and its matching `)`. */
+function signatureOf(region) {
+  const i = region.indexOf("(");
+  if (i < 0) return "";
+  let depth = 0;
+  for (let j = i; j < region.length; j++) {
+    if (region[j] === "(") depth++;
+    else if (region[j] === ")" && --depth === 0) return region.slice(i, j + 1);
+  }
+  return region.slice(i);
+}
+
+/** Parameter names the definition gives a DEFAULT value. Top level only: a default that is itself an
+ *  object/JSX literal must not have its inner commas read as further parameters. */
+function defaultedParams(sig) {
+  const body = sig.replace(/^\(|\)$/g, "");
+  const names = [];
+  let depth = 0, start = 0;
+  const parts = [];
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if ("([{<".includes(c)) depth++;
+    else if (")]}>".includes(c)) depth--;
+    else if (c === "," && depth <= 1) { parts.push(body.slice(start, i)); start = i + 1; }
+  }
+  parts.push(body.slice(start));
+  for (const p of parts) {
+    const m = /^\s*\{?\s*(\w+)\s*=/.exec(p) || /^\s*(\w+)\s*=/.exec(p.replace(/^\s*\{/, ""));
+    if (m) names.push(m[1]);
+  }
+  return [...new Set(names)];
+}
+
+/** WHY THE RECORD AND THE FILE DISAGREE, when the answer is "by construction" and can be evidenced.
+ *
+ *  The dominant cause is PREVIEW PARAMETERIZATION: the Design Studio mounts a record with NO props, so a
+ *  record gives its parameters demo defaults (and often adds loading/error states) that the file, which is
+ *  always called with real props, has no use for. `teams-org-legend` is the clearest case — the file's
+ *  `OrgLegend()` takes nothing, the record's takes `{ archetypes = DEMO_ARCHETYPES, loading = false, error }`.
+ *  The RECORD is the richer copy, so "refresh from the file" would destroy it.
+ *
+ *  Returns null when parameterization does NOT fully explain the difference — either there is no added
+ *  default, or the file's definition still holds substantive lines the record lacks (`behind`), which
+ *  means the record may ALSO be stale and needs a human. Annotating those would bury a real defect under
+ *  a reason that is true but incomplete. */
+function divergenceReason(recRegion, fileRegion, sym) {
+  const added = defaultedParams(signatureOf(recRegion)).filter((n) => !defaultedParams(signatureOf(fileRegion)).includes(n));
+  const states = /\b(loading|error)\b/.test(recRegion) && !/\b(loading|error)\b/.test(fileRegion);
+  if (!added.length && !states) return null;
+
+  const recLines = new Set(recRegion.split("\n").map((l) => l.trim()));
+  const behind = fileRegion.split("\n").map((l) => l.trim())
+    .filter((l) => l.length > 12 && !recLines.has(l) && !/^(import |\/\/|\*|\/\*)/.test(l)).length;
+  if (behind > BEHIND_MAX) return null;
+
+  const bits = [];
+  if (added.length) bits.push(`defaults ${added.map((n) => `\`${n}\``).join(", ")}`);
+  if (states) bits.push("adds loading/error states");
+  // The residual is stated honestly. `behind` is under the threshold, NOT necessarily zero — and if the
+  // file ever gained real behaviour, those lines are exactly where it would be. Saying "the file is not
+  // ahead" would be a stronger claim than the check supports, and would send the next reader past it.
+  const residual = behind === 0
+    ? `Region-scoped check: the file's \`${sym}\` holds NO substantive line the record lacks, so nothing would be gained by refreshing and the parameterization would be lost.`
+    : `Region-scoped check: the file's \`${sym}\` holds ${behind} substantive line(s) the record lacks — under the ${BEHIND_MAX}-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those ${behind} line(s) are where to look.`;
+  return (
+    `Deliberate, not stale — preview parameterization. The record's \`${sym}\` ${bits.join(" and ")}, ` +
+    `so it renders standalone in a preview that mounts records with no props; the file's takes them as ` +
+    `required props from its caller. ${residual} Refreshing from the file would discard the ` +
+    `parameterization. Written by scripts/reconcile-record-src.cjs --annotate.`
+  );
+}
+
 /** Every source file under src/, with its line set precomputed once. */
 function indexSourceFiles() {
   const files = [];
@@ -254,8 +332,10 @@ function classify(rec, files) {
   const recRegion = symbolRegion(rec.srcText ?? "", sym);
   if (fileRegion && recRegion) {
     const rScore = similarity(lineSet(recRegion), lineSet(fileRegion));
-    const verdict = rScore >= DRIFT_MIN ? "ok" : "drifted";
-    return { verdict, symbol: sym, score: +score.toFixed(3), region: +rScore.toFixed(3), by: "region" };
+    if (rScore >= DRIFT_MIN) return { verdict: "ok", symbol: sym, score: +score.toFixed(3), region: +rScore.toFixed(3), by: "region" };
+    // Drifted — but is the difference explainable, and evidenced? `--annotate` writes the reason.
+    const reason = divergenceReason(recRegion, fileRegion, sym);
+    return { verdict: "drifted", symbol: sym, score: +score.toFixed(3), region: +rScore.toFixed(3), by: "region", reason };
   }
   return { verdict: "drifted", symbol: sym, score: +score.toFixed(3) };
 }
@@ -265,6 +345,7 @@ function main() {
   const files = indexSourceFiles();
   const rows = [];
   let repointed = 0;
+  let annotated = 0;
 
   for (const entry of seed) {
     if (!entry.rec) { rows.push({ file: entry.file, verdict: "parse-error", detail: entry.parseError }); continue; }
@@ -278,11 +359,17 @@ function main() {
       row.repointedTo = res.best;
       repointed++;
     }
+    if (ANNOTATE && res.verdict === "drifted" && res.reason && !rec.srcDivergence) {
+      rec.srcDivergence = res.reason;
+      fs.writeFileSync(entry.file, JSON.stringify(rec, null, 2) + "\n", "utf8");
+      row.annotated = true;
+      annotated++;
+    }
     rows.push(row);
   }
 
   const counts = rows.reduce((a, r) => ((a[r.verdict] = (a[r.verdict] ?? 0) + 1), a), {});
-  const summary = { total: rows.length, counts, repointed, applied: APPLY };
+  const summary = { total: rows.length, counts, repointed, annotated, applied: APPLY, annotateMode: ANNOTATE };
 
   if (AS_JSON) {
     process.stdout.write(JSON.stringify({ summary, rows }, null, 2) + "\n");
@@ -326,11 +413,14 @@ ${fix}`);
   const drifted = rows.filter((r) => r.verdict === "drifted");
   if (drifted.length) {
     console.log(`\nDRIFTED (${drifted.length}) — src resolves, but the record is not what the file holds:`);
-    for (const r of drifted.sort((a, b) => a.score - b.score)) {
-      console.log(`  ${String(r.score).padEnd(6)} ${r.id.padEnd(30)} ${r.src}`);
+    for (const r of drifted.sort((a, b) => (a.region ?? a.score) - (b.region ?? b.score))) {
+      console.log(`  region=${String(r.region ?? "?").padEnd(6)} ${r.id.padEnd(30)} ${r.reason ? "explained" : "NEEDS VERDICT"}  ${r.src}`);
     }
-    console.log(`\n  Each needs a per-record verdict: refresh FROM the file (#4235's 9/9 default),`);
-    console.log(`  confirm the file as the stale side, or record the reason in \`srcDivergence\`.`);
+    const explained = drifted.filter((r) => r.reason).length;
+    console.log(`\n  ${explained} EXPLAINED — preview parameterization, evidenced per record. \`--annotate\` writes`);
+    console.log(`  the reason to \`srcDivergence\`, which moves them to the \`intentional\` verdict.`);
+    console.log(`  ${drifted.length - explained} NOT explained — each needs a human verdict. Refresh is the EXCEPTION:`);
+    console.log(`  the record is frequently the RICHER copy (see \`divergenceReason\`).`);
   }
   console.log("");
 }
