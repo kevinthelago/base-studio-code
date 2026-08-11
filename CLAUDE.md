@@ -472,6 +472,34 @@ this repo already used; new items pick a descriptive slug.
 the actor who did the work is not the actor who confirms it. Collapsing them would mean a change is
 "done" on the word of the thing that wrote it.
 
+### The change record — the local PR
+
+The issue says what to do; the **change** says what was done. It lives in the same `plan.db`, keyed by
+the same ref, so one name reaches the issue, the branch, the worktree and the change:
+
+```bash
+bsc plan change new <ref> --note "<title>" --description "<what and why>"
+bsc plan change note <ref> "<a work note>" --from <author>   # append-only, WHILE the reasoning is live
+bsc plan change gate <ref> typecheck pass                    # what the gate actually observed
+bsc plan change status <ref> merged --command <merge-sha> --from <reviewer>
+bsc plan change render <ref>                                 # markdown: PR body when synced · CHANGELOG entry at release
+```
+
+It deliberately does **not** duplicate git: `head_sha`/`merge_sha` are the join to real history and the
+commit messages stay the narrative. What it holds is what git cannot — gate evidence recorded when the
+gate ran, the reviewer's verdict as an actor distinct from the author, notes written before the
+reasoning evaporates, and (once connected) the GitHub identity via `bsc plan change link`, the same
+nullable-identity pattern `bsc plan link` uses for issues. **A NULL `ghNumber` is what says a change
+still needs a PR.** Nothing here writes to GitHub.
+
+Two rules the implementation enforces rather than trusts:
+- **Notes are append-only.** There is no verb that can drop an earlier one.
+- **`Closes:` is never fabricated.** A change defaults to the issue of the same name *only if that
+  issue exists*; a conversational slice with no plan item records no link rather than a dangling one.
+
+Because `render` is the single source for both the PR body and the changelog entry, neither is
+maintained separately from the work — which is why `CHANGELOG.md` kept drifting behind `develop`.
+
 ### GitHub stays silent
 
 Reads are fine (`gh issue list`, `gh api` GET) — they are how the eventual sync learns about drift.

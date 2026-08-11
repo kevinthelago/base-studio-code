@@ -40,6 +40,7 @@ pub mod cli;
 mod artifacts;
 mod assignments;
 mod blueprint;
+pub mod changes;
 mod confirmed;
 mod classify;
 mod deploy;
@@ -68,6 +69,9 @@ mod ui;
 pub mod validate;
 
 pub use artifacts::Artifact;
+pub use changes::{
+    default_issue_links, is_valid_change_status, render_change_markdown, Change, ChangeNote, CHANGE_STATUSES,
+};
 pub use assignments::{Automation, StartupScript};
 pub use features::PlanFeature;
 pub use integrations::{PlanIntegration, DEFAULT_DIRECTION, DIRECTIONS};
