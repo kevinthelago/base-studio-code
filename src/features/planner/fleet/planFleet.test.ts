@@ -43,6 +43,24 @@ describe("parseFleetFile", () => {
     });
   });
 
+  it("carries `systemSessions` through — the parser drops any field it does not name", () => {
+    // The regression: the field was added to FleetPlan and read by the graph, but this parser builds its
+    // result field-by-field, so every fleet loaded from plan.db had it undefined regardless of what the
+    // store held — and the declaration could never render.
+    const raw = JSON.stringify({ streams: [{ id: "a", repo: "r" }], systemSessions: ["designer", "librarian"] });
+    expect(parseFleetFile(raw)!.systemSessions).toEqual(["designer", "librarian"]);
+  });
+
+  it("cleans the system-sessions list at the boundary and leaves it undefined when absent", () => {
+    const raw = JSON.stringify({
+      streams: [{ id: "a", repo: "r" }],
+      systemSessions: ["designer", "designer", "  librarian  ", "", 7, null],
+    });
+    expect(parseFleetFile(raw)!.systemSessions).toEqual(["designer", "librarian"]); // de-duped, trimmed, non-strings dropped
+    // absent ⇒ undefined, NOT [] — "not declared" and "declared as none" stay distinguishable
+    expect(parseFleetFile(JSON.stringify({ streams: [{ id: "a", repo: "r" }] }))!.systemSessions).toBeUndefined();
+  });
+
   it("drops a stream with no id, but KEEPS a repo-less stream visible (#2611 — no silent hiding)", () => {
     const raw = JSON.stringify({ streams: [{ name: "no id", repo: "own/web" }, { id: "no-repo" }, { id: "ok", repo: "own/api" }] });
     // the id-less stream is dropped (unkeyable); the repo-less one STAYS (repo "") so it shows in the plan

@@ -253,7 +253,18 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Prefer the live store copy when it has streams so the active project never flashes sample → real.
   const loadedFleet = useProjectFleet(drill);
   const storeFleet = drill ? planFleet[drill] : undefined;
-  const effectiveFleet = storeFleet && storeFleet.streams.length > 0 ? storeFleet : loadedFleet;
+  // plan.db WINS once it has loaded; the persisted mirror only covers the gap until then.
+  //
+  // It used to be the other way round, which made the persisted `planFleet` outrank the store of record:
+  // a `bsc plan fleet set` was durable but invisible to a running app until the app happened to rewrite
+  // its own copy. That inverts this project's rule — persist is a CACHE, not a source — and it is the
+  // mechanism behind a whole class of "I changed the store and nothing happened".
+  //
+  // NOT a plain inversion: the original ordering existed to stop the active project flashing sample→real
+  // while the async read lands. `useProjectFleet` returns null until its read resolves, so preferring a
+  // LOADED non-empty fleet keeps that guard — the mirror still renders during the load — while making the
+  // authoritative copy win the moment it exists.
+  const effectiveFleet = loadedFleet && loadedFleet.streams.length > 0 ? loadedFleet : storeFleet;
   // #3931: which streams the dependency gate is holding, so their nodes explain themselves instead of
   // rendering as anonymous dark `off` nodes. Read-only — this never launches anything.
   const heldStreams = useFleetHeld(drill, effectiveFleet?.streams);
