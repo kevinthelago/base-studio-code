@@ -124,6 +124,34 @@ export function centerView(v: GraphView, cw: number, ch: number, wx: number, wy:
  *  pointer, since CSS `cursor` resolves per element rather than inheriting from the dragged ancestor. */
 export const PANNING_CLASS = "graph-panning";
 
+/**
+ * Is this wheel event over a descendant that can scroll in the wheel's direction?
+ *
+ * Walks target → viewport. An element qualifies only if it BOTH declares an overflow that scrolls and
+ * actually overflows, and has somewhere left to go in this direction — so a pane scrolled to its bottom
+ * hands the wheel back to the canvas rather than dead-ending the gesture, which is what makes a graph
+ * containing a short log still feel like a canvas.
+ *
+ * Exported for testing: jsdom reports every layout metric as 0, so this cannot be observed through a
+ * render — the unit test drives it with explicit element stubs instead.
+ */
+export function overScrollableChild(target: EventTarget | null, stopAt: Element, deltaY: number): boolean {
+  let el = target instanceof Element ? target : null;
+  while (el && el !== stopAt) {
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(el) : null;
+    const overflowY = style?.overflowY ?? "";
+    if ((overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay")
+      && el.scrollHeight > el.clientHeight) {
+      const atTop = el.scrollTop <= 0;
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+      // Room to move in the direction asked for. `deltaY === 0` (a horizontal wheel) is not ours either.
+      if (deltaY < 0 ? !atTop : deltaY > 0 ? !atBottom : true) return true;
+    }
+    el = el.parentElement;
+  }
+  return false;
+}
+
 /** The `transform` a view renders as. Pure + exported so the imperative drag path and the React render
  *  path can never disagree on the string — they are the same function (#4140). */
 export function viewTransform(v: GraphView): string {
@@ -266,9 +294,21 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
   }, [min, max]);
 
   // Wheel → zoom (native non-passive listener so we can preventDefault the page scroll).
+  //
+  // …unless the wheel belongs to a SCROLLABLE CHILD. The canvas used to `preventDefault()` every wheel
+  // unconditionally, which meant anything scrollable rendered INSIDE the viewport could never scroll: in
+  // Glance a live terminal morph (`GlanceStreamMorph` → `GlanceChatDock` → `TerminalSlot`) sits in the
+  // world layer, so scrolling it zoomed the graph instead. The drag path has had this class of guard
+  // since #4144 (`onCanvasDown` returns early for a node's own gesture); the wheel path had none.
+  //
+  // Detected by BEHAVIOUR, not by a marker class: an ancestor counts if it can actually scroll right now
+  // (overflow auto/scroll AND real overflow). That covers xterm's own viewport without naming it, works
+  // for every graph on this hook, and a child that cannot scroll still zooms the canvas — so the gesture
+  // is unchanged wherever nothing else wants the wheel.
   const onWheel = useCallback((e: WheelEvent) => {
     const el = vpRef.current;
     if (!el) return;
+    if (overScrollableChild(e.target, el, e.deltaY)) return; // no preventDefault — let the child scroll
     e.preventDefault();
     const r = el.getBoundingClientRect();
     zoomAbout(viewRef.current.scale * Math.exp(-e.deltaY * 0.0016), e.clientX - r.left, e.clientY - r.top);
