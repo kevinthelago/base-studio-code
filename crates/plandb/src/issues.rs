@@ -63,6 +63,24 @@ pub struct PlanIssue {
     /// director (verified/failed) — the planner's content edits never touch it.
     #[serde(default = "default_status")]
     pub status: String,
+    /// The GitHub issue number this row was published as, or `None` when it never was.
+    ///
+    /// This is the ONE durable link between a plan row and its GitHub issue. Before it existed the
+    /// link was re-derived on every publish — by title string, or by scraping digits out of `ref` —
+    /// and both are lossy: a retitled issue published twice, and a slug ref (`invite-teammates`,
+    /// which is what the feature→issue path produces) scraped to nothing at all.
+    ///
+    /// `None` is meaningful, not merely absent: it is what marks an issue as still needing creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gh_number: Option<i64>,
+    /// The GraphQL node id of the same issue — what the board/sub-issue mutations address it by.
+    /// Kept alongside the number rather than derived, because resolving one from the other costs a
+    /// round-trip and both are handed to us for free at creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gh_node_id: Option<String>,
+    /// Unix seconds of the last successful reconcile with GitHub, or `None` if never synced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synced_at: Option<i64>,
 }
 
 /// The **lean** projection of a {@link PlanIssue} for the agent token budget (#1562): identity +
@@ -85,21 +103,30 @@ pub struct IssueSummary {
     pub owns: usize,
     /// Count of dependency refs.
     pub depends_on: usize,
+    /// The GitHub issue number, when published. Carried on the LEAN projection (unlike `gh_node_id`,
+    /// which only the API needs) because it is identity, not detail: the sync review lists issues by
+    /// ref + title + number, and making it fetch the full record per row to show one integer would
+    /// reintroduce exactly the per-issue fan-out the batched reads exist to avoid.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gh_number: Option<i64>,
 }
 
 impl Store {
     /// Insert or replace an issue by `ref`. A new issue appends (next position); re-upserting an
     /// existing one updates its fields in place and keeps its position (stable order across edits).
     /// A content edit deliberately does NOT touch `status` — execution state is owned by the
-    /// workers/director, not the planner.
+    /// workers/director, not the planner — nor the `gh_*` identity, which is owned by publish/sync
+    /// ({@link Store::set_github_identity}). Both are set on INSERT and preserved on CONFLICT: a
+    /// planner re-running the features→issues materialization must not un-publish every row it
+    /// rewrites, which is precisely what including them in the DO UPDATE SET would do.
     pub fn upsert(&self, issue: &PlanIssue) -> rusqlite::Result<()> {
         let pos: i64 = self
             .conn
             .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM issues", [], |r| r.get(0))?;
         let status = if issue.status.is_empty() { "open" } else { issue.status.as_str() };
         self.conn.execute(
-            "INSERT INTO issues (ref, title, phase, repo, stream, parent, body, acceptance, owns, depends_on, labels, status, position, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, strftime('%s','now'))
+            "INSERT INTO issues (ref, title, phase, repo, stream, parent, body, acceptance, owns, depends_on, labels, status, gh_number, gh_node_id, synced_at, position, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, strftime('%s','now'))
              ON CONFLICT(ref) DO UPDATE SET
                 title=excluded.title, phase=excluded.phase, repo=excluded.repo, stream=excluded.stream,
                 parent=excluded.parent, body=excluded.body, acceptance=excluded.acceptance, owns=excluded.owns,
@@ -107,10 +134,38 @@ impl Store {
             params![
                 issue.r#ref, issue.title, phase_to_db(&issue.phase), issue.repo, issue.stream, issue.parent, issue.body,
                 arr_to_json(&issue.acceptance), arr_to_json(&issue.owns), arr_to_json(&issue.depends_on), arr_to_json(&issue.labels),
-                status, pos,
+                status, issue.gh_number, issue.gh_node_id, issue.synced_at, pos,
             ],
         )?;
         Ok(())
+    }
+
+    /// Record the GitHub identity a publish/sync just established for `ref`, stamping `synced_at` to
+    /// now. Returns rows updated (0 = no such ref).
+    ///
+    /// Separate from {@link Store::upsert} for the same reason {@link Store::set_status} is: publish
+    /// state and plan content are written by different actors at different times, and folding them
+    /// into one write is what lets the later one silently undo the earlier.
+    pub fn set_github_identity(
+        &self, r#ref: &str, gh_number: i64, gh_node_id: Option<&str>,
+    ) -> rusqlite::Result<usize> {
+        self.conn.execute(
+            "UPDATE issues SET gh_number = ?2, gh_node_id = COALESCE(?3, gh_node_id),
+                synced_at = strftime('%s','now'), updated_at = strftime('%s','now')
+             WHERE ref = ?1",
+            params![r#ref, gh_number, gh_node_id],
+        )
+    }
+
+    /// Look an issue up by the GitHub number it was published as — the reconcile's remote→local
+    /// direction. `None` when no row claims that number.
+    pub fn get_by_gh_number(&self, gh_number: i64) -> rusqlite::Result<Option<PlanIssue>> {
+        let mut stmt = self.conn.prepare(&format!("{SELECT_COLS} WHERE gh_number = ?1"))?;
+        let mut rows = stmt.query_map(params![gh_number], row_to_issue)?;
+        match rows.next() {
+            Some(r) => Ok(Some(r?)),
+            None => Ok(None),
+        }
     }
 
     /// Move an issue to a new execution status (workers: in_progress/complete; director: verified/failed).
@@ -177,13 +232,13 @@ impl Store {
 // phase-column codec lives in the crate root (shared with features).
 
 pub(crate) const SELECT_COLS: &str =
-    "SELECT ref, title, phase, repo, stream, parent, body, acceptance, owns, depends_on, labels, status FROM issues";
+    "SELECT ref, title, phase, repo, stream, parent, body, acceptance, owns, depends_on, labels, status, gh_number, gh_node_id, synced_at FROM issues";
 
 /// Lean column set for {@link Store::list_summary}: **no `body`** (the big blob is dropped at the SQL
 /// layer, not in Rust), value-lists still selected so we can count them. Column order must match
 /// {@link row_to_issue_summary}.
 const SELECT_SUMMARY_COLS: &str =
-    "SELECT ref, title, phase, stream, acceptance, owns, depends_on, status FROM issues";
+    "SELECT ref, title, phase, stream, acceptance, owns, depends_on, status, gh_number FROM issues";
 
 /// Build a `list`/`list_summary` query: pick the column set, AND together the optional filters
 /// (status / stream / `updated_at > since`), then stable plan order + optional `LIMIT`. The named
@@ -247,6 +302,9 @@ pub(crate) fn row_to_issue(r: &rusqlite::Row) -> rusqlite::Result<PlanIssue> {
         depends_on: json_to_arr(&r.get::<_, String>(9)?),
         labels: json_to_arr(&r.get::<_, String>(10)?),
         status: r.get(11)?,
+        gh_number: r.get(12)?,
+        gh_node_id: r.get(13)?,
+        synced_at: r.get(14)?,
     })
 }
 
@@ -261,6 +319,7 @@ fn row_to_issue_summary(r: &rusqlite::Row) -> rusqlite::Result<IssueSummary> {
         owns: json_to_arr(&r.get::<_, String>(5)?).len(),
         depends_on: json_to_arr(&r.get::<_, String>(6)?).len(),
         status: r.get(7)?,
+        gh_number: r.get(8)?,
     })
 }
 
@@ -379,6 +438,114 @@ mod tests {
         s.upsert(&PlanIssue { r#ref: "F3".into(), title: "c".into(), stream: Some("auth".into()), ..Default::default() }).unwrap();
         let mine = s.list(None, Some("auth")).unwrap();
         assert_eq!(mine.iter().map(|i| i.r#ref.as_str()).collect::<Vec<_>>(), vec!["F1", "F3"]);
+    }
+
+    #[test]
+    fn set_github_identity_records_number_node_and_stamps_synced_at() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&mk("invite-teammates", "Invite teammates")).unwrap();
+        // Unpublished rows read as None on every identity field — the state `bsc plan sync` treats as
+        // "still needs creating".
+        let before = s.get("invite-teammates").unwrap().unwrap();
+        assert_eq!((before.gh_number, before.gh_node_id, before.synced_at), (None, None, None));
+
+        assert_eq!(s.set_github_identity("invite-teammates", 3898, Some("I_node1")).unwrap(), 1);
+        let after = s.get("invite-teammates").unwrap().unwrap();
+        assert_eq!(after.gh_number, Some(3898));
+        assert_eq!(after.gh_node_id.as_deref(), Some("I_node1"));
+        assert!(after.synced_at.unwrap() > 0, "a successful sync stamps synced_at");
+        // An unknown ref reports 0 rows rather than erroring — the caller decides if that is a problem.
+        assert_eq!(s.set_github_identity("nope", 1, None).unwrap(), 0);
+    }
+
+    #[test]
+    fn set_github_identity_keeps_a_known_node_id_when_none_is_supplied() {
+        // Re-syncing knows the number but not always the node id (a REST read returns one, GraphQL the
+        // other). Passing None must not blank a node id we already paid a round-trip for.
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&mk("F1", "x")).unwrap();
+        s.set_github_identity("F1", 10, Some("I_kept")).unwrap();
+        s.set_github_identity("F1", 10, None).unwrap();
+        assert_eq!(s.get("F1").unwrap().unwrap().gh_node_id.as_deref(), Some("I_kept"));
+    }
+
+    /// The regression this column exists to make impossible. The planner re-materializes features →
+    /// issues on every publish and on the local commit path, so a published row is re-upserted
+    /// routinely. If that write carried the identity, each one would reset `gh_number` to NULL and the
+    /// next publish would create a SECOND GitHub issue for work that already has one.
+    #[test]
+    fn content_upsert_does_not_reset_github_identity() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&mk("invite-teammates", "Invite teammates")).unwrap();
+        s.set_github_identity("invite-teammates", 3898, Some("I_node1")).unwrap();
+        // A later plan edit — including a RETITLE, which is exactly what defeated the old title match.
+        s.upsert(&mk("invite-teammates", "Invite teammates to a workspace")).unwrap();
+        let issue = s.get("invite-teammates").unwrap().unwrap();
+        assert_eq!(issue.title, "Invite teammates to a workspace");
+        assert_eq!(issue.gh_number, Some(3898), "a content edit must NOT un-publish the row");
+        assert_eq!(issue.gh_node_id.as_deref(), Some("I_node1"));
+    }
+
+    #[test]
+    fn get_by_gh_number_resolves_the_remote_to_local_direction() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&mk("invite-teammates", "Invite teammates")).unwrap();
+        s.upsert(&mk("export-csv", "Export to CSV")).unwrap();
+        s.set_github_identity("export-csv", 3877, None).unwrap();
+        assert_eq!(s.get_by_gh_number(3877).unwrap().unwrap().r#ref, "export-csv");
+        // An unpublished row is unreachable by number, and an unknown number is None (not the first row).
+        assert!(s.get_by_gh_number(9999).unwrap().is_none());
+    }
+
+    #[test]
+    fn an_insert_carrying_an_identity_keeps_it() {
+        // The sync's adopt path inserts a row that ALREADY has its GitHub identity, so the INSERT must
+        // persist the fields even though the CONFLICT branch deliberately ignores them.
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&PlanIssue {
+            r#ref: "adopted".into(), title: "Filed by hand".into(),
+            gh_number: Some(4242), gh_node_id: Some("I_adopt".into()), synced_at: Some(1_700_000_000),
+            ..Default::default()
+        }).unwrap();
+        let got = s.get("adopted").unwrap().unwrap();
+        assert_eq!(got.gh_number, Some(4242));
+        assert_eq!(got.gh_node_id.as_deref(), Some("I_adopt"));
+        assert_eq!(got.synced_at, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn summary_carries_the_number_and_json_omits_it_when_unpublished() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&mk("published", "Published")).unwrap();
+        s.upsert(&mk("draft", "Draft")).unwrap();
+        s.set_github_identity("published", 3898, Some("I_x")).unwrap();
+
+        let rows = s.list_summary(None, None, None, None).unwrap();
+        let by = |r: &str| rows.iter().find(|i| i.r#ref == r).unwrap().gh_number;
+        assert_eq!(by("published"), Some(3898));
+        assert_eq!(by("draft"), None);
+
+        // camelCase on the wire, and ABSENT (not null) when unpublished — the frontend's
+        // `ghNumber === undefined` is what distinguishes "never published" from "issue 0".
+        let published = serde_json::to_value(rows.iter().find(|i| i.r#ref == "published").unwrap()).unwrap();
+        assert_eq!(published["ghNumber"], 3898);
+        let draft = serde_json::to_value(rows.iter().find(|i| i.r#ref == "draft").unwrap()).unwrap();
+        assert!(draft.get("ghNumber").is_none(), "an unpublished row emits no ghNumber key");
+        // The lean projection still carries no node id — identity, not detail.
+        assert!(published.get("ghNodeId").is_none());
+    }
+
+    #[test]
+    fn render_omits_identity_for_an_unpublished_issue() {
+        // `render_issues_json` is the `issues.json` projection the frontend + launch path read. An
+        // unsynced row must serialize exactly as it did before this column existed.
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&mk("F1", "x")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s.render_issues_json().unwrap()).unwrap();
+        let row = &v.as_array().unwrap()[0];
+        assert!(row.get("ghNumber").is_none());
+        assert!(row.get("ghNodeId").is_none());
+        assert!(row.get("syncedAt").is_none());
     }
 
     #[test]

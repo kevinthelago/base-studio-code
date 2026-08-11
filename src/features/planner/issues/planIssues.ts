@@ -45,11 +45,30 @@ export interface PlanIssue {
   /** Execution status from plan.db (#plan-db) — set by workers/director during the build.
    *  Absent on a freshly-planned issue (treated as "open"). */
   status?: PlanIssueStatus;
+  /** The GitHub issue number this ref was published as; absent when it never was.
+   *
+   *  The durable plan↔GitHub link, mirrored from plan.db's `gh_number`. Publish and sync own it;
+   *  a content edit never touches it. Its ABSENCE is meaningful — that is what marks an issue as
+   *  still needing creation — so treat `undefined` as "unpublished", never coerce it to 0. */
+  ghNumber?: number;
+  /** GraphQL node id of the same issue — what the board / sub-issue mutations address it by. */
+  ghNodeId?: string;
+  /** Unix seconds of the last successful reconcile with GitHub; absent if never synced. */
+  syncedAt?: number;
 }
 
 const toStr = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 const toStrArray = (v: unknown): string[] =>
   Array.isArray(v) ? v.map(toStr).filter(Boolean) : [];
+
+/** A positive integer, or `undefined` for anything else — including 0.
+ *
+ *  Zero is rejected on purpose: GitHub issue numbers start at 1, so a 0 can only be a placeholder or
+ *  a coerced null, and letting one through would make an unpublished issue claim an identity and be
+ *  skipped by the sync that exists to create it. Same reason the SQLite column is nullable rather
+ *  than `DEFAULT 0`. */
+const toPositiveInt = (v: unknown): number | undefined =>
+  typeof v === "number" && Number.isInteger(v) && v > 0 ? v : undefined;
 
 /**
  * Parse the planner's `issues.json` (a JSON array of issue objects) into a clean
@@ -81,6 +100,12 @@ export function parseIssuesFile(raw: string): PlanIssue[] {
       parent:     toStr(o.parent) || undefined,
       body:       toStr(o.body) || undefined,
       status:     (PLAN_ISSUE_STATUSES as string[]).includes(toStr(o.status)) ? (toStr(o.status) as PlanIssueStatus) : undefined,
+      // Identity carries through the projection so a round-trip (plan.db → issues.json → parse)
+      // does not silently un-publish every row. Snake_case is accepted alongside camelCase for the
+      // same reason `dependsOn` is: a hand-authored or older file may use either.
+      ghNumber:   toPositiveInt(o.ghNumber ?? o.gh_number),
+      ghNodeId:   toStr(o.ghNodeId ?? o.gh_node_id) || undefined,
+      syncedAt:   toPositiveInt(o.syncedAt ?? o.synced_at),
     });
   }
   return out;

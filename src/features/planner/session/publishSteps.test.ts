@@ -191,7 +191,12 @@ describe("materializeIssues (the local half — #3280)", () => {
 });
 
 describe("createIssues (generated from features)", () => {
-  const noop = { upsertIssue: vi.fn(async () => {}) };
+  /** Hooks that record nothing — for the cases asserting GitHub-side behaviour only. */
+  const noop = {
+    upsertIssue: vi.fn(async () => {}),
+    setIssueIdentity: vi.fn(async () => {}),
+    loadIssues: vi.fn(async () => []),
+  };
   const features = JSON.stringify([{ slug: "login", name: "Add login", acceptance: ["works"] }]);
 
   it("creates one issue per feature, added to the board, with NO milestone pinning", async () => {
@@ -204,7 +209,7 @@ describe("createIssues (generated from features)", () => {
     const { upd, status } = makeUpd();
     await createIssues(api, upd, {
       repos: ["o/app"], featuresContent: features, projectId: "P", streams: [], viewerLogin: "me",
-    }, { upsertIssue });
+    }, { upsertIssue, setIssueIdentity: vi.fn(async () => {}), loadIssues: vi.fn(async () => []) });
     expect(upsertIssue).toHaveBeenCalledTimes(1); // materialized into plan.db
     const issuePost = calls.find(c => c.method === "post" && c.path === "repos/o/app/issues");
     expect(issuePost).toBeTruthy();
@@ -248,6 +253,84 @@ describe("createIssues (generated from features)", () => {
     // …and the created issue already carries it.
     const issuePost = calls.find(c => c.method === "post" && c.path === "repos/o/app/issues");
     expect((issuePost?.body as { labels?: string[] }).labels).toContain("stream:login");
+  });
+
+  // ── GitHub identity (plan↔GitHub link) ───────────────────────────────────────
+  it("records the created issue's number + node id against its ref", async () => {
+    const setIssueIdentity = vi.fn(async () => {});
+    const { api } = makeApi({
+      rest: () => [], post: () => ({ number: 3898, node_id: "I_n1", html_url: "u" }), gql: () => ({}),
+    });
+    const { upd } = makeUpd();
+    await createIssues(api, upd, {
+      repos: ["o/app"], featuresContent: features, projectId: undefined, streams: [], viewerLogin: "",
+    }, { upsertIssue: vi.fn(async () => {}), setIssueIdentity, loadIssues: vi.fn(async () => []) });
+    expect(setIssueIdentity).toHaveBeenCalledWith("login", 3898, "I_n1");
+  });
+
+  it("matches a RETITLED issue by its stored number instead of creating a duplicate", async () => {
+    // The bug the identity column exists to kill: plan.db knows `login` is #3898, GitHub still has
+    // #3898 under its old title. Matching by title would miss and open a second issue for the same work.
+    const { api, calls } = makeApi({
+      rest: () => [{ number: 3898, title: "Add login (old title)" }],
+      post: () => ({ number: 999, node_id: "N", html_url: "u" }),
+      gql: () => ({}),
+    });
+    const { upd, status } = makeUpd();
+    await createIssues(api, upd, {
+      repos: ["o/app"], featuresContent: features, projectId: undefined, streams: [], viewerLogin: "",
+    }, {
+      upsertIssue: vi.fn(async () => {}),
+      setIssueIdentity: vi.fn(async () => {}),
+      loadIssues: vi.fn(async () => [{ ref: "login", title: "x", acceptance: [], owns: [], dependsOn: [], labels: [], ghNumber: 3898 }]),
+    });
+    expect(calls.some(c => c.method === "post" && c.path === "repos/o/app/issues")).toBe(false);
+    expect(status["issue:o/app:login"].detail).toBe("#3898");
+  });
+
+  it("BACKFILLS the identity when a legacy row matches only by title", async () => {
+    // A row published before the column existed has no ghNumber. It matches by title exactly once,
+    // and that match records the number — so every later publish resolves it by identity.
+    const setIssueIdentity = vi.fn(async () => {});
+    const { api, calls } = makeApi({ rest: () => [{ number: 3877, title: "Add login", node_id: "I_old" }] });
+    const { upd, status } = makeUpd();
+    await createIssues(api, upd, {
+      repos: ["o/app"], featuresContent: features, projectId: undefined, streams: [], viewerLogin: "",
+    }, { upsertIssue: vi.fn(async () => {}), setIssueIdentity, loadIssues: vi.fn(async () => []) });
+    expect(setIssueIdentity).toHaveBeenCalledWith("login", 3877, "I_old");
+    expect(status["issue:o/app:login"].detail).toBe("#3877 · linked");
+    expect(calls.some(c => c.method === "post" && c.path === "repos/o/app/issues")).toBe(false);
+  });
+
+  it("does NOT fabricate an identity when a title match carries no number", async () => {
+    // Marking it 'exists' is still right — the issue is there — but writing a 0/undefined number
+    // would point the ref at nothing and every later publish would trust it and skip the issue.
+    const setIssueIdentity = vi.fn(async () => {});
+    const { api } = makeApi({ rest: () => [{ title: "Add login" }] });
+    const { upd, status } = makeUpd();
+    await createIssues(api, upd, {
+      repos: ["o/app"], featuresContent: features, projectId: undefined, streams: [], viewerLogin: "",
+    }, { upsertIssue: vi.fn(async () => {}), setIssueIdentity, loadIssues: vi.fn(async () => []) });
+    expect(setIssueIdentity).not.toHaveBeenCalled();
+    expect(status["issue:o/app:login"].status).toBe("exists");
+  });
+
+  it("still publishes when the plan.db read-back fails", async () => {
+    // loadIssues is an optimisation (it supplies known identities), not a gate. A failed read must
+    // degrade to the title-match path, not abort a publish the user asked for.
+    const { api, calls } = makeApi({
+      rest: () => [], post: () => ({ number: 5, node_id: "N5", html_url: "u" }), gql: () => ({}),
+    });
+    const { upd, status } = makeUpd();
+    await createIssues(api, upd, {
+      repos: ["o/app"], featuresContent: features, projectId: undefined, streams: [], viewerLogin: "",
+    }, {
+      upsertIssue: vi.fn(async () => {}),
+      setIssueIdentity: vi.fn(async () => {}),
+      loadIssues: vi.fn(async () => { throw new Error("plan.db unreadable"); }),
+    });
+    expect(calls.some(c => c.method === "post" && c.path === "repos/o/app/issues")).toBe(true);
+    expect(status["issue:o/app:login"].status).toBe("created");
   });
 });
 

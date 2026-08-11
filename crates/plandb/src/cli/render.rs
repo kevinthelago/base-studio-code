@@ -191,6 +191,7 @@ mod tests {
         IssueSummary {
             r#ref: r.into(), title: r.into(), status: "open".into(),
             stream: stream.map(Into::into), phase, acceptance: acc, owns: 0, depends_on: 0,
+            gh_number: None,
         }
     }
 

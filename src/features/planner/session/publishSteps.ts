@@ -264,18 +264,43 @@ export async function createIssues(
     streams: AgentStream[];
     viewerLogin: string;
   },
-  hooks: { upsertIssue: (iss: PlanIssue) => Promise<void> },
+  hooks: {
+    upsertIssue: (iss: PlanIssue) => Promise<void>;
+    /** Record the GitHub identity a create (or a legacy title match) established for `ref`. */
+    setIssueIdentity: (ref: string, ghNumber: number, ghNodeId?: string) => Promise<void>;
+    /** The CURRENT plan.db rows, read back after materialize so their stored `ghNumber` is in hand.
+     *  The parsed feature list cannot supply it — features carry no publish state — so without this
+     *  read every publish would look at freshly-derived rows and think nothing had ever shipped. */
+    loadIssues: () => Promise<PlanIssue[]>;
+  },
 ): Promise<void> {
   const { repos, featuresContent, projectId, streams, viewerLogin } = opts;
   // The LOCAL half — materialize into plan.db — is shared with the GitHub-less commit path (#3280).
-  const planIssues = await materializeIssues(featuresContent, hooks);
+  const materialized = await materializeIssues(featuresContent, hooks);
+  // Re-read so each issue carries the identity plan.db holds for it. `upsert` preserves `gh_number`
+  // across a content edit, so this read is what turns "the features say F1 exists" into "F1 is
+  // already issue #3898".
+  const stored = new Map((await hooks.loadIssues().catch(() => [] as PlanIssue[])).map(i => [i.ref, i]));
+  const planIssues = materialized.map(iss => {
+    const s = stored.get(iss.ref);
+    return s?.ghNumber ? { ...iss, ghNumber: s.ghNumber, ghNodeId: s.ghNodeId } : iss;
+  });
+
   for (const [repoIdx, fullName] of repos.entries()) {
     // Check what already exists BEFORE creating so a re-sync never duplicates. Fail CLOSED: if we
     // can't fetch the repo's issues, skip creating here.
-    let existingTitles: string[];
+    let existingNumbers: Set<number>;
+    // title → the first row carrying it, so the legacy title match resolves a NUMBER from the one
+    // fetch above. Re-querying per issue would be the N-per-item fan-out this codebase has paid for
+    // repeatedly (#3908/#3912/#3944/#3954) — and it would be worse here, once per issue per publish.
+    let existingByTitle: Map<string, { number: number; node_id?: string }>;
     try {
-      const existing = await api.rest<{ title: string }[]>(`repos/${fullName}/issues?state=all&per_page=100`);
-      existingTitles = existing.map(i => i.title);
+      const existing = await api.rest<{ number: number; title: string; node_id?: string }[]>(`repos/${fullName}/issues?state=all&per_page=100`);
+      existingNumbers = new Set(existing.map(i => i.number).filter(n => typeof n === "number"));
+      existingByTitle = new Map();
+      for (const r of existing) {
+        if (r.title && !existingByTitle.has(r.title)) existingByTitle.set(r.title, { number: r.number, node_id: r.node_id });
+      }
     } catch {
       for (const iss of planIssues) upd(`issue:${fullName}:${iss.ref}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
       continue;
@@ -300,7 +325,29 @@ export async function createIssues(
     const nodeByRef: Record<string, string> = {};
     for (const iss of mine) {
       const id = `issue:${fullName}:${iss.ref}`;
-      if (existingTitles.includes(iss.title)) { upd(id, { status: "exists", detail: "already exists" }); continue; }
+      // IDENTITY FIRST. A row that knows its number is settled — no title comparison, so renaming an
+      // issue no longer makes publish believe it is new and open a duplicate.
+      if (iss.ghNumber && existingNumbers.has(iss.ghNumber)) {
+        upd(id, { status: "exists", detail: `#${iss.ghNumber}` });
+        continue;
+      }
+      // Title match stays ONLY for rows published before the identity column existed. When it hits we
+      // backfill the number, so a legacy row is matched by title exactly once and by identity forever
+      // after — the migration happens as a side effect of the next publish, with no separate pass.
+      const byTitle = existingByTitle.get(iss.title);
+      if (byTitle) {
+        // Only link when the match actually yielded a usable number. "Exists" is still the right
+        // answer without one — the issue is there and must not be re-created — but writing an
+        // undefined/0 number would fabricate an identity that points at nothing, which is worse than
+        // having none: the next publish would trust it and skip the issue forever.
+        if (byTitle.number > 0) {
+          await hooks.setIssueIdentity(iss.ref, byTitle.number, byTitle.node_id).catch(() => {});
+          upd(id, { status: "exists", detail: `#${byTitle.number} · linked` });
+        } else {
+          upd(id, { status: "exists", detail: "already exists" });
+        }
+        continue;
+      }
       upd(id, { status: "running" });
       try {
         const body: Record<string, unknown> = { title: iss.title, body: renderIssueBody(iss) };
@@ -310,6 +357,13 @@ export async function createIssues(
         body.labels = withProvenanceLabel(labels);
         const issue = await api.post<{ number: number; node_id: string; html_url: string }>(`repos/${fullName}/issues`, body);
         if (issue.node_id) nodeByRef[iss.ref] = issue.node_id;
+        // Record the link IMMEDIATELY, before the board-add / assignee / sub-issue calls below. Those
+        // are all best-effort and any of them can throw; if the identity were written after them, a
+        // failure there would leave a real GitHub issue that plan.db has no record of — and the next
+        // publish would create it again. The write that must not be lost goes first.
+        if (issue.number) {
+          await hooks.setIssueIdentity(iss.ref, issue.number, issue.node_id).catch(() => {});
+        }
         if (projectId && issue.node_id) {
           await api.gql(`mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`, { p: projectId, c: issue.node_id }).catch(() => {});
         }

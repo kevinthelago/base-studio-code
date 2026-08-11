@@ -66,6 +66,20 @@ describe("recoverIssue (GitHub → plan.db)", () => {
   });
 });
 
+describe("recovered issues carry their GitHub identity", () => {
+  it("records the issue number it was recovered from", () => {
+    // Recovery is the one path holding a real GitHub issue, so a rehydrated plan.db must come back
+    // ALREADY linked — otherwise the next publish sees unlinked rows and offers to create a second
+    // issue for every one it just restored.
+    const r = recoverIssue({ number: 3898, title: "Invite teammates", state: "open" }, "a/b");
+    expect(r.ghNumber).toBe(3898);
+  });
+
+  it("leaves the identity unset for a nonsense number rather than storing 0", () => {
+    expect(recoverIssue({ number: 0, title: "t", state: "open" }, "a/b").ghNumber).toBeUndefined();
+  });
+});
+
 describe("recoverIssues (bulk)", () => {
   it("drops pull requests and titleless rows", () => {
     const rows: GitHubIssueLike[] = [
