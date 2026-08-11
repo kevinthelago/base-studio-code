@@ -416,10 +416,18 @@ accrues under `[Unreleased]`. The full version-by-version breakdown lives in
 
 ## Development Workflow — local-first, on the `bsc` surface
 
-> **This section OVERRIDES the global `~/.claude/CLAUDE.md` "GitHub Issues & Projects" workflow for
-> this repository.** That file mandates a GitHub Issue per change and a PR per branch. Here the work
-> is tracked in **`plan.db` via `bsc plan`**, and **GitHub stays silent** — no issues, no branches
-> pushed, no PRs, no `gh` writes. Everything else in the global file still applies.
+> **This section SPECIALIZES the global `~/.claude/CLAUDE.md` workflow for this repository.** The global
+> is already local-first — it tracks work in the project's own store, integrates by local merge, and
+> requires explicit approval before any push or hosted-tracker write. This file supplies the two things
+> it deliberately leaves to the project, and hardens one rule:
+>
+> - **The store is named**: `plan.db` via `bsc plan` (items) and `bsc plan change` (changes).
+> - **The gate is named**: the exact commands under *Verify*, below.
+> - **Approval becomes silence.** The global permits a `gh` write once approved; here there are **none** —
+>   no issues, no PRs, no pushed branches. Every migrated item keeps its origin number as a back-link, and
+>   that back-link is the only thing that should ever reconcile. Reads stay free, as they do globally.
+>
+> Everything else in the global file applies unchanged.
 
 ### Where the work lives
 
