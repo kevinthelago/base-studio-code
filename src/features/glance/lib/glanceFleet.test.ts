@@ -142,6 +142,50 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
     expect(org.relationships.some((r) => r.from === PLANNER_NODE_ID)).toBe(false);
   });
 
+  it("isolates the planner from the dependency mesh — the cycle that blanked the graph", () => {
+    // Regression. A real `planner` stream WITH dependsOn sat below the director (director manages
+    // console, planner depends on console) and above it (planner serves director), closing
+    //   console -> planner -> director -> console
+    // `mutualPairs` only finds 2-cycles, so this never reached layerDag's break set: measured at layer
+    // 141 across 46 nodes, spreading the graph over 142 columns — an empty canvas.
+    const org = fleetToOrg({
+      ...fleet,
+      streams: [
+        { id: "planner", name: "Planning", repo: "r", owns: [], issues: [], dependsOn: ["console"] },
+        { id: "console", name: "Console", repo: "r", owns: [], issues: [], dependsOn: [] },
+      ],
+      edges: [{ id: "e9", from: "planner", to: "console", kind: "handoff", hardness: "blocking", via: "direct" }],
+    } as unknown as FleetPlan);
+
+    // The planner's ONLY relationship is serves→director.
+    const plannerRels = org.relationships.filter((r) => r.from === PLANNER_NODE_ID || r.to === PLANNER_NODE_ID);
+    expect(plannerRels).toEqual([
+      expect.objectContaining({ from: PLANNER_NODE_ID, to: "director", archetype: "serves" }),
+    ]);
+
+    // No cycle through the planner: nothing points AT it.
+    expect(org.relationships.some((r) => r.to === PLANNER_NODE_ID)).toBe(false);
+
+    // Everyone else's edges are untouched.
+    expect(org.relationships).toContainEqual(
+      expect.objectContaining({ from: "director", to: "console", archetype: "manages" }),
+    );
+  });
+
+  it("keeps a NON-planner dependsOn edge — the skip is scoped, not a blanket drop", () => {
+    const org = fleetToOrg({
+      ...fleet,
+      streams: [
+        { id: "api", name: "API", repo: "r", owns: [], issues: [], dependsOn: [] },
+        { id: "web", name: "Web", repo: "r", owns: [], issues: [], dependsOn: ["api"] },
+      ],
+      edges: [],
+    } as unknown as FleetPlan);
+    expect(org.relationships).toContainEqual(
+      expect.objectContaining({ from: "api", to: "web", archetype: "peers" }),
+    );
+  });
+
   it("never makes the planner a director REPORT — that pair is a cycle", () => {
     // Regression for the observed `dependency cycle: director ⇄ Project planning session`. A fleet can
     // carry a real stream called `planner`; pairing `manages` with `serves` makes a mutual pair, which

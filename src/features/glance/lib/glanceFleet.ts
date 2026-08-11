@@ -155,8 +155,31 @@ export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Team {
   // layer, so they land left of the planner, which is left of the director, with the workers
   // right of it. The arrangement is a consequence of the archetype, not a layout rule.
   for (const s of systemSessions) rel(s, PLANNER_NODE_ID, archOf(s, PLANNER_NODE_ID, "serves"));
-  for (const e of fleet.edges ?? []) rel(e.from, e.to, archOf(e.from, e.to, KIND_TO_ARCHETYPE[e.kind] ?? "peers"));        // producer → consumer
-  for (const s of fleet.streams) for (const dep of s.dependsOn) rel(dep, s.id, archOf(dep, s.id, "peers"));                // upstream ↔ dependent
+  // producer → consumer, and upstream ↔ dependent — both SKIPPING the planner entirely.
+  //
+  // The planner participates in exactly ONE relationship: `serves director` (above). Every other edge
+  // touching it is dropped, because a planning session is not a peer of the build streams it produced.
+  //
+  // This is load-bearing, not tidiness. A fleet may carry a real `planner` stream WITH `dependsOn` on
+  // build streams (studio-code's does). The director manages those streams, so the planner sat BELOW the
+  // director via its dependency AND above it via `serves` — closing cycles like
+  //   console -> planner -> director -> console
+  //   cli-platform -> console -> planner -> director -> cli-platform
+  // `mutualPairs` only finds 2-CYCLES, so these never reached `layerDag`'s break set and the relaxation
+  // ran away: measured at layer 141 across 46 nodes, spreading the graph over 142 columns, which renders
+  // as an EMPTY canvas. (The old `director manages planner` edge had been masking it — that made a
+  // 2-cycle, which mutualPairs did catch.)
+  const touchesPlanner = (a: string, b: string) => a === PLANNER_NODE_ID || b === PLANNER_NODE_ID;
+  for (const e of fleet.edges ?? []) {
+    if (touchesPlanner(e.from, e.to)) continue;
+    rel(e.from, e.to, archOf(e.from, e.to, KIND_TO_ARCHETYPE[e.kind] ?? "peers"));
+  }
+  for (const s of fleet.streams) {
+    for (const dep of s.dependsOn) {
+      if (touchesPlanner(dep, s.id)) continue;
+      rel(dep, s.id, archOf(dep, s.id, "peers"));
+    }
+  }
 
   // Phase 2 (#2575): ADD the team's authored relationships that have no derived edge, INSTANTIATED onto
   // the streams by persona — a team rel posA→posB becomes every {posA-persona stream} × {posB-persona
