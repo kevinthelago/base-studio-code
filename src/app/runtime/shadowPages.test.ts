@@ -43,24 +43,27 @@ describe("the shadow page catalogue", () => {
     expect(fleet?.modules.every((m) => m.file === null)).toBe(true);
   });
 
-  it("declares mcppage as graph-only — its file copy was dead and was removed", () => {
-    // features/mcp/index.tsx SURVIVES as the feature barrel (lib re-exports + the still-unmigrated
-    // HooksView), so a file path here would resolve and diff — and report `differs` forever, because
-    // what it resolves to is no longer this page. A page whose file copy is gone declares `null`,
-    // which shadow mode reads as `no-file-baseline`. The sibling module keeps its real file.
-    const mcp = SHADOW_PAGES.find((p) => p.pageId === "mcppage");
-    expect(mcp?.modules.find((m) => m.recordId === "mcppage")?.file).toBeNull();
-    expect(mcp?.modules.find((m) => m.recordId === "mcp-analytics")?.file).toBe("/src/features/mcp/McpAnalytics.tsx");
-  });
+  // Four page copies lived in their feature's index barrel and were dead — `lazyWorkspaces` resolved
+  // each workspace symbol to that feature's GraphHost, so the app mounted the RECORD and never the
+  // file. They were removed. Each entry therefore declares `file: null` (read as "no file baseline"),
+  // and the glob above no longer names those `index` files — the two halves have to move together or
+  // the test above catches it. Their PART modules are untouched: a page going graph-only does not
+  // take its parts with it.
+  const RETIRED_PAGE_COPIES: Record<string, number> = {
+    mcppage: 1,        // mcp-analytics
+    securitypage: 4,   // the four tab bodies
+    automationspage: 3,   // Schedules, History, HookAnalytics
+    githubpage: 12,       // Empty/Summary/Pulse/BranchGraph + the eight summary/ cards
+  };
 
-  it("declares securitypage as graph-only — its file copy was dead and was removed", () => {
-    // The barrel is index.TS now (re-exports only), so the old index.tsx path would not resolve at
-    // all. The four tab bodies are still real files and keep their baselines — a page going
-    // graph-only does not take its parts with it.
-    const sec = SHADOW_PAGES.find((p) => p.pageId === "securitypage");
-    expect(sec?.modules.find((m) => m.recordId === "securitypage")?.file).toBeNull();
-    expect(sec?.modules.filter((m) => m.file !== null)).toHaveLength(4);
-  });
+  for (const [pageId, parts] of Object.entries(RETIRED_PAGE_COPIES)) {
+    it(`declares ${pageId} as graph-only, keeping its ${parts} part module(s)`, () => {
+      const page = SHADOW_PAGES.find((p) => p.pageId === pageId);
+      expect(page, `${pageId} is in the catalogue`).toBeTruthy();
+      expect(page?.modules.find((m) => m.recordId === pageId)?.file, `${pageId} page module`).toBeNull();
+      expect(page?.modules.filter((m) => m.file !== null), `${pageId} part modules`).toHaveLength(parts);
+    });
+  }
 
   it("reports what each page renders from TODAY, matching the workspace wiring", () => {
     // `rendersFrom` is the context every number in the report is read against — a `differs` verdict on a
