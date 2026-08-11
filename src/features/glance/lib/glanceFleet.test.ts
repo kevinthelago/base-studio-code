@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./glanceFleet";
+import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID, PLANNER_NODE_ID } from "./glanceFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 import type { Team } from "@/features/teams";
@@ -106,7 +106,7 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
 
   it("projects streams (+ director) into positions and coordination into archetype relationships", () => {
     const org = fleetToOrg(fleet);
-    expect(org.positions.map((p) => p.nodeId).sort()).toEqual(["api", "director", "ui"]);
+    expect(org.positions.map((p) => p.nodeId).sort()).toEqual(["api", "director", "planner", "ui"]);
     expect(org.positions.find((p) => p.nodeId === "api")).toMatchObject({ kind: "agent", personaId: "p-worker" });
     // the director MANAGES each stream
     expect(org.relationships).toContainEqual(expect.objectContaining({ from: "director", to: "api", archetype: "manages" }));
@@ -119,6 +119,53 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
     const org = fleetToOrg({ ...fleet, director: { enabled: false } });
     expect(org.positions.some((p) => p.nodeId === "director")).toBe(false);
     expect(org.relationships.some((r) => r.archetype === "manages")).toBe(false);
+  });
+
+  // ── the planner position ──────────────────────────────────────────────────
+  it("carries the planner and wires it to the director with `serves`", () => {
+    const org = fleetToOrg(fleet);
+    expect(org.positions.find((p) => p.nodeId === PLANNER_NODE_ID))
+      .toMatchObject({ kind: "agent", personaId: "planner" });
+    // planner SERVES the director — it hands the plan over and briefs it, but owns no execution.
+    expect(org.relationships).toContainEqual(
+      expect.objectContaining({ from: PLANNER_NODE_ID, to: "director", archetype: "serves" }),
+    );
+    // ...and never MANAGES it — that would invert the authority chain.
+    expect(org.relationships.some((r) => r.from === PLANNER_NODE_ID && r.archetype === "manages")).toBe(false);
+  });
+
+  it("keeps the planner node even with no director", () => {
+    // A project can decline a director; it cannot have a plan without a planning session. The node
+    // stays (with no edge to draw), so the graph never silently loses the agent that authored the plan.
+    const org = fleetToOrg({ ...fleet, director: { enabled: false } });
+    expect(org.positions.some((p) => p.nodeId === PLANNER_NODE_ID)).toBe(true);
+    expect(org.relationships.some((r) => r.from === PLANNER_NODE_ID)).toBe(false);
+  });
+
+  it("does not duplicate the node when a STREAM is itself called `planner`", () => {
+    // Two positions sharing a nodeId would not read as a duplicate — `rel()` de-dupes by id, so it
+    // would read as edges going missing. The real stream keeps the name; we add ours only if free.
+    const collide = fleetToOrg({
+      ...fleet,
+      streams: [{ id: "planner", name: "Planner", repo: "r", owns: [], issues: [], dependsOn: [] }],
+    } as unknown as FleetPlan);
+    expect(collide.positions.filter((p) => p.nodeId === PLANNER_NODE_ID)).toHaveLength(1);
+    // The real stream's identity survives — it is not overwritten by the synthetic position.
+    expect(collide.positions.find((p) => p.nodeId === PLANNER_NODE_ID)?.label).toBe("Planner");
+    // And no self-edge was produced.
+    expect(collide.relationships.some((r) => r.from === PLANNER_NODE_ID && r.to === PLANNER_NODE_ID)).toBe(false);
+  });
+
+  it("renders the planner in the ORCHESTRATE bucket, not as a worker", () => {
+    // Without the role fallback knowing the id, an unmatched persona falls through to `worker` and the
+    // planner would draw in the BUILD colour — wrong for an orchestrating agent.
+    const data = buildOrgFleetData(fleetToOrg(fleet), []);
+    const planner = data.rawNodes.find((n) => n.id === PLANNER_NODE_ID);
+    expect(planner).toMatchObject({ role: "infra", roleLabel: "planner" });
+    // the director keeps its own fallback
+    expect(data.rawNodes.find((n) => n.id === "director")).toMatchObject({ role: "infra", roleLabel: "director" });
+    // a stream with no persona still falls through to worker
+    expect(data.rawNodes.find((n) => n.id === "api")?.roleLabel).toBe("worker");
   });
 });
 

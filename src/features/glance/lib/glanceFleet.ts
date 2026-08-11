@@ -23,6 +23,18 @@ const ROLE_TO_GROLE: Record<string, GRole> = {
 };
 const gRole = (role?: string): GRole => (role && ROLE_TO_GROLE[role]) || "service";
 
+/** The planner position's node id — fixed, like `"director"`, so the graph, the role fallback and any
+ *  later pane binding all name it the same way. Not a stream id: `AgentStream.id` comes from the plan
+ *  and could in principle collide, which `fleetToOrg`'s `rel()` guard (`from === to`) would then hide. */
+export const PLANNER_NODE_ID = "planner";
+
+/** The session role for a position whose persona did not resolve. The fixed-id agents are known by
+ *  their id — without this a planner falls through to `worker` and renders in the BUILD colour, which
+ *  is exactly wrong for an ORCHESTRATE agent (`ROLE_TO_GROLE` already buckets `planner` as infra). */
+function fallbackRole(nodeId: string): string {
+  return nodeId === "director" || nodeId === PLANNER_NODE_ID ? nodeId : "worker";
+}
+
 /** Fleet coordination kind → Org relationship ARCHETYPE (#2561, interim map until fleets are authored as
  *  Orgs). The archetype names the relationship (Oversees a review, Stewards a shared resource, Peers on a
  *  handoff) and expands into the communication forms shown in the edge inspector. The director hub is a
@@ -47,6 +59,18 @@ function nodePersona(p: Persona | undefined): GRawNode["persona"] {
 export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Team {
   const positions: Position[] = fleet.streams.map((s) => ({ nodeId: s.id, kind: "agent", personaId: s.persona, label: s.name || s.id }));
   if (fleet.director?.enabled) positions.push({ nodeId: "director", kind: "agent", personaId: "director", label: "director" });
+  // The PLANNER, always (#glance-planner-node-per-project). Every project has one — the session that
+  // produced this plan — and until now it was the one agent absent from the graph of the work it
+  // authored. Unconditional, unlike the director: a project can decline a director, but a plan it can
+  // drill into necessarily came from a planning session.
+  //
+  // Guarded against a stream that is itself called `planner`: two positions sharing a nodeId would put
+  // two nodes with one id in the graph, and `rel()` de-dupes by id — so the collision would not look
+  // like a duplicate, it would look like edges going missing. A real stream keeps the name; we add ours
+  // only when nothing already claims it.
+  if (!positions.some((p) => p.nodeId === PLANNER_NODE_ID)) {
+    positions.push({ nodeId: PLANNER_NODE_ID, kind: "agent", personaId: "planner", label: "planner" });
+  }
   const posIds = new Set(positions.map((p) => p.nodeId));
   // Authored-team archetype overlay (#2572): a `persona→persona` pair the blueprint team wired with an
   // archetype OVERRIDES the coordination-derived archetype for that pair — so the authored design's
@@ -54,6 +78,7 @@ export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Team {
   const authored = teamArchetypeByPersonaPair(team);
   const personaOf = new Map<string, string | undefined>(fleet.streams.map((s) => [s.id, s.persona]));
   personaOf.set("director", "director");
+  personaOf.set(PLANNER_NODE_ID, "planner");
   const archOf = (from: string, to: string, derived: string): string => {
     const pf = personaOf.get(from), pt = personaOf.get(to);
     return (pf && pt && authored.get(`${pf}|${pt}`)) || derived;
@@ -68,6 +93,11 @@ export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Team {
     relationships.push({ id: `r${relationships.length}`, archetype, from, to });
   };
   if (fleet.director?.enabled) for (const s of fleet.streams) rel("director", s.id, archOf("director", s.id, "manages")); // manager → report
+  // planner → director (#glance-planner-node-per-project). `serves`, not `manages`: the planner hands
+  // the plan over and briefs it at runtime (`bsc-brief`, #2377) but owns none of the execution — the
+  // director does. That makes the authority chain read in one direction end to end: the studios serve
+  // the planner, the planner serves the director, the director manages the workers.
+  if (fleet.director?.enabled) rel(PLANNER_NODE_ID, "director", archOf(PLANNER_NODE_ID, "director", "serves"));
   for (const e of fleet.edges ?? []) rel(e.from, e.to, archOf(e.from, e.to, KIND_TO_ARCHETYPE[e.kind] ?? "peers"));        // producer → consumer
   for (const s of fleet.streams) for (const dep of s.dependsOn) rel(dep, s.id, archOf(dep, s.id, "peers"));                // upstream ↔ dependent
 
@@ -136,7 +166,7 @@ export function buildOrgFleetData(org: Team, personas: Persona[]): GlanceData {
   const personaById = new Map(personas.map((p) => [p.id, p]));
   const rawNodes: GRawNode[] = org.positions.map((pos) => {
     const persona = pos.personaId ? personaById.get(pos.personaId) : undefined;
-    const role = persona?.role ?? (pos.nodeId === "director" ? "director" : "worker");
+    const role = persona?.role ?? fallbackRole(pos.nodeId);
     const p = nodePersona(persona) ?? fallbackPersona(pos.label ?? persona?.name ?? pos.nodeId, role);
     p.comms = projectComms(org, pos, personas); // who this agent talks to + how (#2563)
     // Rests at idle (#2551) — a planned position isn't "building" until its session is actually live.
