@@ -260,7 +260,10 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     label: "Security",
     rendersFrom: "graph",
     modules: [
-      { recordId: "securitypage", file: "/src/features/security/index.tsx" },
+      // Same as mcppage: the dead SecurityWorkspace copy is gone and what survives is the feature's
+      // re-export barrel — now index.ts, so this path would not even resolve. The four tab bodies
+      // below are still real files and keep their baselines.
+      { recordId: "securitypage", file: null },
       { recordId: "security-profiles", file: "/src/features/security/ProfilesTab.tsx" },
       { recordId: "security-assignments", file: "/src/features/security/AssignmentsTab.tsx" },
       { recordId: "security-activity", file: "/src/features/security/ActivityTab.tsx" },
