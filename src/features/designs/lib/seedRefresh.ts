@@ -299,6 +299,22 @@ export interface RestampPlan<T extends SeedRecord> {
  * @param opts   `seedAuthoritative` — the same predicate {@link reconcileSeed} takes. Matching records
  *               are DEFERRED rather than stamped; see {@link RestampDeferral}.
  */
+/**
+ * Apply a {@link planRestamp} result to the in-memory list — replace each stamped record by id.
+ *
+ * Exists so the repair can run BEFORE the reconcile in a single hydrate pass. The alternative, stamping
+ * the store and re-reading, costs a second full-fidelity load and a second reconcile; worse, done from
+ * inside `hydrateComponents` a re-hydrate would re-enter itself.
+ *
+ * Returns `loaded` unchanged (same reference) when there is nothing to stamp, so the common case adds no
+ * allocation and a caller can cheaply tell whether anything happened.
+ */
+export function applyStamps<T extends SeedRecord>(loaded: T[], stamps: T[]): T[] {
+  if (stamps.length === 0) return loaded;
+  const byId = new Map(stamps.map((s) => [s.id, s]));
+  return loaded.map((rec) => byId.get(rec.id) ?? rec);
+}
+
 export function planRestamp<T extends SeedRecord>(
   loaded: T[],
   seed: T[],

@@ -17,6 +17,7 @@ import { DEFAULT_MAX_TURNS, DRIVER, DESIGNER } from "./lib/designerLoopDrive";
 import { bsc, bscRun } from "@/shared/lib/core/bsc";
 import { kitUsageId, makeChange, planPropagation, dispatchKey } from "./lib/propagation";
 import { SEED_COMPONENTS, SEED_KITS, planComponentRestamp, reconcileComponents, reconcileKits } from "./lib/seed";
+import { applyStamps } from "./lib/seedRefresh";
 import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "./lib/themes";
 import { loadComponents, loadComponentsGraph, loadKits, pushComponent, stampComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
 import { loadThemes, pushTheme, dropTheme, loadVariants } from "./lib/themeBridge";
@@ -260,7 +261,20 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     // Compile each KIT's MOTION library (#2942) into the managed <style> — on boot (useAppBoot calls
     // this) and on a `ui-touch` write (setAiFocused re-runs it), mirroring the variant apply.
     if (!loadedC && !loadedK) { applyAnimationsToRoot(kitAnimations(get().kits)); return; } // seed
-    const rc = reconcileComponents(loadedC ?? []);
+    // PROVENANCE REPAIR, before the reconcile (#auto-restamp-unstamped). A record whose `builtin` flag
+    // was lost — or, far more often here, one whose store copy predates the packaged seed that was later
+    // created for its id — sits OUTSIDE the reconcile: it never refreshes and never reports drift, while
+    // the app renders it. Repairing it is not a judgement call: `planRestamp` stamps with the SEED's
+    // hash, so the record reads as edited-against-an-unmoved-seed, the verdict that KEEPS the store copy.
+    // It restores MEMBERSHIP without adjudicating content, which is why it no longer needs a click.
+    //
+    // Stamped in place and fed straight to the reconcile, rather than written and re-read: a re-hydrate
+    // from inside `hydrateComponents` would re-enter itself.
+    const restamp = planComponentRestamp(loadedC ?? []);
+    // `stampComponent` merges ONLY the two stamp fields. `pushComponent` would send the whole record and
+    // drop whatever this projection does not carry — the #4197 failure, committed by the repair for it.
+    for (const c of restamp.stamps) void stampComponent(c.id, c.seedHash!);
+    const rc = reconcileComponents(applyStamps(loadedC ?? [], restamp.stamps));
     const rk = reconcileKits(loadedK ?? []);
     // Replace only OUR notice types — theme notices (#2488) belong to hydrateThemes, which may have
     // already run (the two hydrates race on boot).
