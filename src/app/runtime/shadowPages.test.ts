@@ -53,6 +53,15 @@ describe("the shadow page catalogue", () => {
     expect(mcp?.modules.find((m) => m.recordId === "mcp-analytics")?.file).toBe("/src/features/mcp/McpAnalytics.tsx");
   });
 
+  it("declares securitypage as graph-only — its file copy was dead and was removed", () => {
+    // The barrel is index.TS now (re-exports only), so the old index.tsx path would not resolve at
+    // all. The four tab bodies are still real files and keep their baselines — a page going
+    // graph-only does not take its parts with it.
+    const sec = SHADOW_PAGES.find((p) => p.pageId === "securitypage");
+    expect(sec?.modules.find((m) => m.recordId === "securitypage")?.file).toBeNull();
+    expect(sec?.modules.filter((m) => m.file !== null)).toHaveLength(4);
+  });
+
   it("reports what each page renders from TODAY, matching the workspace wiring", () => {
     // `rendersFrom` is the context every number in the report is read against — a `differs` verdict on a
     // graph-rendered page is a live problem, the same verdict on a file-rendered one is a not-yet. It is
