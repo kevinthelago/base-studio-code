@@ -64,11 +64,11 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     label: "Console",
     rendersFrom: "graph",
     modules: [
-      { recordId: "consolepage", file: "/src/app/console/index.tsx" },
-      { recordId: "console-pane-at", file: "/src/app/console/PaneAt.tsx" },
-      { recordId: "console-pane-shell", file: "/src/app/console/panes/PaneShell.tsx" },
+      { recordId: "consolepage", file: null },
+      { recordId: "console-pane-at", file: null },
+      { recordId: "console-pane-shell", file: null },
       { recordId: "console-pane-menu", file: "/src/app/console/panes/PaneMenu.tsx" },
-      { recordId: "console-states", file: "/src/app/console/consoleStates.tsx" },
+      { recordId: "console-states", file: null },
     ],
     // The shell is not a feature and has no barrel — the host module IS the registration.
     ensurePlatform: () => import("@/app/console/ConsoleGraphHost"),
@@ -79,12 +79,12 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     // The planner Screen mounts this one with `visible` and keeps it MOUNTED across tabs (#4224).
     rendersFrom: "graph",
     modules: [
-      { recordId: "planningpage", file: "/src/features/planner/session/Planning.tsx" },
-      { recordId: "planning-header", file: "/src/features/planner/session/PlanningHeader.tsx" },
-      { recordId: "planning-notices", file: "/src/features/planner/session/PlanningNotices.tsx" },
-      { recordId: "planning-dialogs", file: "/src/features/planner/session/PlanningDialogs.tsx" },
-      { recordId: "planning-publish-progress", file: "/src/features/planner/session/PublishProgressView.tsx" },
-      { recordId: "planning-injection-gate", file: "/src/features/planner/session/InjectionGateBanner.tsx" },
+      { recordId: "planningpage", file: null },
+      { recordId: "planning-header", file: null },
+      { recordId: "planning-notices", file: null },
+      { recordId: "planning-dialogs", file: null },
+      { recordId: "planning-publish-progress", file: null },
+      { recordId: "planning-injection-gate", file: null },
       { recordId: "planning-github-structure", file: "/src/features/planner/session/GitHubStructureCard.tsx" },
       // The focused project pane (#4227) — the plan half of this page. These are `provides` records, not
       // `@/components/<id>` siblings, so the page composes them without naming a single one: it imports
@@ -175,7 +175,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     label: "Projects",
     rendersFrom: "graph",
     modules: [
-      { recordId: "projectspage", file: "/src/features/planner/list/ProjectsList.tsx" },
+      { recordId: "projectspage", file: null },
       // The list's components (#4232) — `provides` records, like `pane/` and `bodies/`. Authoring them
       // is what the page's regeneration to ABSOLUTE specifiers unlocked: `provides` matches the exact
       // specifier a record imports, so while the page said `./ProjectCard` none of these was reachable.
