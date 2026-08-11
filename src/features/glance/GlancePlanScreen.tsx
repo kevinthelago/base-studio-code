@@ -22,13 +22,21 @@ export interface PlanScreenIssue {
   closed?: boolean;
 }
 
-/** Join a stream's refs to the overlay. Pure + exported so the join is testable without a render.
+/** Join a stream's refs to what is known about each one. Pure + exported so the join is testable
+ *  without a render.
+ *
+ *  TWO SOURCES, plan.db first. plan.db is the store of record and needs no token, so when it has a row
+ *  for a ref its status is the answer; the GitHub overlay only fills refs plan.db has never heard of.
+ *  This is the same both-sources principle the node's progress bar already uses (`unionDone`) — the
+ *  per-row list simply never got it, which is how a bar could read 3/7 while all seven rows said
+ *  "state unknown".
  *
  *  Order is the PLAN's order, not sorted by state: the plan sequences a worker's work, and re-sorting
  *  it (done-first, say) would quietly hide that sequence. */
 export function planScreenIssues(
   refs: readonly string[],
   states: ReadonlyMap<string, boolean>,
+  planClosed?: ReadonlyMap<string, boolean>,
 ): PlanScreenIssue[] {
   const seen = new Set<string>();
   const out: PlanScreenIssue[] = [];
@@ -36,7 +44,11 @@ export function planScreenIssues(
     const key = normalizeRef(ref);
     if (seen.has(key)) continue;      // a ref listed twice is one issue, not two
     seen.add(key);
-    out.push({ ref, closed: states.get(key) });
+    // Look plan.db up by BOTH the raw ref and its normalised form: plan.db refs are stored verbatim
+    // (`4260-sandbox-…`, or `#3898` in an older plan), while the overlay is keyed by the normalised
+    // number. Checking only one of them would miss whichever spelling the project happens to use.
+    const local = planClosed?.get(ref) ?? planClosed?.get(key);
+    out.push({ ref, closed: local ?? states.get(key) });
   }
   return out;
 }
@@ -116,7 +128,11 @@ export function GlancePlanScreen({
         })}
       </Box>
 
-      {unresolved ? (
+      {/* Only ask for GitHub when it would actually add something: the overlay is unavailable AND some
+          row is still unknown after plan.db answered. A project that tracks its work locally resolves
+          every row from plan.db, and telling that user to connect GitHub would be advice to fix
+          nothing. Derived from the rendered rows, so the note cannot contradict what is on screen. */}
+      {unresolved && issues.some((i) => i.closed === undefined) ? (
         <Box style={{ padding: "8px 12px", borderTop: "1px solid var(--border)", flex: "none" }}>
           <Text as="div" size="xs" tone="dim" style={{ lineHeight: 1.5 }}>
             Connect GitHub to see which of these are closed. The list above is the plan and is always accurate.

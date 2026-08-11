@@ -55,6 +55,23 @@ export function planDbDoneRefs(issues: readonly OwnedIssue[]): Set<string> {
   return out;
 }
 
+/**
+ * Per-ref closed-ness from plan.db — `ref → true` when finished, `false` when it demonstrably is not.
+ *
+ * The distinction from {@link planDbDoneRefs} is the FALSE, and it is the whole point: a done-set can
+ * only say "finished" or "not in the set", and "not in the set" conflates *this issue is open* with
+ * *I have never heard of this issue*. The Plan dock has to tell those apart, because the first is a
+ * state worth rendering and the second is the only one worth asking the user to connect GitHub for.
+ *
+ * Same `TERMINAL_GOOD` definition every other done-count uses — a second notion of done-ness here
+ * would eventually let the node's bar and its issue list disagree, which is exactly the bug this fixes.
+ */
+export function planDbClosedByRef(issues: readonly OwnedIssue[]): Map<string, boolean> {
+  const out = new Map<string, boolean>();
+  for (const i of issues) out.set(i.ref, TERMINAL_GOOD.has(i.status));
+  return out;
+}
+
 /** The fill fraction, clamped to 0..1. `total === 0` ⇒ 0 (and the caller should render NO bar at all —
  *  an empty bar and a zero-progress bar say different things, and only one of them is true). */
 export function progressFraction(p: StreamProgress | undefined): number {
