@@ -69,23 +69,38 @@ export const SEED_COMPONENTS: ComponentRecord[] = Object.keys(migratedApp)
  * With the seed now empty (#3543), this DROPS every prior pristine packaged component on the next boot.
  */
 export function reconcileComponents(loaded: ComponentRecord[]): SeedReconcile<ComponentRecord> {
-  // Page records (#3723) are import-based SPECS the app renders through the registry at runtime — not
-  // designer-editable content. So the seed is AUTHORITATIVE for them: a diverged store copy (a designer
-  // self-contained a page so it would render in the preview sandbox) is forced back to the seed instead
-  // of kept — which is what silently shadowed Settings (#3658), then the whole app (#3723).
-  return reconcileSeed(loaded, SEED_COMPONENTS, "component", { seedAuthoritative: (r) => r.role === "page" });
+  // STORE ALWAYS WINS. The seed is the app's STARTING POINT — what a fresh install boots from and what a
+  // release ships — not a standing authority over a running app. Everything after first run is in-app, so
+  // no class of record is force-reset from the seed.
+  //
+  // This drops the `seedAuthoritative: role === "page"` predicate #3723 added. That predicate is why a
+  // page's store copy was forced back to the seed, and it is what silently deleted the moved tests from
+  // `consolepage`/`projectspage` seconds after they were written. Every other role already worked this
+  // way — a USER-EDITED built-in was always kept — so this makes the rule uniform rather than inventing one.
+  //
+  // A PRISTINE copy still tracks the seed (that is content-hash based, not role based), so a fresh install
+  // still seeds and a release still refreshes records nobody has touched. Only an EDITED record now
+  // survives unconditionally.
+  //
+  // What this gives up: #3723's guard against a self-contained page record shadowing the shipped app. With
+  // no automatic reset, the app renders what the store holds — so recovery is the store's history plus the
+  // committed seed. `stamp_with_history` records WHICH fields changed, never their prior VALUES, so until
+  // history carries content the seed in git is the only true restore path.
+  return reconcileSeed(loaded, SEED_COMPONENTS, "component");
 }
 
 /**
  * Plan the `unstamped` repair for components (#4207 — the rule and why the stamp carries the SEED's hash
- * live on {@link planRestamp}). Passes the SAME `seedAuthoritative` predicate `reconcileComponents` uses,
- * so `role: page` records are DEFERRED, never stamped: for a page the seed wins unconditionally (#3723),
- * and stamping one would hand the seed copy straight over the store copy the app currently renders. On
- * this repo those copies are substantively different (the store's `fleetpage` source is a third shorter
- * than its seed), so that swap is a rendering change, not a repair.
+ * live on {@link planRestamp}). Passes no `seedAuthoritative` predicate, matching {@link reconcileComponents}
+ * under store-always-wins: with the seed no longer authoritative for any role there is nothing to DEFER,
+ * so an unstamped page is repaired like any other record.
+ *
+ * The two must stay in lockstep. The predicate previously deferred pages precisely because reconcile would
+ * have force-reset them; a stamp there would have handed the seed copy over the store copy the app renders.
+ * Now that reconcile keeps an edited record, stamping one is a provenance repair, not a content swap.
  */
 export function planComponentRestamp(loaded: ComponentRecord[]): RestampPlan<ComponentRecord> {
-  return planRestamp(loaded, SEED_COMPONENTS, { seedAuthoritative: (r) => r.role === "page" });
+  return planRestamp(loaded, SEED_COMPONENTS);
 }
 
 /** Reconcile loaded kits with the packaged built-in kits (see {@link reconcileComponents}). Drops every

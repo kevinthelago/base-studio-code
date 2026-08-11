@@ -62,6 +62,34 @@ describe("the wipe — the reconcile retires every prior packaged kit (#3543)", 
     expect(r.pushes.map((c) => c.id).sort()).toEqual(seededIds);
   });
 
+  it("KEEPS an edited PAGE record — store always wins, the seed is only the starting point", () => {
+    // The regression this locks. #3723 made `role: page` seed-AUTHORITATIVE, so a diverged page was force
+    // reset to the seed — which is what silently deleted `tests` from consolepage/projectspage seconds
+    // after they were written. Under store-always-wins an edited page survives like every other role.
+    const seedPage = SEED_COMPONENTS.find((c) => c.role === "page");
+    expect(seedPage, "the seed must carry at least one page for this to mean anything").toBeTruthy();
+    const edited: ComponentRecord = { ...seedPage!, srcText: "// edited in-app\nexport default () => null;\n" };
+
+    const r = reconcileComponents([edited]);
+    const back = r.records.find((c) => c.id === edited.id)!;
+    expect(back.srcText).toBe(edited.srcText);          // kept — NOT forced back to the seed
+    expect(r.pushes.map((c) => c.id)).not.toContain(edited.id);
+    expect(r.drops).not.toContain(edited.id);
+  });
+
+  it("a PRISTINE record still tracks the seed — fresh install + release refresh keep working", () => {
+    // Store-always-wins must not turn into never-seed: an untouched copy still follows the seed, which is
+    // what makes a first run populate and a release update records nobody has edited.
+    const seedPage = SEED_COMPONENTS.find((c) => c.role === "page")!;
+    // PRISTINE means the stamp matches the record's OWN content — so it must be re-stamped after the edit,
+    // not given an arbitrary hash. A mismatched hash reads as user-EDITED (`modified`) and would be kept,
+    // which would make this pass for the opposite reason.
+    const stale = stampSeedHash<ComponentRecord>({ ...seedPage, srcText: "// an older release\n" });
+    const r = reconcileComponents([stale]);
+    expect(r.records.find((c) => c.id === seedPage.id)!.srcText).toBe(seedPage.srcText); // refreshed
+    expect(r.pushes.map((c) => c.id)).toContain(seedPage.id);
+  });
+
   it("KEEPS a user-edited prior kit, surfacing an orphaned notice (store wins, #2483)", () => {
     // A kit the designer hand-edited (its recorded hash is not the current seed's) is not silently wiped.
     const edited: Kit = { ...priorKit("react-ui"), stack: "my custom stack", seedHash: "00000000" };
