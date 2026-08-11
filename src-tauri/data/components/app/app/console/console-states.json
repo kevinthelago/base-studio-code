@@ -12,5 +12,11 @@
     "Stack",
     "Text"
   ],
-  "props": []
+  "props": [],
+  "tests": [
+    {
+      "path": "/src/app/console/consoleStates.test.tsx",
+      "text": "// #2128 — render smoke + interaction tests for the console pane placeholder states extracted from\n// console/index.tsx. Each renders its message and fires its single action callback.\nimport { describe, it, expect, vi } from \"vitest\";\nimport { render, screen, fireEvent } from \"@testing-library/react\";\nimport { DisabledConsole, EndedConsole, DormantConsole } from \"./consoleStates\";\n\ndescribe(\"console pane placeholder states (#2128)\", () => {\n  it(\"DisabledConsole shows the stopped message and enables on click\", () => {\n    const onEnable = vi.fn();\n    render(<DisabledConsole onEnable={onEnable} />);\n    expect(screen.getByText(/console disabled/i)).toBeInTheDocument();\n    fireEvent.click(screen.getByRole(\"button\", { name: /enable/i }));\n    expect(onEnable).toHaveBeenCalledOnce();\n  });\n\n  it(\"DormantConsole shows the reaped message and resumes on click\", () => {\n    const onResume = vi.fn();\n    render(<DormantConsole onResume={onResume} />);\n    expect(screen.getByText(/session dormant/i)).toBeInTheDocument();\n    fireEvent.click(screen.getByRole(\"button\", { name: /resume/i }));\n    expect(onResume).toHaveBeenCalledOnce();\n  });\n\n  it(\"EndedConsole renders the state label + summary and reopens on click\", () => {\n    const onReopen = vi.fn();\n    render(<EndedConsole info={{ state: \"done\", summary: \"shipped the thing\", streamId: \"s1\", at: 0 }} onReopen={onReopen} />);\n    expect(screen.getByText(/finished/i)).toBeInTheDocument();\n    expect(screen.getByText(\"shipped the thing\")).toBeInTheDocument();\n    fireEvent.click(screen.getByRole(\"button\", { name: /reopen/i }));\n    expect(onReopen).toHaveBeenCalledOnce();\n  });\n\n  it(\"EndedConsole reflects the blocked state\", () => {\n    render(<EndedConsole info={{ state: \"blocked\", summary: \"tests failing\", streamId: \"s1\", at: 0 }} onReopen={() => {}} />);\n    expect(screen.getByText(/blocked \\/ failed/i)).toBeInTheDocument();\n  });\n});\n"
+    }
+  ]
 }
