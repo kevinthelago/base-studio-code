@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { SessionRecoveryBanner, SandboxSetupBanner, PathExposeBanner, AppBanners } from "./AppBanners";
+import { SessionRecoveryBanner, SandboxSetupBanner, PathExposeBanner, AppBanners, SeedDriftBanner } from "./AppBanners";
 import { useAppStore } from "@/store";
 
 const DISCOVERED = [
@@ -211,5 +211,51 @@ describe("InterruptedLoopBanner (#3961)", () => {
     render(<AppBanners />);
     fireEvent.click(screen.getByLabelText(/dismiss/i));
     expect(useAppStore.getState().interruptedLoops).toEqual([]);
+  });
+});
+
+// ── Seed notices (#seed-banner-actionable-only) ──────────────────────────────
+// The banner used to report every verdict, including `updated-upstream` — a store copy differing from
+// its seed. Under store-always-wins that is the intended state of a used app, so it climbed forever and
+// buried the two verdicts that need a person.
+describe("SeedDriftBanner — actionable verdicts only", () => {
+  const notice = (kind: string, id: string) => ({ kind, type: "component", id, name: id });
+
+  beforeEach(() => {
+    useAppStore.setState({ seedNotices: [] as never });
+  });
+
+  it("renders NOTHING when the only verdicts are plain divergence", () => {
+    useAppStore.setState({
+      seedNotices: [notice("updated-upstream", "a"), notice("updated-upstream", "b")] as never,
+    });
+    const { container } = render(<SeedDriftBanner />);
+    expect(container.textContent).toBe("");
+  });
+
+  it("raises for an ORPHANED record — the seed retired it but the store still holds it", () => {
+    useAppStore.setState({ seedNotices: [notice("orphaned", "old-card")] as never });
+    render(<SeedDriftBanner />);
+    expect(screen.getByText(/needs? a decision/i)).toBeTruthy();
+    expect(screen.getByText(/1 orphaned/)).toBeTruthy();
+  });
+
+  it("counts ONLY the actionable ones when the two are mixed", () => {
+    useAppStore.setState({
+      seedNotices: [
+        notice("updated-upstream", "a"), notice("updated-upstream", "b"), notice("updated-upstream", "c"),
+        notice("orphaned", "d"), notice("unstamped", "e"),
+      ] as never,
+    });
+    render(<SeedDriftBanner />);
+    // 2, not 5 — the three divergences are not a decision
+    expect(screen.getByText(/^2 records need a decision/)).toBeTruthy();
+    expect(screen.queryByText(/updated-upstream/)).toBeNull();
+  });
+
+  it("keeps `reset-to-seed` — unreachable today, but it means a copy was OVERWRITTEN", () => {
+    useAppStore.setState({ seedNotices: [notice("reset-to-seed", "page-x")] as never });
+    render(<SeedDriftBanner />);
+    expect(screen.getByText(/1 reset-to-seed/)).toBeTruthy();
   });
 });

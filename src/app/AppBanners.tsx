@@ -614,21 +614,36 @@ function InterruptedLoopBanner() {
   );
 }
 
+/** The verdicts worth a banner. `updated-upstream` — a store copy that differs from its seed — is
+ *  deliberately NOT here.
+ *
+ *  Under store-always-wins the seed is the app's STARTING POINT and the app is edited in place, so
+ *  divergence is what a used app looks like, not a fault. Reporting it made the banner read
+ *  "301 records differ … review which side is right" — a description of the intended state, climbing with
+ *  every edit, drowning the two verdicts that actually need a person.
+ *
+ *  `reset-to-seed` is unreachable today (no caller passes `seedAuthoritative` any more) but stays in the
+ *  set: if it is ever re-enabled it means a store copy was OVERWRITTEN, which is the most actionable
+ *  verdict there is. A banner that would silently miss that is worse than one carrying a dead branch. */
+const ACTIONABLE_SEED_KINDS = new Set(["orphaned", "unstamped", "reset-to-seed"]);
+
 /**
- * Seed-drift banner (#4216) — the reader `seedNotices` never had.
+ * Seed-notice banner (#4216) — the reader `seedNotices` never had.
  *
- * `reconcileSeed` has always computed divergence verdicts (`updated-upstream`, `orphaned`,
- * `reset-to-seed`, and now `unstamped`) and the store has always collected them. Nothing rendered them:
- * every reference to `seedNotices` lived inside the designs slice itself, so the mechanism computed the
- * right answer and dropped it on the floor. That is why 44 app records drifted from their seeds unnoticed
- * while every guard we had — which reads the SEED, not the store copy the app renders — stayed green.
+ * `reconcileSeed` computes verdicts and the store collects them; nothing rendered them, because every
+ * reference to `seedNotices` lived inside the designs slice itself. The mechanism computed the right
+ * answer and dropped it on the floor.
  *
- * Deliberately REPORT-ONLY. It offers no "fix all": the drift runs both directions (some store copies are
- * far smaller than their seed, some far larger), so which side is right is a per-record judgement. A
- * one-click bulk resolve would be the more dangerous bug.
+ * Now scoped to {@link ACTIONABLE_SEED_KINDS}: a record the seed RETIRED but the store still holds
+ * (`orphaned`), and one sitting outside the reconcile entirely (`unstamped`). Both need a decision;
+ * plain divergence does not.
+ *
+ * Still REPORT-ONLY for `orphaned` — which side is right is a per-record judgement, and a one-click bulk
+ * resolve would be the more dangerous bug. `unstamped` is the exception and has a repair, because it
+ * adjudicates no content at all.
  */
-function SeedDriftBanner() {
-  const notices = useAppStore((s) => s.seedNotices);
+export function SeedDriftBanner() {
+  const allNotices = useAppStore((s) => s.seedNotices);
   const dismissSeedNotice = useAppStore((s) => s.dismissSeedNotice);
   const restampUnstamped = useAppStore((s) => s.restampUnstamped);
   const [open, setOpen] = useState(false);
@@ -639,12 +654,13 @@ function SeedDriftBanner() {
     setBusy(true);
     try {
       const { stamped, deferred } = await restampUnstamped();
-      // Name the deferrals rather than reporting a bare count: they are the records the repair
-      // deliberately would not touch (pages, where the seed would win, #3723), and a "re-stamped 38" that
-      // silently omitted 6 would read as a complete repair.
+      // Still REPORT a deferral rather than folding it into the count — a "re-stamped 38" that silently
+      // omitted 6 would read as a complete repair. It cannot fire today: deferral needs a
+      // `seedAuthoritative` predicate and `planComponentRestamp` passes none, so `deferred` is always 0.
+      // The branch stays because it is the honest reading if that predicate ever returns.
       setResult(
         deferred > 0
-          ? `Re-stamped ${stamped}. ${deferred} page${deferred === 1 ? "" : "s"} left alone — the seed wins for pages, so stamping would replace what renders.`
+          ? `Re-stamped ${stamped}. ${deferred} left alone — the seed is authoritative for ${deferred === 1 ? "it" : "them"}, so stamping would replace what renders.`
           : `Re-stamped ${stamped}.`,
       );
     } finally {
@@ -652,8 +668,14 @@ function SeedDriftBanner() {
     }
   }, [restampUnstamped]);
 
-  // `unstamped` is the state nothing was watching for; the rest are pre-existing verdicts that were
-  // equally invisible. Group so the count reads as "what kind of trouble", not just "how many".
+  // Filter FIRST, then group — so a run whose only verdicts are plain divergence raises nothing at all
+  // rather than an empty expander.
+  const notices = useMemo(
+    () => allNotices.filter((it) => ACTIONABLE_SEED_KINDS.has(it.kind)),
+    [allNotices],
+  );
+
+  // Group so the count reads as "what kind of trouble", not just "how many".
   const byKind = useMemo(() => {
     const m = new Map<string, typeof notices>();
     for (const n of notices) m.set(n.kind, [...(m.get(n.kind) ?? []), n]);
@@ -678,8 +700,9 @@ function SeedDriftBanner() {
         // hydrate, so this hides a known state rather than resolving it.
         onDismiss={() => notices.forEach((it) => dismissSeedNotice(it.type, it.id))}
       >
-        {n} record{n === 1 ? "" : "s"} differ{n === 1 ? "s" : ""} from the packaged seed — the app renders
-        the store copy. Review which side is right; this is not resolved automatically.
+        {n} record{n === 1 ? "" : "s"} need{n === 1 ? "s" : ""} a decision —{" "}
+        <b>{byKind.map(([kind, items]) => `${items.length} ${kind}`).join(" · ")}</b>. Editing in place
+        is expected; these sit outside it.
       </Banner>
       {open && (
         <Box className="app-banner-detail">
