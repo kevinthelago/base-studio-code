@@ -128,6 +128,45 @@ function containment(rec, file) {
   return inter / rec.size;
 }
 
+/** The SOURCE REGION of one symbol's definition — from its `function`/`const`/`class` keyword to the
+ *  matching close brace. Brace-counted rather than parsed: this runs in the default gate where no
+ *  TypeScript AST is available, and the count only has to be right for well-formed source.
+ *
+ *  WHY REGION-SCOPED COMPARISON IS THE ONLY HONEST DRIFT SIGNAL. A whole-file comparison cannot separate
+ *  a record that is STALE from one that differs BY CONSTRUCTION — and almost all of them differ by
+ *  construction. 72 of the 143 whole-file "drifted" records VENDOR symbols the file merely imports (a
+ *  record must be self-standing: the loader resolves only registered modules and sibling records, so a
+ *  record inlines what a file is free to import), and most of the rest are a small leaf LIFTED out of a
+ *  large file. Both make the file look hundreds of lines "ahead" while the component itself is byte-identical.
+ *  Comparing the file's definition of `X` against the record's definition of `X` excludes imports, vendored
+ *  helpers, and every other component in the file — leaving the only question that matters: has this
+ *  component actually changed since the record captured it? */
+function symbolRegion(src, sym) {
+  if (!sym) return null;
+  const m = new RegExp(`(?:^|\\n)\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?(?:function|const|class)\\s+${sym}\\b`).exec(src);
+  if (!m) return null;
+  const start = m.index;
+  // Find the BODY brace, not the first one. `function LogView({ paneId }: Props) {` opens a brace inside
+  // the parameter list, and matching from there returns just the destructuring pattern — which scored
+  // region-similarity 0.00 for 79 records and read as "the body changed completely" when nothing had.
+  // The body brace is the first `{` seen at paren depth 0.
+  let parens = 0, open = -1;
+  for (let i = start; i < src.length; i++) {
+    const c = src[i];
+    if (c === "(") parens++;
+    else if (c === ")") parens--;
+    else if (c === "{" && parens === 0) { open = i; break; }
+    else if (c === ";" && parens === 0) return src.slice(start, i + 1); // a bodyless declaration
+  }
+  if (open < 0) return src.slice(start, start + 400);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}" && --depth === 0) return src.slice(start, i + 1);
+  }
+  return src.slice(start);
+}
+
 /** Every source file under src/, with its line set precomputed once. */
 function indexSourceFiles() {
   const files = [];
@@ -207,6 +246,16 @@ function classify(rec, files) {
       best: best.rel, bestScore: +best.score.toFixed(3),
       runnerUp: second.rel, runnerUpScore: +second.score.toFixed(3), confident: !!confident,
     };
+  }
+
+  // The symbol is in BOTH — so compare DEFINITION to DEFINITION. This is the only comparison that is not
+  // swamped by vendoring and lifting (see `symbolRegion`), and it is what decides drift.
+  const fileRegion = symbolRegion(fileSrc, sym);
+  const recRegion = symbolRegion(rec.srcText ?? "", sym);
+  if (fileRegion && recRegion) {
+    const rScore = similarity(lineSet(recRegion), lineSet(fileRegion));
+    const verdict = rScore >= DRIFT_MIN ? "ok" : "drifted";
+    return { verdict, symbol: sym, score: +score.toFixed(3), region: +rScore.toFixed(3), by: "region" };
   }
   return { verdict: "drifted", symbol: sym, score: +score.toFixed(3) };
 }
