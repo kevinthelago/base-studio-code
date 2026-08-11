@@ -230,6 +230,46 @@ function defaultedParams(sig) {
  *  means the record may ALSO be stale and needs a human. Annotating those would bury a real defect under
  *  a reason that is true but incomplete. */
 function divergenceReason(recRegion, fileRegion, sym) {
+  // ── CLASS 2: PREVIEW DATA SUBSTITUTION ────────────────────────────────────────────────────────────
+  // The preview mounts a record with no Tauri backend and no app store, so a record that called
+  // `invoke(…)` or `useAppStore()` would throw on mount. Records therefore swap the DATA layer for
+  // sample constants and inert handlers while keeping the render layer: `storagecard` uses SAMPLE_ROWS
+  // where the file calls `invoke("worktrees_disk_usage")`; `permissionposturecard` uses `useState(false)`
+  // where the file uses `useAppStore()` + `useSandboxReadiness()`.
+  //
+  // The honesty check is DIFFERENT from class 1's. The file's live-data lines are legitimately absent from
+  // the record, so a line count says nothing — but the RENDER layer should still agree. If the JSX has
+  // also moved on, the record is behind on UI as well and substitution is not a full explanation:
+  // `tabstrip` is the case that proves it, 21 record lines against 34 in the file, which gained stable
+  // tab-id identity and detached-tab handling the record never got. So the markup must match too.
+  const LIVE = /\binvoke\s*\(|\buseAppStore\s*\(|\bsafeInvoke\s*\(|\bfireInvoke\s*\(/;
+  const SAMPLE = /\b(?:SAMPLE|DEMO|MOCK)_[A-Z0-9_]+\b/g;
+  const markup = (r) => new Set(r.split("\n").map((l) => l.trim()).filter((l) => l.includes("<") && l.length > 12));
+  const recSamples = new Set(recRegion.match(SAMPLE) ?? []);
+  const fileSamples = new Set(fileRegion.match(SAMPLE) ?? []);
+  const ownSamples = [...recSamples].filter((s) => !fileSamples.has(s));
+  const goesLive = LIVE.test(fileRegion) && !LIVE.test(recRegion);
+  if (goesLive || ownSamples.length) {
+    const rj = markup(recRegion), fj = markup(fileRegion);
+    const inter = [...rj].filter((l) => fj.has(l)).length;
+    const jsx = rj.size && fj.size ? inter / (rj.size + fj.size - inter) : 0;
+    if (jsx >= 0.6) {
+      const what = goesLive
+        ? "the file reaches live data (a Tauri `invoke` / the app store) where the record uses inert stand-ins"
+        : `the record uses the sample constant(s) ${ownSamples.map((s) => `\`${s}\``).join(", ")}`;
+      return (
+        `Deliberate, not stale — preview DATA SUBSTITUTION. In \`${sym}\`, ${what}, because the preview ` +
+        `mounts a record with no Tauri backend and no app store, so a live call would throw on mount. The ` +
+        `RENDER layer still agrees (${(jsx * 100).toFixed(0)}% of markup lines shared), which is what says ` +
+        `the divergence is confined to the data layer rather than the record being behind on UI. ` +
+        `Refreshing from the file would import modules the loader cannot resolve and make the record ` +
+        `un-previewable. Written by scripts/reconcile-record-src.cjs --annotate.`
+      );
+    }
+    return null; // substituted AND the markup moved on — needs a human, not an annotation
+  }
+
+  // ── CLASS 1: PREVIEW PARAMETERIZATION ─────────────────────────────────────────────────────────────
   const added = defaultedParams(signatureOf(recRegion)).filter((n) => !defaultedParams(signatureOf(fileRegion)).includes(n));
   const states = /\b(loading|error)\b/.test(recRegion) && !/\b(loading|error)\b/.test(fileRegion);
   if (!added.length && !states) return null;
