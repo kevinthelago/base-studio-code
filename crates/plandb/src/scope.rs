@@ -195,6 +195,7 @@ mod tests {
             acceptance: 0,
             owns: 0,
             depends_on: 0,
+            gh_number: None,
         }];
         let block = render_assigned("ui", &open).unwrap();
         assert!(block.contains("stream 'ui'") && block.contains("F1") && block.contains("UI work"), "{block}");

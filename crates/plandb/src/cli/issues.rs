@@ -6,7 +6,7 @@
 use super::{emit_set_result, open_store, Args};
 use super::render::{compute_overview, overview_json, render_fields_tsv, render_issue, render_overview_text, render_summary_tsv};
 use crate::{is_valid_status, PlanIssue, Store, STATUSES};
-use bsc_sqlite_util::{print_json, read_stdin_json};
+use bsc_sqlite_util::{print_json, read_stdin_json, read_stdin_json_one};
 
 /// `add` — upsert issues from JSON on stdin, echo the assigned ref(s).
 pub(crate) fn cmd_add_cmd(args: &Args) -> Result<(), String> {
@@ -104,6 +104,39 @@ pub(crate) fn cmd_status(args: &Args) -> Result<(), String> {
     }
     if !args.json {
         println!("{r} → {new}");
+    }
+    Ok(())
+}
+
+/// `link <ref>` — record the GitHub identity a publish/sync established, from `{ghNumber, ghNodeId}`
+/// JSON on stdin.
+///
+/// Separate from `add` because it is a DIFFERENT WRITE by a different actor: `add` is the planner
+/// rewriting content, `link` is publish reporting what GitHub assigned. Folding it into `add` would
+/// mean every content edit had to carry the identity or lose it — the exact clobber the upsert's
+/// CONFLICT branch is written to prevent.
+pub(crate) fn cmd_link(args: &Args) -> Result<(), String> {
+    let r = args.positional.get(1).ok_or("usage: bsc plan link <ref>  (JSON {ghNumber, ghNodeId} on stdin)")?;
+    let v: serde_json::Value = read_stdin_json_one("link JSON")?;
+    // Accept either spelling: the frontend emits camelCase, a shell caller reaches for snake_case.
+    let num = v.get("ghNumber").or_else(|| v.get("gh_number")).and_then(|n| n.as_i64())
+        .ok_or("link needs a positive integer `ghNumber`")?;
+    if num <= 0 {
+        // Rejected rather than stored: issue numbers start at 1, so a 0 can only be a placeholder, and
+        // storing one would make an unpublished issue claim an identity and be skipped by every sync.
+        return Err(format!("ghNumber must be a positive issue number (got {num})"));
+    }
+    let node = v.get("ghNodeId").or_else(|| v.get("gh_node_id")).and_then(|n| n.as_str());
+    let s = open_store(&args.db)?;
+    // #3279: a scoped worker may link only its own stream's issues — same gate as `status`.
+    let issue = s.get(r).map_err(|e| e.to_string())?.ok_or_else(|| format!("no issue with ref '{r}'"))?;
+    crate::scope::check_access(crate::scope::env_stream().as_deref(), r, issue.stream.as_deref())?;
+    let n = s.set_github_identity(r, num, node).map_err(|e| e.to_string())?;
+    if n == 0 {
+        return Err(format!("no issue with ref '{r}'"));
+    }
+    if !args.json {
+        println!("{r} → #{num}");
     }
     Ok(())
 }

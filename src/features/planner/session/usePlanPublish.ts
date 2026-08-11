@@ -374,6 +374,9 @@ export function usePlanPublish(deps: PlanPublishDeps) {
         projectId, streams, viewerLogin,
       }, {
         upsertIssue: (iss) => bscWrite(effectiveProjectId, ["plan", "add"], iss),
+        setIssueIdentity: (ref, ghNumber, ghNodeId) =>
+          bscWrite(effectiveProjectId, ["plan", "link", ref], { ghNumber, ghNodeId }),
+        loadIssues: () => bscJson<PlanIssue[]>(effectiveProjectId, ["plan", "list", "--full", "--json"], []),
       });
 
       // 4. Stream labels.

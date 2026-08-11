@@ -94,6 +94,10 @@ export function recoverIssue(gh: GitHubIssueLike, repoFullName: string): PlanIss
     labels,
     repo: repoFullName,
     status,
+    // Record the identity we already have in hand. Recovery is the one path that reads a real GitHub
+    // issue, so a rehydrated plan.db comes back ALREADY linked rather than looking freshly-drafted —
+    // which would make the next publish offer to create a second issue for every row it just restored.
+    ghNumber: gh.number > 0 ? gh.number : undefined,
     ...parseIssueBody(rawBody),
   };
 }

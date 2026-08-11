@@ -126,6 +126,18 @@ USAGE:
 Sets one issue's status. <status> is one of: open | in_progress | blocked | complete | verified | failed.",
     },
     CmdDoc {
+        name: "link",
+        summary: "record the GitHub issue an issue was published as",
+        usage: "\
+USAGE:
+  bsc plan link <ref>   # {\"ghNumber\": 3898, \"ghNodeId\": \"I_x\"} as JSON on stdin
+
+Records the GitHub identity a publish/sync established for one issue. `ghNodeId` is optional and a
+known one is kept when omitted. This is the durable plan↔GitHub link: it is how a re-publish knows an
+issue already exists (rather than comparing titles, which a rename defeats) and how a sync knows which
+rows still need creating. A content edit via `add` never touches it.",
+    },
+    CmdDoc {
         name: "remove",
         summary: "delete an issue",
         usage: "\
@@ -589,6 +601,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // #3842: the BATCHED read — every artifact the planner poll needs in one spawn.
         "snapshot" => snapshot::cmd_snapshot(&args),
         "status" => issues::cmd_status(&args),
+        "link" => issues::cmd_link(&args),
         "remove" => issues::cmd_remove(&args),
         "render" => issues::cmd_render(&args),
         "feature" => nouns::cmd_feature(&args),
@@ -796,7 +809,7 @@ mod tests {
         let ov = bsc_cli_util::help_overview("bsc plan", TAGLINE, COMMANDS);
         // Every top-level command appears in the compact menu.
         for c in [
-            "add", "get", "summary", "list", "mine", "status", "remove", "render", "snapshot", "feature", "repo",
+            "add", "get", "summary", "list", "mine", "status", "link", "remove", "render", "snapshot", "feature", "repo",
             "fleet", "deploy", "deps", "market", "classify", "transformation", "mcp", "blueprint", "ui", "discovery",
             "confirm", "skip", "integration", "lesson", "request", "triage", "stage", "automations", "startup",
             "github-context", "artifact",

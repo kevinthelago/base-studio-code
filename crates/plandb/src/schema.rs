@@ -54,6 +54,9 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             depends_on  TEXT NOT NULL DEFAULT '[]',
             labels      TEXT NOT NULL DEFAULT '[]',
             status      TEXT NOT NULL DEFAULT 'open',
+            gh_number   INTEGER,
+            gh_node_id  TEXT,
+            synced_at   INTEGER,
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
          );
@@ -187,6 +190,16 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // around it, so an existing plan.db picks it up in place with no data loss.
     let _ = conn.execute("ALTER TABLE features ADD COLUMN requires TEXT NOT NULL DEFAULT '[]'", []);
     let _ = conn.execute("ALTER TABLE features ADD COLUMN phase TEXT", []);
+    // The GitHub identity of a published issue. Additive like the columns above, so an existing plan.db
+    // picks them up in place with no data loss.
+    //
+    // NULLABLE, deliberately — and NOT defaulted. "Never published" has to be representable and has to
+    // be distinguishable from "published as issue 0", because that distinction is the entire input to
+    // `bsc plan sync`: a NULL `gh_number` is what says an issue still needs creating. A `DEFAULT 0`
+    // would make every pre-existing row claim to be issue #0 and the first sync would skip all of them.
+    let _ = conn.execute("ALTER TABLE issues ADD COLUMN gh_number INTEGER", []);
+    let _ = conn.execute("ALTER TABLE issues ADD COLUMN gh_node_id TEXT", []);
+    let _ = conn.execute("ALTER TABLE issues ADD COLUMN synced_at INTEGER", []);
     Ok(())
 }
 
@@ -249,6 +262,42 @@ mod tests {
         // Idempotent — a second migrate on the already-migrated db is a no-op, not an error.
         migrate(&conn).unwrap();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM features", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
+    }
+
+    /// An EXISTING plan.db gains the GitHub-identity columns in place. Every project on disk today has
+    /// an `issues` table without them, and `CREATE TABLE IF NOT EXISTS` is a no-op for a table that
+    /// already exists — so without the ALTERs those projects would never see the columns and every
+    /// read would fail on the new `SELECT`.
+    #[test]
+    fn issues_gains_github_identity_on_an_existing_db_without_losing_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        // A pre-migration issues table — no gh_number / gh_node_id / synced_at.
+        conn.execute_batch(
+            "CREATE TABLE issues (ref TEXT PRIMARY KEY, title TEXT NOT NULL, phase TEXT, repo TEXT, \
+             stream TEXT, parent TEXT, body TEXT, acceptance TEXT NOT NULL DEFAULT '[]', \
+             owns TEXT NOT NULL DEFAULT '[]', depends_on TEXT NOT NULL DEFAULT '[]', \
+             labels TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'open', \
+             position INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0); \
+             INSERT INTO issues (ref, title, status) VALUES ('invite-teammates', 'Invite teammates', 'complete');",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+
+        // The row survived, and the identity reads as NULL — "never published", which is what makes the
+        // first sync offer to create it. A DEFAULT 0 here would claim it is already issue #0.
+        let (title, status, num): (String, String, Option<i64>) = conn
+            .query_row("SELECT title, status, gh_number FROM issues WHERE ref = 'invite-teammates'", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(title, "Invite teammates");
+        assert_eq!(status, "complete", "existing data is untouched");
+        assert_eq!(num, None, "an unpublished row must be distinguishable from issue 0");
+
+        // Idempotent — a second migrate on the already-migrated db is a no-op, not an error.
+        migrate(&conn).unwrap();
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM issues", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1);
     }
 }

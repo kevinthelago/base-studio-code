@@ -40,6 +40,33 @@ describe("parseIssuesFile", () => {
     expect(out[0].parent).toBeUndefined();
     expect(out[1].parent).toBe("invite");
   });
+
+  it("carries the GitHub identity through, in either casing", () => {
+    // plan.db emits camelCase; a hand-authored or older file may use snake_case, same as dependsOn.
+    const out = parseIssuesFile(JSON.stringify([
+      { ref: "a", title: "A", ghNumber: 3898, ghNodeId: "I_a", syncedAt: 1_700_000_000 },
+      { ref: "b", title: "B", gh_number: 3877, gh_node_id: "I_b" },
+    ]));
+    expect(out[0].ghNumber).toBe(3898);
+    expect(out[0].ghNodeId).toBe("I_a");
+    expect(out[0].syncedAt).toBe(1_700_000_000);
+    expect(out[1].ghNumber).toBe(3877);
+    expect(out[1].ghNodeId).toBe("I_b");
+  });
+
+  it("treats a missing, zero, or non-integer number as UNPUBLISHED", () => {
+    // Absence is meaningful: it is what marks an issue as still needing creation. Coercing any of
+    // these to a number would make an unpublished issue claim an identity and be skipped by the sync
+    // that exists to create it.
+    const out = parseIssuesFile(JSON.stringify([
+      { ref: "a", title: "A" },
+      { ref: "b", title: "B", ghNumber: 0 },
+      { ref: "c", title: "C", ghNumber: "3898" },
+      { ref: "d", title: "D", ghNumber: null },
+      { ref: "e", title: "E", ghNumber: 12.5 },
+    ]));
+    expect(out.map((i) => i.ghNumber)).toEqual([undefined, undefined, undefined, undefined, undefined]);
+  });
 });
 
 describe("issueTree (feature → sub-issue tree)", () => {
