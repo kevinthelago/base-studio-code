@@ -414,40 +414,90 @@ the two.) Its changes are stamped under the `[1.0.41]` CHANGELOG section; new po
 accrues under `[Unreleased]`. The full version-by-version breakdown lives in
 [ROADMAP.md](ROADMAP.md).
 
-## GitHub Workflow
+## Development Workflow — local-first, on the `bsc` surface
 
-### Branch strategy
+> **This section OVERRIDES the global `~/.claude/CLAUDE.md` "GitHub Issues & Projects" workflow for
+> this repository.** That file mandates a GitHub Issue per change and a PR per branch. Here the work
+> is tracked in **`plan.db` via `bsc plan`**, and **GitHub stays silent** — no issues, no branches
+> pushed, no PRs, no `gh` writes. Everything else in the global file still applies.
+
+### Where the work lives
+
+The project's own plan store — `~/.base-studio-code/plans/base-studio-code.db`, reached with the
+bundled `bsc` binary:
+
+```bash
+export BSC_PLAN_DB="$HOME/.base-studio-code/plans/base-studio-code.db"
+
+bsc plan list                      # the board
+bsc plan list --status open        # what's available
+bsc plan get <ref>                 # one item: body + acceptance criteria
+bsc plan status <ref> <status>     # open → in_progress → complete → verified
+```
+
+This is the same surface a fleet worker already uses, so there is one way to read the plan whether a
+human or an agent is driving. `bsc plan` is in the always-allowed mandatory tier, so no session needs
+a permission grant to reach it.
+
+Every migrated item keeps its old GitHub number in `ghNumber` as a **silent back-link** — the trail
+survives and a future `bsc plan sync` can reconcile, but nothing writes to GitHub in the meantime.
+
+### Branch strategy — one branch per work item, 1:1
 
 ```
-{issue-number}-{short-description}  →  develop  →  main
+<ref>  →  develop
 ```
 
-- All feature/fix branches are cut from `develop`.
-- PRs target `develop`. CI must pass before merge.
-- `develop → main` is a separate PR; merge only when `develop` is stable.
-- Never push directly to `main` or `develop`.
+The branch name **IS** the issue's `ref`. One ref, one branch, one worktree, one worker — so a
+worker's plan row, its branch, and its working tree are all reachable from a single name. Migrated
+refs carry their origin number (`4260-sandbox-by-default-…`), which is exactly the branch convention
+this repo already used; new items pick a descriptive slug.
 
-### Issue → branch → PR flow
+- Cut from `develop`. Never commit on `develop` or `main` directly.
+- Keep branches short-lived and scoped to the minimum change that satisfies the item.
+- **Do not push.** The branch is local. Integration is a local merge into `develop` once verified.
 
-1. Claim the GitHub Issue; confirm acceptance criteria.
-2. Create the branch from the issue using `gh issue develop <number>` or the GitHub UI Development panel.
-3. Implement the minimum changes to close the issue.
-4. Push and open a PR targeting `develop`. Reference the issue with `Closes #N`.
+### Item → branch → verify flow
+
+1. **Claim** the item: `bsc plan get <ref>` and confirm its acceptance criteria before writing code.
+2. **Branch** on its ref: `git worktree add wt-<short> -b <ref> develop`, and
+   `bsc plan status <ref> in_progress`.
+3. **Implement** the minimum change, **with its tests in the same branch** (never after).
+4. **Gate** — every command below must pass (unchanged; see *Verify* under Parallel worktree agents).
+5. **Complete**: `bsc plan status <ref> complete` — the worker's half is done.
+6. **Verify**: whoever reviews confirms the acceptance criteria and moves it to `verified`, then
+   merges the branch into `develop` locally. `complete` ≠ done; `verified` is done.
+
+`complete` and `verified` are deliberately distinct, and it is the same split the fleet already runs:
+the actor who did the work is not the actor who confirms it. Collapsing them would mean a change is
+"done" on the word of the thing that wrote it.
+
+### GitHub stays silent
+
+Reads are fine (`gh issue list`, `gh api` GET) — they are how the eventual sync learns about drift.
+**Writes are not**: no `gh issue create/close/edit`, no `gh pr create/merge`, no `git push`. If a
+change genuinely needs to reach GitHub, that is a decision for the maintainer, not a step in this
+loop.
 
 ### Parallel worktree agents
 
-Independent issues are worked **concurrently**, each by an agent in its own **git worktree** so
-parallel file edits never collide. Every worktree agent runs the same lifecycle — the commands below
-are the full set it needs end to end.
+Independent items are worked **concurrently**, each by an agent in its own **git worktree** so
+parallel file edits never collide. One item = one ref = one branch = one worktree = one agent; that
+1:1 chain is what makes a worker's state answerable from a single name. Every worktree agent runs the
+same lifecycle — the commands below are the full set it needs end to end.
 
-**1 · Set up the worktree** (branch off the latest `develop`):
+**1 · Set up the worktree** — the branch is the item's `ref` (1:1), cut from local `develop`:
 ```bash
-git fetch origin develop
-git worktree add .claude/worktrees/{issue}-{short-description} -b {issue}-{short-description} origin/develop
+bsc plan get <ref>                                   # confirm the acceptance criteria FIRST
+bsc plan status <ref> in_progress
+git worktree add wt-<short> -b <ref> develop
 ```
+Cut from **local `develop`**, not `origin/develop`: nothing is pushed any more, so integrations land
+locally and the remote drifts behind on purpose. `.claude/worktrees/` is write-denied mid-session,
+so worktrees go at the repo root as `wt-<short>` (still nested ⇒ still zero-install, see below).
 
 **`node_modules` — nested worktrees need NO install.** A worktree created *nested under the repo
-root* (the convention: `.claude/worktrees/<branch>/`) resolves every dependency from the repo-root
+root* (the convention: `wt-<short>/`) resolves every dependency from the repo-root
 `node_modules` via Node/npm's normal upward directory walk — `tsc`, `vitest`, `eslint`, and the app's
 imports all find it, and `npm run <script>` prepends every ancestor `node_modules/.bin` to PATH. So a
 nested worktree is **zero-install**: 0 MB, 0 install time, and **safe to delete** (no local
@@ -465,9 +515,9 @@ from the shared ancestor `node_modules` (#1669).
 > `git worktree remove` follows it and wipes the main install. Use the nested zero-install pattern (or a
 > real install), never a link.
 
-**2 · Implement** the minimum change to close the issue, **with its tests in the same branch** (never after).
+**2 · Implement** the minimum change to satisfy the item, **with its tests in the same branch** (never after).
 
-**3 · Verify — the gate (every command must pass; mirrors CI exactly):**
+**3 · Verify — the gate (every command must pass). Unchanged, and still mandatory:**
 ```bash
 # Frontend (run when src/ changed)
 npm run typecheck                                   # tsc --noEmit, must be clean
@@ -481,26 +531,33 @@ cargo clippy --workspace --all-targets -- -D warnings   # --all-targets — --li
 cargo test --workspace                                  # or `-p <crate>` to scope a slow build
 ```
 
-**4 · Commit** on the branch (do **not** push until approved); end the message with the agreed
-`Co-Authored-By:` trailer.
+**4 · Commit** on the branch — **never push**. End the message with the agreed `Co-Authored-By:` trailer.
 
-**5 · Push + PR** (after approval): push the branch, then
-`gh pr create --base develop --title "…" --body "… Closes #N"`.
-
-**6 · Merge + clean up** once the PR's CI gate is green
-(`gh pr merge <n> --merge --admin` — the PR run IS the integration test, so don't wait past green):
+**5 · Mark it complete** — the worker's half is done, awaiting confirmation:
 ```bash
-git push origin --delete {branch}
-git worktree remove --force <worktree-path>          # real node_modules → safe; a junction is NOT
-git branch -D {branch}                               # fails while the branch is checked out in a worktree
+bsc plan status <ref> complete
 ```
+Stop here. `complete` means "I did my part", not "this is done". The actor that wrote the change does
+not get to declare it correct.
+
+**6 · Verify + integrate** (the reviewing actor, not the one who implemented): confirm each acceptance
+criterion from `bsc plan get <ref>`, then
+```bash
+bsc plan status <ref> verified
+git merge --no-ff <ref>                              # into local develop; NEVER pipe this into a chain
+git worktree remove --force wt-<short>               # real node_modules → safe; a junction is NOT
+git branch -d <ref>                                  # fails while the branch is checked out in a worktree
+```
+Verify the merge landed **before** deleting anything — a failed merge followed by a branch delete
+destroys the work, which is why these are separate commands and never `&&`-chained.
 
 Gotchas:
-- **Base drift:** a branch cut from an older `develop` can fail an *unrelated* test that broke on the
-  current `develop` (the fleet pushes straight to `develop`, bypassing CI). Refresh with
-  `git merge origin/develop` and re-push rather than chasing a phantom failure.
-- The merge's `--delete-branch` aborts if the branch is checked out in a worktree — delete the **remote**
-  branch, `git worktree remove --force` the worktree, then delete the **local** branch (order matters).
+- **Base drift:** a branch cut from an older `develop` can fail an *unrelated* test that broke since.
+  Refresh with `git merge develop` and re-gate rather than chasing a phantom failure.
+- Deleting the branch fails while it is checked out in a worktree — remove the **worktree** first,
+  then the branch (order matters).
+- A branch whose ref carries a migrated GitHub number (`4260-…`) is still purely local. The number is
+  provenance, not a link to act on — do not `gh` anything on it.
 
 ### Dependency order for UI issues
 
