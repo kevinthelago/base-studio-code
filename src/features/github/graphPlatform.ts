@@ -7,6 +7,9 @@
 // automations/security graph-platforms.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as Planner from "@/features/planner"; // ProjectsSummary/ProjectBoard/Roadmap/Issues/Insights (board drill-in)
+// `record-link-debt`: the board leaves those views compose (IssueCard). Reached through the barrel — the
+// registration lives inside the planner, so this stays a barrel-only dependency (#1545).
+import { registerPlannerGithubPlatform } from "@/features/planner";
 import * as GithubSummary from "./lib/githubSummary";
 import * as UseGithubSummary from "./useGithubSummary";
 import * as UseRepoPulse from "./lib/useRepoPulse";
@@ -23,4 +26,5 @@ export function registerGithubPlatform(): void {
   registerAppModule("@/features/github/useGithubSummary", UseGithubSummary);
   registerAppModule("@/features/github/lib/useRepoPulse", UseRepoPulse);
   registerAppModule("@/features/github/heatFill", HeatFill);
+  registerPlannerGithubPlatform();
 }

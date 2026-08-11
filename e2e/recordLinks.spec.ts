@@ -18,34 +18,18 @@ import { test, expect } from "@playwright/test";
 const HARNESS = "/e2e/harness/graph-pages-harness.html";
 
 /**
- * Records whose imports resolve to NOTHING today — real breakage, pre-dating this check.
+ * Records whose imports resolve to NOTHING — **EMPTY, and it stays empty.**
  *
- * `platformBoundary.test.ts` has been RED on `develop` with this exact list, and with the repo's CI
- * workflows disabled nothing was reporting it. Six modules are simply never registered
- * (`KeyValueList`, `LabelChip`, `TracePlayer`, `SessionFailure`, `SessionReadinessBanner`,
- * `@tauri-apps/api/app`, `IssueCard`) and `@/components/teams-agent-face` names a record that does not
- * exist at all, so it cannot be fixed by registering anything.
+ * It held 14 entries: six specifiers registered nowhere (`KeyValueList`, `LabelChip`, `TracePlayer`,
+ * `SessionFailure`, `SessionReadinessBanner`, `@tauri-apps/api/app`, `IssueCard`) plus
+ * `@/components/teams-agent-face`, which named a record that did not exist. `record-link-debt` registered
+ * the six and authored the record, so every entry came out.
  *
- * Listed rather than ignored, and RATCHETED by the test below: the list may only shrink. A guard whose
- * exclusions can grow silently is how a guard stops guarding — the same reasoning `graphParity`'s
- * KNOWN_STALE carries. Fixing these is `record-link-debt`.
+ * The ratchet below is what makes this list one-way, and it is the point: an exclusion list that can grow
+ * silently is how a guard stops guarding — the same reasoning `graphParity`'s KNOWN_STALE carries. A new
+ * unresolved record fails the check above rather than landing here.
  */
-const KNOWN_UNRESOLVED = new Set([
-  "statusbar",
-  "terminalbanners",
-  "vizpreview",
-  "vizstage",
-  "column",
-  "issuecard",
-  "detailpanel",
-  "teams-canvas",
-  "teamspage",
-  "collectionpage",
-  "pipelinepage",
-  "recordpage",
-  "tablepage",
-  "treeexplorerpage",
-]);
+const KNOWN_UNRESOLVED = new Set<string>([]);
 
 // ~383 records each compiled with esbuild-wasm; the compile cache collapses shared subtrees but the
 // first pass is genuinely long.
