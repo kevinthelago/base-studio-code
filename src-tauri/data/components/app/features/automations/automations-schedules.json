@@ -18,6 +18,6 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/automations/AutomationsSchedules.tsx",
+  "src": "src/features/automations/Schedules.tsx",
   "folder": "features/automations"
 }

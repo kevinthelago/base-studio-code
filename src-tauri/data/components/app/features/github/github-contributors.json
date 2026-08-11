@@ -13,6 +13,6 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/github/GitHubContributors.tsx",
+  "src": "src/features/github/summary/ContributorsCard.tsx",
   "folder": "features/github"
 }

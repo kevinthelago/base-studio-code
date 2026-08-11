@@ -11,6 +11,6 @@
     "Row",
     "Text"
   ],
-  "src": "src/features/skills/SkillsNewGroupDialog.tsx",
+  "src": "src/features/skills/NewGroupDialog.tsx",
   "folder": "features/skills"
 }

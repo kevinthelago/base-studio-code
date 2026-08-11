@@ -7,7 +7,7 @@
   "composes": [
     "ActivityFeed"
   ],
-  "src": "src/features/github/GitHubCrossRepoActivity.tsx",
+  "src": "src/features/github/summary/CrossRepoActivity.tsx",
   "folder": "features/github",
   "props": []
 }

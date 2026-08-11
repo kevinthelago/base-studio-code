@@ -9,6 +9,6 @@
     "Spacer",
     "Text"
   ],
-  "src": "src/features/github/GitHubPageModeStrip.tsx",
+  "src": "src/features/github/summary/GitHubPageModeStrip.tsx",
   "folder": "features/github"
 }

@@ -14,6 +14,6 @@
     "Skeleton",
     "Text"
   ],
-  "src": "src/features/skills/SkillsLessonsTab.tsx",
+  "src": "src/features/skills/LessonsTab.tsx",
   "folder": "features/skills"
 }

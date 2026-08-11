@@ -22,7 +22,7 @@
     "TabBar",
     "Text"
   ],
-  "src": "src/features/mcp/McpWorkspace.tsx",
+  "src": "src/features/mcp/index.tsx",
   "folder": "features/mcp",
   "props": [],
   "tests": [

@@ -11,6 +11,6 @@
     "StatTile",
     "Text"
   ],
-  "src": "src/features/automations/AutomationsHistory.tsx",
+  "src": "src/features/automations/History.tsx",
   "folder": "features/automations"
 }

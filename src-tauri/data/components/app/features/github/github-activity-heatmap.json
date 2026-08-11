@@ -11,6 +11,6 @@
     "Skeleton",
     "Text"
   ],
-  "src": "src/features/github/GitHubActivityHeatmap.tsx",
+  "src": "src/features/github/summary/ActivityHeatmap.tsx",
   "folder": "features/github"
 }
