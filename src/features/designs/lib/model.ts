@@ -214,7 +214,8 @@ export interface ComponentRecord {
    *  override (a normal graph component, imported only as a `@/components/<id>` sibling). Graph-first with a
    *  code fallback: an unmatched specifier stays external (→ the registry), exactly as before. */
   provides?: string;
-  /** WHY this record's body deliberately differs from the file its {@link src} names (`record-src-reconcile`).
+  /** WHY this record's body deliberately differs from the file its {@link src} names — or why it has no
+   *  {@link src} at all (`record-src-reconcile`).
    *
    *  A record and its file disagree far more often than they are out of sync, and almost always ON PURPOSE:
    *  a record is mounted by the Design Studio with NO props, so it gives its parameters demo defaults (and
@@ -226,6 +227,15 @@ export interface ComponentRecord {
    *  Reasons written by `scripts/reconcile-record-src.cjs --annotate` carry a trailing marker naming the
    *  script, which is what lets a re-run refresh its OWN wording without ever clobbering a hand-written one. */
   srcDivergence?: string;
+  /** The file this record USED to be backed by, once that file has been retired (`record-src-reconcile`).
+   *
+   *  A migrated page's file is deleted when the record supersedes it, at which point {@link src} must go
+   *  null — a pointer to a file that is not there makes `bsc ui backing` answer "not backed" for paths it
+   *  genuinely cannot see (#4223). But nulling alone throws away WHICH file this record came from, which is
+   *  the one fact a later reader needs to check the record against history. So the path moves here rather
+   *  than being dropped: `src` null says "no live file backs this", `srcRetired` says "and here is what
+   *  used to". Never set alongside a live {@link src}. */
+  srcRetired?: string;
   /** Which THEME SYSTEM this component renders under (#3715). `"css"` (default, absent) — the component
    *  consumes the theme through the CSS cascade (`--card-*` etc. resolved by `:root` / `<ThemeScope>`), as
    *  every component does today. `"js"` — the component renders to a NON-CSS surface (canvas / WebGL / a

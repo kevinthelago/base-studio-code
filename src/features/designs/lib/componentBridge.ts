@@ -50,6 +50,7 @@ export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
     // hydrate, and the seed round-trip (`seed === load(push(seed))`) then breaks for every record carrying
     // one — which would be all 70 annotated records, each mis-hashing against its stamp forever.
     srcDivergence: c.srcDivergence,
+    srcRetired: c.srcRetired, // `record-src-reconcile` — the file this record superseded; same allowlist rule
     rules: c.rules,
     shapes: c.shapes,
     animations: c.animations, // #2942 — MOTION binding (the kit-animation names it plays); rides verbatim

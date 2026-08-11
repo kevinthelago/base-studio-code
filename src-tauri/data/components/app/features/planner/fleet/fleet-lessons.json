@@ -15,6 +15,6 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/planner/fleet/FleetLessons.tsx",
-  "folder": "features/planner/fleet"
+  "folder": "features/planner/fleet",
+  "srcRetired": "src/features/planner/fleet/FleetLessons.tsx"
 }

@@ -21,7 +21,7 @@
     "Text",
     "WorkerDetail"
   ],
-  "src": "src/features/planner/fleet/FleetPage.tsx",
   "folder": "features/planner/fleet",
-  "props": []
+  "props": [],
+  "srcRetired": "src/features/planner/fleet/FleetPage.tsx"
 }

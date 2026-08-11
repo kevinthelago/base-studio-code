@@ -21,6 +21,10 @@
 //   node scripts/reconcile-record-src.cjs                # report only
 //   node scripts/reconcile-record-src.cjs --json         # machine-readable
 //   node scripts/reconcile-record-src.cjs --apply        # re-point what is UNAMBIGUOUS; never guesses
+//   node scripts/reconcile-record-src.cjs --annotate     # write an evidenced `srcDivergence` where the
+//                                                        #   difference is by construction
+//   node scripts/reconcile-record-src.cjs --retire       # `src` -> `srcRetired` where the file is GONE
+//                                                        #   and nothing matches: a superseded page copy
 //
 // VERDICTS
 //   ok            — `src` resolves and the record carries the symbol the file exports
@@ -40,6 +44,7 @@ const SEED_DIR = path.join(ROOT, "src-tauri", "data", "components", "app");
 
 const APPLY = process.argv.includes("--apply");
 const ANNOTATE = process.argv.includes("--annotate");
+const RETIRE = process.argv.includes("--retire");
 const AS_JSON = process.argv.includes("--json");
 
 /** How many substantive lines the FILE's definition may hold that the record's does not, before
@@ -86,9 +91,15 @@ function exportedSymbols(src) {
 /** A record's own component symbol — what it must still contain for the record to be describing the
  *  same thing its `src` does. Prefers the declared `name`, falls back to its first export. */
 function recordSymbol(rec) {
-  if (rec.name && /^[A-Za-z_]\w*$/.test(rec.name)) return rec.name;
-  const first = exportedSymbols(rec.srcText ?? "").values().next();
-  return first.done ? null : first.value;
+  const own = exportedSymbols(rec.srcText ?? "");
+  // `name` only counts if the RECORD ITSELF defines it. A MULTI-SYMBOL record is named for its MODULE,
+  // not for any one export — `ui-charts` is called `Charts` while defining LineArea/Bars/Donut/HBars/
+  // Swimlane, which are exactly `Charts.tsx`'s exports. Trusting the name there made the check look for a
+  // `Charts` symbol that exists in neither side and report the record as MOVED, when its pointer is
+  // perfectly correct. So fall through to what the record actually exports.
+  if (rec.name && /^[A-Za-z_]\w*$/.test(rec.name) && own.has(rec.name)) return rec.name;
+  const first = own.values().next();
+  return first.done ? (rec.name && /^[A-Za-z_]\w*$/.test(rec.name) ? rec.name : null) : first.value;
 }
 
 /** The "significant lines" of a module — the comparison unit for similarity. Trimmed, and short lines
@@ -277,8 +288,16 @@ function bestMatch(recLines, files) {
   return { best, second };
 }
 
+// 0.35 was too permissive by exactly one case: `mcppage` re-pointed from the retired `McpWorkspace.tsx`
+// to `features/mcp/index.tsx` at 0.419 — a BARREL, which shares a record's import block and little else,
+// and which does not define `McpWorkspace` at all (the page is graph-hosted now, via `McpGraphHost`).
+// `skillspage` scored similarly and was CORRECT, because `skills/index.tsx` really does define
+// `SkillsWorkspace` — the file was merged into the barrel. So the score alone cannot separate them, and
+// the symbol check below is what does: a re-point must land on a file that actually defines the record's
+// symbol, or match it strongly enough (0.55) that a shared import block cannot account for it.
 const REPOINT_MIN = 0.35;   // below this the winner is not really "the same module"
 const REPOINT_LEAD = 1.5;   // and it must be this many times the runner-up
+const REPOINT_NOSYM = 0.55; // required when the candidate does NOT define the record's symbol
 
 /** How close a record must still be to its file to count as describing it. Below this the record is the
  *  older copy (or the file moved on without it) and needs a per-record verdict — #4235 found the FILE was
@@ -296,7 +315,17 @@ function classify(rec, files) {
     // A RENAME is the usual cause, and content is what survives one. Re-point only on a strong, clearly
     // leading match; anything else is reported for a human.
     const { best, second } = bestMatch(recLines, files);
-    const confident = best.rel && best.score >= REPOINT_MIN && best.score >= second.score * REPOINT_LEAD;
+    // A candidate that DEFINES the record's symbol is trusted at REPOINT_MIN; one that does not must clear
+    // the higher bar, because a barrel shares a record's import block and can score respectably on that
+    // alone (see REPOINT_NOSYM).
+    const defines = best.rel && sym && (() => {
+      try {
+        const cs = fs.readFileSync(path.join(ROOT, best.rel), "utf8");
+        return new RegExp(`\\b(?:function|const|class)\\s+${sym}\\b`).test(cs) || exportedSymbols(cs).has(sym);
+      } catch { return false; }
+    })();
+    const floor = defines ? REPOINT_MIN : REPOINT_NOSYM;
+    const confident = best.rel && best.score >= floor && best.score >= second.score * REPOINT_LEAD;
     return {
       verdict: "stale-pointer", symbol: sym,
       best: best.rel, score: +best.score.toFixed(3),
@@ -316,6 +345,32 @@ function classify(rec, files) {
   // at `TeamsCanvas.tsx` and `OrgLegend` is STILL THERE: the pointer is right and the bodies disagree, so
   // refresh. Treating a move as drift would refresh the record from a file that no longer describes it.
   const stillHere = sym && (new RegExp(`\\b(?:function|const|class)\\s+${sym}\\b`).test(fileSrc) || exportedSymbols(fileSrc).has(sym));
+
+  // A RENAMED SYMBOL is not a moved one, and the difference decides whether anything gets rewritten.
+  // The same prefix-drop wave that renamed `GitHubPulse.tsx` → `Pulse.tsx` also renamed the EXPORT:
+  // `GitHubCrossRepoActivity` → `CrossRepoActivity`, `SkillsNewGroupDialog` → `NewGroupDialog`. The record
+  // keeps its own name (its identity in the library), so looking the symbol up BY NAME finds nothing and
+  // reads as "the component left this file" — when the pointer is already correct and only the export's
+  // name changed. So when the name misses, ask which of the file's own definitions matches the record's
+  // body; content identifies it where the name cannot.
+  if (!stillHere && recLines.size) {
+    let bestSym = null, bestScore = 0;
+    for (const cand of exportedSymbols(fileSrc)) {
+      const region = symbolRegion(fileSrc, cand);
+      if (!region) continue;
+      const s = similarity(recLines, lineSet(region));
+      if (s > bestScore) { bestScore = s; bestSym = cand; }
+    }
+    if (bestSym && bestScore >= 0.4) {
+      const recRegion = symbolRegion(rec.srcText ?? "", sym);
+      const fileRegion = symbolRegion(fileSrc, bestSym);
+      const rScore = recRegion && fileRegion ? similarity(lineSet(recRegion), lineSet(fileRegion)) : bestScore;
+      const verdict = rScore >= DRIFT_MIN ? "ok" : "drifted";
+      const reason = recRegion && fileRegion ? divergenceReason(recRegion, fileRegion, sym) : null;
+      return { verdict, symbol: sym, renamedTo: bestSym, score: +score.toFixed(3), region: +rScore.toFixed(3), by: "renamed-symbol", reason };
+    }
+  }
+
   if (!stillHere) {
     const { best, second } = bestMatch(recLines, files);
     const confident = best.rel && best.rel !== src && best.score >= REPOINT_MIN && best.score >= second.score * REPOINT_LEAD;
@@ -346,6 +401,7 @@ function main() {
   const rows = [];
   let repointed = 0;
   let annotated = 0;
+  let retired = 0;
 
   for (const entry of seed) {
     if (!entry.rec) { rows.push({ file: entry.file, verdict: "parse-error", detail: entry.parseError }); continue; }
@@ -359,6 +415,16 @@ function main() {
       row.repointedTo = res.best;
       repointed++;
     }
+    if (RETIRE && res.verdict === "stale-pointer" && !res.confident && rec.src && !rec.srcRetired) {
+      // The file is gone and nothing in src/ matches this record, so there is nothing to re-point TO.
+      // `src` goes null (the convention for a superseded page) and the path it named is preserved in
+      // `srcRetired` — nulling alone would throw away the one fact a later reader needs.
+      rec.srcRetired = rec.src;
+      delete rec.src;
+      fs.writeFileSync(entry.file, JSON.stringify(rec, null, 2) + "\n", "utf8");
+      row.retiredFrom = row.src;
+      retired++;
+    }
     if (ANNOTATE && res.verdict === "drifted" && res.reason && !rec.srcDivergence) {
       rec.srcDivergence = res.reason;
       fs.writeFileSync(entry.file, JSON.stringify(rec, null, 2) + "\n", "utf8");
@@ -369,7 +435,7 @@ function main() {
   }
 
   const counts = rows.reduce((a, r) => ((a[r.verdict] = (a[r.verdict] ?? 0) + 1), a), {});
-  const summary = { total: rows.length, counts, repointed, annotated, applied: APPLY, annotateMode: ANNOTATE };
+  const summary = { total: rows.length, counts, repointed, annotated, retired, applied: APPLY, annotateMode: ANNOTATE };
 
   if (AS_JSON) {
     process.stdout.write(JSON.stringify({ summary, rows }, null, 2) + "\n");
