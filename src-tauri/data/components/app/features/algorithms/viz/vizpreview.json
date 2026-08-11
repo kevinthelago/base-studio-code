@@ -1,0 +1,12 @@
+{
+  "id": "vizpreview",
+  "name": "VizPreview",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\nimport { TracePlayer } from \"@/features/algorithms/viz/TracePlayer\";\n\ninterface VizExample { factory: () => Generator<unknown>; renderers?: Record<string, unknown> }\n\nexport function VizPreview({\r\n  viz = { factory: function* () { yield { structure: \"array\", data: [3, 1, 4, 1, 5] }; } },\r\n  onExpand = () => {},\r\n}: { viz?: VizExample; onExpand?: () => void }) {\r\n  return (\r\n    <Box\r\n      className=\"algo-viz-preview\"\r\n      role=\"button\"\r\n      tabIndex={0}\r\n      aria-label=\"Expand visualization — take a closer look and try your own input\"\r\n      title=\"Expand — take a closer look and try your own input\"\r\n      onClick={onExpand}\r\n      onKeyDown={(e) => {\r\n        if (e.key === \"Enter\" || e.key === \" \") {\r\n          e.preventDefault();\r\n          onExpand();\r\n        }\r\n      }}\r\n    >\r\n      <TracePlayer factory={viz.factory as () => Generator<any>} renderers={viz.renderers as any} fps={3} autoPlay loop controls={false} />\r\n      <Box as=\"span\" className=\"algo-viz-expand-cue\" aria-hidden>\r\n        ⤢ Expand\r\n      </Box>\r\n    </Box>\r\n  );\r\n}",
+  "src": "src/features/algorithms/viz/VizPanel.tsx",
+  "composes": [
+    "Box",
+    "TracePlayer"
+  ]
+}

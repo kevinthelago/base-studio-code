@@ -1,0 +1,13 @@
+{
+  "id": "workspacecard",
+  "name": "WorkspaceCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useState } from \"react\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { Button } from \"@/shared/ui/controls/Button\";\nimport { TextField } from \"@/shared/ui/controls/Field\";\n\nexport function WorkspaceCard() {\r\n  const [bscBaseDir, setBscBaseDir] = useState(\"\");\r\n\r\n  // The real handler opens a native OS directory picker via `invoke(\"pick_directory\")` (Tauri,\n  // unresolvable in this sandbox) — stubbed to a plausible sample path.\r\n  function chooseBaseDir() {\r\n    setBscBaseDir(\"C:\\\\Users\\\\dev\\\\.base-studio-code\");\r\n  }\r\n\r\n  return (\r\n    <Card title=\"Workspace\">\r\n      <TextField\r\n        label=\"Base directory\"\r\n        value={bscBaseDir}\r\n        onChange={setBscBaseDir}\r\n        placeholder=\"~/.base-studio-code\"\r\n        trailing={<Button onClick={chooseBaseDir}>Choose...</Button>}\r\n        hint={<>\r\n          Where projects, clones, and agent worktrees live\r\n          (<code>&lt;base&gt;/projects/&lt;project&gt;/...</code>). Leave blank for the default\r\n          (<code>~/.base-studio-code</code>).\r\n        </>}\r\n      />\r\n    </Card>\r\n  );\r\n}",
+  "src": "src/features/settings/cards/WorkspaceCard.tsx",
+  "composes": [
+    "Card",
+    "Button",
+    "TextField"
+  ]
+}

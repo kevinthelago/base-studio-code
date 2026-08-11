@@ -1,0 +1,13 @@
+{
+  "id": "themecard",
+  "name": "ThemeCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useEffect, useState } from \"react\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Box } from \"@/shared/ui/layout/Box\";\n\nconst THEME_KEY = \"bsc-theme\";\ntype Theme = \"dark\" | \"light\";\nfunction safeGetTheme(): Theme {\n  try { return localStorage.getItem(THEME_KEY) === \"light\" ? \"light\" : \"dark\"; }\n  catch { return \"dark\"; }\n}\nfunction safeSetTheme(theme: Theme) {\n  try {\n    document.documentElement.setAttribute(\"data-theme\", theme);\n    localStorage.setItem(THEME_KEY, theme);\n  } catch { /* sandboxed preview: no persistent storage */ }\n}\nfunction useTheme() {\n  const [theme, setThemeState] = useState<Theme>(safeGetTheme);\n  useEffect(() => { safeSetTheme(theme); }, [theme]);\n  return { theme, setTheme: setThemeState };\n}\nexport function ThemeCard() {\n  const { theme, setTheme } = useTheme();\n\n  return (\n    <Card title=\"Theme\">\n      <Row gap={8} align=\"stretch\">\n        {([\"dark\", \"light\"] as const).map((t) => (\n          <button\n            key={t}\n            className=\"mono\"\n            aria-pressed={theme === t}\n            onClick={() => setTheme(t)}\n            style={{\n              padding: \"6px 18px\", borderRadius: 6, cursor: \"pointer\",\n              fontSize: 11.5,\n              background: theme === t ? \"var(--accent)\" : \"var(--bg-elev)\",\n              color: theme === t ? \"#fff\" : \"var(--fg-muted)\",\n              border: \"1px solid \" + (theme === t ? \"transparent\" : \"var(--border-soft)\"),\n            }}\n          >{t.charAt(0).toUpperCase() + t.slice(1)}</button>\n        ))}\n      </Row>\n      <Box className=\"hint\" style={{ marginTop: 10 }}>\n        Persisted across restarts. Light mode moves all surfaces to the token layer;\n        a few hardcoded terminal palette values may still appear dark.\n      </Box>\n    </Card>\n  );\n}",
+  "src": "src/features/settings/cards/ThemeCard.tsx",
+  "composes": [
+    "Box",
+    "Card",
+    "Row"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "teams-form-lane",
+  "name": "FormLane",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "// FormLane — one direction of a relationship's communication forms: a from/to header over a stack of\n// FormChips, or an empty note. Promoted from harvested into base-studio-code, refactored to use the\n// real Box/Row/Stack/Text primitives and the promoted teams-form-chip component instead of local\n// raw-div redeclarations.\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { FormChip, type CommunicationForm } from \"@/components/teams-form-chip\";\n\nconst DEMO_FORMS: CommunicationForm[] = [\n  { id: \"status\", label: \"status update\", color: \"var(--accent)\", arrow: \"→\", blurb: \"A brief on progress, blockers, and next steps; posted on a cadence.\" },\n  { id: \"escalation\", label: \"escalation\", color: \"var(--danger)\", arrow: \"⇈\", blurb: \"Raised when a blocker needs attention now; interrupts the cadence.\" },\n];\n\nexport function FormLane({ from = \"builder-1\", to = \"reviewer-2\", forms = DEMO_FORMS, hue = 250 }: { from?: string; to?: string; forms?: CommunicationForm[]; hue?: number }) {\n  return (\n    <Box style={{ border: \"1px solid var(--border-soft)\", borderRadius: 11, overflow: \"hidden\", background: \"var(--bg-soft)\" }}>\n      <Row gap={7} align=\"center\" style={{ padding: \"9px 12px\", background: \"var(--bg-elev)\", borderBottom: \"1px solid var(--border-soft)\" }}>\n        <Text as=\"span\" weight={600} size={11.5}>{from}</Text>\n        <Text as=\"span\" weight={700} style={{ color: `oklch(0.72 0.13 ${hue})` }}>→</Text>\n        <Text as=\"span\" weight={600} size={11.5}>{to}</Text>\n      </Row>\n      <Box style={{ padding: \"11px 12px\" }}>\n        {forms.length === 0\n          ? <Text as=\"span\" size={11} tone=\"dim\" style={{ fontStyle: \"italic\" }}>no forms this direction</Text>\n          : <Stack gap={7}>{forms.map((f) => <FormChip key={f.id} form={f} note />)}</Stack>}\n      </Box>\n    </Box>\n  );\n}\n",
+  "src": "src/features/teams/components.tsx",
+  "composes": [
+    "Box",
+    "FormChip",
+    "Row",
+    "Stack",
+    "Text"
+  ],
+  "provides": "@/components/teams-form-lane"
+}

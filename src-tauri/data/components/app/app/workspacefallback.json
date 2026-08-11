@@ -1,0 +1,11 @@
+{
+  "id": "workspacefallback",
+  "name": "WorkspaceFallback",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Row } from \"@/shared/ui/layout/Row\";\n\nexport function WorkspaceFallback() {\r\n  return (\r\n    <Row className=\"mono\" justify=\"center\" style={{ flex: 1, color: \"var(--fg-dim)\", fontSize: 12 }}>\r\n      loading…\r\n    </Row>\r\n  );\r\n}",
+  "src": "src/app/lazyWorkspaces.tsx",
+  "composes": [
+    "Row"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "id": "logview",
+  "name": "LogView",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\nimport { Grid } from \"@/shared/ui/layout/Grid\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport interface Commit {\n  s: string;\n  m: string;\n  who: string;\n  t: string;\n  head?: boolean;\n  merge?: boolean;\n}\ninterface LogViewProps {\n  small?: boolean;\n  commits?: Commit[];\n}\nconst DEMO_COMMITS: Commit[] = [\n  { s: \"a1b2c3d\", m: \"Add live fleet roster endpoint\", who: \"octocat\", t: \"2h\", head: true },\n  { s: \"e4f5g6h\", m: \"Merge feature/export-endpoint\", who: \"hubot\", t: \"5h\", merge: true },\n  { s: \"i7j8k9l\", m: \"Fix credit reservation race\", who: \"octocat\", t: \"1d\" },\n];\nexport function LogView({ small = false, commits = DEMO_COMMITS }: LogViewProps) {\n  return (\n    <Box style={{\n      flex: 1, minHeight: 0, overflow: \"auto\",\n      padding: small ? \"6px 10px\" : \"10px 14px\",\n    }}>\n      {commits.map((c) => (\n        <Grid key={c.s} className=\"mono\" cols=\"16px 50px 1fr auto\" gap={8} align=\"baseline\" style={{\n          padding: \"4px 0\",\n          fontSize: small ? 10 : 11,\n        }}>\n          <Text style={{ color: c.head ? \"var(--accent)\" : c.merge ? \"var(--info)\" : \"var(--fg-dim)\" }}>\n            {c.head ? \"●\" : c.merge ? \"◆\" : \"○\"}\n          </Text>\n          <Text tone=\"accent\">{c.s}</Text>\n          <Text style={{\n            color: \"var(--fg-muted)\",\n            whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\",\n          }}>\n            {c.m} <Text tone=\"dim\">· @{c.who}</Text>\n          </Text>\n          <Text tone=\"dim\" size={small ? 9 : 9.5}>{c.t}</Text>\n        </Grid>\n      ))}\n    </Box>\n  );\n}",
+  "src": "src/app/console/panes/views/LogView.tsx",
+  "composes": [
+    "Box",
+    "Grid",
+    "Text"
+  ]
+}

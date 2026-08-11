@@ -1,0 +1,12 @@
+{
+  "id": "kitchangeapprovalcard",
+  "name": "KitChangeApprovalCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useState } from \"react\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { ToggleRow } from \"@/components/togglerow\";\n\nexport function KitChangeApprovalCard() {\n  const [on, setOn] = useState(true);\n  return (\n    <Card title=\"Designer kit changes\">\n      <ToggleRow on={on} onToggle={() => setOn(!on)} title=\"Auto-apply kit changes\">\n        When ON (default), the kit changes the designer session makes propagate to consumer projects\n        automatically {\"\\u2014\"} no confirmation. Turn OFF to hold each change in a top-right banner for you to\n        review its propagated changes and <b>Approve</b> before it goes out.\n      </ToggleRow>\n    </Card>\n  );\n}",
+  "src": "src/features/settings/cards/KitChangeApprovalCard.tsx",
+  "composes": [
+    "Card",
+    "ToggleRow"
+  ]
+}

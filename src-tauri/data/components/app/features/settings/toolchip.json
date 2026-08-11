@@ -1,0 +1,11 @@
+{
+  "id": "toolchip",
+  "name": "ToolChip",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\n\nexport function ToolChip({\n  label = \"git\", onRemove = () => {},\n}: { label?: string; onRemove?: () => void }) {\n  return (\n    <Box as=\"span\" className=\"mono\" style={{\n      display: \"inline-flex\", alignItems: \"center\", gap: 4,\n      padding: \"2px 8px\", background: \"var(--bg-elev)\", border: \"1px solid var(--border-soft)\", borderRadius: 4,\n      fontSize: 10.5, color: \"var(--fg-muted)\",\n    }}>\n      {label}\n      <Box as=\"span\" onClick={onRemove} style={{ cursor: \"pointer\", lineHeight: 1, color: \"var(--fg-dim)\" }}>x</Box>\n    </Box>\n  );\n}",
+  "src": "src/features/settings/ToolPermissionInputs.tsx",
+  "composes": [
+    "Box"
+  ]
+}

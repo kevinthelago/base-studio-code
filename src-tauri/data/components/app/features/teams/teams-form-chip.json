@@ -1,0 +1,14 @@
+{
+  "id": "teams-form-chip",
+  "name": "FormChip",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "// FormChip — a single communication-form chip: a directional arrow glyph + label, with an optional\n// dim note. Promoted from harvested into base-studio-code, refactored to use the real Row/Text/Chip\n// primitives instead of local raw-div redeclarations.\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Chip } from \"@/shared/ui/data/Chip\";\n\nexport interface CommunicationForm {\n  id: string;\n  label: string;\n  color: string;\n  arrow: string;\n  blurb: string;\n}\n\nconst DEMO_FORM: CommunicationForm = { id: \"status\", label: \"status update\", color: \"var(--accent)\", arrow: \"→\", blurb: \"A brief on progress, blockers, and next steps; posted on a cadence.\" };\n\nexport function FormChip({ form = DEMO_FORM, note = false }: { form?: CommunicationForm; note?: boolean }) {\n  return (\n    <Row gap={7} align=\"center\">\n      <Chip color={form.color} style={{ fontWeight: 600, minWidth: 92 }}>\n        {form.arrow} {form.label}\n      </Chip>\n      {note && <Text as=\"span\" mono size={10} tone=\"dim\">{form.blurb.split(\";\")[0]}</Text>}\n    </Row>\n  );\n}\n",
+  "src": "src/features/teams/components.tsx",
+  "composes": [
+    "Chip",
+    "Row",
+    "Text"
+  ],
+  "provides": "@/components/teams-form-chip"
+}

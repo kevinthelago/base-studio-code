@@ -1,0 +1,22 @@
+{
+  "id": "modal",
+  "name": "Modal",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { ModalScrim } from \"@/shared/ui/overlay/ModalScrim\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Spacer } from \"@/shared/ui/layout/Spacer\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { IconButton } from \"@/shared/ui/controls/IconButton\";\n\nexport function Modal({ title, children, onClose, footer }: {\r\n  title: string; children: React.ReactNode; onClose: () => void; footer?: React.ReactNode;\r\n}) {\r\n  return (\r\n    <ModalScrim onDismiss={onClose}>\r\n      <Box bg=\"var(--bg-panel)\" border radius=\"lg\" style={{ width: 440, maxWidth: \"90vw\", boxShadow: \"0 12px 40px rgba(0,0,0,0.5)\" }}>\r\n        <Row style={{ padding: \"12px 16px\", borderBottom: \"1px solid var(--border-soft)\" }}>\r\n          <Text as=\"h3\" style={{ margin: 0 }}>{title}</Text>\r\n          <Spacer />\r\n          <IconButton aria-label=\"close\" onClick={onClose} />\r\n        </Row>\r\n        <Box pad={16}>{children}</Box>\r\n        {footer && <Row justify=\"end\" align=\"stretch\" gap={8} style={{ padding: \"12px 16px\", borderTop: \"1px solid var(--border-soft)\" }}>{footer}</Row>}\r\n      </Box>\r\n    </ModalScrim>\r\n  );\r\n}",
+  "src": "src/features/planner/fleet/WorkerDetailModal.tsx",
+  "composes": [
+    "ModalScrim",
+    "Box",
+    "Row",
+    "Text",
+    "Spacer",
+    "IconButton"
+  ],
+  "tests": [
+    {
+      "name": "WorkerDetail Modal shell (#499)",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { Modal } from \"./WorkerDetailModal\";\r\n\r\ndescribe(\"WorkerDetail Modal shell (#499)\", () => {\r\n  it(\"renders its title, children, and footer\", () => {\r\n    render(\r\n      <Modal title=\"Change profile\" onClose={() => {}} footer={<span>footer-action</span>}>\r\n        <span>body-content</span>\r\n      </Modal>,\r\n    );\r\n    expect(screen.getByText(\"Change profile\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"body-content\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"footer-action\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"fires onClose when the close button is clicked\", () => {\r\n    const onClose = vi.fn();\r\n    render(<Modal title=\"Stop\" onClose={onClose}>x</Modal>);\r\n    fireEvent.click(screen.getByRole(\"button\", { name: \"close\" }));\r\n    expect(onClose).toHaveBeenCalledTimes(1);\r\n  });\r\n});\r\n"
+    }
+  ]
+}

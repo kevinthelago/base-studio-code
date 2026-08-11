@@ -1,0 +1,9 @@
+{
+  "id": "slot",
+  "name": "Slot",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "interface SlotProps {\n  name?: string;\n}\nexport function Slot({ name = \"toolbar\" }: SlotProps) {\n  return (\n    <span style={{ color: \"var(--danger)\", fontSize: 11 }}>\n      {`[unfilled slot \"${name ?? \"\"}\" - the host supplied no content for this name]`}\n    </span>\n  );\n}",
+  "src": "src/shared/ui/layout/Slot.tsx",
+  "composes": []
+}

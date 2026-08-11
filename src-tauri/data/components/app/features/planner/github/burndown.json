@@ -1,0 +1,11 @@
+{
+  "id": "burndown",
+  "name": "BurnDown",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Text } from \"@/shared/ui/typography/Text\";\n\nexport function BurnDown({ open, closed }: { open: number; closed: number }) {\r\n  const total = open + closed;\r\n  if (total === 0) {\r\n    return (\r\n      <Text as=\"div\" mono size={11} tone=\"dim\" style={{ padding: \"20px 0\" }}>\r\n        No issue data available.\r\n      </Text>\r\n    );\r\n  }\r\n  const W = 1140, H = 120, PAD = { l: 36, r: 20, t: 14, b: 24 };\r\n  const innerW = W - PAD.l - PAD.r;\r\n  const innerH = H - PAD.t - PAD.b;\r\n  const x0 = PAD.l, x1 = PAD.l + innerW;\r\n  const yVal = (v: number) => PAD.t + (1 - v / total) * innerH;\r\n  const idealPath = `M ${x0} ${yVal(total)} L ${x1} ${yVal(0)}`;\r\n  const actualPath = `M ${x0} ${yVal(total)} L ${x1} ${yVal(open)}`;\r\n\r\n  return (\r\n    <svg width={W} height={H} style={{ width: \"100%\", maxWidth: W, display: \"block\" }}>\r\n      {[0, Math.round(total / 2), total].map(v => (\r\n        <g key={v}>\r\n          <line x1={PAD.l} y1={yVal(v)} x2={W - PAD.r} y2={yVal(v)} stroke=\"var(--border-soft)\" strokeDasharray=\"2 3\" />\r\n          <text x={PAD.l - 4} y={yVal(v) + 3} textAnchor=\"end\" fontFamily=\"var(--mono)\" fontSize=\"9\" fill=\"var(--fg-dim)\">{v}</text>\r\n        </g>\r\n      ))}\r\n      <path d={idealPath} fill=\"none\" stroke=\"var(--fg-dim)\" strokeDasharray=\"3 4\" strokeWidth=\"1.5\" />\r\n      <path d={actualPath} fill=\"none\" stroke=\"var(--accent)\" strokeWidth=\"2\" />\r\n      <circle cx={x0} cy={yVal(total)} r=\"3\" fill=\"var(--accent)\" />\r\n      <circle cx={x1} cy={yVal(open)} r=\"3\" fill=\"var(--accent)\" />\r\n      <text x={x1 - 2} y={yVal(open) - 6} textAnchor=\"end\" fontFamily=\"var(--mono)\" fontSize=\"9\" fill=\"var(--accent)\">open · {open}</text>\r\n      <text x={x1 - 2} y={yVal(0) - 6} textAnchor=\"end\" fontFamily=\"var(--mono)\" fontSize=\"9\" fill=\"var(--fg-dim)\">ideal · 0</text>\r\n    </svg>\r\n  );\r\n}",
+  "src": "src/features/planner/github/Roadmap.tsx",
+  "composes": [
+    "Text"
+  ]
+}

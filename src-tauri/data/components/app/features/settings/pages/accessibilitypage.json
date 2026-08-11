@@ -1,0 +1,12 @@
+{
+  "id": "accessibilitypage",
+  "name": "AccessibilityPage",
+  "kitId": "base-studio-code",
+  "role": "page",
+  "srcText": "import { Stack } from \"@/shared/ui/layout/Stack\";\nimport { SettingsPageHeader } from \"@/features/settings/pages/SettingsPageHeader\";\n\nexport function AccessibilityPage() {\n  return (\n    <Stack gap={18} style={{ maxWidth: 820 }}>\n      <SettingsPageHeader\n        title=\"Accessibility\"\n        description=\"The app ships a keyboard and screen-reader baseline. On top of that, it can speak the fleet coordination stream aloud so you can drive the agents by ear.\"\n      />\n    </Stack>\n  );\n}",
+  "src": "src/features/settings/pages/AccessibilityPage.tsx",
+  "composes": [
+    "SettingsPageHeader",
+    "Stack"
+  ]
+}

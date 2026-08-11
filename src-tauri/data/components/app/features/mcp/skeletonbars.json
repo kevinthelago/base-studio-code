@@ -1,0 +1,14 @@
+{
+  "id": "skeletonbars",
+  "name": "SkeletonBars",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Skeleton, SkeletonChart } from \"@/shared/ui/feedback/Skeleton\";\n\nexport function SkeletonBars({ rows = 4 }: { rows?: number }) {\r\n  return (\r\n    <Stack gap={14}>\r\n      {Array.from({ length: rows }).map((_, i) => (\r\n        <Box key={i}>\r\n          <Skeleton h={11} w=\"40%\" style={{ marginBottom: 6 }} />\r\n          <Skeleton h={8} radius={4} />\r\n        </Box>\r\n      ))}\r\n    </Stack>\r\n  );\r\n}",
+  "src": "src/features/mcp/McpAnalytics.tsx",
+  "composes": [
+    "Stack",
+    "Box",
+    "Skeleton",
+    "SkeletonChart"
+  ]
+}

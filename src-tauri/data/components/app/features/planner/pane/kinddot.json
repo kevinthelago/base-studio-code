@@ -1,0 +1,11 @@
+{
+  "id": "kinddot",
+  "name": "KindDot",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\n\nexport const CTX_KIND: Record<string, string> = {\n  spec:   \"oklch(0.72 0.10 230)\",\n  claude: \"oklch(0.80 0.14 70)\",\n  kb:     \"oklch(0.70 0.12 300)\",\n  doc:    \"oklch(0.66 0.06 200)\",\n};\nexport function KindDot({ kind }: { kind: string }) {\n  return <Box as=\"span\" bg={CTX_KIND[kind] || \"var(--fg-dim)\"} radius={2} style={{\n    width: 6, height: 6, flex: \"0 0 6px\",\n  }} />;\n}",
+  "src": "src/features/planner/pane/focusedPrimitives.tsx",
+  "composes": [
+    "Box"
+  ]
+}

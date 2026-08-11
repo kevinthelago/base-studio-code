@@ -1,0 +1,13 @@
+{
+  "id": "relrow",
+  "name": "RelRow",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import type { ReactNode } from \"react\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nconst mono = \"var(--mono)\";\nexport function RelRow({ glyph, c, head, detail, onClick }: { glyph: string; c: string; head: string; detail?: ReactNode; onClick?: () => void }) {\n  return (\n    <Row onClick={onClick} gap={9} align=\"baseline\" style={{ padding: \"6px 9px\", borderRadius: 6, background: \"var(--bg-panel)\", border: \"1px solid var(--border-soft)\", cursor: onClick ? \"pointer\" : \"default\" }}>\n      <Box as=\"span\" style={{ flex: \"0 0 16px\", textAlign: \"center\", fontFamily: mono, fontSize: 11, color: c }}>{glyph}</Box>\n      <Box style={{ flex: 1, minWidth: 0 }}>\n        <Text as=\"div\" size={10.5} style={{ fontFamily: mono, color: \"var(--fg)\" }}>{head}</Text>\n        {detail && <Text as=\"div\" size={8.5} tone=\"dim\" style={{ fontFamily: mono, marginTop: 2, lineHeight: 1.45 }}>{detail}</Text>}\n      </Box>\n    </Row>\n  );\n}",
+  "src": "src/features/planner/relationship/RelationshipInspector.tsx",
+  "composes": [
+    "Box",
+    "Row",
+    "Text"
+  ]
+}

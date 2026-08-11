@@ -1,0 +1,18 @@
+{
+  "id": "debugsessioncard",
+  "name": "DebugSessionCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useState } from \"react\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { ToggleRow } from \"@/components/togglerow\";\n\nexport function DebugSessionCard() {\n  const [debugSession, setDebugSession] = useState(false);\n  const [autoSpawnDebugSessions, setAutoSpawnDebugSessions] = useState(false);\n  return (\n    <Card title=\"Debug session\">\n      <ToggleRow on={debugSession} onToggle={() => setDebugSession(!debugSession)} title=\"Enable debug session\">\n        Spins up a local debug session for inspecting live app state.\n      </ToggleRow>\n      <ToggleRow on={autoSpawnDebugSessions} onToggle={() => setAutoSpawnDebugSessions(!autoSpawnDebugSessions)} title=\"Auto-spawn on launch\">\n        Automatically starts a debug session every time the app opens.\n      </ToggleRow>\n    </Card>\n  );\n}",
+  "src": "src/features/settings/cards/DebugSessionCard.tsx",
+  "composes": [
+    "Card",
+    "ToggleRow"
+  ],
+  "tests": [
+    {
+      "name": "DebugSessionCard",
+      "src": "import { describe, it, expect, beforeEach } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { DebugSessionCard } from \"./DebugSessionCard\";\r\nimport { useAppStore } from \"@/store\";\r\n\r\ndescribe(\"DebugSessionCard\", () => {\r\n  beforeEach(() => useAppStore.setState({ debugSession: false, autoSpawnDebugSessions: false }));\r\n\r\n  it(\"shows both switches, and both start OFF\", () => {\r\n    render(<DebugSessionCard />);\r\n    const switches = screen.getAllByRole(\"switch\");\r\n    expect(switches).toHaveLength(2);\r\n    for (const s of switches) expect(s).toHaveAttribute(\"aria-checked\", \"false\");\r\n  });\r\n\r\n  it(\"toggles auto-spawn — the OUTER gate of the auto-spawn boundary (#3498)\", () => {\r\n    render(<DebugSessionCard />);\r\n    // `ToggleRow` renders its switch with no accessible name (the title is sibling text), so the two\r\n    // switches can only be told apart positionally. Assert the ORDER explicitly rather than trusting\r\n    // an index silently: the auto-spawn row is second, after the graph-visibility row.\r\n    expect(screen.getByText(/Show the debug session/i)).toBeInTheDocument();\r\n    expect(screen.getByText(/start a debug session automatically/i)).toBeInTheDocument();\r\n    fireEvent.click(screen.getAllByRole(\"switch\")[1]);\r\n    expect(useAppStore.getState().autoSpawnDebugSessions).toBe(true);\r\n    // …and it does not drag the unrelated visibility flag along with it.\r\n    expect(useAppStore.getState().debugSession).toBe(false);\r\n  });\r\n\r\n  it(\"states in the UI that ONLY the debugger can be auto-spawned\", () => {\r\n    // The narrowness of this capability has to be legible where it is enabled, not only in code — a\r\n    // toggle that reads as \"let the app start sessions\" would invite a far broader assumption than\r\n    // the gate actually permits.\r\n    render(<DebugSessionCard />);\r\n    expect(screen.getByText(/only the/i)).toBeInTheDocument();\r\n    expect(screen.getByText(/Off by default/i)).toBeInTheDocument();\r\n  });\r\n});\r\n"
+    }
+  ]
+}

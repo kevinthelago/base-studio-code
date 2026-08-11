@@ -1,0 +1,11 @@
+{
+  "id": "menurow",
+  "name": "MenuRow",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useState } from \"react\";\nimport { Row } from \"@/shared/ui/layout/Row\";\n\nexport function MenuRow({ on, onClick, children }: { on?: boolean; onClick?: () => void; children: React.ReactNode }) {\r\n  const [hovered, setHovered] = useState(false);\r\n  const bg = on\r\n    ? \"color-mix(in oklch, var(--accent), transparent 90%)\"\r\n    : hovered ? \"var(--bg-elev2)\" : \"transparent\";\r\n  return (\r\n    <Row\r\n      gap={6}\r\n      onClick={onClick}\r\n      onMouseEnter={() => setHovered(true)}\r\n      onMouseLeave={() => setHovered(false)}\r\n      style={{\r\n        padding: \"6px 8px\",\r\n        borderRadius: 5, background: bg, cursor: \"pointer\",\r\n        transition: \"background 0.08s\",\r\n      }}\r\n    >{children}</Row>\r\n  );\r\n}",
+  "src": "src/app/console/panes/PaneMenu.tsx",
+  "composes": [
+    "Row"
+  ]
+}

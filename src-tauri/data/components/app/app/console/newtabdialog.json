@@ -1,0 +1,15 @@
+{
+  "id": "newtabdialog",
+  "name": "NewTabDialog",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useState } from \"react\";\nimport { Dialog } from \"@/shared/ui/overlay/Dialog\";\nimport { Button } from \"@/shared/ui/controls/Button\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Grid } from \"@/shared/ui/layout/Grid\";\nimport { Box } from \"@/shared/ui/layout/Box\";\n\nexport const LAYOUTS: string[] = [\"1×1\", \"2×1\", \"1×2\", \"2×2\", \"3×2\", \"3×3\"];\ninterface NewTabDialogProps {\n  onConfirm: (layout: string) => void;\n  onDismiss: () => void;\n}\nexport function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {\n  const [layout, setLayout] = useState(\"2×2\");\n\n  function handleSubmit(e: React.FormEvent) {\n    e.preventDefault();\n    onConfirm(layout);\n  }\n\n  return (\n    <Dialog title=\"New workspace\" onDismiss={onDismiss} actions={\n      <>\n        <Button onClick={onDismiss}>cancel</Button>\n        <Button variant=\"primary\" onClick={handleSubmit}>create</Button>\n      </>\n    }>\n      <form onSubmit={handleSubmit} style={{ display: \"flex\", flexDirection: \"column\", gap: 14 }}>\n        <Box className=\"field\" role=\"group\" aria-labelledby=\"new-tab-layout-label\">\n          <Box as=\"span\" id=\"new-tab-layout-label\" className=\"field-caption\">Layout</Box>\n          <Row gap={6} align=\"stretch\" wrap>\n            {LAYOUTS.map((l) => {\n              const [c, r] = l.split(\"×\").map(Number);\n              const active = l === layout;\n              return (\n                <button\n                  key={l}\n                  className=\"mono\"\n                  type=\"button\"\n                  autoFocus={l === layout}\n                  onClick={() => setLayout(l)}\n                  style={{\n                    padding: \"6px 10px\", borderRadius: 5, cursor: \"pointer\",\n                    fontSize: 11.5,\n                    background: active ? \"var(--bg-elev2)\" : \"var(--bg-elev)\",\n                    border: \"1px solid \" + (active ? \"var(--accent)\" : \"var(--border-soft)\"),\n                    color: active ? \"var(--accent)\" : \"var(--fg-muted)\",\n                    display: \"flex\", flexDirection: \"column\", alignItems: \"center\", gap: 4,\n                  }}\n                >\n                  <Grid cols={`repeat(${c}, 10px)`} rows={`repeat(${r}, 7px)`} gap={2}>\n                    {Array.from({ length: c * r }).map((_, i) => (\n                      <Box key={i} bg={active ? \"var(--accent)\" : \"var(--border)\"} radius={1} />\n                    ))}\n                  </Grid>\n                  {l}\n                </button>\n              );\n            })}\n          </Row>\n        </Box>\n      </form>\n    </Dialog>\n  );\n}",
+  "src": "src/app/console/NewTabDialog.tsx",
+  "composes": [
+    "Dialog",
+    "Button",
+    "Box",
+    "Row",
+    "Grid"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "id": "rangetoggle",
+  "name": "RangeToggle",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "export function RangeToggle({ value = \"7d\", onChange = () => {}, options = [\"7d\", \"14d\", \"30d\"] }: {\r\n  value?: string;\r\n  onChange?: (v: string) => void;\r\n  options?: string[];\r\n}) {\r\n  return (\r\n    <div className=\"seg\">\r\n      {options.map(o => (\r\n        <button key={o} className={o === value ? \"on\" : \"\"} onClick={() => onChange(o)}>{o}</button>\r\n      ))}\r\n    </div>\r\n  );\r\n}",
+  "src": "src/shared/ui/charts/primitives.tsx",
+  "composes": []
+}

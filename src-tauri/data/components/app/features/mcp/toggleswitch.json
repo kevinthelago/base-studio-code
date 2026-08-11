@@ -1,0 +1,11 @@
+{
+  "id": "toggleswitch",
+  "name": "ToggleSwitch",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\n\nexport function ToggleSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {\r\n  return (\r\n    <Box\r\n      className={\"toggle\" + (on ? \" on\" : \"\")}\r\n      title={on ? \"enabled\" : \"disabled\"}\r\n      onClick={ev => { ev.stopPropagation(); onToggle(); }}\r\n    />\r\n  );\r\n}",
+  "src": "src/features/mcp/shared.tsx",
+  "composes": [
+    "Box"
+  ]
+}

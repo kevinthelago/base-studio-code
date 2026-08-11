@@ -1,0 +1,14 @@
+{
+  "id": "sessionreadinessbanner",
+  "name": "SessionReadinessBanner",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import type { ReadinessCheck } from \"@/shared/lib/core/diagnostics\";\nimport { Banner } from \"@/shared/ui/feedback/Banner\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\ninterface SessionReadinessBannerProps {\r\n  warnings: ReadinessCheck[];\r\n  onDismiss: () => void;\r\n  /** Called when the user clicks \"Sign in to GitHub\" for a gh-auth warning. */\r\n  onSignInGitHub?: () => void;\r\n}\nexport function SessionReadinessBanner({\r\n  warnings = [{ id: \"gh-auth\", message: \"GitHub isn't connected — some features are limited.\" }],\r\n  onDismiss = () => {},\r\n  onSignInGitHub = () => {},\r\n}: SessionReadinessBannerProps) {\r\n  if (warnings.length === 0) return null;\r\n\r\n  return (\r\n    <Banner\r\n      variant=\"bar\"\r\n      tone=\"warn\"\r\n      loud\r\n      role=\"alert\"\r\n      onDismiss={onDismiss}\r\n      lead={<Text weight={600} style={{ whiteSpace: \"nowrap\" }}>⚠ GitHub</Text>}\r\n    >\r\n      <Stack gap={3} style={{ flex: 1 }}>\r\n        {warnings.map((w) => (\r\n          <Box as=\"span\" key={w.id} style={{ display: \"flex\", alignItems: \"center\", gap: 6, flexWrap: \"wrap\" }}>\r\n            <Text>{w.message}</Text>\r\n            {w.id === \"gh-auth\" && onSignInGitHub && (\r\n              // eslint-disable-next-line no-restricted-syntax -- bespoke inline \"Sign in\" link-button (currentColor border, banner-scoped styling)\r\n              <button\r\n                onClick={onSignInGitHub}\r\n                style={{\r\n                  background: \"transparent\", border: \"1px solid currentColor\", color: \"currentColor\",\r\n                  cursor: \"pointer\", fontSize: 11, padding: \"1px 6px\", borderRadius: 3, lineHeight: 1.4,\r\n                }}\r\n              >\r\n                Sign in →\r\n              </button>\r\n            )}\r\n            {w.installUrl && w.id !== \"gh-auth\" && (\r\n              <a href={w.installUrl} target=\"_blank\" rel=\"noreferrer\"\r\n                style={{ color: \"currentColor\", fontSize: 11, textDecoration: \"underline\" }}>\r\n                Install →\r\n              </a>\r\n            )}\r\n          </Box>\r\n        ))}\r\n      </Stack>\r\n    </Banner>\r\n  );\r\n}",
+  "src": "src/app/SessionReadinessBanner.tsx",
+  "composes": [
+    "Banner",
+    "Stack",
+    "Box",
+    "Text"
+  ]
+}

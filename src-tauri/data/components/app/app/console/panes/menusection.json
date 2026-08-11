@@ -1,0 +1,13 @@
+{
+  "id": "menusection",
+  "name": "MenuSection",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport function MenuSection({ label, children, last }: { label: string; children: React.ReactNode; last?: boolean }) {\r\n  return (\r\n    <Box pad={[6, 6]} style={{ borderBottom: last ? \"0\" : \"1px solid var(--border-soft)\" }}>\r\n      <Text as=\"div\" tone=\"dim\" size={9.5} style={{\r\n        padding: \"4px 8px 6px\",\r\n        textTransform: \"uppercase\", letterSpacing: \".08em\",\r\n      }}>{label}</Text>\r\n      <Stack gap={1}>{children}</Stack>\r\n    </Box>\r\n  );\r\n}",
+  "src": "src/app/console/panes/PaneMenu.tsx",
+  "composes": [
+    "Box",
+    "Text",
+    "Stack"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "sandboxedconsolescard",
+  "name": "SandboxedConsolesCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "srcText": "import { useState } from \"react\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { ToggleRow } from \"@/components/togglerow\";\n\nexport function SandboxedConsolesCard() {\n  const [sandboxConsoles, setSandboxConsoles] = useState(false);\n  return (\n    <Card title=\"Sandboxed consoles\">\n      <ToggleRow\n        on={sandboxConsoles}\n        onToggle={() => setSandboxConsoles(!sandboxConsoles)}\n        title=\"Run new console sessions inside the WSL2 sandbox\"\n      >\n        New console panes launch a clean shell <b>inside the sealed <code>bsc-agent-sandbox</code>{\" \"}\n        distro</b> (no <code>/mnt/c</code>, no Windows interop) instead of on the host {\"\\u2014\"} so whatever\n        runs is confined to the cage, regardless of which LLM drives it. Requires the sandbox installed\n        (Settings {\"\\u2192\"} General {\"\\u2192\"} Required dependencies). Your Windows repos aren't mounted in yet, so this\n        is a scratch/verification shell for now. Takes effect on the next console you open.\n      </ToggleRow>\n    </Card>\n  );\n}",
+  "src": "src/features/settings/cards/SandboxedConsolesCard.tsx",
+  "composes": [
+    "Card",
+    "ToggleRow"
+  ],
+  "tests": [
+    {
+      "name": "SandboxedConsolesCard",
+      "src": "import { describe, it, expect, beforeEach } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { SandboxedConsolesCard } from \"./SandboxedConsolesCard\";\r\nimport { useAppStore } from \"@/store\";\r\n\r\ndescribe(\"SandboxedConsolesCard\", () => {\r\n  beforeEach(() => useAppStore.setState({ sandboxConsoles: false }));\r\n\r\n  it(\"toggles running new consoles inside the WSL2 sandbox\", () => {\r\n    render(<SandboxedConsolesCard />);\r\n    expect(screen.getByText(/Run new console sessions inside the WSL2 sandbox/)).toBeInTheDocument();\r\n    fireEvent.click(screen.getByRole(\"switch\"));\r\n    expect(useAppStore.getState().sandboxConsoles).toBe(true);\r\n  });\r\n});\r\n"
+    }
+  ]
+}

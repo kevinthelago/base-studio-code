@@ -1,0 +1,9 @@
+{
+  "id": "option",
+  "name": "Option",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import type { ReactNode } from \"react\";\n\ninterface OptionProps {\n  value?: string;\n  disabled?: boolean;\n  children?: ReactNode;\n}\nexport function Option({ value, disabled, children = \"Option\" }: OptionProps) {\n  return (\n    <option value={value} disabled={disabled}>\n      {children}\n    </option>\n  );\n}",
+  "src": "src/shared/ui/controls/Option.tsx",
+  "composes": []
+}

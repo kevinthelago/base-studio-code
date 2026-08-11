@@ -1,0 +1,11 @@
+{
+  "id": "labelchip",
+  "name": "LabelChip",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import { Chip } from \"@/shared/ui/data/Chip\";\n\ninterface GhLabel { name: string; color: string }\n\nexport function LabelChip({ label = { name: \"bug\", color: \"d73a4a\" } }: { label?: GhLabel }) {\r\n  // A GitHub label's colour is dynamic (6-hex) → the Chip `color` path. bg/border alphas approximate\r\n  // the old `${color}22`/`${color}55` tints.\r\n  return (\r\n    <Chip color={`#${label.color}`} dot gap={4} padding=\"1px 6px\" fontSize={9} bgAlpha={87} borderAlpha={67}>\r\n      {label.name}\r\n    </Chip>\r\n  );\r\n}",
+  "src": "src/shared/ui/data/LabelChip.tsx",
+  "composes": [
+    "Chip"
+  ]
+}

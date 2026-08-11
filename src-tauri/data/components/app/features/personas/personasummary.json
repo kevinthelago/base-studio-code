@@ -1,0 +1,17 @@
+{
+  "id": "personasummary",
+  "name": "PersonaSummary",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { SectionLabel } from \"@/shared/ui/layout/SectionLabel\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Chip } from \"@/shared/ui/data/Chip\";\nimport { Code } from \"@/shared/ui/data/Code\";\n\n// Preview-only stand-in for `useAppStore((s) => s.skills)` (app-internal, unresolvable here) — same\n// shape/sample the promoted `personaspanel` uses for consistency.\nconst SAMPLE_SKILLS = [{ id: \"s1\", name: \"schema-design\" }, { id: \"s2\", name: \"api-testing\" }];\nconst SAMPLE_PERSONA = {\n  id: \"p1\", name: \"Builder\", blurb: \"Implements features end to end.\", role: \"worker\",\n  responsibilities: [\"Ship the assigned issue\", \"Write tests\"],\n  startPrompt: \"You are a builder agent. Pick up the next ready issue and implement it.\",\n  model: \"claude-sonnet-5\", skills: [\"s1\"],\n};\n\nexport function PersonaSummary({ persona = SAMPLE_PERSONA, flat = false }) {\n  const skills = SAMPLE_SKILLS;\n  const skillNames = persona.skills.map((id) => skills.find((sk) => sk.id === id)?.name ?? id);\n  const body = (\n    <Stack gap={8}>\n        {persona.blurb && (\n          <Text as=\"div\" mono size={10} tone=\"muted\" style={{ lineHeight: 1.5 }}>{persona.blurb}</Text>\n        )}\n\n        <Row gap={8} wrap align=\"center\">\n          <SectionLabel size={9.5}>model</SectionLabel>\n          <Text as=\"span\" mono size={9.5} tone={persona.model ? \"accent\" : \"dim\"}>\n            {persona.model || \"session default\"}\n          </Text>\n        </Row>\n\n        <Box>\n          <SectionLabel size={9.5} style={{ marginBottom: 5 }}>\n            skills · {skillNames.length}\n          </SectionLabel>\n          {skillNames.length === 0 ? (\n            <Text as=\"div\" mono size={9.5} tone=\"dim\">none attached</Text>\n          ) : (\n            <Row gap={5} wrap>\n              {skillNames.map((name, i) => (\n                <Chip key={persona.skills[i]}>{name}</Chip>\n              ))}\n            </Row>\n          )}\n        </Box>\n\n        <details>\n          <summary className=\"mono\" style={{ cursor: \"pointer\", fontSize: 10, color: \"var(--fg-dim)\", userSelect: \"none\" }}>\n            Start prompt\n          </summary>\n          {persona.startPrompt ? (\n            <Code style={{ marginTop: 6 }}>{persona.startPrompt}</Code>\n          ) : (\n            <Text as=\"div\" mono size={9.5} tone=\"dim\" style={{ marginTop: 6, lineHeight: 1.5 }}>\n              No start prompt — falls back to the {persona.role} role's own kickoff assembly at launch.\n            </Text>\n          )}\n        </details>\n    </Stack>\n  );\n  if (flat) return body;\n  return (\n    <Box bg=\"var(--bg-panel)\" radius={5} pad={[9, 10]} style={{ marginTop: 8, border: \"1px solid var(--border-soft)\" }}>\n      {body}\n    </Box>\n  );\n}",
+  "src": "src/features/personas/PersonaSummary.tsx",
+  "composes": [
+    "Box",
+    "Row",
+    "SectionLabel",
+    "Stack",
+    "Text",
+    "Chip",
+    "Code"
+  ]
+}
