@@ -37,6 +37,7 @@ mod issues;
 mod fleet;
 mod nouns;
 mod hub;
+mod changes;
 
 const TAGLINE: &str = "the project plan store — issues, features, fleet, stages (#plan-db)";
 
@@ -378,6 +379,24 @@ DEPRECATED (#1721): native REST connector presets are DATA-platform state — us
 instead. This verb still works (same store) but prints a deprecation note to stderr.",
     },
     CmdDoc {
+        name: "change",
+        summary: "local change records — the PR analogue, paired 1:1 with an issue by ref",
+        usage: "USAGE:
+  bsc plan change new <ref> [--note TITLE] [--description BODY] [--fields REF,REF] [--from BASE] [--command SHA]
+  bsc plan change note <ref> \"<text>\" [--from AUTHOR]      # append a work note (append-only)
+  bsc plan change gate <ref> <gate> <result>                # record what a gate observed
+  bsc plan change status <ref> draft|open|merged|abandoned [--command SHA] [--from REVIEWER]
+  bsc plan change link <ref>                                # {ghNumber, ghNodeId} on stdin
+  bsc plan change get|render [<ref>] | list [--status S] | remove <ref>
+
+The change that satisfies an issue lives in git as a branch and a merge commit; this records what git
+cannot — gate evidence, the reviewer's verdict as an actor distinct from the author, notes written
+while the reasoning was live, and the GitHub identity once published. `--fields` is the --closes list.
+
+`render` emits markdown serving as BOTH the PR body when connected and the CHANGELOG entry at release,
+so neither is hand-maintained separately from the work. GitHub is never written to.",
+    },
+    CmdDoc {
         name: "lesson",
         summary: "self-correction candidates (the review queue; #1362)",
         usage: "\
@@ -619,6 +638,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "confirm" => nouns::cmd_confirm(&args),
         "skip" => nouns::cmd_skip(&args),
         "integration" => nouns::cmd_integration(&args),
+        "change" => changes::cmd_change(&args),
         "lesson" => nouns::cmd_lesson(&args),
         "request" => nouns::cmd_request(&args),
         "triage" => nouns::cmd_triage(&args),
