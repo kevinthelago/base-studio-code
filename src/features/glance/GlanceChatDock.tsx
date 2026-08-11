@@ -31,6 +31,9 @@ export interface DockPlan {
   refs: readonly string[];
   /** ref (unprefixed) → closed. Empty when GitHub is unavailable. */
   states: ReadonlyMap<string, boolean>;
+  /** ref → closed, straight from plan.db. Takes precedence over `states`: it is the store of record
+   *  and needs no token, so a project that never touches GitHub still shows real per-issue state. */
+  planClosed?: ReadonlyMap<string, boolean>;
   progress?: StreamProgress;
   /** The state overlay could not be fetched — the list still renders. */
   unresolved?: boolean;
@@ -109,7 +112,7 @@ export function GlanceChatDock({
         {tab === "plan" && plan && (
           <Box style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
             <GlancePlanScreen
-              issues={planScreenIssues(plan.refs, plan.states)}
+              issues={planScreenIssues(plan.refs, plan.states, plan.planClosed)}
               progress={plan.progress}
               unresolved={plan.unresolved}
               loading={plan.loading}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { streamProgress, progressFraction, withStreamProgress } from "./streamProgress";
+import { streamProgress, progressFraction, withStreamProgress, planDbClosedByRef } from "./streamProgress";
 import { TERMINAL_GOOD } from "@/shared/lib/fleet/workerEnd";
 import type { OwnedIssue } from "@/shared/lib/fleet/workerEnd";
 
@@ -70,5 +70,37 @@ describe("withStreamProgress (#4050)", () => {
     // churn the memo that renders the graph.
     const nodes = [{ id: "auth" }];
     expect(withStreamProgress(nodes, new Map())).toEqual(nodes);
+  });
+});
+
+describe("planDbClosedByRef", () => {
+  it("maps each ref to whether plan.db considers it finished", () => {
+    const out = planDbClosedByRef([
+      i("a", "verified"), i("b", "complete"), i("c", "open"),
+      i("d", "in_progress"), i("e", "blocked"), i("f", "failed"),
+    ]);
+    expect([...out]).toEqual([
+      ["a", true], ["b", true], ["c", false],
+      ["d", false], ["e", false], ["f", false],
+    ]);
+  });
+
+  it("distinguishes known-open from ABSENT — the whole reason it is not a done-set", () => {
+    // A Set can only say "finished" or "not in the set", conflating *this issue is open* with
+    // *I have never heard of this issue*. Only the second should ever prompt "connect GitHub".
+    const out = planDbClosedByRef([i("known-open", "open")]);
+    expect(out.get("known-open")).toBe(false);
+    expect(out.has("never-heard-of")).toBe(false);
+    expect(out.get("never-heard-of")).toBeUndefined();
+  });
+
+  it("counts an issue with no stream — unowned work still has a state", () => {
+    // streamProgress SKIPS stream-less issues (they belong to no worker's denominator), but their
+    // state is still knowable and still worth rendering if a ref points at one.
+    expect(planDbClosedByRef([i("loose", "verified")]).get("loose")).toBe(true);
+  });
+
+  it("agrees with TERMINAL_GOOD rather than restating it", () => {
+    for (const s of TERMINAL_GOOD) expect(planDbClosedByRef([i("x", s)]).get("x")).toBe(true);
   });
 });

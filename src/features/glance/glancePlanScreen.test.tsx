@@ -22,6 +22,50 @@ describe("planScreenIssues", () => {
   it("shows a ref listed twice once", () => {
     expect(planScreenIssues(["#1", "#1"], new Map()).length).toBe(1);
   });
+
+  // ── plan.db as the primary source ────────────────────────────────────────────
+  it("resolves every row from plan.db with NO GitHub overlay at all", () => {
+    // The local-first case: a project that never touches GitHub. Before this, every row read
+    // "state unknown" while plan.db knew each status exactly.
+    const out = planScreenIssues(
+      ["4260-sandbox", "4251-hash-seed"],
+      new Map(),
+      new Map([["4260-sandbox", true], ["4251-hash-seed", false]]),
+    );
+    expect(out).toEqual([
+      { ref: "4260-sandbox", closed: true },
+      { ref: "4251-hash-seed", closed: false },
+    ]);
+  });
+
+  it("prefers plan.db over the GitHub overlay when they disagree", () => {
+    // plan.db is the store of record. GitHub can be stale — here it still calls the issue open.
+    const out = planScreenIssues(["#1"], new Map([["1", false]]), new Map([["#1", true]]));
+    expect(out[0].closed).toBe(true);
+  });
+
+  it("falls back to the overlay for a ref plan.db has never heard of", () => {
+    const out = planScreenIssues(["#1", "#2"], new Map([["2", true]]), new Map([["#1", false]]));
+    expect(out).toEqual([
+      { ref: "#1", closed: false },  // plan.db
+      { ref: "#2", closed: true },   // overlay filled the gap
+    ]);
+  });
+
+  it("matches a plan.db ref by its raw OR normalised spelling", () => {
+    // plan.db stores refs verbatim — `#3898` in an older plan, `4260-slug` in a migrated one — while
+    // the overlay is keyed by the bare number. Checking one spelling only would miss the other.
+    expect(planScreenIssues(["#3898"], new Map(), new Map([["3898", true]]))[0].closed).toBe(true);
+    expect(planScreenIssues(["#3898"], new Map(), new Map([["#3898", true]]))[0].closed).toBe(true);
+  });
+
+  it("does not treat a known-open plan.db row as unknown", () => {
+    // `false` and `undefined` must stay distinct: one is a state, the other is the absence of one,
+    // and only the second should ever prompt "connect GitHub".
+    const out = planScreenIssues(["#1"], new Map(), new Map([["#1", false]]));
+    expect(out[0].closed).toBe(false);
+    expect(out[0].closed).not.toBeUndefined();
+  });
 });
 
 describe("progressLabel", () => {
@@ -54,6 +98,31 @@ describe("GlancePlanScreen", () => {
     expect(screen.getByText("#3871")).toBeTruthy();
     expect(screen.getByText("#3992")).toBeTruthy();
     expect(screen.getAllByText("state unknown").length).toBe(2);
+    expect(screen.getByText(/Connect GitHub/)).toBeTruthy();
+  });
+
+  it("does NOT ask for GitHub when plan.db already answered every row", () => {
+    // A local-first project resolves every state from plan.db, so the overlay being unavailable costs
+    // nothing. Telling that user to connect GitHub would be advice to fix a problem they do not have.
+    render(
+      <GlancePlanScreen
+        issues={[{ ref: "4260-sandbox", closed: true }, { ref: "4251-hash", closed: false }]}
+        progress={{ done: 1, total: 2 }}
+        unresolved
+      />,
+    );
+    expect(screen.getByText("closed")).toBeTruthy();
+    expect(screen.getByText("open")).toBeTruthy();
+    expect(screen.queryByText("state unknown")).toBeNull();
+    expect(screen.queryByText(/Connect GitHub/)).toBeNull();
+  });
+
+  it("still asks for GitHub when SOME row is unresolved after plan.db", () => {
+    // Partial coverage: plan.db knows one, nothing knows the other. The note earns its place here.
+    render(
+      <GlancePlanScreen issues={[{ ref: "#1", closed: true }, { ref: "#2" }]} unresolved />,
+    );
+    expect(screen.getByText("state unknown")).toBeTruthy();
     expect(screen.getByText(/Connect GitHub/)).toBeTruthy();
   });
 

@@ -292,13 +292,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     return {
       refs: stream.issues ?? [],
       states: fleetIssues.states,
+      planClosed: planDbProgress.closedByRef,
       progress: streamDone.get(nodeId),
       // Only claim the overlay is missing once it has actually settled — saying so while the fetch is
       // in flight would flash "connect GitHub" at a connected user.
       unresolved: !fleetIssues.loading && fleetIssues.states.size === 0,
       loading: fleetIssues.loading,
     };
-  }, [fleetStreams, fleetIssues.states, fleetIssues.loading, streamDone]);
+  }, [fleetStreams, fleetIssues.states, fleetIssues.loading, streamDone, planDbProgress.closedByRef]);
 
   const drillNode = drill ? projectModel.nodes.find((n) => n.id === drill) ?? null : null;
   // Name the drilled project in the titlebar crumb (#3041) — "" on the un-drilled network overview.

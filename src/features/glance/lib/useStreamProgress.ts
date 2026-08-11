@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { bscJson } from "@/shared/lib/core/bsc";
 import { usePoll } from "@/shared/hooks/usePoll";
 import type { OwnedIssue } from "@/shared/lib/fleet/workerEnd";
-import { streamProgress, planDbDoneRefs, type StreamProgress } from "./streamProgress";
+import { streamProgress, planDbDoneRefs, planDbClosedByRef, type StreamProgress } from "./streamProgress";
 
 /** Issue counts move at human speed — a worker closing one is a minutes-scale event, so a fast poll
  *  would spend spawns to re-read an unchanged answer. */
@@ -28,9 +28,13 @@ export interface PlanDbProgress {
   byStream: Map<string, StreamProgress>;
   /** Refs of issues plan.db considers finished (`complete` | `verified`). */
   doneRefs: Set<string>;
+  /** Per-ref closed-ness — `true` finished, `false` known-unfinished, ABSENT when plan.db has no such
+   *  row. The Plan dock renders per-issue state from this, so a project that never uses GitHub still
+   *  shows real states instead of "state unknown" on every row. */
+  closedByRef: Map<string, boolean>;
 }
 
-const EMPTY: PlanDbProgress = { byStream: new Map(), doneRefs: new Set() };
+const EMPTY: PlanDbProgress = { byStream: new Map(), doneRefs: new Set(), closedByRef: new Map() };
 
 /** Per-stream `done / total` for `projectKey` plus its done refs, or empty when not drilled / no plan
  *  store. */
@@ -44,7 +48,11 @@ export function useStreamProgress(projectKey: string | null): PlanDbProgress {
     if (!projectKey) return;
     const issues = await bscJson<OwnedIssue[] | null>(projectKey, ["plan", "list", "--full", "--json"], null);
     if (isCancelled() || !issues) return;   // read failed / no plan.db ⇒ keep the last good answer
-    setState({ byStream: streamProgress(issues), doneRefs: planDbDoneRefs(issues) });
+    setState({
+      byStream: streamProgress(issues),
+      doneRefs: planDbDoneRefs(issues),
+      closedByRef: planDbClosedByRef(issues),
+    });
   }, PROGRESS_POLL_MS, [projectKey]);
 
   return state;
