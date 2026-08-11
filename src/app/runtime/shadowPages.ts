@@ -198,7 +198,9 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     label: "GitHub",
     rendersFrom: "graph",
     modules: [
-      { recordId: "githubpage", file: "/src/features/github/index.tsx" },
+      // Graph-only for the same reason as automationspage/mcppage/securitypage: the file copy was
+      // dead and was removed, and the barrel is index.ts now. The six part modules keep their files.
+      { recordId: "githubpage", file: null },
       { recordId: "github-empty", file: "/src/features/github/Empty.tsx" },
       { recordId: "github-summary", file: "/src/features/github/GitHubSummary.tsx" },
       { recordId: "github-pulse", file: "/src/features/github/Pulse.tsx" },
@@ -219,7 +221,9 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     label: "Automations",
     rendersFrom: "graph",
     modules: [
-      { recordId: "automationspage", file: "/src/features/automations/index.tsx" },
+      // Graph-only: the dead AutomationsWorkspace copy is gone and the barrel is index.ts now, so
+      // this path would not resolve. The three tab bodies below are still real files.
+      { recordId: "automationspage", file: null },
       { recordId: "automations-schedules", file: "/src/features/automations/Schedules.tsx" },
       { recordId: "automations-history", file: "/src/features/automations/History.tsx" },
       { recordId: "automations-hook-analytics", file: "/src/features/automations/HookAnalytics.tsx" },
@@ -291,12 +295,12 @@ const FILE_SOURCES = import.meta.glob<string>(
     "/src/app/console/{index,PaneAt,consoleStates}.tsx",
     "/src/app/console/panes/{PaneShell,PaneMenu}.tsx",
     "/src/features/glance/Glance{Workspace,Canvas,Inspector,StreamMorph,PreviewMorph,Node,PlanScreen,ChatDock,SessionLog}.tsx",
-    "/src/features/github/{index,Empty,GitHubSummary,Pulse,BranchGraph}.tsx",
+    "/src/features/github/{Empty,GitHubSummary,Pulse,BranchGraph}.tsx",
     "/src/features/github/summary/{ActivityHeatmap,CIHealthCard,ContributorsCard,CrossRepoActivity,GitHubPageModeStrip,LanguageMix,OpenPRsCard,ReposGrid}.tsx",
-    "/src/features/automations/{index,Schedules,History,HookAnalytics}.tsx",
-    "/src/features/mcp/{index,McpAnalytics}.tsx",
+    "/src/features/automations/{Schedules,History,HookAnalytics}.tsx",
+    "/src/features/mcp/McpAnalytics.tsx",
     "/src/features/skills/{index,SkillsViews,NewGroupDialog,SkillDrawer,SkillsDigest,LessonsTab,RunsTab}.tsx",
-    "/src/features/security/{index,ProfilesTab,AssignmentsTab,ActivityTab,FlowTab}.tsx",
+    "/src/features/security/{ProfilesTab,AssignmentsTab,ActivityTab,FlowTab}.tsx",
   ],
   { query: "?raw", import: "default" },
 );
