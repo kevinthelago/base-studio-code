@@ -313,9 +313,20 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // Secure default (#738): triage only bsc-authored issues unless the user opts out.
                 // #1004: lead with this repo's since-last-run delta (if prepareTriageRun supplied one)
                 // so a re-run resumes from what changed rather than re-ingesting the whole project.
-                // #3281 local-first: no GitHub token ⇒ triage the plan.db issues via `bsc plan`, not
-                // `gh issue list`. (When connected, the GitHub-issue triage is unchanged.)
-                newPaneStartupPromptText[key] = buildTriagePrompt(s.restrictToBscIssues, deltas?.[fullName ?? ""], !s.githubToken);
+                // #3281 local-first: triage the plan.db items via `bsc plan`, not `gh issue list`.
+                //
+                // The trigger used to be `!s.githubToken` alone, which read a token's EXISTENCE as
+                // consent to write to GitHub — so any project with a token got the `gh` variant and
+                // its triage session ran `gh issue edit --add-label` / `gh label create`, creating
+                // GitHub state on a project that integrates locally. A token is what lets us READ
+                // GitHub; the project's STRATEGY is what says whether we write to it.
+                //
+                // So local now means either: no token at all, or a strategy that never reaches a
+                // remote. Fail-closed on the strategy — an unset one resolves to the default, which
+                // is `local`.
+                const triageStrategy = resolveStrategy(undefined, s.planFleet[projKey]?.strategy);
+                const triageLocal = !s.githubToken || triageStrategy === "local";
+                newPaneStartupPromptText[key] = buildTriagePrompt(s.restrictToBscIssues, deltas?.[fullName ?? ""], triageLocal);
                 // Resolution moved to the assignments module (#324/#326): startup
                 // prompt is the override cascade; reference context accumulates.
                 const doc = resolveStartupPrompt(assignments, { projectId, repo: fullName ?? "" });
