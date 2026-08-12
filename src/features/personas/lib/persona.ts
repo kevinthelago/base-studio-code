@@ -12,6 +12,7 @@ import { overlayGlob, overlayRaw } from "@/shared/lib/core/configOverrides";
 import { slugify } from "@/shared/lib/core/format";
 import workerProtocolMd from "@data/fleet/worker-protocol.md?raw";
 import directorProtocolMd from "@data/fleet/director-protocol.md?raw";
+import architectProtocolMd from "@data/fleet/architect-protocol.md?raw";
 
 export interface Persona {
   /** Stable, opaque id (slug for built-ins, minted for user personas). */
@@ -68,6 +69,9 @@ const personaModules = import.meta.glob<{ default: PersonaDef }>("@data/personas
 const PROTOCOL_PROSE: Record<string, string> = {
   "fleet/worker-protocol.md": overlayRaw("fleet/worker-protocol.md", workerProtocolMd).trim(),
   "fleet/director-protocol.md": overlayRaw("fleet/director-protocol.md", directorProtocolMd).trim(),
+  // #funnel-architect-front-door — tier 1's protocol, resolved the same way so the persona's prompt and
+  // any other consumer of the architect prose stay ONE source (the #2027 drift-killer).
+  "fleet/architect-protocol.md": overlayRaw("fleet/architect-protocol.md", architectProtocolMd).trim(),
 };
 
 /** Assemble the packaged persona library from the per-persona JSON defs: overlay the config-dir copies,
