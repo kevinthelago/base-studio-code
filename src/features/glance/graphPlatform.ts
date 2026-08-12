@@ -43,6 +43,7 @@ import * as Debug from "@/features/debug";
 import * as Teams from "@/features/teams";
 import * as PaneIdentity from "@/app/console/lib/paneIdentity";
 import * as TerminalSlot from "@/app/console/terminal/TerminalSlot";
+import * as GraphPlatform from "@/features/glance/graphPlatform";
 
 let done = false;
 
@@ -80,4 +81,5 @@ export function registerGlancePlatform(): void {
   registerAppModule("@/features/teams", Teams);
   registerAppModule("@/app/console/lib/paneIdentity", PaneIdentity);
   registerAppModule("@/app/console/terminal/TerminalSlot", TerminalSlot);
+  registerAppModule("@/features/glance/graphPlatform", GraphPlatform);
 }

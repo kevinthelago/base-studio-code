@@ -11,6 +11,7 @@ import * as AuditRows from "./lib/auditRows";
 import * as BadgeTone from "./lib/badgeTone";
 import * as AppSession from "./lib/appSession";
 import * as FlowModel from "./lib/flowModel";
+import * as GraphPlatform from "@/features/security/graphPlatform";
 
 let done = false;
 
@@ -24,4 +25,5 @@ export function registerSecurityPlatform(): void {
   registerAppModule("@/features/security/lib/badgeTone", BadgeTone);
   registerAppModule("@/features/security/lib/appSession", AppSession);
   registerAppModule("@/features/security/lib/flowModel", FlowModel);
+  registerAppModule("@/features/security/graphPlatform", GraphPlatform);
 }

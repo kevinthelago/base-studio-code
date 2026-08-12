@@ -1,3 +1,9 @@
+// Register this feature's graph-platform modules at module load — so `import("@/features/debug")`
+// (what the shadow catalogue's ensurePlatform does) is what makes a record importing them resolvable.
+// Idempotent; mirrors the *GraphHost pattern for features that have one.
+import { registerDebugPlatform } from "./graphPlatform";
+
+registerDebugPlatform();
 // The DEBUG session feature (epic #3260) — an app-owned, full-capability Claude session in the
 // base-studio-code SOURCE tree that works the `bsc request` improvement queue (fixing `bsc ui`). It is
 // surfaced as the `debugger` node in the base-studio-code Glance graph (#3319/#3322), shown only when the

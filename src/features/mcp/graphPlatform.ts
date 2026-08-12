@@ -13,6 +13,10 @@ import * as Hooks from "./lib/hooks";
 import * as McpTelemetry from "./lib/mcpTelemetry";
 import * as Shared from "./shared";
 import * as UseMcpInstallStatus from "./useMcpInstallStatus";
+import * as GraphPlatform from "@/features/mcp/graphPlatform";
+import * as SessionConfig from "@/features/mcp/lib/sessionConfig";
+import * as HookTelemetry from "@/features/mcp/lib/hookTelemetry";
+import * as MigrateExtensions from "@/features/mcp/lib/migrateExtensions";
 
 let done = false;
 
@@ -27,4 +31,8 @@ export function registerMcpPlatform(): void {
   registerAppModule("@/features/mcp/lib/mcpTelemetry", McpTelemetry);
   registerAppModule("@/features/mcp/shared", Shared);
   registerAppModule("@/features/mcp/useMcpInstallStatus", UseMcpInstallStatus);
+  registerAppModule("@/features/mcp/graphPlatform", GraphPlatform);
+  registerAppModule("@/features/mcp/lib/sessionConfig", SessionConfig);
+  registerAppModule("@/features/mcp/lib/hookTelemetry", HookTelemetry);
+  registerAppModule("@/features/mcp/lib/migrateExtensions", MigrateExtensions);
 }
