@@ -8,14 +8,12 @@ import { useAppStore } from "@/store";
 import { resolveLlmConfig } from "@/shared/lib/core/llmConfig";
 import { startPreviewCapture, grabFrame, stopCapture, screenCaptureAvailable } from "@/shared/lib/preview/captureFrame";
 import { reviewShot } from "@/shared/lib/preview/reviewShot";
-import { injectPrompt } from "@/shared/lib/fleet/paneInject";
 import {
   mergeFindings,
   setFindingStatus,
   pendingFindings,
   confirmedFindings,
   routedFindings,
-  reviewDispatchPrompt,
   type PreviewShot,
   type ReviewFinding,
 } from "@/shared/lib/preview/previewReview";
@@ -23,11 +21,6 @@ import {
 const EMPTY: ReviewFinding[] = [];
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
-/** A readable screen label from a shot id (`<key>:<seq>` → "Screen N") for the dispatch prose. */
-function screenLabel(shotId: string): string {
-  const seq = Number(shotId.split(":").pop());
-  return Number.isFinite(seq) ? `Screen ${seq + 1}` : shotId;
-}
 
 export interface PreviewReview {
   findings: ReviewFinding[];
@@ -92,20 +85,14 @@ export function usePreviewReview(projectKey: string | null): PreviewReview {
     const store = useAppStore.getState();
     const confirmed = confirmedFindings(store.reviewFindings[projectKey] ?? []);
     if (confirmed.length === 0) return;
-    // The director is where the fleet's coordination runs — no live fleet, nowhere to route.
-    if (store.findFleetTabIdx(projectKey) < 0) {
-      setError("No running fleet — launch it first so the director can pick up the review.");
-      return;
-    }
+    // #app-stops-pushing-prompts — this used to type the confirmed findings into the project's
+    // director. The app pushes nothing now, so dispatch only MARKS them routed; a director picks them
+    // up when it reads the review state. The maintainer accepted that these findings have no store the
+    // director can poll today, so until they get one this is a local status change, not a delivery.
     setError(null);
-    try {
-      await injectPrompt(`${projectKey}:director`, reviewDispatchPrompt(confirmed, screenLabel));
-      let next = store.reviewFindings[projectKey] ?? [];
-      for (const f of confirmed) next = setFindingStatus(next, f.id, "routed");
-      store.setReviewFindings(projectKey, next);
-    } catch (e) {
-      setError(errText(e));
-    }
+    let next = store.reviewFindings[projectKey] ?? [];
+    for (const f of confirmed) next = setFindingStatus(next, f.id, "routed");
+    store.setReviewFindings(projectKey, next);
   }, [projectKey]);
 
   return {

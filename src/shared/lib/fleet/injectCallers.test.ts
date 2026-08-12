@@ -42,12 +42,12 @@ const IMPORT_RE = /import\s*\{[^}]*\binjectPrompt\b[^}]*\}\s*from\s*["'][^"']*pa
  * against a real app start. These write to panes that are already running.
  */
 const KNOWN_INJECTORS: readonly string[] = [
-  // SHRINKING under #app-stops-pushing-prompts. Three inject-only pumps are now inert exports.
-  "/src/app/console/useDirectorPump.ts",
-  "/src/app/AppBanners.tsx",
-  "/src/features/designs/useDesignerLoopPump.ts",
-  "/src/features/glance/usePreviewReview.ts",
-  "/src/shared/lib/github/useCiWatcher.ts",
+  // EMPTY. Every app-initiated injector is gone (#app-stops-pushing-prompts) and the kit-change
+  // Approve button — the last user-click caller — went with them. injectPrompt now has NO callers at
+  // all, which is a stronger boundary than a one-entry allow-list: there is nothing to argue onto.
+  //
+  // injectRedirect SURVIVES and is a different thing: it is the user resume click (coordinatorActuate),
+  // a person deciding rather than the app polling.
 ];
 
 /** Files that import `injectPrompt`, as repo-relative paths, sorted. */

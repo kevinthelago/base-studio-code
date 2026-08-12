@@ -68,32 +68,32 @@ describe("usePreviewReview (#2623 slice 5b — capture → review → inbox)", (
     expect(reviewShot).not.toHaveBeenCalled();
   });
 
-  describe("dispatch — route confirmed findings to the director (5d)", () => {
-    it("injects the dispatch prompt into <key>:director and marks findings routed", async () => {
-      useAppStore.setState({ findFleetTabIdx: () => 0 }); // a live fleet exists
-      const { result } = renderHook(() => usePreviewReview("proj"));
-      await act(async () => { await result.current.captureAndReview(); });
-      act(() => result.current.confirm("f0"));
-      await act(async () => { await result.current.dispatch(); });
-
-      const [pane, text] = vi.mocked(injectPrompt).mock.calls[0];
-      expect(pane).toBe("proj:director");
-      expect(text).toContain("preview-review");
-      expect(text).toContain("Overlap");
-      expect(result.current.confirmed).toHaveLength(0); // left the confirmed pool
-      expect(result.current.routed.map((f) => f.id)).toEqual(["f0"]);
-    });
-
-    it("refuses to route with no running fleet, surfacing an error and keeping the finding confirmed", async () => {
-      useAppStore.setState({ findFleetTabIdx: () => -1 });
+  describe("dispatch — mark confirmed findings routed (#app-stops-pushing-prompts)", () => {
+    it("marks them routed WITHOUT pushing anything into a session", async () => {
+      // It used to type the findings into <key>:director. The app pushes no prompts now, so dispatch is
+      // a local status change and a director picks the findings up when it reads the review state.
+      useAppStore.setState({ findFleetTabIdx: () => 0 });
       const { result } = renderHook(() => usePreviewReview("proj"));
       await act(async () => { await result.current.captureAndReview(); });
       act(() => result.current.confirm("f0"));
       await act(async () => { await result.current.dispatch(); });
 
       expect(injectPrompt).not.toHaveBeenCalled();
-      expect(result.current.error).toMatch(/No running fleet/);
-      expect(result.current.confirmed.map((f) => f.id)).toEqual(["f0"]); // still confirmed, not lost
+      expect(result.current.confirmed).toHaveLength(0);       // left the confirmed pool
+      expect(result.current.routed.map((f) => f.id)).toEqual(["f0"]);
+    });
+
+    it("no longer blocks on a missing fleet — there is no delivery left for one to block", async () => {
+      // The old guard refused to route with no live fleet, because the injection needed a director pane
+      // to land in. With nothing being delivered, a missing fleet is not an error state.
+      useAppStore.setState({ findFleetTabIdx: () => -1 });
+      const { result } = renderHook(() => usePreviewReview("proj"));
+      await act(async () => { await result.current.captureAndReview(); });
+      act(() => result.current.confirm("f0"));
+      await act(async () => { await result.current.dispatch(); });
+
+      expect(result.current.error).toBeNull();
+      expect(result.current.routed.map((f) => f.id)).toEqual(["f0"]);
     });
   });
 });
