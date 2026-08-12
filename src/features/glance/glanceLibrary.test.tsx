@@ -5,7 +5,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
-import { GlanceInspector } from "./GlanceInspector";
 import { buildGraph, libraryNodeId, requiresEdgeId, type GRawNode, type GRawEdge } from "./lib/glanceGraph";
 // #3133 — the REAL data path: the designs roll-up + the Glance adapter, joined end to end below.
 import { buildGlanceData } from "./lib/glanceData";
@@ -76,19 +75,6 @@ describe("GlanceOverlays legend — library dimensions (#3119)", () => {
   });
 });
 
-describe("GlanceInspector — library node (#3119)", () => {
-  it("opens an ALGORITHM-scoped panel: the id, its consumer, and the 'requires' relationship", () => {
-    render(<GlanceInspector model={model} selType="node" selId={ALGO} onSelectNode={noop} onClose={noop} />);
-    expect(screen.getByText("ALGORITHM")).toBeTruthy();      // the panel header (vs the UI-KIT panel)
-    expect(screen.getByText("Dijkstra")).toBeTruthy();        // the node name
-    expect(screen.getByText("dijkstra")).toBeTruthy();        // the in-graph library id (prefix stripped)
-    expect(screen.getByText("1 project")).toBeTruthy();       // consumer count
-    expect(screen.getByText("CONSUMED BY")).toBeTruthy();
-    expect(screen.getByText("Route Planner")).toBeTruthy();   // the consuming project, clickable
-    expect(screen.getByText("requires")).toBeTruthy();        // the consumer DepRow's relationship word
-  });
-});
-
 // #3133 — the END-TO-END path the band exists for: a REAL component record whose source imports
 // `@bsc/algorithms/fibonacci` → the designs roll-up resolves it against the packaged algorithm seed →
 // `buildGlanceData` joins it against kit usage → the canvas renders the band. No hand-written `requires`
@@ -120,16 +106,5 @@ describe("Glance band from REAL library refs (#3133)", () => {
     const algo = model.nodes.find((n) => n.id === libraryNodeId("algo", "fibonacci.ts"));
     const proj = model.nodes.find((n) => n.id === "route-planner");
     expect(algo && proj && algo.y < proj.y).toBe(true);
-  });
-
-  it("opens the ALGORITHM inspector panel for the real node, naming its consuming project", () => {
-    const model = realModel();
-    render(
-      <GlanceInspector model={model} selType="node" selId={libraryNodeId("algo", "fibonacci.ts")}
-        onSelectNode={noop} onClose={noop} />,
-    );
-    expect(screen.getByText("ALGORITHM")).toBeTruthy();
-    expect(screen.getByText("fibonacci")).toBeTruthy();
-    expect(screen.getByText("Route Planner")).toBeTruthy();
   });
 });

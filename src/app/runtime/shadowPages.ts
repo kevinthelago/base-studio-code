@@ -172,7 +172,6 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     modules: [
       { recordId: "glancepage", file: "/src/features/glance/GlanceWorkspace.tsx" },
       { recordId: "glance-canvas", file: "/src/features/glance/GlanceCanvas.tsx" },
-      { recordId: "glance-inspector", file: "/src/features/glance/GlanceInspector.tsx" },
       { recordId: "glance-stream-morph", file: "/src/features/glance/GlanceStreamMorph.tsx" },
       { recordId: "glance-preview-morph", file: "/src/features/glance/GlancePreviewMorph.tsx" },
       { recordId: "glance-node", file: "/src/features/glance/GlanceNode.tsx" },
