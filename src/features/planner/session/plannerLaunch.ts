@@ -49,7 +49,7 @@ export function plannerLaunchConfig(s: AppStore, ghEnv: Record<string, string>):
   // Store scopes (#2470, defense-in-depth): the planner role's per-store access tiers (ui: read) for
   // the store CLIs' runtime write check — on BOTH harnesses (the launch-time deny rules are the
   // boundary; this guards accidents + the bsc-agent runtime).
-  const scopes = JSON.stringify(sessionScopes(roleCapability("planner")));
+  const scopes = JSON.stringify(sessionScopes(roleCapability("director")));
   if (harness !== "bsc-agent") {
     return {
       providerId: undefined,
@@ -70,7 +70,7 @@ export function plannerLaunchConfig(s: AppStore, ghEnv: Record<string, string>):
     ...bscAgentEnv(resolveLlmConfig(s)),
     // Plan-only role gate (#219) for the bsc-agent runtime: deny code writes + the mutating git/gh
     // commands the planner role forbids — the runtime's analogue of the claude settings.json denies.
-    BSC_AGENT_PERMS: JSON.stringify(bscAgentPerms(roleCapability("planner"))),
+    BSC_AGENT_PERMS: JSON.stringify(bscAgentPerms(roleCapability("director"))),
     BSC_SCOPES: scopes,
   };
   if (bscMcp.length > 0) env.BSC_AGENT_MCP = JSON.stringify(bscMcp);

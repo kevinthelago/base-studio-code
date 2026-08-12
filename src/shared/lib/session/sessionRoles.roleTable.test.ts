@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ROLE_DEFAULTS, PLANNER_WRITE_GLOBS, DOC_GLOBS, DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, roleDeniedCommands, sessionScopes } from "./sessionRoles";
+import { ROLE_DEFAULTS, PLAN_WRITE_GLOBS, DOC_GLOBS, DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, roleDeniedCommands, sessionScopes, canWritePath } from "./sessionRoles";
 import { mergeRoleDefaults, roleCapability, restrictedRoleCommands, type RoleCapability } from "./roleModel";
 
 // Security guard for the externalized role→capability table (@data/permissions/role-capabilities.json,
@@ -15,7 +15,12 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
     expect(tiers).toEqual({
       planner:    "read/read/write/read/read",
       worker:     "read/write/write/read/read",
-      director:   "write/write/none/read/read",
+      // Director (#funnel-planning-moves-to-director): it absorbed the PLANNING surface, and with it
+      // the planner's tiers. `git`/`github` dropped from `write` to `read` — the only session at a
+      // project hub that could push or merge without owning a worktree, and now there is none. Merging
+      // belongs to the integration stream; the commons belong to the commons stream. Any edit that
+      // widens either axis back to `write` must fail this test.
+      director:   "read/read/write/read/read",
       triage:     "write/none/none/read/read",
       tester:     "read/read/none/read/read",
       reviewer:   "read/read/none/read/read",
@@ -63,9 +68,10 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
     });
   });
 
-  it("only the planner + documentor + marketer ship default write globs; every other role starts empty (no code writes)", () => {
-    expect(PLANNER_WRITE_GLOBS).toBe(ROLE_DEFAULTS.planner.writeGlobs); // same array — derived, not duplicated
-    expect(PLANNER_WRITE_GLOBS).toEqual(["*.md", "*.json", "prompts/*.md", "prompts/*", "discovery/*.md", "discovery/*"]);
+  it("only the director + planner + documentor + marketer ship default write globs; every other role starts empty (no code writes)", () => {
+    // PLAN_WRITE_GLOBS derives from the DIRECTOR now — it carries the planning write surface.
+    expect(PLAN_WRITE_GLOBS).toBe(ROLE_DEFAULTS.director.writeGlobs); // same array — derived, not duplicated
+    expect(PLAN_WRITE_GLOBS).toEqual(["*.md", "*.json", "prompts/*.md", "prompts/*", "discovery/*.md", "discovery/*"]);
     // The documentor ships DOC_GLOBS by default (its prose-doc carve-out, #1555) — strictly markdown/docs.
     expect(DOC_GLOBS).toBe(ROLE_DEFAULTS.documentor.writeGlobs); // same array — derived, not duplicated
     // No `docs/**`: that would grant code files under docs/ (e.g. docs/gen.ts) — the boundary is
@@ -85,7 +91,7 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
     for (const role of ["designer", "architect", "librarian", "sound-designer", "integrator"] as const) {
       expect(ROLE_DEFAULTS[role].writeGlobs).toEqual(["scratch/**"]);
     }
-    const CARVED = ["planner", "documentor", "marketer", "designer", "architect", "librarian", "sound-designer", "integrator"];
+    const CARVED = ["director", "planner", "documentor", "marketer", "designer", "architect", "librarian", "sound-designer", "integrator"];
     for (const c of Object.values(ROLE_DEFAULTS)) {
       if (!CARVED.includes(c.role)) expect(c.writeGlobs).toEqual([]);
     }
@@ -183,6 +189,81 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
     expect(denies).not.toContain("bsc ui"); // …but not the whole tool (that's the `none` tier).
     // And the runtime scope doc renders the same read floor.
     expect(sessionScopes(stale)).toEqual({ ui: "read" });
+  });
+});
+
+// The stale-mirror CEILING (#funnel-planning-moves-to-director). The #2325 floor above stops a mirror
+// DROPPING something the app ships; this is the other direction — a mirror must not RE-GRANT a
+// capability the app has revoked. `config/` is seeded once and never refreshed, so without this the
+// director's narrowing to git/github `read` would apply to nobody with an existing install.
+describe("mergeRoleDefaults — the capability ceiling", () => {
+  const cap = (role: string, over: Partial<RoleCapability> = {}): RoleCapability =>
+    ({ role, github: "read", git: "read", code: "none", net: "read", ui: "read", writeGlobs: [], ...over }) as RoleCapability;
+
+  it("clamps a mirror that re-grants a tier the shipped app revoked", () => {
+    const embedded = { director: cap("director", { git: "read", github: "read" }) };
+    const staleMirror = { director: cap("director", { git: "write", github: "write" }) };
+    const merged = mergeRoleDefaults(embedded, staleMirror);
+    expect(merged.director.git).toBe("read");
+    expect(merged.director.github).toBe("read");
+  });
+
+  it("still lets a mirror NARROW a tier — tightening is the user's prerogative", () => {
+    const embedded = { worker: cap("worker", { git: "write", code: "write" }) };
+    const tightened = { worker: cap("worker", { git: "read", code: "none" }) };
+    const merged = mergeRoleDefaults(embedded, tightened);
+    expect(merged.worker.git).toBe("read");
+    expect(merged.worker.code).toBe("none");
+  });
+
+  it("restores shipped writeGlobs when the mirror supplies an EMPTY list", () => {
+    // The exact stale-mirror shape: the director gained `code: write` AND its plan globs in one
+    // change, so a mirror written before it carries `writeGlobs: []` and would leave the role able
+    // to write with no boundary defined.
+    const embedded = { director: cap("director", { code: "write", writeGlobs: ["*.md", "*.json"] }) };
+    const staleMirror = { director: cap("director", { code: "none", writeGlobs: [] }) };
+    const merged = mergeRoleDefaults(embedded, staleMirror);
+    expect(merged.director.writeGlobs).toEqual(["*.md", "*.json"]);
+  });
+
+  it("a NON-empty mirror glob list still wins (a real narrowing survives)", () => {
+    const embedded = { director: cap("director", { code: "write", writeGlobs: ["*.md", "*.json"] }) };
+    const narrowed = { director: cap("director", { code: "write", writeGlobs: ["*.md"] }) };
+    expect(mergeRoleDefaults(embedded, narrowed).director.writeGlobs).toEqual(["*.md"]);
+  });
+
+  it("the SHIPPED director really is clamped — a mirror cannot hand it push/merge back", () => {
+    // End to end against the actual shipped row, not a fixture.
+    const staleMirror = { director: { ...ROLE_DEFAULTS.director, git: "write", github: "write" } };
+    const merged = mergeRoleDefaults({ director: ROLE_DEFAULTS.director }, staleMirror as Record<string, RoleCapability>);
+    const denies = roleDeniedCommands(merged.director);
+    expect(denies).toContain("git push");
+    expect(denies).toContain("gh pr merge");
+  });
+});
+
+// The invariant this whole slice exists to establish.
+describe("no session at a project hub can mutate git, GitHub, or code", () => {
+  // The roles that run AT `projects/<key>/` — the planning/directing surface. A worker runs in its own
+  // worktree and a triage session at a repo; neither is a hub session.
+  const HUB_ROLES = ["planner", "director"] as const;
+
+  it("denies every git and GitHub write for each hub role", () => {
+    for (const role of HUB_ROLES) {
+      const denies = roleDeniedCommands(ROLE_DEFAULTS[role]);
+      for (const c of ["git push", "git merge", "git commit", "git rebase", "gh pr create", "gh pr merge", "gh issue create"]) {
+        expect(denies, `${role} must deny ${c}`).toContain(c);
+      }
+    }
+  });
+
+  it("confines every hub role's writes to plan files — no project code, ever", () => {
+    for (const role of HUB_ROLES) {
+      const cap = ROLE_DEFAULTS[role];
+      for (const p of ["src/App.tsx", "crates/kb/src/lib.rs", "web/src/auth/login.ts", "web/package.json"]) {
+        expect(canWritePath(cap, p), `${role} must not write ${p}`).toBe(false);
+      }
+    }
   });
 });
 

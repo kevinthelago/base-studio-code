@@ -60,12 +60,14 @@ export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
   }
   const allow = cap.writeGlobs.map(editPathRule);
   // Role-specific deny set, layered over the write-glob allows (deny wins over allow):
-  // - planner: the DB-owned plan-state artifacts (#1070) — its *.md/*.json globs would otherwise
-  //   auto-approve a stray `deploy.md`/`phases.json`; force it to the `bsc-plan` CLI.
+  // - director / planner: the DB-owned plan-state artifacts (#1070) — the plan globs would otherwise
+  //   auto-approve a stray `deploy.md`/`phases.json`; force them to the `bsc plan` CLI. The DIRECTOR
+  //   is listed because it now carries the planning write surface — omitting it would have handed the
+  //   merged role file-level write over exactly the plan state plan.db is supposed to own.
   // - worker: the dependency manifests + lockfiles (#1111) — the planner locks deps once and
   //   publish seeds them, so a worker editing its own manifest is the parallel-redefinition that
   //   collides at integration; a new dep routes through the director.
-  const denyFiles = cap.role === "planner" ? DB_OWNED_PLAN_FILES
+  const denyFiles = cap.role === "planner" || cap.role === "director" ? DB_OWNED_PLAN_FILES
     : cap.role === "worker" ? DEP_MANIFEST_FILES
     : [];
   const deny = denyFiles.map(editPathRule);

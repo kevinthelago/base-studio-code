@@ -123,12 +123,13 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       // without requiring the user to separately authenticate the gh CLI.
       const token = useAppStore.getState().githubToken;
       const ghEnv: Record<string, string> = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
-      // Role gate (#219): the planner is plan-only — write git/gh write denies plus a
-      // write-tool deny (#238) into its session settings before claude launches, so it
-      // can read for context but neither edit files nor mutate the repo/GitHub
-      // (publishing is an explicit, separately-gated step).
-      const plannerCap = roleCapability("planner");
-      const plannerWrite = roleWriteRules(plannerCap);
+      // Role gate (#219): the planning session launches as the DIRECTOR — planning and directing
+      // are one actor at two phases of a project, so the capability moved onto that role rather than
+      // being duplicated. It stays plan-only: git/gh read, writes scoped to the plan files, so it can
+      // read for context but neither edit project code nor mutate the repo/GitHub (publishing is an
+      // explicit, separately-gated step).
+      const planCap = roleCapability("director");
+      const planWrite = roleWriteRules(planCap);
       // Expose EVERY installed MCP server to the planner (#1054), project scope ignored: the planner
       // is the assignment hub, so it sees all downloaded servers — it can call them while planning
       // (e.g. research sources for a skill) and assign them to the workers that need them.
@@ -140,7 +141,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       await safeInvoke("ensure_session_settings", {
         cwd:             paths?.planning_dir ?? "",
         allowedCommands: [],
-        deniedCommands:  roleDeniedCommands(plannerCap),
+        deniedCommands:  roleDeniedCommands(planCap),
         mcpServers:      plannerMcp,
         // Turn accounting (#3455): the planner's bespoke launch must ALSO register the observability
         // floor. bsc-tokens is the only per-session token source, so without it the planner's (often
@@ -149,8 +150,8 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
         // Auto-approve every MCP server the planner sees (Research/Compliance + any downloaded one)
         // so it can call them while planning — e.g. the Research MCP when grounding a skill — without
         // a per-tool permission prompt. `enabledMcpjsonServers` only trusts the server to LOAD.
-        allowToolRules:  [...plannerWrite.allow, "Read", "WebFetch", ...mcpAllowRules(plannerMcp)],
-        denyToolRules:   plannerWrite.deny,
+        allowToolRules:  [...planWrite.allow, "Read", "WebFetch", ...mcpAllowRules(plannerMcp)],
+        denyToolRules:   planWrite.deny,
         replacePermissions: true,
       }, undefined, (e: unknown) => console.error("planner session settings failed:", e));
       // Planner introduction (#1240): a user-facing kickoff that has the planner OPEN the

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ROLE_DEFAULTS,
   type SessionRole,
-  PLANNER_WRITE_GLOBS,
+  PLAN_WRITE_GLOBS,
   DOC_GLOBS,
   DB_OWNED_PLAN_FILES,
   DEP_MANIFEST_FILES,
@@ -26,14 +26,18 @@ import {
 
 describe("scopeWriteGlobs (#1297)", () => {
   it("falls back to the role default when the pane has no owned globs (planner ⇒ plan files)", () => {
-    expect(scopeWriteGlobs("planner", [])).toEqual(PLANNER_WRITE_GLOBS);
+    expect(scopeWriteGlobs("planner", [])).toEqual(PLAN_WRITE_GLOBS);
   });
   it("uses the pane's owned globs when assigned (a worker's lane)", () => {
     expect(scopeWriteGlobs("worker", ["src/auth/**", "src/y.ts"])).toEqual(["src/auth/**", "src/y.ts"]);
   });
-  it("is empty for a code:none role (director/triage) ⇒ no scope hook", () => {
-    expect(scopeWriteGlobs("director", [])).toEqual([]);
+  it("is empty for a code:none role (triage) ⇒ no scope hook", () => {
     expect(scopeWriteGlobs("triage", ["whatever"])).toEqual([]);
+  });
+  it("falls back to the DIRECTOR's plan globs when it has no assigned lane", () => {
+    // The director carries the planning write surface now, so it always has a boundary — that is
+    // what the bsc-scope hook hard-limits its writes to.
+    expect(scopeWriteGlobs("director", [])).toEqual(PLAN_WRITE_GLOBS);
   });
   it("is empty for a worker with no lane yet (no write boundary)", () => {
     expect(scopeWriteGlobs("worker", [])).toEqual([]);
@@ -42,7 +46,7 @@ describe("scopeWriteGlobs (#1297)", () => {
 
 describe("bscAgentPerms", () => {
   it("a code:none role denies the write/edit tools", () => {
-    const p = bscAgentPerms(roleCapability("director")); // github:write, git:write, code:none
+    const p = bscAgentPerms(roleCapability("triage")); // github:write, git:none, code:none
     expect(p.deny_tools).toEqual(["write_file", "edit_file"]);
     expect(p.write_globs).toEqual([]);
   });
@@ -115,9 +119,12 @@ describe("checkCommand", () => {
     expect(checkCommand(planner, "git push").reason).toContain("planner");
   });
 
-  it("director: gh + git writes allowed", () => {
-    expect(checkCommand(director, "gh pr merge 5").allowed).toBe(true);
-    expect(checkCommand(director, "git push").allowed).toBe(true);
+  it("director: reads allowed, all git/gh mutations denied — it plans and routes, it does not mutate", () => {
+    expect(checkCommand(director, "git status").allowed).toBe(true);
+    expect(checkCommand(director, "gh pr list").allowed).toBe(true);
+    expect(checkCommand(director, "gh pr merge 5").allowed).toBe(false);
+    expect(checkCommand(director, "git push").allowed).toBe(false);
+    expect(checkCommand(director, "git merge feature").allowed).toBe(false);
   });
 
   it("worker: git writes allowed, gh writes denied (read only)", () => {
@@ -175,9 +182,11 @@ describe("roleDeniedCommands (launch wiring)", () => {
     expect(denies).not.toContain("git push");
   });
 
-  it("director denies no git/gh commands (write tiers) — only the ui-store writes (#2470)", () => {
+  it("director denies the git + gh WRITES (read tiers) — merging belongs to the integration stream", () => {
     const denies = roleDeniedCommands(ROLE_DEFAULTS.director);
-    expect(denies.some((d) => d.startsWith("git") || d.startsWith("gh"))).toBe(false);
+    for (const c of ["git push", "git merge", "git commit", "gh pr merge", "gh pr create", "gh issue create"]) {
+      expect(denies, `director must deny ${c}`).toContain(c);
+    }
     expect(denies).toContain("bsc ui set"); // ui: read — even the director doesn't redefine kits
   });
 
@@ -195,10 +204,10 @@ describe("roleDeniedCommands (launch wiring)", () => {
       expect(denies).not.toContain("bsc ui set");
     });
 
-    it("a write-less director (no commons) denies file-writes; a commons director does NOT", () => {
-      expect(roleDeniedCommands(ROLE_DEFAULTS.director)).toContain("cp"); // no carve-out → writes nothing
-      const commonsDir = roleCapability("director", { writeGlobs: ["*.md"] });
-      expect(roleDeniedCommands(commonsDir)).not.toContain("cp"); // carve-out writes its globs via the Write tool
+    it("the director keeps the file-mutating bash commands — it is a code:write role now", () => {
+      // It was previously code:"none" with a commons carve-out, so it was file-deny'd unless assigned
+      // globs. It now writes plan files through the Write tool like any writer.
+      expect(roleDeniedCommands(ROLE_DEFAULTS.director)).not.toContain("cp");
     });
 
     it("a writer (planner) and a carve-out documentor keep file-mutating bash commands", () => {
@@ -282,8 +291,8 @@ describe("roleDeniedTools (sub-agent block, #1036)", () => {
 describe("roleWriteRules (write-tool guard)", () => {
   const WRITE_TOOLS = ["Edit", "Write", "NotebookEdit"]; // whole-tool deny set (no MultiEdit — removed tool, #3534)
 
-  it("denies every write tool for no-code roles (director/triage)", () => {
-    for (const role of ["director", "triage"] as const) {
+  it("denies every write tool for no-code roles (triage/tester/reviewer)", () => {
+    for (const role of ["triage", "tester", "reviewer"] as const) {
       const rules = roleWriteRules(ROLE_DEFAULTS[role]);
       expect(rules.deny).toEqual(WRITE_TOOLS);
       expect(rules.allow).toEqual([]);
@@ -293,7 +302,7 @@ describe("roleWriteRules (write-tool guard)", () => {
   it("planner: auto-approves plan-file globs; denies DB-owned plan-state file forms (#509/#1070)", () => {
     const rules = roleWriteRules(ROLE_DEFAULTS.planner);
     // Every PLANNER_WRITE_GLOB is represented in the allow list (section files stay writable).
-    for (const glob of PLANNER_WRITE_GLOBS) {
+    for (const glob of PLAN_WRITE_GLOBS) {
       expect(rules.allow).toContain(`Edit(${glob})`);
       expect(rules.allow).toContain(`Edit(${glob})`);
     }
@@ -413,7 +422,7 @@ describe("planner privilege containment (#1107)", () => {
     expect(perms.deny_bash).toContain("git push");
     expect(perms.deny_bash).toContain("gh pr create");
     expect(perms.deny_bash).toContain("gh repo delete");
-    expect(perms.write_globs).toEqual(PLANNER_WRITE_GLOBS); // plan files only, no repo lane
+    expect(perms.write_globs).toEqual(PLAN_WRITE_GLOBS); // plan files only, no repo lane
   });
 });
 
@@ -440,63 +449,58 @@ describe("issuer + juror roles (#376 / #394)", () => {
   });
 });
 
-// #851 — the director's scoped commons write carve-out: it keeps code:"none" (no feature-code
-// writes) yet may write EXACTLY the commons globs assigned to it, and nothing else.
-describe("director commons carve-out (#851)", () => {
+// The director's #851 commons carve-out is GONE (#funnel-planning-moves-to-director). The commons are
+// a worker STREAM with an owner, a branch and a worktree; the director is a scoped PLAN writer.
+describe("director is a scoped plan writer, not a commons carve-out", () => {
   const WRITE_TOOLS = ["Edit", "Write", "NotebookEdit"]; // whole-tool deny set (no MultiEdit — removed tool, #3534)
-  // A representative commons set (what fleetStartProject assigns to the director from the stack).
   const COMMONS = [".gitignore", "package.json", "tsconfig.json", ".github/workflows/**", ".env.example"];
 
-  it("a director WITHOUT assigned globs keeps the full code:none deny (no accidental carve-out)", () => {
+  it("no longer qualifies for a carve-out at all — it is code:write, not code:none", () => {
+    expect(ROLE_DEFAULTS.director.code).toBe("write");
     expect(hasScopedWriteCarveOut(ROLE_DEFAULTS.director)).toBe(false);
-    expect(roleWriteRules(ROLE_DEFAULTS.director).deny).toEqual(WRITE_TOOLS);
-    expect(roleWriteRules(ROLE_DEFAULTS.director).allow).toEqual([]);
-    expect(canWritePath(ROLE_DEFAULTS.director, ".gitignore")).toBe(false);
-    expect(scopeWriteGlobs("director", [])).toEqual([]);
+    // ...and handing it commons globs does NOT resurrect one.
+    expect(hasScopedWriteCarveOut(roleCapability("director", { writeGlobs: COMMONS }))).toBe(false);
   });
 
-  it("a director WITH commons globs gets a carve-out scoped to exactly the commons", () => {
-    const dir = roleCapability("director", { writeGlobs: COMMONS });
-    expect(dir.code).toBe("none"); // code stays none — feature code is still off-limits
-    expect(hasScopedWriteCarveOut(dir)).toBe(true);
-  });
-
-  it("director writeGlobs INCLUDE the commons set (can write each commons path)", () => {
-    const dir = roleCapability("director", { writeGlobs: COMMONS });
-    for (const p of [".gitignore", "package.json", "tsconfig.json", ".github/workflows/ci.yml", ".env.example"]) {
-      expect(canWritePath(dir, p)).toBe(true);
+  it("writes the plan files and nothing else", () => {
+    const d = ROLE_DEFAULTS.director;
+    for (const p of ["goal.md", "phases.json", "prompts/api-kickoff.md", "discovery/stack.md"]) {
+      expect(canWritePath(d, p), `director must write ${p}`).toBe(true);
+    }
+    for (const p of ["src/App.tsx", "src/auth/login.ts", "crates/kb/src/lib.rs"]) {
+      expect(canWritePath(d, p), `director must NOT write ${p}`).toBe(false);
     }
   });
 
-  it("director is DENIED all other code writes (feature code outside the commons)", () => {
-    const dir = roleCapability("director", { writeGlobs: COMMONS });
-    for (const p of ["src/App.tsx", "src/auth/login.ts", "crates/kb/src/lib.rs", "README.md"]) {
-      expect(canWritePath(dir, p)).toBe(false);
+  it("cannot reach a linked repo's commons — the boundary is DEPTH, not the glob", () => {
+    // Worth stating precisely, because `*.json` is broad enough to match `tsconfig.json` on its own.
+    // What keeps the commons out of reach is that the director runs at the project HUB and a linked
+    // repo is checked out one level down (`<hub>/<repo>/`) — and `*` is a NON-SLASH run, so a plan
+    // glob cannot cross into a repo. The commons stream owns those paths.
+    const d = ROLE_DEFAULTS.director;
+    for (const p of ["web/package.json", "web/tsconfig.json", "api/.github/workflows/ci.yml", "web/src/App.tsx"]) {
+      expect(canWritePath(d, p), `commons ${p} is not the director's`).toBe(false);
+    }
+    // Hub-level files that match neither plan glob stay denied outright.
+    for (const p of [".gitignore", ".env.example"]) {
+      expect(canWritePath(d, p), `${p} matches no plan glob`).toBe(false);
     }
   });
 
-  it("roleWriteRules auto-approves the commons (allow, no whole-tool deny) so writes don't prompt", () => {
-    const rules = roleWriteRules(roleCapability("director", { writeGlobs: COMMONS }));
-    // The whole-tool deny is lifted (deny>allow would otherwise mask the per-glob allows).
-    expect(rules.deny).toEqual([]);
-    for (const g of COMMONS) {
-      expect(rules.allow).toContain(`Edit(${g})`);
-      expect(rules.allow).toContain(`Edit(${g})`);
-    }
-    expect(rules.allow).toHaveLength(COMMONS.length); // one Edit(glob) per commons glob (#3534)
+  it("the DB-owned plan state stays denied even inside its globs (deny > allow, #1070)", () => {
+    // `*.json`/`*.md` would otherwise auto-approve plan state that plan.db owns.
+    const rules = roleWriteRules(ROLE_DEFAULTS.director);
+    expect(rules.deny.length).toBeGreaterThan(0);
+    for (const f of DB_OWNED_PLAN_FILES) expect(rules.deny).toContain(`Edit(${f})`);
   });
 
-  it("scopeWriteGlobs hard-limits the director's writes to the commons (bsc-scope hook)", () => {
-    expect(scopeWriteGlobs("director", COMMONS)).toEqual(COMMONS);
+  it("bscAgentPerms hands it the write tools scoped to the plan globs", () => {
+    const p = bscAgentPerms(ROLE_DEFAULTS.director);
+    expect(p.deny_tools).toEqual([]);
+    expect(p.write_globs).toEqual(PLAN_WRITE_GLOBS);
   });
 
-  it("bscAgentPerms gives a commons-assigned director its write tools scoped to the commons", () => {
-    const p = bscAgentPerms(roleCapability("director", { writeGlobs: COMMONS }));
-    expect(p.deny_tools).toEqual([]); // write_file/edit_file NOT denied — carve-out active
-    expect(p.write_globs).toEqual(COMMONS);
-  });
-
-  it("the carve-out is director/documentor-only — a code:none triage/tester handed globs stays write-denied", () => {
+  it("a code:none triage/tester handed globs stays write-denied (no accidental carve-out)", () => {
     for (const role of ["triage", "tester", "reviewer"] as const) {
       const cap = roleCapability(role, { writeGlobs: COMMONS });
       expect(hasScopedWriteCarveOut(cap)).toBe(false);
