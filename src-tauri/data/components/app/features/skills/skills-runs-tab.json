@@ -14,6 +14,6 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/skills/SkillsRunsTab.tsx",
+  "src": "src/features/skills/RunsTab.tsx",
   "folder": "features/skills"
 }

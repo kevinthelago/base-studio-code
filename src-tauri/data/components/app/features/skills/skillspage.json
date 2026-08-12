@@ -25,7 +25,7 @@
     "Text",
     "Toggle"
   ],
-  "src": "src/features/skills/SkillsWorkspace.tsx",
+  "src": "src/features/skills/index.tsx",
   "folder": "features/skills",
   "props": []
 }

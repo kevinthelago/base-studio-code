@@ -11,5 +11,6 @@
   ],
   "src": "src/shared/ui/charts/Charts.tsx",
   "folder": "shared/ui/charts",
-  "props": []
+  "props": [],
+  "srcDivergence": "Deliberate, not stale — MULTI-COMPONENT MODULE. `Charts.tsx` exports five chart components (LineArea, Bars, Donut, HBars, Swimlane) and no symbol called `Charts`; the record mirrors all five AND adds an `export function Charts()` gallery on top, because the loader's `pickComponent` mounts exactly ONE component per record and a module of five would otherwise have no entry point. The file needs no such wrapper — its callers import the pieces directly. So `src` is right and the extra export is the record doing its job. The record's own header comment says the same thing; it is repeated here because a sweep reads this field, not the source. Hand-written."
 }

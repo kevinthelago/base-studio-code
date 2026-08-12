@@ -1,15 +1,31 @@
 {
-  "id": "teams-agent-face",
-  "name": "AgentFace",
-  "kitId": "base-studio-code",
-  "role": "composite",
-  "srcText": "// AgentFace — the agent card face (glyph · name + role pill · blurb), shared by a normal agent node and\n// the top card of a pool's stack. Lifted out of TeamsCanvas.tsx, where it is a private function, because\n// the `teams-canvas` RECORD already imports it as a separate module (`@/components/teams-agent-face`) and\n// that module did not exist — so `teams-canvas`, and `teamspage` through it, resolved to nothing.\n// Sibling of `teams-org-legend`, which was split out of the same file for the same reason.\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Chip } from \"@/shared/ui/data/Chip\";\n\n/** The resolved display fields for one position — declared locally rather than imported from\n *  `lib/orgView`, so the record is self-standing (the same choice `teams-canvas` makes for its own\n *  `Position`/`Persona` shapes). */\nexport interface PositionDisplay { glyph: string; name: string; role?: string; blurb: string }\n\nexport function AgentFace({ d, isSel }: { d: PositionDisplay; isSel: boolean }) {\n  return (\n    <Box style={{ width: \"100%\", height: \"100%\", boxSizing: \"border-box\", padding: \"10px 12px\",\n      display: \"flex\", flexDirection: \"column\", gap: 8, borderRadius: 13, background: \"var(--bg-elev)\",\n      border: `1px solid ${isSel ? \"var(--accent)\" : \"var(--border)\"}`,\n      boxShadow: isSel ? \"0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)\" : \"0 3px 12px rgba(0,0,0,.3)\" }}>\n      <Row gap={9} align=\"start\">\n        <Box style={{ width: 27, height: 27, borderRadius: 8, display: \"flex\", alignItems: \"center\", justifyContent: \"center\",\n          fontSize: 13, color: isSel ? \"#fff\" : \"var(--accent)\", background: isSel ? \"var(--accent)\" : \"color-mix(in oklch, var(--accent) 14%, transparent)\", flex: \"none\" }}>{d.glyph}</Box>\n        <Box style={{ minWidth: 0, flex: 1 }}>\n          <Row gap={6} align=\"center\">\n            <Text as=\"span\" weight={600} size={13.5} style={{ lineHeight: 1.15, minWidth: 0, overflow: \"hidden\", textOverflow: \"ellipsis\", whiteSpace: \"nowrap\" }}>{d.name}</Text>\n            {d.role && <Chip color=\"var(--accent)\" style={{ flex: \"none\" }}>{d.role}</Chip>}\n          </Row>\n          {/* Clamp the blurb to 4 lines (#3335) so a long persona description ellipsis-truncates inside the\n              card instead of overflowing the node box; the full text stays in the inspector. */}\n          <Text as=\"div\" size={10.5} tone=\"muted\" style={{ lineHeight: 1.3, marginTop: 2,\n            display: \"-webkit-box\", WebkitLineClamp: 4, WebkitBoxOrient: \"vertical\", overflow: \"hidden\" }}>{d.blurb}</Text>\n        </Box>\n      </Row>\n    </Box>\n  );\n}\n",
-  "src": "src/features/teams/TeamsCanvas.tsx",
   "composes": [
     "Box",
     "Chip",
     "Row",
     "Text"
   ],
-  "provides": "@/components/teams-agent-face"
+  "group": "features/teams",
+  "id": "teams-agent-face",
+  "kitId": "base-studio-code",
+  "name": "AgentFace",
+  "provides": "@/components/teams-agent-face",
+  "role": "primitive",
+  "src": "src/features/teams/TeamsCanvas.tsx",
+  "srcText": "// AgentFace (#3335) — the org-chart agent-node face card: name, role chip, and a 4-line-clamped\n// blurb. Promoted from harvested (it was already complete and tested) into base-studio-code, refactored\n// to use the real Box/Row/Text/Chip primitives instead of local raw-div redeclarations. The blurb clamp\n// is CSS (a 4-line `-webkit-box`) so a persona blurb of any length can never grow the fixed node box —\n// the full text stays in the DOM (the truncation is purely visual), verified together with TeamsCanvas.\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Chip } from \"@/shared/ui/data/Chip\";\n\nexport interface PositionDisplay {\n  glyph: string;\n  name: string;\n  role?: string;\n  blurb: string;\n  dept?: string;\n}\n\nconst DEMO_POSITION: PositionDisplay = { glyph: \"◆\", name: \"builder-1\", role: \"engineer\", blurb: \"Implements features end to end, from the plan to a merged PR.\" };\n\nexport function AgentFace({ d = DEMO_POSITION, isSel = false }: { d?: PositionDisplay; isSel?: boolean }) {\n  return (\n    <Box style={{\n      width: \"100%\", height: \"100%\", boxSizing: \"border-box\", padding: \"10px 12px\",\n      display: \"flex\", flexDirection: \"column\", gap: 8, borderRadius: 13, background: \"var(--bg-elev)\",\n      border: `1px solid ${isSel ? \"var(--accent)\" : \"var(--border)\"}`,\n      boxShadow: isSel ? \"0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)\" : \"0 3px 12px rgba(0,0,0,.3)\",\n    }}>\n      <Row gap={9} align=\"start\">\n        <Box style={{\n          width: 27, height: 27, borderRadius: 8, display: \"flex\", alignItems: \"center\", justifyContent: \"center\",\n          fontSize: 13, color: isSel ? \"#fff\" : \"var(--accent)\",\n          background: isSel ? \"var(--accent)\" : \"color-mix(in oklch, var(--accent) 14%, transparent)\", flex: \"none\",\n        }}>{d.glyph}</Box>\n        <Box style={{ minWidth: 0, flex: 1 }}>\n          <Row gap={6} align=\"center\">\n            <Text as=\"span\" weight={600} size={13.5} style={{ lineHeight: 1.15, minWidth: 0, overflow: \"hidden\", textOverflow: \"ellipsis\", whiteSpace: \"nowrap\" }}>{d.name}</Text>\n            {d.role && <Chip color=\"var(--accent)\" style={{ flex: \"none\" }}>{d.role}</Chip>}\n          </Row>\n          <Text as=\"div\" size={10.5} tone=\"muted\" style={{\n            lineHeight: 1.3, marginTop: 2,\n            display: \"-webkit-box\", WebkitLineClamp: 4, WebkitBoxOrient: \"vertical\", overflow: \"hidden\",\n          }}>{d.blurb}</Text>\n        </Box>\n      </Row>\n    </Box>\n  );\n}\n",
+  "tags": [
+    "org-chart",
+    "card"
+  ],
+  "variants": [
+    "default",
+    "selected"
+  ],
+  "whenNot": [
+    "A generic list row - use CardListRow."
+  ],
+  "whenUse": [
+    "The face card for an agent node on an org-chart / team canvas - name, role chip, and a clamped blurb."
+  ],
+  "srcDivergence": "Deliberate, not stale — the record's OWN header documents why, and it was read and confirmed before this was written: \"AgentFace (#3335) — the org-chart agent-node face card: name, role chip, and a 4-line-clamped blurb. Promoted from harvested (it was already complete and tested) into base-studio-code, refactored to use the real Box/Row/Text/Chip primitives instead of local raw-div redeclarations. The blurb clamp is CSS (a 4-line `-webkit-box`) so a persona blurb of any length can never grow the fixed node box — the full text stays in the DOM (the truncation is purely visu…\" The pattern is the same across this group: an app-internal module (a spec renderer, a store hook, a JSON-asset-backed catalog) does not resolve in the preview sandbox, so the record vendors the resolvable part and substitutes representative data for the rest. Refreshing from the file would reintroduce the unresolvable import and break the record at mount. Lifted into `srcDivergence` because the reconcile sweep reads THIS field, not a source comment — the reason was already written down, just not where anything looks. Hand-reviewed for `record-src-reconcile`."
 }

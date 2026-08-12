@@ -16,6 +16,6 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/github/GitHubEmpty.tsx",
+  "src": "src/features/github/Empty.tsx",
   "folder": "features/github"
 }

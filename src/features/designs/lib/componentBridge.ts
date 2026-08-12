@@ -45,6 +45,12 @@ export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
     suppressed: c.suppressed, // #3725 — the tombstone marker; reconcile intercepts it, doctor skips it
     wraps: c.wraps,
     provides: c.provides, // #3660 — the platform specifier this component overrides; rides verbatim (loader reads it)
+    // `record-src-reconcile` — WHY this record deliberately differs from its `src` file. Must ride this
+    // ALLOWLIST for the same reason `analytics`/`tests` do: a field missing here is dropped on every
+    // hydrate, and the seed round-trip (`seed === load(push(seed))`) then breaks for every record carrying
+    // one — which would be all 70 annotated records, each mis-hashing against its stamp forever.
+    srcDivergence: c.srcDivergence,
+    srcRetired: c.srcRetired, // `record-src-reconcile` — the file this record superseded; same allowlist rule
     rules: c.rules,
     shapes: c.shapes,
     animations: c.animations, // #2942 — MOTION binding (the kit-animation names it plays); rides verbatim

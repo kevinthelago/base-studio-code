@@ -17,6 +17,6 @@
     "TabBar",
     "Text"
   ],
-  "src": "src/features/github/GitHubWorkspace.tsx",
-  "folder": "features/github"
+  "folder": "features/github",
+  "srcRetired": "src/features/github/GitHubWorkspace.tsx"
 }

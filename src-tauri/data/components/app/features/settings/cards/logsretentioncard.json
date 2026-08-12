@@ -11,5 +11,6 @@
     "Stack",
     "Box",
     "Text"
-  ]
+  ],
+  "srcDivergence": "Deliberate, not stale — the record's OWN header documents why, and it was read and confirmed before this was written: \"Vendored from `@/features/settings/pages/SettingsControls` (unresolvable in this sandbox as a standalone import — that file's own promoted component only covers its ToggleRow export) — unchanged.\" The pattern is the same across this group: an app-internal module (a spec renderer, a store hook, a JSON-asset-backed catalog) does not resolve in the preview sandbox, so the record vendors the resolvable part and substitutes representative data for the rest. Refreshing from the file would reintroduce the unresolvable import and break the record at mount. Lifted into `srcDivergence` because the reconcile sweep reads THIS field, not a source comment — the reason was already written down, just not where anything looks. Hand-reviewed for `record-src-reconcile`."
 }

@@ -10,6 +10,6 @@
     "Row",
     "Text"
   ],
-  "src": "src/features/github/GitHubBranchGraph.tsx",
+  "src": "src/features/github/BranchGraph.tsx",
   "folder": "features/github"
 }

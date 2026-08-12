@@ -14,6 +14,6 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/github/GitHubLanguageMix.tsx",
+  "src": "src/features/github/summary/LanguageMix.tsx",
   "folder": "features/github"
 }

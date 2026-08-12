@@ -17,6 +17,6 @@
     "StatusDot",
     "Text"
   ],
-  "src": "src/features/github/GitHubReposGrid.tsx",
+  "src": "src/features/github/summary/ReposGrid.tsx",
   "folder": "features/github"
 }

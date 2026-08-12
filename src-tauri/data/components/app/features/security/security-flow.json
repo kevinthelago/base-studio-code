@@ -16,6 +16,6 @@
     "StatusDot",
     "Text"
   ],
-  "src": "src/features/security/SecurityFlow.tsx",
+  "src": "src/features/security/FlowTab.tsx",
   "folder": "features/security"
 }

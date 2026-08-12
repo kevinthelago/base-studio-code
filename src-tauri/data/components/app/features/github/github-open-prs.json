@@ -13,6 +13,6 @@
     "Grid",
     "Text"
   ],
-  "src": "src/features/github/GitHubOpenPRs.tsx",
+  "src": "src/features/github/summary/OpenPRsCard.tsx",
   "folder": "features/github"
 }

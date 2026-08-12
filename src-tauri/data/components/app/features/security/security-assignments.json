@@ -11,7 +11,7 @@
     "Chip",
     "SectionHeader"
   ],
-  "src": "src/features/security/SecurityAssignments.tsx",
+  "src": "src/features/security/AssignmentsTab.tsx",
   "folder": "features/security",
   "props": []
 }
