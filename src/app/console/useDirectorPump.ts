@@ -18,10 +18,10 @@ import { useRef, type RefObject } from "react";
 import { useAppStore } from "@/store";
 import { useLogStream } from "@/shared/hooks/useLogStream";
 import { injectPrompt } from "@/shared/lib/fleet/paneInject";
+import { briefInjections, briefRouteKey } from "@/shared/lib/fleet/briefRouting";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
-  briefKey, pendingBriefPrompt,
   requestKey, pendingRequestPrompt,
   shouldRemind, idleReminderPrompt, ASK_REMINDER_MS,
   DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
@@ -55,10 +55,37 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
     // (restart-safe). Both surface state-based (not edge events) and are guarded once-per-pane.
     const { lines, state } = res;
     const pendingAsks = state.asking;
-    const pendingKeys = new Set([...pendingAsks.map(askKey), ...state.briefs.map(briefKey), ...state.requests.map(requestKey)]);
+    const pendingKeys = new Set([
+      ...pendingAsks.map(askKey),
+      ...state.requests.map(requestKey),
+      // Both brief key shapes: the delivery guard and the undeliverable-report guard.
+      ...state.briefs.map(briefRouteKey),
+      ...state.briefs.map((b) => `undeliverable:${briefRouteKey(b)}`),
+    ]);
     for (const k of [...surfaced.current]) {
       const bar = k.indexOf("|");
       if (bar >= 0 && !pendingKeys.has(k.slice(bar + 1))) surfaced.current.delete(k);
+    }
+
+    // BRIEFS — routed by target, so this runs over EVERY pane rather than inside the director loop
+    // below (#brief-routes-to-its-target). A brief names its audience: `director`, `issuer`, a pane id,
+    // or a bare stream id. Delivering all of them to the director panes — which is what this did — meant
+    // a director briefing a worker briefed itself and the worker never heard.
+    //
+    // No idle gate, the same must-not-drop posture as an ask: Claude queues input typed mid-turn, and
+    // the surfaced set keeps it to exactly one injection per (pane, brief).
+    const briefDue = briefInjections(state.briefs, {
+      directorPanes: paneIds,
+      knownPanes: Object.keys(statuses),
+      surfaced: surfaced.current,
+    });
+    for (const inj of briefDue) {
+      if (inFlight.current.has(inj.paneId)) continue;
+      for (const k of inj.keys) surfaced.current.add(k);
+      inFlight.current.add(inj.paneId);
+      void injectPrompt(inj.paneId, inj.prompt)
+        .catch(() => {})
+        .finally(() => inFlight.current.delete(inj.paneId));
     }
 
     for (const paneId of paneIds) {
@@ -75,18 +102,6 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
           for (const a of fresh) surfaced.current.add(paneId + "|" + askKey(a));
           inFlight.current.add(paneId);
           void injectPrompt(paneId, pendingAskPrompt(fresh))
-            .catch(() => {})
-            .finally(() => inFlight.current.delete(paneId));
-          continue; // one injection per pane per tick
-        }
-
-        // 1b) Deliver the planner's mid-build briefs (#2377) the same must-not-drop way — the
-        // director reconciles the running plan and routes any carried ref onward via bsc-assign.
-        const freshBriefs = state.briefs.filter((b) => !surfaced.current.has(paneId + "|" + briefKey(b)));
-        if (freshBriefs.length > 0) {
-          for (const b of freshBriefs) surfaced.current.add(paneId + "|" + briefKey(b));
-          inFlight.current.add(paneId);
-          void injectPrompt(paneId, pendingBriefPrompt(freshBriefs))
             .catch(() => {})
             .finally(() => inFlight.current.delete(paneId));
           continue; // one injection per pane per tick
