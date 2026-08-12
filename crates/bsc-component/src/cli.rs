@@ -128,6 +128,7 @@ USAGE:
   bsc ui set [--by <tag>] [--note <text>] [--if-version <n>] [--clear a,b] [--pretty]   # component JSON (one object or an array) on stdin
   bsc ui set --file <name> [--by <tag>] [--note <text>] [--clear a,b] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name>
   bsc ui set --replace …                                                                # verbatim WHOLE-record write (see below)
+  bsc ui set --force …                                                                  # store a `role: page` the gate would refuse (a deliberate spec)
 
 Upserts each component by its (required, non-empty) \"id\" field. Prints the id(s) written — how an
 agent (or the pane) authors/updates a component in the shared kit.
@@ -1337,6 +1338,12 @@ fn cmd_set(
             // #4197: opt back into the verbatim whole-record write — for the app bridge, `bsc ui import`,
             // and `reconcileSeed`'s seed-authoritative reset, which a merge would stop from converging.
             "--replace" => replace = true,
+            // #3849: store a record the write-time gate would REFUSE — the deliberate spec-only escape.
+            // Carried in a process-global rather than a parameter because `validate` is a shared `fn`
+            // pointer used by every store's `cmd_set`; threading a flag through would change that
+            // signature for stores that have no gate to bypass. One-shot CLI process, set once here,
+            // read once in `validate_component_batch`.
+            "--force" => FORCE_WRITE.store(true, std::sync::atomic::Ordering::Relaxed),
             // #3373: read the payload from a BARE-NAMED file in $BSC_SCRATCH instead of stdin, so a
             // restricted session can author multi-line records at all (a heredoc cannot be allow-listed
             // — newlines are command separators). Resolution + the traversal defence live in bsc-cli-util.
@@ -1945,6 +1952,9 @@ fn cmd_log(args: &[String]) -> Result<(), String> {
 /// ALSO (non-blocking, #3065): warns on stderr for a bad INLINE animation def on the record's
 /// `animations`, but never rejects over one. The srcText Err semantics are unchanged; both warnings are
 /// pure side-effects. Driven directly by tests.
+/// `--force` on this process's `bsc ui set` — see the flag's arm in [`cmd_set`] for why it is a global.
+static FORCE_WRITE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
     for item in items {
         // #3065: non-blocking — runs for EVERY item, BEFORE the srcText early-continue below, so an
@@ -1965,8 +1975,40 @@ fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
         let provides = item.get("provides").and_then(serde_json::Value::as_str).unwrap_or_default();
         // #3470: not-a-module is REPORTED, never an unchecked skip. Still permissive — it stores.
         if provides.trim().is_empty() && !crate::graph_health::looks_buildable_module(src_text) {
-            eprintln!("{}", unbuildable_module_warning(item, src_text));
-            continue;
+            // #3849: for a `role: page` this is FATAL, not advisory. A page record IS the page — there is
+            // no `.tsx` behind `fleetpage` at all — so storing one that cannot render ships a blank
+            // screen, and the failure surfaces at mount, far from the write that caused it. Every other
+            // role stays permissive: a spec-only primitive is a legitimate thing to store.
+            //
+            // Gated on the defects being TRUSTWORTHY, which is why the false-positive fix had to land
+            // first: rejecting on a liar would just teach everyone to pass `--force`.
+            // A PAGE is judged by the LOADER's oracle, and ONLY by it. It is mounted by the runtime
+            // loader — which resolves registered platform modules and `@/components/<id>` siblings —
+            // never by the preview sandbox, so `looks_buildable_module` (which condemns every `@/`
+            // import, correctly for the sandbox) is simply the wrong question here. Asking it produced a
+            // warning that named sixteen perfectly resolvable specifiers on `fleetpage` and told the
+            // reader it had been "stored as a SPEC, not as compilable code" — of the record that renders
+            // the Fleet page in the running app.
+            let role = item.get("role").and_then(serde_json::Value::as_str).unwrap_or_default();
+            if role == "page" {
+                if !crate::graph_health::renders_at_runtime(src_text)
+                    && !FORCE_WRITE.load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    return Err(format!(
+                        "{}: refusing to store a `role: page` record that cannot render — {}. \
+                         A page record IS the page; there is no source file behind it, so this would ship \
+                         a blank screen. Fix the source, or pass --force to store it as a deliberate spec.",
+                        item_label(item),
+                        crate::graph_health::runtime_module_defects(src_text).join("; "),
+                    ));
+                }
+                // It renders (or --force). Fall THROUGH to the syntax check rather than `continue`ing:
+                // under the old shape a page's source skipped that check entirely, which is exactly the
+                // #3470 inversion — the source least like a preview module got the least validation.
+            } else {
+                eprintln!("{}", unbuildable_module_warning(item, src_text));
+                continue;
+            }
         }
         if let Err(msg) = crate::syntax::check_module_syntax(src_text) {
             return Err(format!(
@@ -4016,17 +4058,21 @@ mod tests {
     fn a_srctext_that_is_not_a_buildable_module_is_reported_never_silently_skipped() {
         use serde_json::json;
 
-        // ROW 3 — keeps its `@/` imports. Warned, with the reason NAMING the unresolved import and
-        // saying what was stored; still accepted.
+        // ROW 3 — keeps its `@/` imports. Warned, with the reason NAMING the import and saying what was
+        // stored; still accepted. Unchanged by #3849: this is the PREVIEW's oracle, and in the preview
+        // sandbox a `@/` import genuinely does not resolve.
         let spec = json!({
             "id": "card", "name": "Card",
-            "srcText": "import { Button } from \"@/shared/ui/controls/Button\";\nexport const Card = () => <Button />;",
+            "srcText": "import { Button } from \"@/shared/ui/controls/Button\";
+export const Card = () => <Button />;",
         });
         let src = spec["srcText"].as_str().unwrap();
-        assert!(!crate::graph_health::looks_buildable_module(src), "row 3 is not a module…");
+        assert!(!crate::graph_health::looks_buildable_module(src), "row 3 is not a PREVIEW module…");
+        // …but the LOADER resolves it fine, which is the distinction #3849 turns on.
+        assert!(crate::graph_health::renders_at_runtime(src), "…yet it renders at runtime");
         let warning = unbuildable_module_warning(&spec, src);
         assert!(warning.contains("Card"), "names the component: {warning}");
-        assert!(warning.contains("@/shared/ui/controls/Button"), "names the unresolved import: {warning}");
+        assert!(warning.contains("@/shared/ui/controls/Button"), "names the import: {warning}");
         assert!(warning.contains("SPEC"), "states what was stored: {warning}");
         assert!(validate_component_batch(std::slice::from_ref(&spec)).is_ok(), "warn-only — it still stores");
 
@@ -4052,6 +4098,76 @@ mod tests {
         let src = copy["srcText"].as_str().unwrap();
         assert!(crate::graph_health::looks_buildable_module(src), "an ellipsis in COPY is not an elision");
         assert!(validate_component_batch(std::slice::from_ref(&copy)).is_ok());
+    }
+
+    /// #3849 — the false-positive classes the issue names, each as a fixture, because the gate below
+    /// REJECTS a page and a gate built on a liar just teaches everyone to pass `--force`.
+    #[test]
+    fn the_buildability_check_does_not_fire_on_its_three_known_false_positives() {
+        // 1 — `…` (U+2026) inside STRING LITERALS. The three strings from the issue, verbatim.
+        for copy in [
+            "export const A = () => <input placeholder=\"Search name, description, tools…\" />;",
+            "export const B = () => <button>Set scope…</button>;",
+            "export const C = () => <button>Add to group…</button>;",
+        ] {
+            assert!(
+                crate::graph_health::looks_buildable_module(copy),
+                "an ellipsis in UI copy is prose, not an elision marker: {copy}",
+            );
+        }
+
+        // 2 — `...` SPREAD syntax, which is code, not prose standing in for omitted code.
+        let spread = "export const D = (p) => <div {...p} style={{ ...p.style, top: 0 }} />;";
+        assert!(crate::graph_health::looks_buildable_module(spread), "spread is not an elision: {spread}");
+
+        // 3 — a REGISTERED platform import. The one measured live: restoring `fleetpage` from the
+        // recovery archive warned about sixteen specifiers the runtime resolves fine.
+        let platform = "import { Button } from \"@/shared/ui/controls/Button\";\n\
+                        import { Card } from \"@/shared/ui/data/Card\";\n\
+                        export const E = () => <Card><Button /></Card>;";
+        assert!(crate::graph_health::renders_at_runtime(platform), "registered platform imports resolve");
+
+        // …and a SIBLING record import, which `resolveGraphSource` vendors from the store by id.
+        let sibling = "import { Health } from \"@/components/fleet-health\";\nexport const F = () => <Health />;";
+        assert!(crate::graph_health::renders_at_runtime(sibling), "`@/components/<id>` resolves by id");
+
+        // The check must still CATCH the real thing, or none of the above is worth anything.
+        let real_elision = "export const G = () => {\n  const rows = [\n    …\n  ];\n  return <div>{rows}</div>;\n};";
+        assert!(!crate::graph_health::looks_buildable_module(real_elision), "a mid-code elision is still caught");
+        let unresolvable = "import { X } from \"@/features/nowhere/X\";\nexport const H = () => <X />;";
+        assert!(!crate::graph_health::renders_at_runtime(unresolvable), "an unregistered import is still caught");
+    }
+
+    /// #3849 — the gate itself: a `role: page` that cannot render is REFUSED, because a page record IS
+    /// the page (there is no `.tsx` behind `fleetpage`), so storing a broken one ships a blank screen.
+    /// Every other role stays permissive, and `--force` remains for a deliberate spec.
+    #[test]
+    fn a_page_record_that_cannot_render_is_refused_while_other_roles_still_store() {
+        use serde_json::json;
+        let broken = "import { X } from \"@/features/nowhere/X\";\nexport const P = () => <X />;";
+
+        let page = json!({ "id": "p", "name": "P", "role": "page", "srcText": broken });
+        let err = validate_component_batch(std::slice::from_ref(&page)).unwrap_err();
+        assert!(err.contains("cannot render"), "states the refusal: {err}");
+        assert!(err.contains("@/features/nowhere/X"), "names the specific cause: {err}");
+        assert!(err.contains("--force"), "names the escape: {err}");
+
+        // The SAME source under any other role is advisory, exactly as before.
+        let primitive = json!({ "id": "q", "name": "Q", "role": "primitive", "srcText": broken });
+        assert!(validate_component_batch(std::slice::from_ref(&primitive)).is_ok(), "non-page still stores");
+
+        // A page whose imports RESOLVE is not refused — the gate must not fire on the common case.
+        let ok_page = json!({
+            "id": "r", "name": "R", "role": "page",
+            "srcText": "import { Card } from \"@/shared/ui/data/Card\";\nexport const R = () => <Card />;",
+        });
+        assert!(validate_component_batch(std::slice::from_ref(&ok_page)).is_ok(), "a resolvable page stores");
+
+        // …and `--force` stores the broken page deliberately.
+        FORCE_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
+        let forced = validate_component_batch(std::slice::from_ref(&page));
+        FORCE_WRITE.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(forced.is_ok(), "--force stores it as a deliberate spec");
     }
 
     #[test]
