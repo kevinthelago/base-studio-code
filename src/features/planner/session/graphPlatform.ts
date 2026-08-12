@@ -48,7 +48,6 @@ import * as PlanTopics from "@/features/planner/stages/planTopics";
 import * as GitHubStructureCard from "@/features/planner/session/GitHubStructureCard";
 import * as PublishSteps from "@/features/planner/session/publishSteps";
 import * as PlannerIntro from "@/features/planner/session/plannerIntro";
-import * as PlanningTerminal from "@/features/planner/session/planningTerminal";
 import * as PlannerLaunch from "@/features/planner/session/plannerLaunch";
 import * as PlannerSandbox from "@/features/planner/session/plannerSandbox";
 import * as RenameProject from "@/features/planner/session/renameProject";
@@ -96,7 +95,6 @@ export function registerPlanningPlatform(): void {
   registerAppModule("@/features/planner/session/GitHubStructureCard", GitHubStructureCard);
   registerAppModule("@/features/planner/session/publishSteps", PublishSteps);
   registerAppModule("@/features/planner/session/plannerIntro", PlannerIntro);
-  registerAppModule("@/features/planner/session/planningTerminal", PlanningTerminal);
   registerAppModule("@/features/planner/session/plannerLaunch", PlannerLaunch);
   registerAppModule("@/features/planner/session/plannerSandbox", PlannerSandbox);
   registerAppModule("@/features/planner/session/renameProject", RenameProject);

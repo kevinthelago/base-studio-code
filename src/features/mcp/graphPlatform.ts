@@ -19,7 +19,6 @@ import * as MigrateExtensions from "@/features/mcp/lib/migrateExtensions";
 // A module that becomes an algorithm record stops being resolved by Vite and starts being resolved by
 // the LOADER, so its own imports become the graph's problem. None of these were registered before,
 // because no record imported them DIRECTLY — each arrives transitively with the hook that was retired.
-import * as McpVersioning from "@/features/mcp/lib/mcpVersioning";
 
 let done = false;
 
@@ -36,5 +35,4 @@ export function registerMcpPlatform(): void {
   registerAppModule("@/features/mcp/lib/sessionConfig", SessionConfig);
   registerAppModule("@/features/mcp/lib/hookTelemetry", HookTelemetry);
   registerAppModule("@/features/mcp/lib/migrateExtensions", MigrateExtensions);
-  registerAppModule("@/features/mcp/lib/mcpVersioning", McpVersioning);
 }
