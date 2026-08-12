@@ -14,9 +14,7 @@ import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
-import { kitDispatchPrompt, type KitChange } from "@/features/designs";
-import { injectPrompt } from "@/shared/lib/fleet/paneInject";
-import { directorPaneId } from "@/app/console/lib/paneIdentity";
+import type { KitChange } from "@/features/designs";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
@@ -497,14 +495,17 @@ const KIT_CLASS_TONE: Record<KitChange["class"], string> = {
  * Kit-change approval banner (#2944). After the designer session makes kit modifications, the store
  * fans them out to consumer projects (`kitDispatches`). By default (auto-apply OFF — a Planner setting)
  * they're GATED here: one summary banner + a Review drawer listing each change, its propagated
- * consumers, and an **Approve** button that releases it to the drain (routing it into each live
- * consumer's director). Approving marks the change approved so it leaves this gate immediately;
- * dismissing drops it. Hidden entirely when auto-apply is ON (changes flow without a gate).
+ * consumers. Hidden entirely when auto-apply is ON.
+ *
+ * NOTICE, NOT A CONTROL (#app-stops-pushing-prompts). It used to carry an **Approve** button that
+ * delivered the change into each live consumer's director by typing into that session. The app does not
+ * push prompts any more — not even behind a click — so approval is gone and only Dismiss remains. A kit
+ * change is adopted by the DIRECTOR reading the queue on its own cadence, the same way every other duty
+ * moved to polling under this directive.
  */
 function KitChangesBanner() {
   const dispatches = useAppStore((s) => s.kitDispatches);
   const autoApply = useAppStore((s) => s.autoApplyKitChanges);
-  const paneDirectorDrive = useAppStore((s) => s.paneDirectorDrive);
   const dismissKitChange = useAppStore((s) => s.dismissKitChange);
   const [open, setOpen] = useState(false);
 
@@ -521,14 +522,6 @@ function KitChangesBanner() {
 
   if (autoApply || groups.length === 0) return null;
   const n = groups.length;
-  // Approve = deliver the change to any LIVE consumer (into its director, like the drain), then REMOVE
-  // all of the change's dispatches (#2951) — gone immediately and for good. Dismiss just drops it.
-  const approve = (g: { change: KitChange; projects: string[] }) => {
-    for (const pk of g.projects) {
-      if (paneDirectorDrive?.[directorPaneId(pk)]) void injectPrompt(directorPaneId(pk), kitDispatchPrompt(g.change));
-    }
-    dismissKitChange(g.change.id);
-  };
   const dismissChange = (g: { change: KitChange; projects: string[] }) => dismissKitChange(g.change.id);
 
   return (
@@ -541,7 +534,7 @@ function KitChangesBanner() {
         right={<Button onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</Button>}
       >
         <Box as="span" style={{ flex: 1, minWidth: 0 }}>
-          <b>{n} kit change{n === 1 ? "" : "s"}</b> from the designer {n === 1 ? "is" : "are"} ready to apply — review &amp; approve.
+          <b>{n} kit change{n === 1 ? "" : "s"}</b> from the designer {n === 1 ? "is" : "are"} waiting for a director to adopt.
         </Box>
       </Banner>
 
@@ -553,7 +546,6 @@ function KitChangesBanner() {
                 <Chip color={KIT_CLASS_TONE[g.change.class]}>{g.change.class}</Chip>
                 <Text weight={600} size={12.5}>{g.change.component}</Text>
                 <Text size={12} tone="muted" style={{ flex: 1, minWidth: 100 }}>— {g.change.summary}</Text>
-                <Button variant="primary" style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => approve(g)}>Approve</Button>
                 <Button variant="ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => dismissChange(g)}>Dismiss</Button>
               </Row>
               {g.change.migration && (

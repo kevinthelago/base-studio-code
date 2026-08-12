@@ -44,7 +44,6 @@ const IMPORT_RE = /import\s*\{[^}]*\binjectPrompt\b[^}]*\}\s*from\s*["'][^"']*pa
 const KNOWN_INJECTORS: readonly string[] = [
   // SHRINKING under #app-stops-pushing-prompts. Three inject-only pumps are now inert exports.
   "/src/app/console/useDirectorPump.ts",
-  "/src/app/AppBanners.tsx",
   "/src/features/designs/useDesignerLoopPump.ts",
   "/src/features/glance/usePreviewReview.ts",
   "/src/shared/lib/github/useCiWatcher.ts",
