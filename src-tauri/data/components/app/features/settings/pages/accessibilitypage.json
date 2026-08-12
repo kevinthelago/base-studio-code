@@ -3,10 +3,11 @@
   "name": "AccessibilityPage",
   "kitId": "base-studio-code",
   "role": "page",
-  "srcText": "import { Stack } from \"@/shared/ui/layout/Stack\";\nimport { SettingsPageHeader } from \"@/features/settings/pages/SettingsPageHeader\";\n\nexport function AccessibilityPage() {\n  return (\n    <Stack gap={18} style={{ maxWidth: 820 }}>\n      <SettingsPageHeader\n        title=\"Accessibility\"\n        description=\"The app ships a keyboard and screen-reader baseline. On top of that, it can speak the fleet coordination stream aloud so you can drive the agents by ear.\"\n      />\n    </Stack>\n  );\n}",
+  "srcText": "import { Stack } from \"@/shared/ui/layout/Stack\";\nimport { SettingsPageHeader } from \"@/features/settings/pages/SettingsPageHeader\";\nimport { TtsCard } from \"@/components/ttscard\";\n\n/** Settings → Accessibility (a11y epic #2725). Screen-reader / keyboard support is baked into the app;\n *  this page holds the app-owned text-to-speech that speaks the fleet coordination stream (Tier 1). */\nexport function AccessibilityPage() {\n  return (\n    <Stack gap={18} style={{ maxWidth: 820 }}>\n      <SettingsPageHeader\n        title=\"Accessibility\"\n        description=\"The app ships a keyboard + screen-reader baseline. On top of that, it can speak the fleet coordination stream aloud so you can drive the agents by ear.\"\n      />\n      <TtsCard />\n    </Stack>\n  );\n}\n",
   "src": "src/features/settings/pages/AccessibilityPage.tsx",
   "composes": [
     "SettingsPageHeader",
     "Stack"
-  ]
+  ],
+  "srcDivergence": "Merged from the file (`record-src-reconcile`). The record was genuinely INCOMPLETE, not merely different: it omitted `<TtsCard />`, which is the page's only card, so the previewed Accessibility page rendered a header over empty space. The card is pulled in as the SIBLING RECORD `@/components/ttscard` rather than the file's relative `../cards/TtsCard` — `ttscard` carries no `provides`, so the sibling-by-id route is the one that resolves. `SettingsPageHeader` stays an absolute import because `settingspageheader` DOES carry a matching `provides`. The header copy is also taken from the file. Hand-merged, not copied."
 }

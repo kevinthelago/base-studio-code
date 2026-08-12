@@ -292,7 +292,12 @@ function divergenceReason(recRegion, fileRegion, sym) {
         `un-previewable. Written by scripts/reconcile-record-src.cjs --annotate.`
       );
     }
-    return null; // substituted AND the markup moved on — needs a human, not an annotation
+    // The markup moved on too, so substitution is not a FULL explanation — but it may not be the only
+    // thing going on, so fall through to class 1 rather than returning. `tablepage` is why: it carries
+    // DEMO_COLUMNS/DEMO_ROWS, so it entered this branch, failed the render gate (it also vendors
+    // `usePageSelection`, which the file imports, changing the markup around it) and was rejected —
+    // when it is in fact a straightforward parameterization case that class 1 explains. A record can be
+    // parameterized AND sample-carrying; whichever class fires first must not veto the other.
   }
 
   // ── CLASS 1: PREVIEW PARAMETERIZATION ─────────────────────────────────────────────────────────────

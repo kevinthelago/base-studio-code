@@ -3,10 +3,11 @@
   "name": "IssueSecurityCard",
   "kitId": "base-studio-code",
   "role": "composite",
-  "srcText": "import { useState } from \"react\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { ToggleRow } from \"@/components/togglerow\";\n\nexport function IssueSecurityCard() {\n  const [restrictToBscIssues, setRestrictToBscIssues] = useState(true);\n  return (\n    <Card title=\"Issue security\">\n      <ToggleRow\n        on={restrictToBscIssues}\n        onToggle={() => setRestrictToBscIssues(!restrictToBscIssues)}\n        title=\"Restrict to base-studio-code issues\"\n      >\n        Only fetch and act on issues from the base-studio-code repository.\n      </ToggleRow>\n    </Card>\n  );\n}",
+  "srcText": "import { useState } from \"react\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { ToggleRow } from \"@/components/togglerow\";\n\nexport function IssueSecurityCard() {\n  const [restrictToBscIssues, setRestrictToBscIssues] = useState(true);\n\n  return (\n    <Card title=\"Issue security\">\n      <ToggleRow\n        on={restrictToBscIssues}\n        onToggle={() => setRestrictToBscIssues(!restrictToBscIssues)}\n        title=\"Only act on base-studio-code-authored issues\"\n      >\n        GitHub issues are an untrusted input channel. When on (recommended), triage and any\n        agent that pulls live issues work <b>only</b> issues base-studio-code created (the{\" \"}\n        <code>bsc-generated</code> label) — a hand-created or injected issue is ignored, so a\n        malicious issue can't drive a worker. Turn off to triage every open issue.\n      </ToggleRow>\n    </Card>\n  );\n}",
   "src": "src/features/settings/cards/IssueSecurityCard.tsx",
   "composes": [
     "Card",
     "ToggleRow"
-  ]
+  ],
+  "srcDivergence": "Merged from the file (`record-src-reconcile`), preview substitution kept. Two things were true at once here and they needed opposite treatment. BY CONSTRUCTION: the file reads state from `useAppStore()` and imports `ToggleRow` from a RELATIVE `../pages/SettingsControls`, neither of which a record can do — the preview has no app store, and a record may not carry a relative specifier — so the record keeps its local `useState` stand-in and its `@/components/togglerow` SIBLING import. GENUINELY STALE: the card's user-facing copy had been rewritten in the file and never reached the record, so the preview was showing out-of-date text. The file's render (title + description) is now taken verbatim while the substitution survives. Hand-merged, not copied."
 }
