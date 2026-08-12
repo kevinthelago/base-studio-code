@@ -36,6 +36,11 @@ import * as UseStudioNetworkPump from "./useStudioNetworkPump";
 // The one cross-feature surface the console page composes — the cockpit's public API. The shell may
 // reach a feature BARREL (#1545 restricts internals), and this coupling already exists in the live file.
 import * as Glance from "@/features/glance";
+// The console-lib helpers a migrated `useHotkeys` record imports (register-the-console-lib-remainder).
+// Registered from the CONSOLE platform, not the shell: app/console owns them.
+import * as Broadcast from "@/app/console/lib/broadcast";
+import * as ClearInput from "@/app/console/lib/clearInput";
+import * as PaneSelect from "@/app/console/lib/paneSelect";
 
 let done = false;
 
@@ -61,4 +66,7 @@ export function registerConsolePlatform(): void {
   registerAppModule("@/app/console/useKitDispatch", UseKitDispatch);
   registerAppModule("@/app/console/useStudioNetworkPump", UseStudioNetworkPump);
   registerAppModule("@/features/glance", Glance);
+  registerAppModule("@/app/console/lib/broadcast", Broadcast);
+  registerAppModule("@/app/console/lib/clearInput", ClearInput);
+  registerAppModule("@/app/console/lib/paneSelect", PaneSelect);
 }

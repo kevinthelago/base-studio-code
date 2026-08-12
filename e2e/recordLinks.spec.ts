@@ -26,7 +26,8 @@ const HARNESS = "/e2e/harness/graph-pages-harness.html";
  * the six and authored the record, so every entry came out.
  *
  * The ratchet below is what makes this list one-way, and it is the point: an exclusion list that can grow
- * silently is how a guard stops guarding — the same reasoning `graphParity`'s KNOWN_STALE carries. A new
+ * silently is how a guard stops guarding — the reasoning `graphParity`'s KNOWN_STALE carried before it
+ * was retired (see `src/app/runtime/shadowPages.ts`). A new
  * unresolved record fails the check above rather than landing here.
  */
 const KNOWN_UNRESOLVED = new Set<string>([]);

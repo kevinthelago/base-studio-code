@@ -97,7 +97,7 @@ describe("the band lift keeps the graph sound", () => {
     // Removing the architect must leave the kit/library/contract lift exactly as it was.
     const withKit = buildGlanceData(projects, [], [{ projectKey: "app-a", kitId: "react-ui" }], [{ id: "react-ui", name: "React UI" }], [], [], architect);
     const m = buildGraph(withKit.rawNodes, withKit.rawEdges);
-    expect(m.kitBand, "the kit band still forms").toBeTruthy();
+    expect(m.bandZone, "the kit band still forms").toBeTruthy();
     const arch = m.nodes.find((n) => n.id === architectNodeId("persona-architect"))!;
     const kit = m.nodes.find((n) => n.kind === "kit")!;
     expect(isBandNode(kit)).toBe(true);
