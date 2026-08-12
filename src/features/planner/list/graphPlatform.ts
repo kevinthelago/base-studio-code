@@ -16,7 +16,6 @@
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as Designs from "@/features/designs";
 import * as BlueprintCatalog from "@/features/planner/blueprints/blueprintCatalog";
-import * as BlueprintImporthelpers from "@/features/planner/blueprints/blueprintImport.helpers";
 import * as BlueprintShare from "@/features/planner/blueprints/blueprintShare";
 import * as Gist from "@/features/planner/lib/gist/gist";
 import * as ReopenProjectModal from "@/features/planner/list/ReopenProjectModal";
@@ -38,7 +37,6 @@ export function registerProjectsPlatform(): void {
   done = true;
   registerAppModule("@/features/designs", Designs);
   registerAppModule("@/features/planner/blueprints/blueprintCatalog", BlueprintCatalog);
-  registerAppModule("@/features/planner/blueprints/blueprintImport.helpers", BlueprintImporthelpers);
   registerAppModule("@/features/planner/blueprints/blueprintShare", BlueprintShare);
   registerAppModule("@/features/planner/lib/gist/gist", Gist);
   registerAppModule("@/features/planner/list/ReopenProjectModal", ReopenProjectModal);

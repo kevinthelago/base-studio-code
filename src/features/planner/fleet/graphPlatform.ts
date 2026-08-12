@@ -11,7 +11,6 @@
 // compiled page's `require()` runs.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as Skills from "@/features/skills"; // FleetLessons reads loadPendingLessons/lessonTitle from the skills barrel
-import * as UseFleetGithub from "./useFleetGithub";
 import * as FleetCost from "./lib/fleetCost";
 import * as FleetHealthLib from "./lib/fleetHealth";
 // #4238 — `WorkerDetail` is now a `provides` RECORD, so the loader vendors its source rather than
@@ -30,7 +29,6 @@ export function registerFleetPlatform(): void {
   if (done) return;
   done = true;
   registerAppModule("@/features/skills", Skills);
-  registerAppModule("@/features/planner/fleet/useFleetGithub", UseFleetGithub);
   registerAppModule("@/features/planner/fleet/lib/fleetCost", FleetCost);
   registerAppModule("@/features/planner/fleet/lib/fleetHealth", FleetHealthLib);
   registerAppModule("@/features/planner/fleet/fleetWorker", FleetWorker);

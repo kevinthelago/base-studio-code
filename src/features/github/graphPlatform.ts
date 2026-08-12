@@ -11,10 +11,13 @@ import * as Planner from "@/features/planner"; // ProjectsSummary/ProjectBoard/R
 // registration lives inside the planner, so this stays a barrel-only dependency (#1545).
 import { registerPlannerGithubPlatform } from "@/features/planner";
 import * as GithubSummary from "./lib/githubSummary";
-import * as UseGithubSummary from "./useGithubSummary";
-import * as UseRepoPulse from "./lib/useRepoPulse";
 import * as HeatFill from "./heatFill";
 import * as GraphPlatform from "@/features/github/graphPlatform";
+// ── Reached only THROUGH a migrated logic module (retire-the-first-19-logic-modules) ─────────────
+// A module that becomes an algorithm record stops being resolved by Vite and starts being resolved by
+// the LOADER, so its own imports become the graph's problem. None of these were registered before,
+// because no record imported them DIRECTLY — each arrives transitively with the hook that was retired.
+import * as LanguageStats from "@/features/github/languageStats";
 
 let done = false;
 
@@ -24,9 +27,8 @@ export function registerGithubPlatform(): void {
   done = true;
   registerAppModule("@/features/planner", Planner);
   registerAppModule("@/features/github/lib/githubSummary", GithubSummary);
-  registerAppModule("@/features/github/useGithubSummary", UseGithubSummary);
-  registerAppModule("@/features/github/lib/useRepoPulse", UseRepoPulse);
   registerAppModule("@/features/github/heatFill", HeatFill);
   registerPlannerGithubPlatform();
   registerAppModule("@/features/github/graphPlatform", GraphPlatform);
+  registerAppModule("@/features/github/languageStats", LanguageStats);
 }
