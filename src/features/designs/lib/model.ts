@@ -236,6 +236,20 @@ export interface ComponentRecord {
    *  than being dropped: `src` null says "no live file backs this", `srcRetired` says "and here is what
    *  used to". Never set alongside a live {@link src}. */
   srcRetired?: string;
+  /** What KIND of page this record is, when {@link role} is `"page"` (shadow-catalogue-guard-over-reaches).
+   *
+   *  `role: "page"` was doing two jobs. Twelve records are APP SCREENS the shell navigates to — the shadow
+   *  catalogue pairs each with its file and `lazyWorkspaces.tsx` says whether it renders from the graph or
+   *  the file. Ten more are page-shaped KIT COMPOSITIONS: the shared Pages tier (#2505 — CollectionPage,
+   *  TablePage, RecordPage, DashboardPage, PipelinePage, TreeExplorerPage), the `KeptMountedPage` wrapper,
+   *  and the `TelemetryGalleryPage` / `TeamsPage` galleries. They have no workspace and no host feature, so
+   *  a catalogue entry for one could never be filled in — its `ensurePlatform` would import nothing.
+   *
+   *  `"kit"` says so ON THE RECORD, which is the point: the alternative was excluding them from the guard
+   *  by id, and the next kit page would have joined that list silently. Absent ⇒ an app screen, and (like
+   *  `provides` / `themeSystem`) an absent value must stay ABSENT rather than be defaulted, so a store copy
+   *  keeps hashing to its `seedHash`. */
+  pageKind?: "kit";
   /** Which THEME SYSTEM this component renders under (#3715). `"css"` (default, absent) — the component
    *  consumes the theme through the CSS cascade (`--card-*` etc. resolved by `:root` / `<ThemeScope>`), as
    *  every component does today. `"js"` — the component renders to a NON-CSS surface (canvas / WebGL / a
