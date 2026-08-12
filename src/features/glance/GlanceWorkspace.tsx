@@ -33,7 +33,9 @@ import { teamRoleStreams } from "@/features/planner/fleet/teamFleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { cellRect, placeByDirection, releaseCell, occupants, clampCell, DEFAULT_CELL, type CellSize, type MorphPlacement } from "./lib/morphGrid";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
-import { resumeProjectFleet, nothingToResume } from "./lib/resumeProject";
+import { resumeProjectFleet, nothingToResume, completedPanes } from "./lib/resumeProject";
+import { decideExpand } from "./lib/expandNode";
+import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
 import { buildGraph, focusSets, isBandNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
 import { timedSync } from "@/shared/lib/core/perf";
 import { buildGlanceData } from "./lib/glanceData";
@@ -110,6 +112,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const findFleetTabIdx = useAppStore((s) => s.findFleetTabIdx);
+  // Resume ONE pane in place when its build tab is still open (#expanding-a-node-resumes-its-session) —
+  // the cheap path behind an expand click, before falling back to bringing the whole fleet back.
+  const resumePaneSession = useAppStore((s) => s.resumePaneSession);
   // Opening a base-studio-code studio node reveals its session on its own workspace page (#glance-resume);
   // `paneClaudeActive` tells us whether that stable-id session is already running.
   const paneClaudeActive = useAppStore((s) => s.paneClaudeActive);
@@ -442,12 +447,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // LIVE agent (morph → terminal, #2401) or selects a non-live one. (Project links are LLM-authored, not
   // drawn by hand — the manual connect-mode was removed, #2737 direction.)
   const onNodeClick = (id: string) => {
-    // Inside a fleet: opening a LIVE agent morphs its node into the live terminal; a non-live agent has
-    // no session to open, so it just selects → inspector.
+    // Inside a fleet: EXPANDING a node is what resumes it (#expanding-a-node-resumes-its-session).
+    // Studio nodes already worked this way — `useStudioViewers` starts a studio when its morph opens —
+    // and this gives the fleet the same rule, now that the per-node Resume button went with the right
+    // pane. `expandNode` covers both the no-pane and the live-but-dead cases.
     if (drill) {
       if (id === PREVIEW_NODE_ID) setPreviewOpen(true);       // the ▷ preview node → render the app (#2623)
-      else if (isLiveAgent(id)) openChat(id);
-      else pickNode(id);
+      else expandNode(id);
     }
     // A fenced-BAND node — a cross-graph LIBRARY node (#2571 kit → #3119 kit/algorithm/sound) OR an
     // external MCP-CONTRACT node (#3786) — has no fleet to drill into, so a click just SELECTS it
@@ -457,6 +463,53 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     // back on) rather than drilling into a fleet the user has muted.
     else if (glanceOff[id]) pickNode(id);
     else { setDrill(id); setSel(null); setShowCycle(false); }
+  };
+  /**
+   * EXPAND a node — and resume whatever it takes to make that expansion show a live agent
+   * (#expanding-a-node-resumes-its-session).
+   *
+   * The placement is made FIRST, unconditionally, so the click is never dead: `openChats` filters
+   * placements by `isLiveAgent`, so the cell simply renders as soon as the session comes up. Resuming
+   * first and expanding after would leave the user staring at an unchanged graph for the length of a
+   * fleet relaunch.
+   *
+   * Two failure shapes, and the second is the one this codebase keeps rediscovering:
+   *   • NO PANE — the node has no session cell at all. Resume it in place if its build tab is still
+   *     open (`resumePaneSession`), else bring the fleet back.
+   *   • PANE, NO AGENT — `isLiveAgent` is TAB MEMBERSHIP, not "an agent is running" (glanceFleet.ts).
+   *     #3998 measured 77 of 78 fleet panes sitting at a bare `$` prompt while reading as live. So a
+   *     live node still needs `ensureClaudeRunning`, which types the resume into the shell it already
+   *     has — nothing remounts such a pane, so this is the only thing that can revive it.
+   */
+  const expandNode = (id: string) => {
+    if (!drill) return;
+    const isStudio = drill === BASE_STUDIO_PROJECT_ID;
+    const paneId = isStudio ? "" : fleetPaneId(drill, id);
+    const action = decideExpand({
+      isStudioProject: isStudio,
+      studioMorphs: isStudio ? studioNodeHome(id)?.kind === "morph" : undefined,
+      paneIsLive: !isStudio && isLiveAgent(id),
+      paneIsComplete: !isStudio && completedPanes(useAppStore.getState()).has(paneId),
+      // `resumePaneSession` is both the probe and the action, so whether a pane can be resumed IN PLACE
+      // is only answerable by trying — decided at actuation below rather than guessed here.
+      canResumeInPlace: true,
+    });
+    switch (action.kind) {
+      case "studio-morph": openChat(id); return;
+      case "select": pickNode(id); return;
+      case "refuse-complete": pickNode(id); setResumeMsg(action.reason); return;
+      case "expand-and-restart-agent":
+        openChat(id); setResumeMsg(null); void ensureClaudeRunning([paneId]); return;
+      default: break;
+    }
+    openChat(id);
+    setResumeMsg(null);
+    if (resumePaneSession(paneId)) return;   // its build tab was still open — resumed in place
+    // No build tab to resume into — the whole fleet has to come back before this one node can.
+    setResuming(true);
+    void resumeProjectFleet({ projectName: projectDisplayName(drill), projectKey: drill, fleet: effectiveFleet })
+      .then((res) => { if (!res.ok) setResumeMsg(res.error ?? "Couldn't resume this agent."); })
+      .finally(() => setResuming(false));
   };
   // OPEN a node's session into a grid cell (#3361). The FIRST open also anchors the grid on that node,
   // so its morph grows exactly where a lone morph always has. Every later node is placed in the
