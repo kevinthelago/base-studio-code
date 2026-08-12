@@ -16,69 +16,15 @@
 //
 // Mounted once in ConsoleWorkspace (stays mounted across screens). Pure logic lives in
 // studioNetworkDrive.ts; this is the thin Tauri/React actuator, like useDirectorPump.
-import { useRef } from "react";
-import { useAppStore } from "@/store";
-import { useLogStream } from "@/shared/hooks/useLogStream";
-import { injectPrompt } from "@/shared/lib/fleet/paneInject";
-import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
-import {
-  activeTargets, authorInjections, deliverBackInjections,
-  type StudioTarget,
-} from "@/shared/lib/fleet/studioNetworkDrive";
+//
+// INERT since #app-stops-pushing-prompts. Its entire body was a poll that injected studio commissions and deliver-backs — and it also LAZY-MOUNTED a commission target, which is the app launching a session, forbidden twice over.
+//
+// The export SURVIVES deliberately: this module is registered in graphPlatform/appModules so graph
+// RECORDS can import it, and removing the export breaks record compilation at runtime. Inert-but-
+// exported is the shape useFleetGate took for the same reason when its launch pump was killed —
+// deleting the hook is not the fix, doing nothing is.
 
-// #3638: event-driven on the `logs://coord` change (+ mount + slow backstop), not a fixed poll.
-// How long after a target first becomes active before the pump injects its author task — enough for
-// the lazy-mount host to run `pty_create` + start Claude. Claude queues input typed mid-turn, so a
-// slightly-early inject is buffered rather than lost; this just avoids writing to a not-yet-open pty.
-const SETTLE_MS = 3000;
-
-function sameSet(a: StudioTarget[], b: StudioTarget[]): boolean {
-  return a.length === b.length && a.every((t) => b.includes(t));
-}
-
+/** Does nothing. See the note above. */
 export function useStudioNetworkPump(): void {
-  // target → ms epoch when the pump first saw it active (the settle clock). Pruned when it goes idle.
-  const activatedAt = useRef<Partial<Record<StudioTarget, number>>>({});
-  // Once-guards: author:<id> and deliver:<id> keys already injected. Pruned when the commission is
-  // gone from the log so a genuinely new commission with a reused id could re-surface (defensive).
-  const injected = useRef<Set<string>>(new Set());
-  const inFlight = useRef(false);
-
-  useLogStream("coord", async (isCancelled) => {
-    if (isCancelled() || inFlight.current) return;
-    const res = await readCoordState(2000);
-    if (isCancelled() || !res) return;
-    const commissions = res.state.commissions;
-    const now = Date.now();
-
-    // 1) Publish the reachable set (drives the lazy-mount hosts) + maintain the settle clock.
-    const active = activeTargets(commissions);
-    for (const t of active) if (activatedAt.current[t] === undefined) activatedAt.current[t] = now;
-    for (const t of Object.keys(activatedAt.current) as StudioTarget[]) {
-      if (!active.includes(t)) delete activatedAt.current[t];
-    }
-    const store = useAppStore.getState();
-    if (!sameSet(store.activeStudioTargets, active)) store.setActiveStudioTargets(active);
-
-    // Prune once-guards for commissions no longer in the log.
-    const liveKeys = new Set(commissions.flatMap((c) => [`author:${c.id}`, `deliver:${c.id}`]));
-    for (const k of [...injected.current]) if (!liveKeys.has(k)) injected.current.delete(k);
-
-    // 2) Compute + perform the due injections (author tasks + deliver-backs), each once.
-    const due = [
-      ...authorInjections(commissions, activatedAt.current, now, SETTLE_MS, injected.current),
-      ...deliverBackInjections(commissions, injected.current),
-    ];
-    if (due.length === 0) return;
-    inFlight.current = true;
-    try {
-      for (const inj of due) {
-        if (isCancelled()) break;
-        await injectPrompt(inj.paneId, inj.prompt);
-        injected.current.add(inj.key);
-      }
-    } finally {
-      inFlight.current = false;
-    }
-  });
+  // Intentionally empty: no poll, no evaluation, no injection.
 }
