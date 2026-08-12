@@ -42,23 +42,11 @@ const IMPORT_RE = /import\s*\{[^}]*\binjectPrompt\b[^}]*\}\s*from\s*["'][^"']*pa
  * against a real app start. These write to panes that are already running.
  */
 const KNOWN_INJECTORS: readonly string[] = [
-  // The director's coordination pump: pending asks, worker requests, and routed actions.
+  // SHRINKING under #app-stops-pushing-prompts. Three inject-only pumps are now inert exports.
   "/src/app/console/useDirectorPump.ts",
-  // Runtime-fault auto-triage — routes a threshold-crossing fault to the owning lane.
-  "/src/app/console/useFaultTriage.ts",
-  // Kit dispatch: a landed UI-kit change is pushed to the director.
-  "/src/app/console/useKitDispatch.ts",
-  // The studio-network pump — commissions between studio sessions.
-  "/src/app/console/useStudioNetworkPump.ts",
-  // The same kit dispatch, reached from the banner layer.
   "/src/app/AppBanners.tsx",
-  // The designer's iteration loop drives its own session.
   "/src/features/designs/useDesignerLoopPump.ts",
-  // Preview review pushes confirmed screen findings to the director.
   "/src/features/glance/usePreviewReview.ts",
-  // CI watcher: a red integration branch or a finished check run wakes the director / the owning
-  // worker. FOUND BY THIS TEST, not by the grep that preceded it — the manual sweep was truncated and
-  // stopped at seven. That is the whole argument for enumerating the set mechanically.
   "/src/shared/lib/github/useCiWatcher.ts",
 ];
 
