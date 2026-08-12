@@ -95,4 +95,68 @@ mod tests {
             "maintenance must state that edits go to the record:\n{md}",
         );
     }
+
+    /// #worker-prose-follows-the-local-first-loop — the worker's standing context must teach the LOCAL
+    /// loop, not auto-pr.
+    ///
+    /// `fleet-local-completion-flow` made `local` the default push policy, which DENIES `git push` /
+    /// `gh pr create` at the permission layer. But the prose still opened with "Under the default
+    /// auto-pr policy you open a PR for your work", and the defer directive — injected on EVERY Stop
+    /// attempt — said the same. Permission and instruction disagreed, and the instruction is what the
+    /// model follows: workers kept trying to open PRs on a project that integrates locally.
+    ///
+    /// The other half was missing entirely: `bsc plan change` (the local PR) appeared in NO worker
+    /// prose, so a worker had never been told to open a change record or write gate evidence.
+    #[test]
+    fn the_worker_protocol_teaches_the_local_loop_not_auto_pr() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-local-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        // The DEFAULT is local, stated as such.
+        assert!(md.contains("default is LOCAL"), "the protocol must state the local default: {md}");
+        // The change record is taught — all three verbs a worker actually needs.
+        for verb in ["bsc plan change new", "bsc plan change note", "bsc plan change gate"] {
+            assert!(md.contains(verb), "the worker must be taught `{verb}`:
+{md}");
+        }
+        // Completion is the worker's HALF, not a verdict on its own work.
+        assert!(md.contains("bsc plan status <ref> complete"), "must name the completion verb: {md}");
+        assert!(
+            md.contains("does not get to declare it correct"),
+            "must state that complete is not verified:
+{md}",
+        );
+    }
+
+    /// The defer directive fires on EVERY attempt to end a turn, so a stale instruction there is
+    /// repeated indefinitely rather than read once. It must not send a worker to open a PR by default.
+    #[test]
+    fn the_defer_directive_does_not_default_to_opening_a_pr() {
+        let empty = std::env::temp_dir().join(format!("bsc-defer-local-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, || {
+            crate::platform::config::load_str("fleet/defer-directive.md")
+        });
+        let _ = std::fs::remove_dir_all(&empty);
+
+        assert!(!md.trim().is_empty(), "the embedded seed must resolve");
+        assert!(
+            md.contains("do NOT push") && md.contains("do NOT open a PR"),
+            "the default directive must forbid push/PR:
+{md}",
+        );
+        assert!(
+            md.contains("bsc plan status <ref> complete"),
+            "the directive must name the local completion verb:
+{md}",
+        );
+        // The stale claim this test exists to prevent coming back.
+        assert!(
+            !md.contains("default auto-pr policy"),
+            "the directive must not call auto-pr the default:
+{md}",
+        );
+    }
 }
