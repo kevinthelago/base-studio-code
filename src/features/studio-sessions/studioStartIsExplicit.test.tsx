@@ -13,8 +13,7 @@ import { renderHook } from "@testing-library/react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { useAppStore } from "@/store";
 import { useStudioViewer, useStudioViewers } from "./useStudioViewer";
-import { StudioTerminalSlot, AgentTerminalSlot } from "./StudioTerminalSlot";
-import { STUDIO_SESSIONS } from "./lib/studioSessions";
+import { StudioTerminalSlot } from "./StudioTerminalSlot";
 
 beforeEach(() => {
   useAppStore.setState({ wantedStudios: [], studioViewers: {} });
@@ -35,9 +34,12 @@ describe("viewing a studio does not start it", () => {
     expect(useAppStore.getState().studioViewers.designer).toBe(0);
   });
 
-  it("useStudioViewers (the Glance morph form) starts none of them either", () => {
+  it("useStudioViewers (the Glance morph form) DOES start — expanding a node is the click", () => {
+    // Deliberately the OPPOSITE of the page hook above, and the pair is the whole point: a page is
+    // "showing" the moment the shell navigates to it, while a morph only exists because the user
+    // expanded that node. Expanding a studio node that is off is how you start it — the lazy load.
     renderHook(() => useStudioViewers(["designer", "librarian"]));
-    expect(useAppStore.getState().wantedStudios).toEqual([]);
+    expect(useAppStore.getState().wantedStudios).toEqual(["designer", "librarian"]);
     expect(useAppStore.getState().studioViewers.designer).toBe(1);
     expect(useAppStore.getState().studioViewers.librarian).toBe(1);
   });
@@ -68,15 +70,13 @@ describe("StudioTerminalSlot — the start control is the only way up", () => {
   });
 });
 
-describe("AgentTerminalSlot routes by pane id", () => {
-  it("a studio pane gets the start control", () => {
-    render(<AgentTerminalSlot paneId={STUDIO_SESSIONS.librarian.paneId} />);
-    expect(screen.getByTestId("studio-not-running-librarian")).toBeTruthy();
-  });
-
-  it("a NON-studio pane is untouched — a fleet worker must not grow a Start button", () => {
-    render(<AgentTerminalSlot paneId="demo:api" />);
-    expect(screen.queryByTestId(/^studio-not-running-/)).toBeNull();
-    expect(screen.queryByRole("button", { name: /start/i })).toBeNull();
+describe("the Glance morph needs no placeholder", () => {
+  it("a studio expanded in a morph is already running, so the dock shows a terminal", () => {
+    // GlanceChatDock keeps its plain TerminalSlot: by the time it renders, `useStudioViewers` has
+    // started the studio. Routing it through the placeholder would only flash a Start button for one
+    // frame before the effect ran.
+    renderHook(() => useStudioViewers(["librarian"]));
+    render(<StudioTerminalSlot studio="librarian" />);
+    expect(screen.queryByTestId("studio-not-running-librarian")).toBeNull();
   });
 });

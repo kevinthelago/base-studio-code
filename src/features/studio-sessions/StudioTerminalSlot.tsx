@@ -15,7 +15,7 @@ import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { Button } from "@/shared/ui/controls/Button";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
-import { STUDIO_SESSIONS, studioForPaneId, type StudioId } from "./lib/studioSessions";
+import { STUDIO_SESSIONS, type StudioId } from "./lib/studioSessions";
 
 export interface StudioTerminalSlotProps {
   studio: StudioId;
@@ -59,20 +59,3 @@ export function StudioTerminalSlot({ studio, visible = true, focused = false }: 
   );
 }
 
-/**
- * The pane-id-keyed form, for a GENERIC surface that shows whatever session a node names (the Glance
- * morph). Routes to {@link StudioTerminalSlot} when the pane belongs to a studio, and is a plain
- * `TerminalSlot` for every other pane — a fleet worker, the director, the debug session.
- *
- * The routing lives here rather than in the caller so the "a studio you have not started shows its start
- * control" rule has ONE definition. The generic path already carries a studio carve-out for the same
- * reason (`TerminalHost` refuses to launch a studio pane that has no dedicated mount, #3427); this is the
- * visible half of that same boundary.
- */
-export function AgentTerminalSlot({ paneId, visible = true, focused = false }: {
-  paneId: string; visible?: boolean; focused?: boolean;
-}) {
-  const studio = studioForPaneId(paneId);
-  if (studio) return <StudioTerminalSlot studio={studio} visible={visible} focused={focused} />;
-  return <TerminalSlot paneId={paneId} visible={visible} focused={focused} />;
-}

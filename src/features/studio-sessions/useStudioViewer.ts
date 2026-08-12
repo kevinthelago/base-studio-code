@@ -12,11 +12,18 @@
 // minutes, navigating back started it again. From outside that reads as sessions starting themselves.
 //
 // The two halves were one call and are now separated on purpose:
-//   • VIEWING  (here) stays automatic — a surface showing a RUNNING session must pin it, or watching a
-//     session could get it reaped out from under you.
-//   • STARTING is `openStudio`, reached only from a control the user presses (`StudioTerminalSlot`).
-// A studio that is not running therefore renders its start affordance instead of a terminal, and nothing
-// on a render path can launch one.
+//   • VIEWING stays automatic — a surface showing a RUNNING session must pin it, or watching a session
+//     could get it reaped out from under you.
+//   • STARTING needs a deliberate act by the user.
+//
+// WHAT COUNTS AS DELIBERATE differs between the two callers, which is why the hooks below differ:
+//   • a studio PAGE is "showing" the moment the shell navigates to it, and navigating is not asking for
+//     an agent — so `useStudioViewer` never starts. Its dock renders `StudioTerminalSlot`, which offers
+//     the Start control when the session is down.
+//   • a Glance MORPH only exists because the user CLICKED that node to expand it. Expanding a studio node
+//     that is off is a request to start it, so `useStudioViewers` still starts — the lazy load this
+//     feature was built around. (`placements` is the open-morph list, not the rendered nodes, so a studio
+//     node merely drawn on the canvas still starts nothing.)
 import { useEffect } from "react";
 import { useAppStore } from "@/store";
 import type { StudioId } from "./lib/studioSessions";
@@ -59,8 +66,10 @@ export function useStudioViewers(ids: readonly StudioId[], showing = true): void
     if (!showing || !key) return;
     const list = key.split(",") as StudioId[];
     const st = useAppStore.getState();
-    // Viewer registration ONLY — no `openStudio`, for the same reason as the single form above.
-    for (const id of list) st.addStudioViewer(id);
+    // Starts as well as pins — UNLIKE the single form above. A morph is only in this list because the
+    // user expanded that node, and expanding a studio node that is off is how you start it. The reaper
+    // cannot fight this: it only arms at zero viewers, and an open morph holds the count above zero.
+    for (const id of list) { st.openStudio(id); st.addStudioViewer(id); }
     return () => {
       const s = useAppStore.getState();
       for (const id of list) s.removeStudioViewer(id);
