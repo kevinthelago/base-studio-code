@@ -114,3 +114,31 @@ describe("the director's team-design surface (#funnel-planner-takes-team-and-con
     expect(surface).not.toContain("bsc plan");
   });
 });
+
+describe("the architect's view of its tier (#architect-sees-director-state)", () => {
+  it("can read director state", () => {
+    expect(restrictedRoleCommands("architect")).toContain("bsc fleet directors");
+  });
+
+  it("is granted the FULL verb, never the `bsc fleet` prefix — that would carry `wake`", () => {
+    // Grants are prefix matches expanded to `Bash(<cmd> *)`. `"bsc fleet"` would auto-run
+    // `bsc fleet wake` too, which STARTS a director — a lever this tier must not hold. Seeing is not
+    // reaching: the architect's only outbound channel is the brief.
+    const surface = restrictedRoleCommands("architect");
+    expect(surface).not.toContain("bsc fleet");
+    expect(surface.filter((c) => c.startsWith("bsc fleet"))).toEqual(["bsc fleet directors"]);
+  });
+
+  it("still cannot reach WORKERS — the tier boundary is one level, not two", () => {
+    // `bsc fleet list` is the DIRECTOR's view of its workers. An architect holding it would be reading
+    // past the tier it hands work to, into a fleet it does not run.
+    expect(restrictedRoleCommands("architect")).not.toContain("bsc fleet list");
+  });
+
+  it("gains no WRITE from seeing — the read gate does not lift its role floor", () => {
+    const a = cap("architect");
+    for (const axis of ["git", "github", "code", "net", "ui"] as const) {
+      expect(a[axis], `architect.${axis}`).toBe("none");
+    }
+  });
+});

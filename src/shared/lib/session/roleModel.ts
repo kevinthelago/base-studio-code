@@ -390,6 +390,10 @@ const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> 
     // it ran, and the AUTHORITY clauses the tiers below cite. Scoped to the one noun, so the architect
     // still cannot reach issues, features, the fleet or any other plan state.
     "bsc plan requirement",
+    // #architect-sees-director-state — the architect's view of the tier it hands work to. The FULL verb,
+    // never the "bsc fleet" prefix: that prefix would also carry `bsc fleet wake`, handing the architect
+    // a lever to START a director. Seeing is not reaching — its only outbound channel stays the brief.
+    "bsc fleet directors",
     ...LOOP_PARTICIPANT_COMMANDS,
     "bsc request new",
     "bsc request list",
