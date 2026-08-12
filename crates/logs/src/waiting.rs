@@ -7,12 +7,17 @@
 //!
 //! ## Four ways to end up blocked, two logs
 //!
-//! | kind         | log          | opened by                  | closed by            |
-//! |--------------|--------------|----------------------------|----------------------|
-//! | `wait`       | coord.log    | `waiting` (`bsc-wait`)     | `woke`, `answer`     |
-//! | `ask`        | coord.log    | `ask` (`bsc-ask`)          | `answer`             |
-//! | `request`    | coord.log    | `request` (#4001)          | `request-resolved`   |
-//! | `permission` | activity.log | `attn` (#4005)             | `run` / `idle`       |
+//! | kind         | log          | opened by                  | closed by                                |
+//! |--------------|--------------|----------------------------|------------------------------------------|
+//! | `wait`       | coord.log    | `waiting` (`bsc-wait`)     | `answer` · `assign` · `woke` · `maintain` |
+//! | `ask`        | coord.log    | `ask` (`bsc-ask`)          | `answer` · `assign` · `woke` · `maintain` |
+//! | `request`    | coord.log    | `request` (#4001)          | `request-resolved`                        |
+//! | `permission` | activity.log | `attn` (#4005)             | `run` / `idle`                            |
+//!
+//! `wait` and `ask` share a closing set because they are two statements of ONE condition — the pane is
+//! parked — and every event that unparks it ends both. That row used to read `woke, answer` / `answer`,
+//! and the narrower reality behind it is what let the queue accumulate: `woke` cleared only a wait, and
+//! `assign`/`maintain` cleared nothing, so an ask outlived every event that actually resolved it.
 //!
 //! The open/close pairing is re-derived from the WHOLE log on every call, exactly as the frontend
 //! reducer does — so the answer is correct across an app restart and does not depend on having
@@ -42,7 +47,23 @@ pub struct WaitingSession {
     pub id: String,
 }
 
+/// The two kinds that mean "this PANE is parked" — as opposed to `request` (keyed by row id, closed
+/// by its own `request-resolved`) and `permission` (a latest-state read from the activity log).
+///
+/// Every event that unblocks a pane clears both, because a pane is parked for ONE reason at a time:
+/// `bsc-ask` supersedes a plain `bsc-wait` when it arrives, so clearing only one kind leaves the
+/// other stranded. Factored out because the four clearing arms must not drift apart — three of them
+/// were added or corrected together after `woke` cleared only `wait` and the queue stopped emptying.
+fn parked(w: &WaitingSession) -> bool {
+    w.kind == "ask" || w.kind == "wait"
+}
+
 /// Every session currently blocked on a human, oldest first.
+///
+/// MUST agree with the frontend reducer (`coordinationLog.ts`), which computes the same queue for the
+/// director pump and the Coordination inbox. When they disagree the director is the one that suffers:
+/// its protocol tells it to run `bsc logs waiting` and drive the queue to empty, so a stale row here
+/// is a question it is asked forever. The clearing set is `answer` · `assign` · `woke` · `maintain`.
 pub fn waiting(dir: &Path) -> Vec<WaitingSession> {
     let mut open: Vec<WaitingSession> = Vec::new();
 
@@ -70,9 +91,20 @@ pub fn waiting(dir: &Path) -> Vec<WaitingSession> {
             }
             // `bsc-answer <target>` — the director's universal unblock: it resumes the target whatever
             // it was parked on, so it clears BOTH an ask and a wait, not just the ask.
-            "answer" if !a.is_empty() => open.retain(|w| !(w.pane == a && (w.kind == "ask" || w.kind == "wait"))),
-            // The coordinator woke a parked session.
-            "woke" if !e.session.is_empty() => open.retain(|w| !(w.pane == e.session && w.kind == "wait")),
+            "answer" if !a.is_empty() => open.retain(|w| !(w.pane == a && parked(w))),
+            // `bsc-assign <target>` — dispatching work to a worker ANSWERS it. The frontend reducer has
+            // always cleared `asking` for the assign target alongside `answer`; this had no arm at all,
+            // so an assigned worker stayed in the queue as though still asking.
+            "assign" if !a.is_empty() => open.retain(|w| !(w.pane == a && parked(w))),
+            // The coordinator woke a parked session. This cleared ONLY a `wait`, which is the bug: the
+            // frontend reducer clears `asking` on `woke` too, so a woken session's ASK was immortal
+            // here and the director was re-handed it every sweep.
+            "woke" if !e.session.is_empty() => open.retain(|w| !(w.pane == e.session && parked(w))),
+            // `bsc-maintain` — the worker declared everything it owns is done and parked alive+ready.
+            // That is the OPPOSITE of blocked on a human, and it had no arm either. It matters most:
+            // `maintain` is the most common event in a real log (a finished worker is told to park
+            // rather than end), so every finished worker sat in the queue forever.
+            "maintain" if !e.session.is_empty() => open.retain(|w| !(w.pane == e.session && parked(w))),
             // A worker->director change request (#4001). Keyed by ID, not session: two workers can
             // have distinct open requests, and the resolve names the id.
             "request" if !a.is_empty() => {
@@ -287,5 +319,85 @@ mod tests {
         let g = waiting_by_pane(&rows);
         assert_eq!(g.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(), vec!["a", "b"]);
         assert_eq!(g[0].1.len(), 2, "both of a's requests group together");
+    }
+
+    /// The regression this item exists for: a queue that could not empty (#logs-waiting-honours-
+    /// every-clearing-event). Each of these three events clears an ask in the FRONTEND reducer, and
+    /// each was either wrong or missing here — so the director's own queue tool re-handed it the same
+    /// resolved questions on every sweep, for two weeks.
+    #[test]
+    fn woke_clears_an_ask_not_only_a_wait() {
+        let d = dir();
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "p:api", "ask", "which base branch?", ""),
+            &c("2026-07-30T10:05:00Z", "p:api", "woke", "", ""),
+        ]);
+        assert!(waiting(&d).is_empty(), "a woken session is not still asking: {:?}", waiting(&d));
+    }
+
+    #[test]
+    fn maintain_clears_the_queue_for_a_finished_worker() {
+        // The highest-volume case by far: a finished worker is told to park in MAINTENANCE rather
+        // than end, so it emits `maintain` repeatedly. Declaring everything done is the opposite of
+        // being blocked on a human.
+        let d = dir();
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "p:api", "ask", "no issues assigned yet", ""),
+            &c("2026-07-30T11:00:00Z", "p:api", "maintain", "owned issues complete — standing by", ""),
+        ]);
+        assert!(waiting(&d).is_empty(), "a maintaining worker is not blocked: {:?}", waiting(&d));
+    }
+
+    #[test]
+    fn assign_clears_the_target_the_same_way_answer_does() {
+        // Dispatching work to a worker ANSWERS its question — the reducer has always treated it so.
+        let d = dir();
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "p:api", "ask", "what should I pick up?", ""),
+            &c("2026-07-30T10:30:00Z", "p:director", "assign", "p:api", "add a retry to the upload path"),
+        ]);
+        assert!(waiting(&d).is_empty(), "an assigned worker is not still asking: {:?}", waiting(&d));
+    }
+
+    #[test]
+    fn a_clearing_event_does_not_close_someone_elses_row() {
+        // The clearing arms key on the pane, so one worker being unblocked must not empty another's.
+        let d = dir();
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "p:api", "ask", "mine", ""),
+            &c("2026-07-30T10:01:00Z", "p:web", "ask", "also mine", ""),
+            &c("2026-07-30T10:05:00Z", "p:api", "maintain", "done", ""),
+        ]);
+        let rows = waiting(&d);
+        assert_eq!(rows.len(), 1, "only p:api clears: {rows:?}");
+        assert_eq!(rows[0].pane, "p:web");
+    }
+
+    #[test]
+    fn a_later_ask_reopens_after_a_clear() {
+        // Clearing is not permanent — a worker that asks again after being woken is blocked again.
+        let d = dir();
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "p:api", "ask", "first", ""),
+            &c("2026-07-30T10:05:00Z", "p:api", "woke", "", ""),
+            &c("2026-07-30T10:10:00Z", "p:api", "ask", "second", ""),
+        ]);
+        let rows = waiting(&d);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].detail, "second");
+    }
+
+    #[test]
+    fn a_request_is_not_cleared_by_a_pane_unblock() {
+        // A `request` is keyed by ROW ID and closed only by its own `request-resolved` — waking or
+        // maintaining the pane must not silently close a tracked contract.
+        let d = dir();
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "p:api", "request", "7", "no develop branch to target"),
+            &c("2026-07-30T10:05:00Z", "p:api", "maintain", "done", ""),
+        ]);
+        let rows = waiting(&d);
+        assert_eq!(rows.len(), 1, "the tracked request survives: {rows:?}");
+        assert_eq!(rows[0].kind, "request");
     }
 }
