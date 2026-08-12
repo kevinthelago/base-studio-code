@@ -11,7 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "@/shared/lib/session/checkpoint";
 import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, findProjectTabIdx, worktreeSlug } from "@/shared/lib/core/projectPaths";
-import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
+import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId, findPaneOwnerTab, parsePaneIdentity } from "@/app/console/lib/paneIdentity";
 import { clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/paneStatus";
 import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
 import { resolveDirectorDrive } from "@/features/planner/fleet/directorDrive";
@@ -128,10 +128,38 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // for EVERY session, and since `actuateWake` kills the PTY first, the inbox Wake button
           // killed a parked worker and never brought it back (skipping the `woke` event too, so the
           // log did not even record it).
-          const owner = findPaneOwnerTab(st.tabs, paneId);
-          if (!owner || st.disabledPanes[paneId]) return {};
+          if (st.disabledPanes[paneId]) return {};
+          let owner = findPaneOwnerTab(st.tabs, paneId);
+          let tabs = st.tabs;
+
+          // #fleet-wake-reaches-a-session-with-no-pane — the pane may not EXIST yet. A stream whose
+          // session was never launched, or whose build tab was closed, has no entry in any tab's
+          // `paneIds`, so the lookup above returns null and wake used to refuse. That is precisely the
+          // case the director protocol names it for ("a stream still has open issues but its session
+          // is not live"), and under the no-app-injection directive it is the ONLY way a stopped node
+          // comes back without the user — so wake CREATES the pane rather than declining.
+          if (!owner) {
+            // `fleetPaneStreams` is the fleet roster: a paneId present here was planned for this
+            // project, whatever its session is doing now. Its ABSENCE is the real error the acceptance
+            // distinguishes — an unknown stream, not merely an unlaunched one — so it still fails.
+            if (!st.fleetPaneStreams[paneId]) return {};
+            const projectKey = parsePaneIdentity(paneId)?.projectKey;
+            if (!projectKey) return {};
+            const tabIdx = findProjectTabIdx(st.tabs, sanitizeProjectKey(projectKey), "build", 0);
+            if (tabIdx < 0) return {};   // the build tab is gone entirely — that is a relaunch, not a wake
+            const tab = st.tabs[tabIdx];
+            // Append into the first FREE cell if the layout has one, else extend — the pane must have a
+            // slot before the runId bump, or the remount renders a grid that does not contain it.
+            const paneIds = [...(tab.paneIds ?? [])];
+            const free = paneIds.indexOf("");
+            if (free >= 0) paneIds[free] = paneId; else paneIds.push(paneId);
+            tabs = st.tabs.map((t, i) => (i === tabIdx ? { ...t, paneIds } : t));
+            owner = { tab: tabs[tabIdx], tabIdx };
+          }
+
           ok = true;
           return {
+            tabs: tabs.map((t, i) => (i === owner!.tabIdx ? { ...t, runId: (t.runId ?? 0) + 1 } : t)),
             paneStartupPromptText: setMapEntry(st.paneStartupPromptText, paneId, prompt),
             paneContinue: setMapEntry(st.paneContinue, paneId, false),
             // A reaped/dormant pane renders the DormantConsole PLACEHOLDER, not a terminal — so the
@@ -139,7 +167,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             // never run. Clearing it is what lets a wake reach a session that was reclaimed.
             dormantPanes: deleteMapEntry(st.dormantPanes, paneId),
             endedPanes: deleteMapEntry(st.endedPanes, paneId),
-            tabs: st.tabs.map((t, i) => (i === owner.tabIdx ? { ...t, runId: (t.runId ?? 0) + 1 } : t)),
+            // A pane the app just re-seated must not stay disabled from a previous reap.
+            disabledPanes: deleteMapEntry(st.disabledPanes, paneId),
           };
         });
         return ok;
