@@ -440,7 +440,7 @@ pub fn harvest_file(file: &Path) -> Vec<Candidate> {
 /// that reads like a logic bug.
 const DOUBLE_QUOTE: char = '\u{22}';
 const SINGLE_QUOTE: char = '\u{27}';
-const BACKSLASH: char = '\u{5C}';
+pub(crate) const BACKSLASH: char = '\u{5C}';
 
 /// Rewrite every RELATIVE import in a lifted module to its `@/…` equivalent.
 ///

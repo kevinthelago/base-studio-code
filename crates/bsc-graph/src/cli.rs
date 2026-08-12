@@ -17,11 +17,14 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 12] =
-    ["impl", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "emit", "help"];
+pub const VERBS: [&str; 13] =
+    ["impl", "edge", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "emit", "help"];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const IMPL_SUBVERBS: [&str; 3] = ["set", "remove", "list"];
+
+/// The `edge` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
+pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
 
 /// The flags that take NO value. Needed by `reject_unknown_flags` to walk the argv correctly: a
 /// value-taking flag consumes the next token, so `--summary "--x"` must not read as the flag `--x`.
@@ -29,7 +32,7 @@ pub const BOOL_FLAGS: [&str; 7] =
     ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 24] = [
+pub const FLAGS: [&str; 25] = [
     "--pretty",
     "--all",
     "--id",
@@ -54,6 +57,7 @@ pub const FLAGS: [&str; 24] = [
     "--fix",
     "--dry-run",
     "--no-src",
+    "--members",
 ];
 
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
@@ -68,6 +72,48 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Ok(())
     };
     match verb {
+        // `edge …` (integration-tests-become-graph-edges) — the RELATIONSHIP tier. A test spanning two
+        // records is evidence about the edge between them, not a property of either node, so it lives
+        // here rather than being forced onto one of them or deleted.
+        //   edge set --id <id> --members a,b [--src <test-file>]   # --src is READ, so a large test never
+        //                                                          # has to fit through argv
+        //   edge list | edge get <id> | edge remove <id>
+        "edge" => match positional.get(1).copied() {
+            Some("set") => {
+                let id = flag_value(&args, "--id").ok_or("usage: bsc graph edge set --id <id> --members a,b [--src <test-file>]")?;
+                let members = list_flag(flag_value(&args, "--members").as_deref());
+                let mut e = serde_json::json!({ "id": id, "members": members });
+                // The test source is READ from the file rather than passed: an integration test is
+                // routinely larger than the argv limit, which is the same wall `impl set --code` hit.
+                if let Some(p) = flag_value(&args, "--src") {
+                    let path = std::path::Path::new(&p);
+                    bsc_cli_util::require_harvestable_root(path)?;
+                    let contents = std::fs::read_to_string(path).map_err(|err| format!("cannot read {p}: {err}"))?;
+                    let name = bsc_util::test_display_name(path, &contents);
+                    e["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
+                    e["src"] = Value::String(p.replace(crate::extract::BACKSLASH, "/"));
+                }
+                let mut g = crate::load();
+                let updated = crate::set_edge(&mut g, e)?;
+                crate::save(&g)?;
+                emit(&serde_json::json!({ "ok": true, "updated": updated }))
+            }
+            Some("remove") => {
+                let id = positional.get(2).ok_or("usage: bsc graph edge remove <id>")?;
+                let mut g = crate::load();
+                let removed = crate::remove_edge(&mut g, id);
+                crate::save(&g)?;
+                emit(&serde_json::json!({ "removed": removed }))
+            }
+            Some("get") => {
+                let id = positional.get(2).ok_or("usage: bsc graph edge get <id>")?;
+                let g = crate::load();
+                let found = crate::edges_of(&g).into_iter().find(|e| e.get("id").and_then(Value::as_str) == Some(*id));
+                emit(&found.unwrap_or(Value::Null))
+            }
+            Some("list") | None => emit(&Value::Array(crate::edges_of(&crate::load()))),
+            Some(other) => Err(format!("unknown edge subverb '{other}' — want one of: {}", EDGE_SUBVERBS.join(" | "))),
+        },
         // `impl …` — read / curate the language-kit implementation tier (#2863/#2961/#2972/#3120):
         //   impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b]
         //     (algorithm: real --code; primitive: DESCRIBE a language built-in via --ref, e.g. std::vec::Vec — never re-coded, #2972)
@@ -606,7 +652,19 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 emit(&serde_json::json!({ "fixed": fixed, "remaining": remaining, "remaining_count": remaining.len() }))
             } else {
                 let findings = crate::doctor(&g);
-                emit(&serde_json::json!({ "findings": findings, "count": findings.len() }))
+                // EDGE COVERAGE (integration-tests-become-graph-edges). `composes` says A builds on B;
+                // an edge says someone CHECKED. Reporting the gap makes coverage a property of the
+                // graph rather than of a file tree — the first question the node tier could never ask.
+                let (missing_edges, dangling_edges) = crate::edge_findings(&g);
+                emit(&serde_json::json!({
+                    "findings": findings,
+                    "count": findings.len(),
+                    "missingEdges": missing_edges,
+                    "missingEdgeCount": missing_edges.len(),
+                    // Separate, and worse: a MISSING edge is honestly empty, a DANGLING one reads as
+                    // covered while naming a record that is gone.
+                    "danglingEdges": dangling_edges,
+                }))
             }
         }
         // `emit` (#4192) — the store→FILE direction, the twin of `bsc ui emit`. The graph is the source
@@ -778,7 +836,8 @@ fn help(prog: &str) -> String {
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
-         {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
+         {prog} edge set --id <id> --members a,b [--src <test-file>] | edge list | edge get <id> | edge remove <id>   # the RELATIONSHIP tier (integration-tests-become-graph-edges): a test spanning two records is evidence about the EDGE between them, not a property of either node; --src is READ from disk so a large test never has to fit through argv
+    {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
   \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)

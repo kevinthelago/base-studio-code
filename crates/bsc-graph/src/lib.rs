@@ -191,6 +191,156 @@ pub struct AlgoImplTest {
     pub src: String,
 }
 
+// ── EDGES (integration-tests-become-graph-edges) ─────────────────────────────────────────────────
+//
+// A test that reaches another app module is not a broken record test — it is a claim about the
+// RELATIONSHIP between records. `composes` already says A builds on B; an edge is where the evidence
+// that the relationship WORKS gets to live, instead of being deleted or forced onto one node it does
+// not belong to.
+//
+// Edges are ADDITIVE to the document, in the same way every facet on `AlgoImpl` is: a store with none
+// never gains an `edges` key, so existing seed JSON round-trips byte-identically.
+
+/// One stored edge: the records it spans and the tests that verify them together.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct GraphEdge {
+    /// Stable id — conventionally the members joined, but opaque to the store.
+    pub id: String,
+    /// The impl ids this edge spans. TWO OR MORE: an edge over one record is a record test and belongs
+    /// on the node, which is the distinction `harvest` now enforces when it pairs.
+    pub members: Vec<String>,
+    /// PROVENANCE — the test file this was lifted from, root-relative and forward-slashed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub src: Option<String>,
+    /// The tests that exercise the members together.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tests: Vec<AlgoImplTest>,
+}
+
+/// The edges of a graph document. READ-ONLY on purpose: unlike `ensure_array`, this never inserts the
+/// key, so merely LOOKING at a store with no edges cannot add `"edges": []` to it.
+pub fn edges_of(g: &Value) -> Vec<Value> {
+    g.get("edges").and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
+/// Upsert an edge. Merging, exactly like [`set_impl`] (#4154): a supplied key overlays, a null removes,
+/// and an unsupplied key is PRESERVED rather than silently deleted.
+pub fn set_edge(g: &mut Value, e: Value) -> Result<bool, String> {
+    let id = e
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .ok_or("an edge needs a non-empty `id`")?
+        .to_string();
+    // An edge over fewer than two records is a RECORD test wearing the wrong shape. Accepting it would
+    // reintroduce exactly what the isolation gate exists to keep off a node.
+    //
+    // Checked only when `members` is SUPPLIED — this is a merging write (#4154), so a later
+    // `--src`-only update must not have to resupply the members it is not changing. Requiring them on
+    // every write is the same destructive default that made a domain-only edit wipe an impl's folder.
+    let supplied = e.get("members").and_then(Value::as_array);
+    if let Some(members) = supplied {
+        if members.len() < 2 {
+            return Err("an edge needs at least two `members` — a test over ONE record belongs on that record".into());
+        }
+    }
+    let is_new = !edges_of(g).iter().any(|x| x.get("id").and_then(Value::as_str) == Some(id.as_str()));
+    if is_new && supplied.is_none() {
+        return Err("a new edge needs `members` — the records it spans".into());
+    }
+    let arr = ensure_array(g, "edges");
+    if let Some(existing) = arr.iter_mut().find(|x| x.get("id").and_then(Value::as_str) == Some(id.as_str())) {
+        match (existing.as_object_mut(), e.as_object()) {
+            (Some(dst), Some(src)) => {
+                for (k, v) in src {
+                    if v.is_null() {
+                        dst.remove(k);
+                    } else {
+                        dst.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            _ => *existing = e,
+        }
+        Ok(true)
+    } else {
+        arr.push(e);
+        Ok(false)
+    }
+}
+
+/// Delete an edge by id. Returns whether one was removed.
+pub fn remove_edge(g: &mut Value, id: &str) -> bool {
+    let Some(arr) = g.get_mut("edges").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    let before = arr.len();
+    arr.retain(|x| x.get("id").and_then(Value::as_str) != Some(id));
+    before != arr.len()
+}
+
+/// Which `composes` relations have NO edge covering them, and which edges name a record that is gone.
+///
+/// A dangling edge is reported separately and deliberately: a MISSING edge is honestly empty, while a
+/// dangling one reads as covered — the worse of the two failures.
+pub fn edge_findings(g: &Value) -> (Vec<Value>, Vec<Value>) {
+    let impls = implementations_of(g);
+    let known: std::collections::HashSet<String> = impls
+        .iter()
+        .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
+        .collect();
+    // A PRIMITIVE is a language built-in DESCRIBED via `ref`, never re-coded (#2972) — "quicksort uses
+    // Vec" is not a relationship anyone can write evidence for. Counting those would report 46 gaps on
+    // the current library where only a handful are real, and a doctor that cries wolf is one nobody runs.
+    let primitives: std::collections::HashSet<String> = impls
+        .iter()
+        .filter(|im| im.get("role").and_then(Value::as_str) == Some("primitive"))
+        .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
+        .collect();
+    let edges = edges_of(g);
+    // Every unordered pair some edge spans.
+    let mut covered: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut dangling = Vec::new();
+    for e in &edges {
+        let members: Vec<String> = e
+            .get("members")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(|m| m.as_str().map(str::to_owned)).collect())
+            .unwrap_or_default();
+        let unknown: Vec<&String> = members.iter().filter(|m| !known.contains(*m)).collect();
+        if !unknown.is_empty() {
+            dangling.push(serde_json::json!({
+                "edge": e.get("id").and_then(Value::as_str).unwrap_or(""),
+                "unknownMembers": unknown,
+            }));
+        }
+        for i in 0..members.len() {
+            for j in (i + 1)..members.len() {
+                covered.insert(pair(&members[i], &members[j]));
+            }
+        }
+    }
+    let mut missing = Vec::new();
+    for im in &impls {
+        let Some(from) = im.get("id").and_then(Value::as_str) else { continue };
+        for to in im.get("composes").and_then(Value::as_array).into_iter().flatten() {
+            let Some(to) = to.as_str() else { continue };
+            // A composes pointing at a record that does not exist is `doctor`'s existing business, not
+            // an edge gap — reporting it here would blame the edge tier for a node-tier problem.
+            if !known.contains(to) || primitives.contains(to) || covered.contains(&pair(from, to)) {
+                continue;
+            }
+            missing.push(serde_json::json!({ "from": from, "to": to }));
+        }
+    }
+    (missing, dangling)
+}
+
+/// Unordered pair key — an edge A↔B covers B↔A.
+fn pair(a: &str, b: &str) -> (String, String) {
+    if a <= b { (a.to_string(), b.to_string()) } else { (b.to_string(), a.to_string()) }
+}
+
 /// The implementation objects of the runtime graph (store-or-seed).
 pub fn implementations() -> Vec<Value> {
     implementations_of(&load())
@@ -807,6 +957,67 @@ mod tests {
         let typed: AlgoImpl = serde_json::from_value(bare.clone()).expect("parses");
         assert!(typed.provides.is_none() && typed.tests.is_empty());
         assert_eq!(serde_json::to_value(&typed).unwrap(), bare, "no empty provides/tests keys appear");
+    }
+
+    /// The EDGE tier (integration-tests-become-graph-edges): a test spanning two records is evidence
+    /// about the relationship, and `doctor` can then say which relationships have none.
+    #[test]
+    fn edges_are_additive_and_doctor_finds_the_gaps() {
+        // A store with NO edges must never gain an `edges` key by being read — otherwise every seed
+        // would churn the first time anything looked at it.
+        let bare = serde_json::json!({ "version": 2, "implementations": [] });
+        assert!(edges_of(&bare).is_empty());
+        assert_eq!(bare, serde_json::json!({ "version": 2, "implementations": [] }), "reading added no key");
+
+        let mut g = serde_json::json!({
+            "version": 2,
+            "implementations": [
+                { "id": "a.ts", "tech": "typescript", "role": "algorithm", "name": "a", "composes": ["b.ts", "c.ts"] },
+                { "id": "b.ts", "tech": "typescript", "role": "algorithm", "name": "b", "composes": [] },
+                { "id": "c.ts", "tech": "typescript", "role": "algorithm", "name": "c", "composes": [] },
+            ],
+        });
+
+        // A relation to a PRIMITIVE is not a gap — it is a language built-in, not a collaborator.
+        {
+            let mut withprim = g.clone();
+            withprim["implementations"].as_array_mut().unwrap().push(serde_json::json!({
+                "id": "typescript.array", "tech": "typescript", "role": "primitive", "name": "array", "composes": []
+            }));
+            withprim["implementations"][0]["composes"].as_array_mut().unwrap().push(serde_json::json!("typescript.array"));
+            let (missing, _) = edge_findings(&withprim);
+            assert!(!missing.iter().any(|m| m["to"] == "typescript.array"), "a primitive is not a missing edge: {missing:?}");
+        }
+
+        // Both relations are uncovered to begin with.
+        let (missing, dangling) = edge_findings(&g);
+        assert_eq!(missing.len(), 2, "a→b and a→c are both uncovered: {missing:?}");
+        assert!(dangling.is_empty());
+
+        // An edge over a→b covers it, in either direction.
+        set_edge(&mut g, serde_json::json!({ "id": "a×b", "members": ["b.ts", "a.ts"] })).unwrap();
+        let (missing, _) = edge_findings(&g);
+        assert_eq!(missing.len(), 1, "only a→c is left: {missing:?}");
+        assert_eq!(missing[0]["to"], "c.ts");
+
+        // A DANGLING edge is its own finding — it reads as covered while naming a record that is gone.
+        set_edge(&mut g, serde_json::json!({ "id": "a×ghost", "members": ["a.ts", "ghost.ts"] })).unwrap();
+        let (_, dangling) = edge_findings(&g);
+        assert_eq!(dangling.len(), 1);
+        assert_eq!(dangling[0]["unknownMembers"][0], "ghost.ts");
+
+        // An edge over ONE record is a record test wearing the wrong shape — refused, or the isolation
+        // gate is pointless.
+        assert!(set_edge(&mut g, serde_json::json!({ "id": "solo", "members": ["a.ts"] })).is_err());
+
+        // Merging, like `set_impl`: a later write overlays without deleting what it did not supply.
+        set_edge(&mut g, serde_json::json!({ "id": "a×b", "src": "src/x.test.ts" })).unwrap();
+        let e = edges_of(&g).into_iter().find(|e| e["id"] == "a×b").unwrap();
+        assert_eq!(e["src"], "src/x.test.ts");
+        assert_eq!(e["members"].as_array().unwrap().len(), 2, "members survived a src-only write");
+
+        assert!(remove_edge(&mut g, "a×ghost"));
+        assert!(edge_findings(&g).1.is_empty());
     }
 
     // ── #3210 kind facet ──
