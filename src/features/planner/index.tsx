@@ -63,7 +63,6 @@ export { addDbProject, setDbTriaged } from "./list/projectsDbBridge";
 export { listDbProjects, type DbProject } from "./list/projectsDbBridge";
 export {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
-  briefKey, pendingBriefPrompt,
   requestKey,
   pendingRequestPrompt,
   shouldRemind,

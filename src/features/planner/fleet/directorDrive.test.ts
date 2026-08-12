@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeDirectorDrive, resolveDirectorDrive, decideDirectorAction,
   eventDirectorPrompt, DEFAULT_DIRECTOR_DRIVE, askKey, pendingAskPrompt,
-  briefKey, pendingBriefPrompt, requestKey, pendingRequestPrompt, heartbeatDirectorPrompt, shouldRemind, idleReminderPrompt, ASK_REMINDER_MS, DEFAULT_HEARTBEAT_MS } from "./directorDrive";
+  requestKey, pendingRequestPrompt, heartbeatDirectorPrompt, shouldRemind, idleReminderPrompt, ASK_REMINDER_MS, DEFAULT_HEARTBEAT_MS } from "./directorDrive";
 
 const TS = "2026-06-01T00:00:00Z";
 const line = (session: string, kind: string, a = "", b = "") => `${TS}	${session}	${kind}	${a}	${b}`;
@@ -142,24 +142,9 @@ describe("director Q&A surfacing (#369, state-based)", () => {
   });
 });
 
-describe("planner brief surfacing (#2377, state-based)", () => {
-  it("briefKey is stable per planner + timestamp", () => {
-    expect(briefKey({ from: "planner", at: 7 })).toBe("planner@7");
-  });
-
-  it("pendingBriefPrompt surfaces each plan update, names a carried ref, and routes onward via bsc-assign", () => {
-    const p = pendingBriefPrompt([
-      { id: "planner@1", from: "planner", target: "director", body: "add CSV export", at: 1 },
-      { id: "planner@2", from: "planner", target: "director", body: "re-sequence auth", ref: { kind: "issue", number: 77 }, at: 2 },
-    ]);
-    expect(p).toContain("add CSV export");
-    expect(p).toContain("re-sequence auth");
-    expect(p).toContain("#77");                 // the carried ref is named
-    expect(p).toContain("bsc-assign");          // director routes the work onward
-    expect(p).toMatch(/plan update/);
-    expect(p).toMatch(/Do not ask the user/);
-  });
-});
+// Brief surfacing (#2377) MOVED to shared/lib/fleet/briefRouting (#brief-routes-to-its-target):
+// routing needs the whole pane set, not just the director's, so it no longer belongs to the
+// director's own drive module. Covered by briefRouting.test.ts.
 
 describe("pendingRequestPrompt / requestKey (#4001)", () => {
   const req = (id: string, from: string, text: string) => ({ id, from, text, at: 1 });
