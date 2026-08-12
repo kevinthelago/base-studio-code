@@ -21,6 +21,8 @@ import {
 // #3760: the `plan` domain's builder lives in the planner feature (it's planner-published), reached
 // via the barrel so the harness covers plan like every other domain.
 import { buildPlanBoardPayload } from "@/features/planner";
+// #3922: guards the org fixture's archetype ids against the real closed vocabulary.
+import { archetypeById } from "@/features/teams";
 import { PROJECTION_INPUTS } from "./storeProjections.fixtures";
 import { STORE_DOMAINS } from "./tunnelClient";
 
@@ -48,13 +50,21 @@ const domains = {
 };
 
 // Variants pin optionality + nullability the way `auth_ok_pre_grant` does for frames: each toggles ONE
-// nullable input so mobile's selectors are exercised against the null branch, not just the populated one.
+// optional/nullable input away from its default so mobile's selectors are exercised against the
+// null/non-default branch, not just the populated-with-the-default-looking-value one.
 const variants = {
   glance_l0: buildGlancePayload({ ...PROJECTION_INPUTS.glance, drill: null }),
   skills_no_lessons: buildSkillsPayload({ ...PROJECTION_INPUTS.skills, lessons: null }),
   blueprints_no_team: buildBlueprintsPayload({
     blueprints: [PROJECTION_INPUTS.blueprints.blueprints[1]], // the team-less `migrate` card
     activeBlueprintId: "migrate",
+  }),
+  // #3922: `KitTheme.base` is optional and defaults to "dark", so an absent value and an explicit
+  // "dark" are indistinguishable on the wire — only a "light" value proves a consumer reads the
+  // field instead of silently falling back (the exact bug this variant was filed over).
+  themes_light: buildThemesPayload({
+    themes: [{ ...PROJECTION_INPUTS.themes.themes[0], base: "light" }],
+    active: "soft",
   }),
 };
 
@@ -100,5 +110,20 @@ describe("storePayloads.fixtures.json — canonical per-domain payload parity (#
     expect(variants.glance_l0.drillFleet).toBeNull();
     expect(variants.skills_no_lessons.lessons).toBeNull();
     expect(variants.blueprints_no_team.activeTeam).toBeNull();
+  });
+
+  it("pins the theme surface via a light variant (#3922 — the field a real consumer bug was filed over)", () => {
+    expect(variants.themes_light.themes[0].base).toBe("light");
+  });
+
+  it("guards the org archetype vocabulary (#3922 — a fixture id that names no real archetype renders as zero edges everywhere)", () => {
+    for (const org of PROJECTION_INPUTS.org.orgs) {
+      for (const rel of org.relationships) {
+        expect(
+          archetypeById(rel.archetype),
+          `org "${org.id}" relationship "${rel.id}" uses unknown archetype "${rel.archetype}"`,
+        ).toBeDefined();
+      }
+    }
   });
 });

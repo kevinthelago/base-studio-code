@@ -137,19 +137,37 @@
         {
           "id": "o1",
           "name": "Pipeline",
+          "blurb": "auth + review pipeline",
+          "builtin": true,
           "positions": [
             {
               "nodeId": "n1",
               "kind": "agent",
-              "personaId": "p1"
+              "personaId": "p1",
+              "x": 40,
+              "y": 60
+            },
+            {
+              "nodeId": "n2",
+              "kind": "external",
+              "label": "Tech Lead",
+              "x": 220,
+              "y": 60
             }
           ],
           "relationships": [
             {
               "id": "r1",
-              "archetype": "delegates",
-              "from": "n1",
+              "archetype": "manages",
+              "from": "n2",
               "to": "n1"
+            },
+            {
+              "id": "r2",
+              "archetype": "iterates",
+              "from": "n2",
+              "to": "n1",
+              "bow": 24
             }
           ]
         }
@@ -161,6 +179,7 @@
           "blurb": "APIs",
           "role": "worker",
           "model": "sonnet",
+          "pooled": true,
           "builtin": true
         }
       ]
@@ -697,6 +716,22 @@
         }
       ],
       "activeTeam": null
+    },
+    "themes_light": {
+      "themes": [
+        {
+          "id": "soft",
+          "tech": "react",
+          "label": "Soft",
+          "description": "rounder corners, softer shadows",
+          "vars": {
+            "--card-radius": "14px"
+          },
+          "builtin": true,
+          "base": "light"
+        }
+      ],
+      "active": "soft"
     }
   }
 }
