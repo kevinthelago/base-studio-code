@@ -63,10 +63,16 @@ export function GraphComponent({
   props,
   fallback = null,
   themeId,
+  exportName,
 }: {
   id: string;
   props?: Record<string, unknown>;
   fallback?: ReactNode;
+  /** Which export of the record to mount. A record provides a MODULE, and a module can export several
+   *  components — `@/shared/ui/controls/Field` exports TextField, TextArea and SelectField — so a host
+   *  mounting one of them must say WHICH, or the loader picks whichever function comes first. Absent ⇒
+   *  the default/only export, the behaviour every existing caller relies on. */
+  exportName?: string;
   /** The theme to resolve for a `themeSystem: "js"` component (#3715) — passed to the wrapping
    *  `<ThemeProvider>`. Ignored for a CSS component (it follows the cascade). Absent ⇒ the base theme. */
   themeId?: string;
@@ -76,6 +82,9 @@ export function GraphComponent({
   // resolved token VALUES; "css"/absent → it follows the CSS cascade as today. A primitive selector (string
   // | undefined), so it never churns re-renders (mirrors the `srcText` selector above).
   const themeSystem = useAppStore((s) => s.components.find((c) => c.id === id)?.themeSystem);
+  // Both caches key on record + EXPORT, never the record alone: the same id serves a different component
+  // per export, so an id-keyed `lastGood` would hand TextArea the component it cached for TextField.
+  const cacheKey = exportName ? `${id}#${exportName}` : id;
   const [Loaded, setLoaded] = useState<ComponentType<Record<string, unknown>> | null>(null);
   // The source the MOUNTED component was built from. Usually `source`; the last-good source when the gate
   // fell back. Kept apart from `source` so the good-marking effect can never mark the CURRENT (broken)
@@ -85,7 +94,7 @@ export function GraphComponent({
 
   /** Mount the last version that worked, if there is one and it is not the source we just tried. */
   const mountLastGood = (why: string): boolean => {
-    const good = lastGood.get(id);
+    const good = lastGood.get(cacheKey);
     if (!good || good.source === source) return false;
     log.warn(`graph-loader: "${id}" ${why} — rendering the last version that worked (${good.source.length} chars)`, "graph-loader");
     setLoaded(() => good.Comp);
@@ -102,11 +111,11 @@ export function GraphComponent({
     setDegraded(false);
     /* eslint-enable react-hooks/set-state-in-effect */
     if (!source) return;
-    const n = (compileCounts.get(id) ?? 0) + 1;
-    compileCounts.set(id, n);
+    const n = (compileCounts.get(cacheKey) ?? 0) + 1;
+    compileCounts.set(cacheKey, n);
     const startedAt = performance.now();
     log.info(`graph-loader: compile #${n} "${id}" (source ${source.length} chars)`, "graph-loader");
-    loadComponentFromSource(source, resolveGraphSource) // vendor sibling panels (#3606)
+    loadComponentFromSource(source, resolveGraphSource, exportName) // vendor sibling panels (#3606)
       // setState((prev) => …) treats a function arg as an UPDATER — a component IS a function, so wrap it.
       .then((c) => {
         if (cancelled) return;
@@ -124,7 +133,7 @@ export function GraphComponent({
     // `mountLastGood` is re-created each render and reads only `id`/`source`, which are already deps —
     // listing it would re-fire the effect on every render and recompile in a loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, source]);
+  }, [id, source, exportName]);
 
   // MARK GOOD — after a commit in which the boundary did NOT catch. This effect cannot run for a render
   // that threw, which is exactly the distinction the gate needs: compiling is a weaker claim than
@@ -132,10 +141,10 @@ export function GraphComponent({
   // mount must never re-mark the good version as good for the broken source.
   useEffect(() => {
     if (!Loaded || degraded || !activeSource || activeSource !== source) return;
-    const prev = lastGood.get(id);
+    const prev = lastGood.get(cacheKey);
     if (prev?.source === activeSource) return; // already known good — no churn
-    lastGood.set(id, { source: activeSource, Comp: Loaded });
-  }, [id, Loaded, activeSource, source, degraded]);
+    lastGood.set(cacheKey, { source: activeSource, Comp: Loaded });
+  }, [cacheKey, id, Loaded, activeSource, source, degraded]);
 
   if (!Loaded) return fallback;
   // A `themeSystem: "js"` component renders to a non-CSS surface — wrap it so `useResolvedTheme()` reaches it

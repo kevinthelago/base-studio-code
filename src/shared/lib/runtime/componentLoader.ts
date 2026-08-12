@@ -131,10 +131,35 @@ export function evalCjsModule(cjs: string, require: (s: string) => unknown): Rec
   return module.exports;
 }
 
-/** Pick the component export from a loaded module: a `default` export, else the first exported function
- *  (React components are functions). `null` when the module exports no component. */
-export function pickComponent(exports: Record<string, unknown>): ComponentType<Record<string, unknown>> | null {
-  const cand = exports.default ?? Object.values(exports).find((v) => typeof v === "function");
+/**
+ * Pick the component export from a loaded module: the export named `prefer` if the caller named one, else
+ * a `default` export, else the single exported function (React components are functions). `null` when the
+ * module exports no component, or when the pick would be a GUESS.
+ *
+ * `prefer` exists because a record provides a MODULE and a module can export several primitives — 14 of the
+ * 69 manifest primitives share 3 specifiers (`controls/Field` alone exports TextField, TextArea and
+ * SelectField). Without it every one of them resolved to whichever function came first, which is how a
+ * password field rendered as `<select class="input" type="password" />`.
+ *
+ * The refusal is narrow on purpose. Demanding an exact name match would disable the graph override for
+ * every record whose source uses a default export or a differently-named one — the export name need not
+ * equal the primitive name. So a name miss still resolves when the module exports exactly ONE component
+ * (unambiguous: that module IS this primitive), and returns `null` only when the caller asked for a name,
+ * the module lacks it, and there is more than one candidate to choose between. `null` sends the host to its
+ * fallback — the bundled primitive, which is correct — rather than mounting the wrong component.
+ */
+export function pickComponent(
+  exports: Record<string, unknown>,
+  prefer?: string,
+): ComponentType<Record<string, unknown>> | null {
+  const named = prefer ? exports[prefer] : undefined;
+  if (typeof named === "function") return named as ComponentType<Record<string, unknown>>;
+
+  // Dedupe by identity: `export default X` alongside `export { X }` is two entries and one component, and
+  // that is not the ambiguity this guards against.
+  const fns = [...new Set(Object.values(exports).filter((v) => typeof v === "function"))];
+  if (prefer && fns.length > 1) return null;
+  const cand = typeof exports.default === "function" ? exports.default : fns[0];
   return typeof cand === "function" ? (cand as ComponentType<Record<string, unknown>>) : null;
 }
 
@@ -152,10 +177,17 @@ export function pickComponent(exports: Record<string, unknown>): ComponentType<R
 export async function loadComponentFromSource(
   source: string,
   resolveGraphSource?: GraphSourceResolver,
+  exportName?: string,
 ): Promise<ComponentType<Record<string, unknown>>> {
   const linked = await linkGraphModules(source, resolveGraphSource, (src) => compileToCjs(src));
   const exports = evaluateEntry(linked, makeRequire());
-  const comp = pickComponent(exports);
-  if (!comp) throw new Error("runtime loader: the graph source exports no component (need a default export or an exported function)");
+  const comp = pickComponent(exports, exportName);
+  if (!comp) {
+    throw new Error(
+      exportName
+        ? `runtime loader: the graph source does not export "${exportName}", and exports more than one component — refusing to guess`
+        : "runtime loader: the graph source exports no component (need a default export or an exported function)",
+    );
+  }
   return comp;
 }
