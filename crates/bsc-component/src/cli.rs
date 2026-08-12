@@ -1397,8 +1397,37 @@ fn cmd_set(
         );
     }
     let items = read_set_items(noun, file.as_deref())?;
-    validate(&items)?;
     let store = open(&dir)?;
+    // VALIDATE WHAT WILL BE STORED, not what was typed (#3849's hole).
+    //
+    // A write has MERGED by default since #4197, so a payload carries only the fields being changed —
+    // `{"id":"githubpage","srcText":"…"}` is the ordinary shape. Validating the raw payload therefore
+    // judged a record by fields it never restated: `validate_component_batch` reads `role` to decide
+    // whether the page gate applies, so EVERY partial write slipped past it and a `role: page` record
+    // that cannot render could be stored by any of them — the exact thing #3849 exists to prevent. It
+    // also emitted the preview-oracle warning at a page, which is the visible half of the same bug and
+    // how this was noticed.
+    //
+    // Under `--replace` the payload IS the record, so there is nothing to merge and the raw items are
+    // already what will be stored.
+    let validated: Vec<serde_json::Value> = if replace {
+        items.clone()
+    } else {
+        items
+            .iter()
+            .map(|item| {
+                let id = item.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+                match store.get(id) {
+                    Ok(Some(raw)) => serde_json::from_str::<serde_json::Value>(&raw)
+                        .map(|prior| crate::record::merge_over(&prior, item, &clear))
+                        .unwrap_or_else(|_| item.clone()),
+                    // Unknown id (a create) or an unreadable row — the payload is the whole record.
+                    _ => item.clone(),
+                }
+            })
+            .collect()
+    };
+    validate(&validated)?;
     // #3729: a component store is keyed by id ALONE — writing an id that already lives under a DIFFERENT
     // kit silently OVERWRITES it. Warn (never reject) so a promote-over-a-builtin clobber is visible.
     if noun == "component" {
@@ -4402,6 +4431,53 @@ export const Card = () => <Button />;",
         .expect("no records in scope is not a drift");
 
         let _ = std::fs::remove_dir_all(&seed);
+    }
+
+    /// `write-gate-blind-to-merge-writes` — the page gate must judge what will be STORED.
+    ///
+    /// A write MERGES by default (#4197), so the ordinary payload is `{id, srcText}` and carries no
+    /// `role`. Validating the raw payload judged a page by a field it never restated, so every partial
+    /// write slipped past #3849's gate — and a `role: page` that cannot render could be stored by any of
+    /// them. Found by using the gate on a real six-page push, which warned at `githubpage` (a page) with
+    /// the PREVIEW oracle's message.
+    #[test]
+    fn the_page_gate_judges_the_merged_record_not_the_payload() {
+        let dir = tmp_store_dir("gate-merge");
+        let store = open_component_store(&Some(dir.clone())).unwrap();
+        // A stored PAGE, currently fine.
+        store
+            .set(
+                "p",
+                &serde_json::json!({
+                    "id": "p", "name": "P", "role": "page",
+                    "srcText": "import { Card } from \"@/shared/ui/data/Card\";
+export const P = () => <Card />;"
+                })
+                .to_string(),
+            )
+            .unwrap();
+
+        // The ordinary merge payload: NO role. Its source cannot resolve, so the page gate must refuse.
+        let broken = serde_json::json!({
+            "id": "p",
+            "srcText": "import { X } from \"@/features/nowhere/X\";
+export const P = () => <X />;"
+        });
+        let merged = {
+            let prior: serde_json::Value = serde_json::from_str(&store.get("p").unwrap().unwrap()).unwrap();
+            crate::record::merge_over(&prior, &broken, &[])
+        };
+        assert_eq!(merged.get("role").and_then(|v| v.as_str()), Some("page"), "the merge restores the role");
+        let err = validate_component_batch(std::slice::from_ref(&merged)).unwrap_err();
+        assert!(err.contains("cannot render"), "the gate fires on the MERGED record: {err}");
+
+        // …and on the raw payload it does not, which is the bug being fixed. Kept as the contrast: if
+        // this ever starts failing, the gate has begun reading something other than `role` and the
+        // reasoning above no longer holds.
+        assert!(
+            validate_component_batch(std::slice::from_ref(&broken)).is_ok(),
+            "the RAW payload has no role — judged as a non-page, which is exactly why validation moved",
+        );
     }
 
     fn tmp_store_dir(tag: &str) -> String {
