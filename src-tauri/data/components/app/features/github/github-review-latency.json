@@ -4,7 +4,6 @@
   "kitId": "base-studio-code",
   "role": "composite",
   "srcText": "// GitHub review latency (#402) — histogram of PR open-to-merge duration with a median callout.\n// Extracted from GitHubPulse's inline card into its own composable record; adds the loading skeleton\n// the inline version didn't have.\nimport { CardHead, Bars, useTip } from \"@/shared/ui/charts\";\nimport { SkeletonChart } from \"@/shared/ui/feedback/Skeleton\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Card } from \"@/shared/ui/data/Card\";\n\nconst DEMO_BUCKETS = [{ label: \"<1h\", v: 4 }, { label: \"1-4h\", v: 6 }, { label: \"4-12h\", v: 5 }, { label: \"12-24h\", v: 3 }, { label: \">1d\", v: 2 }];\n\nexport function ReviewLatency({ buckets = DEMO_BUCKETS, medianH = 5, loading = false }: { buckets?: Array<{ label: string; v: number }>; medianH?: number; loading?: boolean }) {\n  const tip = useTip();\n  const total = buckets.reduce((s, b) => s + b.v, 0);\n  return (\n    <Card>\n      <CardHead title=\"Review latency\" hint=\"PR open to merged · last 14d\" />\n      {loading ? <SkeletonChart height={116} /> : total === 0 ? (\n        <Box className=\"hint\" pad={[8, 2]}>No merged PRs in the window.</Box>\n      ) : (\n        <>\n          <Bars labels={buckets.map((b) => b.label)} height={116} tip={tip} groups={[{ name: \"PRs\", color: \"var(--info)\", data: buckets.map((b) => b.v) }]} />\n          <Box className=\"mono\" style={{ marginTop: 6, fontSize: 10, color: \"var(--fg-dim)\", textAlign: \"center\" }}>\n            median <b style={{ color: \"var(--fg)\" }}>{medianH}h</b> over {total} merged PR{total === 1 ? \"\" : \"s\"}\n          </Box>\n        </>\n      )}\n      {tip.node}\n    </Card>\n  );\n}\n",
-  "src": "src/features/github/Pulse.tsx",
   "composes": [
     "Box",
     "Card"
@@ -27,5 +26,6 @@
     "default",
     "empty",
     "loading"
-  ]
+  ],
+  "srcRetired": "src/features/github/Pulse.tsx"
 }
