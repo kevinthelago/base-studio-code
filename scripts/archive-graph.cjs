@@ -24,19 +24,42 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 const REPO = path.resolve(__dirname, "..");
-const ARCHIVE = path.resolve(REPO, "..", "base-studio-code-archive");
+
+/** The MAIN worktree's root — not this checkout's.
+ *
+ *  This repo works in nested worktrees (`wt-<short>/` under the repo root), so `path.resolve(REPO, "..")`
+ *  from inside one lands on the REPO ROOT and the archive would be created at
+ *  `base-studio-code/base-studio-code-archive` — inside the repo, which is the one thing #4190 says it
+ *  must never be ("a copy that dies with the repo is not a backup"). Worse, it would silently be a
+ *  SECOND, partial archive while the real one aged. `git rev-parse --git-common-dir` points at the main
+ *  `.git` from any worktree, so its parent is the main root. */
+function mainRoot() {
+  try {
+    const common = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+      cwd: REPO, encoding: "utf8",
+    }).trim();
+    if (common) return path.dirname(common);
+  } catch { /* not a git checkout — fall through */ }
+  return REPO;
+}
+
+const ARCHIVE = path.resolve(mainRoot(), "..", "base-studio-code-archive");
 const SEED_DIR = path.join(REPO, "src-tauri", "data", "components", "app");
 const CHECK = process.argv.includes("--check");
 
 /** The bundled `bsc`, used to export the live store. Dev build first, then the packaged sidecar. */
 function bscBin() {
-  const candidates = [
-    path.join(REPO, "target", "debug", "bsc.exe"),
-    path.join(REPO, "target", "release", "bsc.exe"),
-    path.join(REPO, "target", "debug", "bsc"),
-    path.join(REPO, "target", "release", "bsc"),
-  ];
-  return candidates.find((c) => fs.existsSync(c)) ?? null;
+  // Same worktree trap as the archive path: `target/` is only ever built in the MAIN root, so looking
+  // under this checkout finds nothing from a worktree and the store half degrades to "?" — silently
+  // turning a refresh into a seed-only one.
+  const roots = [mainRoot(), REPO];
+  for (const root of roots) {
+    for (const rel of [["target", "debug", "bsc.exe"], ["target", "release", "bsc.exe"], ["target", "debug", "bsc"], ["target", "release", "bsc"]]) {
+      const p = path.join(root, ...rel);
+      if (fs.existsSync(p)) return p;
+    }
+  }
+  return null;
 }
 
 function walk(dir, out = []) {
