@@ -6,12 +6,14 @@ describe("ToolsView (#1149)", () => {
   it("renders the role's capability posture from the role model", () => {
     render(<ToolsView role="director" />);
     expect(screen.getByText("ROLE · DIRECTOR")).toBeInTheDocument();
-    // director: github write, git write, code none — the rows + their tiers show.
+    // director: github read, git read, code write scoped to the plan globs — the rows + tiers show.
     expect(screen.getByText("github")).toBeInTheDocument();
     expect(screen.getByText("git")).toBeInTheDocument();
     expect(screen.getByText("code")).toBeInTheDocument();
-    // a director has no code writes
-    expect(screen.getByText(/read-only role/)).toBeInTheDocument();
+    // It carries the PLANNING write surface, so it is not a read-only role — its writes are the
+    // plan files, and the pane shows those globs rather than the read-only note.
+    expect(screen.queryByText(/read-only role/)).toBeNull();
+    expect(screen.getByText("discovery/*")).toBeInTheDocument();
   });
 
   it("shows a worker's read-only github + the owned-globs note", () => {

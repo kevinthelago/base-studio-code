@@ -110,7 +110,7 @@ export function usePlanMcpManagement(deps: McpManagementDeps): PlanMcpManagement
   // resume; this keeps the file ready. No-op until the planner dir is known.
   useEffect(() => {
     if (!planningDir) return;
-    const cap = roleCapability("planner");
+    const cap = roleCapability("director");
     const write = roleWriteRules(cap);
     const mcp = toSessionPayloads(resolveAllInstalledMcp(useAppStore.getState().mcpServers), []).mcp;
     fireInvoke("ensure_session_settings", {

@@ -10,7 +10,7 @@ import { roleCapability, hasScopedWriteCarveOut } from "./roleModel";
 /**
  * The effective write-scope globs for a pane's role (#1297) — what the `bsc-scope` PreToolUse hook
  * hard-limits writes to. Uses the pane's assigned owned globs when it has them, else the role's
- * default boundary, so the planner falls back to {@link PLANNER_WRITE_GLOBS} rather than being
+ * default boundary, so the planner falls back to {@link PLAN_WRITE_GLOBS} rather than being
  * overridden to `[]`. Empty ⇒ the role has no write boundary (a `code: "none"` role with no
  * carve-out, or a worker with no lane yet) and so gets no scope hook. A `code: "none"` role WITH an
  * explicit carve-out (the director's commons, #851) is scoped to exactly those globs — so the

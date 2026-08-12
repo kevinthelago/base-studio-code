@@ -40,8 +40,49 @@ export function mergeRoleDefaults<T>(embedded: Record<string, T>, overlaid: Reco
     // FIELD-level floor, not role-level (#4108). The role-level `{...embedded, ...overlaid}` above meant
     // a mirror that HAS the role replaced its entry wholesale — so a mirror written before a field
     // existed silently dropped it.
-    out[role] = { ...base, ...over, ...floorLists(base, over) } as T;
+    out[role] = { ...base, ...over, ...floorLists(base, over), ...clampTiers(base, over) } as T;
   }
+  return out;
+}
+
+/**
+ * CEILING on the access tiers: a config-dir mirror may NARROW a tier but never exceed the tier the
+ * shipped app grants. The precise inverse of {@link floorLists}, and it exists for the same reason —
+ * `config/` is seeded ONCE and never refreshed, so every existing install is frozen at whatever
+ * shipped the day it first ran.
+ *
+ * The consequence without this clamp is not cosmetic. When the director's shipped tiers were narrowed
+ * to `git: read` / `github: read`, every install carrying a mirror written before that change kept
+ * `write` on both — so the narrowing shipped, passed its tests, and applied to nobody. A security
+ * default that a stale file can silently revert is not a default.
+ *
+ * Narrowing is deliberately still allowed: the documented contract is that a user may tighten a role,
+ * and tightening is safe by construction. Only the widening direction is clamped.
+ *
+ * `writeGlobs` is handled here too, in the one direction that matters: an EMPTY overlay list falls
+ * back to the shipped globs. An empty list is indistinguishable from a mirror written before the role
+ * had a boundary at all, and that is exactly the case that bites — the director gained `code: "write"`
+ * plus its plan-file globs in the same change, so a mirror supplying `[]` would leave it able to write
+ * with no boundary defined. A NON-empty overlay list still wins, so a user's real narrowing survives.
+ */
+function clampTiers(base: object, over: object): Record<string, unknown> {
+  // Declared INSIDE the function on purpose. `mergeRoleDefaults` is called at module load (the
+  // `roleDefaultsMerged` const above), which is before any module-scope `const` below it has
+  // initialized — hoisting the two tables out would reintroduce a `ReferenceError: Cannot access
+  // 'TIER_FIELDS' before initialization` that takes the whole role table (and so the UI) down at boot.
+  // `floorLists` escapes this only because it has no const dependencies. Do not "tidy" these upward.
+  const TIER_RANK: Record<string, number> = { none: 0, read: 1, write: 2 };
+  const TIER_FIELDS = ["github", "git", "code", "net", "ui"] as const;
+  const b = base as Record<string, unknown>;
+  const o = over as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const f of TIER_FIELDS) {
+    const bv = b[f], ov = o[f];
+    if (typeof bv !== "string" || typeof ov !== "string") continue;
+    if ((TIER_RANK[ov] ?? 0) > (TIER_RANK[bv] ?? 0)) out[f] = bv;
+  }
+  const bg = b.writeGlobs, og = o.writeGlobs;
+  if (Array.isArray(bg) && bg.length > 0 && Array.isArray(og) && og.length === 0) out.writeGlobs = bg;
   return out;
 }
 
@@ -186,11 +227,11 @@ export const HARVEST_ROOT_PROJECTS = "projects";
 // - ROLE_DEFAULTS — default capability per role. `writeGlobs` are filled per assignment (a worker
 //   owns its stream's globs); the defaults are empty so a session with no assigned boundary can't
 //   write code. The **planner is plan-only** — read-only git/GitHub; its code writes are scoped to
-//   plan-section files ({@link PLANNER_WRITE_GLOBS}) so it never needs a prompt to write goal.md /
+//   plan-section files ({@link PLAN_WRITE_GLOBS}) so it never needs a prompt to write goal.md /
 //   phases.json / fleet.json / prompts/*. `net: "read"` across the board preserves today's behavior
 //   (WebFetch allowed via the broad Bash grant); a per-agent `net` profile (#289) or a planner
 //   "no web" toggle (#1107) can set `none` to deny WebFetch/WebSearch at launch.
-// - PLANNER_WRITE_GLOBS (#509) — the section files the planner writes directly (md sections, JSON
+// - PLAN_WRITE_GLOBS (#509) — the section files the planner writes directly (md sections, JSON
 //   manifests, prompts/ + discovery/ #807). Derived from the planner role so the glob list lives once.
 // - DB_OWNED_PLAN_FILES (#1070) — structured plan state that lives in plan.db, written ONLY via the
 //   `bsc plan` CLI. {@link roleWriteRules} denies their FILE forms for the planner (deny > allow) so
@@ -199,7 +240,13 @@ export const HARVEST_ROOT_PROJECTS = "projects";
 //   dep routes through the director). {@link roleWriteRules} denies the Edit/Write TOOLS on these
 //   even inside the worker's owned globs; `npm install` / `cargo build` via Bash still regenerate them.
 export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = roleDefaultsMerged as Record<SessionRole, RoleCapability>;
-export const PLANNER_WRITE_GLOBS: string[] = ROLE_DEFAULTS.planner?.writeGlobs ?? [];
+
+/** The plan-section files the PLANNING session writes directly (md sections, JSON manifests,
+ *  `prompts/`, `discovery/`). Derived from the **director** row, which now carries the planning
+ *  surface: planning and directing were the same actor at different phases of one project, so the
+ *  capability moved rather than being duplicated. Renamed from `PLANNER_WRITE_GLOBS` because the
+ *  globs are no longer the planner role's. */
+export const PLAN_WRITE_GLOBS: string[] = ROLE_DEFAULTS.director?.writeGlobs ?? [];
 export const DB_OWNED_PLAN_FILES: string[] = roleCaps.dbOwnedPlanFiles ?? roleCapsEmbedded.dbOwnedPlanFiles;
 export const DEP_MANIFEST_FILES: string[] = roleCaps.depManifestFiles ?? roleCapsEmbedded.depManifestFiles;
 // DOC_GLOBS (#1555) — the prose-documentation paths the DOCUMENTOR may write: top-level and nested
@@ -228,7 +275,12 @@ export function roleCapability(role: SessionRole, override: Partial<RoleCapabili
  *  fully write-denied even if handed globs — the stewardship can't be accidentally granted to a
  *  non-carve-out role. */
 const CARVE_OUT_ROLES: ReadonlySet<SessionRole> = new Set<SessionRole>([
-  "director", "documentor", "marketer",
+  // The DIRECTOR was removed here (#funnel-planning-moves-to-director). Its commons carve-out existed
+  // only because the director was the one non-worker session holding a project hub, so the repo-root
+  // commons had nowhere else to live. The commons are now a worker STREAM with an owner, a branch and
+  // a worktree — and the director itself is `code: "write"` scoped to plan files, so it no longer
+  // qualifies for a `code: "none"` carve-out at all.
+  "documentor", "marketer",
   // The RESTRICTED studio sessions (#3373). Their carve-out is not project content at all — it is a
   // single sealed SCRATCH dir inside their own workspace (`scratch/**`), the staging area for a payload
   // they then apply with `bsc <store> set --file <name>`. They need it because a heredoc cannot be

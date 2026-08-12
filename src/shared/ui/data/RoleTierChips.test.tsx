@@ -15,11 +15,18 @@ describe("RoleTierChips (#2420)", () => {
   });
 
   it("reflects a mutating role's write tiers", () => {
-    render(<RoleTierChips role="director" />);
-    // Director: git write · github write · code none (#219).
+    render(<RoleTierChips role="worker" />);
+    // Worker: git write · github read · code write (#219) — the fleet's actual mutating role.
     expect(screen.getByText("git · write")).toBeTruthy();
-    expect(screen.getByText("github · write")).toBeTruthy();
-    expect(screen.getByText("code · none")).toBeTruthy();
+    expect(screen.getByText("github · read")).toBeTruthy();
+    expect(screen.getByText("code · write")).toBeTruthy();
+  });
+
+  it("shows the director as read on git + github — it plans and routes, it does not mutate", () => {
+    render(<RoleTierChips role="director" />);
+    expect(screen.getByText("git · read")).toBeTruthy();
+    expect(screen.getByText("github · read")).toBeTruthy();
+    expect(screen.getByText("code · write")).toBeTruthy(); // the plan files
   });
 
   it("renders exactly four pills", () => {

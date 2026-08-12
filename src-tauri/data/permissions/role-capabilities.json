@@ -28,12 +28,12 @@
     },
     "director": {
       "role": "director",
-      "github": "write",
-      "git": "write",
-      "code": "none",
+      "github": "read",
+      "git": "read",
+      "code": "write",
       "net": "read",
       "ui": "read",
-      "writeGlobs": []
+      "writeGlobs": ["*.md", "*.json", "prompts/*.md", "prompts/*", "discovery/*.md", "discovery/*"]
     },
     "triage": {
       "role": "triage",
