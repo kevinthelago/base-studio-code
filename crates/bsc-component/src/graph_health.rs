@@ -329,6 +329,25 @@ pub fn is_registered_platform_module(spec: &str) -> bool {
     platform_modules().contains(spec)
 }
 
+/// The specifiers records in the OPEN STORE `provides` — the loader's first resolution path (#3660).
+///
+/// Unlike the platform manifest this cannot be embedded at compile time: it depends on the store being
+/// written to, which is chosen per invocation (`--dir` / `BSC_COMPONENT_DIR`). `open_component_store`
+/// publishes it here on open. Empty until then, which makes the gate behave exactly as it did before —
+/// a caller that never opens a store (the unit tests) is unaffected.
+static PROVIDED: std::sync::RwLock<Option<std::collections::HashSet<String>>> = std::sync::RwLock::new(None);
+
+/// Publish the open store's provides-set. Called once per invocation, from `open_component_store`.
+pub(crate) fn set_provided_specifiers(specs: std::collections::HashSet<String>) {
+    if let Ok(mut w) = PROVIDED.write() {
+        *w = Some(specs);
+    }
+}
+
+fn provided_specifiers() -> std::collections::HashSet<String> {
+    PROVIDED.read().ok().and_then(|g| g.clone()).unwrap_or_default()
+}
+
 /// The registered platform specifiers, matched LITERALLY (exactly as the loader's `isAppModule` does).
 fn platform_modules() -> &'static BTreeSet<String> {
     static M: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
@@ -986,7 +1005,13 @@ fn internal_specifiers(src_text: &str) -> Vec<String> {
 /// The `@/…` specifiers a bare `srcText` carries that would NOT resolve at runtime — the write-time
 /// counterpart to [`no_implementation_reasons`]'s check, minus the parts that need a kit.
 ///
-/// Three ways a first-party specifier resolves, exactly as the loader does it:
+/// FOUR ways a first-party specifier resolves, exactly as the loader does it:
+///   * a PROVIDING RECORD — some record's `provides` equals the specifier, which `resolveGraphSource`
+///     matches FIRST, ahead of the registry (#3660, graph-first). This one was missing, and its absence
+///     made the gate STRICTER than the runtime rather than looser: after the code-fallback cut removed
+///     the registrations a record's `provides` had replaced, three page records the app renders fine
+///     could no longer be WRITTEN. A gate that refuses what the loader mounts is as wrong as one that
+///     accepts what it cannot.
 ///   * a REGISTERED PLATFORM MODULE — `isAppModule`, matched literally against the generated manifest;
 ///   * a SIBLING RECORD — `@/components/<id>`, which `resolveGraphSource` vendors from the store by id;
 ///   * ERASED before resolution (`import type`), which the loader never asks for at all (#4076).
@@ -996,10 +1021,12 @@ fn internal_specifiers(src_text: &str) -> Vec<String> {
 /// more permissive than the runtime, which is what #4188 removed from the frontend guard.
 pub(crate) fn unresolved_specifiers(src_text: &str) -> Vec<String> {
     let erased = erased_specifiers(src_text);
+    let provided = provided_specifiers();
     let mut out: Vec<String> = Vec::new();
     for spec in import_specifiers(src_text) {
         if !is_internal_specifier(&spec)
             || erased.contains(&spec)
+            || provided.contains(&spec)
             || platform_modules().contains(&spec)
             || spec.starts_with("@/components/")
         {
@@ -2593,6 +2620,53 @@ pub fn analyze_motion(components: &[Value]) -> Vec<Finding> {
         b.severity.cmp(&a.severity).then_with(|| a.node_names.first().cmp(&b.node_names.first()))
     });
     out
+}
+
+#[cfg(test)]
+mod provides_resolution_tests {
+    use super::*;
+
+    /// A specifier no record provides and nothing registers — the control. If this ever resolves, the
+    /// gate has stopped gating and every test below is vacuous.
+    const UNKNOWN: &str = "@/features/nowhere/DoesNotExist";
+    const PROVIDED_SPEC: &str = "@/features/planner/fleet/WorkerDetail";
+
+    fn page_importing(spec: &str) -> String {
+        format!("import {{ X }} from \"{spec}\";\nexport function P() {{ return <X />; }}\n")
+    }
+
+    // These share one process-global, so they run as a single test rather than racing each other.
+    #[test]
+    fn a_specifier_some_record_provides_resolves_like_it_does_at_runtime() {
+        // BEFORE the store is opened: nothing is published, so the gate behaves exactly as it always did.
+        set_provided_specifiers(std::collections::HashSet::new());
+        assert_eq!(
+            unresolved_specifiers(&page_importing(PROVIDED_SPEC)),
+            vec![PROVIDED_SPEC.to_string()],
+            "with no provides published this must still be unresolved",
+        );
+
+        // AFTER: the record that provides it makes it resolve — the #3660 graph-first path the loader
+        // tries FIRST, and the one whose absence refused FleetPage/ProjectsPage/Planning post-cut.
+        set_provided_specifiers(std::collections::HashSet::from([PROVIDED_SPEC.to_string()]));
+        assert!(
+            unresolved_specifiers(&page_importing(PROVIDED_SPEC)).is_empty(),
+            "a provided specifier must resolve",
+        );
+        assert!(renders_at_runtime(&page_importing(PROVIDED_SPEC)));
+
+        // …AND THE GATE DID NOT MERELY GET WEAKER. A specifier that resolves NOWHERE is still refused,
+        // even with a populated provides-set — otherwise this fix would have turned a false rejection
+        // into a silent acceptance, which is the worse trade for a write gate.
+        assert_eq!(
+            unresolved_specifiers(&page_importing(UNKNOWN)),
+            vec![UNKNOWN.to_string()],
+            "an unprovided, unregistered specifier must STILL be refused",
+        );
+        assert!(!renders_at_runtime(&page_importing(UNKNOWN)));
+
+        set_provided_specifiers(std::collections::HashSet::new());
+    }
 }
 
 #[cfg(test)]

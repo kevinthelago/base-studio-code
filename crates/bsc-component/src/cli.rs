@@ -2268,7 +2268,23 @@ fn open_component_store(dir: &Option<String>) -> Result<bsc_json_store::Store, S
             .map(|b| b.join(COMPONENT_SPEC.dir_segment))
             .ok_or_else(|| "could not resolve a home directory; set HOME/USERPROFILE".to_string())
     })?;
-    Ok(bsc_json_store::Store::new(dir, "component"))
+    let store = bsc_json_store::Store::new(dir, "component");
+    crate::graph_health::set_provided_specifiers(provided_specifiers(&store));
+    Ok(store)
+}
+
+/// Every specifier some record in the store `provides` — the loader's FIRST resolution path, which the
+/// write gate could not see. Read here, at store-open, because the validator is passed around as a bare
+/// `fn(&[Value])` pointer (through `bsc_json_store::cli::run_hooked_validated`), so there is nowhere to
+/// thread a store handle without changing that signature across every collection. A process-global is
+/// the same shape `FORCE_WRITE` already uses for `--force` in this file.
+fn provided_specifiers(store: &bsc_json_store::Store) -> std::collections::HashSet<String> {
+    store
+        .list()
+        .iter()
+        .filter_map(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .filter_map(|j| j.get("provides").and_then(serde_json::Value::as_str).map(str::to_owned))
+        .collect()
 }
 
 /// Resolve the KIT store with the same flag → env (`BSC_KIT_DIR`) → default (`~/.base-studio-code/kits/`)
