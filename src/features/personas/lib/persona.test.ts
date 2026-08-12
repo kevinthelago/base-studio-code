@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_PERSONAS, makeBuiltinPersonas, blankPersona, personaSlug, reconcilePersonas, type Persona } from "./persona";
+import architectProtocolMd from "@data/fleet/architect-protocol.md?raw";
 
 describe("persona built-ins (#2094 / externalized #2185)", () => {
   it("every built-in references a real, distinct id and is flagged builtin", () => {
@@ -28,13 +29,27 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     expect(built.every((p) => !("order" in p) && !("protocolFile" in p))).toBe(true);
   });
 
-  it("the architect persona (#2755) rides the architect role and kicks off onto bsc teams + bsc persona", () => {
+  it("the architect persona is the funnel's front door, drawn from the architect protocol", () => {
     const architect = makeBuiltinPersonas().find((p) => p.id === "persona-architect")!;
     expect(architect.role).toBe("architect");
     expect(architect.builtin).toBe(true);
-    // The start prompt IS the session kickoff (baked into the launch arg by useArchitectTerminal):
-    // it must anchor the session to its two command surfaces and the discover-before-write loop.
-    for (const needle of ["bsc teams", "bsc persona", "bsc teams list", "bsc persona list"]) {
+    // #funnel-architect-front-door — the prompt is no longer authored on the def; it resolves from
+    // `fleet/architect-protocol.md` (the same overlay-able source the worker/director draw from), so
+    // there is ONE architect prose and the persona cannot drift from it.
+    expect(architect.startPrompt).toBe(architectProtocolMd.trim());
+    // The two halves it owns, and the fact that discovery is worked one topic at a time — everything
+    // below the architect runs unattended, so a half-settled topic has nobody to ask.
+    for (const needle of ["DISCOVERY", "AUTHORITY", "one topic at a time"]) {
+      expect(architect.startPrompt).toContain(needle);
+    }
+    // Exactly one write surface and exactly one outbound channel — and the channel reaches DIRECTORS
+    // only (the tier constraint `briefInjections` enforces at the other end).
+    for (const needle of ["bsc plan requirement set", "bsc plan brief", "director"]) {
+      expect(architect.startPrompt).toContain(needle);
+    }
+    // Team authoring is still reachable here until it moves to the director, so the Teams Studio
+    // session (STUDIO_SESSIONS.architect, which launches on this persona) keeps its surface.
+    for (const needle of ["bsc teams list", "bsc persona list"]) {
       expect(architect.startPrompt).toContain(needle);
     }
   });

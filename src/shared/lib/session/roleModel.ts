@@ -86,11 +86,17 @@ export type SessionRole =
   // GitHub, no file writes, no web. Launched with `restrictedAllow`, so the baseline command
   // tiers are suppressed and only `bsc ui` (+ the deprecated `bsc component` alias) auto-runs.
   | "designer"
-  // Architect (#2755): the Teams Studio's heavily-restricted team-authoring session. Like the
-  // designer it is `none` on every axis (no git, no GitHub, no file writes, no web) — and `ui: none`
-  // too (it's not a UI-kit session). Launched with `restrictedAllow`, so the baseline command tiers
-  // are suppressed and only `bsc teams` + `bsc persona` auto-run. The Teams graph stays the read-only
-  // viewer; the architect creates/refines teams + personas via those two CLIs.
+  // Architect (#2755, retasked as the funnel's front door): tier 1 — the ONLY session that talks to
+  // the user. It runs DISCOVERY (goal, users, scope, stack, … one topic at a time) and captures the
+  // AUTHORITY the tiers below cite when they decide unattended, then hands both down to a director.
+  // Its capability row is UNCHANGED by that retasking, which is why this role was reused rather than a
+  // new one minted: `none` on every axis (no git, no GitHub, no file writes, no web) with `ui: none`,
+  // launched `restrictedAllow` so the baseline command tiers stay suppressed. That is not merely
+  // convenient — the front door ingests raw user prose, so it is the highest prompt-injection surface
+  // in the system, and being the LEAST capable session is a property worth keeping deliberately.
+  // Its auto-runnable surface is exactly its grant list below: `bsc plan requirement` (the one thing it
+  // writes), `bsc plan brief` (its one outbound channel, director-only), plus the transitional
+  // `bsc teams`/`bsc persona` it still holds until team design moves to the director.
   | "architect"
   // Librarian (#2787): the Algorithms tab's heavily-restricted knowledge-store session. Like the
   // designer/architect it is `none` on every axis (no git, no GitHub, no file writes, no web) and
