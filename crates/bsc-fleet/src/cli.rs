@@ -36,6 +36,29 @@ Requires the desktop app: liveness lives in its PTY state, not on disk. Errors p
 running rather than reporting everything as dead.",
 },
 CmdDoc {
+    name: "directors",
+    summary: "every project's DIRECTOR and whether it is running — the architect's view of its tier",
+    usage: "USAGE:
+  bsc fleet directors [--json|--pretty]
+
+One row per project that has a director pane, with the same real liveness `list` reports:
+
+  LIVE   a PTY session exists for that director
+  BUSY   it has a live descendant — it is working, not merely open
+
+WHY IT IS SEPARATE FROM `list`. This is the ARCHITECT's read, and the architect must not see
+individual workers: that is the director's view, and an architect that reaches past its director is
+back in the middle of a fleet it does not run. So the scoping is the command, not a flag a caller
+could omit.
+
+READ-ONLY, and deliberately so. Seeing a stopped director does not let you start one — the architect's
+only outbound channel is `bsc plan brief <projectKey>:director`. What this answers is whether that
+brief will reach anything: briefing a director that is not running is how work goes quietly missing,
+which is the same failure the director protocol already warns about for assigns to stopped workers.
+
+Requires the desktop app, like `list` — liveness is the app's fact, not the filesystem's.",
+},
+CmdDoc {
     name: "wake",
     summary: "wake a parked/reaped worker — the director's lever over a stopped session",
     usage: "USAGE:
@@ -126,6 +149,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     }
     match args.positional.first().map(String::as_str).unwrap_or("list") {
         "list" => cmd_list(&args),
+        "directors" => cmd_directors(&args),
         "wake" => cmd_wake(&args, prog),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
@@ -148,6 +172,62 @@ fn cmd_wake(args: &Args, prog: &str) -> Result<(), String> {
         format!("woke {}{note}", res.pane_id)
     });
     Ok(())
+}
+
+/// The DIRECTOR pane-id suffix. Pane identity is `<projectKey>:director` (paneIdentity.ts), so the
+/// project key is everything before it — which is also why this needs no roster: the id carries the
+/// project.
+const DIRECTOR_SUFFIX: &str = ":director";
+
+/// `bsc fleet directors` — one row per project director, with real liveness.
+///
+/// Scoped by CONSTRUCTION rather than by a flag: it asks the app for every tracked pane and keeps only
+/// the director ones. An architect running this cannot widen it to workers, which is the tier boundary
+/// this verb exists to hold.
+fn cmd_directors(args: &Args) -> Result<(), String> {
+    // No roster: the architect does not sit in a project hub, and a director's pane id already names
+    // its project. An empty `pane_ids` means "everything the app tracks".
+    let res = send(&FleetRequest::default(), args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS))?;
+    let mut directors: Vec<&PaneLive> =
+        res.panes.iter().filter(|p| p.pane_id.ends_with(DIRECTOR_SUFFIX)).collect();
+    directors.sort_by(|a, b| a.pane_id.cmp(&b.pane_id));
+
+    if args.json || args.pretty {
+        let rows: Vec<_> = directors
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "projectKey": director_project_key(&p.pane_id),
+                    "paneId": p.pane_id,
+                    "live": p.live,
+                    "busy": p.busy,
+                    "pid": p.pid,
+                })
+            })
+            .collect();
+        bsc_cli_util::emit(args.pretty, args.json, &rows, String::new);
+        return Ok(());
+    }
+    println!("{:<28} {:<34} {:<6} {:<6} PID", "PROJECT", "PANE", "LIVE", "BUSY");
+    for p in &directors {
+        println!(
+            "{:<28} {:<34} {:<6} {:<6} {}",
+            director_project_key(&p.pane_id),
+            p.pane_id,
+            if p.live { "yes" } else { "no" },
+            if p.busy { "yes" } else { "no" },
+            p.pid.map(|n| n.to_string()).unwrap_or_else(|| "-".into()),
+        );
+    }
+    if directors.is_empty() {
+        println!("(no director panes — no project fleet is running)");
+    }
+    Ok(())
+}
+
+/// The project key in front of a `<key>:director` pane id.
+pub fn director_project_key(pane_id: &str) -> &str {
+    pane_id.strip_suffix(DIRECTOR_SUFFIX).unwrap_or(pane_id)
 }
 
 fn cmd_list(args: &Args) -> Result<(), String> {
@@ -244,5 +324,34 @@ mod tests {
         assert_eq!(rows[0].role, "worker");
         assert_eq!(rows[1].role, "", "a missing column reads empty, not a panic");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod director_tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_project_key_out_of_a_director_pane_id() {
+        // The pane id carries its project, which is why `directors` needs no roster — the architect
+        // does not sit in a project hub and has no fleet.roster.tsv to read.
+        assert_eq!(director_project_key("studio-code:director"), "studio-code");
+        assert_eq!(director_project_key("a-b-c:director"), "a-b-c");
+    }
+
+    #[test]
+    fn leaves_a_non_director_id_alone_rather_than_mangling_it() {
+        // Defensive: the filter should never hand this a worker id, but silently returning a truncated
+        // key would be worse than returning the id — a wrong project name reads as real.
+        assert_eq!(director_project_key("studio-code:api"), "studio-code:api");
+    }
+
+    #[test]
+    fn the_suffix_match_does_not_catch_a_worker_stream_named_director() {
+        // `<key>:director` is the director. A worker stream could legitimately be called something
+        // ending in "director" (e.g. `art-director`), and `ends_with(":director")` is what keeps that
+        // out — the colon is load-bearing, so this pins it.
+        assert!("studio-code:director".ends_with(DIRECTOR_SUFFIX));
+        assert!(!"studio-code:art-director".ends_with(DIRECTOR_SUFFIX));
     }
 }
