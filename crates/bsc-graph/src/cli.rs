@@ -17,8 +17,8 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 13] =
-    ["impl", "edge", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "emit", "help"];
+pub const VERBS: [&str; 14] =
+    ["impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "emit", "help"];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const IMPL_SUBVERBS: [&str; 3] = ["set", "remove", "list"];
@@ -28,11 +28,11 @@ pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
 
 /// The flags that take NO value. Needed by `reject_unknown_flags` to walk the argv correctly: a
 /// value-taking flag consumes the next token, so `--summary "--x"` must not read as the flag `--x`.
-pub const BOOL_FLAGS: [&str; 7] =
-    ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src"];
+pub const BOOL_FLAGS: [&str; 8] =
+    ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 25] = [
+pub const FLAGS: [&str; 27] = [
     "--pretty",
     "--all",
     "--id",
@@ -58,6 +58,8 @@ pub const FLAGS: [&str; 25] = [
     "--dry-run",
     "--no-src",
     "--members",
+    "--out",
+    "--run",
 ];
 
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
@@ -72,6 +74,104 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Ok(())
     };
     match verb {
+        // `test <id> --out <dir> [--run]` (run-a-records-paired-test-in-isolation) — materialize ONE
+        // record into an empty directory and, optionally, run its paired tests there.
+        //
+        // Materializing exactly one record is what makes the run mean something: a suite that passes in
+        // a directory containing only the record has PROVED the record is self-contained, which no run
+        // inside the repo can prove — there, every import resolves whether the record declares it or not.
+        "test" => {
+            let id = positional.get(1).ok_or("usage: bsc graph test <id> --out <dir> [--run]")?;
+            let out = flag_value(&args, "--out").ok_or("usage: bsc graph test <id> --out <dir> [--run]")?;
+            let g = crate::load();
+            let im = crate::implementations_of(&g)
+                .into_iter()
+                .find(|x| x.get("id").and_then(Value::as_str) == Some(*id))
+                .ok_or_else(|| format!("no implementation '{id}'"))?;
+            let tests = im.get("tests").and_then(Value::as_array).cloned().unwrap_or_default();
+            if tests.is_empty() {
+                // A vacuous pass is worse than a refusal: it would report "green" for a record nothing
+                // checks, which is exactly the reading this whole tier exists to make impossible.
+                return Err(format!(
+                    "'{id}' has no paired test — nothing to run. An integration test lives on an edge                      (`bsc graph edge list`), not on the record."
+                ));
+            }
+            let code = im.get("code").and_then(Value::as_str).unwrap_or_default();
+            // The module's ORIGINAL basename, not the record id: the paired test imports it the way it
+            // always did (`./usePlanGates`), and `use-plan-gates` would not resolve.
+            let stem = im
+                .get("src")
+                .and_then(Value::as_str)
+                .and_then(|p| p.rsplit('/').next())
+                .map(|f| f.trim_end_matches(".tsx").trim_end_matches(".ts").to_string())
+                .unwrap_or_else(|| id.to_string());
+            let dir = std::path::Path::new(&out);
+            std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {out}: {e}"))?;
+            let module_file = dir.join(format!("{stem}.ts"));
+            std::fs::write(&module_file, code).map_err(|e| format!("cannot write the module: {e}"))?;
+            let mut written = vec![module_file.to_string_lossy().into_owned()];
+            for (i, t) in tests.iter().enumerate() {
+                let src = t.get("src").and_then(Value::as_str).unwrap_or_default();
+                let name = if i == 0 { format!("{stem}.test.ts") } else { format!("{stem}.{i}.test.ts") };
+                let p = dir.join(&name);
+                std::fs::write(&p, src).map_err(|e| format!("cannot write {name}: {e}"))?;
+                written.push(p.to_string_lossy().into_owned());
+            }
+            // The record's filesystem declares HOW it is tested. Without a config here, vitest walks UP
+            // and finds the repo's — which pulls in `src/test/setup.ts` and every alias, so the run would
+            // silently borrow the very context isolation is meant to withhold. (It fails loudly:
+            // "Cannot find module .../src/test/setup.ts".)
+            //
+            // `environment` follows the test itself: a record that renders needs a DOM, one that computes
+            // does not, and forcing jsdom on every record would make the run slower and less honest about
+            // what the record actually requires.
+            let needs_dom = tests.iter().any(|t| {
+                t.get("src").and_then(Value::as_str).is_some_and(|src| src.contains("@testing-library"))
+            });
+            let env = if needs_dom { "jsdom" } else { "node" };
+            std::fs::write(
+                dir.join("vitest.config.ts"),
+                format!(
+                    "// Generated by `bsc graph test` — the record's own test contract.
+                     // Present so vitest does NOT walk up and load the repo's config, which would lend
+                     // this record the aliases and setup file that isolation exists to withhold.
+                     import {{ defineConfig }} from \"vitest/config\";
+                     export default defineConfig({{ test: {{ environment: \"{env}\", include: [\"*.test.ts\"] }} }});
+"
+                ),
+            )
+            .map_err(|e| format!("cannot write the test config: {e}"))?;
+            written.push(dir.join("vitest.config.ts").to_string_lossy().into_owned());
+
+            let mut result = serde_json::json!({
+                "id": id, "dir": out, "written": written, "tests": tests.len(), "environment": env, "ran": false,
+            });
+            if args.iter().any(|a| a == "--run") {
+                // `npx vitest run` in the materialized dir. The dir has no config and no node_modules of
+                // its own, so resolution walks UP — which is why the directory's location is the whole
+                // isolation story, and why the sealed distro is the eventual home.
+                // `.cmd` on Windows: `Command` resolves an exact filename and does not consult PATHEXT,
+                // so a bare "npx" is simply "program not found" there.
+                let npx = if cfg!(windows) { "npx.cmd" } else { "npx" };
+                // `--root .` with no config in the directory is the ISOLATION: package imports resolve
+                // (node walks up to a node_modules), while `@/…` app imports do NOT, because the alias
+                // lives in the repo's vitest config and this run never loads it. A record whose test
+                // reached sideways therefore FAILS here rather than passing on borrowed context — which
+                // is the same contract the sealed image gives, reached by config absence instead of a
+                // filesystem seal.
+                let output = std::process::Command::new(npx)
+                    .args(["vitest", "run", "--root", "."])
+                    .current_dir(dir)
+                    .output()
+                    .map_err(|e| format!("cannot run vitest: {e}"))?;
+                let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+                let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+                result["ran"] = Value::Bool(true);
+                result["passed"] = Value::Bool(output.status.success());
+                result["output"] = Value::String(if stdout.trim().is_empty() { stderr } else { stdout });
+            }
+            emit(&result)
+        }
         // `edge …` (integration-tests-become-graph-edges) — the RELATIONSHIP tier. A test spanning two
         // records is evidence about the edge between them, not a property of either node, so it lives
         // here rather than being forced onto one of them or deleted.
@@ -866,7 +966,8 @@ fn help(prog: &str) -> String {
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
-         {prog} edge set --id <id> --members a,b [--src <test-file>] | edge list | edge get <id> | edge remove <id>   # the RELATIONSHIP tier (integration-tests-become-graph-edges): a test spanning two records is evidence about the EDGE between them, not a property of either node; --src is READ from disk so a large test never has to fit through argv
+         {prog} test <id> --out <dir> [--run]   # materialize ONE record + its paired tests into an EMPTY dir and optionally run them there — a pass in a directory holding only the record proves it is self-contained (run-a-records-paired-test-in-isolation)
+  \n  {prog} edge set --id <id> --members a,b [--src <test-file>] | edge list | edge get <id> | edge remove <id>   # the RELATIONSHIP tier (integration-tests-become-graph-edges): a test spanning two records is evidence about the EDGE between them, not a property of either node; --src is READ from disk so a large test never has to fit through argv
     {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
