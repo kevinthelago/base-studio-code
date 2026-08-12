@@ -73,13 +73,9 @@ describe("DesignerTerminal dock (#3357)", () => {
     expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.designer.paneId);
   });
 
-  it("opening the page does NOT start the session — it only holds a viewer while shown", () => {
-    // Inverted by #rendering-a-studio-node-must-not-start-its-session. This used to assert the lazy
-    // start, which is exactly the bug: `useStudioPageShowing` is true the moment the shell navigates
-    // here, so merely opening the Design Studio launched an agent. The dock now renders a Start
-    // control instead; expanding the Glance NODE is what starts it, because that is a click.
+  it("opening the page STARTS the session (lazy) and holds a viewer while it is shown", () => {
     render(<TerminalHost><DesignerTerminal /></TerminalHost>);
-    expect(useAppStore.getState().wantedStudios).not.toContain("designer");
+    expect(useAppStore.getState().wantedStudios).toContain("designer");
     expect(useAppStore.getState().studioViewers.designer).toBe(1);
   });
 
@@ -107,10 +103,6 @@ describe("designer session survives a planner-tab switch (#2826, re-based on #33
   // TerminalHost, so BOTH a hide AND a full unmount leave the session running; only the idle reaper (or an
   // explicit End session) reclaims it. This asserts the new contract at both levels.
   it("releases only the VIEWER when the page is hidden — the session stays wanted (and warm)", () => {
-    // A RUNNING session is the premise of this test, and showing the page no longer creates one
-    // (#rendering-a-studio-node-must-not-start-its-session) — so start it explicitly, as the user's
-    // Start control or an expanded Glance node would. What is under test is survival, not the start.
-    useAppStore.setState({ wantedStudios: ["designer"] });
     const { rerender, container } = render(
       <TerminalHost><KeptMountedPage active={true}><DesignerTerminal /></KeptMountedPage></TerminalHost>,
     );
@@ -133,8 +125,6 @@ describe("designer session survives a planner-tab switch (#2826, re-based on #33
   });
 
   it("UNMOUNTING the dock no longer tears the session down — the terminal is the host's, not the dock's", () => {
-    // Same premise as above: start it first, since showing the page no longer does.
-    useAppStore.setState({ wantedStudios: ["designer"] });
     const { unmount } = render(<TerminalHost><DesignerTerminal /></TerminalHost>);
     expect(useAppStore.getState().wantedStudios).toContain("designer");
     unmount();

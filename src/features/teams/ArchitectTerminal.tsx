@@ -9,7 +9,8 @@
 // `pty_kill` the architect outright. The session now survives navigation and is reclaimed only by the
 // studios feature's 30-minute idle reaper.
 import { SessionDock } from "@/shared/ui/layouts/SessionDock";
-import { useStudioViewer, useStudioPageShowing, StudioTerminalSlot } from "@/features/studio-sessions";
+import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
+import { STUDIO_SESSIONS, useStudioViewer, useStudioPageShowing } from "@/features/studio-sessions";
 
 export function ArchitectTerminal({ height }: { height?: number }) {
   const showing = useStudioPageShowing("architect");
@@ -21,7 +22,7 @@ export function ArchitectTerminal({ height }: { height?: number }) {
       title="◆ Team architect · teams & personas via bsc"
       subtitle="teams-studio · restricted"
     >
-      <StudioTerminalSlot studio="architect" visible={showing} />
+      <TerminalSlot paneId={STUDIO_SESSIONS.architect.paneId} visible={showing} focused={false} />
     </SessionDock>
   );
 }

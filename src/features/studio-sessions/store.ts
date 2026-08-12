@@ -24,10 +24,7 @@ export interface StudiosSlice {
   wantedStudios: StudioId[];
   /** studio id → number of mounted surfaces currently SHOWING it (page dock + Glance morph). Transient. */
   studioViewers: Record<string, number>;
-  /** Mark a studio as wanted — THE START. Idempotent. Reached ONLY from a user control
-   *  (`StudioTerminalSlot`): showing a studio no longer starts it
-   *  (#rendering-a-studio-node-must-not-start-its-session), because "showing" is true for a whole page
-   *  the moment the shell navigates to it, so viewing was launching an agent. */
+  /** Mark a studio as wanted — the lazy start. Idempotent, so every viewer can call it on mount. */
   openStudio: (id: StudioId) => void;
   /** Drop a studio from the wanted list → its persistent mount unmounts. Called by the idle reaper and by
    *  an explicit "End session" from the Glance morph, BOTH of which also `pty_kill` the session. */

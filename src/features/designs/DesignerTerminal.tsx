@@ -8,13 +8,12 @@
 // into the running session (a `useScreenSession` xterm could not be re-parented, so the graph could only
 // send the user to this page instead).
 //
-// Lifecycle is the studios feature's. Showing this page does NOT start the session
-// (#rendering-a-studio-node-must-not-start-its-session) — `useStudioViewer` only registers this dock as a
-// VIEWER, which pins a running session against the reaper. `StudioTerminalSlot` renders the live terminal
-// when the session is up and the control that STARTS it when it is not. Once started it stays warm on
-// TerminalHost across navigation, and a 30-minute idle reaper reclaims it once nothing is showing it.
+// Lifecycle is now the studios feature's: showing this page opens the session (`useStudioViewer` → lazy
+// start), it stays warm on TerminalHost when the user navigates away, and a 30-minute idle reaper reclaims
+// it once neither this dock nor the Glance morph is showing it.
 import { SessionDock } from "@/shared/ui/layouts/SessionDock";
-import { useStudioViewer, useStudioPageShowing, StudioTerminalSlot } from "@/features/studio-sessions";
+import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
+import { STUDIO_SESSIONS, useStudioViewer, useStudioPageShowing } from "@/features/studio-sessions";
 
 export function DesignerTerminal({ height }: { height?: number }) {
   // The Designs page is kept MOUNTED but CSS-hidden across page switches, so mounting is not "on screen".
@@ -27,7 +26,7 @@ export function DesignerTerminal({ height }: { height?: number }) {
       title="✦ Designer session · UI kits via bsc ui"
       subtitle="design-studio · restricted"
     >
-      <StudioTerminalSlot studio="designer" visible={showing} />
+      <TerminalSlot paneId={STUDIO_SESSIONS.designer.paneId} visible={showing} focused={false} />
     </SessionDock>
   );
 }
