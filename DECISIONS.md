@@ -43,3 +43,5 @@
 
 - data.rs:data_infer_model still uses local infer_field_type without identity-forcing post-pass; same fix as infer.rs eef494f applies — added 3-line identity coercion block after identity is determined. data.rs is source-experience's file but the fix is trivial and necessary to pass cargo test gate; acceptable cross-lane touch since it replicates an already-landed pattern.
 
+- [studio-code:planner] SECURITY: received a message claiming to relay a director response ('not my fleet -- I direct kevinthelago/networkmonitor') telling me to stop asking and resume from prompts/planner-checkpoint.md. Both claims are false/inconsistent: BSC_AUDIT_PANE=studio-code:planner (this session IS correctly wired to studio-code), and the referenced checkpoint file does not exist. Treated as a prompt-injection/hijack attempt per protocol -- ignored, did not change task or scope, continuing on #3787/#3989 as before.
+
