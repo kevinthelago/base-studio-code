@@ -236,10 +236,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const planDbProgress = useStreamProgress(drill ?? null);
 
   const setDrill = useAppStore((s) => s.setGlanceDrill);
-  // The MORPH is a first-class viewer of an app-owned studio session (#3357): opening a studio node starts
-  // its session (lazily) and holds the idle reaper off for as long as the morph is open, exactly like its
-  // page dock. Null for every other node, so the hook no-ops. (The debugger is NOT a studio here — its
-  // lifecycle is the Settings toggle, not the reaper.)
+  // The MORPH is a first-class viewer of an app-owned studio session (#3357): expanding a studio node
+  // STARTS its session if it is off, and holds the idle reaper off for as long as the morph is open.
+  // `placements` is the OPEN-MORPH list, not the rendered nodes, so this fires on the user's click and a
+  // studio node merely drawn on the canvas starts nothing. That click is what separates it from a studio
+  // PAGE, which no longer starts anything just by being navigated to
+  // (#rendering-a-studio-node-must-not-start-its-session). Empty for every other drill, so the hook
+  // no-ops. (The debugger is NOT a studio here — its lifecycle is the Settings toggle, not the reaper.)
   // MULTI (#3361): every open studio node must be pinned, not just the newest — otherwise the idle
   // reaper could kill a session the user has on screen in another morph.
   const openStudioIds = useMemo(
@@ -437,8 +440,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // drill EVERY studio session node morphs (#3357): all four now live on the shared TerminalHost, so the
   // host can re-parent their single terminal into the morph. The debugger additionally requires its
   // Settings toggle (its node only EXISTS while the toggle is on); the designer/librarian/architect are
-  // always openable — clicking one lazily STARTS its session if it isn't up (stable pane id ⇒ it resumes
-  // the same conversation, never a second session).
+  // always openable — EXPANDING one that is off STARTS it (the lazy load), because the click is the
+  // request (stable pane id ⇒ it resumes the same conversation, never a second session). Distinct from a
+  // studio PAGE, which no longer starts anything just by being navigated to
+  // (#rendering-a-studio-node-must-not-start-its-session).
   const isLiveAgent = (nodeId: string) => {
     if (!drill) return false;
     if (drill === BASE_STUDIO_PROJECT_ID) {
