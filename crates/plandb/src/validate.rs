@@ -1947,3 +1947,99 @@ mod tests {
         assert!(bare.contains("uiSystem studio") && bare.contains("algorithmSystem studio"), "{bare}");
     }
 }
+
+/// Validate the REQUIREMENT + AUTHORITY blob (#requirement-and-authority-store) — the architect's
+/// handoff down the funnel.
+///
+/// Strict-reject on the #2395 posture, and the reason bites harder here than for most blobs: the
+/// director consumes this UNATTENDED. A malformed clause stored quietly is one the director either
+/// cannot cite or silently ignores, and there is nobody in the loop to notice.
+pub fn validate_requirement(v: &Value) -> Result<(), String> {
+    let noun = "requirement";
+    let Some(obj) = v.as_object() else {
+        return Err(reject(noun, vec![
+            r#"the requirement must be a JSON object: {"statement": "...", "authority": [...]}"#.into(),
+        ]));
+    };
+    let mut errs = Vec::new();
+    match obj.get("statement").and_then(Value::as_str) {
+        Some(s) if !s.trim().is_empty() => {}
+        _ => errs.push(r#"missing "statement" — what the user actually asked for, in their words"#.into()),
+    }
+    if let Some(d) = obj.get("discovery") {
+        if !d.is_object() && !d.is_null() {
+            errs.push(r#""discovery" must be an object (the checklist topics vary by blueprint)"#.into());
+        }
+    }
+    match obj.get("authority") {
+        None | Some(Value::Null) => {}
+        Some(Value::Array(clauses)) => {
+            for (i, c) in clauses.iter().enumerate() {
+                let Some(co) = c.as_object() else {
+                    errs.push(format!("authority[{i}] must be an object {{id, scope, grant}}"));
+                    continue;
+                };
+                // Every field is load-bearing: `id` is what a later decision CITES, and a clause with
+                // no scope or grant authorizes nothing while looking like it does.
+                for k in ["id", "scope", "grant"] {
+                    match co.get(k).and_then(Value::as_str) {
+                        Some(s) if !s.trim().is_empty() => {}
+                        _ => errs.push(format!(r#"authority[{i}] missing "{k}""#)),
+                    }
+                }
+            }
+        }
+        Some(_) => errs.push(r#""authority" must be an array of {id, scope, grant} clauses"#.into()),
+    }
+    if errs.is_empty() { Ok(()) } else { Err(reject(noun, errs)) }
+}
+
+#[cfg(test)]
+mod requirement_validation_tests {
+    use super::*;
+
+    fn ok(v: serde_json::Value) { validate_requirement(&v).expect("should accept"); }
+    fn bad(v: serde_json::Value, needle: &str) {
+        let e = validate_requirement(&v).expect_err("should reject");
+        assert!(e.contains(needle), "expected {needle:?} in:\n{e}");
+    }
+
+    #[test]
+    fn a_statement_is_required_because_it_is_what_the_user_actually_said() {
+        bad(serde_json::json!({}), "statement");
+        bad(serde_json::json!({ "statement": "   " }), "statement");
+        ok(serde_json::json!({ "statement": "a link shortener" }));
+    }
+
+    #[test]
+    fn authority_is_optional_but_every_clause_must_be_citable() {
+        // A clause exists to be CITED by a later decision, so an id-less one authorizes something
+        // nobody can trace. Missing scope/grant is worse than absent: it looks like a grant.
+        ok(serde_json::json!({ "statement": "x" }));
+        ok(serde_json::json!({ "statement": "x", "authority": [] }));
+        for missing in ["id", "scope", "grant"] {
+            let mut c = serde_json::json!({ "id": "a1", "scope": "datastore", "grant": "choose freely" });
+            c.as_object_mut().unwrap().remove(missing);
+            bad(serde_json::json!({ "statement": "x", "authority": [c] }), missing);
+        }
+    }
+
+    #[test]
+    fn the_shape_itself_is_checked_so_a_mistyped_blob_never_reaches_an_unattended_director() {
+        bad(serde_json::json!("just a string"), "JSON object");
+        bad(serde_json::json!({ "statement": "x", "authority": "everything" }), "array");
+        bad(serde_json::json!({ "statement": "x", "discovery": "prose" }), "object");
+    }
+
+    #[test]
+    fn a_full_record_round_trips_the_validator() {
+        ok(serde_json::json!({
+            "statement": "a link shortener with per-link analytics",
+            "discovery": { "goal": "shorten and measure", "users": "internal marketing" },
+            "authority": [
+                { "id": "a1", "scope": "datastore choice", "grant": "choose freely under 10k rows" },
+                { "id": "a2", "scope": "auth provider", "grant": "any OIDC provider" },
+            ],
+        }));
+    }
+}

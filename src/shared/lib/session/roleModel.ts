@@ -328,6 +328,10 @@ const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> 
     // sessionRoles.test.ts pins. Where a brief may LAND is constrained separately in briefRouting: the
     // grant says what it can RUN, the routing says who may RECEIVE.
     "bsc plan brief",
+    // #requirement-and-authority-store — the architect's handoff: the user's statement, the discovery
+    // it ran, and the AUTHORITY clauses the tiers below cite. Scoped to the one noun, so the architect
+    // still cannot reach issues, features, the fleet or any other plan state.
+    "bsc plan requirement",
     ...LOOP_PARTICIPANT_COMMANDS,
     "bsc request new",
     "bsc request list",

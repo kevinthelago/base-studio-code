@@ -633,6 +633,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "deploy" => nouns::cmd_deploy(&args),
         "deps" => nouns::cmd_deps(&args),
         "market" => nouns::cmd_market(&args),
+        "requirement" => nouns::cmd_requirement(&args),
         "classify" => nouns::cmd_classify(&args),
         "transformation" => nouns::cmd_transformation(&args),
         "mcp" => nouns::cmd_mcp(&args),

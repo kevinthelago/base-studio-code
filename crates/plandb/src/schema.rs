@@ -17,6 +17,7 @@ pub(crate) const ALL_TABLES: &[&str] = &[
     "deps",
     "market",
     "classify",
+    "requirement",
     "mcp",
     "automations",
     "startup",
@@ -104,6 +105,12 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             data        TEXT NOT NULL DEFAULT '{}'
          );
          CREATE TABLE IF NOT EXISTS classify (
+            id          INTEGER PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}'
+         );
+         -- The architect's handoff (#requirement-and-authority-store): statement + discovery +
+         -- authority clauses. A singleton blob like classify/market — one per project, read whole.
+         CREATE TABLE IF NOT EXISTS requirement (
             id          INTEGER PRIMARY KEY,
             data        TEXT NOT NULL DEFAULT '{}'
          );

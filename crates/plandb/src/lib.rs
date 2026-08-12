@@ -43,6 +43,7 @@ mod blueprint;
 pub mod changes;
 mod confirmed;
 mod classify;
+mod requirement;
 mod deploy;
 mod discovery;
 mod integrations;
