@@ -18,6 +18,19 @@ import * as TracePlayer from "./viz/TracePlayer";
 // The librarian terminal is hosted by the studio-session surface — a cross-feature BARREL, which #1545
 // permits and the live file already imports.
 import * as StudioSessions from "@/features/studio-sessions";
+import * as GraphPlatform from "@/features/algorithms/graphPlatform";
+import * as Trace from "@/features/algorithms/lib/trace";
+import * as TraceStream from "@/features/algorithms/lib/traceStream";
+import * as Registry from "@/features/algorithms/viz/examples/registry";
+import * as Binding from "@/features/algorithms/lib/binding";
+import * as ArrayViewMotion from "@/features/algorithms/viz/renderers/arrayViewMotion";
+import * as GraphViewMotion from "@/features/algorithms/viz/renderers/graphViewMotion";
+import * as GraphLayout from "@/features/algorithms/viz/renderers/graphLayout";
+import * as MatrixViewMotion from "@/features/algorithms/viz/renderers/matrixViewMotion";
+import * as ScalarViewMotion from "@/features/algorithms/viz/renderers/scalarViewMotion";
+import * as StackViewMotion from "@/features/algorithms/viz/renderers/stackViewMotion";
+import * as TreeViewMotion from "@/features/algorithms/viz/renderers/treeViewMotion";
+import * as TreeLayout from "@/features/algorithms/viz/renderers/treeLayout";
 
 let done = false;
 
@@ -31,4 +44,17 @@ export function registerAlgorithmsPlatform(): void {
   registerAppModule("@/features/algorithms/viz/useVizForImpl", UseVizForImpl);
   registerAppModule("@/features/algorithms/viz/TracePlayer", TracePlayer);
   registerAppModule("@/features/studio-sessions", StudioSessions);
+  registerAppModule("@/features/algorithms/graphPlatform", GraphPlatform);
+  registerAppModule("@/features/algorithms/lib/trace", Trace);
+  registerAppModule("@/features/algorithms/lib/traceStream", TraceStream);
+  registerAppModule("@/features/algorithms/viz/examples/registry", Registry);
+  registerAppModule("@/features/algorithms/lib/binding", Binding);
+  registerAppModule("@/features/algorithms/viz/renderers/arrayViewMotion", ArrayViewMotion);
+  registerAppModule("@/features/algorithms/viz/renderers/graphViewMotion", GraphViewMotion);
+  registerAppModule("@/features/algorithms/viz/renderers/graphLayout", GraphLayout);
+  registerAppModule("@/features/algorithms/viz/renderers/matrixViewMotion", MatrixViewMotion);
+  registerAppModule("@/features/algorithms/viz/renderers/scalarViewMotion", ScalarViewMotion);
+  registerAppModule("@/features/algorithms/viz/renderers/stackViewMotion", StackViewMotion);
+  registerAppModule("@/features/algorithms/viz/renderers/treeViewMotion", TreeViewMotion);
+  registerAppModule("@/features/algorithms/viz/renderers/treeLayout", TreeLayout);
 }

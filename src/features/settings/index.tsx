@@ -1,3 +1,9 @@
+// Register this feature's graph-platform modules at module load — so `import("@/features/settings")`
+// (what the shadow catalogue's ensurePlatform does) is what makes a record importing them resolvable.
+// Idempotent; mirrors the *GraphHost pattern for features that have one.
+import { registerSettingsPlatform } from "./graphPlatform";
+
+registerSettingsPlatform();
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";

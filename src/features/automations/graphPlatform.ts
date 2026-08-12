@@ -10,6 +10,7 @@ import * as Mcp from "@/features/mcp"; // HooksView + parseHookLog/aggregateHook
 import * as Scheduler from "./lib/scheduler";
 import * as Cron from "./lib/cron";
 import * as Format from "./format";
+import * as GraphPlatform from "@/features/automations/graphPlatform";
 
 let done = false;
 
@@ -21,4 +22,5 @@ export function registerAutomationsPlatform(): void {
   registerAppModule("@/features/automations/lib/scheduler", Scheduler);
   registerAppModule("@/features/automations/lib/cron", Cron);
   registerAppModule("@/features/automations/format", Format);
+  registerAppModule("@/features/automations/graphPlatform", GraphPlatform);
 }

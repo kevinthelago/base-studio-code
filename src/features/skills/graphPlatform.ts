@@ -9,6 +9,7 @@ import * as SkillsFilter from "./lib/skillsFilter";
 import * as SkillTelemetry from "./lib/skillTelemetry";
 import * as Lessons from "./lib/lessons";
 import * as SkillStyles from "./skillStyles";
+import * as GraphPlatform from "@/features/skills/graphPlatform";
 
 let done = false;
 
@@ -21,4 +22,5 @@ export function registerSkillsPlatform(): void {
   registerAppModule("@/features/skills/lib/skillTelemetry", SkillTelemetry);
   registerAppModule("@/features/skills/lib/lessons", Lessons);
   registerAppModule("@/features/skills/skillStyles", SkillStyles);
+  registerAppModule("@/features/skills/graphPlatform", GraphPlatform);
 }
