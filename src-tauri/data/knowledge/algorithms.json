@@ -213,6 +213,19 @@
       "tests": []
     },
     {
+      "code": "// Version/install status of a downloadable (first-party) MCP server (#885). Pure (no React/Tauri)\n// so the status type + its derivation are unit-testable and shared by the screen's install hook.\n\nimport { catalogLink } from \"@/features/mcp/lib/mcpInstall\";\nimport type { McpServer } from \"@/features/mcp/lib/mcpServers\";\n\n/** Install/version status of a downloadable MCP server (#885). */\nexport type McpStat =\n  | \"checking\" | \"current\" | \"outdated\" | \"needs-build\"\n  | \"downloading\" | \"building\" | \"updating\" | \"error\";\n\n/** The shape `mcp_check_update` resolves to: whether the clone exists, is built, and is behind. */\nexport interface McpCheckResult {\n  downloaded: boolean;\n  built: boolean;\n  updateAvailable: boolean;\n}\n\n/** Map a backend `mcp_check_update` result to the row status shown on an installed server (#885):\n *  not cloned (or not yet built) → needs-build, behind its remote → outdated, else current. */\nexport function deriveCheckStat(r: McpCheckResult): McpStat {\n  return !r.downloaded ? \"needs-build\" : r.updateAvailable ? \"outdated\" : !r.built ? \"needs-build\" : \"current\";\n}\n\n/** The names of installed servers that are downloadable (first-party, install-from-source) — the\n *  ones the version check runs against. */\nexport function installedDownloadableNames(servers: McpServer[]): string[] {\n  return servers.filter(e => catalogLink(e.name)).map(e => e.name);\n}\n",
+      "composes": [],
+      "domain": "mcp",
+      "folder": "features/mcp/lib",
+      "id": "mcp-versioning.ts",
+      "name": "mcpVersioning",
+      "provides": "@/features/mcp/lib/mcpVersioning",
+      "role": "algorithm",
+      "src": "src/features/mcp/lib/mcpVersioning.ts",
+      "tech": "typescript",
+      "tests": []
+    },
+    {
       "id": "merge-sort.rs",
       "tech": "rust",
       "name": "merge_sort",
@@ -248,6 +261,19 @@
         "typescript.number"
       ],
       "code": "/**\n * Sort items by a DECLARED priority ranking of a category — an order that is deliberately NOT the\n * category's natural or alphabetical one.\n *\n * The everyday case is an \"attention queue\": items fall into a few states and the useful order is by\n * urgency, which no property of the state gives you. Written by hand it becomes a bare comparator with\n * the ranking buried in a chain of ternaries (`s === \"blocked\" ? 0 : s === \"running\" ? 1 : …`) — the\n * priority is real domain knowledge but exists only as magic numbers inside a sort, where it cannot be\n * read as a list, reused, or reordered without recounting.\n *\n * Here the ranking is DATA: an array, first = highest priority. That array is the decision; the sort\n * is mechanical. A category not in the ranking sorts AFTER every ranked one (rather than silently\n * becoming rank 0 and jumping the queue) — an unranked value is \"no stated priority\", not \"top\n * priority\". The sort is STABLE, so items of equal rank keep their input order.\n *\n * Harvested from the Fleet page's merge queue (#3462/#3465).\n */\n\n/**\n * A stable copy of `items` ordered by the priority of each item's category.\n *\n * `ranking[0]` is highest priority. An item whose category is not in `ranking` sorts after every\n * ranked item, in input order among its unranked peers.\n */\nexport function orderByRank<T, R>(\n  items: readonly T[],\n  categoryOf: (item: T) => R,\n  ranking: readonly R[],\n): T[] {\n  const rankOf = new Map<R, number>(ranking.map((r, i) => [r, i]));\n  // Unranked → after everything ranked. `ranking.length` sits past the last real rank.\n  const rank = (item: T) => rankOf.get(categoryOf(item)) ?? ranking.length;\n  // Decorate-sort-undecorate keeps it stable AND calls `categoryOf` once per item rather than O(n log n)\n  // times — the naive `.sort((a,b) => rank(a) - rank(b))` re-derives the category on every comparison.\n  return items\n    .map((item, i) => ({ item, i, r: rank(item) }))\n    .sort((a, b) => a.r - b.r || a.i - b.i)\n    .map((d) => d.item);\n}"
+    },
+    {
+      "code": "// Planner terminal/ANSI helpers, split out of Planning.tsx (#1332): the ANSI-escape stripper and\n// a viewport-content probe used to avoid re-sending an already-pasted prompt. (The xterm TERM_THEME\n// lives in @/app/console/lib/terminalConstants — the single home shared by every terminal, #3246.)\nimport type { Terminal } from \"@xterm/xterm\";\n\n// Covers all common VT/ANSI escape sequences:\n//   CSI  \\x1b [ <0x20-0x3f>* <0x40-0x7e>   — includes private ?/>/< params\n//   OSC  \\x1b ] <text> (\\x07 | \\x1b\\)       — BEL or ST terminator\n//   Char-set  \\x1b [()][…]\n//   Other C1  \\x1b <any single byte>         — fallback: ESC + one char\n// eslint-disable-next-line no-control-regex\nconst ANSI_RE = /\\x1b(?:\\[[\\x20-\\x3f]*[\\x40-\\x7e]|\\][^\\x07\\x1b]*(?:\\x07|\\x1b\\\\)|[()][0-9A-Za-z]|[\\x40-\\x7e])/g;\n\nexport function stripAnsi(s: string): string {\n  return (\n    s\n      .replace(ANSI_RE, \"\")  // remove escape sequences\n      .replace(/\\r/g, \"\")    // remove lone carriage returns (spinner overwrites)\n      // eslint-disable-next-line no-control-regex -- intentional: strip bare ESC bytes from PTY output\n      .replace(/\\x1b/g, \"\")  // remove any leftover bare ESC bytes\n  );\n}\n\n// Read the visible terminal rows (where Claude's input bar lives) and report whether they already\n// contain `snippet` — so a re-send doesn't duplicate a prompt that was pasted but never submitted.\n// Heuristic: a normalized substring match over the viewport. Best-effort; never throws.\nexport function terminalShows(term: Terminal | null, snippet: string): boolean {\n  if (!term || !snippet.trim()) return false;\n  try {\n    const buf = term.buffer.active;\n    let text = \"\";\n    for (let i = 0; i < term.rows; i++) {\n      text += \" \" + (buf.getLine(buf.baseY + i)?.translateToString(true) ?? \"\");\n    }\n    const norm = (s: string) => s.replace(/\\s+/g, \" \").trim().toLowerCase();\n    return norm(text).includes(norm(snippet));\n  } catch {\n    return false;\n  }\n}\n",
+      "composes": [],
+      "domain": "planner",
+      "folder": "features/planner/session",
+      "id": "planning-terminal.ts",
+      "name": "planningTerminal",
+      "provides": "@/features/planner/session/planningTerminal",
+      "role": "algorithm",
+      "src": "src/features/planner/session/planningTerminal.ts",
+      "tech": "typescript",
+      "tests": []
     },
     {
       "id": "precedence-resolve.ts",
