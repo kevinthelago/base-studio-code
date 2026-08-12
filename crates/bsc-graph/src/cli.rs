@@ -267,8 +267,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         "id": c.id, "tech": c.tech, "role": c.role, "name": c.name,
                         "composes": c.composes, "code": c.code,
                         "domain": c.domain, "src": c.src,
-                        "tests": c.tests.iter().map(|t| serde_json::json!({ "name": t.name, "src": t.src })).collect::<Vec<_>>(),
                     });
+                    // Only when NON-EMPTY. `tests: []` is not "no tests recorded" — it is a key the
+                    // additive contract omits, so writing it made every migrated record fail the seed
+                    // round-trip against its own typed model.
+                    if !c.tests.is_empty() {
+                        im["tests"] = Value::Array(
+                            c.tests.iter().map(|t| serde_json::json!({ "name": t.name, "src": t.src })).collect(),
+                        );
+                    }
                     if let Some(f) = bsc_util::folder_from_src(&c.src) {
                         im["folder"] = Value::String(f);
                     }
