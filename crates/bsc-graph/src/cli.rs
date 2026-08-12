@@ -29,7 +29,7 @@ pub const BOOL_FLAGS: [&str; 7] =
     ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 22] = [
+pub const FLAGS: [&str; 24] = [
     "--pretty",
     "--all",
     "--id",
@@ -46,6 +46,8 @@ pub const FLAGS: [&str; 22] = [
     "--viz-code",
     "--src",
     "--folder",
+    "--provides",
+    "--module",
     "--composes",
     "--worthy-only",
     "--apply",
@@ -97,6 +99,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     im["src"] = Value::String(sp);
                 }
                 if let Some(f) = flag_value(&args, "--folder") { im["folder"] = Value::String(f); }
+                // The `@/…` specifier this impl SATISFIES — what a component's import matches on, the
+                // same field the component store already carries. Additive like `--domain`: written only
+                // when supplied, so no existing impl gains one by accident.
+                if let Some(p) = flag_value(&args, "--provides") { im["provides"] = Value::String(p); }
                 // #4136: an ALGORITHM must declare its provenance, or explicitly declare it has none.
                 //
                 // The librarian curated 10 algorithms through this verb with no `--src`, so none could
@@ -213,7 +219,17 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let worthy_only = args.iter().any(|a| a == "--worthy-only");
             // #4161: a FILE target harvests just that module — the route `bsc ui harvest <file>`
             // advertises. It used to fall into the dir walk and return a silent zero.
-            let harvested = if target.is_file() {
+            // `--module` lifts the file as ONE module-shaped candidate instead of one per function —
+            // the shape a runtime loader can vendor, and the only shape that can carry `provides`.
+            // Directory targets keep the function granularity the reusable library is built on.
+            let module_mode = args.iter().any(|a| a == "--module");
+            let harvested = if module_mode {
+                if !target.is_file() {
+                    return Err("--module harvests ONE file; pass a file, not a directory".to_string());
+                }
+                let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                crate::extract::harvest_module(target, &root).into_iter().collect()
+            } else if target.is_file() {
                 crate::extract::harvest_file(target)
             } else {
                 crate::extract::harvest(target)
@@ -240,6 +256,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         "worthy": c.classification.worthy,
                         "score": c.classification.score,
                         "reasons": c.classification.reasons,
+                        // Present only under `--module`: the specifier a component's import matches on.
+                        // Omitted entirely at function granularity, where it would always be null and
+                        // would read as "this impl has no specifier yet" rather than "cannot have one".
+                        "provides": c.provides,
                     })
                 })
                 .collect();
@@ -704,7 +724,7 @@ fn help(prog: &str) -> String {
          READ:\n  \
          {prog} impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
-         {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161)\n  \
+         {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
          {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
   \
@@ -713,7 +733,7 @@ fn help(prog: &str) -> String {
   \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--no-src] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder)\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--no-src] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder)\n  \
          {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n  \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\

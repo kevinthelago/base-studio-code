@@ -45,6 +45,14 @@ pub struct Candidate {
     /// is already testable-by-declaration. The separate `bsc graph tests harvest` stays for the records
     /// curated before this existed; a fresh harvest never needs it.
     pub tests: Vec<CandidateTest>,
+    /// The `@/…` import specifier this candidate SATISFIES — set only by a module-granularity harvest.
+    ///
+    /// A function-granularity candidate has none and never will: half a file satisfies no import. A
+    /// MODULE does, and without it there is nothing for a resolver to match — components resolve by
+    /// `provides`, algorithms compose BY ID, so until an impl carries the specifier a component imports,
+    /// the two graphs cannot link. Derived from `src` at harvest, because backfilling it across a whole
+    /// migration afterwards costs far more than computing it once, here.
+    pub provides: Option<String>,
     /// The reusability classification (#2745 slice 2) — library-worthy vs. project glue, with reasons.
     pub classification: Classification,
 }
@@ -411,6 +419,62 @@ pub fn harvest_file(file: &Path) -> Vec<Candidate> {
     build_candidates(defs, raw, parent)
 }
 
+/// Harvest a file as ONE MODULE-shaped candidate — the record a runtime loader can vendor.
+///
+/// WHY THIS IS NOT [`harvest_file`]. That one lifts every function, which is exactly right for the
+/// reusable library it was built for (#2745): a library wants `quickSort`, not the file it lived in.
+/// It is wrong for turning a logic module INTO a record, because the loader vendors modules — it needs
+/// the `import`s and `export`s intact, and a lifted function body has neither. Measured on
+/// `locationCrumb.ts`: three candidates, none with an `export`.
+///
+/// So this keeps the source VERBATIM and derives the rest from the path:
+///   * `provides` — the `@/…` specifier a component's import will match on;
+///   * `src` — the ROOT-RELATIVE path (not the basename `harvest_file` records), so `folder` derives
+///     and provenance can be traced back;
+///   * `domain` — from `src`, because a domainless impl is invisible in the library (#3607).
+///
+/// `composes` stays empty by construction: a module states its dependencies as IMPORTS, and re-encoding
+/// them as compose edges would give the same fact two representations that can disagree.
+pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
+    let (tech, src_bytes, _tree) = parse(file)?;
+    let code = String::from_utf8_lossy(&src_bytes).into_owned();
+    let src_rel = file
+        .strip_prefix(root)
+        .unwrap_or(file)
+        .to_string_lossy()
+        .replace('\\', "/");
+    let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("module");
+    // `@/x/y` mirrors the app's alias: the tracked path minus its `src/` root and extension.
+    let provides = src_rel
+        .strip_prefix("src/")
+        .map(|rest| format!("@/{}", rest.trim_end_matches(&format!(".{}", ext_of(tech)))));
+    let dir = file.parent().unwrap_or(Path::new("."));
+    // `test_path_for` pairs a FILE NAME against its sibling `*.test.*`, so it must get the basename —
+    // handing it the root-relative path silently finds nothing, which is indistinguishable from
+    // "this module has no test" and would have shipped 150 impls with their coverage quietly dropped.
+    let base = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let tests = bsc_util::test_path_for(dir, base)
+        .and_then(|p| std::fs::read_to_string(&p).ok().map(|c| (p, c)))
+        .map(|(p, contents)| vec![CandidateTest { name: bsc_util::test_display_name(&p, &contents), src: contents }])
+        .unwrap_or_default();
+    let mut c = Candidate {
+        id: format!("{}.{}", kebab(stem), ext_of(tech)),
+        name: stem.to_string(),
+        tech: tech.to_string(),
+        // A module is composed FROM parts rather than being one, so it is never the `primitive` tier.
+        role: "algorithm",
+        composes: Vec::new(),
+        code,
+        domain: domain_of(&src_rel),
+        tests,
+        provides,
+        src: src_rel,
+        classification: Classification::default(),
+    };
+    c.classification = classify(&c);
+    Some(c)
+}
+
 /// Render harvested `defs` + raw call edges into candidates. Shared by the directory [`harvest`] and the
 /// single-file [`harvest_file`] so both resolve `composes`, tests, and classification identically.
 /// `test_root` is the dir colocated tests are resolved against.
@@ -461,6 +525,8 @@ fn build_candidates(defs: Vec<Def>, raw: Vec<(String, String, String)>, test_roo
                 domain: domain_of(&src_rel),
                 tests: test_cache.get(&src_rel).cloned().unwrap_or_default(),
                 src: src_rel,
+                // Function granularity: a fragment of a file satisfies no import specifier.
+                provides: None,
                 classification: Classification::default(),
             };
             c.classification = classify(&c);
@@ -698,6 +764,58 @@ mod tests {
 
     fn fixtures() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures")
+    }
+
+    // ── MODULE GRANULARITY (graph-harvest-module-mode) ───────────────────────────────────────────
+    // The function harvest is right for the reusable LIBRARY and wrong for turning a logic module into
+    // a record: the loader vendors modules, and a lifted function body has no imports and no export.
+
+    #[test]
+    fn harvest_module_lifts_the_whole_file_as_one_candidate() {
+        let file = fixtures().join("sample.ts");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let c = harvest_module(&file, root).expect("sample.ts harvests as a module");
+
+        // ONE candidate, not one per function — the function harvest lifts several from this same file.
+        assert!(harvest_file(&file).len() > 1, "the fixture must hold several functions, or this proves nothing");
+
+        // MODULE-SHAPED: the source verbatim, so `export` survives and the loader can vendor it.
+        assert!(c.code.contains("export function quickSort"), "the module's exports must survive");
+        assert_eq!(c.code, std::fs::read_to_string(&file).unwrap(), "the code is the file, verbatim");
+
+        // Provenance the function harvest does not give: a root-relative src, not the bare basename.
+        assert_eq!(c.src, "tests/fixtures/sample.ts");
+        assert_eq!(c.role, "algorithm");
+        assert!(c.composes.is_empty(), "a module states its deps as imports, not compose edges");
+    }
+
+    #[test]
+    fn harvest_module_derives_the_specifier_it_provides() {
+        // `provides` is what a component's import matches on — without it the two graphs cannot link.
+        // Derived from a `src/`-rooted path, mirroring the app's `@/` alias.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let c = harvest_module(&fixtures().join("sample.ts"), root).unwrap();
+        // This fixture is not under `src/`, so there is no specifier to claim — and inventing one
+        // would be worse than none, since a wrong `provides` is a global override (#3660).
+        assert_eq!(c.provides, None, "a path outside src/ claims no specifier");
+    }
+
+    #[test]
+    fn a_function_granularity_candidate_never_claims_a_specifier() {
+        // Half a file satisfies no import. If these ever gained a `provides`, a resolver would match a
+        // fragment where a module was expected.
+        for c in harvest_file(&fixtures().join("sample.ts")) {
+            assert_eq!(c.provides, None, "{} must not claim a specifier", c.id);
+        }
+    }
+
+    #[test]
+    fn harvest_module_pairs_the_colocated_test() {
+        // `test_path_for` pairs a FILE NAME; handing it a root-relative path finds nothing silently,
+        // which reads as "this module has no test" and would drop coverage across a whole migration.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let c = harvest_module(&fixtures().join("sample.ts"), root).unwrap();
+        assert_eq!(c.tests.len(), 1, "sample.test.ts sits beside sample.ts and must be carried");
     }
 
     #[test]
