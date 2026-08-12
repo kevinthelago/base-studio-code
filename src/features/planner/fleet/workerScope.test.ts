@@ -70,19 +70,26 @@ describe("buildWorkerScope (#844)", () => {
     expect(buildWorkerScope(stream(), [])).not.toContain("Dependencies (locked");
   });
 
-  it("tells the worker the commons are the director's and to request changes (#851)", () => {
+  it("attributes the commons to the LANE, not to the director (#funnel-commons-and-integration-streams)", () => {
     const md = buildWorkerScope(stream());
-    expect(md).toContain("Repo-root commons are the director's, not yours");
+    expect(md).toContain("Repo-root commons belong to the `commons` lane, not to you");
+    // The request path is unchanged — the worker still asks the DIRECTOR and parks. What changed is
+    // what happens next: the director routes rather than applying, so the worker must not expect the
+    // director's own edit and must not conclude it can make the edit itself.
     expect(md).toContain("`bsc-ask`");
+    expect(md).toMatch(/routes the change to the commons\s*\n?\s*lane/);
+    expect(md).not.toContain("commons are the director's");
   });
 
   it("surfaces the commons-landed gate as a note, NOT as a peer contract dependency (#851)", () => {
     const md = buildWorkerScope(stream({ dependsOn: ["api", "commons"] }));
-    // The contracts line lists real seams only — the commons sentinel is filtered out of it.
+    // The contracts line lists real seams only — the commons lane is filtered out of it. It IS a real
+    // stream now rather than a sentinel, but it is a Phase-0 gate, not a peer whose interface this
+    // worker builds against, so it still does not belong on the contracts line.
     expect(md).toMatch(/build against the contracts of:\*\* api\b/i);
     expect(md).not.toMatch(/contracts of:\*\* [^\n]*commons/i);
-    // …and the commons note acknowledges it's already scaffolded.
-    expect(md).toContain("already scaffolded on develop");
+    // …and the commons note acknowledges they are already landed.
+    expect(md).toContain("already scaffolded and landed");
   });
 });
 
