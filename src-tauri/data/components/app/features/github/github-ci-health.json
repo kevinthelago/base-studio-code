@@ -7,12 +7,12 @@
   "composes": [
     "Box",
     "Card",
-    "CardStates",
     "Grid",
     "Row",
     "Stack",
     "Text"
   ],
   "src": "src/features/github/summary/CIHealthCard.tsx",
-  "folder": "features/github"
+  "folder": "features/github",
+  "provides": "@/components/github-ci-health"
 }

@@ -10,58 +10,58 @@
   "composes": [],
   "props": [
     {
+      "desc": "",
       "name": "value",
-      "type": "T",
       "req": true,
-      "desc": ""
+      "type": "T"
     },
     {
+      "desc": "",
       "name": "onChange",
-      "type": "(value: T) => void",
       "req": true,
-      "desc": ""
+      "type": "(value: T) => void"
     },
     {
+      "desc": "",
       "name": "options",
-      "type": "DropdownOption<T>[]",
       "req": true,
-      "desc": ""
+      "type": "DropdownOption<T>[]"
     },
     {
+      "desc": "",
       "name": "placeholder",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "variant",
-      "type": "\"field\" | \"ghost\"",
       "req": false,
-      "desc": ""
+      "type": "\"field\" | \"ghost\""
     },
     {
+      "desc": "",
       "name": "size",
-      "type": "\"sm\" | \"md\"",
       "req": false,
-      "desc": ""
+      "type": "\"sm\" | \"md\""
     },
     {
+      "desc": "",
       "name": "disabled",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "menuMinWidth",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     }
   ]
 }

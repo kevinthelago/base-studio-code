@@ -15,166 +15,166 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "isExisting",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "activeProjectNumber",
-      "type": "number | string",
       "req": true,
-      "desc": ""
+      "type": "number | string"
     },
     {
+      "desc": "",
       "name": "activeProjectName",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "onBack",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "titleEdit",
-      "type": "string | null",
       "req": true,
-      "desc": ""
+      "type": "string | null"
     },
     {
+      "desc": "",
       "name": "setTitleEdit",
-      "type": "(v: string | null) => void",
       "req": true,
-      "desc": ""
+      "type": "(v: string | null) => void"
     },
     {
+      "desc": "",
       "name": "renameErr",
-      "type": "string | null",
       "req": true,
-      "desc": ""
+      "type": "string | null"
     },
     {
+      "desc": "",
       "name": "setRenameErr",
-      "type": "(v: string | null) => void",
       "req": true,
-      "desc": ""
+      "type": "(v: string | null) => void"
     },
     {
+      "desc": "",
       "name": "commitRename",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "planningTitle",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "setPlanningTitle",
-      "type": "(v: string) => void",
       "req": true,
-      "desc": ""
+      "type": "(v: string) => void"
     },
     {
+      "desc": "",
       "name": "draftTitleErr",
-      "type": "string | null",
       "req": true,
-      "desc": ""
+      "type": "string | null"
     },
     {
+      "desc": "",
       "name": "setDraftTitleErr",
-      "type": "(v: string | null) => void",
       "req": true,
-      "desc": ""
+      "type": "(v: string | null) => void"
     },
     {
+      "desc": "",
       "name": "commitDraftTitle",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "autopilotRunning",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "autopilotProgressPct",
-      "type": "number",
       "req": true,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "handleRestart",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "restarting",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "onClearPlan",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "published",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "hasRepos",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "hasFleet",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "triaging",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "planReady",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "launchTriage",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "triaged",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "onGenerateBlueprint",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     }
   ],
   "srcRetired": "src/features/planner/session/PlanningHeader.tsx"

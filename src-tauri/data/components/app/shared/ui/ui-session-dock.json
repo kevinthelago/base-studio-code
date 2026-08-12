@@ -7,47 +7,52 @@
   "srcText": "// SessionDock, AS GRAPH SOURCE (#3684, epic #3604) — a shared/ui overlay/layout container authored as DATA.\n// `provides: \"@/shared/ui/layouts/SessionDock\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). CTX-free, so a fresh compile has no identity split. Transcribed verbatim.\n// SessionDock (#2808) — the shared docked-session panel: a title/subtitle head over the xterm host\r\n// element. The three graph-view session terminals — DesignerTerminal (designs), ArchitectTerminal\r\n// (teams), LibrarianTerminal (algorithms) — were byte-identical shells differing only in a className\r\n// prefix, testid, the labels, and the launch hook; they now all render this. Each keeps its own\r\n// `use*Terminal` hook (it owns the PTY lifecycle) and passes the resulting `containerRef` in.\r\nimport type { ReactNode, RefObject } from \"react\";\r\nimport { Box } from \"@/shared/ui/layout/Box\";\r\nimport { Text } from \"@/shared/ui/typography/Text\";\r\nimport { Eyebrow } from \"@/shared/ui/typography/Eyebrow\";\r\n\r\nexport interface SessionDockProps {\r\n  /** The xterm host element ref, for a caller that mounts its OWN terminal onto a real DOM node.\r\n   *  Mutually exclusive with `children` — pass exactly one. */\r\n  containerRef?: RefObject<HTMLDivElement | null>;\r\n  /** Body rendered in place of the ref'd host div. The studio docks (#3357) pass a <TerminalSlot>: their\r\n   *  terminal is owned by the app-level TerminalHost and re-parented INTO the slot, so there is no\r\n   *  dock-owned xterm to attach a ref to. Wins over `containerRef` when both are given. */\r\n  children?: ReactNode;\r\n  /** The head's eyebrow title (e.g. \"◆ Team architect · teams & personas via bsc\"). */\r\n  title: ReactNode;\r\n  /** The head's right-aligned dim mono subtitle (e.g. \"teams-studio · restricted\"). */\r\n  subtitle?: ReactNode;\r\n  /** Panel height in px — the caller owns it (a `.resize-y` handle above the dock). */\r\n  height?: number;\r\n  /** data-testid for the panel (e.g. \"architect-terminal\"). */\r\n  testid?: string;\r\n}\r\n\r\n/** The shared docked-session terminal panel. See {@link SessionDockProps}. */\r\nexport function SessionDock({ containerRef, children, title, subtitle, height, testid }: SessionDockProps) {\r\n  return (\r\n    <Box className=\"session-dock\" data-testid={testid} style={height !== undefined ? { height } : undefined}>\r\n      <Box className=\"session-dock-head\">\r\n        <Eyebrow size={9.5}>{title}</Eyebrow>\r\n        {subtitle != null && <Text mono size=\"xxs\" tone=\"dim\">{subtitle}</Text>}\r\n      </Box>\r\n      {children != null ? (\r\n        <Box className=\"session-dock-host session-dock-slot\">{children}</Box>\r\n      ) : (\r\n        /* xterm mounts onto this real DOM node via ref (shared/ui primitives aren't forwardRef). */\r\n        <div ref={containerRef} className=\"session-dock-host\" />\r\n      )}\r\n    </Box>\r\n  );\r\n}\r\n",
   "composes": [
     "Box",
-    "Eyebrow",
     "Text"
   ],
   "src": "src/shared/ui/layouts/SessionDock.tsx",
   "props": [
     {
+      "desc": "",
       "name": "containerRef",
-      "type": "RefObject<HTMLDivElement | null>",
       "req": false,
-      "desc": ""
+      "type": "RefObject<HTMLDivElement | null>"
     },
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "title",
-      "type": "ReactNode",
       "req": true,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "subtitle",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "height",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "testid",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     }
   ],
-  "folder": "shared/ui/layouts"
+  "folder": "shared/ui/layouts",
+  "tests": [
+    {
+      "name": "SessionDock (#2808)",
+      "src": "import { describe, it, expect } from \"vitest\";\r\nimport { useRef } from \"react\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { SessionDock } from \"./SessionDock\";\r\n\r\nfunction Harness({ height, testid = \"dock\", subtitle }: { height?: number; testid?: string; subtitle?: string }) {\r\n  const ref = useRef<HTMLDivElement>(null);\r\n  return <SessionDock containerRef={ref} title=\"◆ Session · via bsc\" subtitle={subtitle} height={height} testid={testid} />;\r\n}\r\n\r\ndescribe(\"SessionDock (#2808)\", () => {\r\n  it(\"renders the title, subtitle, and the testid'd panel with the host div\", () => {\r\n    render(<Harness subtitle=\"studio · restricted\" testid=\"architect-terminal\" />);\r\n    expect(screen.getByText(\"◆ Session · via bsc\")).toBeTruthy();\r\n    expect(screen.getByText(\"studio · restricted\")).toBeTruthy();\r\n    const panel = screen.getByTestId(\"architect-terminal\");\r\n    expect(panel.querySelector(\".session-dock-host\")).not.toBeNull();\r\n  });\r\n\r\n  it(\"renders CHILDREN in place of the ref'd host div (#3357 — the studio docks pass a TerminalSlot)\", () => {\r\n    // The studio docks no longer own an xterm: their terminal is the app-level TerminalHost's and is\r\n    // re-parented INTO a <TerminalSlot>, so there is no ref to attach. The host box must still be there\r\n    // (and flag itself as the slot variant, which makes it a flex column so the slot can size itself).\r\n    render(<SessionDock title=\"◆ Session\" testid=\"dock\"><span data-testid=\"slot\" /></SessionDock>);\r\n    const host = screen.getByTestId(\"dock\").querySelector(\".session-dock-host\");\r\n    expect(host).not.toBeNull();\r\n    expect(host!.classList.contains(\"session-dock-slot\")).toBe(true);\r\n    expect(host!.querySelector(\"[data-testid='slot']\")).not.toBeNull();\r\n  });\r\n\r\n  it(\"applies the caller-owned height and omits the subtitle when absent\", () => {\r\n    render(<Harness height={300} />);\r\n    const panel = screen.getByTestId(\"dock\");\r\n    expect(panel.style.height).toBe(\"300px\");\r\n    // only the title line renders — no subtitle Text node\r\n    expect(panel.querySelectorAll(\".session-dock-head *\").length).toBeGreaterThanOrEqual(1);\r\n  });\r\n});\r\n"
+    }
+  ]
 }

@@ -9,5 +9,6 @@
     "Box",
     "Grid",
     "Text"
-  ]
+  ],
+  "folder": "app/console/panes/views"
 }

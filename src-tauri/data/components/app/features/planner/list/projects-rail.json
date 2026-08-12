@@ -17,70 +17,70 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "query",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "statusSel",
-      "type": "Set<ProjectStatus>",
       "req": true,
-      "desc": ""
+      "type": "Set<ProjectStatus>"
     },
     {
+      "desc": "",
       "name": "toggleStatus",
-      "type": "(s: ProjectStatus) => void",
       "req": true,
-      "desc": ""
+      "type": "(s: ProjectStatus) => void"
     },
     {
+      "desc": "",
       "name": "typeSel",
-      "type": "Set<AppType>",
       "req": true,
-      "desc": ""
+      "type": "Set<AppType>"
     },
     {
+      "desc": "",
       "name": "toggleType",
-      "type": "(t: AppType) => void",
       "req": true,
-      "desc": ""
+      "type": "(t: AppType) => void"
     },
     {
+      "desc": "",
       "name": "counts",
-      "type": "Record<ProjectStatus, number>",
       "req": true,
-      "desc": ""
+      "type": "Record<ProjectStatus, number>"
     },
     {
+      "desc": "",
       "name": "typeCountsByCat",
-      "type": "Record<AppType, number>",
       "req": true,
-      "desc": ""
+      "type": "Record<AppType, number>"
     },
     {
+      "desc": "",
       "name": "total",
-      "type": "number",
       "req": true,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "onClearStatus",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "onClearType",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "onClearFilters",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     }
   ]
 }

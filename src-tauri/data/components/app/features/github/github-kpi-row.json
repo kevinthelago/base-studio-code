@@ -9,5 +9,21 @@
     "Box"
   ],
   "provides": "@/components/github-kpi-row",
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `KpiRow` defaults `kpis`, `runs`, `loading` and adds loading/error states, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `KpiRow` holds 5 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 5 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate."
+  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `KpiRow` defaults `kpis`, `runs`, `loading` and adds loading/error states, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `KpiRow` holds 5 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 5 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
+  "folder": "features/github",
+  "whenUse": [
+    "A 6-up KPI stat grid: commits, PRs merged, net lines, CI pass rate, review latency, contributors."
+  ],
+  "whenNot": [
+    "A single stat — use StatCard directly."
+  ],
+  "tags": [
+    "github",
+    "kpi",
+    "stat-grid"
+  ],
+  "variants": [
+    "default",
+    "loading"
+  ]
 }

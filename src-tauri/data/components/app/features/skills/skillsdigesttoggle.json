@@ -8,5 +8,6 @@
   "composes": [
     "Button",
     "Text"
-  ]
+  ],
+  "folder": "features/skills"
 }

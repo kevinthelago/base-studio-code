@@ -8,14 +8,13 @@
     "Box",
     "Button",
     "Card",
-    "Charts",
     "Checkbox",
-    "DataTableRow",
     "Grid",
     "Row",
     "Text",
     "Toggle"
   ],
   "src": "src/features/skills/SkillsViews.tsx",
-  "folder": "features/skills"
+  "folder": "features/skills",
+  "provides": "@/components/skills-views"
 }

@@ -8,15 +8,13 @@
     "Box",
     "Button",
     "Card",
-    "CardStates",
-    "Charts",
     "Grid",
     "Row",
-    "Skeleton",
     "Spacer",
     "StatusDot",
     "Text"
   ],
   "src": "src/features/github/summary/ReposGrid.tsx",
-  "folder": "features/github"
+  "folder": "features/github",
+  "provides": "@/components/github-repos-grid"
 }

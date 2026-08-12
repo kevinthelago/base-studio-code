@@ -15,34 +15,34 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "page",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "title",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "hint",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "retryLabel",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     }
   ]
 }

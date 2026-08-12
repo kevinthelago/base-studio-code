@@ -8,9 +8,9 @@
     "Box",
     "Card",
     "Row",
-    "Skeleton",
     "Text"
   ],
   "src": "src/features/github/summary/ActivityHeatmap.tsx",
-  "folder": "features/github"
+  "folder": "features/github",
+  "provides": "@/components/github-activity-heatmap"
 }

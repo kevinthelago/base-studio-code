@@ -16,5 +16,6 @@
     "Box",
     "Spacer",
     "Text"
-  ]
+  ],
+  "folder": "features/planner/list"
 }

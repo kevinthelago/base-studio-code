@@ -12,7 +12,9 @@
     "Eyebrow",
     "Row",
     "Stack",
-    "Text"
+    "Text",
+    "VizPreview",
+    "VizStage"
   ],
   "props": []
 }

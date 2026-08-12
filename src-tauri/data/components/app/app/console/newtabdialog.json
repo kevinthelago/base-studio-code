@@ -11,5 +11,6 @@
     "Box",
     "Row",
     "Grid"
-  ]
+  ],
+  "folder": "app/console"
 }

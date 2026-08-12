@@ -9,35 +9,53 @@
   "src": "src/shared/ui/controls/SegmentedControl.tsx",
   "props": [
     {
+      "desc": "",
       "name": "options",
-      "type": "SegOption[]",
       "req": true,
-      "desc": ""
+      "type": "SegOption[]"
     },
     {
+      "desc": "",
       "name": "variant",
-      "type": "\"padded\" | \"joined\"",
       "req": false,
-      "desc": ""
+      "type": "\"padded\" | \"joined\""
     },
     {
+      "desc": "",
       "name": "size",
-      "type": "\"sm\" | \"md\"",
       "req": false,
-      "desc": ""
+      "type": "\"sm\" | \"md\""
     },
     {
+      "desc": "",
       "name": "label",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
+    },
+    {
+      "desc": "Render a skeleton pill group instead of the real options.",
+      "name": "loading",
+      "req": false,
+      "type": "boolean"
+    },
+    {
+      "desc": "Render an error note instead of the real options — a message string, or true for a generic one. Takes priority over loading.",
+      "name": "error",
+      "req": false,
+      "type": "string | boolean"
     }
   ],
-  "folder": "shared/ui/controls"
+  "folder": "shared/ui/controls",
+  "tests": [
+    {
+      "name": "SegmentedControl",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { SegmentedControl } from \"./SegmentedControl\";\r\n\r\ndescribe(\"SegmentedControl\", () => {\r\n  it(\"renders options, marks the active one, and fires onClick\", () => {\r\n    const pick = vi.fn();\r\n    render(\r\n      <SegmentedControl\r\n        label=\"scope\"\r\n        options={[\r\n          { label: \"global\", on: true, onClick: () => pick(\"global\") },\r\n          { label: \"project\", on: false, onClick: () => pick(\"project\") },\r\n        ]}\r\n      />,\r\n    );\r\n    expect(screen.getByText(\"scope\")).toBeInTheDocument();\r\n    const global = screen.getByText(\"global\");\r\n    const project = screen.getByText(\"project\");\r\n    // Check the `on` class as a token — a substring match would falsely hit the \"on\" inside\r\n    // the default \"tone-accent\" class (#1874 control-vocab migration).\r\n    expect(global.classList.contains(\"on\")).toBe(true);\r\n    expect(project.classList.contains(\"on\")).toBe(false);\r\n    fireEvent.click(project);\r\n    expect(pick).toHaveBeenCalledWith(\"project\");\r\n  });\r\n\r\n  it(\"applies variant, size, tone, and dot\", () => {\r\n    const { container } = render(\r\n      <SegmentedControl\r\n        variant=\"joined\"\r\n        size=\"md\"\r\n        options={[\r\n          { label: \"deny\", on: true, onClick: () => {}, tone: \"deny\", dot: true },\r\n          { label: \"allow\", on: false, onClick: () => {}, tone: \"allow\" },\r\n        ]}\r\n      />,\r\n    );\r\n    expect(container.querySelector(\".seg-grp.joined.size-md\")).not.toBeNull();\r\n    const deny = screen.getByText(\"deny\").closest(\"button\") as HTMLElement;\r\n    expect(deny.className).toContain(\"tone-deny\");\r\n    expect(deny.className).toContain(\"on\");\r\n    expect(deny.querySelector(\".seg-dot\")).not.toBeNull();\r\n  });\r\n});\r\n"
+    }
+  ]
 }

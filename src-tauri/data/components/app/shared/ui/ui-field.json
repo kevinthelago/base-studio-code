@@ -11,41 +11,47 @@
   "src": "src/shared/ui/controls/Field.tsx",
   "props": [
     {
+      "desc": "",
       "name": "label",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "hint",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "trailing",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     },
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": true,
-      "desc": ""
+      "type": "ReactNode"
     }
   ],
-  "folder": "shared/ui/controls"
+  "folder": "shared/ui/controls",
+  "tests": [
+    {
+      "name": "Field family",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { Field, TextField, TextArea, SelectField } from \"./Field\";\r\n\r\ndescribe(\"Field family\", () => {\r\n  it(\"Field renders the label, hint, and children in the .field stack\", () => {\r\n    const { container } = render(<Field label=\"Name\" hint=\"one line\"><input /></Field>);\r\n    expect(container.querySelector(\".field\")).toBeTruthy();\r\n    expect(screen.getByText(\"Name\").tagName).toBe(\"LABEL\");\r\n    expect(screen.getByText(\"one line\").className).toBe(\"hint\");\r\n  });\r\n\r\n  it(\"Field merges a wrapper className and style onto the .field div\", () => {\r\n    const { container } = render(<Field className=\"extra\" style={{ marginBottom: 18 }}><input /></Field>);\r\n    const field = container.querySelector(\".field\") as HTMLDivElement;\r\n    expect(field.className).toBe(\"field extra\");\r\n    expect(field.style.marginBottom).toBe(\"18px\");\r\n  });\r\n\r\n  it(\"TextField wires an .input and reports string changes\", () => {\r\n    const onChange = vi.fn();\r\n    render(<TextField label=\"Repo\" value=\"abc\" onChange={onChange} placeholder=\"…\" />);\r\n    const input = screen.getByPlaceholderText(\"…\") as HTMLInputElement;\r\n    expect(input.className).toBe(\"input\");\r\n    expect(input.value).toBe(\"abc\");\r\n    fireEvent.change(input, { target: { value: \"xyz\" } });\r\n    expect(onChange).toHaveBeenCalledWith(\"xyz\");\r\n  });\r\n\r\n  it(\"TextArea wires an .input <textarea> in the .field stack and reports string changes\", () => {\r\n    const onChange = vi.fn();\r\n    const { container } = render(<TextArea label=\"Prompt\" value=\"draft\" onChange={onChange} placeholder=\"steps…\" />);\r\n    const ta = screen.getByPlaceholderText(\"steps…\") as HTMLTextAreaElement;\r\n    expect(ta.tagName).toBe(\"TEXTAREA\");\r\n    expect(ta.className).toBe(\"input\");\r\n    expect(ta.value).toBe(\"draft\");\r\n    // label wiring: the label renders inside the same .field stack as the textarea\r\n    const field = container.querySelector(\".field\") as HTMLDivElement;\r\n    expect(screen.getByText(\"Prompt\").tagName).toBe(\"LABEL\");\r\n    expect(field.contains(screen.getByText(\"Prompt\"))).toBe(true);\r\n    expect(field.contains(ta)).toBe(true);\r\n    fireEvent.change(ta, { target: { value: \"draft + more\" } });\r\n    expect(onChange).toHaveBeenCalledWith(\"draft + more\");\r\n  });\r\n\r\n  it(\"TextArea merges an extra className and passes native textarea attrs through\", () => {\r\n    render(<TextArea value=\"\" onChange={() => {}} className=\"ta\" spellCheck={false} data-testid=\"ta\" />);\r\n    const ta = screen.getByTestId(\"ta\") as HTMLTextAreaElement;\r\n    expect(ta.className).toBe(\"input ta\");\r\n    // Assert the attribute, not the `.spellcheck` property — jsdom doesn't implement that IDL\r\n    // reflection on textarea, so the property reads undefined even when the attr passed through.\r\n    expect(ta.getAttribute(\"spellcheck\")).toBe(\"false\");\r\n  });\r\n\r\n  it(\"TextArea loading renders the skeleton instead of the textarea, keeping the label\", () => {\r\n    const { container } = render(<TextArea label=\"Prompt\" value=\"x\" onChange={() => {}} loading />);\r\n    expect(container.querySelector(\"textarea\")).toBeNull();\r\n    expect(screen.getByText(\"Prompt\").tagName).toBe(\"LABEL\");\r\n  });\r\n\r\n  it(\"SelectField renders an .input <select> over the given options\", () => {\r\n    const onChange = vi.fn();\r\n    render(\r\n      <SelectField label=\"Mode\" value=\"b\" onChange={onChange}>\r\n        <option value=\"a\">A</option>\r\n        <option value=\"b\">B</option>\r\n      </SelectField>,\r\n    );\r\n    const select = screen.getByRole(\"combobox\") as HTMLSelectElement;\r\n    expect(select.className).toBe(\"input\");\r\n    expect(select.value).toBe(\"b\");\r\n    fireEvent.change(select, { target: { value: \"a\" } });\r\n    expect(onChange).toHaveBeenCalledWith(\"a\");\r\n  });\r\n\r\n  it(\"SelectField passes native select attrs (style, title) through to the <select>\", () => {\r\n    render(\r\n      <SelectField value=\"a\" onChange={() => {}} style={{ width: 240 }} title=\"pick\">\r\n        <option value=\"a\">A</option>\r\n      </SelectField>,\r\n    );\r\n    const select = screen.getByRole(\"combobox\") as HTMLSelectElement;\r\n    expect(select.style.width).toBe(\"240px\");\r\n    expect(select.title).toBe(\"pick\");\r\n  });\r\n});\r\n"
+    }
+  ]
 }

@@ -8,5 +8,6 @@
   "composes": [
     "Stack",
     "Text"
-  ]
+  ],
+  "folder": "app"
 }

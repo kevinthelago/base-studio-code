@@ -16,5 +16,16 @@
       "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { TeamsContextMenu } from \"./TeamsContextMenu\";\r\n\r\ndescribe(\"TeamsContextMenu (#2385)\", () => {\r\n  it(\"fires delete + close when the item is clicked\", () => {\r\n    const onDelete = vi.fn();\r\n    const onClose = vi.fn();\r\n    render(<TeamsContextMenu x={10} y={20} deleteLabel=\"Delete position\" onDelete={onDelete} onClose={onClose} />);\r\n    fireEvent.click(screen.getByText(\"Delete position\"));\r\n    expect(onDelete).toHaveBeenCalledOnce();\r\n    expect(onClose).toHaveBeenCalledOnce();\r\n  });\r\n\r\n  it(\"closes on Escape\", () => {\r\n    const onClose = vi.fn();\r\n    render(<TeamsContextMenu x={0} y={0} deleteLabel=\"Delete relationship\" onDelete={() => {}} onClose={onClose} />);\r\n    fireEvent.keyDown(window, { key: \"Escape\" });\r\n    expect(onClose).toHaveBeenCalledOnce();\r\n  });\r\n\r\n  it(\"closes on a backdrop click (without deleting)\", () => {\r\n    const onDelete = vi.fn();\r\n    const onClose = vi.fn();\r\n    const { getByRole } = render(<TeamsContextMenu x={0} y={0} deleteLabel=\"Delete position\" onDelete={onDelete} onClose={onClose} />);\r\n    // The menu item is inside role=menu; the backdrop is the fixed sibling — click outside the menu.\r\n    fireEvent.click(getByRole(\"menu\").previousSibling as Element);\r\n    expect(onClose).toHaveBeenCalledOnce();\r\n    expect(onDelete).not.toHaveBeenCalled();\r\n  });\r\n});\r\n"
     }
   ],
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `TeamsContextMenu` defaults `x`, `y`, `deleteLabel`, `onDelete`, `onClose`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `TeamsContextMenu` holds 7 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 7 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate."
+  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `TeamsContextMenu` defaults `x`, `y`, `deleteLabel`, `onDelete`, `onClose`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `TeamsContextMenu` holds 7 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 7 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
+  "folder": "features/teams",
+  "whenUse": [
+    "A right-click context menu anchored at a cursor position - a full-screen dismiss backdrop plus a single danger action row."
+  ],
+  "whenNot": [
+    "A dropdown anchored to a trigger element - use Dropdown."
+  ],
+  "tags": [
+    "context-menu",
+    "overlay"
+  ]
 }

@@ -10,82 +10,82 @@
   "composes": [],
   "props": [
     {
+      "desc": "",
       "name": "lead",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "title",
-      "type": "ReactNode",
       "req": true,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "badge",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "titleAside",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "subtitle",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "body",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "trailing",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "selected",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "off",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "variant",
-      "type": "\"card\" | \"grouped\"",
       "req": false,
-      "desc": ""
+      "type": "\"card\" | \"grouped\""
     },
     {
+      "desc": "",
       "name": "accent",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "onClick",
-      "type": "() => void",
       "req": false,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     }
   ]
 }

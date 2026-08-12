@@ -12,46 +12,46 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "triageError",
-      "type": "string | null",
       "req": true,
-      "desc": ""
+      "type": "string | null"
     },
     {
+      "desc": "",
       "name": "triageNote",
-      "type": "string | null",
       "req": true,
-      "desc": ""
+      "type": "string | null"
     },
     {
+      "desc": "",
       "name": "featureCycle",
-      "type": "string[]",
       "req": true,
-      "desc": ""
+      "type": "string[]"
     },
     {
+      "desc": "",
       "name": "recoverable",
-      "type": "number",
       "req": true,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "recovering",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "onRecover",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "publishRepos",
-      "type": "string[]",
       "req": true,
-      "desc": ""
+      "type": "string[]"
     }
   ],
   "srcRetired": "src/features/planner/session/PlanningNotices.tsx"

@@ -8,5 +8,6 @@
   "composes": [
     "EmptyState",
     "Button"
-  ]
+  ],
+  "folder": "app/console"
 }

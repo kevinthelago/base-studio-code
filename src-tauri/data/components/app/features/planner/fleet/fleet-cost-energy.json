@@ -7,7 +7,6 @@
   "composes": [
     "Box",
     "Card",
-    "Charts",
     "EmptyState",
     "Grid",
     "Row",
@@ -15,5 +14,6 @@
     "Text"
   ],
   "folder": "features/planner/fleet",
-  "srcRetired": "src/features/planner/fleet/CostEnergy.tsx"
+  "srcRetired": "src/features/planner/fleet/CostEnergy.tsx",
+  "provides": "@/components/fleet-cost-energy"
 }

@@ -12,5 +12,6 @@
     "Text",
     "Code"
   ],
-  "srcDivergence": "Deliberate, not stale — PARAMETERIZATION via prop-aliasing, the widest use of the pattern in the library. The file takes eleven REQUIRED props (allow/setAllow, deny/setDeny, allowInput/setAllowInput, denyInput/setDenyInput, applyPreset, addToAllow, addToDeny) from its parent card. A preview mounts the record with none of them, so the record renames each to a *Prop alias and falls back to local state, which is the same trick the smaller cards use with a single useState — just eleven times over. That aliasing is what makes the signature and every consuming expression differ from the file while the rendered panel is unchanged. Hand-reviewed for record-src-reconcile."
+  "srcDivergence": "Deliberate, not stale — PARAMETERIZATION via prop-aliasing, the widest use of the pattern in the library. The file takes eleven REQUIRED props (allow/setAllow, deny/setDeny, allowInput/setAllowInput, denyInput/setDenyInput, applyPreset, addToAllow, addToDeny) from its parent card. A preview mounts the record with none of them, so the record renames each to a *Prop alias and falls back to local state, which is the same trick the smaller cards use with a single useState — just eleven times over. That aliasing is what makes the signature and every consuming expression differ from the file while the rendered panel is unchanged. Hand-reviewed for record-src-reconcile.",
+  "folder": "settings/cards"
 }

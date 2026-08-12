@@ -8,5 +8,6 @@
   "composes": [
     "Box",
     "Text"
-  ]
+  ],
+  "folder": "features/algorithms/viz/renderers"
 }

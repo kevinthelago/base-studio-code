@@ -9,71 +9,77 @@
   "src": "src/shared/ui/feedback/EmptyState.tsx",
   "props": [
     {
+      "desc": "",
       "name": "icon",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "iconVariant",
-      "type": "\"solid\" | \"dashed\"",
       "req": false,
-      "desc": ""
+      "type": "\"solid\" | \"dashed\""
     },
     {
+      "desc": "",
       "name": "title",
-      "type": "ReactNode",
       "req": true,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "description",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "actions",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "extra",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "variant",
-      "type": "\"inline\" | \"card\"",
       "req": false,
-      "desc": ""
+      "type": "\"inline\" | \"card\""
     },
     {
+      "desc": "",
       "name": "align",
-      "type": "\"center\" | \"left\"",
       "req": false,
-      "desc": ""
+      "type": "\"center\" | \"left\""
     },
     {
+      "desc": "",
       "name": "size",
-      "type": "\"sm\" | \"md\"",
       "req": false,
-      "desc": ""
+      "type": "\"sm\" | \"md\""
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     }
   ],
-  "folder": "shared/ui/feedback"
+  "folder": "shared/ui/feedback",
+  "tests": [
+    {
+      "name": "EmptyState",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { EmptyState } from \"./EmptyState\";\r\n\r\ndescribe(\"EmptyState\", () => {\r\n  it(\"renders title, description, icon, and fires action clicks\", () => {\r\n    const onClick = vi.fn();\r\n    render(\r\n      <EmptyState\r\n        icon=\"⌕\"\r\n        title=\"No skills match\"\r\n        description=\"Nothing matches the active filters.\"\r\n        actions={<button onClick={onClick}>Clear filters</button>}\r\n      />,\r\n    );\r\n    expect(screen.getByRole(\"heading\", { name: \"No skills match\" })).toBeInTheDocument();\r\n    expect(screen.getByText(\"Nothing matches the active filters.\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"⌕\")).toBeInTheDocument();\r\n    fireEvent.click(screen.getByRole(\"button\", { name: \"Clear filters\" }));\r\n    expect(onClick).toHaveBeenCalledOnce();\r\n  });\r\n\r\n  it(\"omits the icon, description, and actions when not provided\", () => {\r\n    render(<EmptyState title=\"No automations yet\" />);\r\n    expect(screen.getByRole(\"heading\", { name: \"No automations yet\" })).toBeInTheDocument();\r\n    expect(screen.queryByRole(\"button\")).not.toBeInTheDocument();\r\n  });\r\n\r\n  it(\"renders extra content (e.g. a scopes box) below the body\", () => {\r\n    render(\r\n      <EmptyState\r\n        variant=\"card\"\r\n        title=\"GitHub not connected\"\r\n        extra={<div data-testid=\"scopes\">repo · project</div>}\r\n      />,\r\n    );\r\n    expect(screen.getByTestId(\"scopes\")).toBeInTheDocument();\r\n  });\r\n});\r\n"
+    }
+  ]
 }

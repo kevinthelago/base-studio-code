@@ -14,46 +14,46 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "label",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "count",
-      "type": "number",
       "req": true,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "open",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "onToggle",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "ungrouped",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "path",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     }
   ]
 }

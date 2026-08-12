@@ -12,41 +12,47 @@
   "src": "src/shared/ui/layouts/RailSection.tsx",
   "props": [
     {
+      "desc": "",
       "name": "label",
-      "type": "ReactNode",
       "req": true,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "count",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "open",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "onToggle",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "action",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": true,
-      "desc": ""
+      "type": "ReactNode"
     }
   ],
-  "folder": "shared/ui/layouts"
+  "folder": "shared/ui/layouts",
+  "tests": [
+    {
+      "name": "RailSection (#2797)",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { renderHook, act } from \"@testing-library/react\";\r\nimport { RailSection } from \"./RailSection\";\r\nimport { useRailSections } from \"@/shared/hooks/useRailSections\";\r\n\r\ndescribe(\"RailSection (#2797)\", () => {\r\n  it(\"shows its rows only when open\", () => {\r\n    const { rerender } = render(\r\n      <RailSection label=\"Structures\" count={2} open onToggle={() => {}}>\r\n        <div>Stack</div>\r\n      </RailSection>,\r\n    );\r\n    expect(screen.getByText(\"Structures\")).toBeTruthy();\r\n    expect(screen.getByText(\"2\")).toBeTruthy();\r\n    expect(screen.getByText(\"Stack\")).toBeTruthy();\r\n    rerender(\r\n      <RailSection label=\"Structures\" count={2} open={false} onToggle={() => {}}>\r\n        <div>Stack</div>\r\n      </RailSection>,\r\n    );\r\n    expect(screen.queryByText(\"Stack\")).toBeNull(); // collapsed → rows hidden\r\n  });\r\n\r\n  it(\"fires onToggle when the header is clicked\", () => {\r\n    const onToggle = vi.fn();\r\n    render(<RailSection label=\"Algorithms\" open onToggle={onToggle}><div>row</div></RailSection>);\r\n    fireEvent.click(screen.getByText(\"Algorithms\"));\r\n    expect(onToggle).toHaveBeenCalledTimes(1);\r\n  });\r\n});\r\n\r\ndescribe(\"useRailSections (#2797)\", () => {\r\n  it(\"defaults sections open and flips them on toggle\", () => {\r\n    const { result } = renderHook(() => useRailSections());\r\n    expect(result.current.isOpen(\"a\")).toBe(true); // default open\r\n    act(() => result.current.toggle(\"a\"));\r\n    expect(result.current.isOpen(\"a\")).toBe(false);\r\n    expect(result.current.isOpen(\"b\")).toBe(true); // untouched keys stay at the default\r\n    act(() => result.current.toggle(\"a\"));\r\n    expect(result.current.isOpen(\"a\")).toBe(true);\r\n  });\r\n\r\n  it(\"honors a default-closed start\", () => {\r\n    const { result } = renderHook(() => useRailSections(false));\r\n    expect(result.current.isOpen(\"x\")).toBe(false);\r\n    act(() => result.current.toggle(\"x\"));\r\n    expect(result.current.isOpen(\"x\")).toBe(true);\r\n  });\r\n});\r\n"
+    }
+  ]
 }

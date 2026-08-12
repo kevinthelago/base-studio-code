@@ -11,5 +11,6 @@
     "Grid",
     "Text"
   ],
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `TelemetryView` defaults `usage`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `TelemetryView` holds 3 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 3 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate."
+  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `TelemetryView` defaults `usage`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `TelemetryView` holds 3 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 3 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
+  "folder": "app/console"
 }

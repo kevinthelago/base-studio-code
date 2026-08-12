@@ -18,5 +18,6 @@
       "name": "WorkerDetail Modal shell (#499)",
       "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { Modal } from \"./WorkerDetailModal\";\r\n\r\ndescribe(\"WorkerDetail Modal shell (#499)\", () => {\r\n  it(\"renders its title, children, and footer\", () => {\r\n    render(\r\n      <Modal title=\"Change profile\" onClose={() => {}} footer={<span>footer-action</span>}>\r\n        <span>body-content</span>\r\n      </Modal>,\r\n    );\r\n    expect(screen.getByText(\"Change profile\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"body-content\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"footer-action\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"fires onClose when the close button is clicked\", () => {\r\n    const onClose = vi.fn();\r\n    render(<Modal title=\"Stop\" onClose={onClose}>x</Modal>);\r\n    fireEvent.click(screen.getByRole(\"button\", { name: \"close\" }));\r\n    expect(onClose).toHaveBeenCalledTimes(1);\r\n  });\r\n});\r\n"
     }
-  ]
+  ],
+  "folder": "features/planner/fleet"
 }
