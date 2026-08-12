@@ -10,6 +10,14 @@
 // enums), so mobile's smoke layer can distinguish "read the field correctly" from "fell back". Cap
 // behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted with inflated inputs in
 // storeProjections.test.ts — never inflate these fixtures to prove a cap.
+//
+// INVARIANT (#3922): every entry below must also carry every OPTIONAL field its builder passes
+// through — not just the fields required to satisfy the type — and use real closed-vocabulary
+// values (e.g. an actual archetype id), never a placeholder. `satisfies` only guards required
+// fields and bare-`string` vocabularies; an optional field that's always absent, or a value that
+// always equals a consumer's fallback, type-checks perfectly while being invisible to the harness
+// end-to-end. When a domain's optional surface can't fit non-degenerately in the main input without
+// bloating it, add a `variants` entry in storePayloads.fixtures.test.ts instead (see `themes_light`).
 
 import type { ProjectLite, GlanceFault } from "@/features/glance";
 import type { ProjectLink } from "@/features/glance/lib/projectLinks";
@@ -66,15 +74,27 @@ const glanceLibraryRefs = [
 ] satisfies KitLibraryRef[];
 
 // ── org ────────────────────────────────────────────────────────────────────────────────────────
+// Two real archetypes between distinct nodes — `manages` (solid, single-headed) and `iterates`
+// (dashed, bidirectional, cyclical) — so both edge classes render end-to-end, plus every optional
+// pass-through field a naive consumer could silently drop: `Position.x`/`y`, `Relationship.bow`,
+// `Team.blurb`/`builtin`, `PersonaRef.pooled` (#3922). The prior fixture's only relationship used an
+// archetype id ("delegates") that isn't in the vocabulary at all and was a self-edge every consumer
+// filters, so the entire relationship half of this payload rendered as zero edges everywhere.
 const org = {
-  id: "o1", name: "Pipeline",
-  positions: [{ nodeId: "n1", kind: "agent", personaId: "p1" }],
-  relationships: [{ id: "r1", archetype: "delegates", from: "n1", to: "n1" }],
+  id: "o1", name: "Pipeline", blurb: "auth + review pipeline", builtin: true,
+  positions: [
+    { nodeId: "n1", kind: "agent", personaId: "p1", x: 40, y: 60 },
+    { nodeId: "n2", kind: "external", label: "Tech Lead", x: 220, y: 60 },
+  ],
+  relationships: [
+    { id: "r1", archetype: "manages", from: "n2", to: "n1" },
+    { id: "r2", archetype: "iterates", from: "n2", to: "n1", bow: 24 },
+  ],
 } satisfies Team;
 
 const orgPersona = {
   id: "p1", name: "Backend dev", blurb: "APIs", role: "worker",
-  startPrompt: "You own the API surface.", skills: ["s1"], model: "sonnet", builtin: true,
+  startPrompt: "You own the API surface.", skills: ["s1"], model: "sonnet", pooled: true, builtin: true,
 } satisfies Persona;
 
 // ── blueprints ─────────────────────────────────────────────────────────────────────────────────

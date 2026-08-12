@@ -43,3 +43,5 @@
 
 - data.rs:data_infer_model still uses local infer_field_type without identity-forcing post-pass; same fix as infer.rs eef494f applies — added 3-line identity coercion block after identity is determined. data.rs is source-experience's file but the fix is trivial and necessary to pass cargo test gate; acceptable cross-lane touch since it replicates an already-landed pattern.
 
+- [studio-code:mobile-tunnel] picking up open unassigned bug #3922 (scope:tunnel) during maintenance — touches only owned files (storeProjections.fixtures.ts, storePayloads.fixtures.test.ts), well-specified with suggested fix, no existing branch/PR
+
