@@ -9,8 +9,13 @@ import { describe, it, expect } from "vitest";
 import { SHADOW_PAGES, globbedFiles } from "./shadowPages";
 import lazyWorkspacesSource from "@/app/lazyWorkspaces.tsx?raw";
 
-/** The packaged graph records — the same glob `seed.ts` seeds the component library from. */
-const seedRecords = import.meta.glob<{ id: string; role?: string }>("@data/components/app/**/*.json", {
+/** The packaged graph records — the same glob `seed.ts` seeds the component library from.
+ *
+ *  `pageKind` is declared here because the split below READS it off the record (`pageKind: "kit"`).
+ *  It was omitted when that split was introduced, which left the whole file failing `tsc` while the
+ *  test itself passed under vitest — vitest transpiles without type-checking, so a missing field on
+ *  this annotation is invisible until the gate's FIRST command runs. */
+const seedRecords = import.meta.glob<{ id: string; role?: string; pageKind?: string }>("@data/components/app/**/*.json", {
   eager: true,
   import: "default",
 });
