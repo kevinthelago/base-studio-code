@@ -539,6 +539,56 @@ fn alias_for(spec: &str, dir: &Path, root: &Path) -> Option<String> {
     None
 }
 
+/// Can this colocated test run with NOTHING but the record and its package deps?
+///
+/// A record is a unit only if it can be verified ALONE, and that is the precondition for executing a
+/// record's tests in a sealed filesystem where no other app module exists. So a test is paired only when
+/// every app-module import it makes is the module under test itself.
+///
+/// The rule is about APP MODULES, not imports in general. `vitest` and `@testing-library/react` are
+/// HARNESS — they live in the image and are exactly what a record's test should be free to use. An
+/// `@/…` specifier or a sibling path is different in kind: it makes the record's verification depend on
+/// code the record does not carry, so the test could never run where the record will run.
+///
+/// Returns the disqualifying import, or `None` when the test is isolated. Naming the import matters —
+/// a test that is silently not paired reads as "this module has no test", which is the same false
+/// negative `test_path_for` produced when handed the wrong path.
+fn breaks_isolation(test_src: &str, module_stem: &str) -> Option<String> {
+    for spec in module_specifiers(test_src) {
+        let is_app = spec.starts_with("@/") || spec.starts_with('.');
+        if !is_app {
+            continue; // a package — harness, present in the image
+        }
+        // The module UNDER TEST, by any of the ways a colocated test names it.
+        let stem = spec.rsplit('/').next().unwrap_or("");
+        if stem == module_stem {
+            continue;
+        }
+        return Some(spec);
+    }
+    None
+}
+
+/// Every `from "…"` specifier in a source text. Deliberately literal: a harvest reads code it did not
+/// write, and a parser here would be a second implementation of what the loader already does.
+fn module_specifiers(src: &str) -> Vec<String> {
+    let chars: Vec<char> = src.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        let q = chars[i];
+        if (q == DOUBLE_QUOTE || q == SINGLE_QUOTE) && import_specifier_at(&chars, i) {
+            if let Some(len) = chars[i + 1..].iter().position(|&c| c == q) {
+                out.push(chars[i + 1..i + 1 + len].iter().collect::<String>());
+                i += len + 2;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
 pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
     let (tech, src_bytes, _tree) = parse(file)?;
     // The one place a lifted module is NOT verbatim — see `absolutize_imports`.
@@ -558,10 +608,20 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
     // handing it the root-relative path silently finds nothing, which is indistinguishable from
     // "this module has no test" and would have shipped 150 impls with their coverage quietly dropped.
     let base = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    let tests = bsc_util::test_path_for(dir, base)
-        .and_then(|p| std::fs::read_to_string(&p).ok().map(|c| (p, c)))
-        .map(|(p, contents)| vec![CandidateTest { name: bsc_util::test_display_name(&p, &contents), src: contents }])
-        .unwrap_or_default();
+    let found_test = bsc_util::test_path_for(dir, base)
+        .and_then(|p| std::fs::read_to_string(&p).ok().map(|c| (p, c)));
+    // Pair the test ONLY if it can run where the record will run — see `breaks_isolation`.
+    let mut unpaired: Option<String> = None;
+    let tests = match found_test {
+        Some((p, contents)) => match breaks_isolation(&contents, stem) {
+            None => vec![CandidateTest { name: bsc_util::test_display_name(&p, &contents), src: contents }],
+            Some(spec) => {
+                unpaired = Some(spec);
+                Vec::new()
+            }
+        },
+        None => Vec::new(),
+    };
     let mut c = Candidate {
         id: format!("{}.{}", kebab(stem), ext_of(tech)),
         name: stem.to_string(),
@@ -577,6 +637,12 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
         classification: Classification::default(),
     };
     c.classification = classify(&c);
+    // Say so. A test left off the record must be VISIBLE, or "no tests" reads as "never had one".
+    if let Some(spec) = unpaired {
+        c.classification
+            .reasons
+            .push(format!("test not paired: it imports the app module `{spec}`, so it cannot run in isolation"));
+    }
     Some(c)
 }
 
@@ -1006,6 +1072,66 @@ mod tests {
         assert!(!harvest(&fixtures()).is_empty());
     }
 
+
+    /// A record must be verifiable ALONE — that is the precondition for running its tests in a sealed
+    /// filesystem where no other app module exists (harvest-pairs-only-an-isolated-test).
+    #[test]
+    fn harvest_module_pairs_only_a_test_that_can_run_in_isolation() {
+        let root = std::env::temp_dir().join("bsc-graph-isolation");
+        let dir = root.join("src").join("features").join("demo");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // ISOLATED: vitest + testing-library are HARNESS and live in the image; the only app module it
+        // names is the module under test.
+        let solo = dir.join("solo.ts");
+        std::fs::write(&solo, "export const one = 1;
+").unwrap();
+        std::fs::write(
+            dir.join("solo.test.ts"),
+            concat!(
+                "import { describe, it, expect } from \"vitest\";
+",
+                "import { render } from \"@testing-library/react\";
+",
+                "import { one } from \"./solo\";
+",
+                "describe(\"solo\", () => { it(\"is one\", () => { expect(one).toBe(1); }); });
+",
+            ),
+        )
+        .unwrap();
+        let c = harvest_module(&solo, &root).expect("harvests");
+        assert_eq!(c.tests.len(), 1, "a self-contained test is paired: {:?}", c.classification.reasons);
+
+        // NOT ISOLATED: it reaches the app store, which will not exist where the record runs.
+        let bound = dir.join("bound.ts");
+        std::fs::write(&bound, "export const two = 2;
+").unwrap();
+        std::fs::write(
+            dir.join("bound.test.ts"),
+            concat!(
+                "import { describe, it, expect } from \"vitest\";
+",
+                "import { useAppStore } from \"@/store\";
+",
+                "import { two } from \"./bound\";
+",
+                "describe(\"bound\", () => { it(\"is two\", () => { expect(two).toBe(2); }); });
+",
+            ),
+        )
+        .unwrap();
+        let c = harvest_module(&bound, &root).expect("harvests");
+        assert!(c.tests.is_empty(), "a test reaching an app module is not paired");
+        // …and it SAYS so. Silence would read as "this module has no test".
+        assert!(
+            c.classification.reasons.iter().any(|r| r.contains("@/store")),
+            "the disqualifying import is named: {:?}",
+            c.classification.reasons,
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
 
     /// A record resolves through the LOADER, which has no directory — so a lifted module's relative
     /// imports have to become absolute or the record cannot load, and takes its importing page with it
