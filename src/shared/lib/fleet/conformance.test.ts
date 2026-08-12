@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { checkConformance, effectiveDeniedCommands, isAppSanctioned, type StreamAnchor, type SessionActivity } from "./conformance";
 import { roleCapability } from "../session/sessionRoles";
-import { DEFAULT_FLOW } from "@/features/planner/fleet/agentFlow";
+import { DEFAULT_FLOW, type AgentFlow } from "@/features/planner/fleet/agentFlow";
+
+/** A worker that genuinely pushes — the fixture for every push/PR case below. */
+const AUTO_PR_FLOW: AgentFlow = { ...DEFAULT_FLOW, push: "auto-pr" };
 
 // A worker stream owning src/api/**, with the default flow (auto-pr).
 function workerAnchor(over: Partial<StreamAnchor> = {}): StreamAnchor {
@@ -9,18 +12,26 @@ function workerAnchor(over: Partial<StreamAnchor> = {}): StreamAnchor {
     streamId: "api",
     ownedGlobs: ["src/api/**"],
     capability: roleCapability("worker", { writeGlobs: ["src/api/**"] }),
-    flow: DEFAULT_FLOW, // push: auto-pr
+    // Explicitly auto-pr. This used to lean on DEFAULT_FLOW being auto-pr; the default is now
+    // `local` (nothing reaches a remote), so these push/PR cases must name the policy they test.
+    flow: AUTO_PR_FLOW,
     ...over,
   };
 }
 
 describe("effectiveDeniedCommands", () => {
   it("an auto-pr worker may push + open a PR, but not merge/repo-delete (role denies hold)", () => {
-    const denied = effectiveDeniedCommands(roleCapability("worker"), DEFAULT_FLOW);
+    const denied = effectiveDeniedCommands(roleCapability("worker"), AUTO_PR_FLOW);
     expect(denied).not.toContain("git push");      // lifted by the flow grant (#304)
     expect(denied).not.toContain("gh pr create");  // lifted by the flow grant
     expect(denied).toContain("gh pr merge");       // merging is the director's job
     expect(denied).toContain("gh repo delete");
+  });
+
+  it("the DEFAULT flow denies push + PR — an unconfigured worker cannot reach a remote", () => {
+    const denied = effectiveDeniedCommands(roleCapability("worker"), DEFAULT_FLOW);
+    expect(denied).toContain("git push");
+    expect(denied).toContain("gh pr create");
   });
 
   it("a commit-only worker is denied push + PR (flow blocks propagation)", () => {

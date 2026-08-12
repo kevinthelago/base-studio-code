@@ -1,13 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
-  DEFAULT_FLOW, normalizeFlow, flowOrUndefined, resolveFlow,
+  DEFAULT_FLOW, LOCAL_ONLY_PUSH, normalizeFlow, flowOrUndefined, resolveFlow,
   FLOW_AUTONOMY, FLOW_PUSH, FLOW_TRIGGER, FLOW_GATE,
 } from "./agentFlow";
 import { parseFleetFile } from "./planFleet";
 
 describe("agentFlow model", () => {
-  it("DEFAULT_FLOW is continuous / auto-pr / per-issue / hard", () => {
-    expect(DEFAULT_FLOW).toEqual({ autonomy: "continuous", push: "auto-pr", trigger: "per-issue", gate: "hard" });
+  it("DEFAULT_FLOW is continuous / local / per-issue / hard", () => {
+    expect(DEFAULT_FLOW).toEqual({ autonomy: "continuous", push: "local", trigger: "per-issue", gate: "hard" });
+    // `push` is the load-bearing half: this is the fallback for a stream carrying NO flow at all,
+    // so a remote-writing default here reaches a remote on a launch nobody configured.
+    expect(LOCAL_ONLY_PUSH).toContain(DEFAULT_FLOW.push);
   });
 
   it("every enum value normalizes back to itself", () => {

@@ -6,6 +6,7 @@
 // Precedence in Claude Code settings is deny > ask > allow, so a specific `ask`
 // rule prompts even under the broad Bash allow, and a specific `deny` hard-blocks.
 // That maps the flow's push axis cleanly:
+//   local         → deny push/PR (nothing reaches a remote; the integration stream merges locally)
 //   auto-pr       → no rules (broad allow permits push+PR; --force stays denied)
 //   push-confirm  → hard: ask before push/PR (prompt); soft: no rule (kickoff asks)
 //   commit-only   → deny push/PR (commits stay local)
@@ -33,22 +34,30 @@ export interface FlowPermissionRules {
  */
 export const PUSH_WRITE_RULES = ["Bash(git push *)", "Bash(gh pr create *)"] as const;
 
-/** Compute the ask/deny rules a stream's flow contributes at launch. */
+/** Compute the ask/deny rules a stream's flow contributes at launch.
+ *
+ *  FAILS CLOSED. The `default` branch denies rather than permitting, and the policies that DO reach a
+ *  remote are enumerated explicitly. It used to be the other way around — an unrecognized (or newly
+ *  added) push value fell through to "no rules", which under the broad Bash allow means push and PR
+ *  are permitted. That is the wrong direction for a value nobody has thought about yet, and it is not
+ *  hypothetical: `self-merge` was never a case here and reached the remote through this branch. */
 export function flowPermissionRules(flow: AgentFlow | undefined): FlowPermissionRules {
   const f = resolveFlow(flow);
   const push = [...PUSH_WRITE_RULES];
   switch (f.push) {
     case "auto-pr":
+    case "self-merge":
       return { askToolRules: [], denyToolRules: [] };
     case "push-confirm":
       return f.gate === "hard"
         ? { askToolRules: push, denyToolRules: [] }
         : { askToolRules: [], denyToolRules: [] };
+    case "local":
     case "commit-only":
     case "none":
       return { askToolRules: [], denyToolRules: push };
     default:
-      return { askToolRules: [], denyToolRules: [] };
+      return { askToolRules: [], denyToolRules: push };
   }
 }
 

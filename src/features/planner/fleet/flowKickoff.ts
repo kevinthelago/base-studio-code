@@ -48,6 +48,9 @@ export function flowKickoffText(flow: AgentFlow | undefined, branch: string): Fl
     case "self-merge":
       push = `When your work is ready, integrate it yourself (${when}) — do NOT open a PR and do NOT wait for CI. Steps: (1) run the FULL local gate (typecheck + tests + any native build) and make it green; (2) git fetch origin develop and rebase your branch ${branch} onto origin/develop; (3) re-run the FULL gate on the rebased, integrated tree — this is the integration check; (4) if green, merge ${branch} into develop and push develop. If the push is rejected because another stream merged first, re-fetch, rebase, re-gate, and push again. After develop has your commit, pipe your landed issue ref into bsc-landed on stdin (e.g. echo "#42" | bsc-landed) so the director and board track it, then continue to your next issue. develop's CI is the director's backstop, not your gate. Do not stop while you still have owned issues to integrate — only end your turn once every owned issue is on develop with the gate green.`;
       break;
+    case "local":
+      push = `When your work is ready (${when}), run the FULL local gate (typecheck + lint + tests, plus any native build) and make it green, then commit to your branch ${branch} and STOP. Do NOT push. Do NOT open a PR. Nothing you do reaches a remote — this project integrates locally, and the integration stream merges your branch into the integration branch once your work is confirmed. Record what the gate actually did with \`bsc plan change gate <ref> <step> <pass|fail|not-run>\` — a step you skipped is recorded as skipped, never omitted — then mark your item \`bsc plan status <ref> complete\` and move to your next issue. \`complete\` means "I did my part", not "this is done": do not mark it verified and do not merge your own branch.`;
+      break;
     case "commit-only":
       push = `Commit your work to your branch ${branch} as you go, but do not push — the user or director will push your branch and open any PR.`;
       break;
@@ -63,7 +66,11 @@ export function flowKickoffText(flow: AgentFlow | undefined, branch: string): Fl
   // gate blocks `gh issue close` and attempting it just wastes a turn. The director closes the
   // issue once the work lands (it sees the PR merge / your `bsc-landed`). A read-only (`none`)
   // role owns no issue to close, so it gets no such clause.
-  if (f.push !== "none") {
+  // `local` is excluded too (#fleet-local-completion-flow): there is no GitHub issue to leave alone,
+  // and its own prose already names the completion handoff (`bsc plan status … complete`). Telling a
+  // local worker about GitHub issue state would point it at a surface this project deliberately
+  // keeps silent.
+  if (f.push !== "none" && f.push !== "local") {
     push += " Do not close, reopen, or edit the GitHub issue yourself — the director manages issue state and closes it once your work lands; just signal completion as above.";
   }
 
