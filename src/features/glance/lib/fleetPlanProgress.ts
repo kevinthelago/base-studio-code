@@ -40,6 +40,33 @@ export function normalizeRef(ref: string | number): string {
 }
 
 /**
+ * Every alias a plan.db issue answers to, so a stream's ref can be matched against ITS OWN namespace.
+ *
+ * `glance-progress-ref-namespace-split`. A stream's `issues` and plan.db's `ref` column are two separate
+ * ownership records, and they do not always speak the same language. Measured across the two live
+ * projects:
+ *
+ *   base-studio-code   22 stream refs, ALL 22 are plan.db slugs   -> 22/22 resolve
+ *   studio-code        56 stream refs, ALL bare GitHub numbers    -> 0/56 resolve (plan.db is slugs,
+ *                                                                    and carries no gh_number at all)
+ *
+ * A slug that carries its origin number (`4260-sandbox-by-default-…`) therefore also answers to `4260`,
+ * which is the one join available without a schema change — `bsc plan list --full` does not project
+ * `gh_number`, so the number embedded in the ref is the only GitHub identity reachable from here.
+ */
+export function knownRefAliases(issues: readonly { ref: string }[]): Set<string> {
+  const out = new Set<string>();
+  for (const i of issues) {
+    const ref = normalizeRef(i.ref ?? "");
+    if (!ref) continue;
+    out.add(ref);
+    const lead = /^(\d+)-/.exec(ref);
+    if (lead) out.add(lead[1]);
+  }
+  return out;
+}
+
+/**
  * Per-stream `done / total` for a fleet.
  *
  * `total` is what the stream OWNS. `done` counts its refs present in `doneRefs` — so a ref that is
@@ -60,15 +87,34 @@ export function fleetPlanProgress(
    *  piece of work and double-counting would make the director's denominator disagree with the sum of
    *  its workers'. */
   aggregateId?: string,
+  /** The refs plan.db actually knows ({@link knownRefAliases}). When given, a stream whose refs are ALL
+   *  unknown emits NO entry, so `mergeStreamProgress` lets plan.db answer instead.
+   *
+   *  `glance-progress-ref-namespace-split`: without this, a ref path that can never resolve still won,
+   *  because winning only required `total > 0`. On `studio-code` every one of the 56 stream refs is a
+   *  GitHub number this plan.db has no row for, so all 24 owning streams rendered `0/N` — and
+   *  `design-studio`, which plan.db knows to be 8/8 DONE, rendered `0/15`. A denominator with no
+   *  reachable numerator is not evidence; it is the absence of evidence wearing evidence's clothes.
+   *
+   *  Omitted ⇒ every stream emits, exactly as before (the pre-existing callers and tests are unchanged). */
+  knownRefs?: ReadonlySet<string>,
 ): Map<string, StreamProgress> {
   const done = new Set<string>();
   for (const r of doneRefs) done.add(normalizeRef(r));
+  const resolves = (r: string) => !knownRefs || knownRefs.has(r);
 
   const out = new Map<string, StreamProgress>();
   for (const s of streams) {
     // De-duplicate within a stream: a ref listed twice would push `done` past `total` and render a bar
     // over 100%. `progressFraction` clamps the fill, but the "3/2" label beside it would still be wrong.
     const refs = new Set(s.issues.map(normalizeRef));
+    // Only a stream that owns refs AND resolves NONE of them stands aside. A stream owning NOTHING must
+    // still emit `{0,0}` — that is the documented contract (`mergeStreamProgress` reads `total === 0` as
+    // "owns no refs, let plan.db answer", and the node renders no bar). Skipping it here instead made
+    // `fleetPlanProgress`'s own tests fail on `expected undefined`, which is the distinction: "owns
+    // nothing" and "owns things I cannot resolve" reach the same UI, but only one of them is a fact
+    // about the stream rather than about my ability to look it up.
+    if (refs.size > 0 && ![...refs].some(resolves)) continue;
     let d = 0;
     for (const r of refs) if (done.has(r)) d += 1;
     out.set(s.id, { done: d, total: refs.size });
@@ -79,9 +125,12 @@ export function fleetPlanProgress(
     // ref two streams both claim.
     const all = new Set<string>();
     for (const s of streams) for (const r of s.issues) all.add(normalizeRef(r));
-    let d = 0;
-    for (const r of all) if (done.has(r)) d += 1;
-    out.set(aggregateId, { done: d, total: all.size });
+    // Same rule as a stream: an aggregate over refs that resolve to nothing is the director's `0/56`.
+    if ([...all].some(resolves)) {
+      let d = 0;
+      for (const r of all) if (done.has(r)) d += 1;
+      out.set(aggregateId, { done: d, total: all.size });
+    }
   }
   return out;
 }
