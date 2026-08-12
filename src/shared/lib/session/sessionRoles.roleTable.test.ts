@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ROLE_DEFAULTS, PLANNER_WRITE_GLOBS, DOC_GLOBS, DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, roleDeniedCommands, sessionScopes } from "./sessionRoles";
-import { mergeRoleDefaults, roleCapability, type RoleCapability } from "./roleModel";
+import { mergeRoleDefaults, roleCapability, restrictedRoleCommands, type RoleCapability } from "./roleModel";
 
 // Security guard for the externalized role→capability table (@data/permissions/role-capabilities.json,
 // #2027 P1). The role gate is least-privilege; a JSON edit that WIDENS a role's access (e.g. gives a
@@ -183,5 +183,24 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
     expect(denies).not.toContain("bsc ui"); // …but not the whole tool (that's the `none` tier).
     // And the runtime scope doc renders the same read floor.
     expect(sessionScopes(stale)).toEqual({ ui: "read" });
+  });
+});
+
+// #funnel-generalize-brief-channel — the GRANT half of the architect's one outbound channel.
+describe("the architect can reach a director at all", () => {
+  it("carries the brief emitter in its restricted allow-list", () => {
+    // The architect is `restrictedAllow`, so this list IS its auto-runnable surface — without the
+    // emitter here it cannot brief a director at all, whatever the routing permits. Where a brief may
+    // LAND is constrained separately (briefRouting): grant = what it can run, routing = who receives.
+    expect(restrictedRoleCommands("architect")).toContain("bsc plan brief");
+  });
+
+  it("gains no other outbound channel — its surface stays teams/persona plus the brief", () => {
+    // The tier boundary is the point: an architect that could `bsc-assign` or `bsc-answer` would be
+    // reaching workers directly, which is exactly what routing to directors only exists to prevent.
+    const surface = restrictedRoleCommands("architect");
+    for (const forbidden of ["bsc-assign", "bsc-answer", "bsc-issue", "bsc plan", "bsc ui"]) {
+      expect(surface, forbidden).not.toContain(forbidden);
+    }
   });
 });

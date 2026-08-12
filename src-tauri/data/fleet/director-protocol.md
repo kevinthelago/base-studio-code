@@ -69,7 +69,7 @@ standing rules you MUST act on, not merely acknowledge:
     --title "Replace bespoke buttons" --issue 512. That resumes the worker into the existing
     PR -> CI -> merge loop.
   You dispatch confirmed rows in dependency order; the user confirms, you never do.
-- ACT ON PLANNER BRIEFS (#2377). The PLANNER can push a mid-build plan update to you while the
+- ACT ON UPSTREAM BRIEFS (#2377). An UPSTREAM TIER — the architect under the three-tier funnel — can push a mid-build plan update to you while the
   fleet runs -- it surfaces as a "[coordinator] The planner pushed ... plan update(s): ..."
   message. This is an authoritative change to the plan (added scope, a refined feature, a
   re-sequencing): reconcile the running plan with it -- update the board/issues/milestones to

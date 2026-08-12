@@ -321,6 +321,13 @@ const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> 
   architect: [
     "bsc teams",
     "bsc persona",
+    // #funnel-generalize-brief-channel — the architect's ONE outbound channel. The architect is
+    // `restrictedAllow`, so this list IS its auto-runnable surface: without this it could not reach a
+    // director at all. It is the bsc VERB, not the `bsc-brief` shell helper, because every entry on a
+    // restricted surface must be a `bsc ` store verb — a shell function here would break the invariant
+    // sessionRoles.test.ts pins. Where a brief may LAND is constrained separately in briefRouting: the
+    // grant says what it can RUN, the routing says who may RECEIVE.
+    "bsc plan brief",
     ...LOOP_PARTICIPANT_COMMANDS,
     "bsc request new",
     "bsc request list",

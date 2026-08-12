@@ -716,6 +716,35 @@ fn render_feature(f: &PlanFeature) -> String {
 /// Note which verbs exist and which do not. There is no `remove`: a request is a contract between two
 /// agents, and letting the requester delete it would let a worker withdraw an ask the director is
 /// already acting on. Closure is `resolve`, which keeps the row and the answer.
+/// `brief <target> [--ref <ref>]` — push a tier-to-tier BRIEF, body on stdin
+/// (#funnel-generalize-brief-channel).
+///
+/// The same coord record `bsc-brief` writes, reached as a `bsc` VERB. That distinction is the whole
+/// point: the ARCHITECT is a `restrictedAllow` session, so its allow-list IS its auto-runnable surface,
+/// and `sessionRoles.test.ts` pins every entry on such a surface to a `bsc ` store verb — a shell
+/// function there would break that invariant. The shell helper stays for unrestricted senders.
+///
+/// Touches NO store: a brief is a coordination signal, not plan state. So this deliberately does not
+/// `open_store` — an architect has no project db and must not need one to speak to a director.
+///
+/// WHERE a brief may LAND is not decided here. The emitter records the target; `briefRouting` decides
+/// who receives it, and refuses an architect that names anything but a director. Enforcing the tier at
+/// the delivery end rather than the emitter is what makes it hold for a replayed log too.
+pub(crate) fn cmd_brief(args: &Args) -> Result<(), String> {
+    let target = args.positional.get(1).cloned().unwrap_or_default();
+    if target.trim().is_empty() {
+        return Err("usage: bsc plan brief <target> [--ref <ref>]   # body on stdin".into());
+    }
+    let mut body = String::new();
+    std::io::stdin().read_to_string(&mut body).map_err(|e| format!("reading stdin: {e}"))?;
+    if body.trim().is_empty() {
+        return Err("a brief needs a body on stdin".into());
+    }
+    crate::coord::emit3(crate::coord::KIND_BRIEF, target.trim(), body.trim(), args.brief_ref.as_deref().unwrap_or(""));
+    println!("briefed {}", target.trim());
+    Ok(())
+}
+
 pub(crate) fn cmd_request(args: &Args) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
     let s = open_store(&args.db)?;
