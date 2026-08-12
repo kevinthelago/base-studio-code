@@ -287,11 +287,30 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         fleetStreams,
         unionDone(planDbProgress.doneRefs, fleetIssues.done),
         effectiveFleet?.director?.enabled ? "director" : undefined,
+        // `glance-progress-ref-namespace-split`: a stream's refs and plan.db's refs are separate
+        // ownership records that need not share a namespace. Passing what plan.db KNOWS lets the ref
+        // path stand aside when its refs resolve to nothing, instead of winning with a denominator whose
+        // numerator can never move — which is how 24 of 25 streams, and the director, all read 0/N.
+        planDbProgress.knownRefs,
       ),
       planDbProgress.byStream,
     ),
     [fleetStreams, planDbProgress, fleetIssues.done, effectiveFleet?.director?.enabled],
   );
+
+  // The DIRECTOR's last resort: the project's own progress, from the same read the L0 node counts.
+  //
+  // Its bar is the whole board by design (#4122), so when the ref path cannot answer — every stream ref
+  // in a namespace plan.db has never seen — the honest number is not 0, and it is not the sum of the
+  // per-stream rows either (that omits every issue no stream owns). It is the project's, which is
+  // exactly what L0 shows. This is what makes the two levels agree rather than merely look similar.
+  const streamDoneWithDirector = useMemo(() => {
+    const id = effectiveFleet?.director?.enabled ? "director" : null;
+    if (!id || streamDone.has(id) || planDbProgress.overall.total === 0) return streamDone;
+    const out = new Map(streamDone);
+    out.set(id, planDbProgress.overall);
+    return out;
+  }, [streamDone, effectiveFleet?.director?.enabled, planDbProgress.overall]);
 
   // #4102 — the Plan screen's data for one node. A fleet node's id IS its stream id, so this is a map
   // lookup rather than another join. Returns undefined for a node that is not a planned worker (the
@@ -368,13 +387,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             rawNodes:
               drill === BASE_STUDIO_PROJECT_ID
                 ? applyStudioLiveStatus(fleetData.rawNodes, { debugSession, paneClaudeActive, paneStatus })
-                : applyFleetLiveStatus(withStreamProgress(fleetData.rawNodes, streamDone), drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes, ended: endedPanes }),
+                : applyFleetLiveStatus(withStreamProgress(fleetData.rawNodes, streamDoneWithDirector), drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes, ended: endedPanes }),
           }
         : fleetData,
     // `quarantinedPanes` + `heldStreams` belong here: without them the memo keeps a stale overlay, so a
     // newly quarantined worker (#3916) or a stream released by the gate (#3931) would not repaint until
     // some unrelated dep changed.
-    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams, attentionPanes, maintainingPanes, endedPanes, streamDone],
+    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams, attentionPanes, maintainingPanes, endedPanes, streamDoneWithDirector],
   );
   const fleetModel = useMemo(() => (liveFleetData ? timedSync("buildGraph:glance-fleet", () => buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges)) : null), [liveFleetData]);
   // The ACTIVE graph — the drilled fleet (with live status), else the project network. Everything downstream

@@ -14,7 +14,8 @@ import { useEffect, useState } from "react";
 import { bscJson } from "@/shared/lib/core/bsc";
 import { usePoll } from "@/shared/hooks/usePoll";
 import type { OwnedIssue } from "@/shared/lib/fleet/workerEnd";
-import { streamProgress, planDbDoneRefs, planDbClosedByRef, type StreamProgress } from "./streamProgress";
+import { streamProgress, planDbDoneRefs, planDbClosedByRef, projectProgress, type StreamProgress } from "./streamProgress";
+import { knownRefAliases } from "./fleetPlanProgress";
 
 /** Issue counts move at human speed — a worker closing one is a minutes-scale event, so a fast poll
  *  would spend spawns to re-read an unchanged answer. */
@@ -32,9 +33,28 @@ export interface PlanDbProgress {
    *  row. The Plan dock renders per-issue state from this, so a project that never uses GitHub still
    *  shows real states instead of "state unknown" on every row. */
   closedByRef: Map<string, boolean>;
+  /** Every ref plan.db can be asked about, in each spelling it answers to (`knownRefAliases`).
+   *
+   *  `glance-progress-ref-namespace-split`: a fleet stream's `issues` are a SEPARATE ownership record
+   *  and may be written in another namespace entirely — on `studio-code` they are bare GitHub numbers
+   *  while plan.db is all slugs, so nothing matched and every owning node showed `0/N`. This is what
+   *  lets the ref path tell "owned and unfinished" apart from "owned and unknowable", and stand aside
+   *  for plan.db in the second case. */
+  knownRefs: Set<string>;
+  /** The project's progress across EVERY issue, stream-owned or not — the same `complete | verified`
+   *  over the same rows that `bsc project progress` counts for the L0 project node.
+   *
+   *  `glance-progress-ref-namespace-split`: L0 and L1 disagreed (24 vs 56 on `studio-code`) because they
+   *  counted different ownership records and neither said so. This gives the DIRECTOR — the one node
+   *  accountable for the whole board rather than a lane — the same number L0 shows, from the same read,
+   *  so the two levels agree by construction instead of by coincidence. */
+  overall: StreamProgress;
 }
 
-const EMPTY: PlanDbProgress = { byStream: new Map(), doneRefs: new Set(), closedByRef: new Map() };
+const EMPTY: PlanDbProgress = {
+  byStream: new Map(), doneRefs: new Set(), closedByRef: new Map(), knownRefs: new Set(),
+  overall: { done: 0, total: 0 },
+};
 
 /** Per-stream `done / total` for `projectKey` plus its done refs, or empty when not drilled / no plan
  *  store. */
@@ -52,6 +72,8 @@ export function useStreamProgress(projectKey: string | null): PlanDbProgress {
       byStream: streamProgress(issues),
       doneRefs: planDbDoneRefs(issues),
       closedByRef: planDbClosedByRef(issues),
+      knownRefs: knownRefAliases(issues),
+      overall: projectProgress(issues),
     });
   }, PROGRESS_POLL_MS, [projectKey]);
 
