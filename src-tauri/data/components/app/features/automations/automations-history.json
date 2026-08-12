@@ -10,7 +10,7 @@
     "StatTile",
     "Text"
   ],
-  "src": "src/features/automations/History.tsx",
   "folder": "features/automations",
-  "provides": "@/components/automations-history"
+  "provides": "@/components/automations-history",
+  "srcRetired": "src/features/automations/History.tsx"
 }

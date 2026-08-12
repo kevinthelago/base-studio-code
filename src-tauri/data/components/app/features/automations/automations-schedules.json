@@ -17,7 +17,7 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/automations/Schedules.tsx",
   "folder": "features/automations",
-  "provides": "@/components/automations-schedules"
+  "provides": "@/components/automations-schedules",
+  "srcRetired": "src/features/automations/Schedules.tsx"
 }
