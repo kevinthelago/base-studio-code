@@ -42,6 +42,7 @@
   "@/features/glance",
   "@/features/glance/glanceNodeMotion",
   "@/features/glance/lib/agentStall",
+  "@/features/glance/lib/expandNode",
   "@/features/glance/lib/fleetPlanProgress",
   "@/features/glance/lib/glanceData",
   "@/features/glance/lib/glanceFleet",
