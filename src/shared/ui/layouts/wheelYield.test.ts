@@ -10,9 +10,21 @@ type Stub = { overflowY: string; scrollHeight: number; clientHeight: number; scr
 /** Build a target → … → viewport chain (target first) with a computed-style stub for each. */
 function chain(...nodes: (Stub | null)[]) {
   const styles = new Map<Element, { overflowY: string }>();
+  // Define OWN data properties rather than `Object.assign`-ing them. `parentElement`, `scrollHeight`,
+  // `clientHeight` and `scrollTop` are getter-only accessors inherited from `Node`/`Element.prototype`, and
+  // assignment writes THROUGH the prototype accessor — `TypeError: Cannot set property parentElement of
+  // [object Node] which has only a getter`, thrown while building the fixture, before any assertion runs.
+  // An own property shadows the accessor instead. (That threw for every case from the day this file was
+  // written, which is why these five had never actually executed.)
+  const own = (el: object, values: Record<string, unknown>) => {
+    for (const [k, value] of Object.entries(values)) {
+      Object.defineProperty(el, k, { value, writable: true, configurable: true });
+    }
+  };
   const built = nodes.map((n) => {
-    const el = Object.assign(Object.create(Element.prototype) as Element, {
-      parentElement: null as Element | null,
+    const el = Object.create(Element.prototype) as Element;
+    own(el, {
+      parentElement: null,
       scrollHeight: n?.scrollHeight ?? 0,
       clientHeight: n?.clientHeight ?? 0,
       scrollTop: n?.scrollTop ?? 0,
@@ -20,8 +32,7 @@ function chain(...nodes: (Stub | null)[]) {
     styles.set(el, { overflowY: n?.overflowY ?? "visible" });
     return el;
   });
-  // `parentElement` is typed HTMLElement on the DOM lib; these are structural stubs, so assign through.
-  built.forEach((el, i) => { (el as { parentElement: Element | null }).parentElement = built[i + 1] ?? null; });
+  built.forEach((el, i) => { own(el, { parentElement: built[i + 1] ?? null }); });
   vi.stubGlobal("getComputedStyle", (el: Element) => styles.get(el) ?? { overflowY: "visible" });
   return { target: built[0], viewport: built[built.length - 1] };
 }
