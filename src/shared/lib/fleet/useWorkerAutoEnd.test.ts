@@ -141,7 +141,7 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     );
   });
 
-  it("nudges an idle, complete, question-free worker to self-close (#1379 stage 3)", async () => {
+  it("REAPS an idle, complete, question-free worker without typing at it (#session-stop-is-honoured)", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string, _payload?: unknown) => {
       // Idle since epoch 1ms ⇒ idleMs is huge, well past the close-nudge window.
       if (cmd === "logs_pane_activity") return Promise.resolve([{ pane: WORKER, state: "idle", at: 1 }]);
@@ -157,12 +157,19 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     });
     renderHook(() => useWorkerAutoEnd());
 
-    await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("pty_write", expect.objectContaining({ paneId: WORKER })));
-    const nudge = vi.mocked(invoke).mock.calls.find(([c, a]) => c === "pty_write" && (a as { paneId: string }).paneId === WORKER);
-    expect((nudge?.[1] as { data: string }).data).toContain("bsc-done"); // told to self-close
-    // It only NUDGES — it never ends the pane itself (the worker does, via bsc-done).
-    expect(useAppStore.getState().endedPanes[WORKER]).toBeUndefined();
+    // The pane reaches its resting state from plan.db — the same verdict source as every other path.
+    await waitFor(() => expect(useAppStore.getState().endedPanes[WORKER]).toBeTruthy());
+    expect(useAppStore.getState().endedPanes[WORKER]).toMatchObject({ state: "done", streamId: "api" });
+
+    // THE INVARIANT: nothing was typed into the worker. This path used to `pty_write` a "run bsc-done"
+    // nudge, which never fired while `bsc-defer` refused a worker's Stop — removing that hook would
+    // have switched it on and re-prompted every session the moment it finished.
+    const wroteToWorker = vi.mocked(invoke).mock.calls.some(
+      ([c, a]) => c === "pty_write" && (a as { paneId: string }).paneId === WORKER,
+    );
+    expect(wroteToWorker, "a finished worker must not be typed at").toBe(false);
+    // And its shell is left alive, so resuming it stays a click the USER makes.
+    expect(invoke).not.toHaveBeenCalledWith("pty_kill", { paneId: WORKER });
   });
 
   it("nudges the director to close still-open issues when a worker finishes done (#1379 stage 3)", async () => {
