@@ -144,7 +144,7 @@ export function hasStageGuidance(stage: Stage, pill: GatePill, prompt?: StagePro
   return showReqs || showPrompt;
 }
 
-export type FooterKind = "back-to-current" | "jump-to-current" | "approve-continue" | "route-design" | "publish";
+export type FooterKind = "back-to-current" | "jump-to-current" | "approve-continue" | "route-design" | "publish" | "awaiting";
 
 export interface FooterAction {
   kind: FooterKind;
@@ -164,17 +164,26 @@ export interface FooterAction {
 /**
  * The advance-bar's primary action, by where the selection sits relative to the active
  * stage. Browsing a future (locked) stage → back to current; a past stage → jump to
- * current; on the active stage → approve & continue (enabled when its gate is ready), or
- * publish when the whole plan is complete.
+ * current; on the active stage → approve & continue, or publish when the plan is complete.
  *
- * `canSkip` marks the two active-stage advance actions (approve-continue, route-design) as
- * skip-ELIGIBLE — a marker, not a render decision. Whether Skip actually appears is decided later by
+ * `userGated` (#funnel-ui-into-stores) is what turns this bar from a CONTROL into a PROGRESS
+ * readout. Under the three-tier funnel the director advances the Features and Plan gates itself when
+ * the requirement's authority covers them (#funnel-unattended-director), so an "approve & continue"
+ * button there would offer the user a decision that is no longer theirs to make — and worse, one that
+ * has often already been made. Those stages report `awaiting` instead: the funnel is running, watch it.
+ *
+ * A stage that keeps a REAL user gate passes `userGated: true` and is unchanged. The transformation
+ * queue is the standing example, and the reason is worth carrying: it reverse-scopes a RUNNING app
+ * rather than shaping one being created.
+ *
+ * `canSkip` marks the active-stage advance actions (approve-continue, route-design) as skip-ELIGIBLE
+ * — a marker, not a render decision. Whether Skip actually appears is decided later by
  * {@link resolveFooter} (`skipEnabled`) from the live signals: skippable stage or gate-override on.
- * Navigation and publish are never skip-eligible.
+ * Navigation, publish and `awaiting` are never skip-eligible.
  */
 export function footerAction(
   selectedIdx: number, activeIdx: number, planComplete: boolean, currentGateReady: boolean,
-  routeDesign = false,
+  routeDesign = false, userGated = true,
 ): FooterAction {
   if (selectedIdx > activeIdx) return { kind: "back-to-current", enabled: true };
   if (selectedIdx < activeIdx) return { kind: "jump-to-current", enabled: true };
@@ -183,7 +192,25 @@ export function footerAction(
   // design (sync the skeleton + mark it current) instead of advancing. It's skip-eligible too —
   // routing and skipping are both valid choices — but resolveFooter still gates the actual Skip.
   if (routeDesign) return { kind: "route-design", enabled: true, canSkip: true };
+  // Not user-gated ⇒ the director advances this stage under authority. Report, do not offer.
+  // Deliberately NOT skip-eligible: skipping is a user decision about a gate the user no longer holds.
+  if (!userGated) return { kind: "awaiting", enabled: false };
   return { kind: "approve-continue", enabled: currentGateReady, canSkip: true };
+}
+
+/**
+ * Stage ids that keep a REAL user gate under the funnel (#funnel-ui-into-stores). Everything else
+ * advances under the requirement's authority clauses, so its advance bar reports rather than offers.
+ *
+ * An ALLOW-list, not a deny-list, and that direction is the point: a stage added later is
+ * authority-governed by default and has to argue its way onto this list, rather than silently keeping
+ * a human gate nobody revisited.
+ */
+export const USER_GATED_STAGES: readonly string[] = ["transformations"];
+
+/** Whether `stageId` keeps a user gate — see {@link USER_GATED_STAGES}. */
+export function isUserGated(stageId: string | undefined): boolean {
+  return !!stageId && USER_GATED_STAGES.includes(stageId);
 }
 
 /**
