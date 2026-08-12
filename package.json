@@ -12,6 +12,7 @@
     "clean:incremental": "node scripts/prune-incremental.mjs",
     "stage:sidecar": "node scripts/stage-sidecar.mjs",
     "release": "node scripts/release.mjs",
+    "archive": "node scripts/archive-graph.cjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
