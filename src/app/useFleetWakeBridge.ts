@@ -8,13 +8,14 @@
 // THE ROUND TRIP
 //   bsc fleet wake → request file → Rust watcher → `bsc://fleet-wake` → HERE → store → `fleet_wake_ack`
 //
-// The ack is load-bearing rather than ceremony: the wake KILLS the PTY before relaunching, so a wake
-// that silently failed would leave a dead worker behind a caller that believes it is running. That is
-// #4025 exactly. So this ALWAYS acks — success or a stated error.
+// The ack is load-bearing rather than ceremony: the wake KILLS the PTY before relaunching (see
+// `applyWake`), so a wake that silently failed would leave a dead worker behind a caller that believes
+// it is running. That is #4025 exactly. So this ALWAYS acks — success or a stated error.
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { log } from "@/shared/lib/core/log";
 import { applyWake, type WakeRequest, type WakeAck } from "./fleetWakeBridge";
 
@@ -26,13 +27,19 @@ import { applyWake, type WakeRequest, type WakeAck } from "./fleetWakeBridge";
 export function useFleetWakeBridge(): void {
   useEffect(() => {
     let disposed = false;
-    const un = listen<WakeRequest & { id: string }>("bsc://fleet-wake", (e) => {
+    const un = listen<WakeRequest & { id: string }>("bsc://fleet-wake", async (e) => {
       const { id, ...req } = e.payload;
       let ack: WakeAck;
       try {
         // Read the action off a LIVE getState, not a captured snapshot: zustand hands out a new object
         // per update, so a stale closure could call a wakePane bound to an older tab list.
-        ack = applyWake(id, req, { wakePane: (p, t) => useAppStore.getState().wakePane(p, t) });
+        ack = await applyWake(id, req, {
+          wakePane: (p, t) => useAppStore.getState().wakePane(p, t),
+          // Kill before the bump so the remount spawns instead of reconnecting to a live shell whose
+          // agent has exited — the same order `actuateWake` uses. `fireInvoke` swallows the "no such
+          // session" case, which is the normal one for an already-reaped pane.
+          killPane: async (p) => { await safeInvoke("pty_kill", { paneId: p }, undefined); },
+        });
       } catch (err) {
         // A throw here would strand the Rust waiter until its timeout. State it instead.
         ack = { id, error: `fleet wake threw: ${err instanceof Error ? err.message : String(err)}`, woke: false };
