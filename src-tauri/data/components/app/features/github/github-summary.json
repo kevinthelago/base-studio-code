@@ -20,7 +20,7 @@
     "StatTile",
     "Text"
   ],
-  "src": "src/features/github/GitHubSummary.tsx",
   "folder": "features/github",
-  "provides": "@/components/github-summary"
+  "provides": "@/components/github-summary",
+  "srcRetired": "src/features/github/GitHubSummary.tsx"
 }

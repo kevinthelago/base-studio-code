@@ -54,8 +54,8 @@ describe("the shadow page catalogue", () => {
   // deletion item does not own this file and so cannot flip it itself.
   const RETIRED_PAGE_COPIES: Record<string, number> = {
     mcppage: 0,        // mcp-analytics RELEASED — this page is now wholly record-only
-    securitypage: 4,   // the four tab bodies; three are held by graph-srctext-three-way-merges
-    automationspage: 1,   // Schedules only — History + HookAnalytics RELEASED
+    securitypage: 1,   // AssignmentsTab only — Profiles/Activity/Flow DELETED once their merge landed
+    automationspage: 0,   // Schedules DELETED once its three-way merge landed — wholly record-only now
     githubpage: 9,        // BranchGraph + the eight summary/ cards; Empty/Summary/Pulse RELEASED
   };
 

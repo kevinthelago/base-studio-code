@@ -4,7 +4,6 @@
   "kitId": "base-studio-code",
   "role": "composite",
   "srcText": "// GitHub net lines (#402) — daily additions-vs-deletions bar chart. Extracted from GitHubPulse's\n// inline card into its own composable record; adds the loading + empty states the inline version didn't have.\nimport { useState } from \"react\";\nimport { CardHead, Bars, Legend, RangeToggle, useTip, fmt } from \"@/shared/ui/charts\";\nimport { SkeletonChart } from \"@/shared/ui/feedback/Skeleton\";\nimport { CardEmpty } from \"@/shared/ui/feedback/CardStates\";\nimport { Card } from \"@/shared/ui/data/Card\";\n\ninterface VelocitySlice { labels: string[]; commits: number[]; merged: number[]; opened: number[]; adds: number[]; dels: number[] }\n\nfunction sliceVelocity(v: VelocitySlice, range: string): VelocitySlice {\n  const n = range === \"7d\" ? 7 : v.labels.length;\n  const last = <T,>(a: T[]) => a.slice(-n);\n  return { labels: last(v.labels), commits: last(v.commits), merged: last(v.merged), opened: last(v.opened), adds: last(v.adds), dels: last(v.dels) };\n}\n\nconst DEMO_VELOCITY: VelocitySlice = {\n  labels: Array.from({ length: 14 }, (_, i) => `d${i + 1}`),\n  commits: [3, 5, 2, 6, 4, 7, 5, 3, 6, 4, 8, 5, 6, 4],\n  merged: [1, 2, 1, 3, 2, 3, 2, 1, 3, 2, 4, 2, 3, 2],\n  opened: [2, 3, 2, 4, 3, 4, 3, 2, 4, 3, 5, 3, 4, 3],\n  adds: [120, 200, 90, 260, 180, 300, 210, 130, 240, 170, 320, 200, 250, 180],\n  dels: [40, 60, 30, 80, 50, 90, 60, 40, 70, 50, 100, 60, 80, 50],\n};\n\nexport function NetLines({ velocity = DEMO_VELOCITY, partialDiffs = false, loading = false }: { velocity?: VelocitySlice; partialDiffs?: boolean; loading?: boolean }) {\n  const [range, setRange] = useState(\"14d\");\n  const tip = useTip();\n  const d = sliceVelocity(velocity, range);\n  const total = d.adds.reduce((a, b) => a + b, 0) + d.dels.reduce((a, b) => a + b, 0);\n  return (\n    <Card>\n      <CardHead title=\"Lines changed\" hint={partialDiffs ? \"additions vs deletions · recent commits\" : \"additions vs deletions / day\"}\n        right={<RangeToggle value={range} onChange={setRange} options={[\"7d\", \"14d\"]} />} />\n      {loading ? <SkeletonChart height={140} /> : total === 0 ? (\n        <CardEmpty icon=\"○\" title=\"No line changes yet\" hint=\"Additions and deletions will appear here once this repo has commits.\" />\n      ) : (\n        <>\n          <Bars labels={d.labels} height={140} fmtY={(v) => fmt(v)} tip={tip} groups={[\n            { name: \"added\", color: \"var(--success)\", data: d.adds },\n            { name: \"removed\", color: \"var(--danger)\", data: d.dels },\n          ]} />\n          <Legend style={{ marginTop: 8 }} items={[\n            { color: \"var(--success)\", label: \"added\" },\n            { color: \"var(--danger)\", label: \"removed\" },\n          ]} />\n        </>\n      )}\n      {tip.node}\n    </Card>\n  );\n}\n",
-  "src": "src/features/github/Pulse.tsx",
   "composes": [
     "Card"
   ],
@@ -26,5 +25,6 @@
     "default",
     "empty",
     "loading"
-  ]
+  ],
+  "srcRetired": "src/features/github/Pulse.tsx"
 }

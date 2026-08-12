@@ -10,7 +10,7 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/automations/HookAnalytics.tsx",
   "folder": "features/automations",
-  "provides": "@/components/automations-hook-analytics"
+  "provides": "@/components/automations-hook-analytics",
+  "srcRetired": "src/features/automations/HookAnalytics.tsx"
 }

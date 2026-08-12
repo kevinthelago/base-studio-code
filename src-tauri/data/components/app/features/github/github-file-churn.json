@@ -4,7 +4,6 @@
   "kitId": "base-studio-code",
   "role": "composite",
   "srcText": "// GitHub hottest files (#402) — heat-tinted grid of the hottest changed files. Extracted from\n// GitHubPulse's inline card into its own composable record; adds the loading skeleton the inline\n// version didn't have.\nimport { CardHead } from \"@/shared/ui/charts\";\nimport { SkeletonChart } from \"@/shared/ui/feedback/Skeleton\";\nimport { Grid } from \"@/shared/ui/layout/Grid\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Card } from \"@/shared/ui/data/Card\";\n\nexport interface ChurnFile { p: string; w: number }\n\nconst DEMO_FILES: ChurnFile[] = [\n  { p: \"src/features/planner/Board.tsx\", w: 640 }, { p: \"src/shared/ui/data/Card.tsx\", w: 420 },\n  { p: \"src/features/security/lib/agentProfiles.ts\", w: 310 }, { p: \"src/store/index.ts\", w: 280 },\n];\n\nexport function FileChurn({ files = DEMO_FILES, loading = false }: { files?: ChurnFile[]; loading?: boolean }) {\n  if (loading) {\n    return (\n      <Card>\n        <CardHead title=\"Hottest files\" hint=\"±lines · recent commits · darker = hotter\" />\n        <SkeletonChart height={108} />\n      </Card>\n    );\n  }\n  if (!files.length) return null;\n  const max = Math.max(...files.map((f) => f.w));\n  return (\n    <Card>\n      <CardHead title=\"Hottest files\" hint=\"±lines · recent commits · darker = hotter\" />\n      <Grid cols={4} gap={4}>\n        {files.map((f) => {\n          const t = f.w / max;\n          const a = 0.16 + 0.74 * t;\n          const dark = t > 0.55;\n          return (\n            <Stack key={f.p} title={`${f.p} · ±${f.w}`} className=\"mono\" justify=\"between\" style={{\n              padding: \"8px 9px\", borderRadius: 4, minHeight: 52,\n              background: `color-mix(in oklch, var(--accent) ${Math.round(a * 100)}%, var(--bg-elev))`,\n              border: \"1px solid var(--border-soft)\",\n              fontSize: 9.5, lineHeight: 1.35,\n              overflow: \"hidden\",\n            }}>\n              <Box as=\"span\" style={{ display: \"block\", whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\", color: dark ? \"#1a120a\" : \"var(--fg)\" }}>{f.p.split(\"/\").pop()}</Box>\n              <Box as=\"span\" style={{ fontSize: 8.5, color: dark ? \"#1a120a\" : \"var(--fg-dim)\", whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\" }}>{f.p.replace(/\\/[^/]+$/, \"\") || \"/\"}</Box>\n              <Text as=\"span\" size={9.5} weight={600} style={{ color: dark ? \"#1a120a\" : \"var(--fg-muted)\" }}>±{f.w}</Text>\n            </Stack>\n          );\n        })}\n      </Grid>\n    </Card>\n  );\n}\n",
-  "src": "src/features/github/Pulse.tsx",
   "composes": [
     "Box",
     "Card",
@@ -29,5 +28,6 @@
   "variants": [
     "default",
     "loading"
-  ]
+  ],
+  "srcRetired": "src/features/github/Pulse.tsx"
 }

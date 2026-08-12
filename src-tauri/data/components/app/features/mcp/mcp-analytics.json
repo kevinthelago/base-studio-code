@@ -14,7 +14,7 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/mcp/McpAnalytics.tsx",
   "folder": "features/mcp",
-  "provides": "@/components/mcp-analytics"
+  "provides": "@/components/mcp-analytics",
+  "srcRetired": "src/features/mcp/McpAnalytics.tsx"
 }
