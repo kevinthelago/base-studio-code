@@ -435,9 +435,114 @@ pub fn harvest_file(file: &Path) -> Vec<Candidate> {
 ///
 /// `composes` stays empty by construction: a module states its dependencies as IMPORTS, and re-encoding
 /// them as compose edges would give the same fact two representations that can disagree.
+/// Quote + separator characters as NAMED consts. Escaping them inline survives neither the shell
+/// nor the heredocs this file gets edited through, and a mangled char literal is a compile error
+/// that reads like a logic bug.
+const DOUBLE_QUOTE: char = '\u{22}';
+const SINGLE_QUOTE: char = '\u{27}';
+const BACKSLASH: char = '\u{5C}';
+
+/// Rewrite every RELATIVE import in a lifted module to its `@/…` equivalent.
+///
+/// A file and a record resolve imports differently, and this is the whole difference. `./planningTerminal`
+/// works in a FILE because Vite resolves it against the file's directory. A RECORD is a string in a store
+/// with no directory at all, so the runtime loader can only match absolute `@/…` specifiers against the
+/// platform registry or another record's `provides` — `platformBoundary.test.ts` states the rule outright:
+/// records must import absolutely. Lifting a module verbatim therefore produces a record that cannot load
+/// AND takes its importing page down with it (`planningpage`, `githubpage` and `mcppage` all failed this
+/// way; 12 of the first 18 modules tried were affected, one of them with 15 relative imports).
+///
+/// A specifier that resolves to no file on disk is LEFT ALONE. Rewriting it would be a guess, and a wrong
+/// `@/…` is worse than an honest `./…`: the loader names an unresolved absolute specifier, while a guessed
+/// one may silently resolve to the wrong module.
+fn absolutize_imports(code: &str, file: &Path, root: &Path) -> String {
+    let dir = file.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let chars: Vec<char> = code.chars().collect();
+    let mut out = String::with_capacity(code.len());
+    let mut i = 0usize;
+    while i < chars.len() {
+        let q = chars[i];
+        if (q == DOUBLE_QUOTE || q == SINGLE_QUOTE) && import_specifier_at(&chars, i) {
+            if let Some(len) = chars[i + 1..].iter().position(|&c| c == q) {
+                let spec: String = chars[i + 1..i + 1 + len].iter().collect();
+                if spec.starts_with('.') {
+                    if let Some(alias) = alias_for(&spec, &dir, root) {
+                        out.push(q);
+                        out.push_str(&alias);
+                        out.push(q);
+                        i += len + 2;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(q);
+        i += 1;
+    }
+    out
+}
+
+/// Is the quote at `idx` the start of a MODULE SPECIFIER — i.e. does `from` or `import` sit immediately
+/// before it? Without this the scan would rewrite any string literal in the file that happens to start
+/// with a dot.
+fn import_specifier_at(chars: &[char], idx: usize) -> bool {
+    let mut j = idx;
+    while j > 0 && chars[j - 1].is_whitespace() {
+        j -= 1;
+    }
+    let ends_with = |kw: &str| {
+        let k: Vec<char> = kw.chars().collect();
+        j >= k.len()
+            && chars[j - k.len()..j] == k[..]
+            // A keyword boundary: `notfrom "x"` is not an import.
+            && (j == k.len() || !chars[j - k.len() - 1].is_alphanumeric())
+    };
+    ends_with("from") || ends_with("import")
+}
+
+/// Resolve a relative specifier against `dir` and express it as `@/…`, or `None` when it names no file.
+fn alias_for(spec: &str, dir: &Path, root: &Path) -> Option<String> {
+    // Normalize by hand rather than `canonicalize`: that requires the path to exist BEFORE we know which
+    // extension to try, and returns an absolute platform path we would only have to strip again.
+    let mut parts: Vec<String> = Vec::new();
+    for seg in dir.to_string_lossy().replace(BACKSLASH, "/").split('/').chain(spec.split('/')) {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other.to_string()),
+        }
+    }
+    let base = parts.join("/");
+    // The forms the loader's own resolution accepts, in the order a bundler tries them.
+    for suffix in [".ts", ".tsx", "/index.ts", "/index.tsx"] {
+        let candidate = format!("{base}{suffix}");
+        if !root.join(&candidate).exists() {
+            continue;
+        }
+        let rel = candidate
+            .strip_prefix(&format!("{}/", root.to_string_lossy().replace(BACKSLASH, "/")))
+            .unwrap_or(&candidate)
+            .to_string();
+        let rest = rel.strip_prefix("src/")?;
+        // `@/x/y` is the registration key, so an `index` file is addressed by its DIRECTORY and every
+        // form drops its extension — matching how `provides` is derived for the module itself.
+        let trimmed = rest
+            .strip_suffix("/index.ts")
+            .or_else(|| rest.strip_suffix("/index.tsx"))
+            .or_else(|| rest.strip_suffix(".tsx"))
+            .or_else(|| rest.strip_suffix(".ts"))
+            .unwrap_or(rest);
+        return Some(format!("@/{trimmed}"));
+    }
+    None
+}
+
 pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
     let (tech, src_bytes, _tree) = parse(file)?;
-    let code = String::from_utf8_lossy(&src_bytes).into_owned();
+    // The one place a lifted module is NOT verbatim — see `absolutize_imports`.
+    let code = absolutize_imports(&String::from_utf8_lossy(&src_bytes), file, root);
     let src_rel = file
         .strip_prefix(root)
         .unwrap_or(file)
@@ -899,6 +1004,60 @@ mod tests {
         // pass `tests/fixtures` directly) keep working. Locking the distinction in: it is the reason
         // adding `fixtures` to SKIP_DIRS did not break every other test in this module.
         assert!(!harvest(&fixtures()).is_empty());
+    }
+
+
+    /// A record resolves through the LOADER, which has no directory — so a lifted module's relative
+    /// imports have to become absolute or the record cannot load, and takes its importing page with it
+    /// (harvest-module-must-rewrite-relative-imports).
+    #[test]
+    fn harvest_module_absolutizes_relative_imports() {
+        let root = std::env::temp_dir().join("bsc-graph-absolutize");
+        let feat = root.join("src").join("features").join("demo");
+        let lib = feat.join("lib");
+        std::fs::create_dir_all(&lib).unwrap();
+        std::fs::create_dir_all(root.join("src").join("shared").join("bits")).unwrap();
+        // The three shapes the loader accepts: a plain sibling, a `.tsx` sibling, and a directory index.
+        std::fs::write(feat.join("sibling.ts"), "export const a = 1;
+").unwrap();
+        std::fs::write(feat.join("Widget.tsx"), "export const W = 1;
+").unwrap();
+        std::fs::write(root.join("src").join("shared").join("bits").join("index.ts"), "export const b = 2;
+").unwrap();
+        let entry = feat.join("entry.ts");
+        std::fs::write(
+            &entry,
+            concat!(
+                "import { a } from \"./sibling\";
+",
+                "import { W } from './Widget';
+",
+                "import { b } from \"../../shared/bits\";
+",
+                "import { keep } from \"@/already/absolute\";
+",
+                "import { gone } from \"./doesNotExist\";
+",
+                "const notAnImport = \"./sibling\";
+",
+                "export const use = [a, W, b, keep, gone, notAnImport];
+",
+            ),
+        )
+        .unwrap();
+
+        let c = harvest_module(&entry, &root).expect("module harvests");
+        assert!(c.code.contains("from \"@/features/demo/sibling\""), "plain sibling: {}", c.code);
+        assert!(c.code.contains("from '@/features/demo/Widget'"), "tsx sibling keeps its quote style: {}", c.code);
+        assert!(c.code.contains("from \"@/shared/bits\""), "a directory index drops /index: {}", c.code);
+        assert!(c.code.contains("from \"@/already/absolute\""), "an absolute import is untouched: {}", c.code);
+        // A specifier naming no file is LEFT ALONE — a guessed `@/…` could silently resolve to the wrong
+        // module, while an honest `./…` makes the loader name it.
+        assert!(c.code.contains("from \"./doesNotExist\""), "unresolvable stays relative: {}", c.code);
+        // Only MODULE SPECIFIERS are rewritten; a string that merely looks like a path is not one.
+        assert!(c.code.contains("notAnImport = \"./sibling\""), "a plain string literal is untouched: {}", c.code);
+
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
