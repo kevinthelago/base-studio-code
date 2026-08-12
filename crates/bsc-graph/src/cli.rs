@@ -197,7 +197,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "harvest" => {
             let dir = positional
                 .get(1)
-                .ok_or("usage: bsc graph harvest <dir-or-file> [--tech typescript|rust] [--worthy-only]")?;
+                .ok_or("usage: bsc graph harvest <dir-or-file> [--tech typescript|rust] [--worthy-only] [--module [--apply]]")?;
             // #3475: a harvest hands back file CONTENTS, so it must honor the SAME boundary the
             // file tools do. `bsc-confine` only inspects Claude's file-tool payloads and is blind to
             // what this binary reads — without this, a confined studio session (the librarian is
@@ -234,10 +234,55 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             } else {
                 crate::extract::harvest(target)
             };
-            let candidates: Vec<Value> = harvested
+            // `--apply` WRITES the harvest instead of only reporting it (harvest-module-can-persist).
+            // Module mode only, and that is a guard rather than a limitation: a directory harvest would
+            // write every function in the tree into the library as a side effect of asking what is there,
+            // which is the curation decision `curate --apply` exists to make deliberately. One file, one
+            // record, one specifier is the only shape where apply is unambiguous.
+            //
+            // It exists because `impl set --code <literal>` is the only other write path, and code on the
+            // command line does not scale: two of the modules this migration lifts are 71 KB and 42 KB,
+            // past the Windows `CreateProcess` argv limit, so they could not be written at all.
+            let apply = args.iter().any(|a| a == "--apply");
+            if apply && !module_mode {
+                return Err(
+                    "--apply writes ONE module as ONE record — pass --module with a file. \
+                     A directory harvest would write every function it found; use `curate --apply` for that."
+                        .to_string(),
+                );
+            }
+            let picked: Vec<crate::extract::Candidate> = harvested
                 .into_iter()
                 .filter(|c| tech.as_deref().is_none_or(|t| c.tech == t))
                 .filter(|c| !worthy_only || c.classification.worthy)
+                .collect();
+            if apply {
+                let mut g = crate::load();
+                for c in &picked {
+                    // The same field set `curate --apply` writes — `domain` (invisible without it,
+                    // #3607), `src` provenance (#4091), the `folder` derived from it (#4107), and the
+                    // colocated tests (#4126) — PLUS `provides`, which is the whole point here: a module
+                    // record the loader cannot match by specifier is a record nothing resolves through.
+                    let mut im = serde_json::json!({
+                        "id": c.id, "tech": c.tech, "role": c.role, "name": c.name,
+                        "composes": c.composes, "code": c.code,
+                        "domain": c.domain, "src": c.src,
+                        "tests": c.tests.iter().map(|t| serde_json::json!({ "name": t.name, "src": t.src })).collect::<Vec<_>>(),
+                    });
+                    if let Some(f) = bsc_util::folder_from_src(&c.src) {
+                        im["folder"] = Value::String(f);
+                    }
+                    // Set only when present. `impl set` is a MERGE (#4154), so writing an explicit null
+                    // would CLEAR a specifier a previous run established rather than leaving it alone.
+                    if let Some(p) = &c.provides {
+                        im["provides"] = Value::String(p.clone());
+                    }
+                    crate::set_impl(&mut g, im)?;
+                }
+                crate::save(&g)?;
+            }
+            let candidates: Vec<Value> = picked
+                .iter()
                 .map(|c| {
                     serde_json::json!({
                         "id": c.id,
@@ -263,7 +308,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     })
                 })
                 .collect();
-            emit(&serde_json::json!({ "candidates": candidates, "count": candidates.len() }))
+            emit(&serde_json::json!({ "applied": apply, "candidates": candidates, "count": candidates.len() }))
         }
         // `curate <dir> [--tech t] [--apply]` — the curation + optimize gate (#2745 slice 3): harvest +
         // classify a project, keep only the WORTHY candidates, and plan each into the library — an `add`,
@@ -724,7 +769,7 @@ fn help(prog: &str) -> String {
          READ:\n  \
          {prog} impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
-         {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function\n  \
+         {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
          {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
   \
@@ -918,6 +963,23 @@ mod tests {
         // A PRIMITIVE describes a built-in via `--ref` and has no source by design (#2972) — the gate
         // must never apply to it, or the whole primitive tier becomes unwritable.
         assert!(provenance_declared("primitive", &bare, None, false));
+    }
+
+    /// `--apply` is the module migration's WRITE path (harvest-module-can-persist), and its guard is
+    /// what keeps it from becoming an accidental library dump: a directory harvest under `--apply`
+    /// would write every function it walked into the store as a side effect of asking what is there.
+    /// That is the deliberate curation decision `curate --apply` exists to make.
+    #[test]
+    fn apply_is_refused_without_module_mode() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests").join("fixtures").to_string_lossy().into_owned();
+        let err = bsc_cli_util::with_repo_root(None, || {
+            run(vec!["harvest".into(), fixtures, "--apply".into()], "bsc graph").unwrap_err()
+        });
+        assert!(
+            err.contains("--module"),
+            "a directory --apply must say it needs --module rather than writing the tree: {err}",
+        );
     }
 
     #[test]
