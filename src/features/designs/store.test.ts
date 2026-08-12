@@ -486,15 +486,33 @@ describe("restampUnstamped — the #4207 repair", () => {
     expect(push.mock.calls.map((c) => c[0].id)).not.toContain(seedNonPage.id);
   });
 
-  it("defers a page rather than handing the seed authority over what renders", async () => {
+  it("stamps a PAGE like any other record — nothing is seed-authoritative any more", async () => {
+    // THIS CASE ASSERTED THE OPPOSITE UNTIL `a5ee053b`, and the reversal was deliberate. #3723 made a
+    // page `seedAuthoritative`, force-resetting its store copy to the seed — and `planRestamp` deferred
+    // pages precisely because of that: stamping one would have handed the seed authority over what the
+    // app renders. `a5ee053b` ("store always wins — the seed is a starting point, not an authority")
+    // removed the predicate, because the force-reset "silently deleted the moved tests from
+    // consolepage/projectspage seconds after they were written".
+    //
+    // With nothing force-resetting a page there is nothing to defer, so stamping one is a PROVENANCE
+    // repair rather than a content swap. No caller passes `seedAuthoritative` anywhere in src/ —
+    // AppBanners says so twice, and `deferred` is structurally always 0.
+    //
+    // Kept rather than deleted: this is the seam where a reintroduced seed authority would show up. If
+    // this case ever fails again, check whether a `seedAuthoritative` predicate came back BEFORE
+    // changing the expectation — restoring the deferral without restoring the force-reset would defer
+    // repairs for a danger that no longer exists.
     vi.spyOn(bridge, "loadComponents").mockResolvedValue([unstamped(seedPage)]);
     vi.spyOn(bridge, "loadKits").mockResolvedValue(null);
     const stamp = vi.spyOn(bridge, "stampComponent").mockResolvedValue(undefined);
 
     const r = await useAppStore.getState().restampUnstamped();
 
-    expect(r).toEqual({ stamped: 0, deferred: 1 });
-    expect(stamp).not.toHaveBeenCalled();
+    expect(r).toEqual({ stamped: 1, deferred: 0 });
+    // …and it carries the SEED's hash, not the record's own — the subtle half of #4207. Stamped with its
+    // own hash the record would read as pristine-but-stale, which is the REFRESH verdict, and the seed
+    // copy would replace the store copy on the very next hydrate.
+    expect(stamp).toHaveBeenCalledWith(seedPage.id, seedPage.seedHash);
   });
 
   it("is a no-op when the bridge is unreachable — nothing to repair against", async () => {
