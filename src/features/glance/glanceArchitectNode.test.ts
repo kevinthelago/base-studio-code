@@ -1,10 +1,13 @@
-// #glance-architect-band — the funnel's tier 1 on the L0 graph.
+// #glance-architect-band + #architect-sits-with-the-projects — the funnel's tier 1 on the L0 graph.
 //
-// The architect is lifted into the SAME fenced band as the library + external-contract dimensions
-// (#3007 → #3119 → #3786) rather than getting a bespoke layout, and it is edged to every project. That
-// band lift is what keeps it out of the project DAG — which is the property worth pinning, because a
-// non-project node left in the DAG is exactly what closed the cycles `glance-planner-edge-isolation`
-// had to unpick.
+// The architect renders as a node IN the project network, edged to every project — not lifted into the
+// fenced band the library and external-contract dimensions use. That band is for shared DEPENDENCIES a
+// project consumes; an architect is the thing that CREATED the projects, which is the opposite
+// relationship, so it sits with them.
+//
+// The property that makes that safe is pinned below: the architect is a SINK (every `created-by` edge
+// points AT it), so it cannot close a cycle. Cycle regressions here have blanked the whole graph before
+// (glance-planner-edge-isolation), so it is asserted rather than assumed.
 import { describe, it, expect } from "vitest";
 import { buildGlanceData } from "./lib/glanceData";
 import {
@@ -30,10 +33,13 @@ describe("the architect node", () => {
     expect(architectIdOfNode(node!.id)).toBe("persona-architect");
   });
 
-  it("is a BAND node, so the layout lifts it out of the project DAG", () => {
+  it("is NOT a band node — it lays out WITH the projects (#architect-sits-with-the-projects)", () => {
+    // The fenced band is for shared DEPENDENCIES (kits, algorithms, MCP servers), which is the wrong
+    // relationship: an architect CREATED these projects rather than being consumed by them. Its
+    // presentation row is kept, so a surface that wants the label/colour still has one.
     const d = build();
     const node = d.rawNodes.find((n) => n.id === architectNodeId("persona-architect"))!;
-    expect(isBandNode(node)).toBe(true);
+    expect(isBandNode(node)).toBe(false);
     expect(bandNodeMeta(node).bandLabel).toBe("ARCHITECTS");
   });
 
@@ -46,8 +52,8 @@ describe("the architect node", () => {
     expect(edges[0].id).toBe(createdByEdgeId("app-a", "persona-architect"));
   });
 
-  it("its edge is a BAND edge, so it routes vertically instead of joining the project network", () => {
-    expect(isBandEdge("created-by")).toBe(true);
+  it("its edge is NOT a band edge — it routes in the project network like any other", () => {
+    expect(isBandEdge("created-by")).toBe(false);
   });
 });
 
@@ -76,15 +82,25 @@ describe("the degenerate cases render rather than break", () => {
 });
 
 describe("the band lift keeps the graph sound", () => {
-  it("introduces no cycle, and the architect is fenced above the projects", () => {
+  it("introduces no cycle — the architect is a SINK, and a cycle needs a path back out", () => {
+    // The load-bearing safety property now that it is inside the project network. Cycle regressions
+    // in this graph have blanked it before (glance-planner-edge-isolation), so this is asserted rather
+    // than assumed.
     const d = build();
     const m = buildGraph(d.rawNodes, d.rawEdges);
     expect(m.cyclePairs).toHaveLength(0);
     expect(m.cycleNodeIds.size).toBe(0);
-    // The fenced band exists and the architect sits inside it, above every project node.
-    expect(m.kitBand).toBeTruthy();
+    expect(d.rawEdges.every((e) => e.kind !== "created-by" || e.to === architectNodeId("persona-architect"))).toBe(true);
+  });
+
+  it("does not disturb the band for the dimensions that DO belong in it", () => {
+    // Removing the architect must leave the kit/library/contract lift exactly as it was.
+    const withKit = buildGlanceData(projects, [], [{ projectKey: "app-a", kitId: "react-ui" }], [{ id: "react-ui", name: "React UI" }], [], [], architect);
+    const m = buildGraph(withKit.rawNodes, withKit.rawEdges);
+    expect(m.kitBand, "the kit band still forms").toBeTruthy();
     const arch = m.nodes.find((n) => n.id === architectNodeId("persona-architect"))!;
-    const projNodes = m.nodes.filter((n) => !isBandNode(n));
-    for (const p of projNodes) expect(arch.y).toBeLessThan(p.y);
+    const kit = m.nodes.find((n) => n.kind === "kit")!;
+    expect(isBandNode(kit)).toBe(true);
+    expect(isBandNode(arch)).toBe(false);
   });
 });

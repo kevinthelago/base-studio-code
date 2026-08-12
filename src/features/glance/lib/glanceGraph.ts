@@ -234,15 +234,22 @@ export const libraryGraphOf = (n: { kind?: GNodeKind; library?: GLibraryGraph })
  *  route VERTICALLY into the fenced band and are excluded from the project-network layout. */
 export const isLibraryEdge = (kind: GEdgeKind): boolean => kind === "uses-kit" || kind === "requires";
 
-/** Is `n` a fenced-BAND node (#3786) — ANY lifted non-project node: a library node (kit/algorithm/sound)
+/** The ARCHITECT is deliberately NOT here (#architect-sits-with-the-projects). Every other non-project
+ *  node in this graph is a shared DEPENDENCY — a kit, an algorithm, an MCP server — and lifting those
+ *  keeps their health out of a project's roll-up and their edges out of the project DAG. An architect is
+ *  the opposite relationship: it CREATED these projects rather than being consumed by them, so it belongs
+ *  beside them in the same network. It is safe there because it is a SINK — every `created-by` edge
+ *  points AT it — and a cycle needs a path back out.
+ *
+ *  Is `n` a fenced-BAND node (#3786) — ANY lifted non-project node: a library node (kit/algorithm/sound)
  *  OR an external contract node (`mcp` / `service`). These are lifted OUT of the project DAG into the top
  *  band. */
 export const isBandNode = (n: { kind?: GNodeKind }): boolean =>
-  isLibraryNode(n) || n.kind === "mcp" || n.kind === "service" || n.kind === "architect";
+  isLibraryNode(n) || n.kind === "mcp" || n.kind === "service";
 /** Is `kind` a BAND edge (#3786) — a library edge OR an external-contract edge (`uses-mcp`/`uses-service`).
  *  These route VERTICALLY into the fenced band and are excluded from the project-network layout. */
 export const isBandEdge = (kind: GEdgeKind): boolean =>
-  isLibraryEdge(kind) || kind === "uses-mcp" || kind === "uses-service" || kind === "created-by";
+  isLibraryEdge(kind) || kind === "uses-mcp" || kind === "uses-service";
 /** The band presentation ({@link BandMeta}) for a fenced-band node (#3786) — the MCP row for an `mcp`
  *  contract node, the SERVICE row for a `service` contract node, else the library-graph row for a
  *  kit/algorithm/sound node. */

@@ -9,7 +9,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, LIFECYCLE_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, ARCHITECT_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingPulse, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GLibraryGraph } from "./lib/glanceGraph";
+import { ROLE_COLOR, LIFECYCLE_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingPulse, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
 import type { DockPlan } from "./GlanceChatDock";
@@ -163,15 +163,13 @@ export function GlanceCanvas(p: CanvasProps) {
       if (g) s.add(g);
       else if (n.kind === "mcp") s.add("mcp");
       else if (n.kind === "service") s.add("service");
-      else if (n.kind === "architect") s.add("architect");   // #glance-architect-band
+      // NOTE no architect arm (#architect-sits-with-the-projects): it is not a band node, and this
+      // loop walks EVERY node — counting it here would label an empty band "ARCHITECTS".
     }
     return [...s];
   }, [model.nodes]);
   const soleDim = bandDims.length === 1 ? bandDims[0] : null;
-  const bandMeta = soleDim === "architect" ? ARCHITECT_META
-    : soleDim === "mcp" ? MCP_META
-    : soleDim === "service" ? SERVICE_META
-    : soleDim ? LIBRARY_META[soleDim as GLibraryGraph] : null;
+  const bandMeta = soleDim === "mcp" ? MCP_META : soleDim === "service" ? SERVICE_META : soleDim ? LIBRARY_META[soleDim as GLibraryGraph] : null;
   const bandColor = bandMeta ? bandMeta.color : "var(--fg-muted)";
   const bandLabel = bandMeta ? bandMeta.bandLabel : "LIBRARIES";
 
