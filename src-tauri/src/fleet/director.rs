@@ -78,6 +78,38 @@ mod relocated_tests {
     }
 
     #[test]
+    fn director_protocol_takes_team_design_and_the_worker_context() {
+        // #funnel-planner-takes-team-and-context. The director staffs the fleet and authors the context
+        // its workers run under, from the architect's sealed requirement. Its capability row already
+        // permitted all of this (`bsc` is mandatory-tier, and `code: write` covers the hub prose) — what
+        // was missing was the protocol saying it is the director's JOB, which is what this guards.
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+
+        // The requirement is the director's ONLY input, and it must read it before anything else.
+        assert!(p.contains("bsc plan requirement get"),
+            "the director must read the architect's requirement, by name");
+        assert!(p.contains("You do NOT talk to the"),
+            "the director must be told it never converses with the user");
+        assert!(p.contains("do not infer one from the repo"),
+            "a missing requirement must stop the director, not license it to guess one");
+
+        // Team design: the discover-before-write loop, over both stores.
+        assert!(p.contains("DESIGN THE TEAM"), "team design must be a standing director duty");
+        assert!(p.contains("bsc persona list") && p.contains("bsc teams list"),
+            "the director must discover existing personas + teams before authoring");
+        assert!(p.contains("never guess an id"),
+            "the director must be told not to invent store ids");
+
+        // The context files, and the boundary on the write grant that lets it author them.
+        assert!(p.contains("AUTHOR THE WORKER CONTEXT FILES"),
+            "authoring the workers' context must be a standing director duty");
+        assert!(p.contains("prompts/<stream>-kickoff.md"),
+            "the director must know which files it authors");
+        assert!(p.contains("It does NOT reach") && p.contains("project code"),
+            "the write grant must be bounded in the same breath it is granted");
+    }
+
+    #[test]
     fn director_protocol_reports_an_undelivered_assign_to_a_stopped_lane() {
         // The commons + integration lanes are ORDINARY streams that stop when done, so the honesty
         // rule stops being advice and becomes the only thing preventing silent loss: a worker parked
