@@ -276,13 +276,24 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   const skills = toSkillCfgs(skillDefs);
   // Agents audit (#257): on a gated pane (role or profile assigned), install PreToolUse hooks: log
   // each tool attempt (bsc-audit), time MCP calls (bsc-mcp), enforce the write-scope gate (bsc-scope,
-  // #1297), the tainted-turn gate (bsc-taint, #1167), and — for a fleet WORKER only — the issue→PR Stop
-  // bounce (bsc-defer, #369) that keeps it going or defers a real question to the director (it bounces
-  // ONCE per stop, so a finished worker is never trapped). A restricted STUDIO session gets NO Stop
-  // bounce (#3580): its keep-going is the LOOP pump (useDesignerLoopPump, #3292), which drives it
-  // turn-by-turn ONLY while an open loop exists — so an interactive studio session stops and hands back
-  // instead of being told to power through a queue that isn't there. FS confinement (bsc-confine, #158)
-  // is NOT gated — it's defaulted onto every pane below (#1916).
+  // #1297) and the tainted-turn gate (bsc-taint, #1167). FS confinement (bsc-confine, #158) is NOT
+  // gated — it's defaulted onto every pane below (#1916).
+  //
+  // NO SESSION GETS A STOP BOUNCE ANY MORE (#session-stop-is-honoured). A worker used to carry
+  // `bsc-defer` (#369) here — a Stop hook that REFUSED the stop and sent it back to work. #4021 widened
+  // it from bouncing once to bouncing while any work remained, and the measured result was a session
+  // that could not end: one worker emitted `maintain` 66 times on a ~90s cadence, trying to stop and
+  // being pushed back each time. `maintain` became the most common event in the whole coordination log.
+  //
+  // Nothing was polling to wake those sessions; they were PREVENTED FROM STOPPING, which looks identical
+  // from outside — which is why two separate sweeps of the app's injection sites missed it. Resuming a
+  // finished session is the user's click now, so the hook has no successor: the comment above used to
+  // say "it bounces ONCE per stop, so a finished worker is never trapped", and that stopped being true
+  // in #4021 without the comment changing, which is most of why it survived review.
+  //
+  // The restricted STUDIO sessions never had one (#3580) — their keep-going is the LOOP pump
+  // (useDesignerLoopPump, #3292), which drives a session turn-by-turn ONLY while an open loop exists.
+  // That remains the one sanctioned way a session is kept going, and it is bounded by an explicit loop.
   // A fleet WORKER also gets the superseded gate (bsc-superseded, #4240): two actors can land the same
   // issue — a director closes one directly, two streams overlap — and today the second worker finds out
   // at MERGE time, after writing code and opening a conflicting PR. The completion is already ON the
@@ -290,8 +301,7 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   // back INTO a session. This reads it before an edit and blocks ONCE per issue, then latches — so the
   // worker is informed and moves on. Worker-only: a director coordinating is not doing the work.
   const workerGates = role === "worker"
-    ? [{ event: "Stop", matcher: "", command: "bsc-defer" },
-       { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit", command: "bsc-superseded" }]
+    ? [{ event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit", command: "bsc-superseded" }]
     : [];
   const gatedHooks = (cap || prof)
     ? [...hooks,
@@ -321,8 +331,8 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
        { event: "PostToolUse", matcher: "Skill", command: "bsc-skill" }]
     : gatedHooks;
   // Turn-activity hooks (#1184): authoritative turn boundaries for the status dot, on EVERY
-  // claude-launching pane. Listed AFTER bsc-defer so a worker's Stop records idle even though
-  // bsc-defer blocks the stop.
+  // claude-launching pane. Ordering no longer matters here — the Stop bounce that used to precede
+  // these is gone, so nothing can block the stop before the accounting hooks record it.
   const sessionHooks = [
     ...skillHooks,
     // FS confinement (#158/#1916): the DEFAULT, un-gated deny — confine the AI's file tools to this
@@ -339,7 +349,7 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
     // Turn accounting (bsc-activity + bsc-tokens, #1184/#416) — the un-gated observability floor, from
     // the ONE shared constant every launch path spreads (#3452 fleet / #3455 planner both silently lost
     // this set when it was inlined per-path). bsc-tokens is the ONLY per-session token source, so it
-    // must fire on Stop even for a worker whose `bsc-defer` blocks the stop (all hooks still run).
+    // must fire on Stop, and now nothing can refuse that Stop — these are the only Stop hooks left.
     ...TURN_ACCOUNTING_HOOKS,
   ];
   return {

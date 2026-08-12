@@ -313,15 +313,17 @@ describe("buildSessionSettings", () => {
     expect(out.denyToolRules).not.toContain("Task");
   });
 
-  it("installs the audit/confine/scope/taint/supply hooks + worker Stop-bounce for a worker role", () => {
+  it("installs the audit/confine/scope/taint/supply hooks for a worker role — and NO Stop bounce", () => {
     const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
     const out = buildSessionSettings(s, "p");
     const c = cmds(out);
     // bsc-supply (#3799) is a GATED hook — present on this agent pane, absent from the ungated pane
     // asserted above (the supply-chain add gate targets agents, not the maintainer's manual console).
-    expect(c).toEqual(expect.arrayContaining(["bsc-audit", "bsc-mcp", "bsc-confine", "bsc-deny", "bsc-scope", "bsc-taint", "bsc-supply", "bsc-defer", "bsc-superseded"]));
-    // turn-activity hooks stay together (after bsc-defer) so a worker's Stop still records idle, and
-    // the cost hooks (#3452) trail them — both must fire on Stop even though bsc-defer blocks the stop.
+    expect(c).toEqual(expect.arrayContaining(["bsc-audit", "bsc-mcp", "bsc-confine", "bsc-deny", "bsc-scope", "bsc-taint", "bsc-supply", "bsc-superseded"]));
+    // #session-stop-is-honoured: `bsc-defer` is GONE. It refused a worker's Stop while work remained,
+    // so a session could not end — measured at 66 bounces on a ~90s cadence for one worker.
+    expect(c).not.toContain("bsc-defer");
+    // The turn-activity + cost hooks still trail on Stop; nothing can block that Stop now.
     expect(c.slice(-6)).toEqual([
       "bsc-activity run", "bsc-activity attn", "bsc-activity idle", "bsc-activity idle",
       "bsc-tokens", "bsc-tokens",
@@ -355,6 +357,23 @@ describe("buildSessionSettings", () => {
     const out = buildSessionSettings(mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("auto-pr") } }), "p");
     for (const g of granted) expect(out.deniedCommands).not.toContain(g);
     for (const d of roleDenies.filter((x) => !granted.includes(x))) expect(out.deniedCommands).toContain(d);
+  });
+
+  it("NO role gets a Stop hook that can refuse the stop — a finished session stays finished", () => {
+    // The invariant, asserted over every role rather than the one that regressed: the only Stop hooks
+    // left are pure accounting (`bsc-activity idle`, `bsc-tokens`), which RECORD the turn boundary
+    // without preventing it. Resuming a stopped session is the user's click.
+    const BLOCKING_STOP_HOOKS = ["bsc-defer", "bsc-continue"];
+    for (const role of ["worker", "director", "planner", "triage", "designer", "librarian", "curator"]) {
+      const out = buildSessionSettings(mkStore({ paneRoles: { p: role } }), "p");
+      const stopCmds = out.hooks.filter((h) => h.event === "Stop").map((h) => h.command);
+      for (const blocking of BLOCKING_STOP_HOOKS) {
+        expect(stopCmds, `${role} must not carry ${blocking}`).not.toContain(blocking);
+      }
+      // ...and the accounting ones survive, or a stop would stop being observable.
+      expect(stopCmds, role).toContain("bsc-activity idle");
+      expect(stopCmds, role).toContain("bsc-tokens");
+    }
   });
 
   it("gates a director without ANY Stop bounce (unrestricted, non-worker)", () => {

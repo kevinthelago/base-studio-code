@@ -95,4 +95,27 @@ mod tests {
             "maintenance must state that edits go to the record:\n{md}",
         );
     }
+
+    /// #session-stop-is-honoured — the protocol must not promise MAINTENANCE as the end state.
+    ///
+    /// The promise was load-bearing for a hook that no longer exists: `bsc-defer` refused a worker's
+    /// Stop while work remained, and the prose told it to park in maintenance rather than end. With the
+    /// bounce gone, telling a worker it "does not end" would leave it looping on prose alone.
+    #[test]
+    fn the_worker_protocol_ends_at_stop_not_maintenance() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-stop-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        assert!(md.contains("you STOP"), "the protocol must end the loop at a stop:
+{md}");
+        assert!(
+            !md.contains("you do not end"),
+            "the protocol must not promise a session never ends:
+{md}",
+        );
+        // `bsc-maintain` survives as a NOTE, and must be described as one rather than as a park.
+        assert!(md.contains("not a parking brake"), "bsc-maintain must be framed as a note: {md}");
+    }
 }
