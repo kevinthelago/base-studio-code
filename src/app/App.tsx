@@ -17,8 +17,10 @@ import { useDockBack } from "./useDockBack";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 // #4186: Console renders FROM THE GRAPH — the host mounts the authored `consolepage` node. The file
-// component stays exported from the barrel and is NOT going away — both copies coexist, held identical by
-// the record↔file parity guard (`app/runtime/graphParity.test.ts`).
+// component stays exported from the barrel and is NOT going away — both copies coexist. They are no
+// longer held IDENTICAL: the record↔file parity guard was retired (see the note in
+// `app/runtime/shadowPages.ts`), because a record deliberately diverges from its file to render
+// standalone in the preview. What still holds is that the record is what MOUNTS.
 import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { DebugSessionMount, RequestSessionsMount } from "@/features/debug";

@@ -15,6 +15,33 @@
 // be a copy of the thing under test, which is not a second opinion. `bsc ui parity` (#4246) answers the
 // question that outlives the file: does the app RENDER what it SHIPS (store vs seed)?
 //
+// ── `graphParity.test.ts` IS RETIRED (retire-graphparity). Do not recreate it. ────────────────────
+//
+// It asserted that every record's CODE equals its source file's code, and it was written for two real
+// user-visible bugs: #4174 (a `security-flow` record still telling users to run a command #1039 had
+// removed, corrected in the file only) and #4179 (Skills drifting BOTH ways in a single day while the
+// suite stayed green, because #3854's own test asserted against a component nobody mounts).
+//
+// It was retired for a reason that will look like a bug if you rediscover it cold: at the end it was
+// failing for ~210 of the 299 records that still had a file, and almost none of those were drift. A
+// record must render STANDALONE in the preview sandbox, so it inlines what it cannot resolve and relaxes
+// required props — `backbutton`'s record defines `ChevronLeft` where the file imports it, and makes
+// `onClick`/`aria-label` optional. 156 of those records carry a transcription/inlining header saying so.
+// Record-only content is DESIGNED (the three-way merges preserved `loading`/`error` props the file never
+// had), so "the record's code equals the file's code" is not a stale assertion — it contradicts a
+// deliberate decision. Narrowing it to records that still have a file removes almost nothing.
+//
+// WHAT NOW COVERS WHAT, stated so the gap is visible rather than assumed:
+//   * `bsc ui parity` (#4246)        — store vs SEED. Does the app render what it ships?
+//   * `e2e/recordLinks.spec.ts`      — every record compiles and every specifier it needs resolves.
+//   * `e2e/graphPages.spec.ts`       — every page record exports a component.
+//   * `e2e/graphPrimitive.spec.ts`   — the record, not the bundled file, is what the renderer mounts.
+// NONE of them can see "the file was corrected and the record was not". That risk is ACCEPTED for as
+// long as both copies exist, and it disappears with the file — which is the direction of travel.
+// `projectsGraphSeed.test.ts` went with it: same class, and it had stopped running entirely because its
+// `ProjectsList.tsx?raw` baseline no longer exists. Its surviving question — does every specifier the
+// record imports resolve? — is what `recordLinks` now asks of every record, not just that one.
+//
 // Entries are nulled HERE, ahead of the deletion, because this file belongs to the design-studio stream
 // while each deletion item is scoped to its own feature glob — a github worker cannot edit this file, so
 // leaving the flip to the deletion would make every deletion item fail a test it has no way to fix.
