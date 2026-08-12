@@ -871,8 +871,13 @@ fn own_module_source<'a>(node: &'a Node, kit_targets: &BTreeSet<String>) -> Opti
 /// Rust port of `looksBuildableModule` (componentPreview.ts, #2828): does `src_text` look like a
 /// self-contained, buildable component MODULE rather than the usual usage snippet? Conservative — it
 /// must declare an `export`, contain no `…` code-elision marker, and use no `@/` first-party import
-/// (which has no dependency closure to resolve against here). Crate-visible so the write-time syntax
-/// gate (#2928) reuses the SAME "is this a module?" test to decide whether to syntax-check a `srcText`.
+/// (which has no dependency closure to resolve against IN THE PREVIEW SANDBOX). Crate-visible so the
+/// write-time syntax gate (#2928) reuses the SAME "is this a module?" test to decide whether to
+/// syntax-check a `srcText`.
+///
+/// This is the PREVIEW's oracle and must stay in lockstep with the TS `looksBuildableModule`. For "will
+/// the runtime LOADER mount this?" — a different and far more permissive question — use
+/// [`renders_at_runtime`] (#3849).
 ///
 /// It is now the boolean face of [`module_defects`] — the reasons ARE the predicate, so the write-time
 /// gate can NAME why it treated a `srcText` as a spec instead of silently skipping it (#3470).
@@ -903,12 +908,18 @@ pub(crate) fn module_defects(src_text: &str) -> Vec<String> {
     if has_code_elision(s) {
         why.push("a `…` elision marker stands in for omitted code — a sketch, not compilable code".to_string());
     }
+    // The PREVIEW's oracle, deliberately: any `@/` import is unresolvable in the preview sandbox, which
+    // is an isolated iframe resolving bare specifiers from esm.sh and shipping no first-party closure.
+    // This mirrors the TS `looksBuildableModule` exactly, and `looks_buildable_module_mirrors_the_ts_twin`
+    // holds the two in lockstep. Do NOT relax it here: the runtime loader's far more permissive
+    // resolution is a DIFFERENT question, answered by [`runtime_module_defects`].
     if s.contains("\"@/") || s.contains("'@/") {
-        let named = internal_specifiers(s);
-        let list = if named.is_empty() {
+        let named = unresolved_specifiers(s);
+        let all: Vec<String> = if named.is_empty() { internal_specifiers(s) } else { named };
+        let list = if all.is_empty() {
             String::new()
         } else {
-            format!(" ({})", named.iter().map(|m| format!("`{m}`")).collect::<Vec<_>>().join(", "))
+            format!(" ({})", all.iter().map(|m| format!("`{m}`")).collect::<Vec<_>>().join(", "))
         };
         why.push(format!(
             "unresolved first-party `@/…` import(s){list} — there is no dependency closure to resolve them against"
@@ -917,13 +928,84 @@ pub(crate) fn module_defects(src_text: &str) -> Vec<String> {
     why
 }
 
-/// The distinct `@/…` module specifiers `src_text` imports, in source order and de-duplicated — used
-/// only to NAME them in a [`module_defects`] reason (the defect itself is decided by the coarser
-/// substring test above, which is what the preview gate uses, so the message can never contradict it).
+/// Every reason `src_text` would not RENDER — the runtime loader's oracle, not the preview sandbox's.
+///
+/// #3849. [`module_defects`] answers "would the preview sandbox build this?", and for a `role: page`
+/// that is the wrong question asked of the wrong runtime. A page is mounted by the LOADER, which
+/// resolves a registered platform module (`isAppModule`) and an `@/components/<id>` sibling perfectly
+/// well — so the preview oracle condemns every graph page over imports that work. Measured live:
+/// restoring `fleetpage` from the recovery archive warned about sixteen specifiers, every one of which
+/// the runtime resolves.
+///
+/// A false "unresolved import" is not merely noise — it is the pressure that makes the next author
+/// hand-stub the import to silence it, which is the corruption `reimplemented-component` exists to catch
+/// (#3892/#3895). Two band-aids had already grown over the mismatch: `bsc ui set` skips the advisory
+/// entirely for any record carrying `provides` (#43), and `is_preview_buildable` grew its own
+/// registry-aware path (#3897). This is the third caller getting the right oracle rather than a fourth
+/// exception.
+pub(crate) fn runtime_module_defects(src_text: &str) -> Vec<String> {
+    let s = src_text.trim();
+    let mut why = Vec::new();
+    if s.is_empty() {
+        return why;
+    }
+    if !contains_word(s, "export") {
+        why.push("no `export` — the loader has nothing to mount".to_string());
+    }
+    if has_code_elision(s) {
+        why.push("a `…` elision marker stands in for omitted code — a sketch, not compilable code".to_string());
+    }
+    let unresolved = unresolved_specifiers(s);
+    if !unresolved.is_empty() {
+        let list = unresolved.iter().map(|m| format!("`{m}`")).collect::<Vec<_>>().join(", ");
+        why.push(format!(
+            "unresolved first-party import(s) ({list}) — resolving to no registered platform module and no `@/components/<id>` sibling"
+        ));
+    }
+    why
+}
+
+/// Is `src_text` a module the RUNTIME LOADER can mount? The boolean face of [`runtime_module_defects`].
+pub(crate) fn renders_at_runtime(src_text: &str) -> bool {
+    !src_text.trim().is_empty() && runtime_module_defects(src_text).is_empty()
+}
+
+/// The distinct `@/…` specifiers `src_text` imports, in source order and de-duplicated — used only to
+/// NAME them in a [`module_defects`] reason when none of them is individually unresolvable (the preview
+/// defect is decided by the coarser substring test, so the message must not contradict it).
 fn internal_specifiers(src_text: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for spec in import_specifiers(src_text) {
         if spec.starts_with("@/") && !out.iter().any(|s| s == &spec) {
+            out.push(spec);
+        }
+    }
+    out
+}
+
+/// The `@/…` specifiers a bare `srcText` carries that would NOT resolve at runtime — the write-time
+/// counterpart to [`no_implementation_reasons`]'s check, minus the parts that need a kit.
+///
+/// Three ways a first-party specifier resolves, exactly as the loader does it:
+///   * a REGISTERED PLATFORM MODULE — `isAppModule`, matched literally against the generated manifest;
+///   * a SIBLING RECORD — `@/components/<id>`, which `resolveGraphSource` vendors from the store by id;
+///   * ERASED before resolution (`import type`), which the loader never asks for at all (#4076).
+///
+/// A kit-relative `src`-path resolution (`resolves_internal`) is deliberately NOT attempted: at write
+/// time there is no kit context, and guessing one would put this check back in the business of being
+/// more permissive than the runtime, which is what #4188 removed from the frontend guard.
+pub(crate) fn unresolved_specifiers(src_text: &str) -> Vec<String> {
+    let erased = erased_specifiers(src_text);
+    let mut out: Vec<String> = Vec::new();
+    for spec in import_specifiers(src_text) {
+        if !is_internal_specifier(&spec)
+            || erased.contains(&spec)
+            || platform_modules().contains(&spec)
+            || spec.starts_with("@/components/")
+        {
+            continue;
+        }
+        if !out.iter().any(|s| s == &spec) {
             out.push(spec);
         }
     }
