@@ -169,6 +169,26 @@ pub struct AlgoImpl {
     /// librarian authors it (`bsc graph impl set --viz-code`); absent ⇒ omitted. Stored as `vizCode`.
     #[serde(default, rename = "vizCode", skip_serializing_if = "Option::is_none")]
     pub viz_code: Option<String>,
+    /// The `@/…` specifier this impl SATISFIES — what the runtime loader matches a record's import
+    /// against, the same field the component store carries (#3660).
+    ///
+    /// Typed late, and the gap was not cosmetic: the store had held this since `harvest --module`
+    /// existed, so a typed round-trip DROPPED it silently. `provides` is not incidental metadata — it is
+    /// the whole reason a logic module can be a record at all, and an untyped field the store round-trips
+    /// through is one refactor away from being dropped for real.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provides: Option<String>,
+    /// The COLOCATED TESTS carried onto the node (#4126), paired only when they can run in isolation.
+    /// Additive like every facet above: an impl without them re-serializes with no `tests` key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tests: Vec<AlgoImplTest>,
+}
+
+/// One test paired with an impl: its display name and its full source.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AlgoImplTest {
+    pub name: String,
+    pub src: String,
 }
 
 /// The implementation objects of the runtime graph (store-or-seed).
@@ -757,6 +777,36 @@ mod tests {
         let dijkstra = implementations_of(&seed()).into_iter().find(|im| im["id"] == "dijkstra.rs").unwrap();
         let typed: AlgoImpl = serde_json::from_value(dijkstra).unwrap();
         assert_eq!(typed.domain.as_deref(), Some("logistics"));
+    }
+
+    /// `provides` is what makes a record RESOLVABLE at runtime, and `tests` is what will let one be
+    /// verified in isolation — so both must survive the typed model, not merely sit in the JSON.
+    /// Untyped, they round-tripped to nothing and the whole 19-module migration failed this test
+    /// (algoimpl-drops-provides-and-tests).
+    #[test]
+    fn a_record_keeps_provides_and_its_paired_tests_through_the_typed_model() {
+        let raw = serde_json::json!({
+            "id": "use-plan-gates.ts", "tech": "typescript", "role": "algorithm", "name": "usePlanGates",
+            "composes": [], "code": "export const x = 1;
+",
+            "provides": "@/features/planner/session/usePlanGates",
+            "tests": [{ "name": "usePlanGates", "src": "import { it } from \"vitest\";
+" }],
+        });
+        let typed: AlgoImpl = serde_json::from_value(raw.clone()).expect("parses");
+        assert_eq!(typed.provides.as_deref(), Some("@/features/planner/session/usePlanGates"));
+        assert_eq!(typed.tests.len(), 1);
+        assert_eq!(serde_json::to_value(&typed).unwrap(), raw, "round-trips byte-for-byte");
+
+        // ADDITIVE both ways: an impl with neither gains no keys, so untouched seed JSON stays identical.
+        let bare = serde_json::json!({
+            "id": "fibonacci.ts", "tech": "typescript", "role": "algorithm", "name": "fibonacci",
+            "composes": [], "code": "export const f = 1;
+",
+        });
+        let typed: AlgoImpl = serde_json::from_value(bare.clone()).expect("parses");
+        assert!(typed.provides.is_none() && typed.tests.is_empty());
+        assert_eq!(serde_json::to_value(&typed).unwrap(), bare, "no empty provides/tests keys appear");
     }
 
     // ── #3210 kind facet ──
