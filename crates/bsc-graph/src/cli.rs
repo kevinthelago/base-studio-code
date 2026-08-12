@@ -331,6 +331,30 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         im["provides"] = Value::String(p.clone());
                     }
                     crate::set_impl(&mut g, im)?;
+                    // ROUTE THE INTEGRATION TEST (edges-fill-themselves-at-retirement). A colocated test
+                    // that reaches other modules is not paired onto the node — but it must not be left
+                    // behind either, because the file it lives in goes when the module retires. It
+                    // becomes an EDGE: this record plus the specifiers it reaches.
+                    //
+                    // Those specifiers are usually still FILES at this moment, which is why a member may
+                    // be a specifier rather than a record id — `doctor` reports them as PENDING and they
+                    // resolve as the migration reaches them.
+                    if let Some(t) = &c.edge_test {
+                        let mut members = vec![Value::String(c.id.clone())];
+                        members.extend(c.edge_members.iter().map(|m| Value::String(m.clone())));
+                        crate::set_edge(
+                            &mut g,
+                            serde_json::json!({
+                                // Keyed on the module, so a re-harvest UPDATES this edge rather than
+                                // adding a second one for the same test file.
+                                "id": format!("{}~integration", c.id),
+                                "members": members,
+                                // The TEST's path, not the module's — the edge is about the test.
+                                "src": c.edge_src,
+                                "tests": [{ "name": t.name, "src": t.src }],
+                            }),
+                        )?;
+                    }
                 }
                 crate::save(&g)?;
             }
@@ -358,6 +382,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         // Omitted entirely at function granularity, where it would always be null and
                         // would read as "this impl has no specifier yet" rather than "cannot have one".
                         "provides": c.provides,
+                        // The integration test routed to an edge, if any — visible in a dry harvest so
+                        // the routing can be inspected before it is applied.
+                        "edgeMembers": c.edge_members,
                     })
                 })
                 .collect();
@@ -655,7 +682,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // EDGE COVERAGE (integration-tests-become-graph-edges). `composes` says A builds on B;
                 // an edge says someone CHECKED. Reporting the gap makes coverage a property of the
                 // graph rather than of a file tree — the first question the node tier could never ask.
-                let (missing_edges, dangling_edges) = crate::edge_findings(&g);
+                let (missing_edges, dangling_edges, pending_edges) = crate::edge_findings(&g);
                 emit(&serde_json::json!({
                     "findings": findings,
                     "count": findings.len(),
@@ -664,6 +691,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     // Separate, and worse: a MISSING edge is honestly empty, a DANGLING one reads as
                     // covered while naming a record that is gone.
                     "danglingEdges": dangling_edges,
+                    // PENDING is not a defect: an edge written at retirement names collaborators that
+                    // are still files, and they resolve as the migration reaches them.
+                    "pendingEdges": pending_edges,
                 }))
             }
         }

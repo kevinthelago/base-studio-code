@@ -279,11 +279,12 @@ pub fn remove_edge(g: &mut Value, id: &str) -> bool {
     before != arr.len()
 }
 
-/// Which `composes` relations have NO edge covering them, and which edges name a record that is gone.
+/// Which `composes` relations have NO edge covering them, which edges name a record that is GONE, and
+/// which name a specifier no record provides YET. Returned as `(missing, dangling, pending)`.
 ///
 /// A dangling edge is reported separately and deliberately: a MISSING edge is honestly empty, while a
 /// dangling one reads as covered — the worse of the two failures.
-pub fn edge_findings(g: &Value) -> (Vec<Value>, Vec<Value>) {
+pub fn edge_findings(g: &Value) -> (Vec<Value>, Vec<Value>, Vec<Value>) {
     let impls = implementations_of(g);
     let known: std::collections::HashSet<String> = impls
         .iter()
@@ -297,21 +298,54 @@ pub fn edge_findings(g: &Value) -> (Vec<Value>, Vec<Value>) {
         .filter(|im| im.get("role").and_then(Value::as_str) == Some("primitive"))
         .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
         .collect();
+    // What the records currently PROVIDE — how a specifier-shaped member resolves.
+    let provided: std::collections::HashSet<String> = impls
+        .iter()
+        .filter_map(|im| im.get("provides").and_then(Value::as_str).map(str::to_owned))
+        .collect();
     let edges = edges_of(g);
     // Every unordered pair some edge spans.
     let mut covered: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
     let mut dangling = Vec::new();
+    let mut pending = Vec::new();
     for e in &edges {
         let members: Vec<String> = e
             .get("members")
             .and_then(Value::as_array)
             .map(|a| a.iter().filter_map(|m| m.as_str().map(str::to_owned)).collect())
             .unwrap_or_default();
-        let unknown: Vec<&String> = members.iter().filter(|m| !known.contains(*m)).collect();
-        if !unknown.is_empty() {
+        // A member is either a RECORD ID or a `@/…` SPECIFIER, and the difference is the whole point.
+        //
+        //   pending  — a specifier no record provides YET. An edge is written when a module RETIRES,
+        //              and its collaborators are usually still files at that moment, so this is the
+        //              migration not having reached them: expected, honest, not an error.
+        //   dangling — a bare record id that does not exist. A record was REMOVED and the edge still
+        //              claims to cover it, which reads as covered while covering nothing.
+        //
+        // Collapsing the two would make doctor either cry wolf or go silent — the same mistake as
+        // counting primitive relations, which reported 46 findings where exactly 1 was real.
+        let mut unresolved = Vec::new();
+        let mut not_yet = Vec::new();
+        for m in &members {
+            if let Some(spec) = m.strip_prefix("@/") {
+                let _ = spec;
+                if !provided.contains(m) {
+                    not_yet.push(m.clone());
+                }
+            } else if !known.contains(m) {
+                unresolved.push(m.clone());
+            }
+        }
+        if !unresolved.is_empty() {
             dangling.push(serde_json::json!({
                 "edge": e.get("id").and_then(Value::as_str).unwrap_or(""),
-                "unknownMembers": unknown,
+                "unknownMembers": unresolved,
+            }));
+        }
+        if !not_yet.is_empty() {
+            pending.push(serde_json::json!({
+                "edge": e.get("id").and_then(Value::as_str).unwrap_or(""),
+                "pendingMembers": not_yet,
             }));
         }
         for i in 0..members.len() {
@@ -333,7 +367,7 @@ pub fn edge_findings(g: &Value) -> (Vec<Value>, Vec<Value>) {
             missing.push(serde_json::json!({ "from": from, "to": to }));
         }
     }
-    (missing, dangling)
+    (missing, dangling, pending)
 }
 
 /// Unordered pair key — an edge A↔B covers B↔A.
@@ -985,24 +1019,24 @@ mod tests {
                 "id": "typescript.array", "tech": "typescript", "role": "primitive", "name": "array", "composes": []
             }));
             withprim["implementations"][0]["composes"].as_array_mut().unwrap().push(serde_json::json!("typescript.array"));
-            let (missing, _) = edge_findings(&withprim);
+            let (missing, _, _) = edge_findings(&withprim);
             assert!(!missing.iter().any(|m| m["to"] == "typescript.array"), "a primitive is not a missing edge: {missing:?}");
         }
 
         // Both relations are uncovered to begin with.
-        let (missing, dangling) = edge_findings(&g);
+        let (missing, dangling, _) = edge_findings(&g);
         assert_eq!(missing.len(), 2, "a→b and a→c are both uncovered: {missing:?}");
         assert!(dangling.is_empty());
 
         // An edge over a→b covers it, in either direction.
         set_edge(&mut g, serde_json::json!({ "id": "a×b", "members": ["b.ts", "a.ts"] })).unwrap();
-        let (missing, _) = edge_findings(&g);
+        let (missing, _, _) = edge_findings(&g);
         assert_eq!(missing.len(), 1, "only a→c is left: {missing:?}");
         assert_eq!(missing[0]["to"], "c.ts");
 
         // A DANGLING edge is its own finding — it reads as covered while naming a record that is gone.
         set_edge(&mut g, serde_json::json!({ "id": "a×ghost", "members": ["a.ts", "ghost.ts"] })).unwrap();
-        let (_, dangling) = edge_findings(&g);
+        let (_, dangling, _) = edge_findings(&g);
         assert_eq!(dangling.len(), 1);
         assert_eq!(dangling[0]["unknownMembers"][0], "ghost.ts");
 
@@ -1018,6 +1052,26 @@ mod tests {
 
         assert!(remove_edge(&mut g, "a×ghost"));
         assert!(edge_findings(&g).1.is_empty());
+
+        // PENDING, not dangling: an edge written when a module retires names collaborators that are
+        // still FILES. `@/…` that no record provides YET is the migration not having reached it —
+        // expected and honest — where a bare id that does not exist is a record that was REMOVED.
+        set_edge(&mut g, serde_json::json!({
+            "id": "a~integration",
+            "members": ["a.ts", "@/features/not/migrated/yet"],
+        })).unwrap();
+        let (_, dangling, pending) = edge_findings(&g);
+        assert!(dangling.is_empty(), "a specifier is not dangling: {dangling:?}");
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0]["pendingMembers"][0], "@/features/not/migrated/yet");
+
+        // …and it RESOLVES once that module becomes a record carrying the specifier.
+        g["implementations"].as_array_mut().unwrap().push(serde_json::json!({
+            "id": "yet.ts", "tech": "typescript", "role": "algorithm", "name": "yet", "composes": [],
+            "provides": "@/features/not/migrated/yet",
+        }));
+        let (_, _, pending) = edge_findings(&g);
+        assert!(pending.is_empty(), "pending clears when the module migrates: {pending:?}");
     }
 
     // ── #3210 kind facet ──
