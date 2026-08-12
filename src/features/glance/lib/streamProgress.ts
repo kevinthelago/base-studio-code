@@ -96,3 +96,22 @@ export function withStreamProgress<T extends { id: string; progress?: StreamProg
     return p ? { ...n, progress: p } : n;
   });
 }
+
+/**
+ * The project's progress across EVERY issue — including those no stream owns.
+ *
+ * `glance-progress-ref-namespace-split`. {@link streamProgress} deliberately SKIPS unowned issues,
+ * because attributing them to a worker would make that worker's denominator wrong. But the project as a
+ * whole owns all of them, so summing the per-stream rows is not the project's number and never was:
+ * `studio-code` reads 24 issues here and 56 stream-owned refs there, and the two levels of the graph
+ * showed those two numbers side by side with nothing to say they measured different things.
+ *
+ * Deliberately the SAME `complete | verified` definition as every other done-count in this file, and the
+ * same one `bsc project progress` uses for the L0 node — so the director's bar and the project node's
+ * bar are the same fact rather than two estimates that happen to agree.
+ */
+export function projectProgress(issues: readonly OwnedIssue[]): StreamProgress {
+  let done = 0;
+  for (const i of issues) if (TERMINAL_GOOD.has(i.status)) done += 1;
+  return { done, total: issues.length };
+}
