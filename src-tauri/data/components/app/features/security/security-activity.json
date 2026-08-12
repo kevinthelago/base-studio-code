@@ -9,7 +9,7 @@
     "StatTile",
     "Text"
   ],
-  "src": "src/features/security/ActivityTab.tsx",
   "folder": "features/security",
-  "provides": "@/components/security-activity"
+  "provides": "@/components/security-activity",
+  "srcRetired": "src/features/security/ActivityTab.tsx"
 }
