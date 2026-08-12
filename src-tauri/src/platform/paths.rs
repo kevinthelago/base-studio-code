@@ -197,9 +197,16 @@ pub(crate) fn repo_short(repo_full_name: &str) -> &str {
 /// the hub-rooted director believe it launches the fleet. Relocating them here makes each
 /// worker load only its own scoped `CLAUDE.local.md` + the repo's tracked `CLAUDE.md` (#844).
 pub(crate) fn worktrees_dir(project_key: &str) -> std::path::PathBuf {
-    bsc_base_dir()
-        .join("worktrees")
-        .join(sanitize_project_key(project_key))
+    worktrees_root().join(sanitize_project_key(project_key))
+}
+
+/// The root every project's worktree tree hangs off — the sibling of [`projects_root`].
+///
+/// Exists so a cwd can be resolved back to its project key from EITHER root. `project_key_from_cwd`
+/// stripped only `projects_root()`, which silently excluded every worker (they live here, not there,
+/// since #844) from the per-project stores keyed off that derivation.
+pub(crate) fn worktrees_root() -> std::path::PathBuf {
+    bsc_base_dir().join("worktrees")
 }
 
 /// The on-disk directory NAME of a fleet worker's worktree: `<repoShort>--<slug>`, where
