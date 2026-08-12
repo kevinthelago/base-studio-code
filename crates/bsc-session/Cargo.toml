@@ -1,0 +1,17 @@
+[package]
+name = "bsc-session"
+version = "0.1.0"
+edition = "2021"
+description = "The `bsc session` CLI (#architect-starts-and-stops-system-sessions): start · stop · list the app-owned SYSTEM SESSIONS (designer, librarian, architect, sound-designer, integrator). The id is an ENUM resolved against a closed registry and refused outside it — that closed set is what makes the verb safe to grant to the architect, which ingests raw user prose. Tauri-free; rides the shared bsc-appchan transport."
+
+[lib]
+name = "bsc_session"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bsc-util = { path = "../bsc-util" }
+bsc-cli-util = { path = "../bsc-cli-util" }
+# The ONE bsc→app request channel — shared with `bsc shot`/`bsc navigate`/`bsc fleet`, so there is no
+# second transport.
+bsc-appchan = { path = "../bsc-appchan" }

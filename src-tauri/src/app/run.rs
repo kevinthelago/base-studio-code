@@ -74,6 +74,9 @@ pub fn run() {
         // `navigate_ack` (invoked by the frontend once it has applied the view) delivers into it.
         .manage(crate::navigate::NavPending::default())
         .manage(crate::fleet::wake::WakePending::default())
+        // In-flight `bsc session start|stop` requests — the same park-and-ack shape as the wake above,
+        // because bringing a studio up is frontend state (#architect-starts-and-stops-system-sessions).
+        .manage(crate::session::system::LifecyclePending::default())
         // In-flight `bsc debug` inspections (#3437) — the same park-and-ack shape as navigate.
         .manage(crate::debug::DebugPending::default())
         .manage(scope_registry.clone())
@@ -355,6 +358,7 @@ pub fn run() {
             logs::logs_usage,
             logs::graph_dump,
             crate::fleet::wake::fleet_wake_ack,
+            crate::session::system::system_session_ack,
             logs::logs_pane_activity,
             logs::logs_done_panes,
             logs::clear_log,

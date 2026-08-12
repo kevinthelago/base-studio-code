@@ -394,6 +394,26 @@ const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> 
     // never the "bsc fleet" prefix: that prefix would also carry `bsc fleet wake`, handing the architect
     // a lever to START a director. Seeing is not reaching — its only outbound channel stays the brief.
     "bsc fleet directors",
+    // #architect-starts-and-stops-system-sessions — the architect's lever over the app's OWN studios:
+    // start · stop · list the designer, librarian, sound-designer and integrator.
+    //
+    // WHY THIS IS SAFE TO GRANT A SESSION THAT READS RAW USER PROSE. The architect is `none` on every
+    // axis precisely because it is the highest prompt-injection surface in the system, and being the
+    // least capable session used to be the whole mitigation. The replacement is one property — THE
+    // ARCHITECT CAN ONLY CAUSE WHAT A USER CLICKING IN THE APP CAN ALREADY CAUSE — held up by three
+    // things, all of which have to stay true if this grant is ever widened:
+    //   a. The argument is an ENUM, not a string: `bsc session` resolves its id against a closed
+    //      app-owned registry (and the APP re-resolves it, since the channel dir is writable by
+    //      anything). No verb here takes a command, a path, or prose that becomes execution.
+    //   b. No escalation through what it starts: a started session keeps its OWN role gate, so
+    //      starting the designer yields a designer confined to `bsc ui`. The reachable capability set
+    //      is the union of the fixed personas' gates — every one already one click away.
+    //   c. The lever list IS the grant list: the full verb, never a prefix.
+    // Consequence worth stating plainly: this reaches SYSTEM sessions only. A director is not
+    // expressible in the verb's argument space, so `stop` can never end one — a director coordinates a
+    // running fleet whose workers, under the no-app-injection model, have no route back except the
+    // user's click.
+    "bsc session",
     ...LOOP_PARTICIPANT_COMMANDS,
     "bsc request new",
     "bsc request list",

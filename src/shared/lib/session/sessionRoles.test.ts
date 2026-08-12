@@ -790,7 +790,10 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     // helper precisely so this surface stays all-`bsc `, which the interpreter test below pins.
     // #architect-sees-director-state adds the READ of its own tier: the full verb, so the grant
     // cannot expand to `bsc fleet wake` and hand the architect a lever to START a director.
-    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet directors", ...LOOP, "bsc request new", "bsc request list"]);
+    // #architect-starts-and-stops-system-sessions adds `bsc session` — start/stop/list over the
+    // app's OWN studios. Safe on a prose-ingesting session because the verb's argument is an id from a
+    // closed app-owned registry, not a command or a path; see the grant's comment in roleModel.ts.
+    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet directors", "bsc session", ...LOOP, "bsc request new", "bsc request list"]);
     expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound", ...LOOP, "bsc request new", "bsc request list"]);
   });
 

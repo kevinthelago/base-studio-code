@@ -104,6 +104,18 @@ fn handle(app: &tauri::AppHandle, env: &bsc_appchan::Envelope) -> Result<serde_j
             let res = crate::fleet::wake::apply(app, &env.id, &req)?;
             serde_json::to_value(res).map_err(|e| e.to_string())
         }
+        bsc_session::KIND => {
+            let req: bsc_session::SessionListRequest = serde_json::from_value(env.payload.clone())
+                .map_err(|e| format!("malformed session list request: {e}"))?;
+            let res = crate::session::system::list(app, &req)?;
+            serde_json::to_value(res).map_err(|e| e.to_string())
+        }
+        bsc_session::LIFECYCLE_KIND => {
+            let req: bsc_session::LifecycleRequest = serde_json::from_value(env.payload.clone())
+                .map_err(|e| format!("malformed session lifecycle request: {e}"))?;
+            let res = crate::session::system::apply(app, &env.id, &req)?;
+            serde_json::to_value(res).map_err(|e| e.to_string())
+        }
         bsc_navigate::KIND => {
             let req: bsc_navigate::NavRequest = serde_json::from_value(env.payload.clone())
                 .map_err(|e| format!("malformed navigate request: {e}"))?;
@@ -133,8 +145,20 @@ mod tests {
         assert_eq!(bsc_shot::KIND, "shot");
         assert_eq!(bsc_navigate::KIND, "navigate");
         assert_eq!(bsc_debug::KIND, "debug");
+        assert_eq!(bsc_session::KIND, "session");
+        assert_eq!(bsc_session::LIFECYCLE_KIND, "session-lifecycle");
         // One channel, routed by kind — a collision silently sends a request to the wrong handler.
-        let kinds = [bsc_shot::KIND, bsc_navigate::KIND, bsc_debug::KIND];
+        // `fleet` and its `fleet-wake` sibling are in here too: `session`/`session-lifecycle` follows
+        // the same two-key shape, and the pair is exactly where a prefix collision would hide.
+        let kinds = [
+            bsc_shot::KIND,
+            bsc_navigate::KIND,
+            bsc_debug::KIND,
+            bsc_fleet::KIND,
+            bsc_fleet::WAKE_KIND,
+            bsc_session::KIND,
+            bsc_session::LIFECYCLE_KIND,
+        ];
         for (i, a) in kinds.iter().enumerate() {
             for b in &kinds[i + 1..] {
                 assert_ne!(a, b, "two verbs on one channel must not collide");
