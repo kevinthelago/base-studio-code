@@ -24,7 +24,7 @@
     "Text",
     "Velocity"
   ],
-  "src": "src/features/github/Pulse.tsx",
   "folder": "features/github",
-  "provides": "@/components/github-pulse"
+  "provides": "@/components/github-pulse",
+  "srcRetired": "src/features/github/Pulse.tsx"
 }

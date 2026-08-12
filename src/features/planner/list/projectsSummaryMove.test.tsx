@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { GitHubPageModeStrip } from "@/features/github/GitHubSummary";
+// Imported from its real home: GitHubSummary.tsx was deleted (the `github-summary` record supersedes
+// it) and the re-export that used to forward this symbol went with it.
+import { GitHubPageModeStrip } from "@/features/github/summary/GitHubPageModeStrip";
 import { PROJECT_MODES } from "./projectModes";
 
 // #421: the Projects portfolio summary moved into the GitHub screen, between
