@@ -55,6 +55,20 @@ pub struct Candidate {
     pub provides: Option<String>,
     /// The reusability classification (#2745 slice 2) — library-worthy vs. project glue, with reasons.
     pub classification: Classification,
+    /// The colocated test that could NOT be paired, carried here so `--apply` can route it into an EDGE
+    /// rather than leave it behind when the module's file is retired
+    /// (edges-fill-themselves-at-retirement). A test that reaches other modules is not a broken record
+    /// test; it is evidence about a relationship, and dropping it at retirement is the loss this avoids.
+    pub edge_test: Option<CandidateTest>,
+    /// The app modules `edge_test` reaches — the edge's other members. Always ABSOLUTE `@/…`
+    /// specifiers, never relative: a member is matched against what records `provide`, and `./sibling`
+    /// resolves against a directory an edge does not have. A relative member also reads as a bare record
+    /// ID, so doctor would call it DANGLING when it is merely pending.
+    pub edge_members: Vec<String>,
+    /// The TEST file the edge came from — its provenance. Distinct from [`Self::src`], which is the
+    /// module's path: the edge is about the test, so pointing it at the module loses the one path a
+    /// reader needs to find the original.
+    pub edge_src: Option<String>,
 }
 
 /// One colocated test file carried on a candidate — the `{name, src}` shape a stored impl's `tests`
@@ -539,7 +553,12 @@ fn alias_for(spec: &str, dir: &Path, root: &Path) -> Option<String> {
     None
 }
 
-/// Can this colocated test run with NOTHING but the record and its package deps?
+/// EVERY app module a colocated test reaches other than the one under test.
+///
+/// Empty ⇒ the test can run with NOTHING but the record and its package deps, so it PAIRS onto the
+/// node. Non-empty ⇒ it is an integration test, and these are the members of the EDGE it becomes.
+/// All of them, not just the first: an edge naming one collaborator when the test exercises three
+/// would claim coverage it does not have.
 ///
 /// A record is a unit only if it can be verified ALONE, and that is the precondition for executing a
 /// record's tests in a sealed filesystem where no other app module exists. So a test is paired only when
@@ -553,20 +572,20 @@ fn alias_for(spec: &str, dir: &Path, root: &Path) -> Option<String> {
 /// Returns the disqualifying import, or `None` when the test is isolated. Naming the import matters —
 /// a test that is silently not paired reads as "this module has no test", which is the same false
 /// negative `test_path_for` produced when handed the wrong path.
-fn breaks_isolation(test_src: &str, module_stem: &str) -> Option<String> {
+fn foreign_app_imports(test_src: &str, module_stem: &str) -> Vec<String> {
+    let mut out = Vec::new();
     for spec in module_specifiers(test_src) {
-        let is_app = spec.starts_with("@/") || spec.starts_with('.');
-        if !is_app {
+        if !(spec.starts_with("@/") || spec.starts_with('.')) {
             continue; // a package — harness, present in the image
         }
-        // The module UNDER TEST, by any of the ways a colocated test names it.
-        let stem = spec.rsplit('/').next().unwrap_or("");
-        if stem == module_stem {
-            continue;
+        if spec.rsplit('/').next().unwrap_or("") == module_stem {
+            continue; // the module UNDER TEST
         }
-        return Some(spec);
+        if !out.contains(&spec) {
+            out.push(spec);
+        }
     }
-    None
+    out
 }
 
 /// Every `from "…"` specifier in a source text. Deliberately literal: a harvest reads code it did not
@@ -612,14 +631,34 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
         .and_then(|p| std::fs::read_to_string(&p).ok().map(|c| (p, c)));
     // Pair the test ONLY if it can run where the record will run — see `breaks_isolation`.
     let mut unpaired: Option<String> = None;
+    let mut edge_test: Option<CandidateTest> = None;
+    let mut edge_members: Vec<String> = Vec::new();
+    let mut edge_src: Option<String> = None;
     let tests = match found_test {
-        Some((p, contents)) => match breaks_isolation(&contents, stem) {
-            None => vec![CandidateTest { name: bsc_util::test_display_name(&p, &contents), src: contents }],
-            Some(spec) => {
-                unpaired = Some(spec);
+        Some((p, contents)) => {
+            let foreign = foreign_app_imports(&contents, stem);
+            if foreign.is_empty() {
+                vec![CandidateTest { name: bsc_util::test_display_name(&p, &contents), src: contents }]
+            } else {
+                unpaired = Some(foreign[0].clone());
+                // ABSOLUTE, via the same resolution the module's own imports get. A relative member
+                // cannot be matched against `provides` and reads as a bare record id, so doctor would
+                // report it DANGLING when the module has simply not migrated yet.
+                edge_members = foreign
+                    .into_iter()
+                    .map(|spec| alias_for(&spec, dir, root).unwrap_or(spec))
+                    .collect();
+                edge_src = Some(
+                    p.strip_prefix(root)
+                        .unwrap_or(&p)
+                        .to_string_lossy()
+                        .replace(BACKSLASH, "/"),
+                );
+                edge_test =
+                    Some(CandidateTest { name: bsc_util::test_display_name(&p, &contents), src: contents });
                 Vec::new()
             }
-        },
+        }
         None => Vec::new(),
     };
     let mut c = Candidate {
@@ -635,6 +674,9 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
         provides,
         src: src_rel,
         classification: Classification::default(),
+        edge_test,
+        edge_members,
+        edge_src,
     };
     c.classification = classify(&c);
     // Say so. A test left off the record must be VISIBLE, or "no tests" reads as "never had one".
@@ -699,6 +741,11 @@ fn build_candidates(defs: Vec<Def>, raw: Vec<(String, String, String)>, test_roo
                 // Function granularity: a fragment of a file satisfies no import specifier.
                 provides: None,
                 classification: Classification::default(),
+            // Function granularity never carries one: half a file is not a module, so it has no
+            // colocated test of its own to route.
+            edge_test: None,
+            edge_members: Vec::new(),
+            edge_src: None,
             };
             c.classification = classify(&c);
             c
@@ -1107,12 +1154,18 @@ mod tests {
         let bound = dir.join("bound.ts");
         std::fs::write(&bound, "export const two = 2;
 ").unwrap();
+        std::fs::write(dir.join("helper.ts"), "export const h = 3;
+").unwrap();
         std::fs::write(
             dir.join("bound.test.ts"),
             concat!(
                 "import { describe, it, expect } from \"vitest\";
 ",
                 "import { useAppStore } from \"@/store\";
+",
+                // A RELATIVE collaborator — the shape that shipped broken: it reads as a bare record id,
+                // so doctor called it DANGLING when the module had merely not migrated yet.
+                "import { h } from \"./helper\";
 ",
                 "import { two } from \"./bound\";
 ",
@@ -1129,6 +1182,19 @@ mod tests {
             "the disqualifying import is named: {:?}",
             c.classification.reasons,
         );
+
+        // The unpaired test is CARRIED, not discarded — `--apply` routes it into an edge naming every
+        // app module it reaches (edges-fill-themselves-at-retirement). Dropping it here is the loss the
+        // whole edge tier exists to prevent.
+        assert!(c.edge_test.is_some(), "the integration test rides along for routing");
+        // ABSOLUTE, both of them. A member is matched against what records `provide`, and `./helper`
+        // resolves against a directory an edge does not have.
+        assert_eq!(
+            c.edge_members,
+            vec!["@/store".to_string(), "@/features/demo/helper".to_string()],
+            "every member is an absolute specifier",
+        );
+        assert_eq!(c.edge_src.as_deref(), Some("src/features/demo/bound.test.ts"), "provenance is the TEST");
 
         std::fs::remove_dir_all(&root).ok();
     }
