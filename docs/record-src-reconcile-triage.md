@@ -42,3 +42,18 @@ Each was MERGED, never copied: the file logic taken, the record preview affordan
   `--apply` / `--annotate` / `--retire`.
 - `seedProjectionCoverage.test.ts` stops a new record field being silently dropped by the projection
   allowlist — the failure `seedRoundTrip` structurally cannot see.
+
+## The store half (components.db)
+
+The audit reads the STORE; the reconcile script reads the SEED. Different populations, both had to be
+resolved. `bsc ui backing audit` now reports **0** stale pointers for `base-studio-code` (was 58).
+
+- **24 store-only records** — user-authored/harvested, not `builtin`, no `seedHash`, so the seed reconcile
+  never touches them and nothing but a direct pass would ever fix them. 11 re-pointed, 13 retired.
+- **34 seed-backed records** — the corrected seed pointer was pushed onto each. “Leave them to
+  reconcileSeed” looked right and was NOT: that only refreshes a copy still hashing to its stamped
+  `seedHash`, and only **6 of 34** still do. The other 28 would have been kept, stale, on every launch.
+
+Only `src`/`srcRetired` were written — `bsc ui set` is a merge, so record content is untouched.
+
+Other kits are out of scope for the criterion and untouched: mobile-studio-code (70), react-d3 (25).
