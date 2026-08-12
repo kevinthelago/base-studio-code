@@ -32,16 +32,61 @@ mod relocated_tests {
 
     #[test]
     fn director_protocol_assigns_contract_ownership() {
-        // The director owns the integration contracts, tests the seams, and is the worker's
-        // help desk for them (#…). Guard that the standing protocol says so.
+        // The director owns the integration contracts and is the worker's help desk for them. That
+        // survives the funnel: answering from a contract is deciding, and deciding is the one thing
+        // the director keeps.
         let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
         assert!(p.contains("contracts/") || p.contains("contracts directory") || p.contains("INTEGRATION CONTRACTS"),
             "director protocol must claim ownership of the contracts directory");
-        assert!(p.contains("TEST THE INTEGRATIONS"), "director protocol must mandate integration testing");
-        // The director is the ONLY GitHub PR/issue writer by default (#1948): workers open PRs, the
-        // director reviews, merges, AND closes them — never the worker. Guard the ownership clause.
-        assert!(p.contains("OWN ALL GITHUB") && p.contains("gh pr merge"),
-            "director protocol must claim ownership of GitHub PR writes (merge/close) as the default");
+    }
+
+    #[test]
+    fn director_protocol_routes_the_doing_duties_rather_than_performing_them() {
+        // #funnel-commons-and-integration-streams. The director loses write, so its three DOING
+        // duties become lanes: the commons lane owns the repo-root commons, the integration lane owns
+        // the integration branch (merges, the revert, the seam tests). This replaces the assertions
+        // that guarded `OWN ALL GITHUB` / `gh pr merge` ownership — under local-first there are no PRs
+        // to own, so that clause is not narrowed, it is vacuous.
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+
+        // The GitHub-ownership clause is GONE, not reworded. Guarding its absence is the point: a
+        // director that still believes it merges PRs will sit waiting for PRs that never open.
+        assert!(!p.contains("OWN ALL GITHUB"),
+            "the OWN ALL GITHUB section must be removed -- local-first has no PRs to review or merge");
+        assert!(!p.contains("gh pr merge"),
+            "the director must not be told to merge PRs; it holds no GitHub write under the funnel");
+
+        // Commons: routed to the lane, and explicitly NOT applied by the director itself.
+        assert!(p.contains("ROUTE THE COMMONS"),
+            "director protocol must carry the commons ROUTING section");
+        assert!(p.contains("COMMONS lane"),
+            "the commons must be attributed to the commons lane, not to the director");
+        assert!(p.contains("never edit one yourself"),
+            "the director must be told it no longer edits a commons file");
+
+        // Integration: the revert and the seam tests both belong to the integration lane.
+        assert!(p.contains("WATCHDOG -- ROUTE THE REVERT"),
+            "the watchdog duty must be a routing instruction, not a revert the director performs");
+        assert!(p.contains("INTEGRATION lane"),
+            "the revert must be routed to the integration lane");
+        assert!(p.contains("TEST THE INTEGRATIONS"),
+            "integration testing must still be mandated -- as a routed duty");
+
+        // Both duties route through the same emitter every other dispatch uses.
+        assert!(p.contains("bsc-assign"),
+            "routed duties reach their lane via bsc-assign");
+    }
+
+    #[test]
+    fn director_protocol_reports_an_undelivered_assign_to_a_stopped_lane() {
+        // The commons + integration lanes are ORDINARY streams that stop when done, so the honesty
+        // rule stops being advice and becomes the only thing preventing silent loss: a worker parked
+        // on bsc-ask for a commons change is waiting on a lane that may have ended.
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+        assert!(p.contains("not delivered"),
+            "an assign to a stopped session must be described as undelivered");
+        assert!(p.contains("BLOCKED"),
+            "a commons change whose lane has stopped must be reported as blocked, not as landed");
     }
 
     #[test]

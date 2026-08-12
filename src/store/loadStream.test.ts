@@ -58,8 +58,11 @@ describe("load-stream fleet wiring (#ls-stream)", () => {
     const rows = useAppStore.getState().fleetStartProject(PROJECT_NAME, fleet([loadStream()]), PROJECT_KEY);
     const { paneRoleGlobs } = useAppStore.getState();
 
-    // Find the pane that the load stream landed in
-    const paneId = Object.keys(paneRoleGlobs).find((k) => paneRoleGlobs[k].length > 0);
+    // Find the pane the LOAD STREAM landed in — by its stream id, not by "the first pane with any
+    // globs". The commons lane carries globs now (#funnel-commons-and-integration-streams) and it
+    // launches FIRST, so a positional lookup silently reads the commons set instead.
+    const { fleetPaneStreams } = useAppStore.getState();
+    const paneId = Object.keys(fleetPaneStreams).find((k) => fleetPaneStreams[k].id === "load-stream");
     expect(paneId).toBeDefined();
     const globs = paneRoleGlobs[paneId!];
 
@@ -69,17 +72,18 @@ describe("load-stream fleet wiring (#ls-stream)", () => {
       expect(globs).toContain(expected);
     }
 
-    // roster rows returned
-    expect(rows.length).toBe(1);
+    // One roster row per session: the load stream plus the two lanes every project now gets.
+    expect(rows.length).toBe(3);
   });
 
   it("fleetPaneStreams records the load-stream AgentStream", () => {
     useAppStore.getState().fleetStartProject(PROJECT_NAME, fleet([loadStream()]), PROJECT_KEY);
     const { fleetPaneStreams } = useAppStore.getState();
     const streams = Object.values(fleetPaneStreams);
-    expect(streams.length).toBe(1);
-    const s = streams[0];
-    expect(s.id).toBe("load-stream");
+    // The load stream plus the commons + integration lanes.
+    expect(streams.length).toBe(3);
+    const s = streams.find((x) => x.id === "load-stream")!;
+    expect(s).toBeDefined();
     expect(s.dependsOn).toContain("source-experience");
     expect(s.issues).toEqual(expect.arrayContaining(["ls-stream", "ls-reconcile-ui", "ls-lineage-verify"]));
   });
@@ -101,14 +105,32 @@ describe("load-stream fleet wiring (#ls-stream)", () => {
     expect(texts.some((t) => t.includes("load-stream") || t.includes("Build-time load"))).toBe(true);
   });
 
-  it("a fleet with two streams produces two pane wiring entries", () => {
+  it("a fleet with two streams produces a pane wiring entry per stream, plus the two lanes", () => {
     const second: AgentStream = {
       id: "source-experience", name: "Source XP", repo: "org/studio-code",
       owns: ["src-tauri/src/data.rs"], issues: ["se-1"], dependsOn: [],
     };
     useAppStore.getState().fleetStartProject(PROJECT_NAME, fleet([loadStream(), second]), PROJECT_KEY);
     const streams = Object.values(useAppStore.getState().fleetPaneStreams);
-    expect(streams).toHaveLength(2);
-    expect(streams.map((s) => s.id)).toEqual(expect.arrayContaining(["load-stream", "source-experience"]));
+    // Two feature streams + the commons and integration lanes. Both streams share a repo here, so it
+    // is ONE pair of lanes, not one pair per stream.
+    expect(streams).toHaveLength(4);
+    expect(streams.map((s) => s.id)).toEqual(
+      expect.arrayContaining(["load-stream", "source-experience", "commons", "integration"]),
+    );
+  });
+
+  it("gives a DIRECTOR-LESS fleet the commons lane — the owner is a worker, not the director", () => {
+    // This whole suite runs `director: { enabled: false }`. Before the funnel that meant NO commons
+    // set was derived at all (the DIRECTOR was the steward, so a director-less fleet had none) and
+    // every feature stream was left free to write `.gitignore`. That gap is what these lanes close.
+    useAppStore.getState().fleetStartProject(PROJECT_NAME, fleet([loadStream()]), PROJECT_KEY);
+    const { fleetPaneStreams, paneRoleGlobs } = useAppStore.getState();
+    const commonsPane = Object.keys(fleetPaneStreams).find((k) => fleetPaneStreams[k].id === "commons");
+    expect(commonsPane).toBeDefined();
+    expect(paneRoleGlobs[commonsPane!]).toContain(".gitignore");
+    // …and the feature stream gates on it rather than racing it.
+    const load = Object.values(fleetPaneStreams).find((s) => s.id === "load-stream")!;
+    expect(load.dependsOn).toContain("commons");
   });
 });
