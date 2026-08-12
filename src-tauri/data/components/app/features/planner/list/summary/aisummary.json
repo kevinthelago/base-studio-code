@@ -12,5 +12,6 @@
     "Text",
     "Spacer",
     "Button"
-  ]
+  ],
+  "folder": "features/planner/list/summary"
 }

@@ -12,40 +12,40 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": true,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "pad",
-      "type": "Space | [Space, Space]",
       "req": false,
-      "desc": ""
+      "type": "Space | [Space, Space]"
     },
     {
+      "desc": "",
       "name": "radius",
-      "type": "Radius",
       "req": false,
-      "desc": ""
+      "type": "Radius"
     },
     {
+      "desc": "",
       "name": "borderFade",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     }
   ]
 }

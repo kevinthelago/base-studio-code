@@ -14,28 +14,28 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "publishPhase",
-      "type": "PublishPhase",
       "req": true,
-      "desc": ""
+      "type": "PublishPhase"
     },
     {
+      "desc": "",
       "name": "onBackToPlan",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "structure",
-      "type": "GhStructure",
       "req": true,
-      "desc": ""
+      "type": "GhStructure"
     },
     {
+      "desc": "",
       "name": "status",
-      "type": "GhStatusMap",
       "req": true,
-      "desc": ""
+      "type": "GhStatusMap"
     }
   ],
   "srcRetired": "src/features/planner/session/PublishProgressView.tsx"

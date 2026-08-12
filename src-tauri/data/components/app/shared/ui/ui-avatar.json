@@ -9,41 +9,47 @@
   "src": "src/shared/ui/data/Avatar.tsx",
   "props": [
     {
+      "desc": "",
       "name": "login",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "size",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "palette",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "bordered",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "ml",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "fontScale",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     }
   ],
-  "folder": "shared/ui/data"
+  "folder": "shared/ui/data",
+  "tests": [
+    {
+      "name": "Avatar",
+      "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render } from \"@testing-library/react\";\r\nimport { Avatar } from \"./Avatar\";\r\nimport { LabelChip } from \"./LabelChip\";\r\n\r\ndescribe(\"Avatar\", () => {\r\n  it(\"renders the login initial and a hover title\", () => {\r\n    const { container } = render(<Avatar login=\"octocat\" />);\r\n    const span = container.querySelector(\"span\")!;\r\n    expect(span.textContent).toBe(\"O\");\r\n    expect(span.getAttribute(\"title\")).toBe(\"@octocat\");\r\n  });\r\n\r\n  it(\"falls back to ? for an empty login\", () => {\r\n    const { container } = render(<Avatar login=\"\" />);\r\n    expect(container.querySelector(\"span\")!.textContent).toBe(\"?\");\r\n  });\r\n\r\n  it(\"borders + offsets in palette mode (assignee stack)\", () => {\r\n    const { container } = render(<Avatar login=\"alice\" palette bordered ml={-5} fontScale={0.56} />);\r\n    const style = container.querySelector(\"span\")!.style;\r\n    expect(style.border).toContain(\"var(--bg-canvas)\");\r\n    expect(style.marginLeft).toBe(\"-5px\");\r\n  });\r\n});\r\n\r\ndescribe(\"LabelChip\", () => {\r\n  it(\"renders the label name and tints from its hex color\", () => {\r\n    const { container } = render(<LabelChip label={{ name: \"bug\", color: \"ff0000\" }} />);\r\n    const span = container.querySelector(\"span\")!;\r\n    expect(span.textContent).toBe(\"bug\");\r\n    expect(span.style.color).toBe(\"rgb(255, 0, 0)\");\r\n  });\r\n});\r\n"
+    }
+  ]
 }

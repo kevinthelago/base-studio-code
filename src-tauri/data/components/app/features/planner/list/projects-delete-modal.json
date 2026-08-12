@@ -17,22 +17,22 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "target",
-      "type": "GhProject",
       "req": true,
-      "desc": ""
+      "type": "GhProject"
     },
     {
+      "desc": "",
       "name": "onClose",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "setProjects",
-      "type": "Dispatch<SetStateAction<GhProject[]>>",
       "req": true,
-      "desc": ""
+      "type": "Dispatch<SetStateAction<GhProject[]>>"
     }
   ]
 }

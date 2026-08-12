@@ -14,8 +14,10 @@
     "Row",
     "Screen",
     "Stack",
-    "TabBar",
-    "Text"
+    "Text",
+    "Column",
+    "FilterBar",
+    "QueryBanner"
   ],
   "folder": "features/github",
   "srcRetired": "src/features/github/GitHubWorkspace.tsx"

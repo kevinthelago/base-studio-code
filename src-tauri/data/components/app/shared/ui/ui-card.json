@@ -11,95 +11,101 @@
   "src": "src/shared/ui/data/Card.tsx",
   "props": [
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": true,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "loading",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "loadingLines",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "title",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "hint",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "right",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "headMb",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "header",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "tone",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "interactive",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "pad",
-      "type": "\"sm\"",
       "req": false,
-      "desc": ""
+      "type": "\"sm\""
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     },
     {
+      "desc": "",
       "name": "onClick",
-      "type": "(e: MouseEvent<HTMLDivElement>) => void",
       "req": false,
-      "desc": ""
+      "type": "(e: MouseEvent<HTMLDivElement>) => void"
     },
     {
+      "desc": "",
       "name": "tooltip",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     }
   ],
-  "folder": "shared/ui/data"
+  "folder": "shared/ui/data",
+  "tests": [
+    {
+      "name": "Card",
+      "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { Card } from \"./Card\";\r\n\r\ndescribe(\"Card\", () => {\r\n  it(\"renders the .card frame + children\", () => {\r\n    const { container } = render(<Card>body</Card>);\r\n    expect(container.querySelector(\".card\")).not.toBeNull();\r\n    expect(screen.getByText(\"body\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"renders a canonical head from title + hint\", () => {\r\n    render(<Card title=\"Theme\" hint=\"appearance\">body</Card>);\r\n    expect(screen.getByRole(\"heading\", { name: \"Theme\" })).toBeInTheDocument();\r\n    expect(screen.getByText(\"appearance\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"prefers a custom header over title\", () => {\r\n    render(<Card title=\"ignored\" header={<div>custom head</div>}>body</Card>);\r\n    expect(screen.getByText(\"custom head\")).toBeInTheDocument();\r\n    expect(screen.queryByText(\"ignored\")).toBeNull();\r\n  });\r\n\r\n  it(\"applies className alongside .card and a tooltip\", () => {\r\n    const { container } = render(<Card className=\"stat-tile\" tooltip=\"hi\">body</Card>);\r\n    const el = container.querySelector(\".card.stat-tile\");\r\n    expect(el).not.toBeNull();\r\n    expect(el?.getAttribute(\"title\")).toBe(\"hi\");\r\n  });\r\n});\r\n"
+    }
+  ]
 }

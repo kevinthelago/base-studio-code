@@ -9,53 +9,59 @@
   "src": "src/shared/ui/layout/Grid.tsx",
   "props": [
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "cols",
-      "type": "Tracks",
       "req": false,
-      "desc": ""
+      "type": "Tracks"
     },
     {
+      "desc": "",
       "name": "rows",
-      "type": "Tracks",
       "req": false,
-      "desc": ""
+      "type": "Tracks"
     },
     {
+      "desc": "",
       "name": "gap",
-      "type": "Space",
       "req": false,
-      "desc": ""
+      "type": "Space"
     },
     {
+      "desc": "",
       "name": "align",
-      "type": "Align",
       "req": false,
-      "desc": ""
+      "type": "Align"
     },
     {
+      "desc": "",
       "name": "justify",
-      "type": "Justify",
       "req": false,
-      "desc": ""
+      "type": "Justify"
     },
     {
+      "desc": "",
       "name": "inline",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     }
   ],
-  "folder": "shared/ui/layout"
+  "folder": "shared/ui/layout",
+  "tests": [
+    {
+      "name": "Grid",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { Grid } from \"./Grid\";\r\n\r\ndescribe(\"Grid\", () => {\r\n  it(\"renders a grid with a numeric cols expanded to repeat(n, 1fr) and the resolved gap\", () => {\r\n    render(<Grid cols={2} gap=\"sm\" data-testid=\"g\"><span>a</span><span>b</span></Grid>);\r\n    const el = screen.getByTestId(\"g\");\r\n    expect(el.style.display).toBe(\"grid\");\r\n    expect(el.style.gridTemplateColumns).toBe(\"repeat(2, 1fr)\");\r\n    expect(el.style.gap).toBe(\"8px\");\r\n    expect(el).toHaveTextContent(\"ab\");\r\n  });\r\n\r\n  it(\"passes an explicit cols/rows template string straight through\", () => {\r\n    render(<Grid cols=\"1fr auto\" rows=\"50px 1fr\" data-testid=\"g\">x</Grid>);\r\n    const el = screen.getByTestId(\"g\");\r\n    expect(el.style.gridTemplateColumns).toBe(\"1fr auto\");\r\n    expect(el.style.gridTemplateRows).toBe(\"50px 1fr\");\r\n  });\r\n\r\n  it(\"expands a numeric rows to repeat(n, 1fr) and supports a raw px gap\", () => {\r\n    render(<Grid rows={3} gap={10} data-testid=\"g\">x</Grid>);\r\n    const el = screen.getByTestId(\"g\");\r\n    expect(el.style.gridTemplateRows).toBe(\"repeat(3, 1fr)\");\r\n    expect(el.style.gap).toBe(\"10px\");\r\n  });\r\n\r\n  it(\"maps align → alignItems and justify → justifyContent via the shared vocabulary\", () => {\r\n    render(<Grid align=\"center\" justify=\"between\" data-testid=\"g\">x</Grid>);\r\n    const el = screen.getByTestId(\"g\");\r\n    expect(el.style.alignItems).toBe(\"center\");\r\n    expect(el.style.justifyContent).toBe(\"space-between\");\r\n  });\r\n\r\n  it(\"leaves cols/rows/gap/align/justify unset when not provided\", () => {\r\n    render(<Grid data-testid=\"g\">x</Grid>);\r\n    const el = screen.getByTestId(\"g\");\r\n    expect(el.style.gridTemplateColumns).toBe(\"\");\r\n    expect(el.style.gridTemplateRows).toBe(\"\");\r\n    expect(el.style.gap).toBe(\"\");\r\n    expect(el.style.alignItems).toBe(\"\");\r\n    expect(el.style.justifyContent).toBe(\"\");\r\n  });\r\n\r\n  it(\"renders inline-grid and passes through arbitrary div props\", () => {\r\n    const onClick = vi.fn();\r\n    render(<Grid inline className=\"c\" onClick={onClick} data-testid=\"g\">x</Grid>);\r\n    const el = screen.getByTestId(\"g\");\r\n    expect(el.style.display).toBe(\"inline-grid\");\r\n    expect(el.classList.contains(\"c\")).toBe(true);\r\n    fireEvent.click(el);\r\n    expect(onClick).toHaveBeenCalledOnce();\r\n  });\r\n\r\n  it(\"lets a style override win last\", () => {\r\n    render(<Grid cols={2} gap=\"md\" style={{ gap: 3 }} data-testid=\"g\">x</Grid>);\r\n    expect(screen.getByTestId(\"g\").style.gap).toBe(\"3px\");\r\n  });\r\n});\r\n"
+    }
+  ]
 }

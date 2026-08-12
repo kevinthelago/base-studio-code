@@ -11,34 +11,34 @@
   "src": "src/shared/ui/overlay/Dialog.tsx",
   "props": [
     {
+      "desc": "",
       "name": "title",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "children",
-      "type": "React.ReactNode",
       "req": true,
-      "desc": ""
+      "type": "React.ReactNode"
     },
     {
+      "desc": "",
       "name": "actions",
-      "type": "React.ReactNode",
       "req": true,
-      "desc": ""
+      "type": "React.ReactNode"
     },
     {
+      "desc": "",
       "name": "onDismiss",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "danger",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     }
   ],
   "folder": "shared/ui/overlay"

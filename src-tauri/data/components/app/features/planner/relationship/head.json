@@ -9,5 +9,6 @@
     "ColorSwatch",
     "Row",
     "Text"
-  ]
+  ],
+  "folder": "features/planner/relationship"
 }

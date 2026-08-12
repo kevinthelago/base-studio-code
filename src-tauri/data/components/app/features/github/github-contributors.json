@@ -7,12 +7,12 @@
   "composes": [
     "Avatar",
     "Card",
-    "CardStates",
     "FillBar",
     "Grid",
     "Stack",
     "Text"
   ],
   "src": "src/features/github/summary/ContributorsCard.tsx",
-  "folder": "features/github"
+  "folder": "features/github",
+  "provides": "@/components/github-contributors"
 }

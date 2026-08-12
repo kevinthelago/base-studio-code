@@ -9,5 +9,6 @@
     "Box",
     "Card",
     "Row"
-  ]
+  ],
+  "folder": "features/settings/cards"
 }

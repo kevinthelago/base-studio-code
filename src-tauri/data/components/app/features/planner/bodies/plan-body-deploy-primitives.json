@@ -8,11 +8,10 @@
   "src": "src/features/planner/bodies/deployPrimitives.tsx",
   "folder": "features/planner/bodies",
   "composes": [
-    "Box",
     "Row",
     "Spacer",
-    "Text",
-    "Toggle"
+    "Box",
+    "Text"
   ],
   "props": []
 }

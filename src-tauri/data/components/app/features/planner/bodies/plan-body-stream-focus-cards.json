@@ -20,5 +20,6 @@
     "Stack",
     "Text"
   ],
-  "provides": "@/features/planner/bodies/StreamFocusCards"
+  "provides": "@/features/planner/bodies/StreamFocusCards",
+  "folder": "planner"
 }

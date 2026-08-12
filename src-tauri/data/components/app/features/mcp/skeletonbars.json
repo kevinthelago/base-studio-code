@@ -10,5 +10,6 @@
     "Box",
     "Skeleton",
     "SkeletonChart"
-  ]
+  ],
+  "folder": "features/mcp"
 }

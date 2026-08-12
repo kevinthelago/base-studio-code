@@ -13,5 +13,21 @@
     "Text"
   ],
   "provides": "@/components/github-file-churn",
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `FileChurn` defaults `files`, `loading` and adds loading/error states, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `FileChurn` holds 6 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 6 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate."
+  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `FileChurn` defaults `files`, `loading` and adds loading/error states, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `FileChurn` holds 6 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 6 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
+  "folder": "features/github",
+  "whenUse": [
+    "A heat-tinted grid of the hottest changed files."
+  ],
+  "whenNot": [
+    "An area-level rollup — use ChurnByArea."
+  ],
+  "tags": [
+    "github",
+    "churn",
+    "heatmap"
+  ],
+  "variants": [
+    "default",
+    "loading"
+  ]
 }

@@ -11,148 +11,148 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "i",
-      "type": "number",
       "req": true,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "tabIdx",
-      "type": "number",
       "req": true,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "paneId",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "name",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "view",
-      "type": "ViewKey",
       "req": true,
-      "desc": ""
+      "type": "ViewKey"
     },
     {
+      "desc": "",
       "name": "status",
-      "type": "\"run\" | \"on\" | \"idle\"",
       "req": true,
-      "desc": ""
+      "type": "\"run\" | \"on\" | \"idle\""
     },
     {
+      "desc": "",
       "name": "cwd",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "initCmd",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "onRename",
-      "type": "(tabIdx: number, i: number, name: string) => void",
       "req": true,
-      "desc": ""
+      "type": "(tabIdx: number, i: number, name: string) => void"
     },
     {
+      "desc": "",
       "name": "onMenuToggle",
-      "type": "(tabIdx: number, i: number) => void",
       "req": true,
-      "desc": ""
+      "type": "(tabIdx: number, i: number) => void"
     },
     {
+      "desc": "",
       "name": "onFocus",
-      "type": "(tabIdx: number, i: number) => void",
       "req": true,
-      "desc": ""
+      "type": "(tabIdx: number, i: number) => void"
     },
     {
+      "desc": "",
       "name": "onViewChange",
-      "type": "(tabIdx: number, i: number, v: ViewKey) => void",
       "req": true,
-      "desc": ""
+      "type": "(tabIdx: number, i: number, v: ViewKey) => void"
     },
     {
+      "desc": "",
       "name": "onPickDirectory",
-      "type": "(tabIdx: number, i: number) => void",
       "req": true,
-      "desc": ""
+      "type": "(tabIdx: number, i: number) => void"
     },
     {
+      "desc": "",
       "name": "onCwdChange",
-      "type": "(tabIdx: number, i: number, path: string) => void",
       "req": true,
-      "desc": ""
+      "type": "(tabIdx: number, i: number, path: string) => void"
     },
     {
+      "desc": "",
       "name": "onStatusChange",
-      "type": "(tabIdx: number, i: number, status: \"run\" | \"idle\") => void",
       "req": true,
-      "desc": ""
+      "type": "(tabIdx: number, i: number, status: \"run\" | \"idle\") => void"
     },
     {
+      "desc": "",
       "name": "onToggleFullscreen",
-      "type": "(tabIdx: number, i: number) => void",
       "req": true,
-      "desc": ""
+      "type": "(tabIdx: number, i: number) => void"
     },
     {
+      "desc": "",
       "name": "onToggleDisable",
-      "type": "(tabIdx: number, i: number) => void",
       "req": true,
-      "desc": ""
+      "type": "(tabIdx: number, i: number) => void"
     },
     {
+      "desc": "",
       "name": "onRedraw",
-      "type": "(tabIdx: number, i: number) => void",
       "req": true,
-      "desc": ""
+      "type": "(tabIdx: number, i: number) => void"
     },
     {
+      "desc": "",
       "name": "menuOpen",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "focused",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "fullscreen",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "disabled",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "hidden",
-      "type": "boolean",
       "req": true,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "usage",
-      "type": "PaneTokenUsage",
       "req": false,
-      "desc": ""
+      "type": "PaneTokenUsage"
     }
   ],
   "srcRetired": "src/app/console/PaneAt.tsx"

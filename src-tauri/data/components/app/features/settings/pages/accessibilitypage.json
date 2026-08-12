@@ -9,5 +9,6 @@
     "SettingsPageHeader",
     "Stack"
   ],
-  "srcDivergence": "Merged from the file (`record-src-reconcile`). The record was genuinely INCOMPLETE, not merely different: it omitted `<TtsCard />`, which is the page's only card, so the previewed Accessibility page rendered a header over empty space. The card is pulled in as the SIBLING RECORD `@/components/ttscard` rather than the file's relative `../cards/TtsCard` — `ttscard` carries no `provides`, so the sibling-by-id route is the one that resolves. `SettingsPageHeader` stays an absolute import because `settingspageheader` DOES carry a matching `provides`. The header copy is also taken from the file. Hand-merged, not copied."
+  "srcDivergence": "Merged from the file (`record-src-reconcile`). The record was genuinely INCOMPLETE, not merely different: it omitted `<TtsCard />`, which is the page's only card, so the previewed Accessibility page rendered a header over empty space. The card is pulled in as the SIBLING RECORD `@/components/ttscard` rather than the file's relative `../cards/TtsCard` — `ttscard` carries no `provides`, so the sibling-by-id route is the one that resolves. `SettingsPageHeader` stays an absolute import because `settingspageheader` DOES carry a matching `provides`. The header copy is also taken from the file. Hand-merged, not copied.",
+  "folder": "features/settings/pages"
 }

@@ -22,16 +22,16 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "onBack",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "onStart",
-      "type": "(title: string, bpId: string) => void",
       "req": true,
-      "desc": ""
+      "type": "(title: string, bpId: string) => void"
     }
   ]
 }

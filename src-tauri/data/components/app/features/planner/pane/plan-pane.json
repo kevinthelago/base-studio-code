@@ -8,15 +8,19 @@
   "src": "src/features/planner/pane/ProjectPane.tsx",
   "folder": "features/planner/pane",
   "composes": [
-    "Box",
-    "FocusedPrimitives",
-    "FocusedShell",
-    "FocusedStageBody",
-    "ModalScrim",
     "Pane",
-    "Row",
+    "ModalScrim",
     "Stack",
-    "Text"
+    "Row",
+    "Box",
+    "Text",
+    "FocusedStepper",
+    "FocusedStageHeader",
+    "FocusedStageGuidance",
+    "FocusedLockBanner",
+    "FocusedStageFooter",
+    "FocusedStageBody",
+    "KindDot"
   ],
   "props": []
 }

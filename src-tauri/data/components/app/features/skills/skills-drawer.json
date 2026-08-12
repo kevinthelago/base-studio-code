@@ -16,5 +16,6 @@
     "Toggle"
   ],
   "src": "src/features/skills/SkillDrawer.tsx",
-  "folder": "features/skills"
+  "folder": "features/skills",
+  "provides": "@/components/skills-drawer"
 }

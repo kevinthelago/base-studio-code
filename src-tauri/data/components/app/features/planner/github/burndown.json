@@ -7,5 +7,6 @@
   "src": "src/features/planner/github/Roadmap.tsx",
   "composes": [
     "Text"
-  ]
+  ],
+  "folder": "features/planner/github"
 }

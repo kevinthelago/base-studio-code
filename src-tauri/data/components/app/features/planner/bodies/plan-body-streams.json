@@ -8,13 +8,13 @@
   "src": "src/features/planner/bodies/StreamsBody.tsx",
   "folder": "features/planner/bodies",
   "composes": [
+    "PlanBody",
+    "StreamFocusCards",
     "CollapsibleCard",
     "CoordinationControls",
-    "EmptyState",
-    "PlanBody",
     "Stack",
-    "StreamFocusCards",
-    "Text"
+    "Text",
+    "EmptyState"
   ],
   "props": []
 }

@@ -13,7 +13,6 @@
     "GitHubCrossRepoActivity",
     "GitHubLanguageMix",
     "GitHubOpenPRs",
-    "GitHubPageModeStrip",
     "GitHubReposGrid",
     "Grid",
     "Row",
@@ -22,5 +21,6 @@
     "Text"
   ],
   "src": "src/features/github/GitHubSummary.tsx",
-  "folder": "features/github"
+  "folder": "features/github",
+  "provides": "@/components/github-summary"
 }

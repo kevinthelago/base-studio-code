@@ -8,5 +8,6 @@
   "composes": [
     "Avatar",
     "LabelChip"
-  ]
+  ],
+  "folder": "features/planner/github"
 }

@@ -9,53 +9,59 @@
   "src": "src/shared/ui/layout/Box.tsx",
   "props": [
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "as",
-      "type": "ElementType",
       "req": false,
-      "desc": ""
+      "type": "ElementType"
     },
     {
+      "desc": "",
       "name": "pad",
-      "type": "Space | [Space, Space]",
       "req": false,
-      "desc": ""
+      "type": "Space | [Space, Space]"
     },
     {
+      "desc": "",
       "name": "bg",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "border",
-      "type": "BorderProp",
       "req": false,
-      "desc": ""
+      "type": "BorderProp"
     },
     {
+      "desc": "",
       "name": "radius",
-      "type": "Radius",
       "req": false,
-      "desc": ""
+      "type": "Radius"
     },
     {
+      "desc": "",
       "name": "shadow",
-      "type": "Shadow",
       "req": false,
-      "desc": ""
+      "type": "Shadow"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     }
   ],
-  "folder": "shared/ui/layout"
+  "folder": "shared/ui/layout",
+  "tests": [
+    {
+      "name": "Box",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { Box } from \"./Box\";\r\n\r\ndescribe(\"Box\", () => {\r\n  it(\"renders a plain div by default and passes children + className through\", () => {\r\n    render(<Box className=\"c\" data-testid=\"b\">hi</Box>);\r\n    const el = screen.getByTestId(\"b\");\r\n    expect(el.tagName).toBe(\"DIV\");\r\n    expect(el.classList.contains(\"c\")).toBe(true);\r\n    expect(el).toHaveTextContent(\"hi\");\r\n  });\r\n\r\n  it(\"renders a custom element via `as`\", () => {\r\n    render(<Box as=\"section\" data-testid=\"b\">x</Box>);\r\n    expect(screen.getByTestId(\"b\").tagName).toBe(\"SECTION\");\r\n  });\r\n\r\n  it(\"maps the token shorthands\", () => {\r\n    render(<Box pad=\"md\" bg=\"var(--bg-elev)\" border radius=\"lg\" shadow=\"xl\" data-testid=\"b\">x</Box>);\r\n    const el = screen.getByTestId(\"b\");\r\n    expect(el.style.padding).toBe(\"12px\");\r\n    expect(el.style.background).toBe(\"var(--bg-elev)\");\r\n    expect(el.style.border).toBe(\"var(--stroke)\");\r\n    expect(el.style.borderRadius).toBe(\"var(--r-lg)\");\r\n    expect(el.style.boxShadow).toBe(\"var(--shadow-xl)\");\r\n  });\r\n\r\n  it(\"supports the border variants and a [block, inline] pad\", () => {\r\n    const { rerender } = render(<Box border=\"soft\" pad={[\"sm\", \"lg\"]} data-testid=\"b\">x</Box>);\r\n    let el = screen.getByTestId(\"b\");\r\n    expect(el.style.border).toBe(\"var(--stroke-soft)\");\r\n    expect(el.style.padding).toBe(\"8px 16px\");\r\n    rerender(<Box border=\"var(--accent)\" radius={4} data-testid=\"b\">x</Box>);\r\n    el = screen.getByTestId(\"b\");\r\n    expect(el.style.border).toBe(\"1px solid var(--accent)\");\r\n    expect(el.style.borderRadius).toBe(\"4px\");\r\n  });\r\n\r\n  it(\"omits unset shorthands, lets style win last, and passes handlers through\", () => {\r\n    const onClick = vi.fn();\r\n    render(<Box radius=\"md\" style={{ borderRadius: \"2px\" }} onClick={onClick} data-testid=\"b\">x</Box>);\r\n    const el = screen.getByTestId(\"b\");\r\n    expect(el.style.borderRadius).toBe(\"2px\"); // style override wins\r\n    expect(el.style.padding).toBe(\"\"); // unset shorthand omitted\r\n    fireEvent.click(el);\r\n    expect(onClick).toHaveBeenCalledOnce();\r\n  });\r\n});\r\n"
+    }
+  ]
 }

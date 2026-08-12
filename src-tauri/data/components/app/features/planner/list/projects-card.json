@@ -21,46 +21,46 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "item",
-      "type": "ProjectItem",
       "req": true,
-      "desc": ""
+      "type": "ProjectItem"
     },
     {
+      "desc": "",
       "name": "onOpen",
-      "type": "(item: ProjectItem) => void",
       "req": true,
-      "desc": ""
+      "type": "(item: ProjectItem) => void"
     },
     {
+      "desc": "",
       "name": "onBoard",
-      "type": "(item: ProjectItem) => void",
       "req": false,
-      "desc": ""
+      "type": "(item: ProjectItem) => void"
     },
     {
+      "desc": "",
       "name": "onDelete",
-      "type": "(item: ProjectItem) => void",
       "req": false,
-      "desc": ""
+      "type": "(item: ProjectItem) => void"
     },
     {
+      "desc": "",
       "name": "menuOpenId",
-      "type": "string | null",
       "req": true,
-      "desc": ""
+      "type": "string | null"
     },
     {
+      "desc": "",
       "name": "setMenuOpenId",
-      "type": "(id: string | null) => void",
       "req": true,
-      "desc": ""
+      "type": "(id: string | null) => void"
     },
     {
+      "desc": "",
       "name": "variant",
-      "type": "\"card\" | \"row\"",
       "req": false,
-      "desc": ""
+      "type": "\"card\" | \"row\""
     }
   ]
 }

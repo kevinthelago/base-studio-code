@@ -10,5 +10,6 @@
     "Text"
   ],
   "src": "src/features/github/summary/GitHubPageModeStrip.tsx",
-  "folder": "features/github"
+  "folder": "features/github",
+  "provides": "@/components/github-page-mode-strip"
 }

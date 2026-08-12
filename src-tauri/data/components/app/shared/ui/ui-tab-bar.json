@@ -11,77 +11,77 @@
   "src": "src/shared/ui/layouts/TabBar.tsx",
   "props": [
     {
+      "desc": "",
       "name": "tabs",
-      "type": "TabItem[]",
       "req": true,
-      "desc": ""
+      "type": "TabItem[]"
     },
     {
+      "desc": "",
       "name": "activeId",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "onSelect",
-      "type": "(id: string) => void",
       "req": true,
-      "desc": ""
+      "type": "(id: string) => void"
     },
     {
+      "desc": "",
       "name": "onReorder",
-      "type": "(from: number, to: number) => void",
       "req": false,
-      "desc": ""
+      "type": "(from: number, to: number) => void"
     },
     {
+      "desc": "",
       "name": "onTearOff",
-      "type": "(id: string) => void",
       "req": false,
-      "desc": ""
+      "type": "(id: string) => void"
     },
     {
-      "name": "className",
-      "type": "string",
-      "req": false,
-      "desc": ""
-    },
-    {
-      "name": "trailing",
-      "type": "ReactNode",
-      "req": false,
-      "desc": ""
-    },
-    {
-      "name": "tearOffHint",
-      "type": "string",
-      "req": false,
-      "desc": ""
-    },
-    {
+      "desc": "",
       "name": "onClose",
-      "type": "(id: string) => void",
       "req": false,
-      "desc": ""
+      "type": "(id: string) => void"
     },
     {
+      "desc": "",
       "name": "onAdd",
-      "type": "() => void",
       "req": false,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "onRename",
-      "type": "(id: string, name: string) => void",
       "req": false,
-      "desc": ""
+      "type": "(id: string, name: string) => void"
     },
     {
+      "desc": "",
       "name": "renderMenu",
-      "type": "(id: string, ctx: { close: () => void",
       "req": false,
-      "desc": ""
+      "type": "(id: string, ctx: { close: () => void"
+    },
+    {
+      "desc": "Render a skeleton strip instead of the real tabs.",
+      "name": "loading",
+      "req": false,
+      "type": "boolean"
+    },
+    {
+      "desc": "Render an error strip instead of the real tabs — a message string, or true for a generic one. Takes priority over loading.",
+      "name": "error",
+      "req": false,
+      "type": "string | boolean"
     }
   ],
-  "folder": "shared/ui/layouts"
+  "folder": "shared/ui/layouts",
+  "tests": [
+    {
+      "name": "TabBar",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { TabBar, type TabItem } from \"./TabBar\";\r\n\r\nconst TABS: TabItem[] = [\r\n  { id: \"board\", label: \"Board\", hint: \"kanban · per column\" },\r\n  { id: \"coordination\", label: \"Coordination\", hint: \"blocked sessions · #199\" },\r\n];\r\n\r\ndescribe(\"TabBar\", () => {\r\n  it(\"renders the main labels\", () => {\r\n    render(<TabBar tabs={TABS} activeId=\"board\" onSelect={() => {}} />);\r\n    expect(screen.getByText(\"Board\")).toBeTruthy();\r\n    expect(screen.getByText(\"Coordination\")).toBeTruthy();\r\n  });\r\n\r\n  it(\"exposes the hint as an on-hover title, not inline text (#488)\", () => {\r\n    render(<TabBar tabs={TABS} activeId=\"board\" onSelect={() => {}} />);\r\n    // The hint text must NOT render as a visible inline sibling of the label.\r\n    expect(screen.queryByText(\"kanban · per column\")).toBeNull();\r\n    expect(screen.queryByText(\"blocked sessions · #199\")).toBeNull();\r\n    // It's carried on the tab's title attribute instead, alongside the label.\r\n    const tab = screen.getByText(\"Coordination\").closest(\"[data-tab]\");\r\n    expect(tab?.getAttribute(\"title\")).toBe(\"Coordination — blocked sessions · #199\");\r\n  });\r\n\r\n  it(\"falls back to just the label in the title when there is no hint\", () => {\r\n    render(<TabBar tabs={[{ id: \"x\", label: \"Plain\" }]} activeId=\"x\" onSelect={() => {}} />);\r\n    const tab = screen.getByText(\"Plain\").closest(\"[data-tab]\");\r\n    expect(tab?.getAttribute(\"title\")).toBe(\"Plain\");\r\n  });\r\n\r\n  it(\"selects a tab on click\", () => {\r\n    const onSelect = vi.fn();\r\n    render(<TabBar tabs={TABS} activeId=\"board\" onSelect={onSelect} />);\r\n    fireEvent.click(screen.getByText(\"Coordination\"));\r\n    expect(onSelect).toHaveBeenCalledWith(\"coordination\");\r\n  });\r\n});\r\n"
+    }
+  ]
 }

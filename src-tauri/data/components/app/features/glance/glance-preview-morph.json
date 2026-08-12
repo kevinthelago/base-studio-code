@@ -9,7 +9,8 @@
   "composes": [
     "Box",
     "Button",
-    "Text"
+    "Text",
+    "ReviewStrip"
   ],
   "props": []
 }

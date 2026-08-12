@@ -18,89 +18,107 @@
   "src": "src/shared/ui/layouts/Tree.tsx",
   "props": [
     {
+      "desc": "",
       "name": "nodes",
-      "type": "TreeNodeData[]",
       "req": true,
-      "desc": ""
+      "type": "TreeNodeData[]"
     },
     {
+      "desc": "",
       "name": "variant",
-      "type": "TreeVariant",
       "req": false,
-      "desc": ""
+      "type": "TreeVariant"
     },
     {
+      "desc": "",
       "name": "selectedId",
-      "type": "string | null",
       "req": false,
-      "desc": ""
+      "type": "string | null"
     },
     {
+      "desc": "",
       "name": "defaultSelectedId",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "onSelect",
-      "type": "(id: string) => void",
       "req": false,
-      "desc": ""
+      "type": "(id: string) => void"
     },
     {
+      "desc": "",
       "name": "detail",
-      "type": "ReactNode | ((node: TreeNodeData | undefined) => ReactNode)",
       "req": false,
-      "desc": ""
+      "type": "ReactNode | ((node: TreeNodeData | undefined) => ReactNode)"
     },
     {
+      "desc": "",
       "name": "toolbar",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "defaultCollapsedIds",
-      "type": "string[]",
       "req": false,
-      "desc": ""
+      "type": "string[]"
     },
     {
+      "desc": "",
       "name": "onToggle",
-      "type": "(id: string, expanded: boolean) => void",
       "req": false,
-      "desc": ""
+      "type": "(id: string, expanded: boolean) => void"
     },
     {
+      "desc": "",
       "name": "indent",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "railWidth",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "resizable",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "detailWidth",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
+    },
+    {
+      "desc": "Render a skeleton tree instead of the real rows/chart.",
+      "name": "loading",
+      "req": false,
+      "type": "boolean"
+    },
+    {
+      "desc": "Render an error message instead of the real rows/chart — a message string, or true for a generic one. Takes priority over loading.",
+      "name": "error",
+      "req": false,
+      "type": "string | boolean"
     }
   ],
-  "folder": "shared/ui/layouts"
+  "folder": "shared/ui/layouts",
+  "tests": [
+    {
+      "name": "Tree — indented variant (#2476)",
+      "src": "// Tree (#2476, Layouts tier #2197) — the tree page template: the INDENTED file-explorer variant\r\n// (collapsible depth-indented rows + detail) and the LAYERED org-chart variant (top-down cards +\r\n// shared-edge SVG inside a GraphCanvas).\r\nimport { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { Tree } from \"./Tree\";\r\nimport { layoutTree, treeEdges, flattenTree, type TreeNodeData } from \"./treeLayout\";\r\n\r\nconst NODES: TreeNodeData[] = [\r\n  {\r\n    id: \"root\", label: \"src\", meta: \"12 files\",\r\n    children: [\r\n      { id: \"app\", label: \"app\", children: [{ id: \"main\", label: \"main.tsx\" }] },\r\n      { id: \"shared\", label: \"shared\", children: [{ id: \"ui\", label: \"ui\" }] },\r\n      { id: \"readme\", label: \"README.md\" },\r\n    ],\r\n  },\r\n];\r\n\r\nconst row = (label: string): HTMLElement => {\r\n  const el = screen.getByText(label).closest('[role=\"treeitem\"]');\r\n  expect(el, `row ${label}`).toBeTruthy();\r\n  return el as HTMLElement;\r\n};\r\n\r\ndescribe(\"Tree — indented variant (#2476)\", () => {\r\n  it(\"renders every node as a treeitem row, fully expanded by default\", () => {\r\n    render(<Tree nodes={NODES} />);\r\n    expect(screen.getByRole(\"tree\")).toBeInTheDocument();\r\n    expect(screen.getAllByRole(\"treeitem\")).toHaveLength(6);\r\n    expect(screen.getByText(\"main.tsx\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"12 files\")).toBeInTheDocument(); // meta renders\r\n  });\r\n\r\n  it(\"indents rows by depth\", () => {\r\n    render(<Tree nodes={NODES} indent={20} />);\r\n    expect(row(\"src\").style.paddingLeft).toBe(\"6px\");        // depth 0\r\n    expect(row(\"app\").style.paddingLeft).toBe(\"26px\");       // depth 1\r\n    expect(row(\"main.tsx\").style.paddingLeft).toBe(\"46px\");  // depth 2\r\n  });\r\n\r\n  it(\"collapses and re-expands a branch via the chevron, notifying onToggle\", () => {\r\n    const onToggle = vi.fn();\r\n    render(<Tree nodes={NODES} onToggle={onToggle} />);\r\n    expect(row(\"app\").getAttribute(\"aria-expanded\")).toBe(\"true\");\r\n\r\n    fireEvent.click(screen.getByLabelText(\"collapse app\"));\r\n    expect(screen.queryByText(\"main.tsx\")).toBeNull();\r\n    expect(row(\"app\").getAttribute(\"aria-expanded\")).toBe(\"false\");\r\n    expect(onToggle).toHaveBeenLastCalledWith(\"app\", false);\r\n    // Siblings' subtrees are untouched.\r\n    expect(screen.getByText(\"ui\")).toBeInTheDocument();\r\n\r\n    fireEvent.click(screen.getByLabelText(\"expand app\"));\r\n    expect(screen.getByText(\"main.tsx\")).toBeInTheDocument();\r\n    expect(onToggle).toHaveBeenLastCalledWith(\"app\", true);\r\n  });\r\n\r\n  it(\"starts collapsed for defaultCollapsedIds branches\", () => {\r\n    render(<Tree nodes={NODES} defaultCollapsedIds={[\"app\"]} />);\r\n    expect(screen.queryByText(\"main.tsx\")).toBeNull();\r\n    expect(screen.getByLabelText(\"expand app\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"leaf rows have no chevron and no aria-expanded\", () => {\r\n    render(<Tree nodes={NODES} />);\r\n    expect(row(\"README.md\").getAttribute(\"aria-expanded\")).toBeNull();\r\n    expect(screen.queryByLabelText(\"collapse README.md\")).toBeNull();\r\n  });\r\n\r\n  it(\"uncontrolled selection: clicking a row selects it and fires onSelect; the detail fn gets the node\", () => {\r\n    const onSelect = vi.fn();\r\n    render(\r\n      <Tree nodes={NODES} onSelect={onSelect}\r\n        detail={(n) => <span>DETAIL:{n ? n.label : \"none\"}</span>} />,\r\n    );\r\n    expect(screen.getByText(\"DETAIL:none\")).toBeInTheDocument();\r\n\r\n    fireEvent.click(screen.getByText(\"README.md\"));\r\n    expect(onSelect).toHaveBeenCalledWith(\"readme\");\r\n    expect(row(\"README.md\").getAttribute(\"aria-selected\")).toBe(\"true\");\r\n    expect(screen.getByText(\"DETAIL:README.md\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"keyboard selection: Enter on a focused row selects it\", () => {\r\n    const onSelect = vi.fn();\r\n    render(<Tree nodes={NODES} onSelect={onSelect} />);\r\n    fireEvent.keyDown(row(\"app\"), { key: \"Enter\" });\r\n    expect(onSelect).toHaveBeenCalledWith(\"app\");\r\n    expect(row(\"app\").getAttribute(\"aria-selected\")).toBe(\"true\");\r\n  });\r\n\r\n  it(\"controlled selection: selectedId drives the highlight; a click only fires onSelect\", () => {\r\n    const onSelect = vi.fn();\r\n    render(<Tree nodes={NODES} selectedId=\"app\" onSelect={onSelect} />);\r\n    expect(row(\"app\").getAttribute(\"aria-selected\")).toBe(\"true\");\r\n\r\n    fireEvent.click(screen.getByText(\"README.md\"));\r\n    expect(onSelect).toHaveBeenCalledWith(\"readme\");\r\n    // Controlled — the highlight does NOT move on its own.\r\n    expect(row(\"app\").getAttribute(\"aria-selected\")).toBe(\"true\");\r\n    expect(row(\"README.md\").getAttribute(\"aria-selected\")).toBe(\"false\");\r\n  });\r\n\r\n  it(\"the chevron toggles without selecting the row\", () => {\r\n    const onSelect = vi.fn();\r\n    render(<Tree nodes={NODES} onSelect={onSelect} />);\r\n    fireEvent.click(screen.getByLabelText(\"collapse app\"));\r\n    expect(onSelect).not.toHaveBeenCalled();\r\n    expect(row(\"app\").getAttribute(\"aria-selected\")).toBe(\"false\");\r\n  });\r\n\r\n  it(\"renders the toolbar slot and a resizable rail splitter on request\", () => {\r\n    const { container } = render(<Tree nodes={NODES} toolbar={<span>TOOLBAR</span>} resizable />);\r\n    expect(screen.getByText(\"TOOLBAR\")).toBeInTheDocument();\r\n    expect(container.querySelector(\".resize-x\")).not.toBeNull();\r\n  });\r\n\r\n  it(\"has no splitter by default\", () => {\r\n    const { container } = render(<Tree nodes={NODES} />);\r\n    expect(container.querySelector(\".resize-x\")).toBeNull();\r\n  });\r\n});\r\n\r\ndescribe(\"Tree — layered variant (#2476)\", () => {\r\n  it(\"renders a positioned [data-node] card per node at its layoutTree position\", () => {\r\n    const { container } = render(<Tree nodes={NODES} variant=\"layered\" />);\r\n    const cards = container.querySelectorAll(\"[data-node]\");\r\n    expect(cards).toHaveLength(6);\r\n    const layout = layoutTree(NODES);\r\n    const rootCard = container.querySelector('[data-node=\"root\"]') as HTMLElement;\r\n    const p = layout.pos.get(\"root\")!;\r\n    expect(rootCard.style.left).toBe(`${p.x}px`);\r\n    expect(rootCard.style.top).toBe(`${p.y}px`);\r\n  });\r\n\r\n  it(\"draws one shared-grammar edge (curve + arrowhead) per parent→child link\", () => {\r\n    const { container } = render(<Tree nodes={NODES} variant=\"layered\" />);\r\n    const edgeGroups = container.querySelectorAll(\"svg g\");\r\n    expect(edgeGroups).toHaveLength(treeEdges(flattenTree(NODES)).length); // 5\r\n    for (const g of edgeGroups) expect(g.querySelectorAll(\"path\")).toHaveLength(2);\r\n  });\r\n\r\n  it(\"mounts the GraphCanvas chrome: zoom cluster, fit, and the toolbar slot\", () => {\r\n    render(<Tree nodes={NODES} variant=\"layered\" toolbar={<span>TREE-TOOLBAR</span>} />);\r\n    expect(screen.getByText(\"TREE-TOOLBAR\")).toBeInTheDocument();\r\n    expect(screen.getByLabelText(\"zoom in\")).toBeInTheDocument();\r\n    expect(screen.getByLabelText(\"zoom out\")).toBeInTheDocument();\r\n    expect(screen.getByLabelText(\"fit tree\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"selects a node on card click (data-selected) and shows the detail inspector\", () => {\r\n    const onSelect = vi.fn();\r\n    const { container } = render(\r\n      <Tree nodes={NODES} variant=\"layered\" onSelect={onSelect}\r\n        detail={(n) => (n ? <span>INSPECT:{n.label}</span> : null)} />,\r\n    );\r\n    fireEvent.click(container.querySelector('[data-node=\"shared\"]') as HTMLElement);\r\n    expect(onSelect).toHaveBeenCalledWith(\"shared\");\r\n    expect((container.querySelector('[data-node=\"shared\"]') as HTMLElement).dataset.selected).toBe(\"true\");\r\n    expect(screen.getByText(\"INSPECT:shared\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"controlled selection highlights the given card\", () => {\r\n    const { container } = render(<Tree nodes={NODES} variant=\"layered\" selectedId=\"ui\" />);\r\n    expect((container.querySelector('[data-node=\"ui\"]') as HTMLElement).dataset.selected).toBe(\"true\");\r\n    expect((container.querySelector('[data-node=\"root\"]') as HTMLElement).dataset.selected).toBeUndefined();\r\n  });\r\n\r\n  it(\"sizes the GraphCanvas world layer to the tree layout's world\", () => {\r\n    const { container } = render(<Tree nodes={NODES} variant=\"layered\" />);\r\n    const layout = layoutTree(NODES);\r\n    const svg = container.querySelector(\"svg\") as SVGElement;\r\n    const worldLayer = svg.parentElement as HTMLElement;\r\n    expect(worldLayer.style.width).toBe(`${layout.world.w}px`);\r\n    expect(worldLayer.style.height).toBe(`${layout.world.h}px`);\r\n  });\r\n});\r\n"
+    }
+  ]
 }

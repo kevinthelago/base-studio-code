@@ -11,5 +11,6 @@
     "Row",
     "Stack",
     "Text"
-  ]
+  ],
+  "folder": "features/planner/preview"
 }

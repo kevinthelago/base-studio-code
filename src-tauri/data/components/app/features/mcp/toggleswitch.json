@@ -7,5 +7,6 @@
   "src": "src/features/mcp/shared.tsx",
   "composes": [
     "Box"
-  ]
+  ],
+  "folder": "features/mcp"
 }

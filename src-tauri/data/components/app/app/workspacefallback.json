@@ -7,5 +7,6 @@
   "src": "src/app/lazyWorkspaces.tsx",
   "composes": [
     "Row"
-  ]
+  ],
+  "folder": "app"
 }

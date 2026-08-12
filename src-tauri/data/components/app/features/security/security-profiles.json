@@ -22,5 +22,6 @@
   ],
   "src": "src/features/security/ProfilesTab.tsx",
   "folder": "features/security",
-  "props": []
+  "props": [],
+  "provides": "@/components/security-profiles"
 }
