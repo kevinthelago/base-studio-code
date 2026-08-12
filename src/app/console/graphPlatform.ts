@@ -26,12 +26,6 @@ import * as UsePaneTokenUsage from "./lib/usePaneTokenUsage";
 import * as MenuPlacement from "./panes/menuPlacement";
 import * as ViewDefs from "./panes/viewDefs";
 // — the pane VIEWS: the behaviour a pane cell hosts —
-import * as BranchesView from "./panes/views/BranchesView";
-import * as ChangesView from "./panes/views/ChangesView";
-import * as FilesView from "./panes/views/FilesView";
-import * as LogView from "./panes/views/LogView";
-import * as TelemetryView from "./panes/views/TelemetryView";
-import * as ToolsView from "./panes/views/ToolsView";
 import * as TerminalSlot from "./terminal/TerminalSlot";
 // — the pumps the page mounts —
 import * as UseCoordinator from "./useCoordinator";
@@ -60,12 +54,6 @@ export function registerConsolePlatform(): void {
   registerAppModule("@/app/console/lib/usePaneTokenUsage", UsePaneTokenUsage);
   registerAppModule("@/app/console/panes/menuPlacement", MenuPlacement);
   registerAppModule("@/app/console/panes/viewDefs", ViewDefs);
-  registerAppModule("@/app/console/panes/views/BranchesView", BranchesView);
-  registerAppModule("@/app/console/panes/views/ChangesView", ChangesView);
-  registerAppModule("@/app/console/panes/views/FilesView", FilesView);
-  registerAppModule("@/app/console/panes/views/LogView", LogView);
-  registerAppModule("@/app/console/panes/views/TelemetryView", TelemetryView);
-  registerAppModule("@/app/console/panes/views/ToolsView", ToolsView);
   registerAppModule("@/app/console/terminal/TerminalSlot", TerminalSlot);
   registerAppModule("@/app/console/useCoordinator", UseCoordinator);
   registerAppModule("@/app/console/useDirectorPump", UseDirectorPump);

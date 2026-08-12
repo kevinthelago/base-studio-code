@@ -8,8 +8,8 @@
     "Box",
     "Text"
   ],
-  "src": "src/features/github/summary/CrossRepoActivity.tsx",
   "folder": "features/github",
   "props": [],
-  "provides": "@/components/github-cross-repo-activity"
+  "provides": "@/components/github-cross-repo-activity",
+  "srcRetired": "src/features/github/summary/CrossRepoActivity.tsx"
 }

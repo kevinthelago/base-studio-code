@@ -4,7 +4,6 @@
   "kitId": "base-studio-code",
   "role": "composite",
   "srcText": "import { Dialog } from \"@/shared/ui/overlay/Dialog\";\nimport { BackButton } from \"@/shared/ui/controls/BackButton\";\nimport { Button } from \"@/shared/ui/controls/Button\";\n\nexport function BlueprintUpdateModal({ busy, onGoBack = () => {}, onKeep = () => {}, onRestart = () => {}, onDismiss = () => {} }: {\n  busy?: boolean;\n  onGoBack?: () => void;\n  onKeep?: () => void;\n  onRestart?: () => void;\n  onDismiss?: () => void;\n}) {\n  return (\n    <Dialog\n      title=\"This project's blueprint has changed\"\n      onDismiss={onDismiss}\n      actions={\n        <>\n          <BackButton variant=\"text\" label=\"go back\" className=\"btn ghost\" onClick={onGoBack} aria-label=\"Go back\" />\n          <Button disabled={busy} onClick={onKeep}>keep previous plan files</Button>\n          <Button danger disabled={busy} onClick={onRestart}>restart the plan</Button>\n        </>\n      }\n    >\n      The blueprint or planner template this project was set up with has been updated since you last\n      planned it. Choose how to proceed:\n      <ul style={{ margin: \"10px 0 0\", paddingLeft: 18, lineHeight: 1.6 }}>\n        <li><b>Go back</b> - return to the projects list and leave this plan untouched.</li>\n        <li><b>Keep previous plan files</b> - adopt the new version but preserve everything you have planned (goal, scope, features, fleet, etc).</li>\n        <li><b>Restart the plan</b> - wipe the plan and start fresh on the new version. This cannot be undone.</li>\n      </ul>\n    </Dialog>\n  );\n}",
-  "src": "src/features/planner/blueprints/BlueprintUpdateModal.tsx",
   "composes": [
     "BackButton",
     "Button",
@@ -18,5 +17,6 @@
     }
   ],
   "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `BlueprintUpdateModal` defaults `onGoBack`, `onKeep`, `onRestart`, `onDismiss`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `BlueprintUpdateModal` holds 8 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 8 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
-  "folder": "features/planner/blueprints"
+  "folder": "features/planner/blueprints",
+  "srcRetired": "src/features/planner/blueprints/BlueprintUpdateModal.tsx"
 }

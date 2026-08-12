@@ -30,7 +30,6 @@ import * as EmptyStateMod from "@/shared/ui/feedback/EmptyState";
 import * as Field from "@/shared/ui/controls/Field";
 import * as SegmentedControl from "@/shared/ui/controls/SegmentedControl";
 // ── Projects page (#3874) — the leaves it composes but does not redraw. ──────────────────────────────
-import * as Dropdown from "@/shared/ui/controls/Dropdown";
 import * as InlineError from "@/shared/ui/feedback/InlineError";
 import * as DialogMod from "@/shared/ui/overlay/Dialog";
 import * as SafeInvoke from "@/shared/lib/core/safeInvoke";
@@ -201,7 +200,6 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/controls/Field": Field,
   "@/shared/ui/controls/SegmentedControl": SegmentedControl,
   // #3874 — Projects.
-  "@/shared/ui/controls/Dropdown": Dropdown,
   "@/shared/ui/feedback/InlineError": InlineError,
   "@/shared/ui/overlay/Dialog": DialogMod,
   "@/shared/lib/core/safeInvoke": SafeInvoke,
