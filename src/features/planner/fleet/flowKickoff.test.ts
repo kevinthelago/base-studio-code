@@ -5,8 +5,24 @@ import { DEFAULT_FLOW, type AgentFlow } from "./agentFlow";
 const flow = (p: Partial<AgentFlow>): AgentFlow => ({ ...DEFAULT_FLOW, ...p });
 
 describe("flowKickoffText", () => {
-  it("default flow (continuous + auto-pr) tells the agent to push + open a PR", () => {
+  it("the DEFAULT flow never mentions pushing or a PR — it is local (#fleet-local-completion-flow)", () => {
     const k = flowKickoffText(undefined, "auth-ui");
+    // It must PROHIBIT the PR, not merely omit it — so assert the prohibition plus the absence of
+    // the auto-pr instruction, rather than the absence of the phrase (which the prohibition contains).
+    expect(k.push).toMatch(/Do NOT push/);
+    expect(k.push).toMatch(/Do NOT open a PR/);
+    expect(k.push).not.toMatch(/push it, and open a PR/);
+    expect(k.push).not.toMatch(/pull request/i);
+    expect(k.push).toMatch(/integration stream merges/i);
+    // The completion handoff: gate evidence, then `complete` — and explicitly NOT self-verification.
+    expect(k.push).toMatch(/bsc plan change gate/);
+    expect(k.push).toMatch(/bsc plan status <ref> complete/);
+    expect(k.push).toMatch(/do not mark it verified and do not merge your own branch/i);
+    expect(k.push).toContain("auth-ui");
+  });
+
+  it("an explicit auto-pr flow still tells the agent to push + open a PR", () => {
+    const k = flowKickoffText(flow({ push: "auto-pr" }), "auth-ui");
     expect(k.autonomy).toMatch(/do not stop to ask/);
     // #382: continuous autonomy no longer references the old PR-merge model.
     expect(k.autonomy).not.toMatch(/the director reviews and merges/);
@@ -69,6 +85,12 @@ describe("flowKickoffText", () => {
       expect(k.push).toMatch(/director manages issue state and closes it/i);
       expect(k.push).toMatch(/do not close, reopen, or edit the GitHub issue/i);
     }
+  });
+
+  it("does not add the GitHub issue-close clause to a local flow — GitHub is not in the loop", () => {
+    const k = flowKickoffText(flow({ push: "local" }), "api");
+    expect(k.push).not.toMatch(/GitHub/i);
+    expect(k.push).not.toMatch(/director manages issue state/i);
   });
 
   it("does not add the issue-close clause to a read-only (none) flow — no issue to close (#906)", () => {

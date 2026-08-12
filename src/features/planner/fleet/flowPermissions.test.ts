@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { flowPermissionRules, PUSH_WRITE_RULES } from "./flowPermissions";
-import { DEFAULT_FLOW, type AgentFlow } from "./agentFlow";
+import { DEFAULT_FLOW, LOCAL_ONLY_PUSH, type AgentFlow } from "./agentFlow";
 
 const flow = (p: Partial<AgentFlow>): AgentFlow => ({ ...DEFAULT_FLOW, ...p });
 
@@ -29,8 +29,39 @@ describe("flowPermissionRules", () => {
     expect(flowPermissionRules(flow({ push: "none" })).denyToolRules).toEqual([...PUSH_WRITE_RULES]);
   });
 
-  it("undefined flow resolves to DEFAULT_FLOW (auto-pr) — no rules", () => {
-    expect(flowPermissionRules(undefined)).toEqual({ askToolRules: [], denyToolRules: [] });
+  it("local denies push and PR — nothing reaches a remote", () => {
+    const r = flowPermissionRules(flow({ push: "local" }));
+    expect(r.denyToolRules).toEqual([...PUSH_WRITE_RULES]);
+    expect(r.askToolRules).toEqual([]);
+  });
+
+  it("undefined flow resolves to DEFAULT_FLOW (local) — push and PR denied", () => {
+    expect(flowPermissionRules(undefined)).toEqual({ askToolRules: [], denyToolRules: [...PUSH_WRITE_RULES] });
+  });
+
+  // The guarantee asserted from ONE list, so a push policy added later without a decision here
+  // shows up as a failure rather than as a silent remote write.
+  it("every LOCAL_ONLY_PUSH policy denies push and PR under both gates", () => {
+    for (const push of LOCAL_ONLY_PUSH) {
+      for (const gate of ["soft", "hard"] as const) {
+        const r = flowPermissionRules(flow({ push, gate }));
+        expect(r.denyToolRules, `${push}/${gate} must deny`).toEqual([...PUSH_WRITE_RULES]);
+        expect(r.askToolRules, `${push}/${gate} must not merely ask`).toEqual([]);
+      }
+    }
+  });
+
+  it("FAILS CLOSED — an unrecognized push policy denies rather than permitting", () => {
+    // The old `default` branch returned no rules, which under the broad Bash allow PERMITS push+PR.
+    const r = flowPermissionRules(flow({ push: "not-a-real-policy" as never }));
+    expect(r.denyToolRules).toEqual([...PUSH_WRITE_RULES]);
+  });
+
+  it("grants push commands only to the policies that actually push", () => {
+    for (const push of LOCAL_ONLY_PUSH) {
+      expect(flowGrantedPushCommands(flow({ push })), `${push} must grant nothing`).toEqual([]);
+    }
+    expect(flowGrantedPushCommands(flow({ push: "auto-pr" }))).toEqual(["git push", "gh pr create"]);
   });
 
   it("gate is ignored unless push is push-confirm", () => {

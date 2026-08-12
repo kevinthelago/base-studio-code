@@ -11,7 +11,7 @@
 /** How the agent handles underspecified decisions. */
 export type FlowAutonomy = "continuous" | "checkpoint" | "confirm";
 /** What and whether the agent pushes to GitHub. */
-export type FlowPush = "auto-pr" | "self-merge" | "push-confirm" | "commit-only" | "none";
+export type FlowPush = "local" | "auto-pr" | "self-merge" | "push-confirm" | "commit-only" | "none";
 /** Which event fires a push attempt. */
 export type FlowTrigger = "per-issue" | "per-stage" | "on-green";
 /** How a "confirm"/"push-confirm" pause is enforced. */
@@ -20,7 +20,10 @@ export type FlowGate = "soft" | "hard";
 export interface AgentFlow {
   /** continuous = never pause; checkpoint = pause at stage/PR boundaries; confirm = ask before non-trivial decisions. */
   autonomy: FlowAutonomy;
-  /** auto-pr = commit+push+open PR on green; self-merge = run full gate, rebase onto develop, re-gate, push develop directly (no PR); push-confirm = commit+test then wait; commit-only = commit, don't push; none = no git/gh. */
+  /** local = commit on the branch and STOP; nothing ever reaches a remote and the integration stream
+   *  merges locally (the default); auto-pr = commit+push+open PR on green; self-merge = run full gate,
+   *  rebase onto develop, re-gate, push develop directly (no PR); push-confirm = commit+test then wait;
+   *  commit-only = commit, don't push — someone else pushes the branch and opens the PR; none = no git/gh. */
   push: FlowPush;
   /** When a push fires: per owned issue, per pipeline stage, or whenever the gate is green. */
   trigger: FlowTrigger;
@@ -29,14 +32,24 @@ export interface AgentFlow {
 }
 
 export const FLOW_AUTONOMY: readonly FlowAutonomy[] = ["continuous", "checkpoint", "confirm"];
-export const FLOW_PUSH: readonly FlowPush[] = ["auto-pr", "self-merge", "push-confirm", "commit-only", "none"];
+export const FLOW_PUSH: readonly FlowPush[] = ["local", "auto-pr", "self-merge", "push-confirm", "commit-only", "none"];
+
+/** The push policies that never reach a remote — no `git push`, no `gh pr create`, under any gate.
+ *  Exported so the "nothing escapes locally" guarantee is asserted from ONE list rather than
+ *  re-enumerated at each call site (a new policy added without a decision here fails that test). */
+export const LOCAL_ONLY_PUSH: readonly FlowPush[] = ["local", "commit-only", "none"];
 export const FLOW_TRIGGER: readonly FlowTrigger[] = ["per-issue", "per-stage", "on-green"];
 export const FLOW_GATE: readonly FlowGate[] = ["soft", "hard"];
 
-/** The default flow a freshly-planned stream gets (confirmed with the user). */
+/** The default flow a freshly-planned stream gets (confirmed with the user).
+ *
+ *  `push` is `local` and that is load-bearing, not a preference: this is the fallback
+ *  {@link resolveFlow} applies when a stream carries NO flow at all, so it is what governs a
+ *  launch that never went near the strategy layer. It was `auto-pr` — which meant a fleet
+ *  launched with untouched defaults pushed branches and opened PRs regardless of intent. */
 export const DEFAULT_FLOW: AgentFlow = {
   autonomy: "continuous",
-  push: "auto-pr",
+  push: "local",
   trigger: "per-issue",
   gate: "hard",
 };

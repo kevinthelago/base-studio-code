@@ -25,7 +25,7 @@ describe("fleetWorker mappers (#499)", () => {
   it("flowRows surfaces autonomy/push/trigger/gate with descriptions", () => {
     const rows = flowRows(DEFAULT_FLOW);
     expect(rows.map(r => r.key)).toEqual(["autonomy", "push", "trigger", "gate"]);
-    expect(rows.find(r => r.key === "push")!.value).toBe("auto-pr");
+    expect(rows.find(r => r.key === "push")!.value).toBe("local");
     rows.forEach(r => expect(r.desc.length).toBeGreaterThan(0));
   });
 
