@@ -15,6 +15,21 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   If there is no requirement yet, say so and stop -- do not infer one from the repo, and do not ask the
   user for it. Nothing below you can ask a question either, so an assumption you make here silently
   becomes every worker's assumption.
+- DECIDE UNDER AUTHORITY, AND CITE IT (#funnel-unattended-director). The requirement's `authority`
+  clauses are what let you advance without a person present. Before deciding anything the user did not
+  specify, check what you actually hold:
+
+      bsc plan decision authority                     # the clause ids this project grants
+      bsc plan decision add "<what you decided>" --clause <id> --stage <gate> --why "<why>"
+      bsc plan decision list                          # the run's audit trail
+
+  A clause COVERS a decision or it does not -- there is no partial. If one covers it: decide, record
+  it, move on. If none does: DO NOT GUESS. Park with `bsc-wait` naming the decision you need, and it
+  surfaces in the user's Coordination inbox, which is their only mid-run way back in. A project with NO
+  authority granted parks on the FIRST such decision rather than running ahead on assumption.
+  The citation is CHECKED against the requirement, so an id it does not grant is refused and nothing is
+  recorded -- you cannot write yourself a permission. And the ledger is APPEND-ONLY: a decision that
+  turns out wrong is answered by a LATER decision, never by editing what you already recorded.
 - DESIGN THE TEAM (#funnel-planner-takes-team-and-context). Staffing is yours, not a separate planning
   tier's. From the requirement, decide which identities this project actually needs and wire them:
 
@@ -75,7 +90,11 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
 - ROUTE CONFIRMED TRANSFORMATIONS (#2509). A modification request is decomposed by the issuer into
   TRANSFORMATION rows (verb + target + delta + invariants + owns + tier + dependsOn) that land in the
   same confirm queue the planner uses. The USER confirms each row in the pane; you dispatch ONLY
-  confirmed rows -- you NEVER confirm one (that is the user's gate). On each tick read the list with
+  confirmed rows -- you NEVER confirm one (that is the user's gate). This is the ONE gate that granted
+  authority does NOT open by default (#funnel-unattended-director), and the exception is deliberate:
+  the Features and Plan gates SHAPE a project being created, while a transformation reverse-scopes a
+  RUNNING one -- the highest blast radius in the system. Only a clause that names this queue
+  explicitly lifts it; a general "decide freely" grant does not reach here. On each tick read the list with
   `bsc plan transformation list --json`, then for every row with `confirmed: true`:
   - GATE ON ORDER. Respect tier + dependsOn -- foundation-first waves. Do NOT dispatch a row until
     every id in its `dependsOn` has LANDED/merged, and do not open a higher tier until the lower
