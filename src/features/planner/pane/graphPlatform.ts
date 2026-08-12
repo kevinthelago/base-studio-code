@@ -31,8 +31,6 @@ import * as FocusedHandlers from "@/features/planner/bodies/focusedHandlers";
 import * as DirectorDrive from "@/features/planner/fleet/directorDrive";
 import * as DeployConfig from "@/features/planner/lib/deployConfig";
 import * as FocusedBodies from "@/features/planner/pane/FocusedBodies";
-import * as FocusedShell from "@/features/planner/pane/FocusedShell";
-import * as ProgressionRail from "@/features/planner/pane/ProgressionRail";
 import * as FocusedPrimitives from "@/features/planner/pane/focusedPrimitives";
 import * as ProjectPaneData from "@/features/planner/pane/projectPaneData";
 import * as PreviewPaneShell from "@/features/planner/preview/PreviewPaneShell";
@@ -66,8 +64,6 @@ export function registerPanePlatform(): void {
   registerAppModule("@/features/planner/fleet/directorDrive", DirectorDrive);
   registerAppModule("@/features/planner/lib/deployConfig", DeployConfig);
   registerAppModule("@/features/planner/pane/FocusedBodies", FocusedBodies);
-  registerAppModule("@/features/planner/pane/FocusedShell", FocusedShell);
-  registerAppModule("@/features/planner/pane/ProgressionRail", ProgressionRail);
   registerAppModule("@/features/planner/pane/focusedPrimitives", FocusedPrimitives);
   registerAppModule("@/features/planner/pane/projectPaneData", ProjectPaneData);
   registerAppModule("@/features/planner/preview/PreviewPaneShell", PreviewPaneShell);

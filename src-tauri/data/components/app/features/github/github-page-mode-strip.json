@@ -9,7 +9,7 @@
     "Spacer",
     "Text"
   ],
-  "src": "src/features/github/summary/GitHubPageModeStrip.tsx",
   "folder": "features/github",
-  "provides": "@/components/github-page-mode-strip"
+  "provides": "@/components/github-page-mode-strip",
+  "srcRetired": "src/features/github/summary/GitHubPageModeStrip.tsx"
 }

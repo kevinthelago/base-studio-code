@@ -56,7 +56,7 @@ describe("the shadow page catalogue", () => {
     mcppage: 0,        // mcp-analytics RELEASED — this page is now wholly record-only
     securitypage: 1,   // AssignmentsTab only — Profiles/Activity/Flow DELETED once their merge landed
     automationspage: 0,   // Schedules DELETED once its three-way merge landed — wholly record-only now
-    githubpage: 9,        // BranchGraph + the eight summary/ cards; Empty/Summary/Pulse RELEASED
+    githubpage: 0,        // BranchGraph + the eight summary/ cards went in the code-fallback cut too
   };
 
   for (const [pageId, parts] of Object.entries(RETIRED_PAGE_COPIES)) {

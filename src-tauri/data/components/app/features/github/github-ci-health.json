@@ -12,7 +12,7 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/github/summary/CIHealthCard.tsx",
   "folder": "features/github",
-  "provides": "@/components/github-ci-health"
+  "provides": "@/components/github-ci-health",
+  "srcRetired": "src/features/github/summary/CIHealthCard.tsx"
 }

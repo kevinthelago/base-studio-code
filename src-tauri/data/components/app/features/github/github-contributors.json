@@ -12,7 +12,7 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/github/summary/ContributorsCard.tsx",
   "folder": "features/github",
-  "provides": "@/components/github-contributors"
+  "provides": "@/components/github-contributors",
+  "srcRetired": "src/features/github/summary/ContributorsCard.tsx"
 }

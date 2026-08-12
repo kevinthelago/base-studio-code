@@ -4,7 +4,7 @@
   "kitId": "base-studio-code",
   "role": "composite",
   "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport function FleetPill({ running, paused }: { running: number; paused: number }) {\n  if (running === 0 && paused === 0) return null;\n  return (\n    <Box as=\"span\" className=\"mono\" pad={[2, 9]} bg=\"color-mix(in oklch, var(--success), transparent 88%)\" radius={99} style={{\n      display: \"inline-flex\", alignItems: \"center\", gap: 6, fontSize: 9.5, color: \"var(--success)\",\n      border: \"1px solid color-mix(in oklch, var(--success), transparent 70%)\",\n    }}>\n      <Box as=\"span\" bg=\"var(--success)\" radius={99} style={{ width: 6, height: 6, animation: \"pulse 1.4s ease-in-out infinite\" }} />\n      <Box as=\"span\">{running} agent{running !== 1 ? \"s\" : \"\"} running</Box>\n      {paused > 0 && <Text as=\"span\" tone=\"dim\">· {paused} paused</Text>}\n    </Box>\n  );\n}",
-  "src": "src/features/planner/list/ProjectCard.tsx",
+  "src": "src/features/planner/list/published/ProjectRow.tsx",
   "composes": [
     "Box",
     "Text"

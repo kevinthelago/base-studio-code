@@ -10,7 +10,7 @@
     "Row",
     "Text"
   ],
-  "src": "src/features/github/summary/ActivityHeatmap.tsx",
   "folder": "features/github",
-  "provides": "@/components/github-activity-heatmap"
+  "provides": "@/components/github-activity-heatmap",
+  "srcRetired": "src/features/github/summary/ActivityHeatmap.tsx"
 }

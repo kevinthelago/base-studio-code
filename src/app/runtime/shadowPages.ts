@@ -102,11 +102,11 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // `@/components/<id>` siblings, so the page composes them without naming a single one: it imports
       // `@/features/planner/pane/ProjectPane` exactly as it did when that was a code module, and the
       // resolver reaches the graph first. Listed here so they fall under the parity guard like the rest.
-      { recordId: "plan-pane", file: "/src/features/planner/pane/ProjectPane.tsx" },
-      { recordId: "plan-pane-shell", file: "/src/features/planner/pane/FocusedShell.tsx" },
+      { recordId: "plan-pane", file: null },
+      { recordId: "plan-pane-shell", file: null },
       { recordId: "plan-pane-bodies", file: "/src/features/planner/pane/FocusedBodies.tsx" },
-      { recordId: "plan-pane-stage-bar", file: "/src/features/planner/pane/PlanStageBar.tsx" },
-      { recordId: "plan-pane-rail", file: "/src/features/planner/pane/ProgressionRail.tsx" },
+      { recordId: "plan-pane-stage-bar", file: null },
+      { recordId: "plan-pane-rail", file: null },
       { recordId: "plan-pane-mcp-modal", file: "/src/features/planner/pane/McpDownloadModal.tsx" },
       { recordId: "plan-pane-primitives", file: "/src/features/planner/pane/focusedPrimitives.tsx" },
       // The stage bodies (#4230) — the pane's body switch reaches these, and they reach each other,
@@ -190,13 +190,13 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // The list's components (#4232) — `provides` records, like `pane/` and `bodies/`. Authoring them
       // is what the page's regeneration to ABSOLUTE specifiers unlocked: `provides` matches the exact
       // specifier a record imports, so while the page said `./ProjectCard` none of these was reachable.
-      { recordId: "projects-card", file: "/src/features/planner/list/ProjectCard.tsx" },
-      { recordId: "projects-rail", file: "/src/features/planner/list/ProjectsRail.tsx" },
-      { recordId: "projects-setup", file: "/src/features/planner/list/ProjectSetupPage.tsx" },
-      { recordId: "projects-blueprint-card", file: "/src/features/planner/list/BlueprintCard.tsx" },
-      { recordId: "projects-cloud-blueprints", file: "/src/features/planner/list/CloudBlueprints.tsx" },
+      { recordId: "projects-card", file: null },
+      { recordId: "projects-rail", file: null },
+      { recordId: "projects-setup", file: null },
+      { recordId: "projects-blueprint-card", file: null },
+      { recordId: "projects-cloud-blueprints", file: null },
       { recordId: "projects-reopen-modal", file: "/src/features/planner/list/ReopenProjectModal.tsx" },
-      { recordId: "projects-delete-modal", file: "/src/features/planner/list/published/DeleteProjectModal.tsx" },
+      { recordId: "projects-delete-modal", file: null },
     ],
     // The ONE page that does not register when its module evaluates: `ProjectsGraphHost` registers at
     // first RENDER, to break an import cycle (see its comment). Shadow mode renders nothing, so it must
@@ -221,15 +221,15 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // Pulse.tsx backs NINE records; only this one is catalogued, so its deletion also needs
       // `reconcile-record-src.cjs --retire` to move the other eight off `src`.
       { recordId: "github-pulse", file: null },
-      { recordId: "github-branch-graph", file: "/src/features/github/BranchGraph.tsx" },
-      { recordId: "github-activity-heatmap", file: "/src/features/github/summary/ActivityHeatmap.tsx" },
-      { recordId: "github-ci-health", file: "/src/features/github/summary/CIHealthCard.tsx" },
-      { recordId: "github-contributors", file: "/src/features/github/summary/ContributorsCard.tsx" },
-      { recordId: "github-cross-repo-activity", file: "/src/features/github/summary/CrossRepoActivity.tsx" },
-      { recordId: "github-page-mode-strip", file: "/src/features/github/summary/GitHubPageModeStrip.tsx" },
-      { recordId: "github-language-mix", file: "/src/features/github/summary/LanguageMix.tsx" },
-      { recordId: "github-open-prs", file: "/src/features/github/summary/OpenPRsCard.tsx" },
-      { recordId: "github-repos-grid", file: "/src/features/github/summary/ReposGrid.tsx" },
+      { recordId: "github-branch-graph", file: null },
+      { recordId: "github-activity-heatmap", file: null },
+      { recordId: "github-ci-health", file: null },
+      { recordId: "github-contributors", file: null },
+      { recordId: "github-cross-repo-activity", file: null },
+      { recordId: "github-page-mode-strip", file: null },
+      { recordId: "github-language-mix", file: null },
+      { recordId: "github-open-prs", file: null },
+      { recordId: "github-repos-grid", file: null },
     ],
     ensurePlatform: () => import("@/features/github"),
   },
@@ -304,23 +304,19 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
  *  out of every component file in the app. */
 const FILE_SOURCES = import.meta.glob<string>(
   [
-    "/src/features/planner/list/{ProjectsList,ProjectCard,ProjectsRail,ProjectSetupPage,BlueprintCard,CloudBlueprints,ReopenProjectModal}.tsx",
-    "/src/features/planner/list/published/DeleteProjectModal.tsx",
-    "/src/features/planner/session/{Planning,PlanningHeader,PlanningNotices,PlanningDialogs,PublishProgressView,InjectionGateBanner,GitHubStructureCard}.tsx",
-    "/src/features/planner/pane/{ProjectPane,FocusedShell,FocusedBodies,PlanStageBar,ProgressionRail,McpDownloadModal,focusedPrimitives}.tsx",
+    "/src/features/planner/list/ReopenProjectModal.tsx",
+    "/src/features/planner/session/GitHubStructureCard.tsx",
+    "/src/features/planner/pane/{FocusedBodies,McpDownloadModal,focusedPrimitives}.tsx",
     // Named, not `bodies/*.tsx` — the glob is the file half of the parity diff, and a wildcard sweeps up
     // the directory's twelve `.test.tsx` files, which the catalogue guard correctly rejects as globbed
     // sources nothing declares.
     "/src/features/planner/bodies/{DiscoveryBody,MarketBody,TransformationsBody,FocusedAutomationsBody,FocusedSkillsBody,McpsBody,FocusedFeaturesBody,FileIntakePane,ReposDeployView,DeployView,deployShipSections,deployTargetSection,deployPrimitives,FocusedSourceBody,ScanViews,connectorForm,StreamsBody,FocusedPermissionsBody,FocusedPlanBody,StreamFocusCards,SharedDependencies,collapsibleCard,bodyPrimitives}.tsx",
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
     "/src/features/algorithms/{AlgorithmsWorkspace,AlgorithmsRail,AlgorithmsInspector,AlgorithmsKitGraph,LibrarianTerminal}.tsx",
-    "/src/app/console/{index,PaneAt,consoleStates}.tsx",
-    "/src/app/console/panes/{PaneShell,PaneMenu}.tsx",
-    "/src/features/glance/Glance{Workspace,Canvas,Inspector,StreamMorph,PreviewMorph,Node,PlanScreen,ChatDock,SessionLog}.tsx",
+    "/src/app/console/panes/PaneMenu.tsx",
+    "/src/features/glance/{GlanceWorkspace,GlanceCanvas,GlanceStreamMorph,GlancePreviewMorph,GlanceNode,GlancePlanScreen,GlanceChatDock,GlanceSessionLog}.tsx",
     // Empty/GitHubSummary/Pulse dropped with their entries — the glob and the catalogue are pinned to
     // each other BOTH ways by `shadowPages.test.ts`, so a path released for deletion has to leave both.
-    "/src/features/github/BranchGraph.tsx",
-    "/src/features/github/summary/{ActivityHeatmap,CIHealthCard,ContributorsCard,CrossRepoActivity,GitHubPageModeStrip,LanguageMix,OpenPRsCard,ReposGrid}.tsx",
     // Schedules.tsx dropped with its entry — automations now contributes no file baseline at all.
     // McpAnalytics dropped with its entry.
     "/src/features/skills/{index,SkillsViews,NewGroupDialog,SkillDrawer,SkillsDigest,LessonsTab,RunsTab}.tsx",

@@ -4,7 +4,6 @@
   "kitId": "base-studio-code",
   "role": "composite",
   "srcText": "import { ProgressionRail, type RailStatus, type ConnectorKind, type RailNode } from \"@/features/planner/pane/ProgressionRail\";\n\nexport interface Stage {\n  key: string;\n  status: RailStatus;\n  name: string;\n}\nfunction connectorKindForStages(stages: Stage[], i: number): ConnectorKind {\n  return stages[i].status === \"complete\" ? \"solid\" : \"dim\";\n}\nconst DEMO_STAGES: Stage[] = [\n  { key: \"plan\", status: \"complete\", name: \"Plan\" },\n  { key: \"build\", status: \"active\", name: \"Build\" },\n  { key: \"review\", status: \"upcoming\", name: \"Review\" },\n  { key: \"deploy\", status: \"locked\", name: \"Deploy\" },\n];\nexport function Stepper({ stages = DEMO_STAGES, selectedIdx = 1, onSelect, highlight }: {\n  stages?: Stage[]; selectedIdx?: number; onSelect?: (i: number) => void; highlight?: Set<string>;\n}) {\n  const nodes: RailNode[] = stages.map((p) => ({\n    key: p.key,\n    status: p.status,\n    icon: p.key,\n    label: p.name,\n    title: p.name,\n  }));\n  return (\n    <ProgressionRail\n      nodes={nodes}\n      variant=\"stepper\"\n      selectedIdx={selectedIdx}\n      onSelect={onSelect}\n      highlight={highlight}\n      connectorKind={(_, i) => connectorKindForStages(stages, i)}\n    />\n  );\n}",
-  "src": "src/features/planner/pane/FocusedShell.tsx",
   "composes": [
     "ProgressionRail"
   ],
@@ -15,5 +14,6 @@
     }
   ],
   "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `Stepper` defaults `stages`, `selectedIdx`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `Stepper` holds 4 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 4 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
-  "folder": "features/planner/pane"
+  "folder": "features/planner/pane",
+  "srcRetired": "src/features/planner/pane/FocusedShell.tsx"
 }

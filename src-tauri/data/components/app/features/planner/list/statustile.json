@@ -4,10 +4,10 @@
   "kitId": "base-studio-code",
   "role": "primitive",
   "srcText": "import { FolderGit2, PackageCheck, Hammer, PenLine, type LucideIcon } from \"lucide-react\";\nimport { IconBox } from \"@/shared/ui/data/IconBox\";\n\ntype ProjectStatus = \"active\" | \"shipped\" | \"in-progress\" | \"draft\";\ninterface StatusFacet { value: ProjectStatus; label: string; dot: string; tone: string }\nconst STATUS_FACETS: StatusFacet[] = [\n  { value: \"active\",      label: \"active\",      dot: \"var(--success)\", tone: \"success\" },\n  { value: \"shipped\",     label: \"shipped\",     dot: \"var(--fg-dim)\",  tone: \"neutral\" },\n  { value: \"in-progress\", label: \"in progress\", dot: \"var(--violet)\",  tone: \"info\" },\n  { value: \"draft\",       label: \"draft\",       dot: \"var(--accent)\",  tone: \"accent\" },\n];\nconst STATUS_META: Record<ProjectStatus, StatusFacet> =\n  Object.fromEntries(STATUS_FACETS.map((f) => [f.value, f])) as Record<ProjectStatus, StatusFacet>;\n\nconst STATUS_ICON: Record<ProjectStatus, LucideIcon> = {\n  active: FolderGit2, shipped: PackageCheck, \"in-progress\": Hammer, draft: PenLine,\n};\nexport function StatusTile({ status = \"active\", big }: { status?: ProjectStatus; big?: boolean }) {\n  const hue = STATUS_META[status].dot;\n  const Icon = STATUS_ICON[status];\n  const size = big ? 34 : 28;\n  return (\n    <IconBox\n      size={size}\n      radius={8}\n      background={`color-mix(in oklch, ${hue}, transparent 88%)`}\n      border={`1px solid color-mix(in oklch, ${hue}, transparent 70%)`}\n      color={hue}\n    >\n      <Icon size={big ? 16 : 14} />\n    </IconBox>\n  );\n}",
-  "src": "src/features/planner/list/ProjectCard.tsx",
   "composes": [
     "IconBox"
   ],
   "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `StatusTile` defaults `status`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `StatusTile` holds 1 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 1 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
-  "folder": "features/planner/list"
+  "folder": "features/planner/list",
+  "srcRetired": "src/features/planner/list/ProjectCard.tsx"
 }
