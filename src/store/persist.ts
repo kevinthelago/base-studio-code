@@ -140,6 +140,7 @@ export function persistedState(s: AppStore) {
     // thread for a scan that touches `componentBuildStatus`. Each store was verified to hold every
     // row its cache held (cache-only rows: 0) before the copy was dropped.
     //   components (#3610) 592 KB  → hydrateComponents  · blueprints  395 KB → store/index.ts:202
+    //   algorithmImpls             → hydrateAlgorithms   (the same rule: a bsc-hydrated cache, never persisted)
     //   skills + skillGroups 71 KB → hydrateSkills      · personas     33 KB → hydratePersonas
     //   teams                 6 KB → hydrateOrgs   · triagedProjects (#4088) → projects.db
     // The in-memory copies stay (synchronous reads are unaffected); only the disk copy is gone.

@@ -126,7 +126,9 @@ import * as GraphLegend from "@/shared/ui/layouts/GraphLegend";
 import * as SplitView from "@/shared/ui/layouts/SplitView";
 import * as Sequence from "@/shared/ui/layouts/Sequence";
 import * as PagesPageHeader from "@/shared/ui/pages/pageHeader";
-import * as SettingsPageHeader from "@/features/settings/pages/SettingsPageHeader";
+// Through the feature BARREL (#1545): `app/` may not reach a feature's internals. The registry KEY
+// below stays the deep specifier, because that is the string the `accessibilitypage` record imports.
+import * as SettingsPageHeader from "@/features/settings";
 import * as UseRailSections from "@/shared/hooks/useRailSections";
 import * as UseDragResize from "@/shared/hooks/useDragResize";
 import * as SkillsData from "@/shared/data/skills";

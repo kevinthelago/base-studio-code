@@ -16,6 +16,11 @@ import { McpPage } from "./pages/McpPage";
 // boot + hotkey hooks consume (through this barrel, not settings internals).
 export { accentVars } from "./lib/appearance";
 export { SCREEN_HOTKEYS } from "./lib/shortcuts";
+// Re-exported so `app/runtime/appModules.ts` can REGISTER it without reaching a feature's internals
+// (#1545). The packaged `accessibilitypage` record imports it, and an unregistered specifier makes that
+// record unstorable. The registry KEY stays the deep specifier the record actually carries
+// (`@/features/settings/pages/SettingsPageHeader`); only the registering module's import path changes.
+export { SettingsPageHeader, SettingsSubHeader } from "./pages/SettingsPageHeader";
 export {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,
