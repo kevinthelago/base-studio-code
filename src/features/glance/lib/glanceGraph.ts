@@ -74,7 +74,7 @@ export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" 
  *  CONTRACT edges (#3786): `uses-mcp` (an MCP server) and `uses-service` (a third-party service). Every
  *  band edge ({@link isBandEdge}) routes vertically into the fenced band; the project contracts flow
  *  left→right. */
-export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "uses-mcp" | "uses-service";
+export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "uses-mcp" | "uses-service" | "created-by";
 /** A Glance node's KIND (#2571 → generalized #3119 → external contracts #3786). A PROJECT (the default), a
  *  UI-KIT node (`kit`, the `ui` library graph — kept as-is so existing fixtures + persisted ids are
  *  unaffected), a generalized cross-graph `library` node (an algorithm / sound, carrying
@@ -83,7 +83,7 @@ export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "u
  *  contracts with, #3786 Phase 2). ABSENT ⇒ `"project"`. A non-project node's id is namespaced (`kit:` /
  *  `algo:` / `sound:` / `mcp:` / `service:`, see {@link libraryNodeId} / {@link mcpNodeId} /
  *  {@link serviceNodeId}) so it can never collide with a project key (a `[a-z0-9-]` slug — no colon). */
-export type GNodeKind = "project" | "kit" | "library" | "mcp" | "service";
+export type GNodeKind = "project" | "kit" | "library" | "mcp" | "service" | "architect";
 
 /** The cross-graph LIBRARY dimensions a band node can belong to (#3119) — reuses A's {@link NodeGraph}
  *  (algorithms · UI kits · sounds). A `kit` node is the `ui` case (kept for back-compat); a generalized
@@ -151,6 +151,28 @@ export const SERVICE_META: BandMeta = {
   blurb: "An external service this project contracts with — a third-party endpoint (a payments API, a SaaS backend, another team's service) the planner declared as a dependency, so the relationship is visible and downstream agents know the contract.",
 };
 
+/** ARCHITECT node presentation (#glance-architect-band) — the funnel's tier 1, the only session that
+ *  converses with the user. Rendered in the same fenced top band as the library + contract dimensions,
+ *  but distinct (amber · ◈ · "architect" · "ARCHITECTS") so the tier that CREATES projects reads apart
+ *  from the dependencies they consume. */
+export const ARCHITECT_COLOR = "#e0a458";
+export const ARCHITECT_META: BandMeta = {
+  color: ARCHITECT_COLOR, marker: "◈", kindLabel: "architect", bandLabel: "ARCHITECTS", panelTitle: "ARCHITECT", edgeLabel: "created by",
+  blurb: "The architect session that creates projects — the funnel's front door, and the only tier that talks to you. It runs discovery and hands a sealed requirement (plus the authority granted with it) down to each project's director.",
+};
+
+/** Namespace prefix for an ARCHITECT node id — its own namespace so it can never collide with a project
+ *  key (a `[a-z0-9-]` slug, no colon) or another band node id. */
+export const ARCHITECT_NODE_PREFIX = "architect:";
+/** The stable, collision-proof id of the graph node for an architect persona. */
+export const architectNodeId = (personaId: string): string => `${ARCHITECT_NODE_PREFIX}${personaId}`;
+/** The persona id behind an `architect:<personaId>` node id (identity for anything already bare). */
+export const architectIdOfNode = (nodeId: string): string =>
+  nodeId.startsWith(ARCHITECT_NODE_PREFIX) ? nodeId.slice(ARCHITECT_NODE_PREFIX.length) : nodeId;
+/** Stable id for a project→architect `created-by` edge — prefixed so it never collides with any other
+ *  edge id. */
+export const createdByEdgeId = (projectKey: string, personaId: string): string => `createdby:${projectKey}>${personaId}`;
+
 /** Namespace prefix for a KIT node id (#2571). */
 export const KIT_NODE_PREFIX = "kit:";
 /** graph → the namespace prefix for a library node id (#3119). `ui` stays `kit:` so {@link kitNodeId}
@@ -216,16 +238,19 @@ export const isLibraryEdge = (kind: GEdgeKind): boolean => kind === "uses-kit" |
  *  OR an external contract node (`mcp` / `service`). These are lifted OUT of the project DAG into the top
  *  band. */
 export const isBandNode = (n: { kind?: GNodeKind }): boolean =>
-  isLibraryNode(n) || n.kind === "mcp" || n.kind === "service";
+  isLibraryNode(n) || n.kind === "mcp" || n.kind === "service" || n.kind === "architect";
 /** Is `kind` a BAND edge (#3786) — a library edge OR an external-contract edge (`uses-mcp`/`uses-service`).
  *  These route VERTICALLY into the fenced band and are excluded from the project-network layout. */
 export const isBandEdge = (kind: GEdgeKind): boolean =>
-  isLibraryEdge(kind) || kind === "uses-mcp" || kind === "uses-service";
+  isLibraryEdge(kind) || kind === "uses-mcp" || kind === "uses-service" || kind === "created-by";
 /** The band presentation ({@link BandMeta}) for a fenced-band node (#3786) — the MCP row for an `mcp`
  *  contract node, the SERVICE row for a `service` contract node, else the library-graph row for a
  *  kit/algorithm/sound node. */
 export const bandNodeMeta = (n: { kind?: GNodeKind; library?: GLibraryGraph }): BandMeta =>
-  n.kind === "mcp" ? MCP_META : n.kind === "service" ? SERVICE_META : LIBRARY_META[libraryGraphOf(n) ?? "ui"];
+  n.kind === "architect" ? ARCHITECT_META
+  : n.kind === "mcp" ? MCP_META
+  : n.kind === "service" ? SERVICE_META
+  : LIBRARY_META[libraryGraphOf(n) ?? "ui"];
 
 /** One communication form on a fleet node's comms surface (#2563) — a typed interaction + its `bsc-*`
  *  runtime transport, pared from the Org model so the glance node model stays decoupled from it. */
@@ -473,6 +498,10 @@ export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: 
   // dependency; the canvas tints each edge by the TARGET node's graph colour (LIBRARY_META), so this
   // static `color` is only a neutral fallback (e.g. the legend swatch).
   requires: { label: "requires", color: "var(--fg-muted)", dash: "4 4", w: 1.6, surface: "requires a shared library node (algorithm / sound) · cross-graph dependency" },
+  // The PROVENANCE dimension (#glance-architect-band): the architect session that created this project.
+  // Dashed amber, matching ARCHITECT_META, so the tier that CREATES a project reads apart from the
+  // dependencies it consumes.
+  "created-by": { label: "created by", color: ARCHITECT_COLOR, dash: "4 4", w: 1.6, surface: "created by an architect session · funnel provenance" },
   // The external MCP-CONTRACT dimension (#3786): a project CONTRACTS WITH a scoped MCP server — a wire
   // contract to an external tool/data server, drawn to the shared mcp node. Tight-dotted amber so it reads
   // apart from the kit/library edges.

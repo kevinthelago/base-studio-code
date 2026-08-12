@@ -191,9 +191,16 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // library nodes their kits require #3133 + external MCP-contract nodes #3786, edges = the user-drawn
   // relationships #2253 + one kit→project edge per consumer #2571 + the transitive project→library
   // `requires` edges #3133 + one project→mcp `uses-mcp` edge per scoped consumer #3786).
+  // The ARCHITECT band (#glance-architect-band) — tier 1 of the funnel, from the persona store. Filtered
+  // by ROLE rather than by a hardcoded id, so a second architect persona shows up without a code change
+  // (funnel-architect-front-door makes multiple architects a first-class case).
+  const architects = useMemo(
+    () => personas.filter((p) => p.role === "architect").map((p) => ({ id: p.id, name: p.name })),
+    [personas],
+  );
   const projectData = useMemo(
-    () => buildGlanceData(projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers),
-    [projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers],
+    () => buildGlanceData(projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers, architects),
+    [projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers, architects],
   );
   const projectModel = useMemo(() => timedSync("buildGraph:glance-project", () => buildGraph(projectData.rawNodes, projectData.rawEdges)), [projectData]);
 
