@@ -30,7 +30,6 @@ import * as EmptyStateMod from "@/shared/ui/feedback/EmptyState";
 import * as Field from "@/shared/ui/controls/Field";
 import * as SegmentedControl from "@/shared/ui/controls/SegmentedControl";
 // ── Projects page (#3874) — the leaves it composes but does not redraw. ──────────────────────────────
-import * as Dropdown from "@/shared/ui/controls/Dropdown";
 import * as InlineError from "@/shared/ui/feedback/InlineError";
 import * as DialogMod from "@/shared/ui/overlay/Dialog";
 import * as SafeInvoke from "@/shared/lib/core/safeInvoke";
@@ -119,6 +118,17 @@ import * as TabBar from "@/shared/ui/layouts/TabBar";
 import * as IconButton from "@/shared/ui/controls/IconButton";
 import * as PreviewReview from "@/shared/lib/preview/previewReview";
 import * as GraphCanvas from "@/shared/ui/layouts/GraphCanvas";
+// The six modules the packaged PAGE records honestly import and the registry did not expose, so the
+// write gate refused those records outright ("resolving to no registered platform module and no
+// @/components/<id> sibling"). Each is a real, correctly-cased file; they were simply never registered.
+import * as PaneGrid from "@/shared/ui/layouts/PaneGrid";
+import * as GraphLegend from "@/shared/ui/layouts/GraphLegend";
+import * as SplitView from "@/shared/ui/layouts/SplitView";
+import * as Sequence from "@/shared/ui/layouts/Sequence";
+import * as PagesPageHeader from "@/shared/ui/pages/pageHeader";
+// Through the feature BARREL (#1545): `app/` may not reach a feature's internals. The registry KEY
+// below stays the deep specifier, because that is the string the `accessibilitypage` record imports.
+import * as SettingsPageHeader from "@/features/settings";
 import * as UseRailSections from "@/shared/hooks/useRailSections";
 import * as UseDragResize from "@/shared/hooks/useDragResize";
 import * as SkillsData from "@/shared/data/skills";
@@ -156,6 +166,86 @@ import * as CoreLog from "@/shared/lib/core/log";
 // loader requires those registered exactly like a first-party one. `platformBoundary` used to skip bare
 // specifiers as "the import-map's concern"; the browser check caught this because the loader does not.
 import * as ZustandShallow from "zustand/react/shallow";
+// ── The LOGIC SURFACE a record imports (register-the-shell-logic-surface) ─────────────────────────
+// These modules STAY on disk — registration is not migration. A graph record that imports one of them
+// resolves it here instead of failing to load, which is the prerequisite for migrating the modules that
+// import THEM: five modules measured against the un-registered surface dragged in 251 unresolved
+// specifiers, so module-by-module migration is impossible until this resolves.
+// Shell scope only — @/shared/**, @/app/** and feature BARRELS. A feature's INTERNALS cannot be
+// registered from here (#1545); each feature registers its own in its graphPlatform.ts.
+import * as Achievements from "@/shared/lib/core/achievements";
+import * as AchievementChime from "@/shared/lib/core/achievementChime";
+import * as LocationCrumb from "@/app/chrome/locationCrumb";
+import * as UseAppRepoRoot from "@/shared/hooks/useAppRepoRoot";
+import * as UseHotkeys from "@/app/useHotkeys";
+import * as UseNavigateBridge from "@/app/useNavigateBridge";
+import * as UseFleetWakeBridge from "@/app/useFleetWakeBridge";
+import * as UseDebugChannel from "@/app/useDebugChannel";
+import * as UseDockBack from "@/app/useDockBack";
+import * as Automations from "@/features/automations";
+import * as Tunnel from "@/features/tunnel";
+import * as UseCoordAnnouncer from "@/app/a11y/useCoordAnnouncer";
+import * as UseCoordSpeaker from "@/app/a11y/useCoordSpeaker";
+import * as UseWarden from "@/shared/lib/fleet/useWarden";
+import * as UseWorkerAutoEnd from "@/shared/lib/fleet/useWorkerAutoEnd";
+import * as Sounds from "@/features/sounds";
+import * as UseAppBoot from "@/app/useAppBoot";
+import * as UseNavHistory from "@/shared/hooks/useNavHistory";
+import * as Registry from "@/app/registry";
+import * as StreamCompletion from "@/shared/lib/fleet/streamCompletion";
+import * as SessionRecovery from "@/app/console/lib/sessionRecovery";
+import * as PaneInject from "@/shared/lib/fleet/paneInject";
+import * as UseSandboxReadiness from "@/shared/hooks/useSandboxReadiness";
+import * as DockBack from "@/shared/lib/core/dockBack";
+import * as DetachWindow from "@/app/console/lib/detachWindow";
+import * as Diagnostics from "@/shared/lib/core/diagnostics";
+import * as GraphPlatform from "@/app/console/graphPlatform";
+import * as TerminalClipboard from "@/shared/lib/session/terminalClipboard";
+import * as Terminal from "@/app/console/lib/terminal";
+import * as TerminalKeys from "@/app/console/lib/terminalKeys";
+import * as TerminalNudge from "@/app/console/lib/terminalNudge";
+import * as JumbleProbe from "@/app/console/lib/jumbleProbe";
+import * as Checkpoint from "@/shared/lib/session/checkpoint";
+import * as PendingPtyData from "@/app/console/lib/pendingPtyData";
+import * as SessionLaunch from "@/app/console/lib/sessionLaunch";
+import * as UseTerminalSession from "@/app/console/useTerminalSession";
+import * as RepoCredentials from "@/shared/lib/github/repoCredentials";
+import * as PaneActivity from "@/app/console/lib/paneActivity";
+import * as TerminalAdmission from "@/app/console/lib/terminalAdmission";
+import * as SystemSessions from "@/shared/lib/session/systemSessions";
+import * as StartupTrace from "@/shared/lib/core/startupTrace";
+import * as ConfigOverrides from "@/shared/lib/core/configOverrides";
+import * as PoolPlan from "@/shared/lib/session/poolPlan";
+import * as RequestSpawn from "@/shared/lib/session/requestSpawn";
+import * as ComponentBundle from "@/shared/lib/preview/componentBundle";
+import * as CollectAppCss from "@/shared/lib/preview/collectAppCss";
+import * as UseGraphPage from "@/shared/ui/layouts/useGraphPage";
+import * as SelectionNeighborhood from "@/shared/lib/graph/selectionNeighborhood";
+import * as CrossGraph from "@/shared/lib/graph/crossGraph";
+import * as NodeUrn from "@/shared/lib/graph/nodeUrn";
+import * as Types from "@/shared/lib/github/types";
+import * as SessionRoles from "@/shared/lib/session/sessionRoles";
+import * as Algorithms from "@/features/algorithms";
+import * as FleetLive from "@/shared/lib/fleet/fleetLive";
+import * as ProjectV2 from "@/shared/lib/github/projectV2";
+import * as UseGithubQuery from "@/shared/lib/github/useGithubQuery";
+import * as RoleProfile from "@/shared/lib/session/roleProfile";
+import * as AppStateGist from "@/store/appStateGist";
+import * as IdleReaper from "@/app/console/lib/idleReaper";
+import * as ShellConfig from "@/shared/lib/core/shellConfig";
+import * as Studio from "@/features/studio";
+import * as Speech from "@/shared/lib/a11y/speech";
+import * as ComponentLoader from "@/shared/lib/runtime/componentLoader";
+import * as GraphResolver from "@/shared/lib/runtime/graphResolver";
+import * as RenderGate from "@/shared/lib/runtime/renderGate";
+import * as Announcer from "@/shared/lib/a11y/announcer";
+import * as Theme from "@/shared/ui/kit/theme";
+import * as Resolve from "@/shared/ui/kit/resolve";
+import * as UseSelection from "@/shared/ui/pages/useSelection";
+import * as NetworkLayout from "@/shared/ui/pages/networkLayout";
+import * as Manifest from "@/shared/ui/manifest";
+import * as GeneralNode from "@/shared/ui/spec/generalNode";
+import * as SpecWalk from "@/shared/ui/spec/specWalk";
 // `record-link-debt` — five of the six specifiers that were registered NOWHERE, so any record importing
 // one threw the loader's named error the moment something mounted it. Each of these five ALSO exists as a
 // record (`keyvaluelist`, `labelchip`, `sessionfailure`, `sessionreadinessbanner`), and the tempting fix
@@ -201,7 +291,6 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/controls/Field": Field,
   "@/shared/ui/controls/SegmentedControl": SegmentedControl,
   // #3874 — Projects.
-  "@/shared/ui/controls/Dropdown": Dropdown,
   "@/shared/ui/feedback/InlineError": InlineError,
   "@/shared/ui/overlay/Dialog": DialogMod,
   "@/shared/lib/core/safeInvoke": SafeInvoke,
@@ -258,6 +347,16 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/controls/IconButton": IconButton,
   "@/shared/lib/preview/previewReview": PreviewReview,
   "@/shared/ui/layouts/GraphCanvas": GraphCanvas,
+  "@/shared/ui/layouts/PaneGrid": PaneGrid,
+  "@/shared/ui/layouts/GraphLegend": GraphLegend,
+  "@/shared/ui/layouts/SplitView": SplitView,
+  "@/shared/ui/layouts/Sequence": Sequence,
+  // LOWERCASE `pageHeader` — that is the tracked filename. Six page records import it as `PageHeader`,
+  // which resolves on NTFS and nowhere else; those records are corrected rather than this key bent to
+  // match them. It is the same wrong-case path that made `graph-delete-retired-shared-page-files` a
+  // phantom item, where `git ls-files` shows no `PageHeader.tsx` was ever tracked.
+  "@/shared/ui/pages/pageHeader": PagesPageHeader,
+  "@/features/settings/pages/SettingsPageHeader": SettingsPageHeader,
   "@/shared/hooks/useRailSections": UseRailSections,
   "@/shared/hooks/useDragResize": UseDragResize,
   "@/shared/data/skills": SkillsData,
@@ -314,6 +413,86 @@ const PLATFORM: Record<string, unknown> = {
   "@/app/SessionFailure": SessionFailure,
   "@/app/SessionReadinessBanner": SessionReadinessBanner,
   "@tauri-apps/api/app": TauriApp,
+// ── The LOGIC SURFACE a record imports (register-the-shell-logic-surface) ─────────────────────────
+// These modules STAY on disk — registration is not migration. A graph record that imports one of them
+// resolves it here instead of failing to load, which is the prerequisite for migrating the modules that
+// import THEM: five modules measured against the un-registered surface dragged in 251 unresolved
+// specifiers, so module-by-module migration is impossible until this resolves.
+// Shell scope only — @/shared/**, @/app/** and feature BARRELS. A feature's INTERNALS cannot be
+// registered from here (#1545); each feature registers its own in its graphPlatform.ts.
+  "@/shared/lib/core/achievements": Achievements,
+  "@/shared/lib/core/achievementChime": AchievementChime,
+  "@/app/chrome/locationCrumb": LocationCrumb,
+  "@/shared/hooks/useAppRepoRoot": UseAppRepoRoot,
+  "@/app/useHotkeys": UseHotkeys,
+  "@/app/useNavigateBridge": UseNavigateBridge,
+  "@/app/useFleetWakeBridge": UseFleetWakeBridge,
+  "@/app/useDebugChannel": UseDebugChannel,
+  "@/app/useDockBack": UseDockBack,
+  "@/features/automations": Automations,
+  "@/features/tunnel": Tunnel,
+  "@/app/a11y/useCoordAnnouncer": UseCoordAnnouncer,
+  "@/app/a11y/useCoordSpeaker": UseCoordSpeaker,
+  "@/shared/lib/fleet/useWarden": UseWarden,
+  "@/shared/lib/fleet/useWorkerAutoEnd": UseWorkerAutoEnd,
+  "@/features/sounds": Sounds,
+  "@/app/useAppBoot": UseAppBoot,
+  "@/shared/hooks/useNavHistory": UseNavHistory,
+  "@/app/registry": Registry,
+  "@/shared/lib/fleet/streamCompletion": StreamCompletion,
+  "@/app/console/lib/sessionRecovery": SessionRecovery,
+  "@/shared/lib/fleet/paneInject": PaneInject,
+  "@/shared/hooks/useSandboxReadiness": UseSandboxReadiness,
+  "@/shared/lib/core/dockBack": DockBack,
+  "@/app/console/lib/detachWindow": DetachWindow,
+  "@/shared/lib/core/diagnostics": Diagnostics,
+  "@/app/console/graphPlatform": GraphPlatform,
+  "@/shared/lib/session/terminalClipboard": TerminalClipboard,
+  "@/app/console/lib/terminal": Terminal,
+  "@/app/console/lib/terminalKeys": TerminalKeys,
+  "@/app/console/lib/terminalNudge": TerminalNudge,
+  "@/app/console/lib/jumbleProbe": JumbleProbe,
+  "@/shared/lib/session/checkpoint": Checkpoint,
+  "@/app/console/lib/pendingPtyData": PendingPtyData,
+  "@/app/console/lib/sessionLaunch": SessionLaunch,
+  "@/app/console/useTerminalSession": UseTerminalSession,
+  "@/shared/lib/github/repoCredentials": RepoCredentials,
+  "@/app/console/lib/paneActivity": PaneActivity,
+  "@/app/console/lib/terminalAdmission": TerminalAdmission,
+  "@/shared/lib/session/systemSessions": SystemSessions,
+  "@/shared/lib/core/startupTrace": StartupTrace,
+  "@/shared/lib/core/configOverrides": ConfigOverrides,
+  "@/shared/lib/session/poolPlan": PoolPlan,
+  "@/shared/lib/session/requestSpawn": RequestSpawn,
+  "@/shared/lib/preview/componentBundle": ComponentBundle,
+  "@/shared/lib/preview/collectAppCss": CollectAppCss,
+  "@/shared/ui/layouts/useGraphPage": UseGraphPage,
+  "@/shared/lib/graph/selectionNeighborhood": SelectionNeighborhood,
+  "@/shared/lib/graph/crossGraph": CrossGraph,
+  "@/shared/lib/graph/nodeUrn": NodeUrn,
+  "@/shared/lib/github/types": Types,
+  "@/shared/lib/session/sessionRoles": SessionRoles,
+  "@/features/algorithms": Algorithms,
+  "@/shared/lib/fleet/fleetLive": FleetLive,
+  "@/shared/lib/github/projectV2": ProjectV2,
+  "@/shared/lib/github/useGithubQuery": UseGithubQuery,
+  "@/shared/lib/session/roleProfile": RoleProfile,
+  "@/store/appStateGist": AppStateGist,
+  "@/app/console/lib/idleReaper": IdleReaper,
+  "@/shared/lib/core/shellConfig": ShellConfig,
+  "@/features/studio": Studio,
+  "@/shared/lib/a11y/speech": Speech,
+  "@/shared/lib/runtime/componentLoader": ComponentLoader,
+  "@/shared/lib/runtime/graphResolver": GraphResolver,
+  "@/shared/lib/runtime/renderGate": RenderGate,
+  "@/shared/lib/a11y/announcer": Announcer,
+  "@/shared/ui/kit/theme": Theme,
+  "@/shared/ui/kit/resolve": Resolve,
+  "@/shared/ui/pages/useSelection": UseSelection,
+  "@/shared/ui/pages/networkLayout": NetworkLayout,
+  "@/shared/ui/manifest": Manifest,
+  "@/shared/ui/spec/generalNode": GeneralNode,
+  "@/shared/ui/spec/specWalk": SpecWalk,
 };
 
 let done = false;

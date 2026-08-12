@@ -1,3 +1,9 @@
+// Register this feature's graph-platform modules at module load — so `import("@/features/studio-sessions")`
+// (what the shadow catalogue's ensurePlatform does) is what makes a record importing them resolvable.
+// Idempotent; mirrors the *GraphHost pattern for features that have one.
+import { registerStudioSessionsPlatform } from "./graphPlatform";
+
+registerStudioSessionsPlatform();
 // Public API of the studio-sessions feature (#3357) — the app-owned designer / librarian / architect
 // singleton SESSIONS, hosted on the shared TerminalHost. (Distinct from the neighbouring `studio` feature,
 // #2889, which is the shareable snapshot BUNDLE of the app's library state — same word, unrelated

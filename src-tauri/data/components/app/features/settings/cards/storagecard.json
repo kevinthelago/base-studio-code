@@ -15,5 +15,6 @@
     "Box",
     "Text"
   ],
-  "srcDivergence": "Deliberate, not stale — preview DATA SUBSTITUTION. In `StorageCard`, the record uses the sample constant(s) `SAMPLE_ROWS`, `SAMPLE_SANDBOX`, because the preview mounts a record with no Tauri backend and no app store, so a live call would throw on mount. The RENDER layer still agrees (73% of markup lines shared), which is what says the divergence is confined to the data layer rather than the record being behind on UI. Refreshing from the file would import modules the loader cannot resolve and make the record un-previewable. Written by scripts/reconcile-record-src.cjs --annotate."
+  "srcDivergence": "Deliberate, not stale — preview DATA SUBSTITUTION. In `StorageCard`, the record uses the sample constant(s) `SAMPLE_ROWS`, `SAMPLE_SANDBOX`, because the preview mounts a record with no Tauri backend and no app store, so a live call would throw on mount. The RENDER layer still agrees (73% of markup lines shared), which is what says the divergence is confined to the data layer rather than the record being behind on UI. Refreshing from the file would import modules the loader cannot resolve and make the record un-previewable. Written by scripts/reconcile-record-src.cjs --annotate.",
+  "folder": "settings/cards"
 }

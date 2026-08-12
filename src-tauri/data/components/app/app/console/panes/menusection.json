@@ -9,5 +9,6 @@
     "Box",
     "Text",
     "Stack"
-  ]
+  ],
+  "folder": "app/console/panes"
 }

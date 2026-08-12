@@ -14,6 +14,7 @@ import * as GithubSummary from "./lib/githubSummary";
 import * as UseGithubSummary from "./useGithubSummary";
 import * as UseRepoPulse from "./lib/useRepoPulse";
 import * as HeatFill from "./heatFill";
+import * as GraphPlatform from "@/features/github/graphPlatform";
 
 let done = false;
 
@@ -27,4 +28,5 @@ export function registerGithubPlatform(): void {
   registerAppModule("@/features/github/lib/useRepoPulse", UseRepoPulse);
   registerAppModule("@/features/github/heatFill", HeatFill);
   registerPlannerGithubPlatform();
+  registerAppModule("@/features/github/graphPlatform", GraphPlatform);
 }

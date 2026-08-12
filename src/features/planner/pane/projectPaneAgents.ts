@@ -3,7 +3,7 @@
 // projectPaneData (#2151); pure, no logic changes.
 
 import type { Tier, ToolKey } from "@/features/security";
-import { resolveFlow } from "../fleet/agentFlow";
+import { resolveFlow, LOCAL_ONLY_PUSH } from "../fleet/agentFlow";
 import { resolveStrategy } from "../lib/integrationStrategy";
 import { depsForRepo } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
@@ -35,9 +35,12 @@ const DEFAULT_PERM: Perm = {
 function derivePerm(profile: AgentProfile | undefined, push: string): Perm {
   const tier = (k: ToolKey, fallback: Posture): Posture =>
     (profile?.tools?.[k] as Tier | undefined) ?? fallback;
+  // Mirrors `flowPermissionRules`: the policies that never reach a remote are DENIED, not prompted.
+  // `commit-only` is included because it always denied push there — the pane was showing "ask" for a
+  // command the launch hard-blocks, which reads as "you'll be asked" when you never will be.
   const pushPosture: Posture =
-    push === "none" ? "deny" :
-    push === "auto-pr" ? "allow" :
+    (LOCAL_ONLY_PUSH as readonly string[]).includes(push) ? "deny" :
+    push === "auto-pr" || push === "self-merge" ? "allow" :
     "ask";
   if (!profile) {
     return { ...DEFAULT_PERM, push: pushPosture };

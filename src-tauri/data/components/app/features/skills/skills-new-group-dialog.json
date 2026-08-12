@@ -12,5 +12,6 @@
     "Text"
   ],
   "src": "src/features/skills/NewGroupDialog.tsx",
-  "folder": "features/skills"
+  "folder": "features/skills",
+  "provides": "@/components/skills-new-group-dialog"
 }

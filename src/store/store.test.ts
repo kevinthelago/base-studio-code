@@ -950,11 +950,32 @@ describe("triageStartProject", () => {
   });
 
   it("sets the verbatim triage prompt text on every triage pane", () => {
-    useAppStore.setState({ githubToken: "tok" }); // the verbatim GitHub triage prompt is the connected path (#3281)
+    // The GitHub triage prompt needs BOTH a token and a strategy that reaches a remote — a token
+    // alone used to be enough, which ran `gh issue edit`/`gh label create` on locally-integrating
+    // projects (#worker-prose-follows-the-local-first-loop).
+    useAppStore.setState({
+      githubToken: "tok",
+      planFleet: { [sanitizeProjectKey("proj")]: { recommended: 1, reasoning: "", director: { enabled: false }, streams: [], strategy: "pr-ci" } },
+    } as never);
     useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
     const { paneStartupPromptText } = useAppStore.getState();
     expect(paneStartupPromptText[tri("proj", "o/a")]).toBe(TRIAGE_PROMPT);
     expect(paneStartupPromptText[tri("proj", "o/b")]).toBe(TRIAGE_PROMPT);
+  });
+
+  it("triages LOCALLY by default even WITH a GitHub token — a token is not consent to write", () => {
+    // The regression: locality was decided by `!githubToken` alone, so any project holding a token
+    // got the `gh` variant and its triage ran `gh issue edit --add-label` / `gh label create` on a
+    // project that integrates locally. The strategy decides now, and an unset one resolves to the
+    // `local` default.
+    // planFleet is cleared explicitly: the sibling test above sets a `pr-ci` strategy under the SAME
+    // project key, and the store is shared across cases in this file.
+    useAppStore.setState({ githubToken: "tok", planFleet: {} } as never);
+    useAppStore.getState().triageStartProject("proj", ["o/a"], "P1");
+    const text = useAppStore.getState().paneStartupPromptText[tri("proj", "o/a")];
+    expect(text).toContain("bsc plan");            // works the local plan store
+    expect(text).not.toContain("gh issue list");   // and never the GitHub issue surface
+    expect(text).not.toContain("gh label create");
   });
 
   it("defaults every triage pane's doc prompt to the built-in default ('')", () => {
@@ -979,8 +1000,11 @@ describe("triageStartProject", () => {
   it("uses a per-repo triage script (doc) and skips the verbatim prompt for that pane", () => {
     useAppStore.setState({
       repoTriagePromptDoc: { "P1::o/b": "projects/P1/prompts/b-triage.md" },
-      githubToken: "tok", // the verbatim GitHub triage prompt is the connected path (#3281)
-    });
+      // Token AND a remote-integrating strategy — the verbatim GitHub prompt needs both now. Set
+      // explicitly rather than inherited from a sibling case, since the store is shared here.
+      githubToken: "tok",
+      planFleet: { [sanitizeProjectKey("proj")]: { recommended: 1, reasoning: "", director: { enabled: false }, streams: [], strategy: "pr-ci" } },
+    } as never);
     useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
     const { paneStartupPromptDocs, paneStartupPromptText } = useAppStore.getState();
     // o/a has no triage doc → verbatim prompt; o/b → its triage doc, no verbatim text.
@@ -1197,28 +1221,44 @@ describe("agent fleet store", () => {
     expect(st.tabs[idx].name).toBe("Proj · build");
     expect(st.tabs[idx].projectKey).toBe("proj-key");
     expect(st.tabs[idx].kind).toBe("build");
-    expect(st.tabs[idx].layout).toBe("2×2"); // director + 2 workers = 3 panes
+    // director + 4 lanes + 2 workers = 7 panes. The fixture spans TWO repos (own/web, own/api) and
+    // the commons are a property of a repo ROOT — one lane cannot hold two `.gitignore`s, since it
+    // gets one worktree — so a multi-repo fleet pays for a pair of lanes per repo
+    // (#funnel-commons-and-integration-streams). A single-repo fleet, which is nearly all of them,
+    // pays for exactly one pair.
+    expect(st.tabs[idx].layout).toBe("3×3");
 
     // pane 0 = director at the project hub, doc-based kickoff
     expect(st.paneCwds[directorPaneId("proj-key")]).toBe("/base/projects/proj-key");
     expect(st.paneStartupPromptDocs[directorPaneId("proj-key")]).toBe("projects/proj-key/prompts/director-kickoff.md");
     expect(st.paneNames[idx][0]).toBe("director");
 
-    // pane 1 = first worker in its OWN git worktree (outside the hub, #844), planner-authored kickoff doc
+    // panes 1..4 = the lanes, which lead the launch order because Phase 0 is what "first" means:
+    // both commons lanes (no deps) ahead of both integration lanes (each waits on its own commons).
+    expect([1, 2, 3, 4].map((i) => st.paneNames[idx][i])).toEqual([
+      "Commons (own/web)", "Commons (own/api)", "Integration (own/web)", "Integration (own/api)",
+    ]);
+
+    // the feature workers follow, each in its OWN git worktree (outside the hub, #844), with its
+    // planner-authored kickoff doc
     expect(st.paneCwds[fleetPaneId("proj-key", "auth-ui")]).toBe("/base/worktrees/proj-key/web--auth-ui");
     expect(st.paneStartupPromptDocs[fleetPaneId("proj-key", "auth-ui")]).toBe("projects/proj-key/prompts/auth-ui-kickoff.md");
-    expect(st.paneNames[idx][1]).toBe("Auth UI");
+    expect(st.paneNames[idx][5]).toBe("Auth UI");
 
     // pane 2 = second worker (own worktree) with no kickoff doc → generated text
     expect(st.paneCwds[fleetPaneId("proj-key", "api")]).toBe("/base/worktrees/proj-key/api--api");
     expect(st.paneStartupPromptText[fleetPaneId("proj-key", "api")]).toContain("API");
 
-    // worker write boundary (#354): the stream's owned globs feed the role gate so edits in
-    // its lane auto-approve. The director (code:none) now OWNS the repo-root commons via the
-    // #851 scoped carve-out — with no stack.md it gets the universal commons set, not no globs.
+    // worker write boundary (#354): the stream's owned globs feed the role gate so edits in its lane
+    // auto-approve. The DIRECTOR no longer holds a commons carve-out
+    // (#funnel-commons-and-integration-streams) — it used to launch with the commons set as its
+    // writeGlobs, the one place a `code: none` role could still write. That owner is now a worker, so
+    // the director keeps the full code:none deny and ROUTES commons changes to the lane instead.
     expect(st.paneRoleGlobs[fleetPaneId("proj-key", "auth-ui")]).toEqual(["src/auth/**"]);
-    expect(st.paneRoleGlobs[directorPaneId("proj-key")]).toContain(".gitignore");
+    expect(st.paneRoleGlobs[directorPaneId("proj-key")]).toBeUndefined();
     expect(st.paneRoleGlobs[fleetPaneId("proj-key", "api")]).toBeUndefined();
+    // …and the commons lane for that repo holds exactly what the director gave up.
+    expect(st.paneRoleGlobs[fleetPaneId("proj-key", "commons--own-web")]).toContain(".gitignore");
 
     // repo-scoped session credentials (#158): each worker pane is bound to its repo
     // so TerminalView scopes its GH_TOKEN to that repo; the director spans every repo
@@ -1234,8 +1274,9 @@ describe("agent fleet store", () => {
     // first launch starts fresh — no --continue
     expect(st.paneContinue[fleetPaneId("proj-key", "auth-ui")]).toBe(false);
 
-    // empty grid cell starts disabled
-    expect(st.disabledPanes["t3p3"]).toBe(true);
+    // empty grid cell starts disabled — 7 sessions fill t3p0..t3p6 of a 3×3, so t3p7 is the first
+    // empty one.
+    expect(st.disabledPanes["t3p7"]).toBe(true);
 
     // fleetPaneStreams bridges pane id → stream for the coordinator (#199 AC#7):
     // worker panes are recorded by their stream; the director + empty cells are not.
@@ -1243,7 +1284,11 @@ describe("agent fleet store", () => {
     expect(st.fleetPaneStreams[fleetPaneId("proj-key", "auth-ui")].owns).toEqual(["src/auth/**"]);
     expect(st.fleetPaneStreams[fleetPaneId("proj-key", "api")].id).toBe("api");
     expect(st.fleetPaneStreams[directorPaneId("proj-key")]).toBeUndefined(); // director pane
-    expect(st.fleetPaneStreams["t3p3"]).toBeUndefined(); // empty cell
+    // The lanes are ORDINARY streams, so they are recorded like any other worker — that is what makes
+    // `bsc-assign <commons lane>` reach a real session rather than a sentinel.
+    expect(st.fleetPaneStreams[fleetPaneId("proj-key", "commons--own-web")].id).toBe("commons--own-web");
+    expect(st.fleetPaneStreams[fleetPaneId("proj-key", "integration--own-web")].owns).toEqual([]);
+    expect(st.fleetPaneStreams["t3p8"]).toBeUndefined(); // empty cell (7 sessions in a 3×3)
   });
 
   it("fleetStartProject sets the pane provider from fleetHarness (#1078 P5)", () => {
@@ -1468,14 +1513,17 @@ describe("agent fleet store", () => {
     useAppStore.getState().fleetStartProject("Big", bigFleet, "big");
     const st = useAppStore.getState();
     const idx = st.findFleetTabIdx("big");
-    // 20 workers → 16 in tab 1, 4 in tab 2.
+    // 20 workers + the commons and integration lanes = 22 sessions → 16 in tab 1, 6 in tab 2.
+    // (One repo here, so ONE pair of lanes.)
     expect(st.tabs[idx].name).toBe("Big · build");
     expect(st.tabs[idx].layout).toBe("4×4");
     expect(st.tabs[idx + 1].name).toBe("Big · build 2");
-    expect(st.tabs[idx + 1].layout).toBe("2×2");
-    // tab 2's first pane is the 17th worker (s16), in its own worktree.
-    expect(st.paneNames[idx + 1][0]).toBe("S16");
-    expect(st.paneCwds[fleetPaneId("big", "s16")]).toBe("/base/worktrees/big/web--s16");
+    expect(st.tabs[idx + 1].layout).toBe("3×2");
+    // The lanes lead: tab 1 is [commons, integration, s0..s13], so tab 2 opens on s14.
+    expect(st.paneNames[idx][0]).toBe("Commons");
+    expect(st.paneNames[idx][1]).toBe("Integration");
+    expect(st.paneNames[idx + 1][0]).toBe("S14");
+    expect(st.paneCwds[fleetPaneId("big", "s14")]).toBe("/base/worktrees/big/web--s14");
   });
 
   // #479 — no silent drop: ALL workers launch regardless of the recommended count.
@@ -1512,9 +1560,18 @@ describe("agent fleet store", () => {
     expect(dir).toBeTruthy();
     expect(dir![1]).toBe("director");
     const workers = rows.filter((c) => c[4] === "worker");
-    expect(workers.length).toBe(fleet.streams.length);
-    expect(workers[0][2]).toContain("/"); // repo "owner/name"
-    expect(workers[0][0]).toBe(fleetPaneId("roster-key", "auth-ui")); // stable identity pane id (#1176)
+    // The lanes get roster rows like any other worker — that is the point of making them ordinary
+    // streams: `bsc-fleet` enumerates them, so the director can see whether the commons lane is still
+    // running before it routes a commons change to it. Two repos in the fixture ⇒ two pairs.
+    expect(workers.length).toBe(fleet.streams.length + 4);
+    const laneRows = workers.filter((c) => c[1].startsWith("commons") || c[1].startsWith("integration"));
+    expect(laneRows.map((c) => c[1]).sort()).toEqual([
+      "commons--own-api", "commons--own-web", "integration--own-api", "integration--own-web",
+    ]);
+    const feature = workers.filter((c) => !c[1].startsWith("commons") && !c[1].startsWith("integration"));
+    expect(feature.length).toBe(fleet.streams.length);
+    expect(feature[0][2]).toContain("/"); // repo "owner/name"
+    expect(feature[0][0]).toBe(fleetPaneId("roster-key", "auth-ui")); // stable identity pane id (#1176)
   });
 
   // #457 — the "two directors" bug: a project rename froze tab.name, so the

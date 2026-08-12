@@ -15,6 +15,7 @@
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 // — glance's own domain: the hooks + pure derivations the cockpit is thin over —
 import * as AgentStall from "./lib/agentStall";
+import * as ExpandNode from "./lib/expandNode";
 import * as FleetPlanProgress from "./lib/fleetPlanProgress";
 import * as GlanceData from "./lib/glanceData";
 import * as GlanceFleet from "./lib/glanceFleet";
@@ -42,6 +43,7 @@ import * as Debug from "@/features/debug";
 import * as Teams from "@/features/teams";
 import * as PaneIdentity from "@/app/console/lib/paneIdentity";
 import * as TerminalSlot from "@/app/console/terminal/TerminalSlot";
+import * as GraphPlatform from "@/features/glance/graphPlatform";
 
 let done = false;
 
@@ -51,6 +53,9 @@ export function registerGlancePlatform(): void {
   done = true;
   registerAppModule("@/features/glance/lib/agentStall", AgentStall);
   registerAppModule("@/features/glance/lib/fleetPlanProgress", FleetPlanProgress);
+  // The expand-click decision (#expanding-a-node-resumes-its-session) — a page record IS the page, so
+  // an import it cannot resolve ships a blank screen; `bsc ui set` refuses the write without this.
+  registerAppModule("@/features/glance/lib/expandNode", ExpandNode);
   registerAppModule("@/features/glance/lib/glanceData", GlanceData);
   registerAppModule("@/features/glance/lib/glanceFleet", GlanceFleet);
   registerAppModule("@/features/glance/lib/glanceGraph", GlanceGraph);
@@ -76,4 +81,5 @@ export function registerGlancePlatform(): void {
   registerAppModule("@/features/teams", Teams);
   registerAppModule("@/app/console/lib/paneIdentity", PaneIdentity);
   registerAppModule("@/app/console/terminal/TerminalSlot", TerminalSlot);
+  registerAppModule("@/features/glance/graphPlatform", GraphPlatform);
 }

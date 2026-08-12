@@ -7,5 +7,6 @@
   "src": "src/shared/ui/feedback/CardStates.tsx",
   "composes": [
     "Skeleton"
-  ]
+  ],
+  "folder": "shared/ui/feedback"
 }

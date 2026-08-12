@@ -8,12 +8,11 @@
     "Box",
     "Button",
     "Card",
-    "Charts",
     "Row",
-    "Skeleton",
     "StatTile",
     "Text"
   ],
   "src": "src/features/skills/SkillsDigest.tsx",
-  "folder": "features/skills"
+  "folder": "features/skills",
+  "provides": "@/components/skills-digest"
 }

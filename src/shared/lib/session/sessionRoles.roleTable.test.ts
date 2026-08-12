@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ROLE_DEFAULTS, PLAN_WRITE_GLOBS, DOC_GLOBS, DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, roleDeniedCommands, sessionScopes, canWritePath } from "./sessionRoles";
-import { mergeRoleDefaults, roleCapability, type RoleCapability } from "./roleModel";
+import { mergeRoleDefaults, roleCapability, restrictedRoleCommands, type RoleCapability } from "./roleModel";
 
 // Security guard for the externalized role→capability table (@data/permissions/role-capabilities.json,
 // #2027 P1). The role gate is least-privilege; a JSON edit that WIDENS a role's access (e.g. gives a
@@ -263,6 +263,43 @@ describe("no session at a project hub can mutate git, GitHub, or code", () => {
       for (const p of ["src/App.tsx", "crates/kb/src/lib.rs", "web/src/auth/login.ts", "web/package.json"]) {
         expect(canWritePath(cap, p), `${role} must not write ${p}`).toBe(false);
       }
+    }
+  });
+});
+
+// #funnel-generalize-brief-channel — the GRANT half of the architect's one outbound channel.
+describe("the architect can reach a director at all", () => {
+  it("carries the brief emitter in its restricted allow-list", () => {
+    // The architect is `restrictedAllow`, so this list IS its auto-runnable surface — without the
+    // emitter here it cannot brief a director at all, whatever the routing permits. Where a brief may
+    // LAND is constrained separately (briefRouting): grant = what it can run, routing = who receives.
+    expect(restrictedRoleCommands("architect")).toContain("bsc plan brief");
+  });
+
+  it("gains no other outbound channel — its surface stays teams/persona plus the brief", () => {
+    // The tier boundary is the point: an architect that could `bsc-assign` or `bsc-answer` would be
+    // reaching workers directly, which is exactly what routing to directors only exists to prevent.
+    const surface = restrictedRoleCommands("architect");
+    for (const forbidden of ["bsc-assign", "bsc-answer", "bsc-issue", "bsc plan", "bsc ui"]) {
+      expect(surface, forbidden).not.toContain(forbidden);
+    }
+  });
+});
+
+// #requirement-and-authority-store — the architect writes its handoff, and nothing else in plan.db.
+describe("the architect's plan surface is exactly its handoff", () => {
+  it("can write the requirement record", () => {
+    expect(restrictedRoleCommands("architect")).toContain("bsc plan requirement");
+  });
+
+  it("cannot reach the REST of plan.db — issues, features, the fleet stay closed to it", () => {
+    // The grants are noun-scoped prefixes, so `bsc plan` itself must never appear: that would carry
+    // every noun, and the architect would be able to write issues and fleet state directly — the tier
+    // boundary the funnel exists to keep.
+    const surface = restrictedRoleCommands("architect");
+    expect(surface).not.toContain("bsc plan");
+    for (const c of surface) {
+      if (c.startsWith("bsc plan")) expect(["bsc plan brief", "bsc plan requirement"]).toContain(c);
     }
   });
 });

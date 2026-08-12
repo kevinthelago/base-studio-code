@@ -31,15 +31,16 @@ import { resolveKitLibraryRefs } from "@/features/designs";
 import { FleetGraphHost } from "@/features/planner/fleet/FleetGraphHost";
 import { teamRoleStreams } from "@/features/planner/fleet/teamFleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
-import { GlanceInspector } from "./GlanceInspector";
 import { cellRect, placeByDirection, releaseCell, occupants, clampCell, DEFAULT_CELL, type CellSize, type MorphPlacement } from "./lib/morphGrid";
-import { fleetPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
+import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 import { resumeProjectFleet, nothingToResume, completedPanes } from "./lib/resumeProject";
+import { decideExpand } from "./lib/expandNode";
+import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
 import { buildGraph, focusSets, isBandNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
 import { timedSync } from "@/shared/lib/core/perf";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
-import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus } from "./lib/studioProject";
+import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode, studioNodeHome, applyStudioLiveStatus } from "./lib/studioProject";
 import { DEBUG_PANE_ID } from "@/features/debug";
 import { isStudioId, useStudioViewers } from "@/features/studio-sessions";
 import { useProjectComplete } from "./lib/useProjectComplete";
@@ -57,7 +58,6 @@ import type { DockPlan } from "./GlanceChatDock";
 import { fleetPlanProgress, unionDone, mergeStreamProgress } from "./lib/fleetPlanProgress";
 import { useFleetHeld } from "./lib/useFleetHeld";
 import "./glance.css";
-import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
 
 // The agent-health watchdog (#2541) polls the coord log on a slow cadence — a stall is a minutes-scale
 // event, so per-second rebuilds aren't worth it.
@@ -111,15 +111,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // place, and find a project's existing build tab so a project-resume can prefer jumping over rebuilding.
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
-  const setFocusedPane = useAppStore((s) => s.setFocusedPane);
-  const resumePaneSession = useAppStore((s) => s.resumePaneSession);
   const findFleetTabIdx = useAppStore((s) => s.findFleetTabIdx);
+  // Resume ONE pane in place when its build tab is still open (#expanding-a-node-resumes-its-session) —
+  // the cheap path behind an expand click, before falling back to bringing the whole fleet back.
+  const resumePaneSession = useAppStore((s) => s.resumePaneSession);
   // Opening a base-studio-code studio node reveals its session on its own workspace page (#glance-resume);
   // `paneClaudeActive` tells us whether that stable-id session is already running.
-  const navigate = useAppStore((s) => s.navigate);
   const paneClaudeActive = useAppStore((s) => s.paneClaudeActive);
   const projectLinks = useAppStore((s) => s.projectLinks);
-  const removeProjectLink = useAppStore((s) => s.removeProjectLink);
   // The UI-kit consumer index + kit library (#2571): drives the kit NODES on the L0 network (one per
   // distinct kit in use, edged to every consuming project — showing which projects share a kit).
   const kitUsage = useAppStore((s) => s.kitUsage);
@@ -135,12 +134,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // project — showing which projects contract with which external MCP servers.
   const mcpServers = useAppStore((s) => s.mcpServers);
   // Per-project auto-triage toggle (#2265) — gates the fault→fix loop; surfaced in the node inspector.
-  const autoTriage = useAppStore((s) => s.autoTriage);
-  const setAutoTriage = useAppStore((s) => s.setAutoTriage);
   // Per-node OFF toggle (#3239) — the user has deactivated these nodes; they render greyed (health `off`)
   // and read "off" over any live status. Persisted, so it continues from the last session.
   const glanceOff = useAppStore((s) => s.glanceOff);
-  const setGlanceNodeOff = useAppStore((s) => s.setGlanceNodeOff);
   // Ending a stuck agent's session (#3049): disabling the cell drops it from livePaneIds (so the node
   // stops reading as live) and setPaneStatus clears a stale "run" dot. fleetStartProject re-enables the
   // cell on the next launch, so this is self-reversing — "Relaunch fleet" respawns it fresh.
@@ -195,9 +191,16 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // library nodes their kits require #3133 + external MCP-contract nodes #3786, edges = the user-drawn
   // relationships #2253 + one kit→project edge per consumer #2571 + the transitive project→library
   // `requires` edges #3133 + one project→mcp `uses-mcp` edge per scoped consumer #3786).
+  // The ARCHITECT band (#glance-architect-band) — tier 1 of the funnel, from the persona store. Filtered
+  // by ROLE rather than by a hardcoded id, so a second architect persona shows up without a code change
+  // (funnel-architect-front-door makes multiple architects a first-class case).
+  const architects = useMemo(
+    () => personas.filter((p) => p.role === "architect").map((p) => ({ id: p.id, name: p.name })),
+    [personas],
+  );
   const projectData = useMemo(
-    () => buildGlanceData(projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers),
-    [projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers],
+    () => buildGlanceData(projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers, architects),
+    [projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers, architects],
   );
   const projectModel = useMemo(() => timedSync("buildGraph:glance-project", () => buildGraph(projectData.rawNodes, projectData.rawEdges)), [projectData]);
 
@@ -447,23 +450,17 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     }
     return nodeHasLiveSession(fleetPaneId(drill, nodeId), livePaneIds);
   };
-  // Whether a node's SESSION is actually running (#glance-resume) — the studio analogue of morph-liveness.
-  // Drives the details-pane action's wording (open a running session vs resume a stopped one). A studio
-  // node reads its app-owned session's live signals; a fleet node is live when its cell is live.
-  const nodeActive = (nodeId: string) =>
-    drill === BASE_STUDIO_PROJECT_ID
-      ? studioSessionLive(nodeId, { debugSession, paneClaudeActive, paneStatus })
-      : isLiveAgent(nodeId);
   // On the L0 network: a click drills into that project's fleet. Inside a fleet a click checks in on a
   // LIVE agent (morph → terminal, #2401) or selects a non-live one. (Project links are LLM-authored, not
   // drawn by hand — the manual connect-mode was removed, #2737 direction.)
   const onNodeClick = (id: string) => {
-    // Inside a fleet: opening a LIVE agent morphs its node into the live terminal; a non-live agent has
-    // no session to open, so it just selects → inspector.
+    // Inside a fleet: EXPANDING a node is what resumes it (#expanding-a-node-resumes-its-session).
+    // Studio nodes already worked this way — `useStudioViewers` starts a studio when its morph opens —
+    // and this gives the fleet the same rule, now that the per-node Resume button went with the right
+    // pane. `expandNode` covers both the no-pane and the live-but-dead cases.
     if (drill) {
       if (id === PREVIEW_NODE_ID) setPreviewOpen(true);       // the ▷ preview node → render the app (#2623)
-      else if (isLiveAgent(id)) openChat(id);
-      else pickNode(id);
+      else expandNode(id);
     }
     // A fenced-BAND node — a cross-graph LIBRARY node (#2571 kit → #3119 kit/algorithm/sound) OR an
     // external MCP-CONTRACT node (#3786) — has no fleet to drill into, so a click just SELECTS it
@@ -473,6 +470,53 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     // back on) rather than drilling into a fleet the user has muted.
     else if (glanceOff[id]) pickNode(id);
     else { setDrill(id); setSel(null); setShowCycle(false); }
+  };
+  /**
+   * EXPAND a node — and resume whatever it takes to make that expansion show a live agent
+   * (#expanding-a-node-resumes-its-session).
+   *
+   * The placement is made FIRST, unconditionally, so the click is never dead: `openChats` filters
+   * placements by `isLiveAgent`, so the cell simply renders as soon as the session comes up. Resuming
+   * first and expanding after would leave the user staring at an unchanged graph for the length of a
+   * fleet relaunch.
+   *
+   * Two failure shapes, and the second is the one this codebase keeps rediscovering:
+   *   • NO PANE — the node has no session cell at all. Resume it in place if its build tab is still
+   *     open (`resumePaneSession`), else bring the fleet back.
+   *   • PANE, NO AGENT — `isLiveAgent` is TAB MEMBERSHIP, not "an agent is running" (glanceFleet.ts).
+   *     #3998 measured 77 of 78 fleet panes sitting at a bare `$` prompt while reading as live. So a
+   *     live node still needs `ensureClaudeRunning`, which types the resume into the shell it already
+   *     has — nothing remounts such a pane, so this is the only thing that can revive it.
+   */
+  const expandNode = (id: string) => {
+    if (!drill) return;
+    const isStudio = drill === BASE_STUDIO_PROJECT_ID;
+    const paneId = isStudio ? "" : fleetPaneId(drill, id);
+    const action = decideExpand({
+      isStudioProject: isStudio,
+      studioMorphs: isStudio ? studioNodeHome(id)?.kind === "morph" : undefined,
+      paneIsLive: !isStudio && isLiveAgent(id),
+      paneIsComplete: !isStudio && completedPanes(useAppStore.getState()).has(paneId),
+      // `resumePaneSession` is both the probe and the action, so whether a pane can be resumed IN PLACE
+      // is only answerable by trying — decided at actuation below rather than guessed here.
+      canResumeInPlace: true,
+    });
+    switch (action.kind) {
+      case "studio-morph": openChat(id); return;
+      case "select": pickNode(id); return;
+      case "refuse-complete": pickNode(id); setResumeMsg(action.reason); return;
+      case "expand-and-restart-agent":
+        openChat(id); setResumeMsg(null); void ensureClaudeRunning([paneId]); return;
+      default: break;
+    }
+    openChat(id);
+    setResumeMsg(null);
+    if (resumePaneSession(paneId)) return;   // its build tab was still open — resumed in place
+    // No build tab to resume into — the whole fleet has to come back before this one node can.
+    setResuming(true);
+    void resumeProjectFleet({ projectName: projectDisplayName(drill), projectKey: drill, fleet: effectiveFleet })
+      .then((res) => { if (!res.ok) setResumeMsg(res.error ?? "Couldn't resume this agent."); })
+      .finally(() => setResuming(false));
   };
   // OPEN a node's session into a grid cell (#3361). The FIRST open also anchors the grid on that node,
   // so its morph grows exactly where a lone morph always has. Every later node is placed in the
@@ -548,17 +592,6 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Cosmetic — the build tab is matched/reused by the stable key.
   const projectDisplayName = (key: string) =>
     projects.find((p) => p.id === key)?.name ?? projectModel.nodes.find((n) => n.id === key)?.slug ?? key;
-  // Navigate to a pane's live Console cell by its identity id (mirrors WorkerDetail.openSession). Reads
-  // tabs fresh (getState) so a just-launched build tab is found.
-  const jumpToConsolePane = (paneId: string) => {
-    const owner = findPaneOwnerTab(useAppStore.getState().tabs, paneId);
-    setWorkspace("console");
-    if (owner) {
-      setActiveTab(owner.tabIdx);
-      const pi = owner.tab.paneIds?.indexOf(paneId) ?? -1;
-      if (pi >= 0) setFocusedPane(pi);
-    }
-  };
   // Header Resume: bring the drilled project's whole fleet back. If a build tab is already LIVE, jump to
   // it instead of rebuilding (rebuilding would restart running agents); otherwise run the progress-gated
   // relaunch, which reopens the build tab and switches to the Console.
@@ -604,47 +637,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       setResuming(false);
     }
   };
-  // Node Resume: jump to a live agent's Console pane; for a dormant agent, resume just that pane in place
-  // when its build tab is still open, else bring the whole fleet back and land on it.
-  const onResumeNode = (nodeId: string) => {
-    if (!drill) return;
-    // base-studio-code studio node (#3319/#glance-resume): open its app-owned session at its HOME. These
-    // sessions have STABLE ids, so revealing them re-uses the running session (or mounts it if it isn't
-    // up) — we never start a second one. Since #3357 every studio session is TerminalHost-hosted, so they
-    // all open inline in the graph morph; the `page` branch remains for a future non-morphable node.
-    if (drill === BASE_STUDIO_PROJECT_ID) {
-      const home = studioNodeHome(nodeId);
-      if (!home) return;                                   // a library/resource node — no session to open
-      if (home.kind === "morph") openChat(nodeId);
-      else navigate({ workspace: "projects", page: home.pageMode });
-      return;
-    }
-    if (!canResume) return;
-    const paneId = fleetPaneId(drill, nodeId);
-    // #4029 — a FINISHED worker is not restarted by a button. Relaunching one undoes the reclaim
-    // (#4025) and puts an agent back on the model for no reason; it is woken by the thing that has
-    // actual work for it, a director `bsc-assign`, which relaunches with the assignment baked in.
-    // Guarded here as well as in `partitionResumable` because this path bypasses it entirely.
-    if (completedPanes(useAppStore.getState()).has(paneId)) {
-      setResumeMsg("This worker is complete. The director wakes it when it dispatches work.");
-      return;
-    }
-    // #3998: `livePaneIds` is TAB MEMBERSHIP (a session cell exists), not "an agent is running" — see
-    // `glanceFleet.ts`. Jumping was therefore the whole of Resume for any pane still in its tab, which
-    // is every pane whose agent had quietly exited to a `$` prompt. Nothing remounts such a pane
-    // either (TerminalView is portal-hosted by paneId), so this is the only place that can revive it.
-    // Fire-and-forget: the probe decides whether anything is needed, and navigation shouldn't wait.
-    if (livePaneIds.has(paneId)) { void ensureClaudeRunning([paneId]); jumpToConsolePane(paneId); return; }
-    setResumeMsg(null);
-    if (resumePaneSession(paneId)) { jumpToConsolePane(paneId); return; }
-    setResuming(true);
-    void resumeProjectFleet({ projectName: projectDisplayName(drill), projectKey: drill, fleet: effectiveFleet })
-      .then((res) => {
-        if (!res.ok) setResumeMsg(res.error ?? "Couldn't resume this agent.");
-        else jumpToConsolePane(paneId);
-      })
-      .finally(() => setResuming(false));
-  };
+
 
   // The open morphs, DERIVED (never stored) — a morph shows only while its node is still a live agent in
   // the CURRENT fleet, so drilling out (or a nav-history back/forward that swaps `drill`) closes them all
@@ -840,22 +833,6 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           })}
         </GraphRail>
       }
-      inspector={sel ? <GlanceInspector model={model} selType={sel.type} selId={sel.id} onSelectNode={pickNode} onClose={() => setSel(null)}
-        onRemoveEdge={!drill && !data.sample ? removeProjectLink : undefined}
-        autoTriageOn={!drill && sel.type === "node" ? !!autoTriage[sel.id] : undefined}
-        onToggleAutoTriage={!drill && sel.type === "node" ? (on) => setAutoTriage(sel.id, on) : undefined}
-        // The per-node OFF toggle (#3239) — only on the L0 project network (a drilled fleet node has none).
-        offOn={!drill && sel.type === "node" ? !!glanceOff[sel.id] : undefined}
-        onToggleOff={!drill && sel.type === "node" ? (off) => setGlanceNodeOff(sel.id, off) : undefined}
-        // Open the real PTY stream (#2369) — only for a drilled, LIVE agent node.
-        onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? openChat : undefined}
-        // Resume this node's session (#glance-resume). A drilled REAL fleet node jumps to its Console pane
-        // when live, else relaunches that one agent. A base-studio-code STUDIO node opens its app-owned
-        // session at its home (re-using the running one) — offered for the nodes that HAVE a session.
-        onResumeNode={sel.type === "node" && sel.id !== PREVIEW_NODE_ID
-          && (canResume || (drill === BASE_STUDIO_PROJECT_ID && !!studioNodeHome(sel.id)))
-          ? onResumeNode : undefined}
-        nodeLive={sel.type === "node" ? nodeActive(sel.id) : undefined} /> : undefined}
     >
       {/* keyed so drilling in/out remounts + replays the shared transition (graphCanvas.css, #2418) */}
       <Box key={drill ?? "network"} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>

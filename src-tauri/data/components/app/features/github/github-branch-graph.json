@@ -10,6 +10,7 @@
     "Row",
     "Text"
   ],
-  "src": "src/features/github/BranchGraph.tsx",
-  "folder": "features/github"
+  "folder": "features/github",
+  "provides": "@/components/github-branch-graph",
+  "srcRetired": "src/features/github/BranchGraph.tsx"
 }

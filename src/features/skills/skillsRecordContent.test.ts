@@ -1,8 +1,8 @@
 // What the Skills page RENDERS (#4179).
 //
-// The record ↔ file parity guard lives in `src/app/runtime/graphParity.test.ts` and covers every page in
-// one place. This is the part it cannot do: parity only proves the two copies AGREE, so a change that
-// reverted both would sail through it. These assertions pin the CONTENT of the two changes that spent
+// The record ↔ file parity guard is RETIRED (see the note in `src/app/runtime/shadowPages.ts`) — which
+// makes these assertions MORE load-bearing, not less. Parity only ever proved the two copies agreed, so a
+// change reverting both sailed through it; with parity gone, this is the only thing pinning the content. These assertions pin the CONTENT of the two changes that spent
 // months in one copy each, on the record, because the record is what renders.
 import { describe, it, expect } from "vitest";
 import pageRecord from "@data/components/app/features/skills/skillspage.json";

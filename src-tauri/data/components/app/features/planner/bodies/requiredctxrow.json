@@ -8,5 +8,6 @@
   "composes": [
     "Row",
     "Text"
-  ]
+  ],
+  "folder": "features/planner/bodies"
 }

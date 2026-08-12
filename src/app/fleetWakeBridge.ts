@@ -5,11 +5,25 @@
 // `navigateBridge` uses.
 //
 // WHY THE VERDICT MATTERS
-// `wakePane` KILLS the PTY before relaunching. It returns false when it cannot resolve the pane's owning
-// tab, or when the pane is disabled — and a false reported as success leaves a dead worker behind a
-// caller that believes it is running. That is #4025 exactly: `wakePane` resolved tabs by the retired
-// positional pane id, returned false for all 273 real sessions, and the Wake button killed every parked
-// worker silently. So the verdict is carried all the way back to the CLI.
+// `wakePane` returns false when it cannot resolve the pane's owning tab, or when the pane is disabled —
+// and a false reported as success leaves a dead worker behind a caller that believes it is running. That
+// is #4025 exactly: `wakePane` resolved tabs by the retired positional pane id, returned false for all
+// 273 real sessions, and the Wake button killed every parked worker silently. So the verdict is carried
+// all the way back to the CLI.
+//
+// WHY THE KILL IS HERE AND NOT ONLY IN `wakePane`
+// `wakePane` does NOT kill anything — it bakes the startup prompt and bumps the owning tab's `runId`.
+// (A comment here used to claim otherwise, which is very likely why this path never killed: it read as
+// already handled.) The bump remounts the pane, and `pty_create` "returns true for a new session, FALSE
+// when reconnecting to an existing one" (TerminalView) — on reconnect it just sends `\n` and the baked
+// prompt is discarded (the #3998 init_cmd-on-reconnect trap).
+//
+// So for a pane whose SHELL OUTLIVED ITS AGENT — bash alive, Claude exited, which `bsc fleet list`
+// reports as `live && !busy` — the wake reconnected to bash, never started Claude, and still returned
+// `woke: true`. Worse than a refusal: the director was told it landed. The coordinator's `actuateWake`
+// already got this right ("Kill first so the runId-bump remount spawns a FRESH session (not a
+// reconnect)"); this path was missing exactly that step, and the two differed by one line for no reason
+// anyone recorded.
 
 /** The wake request as it arrives from Rust (`bsc://fleet-wake`). */
 export interface WakeRequest {
@@ -47,17 +61,29 @@ export const DEFAULT_WAKE_PROMPT =
 export interface WakeDeps {
   /** The real `wakePane`. Returns whether the wake actually landed. */
   wakePane: (paneId: string, prompt: string) => boolean;
+  /** `pty_kill` for this pane. MUST run before {@link WakeDeps.wakePane} so the remount SPAWNS rather
+   *  than reconnecting — see the header. A no-op when there is no PTY (a dormant/reaped pane), which is
+   *  why it is safe to call unconditionally rather than probing liveness first: the probe would be a
+   *  second source of truth about what is alive, and Rust already owns that answer. */
+  killPane: (paneId: string) => Promise<void>;
 }
 
 /**
  * Apply one wake request. Never throws — every path produces an ack, because silence would strand the
  * Rust waiter until its timeout and surface as "the frontend did not apply the wake", sending someone
  * to debug the wrong thing.
+ *
+ * ORDER IS LOAD-BEARING: kill, then wake. Reversed, the remount races the kill and can reconnect to a
+ * PTY that is about to die; skipped, a live shell is reconnected and the prompt is silently dropped.
  */
-export function applyWake(id: string, req: WakeRequest, deps: WakeDeps): WakeAck {
+export async function applyWake(id: string, req: WakeRequest, deps: WakeDeps): Promise<WakeAck> {
   const paneId = (req.paneId ?? "").trim();
   if (!paneId) return { id, error: "fleet wake: no pane id", woke: false };
 
+  // A kill failure must not abort the wake: the common reason is that there was nothing to kill, and
+  // refusing to wake a dormant pane because its absent PTY could not be killed would break the case
+  // this command was built for.
+  await deps.killPane(paneId).catch(() => {});
   const woke = deps.wakePane(paneId, req.prompt?.trim() || DEFAULT_WAKE_PROMPT);
   return { id, woke };
 }

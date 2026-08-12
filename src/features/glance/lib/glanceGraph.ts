@@ -12,7 +12,6 @@ import { mutualPairs } from "@/shared/lib/graph/cycles";
 import { layerDag } from "@/shared/lib/graph/layers";
 import { orderLayers } from "@/shared/lib/graph/order";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
-import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import type { NodeGraph } from "@/shared/lib/graph/nodeUrn";
 // Cross-feature TYPE only, via the barrel (#1309 boundary) — the project's application architecture
 // (#3786/#3802), surfaced on each project node as the contract endpoint-type discriminator. `import type`
@@ -74,7 +73,7 @@ export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" 
  *  CONTRACT edges (#3786): `uses-mcp` (an MCP server) and `uses-service` (a third-party service). Every
  *  band edge ({@link isBandEdge}) routes vertically into the fenced band; the project contracts flow
  *  left→right. */
-export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "uses-mcp" | "uses-service";
+export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "uses-mcp" | "uses-service" | "created-by" | "served-by";
 /** A Glance node's KIND (#2571 → generalized #3119 → external contracts #3786). A PROJECT (the default), a
  *  UI-KIT node (`kit`, the `ui` library graph — kept as-is so existing fixtures + persisted ids are
  *  unaffected), a generalized cross-graph `library` node (an algorithm / sound, carrying
@@ -83,7 +82,7 @@ export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "u
  *  contracts with, #3786 Phase 2). ABSENT ⇒ `"project"`. A non-project node's id is namespaced (`kit:` /
  *  `algo:` / `sound:` / `mcp:` / `service:`, see {@link libraryNodeId} / {@link mcpNodeId} /
  *  {@link serviceNodeId}) so it can never collide with a project key (a `[a-z0-9-]` slug — no colon). */
-export type GNodeKind = "project" | "kit" | "library" | "mcp" | "service";
+export type GNodeKind = "project" | "kit" | "library" | "mcp" | "service" | "architect" | "session";
 
 /** The cross-graph LIBRARY dimensions a band node can belong to (#3119) — reuses A's {@link NodeGraph}
  *  (algorithms · UI kits · sounds). A `kit` node is the `ui` case (kept for back-compat); a generalized
@@ -151,6 +150,51 @@ export const SERVICE_META: BandMeta = {
   blurb: "An external service this project contracts with — a third-party endpoint (a payments API, a SaaS backend, another team's service) the planner declared as a dependency, so the relationship is visible and downstream agents know the contract.",
 };
 
+/** ARCHITECT node presentation (#glance-architect-band) — the funnel's tier 1, the only session that
+ *  converses with the user. Rendered in the same fenced top band as the library + contract dimensions,
+ *  but distinct (amber · ◈ · "architect" · "ARCHITECTS") so the tier that CREATES projects reads apart
+ *  from the dependencies they consume. */
+export const ARCHITECT_COLOR = "#e0a458";
+export const ARCHITECT_META: BandMeta = {
+  color: ARCHITECT_COLOR, marker: "◈", kindLabel: "architect", bandLabel: "ARCHITECTS", panelTitle: "ARCHITECT", edgeLabel: "created by",
+  blurb: "The architect session that creates projects — the funnel's front door, and the only tier that talks to you. It runs discovery and hands a sealed requirement (plus the authority granted with it) down to each project's director.",
+};
+
+/** SYSTEM-SESSION node presentation (#glance-reads-left-to-right-sessions-to-libraries) — the app-owned
+ *  singleton studios (designer · librarian · sound-designer · integrator) that produce the material a
+ *  build runs on. Like the architect these are NETWORK nodes, not band nodes: they take a layer from the
+ *  DAG, which is what places them left of the architect. Slate + ◇ so they read as the quiet upstream of
+ *  the funnel rather than competing with the architect's amber. */
+export const SESSION_COLOR = "#8b93a7";
+export const SESSION_META: BandMeta = {
+  color: SESSION_COLOR, marker: "◇", kindLabel: "session", bandLabel: "SYSTEM SESSIONS", panelTitle: "SYSTEM SESSION", edgeLabel: "served by",
+  blurb: "An app-owned studio session — a singleton the app launches on demand rather than a fleet worker. These produce the material every build runs on: UI kits, algorithms, sounds, and integration connectors.",
+};
+
+/** Namespace prefix for a SYSTEM-SESSION node id — its own namespace, for the same reason the architect
+ *  has one: a bare `designer` would be indistinguishable from a project key. */
+export const SESSION_NODE_PREFIX = "session:";
+/** The stable, collision-proof id of the graph node for an app-owned system session. */
+export const sessionNodeId = (sessionId: string): string => `${SESSION_NODE_PREFIX}${sessionId}`;
+/** The session id behind a `session:<id>` node id (identity for anything already bare). */
+export const sessionIdOfNode = (nodeId: string): string =>
+  nodeId.startsWith(SESSION_NODE_PREFIX) ? nodeId.slice(SESSION_NODE_PREFIX.length) : nodeId;
+/** Stable id for an architect→session `served-by` edge — prefixed so it never collides with any other
+ *  edge id. */
+export const servedByEdgeId = (personaId: string, sessionId: string): string => `servedby:${personaId}>${sessionId}`;
+
+/** Namespace prefix for an ARCHITECT node id — its own namespace so it can never collide with a project
+ *  key (a `[a-z0-9-]` slug, no colon) or another band node id. */
+export const ARCHITECT_NODE_PREFIX = "architect:";
+/** The stable, collision-proof id of the graph node for an architect persona. */
+export const architectNodeId = (personaId: string): string => `${ARCHITECT_NODE_PREFIX}${personaId}`;
+/** The persona id behind an `architect:<personaId>` node id (identity for anything already bare). */
+export const architectIdOfNode = (nodeId: string): string =>
+  nodeId.startsWith(ARCHITECT_NODE_PREFIX) ? nodeId.slice(ARCHITECT_NODE_PREFIX.length) : nodeId;
+/** Stable id for a project→architect `created-by` edge — prefixed so it never collides with any other
+ *  edge id. */
+export const createdByEdgeId = (projectKey: string, personaId: string): string => `createdby:${projectKey}>${personaId}`;
+
 /** Namespace prefix for a KIT node id (#2571). */
 export const KIT_NODE_PREFIX = "kit:";
 /** graph → the namespace prefix for a library node id (#3119). `ui` stays `kit:` so {@link kitNodeId}
@@ -212,7 +256,14 @@ export const libraryGraphOf = (n: { kind?: GNodeKind; library?: GLibraryGraph })
  *  route VERTICALLY into the fenced band and are excluded from the project-network layout. */
 export const isLibraryEdge = (kind: GEdgeKind): boolean => kind === "uses-kit" || kind === "requires";
 
-/** Is `n` a fenced-BAND node (#3786) — ANY lifted non-project node: a library node (kit/algorithm/sound)
+/** The ARCHITECT is deliberately NOT here (#architect-sits-with-the-projects). Every other non-project
+ *  node in this graph is a shared DEPENDENCY — a kit, an algorithm, an MCP server — and lifting those
+ *  keeps their health out of a project's roll-up and their edges out of the project DAG. An architect is
+ *  the opposite relationship: it CREATED these projects rather than being consumed by them, so it belongs
+ *  beside them in the same network. It is safe there because it is a SINK — every `created-by` edge
+ *  points AT it — and a cycle needs a path back out.
+ *
+ *  Is `n` a fenced-BAND node (#3786) — ANY lifted non-project node: a library node (kit/algorithm/sound)
  *  OR an external contract node (`mcp` / `service`). These are lifted OUT of the project DAG into the top
  *  band. */
 export const isBandNode = (n: { kind?: GNodeKind }): boolean =>
@@ -225,7 +276,11 @@ export const isBandEdge = (kind: GEdgeKind): boolean =>
  *  contract node, the SERVICE row for a `service` contract node, else the library-graph row for a
  *  kit/algorithm/sound node. */
 export const bandNodeMeta = (n: { kind?: GNodeKind; library?: GLibraryGraph }): BandMeta =>
-  n.kind === "mcp" ? MCP_META : n.kind === "service" ? SERVICE_META : LIBRARY_META[libraryGraphOf(n) ?? "ui"];
+  n.kind === "session" ? SESSION_META
+  : n.kind === "architect" ? ARCHITECT_META
+  : n.kind === "mcp" ? MCP_META
+  : n.kind === "service" ? SERVICE_META
+  : LIBRARY_META[libraryGraphOf(n) ?? "ui"];
 
 /** One communication form on a fleet node's comms surface (#2563) — a typed interaction + its `bsc-*`
  *  runtime transport, pared from the Org model so the glance node model stays decoupled from it. */
@@ -354,7 +409,7 @@ export interface GraphModel {
    *  draws a tinted backdrop + divider + a header label (the graph's name for a single-dimension band —
    *  "UI KITS"/"ALGORITHMS"/"SOUNDS" — else "LIBRARIES"). The field name stays `kitBand` for persist/test
    *  stability. */
-  kitBand?: { y0: number; y1: number };
+  bandZone?: { x0: number; x1: number };
 }
 
 /**
@@ -473,6 +528,15 @@ export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: 
   // dependency; the canvas tints each edge by the TARGET node's graph colour (LIBRARY_META), so this
   // static `color` is only a neutral fallback (e.g. the legend swatch).
   requires: { label: "requires", color: "var(--fg-muted)", dash: "4 4", w: 1.6, surface: "requires a shared library node (algorithm / sound) · cross-graph dependency" },
+  // The PROVENANCE dimension (#glance-architect-band): the architect session that created this project.
+  // Dashed amber, matching ARCHITECT_META, so the tier that CREATES a project reads apart from the
+  // dependencies it consumes.
+  "created-by": { label: "created by", color: ARCHITECT_COLOR, dash: "4 4", w: 1.6, surface: "created by an architect session · funnel provenance" },
+  // The SYSTEM-SESSION dimension (#glance-reads-left-to-right-sessions-to-libraries): the architect is
+  // SERVED BY the app-owned studio sessions that produce the material its projects are built from.
+  // Dashed slate, matching SESSION_META, and drawn architect→session so the session sits one layer
+  // LEFT — the far upstream of the left→right funnel.
+  "served-by": { label: "served by", color: SESSION_COLOR, dash: "4 4", w: 1.6, surface: "served by an app-owned studio session · produces kits / algorithms / sounds / connectors" },
   // The external MCP-CONTRACT dimension (#3786): a project CONTRACTS WITH a scoped MCP server — a wire
   // contract to an external tool/data server, drawn to the shared mcp node. Tight-dotted amber so it reads
   // apart from the kit/library edges.
@@ -487,28 +551,49 @@ export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: 
 export const NW = 186, NH = 66;
 const COLGAP = 252, ROWGAP = 102;
 
-// The fenced LIBRARY band across the top (#3007, generalized #3119). Library nodes (UI kits + algorithms +
-// sounds) are LIFTED out of the project dependency DAG into a single row here, so they read as a separate
-// library dimension instead of an intermixed project column (mirrors the Design Studio composition
-// swimlanes). The band math is A's shared `layoutBand`; these tune its top pad + fence clearance.
-const KIT_TOP_PAD = 40;   // y of the library cards' top edge inside the band
-const KIT_BAND_GAP = 34;  // clearance from the library cards' bottom down to the fence divider
+// The fenced LIBRARY band, RIGHT of the projects (#3007, generalized #3119; reoriented by
+// #glance-reads-left-to-right-sessions-to-libraries). Band nodes (UI kits + algorithms + sounds + MCP
+// servers + external services) are LIFTED out of the project dependency DAG into a single COLUMN here, so
+// they read as a separate library dimension instead of an intermixed project column.
+//
+// It used to be a horizontal row across the TOP, which meant the graph was drawn on two axes at once:
+// the funnel ran left→right (sessions → architect → projects) while the thing those projects consume sat
+// above them. One axis reads as one pipeline, so the band moved to the end of the line.
+const BAND_FENCE_PAD = 40;  // clearance from the projects' right edge out to the fence divider
+const BAND_CARD_GAP = 34;   // clearance from the fence divider across to the band cards' left edge
+
+/** Lay out `count` band cards as a vertical COLUMN — the transpose of A's shared `layoutBand`, which
+ *  only does rows. Evenly spaced and centred over the project span [`spanY0`, `spanY1`], the step capped
+ *  at `maxStep` so a couple of nodes cluster in the middle instead of stretching the full height.
+ *
+ *  Deliberately local rather than a change to `layoutBand`: that helper is shared with the Design Studio
+ *  composition swimlanes, which are genuinely horizontal, so generalizing it to both axes would make
+ *  every caller pass an orientation to get what it already had. */
+function layoutBandColumn(count: number, spanY0: number, spanY1: number, x: number, maxStep: number): { x: number; y: number }[] {
+  if (count <= 0) return [];
+  const span = Math.max(0, spanY1 - spanY0);
+  const step = count > 1 ? Math.min(span / (count - 1), maxStep) : 0;
+  const colH = step * (count - 1);
+  const startY = spanY0 + (span - colH) / 2;
+  return Array.from({ length: count }, (_, i) => ({ x, y: startY + i * step }));
+}
 
 /** Bezier path + arrowhead between two node boxes (F depends on T). Cycle back-edges bow to separate the
- *  two directions. Ported from the spec's edgeGeom. `kind` picks the router (#3007, generalized #3119): a
- *  LIBRARY edge (`uses-kit`/`requires`) runs VERTICALLY (a project below → its library node in the top
- *  band), so it uses the DEFAULT perimeter-anchor router; every project edge keeps the layered side-port
- *  routing. */
-export function edgeGeom(F: { x: number; y: number; id: string }, T: { x: number; y: number; id: string }, isCycle: boolean, kind?: GEdgeKind): { d: string; arrow: string } {
-  // The shared graph line-type (#2222) with SIDE-PORT routing (#2226) — Glance's PROJECT network is a
-  // layered left→right DAG, so edges leave the right edge / enter the left at the vertical middle for a
-  // clean columnar flow (the perimeter-anchor router read messy here). Cycle back-edges bow apart
-  // (deterministic sign by id order) so the two directions of a↔b don't overlap. A LIBRARY edge is
-  // vertical (the band sits above the network), so side ports would meet the wrong faces — route it with
-  // the perimeter-anchor DEFAULT (omit `routing: "ports"`) so each card faces the other.
+ *  two directions. Ported from the spec's edgeGeom.
+ *
+ *  EVERY edge now uses side-port routing (#glance-reads-left-to-right-sessions-to-libraries). It used to
+ *  branch on `kind`: a library edge ran VERTICALLY into the top band, where side ports would have met the
+ *  wrong faces, so it fell back to the perimeter-anchor router. With the band moved to a column RIGHT of
+ *  the projects, every dimension — sessions, architect, projects, libraries — lies on the same left→right
+ *  axis, so there is no longer a second orientation to special-case. `kind` is kept in the signature
+ *  because callers pass it and the legend/labels still key off it. */
+export function edgeGeom(F: { x: number; y: number; id: string }, T: { x: number; y: number; id: string }, isCycle: boolean, _kind?: GEdgeKind): { d: string; arrow: string } {
+  // The shared graph line-type (#2222) with SIDE-PORT routing (#2226) — Glance is a layered left→right
+  // DAG, so edges leave the right edge / enter the left at the vertical middle for a clean columnar flow
+  // (the perimeter-anchor router read messy here). Cycle back-edges bow apart (deterministic sign by id
+  // order) so the two directions of a↔b don't overlap.
   const bow = isCycle ? (F.id < T.id ? -46 : 46) : 0;
-  const opts = kind && isBandEdge(kind) ? { bow } : { bow, routing: "ports" as const };
-  const { d, arrow } = graphEdge({ x: F.x, y: F.y, w: NW, h: NH }, { x: T.x, y: T.y, w: NW, h: NH }, opts);
+  const { d, arrow } = graphEdge({ x: F.x, y: F.y, w: NW, h: NH }, { x: T.x, y: T.y, w: NW, h: NH }, { bow, routing: "ports" as const });
   return { d, arrow };
 }
 
@@ -648,20 +733,25 @@ export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphMod
 
   layoutProjectNetwork(projNodes, projEdges, byId, cycleEdge);
 
-  let kitBand: { y0: number; y1: number } | undefined;
+  let bandZone: { x0: number; x1: number } | undefined;
   if (bandNodes.length > 0) {
-    // A single library row across the TOP, laid out by A's shared band helper (#3119) — evenly spaced and
-    // centred over the project span [70, projMaxX], the step capped at one column gap so a couple of nodes
-    // cluster in the middle instead of stretching the full width. `layer = -1` marks them as band nodes
-    // (outside the project layering). This is behaviour-preserving for the kit-only case (#3007).
+    // A single library COLUMN past the rightmost project, evenly spaced and centred over the project's
+    // vertical span, the step capped at one row gap so a couple of nodes cluster in the middle instead of
+    // stretching the full height. `layer = -1` marks them as band nodes (outside the project layering).
+    //
+    // Unlike the old top band, nothing shifts: the column occupies space the project network never used,
+    // so the projects keep the exact positions the layout engine gave them.
     const projMaxX = projNodes.length ? Math.max(...projNodes.map((n) => n.x)) : 70;
-    const band = layoutBand(bandNodes.length, { spanX0: 70, spanX1: projMaxX, topPad: KIT_TOP_PAD, nodeH: NH, gap: KIT_BAND_GAP, maxStep: COLGAP });
-    bandNodes.forEach((k, i) => { k.layer = -1; k.x = band.positions[i].x; k.y = band.positions[i].y; });
+    const projMinY = projNodes.length ? Math.min(...projNodes.map((n) => n.y)) : 70;
+    const projMaxY = projNodes.length ? Math.max(...projNodes.map((n) => n.y)) : 70;
+    const fenceX = projMaxX + NW + BAND_FENCE_PAD;
+    const cardX = fenceX + BAND_CARD_GAP;
+    const positions = layoutBandColumn(bandNodes.length, projMinY, projMaxY, cardX, ROWGAP);
+    bandNodes.forEach((k, i) => { k.layer = -1; k.x = positions[i].x; k.y = positions[i].y; });
 
-    // The fence sits a gap below the library cards' bottom; the project network shifts down by that much
-    // so the layout's own 70px top pad becomes the clean gap between the divider and the first project row.
-    kitBand = { y0: band.y0, y1: band.y1 };
-    projNodes.forEach((n) => (n.y += band.dividerY));
+    // The fence sits a gap to the LEFT of the band cards; the zone runs from there out past their right
+    // edge, so the canvas has a rect to wash and a divider line to draw.
+    bandZone = { x0: fenceX, x1: cardX + NW + BAND_FENCE_PAD };
   }
 
   let maxX = 0, maxY = 0;
@@ -673,5 +763,5 @@ export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphMod
   // edges keep side ports.
   edges.forEach((e) => Object.assign(e, edgeGeom(byId[e.from], byId[e.to], e.isCycle, e.kind)));
 
-  return { nodes, edges, cyclePairs, cycleNodeIds, worldW, worldH, kitBand };
+  return { nodes, edges, cyclePairs, cycleNodeIds, worldW, worldH, bandZone };
 }

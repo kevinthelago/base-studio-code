@@ -73,7 +73,17 @@ fn load_shell(name: &str) -> String {
     s
 }
 
-/// The `bsc-defer` Stop hook (#369, rebuilt in #4021): fires when a fleet WORKER tries to end its turn.
+/// The `bsc-defer` Stop hook (#369, rebuilt in #4021) — **NO LONGER ATTACHED TO ANY SESSION**
+/// (#session-stop-is-honoured). `sessionLaunch` stopped installing it: refusing a worker's Stop meant a
+/// session could not end, and the measured result was one worker bouncing 66 times on a ~90s cadence.
+/// The fragment and `bsc hook stop-defer` are kept rather than deleted so the decision stays legible
+/// and the behaviour is one line away if it is ever wanted deliberately — but nothing installs it, and
+/// re-attaching it re-creates a session that cannot stop. Resuming a finished session is the user's
+/// click now.
+///
+/// Historical description follows.
+///
+/// Fires when a fleet WORKER tries to end its turn.
 ///
 /// It is now a ONE-LINE wrapper around `bsc hook stop-defer`, for the reason `bsc-deny` already gives:
 /// the decision is backed by the binary rather than fragile shell JSON-parsing. And this decision needs

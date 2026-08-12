@@ -1,20 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { render } from "@testing-library/react";
-import { GitHubPageModeStrip } from "@/features/github/GitHubSummary";
 import { PROJECT_MODES } from "./projectModes";
 
 // #421: the Projects portfolio summary moved into the GitHub screen, between
 // Summary and Repositories. The Projects tab drops its Summary mode.
 
-describe("GitHub mode strip", () => {
-  it("offers Summary · Projects · Repositories in that order", () => {
-    const { container } = render(<GitHubPageModeStrip />);
-    const labels = Array.from(container.querySelectorAll("div"))
-      .map(d => d.childNodes[0]?.textContent?.trim())
-      .filter(t => t === "Summary" || t === "Projects" || t === "Repositories");
-    expect(labels).toEqual(["Summary", "Projects", "Repositories"]);
-  });
-});
+// COVERAGE LOST HERE: a "GitHub mode strip" case rendered GitHubPageModeStrip and asserted its options
+// were Summary · Projects · Repositories in that order. Its file went with the code-fallback cut — the
+// `github-page-mode-strip` record is the only copy now, and a record carries no runnable test. The
+// PROJECT_MODES half below is unaffected: it reads a plain data table, not the deleted component.
 
 describe("Projects modes (#1876)", () => {
   it("no longer offers Summary — Projects + Teams (Fleet→Glance #2228, Personas→Teams #2199)", () => {

@@ -9,71 +9,77 @@
   "src": "src/shared/ui/feedback/Banner.tsx",
   "props": [
     {
+      "desc": "",
       "name": "tone",
-      "type": "\"neutral\" | \"info\" | \"success\" | \"warn\" | \"danger\" | \"accent\"",
       "req": false,
-      "desc": ""
+      "type": "\"neutral\" | \"info\" | \"success\" | \"warn\" | \"danger\" | \"accent\""
     },
     {
+      "desc": "",
       "name": "variant",
-      "type": "\"inline\" | \"bar\"",
       "req": false,
-      "desc": ""
+      "type": "\"inline\" | \"bar\""
     },
     {
+      "desc": "",
       "name": "lead",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "dot",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "loud",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "right",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "onDismiss",
-      "type": "() => void",
       "req": false,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "role",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": true,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     }
   ],
-  "folder": "shared/ui/feedback"
+  "folder": "shared/ui/feedback",
+  "tests": [
+    {
+      "name": "Banner",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { Banner } from \"./Banner\";\r\n\r\ndescribe(\"Banner\", () => {\r\n  it(\"renders the tone class, lead, and content\", () => {\r\n    const { container } = render(\r\n      <Banner tone=\"success\" lead={<span data-testid=\"dot\" />}>all good</Banner>,\r\n    );\r\n    expect(screen.getByText(\"all good\")).toBeInTheDocument();\r\n    expect(screen.getByTestId(\"dot\")).toBeInTheDocument();\r\n    expect(container.querySelector(\".banner.tone-success\")).not.toBeNull();\r\n  });\r\n\r\n  it(\"defaults to the neutral inline tone (not a bar)\", () => {\r\n    const { container } = render(<Banner>note</Banner>);\r\n    expect(container.querySelector(\".banner.tone-neutral\")).not.toBeNull();\r\n    expect(container.querySelector(\".banner.bar\")).toBeNull();\r\n  });\r\n\r\n  it(\"renders a tone-colored dot, loud text, and a right slot (the status-box look)\", () => {\r\n    const { container } = render(\r\n      <Banner tone=\"success\" dot loud right={<span data-testid=\"cap\">cap</span>}>sources connected</Banner>,\r\n    );\r\n    expect(container.querySelector(\".banner.loud.tone-success\")).not.toBeNull();\r\n    expect(container.querySelector(\".banner-dot\")).not.toBeNull();\r\n    expect(screen.getByText(\"sources connected\")).toBeInTheDocument();\r\n    expect(screen.getByTestId(\"cap\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"variant=bar renders a full-width app bar with a working dismiss\", () => {\r\n    const onDismiss = vi.fn();\r\n    const { container } = render(\r\n      <Banner variant=\"bar\" tone=\"accent\" onDismiss={onDismiss}>restore?</Banner>,\r\n    );\r\n    expect(container.querySelector(\".banner.bar\")).not.toBeNull();\r\n    fireEvent.click(screen.getByRole(\"button\", { name: \"Dismiss\" }));\r\n    expect(onDismiss).toHaveBeenCalledOnce();\r\n  });\r\n});\r\n"
+    }
+  ]
 }

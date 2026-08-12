@@ -4,96 +4,102 @@
   "kitId": "base-studio-code",
   "role": "layout",
   "provides": "@/shared/ui/overlay/Pane",
-  "srcText": "// Pane, AS GRAPH SOURCE (#3684, epic #3604) — a shared/ui overlay/layout container authored as DATA.\n// `provides: \"@/shared/ui/overlay/Pane\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). CTX-free, so a fresh compile has no identity split. Transcribed verbatim.\n// Pane (#1824) — the ONE detail/editor pane. A single header / scrollable-body / footer frame\n// shared by every \"select an item → edit its fields\" surface. Two modes:\n//   - mode=\"drawer\": a slide-over (scrim + slide-in) — replaces the per-feature DrawerSlideOver +\n//     the hand-rolled SkillDrawer chrome. Renders content only while `open`.\n//   - mode=\"inline\": the same frame filling its container — for master-detail editors (Automations,\n//     the planner pane).\n// The footer is either supplied (`footer` slot) or, in drawer mode, the standard draft/remove bar\n// every editor shares (cancel/done while drafting, remove/done for an existing item). Pairs with\n// the `useDraft` hook for the selection/draft state.\n// RECONCILED #4235: re-transcribed from the file, which had moved on without it.\n// Pane (#1824) — the ONE detail/editor pane. A single header / scrollable-body / footer frame\n// shared by every \"select an item → edit its fields\" surface. Two modes:\n//   - mode=\"drawer\": a slide-over (scrim + slide-in) — replaces the per-feature DrawerSlideOver +\n//     the hand-rolled SkillDrawer chrome. Renders content only while `open`.\n//   - mode=\"inline\": the same frame filling its container — for master-detail editors (Automations,\n//     the planner pane).\n// The footer is either supplied (`footer` slot) or, in drawer mode, the standard draft/remove bar\n// every editor shares (cancel/done while drafting, remove/done for an existing item). Pairs with\n// the `useDraft` hook for the selection/draft state.\n// RECONCILED #4235: re-transcribed from the file, which had moved on without it.\n// Pane (#1824) — the ONE detail/editor pane. A single header / scrollable-body / footer frame\n// shared by every \"select an item → edit its fields\" surface. Two modes:\n//   - mode=\"drawer\": a slide-over (scrim + slide-in) — replaces the per-feature DrawerSlideOver +\n//     the hand-rolled SkillDrawer chrome. Renders content only while `open`.\n//   - mode=\"inline\": the same frame filling its container — for master-detail editors (Automations,\n//     the planner pane).\n// The footer is either supplied (`footer` slot) or, in drawer mode, the standard draft/remove bar\n// every editor shares (cancel/done while drafting, remove/done for an existing item). Pairs with\n// the `useDraft` hook for the selection/draft state.\n// RECONCILED #4235: re-transcribed from the file, which had moved on without it.\n// Pane (#1824) — the ONE detail/editor pane. A single header / scrollable-body / footer frame\n// shared by every \"select an item → edit its fields\" surface. Two modes:\n//   - mode=\"drawer\": a slide-over (scrim + slide-in) — replaces the per-feature DrawerSlideOver +\n//     the hand-rolled SkillDrawer chrome. Renders content only while `open`.\n//   - mode=\"inline\": the same frame filling its container — for master-detail editors (Automations,\n//     the planner pane).\n// The footer is either supplied (`footer` slot) or, in drawer mode, the standard draft/remove bar\n// every editor shares (cancel/done while drafting, remove/done for an existing item). Pairs with\n// the `useDraft` hook for the selection/draft state.\n// RECONCILED #4235: re-transcribed from the file, which had moved on without it.\n// Pane (#1824) — the ONE detail/editor pane. A single header / scrollable-body / footer frame\n// shared by every \"select an item → edit its fields\" surface. Two modes:\n//   - mode=\"drawer\": a slide-over (scrim + slide-in) — replaces the per-feature DrawerSlideOver +\n//     the hand-rolled SkillDrawer chrome. Renders content only while `open`.\n//   - mode=\"inline\": the same frame filling its container — for master-detail editors (Automations,\n//     the planner pane).\n// The footer is either supplied (`footer` slot) or, in drawer mode, the standard draft/remove bar\n// every editor shares (cancel/done while drafting, remove/done for an existing item). Pairs with\n// the `useDraft` hook for the selection/draft state.\nimport { type ReactNode } from \"react\";\nimport { IconButton } from \"@/shared/ui/controls/IconButton\";\n\nexport interface PaneProps {\n  /** \"drawer\" = slide-over (scrim + slide-in); \"inline\" = fills its container. Default \"drawer\". */\n  mode?: \"drawer\" | \"inline\";\n  /** Drawer mode: drives the scrim/slide open state + gates body render. Default true (inline ignores it). */\n  open?: boolean;\n  /** Top-zone content (drawer mode auto-appends a close button after it). */\n  header?: ReactNode;\n  /** Body content — pass via `body` or as children. */\n  body?: ReactNode;\n  children?: ReactNode;\n  /** Custom footer. When omitted in drawer mode, the standard draft/remove bar is rendered. */\n  footer?: ReactNode;\n  // ── Standard drawer footer wiring (used when `footer` is not supplied) ──\n  onClose?: () => void;\n  onRemove?: () => void;\n  isDraft?: boolean;\n  onCommit?: () => void;\n  /** Disable the draft \"done\" button (e.g. a required field is empty). */\n  commitDisabled?: boolean;\n  /** Drop the body's default padding — for bodies whose sections supply their own (e.g. full-bleed\n   *  divider rows). */\n  flush?: boolean;\n  /** Inline mode only: render children directly in the flex-column frame with NO styled\n   *  head/body/foot wrappers — for content panes whose zones bring their own chrome (e.g. the\n   *  planner `ProjectPane`: progression rail, phase header, advance bar). The editor drawers and the\n   *  styled inline editors use the default framed layout. */\n  bare?: boolean;\n  /** Extra class on the frame element (the drawer aside / the inline section). */\n  className?: string;\n}\n\n/** The standard drawer footer: cancel/done while drafting, remove/done for an existing item. */\nfunction StandardFooter({ isDraft, onClose, onRemove, onCommit, commitDisabled }: PaneProps) {\n  return isDraft ? (\n    <>\n      <button className=\"btn ghost\" onClick={onClose}>cancel</button>\n      <div className=\"spacer\" />\n      <button className=\"btn primary\" disabled={commitDisabled} onClick={onCommit}>done</button>\n    </>\n  ) : (\n    <>\n      <button className=\"btn ghost danger\" onClick={onRemove}>remove</button>\n      <div className=\"spacer\" />\n      <button className=\"btn primary\" onClick={onClose}>done</button>\n    </>\n  );\n}\n\nexport function Pane(props: PaneProps) {\n  const { mode = \"drawer\", open = true, header, body, children, footer, onClose, flush, bare, className } = props;\n  const content = body ?? children;\n  const bodyClass = \"pane-body\" + (flush ? \" flush\" : \"\");\n  const foot = footer !== undefined\n    ? footer\n    : mode === \"drawer\" ? <StandardFooter {...props} /> : null;\n\n  if (mode === \"inline\") {\n    const cls = className ? `pane-inline ${className}` : \"pane-inline\";\n    // Bare: the content pane owns its own zones (header/body/footer chrome) — the Pane is only the\n    // flex-column frame. Used by ProjectPane so it joins the one Pane component without restyling.\n    if (bare) return <section className={cls}>{content}</section>;\n    return (\n      <section className={cls}>\n        {header != null && <div className=\"pane-head\">{header}</div>}\n        <div className={bodyClass}>{content}</div>\n        {foot != null && <div className=\"pane-foot\">{foot}</div>}\n      </section>\n    );\n  }\n\n  return (\n    <>\n      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- drawer scrim mouse-dismiss; the drawer has a keyboard-reachable close button */}\n      <div className={\"pane-scrim\" + (open ? \" on\" : \"\")} onClick={onClose} />\n      <div className={\"pane-drawer\" + (open ? \" on\" : \"\") + (className ? \" \" + className : \"\")}>\n        {open && (\n          <>\n            <div className=\"pane-head\">\n              {header}\n              <IconButton aria-label=\"close\" onClick={onClose} />\n            </div>\n            <div className={bodyClass}>{content}</div>\n            {foot != null && <div className=\"pane-foot\">{foot}</div>}\n          </>\n        )}\n      </div>\n    </>\n  );\n}\n",
+  "srcText": "// Pane, AS GRAPH SOURCE (#3684, epic #3604) — a shared/ui overlay/layout container authored as DATA.\n// `provides: \"@/shared/ui/overlay/Pane\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). CTX-free, so a fresh compile has no identity split. Transcribed verbatim.\n// Pane (#1824) — the ONE detail/editor pane. A single header / scrollable-body / footer frame\n// shared by every \"select an item → edit its fields\" surface. Two modes:\n//   - mode=\"drawer\": a slide-over (scrim + slide-in) — replaces the per-feature DrawerSlideOver +\n//     the hand-rolled SkillDrawer chrome. Renders content only while `open`.\n//   - mode=\"inline\": the same frame filling its container — for master-detail editors (Automations,\n//     the planner pane).\n// The footer is either supplied (`footer` slot) or, in drawer mode, the standard draft/remove bar\n// every editor shares (cancel/done while drafting, remove/done for an existing item). Pairs with\n// the `useDraft` hook for the selection/draft state.\n// RECONCILED #4235: re-transcribed from the file, which had moved on without it.import { type ReactNode } from \"react\";\nimport { IconButton } from \"@/shared/ui/controls/IconButton\";\n\nexport interface PaneProps {\n  /** \"drawer\" = slide-over (scrim + slide-in); \"inline\" = fills its container. Default \"drawer\". */\n  mode?: \"drawer\" | \"inline\";\n  /** Drawer mode: drives the scrim/slide open state + gates body render. Default true (inline ignores it). */\n  open?: boolean;\n  /** Top-zone content (drawer mode auto-appends a close button after it). */\n  header?: ReactNode;\n  /** Body content — pass via `body` or as children. */\n  body?: ReactNode;\n  children?: ReactNode;\n  /** Custom footer. When omitted in drawer mode, the standard draft/remove bar is rendered. */\n  footer?: ReactNode;\n  // ── Standard drawer footer wiring (used when `footer` is not supplied) ──\n  onClose?: () => void;\n  onRemove?: () => void;\n  isDraft?: boolean;\n  onCommit?: () => void;\n  /** Disable the draft \"done\" button (e.g. a required field is empty). */\n  commitDisabled?: boolean;\n  /** Drop the body's default padding — for bodies whose sections supply their own (e.g. full-bleed\n   *  divider rows). */\n  flush?: boolean;\n  /** Inline mode only: render children directly in the flex-column frame with NO styled\n   *  head/body/foot wrappers — for content panes whose zones bring their own chrome (e.g. the\n   *  planner `ProjectPane`: progression rail, phase header, advance bar). The editor drawers and the\n   *  styled inline editors use the default framed layout. */\n  bare?: boolean;\n  /** Extra class on the frame element (the drawer aside / the inline section). */\n  className?: string;\n}\n\n/** The standard drawer footer: cancel/done while drafting, remove/done for an existing item. */\nfunction StandardFooter({ isDraft, onClose, onRemove, onCommit, commitDisabled }: PaneProps) {\n  return isDraft ? (\n    <>\n      <button className=\"btn ghost\" onClick={onClose}>cancel</button>\n      <div className=\"spacer\" />\n      <button className=\"btn primary\" disabled={commitDisabled} onClick={onCommit}>done</button>\n    </>\n  ) : (\n    <>\n      <button className=\"btn ghost danger\" onClick={onRemove}>remove</button>\n      <div className=\"spacer\" />\n      <button className=\"btn primary\" onClick={onClose}>done</button>\n    </>\n  );\n}\n\nexport function Pane(props: PaneProps) {\n  const { mode = \"drawer\", open = true, header, body, children, footer, onClose, flush, bare, className } = props;\n  const content = body ?? children;\n  const bodyClass = \"pane-body\" + (flush ? \" flush\" : \"\");\n  const foot = footer !== undefined\n    ? footer\n    : mode === \"drawer\" ? <StandardFooter {...props} /> : null;\n\n  if (mode === \"inline\") {\n    const cls = className ? `pane-inline ${className}` : \"pane-inline\";\n    // Bare: the content pane owns its own zones (header/body/footer chrome) — the Pane is only the\n    // flex-column frame. Used by ProjectPane so it joins the one Pane component without restyling.\n    if (bare) return <section className={cls}>{content}</section>;\n    return (\n      <section className={cls}>\n        {header != null && <div className=\"pane-head\">{header}</div>}\n        <div className={bodyClass}>{content}</div>\n        {foot != null && <div className=\"pane-foot\">{foot}</div>}\n      </section>\n    );\n  }\n\n  return (\n    <>\n      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- drawer scrim mouse-dismiss; the drawer has a keyboard-reachable close button */}\n      <div className={\"pane-scrim\" + (open ? \" on\" : \"\")} onClick={onClose} />\n      <div className={\"pane-drawer\" + (open ? \" on\" : \"\") + (className ? \" \" + className : \"\")}>\n        {open && (\n          <>\n            <div className=\"pane-head\">\n              {header}\n              <IconButton aria-label=\"close\" onClick={onClose} />\n            </div>\n            <div className={bodyClass}>{content}</div>\n            {foot != null && <div className=\"pane-foot\">{foot}</div>}\n          </>\n        )}\n      </div>\n    </>\n  );\n}\n",
   "composes": [
     "IconButton"
   ],
   "src": "src/shared/ui/overlay/Pane.tsx",
   "props": [
     {
+      "desc": "",
       "name": "mode",
-      "type": "\"drawer\" | \"inline\"",
       "req": false,
-      "desc": ""
+      "type": "\"drawer\" | \"inline\""
     },
     {
+      "desc": "",
       "name": "open",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "header",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "body",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "footer",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "onClose",
-      "type": "() => void",
       "req": false,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "onRemove",
-      "type": "() => void",
       "req": false,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "isDraft",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "onCommit",
-      "type": "() => void",
       "req": false,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "commitDisabled",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "flush",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "bare",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     }
   ],
-  "folder": "shared/ui/overlay"
+  "folder": "shared/ui/overlay",
+  "tests": [
+    {
+      "name": "Pane (#1824)",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { Pane } from \"./Pane\";\r\n\r\ndescribe(\"Pane (#1824)\", () => {\r\n  it(\"drawer mode renders header, body, and the standard remove/done footer\", () => {\r\n    const onClose = vi.fn();\r\n    const onRemove = vi.fn();\r\n    render(\r\n      <Pane open header={<div className=\"name\">My item</div>} body={<p>fields</p>} onClose={onClose} onRemove={onRemove} />,\r\n    );\r\n    expect(screen.getByText(\"My item\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"fields\")).toBeInTheDocument();\r\n    fireEvent.click(screen.getByText(\"remove\"));\r\n    expect(onRemove).toHaveBeenCalled();\r\n    fireEvent.click(screen.getByText(\"done\"));\r\n    expect(onClose).toHaveBeenCalled();\r\n  });\r\n\r\n  it(\"the auto-rendered close button calls onClose\", () => {\r\n    const onClose = vi.fn();\r\n    render(<Pane open body={<p>x</p>} onClose={onClose} onRemove={vi.fn()} />);\r\n    fireEvent.click(screen.getByLabelText(\"close\"));\r\n    expect(onClose).toHaveBeenCalled();\r\n  });\r\n\r\n  it(\"draft mode shows cancel/done, with done gated by commitDisabled\", () => {\r\n    const onCommit = vi.fn();\r\n    const onClose = vi.fn();\r\n    render(<Pane open isDraft commitDisabled body={<p>x</p>} onClose={onClose} onCommit={onCommit} onRemove={vi.fn()} />);\r\n    expect(screen.getByText(\"cancel\")).toBeInTheDocument();\r\n    const done = screen.getByText(\"done\") as HTMLButtonElement;\r\n    expect(done.disabled).toBe(true);\r\n    fireEvent.click(done);\r\n    expect(onCommit).not.toHaveBeenCalled();\r\n  });\r\n\r\n  it(\"draft mode commits when enabled\", () => {\r\n    const onCommit = vi.fn();\r\n    render(<Pane open isDraft body={<p>x</p>} onClose={vi.fn()} onCommit={onCommit} onRemove={vi.fn()} />);\r\n    fireEvent.click(screen.getByText(\"done\"));\r\n    expect(onCommit).toHaveBeenCalled();\r\n  });\r\n\r\n  it(\"does not render the body while closed (drawer)\", () => {\r\n    render(<Pane open={false} body={<p>hidden</p>} onClose={vi.fn()} onRemove={vi.fn()} />);\r\n    expect(screen.queryByText(\"hidden\")).toBeNull();\r\n  });\r\n\r\n  it(\"inline mode renders no scrim and accepts a custom footer\", () => {\r\n    const { container } = render(\r\n      <Pane mode=\"inline\" header={<h2>Phase</h2>} footer={<button>advance</button>}>\r\n        <p>phase body</p>\r\n      </Pane>,\r\n    );\r\n    expect(container.querySelector(\".pane-scrim\")).toBeNull();\r\n    expect(container.querySelector(\".pane-inline\")).not.toBeNull();\r\n    expect(screen.getByText(\"Phase\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"phase body\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"advance\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"a supplied footer overrides the standard drawer footer\", () => {\r\n    render(<Pane open body={<p>x</p>} footer={<button>custom</button>} onClose={vi.fn()} onRemove={vi.fn()} />);\r\n    expect(screen.getByText(\"custom\")).toBeInTheDocument();\r\n    expect(screen.queryByText(\"remove\")).toBeNull();\r\n  });\r\n});\r\n"
+    }
+  ]
 }

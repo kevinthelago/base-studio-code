@@ -4,7 +4,8 @@
 // wiring real edges later is a drop-in — the page + graph core never change.
 import sampleGraphEmbedded from "@data/glance/sample-graph.json";
 import type { GRawNode, GRawEdge, GRole, GHealth, GActivity } from "./glanceGraph";
-import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId } from "./glanceGraph";
+import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId, architectNodeId, createdByEdgeId, sessionNodeId, servedByEdgeId } from "./glanceGraph";
+import { SYSTEM_SESSION_IDS } from "./glanceFleet";
 import { isProjectContract, type ProjectLink } from "./projectLinks";
 // Cross-feature types only, via the barrel (#1309 boundary): the consumer index (`kitUsage`) whose
 // (projectKey, kitId) edges the kit nodes are built from, plus the kit→library `requires` roll-up
@@ -31,6 +32,9 @@ export interface KitLite { id: string; name: string }
  *  `McpServer[]` is structurally assignable, so the caller passes it as-is. A server with an EMPTY
  *  `projects` list is GLOBAL (every session gets it) — not a specific contract, so it is skipped. */
 export interface McpLite { id: string; name: string; projects: string[]; transport?: "stdio" | "http" }
+/** An ARCHITECT persona, pared to what the L0 band needs (#glance-architect-band) — the funnel tier-1
+ *  personas from the persona store, filtered to `role: "architect"` by the caller. */
+export interface ArchitectLite { id: string; name: string }
 
 /** The packaged SAMPLE project network — the spec's example (roles · edge kinds · a dependency CYCLE:
  *  reporting → analytics → reporting · hazards). No longer an auto-fallback for an empty app (#2272 — an
@@ -76,6 +80,7 @@ export function buildGlanceData(
   kits: KitLite[] = [],
   libraryRefs: KitLibraryRef[] = [],
   mcpServers: McpLite[] = [],
+  architects: ArchitectLite[] = [],
 ): GlanceData {
   const rawNodes: GRawNode[] = projects.map((p) => ({
     id: p.id,
@@ -106,6 +111,65 @@ export function buildGlanceData(
   const rawEdges: GRawEdge[] = links
     .filter((l) => isProjectContract(l) && ids.has(l.from) && ids.has(l.to))
     .map((l) => ({ id: l.id, from: l.from, to: l.to, kind: l.kind }));
+
+  // The ARCHITECT dimension (#glance-architect-band) — the funnel's tier 1 lifted into the same fenced
+  // band as the library + contract dimensions. One node per architect persona, edged from EVERY project.
+  //
+  // FIRST CUT: connected to every project rather than the ones it created. The provenance field
+  // (`createdBy` on the project record) does not exist yet and nothing writes it, so filtering by it
+  // today would draw an architect with no edges at all. Once it exists — and once there is more than one
+  // architect to distinguish — this narrows to `projects.filter(p => p.createdBy === a.id)` and the rest
+  // of the shape is unchanged.
+  //
+  // Edge direction follows the graph's consumer→provider convention (`from depends on to`), the same as
+  // every other band dimension: the PROJECT is `from` and the lifted architect is `to`. That is also
+  // what keeps an architect's health from ever rolling up into a project's.
+  for (const a of architects) {
+    const nodeId = architectNodeId(a.id);
+    rawNodes.push({
+      id: nodeId,
+      slug: a.name || a.id,
+      kind: "architect",
+      role: "infra",   // lifted + foundational, like a kit — the canvas draws it from `kind`
+      health: "off",   // an architect persona is a definition, not a running session — `off` is exactly that
+      activity: "idle",
+    });
+    for (const p of projects) {
+      rawEdges.push({ id: createdByEdgeId(p.id, a.id), from: p.id, to: nodeId, kind: "created-by" });
+    }
+  }
+
+  // The SYSTEM-SESSION dimension (#glance-reads-left-to-right-sessions-to-libraries) — the app-owned
+  // studio singletons that produce the material a build runs on: UI kits (designer), algorithms
+  // (librarian), sounds (sound-designer) and integration connectors (integrator).
+  //
+  // The ARCHITECT is itself in `SYSTEM_SESSION_IDS` and is EXCLUDED here: it already has its own L0 node
+  // above, and emitting it twice would draw a session that serves itself.
+  //
+  // Edge direction is what places them. The graph lays a dependency at a LOWER layer (further LEFT), and
+  // the convention is `from depends on to` — so the ARCHITECT is `from` and the session is `to`, which
+  // puts the sessions one layer left of the architect: system sessions → architect → projects → libraries,
+  // one axis, one reading order.
+  //
+  // Emitted only when there IS an architect. Without one these would be a row of unconnected cards
+  // floating beside the network, which says less than drawing nothing.
+  if (architects.length > 0) {
+    for (const sessionId of SYSTEM_SESSION_IDS) {
+      if (sessionId === "architect") continue;
+      const nodeId = sessionNodeId(sessionId);
+      rawNodes.push({
+        id: nodeId,
+        slug: sessionId,
+        kind: "session",
+        role: "infra",   // app-owned + foundational, like a kit — the canvas draws it from `kind`
+        health: "off",   // a studio singleton is launched on demand, not a standing process
+        activity: "idle",
+      });
+      for (const a of architects) {
+        rawEdges.push({ id: servedByEdgeId(a.id, sessionId), from: architectNodeId(a.id), to: nodeId, kind: "served-by" });
+      }
+    }
+  }
 
   // The UI-KIT dimension (#2571): one node per DISTINCT kit that has ≥1 consumer AMONG the current
   // projects, edged from every consuming project to the shared kit node. The edge follows the graph's

@@ -26,13 +26,18 @@ import { log } from "../core/log";
  *  returns it — typed locally so this shared module doesn't import the app layer. */
 interface ActivityRow { pane: string; state: string; at: number }
 
-/** The close-nudge injected into an idle, question-free, work-complete worker (#1379). It asks the
- *  worker to self-assess and `bsc-done` if truly finished — never forces it; `bsc-defer` only fires
- *  on a Stop, so this prompt doesn't fight it. One line so the trailing Enter submits it. */
-const CLOSE_NUDGE =
-  "Your owned issues all read complete in the plan and this session has gone idle. If your work is " +
-  "genuinely done — everything integrated on develop with the gate green — run `bsc-done` to close " +
-  "this console. If anything remains, keep going instead.";
+// The close-NUDGE is gone (#session-stop-is-honoured). It used to `pty_write` a "run bsc-done" prompt
+// into an idle, question-free, work-complete worker — i.e. the app typing at a session that had just
+// finished. That never fired in practice, because `bsc-defer` refused a worker's Stop and it could not
+// reach "idle with work complete" in the first place. Removing the hook would have SWITCHED IT ON, so
+// a finished worker would have stopped and immediately been re-prompted: the exact behaviour this item
+// exists to end, arriving through a different door.
+//
+// The pane still reaches its resting state — `evaluateExit` is called directly instead. That is the
+// same verdict from the same source (plan.db via `classifyWorkerEnd`, never the worker's say-so); the
+// nudge only ever existed to make the worker call `bsc-done` so this ran. Cutting out the round trip
+// through the agent is strictly better: no injection, no token spend, and no dependence on the session
+// still being alive to answer. The app updating its OWN UI is not the app driving a session.
 
 /** How idle-poll ticks: every 15s. The close-nudge threshold is 60s, so this is responsive enough. */
 // #3643: the idle close-nudge is event-driven — it re-checks when a worker's turn state changes
@@ -144,7 +149,10 @@ export function useWorkerAutoEnd(): void {
       const act = activity.find((a) => a.pane === paneId);
       if (act?.state === "run") { nudgedRef.current.delete(paneId); resurfacedRef.current.delete(paneId); continue; } // working → re-arm
       if (coord.waiting.some((w) => w.session === paneId)) continue;             // paused for the user → leave it
-      if (coord.maintaining.some((m) => m.session === paneId)) { nudgedRef.current.delete(paneId); continue; } // in MAINTENANCE (#1957) — stay alive + ready, never nudge to close
+      // `maintaining` NO LONGER PINS A PANE OPEN (#session-stop-is-honoured). Under #1957 a `maintain`
+      // event meant "parked alive and ready", so skipping it was right. It now means the worker left a
+      // standing note on its way OUT, so skipping it would hold a finished pane in the grid forever —
+      // the resting-state problem (#920) coming back through the event that says the work is done.
       if (!coord.asking.some((a) => a.session === paneId)) resurfacedRef.current.delete(paneId); // ask answered → re-arm resurface
       const stream = s.fleetPaneStreams[paneId];
       const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
@@ -171,9 +179,14 @@ export function useWorkerAutoEnd(): void {
         verdict,
       }, DEFAULT_AUTO_END_THRESHOLDS);
       if (action === "close-nudge" && !nudgedRef.current.has(paneId)) {
+        // The decision is unchanged — this worker is at rest with its owned work complete. What we DO
+        // with it changed: reap the pane ourselves rather than typing at the session (see the header).
+        // `evaluateExit` re-reads plan.db and is idempotent via its own `endedPanes` guard, so the ref
+        // is belt-and-braces against a burst of log events, not the thing that makes it safe.
+        // No `kill` — the shell stays up so the user can resume this session with a click.
         nudgedRef.current.add(paneId); // once per idle period; cleared when the turn reopens
-        log.info(`auto-end: nudging ${paneId} (${stream.id}) to self-close — idle + work complete`);
-        await safeInvoke("pty_write", { paneId, data: `${CLOSE_NUDGE}\r` }, undefined);
+        log.info(`auto-end: reaping ${paneId} (${stream.id}) — idle + work complete`);
+        await evaluateExit(paneId);
       } else if (action === "resurface-question" && !resurfacedRef.current.has(paneId)) {
         // Lost-question resurface (#1379 stage 4): the worker has waited too long on a director
         // answer — its ask may have been missed. Re-surface it to the live director ONCE so it

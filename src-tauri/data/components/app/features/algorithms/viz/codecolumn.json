@@ -10,5 +10,6 @@
     "Row",
     "Stack",
     "Text"
-  ]
+  ],
+  "folder": "features/algorithms/viz"
 }

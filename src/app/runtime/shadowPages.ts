@@ -1,11 +1,50 @@
 // The shadow-mode page catalogue (#4169, epic #3604) — which graph page node corresponds to which source
 // file, for every page the migration has touched.
 //
-// This is the pairing shadow mode compares. Each entry mirrors the generator that authored the records
-// (`scripts/gen-<x>-graph.cjs`), which is the ONLY place the record ↔ file correspondence has lived until
-// now — a mapping the generators use once and then forget. `shadowPages.test.ts` pins both halves so an
-// entry cannot rot into a silent skip: a wrong file path or a dropped record id fails there rather than
-// reading as "no drift".
+// This is the pairing shadow mode compares. It used to mirror the generator that authored the records
+// (`scripts/gen-<x>-graph.cjs`); those were RETIRED (graph-retire-shadow-and-generators) because they
+// `readFileSync` source files this migration deletes, so this catalogue is now the pairing's home rather
+// than its copy. `shadowPages.test.ts` pins both halves so an entry cannot rot into a silent skip: a
+// wrong file path or a dropped record id fails there rather than reading as "no drift".
+//
+// HOW A FILE LEAVES. `file: null` is the designed end state, not a special case — it says the file is
+// gone and the record is the only copy, so the STRUCTURAL half of the report drops and the BINDING half
+// (does the record resolve its imports?) keeps running. Shadow mode therefore never needs retiring: it
+// shrinks as the migration proceeds and its structural half self-retires when the last entry goes null.
+// There is deliberately NO replacement baseline — an archive copy or a previous record revision would
+// be a copy of the thing under test, which is not a second opinion. `bsc ui parity` (#4246) answers the
+// question that outlives the file: does the app RENDER what it SHIPS (store vs seed)?
+//
+// ── `graphParity.test.ts` IS RETIRED (retire-graphparity). Do not recreate it. ────────────────────
+//
+// It asserted that every record's CODE equals its source file's code, and it was written for two real
+// user-visible bugs: #4174 (a `security-flow` record still telling users to run a command #1039 had
+// removed, corrected in the file only) and #4179 (Skills drifting BOTH ways in a single day while the
+// suite stayed green, because #3854's own test asserted against a component nobody mounts).
+//
+// It was retired for a reason that will look like a bug if you rediscover it cold: at the end it was
+// failing for ~210 of the 299 records that still had a file, and almost none of those were drift. A
+// record must render STANDALONE in the preview sandbox, so it inlines what it cannot resolve and relaxes
+// required props — `backbutton`'s record defines `ChevronLeft` where the file imports it, and makes
+// `onClick`/`aria-label` optional. 156 of those records carry a transcription/inlining header saying so.
+// Record-only content is DESIGNED (the three-way merges preserved `loading`/`error` props the file never
+// had), so "the record's code equals the file's code" is not a stale assertion — it contradicts a
+// deliberate decision. Narrowing it to records that still have a file removes almost nothing.
+//
+// WHAT NOW COVERS WHAT, stated so the gap is visible rather than assumed:
+//   * `bsc ui parity` (#4246)        — store vs SEED. Does the app render what it ships?
+//   * `e2e/recordLinks.spec.ts`      — every record compiles and every specifier it needs resolves.
+//   * `e2e/graphPages.spec.ts`       — every page record exports a component.
+//   * `e2e/graphPrimitive.spec.ts`   — the record, not the bundled file, is what the renderer mounts.
+// NONE of them can see "the file was corrected and the record was not". That risk is ACCEPTED for as
+// long as both copies exist, and it disappears with the file — which is the direction of travel.
+// `projectsGraphSeed.test.ts` went with it: same class, and it had stopped running entirely because its
+// `ProjectsList.tsx?raw` baseline no longer exists. Its surviving question — does every specifier the
+// record imports resolve? — is what `recordLinks` now asks of every record, not just that one.
+//
+// Entries are nulled HERE, ahead of the deletion, because this file belongs to the design-studio stream
+// while each deletion item is scoped to its own feature glob — a github worker cannot edit this file, so
+// leaving the flip to the deletion would make every deletion item fail a test it has no way to fix.
 //
 // WHY THE FILE SOURCES ARE A RAW GLOB: the file half of the diff is the .tsx on disk, and the app has no
 // filesystem access to its own source in a packaged build. Vite's `?raw` glob is the only way to have it
@@ -90,11 +129,11 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // `@/components/<id>` siblings, so the page composes them without naming a single one: it imports
       // `@/features/planner/pane/ProjectPane` exactly as it did when that was a code module, and the
       // resolver reaches the graph first. Listed here so they fall under the parity guard like the rest.
-      { recordId: "plan-pane", file: "/src/features/planner/pane/ProjectPane.tsx" },
-      { recordId: "plan-pane-shell", file: "/src/features/planner/pane/FocusedShell.tsx" },
+      { recordId: "plan-pane", file: null },
+      { recordId: "plan-pane-shell", file: null },
       { recordId: "plan-pane-bodies", file: "/src/features/planner/pane/FocusedBodies.tsx" },
-      { recordId: "plan-pane-stage-bar", file: "/src/features/planner/pane/PlanStageBar.tsx" },
-      { recordId: "plan-pane-rail", file: "/src/features/planner/pane/ProgressionRail.tsx" },
+      { recordId: "plan-pane-stage-bar", file: null },
+      { recordId: "plan-pane-rail", file: null },
       { recordId: "plan-pane-mcp-modal", file: "/src/features/planner/pane/McpDownloadModal.tsx" },
       { recordId: "plan-pane-primitives", file: "/src/features/planner/pane/focusedPrimitives.tsx" },
       // The stage bodies (#4230) — the pane's body switch reaches these, and they reach each other,
@@ -160,7 +199,6 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     modules: [
       { recordId: "glancepage", file: "/src/features/glance/GlanceWorkspace.tsx" },
       { recordId: "glance-canvas", file: "/src/features/glance/GlanceCanvas.tsx" },
-      { recordId: "glance-inspector", file: "/src/features/glance/GlanceInspector.tsx" },
       { recordId: "glance-stream-morph", file: "/src/features/glance/GlanceStreamMorph.tsx" },
       { recordId: "glance-preview-morph", file: "/src/features/glance/GlancePreviewMorph.tsx" },
       { recordId: "glance-node", file: "/src/features/glance/GlanceNode.tsx" },
@@ -179,13 +217,13 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // The list's components (#4232) — `provides` records, like `pane/` and `bodies/`. Authoring them
       // is what the page's regeneration to ABSOLUTE specifiers unlocked: `provides` matches the exact
       // specifier a record imports, so while the page said `./ProjectCard` none of these was reachable.
-      { recordId: "projects-card", file: "/src/features/planner/list/ProjectCard.tsx" },
-      { recordId: "projects-rail", file: "/src/features/planner/list/ProjectsRail.tsx" },
-      { recordId: "projects-setup", file: "/src/features/planner/list/ProjectSetupPage.tsx" },
-      { recordId: "projects-blueprint-card", file: "/src/features/planner/list/BlueprintCard.tsx" },
-      { recordId: "projects-cloud-blueprints", file: "/src/features/planner/list/CloudBlueprints.tsx" },
+      { recordId: "projects-card", file: null },
+      { recordId: "projects-rail", file: null },
+      { recordId: "projects-setup", file: null },
+      { recordId: "projects-blueprint-card", file: null },
+      { recordId: "projects-cloud-blueprints", file: null },
       { recordId: "projects-reopen-modal", file: "/src/features/planner/list/ReopenProjectModal.tsx" },
-      { recordId: "projects-delete-modal", file: "/src/features/planner/list/published/DeleteProjectModal.tsx" },
+      { recordId: "projects-delete-modal", file: null },
     ],
     // The ONE page that does not register when its module evaluates: `ProjectsGraphHost` registers at
     // first RENDER, to break an import cycle (see its comment). Shadow mode renders nothing, so it must
@@ -201,18 +239,24 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // Graph-only for the same reason as automationspage/mcppage/securitypage: the file copy was
       // dead and was removed, and the barrel is index.ts now. The six part modules keep their files.
       { recordId: "githubpage", file: null },
-      { recordId: "github-empty", file: "/src/features/github/Empty.tsx" },
-      { recordId: "github-summary", file: "/src/features/github/GitHubSummary.tsx" },
-      { recordId: "github-pulse", file: "/src/features/github/Pulse.tsx" },
-      { recordId: "github-branch-graph", file: "/src/features/github/BranchGraph.tsx" },
-      { recordId: "github-activity-heatmap", file: "/src/features/github/summary/ActivityHeatmap.tsx" },
-      { recordId: "github-ci-health", file: "/src/features/github/summary/CIHealthCard.tsx" },
-      { recordId: "github-contributors", file: "/src/features/github/summary/ContributorsCard.tsx" },
-      { recordId: "github-cross-repo-activity", file: "/src/features/github/summary/CrossRepoActivity.tsx" },
-      { recordId: "github-page-mode-strip", file: "/src/features/github/summary/GitHubPageModeStrip.tsx" },
-      { recordId: "github-language-mix", file: "/src/features/github/summary/LanguageMix.tsx" },
-      { recordId: "github-open-prs", file: "/src/features/github/summary/OpenPRsCard.tsx" },
-      { recordId: "github-repos-grid", file: "/src/features/github/summary/ReposGrid.tsx" },
+      // Empty/GitHubSummary/Pulse are RELEASED FOR DELETION (graph-retire-shadow-and-generators): their
+      // records are settled against the seed, so the file has no second opinion left to give, and the
+      // per-stream deletion item cannot null these itself — it does not own this file. Nulled here so
+      // `git rm` in `src/features/github/**` is all that item has to do.
+      { recordId: "github-empty", file: null },
+      { recordId: "github-summary", file: null },
+      // Pulse.tsx backs NINE records; only this one is catalogued, so its deletion also needs
+      // `reconcile-record-src.cjs --retire` to move the other eight off `src`.
+      { recordId: "github-pulse", file: null },
+      { recordId: "github-branch-graph", file: null },
+      { recordId: "github-activity-heatmap", file: null },
+      { recordId: "github-ci-health", file: null },
+      { recordId: "github-contributors", file: null },
+      { recordId: "github-cross-repo-activity", file: null },
+      { recordId: "github-page-mode-strip", file: null },
+      { recordId: "github-language-mix", file: null },
+      { recordId: "github-open-prs", file: null },
+      { recordId: "github-repos-grid", file: null },
     ],
     ensurePlatform: () => import("@/features/github"),
   },
@@ -224,9 +268,12 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // Graph-only: the dead AutomationsWorkspace copy is gone and the barrel is index.ts now, so
       // this path would not resolve. The three tab bodies below are still real files.
       { recordId: "automationspage", file: null },
-      { recordId: "automations-schedules", file: "/src/features/automations/Schedules.tsx" },
-      { recordId: "automations-history", file: "/src/features/automations/History.tsx" },
-      { recordId: "automations-hook-analytics", file: "/src/features/automations/HookAnalytics.tsx" },
+      // Schedules.tsx is GONE. It was held back while `automations-schedules` was one of the 50
+      // unresolved in `graph-srctext-three-way-merges` — the .tsx was a party to that merge. The merge
+      // has landed, so the record is the only copy and there is nothing left to diff against.
+      { recordId: "automations-schedules", file: null },
+      { recordId: "automations-history", file: null },
+      { recordId: "automations-hook-analytics", file: null },
     ],
     ensurePlatform: () => import("@/features/automations"),
   },
@@ -240,7 +287,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // the record through McpGraphHost — so it was removed. Diffing the record against what is
       // left would report `differs` forever against a file that no longer claims to be this page.
       { recordId: "mcppage", file: null },
-      { recordId: "mcp-analytics", file: "/src/features/mcp/McpAnalytics.tsx" },
+      { recordId: "mcp-analytics", file: null },
     ],
     ensurePlatform: () => import("@/features/mcp"),
   },
@@ -265,13 +312,15 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     rendersFrom: "graph",
     modules: [
       // Same as mcppage: the dead SecurityWorkspace copy is gone and what survives is the feature's
-      // re-export barrel — now index.ts, so this path would not even resolve. The four tab bodies
-      // below are still real files and keep their baselines.
+      // re-export barrel — now index.ts, so this path would not even resolve.
       { recordId: "securitypage", file: null },
-      { recordId: "security-profiles", file: "/src/features/security/ProfilesTab.tsx" },
+      // Profiles/Activity/Flow were the last three files HELD by graph-srctext-three-way-merges — their
+      // .tsx was a party to the merge. The merge landed and the files are deleted, so their records are
+      // the only copy. AssignmentsTab.tsx is the one tab body that still has a file.
+      { recordId: "security-profiles", file: null },
       { recordId: "security-assignments", file: "/src/features/security/AssignmentsTab.tsx" },
-      { recordId: "security-activity", file: "/src/features/security/ActivityTab.tsx" },
-      { recordId: "security-flow", file: "/src/features/security/FlowTab.tsx" },
+      { recordId: "security-activity", file: null },
+      { recordId: "security-flow", file: null },
     ],
     ensurePlatform: () => import("@/features/security"),
   },
@@ -282,25 +331,24 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
  *  out of every component file in the app. */
 const FILE_SOURCES = import.meta.glob<string>(
   [
-    "/src/features/planner/list/{ProjectsList,ProjectCard,ProjectsRail,ProjectSetupPage,BlueprintCard,CloudBlueprints,ReopenProjectModal}.tsx",
-    "/src/features/planner/list/published/DeleteProjectModal.tsx",
-    "/src/features/planner/session/{Planning,PlanningHeader,PlanningNotices,PlanningDialogs,PublishProgressView,InjectionGateBanner,GitHubStructureCard}.tsx",
-    "/src/features/planner/pane/{ProjectPane,FocusedShell,FocusedBodies,PlanStageBar,ProgressionRail,McpDownloadModal,focusedPrimitives}.tsx",
+    "/src/features/planner/list/ReopenProjectModal.tsx",
+    "/src/features/planner/session/GitHubStructureCard.tsx",
+    "/src/features/planner/pane/{FocusedBodies,McpDownloadModal,focusedPrimitives}.tsx",
     // Named, not `bodies/*.tsx` — the glob is the file half of the parity diff, and a wildcard sweeps up
     // the directory's twelve `.test.tsx` files, which the catalogue guard correctly rejects as globbed
     // sources nothing declares.
     "/src/features/planner/bodies/{DiscoveryBody,MarketBody,TransformationsBody,FocusedAutomationsBody,FocusedSkillsBody,McpsBody,FocusedFeaturesBody,FileIntakePane,ReposDeployView,DeployView,deployShipSections,deployTargetSection,deployPrimitives,FocusedSourceBody,ScanViews,connectorForm,StreamsBody,FocusedPermissionsBody,FocusedPlanBody,StreamFocusCards,SharedDependencies,collapsibleCard,bodyPrimitives}.tsx",
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
     "/src/features/algorithms/{AlgorithmsWorkspace,AlgorithmsRail,AlgorithmsInspector,AlgorithmsKitGraph,LibrarianTerminal}.tsx",
-    "/src/app/console/{index,PaneAt,consoleStates}.tsx",
-    "/src/app/console/panes/{PaneShell,PaneMenu}.tsx",
-    "/src/features/glance/Glance{Workspace,Canvas,Inspector,StreamMorph,PreviewMorph,Node,PlanScreen,ChatDock,SessionLog}.tsx",
-    "/src/features/github/{Empty,GitHubSummary,Pulse,BranchGraph}.tsx",
-    "/src/features/github/summary/{ActivityHeatmap,CIHealthCard,ContributorsCard,CrossRepoActivity,GitHubPageModeStrip,LanguageMix,OpenPRsCard,ReposGrid}.tsx",
-    "/src/features/automations/{Schedules,History,HookAnalytics}.tsx",
-    "/src/features/mcp/McpAnalytics.tsx",
+    "/src/app/console/panes/PaneMenu.tsx",
+    "/src/features/glance/{GlanceWorkspace,GlanceCanvas,GlanceStreamMorph,GlancePreviewMorph,GlanceNode,GlancePlanScreen,GlanceChatDock,GlanceSessionLog}.tsx",
+    // Empty/GitHubSummary/Pulse dropped with their entries — the glob and the catalogue are pinned to
+    // each other BOTH ways by `shadowPages.test.ts`, so a path released for deletion has to leave both.
+    // Schedules.tsx dropped with its entry — automations now contributes no file baseline at all.
+    // McpAnalytics dropped with its entry.
     "/src/features/skills/{index,SkillsViews,NewGroupDialog,SkillDrawer,SkillsDigest,LessonsTab,RunsTab}.tsx",
-    "/src/features/security/{ProfilesTab,AssignmentsTab,ActivityTab,FlowTab}.tsx",
+    // ProfilesTab/ActivityTab/FlowTab dropped with their entries — AssignmentsTab is the last security file.
+    "/src/features/security/AssignmentsTab.tsx",
   ],
   { query: "?raw", import: "default" },
 );

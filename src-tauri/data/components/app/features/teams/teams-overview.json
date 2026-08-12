@@ -13,5 +13,23 @@
     "Text"
   ],
   "provides": "@/components/teams-overview",
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `TeamsOverview` defaults `teams`, `onEnter`, `loading` and adds loading/error states, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `TeamsOverview` holds 8 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 8 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate."
+  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `TeamsOverview` defaults `teams`, `onEnter`, `loading` and adds loading/error states, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `TeamsOverview` holds 8 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 8 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
+  "folder": "features/teams",
+  "whenUse": [
+    "A grid of team cards on an infinite canvas - one cell per team, click to enter. Absolutely positioned; render inside a canvas/viewport host."
+  ],
+  "whenNot": [
+    "A plain list of cards in normal flow - use CollectionPage or a Stack of CardListRow."
+  ],
+  "tags": [
+    "org-chart",
+    "grid",
+    "canvas"
+  ],
+  "variants": [
+    "default",
+    "empty",
+    "loading",
+    "error"
+  ]
 }

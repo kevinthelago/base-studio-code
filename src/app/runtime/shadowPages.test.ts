@@ -49,15 +49,18 @@ describe("the shadow page catalogue", () => {
   // and the glob above no longer names those `index` files — the two halves have to move together or
   // the test above catches it. Their PART modules are untouched: a page going graph-only does not
   // take its parts with it.
+  // The counts fall as files are RELEASED FOR DELETION (graph-retire-shadow-and-generators): a released
+  // entry goes `file: null` here and leaves the glob, ahead of the `git rm`, because the per-stream
+  // deletion item does not own this file and so cannot flip it itself.
   const RETIRED_PAGE_COPIES: Record<string, number> = {
-    mcppage: 1,        // mcp-analytics
-    securitypage: 4,   // the four tab bodies
-    automationspage: 3,   // Schedules, History, HookAnalytics
-    githubpage: 12,       // Empty/Summary/Pulse/BranchGraph + the eight summary/ cards
+    mcppage: 0,        // mcp-analytics RELEASED — this page is now wholly record-only
+    securitypage: 1,   // AssignmentsTab only — Profiles/Activity/Flow DELETED once their merge landed
+    automationspage: 0,   // Schedules DELETED once its three-way merge landed — wholly record-only now
+    githubpage: 0,        // BranchGraph + the eight summary/ cards went in the code-fallback cut too
   };
 
   for (const [pageId, parts] of Object.entries(RETIRED_PAGE_COPIES)) {
-    it(`declares ${pageId} as graph-only, keeping its ${parts} part module(s)`, () => {
+    it(`declares ${pageId} as graph-only, with ${parts} part module(s) still file-backed`, () => {
       const page = SHADOW_PAGES.find((p) => p.pageId === pageId);
       expect(page, `${pageId} is in the catalogue`).toBeTruthy();
       expect(page?.modules.find((m) => m.recordId === pageId)?.file, `${pageId} page module`).toBeNull();

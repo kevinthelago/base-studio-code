@@ -1,3 +1,9 @@
+// Register this feature's graph-platform modules at module load — so `import("@/features/settings")`
+// (what the shadow catalogue's ensurePlatform does) is what makes a record importing them resolvable.
+// Idempotent; mirrors the *GraphHost pattern for features that have one.
+import { registerSettingsPlatform } from "./graphPlatform";
+
+registerSettingsPlatform();
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -16,6 +22,11 @@ import { McpPage } from "./pages/McpPage";
 // boot + hotkey hooks consume (through this barrel, not settings internals).
 export { accentVars } from "./lib/appearance";
 export { SCREEN_HOTKEYS } from "./lib/shortcuts";
+// Re-exported so `app/runtime/appModules.ts` can REGISTER it without reaching a feature's internals
+// (#1545). The packaged `accessibilitypage` record imports it, and an unregistered specifier makes that
+// record unstorable. The registry KEY stays the deep specifier the record actually carries
+// (`@/features/settings/pages/SettingsPageHeader`); only the registering module's import path changes.
+export { SettingsPageHeader, SettingsSubHeader } from "./pages/SettingsPageHeader";
 export {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,

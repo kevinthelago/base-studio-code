@@ -1,3 +1,9 @@
+// Register this feature's graph-platform modules at module load — so `import("@/features/designs")`
+// (what the shadow catalogue's ensurePlatform does) is what makes a record importing them resolvable.
+// Idempotent; mirrors the *GraphHost pattern for features that have one.
+import { registerDesignsPlatform } from "./graphPlatform";
+
+registerDesignsPlatform();
 // Public API of the components feature (#2269) — the proven-component library: the planner's
 // project-scoped pane (#2314) and the full-page Design Studio workspace (#2308).
 export { PlannerComponentsPane } from "./PlannerComponentsPane";

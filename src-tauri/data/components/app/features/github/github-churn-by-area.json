@@ -4,11 +4,27 @@
   "kitId": "base-studio-code",
   "role": "composite",
   "srcText": "// GitHub churn by area (#402) — ranked horizontal-bar breakdown of lines changed per code area.\n// Extracted from GitHubPulse's inline card into its own composable record; adds the loading skeleton\n// the inline version didn't have.\nimport { CardHead, HBars, fmt } from \"@/shared/ui/charts\";\nimport { SkeletonChart } from \"@/shared/ui/feedback/Skeleton\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Card } from \"@/shared/ui/data/Card\";\n\nexport interface ChurnArea { area: string; add: number; del: number; files: number; color: string }\n\nconst DEMO_AREAS: ChurnArea[] = [\n  { area: \"src/features/fleet\", add: 820, del: 240, files: 9, color: \"var(--accent)\" },\n  { area: \"src/features/github\", add: 610, del: 180, files: 7, color: \"var(--info)\" },\n  { area: \"src/shared/ui\", add: 340, del: 90, files: 12, color: \"var(--success)\" },\n];\n\nexport function ChurnByArea({ areas = DEMO_AREAS, loading = false }: { areas?: ChurnArea[]; loading?: boolean }) {\n  if (loading) {\n    return (\n      <Card>\n        <CardHead title=\"Churn by area\" hint=\"lines changed · recent commits\" />\n        <SkeletonChart height={90} />\n      </Card>\n    );\n  }\n  if (!areas.length) return null;\n  const rows = areas.map((a) => ({\n    label: a.area, value: a.add + a.del, color: a.color, strong: true,\n    tag: <Text as=\"span\" mono size={9} tone=\"dim\">\n      <Text as=\"span\" tone=\"success\">+{fmt(a.add)}</Text> / <Text as=\"span\" tone=\"danger\">-{fmt(a.del)}</Text> · {a.files}f\n    </Text>,\n  }));\n  return (\n    <Card>\n      <CardHead title=\"Churn by area\" hint=\"lines changed · recent commits\" />\n      <HBars rows={rows} fmtV={(v) => fmt(v)} />\n    </Card>\n  );\n}\n",
-  "src": "src/features/github/Pulse.tsx",
   "composes": [
     "Card",
     "Text"
   ],
   "provides": "@/components/github-churn-by-area",
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `ChurnByArea` defaults `areas`, `loading` and adds loading/error states, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `ChurnByArea` holds 3 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 3 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate."
+  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `ChurnByArea` defaults `areas`, `loading` and adds loading/error states, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `ChurnByArea` holds 3 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 3 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
+  "folder": "features/github",
+  "whenUse": [
+    "A ranked horizontal-bar breakdown of lines changed per code area."
+  ],
+  "whenNot": [
+    "Per-file detail — use FileChurn."
+  ],
+  "tags": [
+    "github",
+    "churn",
+    "ranked-list"
+  ],
+  "variants": [
+    "default",
+    "loading"
+  ],
+  "srcRetired": "src/features/github/Pulse.tsx"
 }

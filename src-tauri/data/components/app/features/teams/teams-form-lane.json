@@ -13,5 +13,19 @@
     "Text"
   ],
   "provides": "@/components/teams-form-lane",
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `FormLane` defaults `from`, `to`, `forms`, `hue`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `FormLane` holds 2 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 2 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate."
+  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `FormLane` defaults `from`, `to`, `forms`, `hue`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `FormLane` holds 2 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 2 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
+  "folder": "features/teams",
+  "whenUse": [
+    "One direction of a relationship's communication forms - a from/to header over a stack of FormChips, or an empty note."
+  ],
+  "whenNot": [
+    "The chip alone - use FormChip directly."
+  ],
+  "tags": [
+    "org-chart"
+  ],
+  "variants": [
+    "default",
+    "empty"
+  ]
 }

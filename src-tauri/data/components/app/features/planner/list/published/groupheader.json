@@ -9,5 +9,6 @@
     "Box",
     "Text"
   ],
-  "srcRetired": "src/features/planner/list/published/GroupHeader.tsx"
+  "srcRetired": "src/features/planner/list/published/GroupHeader.tsx",
+  "folder": "features/planner/list/published"
 }

@@ -313,9 +313,20 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // Secure default (#738): triage only bsc-authored issues unless the user opts out.
                 // #1004: lead with this repo's since-last-run delta (if prepareTriageRun supplied one)
                 // so a re-run resumes from what changed rather than re-ingesting the whole project.
-                // #3281 local-first: no GitHub token ⇒ triage the plan.db issues via `bsc plan`, not
-                // `gh issue list`. (When connected, the GitHub-issue triage is unchanged.)
-                newPaneStartupPromptText[key] = buildTriagePrompt(s.restrictToBscIssues, deltas?.[fullName ?? ""], !s.githubToken);
+                // #3281 local-first: triage the plan.db items via `bsc plan`, not `gh issue list`.
+                //
+                // The trigger used to be `!s.githubToken` alone, which read a token's EXISTENCE as
+                // consent to write to GitHub — so any project with a token got the `gh` variant and
+                // its triage session ran `gh issue edit --add-label` / `gh label create`, creating
+                // GitHub state on a project that integrates locally. A token is what lets us READ
+                // GitHub; the project's STRATEGY is what says whether we write to it.
+                //
+                // So local now means either: no token at all, or a strategy that never reaches a
+                // remote. Fail-closed on the strategy — an unset one resolves to the default, which
+                // is `local`.
+                const triageStrategy = resolveStrategy(undefined, s.planFleet[projKey]?.strategy);
+                const triageLocal = !s.githubToken || triageStrategy === "local";
+                newPaneStartupPromptText[key] = buildTriagePrompt(s.restrictToBscIssues, deltas?.[fullName ?? ""], triageLocal);
                 // Resolution moved to the assignments module (#324/#326): startup
                 // prompt is the override cascade; reference context accumulates.
                 const doc = resolveStartupPrompt(assignments, { projectId, repo: fullName ?? "" });
@@ -398,14 +409,17 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const baseTabName = `${projectName} · build`;
           const hasDirector = fleet.director.enabled;
 
-          // Director-owned commons (#851): derive the repo-root commons set from the project's stack
-          // (`stack.md`), then (a) strip those paths from every feature stream's `owns` so no worker
-          // owns `.gitignore`/`package.json`/CI config, and (b) gate every feature stream on the
-          // commons-landed sentinel so the director scaffolds + lands them first (Phase 0). The
-          // commons globs also become the director's scoped writeGlobs below (its only code writes).
-          const commonsGlobs = hasDirector
-            ? commonsGlobsForStack(stackTagsFromSection(s.planStages[projectKey]?.stack ?? ""))
-            : [];
+          // The commons + integration LANES (#851, retasked by #funnel-commons-and-integration-streams):
+          // derive the repo-root commons set from the project's stack (`stack.md`), then (a) strip
+          // those paths from every feature stream's `owns` so no worker owns `.gitignore`/
+          // `package.json`/CI config, (b) gate every feature stream on its repo's commons lane so the
+          // commons land first (Phase 0), and (c) materialize the commons + integration lanes as real
+          // streams with real worktrees.
+          //
+          // NOT conditioned on a director any more. It was, because the DIRECTOR used to own the
+          // commons and a director-less fleet therefore had no steward; the owner is now a worker, so
+          // the commons exist — and have an owner — whether or not this fleet runs a director.
+          const commonsGlobs = commonsGlobsForStack(stackTagsFromSection(s.planStages[projectKey]?.stack ?? ""));
           const plan = commonsGlobs.length ? applyCommonsGate(fleet, commonsGlobs) : fleet;
           // #1854 Phase b: the seeding blueprint's fleet POLICY — the DEFAULT per-stream profile +
           // flow this project type declares. Resolved from the project's blueprint (keyed like
@@ -543,12 +557,12 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   tabPaneNames[i] = "director";
                   newPaneDirectorDrive[key] = resolveDirectorDrive(plan.director.drive);
                   newPaneDirectorMode[key] = strategySettings(resolveStrategy(undefined, plan.strategy)).director;
-                  // Director-owned commons (#851): the director's scoped write boundary is the
-                  // commons set. With role `code: "none"` this is the carve-out (sessionRoles
-                  // `hasScopedWriteCarveOut`) — it may write EXACTLY these globs (.gitignore,
-                  // manifests, CI config) and is denied every other code write; the bsc-scope hook
-                  // hard-blocks anything outside them. Empty ⇒ no carve-out, full code:none deny.
-                  if (commonsGlobs.length) newPaneRoleGlobs[key] = commonsGlobs;
+                  // NO commons carve-out for the director (#funnel-commons-and-integration-streams).
+                  // It used to launch with the commons set as its scoped writeGlobs — the one place a
+                  // `code: "none"` role could still write. The commons lane owns those globs now, so
+                  // the director keeps the full `code: none` deny and ROUTES a commons change to that
+                  // lane with `bsc-assign` instead of applying it. Leaving the carve-out here would
+                  // give the commons two writers, which is the collision #851 exists to prevent.
                 } else {
                   // A REPO-LESS stream is a team-derived hub role-actor (#3103: curator/documentor/…) —
                   // it runs PROJECT-WIDE at the hub (like the director), not in a per-repo worktree. A

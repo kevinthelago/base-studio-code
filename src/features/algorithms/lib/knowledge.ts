@@ -56,6 +56,12 @@ export interface AlgoImpl {
   /** An algorithm's real, reusable implementation in `tech`. Optional for a primitive — a language
    *  built-in is described (`ref` + `summary`), not re-coded (#2972). */
   code?: string;
+  /** The `@/…` import specifier this impl SATISFIES, set by a module-granularity harvest
+   *  (`bsc graph harvest --module`). Present only on impls that are whole MODULES: a function lifted out
+   *  of a file satisfies no import, so the field stays absent there rather than null. It is what
+   *  `resolveGraphSource` matches on, and the only thing that lets a component's import reach the
+   *  algorithms graph at all — components resolve by specifier, algorithms otherwise compose by id. */
+  provides?: string;
   /** PROVENANCE (#4091/#4107) — the scanned-root-relative path of the file this was harvested from.
    *  The Rust mirror is `AlgoImpl.src`. Absent on anything authored before it (every seeded impl). */
   src?: string;

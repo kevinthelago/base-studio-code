@@ -12,7 +12,7 @@
 
 import { Fragment, type ComponentType, type ReactNode } from "react";
 import { Text } from "@/shared/ui/typography/Text";
-import { componentFor } from "@/shared/ui/registry";
+import { primitiveFor } from "./graphPrimitive";
 import { UI_KIT } from "@/shared/ui/manifest";
 import type { GeneralNode } from "./generalNode";
 
@@ -64,7 +64,9 @@ function renderNode(node: GeneralNode, ctx: KitBindings, key: string): ReactNode
     const filled = ctx.slots?.[name];
     if (filled !== undefined) return <Fragment key={key}>{filled}</Fragment>;
   }
-  const Comp = componentFor(node.type);
+  // Graph-first: a record that `provides` this primitive's specifier wins over the bundled component,
+  // which stays as the fallback. Same order `routeImport` uses for a graph component's own imports.
+  const Comp = primitiveFor(node.type);
   if (!Comp) {
     return (
       <Text key={key} tone="danger" size="sm">

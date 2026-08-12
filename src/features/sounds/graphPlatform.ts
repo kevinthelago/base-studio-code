@@ -11,6 +11,7 @@ import * as SoundGraph from "./lib/soundGraph";
 import * as SoundKits from "./lib/soundKits";
 import * as Synth from "./lib/synth";
 import * as UseSoundKits from "./useSoundKits";
+import * as GraphPlatform from "@/features/sounds/graphPlatform";
 
 let done = false;
 
@@ -23,4 +24,5 @@ export function registerSoundsPlatform(): void {
   registerAppModule("@/features/sounds/lib/soundKits", SoundKits);
   registerAppModule("@/features/sounds/lib/synth", Synth);
   registerAppModule("@/features/sounds/useSoundKits", UseSoundKits);
+  registerAppModule("@/features/sounds/graphPlatform", GraphPlatform);
 }

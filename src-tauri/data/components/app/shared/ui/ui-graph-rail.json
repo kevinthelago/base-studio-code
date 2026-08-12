@@ -14,53 +14,59 @@
   "src": "src/shared/ui/layouts/GraphRail.tsx",
   "props": [
     {
+      "desc": "",
       "name": "label",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "count",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "tools",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "footer",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "bodyPad",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": true,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "bodyClassName",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     }
   ],
-  "folder": "shared/ui/layouts"
+  "folder": "shared/ui/layouts",
+  "tests": [
+    {
+      "name": "GraphRail",
+      "src": "// GraphRail (#2767) — the shared graph-page left rail: header (label · count) · optional tools · scroll\r\n// body · optional footer. These lock the slots the three graph pages (Teams/Glance/Designs) depend on.\r\nimport { describe, it, expect } from \"vitest\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { GraphRail } from \"./GraphRail\";\r\n\r\ndescribe(\"GraphRail\", () => {\r\n  it(\"renders the label + count header over the scroll body\", () => {\r\n    render(<GraphRail label=\"Projects\" count={7}><div>row-a</div></GraphRail>);\r\n    expect(screen.getByText(\"Projects\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"7\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"row-a\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"hides the count slot when count is null/undefined (but shows an explicit 0)\", () => {\r\n    const { rerender } = render(<GraphRail label=\"Positions\"><div>x</div></GraphRail>);\r\n    // No count passed → only the label renders in the header.\r\n    expect(screen.getByText(\"Positions\")).toBeInTheDocument();\r\n    expect(screen.queryByText(\"0\")).toBeNull();\r\n    // An explicit 0 IS shown (a real, if empty, count).\r\n    rerender(<GraphRail label=\"Positions\" count={0}><div>x</div></GraphRail>);\r\n    expect(screen.getByText(\"0\")).toBeInTheDocument();\r\n  });\r\n\r\n  it(\"renders headerless when no label is given — the search leads, no label bar (#2797)\", () => {\r\n    render(\r\n      <GraphRail tools={<input aria-label=\"Search nodes\" />}>\r\n        <div>row-a</div>\r\n      </GraphRail>,\r\n    );\r\n    // No label ⇒ no SectionLabel header box; the tools (search) + rows still render.\r\n    expect(screen.getByLabelText(\"Search nodes\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"row-a\")).toBeInTheDocument();\r\n    expect(document.querySelector(\".mono\")).toBeNull(); // the SectionLabel header is gone\r\n  });\r\n\r\n  it(\"renders the optional tools strip (e.g. a search field) and the pinned footer\", () => {\r\n    render(\r\n      <GraphRail\r\n        label=\"Kits · Components\"\r\n        count=\"3 comps\"\r\n        tools={<input aria-label=\"Search\" />}\r\n        footer={<div>hazards</div>}\r\n      >\r\n        <div>tree</div>\r\n      </GraphRail>,\r\n    );\r\n    expect(screen.getByLabelText(\"Search\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"3 comps\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"hazards\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"tree\")).toBeInTheDocument();\r\n  });\r\n});\r\n"
+    }
+  ]
 }

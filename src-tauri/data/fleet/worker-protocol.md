@@ -1,7 +1,7 @@
 
 ## Fleet coordination protocol (auto-added — do not edit)
 
-You are one of several parallel sessions building this project. Never stop to ask the user what to do with your work — not for direction, not for whether your work is done, and not for how to integrate it. Under the default auto-pr policy you open a PR for your work and the DIRECTOR reviews, merges, and closes it — you never merge or close your own PR — while you keep going through every owned issue without waiting on the merge. GitHub PR/issue writes are the director's job, not yours. Follow your push instruction.
+You are one of several parallel sessions building this project. Never stop to ask the user what to do with your work — not for direction, not for whether your work is done, and not for how to integrate it. **The default is LOCAL: nothing you do reaches a remote.** You gate, commit on your own branch, record what you did, mark your item complete, and move to the next one — you do not push, and you do not open a PR. Follow the push instruction in your kickoff; if it names a policy that DOES push (auto-pr, self-merge, push-confirm), that instruction wins over this paragraph and the PR rules further down apply.
 
 **The stores are the source of truth — prefer them over anything quoted in your context.** Your context is assembled once, at launch; the stores are live. If a quote here disagrees with what a store returns, the store is right and the quote is stale. Read them directly — `bsc` is always available to you (you do not need to ask, and you should not work from a copy when the original is one command away):
 
@@ -15,7 +15,7 @@ You are one of several parallel sessions building this project. Never stop to as
 - `bsc ui backing <path>` — before you edit a `.tsx`, ask whether it has a record. Cheap, and it covers every component rather than a catalogue you would have to read by hand.
 - If it is backed: `bsc ui get <id>` to read it, `bsc ui set …` to make the change, then `bsc ui emit component <id> <dir>` so the file follows. Build and test against the emitted file — a record that cannot render fails there rather than in the app.
 - `bsc ui set` **merges** (#4197): send only the fields you are changing and the rest of the record is preserved. To REMOVE a field, say so — `--clear a,b` (or send the field as JSON `null`). Some pages have no source file at all, so the record is the only copy; a write that silently dropped what it did not restate would be unrecoverable.
-- `bsc ui backing gate $(git diff --name-only)` — run this before you open a PR. It exits non-zero and names the record if your change touched a backed file without going through it.
+- `bsc ui backing gate $(git diff --name-only)` — run this before you commit. It exits non-zero and names the record if your change touched a backed file without going through it.
 
 **An ALGORITHM is the same rule, reached a different way (#4254).** Anything your feature `requires` is a record the planner commissioned from the librarian — you pulled it in by **id**, so a change to it belongs on that record exactly as it does for a component:
 
@@ -31,10 +31,22 @@ When you genuinely need a decision you cannot make yourself, defer to the direct
 - `bsc plan request new "<what you need>" --command "<the command that failed>"` — for something you cannot do from your own worktree at all: no integration branch to target, a kickoff pointing at a path that does not exist, a glob you own that no repo contains. Unlike `bsc-ask` this is a tracked contract, so it survives your session and the director closes it with an answer you can read back (`bsc plan request list`). Always pass `--command`: the exact command that failed is what makes the ask actionable without a conversation. Do NOT reach for the global `bsc request` — that is the base-studio-code tooling queue, it is denied to you, and your ask belongs to the director.
 - `echo "what you decided" | bsc-note` — for a micro-decision, pick the option that best serves the planned solution (a reversible one when you're genuinely unsure), record it, and move on; do not ask, and do not default to the minimal thing.
 
-If your push policy is auto-pr (the default), open a PR and the DIRECTOR reviews, merges, and closes it — never run gh pr merge or gh pr close on your own PR. (Only if your push policy is explicitly self-merge do you integrate your own work to develop — full gate -> rebase onto develop -> re-gate -> push — and open no PR.) Follow the push instruction in your kickoff. When you open a PR, stop -- CI runs and is watched for you; you will be told to continue (if it passed) or to fix the build and push (if it failed). Do not poll CI, close, merge, reopen, or duplicate the PR — the director owns its merge and close.
+**HOW YOUR WORK IS RECORDED — the change record is your PR (`bsc plan change`).** The item says what to DO; the change says what was DONE, and it lives in the same plan.db under the same ref, so one name reaches the item, your branch, your worktree and your record.
+
+- `bsc plan change new <ref> --note "<title>" --description "<what and why>"` — open it at the **START**, not the end. The notes are only worth writing while the reasoning is live; reconstructed afterwards they lose the part that mattered.
+- `bsc plan change note <ref> "<what you learned>" --from <you>` — as you go, for anything a future reader would otherwise have to rediscover: a trap, a false lead, a decision and its reason. Append-only; nothing can drop an earlier one.
+- `bsc plan change gate <ref> <step> <pass|fail|not-run>` — record what each gate command ACTUALLY did, as it runs. Evidence, not a claim. A step you skipped is recorded `not-run`, never omitted — an omitted step reads as one that passed.
+
+**Under the default LOCAL policy you never push and never open a PR.** Run the full gate, make it green, commit to your branch, record the gate evidence, then `bsc plan status <ref> complete` and pick up your next owned item. The integration stream merges your branch; you do not merge it yourself.
+
+`complete` is your half — it means "I did my part", NOT "this is done". Do not mark an item `verified`, do not stamp your change `merged`, and do not fill in a reviewer: the actor that wrote a change does not get to declare it correct.
+
+(If your kickoff names a policy that DOES push: under **auto-pr** you open a PR and the DIRECTOR reviews, merges and closes it — never run `gh pr merge` or `gh pr close` on your own PR; then stop, because CI is watched for you. Under **self-merge** you integrate to develop yourself — full gate → rebase → re-gate → push — and open no PR. GitHub PR/issue writes are the director's job, never yours.)
 
 **In MAINTENANCE you modify the ORIGINAL DOCUMENT.** Once a feature is live and verified, the components and algorithms it pulled in are still records — maintaining them means editing the RECORD and re-emitting, never patching the emitted file. That is what keeps the graph the source, and it is what fires the emit/testing/alert pipeline the designer watches. A file edit here is invisible to all of it: the record keeps the old body, and the app renders the record.
 
-**When every owned issue is complete, you ENTER MAINTENANCE — you do not end.** Do not run `bsc-done`. Instead pipe a one-line standing note into `bsc-maintain` (e.g. `echo "owned issues complete — standing by" | bsc-maintain`): this parks you alive and ready. Stay available; the director dispatches new or regressed work in your lane (`bsc-assign`) and resumes you automatically — pick it up, carry it through your normal loop, then re-enter maintenance the same way. You remain a live maintainer of your section, not a closed session.
+**When every owned item is complete, you STOP.** Record the last gate, mark the item `bsc plan status <ref> complete`, say briefly what you finished and what is left, and end your turn. Nothing will push you back into the loop — a session that has done its work is meant to be finished, and starting it again is the USER's decision, made with a click.
+
+If you want to leave a standing note for whoever picks the lane up next, pipe one line into `bsc-maintain` before you stop. It is a note, not a parking brake: it does not keep you alive and you should not treat it as a reason to continue.
 
 Only the director escalates to the user.

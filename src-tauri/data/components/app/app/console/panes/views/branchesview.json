@@ -4,11 +4,13 @@
   "kitId": "base-studio-code",
   "role": "composite",
   "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Grid } from \"@/shared/ui/layout/Grid\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport interface Branch {\n  n: string;\n  cur?: boolean;\n  ahead?: number;\n  behind?: number;\n  age: string;\n  merged?: boolean;\n  stale?: boolean;\n}\ninterface BranchesViewProps {\n  small?: boolean;\n  branches?: Branch[];\n}\nconst DEMO_BRANCHES: Branch[] = [\n  { n: \"main\", cur: true, age: \"2h\" },\n  { n: \"feature/export-endpoint\", ahead: 4, behind: 1, age: \"1d\" },\n  { n: \"fix/credit-race\", ahead: 2, behind: 6, age: \"3d\", stale: true },\n];\nexport function BranchesView({ small = false, branches = DEMO_BRANCHES }: BranchesViewProps) {\n  return (\n    <Box style={{\n      flex: 1, minHeight: 0, overflow: \"auto\",\n      padding: small ? \"6px 8px\" : \"10px 12px\",\n    }}>\n      <Row className=\"mono\" align=\"baseline\" gap={8} style={{\n        marginBottom: 6,\n        fontSize: 10, color: \"var(--fg-dim)\",\n        textTransform: \"uppercase\", letterSpacing: \".06em\",\n      }}>\n        <Text>{branches.length} branches</Text>\n        <Text>·</Text>\n        <Text>{branches.filter((b) => (b.ahead ?? 0) > 0).length} ahead, {branches.filter((b) => b.stale).length} stale</Text>\n      </Row>\n      {branches.map((b) => (\n        <Grid key={b.n} className=\"mono\" cols=\"14px 1fr auto auto\" gap={8} align=\"center\" style={{\n          padding: \"4px 6px\", borderRadius: 4,\n          background: b.cur ? \"color-mix(in oklch, var(--accent), transparent 90%)\" : \"transparent\",\n          fontSize: small ? 10 : 11,\n        }}>\n          <Text style={{ color: b.cur ? \"var(--accent)\" : \"var(--fg-dim)\" }}>{b.cur ? \"●\" : \"○\"}</Text>\n          <Text style={{\n            color: b.cur ? \"var(--accent)\" : b.merged ? \"var(--fg-dim)\" : \"var(--fg)\",\n            textDecoration: b.merged ? \"line-through\" : \"none\",\n            whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\",\n          }}>{b.n}</Text>\n          <Text size={small ? 9.5 : 10} tone=\"muted\" style={{ whiteSpace: \"nowrap\" }}>\n            {(b.ahead ?? 0) > 0 && <Text style={{ color: \"var(--info)\" }}>⇡{b.ahead}</Text>}\n            {(b.ahead ?? 0) > 0 && (b.behind ?? 0) > 0 && \" \"}\n            {(b.behind ?? 0) > 0 && <Text tone=\"accent\">⇣{b.behind}</Text>}\n            {b.merged && <Text tone=\"success\">merged</Text>}\n            {b.stale && <Text tone=\"danger\">stale</Text>}\n          </Text>\n          <Text size={small ? 9 : 10} tone=\"dim\">{b.age}</Text>\n        </Grid>\n      ))}\n    </Box>\n  );\n}",
-  "src": "src/app/console/panes/views/BranchesView.tsx",
   "composes": [
     "Box",
     "Grid",
     "Row",
     "Text"
-  ]
+  ],
+  "folder": "app/console/panes/views",
+  "provides": "@/app/console/panes/views/BranchesView",
+  "srcRetired": "src/app/console/panes/views/BranchesView.tsx"
 }

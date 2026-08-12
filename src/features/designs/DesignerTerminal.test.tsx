@@ -86,12 +86,42 @@ describe("DesignerTerminal dock (#3357)", () => {
 });
 
 describe("DesignsWorkbench always-on designer panel (#2597)", () => {
+  // The toggle #2597 deleted (5c6bc19b) was an ACTION-BAR control:
+  //
+  //     <Box as="button" className="ds-act" aria-expanded={designerOpen} onClick={toggleDesigner}>✦ Designer</Box>
+  //
+  // This case used to pin its absence with `queryByRole("button", { name: /Designer/ })` over the whole
+  // page. That went red — not because the toggle came back, but because the MIGRATION worked: the dock and
+  // its banner became graph records (`designerterminal.json`, `designerloopbanner.json`), so the studio's
+  // own component rail now lists them BY NAME and two `.ds-comprow` rows match `/Designer/`. A name regex
+  // over every button cannot tell a control from a catalogue entry, and the catalogue is exactly what this
+  // studio is for — every component migrated from here will keep widening the collision.
+  //
+  // So assert the SHAPE instead of the count: a button named "Designer…" is allowed to exist as long as it
+  // is a rail row. Re-add the toggle and it is a `.ds-act`, not a `.ds-comprow`, and this fails again —
+  // which an id/name allow-list of the two colliding records would NOT have caught.
+  // Cost note: this is the only case here that renders the WHOLE workbench, and the component rail is not
+  // virtualised — one row per record. Against the full seed (382 and climbing, since turning files into
+  // records is the point) it takes ~4-7s in jsdom: inside the 5s limit ALONE, over it under full-suite
+  // load. That is why this file once passed 7/7 in a worktree and still reported FAIL at the repo root.
+  // Raising the timeout would buy a few hundred records and then fail again with a less obvious cause, so
+  // seed a representative slice and keep the cost constant — including the Designer-named records, without
+  // which the assertion below passes vacuously.
+  const railSample = () => {
+    const designer = SEED_COMPONENTS.filter((c) => /Designer/.test(c.name));
+    expect(designer.length).toBeGreaterThan(1); // the collision is the point; a seed without it proves nothing
+    return [...designer, ...SEED_COMPONENTS.filter((c) => !/Designer/.test(c.name)).slice(0, 5)];
+  };
+
   it("docks the designer session in the studio's GraphCanvas from the first render, with no toggle button", () => {
+    useAppStore.setState({ components: railSample() });
     render(<TerminalHost><DesignsWorkbench /></TerminalHost>);
     const panel = screen.getByTestId("designer-terminal");
     expect(panel).toBeInTheDocument();
     expect(panel.style.display).not.toBe("none");
-    expect(screen.queryByRole("button", { name: /Designer/ })).toBeNull();
+    for (const button of screen.queryAllByRole("button", { name: /Designer/ })) {
+      expect(button.className).toContain("ds-comprow");
+    }
     expect(panel.closest(".ds-graph")).toBeTruthy();
   });
 });

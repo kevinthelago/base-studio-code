@@ -785,7 +785,10 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     // auto-run `set`/`remove`, the designer's store).
     expect(restrictedRoleCommands("librarian")).toEqual(
       ["bsc graph", "bsc ui list", "bsc ui get", ...LOOP, "bsc request new", "bsc request list"]);
-    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", ...LOOP, "bsc request new", "bsc request list"]);
+    // `bsc plan brief` (#funnel-generalize-brief-channel) is the architect's ONE outbound channel —
+    // the tier-to-tier brief to a director. It is the bsc VERB rather than the `bsc-brief` shell
+    // helper precisely so this surface stays all-`bsc `, which the interpreter test below pins.
+    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", ...LOOP, "bsc request new", "bsc request list"]);
     expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound", ...LOOP, "bsc request new", "bsc request list"]);
   });
 

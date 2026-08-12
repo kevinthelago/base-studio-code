@@ -12,5 +12,6 @@
     "SettingsSelect",
     "Stack",
     "Toggle"
-  ]
+  ],
+  "folder": "features/settings/cards"
 }

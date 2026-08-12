@@ -9,58 +9,58 @@
   "src": "src/shared/ui/controls/SearchField.tsx",
   "props": [
     {
+      "desc": "",
       "name": "value",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "onChange",
-      "type": "(value: string) => void",
       "req": true,
-      "desc": ""
+      "type": "(value: string) => void"
     },
     {
+      "desc": "",
       "name": "placeholder",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "icon",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "trailing",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "inputStyle",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     },
     {
+      "desc": "",
       "name": "onKeyDown",
-      "type": "(e: KeyboardEvent<HTMLInputElement>) => void",
       "req": false,
-      "desc": ""
+      "type": "(e: KeyboardEvent<HTMLInputElement>) => void"
     }
   ],
   "folder": "shared/ui/controls"

@@ -1,11 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
-  buildGraph, focusSets, rollUpHealth, kitNodeId, usesKitEdgeId, NW, NH,
+  buildGraph, focusSets, rollUpHealth, kitNodeId, usesKitEdgeId, NW,
   libraryNodeId, requiresEdgeId, libIdOfNode, isLibraryNode, libraryGraphOf, isLibraryEdge, LIBRARY_META,
   HEALTH_META, HEALTH_RANK, ACTIVITY_META, nodeStateWord,
   type GHealth, type GActivity,
   type GRawNode, type GRawEdge, showsBuildingPulse } from "./glanceGraph";
-import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import { buildGlanceData } from "./glanceData";
 
 const NODES: GRawNode[] = [
@@ -91,40 +90,53 @@ describe("buildGraph — fenced UI-kit band (#3007)", () => {
     { id: usesKitEdgeId("app-b", KIT), from: "app-b", to: kitNodeId(KIT), kind: "uses-kit" },
   ];
 
-  it("lifts kit nodes into a fenced top band, strictly above every project node", () => {
+  it("lifts kit nodes into a fenced band RIGHT of every project node", () => {
     const g = buildGraph(withKit, kitEdges);
-    expect(g.kitBand).toBeDefined();
-    const band = g.kitBand!;
+    expect(g.bandZone).toBeDefined();
+    const band = g.bandZone!;
     const kits = g.nodes.filter((n) => n.kind === "kit");
     const projs = g.nodes.filter((n) => n.kind !== "kit");
     expect(kits).toHaveLength(1);
     for (const k of kits) {
-      // every kit sits INSIDE the band…
-      expect(k.y).toBeGreaterThanOrEqual(band.y0);
-      expect(k.y).toBeLessThanOrEqual(band.y1);
+      // every kit sits INSIDE the band column…
+      expect(k.x).toBeGreaterThanOrEqual(band.x0);
+      expect(k.x).toBeLessThanOrEqual(band.x1);
       expect(k.layer).toBe(-1); // sentinel: outside the project layering
     }
-    // …and every project sits STRICTLY below the fence.
-    for (const p of projs) expect(p.y).toBeGreaterThan(band.y1);
+    // …and every project sits STRICTLY left of the fence.
+    for (const p of projs) expect(p.x).toBeLessThan(band.x0);
   });
 
-  it("routes each uses-kit edge with the perimeter-anchor router (not the columnar side-port)", () => {
+  it("leaves the project positions UNTOUCHED — a right-hand band displaces nothing", () => {
+    // The old top band shifted every project DOWN by its divider to clear the row. A column past the
+    // rightmost project occupies space the network never used, so the projects keep exactly the
+    // coordinates the layout engine gave them. That is what makes the move purely additive.
+    const bare = buildGraph(withKit.filter((n) => n.kind !== "kit"), []);
+    const g = buildGraph(withKit, kitEdges);
+    for (const b of bare.nodes) {
+      const after = g.nodes.find((n) => n.id === b.id)!;
+      expect([after.x, after.y]).toEqual([b.x, b.y]);
+    }
+  });
+
+  it("routes each uses-kit edge with the columnar side-port, like every other edge", () => {
+    // The band used to sit ABOVE, so a library edge ran vertically and fell back to the perimeter-anchor
+    // router. With the band to the RIGHT every dimension is on one left→right axis, so there is no second
+    // orientation left to special-case: the edge leaves the project's RIGHT face.
     const g = buildGraph(withKit, kitEdges);
     const kitEdgesOut = g.edges.filter((e) => e.kind === "uses-kit");
     expect(kitEdgesOut).toHaveLength(2);
     for (const e of kitEdgesOut) {
       expect(e.d.startsWith("M ") && e.arrow.startsWith("M ")).toBe(true);
-      // The perimeter-anchor router leaves the source's TOP face at the box's horizontal CENTRE (the kit
-      // sits directly above), NOT the left/right side-port a layered edge would use.
       const src = g.nodes.find((n) => n.id === e.from)!;
       const startX = Number(/^M ([\d.]+) /.exec(e.d)![1]);
-      expect(Math.abs(startX - (src.x + NW / 2))).toBeLessThan(6);
+      expect(Math.abs(startX - (src.x + NW))).toBeLessThan(6);   // right face, not the top centre
     }
   });
 
   it("returns NO band and the exact pre-#3007 project layout when there are no kit nodes", () => {
     const g = buildGraph(NODES, EDGES);
-    expect(g.kitBand).toBeUndefined();
+    expect(g.bandZone).toBeUndefined();
     // Locked coordinates: the layered DAG places core/api/web left→right, all on one centred row —
     // byte-identical to before the kit-band scoping refactor.
     const layout = Object.fromEntries(g.nodes.map((n) => [n.id, [n.x, n.y]]));
@@ -179,29 +191,46 @@ describe("cross-graph library band (#3119) — generalized from the UI-kit band"
     { id: requiresEdgeId("api", SOUND), from: "api", to: SOUND, kind: "requires" },
   ];
 
-  it("lifts algorithm + sound library nodes into the fenced band, laid out via A's layoutBand", () => {
+  it("lifts algorithm + sound library nodes into the fenced band, as a column past the last project", () => {
     const g = buildGraph(withLibs, libEdges);
-    // The band's vertical extent is topPad(40) + NH(66) + gap(34) = 140 (from the shared layoutBand math).
-    expect(g.kitBand).toEqual({ y0: 0, y1: 140 });
+    // core/api/web lay out at x = 70/322/574, so the rightmost project's right edge is 574 + NW(186) = 760.
+    // The fence clears that by 40; the cards clear the fence by 34.
+    expect(g.bandZone).toEqual({ x0: 800, x1: 800 + 34 + NW + 40 });
 
     const libs = g.nodes.filter(isLibraryNode);
     expect(libs.map((n) => n.id)).toEqual([ALGO, SOUND]); // both library dimensions present, in order
 
-    // Positions come straight from A's layoutBand over the project span [70, projMaxX=574] (core/api/web).
-    const expected = layoutBand(2, { spanX0: 70, spanX1: 574, topPad: 40, nodeH: NH, gap: 34, maxStep: 252 });
-    libs.forEach((n, i) => {
+    // ONE column: both cards share an x, stacked and centred on the projects' vertical span.
+    for (const n of libs) {
       expect(n.layer).toBe(-1); // sentinel: outside the project layering
-      expect(n.x).toBeCloseTo(expected.positions[i].x);
-      expect(n.y).toBe(expected.positions[i].y);
-    });
-
-    // every project sits STRICTLY below the fence (shifted down by the divider).
-    for (const p of g.nodes.filter((n) => !isLibraryNode(n))) expect(p.y).toBeGreaterThan(g.kitBand!.y1);
+      expect(n.x).toBe(800 + 34);
+    }
+    // every project sits STRICTLY left of the fence.
+    for (const p of g.nodes.filter((n) => !isLibraryNode(n))) expect(p.x).toBeLessThan(g.bandZone!.x0);
   });
 
-  it("routes each requires edge vertically with the perimeter-anchor router (leaves the project's top face)", () => {
-    // One app directly below its two library deps (the aligned single-consumer case, like the kit-band
-    // test) so the perimeter-anchor router is unambiguous — the band sits straight above the project.
+  it("spreads the band column over the projects' vertical span, capped at one row gap", () => {
+    // Two projects on separate rows give the column a real span to spread over; one row would collapse
+    // the step to 0 and prove nothing about the spacing.
+    const g = buildGraph(
+      [
+        { id: "a", role: "service", health: "healthy", activity: "idle" },
+        { id: "b", role: "service", health: "healthy", activity: "idle" },
+        { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "healthy", activity: "idle" },
+        { id: SOUND, slug: "Chime", kind: "library", library: "sound", role: "infra", health: "healthy", activity: "idle" },
+      ],
+      [
+        { id: requiresEdgeId("a", ALGO), from: "a", to: ALGO, kind: "requires" },
+        { id: requiresEdgeId("b", SOUND), from: "b", to: SOUND, kind: "requires" },
+      ],
+    );
+    const libs = g.nodes.filter(isLibraryNode);
+    expect(Math.abs(libs[1].y - libs[0].y)).toBeLessThanOrEqual(102); // ROWGAP cap
+  });
+
+  it("routes each requires edge with the columnar side-port (leaves the project's right face)", () => {
+    // One app with two library deps in the band column to its right — a library edge is horizontal now,
+    // so it takes the same side ports every project edge does.
     const g = buildGraph(
       [
         { id: "app", role: "service", health: "healthy", activity: "idle" },
@@ -217,11 +246,11 @@ describe("cross-graph library band (#3119) — generalized from the UI-kit band"
     expect(reqEdges).toHaveLength(2);
     for (const e of reqEdges) {
       expect(e.d.startsWith("M ") && e.arrow.startsWith("M ")).toBe(true);
-      // The library node sits above; the edge leaves the project's TOP face at the box's horizontal centre
-      // (the perimeter-anchor router), NOT the left/right side-port a layered project edge would use.
+      // The library node sits to the RIGHT, so the edge leaves the project's right face — not the top
+      // centre the perimeter-anchor router used when the band was above.
       const src = g.nodes.find((n) => n.id === e.from)!;
       const startX = Number(/^M ([\d.]+) /.exec(e.d)![1]);
-      expect(Math.abs(startX - (src.x + NW / 2))).toBeLessThan(6);
+      expect(Math.abs(startX - (src.x + NW))).toBeLessThan(6);
     }
   });
 
@@ -236,13 +265,13 @@ describe("cross-graph library band (#3119) — generalized from the UI-kit band"
       { id: requiresEdgeId("app", libraryNodeId("algo", "fib")), from: "app", to: libraryNodeId("algo", "fib"), kind: "requires" },
     ];
     const g = buildGraph(nodes, edges);
-    expect(g.kitBand).toBeDefined();
+    expect(g.bandZone).toBeDefined();
     const libs = g.nodes.filter(isLibraryNode);
     expect(libs).toHaveLength(2);
     for (const l of libs) expect(l.layer).toBe(-1);
-    // both the uses-kit and the requires edge render (excluded from the project layout, routed vertically).
+    // both the uses-kit and the requires edge render (excluded from the project layout).
     expect(g.edges.filter((e) => isLibraryEdge(e.kind))).toHaveLength(2);
-    expect(g.nodes.find((n) => n.id === "app")!.y).toBeGreaterThan(g.kitBand!.y1);
+    expect(g.nodes.find((n) => n.id === "app")!.x).toBeLessThan(g.bandZone!.x0);
   });
 });
 

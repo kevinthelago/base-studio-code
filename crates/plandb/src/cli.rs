@@ -525,6 +525,9 @@ struct Args {
     from: Option<String>,
     /// The answer stamped on `request resolve <id> --note "<what was done>"` (#4000).
     note: Option<String>,
+    /// The optional coordination REF carried by `brief <target> --ref <ref>`
+    /// (#funnel-generalize-brief-channel) — an issue/contract/file the brief is about.
+    brief_ref: Option<String>,
     /// Automation fields (#2009) — `automations add <name> --command … [--schedule …] [--description …]`.
     command: Option<String>,
     schedule: Option<String>,
@@ -552,7 +555,7 @@ struct Args {
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let mut a = Args {
         prog: String::new(), json: false, db: None, positional: Vec::new(), status: None, stream: None,
-        rule: None, cause: None, from: None, note: None, command: None, schedule: None, description: None,
+        rule: None, cause: None, from: None, note: None, brief_ref: None, command: None, schedule: None, description: None,
         mode: None, path: None, direction: None,
         full: false, fields: None, limit: None,
         since: None, pretty: false, force: false,
@@ -568,6 +571,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--cause" => a.cause = Some(it.next().ok_or("--cause needs a value")?),
             "--from" => a.from = Some(it.next().ok_or("--from needs a value")?),
             "--note" => a.note = Some(it.next().ok_or("--note needs a value")?),
+            "--ref" => a.brief_ref = Some(it.next().ok_or("--ref needs a value")?),
             "--command" => a.command = Some(it.next().ok_or("--command needs a value")?),
             "--mode" => a.mode = Some(it.next().ok_or("--mode needs a value")?),
             "--direction" => a.direction = Some(it.next().ok_or("--direction needs a value")?),
@@ -629,6 +633,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "deploy" => nouns::cmd_deploy(&args),
         "deps" => nouns::cmd_deps(&args),
         "market" => nouns::cmd_market(&args),
+        "requirement" => nouns::cmd_requirement(&args),
         "classify" => nouns::cmd_classify(&args),
         "transformation" => nouns::cmd_transformation(&args),
         "mcp" => nouns::cmd_mcp(&args),
@@ -640,6 +645,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "integration" => nouns::cmd_integration(&args),
         "change" => changes::cmd_change(&args),
         "lesson" => nouns::cmd_lesson(&args),
+        "brief" => nouns::cmd_brief(&args),
         "request" => nouns::cmd_request(&args),
         "triage" => nouns::cmd_triage(&args),
         "stage" => hub::cmd_stage(&args),

@@ -60,10 +60,16 @@ export function paneActivityFor(rows: PaneActivity[] | undefined, paneId: string
   return rows?.find((r) => r.pane === paneId);
 }
 
-/** Grace window after an `idle` event during which the turn is still treated as open (#1184). A
- *  fleet WORKER runs under the `bsc-defer` Stop hook: each turn records `idle`, bsc-defer blocks the
- *  stop, and the next turn's UserPromptSubmit reopens `run` a moment later. Without a debounce that
- *  momentary idle un-gates the silence timer and blinks the dot idle→run; the grace covers the gap. */
+/** Grace window after an `idle` event during which the turn is still treated as open (#1184).
+ *
+ *  The original reason was the `bsc-defer` Stop hook: a worker recorded `idle`, the hook refused the
+ *  stop, and the next turn reopened `run` a moment later — so the dot blinked idle→run between them.
+ *  That hook is GONE (#session-stop-is-honoured) and a worker's `idle` now means it is finished.
+ *
+ *  The grace is kept because the same gap remains wherever a session legitimately takes back-to-back
+ *  turns — the designer LOOP pump (#3292) driving a session turn-by-turn, or a user sending a
+ *  follow-up straight after a reply. It is safe by construction: it only ever DELAYS the silence
+ *  timer, never forces an idle, so at worst a finished pane settles 2.5s later than it could. */
 export const ACTIVITY_IDLE_GRACE_MS = 2500;
 
 /**

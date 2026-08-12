@@ -4,10 +4,26 @@
   "kitId": "base-studio-code",
   "role": "composite",
   "srcText": "// GitHub KPI row (#402) — a 6-up KPI stat grid: commits, PRs merged, net lines, CI pass rate, review\n// latency, contributors. Extracted from GitHubPulse's inline card into its own composable record;\n// adds the loading state the inline version didn't have.\nimport { StatCard, fmt } from \"@/shared/ui/charts\";\nimport { Box } from \"@/shared/ui/layout/Box\";\n\nexport type StatTone = \"fg\" | \"accent\" | \"info\" | \"success\" | \"danger\";\nexport interface PulseKpis { commitsWeek: number; prsMerged: number; netLines: number; passRate: number; reviewLatencyH: number; contributors: number; botShare: number }\n\nconst DEMO_KPIS: PulseKpis = { commitsWeek: 38, prsMerged: 9, netLines: 1240, passRate: 92, reviewLatencyH: 5, contributors: 4, botShare: 12 };\n\nexport function KpiRow({ kpis = DEMO_KPIS, runs = 48, loading = false }: { kpis?: PulseKpis; runs?: number; loading?: boolean }) {\n  const cards: Array<{ k: string; v: string; sub: string; tone?: StatTone }> = [\n    { k: \"commits · 7d\", v: String(kpis.commitsWeek), sub: \"on the default branch\", tone: \"fg\" },\n    { k: \"PRs merged · 7d\", v: String(kpis.prsMerged), sub: \"merged pull requests\", tone: \"accent\" },\n    { k: \"net lines · 7d\", v: `${kpis.netLines >= 0 ? \"+\" : \"\"}${fmt(kpis.netLines)}`, sub: \"added minus removed\", tone: kpis.netLines >= 0 ? \"success\" : \"danger\" },\n    { k: \"CI pass rate\", v: `${kpis.passRate}%`, sub: `${runs} runs`, tone: kpis.passRate >= 90 ? \"success\" : \"fg\" },\n    { k: \"review latency\", v: kpis.reviewLatencyH ? `${kpis.reviewLatencyH}h` : \"-\", sub: \"open to merge median\", tone: \"fg\" },\n    { k: \"contributors\", v: String(kpis.contributors), sub: `${kpis.botShare}% bot commits`, tone: \"info\" },\n  ];\n  return (\n    <Box style={{ display: \"grid\", gridTemplateColumns: \"repeat(auto-fit, minmax(120px, 1fr))\", gap: 10 }}>\n      {cards.map((c) => <StatCard key={c.k} {...c} loading={loading} />)}\n    </Box>\n  );\n}\n",
-  "src": "src/features/github/Pulse.tsx",
   "composes": [
     "Box"
   ],
   "provides": "@/components/github-kpi-row",
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `KpiRow` defaults `kpis`, `runs`, `loading` and adds loading/error states, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `KpiRow` holds 5 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 5 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate."
+  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `KpiRow` defaults `kpis`, `runs`, `loading` and adds loading/error states, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `KpiRow` holds 5 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 5 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
+  "folder": "features/github",
+  "whenUse": [
+    "A 6-up KPI stat grid: commits, PRs merged, net lines, CI pass rate, review latency, contributors."
+  ],
+  "whenNot": [
+    "A single stat — use StatCard directly."
+  ],
+  "tags": [
+    "github",
+    "kpi",
+    "stat-grid"
+  ],
+  "variants": [
+    "default",
+    "loading"
+  ],
+  "srcRetired": "src/features/github/Pulse.tsx"
 }

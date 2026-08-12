@@ -95,4 +95,93 @@ mod tests {
             "maintenance must state that edits go to the record:\n{md}",
         );
     }
+
+    /// #session-stop-is-honoured — the protocol must not promise MAINTENANCE as the end state.
+    ///
+    /// The promise was load-bearing for a hook that no longer exists: `bsc-defer` refused a worker's
+    /// Stop while work remained, and the prose told it to park in maintenance rather than end. With the
+    /// bounce gone, telling a worker it "does not end" would leave it looping on prose alone.
+    #[test]
+    fn the_worker_protocol_ends_at_stop_not_maintenance() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-stop-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        assert!(md.contains("you STOP"), "the protocol must end the loop at a stop:\n{md}");
+        assert!(
+            !md.contains("you do not end"),
+            "the protocol must not promise a session never ends:\n{md}",
+        );
+        // `bsc-maintain` survives as a NOTE, and must be described as one rather than as a park.
+        assert!(md.contains("not a parking brake"), "bsc-maintain must be framed as a note: {md}");
+    }
+
+    /// #worker-prose-follows-the-local-first-loop — the worker's standing context must teach the LOCAL
+    /// loop, not auto-pr.
+    ///
+    /// `fleet-local-completion-flow` made `local` the default push policy, which DENIES `git push` /
+    /// `gh pr create` at the permission layer. But the prose still opened with "Under the default
+    /// auto-pr policy you open a PR for your work", and the defer directive — injected on EVERY Stop
+    /// attempt — said the same. Permission and instruction disagreed, and the instruction is what the
+    /// model follows: workers kept trying to open PRs on a project that integrates locally.
+    ///
+    /// The other half was missing entirely: `bsc plan change` (the local PR) appeared in NO worker
+    /// prose, so a worker had never been told to open a change record or write gate evidence.
+    #[test]
+    fn the_worker_protocol_teaches_the_local_loop_not_auto_pr() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-local-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        // The DEFAULT is local, stated as such.
+        assert!(md.contains("default is LOCAL"), "the protocol must state the local default: {md}");
+        // The change record is taught — all three verbs a worker actually needs.
+        for verb in ["bsc plan change new", "bsc plan change note", "bsc plan change gate"] {
+            assert!(md.contains(verb), "the worker must be taught `{verb}`:
+{md}");
+        }
+        // Completion is the worker's HALF, not a verdict on its own work.
+        assert!(md.contains("bsc plan status <ref> complete"), "must name the completion verb: {md}");
+        assert!(
+            md.contains("does not get to declare it correct"),
+            "must state that complete is not verified:
+{md}",
+        );
+    }
+
+    /// The defer directive is NO LONGER INJECTED — `sessionLaunch` stopped installing the `bsc-defer`
+    /// Stop hook (#session-stop-is-honoured), so nothing reads this file at runtime any more. The
+    /// assertion is kept because the seed is still compiled into `bsc` (`crates/bsc/src/defer.rs`
+    /// `include_str!`s it) and re-attaching the hook is one line: if that ever happens deliberately,
+    /// the prose it would inject must already be correct rather than two releases stale. That is
+    /// exactly how the auto-pr instruction outlived the policy change it contradicted.
+    #[test]
+    fn the_defer_directive_does_not_default_to_opening_a_pr() {
+        let empty = std::env::temp_dir().join(format!("bsc-defer-local-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, || {
+            crate::platform::config::load_str("fleet/defer-directive.md")
+        });
+        let _ = std::fs::remove_dir_all(&empty);
+
+        assert!(!md.trim().is_empty(), "the embedded seed must resolve");
+        assert!(
+            md.contains("do NOT push") && md.contains("do NOT open a PR"),
+            "the default directive must forbid push/PR:
+{md}",
+        );
+        assert!(
+            md.contains("bsc plan status <ref> complete"),
+            "the directive must name the local completion verb:
+{md}",
+        );
+        // The stale claim this test exists to prevent coming back.
+        assert!(
+            !md.contains("default auto-pr policy"),
+            "the directive must not call auto-pr the default:
+{md}",
+        );
+    }
 }

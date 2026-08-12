@@ -12,52 +12,52 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "children",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "loading",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "loadingLines",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "maxHeight",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "wrap",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "tone",
-      "type": "Tone",
       "req": false,
-      "desc": ""
+      "type": "Tone"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     }
   ]
 }

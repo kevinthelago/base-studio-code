@@ -8,11 +8,11 @@
     "Box",
     "Button",
     "Card",
-    "CardStates",
     "Chip",
     "Grid",
     "Text"
   ],
-  "src": "src/features/github/summary/OpenPRsCard.tsx",
-  "folder": "features/github"
+  "folder": "features/github",
+  "provides": "@/components/github-open-prs",
+  "srcRetired": "src/features/github/summary/OpenPRsCard.tsx"
 }

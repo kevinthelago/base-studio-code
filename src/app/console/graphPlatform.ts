@@ -26,12 +26,6 @@ import * as UsePaneTokenUsage from "./lib/usePaneTokenUsage";
 import * as MenuPlacement from "./panes/menuPlacement";
 import * as ViewDefs from "./panes/viewDefs";
 // — the pane VIEWS: the behaviour a pane cell hosts —
-import * as BranchesView from "./panes/views/BranchesView";
-import * as ChangesView from "./panes/views/ChangesView";
-import * as FilesView from "./panes/views/FilesView";
-import * as LogView from "./panes/views/LogView";
-import * as TelemetryView from "./panes/views/TelemetryView";
-import * as ToolsView from "./panes/views/ToolsView";
 import * as TerminalSlot from "./terminal/TerminalSlot";
 // — the pumps the page mounts —
 import * as UseCoordinator from "./useCoordinator";
@@ -42,6 +36,11 @@ import * as UseStudioNetworkPump from "./useStudioNetworkPump";
 // The one cross-feature surface the console page composes — the cockpit's public API. The shell may
 // reach a feature BARREL (#1545 restricts internals), and this coupling already exists in the live file.
 import * as Glance from "@/features/glance";
+// The console-lib helpers a migrated `useHotkeys` record imports (register-the-console-lib-remainder).
+// Registered from the CONSOLE platform, not the shell: app/console owns them.
+import * as Broadcast from "@/app/console/lib/broadcast";
+import * as ClearInput from "@/app/console/lib/clearInput";
+import * as PaneSelect from "@/app/console/lib/paneSelect";
 
 let done = false;
 
@@ -60,12 +59,6 @@ export function registerConsolePlatform(): void {
   registerAppModule("@/app/console/lib/usePaneTokenUsage", UsePaneTokenUsage);
   registerAppModule("@/app/console/panes/menuPlacement", MenuPlacement);
   registerAppModule("@/app/console/panes/viewDefs", ViewDefs);
-  registerAppModule("@/app/console/panes/views/BranchesView", BranchesView);
-  registerAppModule("@/app/console/panes/views/ChangesView", ChangesView);
-  registerAppModule("@/app/console/panes/views/FilesView", FilesView);
-  registerAppModule("@/app/console/panes/views/LogView", LogView);
-  registerAppModule("@/app/console/panes/views/TelemetryView", TelemetryView);
-  registerAppModule("@/app/console/panes/views/ToolsView", ToolsView);
   registerAppModule("@/app/console/terminal/TerminalSlot", TerminalSlot);
   registerAppModule("@/app/console/useCoordinator", UseCoordinator);
   registerAppModule("@/app/console/useDirectorPump", UseDirectorPump);
@@ -73,4 +66,7 @@ export function registerConsolePlatform(): void {
   registerAppModule("@/app/console/useKitDispatch", UseKitDispatch);
   registerAppModule("@/app/console/useStudioNetworkPump", UseStudioNetworkPump);
   registerAppModule("@/features/glance", Glance);
+  registerAppModule("@/app/console/lib/broadcast", Broadcast);
+  registerAppModule("@/app/console/lib/clearInput", ClearInput);
+  registerAppModule("@/app/console/lib/paneSelect", PaneSelect);
 }

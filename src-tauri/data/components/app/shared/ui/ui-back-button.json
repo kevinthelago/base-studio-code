@@ -12,52 +12,52 @@
   ],
   "props": [
     {
+      "desc": "",
       "name": "onClick",
-      "type": "() => void",
       "req": true,
-      "desc": ""
+      "type": "() => void"
     },
     {
+      "desc": "",
       "name": "variant",
-      "type": "\"icon\" | \"text\"",
       "req": false,
-      "desc": ""
+      "type": "\"icon\" | \"text\""
     },
     {
+      "desc": "",
       "name": "label",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "disabled",
-      "type": "boolean",
       "req": false,
-      "desc": ""
+      "type": "boolean"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     },
     {
+      "desc": "",
       "name": "size",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "title",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     }
   ]
 }

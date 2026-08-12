@@ -11,7 +11,9 @@ function session(paneId: string, over: Partial<WardenSession["activity"]> = {}):
       streamId: "api",
       ownedGlobs: ["src/api/**"],
       capability: roleCapability("worker", { writeGlobs: ["src/api/**"] }),
-      flow: DEFAULT_FLOW, // auto-pr
+      // Explicitly auto-pr: DEFAULT_FLOW is now `local` (push + PR denied), so a fixture relying on
+      // the default would make every push in this file a warden trip.
+      flow: { ...DEFAULT_FLOW, push: "auto-pr" },
     },
     activity: { changedFiles: [], commands: [], ...over },
   };

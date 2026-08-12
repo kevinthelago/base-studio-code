@@ -9,5 +9,6 @@
     "Row",
     "Text",
     "Box"
-  ]
+  ],
+  "folder": "features/planner/bodies"
 }

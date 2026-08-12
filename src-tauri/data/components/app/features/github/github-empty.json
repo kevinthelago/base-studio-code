@@ -16,6 +16,13 @@
     "Stack",
     "Text"
   ],
-  "src": "src/features/github/Empty.tsx",
-  "folder": "features/github"
+  "folder": "features/github",
+  "tests": [
+    {
+      "name": "GitHubEmpty — Connect with GitHub",
+      "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { GitHubEmpty } from \"./Empty\";\r\nimport { useAppStore } from \"@/store\";\r\n\r\ndescribe(\"GitHubEmpty — Connect with GitHub\", () => {\r\n  it(\"renders the showcase and navigates to Settings → GitHub on connect\", () => {\r\n    // Start on a non-GitHub settings tab so we prove the click switches it back.\r\n    useAppStore.getState().setSettingsSection(\"general\");\r\n\r\n    render(<GitHubEmpty />);\r\n\r\n    // The richer GitHub-page screen carries the \"what you get\" feature showcase.\r\n    expect(screen.getByText(/what you get/i)).toBeInTheDocument();\r\n    expect(screen.getByText(/Portfolio summary/i)).toBeInTheDocument();\r\n\r\n    fireEvent.click(screen.getByText(/Connect with GitHub/i));\r\n\r\n    expect(useAppStore.getState().activeWorkspace).toBe(\"settings\");\r\n    expect(useAppStore.getState().settingsSection).toBe(\"github\");\r\n  });\r\n});\r\n"
+    }
+  ],
+  "provides": "@/components/github-empty",
+  "srcRetired": "src/features/github/Empty.tsx"
 }

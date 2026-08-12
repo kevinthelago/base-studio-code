@@ -9,35 +9,41 @@
   "src": "src/shared/ui/controls/ColorSwatch.tsx",
   "props": [
     {
+      "desc": "",
       "name": "color",
-      "type": "string",
       "req": true,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "size",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "radius",
-      "type": "number",
       "req": false,
-      "desc": ""
+      "type": "number"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
     },
     {
+      "desc": "",
       "name": "style",
-      "type": "CSSProperties",
       "req": false,
-      "desc": ""
+      "type": "CSSProperties"
     }
   ],
-  "folder": "shared/ui/controls"
+  "folder": "shared/ui/controls",
+  "tests": [
+    {
+      "name": "ColorSwatch",
+      "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render } from \"@testing-library/react\";\r\nimport { ColorSwatch } from \"./ColorSwatch\";\r\n\r\ndescribe(\"ColorSwatch\", () => {\r\n  it(\"renders a sized square with the given colour\", () => {\r\n    const { container } = render(<ColorSwatch color=\"var(--accent)\" size={8} radius={3} />);\r\n    const el = container.firstChild as HTMLElement;\r\n    expect(el.style.width).toBe(\"8px\");\r\n    expect(el.style.height).toBe(\"8px\");\r\n    expect(el.style.borderRadius).toBe(\"3px\");\r\n    expect(el.style.background).toBe(\"var(--accent)\");\r\n  });\r\n\r\n  it(\"defaults to 9px / radius 2 and merges an override style\", () => {\r\n    const { container } = render(<ColorSwatch color=\"#abc\" style={{ display: \"block\" }} />);\r\n    const el = container.firstChild as HTMLElement;\r\n    expect(el.style.width).toBe(\"9px\");\r\n    expect(el.style.borderRadius).toBe(\"2px\");\r\n    expect(el.style.display).toBe(\"block\");\r\n  });\r\n});\r\n"
+    }
+  ]
 }

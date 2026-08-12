@@ -5,7 +5,8 @@ import {
 } from "./integrationStrategy";
 
 describe("normalizeStrategy (#378)", () => {
-  it("accepts the three valid strategies", () => {
+  it("accepts every valid strategy", () => {
+    expect(normalizeStrategy("local")).toBe("local");
     expect(normalizeStrategy("self-merge")).toBe("self-merge");
     expect(normalizeStrategy("pr-ci")).toBe("pr-ci");
     expect(normalizeStrategy("manual")).toBe("manual");
@@ -31,12 +32,20 @@ describe("resolveStrategy (#378)", () => {
   });
   it("falls back to DEFAULT_STRATEGY when both are unset", () => {
     expect(resolveStrategy(undefined, undefined)).toBe(DEFAULT_STRATEGY);
-    expect(DEFAULT_STRATEGY).toBe("self-merge");
+    expect(DEFAULT_STRATEGY).toBe("local");
+  });
+
+  // The regression this item exists for: an unconfigured project must not integrate to a remote.
+  // Both prior candidates did — `self-merge` pushed develop, `pr-ci` pushed a branch + opened a PR —
+  // so a fleet launched with untouched settings wrote to GitHub regardless of intent.
+  it("the default strategy never reaches a remote", () => {
+    expect(strategySettings(resolveStrategy(undefined, undefined)).integrate).toBe("local");
   });
 });
 
 describe("STRATEGY_SETTINGS mapping (#378)", () => {
   it("maps each strategy onto its worker push + director mode", () => {
+    expect(STRATEGY_SETTINGS["local"]).toEqual({ test: "full", integrate: "local", director: "integrator" });
     expect(STRATEGY_SETTINGS["self-merge"]).toEqual({ test: "full", integrate: "self-merge", director: "watchdog" });
     expect(STRATEGY_SETTINGS["pr-ci"]).toEqual({ test: "full", integrate: "auto-pr", director: "integrator" });
     expect(STRATEGY_SETTINGS["manual"]).toEqual({ test: "full", integrate: "commit-only", director: "integrator" });

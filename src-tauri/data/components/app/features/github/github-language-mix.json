@@ -7,13 +7,13 @@
   "composes": [
     "Box",
     "Card",
-    "CardStates",
     "ColorSwatch",
     "Grid",
     "Row",
     "Stack",
     "Text"
   ],
-  "src": "src/features/github/summary/LanguageMix.tsx",
-  "folder": "features/github"
+  "folder": "features/github",
+  "provides": "@/components/github-language-mix",
+  "srcRetired": "src/features/github/summary/LanguageMix.tsx"
 }

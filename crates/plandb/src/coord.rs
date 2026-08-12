@@ -30,6 +30,14 @@ use std::io::Write;
 
 /// The coord kind announcing a newly-filed project request.
 pub const KIND_REQUEST: &str = "request";
+/// A tier-to-tier BRIEF (#2377) — under the three-tier funnel this is the architect's ONE outbound
+/// channel (#funnel-generalize-brief-channel). Its payload is three fields (target, body, optional
+/// ref), so it emits through [`emit3`] rather than the two-field [`emit`].
+///
+/// It exists as a `bsc` VERB, not only as the `bsc-brief` shell helper, because a restricted session's
+/// allow-list may hold nothing but `bsc ` store verbs — a shell function on that surface would break
+/// the invariant `sessionRoles.test.ts` pins. The helper stays for unrestricted senders.
+pub const KIND_BRIEF: &str = "brief";
 /// The coord kind announcing that a request was answered, so the pump stops surfacing it.
 pub const KIND_REQUEST_RESOLVED: &str = "request-resolved";
 
@@ -41,12 +49,30 @@ fn clean(s: &str) -> String {
 /// Append one coord record. Best-effort: any failure is swallowed, because a coordination
 /// notification must never break the store write it accompanies.
 pub fn emit(kind: &str, a: &str, b: &str) {
+    emit_fields(kind, &[a, b]);
+}
+
+/// Append one coord record with THREE payload fields — the shape a `brief` line takes
+/// (`<target>`, `<body>`, `<ref?>`). [`emit`] is the two-field case; both go through
+/// [`emit_fields`], so there is one implementation and the records cannot drift apart.
+pub fn emit3(kind: &str, a: &str, b: &str, c: &str) {
+    emit_fields(kind, &[a, b, c]);
+}
+
+/// The one writer. Best-effort: any failure is swallowed, because a coordination notification must
+/// never break the store write it accompanies.
+fn emit_fields(kind: &str, payload: &[&str]) {
     let Ok(path) = std::env::var("BSC_COORD_LOG") else { return };
     if path.is_empty() {
         return;
     }
     let pane = std::env::var("BSC_AUDIT_PANE").unwrap_or_else(|_| "?".into());
-    let line = format!("{}\t{}\t{}\t{}\t{}\n", bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms()), clean(&pane), kind, clean(a), clean(b));
+    let mut line = format!("{}\t{}\t{}", bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms()), clean(&pane), kind);
+    for f in payload {
+        line.push('\t');
+        line.push_str(&clean(f));
+    }
+    line.push('\n');
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
         let _ = f.write_all(line.as_bytes());
     }
@@ -55,6 +81,32 @@ pub fn emit(kind: &str, a: &str, b: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #funnel-generalize-brief-channel — a brief carries THREE payload fields (target, body, ref),
+    /// so its record must have six columns. The frontend parser reads the ref at `rest[2]`; emitting
+    /// it through the two-field [`emit`] would silently drop it and every architect brief would
+    /// arrive ref-less — a loss nothing downstream could detect.
+    #[test]
+    fn a_brief_emits_three_payload_fields() {
+        let dir = std::env::temp_dir().join(format!("bsc-coord3-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("coord.log");
+        let prev = std::env::var("BSC_COORD_LOG").ok();
+        std::env::set_var("BSC_COORD_LOG", &log);
+        emit3(KIND_BRIEF, "proj:director", "ship the auth slice", "#42");
+        let body = std::fs::read_to_string(&log).unwrap_or_default();
+        match prev {
+            Some(p) => std::env::set_var("BSC_COORD_LOG", p),
+            None => std::env::remove_var("BSC_COORD_LOG"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let cols: Vec<&str> = body.trim_end().split('\t').collect();
+        assert_eq!(cols.len(), 6, "ts, pane, kind + three payload fields: {body:?}");
+        assert_eq!(cols[2], "brief");
+        assert_eq!(cols[3], "proj:director");
+        assert_eq!(cols[5], "#42", "the ref must survive — it is the third payload field");
+    }
 
     #[test]
     fn field_separators_are_stripped_from_free_text() {

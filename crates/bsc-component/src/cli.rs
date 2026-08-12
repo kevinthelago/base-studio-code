@@ -213,6 +213,26 @@ through `bsc ui import`. Files are written pretty (readable diffs); --pretty als
 A READ — no `ui` write scope required. `--dir` overrides the STORE location, not the output <dir>.",
     },
     CmdDoc {
+        name: "parity",
+        summary: "does the app RENDER what it SHIPS? store vs seed, per record (#4246)",
+        usage: "USAGE:
+  bsc ui parity <seed-dir> [--role <role>] [--strict] [--dir <store>] [--pretty]
+
+Compares each seed record's `srcText` against the STORE copy the app actually mounts. `--role page`
+scopes it to the pages, which is the sharp version of the question: a page record IS the page, so a
+diverged store copy renders source nothing has ever checked.
+
+Three existing guards all read the SEED — `graphParity` globs it, the ratchet lists its exclusions, and
+`reconcileSeed` returns early for any record with no `builtin`. None of them looks at what renders.
+This does, and it lives here because the store is SQLite behind this binary: vitest cannot read it,
+which is exactly why every other guard ended up seed-side.
+
+Reports and exits 0 by default; `--strict` exits non-zero on any drift. A guard that lands red protects
+nothing — see `record-link-debt`, where a red parity test sat unnoticed for weeks. Use `--strict` once
+the known set is adjudicated. `delta` is SIGNED: the drift runs both ways, and a positive delta is the
+store holding source the seed never had. A READ — no `ui` write scope required.",
+    },
+    CmdDoc {
         name: "import",
         summary: "load a folder tree of component records into the store — the seed half (#3606)",
         usage: "\
@@ -1041,6 +1061,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `export`/`import` (#3606) — components-as-data round-trip: dump the store to a folder tree under
         // `data/` and load it back. `export` is a read; `import` is a ui-scope MUTATION (gated above).
         Some("export") if args.get(1).map(String::as_str) != Some("help") => cmd_export(&args[1..]),
+        Some("parity") if args.get(1).map(String::as_str) != Some("help") => cmd_parity(&args[1..]),
         Some("import") if args.get(1).map(String::as_str) != Some("help") => cmd_import(&args[1..]),
         Some(v @ ("export" | "import")) => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
@@ -1376,8 +1397,37 @@ fn cmd_set(
         );
     }
     let items = read_set_items(noun, file.as_deref())?;
-    validate(&items)?;
     let store = open(&dir)?;
+    // VALIDATE WHAT WILL BE STORED, not what was typed (#3849's hole).
+    //
+    // A write has MERGED by default since #4197, so a payload carries only the fields being changed —
+    // `{"id":"githubpage","srcText":"…"}` is the ordinary shape. Validating the raw payload therefore
+    // judged a record by fields it never restated: `validate_component_batch` reads `role` to decide
+    // whether the page gate applies, so EVERY partial write slipped past it and a `role: page` record
+    // that cannot render could be stored by any of them — the exact thing #3849 exists to prevent. It
+    // also emitted the preview-oracle warning at a page, which is the visible half of the same bug and
+    // how this was noticed.
+    //
+    // Under `--replace` the payload IS the record, so there is nothing to merge and the raw items are
+    // already what will be stored.
+    let validated: Vec<serde_json::Value> = if replace {
+        items.clone()
+    } else {
+        items
+            .iter()
+            .map(|item| {
+                let id = item.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+                match store.get(id) {
+                    Ok(Some(raw)) => serde_json::from_str::<serde_json::Value>(&raw)
+                        .map(|prior| crate::record::merge_over(&prior, item, &clear))
+                        .unwrap_or_else(|_| item.clone()),
+                    // Unknown id (a create) or an unreadable row — the payload is the whole record.
+                    _ => item.clone(),
+                }
+            })
+            .collect()
+    };
+    validate(&validated)?;
     // #3729: a component store is keyed by id ALONE — writing an id that already lives under a DIFFERENT
     // kit silently OVERWRITES it. Warn (never reject) so a promote-over-a-builtin clobber is visible.
     if noun == "component" {
@@ -1852,6 +1902,114 @@ fn cmd_export(args: &[String]) -> Result<(), String> {
 /// `bsc ui import <dir> [--dir <store>] [--pretty]` (#3606) — load a folder tree of component records into
 /// the store (the load half of components-as-data). Each `*.json` is UPSERT by its `id`; a KIT BUNDLE
 /// (`{"components":[…]}`, e.g. react-ui.json) is exploded so every component in it imports.
+/// `bsc ui parity <seed-dir>` — compare what the app RENDERS against what it SHIPS (#4246).
+///
+/// ## Why this exists
+///
+/// Three guards already watch the graph and none of them looks at the thing that renders:
+///
+/// ```text
+/// graphParity.test.ts   globs data/components/app/**       -> the SEED
+/// GraphComponent.tsx    useAppStore(s => s.components…)    -> the STORE
+/// reconcileSeed         store <-> seed, but returns early for a record with no `builtin`
+/// ```
+///
+/// So a record whose store copy has drifted from its seed renders source nothing has ever compared
+/// against anything. Measured on this machine: 8 of 22 `role: page` records differ, `skillspage` by 9137
+/// characters — and two of those eight drifted because a seed fix landed and the store never followed,
+/// which is #4207 in miniature.
+///
+/// ## Why a CLI verb and not a test
+///
+/// The store is SQLite behind this binary; vitest cannot read it, which is precisely why the existing
+/// guards are all seed-side. Putting the comparison where the store already lives is the only place it
+/// can be honest. It reads the seed with the SAME folder walk `bsc ui import` uses, so the two verbs
+/// cannot disagree about what "the seed" means.
+///
+/// ## Reporting, not gating, by default
+///
+/// Exits 0 unless `--strict`. A guard that lands red protects nothing — it just teaches everyone to
+/// ignore it (`record-link-debt` is this repo's worked example: a red parity test sat unnoticed because
+/// CI is disabled). `--strict` is for a caller that has adjudicated the known set and wants the next
+/// drift to fail.
+fn cmd_parity(args: &[String]) -> Result<(), String> {
+    let (mut inp, mut dir, mut pretty, mut strict, mut role) =
+        (None::<String>, None::<String>, false, false, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--strict" => strict = true,
+            // Scope to one role — `--role page` is the #4246 question, since a page record IS the page.
+            "--role" => role = it.next().cloned(),
+            other if !other.starts_with("--") && inp.is_none() => inp = Some(other.to_string()),
+            other => return Err(format!("unknown flag '{other}' — usage: bsc ui parity <seed-dir> [--role <r>] [--strict] [--dir <store>] [--pretty]")),
+        }
+    }
+    let inp = inp.ok_or("usage: bsc ui parity <seed-dir> [--role <r>] [--strict] [--dir <store>] [--pretty]")?;
+    let store = open_component_store(&dir)?;
+
+    let mut files = Vec::new();
+    collect_json_files(std::path::Path::new(&inp), &mut files).map_err(|e| format!("cannot read {inp}: {e}"))?;
+    files.sort();
+
+    let mut same = 0usize;
+    let mut drift: Vec<serde_json::Value> = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
+    for f in &files {
+        let raw = std::fs::read_to_string(f).map_err(|e| format!("cannot read {}: {e}", f.display()))?;
+        let seed: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("{} is not valid JSON: {e}", f.display()))?;
+        let Some(id) = seed.get("id").and_then(serde_json::Value::as_str) else { continue };
+        if let Some(want) = role.as_deref() {
+            if seed.get("role").and_then(serde_json::Value::as_str).unwrap_or_default() != want {
+                continue;
+            }
+        }
+        let Some(stored_raw) = store.get(id)? else {
+            // In the seed, absent from the store — it has never been hydrated here. Reported separately
+            // from drift: "not yet seeded" and "seeded then diverged" need different remedies.
+            missing.push(id.to_string());
+            continue;
+        };
+        let stored: serde_json::Value = serde_json::from_str(&stored_raw)
+            .map_err(|e| format!("stored record '{id}' is not valid JSON: {e}"))?;
+        let s_txt = stored.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+        let d_txt = seed.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if s_txt == d_txt {
+            same += 1;
+            continue;
+        }
+        drift.push(serde_json::json!({
+            "id": id,
+            "role": seed.get("role").and_then(serde_json::Value::as_str).unwrap_or_default(),
+            "store": s_txt.chars().count(),
+            "seed": d_txt.chars().count(),
+            // Signed, because the drift runs BOTH ways and "the store is stale" is the wrong summary:
+            // a positive delta is the store holding source the seed has never had.
+            "delta": s_txt.chars().count() as i64 - d_txt.chars().count() as i64,
+            "builtin": stored.get("builtin").and_then(serde_json::Value::as_bool).unwrap_or(false),
+            "stamped": stored.get("seedHash").is_some(),
+        }));
+    }
+
+    let report = serde_json::json!({
+        "seedDir": inp, "role": role, "same": same,
+        "drift": drift.len(), "missingFromStore": missing.len(),
+        "records": drift, "missing": missing,
+    });
+    let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    println!("{}", s.map_err(|e| e.to_string())?);
+    if strict && !drift.is_empty() {
+        return Err(format!(
+            "{} record(s) render source that differs from what ships — `bsc ui parity {inp} --pretty` names them",
+            drift.len()
+        ));
+    }
+    Ok(())
+}
+
 fn cmd_import(args: &[String]) -> Result<(), String> {
     let (mut inp, mut dir, mut pretty) = (None::<String>, None::<String>, false);
     let mut it = args.iter();
@@ -2110,7 +2268,23 @@ fn open_component_store(dir: &Option<String>) -> Result<bsc_json_store::Store, S
             .map(|b| b.join(COMPONENT_SPEC.dir_segment))
             .ok_or_else(|| "could not resolve a home directory; set HOME/USERPROFILE".to_string())
     })?;
-    Ok(bsc_json_store::Store::new(dir, "component"))
+    let store = bsc_json_store::Store::new(dir, "component");
+    crate::graph_health::set_provided_specifiers(provided_specifiers(&store));
+    Ok(store)
+}
+
+/// Every specifier some record in the store `provides` — the loader's FIRST resolution path, which the
+/// write gate could not see. Read here, at store-open, because the validator is passed around as a bare
+/// `fn(&[Value])` pointer (through `bsc_json_store::cli::run_hooked_validated`), so there is nowhere to
+/// thread a store handle without changing that signature across every collection. A process-global is
+/// the same shape `FORCE_WRITE` already uses for `--force` in this file.
+fn provided_specifiers(store: &bsc_json_store::Store) -> std::collections::HashSet<String> {
+    store
+        .list()
+        .iter()
+        .filter_map(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .filter_map(|j| j.get("provides").and_then(serde_json::Value::as_str).map(str::to_owned))
+        .collect()
 }
 
 /// Resolve the KIT store with the same flag → env (`BSC_KIT_DIR`) → default (`~/.base-studio-code/kits/`)
@@ -4224,6 +4398,104 @@ export const Card = () => <Button />;",
 
     /// A fresh (created, empty) scratch store dir so the shape-verb tests never touch the user's
     /// real `~/.base-studio-code/components` store.
+    /// #4246 — `bsc ui parity` compares what the app RENDERS (the store) against what it SHIPS (the
+    /// seed folder). Three guards already watch the graph and every one of them reads the seed, so a
+    /// record whose store copy drifted renders source nothing has ever compared against anything.
+    #[test]
+    fn parity_reports_store_vs_seed_and_only_gates_under_strict() {
+        let dir = tmp_store_dir("parity");
+        let seed = std::env::temp_dir().join(format!("bsc-parity-seed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&seed);
+        std::fs::create_dir_all(&seed).unwrap();
+
+        // Three seed records: one the store matches, one it has drifted from, one it has never seen.
+        for (id, role, src) in [
+            ("agree", "page", "export const A = 1;"),
+            ("drifted", "page", "export const B = 1; // the SEED copy, longer"),
+            ("never-hydrated", "page", "export const C = 1;"),
+        ] {
+            std::fs::write(
+                seed.join(format!("{id}.json")),
+                serde_json::json!({ "id": id, "name": id, "role": role, "srcText": src }).to_string(),
+            )
+            .unwrap();
+        }
+        // The store holds two of them, and its `drifted` copy is NOT the seed's.
+        let store = open_component_store(&Some(dir.clone())).unwrap();
+        for (id, src) in [("agree", "export const A = 1;"), ("drifted", "export const B = 1;")] {
+            let payload = serde_json::json!({ "id": id, "name": id, "role": "page", "srcText": src }).to_string();
+            store.set(id, &payload).unwrap();
+        }
+
+        let seed_s = seed.to_string_lossy().into_owned();
+        // Default: REPORTS, exits Ok. A guard that lands red protects nothing (see `record-link-debt`).
+        cmd_parity(&[seed_s.clone(), "--role".into(), "page".into(), "--dir".into(), dir.clone()]).unwrap();
+
+        // --strict is the gate, for a caller that has adjudicated the known set.
+        let err = cmd_parity(&[
+            seed_s.clone(), "--role".into(), "page".into(), "--strict".into(), "--dir".into(), dir.clone(),
+        ])
+        .unwrap_err();
+        assert!(err.contains("differs from what ships"), "names the failure: {err}");
+        assert!(err.contains("bsc ui parity"), "names how to see them: {err}");
+
+        // A role filter that matches nothing leaves nothing to compare — and must not then "pass" by
+        // vacuity under --strict, which would make `--role` a way to silence the gate.
+        cmd_parity(&[
+            seed_s.clone(), "--role".into(), "primitive".into(), "--strict".into(), "--dir".into(), dir.clone(),
+        ])
+        .expect("no records in scope is not a drift");
+
+        let _ = std::fs::remove_dir_all(&seed);
+    }
+
+    /// `write-gate-blind-to-merge-writes` — the page gate must judge what will be STORED.
+    ///
+    /// A write MERGES by default (#4197), so the ordinary payload is `{id, srcText}` and carries no
+    /// `role`. Validating the raw payload judged a page by a field it never restated, so every partial
+    /// write slipped past #3849's gate — and a `role: page` that cannot render could be stored by any of
+    /// them. Found by using the gate on a real six-page push, which warned at `githubpage` (a page) with
+    /// the PREVIEW oracle's message.
+    #[test]
+    fn the_page_gate_judges_the_merged_record_not_the_payload() {
+        let dir = tmp_store_dir("gate-merge");
+        let store = open_component_store(&Some(dir.clone())).unwrap();
+        // A stored PAGE, currently fine.
+        store
+            .set(
+                "p",
+                &serde_json::json!({
+                    "id": "p", "name": "P", "role": "page",
+                    "srcText": "import { Card } from \"@/shared/ui/data/Card\";
+export const P = () => <Card />;"
+                })
+                .to_string(),
+            )
+            .unwrap();
+
+        // The ordinary merge payload: NO role. Its source cannot resolve, so the page gate must refuse.
+        let broken = serde_json::json!({
+            "id": "p",
+            "srcText": "import { X } from \"@/features/nowhere/X\";
+export const P = () => <X />;"
+        });
+        let merged = {
+            let prior: serde_json::Value = serde_json::from_str(&store.get("p").unwrap().unwrap()).unwrap();
+            crate::record::merge_over(&prior, &broken, &[])
+        };
+        assert_eq!(merged.get("role").and_then(|v| v.as_str()), Some("page"), "the merge restores the role");
+        let err = validate_component_batch(std::slice::from_ref(&merged)).unwrap_err();
+        assert!(err.contains("cannot render"), "the gate fires on the MERGED record: {err}");
+
+        // …and on the raw payload it does not, which is the bug being fixed. Kept as the contrast: if
+        // this ever starts failing, the gate has begun reading something other than `role` and the
+        // reasoning above no longer holds.
+        assert!(
+            validate_component_batch(std::slice::from_ref(&broken)).is_ok(),
+            "the RAW payload has no role — judged as a non-page, which is exactly why validation moved",
+        );
+    }
+
     fn tmp_store_dir(tag: &str) -> String {
         let d = std::env::temp_dir().join(format!("bsc-component-cli-test-{tag}-{}", std::process::id()));
         // Start EMPTY (#3382). `process::id()` is unique among LIVE processes, not over time — the OS
@@ -4479,7 +4751,7 @@ export const Card = () => <Button />;",
         assert_eq!(
             names,
             vec![
-                "list", "shapes", "get", "log", "set", "remove", "suppress", "unsuppress", "export", "import",
+                "list", "shapes", "get", "log", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
                 "backing", "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "preview-errors", "preview-error"

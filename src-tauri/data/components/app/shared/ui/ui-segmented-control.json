@@ -4,40 +4,58 @@
   "kitId": "base-studio-code",
   "role": "primitive",
   "provides": "@/shared/ui/controls/SegmentedControl",
-  "srcText": "// SegmentedControl, AS GRAPH SOURCE (#3678, epic #3604) — a pure shared/ui control authored as DATA. Its\n// `provides: \"@/shared/ui/controls/SegmentedControl\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\nimport type { ReactNode } from \"react\";\r\n\r\nexport interface SegOption {\r\n  label: ReactNode;\r\n  /** Whether this option is currently active. */\r\n  on: boolean;\r\n  onClick: () => void;\r\n  /** On-state colour. Default \"accent\". */\r\n  tone?: \"accent\" | \"allow\" | \"ask\" | \"deny\";\r\n  /** Show a leading dot in the current colour. */\r\n  dot?: boolean;\r\n  title?: string;\r\n}\r\n\r\nexport interface SegmentedControlProps {\r\n  options: SegOption[];\r\n  /** \"padded\" (default) = gapped pill buttons in a padded container; \"joined\" = a tight shared-border bar. */\r\n  variant?: \"padded\" | \"joined\";\r\n  /** Button height: \"sm\" (22px, default) or \"md\" (24px). */\r\n  size?: \"sm\" | \"md\";\r\n  /** Optional leading label (e.g. \"scope\"). */\r\n  label?: ReactNode;\r\n  className?: string;\r\n}\r\n\r\n/** SegmentedControl — the one mutually-exclusive / multi-toggle button group: the control-vocabulary\r\n *  primitive that absorbs `.scope` · `.seg` · `.tri` · `.pill-group` (#1874). Each option owns its\r\n *  on-state + click, so it serves single-select and multi-select alike; `tone` covers the\r\n *  allow/ask/deny tri-states. */\r\nexport function SegmentedControl({ options, variant = \"padded\", size = \"sm\", label, className }: SegmentedControlProps) {\r\n  return (\r\n    <div className={\"seg-ctl\" + (className ? ` ${className}` : \"\")}>\r\n      {label != null && <span className=\"seg-ctl-label\">{label}</span>}\r\n      <div className={`seg-grp ${variant} size-${size}`}>\r\n        {options.map((o, i) => (\r\n          <button\r\n            key={i}\r\n            type=\"button\"\r\n            title={o.title}\r\n            className={\"seg-btn tone-\" + (o.tone ?? \"accent\") + (o.on ? \" on\" : \"\")}\r\n            onClick={o.onClick}\r\n          >\r\n            {o.dot && <span className=\"seg-dot\" />}\r\n            {o.label}\r\n          </button>\r\n        ))}\r\n      </div>\r\n    </div>\r\n  );\r\n}\r\n",
+  "srcText": "// SegmentedControl, AS GRAPH SOURCE (#3678, epic #3604) — a pure shared/ui control authored as DATA. Its\n// `provides: \"@/shared/ui/controls/SegmentedControl\"` makes the runtime loader vendor THIS over the bundled module (registered code\n// is the fallback). Transcribed verbatim; deps stay registered code.\n// `loading` renders a skeleton pill group; `error` renders an inline error note (checked first); an\n// empty `options` array renders a distinct dashed \"no options\" placeholder instead of a blank bar.\nimport type { ReactNode } from \"react\";\n\nexport interface SegOption {\n  label: ReactNode;\n  /** Whether this option is currently active. */\n  on: boolean;\n  onClick: () => void;\n  /** On-state colour. Default \"accent\". */\n  tone?: \"accent\" | \"allow\" | \"ask\" | \"deny\";\n  /** Show a leading dot in the current colour. */\n  dot?: boolean;\n  title?: string;\n}\n\nexport interface SegmentedControlProps {\n  options: SegOption[];\n  /** \"padded\" (default) = gapped pill buttons in a padded container; \"joined\" = a tight shared-border bar. */\n  variant?: \"padded\" | \"joined\";\n  /** Button height: \"sm\" (22px, default) or \"md\" (24px). */\n  size?: \"sm\" | \"md\";\n  /** Optional leading label (e.g. \"scope\"). */\n  label?: ReactNode;\n  className?: string;\n  /** Render a skeleton pill group instead of the real options. */\n  loading?: boolean;\n  /** Render an error note instead of the real options — a message string, or true for a generic one. Takes priority over loading. */\n  error?: string | boolean;\n}\n\n// A small sample so a standalone preview (no page feeding real options) shows real pills instead of\n// an empty bar.\nconst SAMPLE_OPTIONS: SegOption[] = [\n  { label: \"Day\", on: false, onClick: () => {} },\n  { label: \"Week\", on: true, onClick: () => {} },\n  { label: \"Month\", on: false, onClick: () => {} },\n];\n\n/** SegmentedControl — the one mutually-exclusive / multi-toggle button group: the control-vocabulary\n *  primitive that absorbs `.scope` · `.seg` · `.tri` · `.pill-group` (#1874). Each option owns its\n *  on-state + click, so it serves single-select and multi-select alike; `tone` covers the\n *  allow/ask/deny tri-states. */\nexport function SegmentedControl({ options = SAMPLE_OPTIONS, variant = \"padded\", size = \"sm\", label, className, loading, error }: SegmentedControlProps) {\n  if (error) {\n    return (\n      <div className={\"seg-ctl\" + (className ? ` ${className}` : \"\")} style={{ color: \"var(--danger)\", fontSize: 11.5 }}>\n        {typeof error === \"string\" ? error : \"Couldn't load options\"}\n      </div>\n    );\n  }\n\n  if (loading) {\n    return (\n      <div className={\"seg-ctl\" + (className ? ` ${className}` : \"\")} style={{ display: \"flex\", gap: 6 }}>\n        {[1, 2, 3].map((i) => (\n          <div key={i} className=\"skeleton\" style={{ width: 48, height: size === \"md\" ? 24 : 22, borderRadius: 999, background: \"var(--bg-elev)\" }} />\n        ))}\n      </div>\n    );\n  }\n\n  const opts = options ?? [];\n\n  return (\n    <div className={\"seg-ctl\" + (className ? ` ${className}` : \"\")}>\n      {label != null && <span className=\"seg-ctl-label\">{label}</span>}\n      {opts.length === 0 ? (\n        <span style={{ fontSize: 11.5, color: \"var(--fg-dim)\", border: \"1px dashed var(--border)\", borderRadius: 999, padding: \"3px 10px\" }}>\n          no options\n        </span>\n      ) : (\n        <div className={`seg-grp ${variant} size-${size}`}>\n          {opts.map((o, i) => (\n            <button\n              key={i}\n              type=\"button\"\n              title={o.title}\n              className={\"seg-btn tone-\" + (o.tone ?? \"accent\") + (o.on ? \" on\" : \"\")}\n              onClick={o.onClick}\n            >\n              {o.dot && <span className=\"seg-dot\" />}\n              {o.label}\n            </button>\n          ))}\n        </div>\n      )}\n    </div>\n  );\n}\n",
   "composes": [],
   "src": "src/shared/ui/controls/SegmentedControl.tsx",
   "props": [
     {
+      "desc": "",
       "name": "options",
-      "type": "SegOption[]",
       "req": true,
-      "desc": ""
+      "type": "SegOption[]"
     },
     {
+      "desc": "",
       "name": "variant",
-      "type": "\"padded\" | \"joined\"",
       "req": false,
-      "desc": ""
+      "type": "\"padded\" | \"joined\""
     },
     {
+      "desc": "",
       "name": "size",
-      "type": "\"sm\" | \"md\"",
       "req": false,
-      "desc": ""
+      "type": "\"sm\" | \"md\""
     },
     {
+      "desc": "",
       "name": "label",
-      "type": "ReactNode",
       "req": false,
-      "desc": ""
+      "type": "ReactNode"
     },
     {
+      "desc": "",
       "name": "className",
-      "type": "string",
       "req": false,
-      "desc": ""
+      "type": "string"
+    },
+    {
+      "desc": "Render a skeleton pill group instead of the real options.",
+      "name": "loading",
+      "req": false,
+      "type": "boolean"
+    },
+    {
+      "desc": "Render an error note instead of the real options — a message string, or true for a generic one. Takes priority over loading.",
+      "name": "error",
+      "req": false,
+      "type": "string | boolean"
     }
   ],
-  "folder": "shared/ui/controls"
+  "folder": "shared/ui/controls",
+  "tests": [
+    {
+      "name": "SegmentedControl",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { SegmentedControl } from \"./SegmentedControl\";\r\n\r\ndescribe(\"SegmentedControl\", () => {\r\n  it(\"renders options, marks the active one, and fires onClick\", () => {\r\n    const pick = vi.fn();\r\n    render(\r\n      <SegmentedControl\r\n        label=\"scope\"\r\n        options={[\r\n          { label: \"global\", on: true, onClick: () => pick(\"global\") },\r\n          { label: \"project\", on: false, onClick: () => pick(\"project\") },\r\n        ]}\r\n      />,\r\n    );\r\n    expect(screen.getByText(\"scope\")).toBeInTheDocument();\r\n    const global = screen.getByText(\"global\");\r\n    const project = screen.getByText(\"project\");\r\n    // Check the `on` class as a token — a substring match would falsely hit the \"on\" inside\r\n    // the default \"tone-accent\" class (#1874 control-vocab migration).\r\n    expect(global.classList.contains(\"on\")).toBe(true);\r\n    expect(project.classList.contains(\"on\")).toBe(false);\r\n    fireEvent.click(project);\r\n    expect(pick).toHaveBeenCalledWith(\"project\");\r\n  });\r\n\r\n  it(\"applies variant, size, tone, and dot\", () => {\r\n    const { container } = render(\r\n      <SegmentedControl\r\n        variant=\"joined\"\r\n        size=\"md\"\r\n        options={[\r\n          { label: \"deny\", on: true, onClick: () => {}, tone: \"deny\", dot: true },\r\n          { label: \"allow\", on: false, onClick: () => {}, tone: \"allow\" },\r\n        ]}\r\n      />,\r\n    );\r\n    expect(container.querySelector(\".seg-grp.joined.size-md\")).not.toBeNull();\r\n    const deny = screen.getByText(\"deny\").closest(\"button\") as HTMLElement;\r\n    expect(deny.className).toContain(\"tone-deny\");\r\n    expect(deny.className).toContain(\"on\");\r\n    expect(deny.querySelector(\".seg-dot\")).not.toBeNull();\r\n  });\r\n});\r\n"
+    }
+  ]
 }

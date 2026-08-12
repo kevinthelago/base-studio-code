@@ -10,5 +10,6 @@
     "Box",
     "Chip",
     "ToggleSwitch"
-  ]
+  ],
+  "folder": "features/mcp"
 }

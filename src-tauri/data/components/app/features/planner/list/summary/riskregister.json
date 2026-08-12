@@ -12,5 +12,6 @@
     "Box",
     "Grid",
     "Avatar"
-  ]
+  ],
+  "folder": "features/planner/list/summary"
 }

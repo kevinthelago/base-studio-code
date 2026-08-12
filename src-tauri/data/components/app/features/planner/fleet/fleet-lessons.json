@@ -7,7 +7,6 @@
   "composes": [
     "Box",
     "Card",
-    "Charts",
     "Chip",
     "EmptyState",
     "Row",
@@ -16,5 +15,6 @@
     "Text"
   ],
   "folder": "features/planner/fleet",
-  "srcRetired": "src/features/planner/fleet/FleetLessons.tsx"
+  "srcRetired": "src/features/planner/fleet/FleetLessons.tsx",
+  "provides": "@/components/fleet-lessons"
 }

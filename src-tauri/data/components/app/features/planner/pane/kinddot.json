@@ -7,5 +7,6 @@
   "src": "src/features/planner/pane/focusedPrimitives.tsx",
   "composes": [
     "Box"
-  ]
+  ],
+  "folder": "features/planner/pane"
 }

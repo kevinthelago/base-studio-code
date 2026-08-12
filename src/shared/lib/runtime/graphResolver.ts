@@ -19,10 +19,21 @@ export const GRAPH_SIBLING_PREFIX = "@/components/";
  *       PLATFORM module (#3660), e.g. a shared/ui primitive authored as DATA. Graph-first: this is why
  *       `routeImport` consults the resolver before the registry. */
 export const resolveGraphSource: GraphSourceResolver = (specifier) => {
-  const components = useAppStore.getState().components;
+  const { components, algorithmImpls } = useAppStore.getState();
   if (specifier.startsWith(GRAPH_SIBLING_PREFIX)) {
     const id = specifier.slice(GRAPH_SIBLING_PREFIX.length);
     return components.find((c) => c.id === id)?.srcText ?? null;
   }
-  return components.find((c) => c.provides === specifier)?.srcText ?? null;
+  const component = components.find((c) => c.provides === specifier);
+  if (component) return component.srcText ?? null;
+  // 3. an ALGORITHM IMPL whose `provides` equals the specifier — a logic module authored as a record
+  //    rather than a file. Its `code` IS the module (harvested with `bsc graph harvest --module`), so it
+  //    vendors exactly like a component's `srcText`.
+  //
+  //    LAST, and that ordering is a decision rather than an accident: two stores can now claim one
+  //    specifier, and a component claiming it means a UI record overriding a registered platform module
+  //    (#3660) — the established meaning of `provides`. If an impl could win, it would silently shadow a
+  //    rendering component with a non-rendering module, which fails at mount rather than at resolution.
+  //    So an impl resolves only where no component claims the specifier.
+  return algorithmImpls.find((im) => im.provides === specifier)?.code ?? null;
 };

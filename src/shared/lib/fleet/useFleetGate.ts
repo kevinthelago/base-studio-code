@@ -14,16 +14,10 @@
 // It never parks anything and never wakes a running session — the only action it can take is to launch a
 // stream that was never started, which is exactly what #1039 left room for.
 
-import { useRef } from "react";
-import { useAppStore } from "@/store";
-import { useLogStream } from "@/shared/hooks/useLogStream";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import { readCoordState } from "./useCoordLog";
-import { doneIssueRefs } from "./streamCompletion";
-import { partitionByDeps, sessionDoneStreams, type GateStream, type LandedEvidence } from "./streamGate";
-import { bscJson } from "@/shared/lib/core/bsc";
-import type { PlanIssue } from "@/features/planner/issues/planIssues";
-import { log } from "@/shared/lib/core/log";
+// The pump's own imports (the coord read, the landed-evidence probes, the partition) went with its body
+// when it was disabled — see `useFleetGate` below. The PURE core above keeps only what it needs, so the
+// helpers and their tests survive for whoever re-enables this.
+import type { GateStream } from "./streamGate";
 
 /** Launch the streams that just became ready for one project. Injected so the pump is testable. */
 export type GateLauncher = (projectKey: string) => Promise<unknown>;
@@ -73,54 +67,36 @@ export function newlyLaunchable(
 }
 
 /**
- * Mount once (alongside `useCoordinator`, in the always-mounted ConsoleWorkspace). On every coord-log
- * change it re-evaluates each project's dependency gate and calls `launch` for any project that has a
- * stream newly released.
+/**
+ * DISABLED (#fleet-gate-stops-launching-on-its-own). Mounted, and does nothing.
  *
- * `launch` is normally `resumeProjectFleet`, which is the right actuator precisely because it is
- * idempotent: it re-partitions from scratch, reconnects live panes without re-sending anything (the
- * backend's `pty_create` returns early for an existing session), and starts only what the gate allows.
- * So "launch the newly-ready stream" needs no new narrow launch path.
+ * WHAT IT USED TO DO. Mounted once from the `consolepage` record, it re-evaluated each project's
+ * dependency gate on every coord-log change and called `launch` — `resumeProjectFleet` — for any
+ * project with a newly-released stream.
+ *
+ * WHY IT IS OFF. `useLogStream` READS ON MOUNT, and `lastFired` is a fresh ref each app run, so the
+ * first evaluation could not be deduped against anything and always fired. Starting the app therefore
+ * relaunched whole fleets: measured in the process table seconds after boot as
+ * `claude --model sonnet --continue "You are the OPNsense adapter worker…"` — a fleetStartProject
+ * kickoff, not a reconnect — with matching bursts of 6 and 13 panes in activity.log. Both of this
+ * machine's projects arm it (37 of 38 and 27 of 40 streams carry `dependsOn`), and `planFleet` +
+ * `fleetPaneStreams` are persisted, so the gate is loaded and ready the moment the app opens.
+ *
+ * The header above used to claim "the only action it can take is to launch a stream that was never
+ * started". Its actuator relaunches the WHOLE fleet, and for any pane whose PTY did not survive the
+ * app close that is a genuine cold start.
+ *
+ * NOTHING IS STRANDED. A user-initiated Resume still partitions by the SAME dependency gate
+ * (`resumeProjectFleet` → `streamGate`), so a held stream is released the moment the user asks for
+ * the fleet — it just is not released for them while they are not looking.
+ *
+ * Disabled rather than deleted, and the signature is kept, so the `consolepage` record's call site
+ * (`useFleetGate(fleetGateLaunch)`) needs no edit and re-enabling is restoring one body. If it ever
+ * comes back it must NOT act on the mount read — a gate release is an EVENT, and replaying it at boot
+ * is the same defect the coordinator's freshness window had.
+ *
+ * @param _launch the actuator, retained for the signature; never called.
  */
-export function useFleetGate(launch: GateLauncher): void {
-  // Per-project fingerprint of the last action set, so an unchanged gate doesn't re-launch on every
-  // unrelated coord line (an `ask`, a `waiting`, a brief — most log traffic releases nothing).
-  const lastFired = useRef<Record<string, string>>({});
-
-  useLogStream("coord", async (isCancelled) => {
-    const st = useAppStore.getState();
-    const projects = gatedProjects(st.fleetPaneStreams);
-    if (projects.length === 0) return;
-    const coord = await readCoordState();
-    // A failed read withholds evidence rather than fabricating it — the same rule the resume follows.
-    // Firing on a null read would launch held streams on a transient log error.
-    if (!coord || isCancelled()) return;
-
-    for (const projectKey of projects) {
-      const fleet = st.planFleet[projectKey];
-      if (!fleet || fleet.streams.length === 0) continue;
-      // Only pay for the git probe when this project actually has something waiting.
-      const hasDeps = fleet.streams.some((s) => (s.dependsOn ?? []).length > 0);
-      if (!hasDeps) continue;
-
-      const [merged, dbIssues] = await Promise.all([
-        safeInvoke<string[]>("fleet_landed_streams", { projectKey }, []),
-        bscJson<PlanIssue[]>(projectKey, ["plan", "list", "--full", "--json"], []),
-      ]);
-      if (isCancelled()) return;
-      const evidence: LandedEvidence = {
-        doneIssues: doneIssueRefs(dbIssues ?? []),
-        mergedBranches: new Set(merged ?? []),
-        sessionDone: sessionDoneStreams(coord.state.maintaining, projectKey),
-      };
-      const { ready } = partitionByDeps(fleet.streams, evidence);
-      const launchable = newlyLaunchable(ready, projectKey, st.quarantinedPanes);
-      const fingerprint = launchable.slice().sort().join(",");
-      if (!fingerprint || lastFired.current[projectKey] === fingerprint) continue;
-      lastFired.current[projectKey] = fingerprint;
-      log.info(`fleet-gate: releasing ${launchable.length} stream(s) for ${projectKey}: ${fingerprint}`);
-      await launch(projectKey);
-      if (isCancelled()) return;
-    }
-  });
+export function useFleetGate(_launch: GateLauncher): void {
+  // Intentionally empty: no subscription, no evaluation, no launch.
 }
