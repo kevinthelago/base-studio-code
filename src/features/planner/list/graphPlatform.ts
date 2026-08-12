@@ -1,6 +1,8 @@
-// The projects page's graph-platform surface (#3874, regenerated #4232, epic #3604) — AUTO-GENERATED
-// by scripts/gen-projects-graph.cjs. DO NOT EDIT BY HAND: it is derived from the specifiers the
-// `projectspage` records actually carry, so it cannot drift from them.
+// The projects page's graph-platform surface (#3874, regenerated #4232, epic #3604) — originally
+// generated from the specifiers the `projectspage` records carry, now HAND-MAINTAINED:
+// `scripts/gen-projects-graph.cjs` was retired with the rest of the one-off generators, because it read
+// source files the migration deletes and would break the moment one went. Edit this by hand and keep it
+// in step with the records' specifiers; git history holds the generator if it needs re-reading.
 //
 // Registered HERE, inside the feature, because the shell must not reach a feature's internals (#1545).
 //
