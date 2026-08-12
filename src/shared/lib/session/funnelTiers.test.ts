@@ -1,0 +1,116 @@
+// #funnel-planner-takes-team-and-context — the three-tier funnel's capability shape.
+//
+// The funnel is architect → director → workers, and the property that makes it safe to run unattended
+// is MONOTONIC capability: the closer a tier sits to the human, the less it can do; the closer to the
+// code, the more. The architect ingests raw user prose, so it is the highest prompt-injection surface
+// in the system and is deliberately the LEAST capable session anywhere. A worker is the most capable,
+// and it is also the one confined to a single worktree on a single branch.
+//
+// This is asserted as an ORDER rather than as three separate row snapshots, because the invariant is
+// the relationship: any future change that widens the architect past the director, or the director past
+// a worker, is the regression — regardless of what the individual rows happen to say.
+import { describe, it, expect } from "vitest";
+import { ROLE_DEFAULTS, roleDeniedCommands, canWritePath } from "./sessionRoles";
+import { restrictedRoleCommands, type RoleCapability } from "./roleModel";
+
+/** The funnel, ordered least-capable first. `planner` is deliberately NOT here: it still exists as a
+ *  role and its Glance node stands, but its RESPONSIBILITIES moved to the director, so it is not one of
+ *  the three tiers this invariant is about. */
+const TIERS = ["architect", "director", "worker"] as const;
+
+/** Rank a capability tier so the axes can be compared as an order. */
+const RANK: Record<string, number> = { none: 0, read: 1, write: 2 };
+const rank = (v: string | undefined): number => RANK[v ?? "none"] ?? 0;
+
+const cap = (role: (typeof TIERS)[number]): RoleCapability => ROLE_DEFAULTS[role];
+
+describe("the three-tier funnel is monotonic — architect < director < worker", () => {
+  it("never widens a git/github/code/net axis as you move UP the funnel toward the human", () => {
+    // Walk the tiers in order and assert each axis is non-decreasing from architect to worker.
+    for (const axis of ["git", "github", "code", "net"] as const) {
+      const ranks = TIERS.map((t) => rank(cap(t)[axis] as string));
+      for (let i = 1; i < ranks.length; i++) {
+        expect(
+          ranks[i],
+          `${axis}: ${TIERS[i]} (${cap(TIERS[i])[axis]}) must not be NARROWER than ${TIERS[i - 1]} (${cap(TIERS[i - 1])[axis]})`,
+        ).toBeGreaterThanOrEqual(ranks[i - 1]);
+      }
+    }
+  });
+
+  it("keeps the architect strictly the least capable — none on every axis", () => {
+    // Not merely "≤ the director": being the least capable session in the system is the deliberate
+    // property, because this is the tier that reads raw user prose.
+    const a = cap("architect");
+    for (const axis of ["git", "github", "code", "net", "ui"] as const) {
+      expect(a[axis], `architect.${axis}`).toBe("none");
+    }
+  });
+
+  it("gives ONLY the worker a git write — the two tiers above it cannot mutate history", () => {
+    expect(cap("worker").git).toBe("write");
+    for (const t of ["architect", "director"] as const) {
+      expect(cap(t).git, `${t} must not hold git write`).not.toBe("write");
+      // The two tiers deny at DIFFERENT granularities and both are correct: the architect is
+      // `git: "none"`, so the whole binary is denied, while the director is `git: "read"` and denies
+      // the mutating verbs individually. Asserting `git push` literally would have failed the stricter
+      // of the two — so the check is "is a push reachable", not "is this exact string listed".
+      const denies = roleDeniedCommands(cap(t));
+      const blocked = (verb: string) => denies.includes("git") || denies.includes(`git ${verb}`);
+      for (const verb of ["push", "merge"]) {
+        expect(blocked(verb), `${t} must not be able to git ${verb}`).toBe(true);
+      }
+    }
+  });
+
+  it("lets NO tier mutate GitHub — local-first means there is nothing up there to write", () => {
+    for (const t of TIERS) {
+      expect(rank(cap(t).github as string), `${t}.github`).toBeLessThan(RANK.write);
+    }
+  });
+
+  it("separates the two WRITE surfaces by path, not just by tier", () => {
+    // Both the director and a worker are `code: write`, so the order alone does not distinguish them —
+    // what does is WHERE. The director writes plan/context prose at the hub; the worker writes code in
+    // its own lane. Neither can reach the other's.
+    const dir = cap("director"), worker = cap("worker");
+    expect(dir.code).toBe("write");
+    expect(worker.code).toBe("write");
+    // The director cannot touch project source, whatever its writeGlobs say about markdown.
+    for (const p of ["src/App.tsx", "crates/kb/src/lib.rs", "web/src/auth/login.ts"]) {
+      expect(canWritePath(dir, p), `director must not write ${p}`).toBe(false);
+    }
+    // …and it CAN write the context files it is now responsible for authoring.
+    for (const p of ["prompts/api-kickoff.md", "goal.md"]) {
+      expect(canWritePath(dir, p), `director must be able to author ${p}`).toBe(true);
+    }
+  });
+});
+
+describe("the director's team-design surface (#funnel-planner-takes-team-and-context)", () => {
+  it("can reach bsc teams + bsc persona, because it is NOT a restricted-allow role", () => {
+    // There is no per-role allow-list to add to here: `bsc` sits in the always-allowed mandatory tier
+    // (permissions/base.json), and a role only gets a narrowed surface if it appears in the restricted
+    // table. The director does not — so team and persona authoring is reachable by construction. This
+    // pins that fact, because "add it to the allow-list" would be a no-op that reads like a change.
+    expect(restrictedRoleCommands("director")).toEqual([]);
+  });
+
+  it("is not denied the team/persona commands by its role gate", () => {
+    const denies = roleDeniedCommands(cap("director"));
+    for (const c of denies) {
+      expect(c.startsWith("bsc teams"), `role gate must not deny ${c}`).toBe(false);
+      expect(c.startsWith("bsc persona"), `role gate must not deny ${c}`).toBe(false);
+    }
+  });
+
+  it("keeps the ARCHITECT's team surface narrow — it is transitional, not a second designer", () => {
+    // The architect still holds teams/persona while the Teams Studio runs on it, but its surface is a
+    // fixed restricted list, so it cannot grow into the director's job by accident.
+    const surface = restrictedRoleCommands("architect");
+    expect(surface).toContain("bsc teams");
+    expect(surface).toContain("bsc persona");
+    // …and it still cannot reach the plan beyond its own two handoff nouns.
+    expect(surface).not.toContain("bsc plan");
+  });
+});
