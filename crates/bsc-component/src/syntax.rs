@@ -22,7 +22,12 @@ pub fn check_module_syntax(src: &str) -> Result<(), String> {
     // The last significant (non-whitespace, non-comment) char — decides whether a `/` starts a regex
     // (expression position) or is division (right after a value: an identifier char, `)` or `]`).
     let mut last_sig: Option<char> = None;
-    let is_value_end = |c: char| c.is_alphanumeric() || c == '_' || c == '$' || c == ')' || c == ']';
+    // `}` counts as a value end: it closes an object literal, a block-bodied arrow, or — the case that
+    // matters here — a JSX EXPRESSION CONTAINER, all of which are values. So the `/` in
+    // `{approvedCount}/{declared.length}` is division, not the start of a regex that then runs to the
+    // newline and false-rejects the module.
+    let is_value_end =
+        |c: char| c.is_alphanumeric() || c == '_' || c == '$' || c == ')' || c == ']' || c == '}';
 
     while i < n {
         let c = chars[i];
@@ -98,6 +103,35 @@ pub fn check_module_syntax(src: &str) -> Result<(), String> {
                     }
                 }
                 last_sig = Some('/'); // a regex is a value → a following `/` is division
+            }
+            // An APOSTROPHE IN PROSE, not a string opener. A quote directly after a value end —
+            // `you've`, `the repo's`, `can't`, `{source}'s` — cannot start a string literal, because
+            // `identifier'…'` / `}'…'` is not valid JS in any position. It is JSX TEXT, where a quote is
+            // an ordinary character. Without this the quote opens a string that runs to the newline and
+            // false-rejects the whole module — the failure that kept five packaged records out of the
+            // store entirely, since a record that cannot be WRITTEN can never be seeded or rendered.
+            //
+            // Deliberately narrower than a JSX-text state machine. Distinguishing `<div>` from a generic
+            // `Map<string, number>` needs a real parser, and guessing wrong there would make the scanner
+            // SKIP real code — trading these false positives for false negatives, which is the worse
+            // direction for a corruption gate. This rule only ignores positions where a string literal
+            // is syntactically impossible, so it cannot hide corruption.
+            // ADJACENCY IS THE WHOLE RULE — it must be the IMMEDIATELY preceding character, not
+            // `last_sig`, which skips whitespace. `last_sig` would see the `m` of `from` in
+            // `import … from "@/x"` as a value end, stop treating the module path as a string, walk into
+            // it, and read its `/` as a regex — false-rejecting 30 further records. A keyword before a
+            // string always has whitespace; an apostrophe in prose never does.
+            // `>` is included because a tag close is the other thing prose follows — `</b>'s blueprints`.
+            // It is NOT added to `is_value_end` itself: that would make `x => /re/.test(x)` stop reading
+            // as a regex, turning a false positive into a missed one. And an ARROW is excluded here for
+            // the same care in the other direction, so a space-less `() =>'x'` still scans as a string.
+            '"' | '\''
+                if i > 0
+                    && (is_value_end(chars[i - 1])
+                        || (chars[i - 1] == '>' && !(i > 1 && chars[i - 2] == '='))) =>
+            {
+                last_sig = Some(c);
+                i += 1;
             }
             // string literal — the corruption target: a raw newline before the close is unterminated
             '"' | '\'' => {
@@ -183,6 +217,97 @@ line two ${title}`;
             }
         "#;
         assert!(check_module_syntax(src).is_ok());
+    }
+
+    // ── JSX PROSE (the third instance of the JSX-false-positive class, after #2991 + #3045) ──────────
+    // Five packaged records were kept OUT OF THE STORE ENTIRELY by these, because a record that cannot
+    // be written can never be seeded, and `bsc ui parity` reported them as `missingFromStore`.
+
+    #[test]
+    fn an_apostrophe_in_jsx_text_is_not_a_string_opener() {
+        // Real cases, verbatim from the records the gate refused.
+        for src in [
+            r#"export const C = () => <li>everything you've planned (goal, scope, …)</li>;"#,
+            r#"export const C = () => <p>deps reconcile into the repo's single package.json</p>;"#,
+            r#"export const C = () => <p>the name is the project's identity</p>;"#,
+            r#"export const C = () => <p>so two can't share it.</p>;"#,
+        ] {
+            assert!(check_module_syntax(src).is_ok(), "false-rejected: {src}");
+        }
+    }
+
+    #[test]
+    fn an_apostrophe_after_a_closing_tag_is_not_a_string_opener() {
+        let src = r#"export const C = ({ source }) => <p>All of <b>{source}</b>'s blueprints are downloaded.</p>;"#;
+        assert!(check_module_syntax(src).is_ok(), "{:?}", check_module_syntax(src));
+    }
+
+    #[test]
+    fn an_arrow_before_a_string_still_opens_a_string() {
+        // `>` counts as prose-adjacent only when it is a TAG close. A space-less arrow must not be
+        // mistaken for one, or `() =>'unterminated` would stop being caught.
+        assert!(check_module_syntax("const f = () =>'ok';").is_ok());
+        assert!(check_module_syntax("const f = () =>'unterminated\n;").is_err());
+    }
+
+    #[test]
+    fn an_apostrophe_after_a_jsx_expression_container_is_not_a_string_opener() {
+        let src = r#"export const C = ({ source }) => <span>fetching {source}'s blueprints…</span>;"#;
+        assert!(check_module_syntax(src).is_ok(), "{:?}", check_module_syntax(src));
+    }
+
+    #[test]
+    fn a_slash_between_two_jsx_expression_containers_is_division_not_a_regex() {
+        let src = r#"export const C = ({ a, b }) => <span>{a}/{b} approved</span>;"#;
+        assert!(check_module_syntax(src).is_ok(), "{:?}", check_module_syntax(src));
+    }
+
+    // ── …AND THE GATE DID NOT JUST GET WEAKER ────────────────────────────────────────────────────────
+    // The whole point of #2928 is the escape-collapse class: a `\n` that collapsed into a REAL newline
+    // inside a string. If the rules above had been written loosely, these would now pass — which would
+    // trade a visible false positive for a silent false negative, the worse failure for a corruption gate.
+
+    #[test]
+    fn still_rejects_the_escape_collapse_corruption_it_exists_for() {
+        let src = "export const s = [\"one\", \"two\"].join(\"\nthe newline collapsed here\");";
+        assert!(check_module_syntax(src).is_err(), "the #2928 corruption must still be caught");
+    }
+
+    #[test]
+    fn still_rejects_an_unterminated_string_in_ordinary_expression_position() {
+        // `(` is not a value end, so the quote still opens a string — and still runs to the newline.
+        let src = "export function f() {\n  return g('unterminated\n}";
+        assert!(check_module_syntax(src).is_err());
+    }
+
+    #[test]
+    fn a_keyword_before_a_string_still_opens_a_string() {
+        // The regression the first cut of this fix caused: `last_sig` skips whitespace, so the `m` of
+        // `from` read as a value end, the module path stopped being a string, and the scanner walked into
+        // it and called its `/` a regex — 30 extra records false-rejected. Adjacency is what separates
+        // `you've` from `from "…"`.
+        assert!(check_module_syntax("import { X } from \"@/shared/ui/layout/Box\";\nexport const a = 1;").is_ok());
+        for src in [
+            "const a = typeof 'x';",
+            "export function f() { return 'x'; }",
+            "switch (k) { case 'a': break; }",
+        ] {
+            assert!(check_module_syntax(src).is_ok(), "false-rejected: {src}");
+        }
+        // …and one that is genuinely broken in the same shape must STILL fail.
+        assert!(check_module_syntax("import { X } from \"@/unterminated\nexport const a = 1;").is_err());
+    }
+
+    #[test]
+    fn a_quote_after_an_operator_or_paren_still_opens_a_string() {
+        // The new rule must not swallow ordinary string starts: `=`, `(`, `,`, `[` are not value ends.
+        for src in [
+            "const a = 'unterminated\n;",
+            "f('unterminated\n);",
+            "const a = ['ok', 'unterminated\n];",
+        ] {
+            assert!(check_module_syntax(src).is_err(), "should still reject: {src}");
+        }
     }
 
     #[test]
