@@ -30,7 +30,11 @@ describe("positionDisplay (#2193)", () => {
 
 describe("tierChips (#2193)", () => {
   it("lists a role's non-none capabilities + net on/off", () => {
-    const labels = tierChips("director").map((t) => t.label);
+    // `worker`, not `director`. The director absorbed the planning surface and with it the planner's
+    // tiers (funnel-planning-moves-to-director), dropping git/github from `write` to `read` — so it no
+    // longer demonstrates a write tier at all. The worker is the fleet's actual mutating role, which is
+    // the same substitution `RoleTierChips.test.tsx` made; this second copy of the assertion was missed.
+    const labels = tierChips("worker").map((t) => t.label);
     expect(labels).toContain("git·write");
     expect(labels.some((l) => l.startsWith("net·"))).toBe(true);
     // A read-only role shows no write tier.
