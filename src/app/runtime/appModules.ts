@@ -54,7 +54,6 @@ import * as UseDraft from "@/shared/hooks/useDraft";
 import * as LogsBridge from "@/shared/lib/core/logsBridge";
 // ── Live data + hooks the FleetPage panels read (feature-agnostic → stay injected permanently) ────────
 import * as FleetData from "@/shared/data/fleet";
-import * as UseFleetLive from "@/shared/hooks/useFleetLive";
 import * as UsePoll from "@/shared/hooks/usePoll";
 // #4185 — the feature-agnostic surface the graph-loaded Glance cockpit reaches: the crumb hook, the
 // perf marker, the session-log tail, the preview source resolver, the claude-running guard, and the demo
@@ -263,6 +262,15 @@ import * as RenderProfiler from "@/shared/lib/core/renderProfiler";       // Gra
 import * as TreeLayout from "@/shared/ui/layouts/treeLayout";             // Tree (#3692)
 import * as EdgePath from "@/shared/lib/graph/edgePath";                  // Tree (#3692)
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
+// ── Reached only THROUGH a migrated logic module (retire-the-first-19-logic-modules) ─────────────
+// A module that becomes an algorithm record stops being resolved by Vite and starts being resolved by
+// the LOADER, so its own imports become the graph's problem. None of these were registered before,
+// because no record imported them DIRECTLY — each arrives transitively with the hook that was retired.
+import * as FleetGithub from "@/shared/lib/github/fleetGithub";
+import * as TurnHooks from "@/shared/lib/session/turnHooks";
+import * as FleetRoster from "@/shared/lib/fleet/fleetRoster";
+import * as UseScreenSession from "@/shared/lib/session/useScreenSession";
+import * as Mock from "@/shared/data/mock";
 
 // The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
 // here — the shell must not reach a feature's internals (#1545), and eager-importing them would de-lazy the
@@ -389,7 +397,6 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/graph/edgePath": EdgePath,
   "@/shared/lib/core/logsBridge": LogsBridge,
   "@/shared/data/fleet": FleetData,
-  "@/shared/hooks/useFleetLive": UseFleetLive,
   "@/shared/hooks/usePoll": UsePoll,
   "@/shared/hooks/useCrumbEntity": UseCrumbEntity,
   "@/shared/lib/core/perf": Perf,
@@ -493,6 +500,15 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/manifest": Manifest,
   "@/shared/ui/spec/generalNode": GeneralNode,
   "@/shared/ui/spec/specWalk": SpecWalk,
+// ── Reached only THROUGH a migrated logic module (retire-the-first-19-logic-modules) ─────────────
+// A module that becomes an algorithm record stops being resolved by Vite and starts being resolved by
+// the LOADER, so its own imports become the graph's problem. None of these were registered before,
+// because no record imported them DIRECTLY — each arrives transitively with the hook that was retired.
+  "@/shared/lib/github/fleetGithub": FleetGithub,
+  "@/shared/lib/session/turnHooks": TurnHooks,
+  "@/shared/lib/fleet/fleetRoster": FleetRoster,
+  "@/shared/lib/session/useScreenSession": UseScreenSession,
+  "@/shared/data/mock": Mock,
 };
 
 let done = false;

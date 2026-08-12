@@ -28,31 +28,31 @@ import * as ProjectPaneData from "@/features/planner/pane/projectPaneData";
 import * as PlanAutopilotRunner from "@/features/planner/session/planAutopilotRunner";
 import * as PlannerConductor from "@/features/planner/session/plannerConductor";
 import * as ProjectTitle from "@/features/planner/session/projectTitle";
-import * as UseCtxRequired from "@/features/planner/session/useCtxRequired";
 import * as UseDesignRouteState from "@/features/planner/session/useDesignRouteState";
 import * as UsePlanConfirmations from "@/features/planner/session/usePlanConfirmations";
 import * as UsePlanFocusedPane from "@/features/planner/session/usePlanFocusedPane";
-import * as UsePlanGates from "@/features/planner/session/usePlanGates";
-import * as UsePlanMcpDownloads from "@/features/planner/session/usePlanMcpDownloads";
-import * as UsePlanMcpManagement from "@/features/planner/session/usePlanMcpManagement";
-import * as UsePlanPublish from "@/features/planner/session/usePlanPublish";
-import * as UsePlanSkillsManagement from "@/features/planner/session/usePlanSkillsManagement";
 import * as UsePlanStagePoll from "@/features/planner/session/usePlanStagePoll";
-import * as UsePlannerBlueprint from "@/features/planner/session/usePlannerBlueprint";
 import * as UsePlannerPromptDelivery from "@/features/planner/session/usePlannerPromptDelivery";
-import * as UsePlannerRepoManagement from "@/features/planner/session/usePlannerRepoManagement";
-import * as UsePlannerTagStream from "@/features/planner/session/usePlannerTagStream";
-import * as UsePlannerTerminal from "@/features/planner/session/usePlannerTerminal";
 import * as UsePlannerTunnelSync from "@/features/planner/session/usePlannerTunnelSync";
 import * as UsePlanningModals from "@/features/planner/session/usePlanningModals";
 import * as UsePlanningSession from "@/features/planner/session/usePlanningSession";
-import * as UsePlanningTitle from "@/features/planner/session/usePlanningTitle";
-import * as UseSetupSignature from "@/features/planner/session/useSetupSignature";
 import * as Blueprints from "@/features/planner/stages/blueprints";
 import * as ConfirmReconcile from "@/features/planner/stages/confirmReconcile";
 import * as FocusedPlan from "@/features/planner/stages/focusedPlan";
 import * as PlanStages from "@/features/planner/stages/planStages";
 import * as PlanTopics from "@/features/planner/stages/planTopics";
+// ── Reached only THROUGH a migrated logic module (retire-the-first-19-logic-modules) ─────────────
+// A module that becomes an algorithm record stops being resolved by Vite and starts being resolved by
+// the LOADER, so its own imports become the graph's problem. None of these were registered before,
+// because no record imported them DIRECTLY — each arrives transitively with the hook that was retired.
+import * as GitHubStructureCard from "@/features/planner/session/GitHubStructureCard";
+import * as PublishSteps from "@/features/planner/session/publishSteps";
+import * as PlannerIntro from "@/features/planner/session/plannerIntro";
+import * as PlanningTerminal from "@/features/planner/session/planningTerminal";
+import * as PlannerLaunch from "@/features/planner/session/plannerLaunch";
+import * as PlannerSandbox from "@/features/planner/session/plannerSandbox";
+import * as RenameProject from "@/features/planner/session/renameProject";
+import * as DraftTitle from "@/features/planner/session/draftTitle";
 
 let done = false;
 
@@ -80,29 +80,25 @@ export function registerPlanningPlatform(): void {
   registerAppModule("@/features/planner/session/planAutopilotRunner", PlanAutopilotRunner);
   registerAppModule("@/features/planner/session/plannerConductor", PlannerConductor);
   registerAppModule("@/features/planner/session/projectTitle", ProjectTitle);
-  registerAppModule("@/features/planner/session/useCtxRequired", UseCtxRequired);
   registerAppModule("@/features/planner/session/useDesignRouteState", UseDesignRouteState);
   registerAppModule("@/features/planner/session/usePlanConfirmations", UsePlanConfirmations);
   registerAppModule("@/features/planner/session/usePlanFocusedPane", UsePlanFocusedPane);
-  registerAppModule("@/features/planner/session/usePlanGates", UsePlanGates);
-  registerAppModule("@/features/planner/session/usePlanMcpDownloads", UsePlanMcpDownloads);
-  registerAppModule("@/features/planner/session/usePlanMcpManagement", UsePlanMcpManagement);
-  registerAppModule("@/features/planner/session/usePlanPublish", UsePlanPublish);
-  registerAppModule("@/features/planner/session/usePlanSkillsManagement", UsePlanSkillsManagement);
   registerAppModule("@/features/planner/session/usePlanStagePoll", UsePlanStagePoll);
-  registerAppModule("@/features/planner/session/usePlannerBlueprint", UsePlannerBlueprint);
   registerAppModule("@/features/planner/session/usePlannerPromptDelivery", UsePlannerPromptDelivery);
-  registerAppModule("@/features/planner/session/usePlannerRepoManagement", UsePlannerRepoManagement);
-  registerAppModule("@/features/planner/session/usePlannerTagStream", UsePlannerTagStream);
-  registerAppModule("@/features/planner/session/usePlannerTerminal", UsePlannerTerminal);
   registerAppModule("@/features/planner/session/usePlannerTunnelSync", UsePlannerTunnelSync);
   registerAppModule("@/features/planner/session/usePlanningModals", UsePlanningModals);
   registerAppModule("@/features/planner/session/usePlanningSession", UsePlanningSession);
-  registerAppModule("@/features/planner/session/usePlanningTitle", UsePlanningTitle);
-  registerAppModule("@/features/planner/session/useSetupSignature", UseSetupSignature);
   registerAppModule("@/features/planner/stages/blueprints", Blueprints);
   registerAppModule("@/features/planner/stages/confirmReconcile", ConfirmReconcile);
   registerAppModule("@/features/planner/stages/focusedPlan", FocusedPlan);
   registerAppModule("@/features/planner/stages/planStages", PlanStages);
   registerAppModule("@/features/planner/stages/planTopics", PlanTopics);
+  registerAppModule("@/features/planner/session/GitHubStructureCard", GitHubStructureCard);
+  registerAppModule("@/features/planner/session/publishSteps", PublishSteps);
+  registerAppModule("@/features/planner/session/plannerIntro", PlannerIntro);
+  registerAppModule("@/features/planner/session/planningTerminal", PlanningTerminal);
+  registerAppModule("@/features/planner/session/plannerLaunch", PlannerLaunch);
+  registerAppModule("@/features/planner/session/plannerSandbox", PlannerSandbox);
+  registerAppModule("@/features/planner/session/renameProject", RenameProject);
+  registerAppModule("@/features/planner/session/draftTitle", DraftTitle);
 }

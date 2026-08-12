@@ -35,6 +35,7 @@ import { registerBodiesPlatform } from "@/features/planner/bodies/graphPlatform"
 import { registerPreviewPlatform } from "@/features/planner/preview/graphPlatform";
 import { registerPlannerGithubPlatform } from "@/features/planner/github/graphPlatform";
 import { isAppModule } from "@/shared/lib/runtime/moduleRegistry";
+import algorithmsSeed from "@data/knowledge/algorithms.json";
 
 interface SeedRecord {
   id: string;
@@ -92,6 +93,15 @@ describe("the platform-kernel boundary (#3858)", () => {
   it("EVERY packaged record's first-party imports resolve", () => {
     const ids = new Set(RECORDS.map((r) => r.id));
     const provides = new Set(RECORDS.map((r) => r.provides?.trim()).filter(Boolean) as string[]);
+    // The THIRD resolution path, and the third place that has had to learn it (after `routeImport` itself
+    // and the e2e harness): a logic module authored as an ALGORITHM record, matched on the same `provides`
+    // field. A retired module's specifier resolves here and NOWHERE else, so omitting this reports every
+    // migrated module as a broken import — a false alarm about the change that just landed.
+    const implProvides = new Set(
+      ((algorithmsSeed as { implementations?: { provides?: string }[] }).implementations ?? [])
+        .map((im) => im.provides?.trim())
+        .filter(Boolean) as string[],
+    );
     const unresolved: string[] = [];
 
     for (const r of RECORDS) {
@@ -117,6 +127,7 @@ describe("the platform-kernel boundary (#3858)", () => {
         // IconButton, previewReview) that this file had waved through, and #4188 removed the rule.
         if (isAppModule(spec)) continue;                                   // a registered platform module
         if (provides.has(spec)) continue;                                  // a graph component that PROVIDES it
+        if (implProvides.has(spec)) continue;                              // an ALGORITHM record that provides it
         const id = spec.startsWith("@/components/") ? spec.slice("@/components/".length) : null;
         if (id && ids.has(id)) continue;                                   // a sibling BY ID
         unresolved.push(`${r.id} → ${spec}`);

@@ -7,16 +7,19 @@
 // are the mcp INTERNALS, a disjoint set of specifiers.)
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as McpInstall from "./lib/mcpInstall";
-import * as McpCatalogView from "./lib/mcpCatalogView";
 import * as McpServers from "./lib/mcpServers";
 import * as Hooks from "./lib/hooks";
 import * as McpTelemetry from "./lib/mcpTelemetry";
 import * as Shared from "./shared";
-import * as UseMcpInstallStatus from "./useMcpInstallStatus";
 import * as GraphPlatform from "@/features/mcp/graphPlatform";
 import * as SessionConfig from "@/features/mcp/lib/sessionConfig";
 import * as HookTelemetry from "@/features/mcp/lib/hookTelemetry";
 import * as MigrateExtensions from "@/features/mcp/lib/migrateExtensions";
+// ── Reached only THROUGH a migrated logic module (retire-the-first-19-logic-modules) ─────────────
+// A module that becomes an algorithm record stops being resolved by Vite and starts being resolved by
+// the LOADER, so its own imports become the graph's problem. None of these were registered before,
+// because no record imported them DIRECTLY — each arrives transitively with the hook that was retired.
+import * as McpVersioning from "@/features/mcp/lib/mcpVersioning";
 
 let done = false;
 
@@ -25,14 +28,13 @@ export function registerMcpPlatform(): void {
   if (done) return;
   done = true;
   registerAppModule("@/features/mcp/lib/mcpInstall", McpInstall);
-  registerAppModule("@/features/mcp/lib/mcpCatalogView", McpCatalogView);
   registerAppModule("@/features/mcp/lib/mcpServers", McpServers);
   registerAppModule("@/features/mcp/lib/hooks", Hooks);
   registerAppModule("@/features/mcp/lib/mcpTelemetry", McpTelemetry);
   registerAppModule("@/features/mcp/shared", Shared);
-  registerAppModule("@/features/mcp/useMcpInstallStatus", UseMcpInstallStatus);
   registerAppModule("@/features/mcp/graphPlatform", GraphPlatform);
   registerAppModule("@/features/mcp/lib/sessionConfig", SessionConfig);
   registerAppModule("@/features/mcp/lib/hookTelemetry", HookTelemetry);
   registerAppModule("@/features/mcp/lib/migrateExtensions", MigrateExtensions);
+  registerAppModule("@/features/mcp/lib/mcpVersioning", McpVersioning);
 }
