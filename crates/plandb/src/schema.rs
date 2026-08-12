@@ -18,6 +18,7 @@ pub(crate) const ALL_TABLES: &[&str] = &[
     "market",
     "classify",
     "requirement",
+    "decisions",
     "mcp",
     "automations",
     "startup",
@@ -181,6 +182,7 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     )?;
     // Self-correction lessons (#1362) own their schema in the `lessons` module.
     conn.execute_batch(lessons::LESSONS_DDL)?;
+    conn.execute_batch(crate::decisions::DECISIONS_DDL)?;
     // (The feature-scope `todos` table was removed in #3278 — the local-first consolidation onto the one
     // `bsc plan` surface. Existing `plan.db` files keep their orphaned `todos` table; nothing reads it,
     // and `Store::open` never drops a table, so leaving it is harmless.)

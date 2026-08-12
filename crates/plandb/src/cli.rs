@@ -537,6 +537,11 @@ struct Args {
     /// Startup-script fields (#2010) — `startup add <repo> --mode dev|triage --path <relpath>`.
     mode: Option<String>,
     path: Option<String>,
+    /// Decision-ledger fields (#funnel-unattended-director) —
+    /// `decision add "<what>" --clause <id> [--stage features|plan] [--why "<rationale>"]`.
+    stage: Option<String>,
+    clause: Option<String>,
+    why: Option<String>,
     /// Plural reads (`list`/`mine`) escalate from the lean default to every field (#1562).
     full: bool,
     /// Explicit column projection for `list`/`mine`, e.g. `--fields ref,title,status` → TSV.
@@ -556,7 +561,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let mut a = Args {
         prog: String::new(), json: false, db: None, positional: Vec::new(), status: None, stream: None,
         rule: None, cause: None, from: None, note: None, brief_ref: None, command: None, schedule: None, description: None,
-        mode: None, path: None, direction: None,
+        mode: None, path: None, direction: None, stage: None, clause: None, why: None,
         full: false, fields: None, limit: None,
         since: None, pretty: false, force: false,
     };
@@ -570,6 +575,9 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--rule" => a.rule = Some(it.next().ok_or("--rule needs a value")?),
             "--cause" => a.cause = Some(it.next().ok_or("--cause needs a value")?),
             "--from" => a.from = Some(it.next().ok_or("--from needs a value")?),
+            "--stage" => a.stage = Some(it.next().ok_or("--stage needs a value")?),
+            "--clause" => a.clause = Some(it.next().ok_or("--clause needs a value")?),
+            "--why" => a.why = Some(it.next().ok_or("--why needs a value")?),
             "--note" => a.note = Some(it.next().ok_or("--note needs a value")?),
             "--ref" => a.brief_ref = Some(it.next().ok_or("--ref needs a value")?),
             "--command" => a.command = Some(it.next().ok_or("--command needs a value")?),
@@ -645,6 +653,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "integration" => nouns::cmd_integration(&args),
         "change" => changes::cmd_change(&args),
         "lesson" => nouns::cmd_lesson(&args),
+        "decision" => nouns::cmd_decision(&args),
         "brief" => nouns::cmd_brief(&args),
         "request" => nouns::cmd_request(&args),
         "triage" => nouns::cmd_triage(&args),
@@ -806,6 +815,54 @@ mod tests {
         assert!(go(vec!["request", "show", "999"]).is_err(), "an unknown id is an error");
         assert!(go(vec!["request", "claim", "not-a-number"]).is_err(), "a non-numeric id is rejected");
         assert!(go(vec!["request", "frobnicate"]).is_err(), "an unknown sub is an error");
+        let _ = std::fs::remove_file(&db);
+    }
+
+    /// The decision-ledger verbs + their flags, through `run()` (#funnel-unattended-director). Same
+    /// reasoning as the request test above: `decision_add` passes at the store level while `--clause`
+    /// is rejected as an unknown flag at the CLI boundary, and the boundary is where the director
+    /// actually calls it from.
+    #[test]
+    fn the_decision_verbs_and_their_flags_are_registered() {
+        let db = test_db_path("decision-verbs");
+        let go = |a: Vec<&str>| {
+            let mut v: Vec<String> = a.into_iter().map(String::from).collect();
+            v.push("--db".into());
+            v.push(db.clone());
+            run(v, "bsc plan")
+        };
+
+        // With no requirement there is no authority, so the ledger REFUSES rather than accumulating
+        // decisions nobody permitted — the "a run with no authority parks" rule, enforced in the store.
+        assert!(go(vec!["decision", "add", "chose Postgres", "--clause", "a1"]).is_err(),
+            "a decision cannot be recorded before any authority is granted");
+
+        // Seal a requirement granting one clause. Through the STORE, not the CLI: `requirement set`
+        // reads its JSON from stdin, which a unit test has no way to supply — and this test is about
+        // the DECISION flags, not that one.
+        {
+            let store = crate::Store::open(std::path::Path::new(&db)).expect("store");
+            store
+                .requirement_set(&serde_json::json!({
+                    "statement": "build it",
+                    "discovery": {},
+                    "authority": [{ "id": "a1", "scope": "datastore choice", "grant": "choose freely under 10k rows" }],
+                }))
+                .expect("requirement set");
+        }
+
+        go(vec!["decision", "authority"]).expect("`decision authority` lists the granted clauses");
+        go(vec!["decision", "add", "chose Postgres over SQLite",
+                "--clause", "a1", "--stage", "features", "--why", "row count passes 10k"])
+            .expect("`add` with --clause/--stage/--why — the three flags a store test cannot check");
+        go(vec!["decision", "list", "--stage", "features"]).expect("`list --stage`");
+
+        // A citation that the requirement does not grant is refused at the boundary too, so the
+        // director cannot write itself a permission by naming a clause that does not exist.
+        assert!(go(vec!["decision", "add", "chose Mongo", "--clause", "a9"]).is_err(),
+            "an ungranted clause id is refused");
+        assert!(go(vec!["decision", "add", "chose Mongo"]).is_err(), "a decision must cite a clause");
+        assert!(go(vec!["decision", "frobnicate"]).is_err(), "an unknown sub is an error");
         let _ = std::fs::remove_file(&db);
     }
 

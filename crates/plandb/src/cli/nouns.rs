@@ -614,6 +614,55 @@ pub(crate) fn cmd_integration(args: &Args) -> Result<(), String> {
 }
 
 /// `lesson` — self-correction candidates (#1362): the `bsc-learned` capture helper + the review queue.
+/// `decision` — the DECISION LEDGER (#funnel-unattended-director). Every choice the director made
+/// under granted authority, recorded against the clause that permitted it.
+///
+///   bsc plan decision add "<what was decided>" --clause <id> [--stage features|plan] [--why "<why>"]
+///   bsc plan decision list [--stage <stage>] [--json]
+///
+/// APPEND-ONLY on purpose: there is no edit and no remove. A decision that turned out wrong is
+/// answered by a LATER decision, never by rewriting the record of what was actually done. The clause
+/// is validated against the stored requirement, so a citation is checkable rather than decorative —
+/// an unknown id (or no requirement at all) is REFUSED and nothing is written.
+pub(crate) fn cmd_decision(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        "add" => {
+            let what = args.positional.get(2).cloned().unwrap_or_default();
+            let d = plandb_decision(args, what);
+            let id = s.decision_add(&d).map_err(|e| e.to_string())?;
+            println!("{}", if args.json { serde_json::to_string(&id).unwrap_or_default() } else { id });
+            Ok(())
+        }
+        "list" => {
+            let rows = s.decision_list(args.stage.as_deref().unwrap_or("")).map_err(|e| e.to_string())?;
+            print_json(&serde_json::to_value(&rows).unwrap_or_default(), args.pretty);
+            Ok(())
+        }
+        // The GRANTED clauses, so a session can see what it may decide before it decides it.
+        "authority" => {
+            let ids = s.authority_clause_ids().map_err(|e| e.to_string())?;
+            print_json(&serde_json::to_value(&ids).unwrap_or_default(), args.pretty);
+            Ok(())
+        }
+        _ => Err(format!(
+            "usage: {} decision add \"<what>\" --clause <id> [--stage <stage>] [--why \"<why>\"] | decision list [--stage <s>] | decision authority",
+            args.prog
+        )),
+    }
+}
+
+fn plandb_decision(args: &Args, what: String) -> crate::Decision {
+    crate::Decision {
+        stage: args.stage.clone().unwrap_or_default(),
+        decision: what,
+        clause: args.clause.clone().unwrap_or_default(),
+        rationale: args.why.clone().unwrap_or_default(),
+        ..Default::default()
+    }
+}
+
 pub(crate) fn cmd_lesson(args: &Args) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
     let s = open_store(&args.db)?;

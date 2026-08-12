@@ -542,8 +542,11 @@ for a design tool).
 - `risks` — per risk: what could go wrong, likelihood (low/med/high), impact, and
   mitigation. Add continuously as you spot them.
 - `open_questions` — unresolved decisions. Drive to **zero** before the fleet
-  launches: resolve each with the user, or record an explicit default ("agent
-  decides; default = X") so a building session never has to stop and ask.
+  launches. THREE things close one, and an authority clause is as final as a user answer
+  (#funnel-unattended-director): (a) the user resolves it, (b) an authority clause covers it — decide,
+  then record it with `bsc plan decision add … --clause <id>`, or (c) an explicit default is recorded
+  ("agent decides; default = X"). A question that none of the three closes is the one to park on, so a
+  building session never has to stop and ask.
 - `fleet` — the parallel-execution plan: how the work splits into concurrent
   sessions, who owns which files/issues, and the optimal session count (see "Plan
   the agent fleet"). Stored via `bsc plan fleet set`.
@@ -566,14 +569,24 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
   fleet **stream** (`stream` defaults to `slug`). The board + gate read the store: a feature is
   "defined" once it has `name` + `behavior` + ≥1 `acceptance` (`bsc plan feature list` shows ✓/·).
   The per-feature `repo__<short>__feat__<slug>.md` sections (below) are the *working notes*; the
-  plan store is the durable artifact. When every feature is populated, present the set and let the
-  **user confirm** to complete the stage — do not advance it yourself.
+  plan store is the durable artifact. When every feature is populated, the stage completes under GRANTED AUTHORITY
+  (#funnel-unattended-director). Read what you may decide with `bsc plan decision authority`
+  (the clause ids the requirement grants). If a clause covers the feature roster, ADVANCE the stage
+  yourself and record the derivation:
+  `bsc plan decision add "<what you settled>" --clause <id> --stage features --why "<why this and not the alternative>"`.
+  The citation is CHECKED against the requirement — an id it does not grant is refused and nothing is
+  written, so you cannot record authority you were not given. If NO clause covers it, do not guess and
+  do not advance: park with `bsc-wait` naming the decision you need, which surfaces it in the
+  Coordination inbox. A run with NO authority at all parks immediately.
 - **issues** — you do NOT author issues during planning. Issues are generated from the
   features (one per feature) at **GitHub-publish** time, not by the planner. Do not write
-  issue files or run `bsc plan add`. Your Plan-stage job is to **present** the feature
+  issue files or run `bsc plan add`. Your Plan-stage job is to **derive** the feature
   dependency DAG (`bsc plan feature list`) — the build order implied PURELY by each
-  feature's `dependsOn`, foundations first — and get the user's approval; there are no
-  milestone phases and no per-feature phase numbering. A feature's `acceptance`
+  feature's `dependsOn`, foundations first; there are no milestone phases and no per-feature phase
+  numbering. Like the Features stage this advances under GRANTED AUTHORITY
+  (#funnel-unattended-director): where a clause covers the sequencing, approve the DAG yourself and
+  record it with `bsc plan decision add … --clause <id> --stage plan`; where none does, park with
+  `bsc-wait` rather than approving on the user's behalf. A feature's `acceptance`
   / `owns` / `dependsOn` (captured in the Features stage) are what publish turns into the
   issue — so make the FEATURE complete, not a separate issue.
 - **`_skipped`** — the coverage record described under "Coverage" above.

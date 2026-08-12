@@ -110,6 +110,35 @@ mod relocated_tests {
     }
 
     #[test]
+    fn director_protocol_decides_under_authority_and_parks_when_it_has_none() {
+        // #funnel-unattended-director. The protocol must carry BOTH halves, because either alone is
+        // unsafe: authority without the park rule licenses guessing, and the park rule without
+        // authority stalls the pipeline on the first unspecified thing.
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+
+        assert!(p.contains("DECIDE UNDER AUTHORITY, AND CITE IT"),
+            "deciding under authority must be a standing duty, not an aside");
+        assert!(p.contains("bsc plan decision authority"),
+            "the director must be told how to read what it may decide BEFORE deciding");
+        assert!(p.contains("bsc plan decision add"),
+            "every derived decision must be recorded against its clause");
+
+        // The other half: no clause ⇒ park, and it is the user's inbox that surfaces it.
+        assert!(p.contains("DO NOT GUESS"), "an uncovered decision must not be guessed");
+        assert!(p.contains("bsc-wait") && p.contains("Coordination inbox"),
+            "an uncovered decision must park and surface where the user can see it");
+        assert!(p.contains("parks on the FIRST such decision"),
+            "a project with NO authority must park immediately rather than run ahead");
+
+        // The transformation queue is the deliberate EXCEPTION — stated in the same document, or a
+        // reader generalizes the new authority rule straight onto the highest-blast-radius gate.
+        assert!(p.contains("ONE gate that granted") && p.contains("does NOT open by default"),
+            "the transformation queue must be named as the exception to authority-governed advance");
+        assert!(p.contains("reverse-scopes a"),
+            "the exception must carry its REASON, not just the rule");
+    }
+
+    #[test]
     fn director_protocol_reports_an_undelivered_assign_to_a_stopped_lane() {
         // The commons + integration lanes are ORDINARY streams that stop when done, so the honesty
         // rule stops being advice and becomes the only thing preventing silent loss: a worker parked

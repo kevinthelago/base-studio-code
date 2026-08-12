@@ -42,6 +42,7 @@ mod assignments;
 mod blueprint;
 pub mod changes;
 mod confirmed;
+mod decisions;
 mod classify;
 mod requirement;
 mod deploy;
@@ -70,6 +71,7 @@ mod ui;
 pub mod validate;
 
 pub use artifacts::Artifact;
+pub use decisions::Decision;
 pub use changes::{
     default_issue_links, is_valid_change_status, render_change_markdown, Change, ChangeNote, CHANGE_STATUSES,
 };

@@ -316,6 +316,37 @@ mod tests {
     }
 
     #[test]
+    fn the_features_and_plan_gates_advance_under_authority_not_a_user_confirm() {
+        // #funnel-unattended-director. These two were the hard human gates that made the pipeline need
+        // a person standing next to it. The OLD wording is asserted ABSENT, not just the new wording
+        // present: leaving "let the user confirm — do not advance it yourself" anywhere in the prose
+        // would have the session obey whichever paragraph it read last.
+        let p = process_md();
+        assert!(!p.contains("do not advance it yourself"),
+            "the Features stage must no longer forbid the session from advancing it");
+        assert!(!p.contains("get the user's approval"),
+            "the Plan stage must no longer require the user to approve the DAG");
+
+        // Both gates now cite the same mechanism.
+        assert!(p.contains("GRANTED AUTHORITY"), "both gates must advance under granted authority");
+        assert!(p.contains("bsc plan decision authority"),
+            "the session must be told to read what it holds BEFORE deciding");
+        assert!(p.contains("bsc plan decision add"), "each derivation must be recorded against its clause");
+
+        // …and both carry the park rule, which is the half that keeps this honest.
+        assert!(p.contains("do not guess and\n  do not advance"),
+            "an uncovered Features decision must park rather than advance");
+        assert!(p.contains("park with\n  `bsc-wait`") || p.contains("park with\n  \\`bsc-wait\\`"),
+            "an uncovered decision must park via bsc-wait");
+        assert!(p.contains("A run with NO authority at all parks immediately"),
+            "no authority must mean an immediate park, not a guess");
+
+        // open_questions closes three ways now — an authority clause is as final as a user answer.
+        assert!(p.contains("an authority clause is as final as a user answer"),
+            "an authority clause must be able to close an open question");
+    }
+
+    #[test]
     fn context_signature_is_versioned_sorted_and_order_independent() {
         // One source of truth (#756): setup_workspaces (baseline) + compute_context_signature
         // (live) call this, so they can never disagree on format/version.
