@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { gatedProjects, newlyLaunchable } from "./useFleetGate";
 import type { GateStream } from "./streamGate";
 
@@ -46,5 +46,50 @@ describe("newlyLaunchable (#3971)", () => {
     // caller's `lastFired` fingerprint's job — not a liveness proxy that is wrong at boot.
     const twice = [newlyLaunchable(ready, "p", {}), newlyLaunchable(ready, "p", {})];
     expect(twice[0]).toEqual(twice[1]);
+  });
+});
+
+// #fleet-gate-stops-launching-on-its-own — the pump must never launch.
+//
+// It read the coord log ON MOUNT and called `resumeProjectFleet`, which relaunches a whole fleet with
+// baked kickoff prompts — measured at boot as `claude --continue "You are the OPNsense adapter worker…"`.
+// The guard is written against the ACTUATOR: if the injected launcher is ever called, a fleet started.
+describe("useFleetGate performs no launch", () => {
+  it("never calls its launcher — with the store ARMED exactly as it is at a real boot", async () => {
+    // The state matters: an empty store makes the old pump bail at `gatedProjects` before it could
+    // launch, so a naive version of this test passes against the unfixed code and proves nothing.
+    // (It did. This is the armed version.) Here `demo` has a pane, a fleet with a dependsOn edge, and
+    // landed evidence that releases it — the shape that fired at boot on the real machine.
+    const { renderHook } = await import("@testing-library/react");
+    const { useAppStore } = await import("@/store");
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { useFleetGate } = await import("./useFleetGate");
+
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "fleet_landed_streams") return Promise.resolve(["core"]);  // core has landed…
+      if (cmd === "logs_tail") return Promise.resolve([]);
+      if (cmd === "bsc") return Promise.resolve(JSON.stringify([]));
+      return Promise.resolve(undefined);
+    });
+    useAppStore.setState({
+      fleetPaneStreams: { "demo:api": { id: "api" }, "demo:core": { id: "core" } },
+      planFleet: { demo: { streams: [
+        { id: "core", name: "core", repo: "me/app", owns: [], issues: [], dependsOn: [] },
+        { id: "api", name: "api", repo: "me/app", owns: [], issues: [], dependsOn: ["core"] },
+      ] } },
+      quarantinedPanes: {},
+    } as never);
+
+    const launch = vi.fn(() => Promise.resolve());
+    renderHook(() => useFleetGate(launch));
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(launch, "the app must not start a fleet on its own").not.toHaveBeenCalled();
+  });
+
+  it("keeps its pure core, so re-enabling is restoring a body rather than a rewrite", async () => {
+    const m = await import("./useFleetGate");
+    expect(typeof m.gatedProjects).toBe("function");
+    expect(typeof m.newlyLaunchable).toBe("function");
   });
 });
