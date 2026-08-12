@@ -22,3 +22,7 @@ export {
   type Team, type Position, type Relationship, type RelationshipArchetype,
   type CommunicationForm, type CommEdge, type PositionKind,
 } from "./lib/team";
+// The effective-team precedence resolver (#3152, epic #3151) — the planner's `teamFleet.ts` composes
+// this with its own `bsc plan team get` binding + `blueprint.team` once #3152's plan.db/CLI half
+// lands (blocked on this stream's write scope; see `bsc plan request 1`).
+export { effectiveTeam, type TeamGraph } from "./lib/effectiveTeam";
