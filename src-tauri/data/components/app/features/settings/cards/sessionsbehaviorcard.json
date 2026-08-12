@@ -11,5 +11,6 @@
     "Row",
     "Text",
     "Toggle"
-  ]
+  ],
+  "srcDivergence": "Deliberate, not stale — the record's OWN header documents why, and it was read and confirmed before this was written: \"The real SessionsBehaviorCard renders from a node spec (SESSIONS_BEHAVIOR_SPEC) through the app's own KitRenderer (`@/shared/ui/spec`) — app-internal composition infra, unresolvable in this sandbox. This vendors the exact layout the spec describes (Card > Stack > [Row(Text, Toggle), note] x2) as plain JSX with local state standing in for the real store-bound `autoResumeClaude`/`autoAdvanceOnReply`.\" The pattern is the same across this group: an app-internal module (a spec renderer, a store hook, a JSON-asset-backed catalog) does not resolve in the preview sandbox, so the record vendors the resolvable part and substitutes representative data for the rest. Refreshing from the file would reintroduce the unresolvable import and break the record at mount. Lifted into `srcDivergence` because the reconcile sweep reads THIS field, not a source comment — the reason was already written down, just not where anything looks. Hand-reviewed for `record-src-reconcile`."
 }

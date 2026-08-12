@@ -26,5 +26,6 @@
   ],
   "whenUse": [
     "The face card for an agent node on an org-chart / team canvas - name, role chip, and a clamped blurb."
-  ]
+  ],
+  "srcDivergence": "Deliberate, not stale — the record's OWN header documents why, and it was read and confirmed before this was written: \"AgentFace (#3335) — the org-chart agent-node face card: name, role chip, and a 4-line-clamped blurb. Promoted from harvested (it was already complete and tested) into base-studio-code, refactored to use the real Box/Row/Text/Chip primitives instead of local raw-div redeclarations. The blurb clamp is CSS (a 4-line `-webkit-box`) so a persona blurb of any length can never grow the fixed node box — the full text stays in the DOM (the truncation is purely visu…\" The pattern is the same across this group: an app-internal module (a spec renderer, a store hook, a JSON-asset-backed catalog) does not resolve in the preview sandbox, so the record vendors the resolvable part and substitutes representative data for the rest. Refreshing from the file would reintroduce the unresolvable import and break the record at mount. Lifted into `srcDivergence` because the reconcile sweep reads THIS field, not a source comment — the reason was already written down, just not where anything looks. Hand-reviewed for `record-src-reconcile`."
 }
