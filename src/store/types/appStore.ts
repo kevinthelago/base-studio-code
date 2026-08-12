@@ -13,6 +13,7 @@ import type { McpSlice } from "@/features/mcp/store";
 import type { PersonasSlice } from "@/features/personas/store";
 import type { OrgSlice } from "@/features/teams/store";
 import type { ComponentsSlice } from "@/features/designs/store";
+import type { AlgorithmsSlice } from "@/features/algorithms/store";
 import type { StudiosSlice } from "@/features/studio-sessions/store";
 import type { SkillsSlice } from "@/features/skills/store";
 import type { AutomationsSlice } from "@/features/automations/store";
@@ -30,6 +31,7 @@ export interface AppStore
     PersonasSlice,
     OrgSlice,
     ComponentsSlice,
+    AlgorithmsSlice,
     StudiosSlice,
     McpSlice,
     AutomationsSlice,

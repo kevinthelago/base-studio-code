@@ -13,6 +13,7 @@ import { createPersonasSlice } from "@/features/personas/store";
 import { reconcilePersonas } from "@/features/personas/lib/persona";
 import { createOrgSlice } from "@/features/teams/store";
 import { createComponentsSlice } from "@/features/designs/store";
+import { createAlgorithmsSlice } from "@/features/algorithms/store";
 import { createStudiosSlice } from "@/features/studio-sessions/store";
 import { reconcileOrgs } from "@/features/teams/lib/team";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
@@ -40,6 +41,7 @@ import { newTabId } from "./helpers";
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get, store) => ({
+      ...createAlgorithmsSlice(set, get, store),
       ...createConsoleSlice(set, get, store),
       ...createGithubSlice(set, get, store),
       ...createShellSlice(set, get, store),

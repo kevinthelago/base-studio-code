@@ -168,6 +168,11 @@ export function useAppBoot() {
     // store so the planner's test_ui pane + (later) the Design Studio share ONE library. A no-op that
     // keeps the typed seed when the bridge is unreachable (which is every build until the store lands).
     void useAppStore.getState().hydrateComponents();
+    // The ALGORITHM impls (resolver-reads-the-algorithms-store) — the set `resolveGraphSource` matches a
+    // module-granularity `provides` against, so a logic module authored as a record resolves like a
+    // component does. Same contract as the components hydrate: a no-op when the read is unavailable, so
+    // a degraded environment resolves nothing rather than failing boot.
+    void useAppStore.getState().hydrateAlgorithms();
     // Kit-usage consumer index (#2277): hydrate which projects use which kit from the global
     // `bsc ui usage` store — the edges a kit change fans out over. No-op keeping the cache when
     // the bridge is absent.
