@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   stagesFrom, activeIndex, clampIndex, gatePill, footerAction, resolveFooter, currentGateReady, connectorKind,
+  isUserGated, USER_GATED_STAGES,
   sectionForStage, shouldAutoCompleteGate, type Stage, type StageStatus,
 } from "./focusedPlan";
 import { confirmedSignal, skippedSignal, type BlueprintStage } from "./blueprints";
@@ -269,5 +270,65 @@ describe("shouldAutoCompleteGate (#1068)", () => {
     expect(shouldAutoCompleteGate(true, true, ["phases"])).toBe(false);
     // nothing to confirm (e.g. a generation-gated stage) → no-op
     expect(shouldAutoCompleteGate(true, false, [])).toBe(false);
+  });
+});
+
+describe("the advance bar as a PROGRESS surface (#funnel-ui-into-stores)", () => {
+  // The director advances the Features and Plan gates itself under the requirement's authority
+  // (#funnel-unattended-director). An "approve & continue" button on those stages offers the user a
+  // decision that is no longer theirs — and often one already made — so the bar reports instead.
+  it("reports 'awaiting' on the active stage when the stage is not user-gated", () => {
+    expect(footerAction(1, 1, false, false, false, false)).toEqual({ kind: "awaiting", enabled: false });
+    // …even when the gate IS ready: readiness is not an invitation to approve.
+    expect(footerAction(1, 1, false, true, false, false)).toEqual({ kind: "awaiting", enabled: false });
+  });
+
+  it("keeps approve & continue where a user gate genuinely survives", () => {
+    expect(footerAction(1, 1, false, true, false, true).kind).toBe("approve-continue");
+    expect(footerAction(1, 1, false, false, false, true).enabled).toBe(false);
+  });
+
+  it("defaults to user-gated, so an un-migrated caller keeps today's behaviour", () => {
+    // The parameter is last and optional on purpose: this change must not silently turn every
+    // existing call site into a progress readout.
+    expect(footerAction(1, 1, false, true).kind).toBe("approve-continue");
+  });
+
+  it("never offers Skip on an awaiting bar — skipping is a gate decision the user no longer holds", () => {
+    const raw = footerAction(1, 1, false, true, false, false);
+    expect(raw.canSkip).toBeUndefined();
+    // …and resolveFooter cannot resurrect it, even with override on and the stage skippable.
+    const resolved = resolveFooter(raw, 3, true, true);
+    expect(resolved.skipEnabled).toBeUndefined();
+    expect(resolved.kind).toBe("awaiting");
+  });
+
+  it("does not let the pending-confirm one-click enable an awaiting bar", () => {
+    // resolveFooter force-enables a BLOCKING approve-continue when there are drafted sections. An
+    // awaiting bar is not blocked on the user, so that path must not reach it.
+    expect(resolveFooter(footerAction(1, 1, false, false, false, false), 5, false, false).enabled).toBe(false);
+  });
+
+  it("navigation and publish are unaffected by the gate model", () => {
+    expect(footerAction(2, 1, false, false, false, false).kind).toBe("back-to-current");
+    expect(footerAction(0, 1, false, false, false, false).kind).toBe("jump-to-current");
+    expect(footerAction(1, 1, true, false, false, false).kind).toBe("publish");
+  });
+});
+
+describe("USER_GATED_STAGES (#funnel-ui-into-stores)", () => {
+  it("is an ALLOW-list — a stage is authority-governed unless it argues its way on", () => {
+    // The direction matters: a deny-list would let a stage added later keep a human gate nobody
+    // revisited, which is exactly how the pipeline ended up needing someone standing next to it.
+    expect(isUserGated("features")).toBe(false);
+    expect(isUserGated("streams")).toBe(false);
+    expect(isUserGated("discovery")).toBe(false);
+    expect(isUserGated("a-stage-invented-next-year")).toBe(false);
+    expect(isUserGated(undefined)).toBe(false);
+  });
+
+  it("keeps the transformation queue gated — it reverse-scopes a RUNNING app", () => {
+    expect(isUserGated("transformations")).toBe(true);
+    expect(USER_GATED_STAGES).toEqual(["transformations"]);
   });
 });

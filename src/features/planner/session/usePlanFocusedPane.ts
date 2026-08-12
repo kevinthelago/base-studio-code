@@ -13,7 +13,7 @@
 // usePlanConfirmations (whose `pendingConfirm` the footer reads). The skip/confirm/publish actions
 // stay in the component (they close over usePlanConfirmations + usePlanPublish).
 import { useState, useEffect, useMemo } from "react";
-import { clampIndex, gatePill, footerAction, resolveFooter, type stagesFrom } from "../stages/focusedPlan";
+import { clampIndex, gatePill, footerAction, resolveFooter, type stagesFrom, isUserGated } from "../stages/focusedPlan";
 import { activeStagePrompt } from "./plannerConductor";
 import type { BlueprintStage } from "../stages/blueprints";
 
@@ -68,7 +68,13 @@ export function usePlanFocusedPane(opts: PlanFocusedPaneOpts) {
   const activeSkippable = stages[focusActiveIdx]?.skippable === true;
   // #2121: on the active UI stage with missing/stale design, the primary action routes the design.
   const routeDesign = stages[focusActiveIdx]?.key === "ui" && uiNeedsRoute;
-  const footerRaw = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady, routeDesign);
+  // #funnel-ui-into-stores: does the ACTIVE stage still hold a user gate? Everything that does not
+  // advances under the requirement's authority (#funnel-unattended-director), so its bar reports
+  // progress instead of offering an approval the user no longer owns.
+  const activeUserGated = isUserGated(stages[focusActiveIdx]?.key);
+  const footerRaw = footerAction(
+    focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady, routeDesign, activeUserGated,
+  );
   // Let "approve & continue" light up as soon as there are drafted sections to confirm (clicking
   // confirms them, see onPrimary); resolveFooter also sets `skipEnabled` from skippable + override.
   const focusFooter = resolveFooter(footerRaw, pendingConfirm.length, allowGateOverride, activeSkippable);
