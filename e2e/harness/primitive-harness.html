@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <title>graph-primitive render-seam harness</title>
+  </head>
+  <body>
+    <!-- KitRenderer mounts here. Unlike the graph-pages harness this DOES render, because the seam under
+         test is a render decision — which copy of a primitive reaches the DOM — and a load-only check
+         cannot see it. -->
+    <div id="root"></div>
+    <script type="module" src="./primitiveHarness.ts"></script>
+  </body>
+</html>
