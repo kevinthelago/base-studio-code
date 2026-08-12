@@ -17,10 +17,26 @@ const seedRecords = import.meta.glob<{ id: string; role?: string }>("@data/compo
 const records = Object.values(seedRecords);
 
 describe("the shadow page catalogue", () => {
-  it("covers EVERY migrated page — a new one cannot slip past the report", () => {
-    const pageRecords = records.filter((r) => r.role === "page").map((r) => r.id).sort();
-    expect(pageRecords.length, "there are page records to cover").toBeGreaterThan(0);
-    expect(SHADOW_PAGES.map((p) => p.pageId).sort()).toEqual(pageRecords);
+  // `role: "page"` is TWO populations, which is why this asserted over the wrong set for a long time.
+  // Twelve records are APP SCREENS the shell navigates to; ten are page-shaped KIT COMPOSITIONS — the
+  // shared Pages tier (#2505), the `KeptMountedPage` wrapper, the Telemetry/Teams galleries. A kit page
+  // has no workspace and no host feature, so its entry's `ensurePlatform` could only import nothing.
+  //
+  // The split is read off the RECORD (`pageKind: "kit"`), never off an id list here: an exclusion list is
+  // the tempting fix and the wrong one, because the next kit page joins it by being forgotten. Marked on
+  // the record, a new kit page declares itself and a new APP SCREEN still fails this until catalogued.
+  it("covers EVERY migrated app screen — a new one cannot slip past the report", () => {
+    const appScreens = records.filter((r) => r.role === "page" && r.pageKind !== "kit").map((r) => r.id).sort();
+    expect(appScreens.length, "there are app-screen records to cover").toBeGreaterThan(0);
+    expect(SHADOW_PAGES.map((p) => p.pageId).sort()).toEqual(appScreens);
+  });
+
+  it("the kit tier is MARKED, not merely uncatalogued — the exclusion is a stated fact", () => {
+    // Without this, deleting every `pageKind` would make the guard above pass vacuously by widening the
+    // catalogue's expected set to nothing it does not already contain... in the wrong direction.
+    const kit = records.filter((r) => r.role === "page" && r.pageKind === "kit").map((r) => r.id);
+    expect(kit.length, "the kit page tier is marked on the records").toBeGreaterThan(0);
+    expect(kit.filter((id) => SHADOW_PAGES.some((p) => p.pageId === id)), "no kit page is catalogued").toEqual([]);
   });
 
   it("names records that exist", () => {

@@ -3,6 +3,7 @@
   "name": "KeptMountedPage",
   "kitId": "base-studio-code",
   "role": "page",
+  "pageKind": "kit",
   "srcText": "import { useRef, Suspense, type ReactNode, type CSSProperties } from \"react\";\nimport { Box } from \"@/shared/ui/layout/Box\";\n\nexport function KeptMountedPage({\r\n  active,\r\n  gate = true,\r\n  keepAlive = false,\r\n  fallback,\r\n  style,\r\n  children,\r\n}: {\r\n  active: boolean;\r\n  gate?: boolean;\r\n  keepAlive?: boolean;\r\n  fallback?: ReactNode;\r\n  style?: CSSProperties;\r\n  children: ReactNode;\r\n}) {\r\n  const everShown = useRef(false);\r\n  if (active && gate) everShown.current = true;\r\n  if (!gate || !(everShown.current || keepAlive)) return null;\r\n\r\n  const body = fallback !== undefined ? <Suspense fallback={fallback}>{children}</Suspense> : children;\r\n  return (\r\n    <Box style={{ display: active ? \"flex\" : \"none\", flex: 1, flexDirection: \"column\", minHeight: 0, minWidth: 0, ...style }}>\r\n      {body}\r\n    </Box>\r\n  );\r\n}",
   "src": "src/app/KeptMountedPage.tsx",
   "composes": [

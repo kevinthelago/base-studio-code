@@ -83,6 +83,20 @@ export interface ShadowPageDef {
 /** The pages the graph carries, in rail order. */
 export const SHADOW_PAGES: ShadowPageDef[] = [
   {
+    pageId: "accessibilitypage",
+    label: "Accessibility",
+    // The ONLY file-rendered entry, and deliberately so. Settings was rolled back to files (#3758) and its
+    // `settingspage` graph copy deleted (#4183) — but this record is not that leftover: it was promoted
+    // into the seed on 2026-08-11, ten days later, alongside the whole `features/settings/cards/*` family.
+    // So the record is live and the SCREEN renders from the file, which is what `rendersFrom` exists to
+    // say: a `differs` verdict here is a not-yet, not a live problem.
+    rendersFrom: "file",
+    modules: [
+      { recordId: "accessibilitypage", file: "/src/features/settings/pages/AccessibilityPage.tsx" },
+    ],
+    ensurePlatform: () => import("@/features/settings"),
+  },
+  {
     pageId: "fleetpage",
     label: "Fleet",
     rendersFrom: "graph",
@@ -349,6 +363,8 @@ const FILE_SOURCES = import.meta.glob<string>(
     "/src/features/skills/{index,SkillsViews,NewGroupDialog,SkillDrawer,SkillsDigest,LessonsTab,RunsTab}.tsx",
     // ProfilesTab/ActivityTab/FlowTab dropped with their entries — AssignmentsTab is the last security file.
     "/src/features/security/AssignmentsTab.tsx",
+    // The one file-rendered page (see its entry) — Settings renders this .tsx while the record shadows it.
+    "/src/features/settings/pages/AccessibilityPage.tsx",
   ],
   { query: "?raw", import: "default" },
 );
