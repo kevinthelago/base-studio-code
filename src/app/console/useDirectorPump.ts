@@ -77,6 +77,9 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
       directorPanes: paneIds,
       knownPanes: Object.keys(statuses),
       surfaced: surfaced.current,
+      // The sender's tier, read LIVE rather than captured — the constraint is on who sent the brief,
+      // and an architect may only reach a director (#funnel-generalize-brief-channel).
+      roleOf: (paneId) => useAppStore.getState().paneRoles[paneId],
     });
     for (const inj of briefDue) {
       if (inFlight.current.has(inj.paneId)) continue;

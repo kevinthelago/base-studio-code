@@ -30,7 +30,13 @@ export interface BriefRouteContext {
   knownPanes: string[];
   /** `<paneId>|<key>` entries already injected. */
   surfaced: ReadonlySet<string>;
+  /** A pane's session ROLE, for the tier constraint below. Optional so every existing caller and
+   *  fixture keeps working unchanged — absent ⇒ no sender is treated as an architect. */
+  roleOf?: (paneId: string) => string | undefined;
 }
+
+/** The funnel's tier 1. Its briefs are constrained to directors — see {@link briefInjections}. */
+const ARCHITECT = "architect";
 
 /** The broadcast audiences — every other target names one specific session. */
 const DIRECTOR = "director";
@@ -84,8 +90,8 @@ export function resolveBriefTarget(target: string, ctx: BriefRouteContext): stri
 
 /** The prose a DIRECTOR gets: reconcile the plan and route the work onward. Unchanged in substance
  *  from the original `pendingBriefPrompt` — this audience's job did not change. */
-export function directorBriefPrompt(briefs: ReceivedBrief[]): string {
-  return `[coordinator] ${briefs.length} plan update(s) pushed to you: ${briefs.map(describe).join("; ")}. ` +
+export function directorBriefPrompt(briefs: ReceivedBrief[], senderTier = "an upstream tier"): string {
+  return `[coordinator] ${briefs.length} plan update(s) pushed to you by ${senderTier}: ${briefs.map(describe).join("; ")}. ` +
     `Reconcile the running plan with each: update the board/issues to match, and route any new or changed ` +
     `work to the owning worker with bsc-assign (open a fresh issue via bsc-issue first when a brief ` +
     `introduces a new #ref). Do not ask the user.`;
@@ -122,7 +128,21 @@ export function briefInjections(briefs: ReceivedBrief[], ctx: BriefRouteContext)
   const undeliverable: ReceivedBrief[] = [];
 
   for (const b of briefs) {
-    const panes = resolveBriefTarget(b.target, ctx);
+    let panes = resolveBriefTarget(b.target, ctx);
+    // THE TIER CONSTRAINT (#funnel-generalize-brief-channel): an ARCHITECT reaches directors, and
+    // nothing else. It is applied here rather than inside `resolveBriefTarget` because the sender is
+    // a property of the BRIEF, not of the target string — and because resolution and authorisation are
+    // different questions: resolve says "what does this name point at", this says "may this sender
+    // reach it".
+    //
+    // Intersecting (rather than replacing with every director) is deliberate: `bsc-brief
+    // <project>:director` from an architect must still reach exactly that one director, so a targeted
+    // brief stays targeted. An architect naming a WORKER resolves to that worker, intersects to empty,
+    // and is reported as undeliverable — refused loudly rather than silently re-routed to a director,
+    // which would look like it worked and quietly cross the tier boundary.
+    if (ctx.roleOf?.(b.from) === ARCHITECT) {
+      panes = panes.filter((p) => ctx.directorPanes.includes(p));
+    }
     if (panes.length === 0) {
       // Guard the REPORT on the director panes, so an undeliverable brief is announced once and not
       // re-announced every tick for as long as it sits in the log (a brief is never consumed).
@@ -139,8 +159,11 @@ export function briefInjections(briefs: ReceivedBrief[], ctx: BriefRouteContext)
 
   const out: BriefInjection[] = [];
   for (const [paneId, group] of perPane) {
+    // Name the SENDING TIER rather than hardcoding "the planner" — under the three-tier funnel the
+    // upstream is the ARCHITECT, and a director that is told who briefed it can weigh the instruction.
+    const senderTier = ctx.roleOf?.(group[0].from) ?? "an upstream tier";
     const prompt = ctx.directorPanes.includes(paneId)
-      ? directorBriefPrompt(group)
+      ? directorBriefPrompt(group, senderTier)
       : targetedBriefPrompt(group, group[0].from);
     out.push({ paneId, prompt, keys: group.map((b) => `${paneId}|${briefRouteKey(b)}`) });
   }

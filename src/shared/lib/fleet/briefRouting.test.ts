@@ -146,3 +146,60 @@ describe("the prompts", () => {
     expect(p).toMatch(/bsc-ask/);
   });
 });
+
+// #funnel-generalize-brief-channel — the architect reaches directors, and only directors.
+//
+// Two enforcement points guard this; these cover the ROUTING half (the GRANT half — the emitter being
+// in the architect's restricted allow-list — is asserted in roleModel's own suite). Either alone is
+// weak: the grant decides what the architect can RUN, the routing decides where what it sends can LAND.
+describe("an architect brief is constrained to directors", () => {
+  const DIRECTORS = ["proj:director", "other:director"];
+  const KNOWN = [...DIRECTORS, "proj:api", "proj:issuer"];
+  const ctx = (roleOf?: (p: string) => string | undefined) => ({
+    directorPanes: DIRECTORS, knownPanes: KNOWN, surfaced: new Set<string>(), roleOf,
+  });
+  const arch = () => (p: string) => (p === "arch:1" ? "architect" : p.endsWith(":director") ? "director" : "worker");
+  const brief = (target: string) => ([{ id: "b1", from: "arch:1", target, body: "ship it", at: 1 }] as never);
+
+  it("reaches ONE named director — a targeted brief stays targeted", () => {
+    const out = briefInjections(brief("proj:director"), ctx(arch()));
+    expect(out.map((i) => i.paneId)).toEqual(["proj:director"]);
+  });
+
+  it("reaches EVERY director when untargeted", () => {
+    const out = briefInjections(brief(""), ctx(arch()));
+    expect(out.map((i) => i.paneId).sort()).toEqual([...DIRECTORS].sort());
+  });
+
+  it("REFUSES a worker named by exact pane id — the tier boundary the funnel exists to keep", () => {
+    // Refused LOUDLY: it resolves to the worker, intersects to empty, and is reported undeliverable
+    // on the director panes rather than silently re-routed (which would look like it worked).
+    const out = briefInjections(brief("proj:api"), ctx(arch()));
+    expect(out.every((i) => i.prompt.includes("could NOT be delivered"))).toBe(true);
+    expect(out.some((i) => i.paneId === "proj:api")).toBe(false);
+  });
+
+  it("REFUSES a bare stream id, and REFUSES the issuer audience", () => {
+    for (const t of ["api", "issuer"]) {
+      const out = briefInjections(brief(t), ctx(arch()));
+      expect(out.some((i) => i.paneId === "proj:api" || i.paneId === "proj:issuer"), t).toBe(false);
+    }
+  });
+
+  it("leaves a NON-architect sender routing exactly as before — this constrains one tier, not the fleet", () => {
+    const fromPlanner = [{ id: "b2", from: "proj:planner", target: "proj:api", body: "x", at: 1 }] as never;
+    const out = briefInjections(fromPlanner, ctx(arch()));
+    expect(out.map((i) => i.paneId)).toEqual(["proj:api"]);
+  });
+
+  it("with NO roleOf supplied, nothing is treated as an architect (every existing caller is unchanged)", () => {
+    const out = briefInjections(brief("proj:api"), ctx(undefined));
+    expect(out.map((i) => i.paneId)).toEqual(["proj:api"]);
+  });
+
+  it("names the SENDING TIER in the director's prose instead of hardcoding the planner", () => {
+    const out = briefInjections(brief("proj:director"), ctx(arch()));
+    expect(out[0].prompt).toContain("architect");
+    expect(out[0].prompt).not.toContain("the planner");
+  });
+});
