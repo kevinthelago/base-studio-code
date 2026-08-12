@@ -10,17 +10,38 @@ use crate::{bsc_base_dir, to_bash_path};
 use portable_pty::CommandBuilder;
 use std::collections::HashMap;
 
-/// The sanitized project key owning `cwd` — the first path component under the projects hub root
-/// (`~/.base-studio-code/projects/<key>/...`), or None when `cwd` is empty or not under a hub.
-/// Shared derivation for [`plan_db_for_cwd`] and [`data_db_for_cwd`] so a session's plan.db and
-/// DuckDB store always resolve to the same key.
+/// The sanitized project key owning `cwd`, or None when `cwd` is empty or belongs to no project.
+///
+/// A project session lives under ONE OF TWO roots, and both must resolve to the same key:
+///   · the hub          — `~/.base-studio-code/projects/<key>/...`   (the director and the planner)
+///   · the worktree tree — `~/.base-studio-code/worktrees/<key>/...` (every fleet WORKER)
+///
+/// The second root is why this exists. It used to strip only `projects_root()`, and the comment
+/// claimed "workers run in `projects/<key>/.worktrees/...`" — a layout #844 deliberately abandoned
+/// when it moved worktrees OUT of the hub so the planner's `CLAUDE.md` would stop being an ancestor
+/// of every worker (`worktrees_dir`, and the test `worktrees_dir_is_outside_the_project_hub`). After
+/// that move the strip failed for every worker, so `BSC_PLAN_DB` — and with it `error.db`, `usage.db`
+/// and the project DuckDB, which all share this derivation — was never set for one. A worker could
+/// not read its own items, file a `bsc plan request`, open a `bsc plan change`, or mark anything
+/// complete; `bsc-ask` (a bare coord.log append needing no DB) was the only channel left, which is
+/// exactly what the ask queue filled up with.
+///
+/// Shared by [`plan_db_for_cwd`], [`error_db_for_cwd`], [`usage_db_for_cwd`] and [`data_db_for_cwd`]
+/// so every per-project store a session reaches resolves to the same key.
 fn project_key_from_cwd(cwd: &str) -> Option<std::ffi::OsString> {
     if cwd.is_empty() {
         return None;
     }
-    let root = crate::projects_root();
-    let rel = std::path::Path::new(cwd).strip_prefix(&root).ok()?;
-    Some(rel.components().next()?.as_os_str().to_os_string())
+    let path = std::path::Path::new(cwd);
+    // Both roots, most-specific-first is not needed (they are siblings and cannot both match), but a
+    // non-project session must still resolve to None — so this is an allow-list of the two project
+    // roots rather than "anything under the base dir".
+    let roots = [crate::projects_root(), crate::worktrees_root()];
+    roots
+        .iter()
+        .find_map(|root| path.strip_prefix(root).ok())
+        .and_then(|rel| rel.components().next())
+        .map(|c| c.as_os_str().to_os_string())
 }
 
 /// The workspace dir of an app-owned STUDIO session, or None for every other pane.
@@ -776,7 +797,8 @@ mod tests {
     }
 
     use super::{
-        bsc_shim_files, bundled_gh_dir, compose_path, is_build_output, plan_db_for_cwd,
+        bsc_shim_files, bundled_gh_dir, compose_path, data_db_for_cwd, error_db_for_cwd,
+        is_build_output, plan_db_for_cwd, usage_db_for_cwd,
         portable_git_bin_candidates, scratch_dir_for_cwd, session_env_with, shot_dir_for_cwd,
         session_skill_group_for_pane, sidecar_candidates, staged_sidecar_dir, BSC_SHIM_CMD,
         BSC_SHIM_SH,
@@ -1042,13 +1064,45 @@ mod tests {
 
     #[test]
     fn plan_db_for_cwd_resolves_the_central_db_from_a_project_session() {
-        let projects = bsc_base_dir().join("projects");
         // Director/planner at the hub root → the project's central plans/<key>.db (#2996, out of the hub).
-        let hub = projects.join("my-app");
+        let hub = bsc_base_dir().join("projects").join("my-app");
         assert_eq!(plan_db_for_cwd(&hub.to_string_lossy()), Some(crate::plan_db_path("my-app")));
-        // A worker in a worktree beneath the hub resolves to the SAME db.
-        let wt = projects.join("my-app").join(".worktrees").join("web--auth");
-        assert_eq!(plan_db_for_cwd(&wt.to_string_lossy()), Some(crate::plan_db_path("my-app")));
+    }
+
+    /// The regression: a WORKER's cwd must resolve to its project's stores.
+    ///
+    /// This test previously used `projects/<key>/.worktrees/...` — a layout #844 abandoned when it
+    /// moved worktrees OUT of the hub. So it passed against a path no worker has had in a long time,
+    /// while every real worker got NO `BSC_PLAN_DB` and could not run a single `bsc plan` verb.
+    /// Built from `worktrees_dir` rather than a hand-written path, so it cannot drift from the real
+    /// layout again.
+    #[test]
+    fn every_per_project_store_resolves_from_a_real_worker_worktree() {
+        let wt = crate::worktrees_dir("my-app").join("web--auth");
+        let cwd = wt.to_string_lossy();
+
+        assert_eq!(plan_db_for_cwd(&cwd), Some(crate::plan_db_path("my-app")));
+        // The other three share the derivation, so they broke together and must be fixed together.
+        assert_eq!(error_db_for_cwd(&cwd), Some(crate::error_db_path("my-app")));
+        assert_eq!(usage_db_for_cwd(&cwd), Some(crate::usage_db_path("my-app")));
+        assert!(data_db_for_cwd(&cwd).is_some(), "the project DuckDB must resolve for a worker too");
+
+        // A worker and the hub director share ONE plan.db — that is what makes the fleet's plan a
+        // single store rather than a copy per session.
+        let hub = crate::project_dir("my-app");
+        assert_eq!(plan_db_for_cwd(&cwd), plan_db_for_cwd(&hub.to_string_lossy()));
+    }
+
+    /// The guard the widening must not remove: a session that belongs to no project gets no stores.
+    #[test]
+    fn a_non_project_session_still_resolves_no_stores() {
+        for cwd in [
+            "",
+            "C:/code/some-repo",
+            &bsc_base_dir().join("design-studio").to_string_lossy(),
+        ] {
+            assert_eq!(plan_db_for_cwd(cwd), None, "{cwd} must not resolve a plan db");
+        }
     }
 
     #[test]

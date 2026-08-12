@@ -58,8 +58,20 @@ describe("issue provenance (#738)", () => {
 
   it("triageStartProject seeds the restricted GITHUB prompt by default when CONNECTED (#738)", () => {
     // The restricted (gh issue list) triage is the connected behavior, so it needs a token (#3281 made
-    // triage token-aware: no token ⇒ the local plan.db prompt, next test).
-    useAppStore.setState({ bscBaseDir: "/base", restrictToBscIssues: true, githubToken: "ghp_x" });
+    // triage token-aware: no token ⇒ the local plan.db prompt, next test) AND a strategy that actually
+    // reaches a remote (#worker-prose-follows-the-local-first-loop — a token alone stopped being
+    // enough, because holding one is not consent to WRITE to GitHub).
+    //
+    // The #738 guard itself is unchanged and still worth pinning: WHEN a project genuinely triages
+    // GitHub issues, only bsc-authored ones are trusted.
+    useAppStore.setState({
+      bscBaseDir: "/base",
+      restrictToBscIssues: true,
+      githubToken: "ghp_x",
+      // keyed by the sanitized project NAME ("Proj"), which is what triageStartProject derives — not
+      // the project id ("k") it is also passed.
+      planFleet: { Proj: { recommended: 1, reasoning: "", director: { enabled: false }, streams: [], strategy: "pr-ci" } },
+    } as never);
     useAppStore.getState().triageStartProject("Proj", ["acme/web"], "k");
     const texts = Object.values(useAppStore.getState().paneStartupPromptText);
     expect(texts.some((t) => typeof t === "string" && t.includes(BSC_ISSUE_LABEL))).toBe(true);

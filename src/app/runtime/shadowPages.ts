@@ -1,11 +1,23 @@
 // The shadow-mode page catalogue (#4169, epic #3604) — which graph page node corresponds to which source
 // file, for every page the migration has touched.
 //
-// This is the pairing shadow mode compares. Each entry mirrors the generator that authored the records
-// (`scripts/gen-<x>-graph.cjs`), which is the ONLY place the record ↔ file correspondence has lived until
-// now — a mapping the generators use once and then forget. `shadowPages.test.ts` pins both halves so an
-// entry cannot rot into a silent skip: a wrong file path or a dropped record id fails there rather than
-// reading as "no drift".
+// This is the pairing shadow mode compares. It used to mirror the generator that authored the records
+// (`scripts/gen-<x>-graph.cjs`); those were RETIRED (graph-retire-shadow-and-generators) because they
+// `readFileSync` source files this migration deletes, so this catalogue is now the pairing's home rather
+// than its copy. `shadowPages.test.ts` pins both halves so an entry cannot rot into a silent skip: a
+// wrong file path or a dropped record id fails there rather than reading as "no drift".
+//
+// HOW A FILE LEAVES. `file: null` is the designed end state, not a special case — it says the file is
+// gone and the record is the only copy, so the STRUCTURAL half of the report drops and the BINDING half
+// (does the record resolve its imports?) keeps running. Shadow mode therefore never needs retiring: it
+// shrinks as the migration proceeds and its structural half self-retires when the last entry goes null.
+// There is deliberately NO replacement baseline — an archive copy or a previous record revision would
+// be a copy of the thing under test, which is not a second opinion. `bsc ui parity` (#4246) answers the
+// question that outlives the file: does the app RENDER what it SHIPS (store vs seed)?
+//
+// Entries are nulled HERE, ahead of the deletion, because this file belongs to the design-studio stream
+// while each deletion item is scoped to its own feature glob — a github worker cannot edit this file, so
+// leaving the flip to the deletion would make every deletion item fail a test it has no way to fix.
 //
 // WHY THE FILE SOURCES ARE A RAW GLOB: the file half of the diff is the .tsx on disk, and the app has no
 // filesystem access to its own source in a packaged build. Vite's `?raw` glob is the only way to have it
@@ -201,9 +213,15 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // Graph-only for the same reason as automationspage/mcppage/securitypage: the file copy was
       // dead and was removed, and the barrel is index.ts now. The six part modules keep their files.
       { recordId: "githubpage", file: null },
-      { recordId: "github-empty", file: "/src/features/github/Empty.tsx" },
-      { recordId: "github-summary", file: "/src/features/github/GitHubSummary.tsx" },
-      { recordId: "github-pulse", file: "/src/features/github/Pulse.tsx" },
+      // Empty/GitHubSummary/Pulse are RELEASED FOR DELETION (graph-retire-shadow-and-generators): their
+      // records are settled against the seed, so the file has no second opinion left to give, and the
+      // per-stream deletion item cannot null these itself — it does not own this file. Nulled here so
+      // `git rm` in `src/features/github/**` is all that item has to do.
+      { recordId: "github-empty", file: null },
+      { recordId: "github-summary", file: null },
+      // Pulse.tsx backs NINE records; only this one is catalogued, so its deletion also needs
+      // `reconcile-record-src.cjs --retire` to move the other eight off `src`.
+      { recordId: "github-pulse", file: null },
       { recordId: "github-branch-graph", file: "/src/features/github/BranchGraph.tsx" },
       { recordId: "github-activity-heatmap", file: "/src/features/github/summary/ActivityHeatmap.tsx" },
       { recordId: "github-ci-health", file: "/src/features/github/summary/CIHealthCard.tsx" },
@@ -224,9 +242,12 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // Graph-only: the dead AutomationsWorkspace copy is gone and the barrel is index.ts now, so
       // this path would not resolve. The three tab bodies below are still real files.
       { recordId: "automationspage", file: null },
+      // Schedules KEEPS its file: `automations-schedules` is one of the 50 still unresolved in
+      // `graph-srctext-three-way-merges`, where the .tsx is a PARTY to the merge — and its seed does not
+      // even parse (unterminated string literal at line 210), so the file is the only sound copy.
       { recordId: "automations-schedules", file: "/src/features/automations/Schedules.tsx" },
-      { recordId: "automations-history", file: "/src/features/automations/History.tsx" },
-      { recordId: "automations-hook-analytics", file: "/src/features/automations/HookAnalytics.tsx" },
+      { recordId: "automations-history", file: null },
+      { recordId: "automations-hook-analytics", file: null },
     ],
     ensurePlatform: () => import("@/features/automations"),
   },
@@ -240,7 +261,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // the record through McpGraphHost — so it was removed. Diffing the record against what is
       // left would report `differs` forever against a file that no longer claims to be this page.
       { recordId: "mcppage", file: null },
-      { recordId: "mcp-analytics", file: "/src/features/mcp/McpAnalytics.tsx" },
+      { recordId: "mcp-analytics", file: null },
     ],
     ensurePlatform: () => import("@/features/mcp"),
   },
@@ -295,10 +316,12 @@ const FILE_SOURCES = import.meta.glob<string>(
     "/src/app/console/{index,PaneAt,consoleStates}.tsx",
     "/src/app/console/panes/{PaneShell,PaneMenu}.tsx",
     "/src/features/glance/Glance{Workspace,Canvas,Inspector,StreamMorph,PreviewMorph,Node,PlanScreen,ChatDock,SessionLog}.tsx",
-    "/src/features/github/{Empty,GitHubSummary,Pulse,BranchGraph}.tsx",
+    // Empty/GitHubSummary/Pulse dropped with their entries — the glob and the catalogue are pinned to
+    // each other BOTH ways by `shadowPages.test.ts`, so a path released for deletion has to leave both.
+    "/src/features/github/BranchGraph.tsx",
     "/src/features/github/summary/{ActivityHeatmap,CIHealthCard,ContributorsCard,CrossRepoActivity,GitHubPageModeStrip,LanguageMix,OpenPRsCard,ReposGrid}.tsx",
-    "/src/features/automations/{Schedules,History,HookAnalytics}.tsx",
-    "/src/features/mcp/McpAnalytics.tsx",
+    "/src/features/automations/Schedules.tsx",
+    // McpAnalytics dropped with its entry.
     "/src/features/skills/{index,SkillsViews,NewGroupDialog,SkillDrawer,SkillsDigest,LessonsTab,RunsTab}.tsx",
     "/src/features/security/{ProfilesTab,AssignmentsTab,ActivityTab,FlowTab}.tsx",
   ],

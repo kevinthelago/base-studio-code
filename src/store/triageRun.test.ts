@@ -64,7 +64,11 @@ describe("prepareTriageRun (#1004)", () => {
 
 describe("triageStartProject deltas (#1004)", () => {
   it("leads the default triage prompt with the supplied per-repo delta", () => {
-    useAppStore.setState({ githubToken: "tok" }); // the "You are triaging" GitHub prompt is the connected path (#3281)
+    // Token AND a remote-integrating strategy — see store.test.ts.
+    useAppStore.setState({
+      githubToken: "tok",
+      planFleet: { [sanitizeProjectKey("dproj")]: { recommended: 1, reasoning: "", director: { enabled: false }, streams: [], strategy: "pr-ci" } },
+    } as never);
     useAppStore.getState().triageStartProject("dproj", ["o/web"], "", {
       "o/web": "RESUME: since your last triage, 1 issue(s) changed.",
     });

@@ -950,11 +950,32 @@ describe("triageStartProject", () => {
   });
 
   it("sets the verbatim triage prompt text on every triage pane", () => {
-    useAppStore.setState({ githubToken: "tok" }); // the verbatim GitHub triage prompt is the connected path (#3281)
+    // The GitHub triage prompt needs BOTH a token and a strategy that reaches a remote — a token
+    // alone used to be enough, which ran `gh issue edit`/`gh label create` on locally-integrating
+    // projects (#worker-prose-follows-the-local-first-loop).
+    useAppStore.setState({
+      githubToken: "tok",
+      planFleet: { [sanitizeProjectKey("proj")]: { recommended: 1, reasoning: "", director: { enabled: false }, streams: [], strategy: "pr-ci" } },
+    } as never);
     useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
     const { paneStartupPromptText } = useAppStore.getState();
     expect(paneStartupPromptText[tri("proj", "o/a")]).toBe(TRIAGE_PROMPT);
     expect(paneStartupPromptText[tri("proj", "o/b")]).toBe(TRIAGE_PROMPT);
+  });
+
+  it("triages LOCALLY by default even WITH a GitHub token — a token is not consent to write", () => {
+    // The regression: locality was decided by `!githubToken` alone, so any project holding a token
+    // got the `gh` variant and its triage ran `gh issue edit --add-label` / `gh label create` on a
+    // project that integrates locally. The strategy decides now, and an unset one resolves to the
+    // `local` default.
+    // planFleet is cleared explicitly: the sibling test above sets a `pr-ci` strategy under the SAME
+    // project key, and the store is shared across cases in this file.
+    useAppStore.setState({ githubToken: "tok", planFleet: {} } as never);
+    useAppStore.getState().triageStartProject("proj", ["o/a"], "P1");
+    const text = useAppStore.getState().paneStartupPromptText[tri("proj", "o/a")];
+    expect(text).toContain("bsc plan");            // works the local plan store
+    expect(text).not.toContain("gh issue list");   // and never the GitHub issue surface
+    expect(text).not.toContain("gh label create");
   });
 
   it("defaults every triage pane's doc prompt to the built-in default ('')", () => {
@@ -979,8 +1000,11 @@ describe("triageStartProject", () => {
   it("uses a per-repo triage script (doc) and skips the verbatim prompt for that pane", () => {
     useAppStore.setState({
       repoTriagePromptDoc: { "P1::o/b": "projects/P1/prompts/b-triage.md" },
-      githubToken: "tok", // the verbatim GitHub triage prompt is the connected path (#3281)
-    });
+      // Token AND a remote-integrating strategy — the verbatim GitHub prompt needs both now. Set
+      // explicitly rather than inherited from a sibling case, since the store is shared here.
+      githubToken: "tok",
+      planFleet: { [sanitizeProjectKey("proj")]: { recommended: 1, reasoning: "", director: { enabled: false }, streams: [], strategy: "pr-ci" } },
+    } as never);
     useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
     const { paneStartupPromptDocs, paneStartupPromptText } = useAppStore.getState();
     // o/a has no triage doc → verbatim prompt; o/b → its triage doc, no verbatim text.

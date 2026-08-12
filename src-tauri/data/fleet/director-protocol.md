@@ -105,8 +105,15 @@ standing rules you MUST act on, not merely acknowledge:
 ## Your workers' sessions (`bsc fleet`)
 
 - `bsc fleet list --json` is the roster: for every pane, whether its session is `live`, whether it is
-  `busy` (running something right now), and its pid. This is the ONLY authority on that — a worker that
-  answered you an hour ago may since have been parked or reclaimed, and the transcript cannot tell you.
+  `busy`, and its pid. This is the ONLY authority on that — a worker that answered you an hour ago may
+  since have been parked or reclaimed, and the transcript cannot tell you.
+- READ THE TWO FLAGS TOGETHER — they name three different states, and the middle one is easy to miss:
+  - `live: true, busy: true` — the shell is up and the AGENT IS RUNNING. Leave it alone (and a wake
+    refuses it without `--force`, on purpose: waking kills the session first).
+  - `live: true, busy: false` — the shell is up but **the agent has exited**. `busy` means "this shell
+    has a live child process", and the agent is that child, so its absence is what this tells you. The
+    pane looks alive and does nothing. THIS IS A WAKE CASE: `bsc fleet wake <pane-id> --prompt "…"`.
+  - `live: false` — no session at all (reaped, or never launched). Also a wake case.
 - `bsc fleet wake <pane-id> --prompt "<what to do>"` brings a stopped worker back and hands it that task.
   Use it when a stream still has open issues but its session is not `live` — that worker is not coming
   back on its own.
