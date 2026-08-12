@@ -8,7 +8,7 @@
 //
 // These guard that they stay out, and that genuine UI/settings state stays in.
 import { describe, it, expect } from "vitest";
-import { persistedState } from "./persist";
+import { persistedState, migrateAutoResumeOff } from "./persist";
 import { useAppStore } from "@/store";
 
 describe("persistedState — the persist allowlist (#3610)", () => {
@@ -65,5 +65,30 @@ describe("persistedState — the persist allowlist (#3610)", () => {
     const snap = persistedState(useAppStore.getState()) as Record<string, unknown>;
     expect(typeof snap.setWorkspace).toBe("undefined");
     expect(typeof snap.navigate).toBe("undefined");
+  });
+});
+
+// #restart-does-not-resume-sessions — the v1→v2 flip that actually reaches existing installs.
+describe("migrateAutoResumeOff (persist v1 → v2)", () => {
+  it("turns a persisted `true` OFF on the upgrade — the case every existing install is in", () => {
+    // This is the whole point of the migration. `autoResumeClaude` defaulted TRUE, so the persisted
+    // snapshot carries an explicit `true` that is rehydrated OVER the new default — moving the default
+    // alone would have left every affected install auto-resuming exactly as before.
+    expect(migrateAutoResumeOff({ autoResumeClaude: true }, 1).autoResumeClaude).toBe(false);
+  });
+
+  it("leaves an already-off install alone", () => {
+    expect(migrateAutoResumeOff({ autoResumeClaude: false }, 1).autoResumeClaude).toBe(false);
+  });
+
+  it("does NOT re-flip a deliberate re-enable — it is one-time, keyed on the upgrade", () => {
+    // The setting survives so it can be switched back on. If this ran on every load, turning it on in
+    // Settings would silently revert at the next restart and read as the toggle being broken.
+    expect(migrateAutoResumeOff({ autoResumeClaude: true }, 2).autoResumeClaude).toBe(true);
+    expect(migrateAutoResumeOff({ autoResumeClaude: true }, 3).autoResumeClaude).toBe(true);
+  });
+
+  it("tolerates a snapshot that never had the field", () => {
+    expect(migrateAutoResumeOff({}, 1)).toEqual({});
   });
 });

@@ -32,7 +32,16 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       // Back-compat: syncs to autoFocusMode.
       setAutoAdvanceOnReply: (v) => set({ autoAdvanceOnReply: v, autoFocusMode: v ? "cycle-on-reply" : "off" }),
 
-      autoResumeClaude: true,
+      // OFF by default (#restart-does-not-resume-sessions). The mechanism is intact and the Settings
+      // toggle still turns it back on — this is a default change, not a removal.
+      //
+      // It defaulted TRUE, which meant that after any unclean shutdown (a kill or force-quit, i.e. the
+      // normal case during development) every pane that had ever run Claude relaunched itself with
+      // `--continue`, with no click involved. The same flag ALSO suppressed the crash banner, on the
+      // reasoning that auto-resume had already handled things — so it started the sessions and hid the
+      // control that would have let the user start them. Off, the banner comes back and the restore is
+      // a button. Re-enable once the session lifecycle is trusted end-to-end.
+      autoResumeClaude: false,
       setAutoResumeClaude: (v) => set({ autoResumeClaude: v }),
       // #1107: when ON, a detected prompt-injection marker in the plan HARD-blocks publish (must be
       // resolved). Default OFF = acknowledge-to-clear (findings surfaced; the user reviews + proceeds).

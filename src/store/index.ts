@@ -19,7 +19,7 @@ import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
 import { type AppStore } from "./types";
-import { persistedState } from "./persist";
+import { persistedState, migrateAutoResumeOff } from "./persist";
 import { createSessionSlice } from "./slices/session";
 import { createPlanSlice } from "./slices/plan";
 import { createProjectsSlice } from "./slices/projects";
@@ -64,7 +64,7 @@ export const useAppStore = create<AppStore>()(
     {
       name: "app-state",
       storage: createJSONStorage(() => persistStorage),
-      version: 1,
+      version: 2,
       // #2548: one-time grandfather. The Glance triaged filter (#2541) is forward-looking, so on an
       // upgrade from persist v0 an existing user's already-worked projects (published + fleeted) carry
       // no `triagedProjects` marker and vanish from Glance. Backfill it once from the persisted board +
@@ -79,6 +79,9 @@ export const useAppStore = create<AppStore>()(
         if (version < 1 && Object.keys(s.triagedProjects ?? {}).length === 0) {
           s.triagedProjects = grandfatherTriaged(s.githubState?.records, s.planFleet, Date.now());
         }
+        // v2 (#restart-does-not-resume-sessions): turn silent auto-resume off once. Named + exported
+        // so the one-time-ness is testable on its own — see `migrateAutoResumeOff`.
+        migrateAutoResumeOff(s, version);
         return s as AppStore;
       },
       // Exclude transient UI-only state — and anything a `bsc` store owns + re-hydrates at boot
