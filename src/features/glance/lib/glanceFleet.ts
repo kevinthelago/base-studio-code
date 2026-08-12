@@ -50,6 +50,12 @@ const SYSTEM_SESSION_ROLES: Record<string, string> = {
   integrator: "integrator",
 };
 
+/** Every app-owned system session id, in display order. Exported so the L0 graph
+ *  (#glance-reads-left-to-right-sessions-to-libraries) draws the SAME set this fleet graph resolves —
+ *  one list, so a session added here appears in both places at once rather than in whichever was
+ *  remembered. */
+export const SYSTEM_SESSION_IDS: readonly string[] = Object.keys(SYSTEM_SESSION_ROLES);
+
 /** The declared system sessions that are real, de-duplicated, in a stable order. */
 export function resolveSystemSessions(ids: readonly string[] | undefined): string[] {
   return [...new Set(ids ?? [])].filter((s) => s in SYSTEM_SESSION_ROLES);

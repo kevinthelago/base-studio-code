@@ -4,7 +4,8 @@
 // wiring real edges later is a drop-in — the page + graph core never change.
 import sampleGraphEmbedded from "@data/glance/sample-graph.json";
 import type { GRawNode, GRawEdge, GRole, GHealth, GActivity } from "./glanceGraph";
-import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId, architectNodeId, createdByEdgeId } from "./glanceGraph";
+import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId, architectNodeId, createdByEdgeId, sessionNodeId, servedByEdgeId } from "./glanceGraph";
+import { SYSTEM_SESSION_IDS } from "./glanceFleet";
 import { isProjectContract, type ProjectLink } from "./projectLinks";
 // Cross-feature types only, via the barrel (#1309 boundary): the consumer index (`kitUsage`) whose
 // (projectKey, kitId) edges the kit nodes are built from, plus the kit→library `requires` roll-up
@@ -135,6 +136,38 @@ export function buildGlanceData(
     });
     for (const p of projects) {
       rawEdges.push({ id: createdByEdgeId(p.id, a.id), from: p.id, to: nodeId, kind: "created-by" });
+    }
+  }
+
+  // The SYSTEM-SESSION dimension (#glance-reads-left-to-right-sessions-to-libraries) — the app-owned
+  // studio singletons that produce the material a build runs on: UI kits (designer), algorithms
+  // (librarian), sounds (sound-designer) and integration connectors (integrator).
+  //
+  // The ARCHITECT is itself in `SYSTEM_SESSION_IDS` and is EXCLUDED here: it already has its own L0 node
+  // above, and emitting it twice would draw a session that serves itself.
+  //
+  // Edge direction is what places them. The graph lays a dependency at a LOWER layer (further LEFT), and
+  // the convention is `from depends on to` — so the ARCHITECT is `from` and the session is `to`, which
+  // puts the sessions one layer left of the architect: system sessions → architect → projects → libraries,
+  // one axis, one reading order.
+  //
+  // Emitted only when there IS an architect. Without one these would be a row of unconnected cards
+  // floating beside the network, which says less than drawing nothing.
+  if (architects.length > 0) {
+    for (const sessionId of SYSTEM_SESSION_IDS) {
+      if (sessionId === "architect") continue;
+      const nodeId = sessionNodeId(sessionId);
+      rawNodes.push({
+        id: nodeId,
+        slug: sessionId,
+        kind: "session",
+        role: "infra",   // app-owned + foundational, like a kit — the canvas draws it from `kind`
+        health: "off",   // a studio singleton is launched on demand, not a standing process
+        activity: "idle",
+      });
+      for (const a of architects) {
+        rawEdges.push({ id: servedByEdgeId(a.id, sessionId), from: architectNodeId(a.id), to: nodeId, kind: "served-by" });
+      }
     }
   }
 

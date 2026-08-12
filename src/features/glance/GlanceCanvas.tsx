@@ -181,14 +181,18 @@ export function GlanceCanvas(p: CanvasProps) {
       {/* edges */}
       <svg width={model.worldW} height={model.worldH} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
         {/* The fenced LIBRARY band (#3007, generalized #3119) — drawn FIRST so it sits behind the edges +
-            nodes. A faint wash, a dashed divider at the fence, and a small header label, mirroring the
-            Design Studio composition swimlanes so the lifted library nodes read as a distinct top zone.
-            Colour + label follow the dimension(s) present (kit-only ⇒ cyan "UI KITS", unchanged). */}
-        {model.kitBand && (
+            nodes. A faint wash, a dashed divider at the fence, and a small header label, so the lifted
+            library nodes read as a distinct zone. Colour + label follow the dimension(s) present
+            (kit-only ⇒ cyan "UI KITS", unchanged).
+
+            RIGHT of the projects since #glance-reads-left-to-right-sessions-to-libraries — so the wash is
+            a full-height column, the divider is VERTICAL at its left fence, and the label sits at the top
+            of that column rather than at the top-left of a row. */}
+        {model.bandZone && (
           <g className="glance-kit-band" style={{ pointerEvents: "none" }}>
-            <rect x={0} y={model.kitBand.y0} width={model.worldW} height={model.kitBand.y1 - model.kitBand.y0} className="glance-kit-band-bg" style={{ fill: bandColor }} />
-            <line x1={0} y1={model.kitBand.y1} x2={model.worldW} y2={model.kitBand.y1} className="glance-kit-band-divider" style={{ stroke: bandColor }} />
-            <text x={16} y={model.kitBand.y0 + 22} className="glance-kit-band-label" style={{ fill: bandColor }}>{bandLabel}</text>
+            <rect x={model.bandZone.x0} y={0} width={model.bandZone.x1 - model.bandZone.x0} height={model.worldH} className="glance-kit-band-bg" style={{ fill: bandColor }} />
+            <line x1={model.bandZone.x0} y1={0} x2={model.bandZone.x0} y2={model.worldH} className="glance-kit-band-divider" style={{ stroke: bandColor }} />
+            <text x={model.bandZone.x0 + 16} y={22} className="glance-kit-band-label" style={{ fill: bandColor }}>{bandLabel}</text>
           </g>
         )}
         {model.edges.map((e) => {
