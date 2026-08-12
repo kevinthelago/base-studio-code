@@ -1940,6 +1940,13 @@ mod tests {
     /// ignored (an assert failure in one test must not cascade).
     static SCOPES_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    /// Serializes every test that sets `$BSC_COMPONENT_DIR` (± `$BSC_COMPONENT_KIT_DIR`) to isolate itself
+    /// from the developer's real `~/.base-studio-code/components/` store (#3910): tests run in parallel
+    /// threads sharing the process environment, so two such tests racing would each flakily see the
+    /// other's scratch dir. Every other component-store test uses `--dir` (a per-call argument, already
+    /// thread-safe) and needs no lock. Poisoning is ignored (an assert failure in one test must not cascade).
+    static COMPONENT_DIR_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn help_overview_lists_the_commands() {
         let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMMANDS);
@@ -2047,6 +2054,18 @@ mod tests {
     #[test]
     fn emit_component_writes_a_stamped_alias_free_closure() {
         // The CLI path end-to-end (#2800): emit `card` into a temp dir, from the EMBEDDED artifact.
+        //
+        // #3910: `emit_kit()` (#3720) prefers the LIVE store (`$BSC_COMPONENT_DIR`, default
+        // `~/.base-studio-code/components/`) over the packaged artifact whenever that store is reachable
+        // and non-empty — so without isolation this test's `bsc/react-ui@` assertion is really an assertion
+        // about the DEVELOPER's local library (whatever kit their own `card` record happens to belong to),
+        // not about the code. Pointed at an EMPTY scratch dir under the shared lock, `load_store_components`
+        // returns `[]`, `emit_kit()` takes its documented `_ => EmitKit::packaged()` fallback, and `card`
+        // resolves from the embedded `bsc/react-ui` artifact deterministically, everywhere.
+        let _guard = COMPONENT_DIR_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let comp_dir = tmp_store_dir("emit-component");
+        std::env::set_var("BSC_COMPONENT_DIR", &comp_dir);
+
         let dir = std::env::temp_dir().join(format!("bsc-ui-emit-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let d = dir.to_string_lossy().into_owned();
@@ -2059,6 +2078,9 @@ mod tests {
         assert!(run(vec!["emit".into()], "bsc ui").is_ok(), "bare emit prints help");
         assert!(run(vec!["emit".into(), "component".into(), "nope".into(), d], "bsc ui").is_err(), "unknown id");
         assert!(run(vec!["emit".into(), "kit".into()], "bsc ui").is_err(), "kit needs a dir");
+
+        std::env::remove_var("BSC_COMPONENT_DIR");
+        let _ = std::fs::remove_dir_all(&comp_dir);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2150,9 +2172,8 @@ mod tests {
     #[test]
     fn release_add_from_store_assembles_a_non_empty_artifact() {
         // --from-store reads the LIVE component library (BSC_COMPONENT_DIR / BSC_COMPONENT_KIT_DIR) — set
-        // both to scratch dirs under a lock (the env is process-global; every other test uses --dir).
-        static FROM_STORE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = FROM_STORE_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // both to scratch dirs under the shared lock (the env is process-global; every other test uses --dir).
+        let _guard = COMPONENT_DIR_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
 
         let base = std::env::temp_dir().join(format!("bsc-ui-from-store-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
