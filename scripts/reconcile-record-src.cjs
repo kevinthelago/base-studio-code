@@ -113,6 +113,32 @@ function lineSet(src) {
   return s;
 }
 
+/** The comparison unit for a REGION: statements, not lines.
+ *
+ *  WHY NOT LINES. Two things that are not content differences were being counted as content:
+ *   - REFORMATTING. `collapsiblecard` collapses its props interface onto one line where the file spreads
+ *     it over twelve. Line-wise that is twelve lines the record "lacks"; it is the same declarations.
+ *   - COMMENTS. The file's JSDoc on each prop is documentation, and a record dropping it is not drift.
+ *  Splitting on `;` as well as newlines, and stripping comments, makes both spellings compare equal.
+ *  Short fragments are dropped for the same reason `lineSet` drops them — `}`, `);` and friends are
+ *  identical in every React module and would float every score. */
+function stmtSet(src) {
+  const noComments = src
+    .replace(/\/\*[\s\S]*?\*\//g, " ")   // block + JSDoc
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1"); // line comments (not a `://` in a URL)
+  const out = new Set();
+  for (const piece of noComments.split(/[\n;]/)) {
+    // `export` is a module-boundary concern, not content. A record MUST export the component it renders
+    // (the loader's `pickComponent` needs an export to mount); a file is free to keep the same function
+    // private and re-export it elsewhere. `infochip` is exactly that and NOTHING else — the record says
+    // `export function InfoChip`, `connectorForm.tsx` says `function InfoChip` — so leaving the keyword in
+    // made a record that is otherwise byte-identical read as drifted.
+    const t = piece.trim().replace(/\s+/g, " ").replace(/^export\s+/, "");
+    if (t.length > 12) out.add(t);
+  }
+  return out;
+}
+
 /** Jaccard overlap of two line sets — 1.0 identical, 0.0 disjoint.
  *
  *  WHY SIMILARITY AND NOT SYMBOL MATCHING. The first cut of this script looked for a file exporting the
@@ -274,9 +300,12 @@ function divergenceReason(recRegion, fileRegion, sym) {
   const states = /\b(loading|error)\b/.test(recRegion) && !/\b(loading|error)\b/.test(fileRegion);
   if (!added.length && !states) return null;
 
-  const recLines = new Set(recRegion.split("\n").map((l) => l.trim()));
-  const behind = fileRegion.split("\n").map((l) => l.trim())
-    .filter((l) => l.length > 12 && !recLines.has(l) && !/^(import |\/\/|\*|\/\*)/.test(l)).length;
+  // Statements, not lines — for the same reason the drift score uses them. `collapsiblecard` collapses
+  // its props interface onto one line where the file spreads it over twelve; counting lines made that
+  // read as twelve lines the record was "behind" on, pushing a pure-parameterization record past the
+  // threshold and out of this class.
+  const recStmts = stmtSet(recRegion);
+  const behind = [...stmtSet(fileRegion)].filter((t) => !recStmts.has(t) && !t.startsWith("import ")).length;
   if (behind > BEHIND_MAX) return null;
 
   const bits = [];
@@ -404,7 +433,7 @@ function classify(rec, files) {
     if (bestSym && bestScore >= 0.4) {
       const recRegion = symbolRegion(rec.srcText ?? "", sym);
       const fileRegion = symbolRegion(fileSrc, bestSym);
-      const rScore = recRegion && fileRegion ? similarity(lineSet(recRegion), lineSet(fileRegion)) : bestScore;
+      const rScore = recRegion && fileRegion ? similarity(stmtSet(recRegion), stmtSet(fileRegion)) : bestScore;
       const verdict = rScore >= DRIFT_MIN ? "ok" : "drifted";
       const reason = recRegion && fileRegion ? divergenceReason(recRegion, fileRegion, sym) : null;
       return { verdict, symbol: sym, renamedTo: bestSym, score: +score.toFixed(3), region: +rScore.toFixed(3), by: "renamed-symbol", reason };
@@ -426,7 +455,7 @@ function classify(rec, files) {
   const fileRegion = symbolRegion(fileSrc, sym);
   const recRegion = symbolRegion(rec.srcText ?? "", sym);
   if (fileRegion && recRegion) {
-    const rScore = similarity(lineSet(recRegion), lineSet(fileRegion));
+    const rScore = similarity(stmtSet(recRegion), stmtSet(fileRegion));
     if (rScore >= DRIFT_MIN) return { verdict: "ok", symbol: sym, score: +score.toFixed(3), region: +rScore.toFixed(3), by: "region" };
     // Drifted — but is the difference explainable, and evidenced? `--annotate` writes the reason.
     const reason = divergenceReason(recRegion, fileRegion, sym);
