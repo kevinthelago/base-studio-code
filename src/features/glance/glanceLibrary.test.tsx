@@ -101,10 +101,11 @@ describe("Glance band from REAL library refs (#3133)", () => {
     expect(screen.getByText("algorithm")).toBeTruthy();    // its library kind word
     expect(screen.getByText("React UI")).toBeTruthy();     // the kit dimension still renders alongside
     expect(screen.getByText("Route Planner")).toBeTruthy();
-    // the band is FENCED — the library nodes sit in their own zone above the project network (#3007).
-    expect(model.kitBand).toBeTruthy();
+    // the band is FENCED — the library nodes sit in their own zone RIGHT of the project network
+    // (#3007, reoriented by #glance-reads-left-to-right-sessions-to-libraries).
+    expect(model.bandZone).toBeTruthy();
     const algo = model.nodes.find((n) => n.id === libraryNodeId("algo", "fibonacci.ts"));
     const proj = model.nodes.find((n) => n.id === "route-planner");
-    expect(algo && proj && algo.y < proj.y).toBe(true);
+    expect(algo && proj && algo.x > proj.x).toBe(true);
   });
 });
