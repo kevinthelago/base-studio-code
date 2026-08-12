@@ -23,7 +23,8 @@ import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
   requestKey, pendingRequestPrompt,
-  shouldRemind, idleReminderPrompt, ASK_REMINDER_MS,
+  // `shouldRemind` / `idleReminderPrompt` / `ASK_REMINDER_MS` are deliberately NOT imported — the
+  // idle reminder is disabled (see 1d below). They remain exported and tested so it can come back.
   DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
 } from "@/features/planner";
 
@@ -37,10 +38,8 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
   // Per (pane|ask) keys already surfaced, pruned when the ask is no longer pending — so a
   // question is injected exactly once (not re-queued every 3s) until it is answered.
   const surfaced = useRef<Set<string>>(new Set());
-  // #4019 — when each pane was last REMINDED about outstanding asks/requests. Separate from the
-  // cursor's `lastInjectAt` (which paces notifications + the heartbeat) so a reminder is not
-  // starved by unrelated traffic, and vice versa.
-  const remindedAt = useRef<Map<string, number>>(new Map());
+  // (#4019's `remindedAt` — the per-pane last-reminded clock — is gone with the idle reminder it
+  // paced. See 1d below; restoring the reminder means restoring this ref alongside it.)
   useLogStream("coord", async (isCancelled) => {
     if (isCancelled()) return;
     const drives = useAppStore.getState().paneDirectorDrive;
@@ -122,23 +121,25 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
         }
       }
 
-      // 1d) IDLE REMINDER (#4019) — the backstop for a delivery that did not take. Each ask/request is
-      // injected exactly once by the blocks above; if the director was mid-turn or simply did not act,
-      // nothing above will ever say it again, and the worker stays parked (measured: 44 asks, 20
-      // answers). So while the director is IDLE and anything is still outstanding, re-state it on a
-      // rate-limited cadence. Runs for every drive except off/manual — an `event` director has no
-      // heartbeat at all, which is precisely the case that went silent.
-      if (drive !== "off" && drive !== "manual") {
-        const pending = pendingAsks.length + state.requests.length;
-        if (shouldRemind({ idle, pending, now, lastRemindAt: remindedAt.current.get(paneId) ?? 0, everyMs: ASK_REMINDER_MS })) {
-          remindedAt.current.set(paneId, now);
-          inFlight.current.add(paneId);
-          void injectPrompt(paneId, idleReminderPrompt(pendingAsks, state.requests))
-            .catch(() => {})
-            .finally(() => inFlight.current.delete(paneId));
-          continue; // one injection per pane per tick
-        }
-      }
+      // 1d) IDLE REMINDER (#4019) — DISABLED (#idle-reminder-stops-nagging-the-director).
+      //
+      // It was the backstop for a delivery that did not take: each ask/request is injected exactly
+      // once by the blocks above, so if the director was mid-turn or simply did not act, nothing
+      // would ever say it again and the worker stayed parked (measured: 44 asks, 20 answers). While
+      // the director was idle with anything outstanding, it re-stated the queue every ASK_REMINDER_MS.
+      //
+      // WHY IT IS OFF. An ask is only ever cleared by an `answer`/`assign` TARGETING that session, or
+      // by a later event FROM it — so nothing clears an ask whose session has since DIED. A dead
+      // worker's question stays pending forever and the reminder re-fired on it every 3 minutes,
+      // indefinitely, waking the director to drain a queue it structurally could not drain. From the
+      // outside that is a director being woken by the app on a timer, for no reachable reason.
+      //
+      // Kept, not deleted: `shouldRemind` / `idleReminderPrompt` / `ASK_REMINDER_MS` and their tests
+      // are intact and still exported, so re-enabling is restoring this call. DO NOT re-enable before
+      // fixing the stale-ask half — `pending` must exclude asks/requests whose session is no longer
+      // live (`bsc fleet list` is the authority), or the forever-nag comes straight back. Everything
+      // the reminder would have said is still visible in the Coordination inbox and `bsc logs waiting`,
+      // which a director sweeps deliberately rather than being interrupted by.
 
       // 2) Notifications + heartbeat (cursor-based). First sight seeds the cursor at the
       // current end so we only NOTIFY on activity after launch (asks are handled above).
