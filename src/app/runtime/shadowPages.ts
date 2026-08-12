@@ -242,10 +242,10 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // Graph-only: the dead AutomationsWorkspace copy is gone and the barrel is index.ts now, so
       // this path would not resolve. The three tab bodies below are still real files.
       { recordId: "automationspage", file: null },
-      // Schedules KEEPS its file: `automations-schedules` is one of the 50 still unresolved in
-      // `graph-srctext-three-way-merges`, where the .tsx is a PARTY to the merge — and its seed does not
-      // even parse (unterminated string literal at line 210), so the file is the only sound copy.
-      { recordId: "automations-schedules", file: "/src/features/automations/Schedules.tsx" },
+      // Schedules.tsx is GONE. It was held back while `automations-schedules` was one of the 50
+      // unresolved in `graph-srctext-three-way-merges` — the .tsx was a party to that merge. The merge
+      // has landed, so the record is the only copy and there is nothing left to diff against.
+      { recordId: "automations-schedules", file: null },
       { recordId: "automations-history", file: null },
       { recordId: "automations-hook-analytics", file: null },
     ],
@@ -320,7 +320,7 @@ const FILE_SOURCES = import.meta.glob<string>(
     // each other BOTH ways by `shadowPages.test.ts`, so a path released for deletion has to leave both.
     "/src/features/github/BranchGraph.tsx",
     "/src/features/github/summary/{ActivityHeatmap,CIHealthCard,ContributorsCard,CrossRepoActivity,GitHubPageModeStrip,LanguageMix,OpenPRsCard,ReposGrid}.tsx",
-    "/src/features/automations/Schedules.tsx",
+    // Schedules.tsx dropped with its entry — automations now contributes no file baseline at all.
     // McpAnalytics dropped with its entry.
     "/src/features/skills/{index,SkillsViews,NewGroupDialog,SkillDrawer,SkillsDigest,LessonsTab,RunsTab}.tsx",
     "/src/features/security/{ProfilesTab,AssignmentsTab,ActivityTab,FlowTab}.tsx",
