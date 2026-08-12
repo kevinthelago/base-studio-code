@@ -25,7 +25,9 @@ import { loadComponentFromSource, compileToCjs } from "@/shared/lib/runtime/comp
 import { verifyGraphRecord } from "@/shared/lib/runtime/verifyRecord";
 import { isAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
-import { GRAPH_SIBLING_PREFIX } from "@/shared/lib/runtime/graphResolver";
+import { resolveGraphSource } from "@/shared/lib/runtime/graphResolver";
+import { useAppStore } from "@/store";
+import algorithmsSeed from "@data/knowledge/algorithms.json";
 
 /** Every packaged app record — pages, their siblings, and the shared/ui components that `provides` them. */
 const packaged = import.meta.glob<{ id: string; srcText?: string; provides?: string }>(
@@ -35,15 +37,22 @@ const packaged = import.meta.glob<{ id: string; srcText?: string; provides?: str
 const RECORDS = Object.values(packaged);
 const BY_ID = new Map(RECORDS.map((r) => [r.id, r]));
 
-/** `resolveGraphSource`, mirrored: a SIBLING by id (#3606), or a record whose `provides` matches the
- *  specifier (#3660 graph-first — the branch #4185's harness was missing). Anything else returns null and
- *  goes to the registry, exactly as `routeImport` does. */
-function resolveGraphSource(specifier: string): string | null {
-  const record = specifier.startsWith(GRAPH_SIBLING_PREFIX)
-    ? BY_ID.get(specifier.slice(GRAPH_SIBLING_PREFIX.length))
-    : RECORDS.find((r) => r.provides === specifier);
-  return record?.srcText ?? null;
-}
+/** Seed the store with what SHIPS, then let the REAL resolver run against it.
+ *
+ *  This file used to carry its own copy of `resolveGraphSource`, and the copy drifted TWICE — its own
+ *  comment recorded the first ("the branch #4185's harness was missing"), and by the time logic modules
+ *  started becoming algorithm records it was a branch behind again, so it could not see one at all. A
+ *  mirrored resolver falls one branch behind every time the real one grows, and the failure mode is
+ *  SILENT UNDER-REPORTING: the oracle says "unresolved" about specifiers the app resolves perfectly well,
+ *  which is the worst possible answer from the check you delete files on the strength of.
+ *
+ *  The mirror existed because the harness must verify what SHIPS, not whatever the dev machine's live
+ *  store happens to hold. That constraint is about which DATA is loaded, not about which function
+ *  resolves — so seeding the packaged data satisfies it and the copy is unnecessary. */
+useAppStore.setState({
+  components: RECORDS as never,
+  algorithmImpls: (algorithmsSeed as { implementations?: unknown[] }).implementations as never,
+});
 
 export interface PageResult {
   pageId: string;
