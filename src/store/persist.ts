@@ -148,3 +148,28 @@ export function persistedState(s: AppStore) {
     kitDispatches:         s.kitDispatches, // #2277: the pending fan-out queue — durable so the drain delivers it after a restart
   };
 }
+
+/**
+ * Persist migration v1 → v2 (#restart-does-not-resume-sessions): turn silent auto-resume OFF once.
+ *
+ * `autoResumeClaude` defaulted to `true`, so after an unclean shutdown — a kill or force-quit, which
+ * is the normal way the app ends during development — every pane that had ever run Claude relaunched
+ * itself with `--continue`, no click involved. The same flag also suppressed the crash-recovery
+ * banner, so it started the sessions AND hid the control that would have let the user start them.
+ *
+ * Why a migration rather than just moving the default: the persisted value is rehydrated OVER the
+ * default, and because the flag defaulted true, essentially every existing install carries an explicit
+ * `true`. Those installs are exactly the population with the bug, and a default change alone is
+ * invisible to all of them.
+ *
+ * Deliberately ONE-TIME and a mutation of the default, not a removal — the setting and its Settings
+ * toggle stay, so re-enabling is a click once the session lifecycle is trusted. Because it is keyed on
+ * the v1→v2 upgrade it cannot re-fire, so a user who turns it back on keeps it on.
+ *
+ * @param state the persisted snapshot being migrated (mutated in place, as zustand's `migrate` expects)
+ * @param version the version the snapshot was written at
+ */
+export function migrateAutoResumeOff<T extends { autoResumeClaude?: boolean }>(state: T, version: number): T {
+  if (version < 2 && state.autoResumeClaude) state.autoResumeClaude = false;
+  return state;
+}

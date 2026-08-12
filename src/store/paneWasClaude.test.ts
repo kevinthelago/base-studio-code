@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./";
+import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 
 /**
  * #36: paneWasClaude + autoResumeClaude carry the "claude was running here"
@@ -34,8 +35,14 @@ describe("paneWasClaude / autoResumeClaude (#36)", () => {
     expect(after).toBe(before);
   });
 
-  it("autoResumeClaude defaults to true (the resume IS the desired behavior; toggle is opt-out)", () => {
-    expect(useAppStore.getState().autoResumeClaude).toBe(true);
+  it("autoResumeClaude defaults to FALSE — the app never resumes a session on its own", () => {
+    // #restart-does-not-resume-sessions. It used to default TRUE, so after any unclean shutdown (a kill
+    // or force-quit — the normal case in development) every pane that had run Claude relaunched itself
+    // with no click. The same flag also hid the crash banner, so the app started the sessions AND hid
+    // the control for starting them. The mechanism is intact and the toggle still turns it back on;
+    // only the default moved. Assert on a FRESH store, not the beforeEach state.
+    useAppStore.setState({ autoResumeClaude: useAppStore.getInitialState().autoResumeClaude });
+    expect(useAppStore.getState().autoResumeClaude).toBe(false);
   });
 
   it("setAutoResumeClaude flips the toggle", () => {
@@ -43,5 +50,40 @@ describe("paneWasClaude / autoResumeClaude (#36)", () => {
     expect(useAppStore.getState().autoResumeClaude).toBe(false);
     useAppStore.getState().setAutoResumeClaude(true);
     expect(useAppStore.getState().autoResumeClaude).toBe(true);
+  });
+});
+
+/**
+ * The composition that actually matters (#restart-does-not-resume-sessions): the store's DEFAULT,
+ * fed through the real decision function, must produce no resume after an unclean shutdown.
+ *
+ * The two halves are pinned separately above and in resumeClaude.test.ts, but neither alone catches
+ * the regression that reintroduces this bug — flipping the default back to `true`. That change keeps
+ * every other test green, because they all pass the flag in explicitly.
+ */
+describe("the default posture resumes nothing (#restart-does-not-resume-sessions)", () => {
+  it("a crashed pane that had claude does NOT auto-resume under the shipped default", () => {
+    const autoResumeClaude = useAppStore.getInitialState().autoResumeClaude;
+    expect(resolveInitCmd({
+      explicit: undefined,
+      startupPrompt: undefined,
+      continueSession: false,
+      paneWasClaude: true,
+      autoResumeClaude,
+      wasUncleanShutdown: true,
+      restoreRequested: false,
+    })).toBe("");
+  });
+
+  it("...and the SAME pane resumes the moment the user clicks Restore", () => {
+    expect(resolveInitCmd({
+      explicit: undefined,
+      startupPrompt: undefined,
+      continueSession: false,
+      paneWasClaude: true,
+      autoResumeClaude: useAppStore.getInitialState().autoResumeClaude,
+      wasUncleanShutdown: true,
+      restoreRequested: true,
+    })).not.toBe("");
   });
 });

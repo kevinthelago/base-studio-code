@@ -52,7 +52,7 @@ export const SESSIONS_BEHAVIOR_SPEC: GeneralNode = {
       children: [
         toggleRow("Auto-resume Claude on restart", "autoResumeClaude", "toggleAutoResumeClaude"),
         note(
-          "Panes that had Claude running at last shutdown relaunch it with --continue when the app reopens, restoring the prior conversation. Off means panes start at a bare bash prompt; you'd type claude yourself.",
+          "OFF by default. When on, panes that had Claude running at an UNCLEAN shutdown relaunch it with --continue when the app reopens — no click — and the crash-recovery banner is hidden, since the resume already happened. Off, that banner appears instead and its Restore button is what brings the sessions back, so restarting is always your decision.",
         ),
         toggleRow("Cycle to next console on reply", "autoAdvanceOnReply", "toggleAutoAdvanceOnReply"),
         note(
