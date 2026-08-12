@@ -204,3 +204,21 @@ describe("the architect can reach a director at all", () => {
     }
   });
 });
+
+// #requirement-and-authority-store — the architect writes its handoff, and nothing else in plan.db.
+describe("the architect's plan surface is exactly its handoff", () => {
+  it("can write the requirement record", () => {
+    expect(restrictedRoleCommands("architect")).toContain("bsc plan requirement");
+  });
+
+  it("cannot reach the REST of plan.db — issues, features, the fleet stay closed to it", () => {
+    // The grants are noun-scoped prefixes, so `bsc plan` itself must never appear: that would carry
+    // every noun, and the architect would be able to write issues and fleet state directly — the tier
+    // boundary the funnel exists to keep.
+    const surface = restrictedRoleCommands("architect");
+    expect(surface).not.toContain("bsc plan");
+    for (const c of surface) {
+      if (c.startsWith("bsc plan")) expect(["bsc plan brief", "bsc plan requirement"]).toContain(c);
+    }
+  });
+});

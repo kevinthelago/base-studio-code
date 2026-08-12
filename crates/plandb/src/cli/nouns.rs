@@ -178,6 +178,22 @@ pub(crate) fn cmd_market(args: &Args) -> Result<(), String> {
 /// output that shapes the plan (who renders the UI, where its algorithms come from, the UI mode, the
 /// taxonomy axes, and which optional stages the project needs). Validated at set-time; the echo
 /// mirrors the recorded uiSystem + algorithmSystem + uiMode + which optional stages are on.
+/// `requirement` — the architect's handoff (#requirement-and-authority-store): the user's
+/// statement, the discovery it ran, and the AUTHORITY clauses the tiers below cite when they decide
+/// something unattended. One blob per project, read whole by the director.
+pub(crate) fn cmd_requirement(args: &Args) -> Result<(), String> {
+    cmd_blob_noun(
+        args, "requirement", "requirement JSON", "(no requirement)",
+        crate::validate::validate_requirement,
+        |s, v| s.requirement_set(v).map_err(|e| e.to_string()),
+        |s| s.requirement_get().map_err(|e| e.to_string()),
+        |v| {
+            let n = v.get("authority").and_then(|a| a.as_array()).map(|a| a.len()).unwrap_or(0);
+            format!("requirement set ({n} authority clause{})", if n == 1 { "" } else { "s" })
+        },
+    )
+}
+
 pub(crate) fn cmd_classify(args: &Args) -> Result<(), String> {
     cmd_blob_noun(
         args, "classify", "classification JSON", "(no classification)",
