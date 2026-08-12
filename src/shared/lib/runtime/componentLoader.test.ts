@@ -77,6 +77,32 @@ describe("pickComponent (#3605)", () => {
     expect(pickComponent({ Widget: f, meta: 3 })).toBe(f);
     expect(pickComponent({ meta: 3 })).toBeNull();
   });
+
+  // A record provides a MODULE, and 14 of the 69 manifest primitives share 3 specifiers — so the host has
+  // to be able to say WHICH export it wants (graph-primitive-resolves-a-module-not-an-export).
+  it("picks the export the caller NAMED, over the default and over the first function", () => {
+    const TextField = () => null, TextArea = () => null, dflt = () => null;
+    expect(pickComponent({ default: dflt, TextField, TextArea }, "TextArea")).toBe(TextArea);
+    expect(pickComponent({ TextField, TextArea }, "TextField")).toBe(TextField);
+  });
+
+  it("REFUSES to guess when the named export is missing and the module exports several", () => {
+    const a = () => null, b = () => null;
+    // `null` sends the host to its fallback — the bundled primitive, which is correct. Guessing here is
+    // what rendered a <select class="input" type="password" /> for a password field.
+    expect(pickComponent({ TextField: a, SelectField: b }, "TextArea")).toBeNull();
+    expect(pickComponent({ default: a, SelectField: b }, "TextArea")).toBeNull();
+  });
+
+  it("still resolves a SINGLE-component module whose export name differs — the refusal must stay narrow", () => {
+    const only = () => null;
+    // Otherwise the graph override would be silently dead for every record using a default export, or one
+    // whose export name simply is not the primitive's name.
+    expect(pickComponent({ default: only }, "TextField")).toBe(only);
+    expect(pickComponent({ Field: only }, "TextField")).toBe(only);
+    // `export default X` alongside `export { X }` is two entries and ONE component, not an ambiguity.
+    expect(pickComponent({ default: only, Field: only, meta: 3 }, "TextField")).toBe(only);
+  });
 });
 
 describe("evalCjsModule — graph code runs live against the registry (#3605)", () => {
