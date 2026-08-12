@@ -11,17 +11,17 @@
 // The pane's OWN modules are registered too: each is `provides`-resolved from the graph first, and the
 // module behind it is the fallback for a record that will not load.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
-import * as Designs from "@/features/designs";
 import * as BlueprintCatalog from "@/features/planner/blueprints/blueprintCatalog";
 import * as BlueprintIcons from "@/features/planner/blueprints/blueprintIcons";
 import * as DiscoveryBody from "@/features/planner/bodies/DiscoveryBody";
+import * as FeaturesStageBody from "@/features/planner/bodies/FeaturesStageBody";
 import * as FileIntakePane from "@/features/planner/bodies/FileIntakePane";
 import * as FocusedAutomationsBody from "@/features/planner/bodies/FocusedAutomationsBody";
-import * as FocusedFeaturesBody from "@/features/planner/bodies/FocusedFeaturesBody";
 import * as FocusedSkillsBody from "@/features/planner/bodies/FocusedSkillsBody";
 import * as FocusedSourceBody from "@/features/planner/bodies/FocusedSourceBody";
 import * as MarketBody from "@/features/planner/bodies/MarketBody";
 import * as McpsBody from "@/features/planner/bodies/McpsBody";
+import * as PlannerLibraryPane from "@/features/planner/bodies/PlannerLibraryPane";
 import * as ReposDeployView from "@/features/planner/bodies/ReposDeployView";
 import * as StreamsBody from "@/features/planner/bodies/StreamsBody";
 import * as TransformationsBody from "@/features/planner/bodies/TransformationsBody";
@@ -46,17 +46,17 @@ let done = false;
 export function registerPanePlatform(): void {
   if (done) return;
   done = true;
-  registerAppModule("@/features/designs", Designs);
   registerAppModule("@/features/planner/blueprints/blueprintCatalog", BlueprintCatalog);
   registerAppModule("@/features/planner/blueprints/blueprintIcons", BlueprintIcons);
   registerAppModule("@/features/planner/bodies/DiscoveryBody", DiscoveryBody);
+  registerAppModule("@/features/planner/bodies/FeaturesStageBody", FeaturesStageBody);
   registerAppModule("@/features/planner/bodies/FileIntakePane", FileIntakePane);
   registerAppModule("@/features/planner/bodies/FocusedAutomationsBody", FocusedAutomationsBody);
-  registerAppModule("@/features/planner/bodies/FocusedFeaturesBody", FocusedFeaturesBody);
   registerAppModule("@/features/planner/bodies/FocusedSkillsBody", FocusedSkillsBody);
   registerAppModule("@/features/planner/bodies/FocusedSourceBody", FocusedSourceBody);
   registerAppModule("@/features/planner/bodies/MarketBody", MarketBody);
   registerAppModule("@/features/planner/bodies/McpsBody", McpsBody);
+  registerAppModule("@/features/planner/bodies/PlannerLibraryPane", PlannerLibraryPane);
   registerAppModule("@/features/planner/bodies/ReposDeployView", ReposDeployView);
   registerAppModule("@/features/planner/bodies/StreamsBody", StreamsBody);
   registerAppModule("@/features/planner/bodies/TransformationsBody", TransformationsBody);
