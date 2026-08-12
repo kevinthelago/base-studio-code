@@ -118,6 +118,15 @@ import * as TabBar from "@/shared/ui/layouts/TabBar";
 import * as IconButton from "@/shared/ui/controls/IconButton";
 import * as PreviewReview from "@/shared/lib/preview/previewReview";
 import * as GraphCanvas from "@/shared/ui/layouts/GraphCanvas";
+// The six modules the packaged PAGE records honestly import and the registry did not expose, so the
+// write gate refused those records outright ("resolving to no registered platform module and no
+// @/components/<id> sibling"). Each is a real, correctly-cased file; they were simply never registered.
+import * as PaneGrid from "@/shared/ui/layouts/PaneGrid";
+import * as GraphLegend from "@/shared/ui/layouts/GraphLegend";
+import * as SplitView from "@/shared/ui/layouts/SplitView";
+import * as Sequence from "@/shared/ui/layouts/Sequence";
+import * as PagesPageHeader from "@/shared/ui/pages/pageHeader";
+import * as SettingsPageHeader from "@/features/settings/pages/SettingsPageHeader";
 import * as UseRailSections from "@/shared/hooks/useRailSections";
 import * as UseDragResize from "@/shared/hooks/useDragResize";
 import * as SkillsData from "@/shared/data/skills";
@@ -256,6 +265,16 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/controls/IconButton": IconButton,
   "@/shared/lib/preview/previewReview": PreviewReview,
   "@/shared/ui/layouts/GraphCanvas": GraphCanvas,
+  "@/shared/ui/layouts/PaneGrid": PaneGrid,
+  "@/shared/ui/layouts/GraphLegend": GraphLegend,
+  "@/shared/ui/layouts/SplitView": SplitView,
+  "@/shared/ui/layouts/Sequence": Sequence,
+  // LOWERCASE `pageHeader` — that is the tracked filename. Six page records import it as `PageHeader`,
+  // which resolves on NTFS and nowhere else; those records are corrected rather than this key bent to
+  // match them. It is the same wrong-case path that made `graph-delete-retired-shared-page-files` a
+  // phantom item, where `git ls-files` shows no `PageHeader.tsx` was ever tracked.
+  "@/shared/ui/pages/pageHeader": PagesPageHeader,
+  "@/features/settings/pages/SettingsPageHeader": SettingsPageHeader,
   "@/shared/hooks/useRailSections": UseRailSections,
   "@/shared/hooks/useDragResize": UseDragResize,
   "@/shared/data/skills": SkillsData,
