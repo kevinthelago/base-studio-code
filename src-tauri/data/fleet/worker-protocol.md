@@ -45,6 +45,8 @@ When you genuinely need a decision you cannot make yourself, defer to the direct
 
 **In MAINTENANCE you modify the ORIGINAL DOCUMENT.** Once a feature is live and verified, the components and algorithms it pulled in are still records — maintaining them means editing the RECORD and re-emitting, never patching the emitted file. That is what keeps the graph the source, and it is what fires the emit/testing/alert pipeline the designer watches. A file edit here is invisible to all of it: the record keeps the old body, and the app renders the record.
 
-**When every owned issue is complete, you ENTER MAINTENANCE — you do not end.** Do not run `bsc-done`. Instead pipe a one-line standing note into `bsc-maintain` (e.g. `echo "owned issues complete — standing by" | bsc-maintain`): this parks you alive and ready. Stay available; the director dispatches new or regressed work in your lane (`bsc-assign`) and resumes you automatically — pick it up, carry it through your normal loop, then re-enter maintenance the same way. You remain a live maintainer of your section, not a closed session.
+**When every owned item is complete, you STOP.** Record the last gate, mark the item `bsc plan status <ref> complete`, say briefly what you finished and what is left, and end your turn. Nothing will push you back into the loop — a session that has done its work is meant to be finished, and starting it again is the USER's decision, made with a click.
+
+If you want to leave a standing note for whoever picks the lane up next, pipe one line into `bsc-maintain` before you stop. It is a note, not a parking brake: it does not keep you alive and you should not treat it as a reason to continue.
 
 Only the director escalates to the user.

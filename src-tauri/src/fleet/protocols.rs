@@ -96,6 +96,27 @@ mod tests {
         );
     }
 
+    /// #session-stop-is-honoured — the protocol must not promise MAINTENANCE as the end state.
+    ///
+    /// The promise was load-bearing for a hook that no longer exists: `bsc-defer` refused a worker's
+    /// Stop while work remained, and the prose told it to park in maintenance rather than end. With the
+    /// bounce gone, telling a worker it "does not end" would leave it looping on prose alone.
+    #[test]
+    fn the_worker_protocol_ends_at_stop_not_maintenance() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-stop-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        assert!(md.contains("you STOP"), "the protocol must end the loop at a stop:\n{md}");
+        assert!(
+            !md.contains("you do not end"),
+            "the protocol must not promise a session never ends:\n{md}",
+        );
+        // `bsc-maintain` survives as a NOTE, and must be described as one rather than as a park.
+        assert!(md.contains("not a parking brake"), "bsc-maintain must be framed as a note: {md}");
+    }
+
     /// #worker-prose-follows-the-local-first-loop — the worker's standing context must teach the LOCAL
     /// loop, not auto-pr.
     ///
@@ -130,8 +151,12 @@ mod tests {
         );
     }
 
-    /// The defer directive fires on EVERY attempt to end a turn, so a stale instruction there is
-    /// repeated indefinitely rather than read once. It must not send a worker to open a PR by default.
+    /// The defer directive is NO LONGER INJECTED — `sessionLaunch` stopped installing the `bsc-defer`
+    /// Stop hook (#session-stop-is-honoured), so nothing reads this file at runtime any more. The
+    /// assertion is kept because the seed is still compiled into `bsc` (`crates/bsc/src/defer.rs`
+    /// `include_str!`s it) and re-attaching the hook is one line: if that ever happens deliberately,
+    /// the prose it would inject must already be correct rather than two releases stale. That is
+    /// exactly how the auto-pr instruction outlived the policy change it contradicted.
     #[test]
     fn the_defer_directive_does_not_default_to_opening_a_pr() {
         let empty = std::env::temp_dir().join(format!("bsc-defer-local-{}", std::process::id()));

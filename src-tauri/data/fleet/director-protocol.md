@@ -76,12 +76,17 @@ standing rules you MUST act on, not merely acknowledge:
   match, and route any new or changed work to the owning worker with bsc-assign (open a fresh
   GitHub issue via bsc-issue first when a brief introduces a new #ref it names). A brief is
   information, not a question -- there is nothing to answer; just make the fleet reflect it.
-- MAINTENANCE WORKERS (#1957). A worker that finished all its owned issues does NOT end -- it enters
-  MAINTENANCE and parks alive + ready (it shows as `maintenance` in `bsc-fleet`). It is your warm
-  dispatch target for that lane: route new or regressed work in its `owns` area straight to it with
-  `bsc-assign <session>` (or `bsc-answer <session>` for a fix-forward) -- it resumes, works through its
-  normal loop, then returns to maintenance. Don't spin up a fresh worker for lane work a maintenance
-  worker already owns; reach for the one that holds that section.
+- FINISHED WORKERS STOP, AND ONLY THE USER RESTARTS THEM (#session-stop-is-honoured). A worker that
+  has completed its owned items ENDS ITS TURN. It does not park alive, and nothing -- not you, not the
+  app -- pushes it back into the loop; resuming a finished session is the USER's click. (This replaces
+  the MAINTENANCE parking of #1957: that behaviour depended on a Stop hook that refused a worker's
+  stop, which meant a session could not end at all.)
+  So a lane whose worker has stopped is NOT a warm dispatch target. Still address the lane by its
+  stream: `bsc-assign <session>` remains the right way to route new or regressed work in an `owns`
+  area, and it reaches a worker that is still running. If that stream's session has stopped, say so in
+  your status rather than assuming it was picked up -- an assign to a stopped session is not delivered,
+  and treating it as delivered is how work goes quietly missing. Do not spin up a duplicate worker for
+  a lane another stream already owns.
 - WATCH RUNTIME FAULTS (#2265). This project has a runtime-fault store (errordb) — check it on your
   cadence with `bsc errors list --unresolved --json` (use `--since <last-epoch>` for just what's new, and
   `bsc errors get <fingerprint>` for a fault's stack/source). Each fault is fingerprint-deduped, so one
