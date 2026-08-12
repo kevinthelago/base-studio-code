@@ -1,10 +1,22 @@
 // useStudioViewer (#3357) — the ONE way a surface says "I am showing this studio session".
 //
 // Both surfaces that can show a studio terminal call it: the studio page's `SessionDock` and the Glance
-// node morph. On the first call the studio becomes WANTED (the lazy start — nothing launches at app boot),
-// and for as long as the caller is showing it the studio's viewer count is held above zero, which keeps the
-// idle reaper disarmed. When the last viewer goes away the reaper arms; the session stays warm on
+// node morph. For as long as the caller is showing it the studio's viewer count is held above zero, which
+// keeps the idle reaper disarmed. When the last viewer goes away the reaper arms; the session stays warm on
 // TerminalHost throughout, so re-opening inside the window reattaches to the SAME conversation.
+//
+// SHOWING IS NO LONGER STARTING (#rendering-a-studio-node-must-not-start-its-session). These hooks used to
+// call `openStudio` too, which put the studio in `wantedStudios` → `StudioSessionMount` → a live PTY. Since
+// `useStudioPageShowing` is true whenever the shell is on that page, merely NAVIGATING to the Design Studio
+// (or Algorithms, or Teams) launched an agent — and because the reaper drops an unwatched studio after 30
+// minutes, navigating back started it again. From outside that reads as sessions starting themselves.
+//
+// The two halves were one call and are now separated on purpose:
+//   • VIEWING  (here) stays automatic — a surface showing a RUNNING session must pin it, or watching a
+//     session could get it reaped out from under you.
+//   • STARTING is `openStudio`, reached only from a control the user presses (`StudioTerminalSlot`).
+// A studio that is not running therefore renders its start affordance instead of a terminal, and nothing
+// on a render path can launch one.
 import { useEffect } from "react";
 import { useAppStore } from "@/store";
 import type { StudioId } from "./lib/studioSessions";
@@ -22,10 +34,8 @@ import type { StudioId } from "./lib/studioSessions";
 export function useStudioViewer(id: StudioId | null | undefined, showing = true): void {
   useEffect(() => {
     if (!id || !showing) return;
-    const st = useAppStore.getState();
-    // Showing it is what STARTS it: opening a studio page (or its Glance node) is the lazy launch.
-    st.openStudio(id);
-    st.addStudioViewer(id);
+    // Viewer registration ONLY — no `openStudio`. Showing a studio does not start it (see the header).
+    useAppStore.getState().addStudioViewer(id);
     return () => { useAppStore.getState().removeStudioViewer(id); };
   }, [id, showing]);
 }
@@ -49,7 +59,8 @@ export function useStudioViewers(ids: readonly StudioId[], showing = true): void
     if (!showing || !key) return;
     const list = key.split(",") as StudioId[];
     const st = useAppStore.getState();
-    for (const id of list) { st.openStudio(id); st.addStudioViewer(id); }
+    // Viewer registration ONLY — no `openStudio`, for the same reason as the single form above.
+    for (const id of list) st.addStudioViewer(id);
     return () => {
       const s = useAppStore.getState();
       for (const id of list) s.removeStudioViewer(id);

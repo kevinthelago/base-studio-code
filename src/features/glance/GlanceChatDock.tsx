@@ -15,7 +15,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
-import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
+import { AgentTerminalSlot } from "@/features/studio-sessions";
 import { GlanceSessionLog } from "./GlanceSessionLog";
 import { GlancePlanScreen, planScreenIssues } from "./GlancePlanScreen";
 import type { StreamProgress } from "./lib/streamProgress";
@@ -101,7 +101,7 @@ export function GlanceChatDock({
           <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             {/* Viewer slot (not primary): the host re-parents the agent's single terminal here while the
                 dock is open. `visible` gates its render/fit exactly like a background console pane. */}
-            <TerminalSlot paneId={paneId} visible={tab === "stream"} focused={false} />
+            <AgentTerminalSlot paneId={paneId} visible={tab === "stream"} focused={false} />
           </Box>
         </Box>
         {tab === "logs" && (
