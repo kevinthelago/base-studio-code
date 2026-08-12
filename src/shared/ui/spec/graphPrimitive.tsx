@@ -33,17 +33,20 @@ const SPEC_BY_NAME = new Map<string, string>(UI_KIT.map((p) => [p.name as string
  *  the identity stays put. */
 const wrappers = new Map<string, AnyComponent>();
 
-function wrapperFor(id: string, Static: AnyComponent): AnyComponent {
-  const cached = wrappers.get(id);
+function wrapperFor(id: string, name: string, Static: AnyComponent): AnyComponent {
+  // Keyed on record + PRIMITIVE, not the record alone. One record can serve several primitives (see
+  // `primitiveFor`), and an id-keyed cache would hand the second one the wrapper built for the first.
+  const key = `${id}#${name}`;
+  const cached = wrappers.get(key);
   if (cached) return cached;
   function GraphPrimitive(props: Record<string, unknown>) {
     // `fallback` covers BOTH the async gap and every failure path — while the record compiles, and if it
     // fails to compile or throws while rendering. A primitive that renders nothing is worse than one that
     // renders the bundled version: a blank is indistinguishable from "the data said render nothing".
-    return <GraphComponent id={id} props={props} fallback={<Static {...props} />} />;
+    return <GraphComponent id={id} exportName={name} props={props} fallback={<Static {...props} />} />;
   }
-  GraphPrimitive.displayName = `GraphPrimitive(${id})`;
-  wrappers.set(id, GraphPrimitive);
+  GraphPrimitive.displayName = `GraphPrimitive(${id}:${name})`;
+  wrappers.set(key, GraphPrimitive);
   return GraphPrimitive;
 }
 
@@ -53,6 +56,12 @@ function wrapperFor(id: string, Static: AnyComponent): AnyComponent {
  * Graph-backed when a packaged record `provides` its specifier; the bundled component otherwise — which
  * covers the 24 manifest primitives with no record today, including `Slot`, which will never have one
  * (the renderer resolves it itself: it is a hole the host fills, not a component).
+ *
+ * A record provides a MODULE, so the primitive NAME is passed on as the export to mount. 14 of the 69
+ * primitives share 3 specifiers — `@/shared/ui/controls/Field` alone exports TextField, TextArea and
+ * SelectField — and joining on the specifier alone collapsed all of them onto whichever component the
+ * loader picked first, which is how a password field rendered as a `<select>`. The manifest's `importPath`
+ * plus the primitive's own name is the full join; neither half is enough.
  *
  * Reads a store SNAPSHOT rather than subscribing, because the caller (`renderNode`) is a plain recursive
  * function, not a component, so it cannot hold a hook. The consequence is bounded and known: a record
@@ -64,7 +73,7 @@ export function primitiveFor(name: PrimitiveName): AnyComponent | undefined {
   const spec = SPEC_BY_NAME.get(name);
   if (!spec || !Static) return Static;
   const record = useAppStore.getState().components.find((c) => c.provides === spec);
-  return record ? wrapperFor(record.id, Static) : Static;
+  return record ? wrapperFor(record.id, name, Static) : Static;
 }
 
 /** Test seam — the wrapper cache is module-global by design (identity must outlive a render). */

@@ -115,8 +115,10 @@ describe("KitRenderer — which copy reaches the DOM", () => {
     // it. Both render the text, so the testid is the only thing that distinguishes them.
     await waitFor(() => expect(screen.getByTestId("from-the-graph")).toBeTruthy());
     expect(screen.getByText("hello")).toBeTruthy();
-    // It was handed the RECORD's source, not the file's — the join actually went through `provides`.
-    expect(load).toHaveBeenCalledWith(TEXT_RECORD.srcText, expect.anything());
+    // It was handed the RECORD's source, not the file's — the join actually went through `provides` —
+    // AND the primitive NAME as the export to mount, which is the other half of the join: a record
+    // provides a module, and a module can export several primitives.
+    expect(load).toHaveBeenCalledWith(TEXT_RECORD.srcText, expect.anything(), "Text");
   });
 
   it("passes the node's props THROUGH to the graph copy", async () => {
@@ -135,5 +137,42 @@ describe("KitRenderer — which copy reaches the DOM", () => {
     // Never blank: a primitive that renders nothing is indistinguishable from "the data said render nothing".
     await waitFor(() => expect(screen.getByText("hello")).toBeTruthy());
     expect(screen.queryByTestId("from-the-graph")).toBeNull();
+  });
+});
+
+// The bug this pair guards (graph-primitive-resolves-a-module-not-an-export). 14 of the 69 manifest
+// primitives share 3 specifiers, so the name→specifier→record join is NOT one-to-one: a record provides a
+// MODULE. `@/shared/ui/controls/Field` exports TextField, TextArea and SelectField, and `ui-field` provides
+// it — so before the export name was part of the join, all three mounted whichever function the loader
+// picked first, and a password TextField rendered as `<select class="input" type="password" />`.
+describe("a record that provides a MULTI-EXPORT module (graph-primitive-resolves-a-module-not-an-export)", () => {
+  /** One record standing in for `ui-field` — the module every Field primitive resolves to. */
+  const FIELD_RECORD = {
+    id: "test-graph-field",
+    name: "Field",
+    kitId: "base-studio-code",
+    role: "primitive",
+    provides: "@/shared/ui/controls/Field",
+    srcText: "export function TextField() { return null; }\n",
+  };
+
+  beforeEach(() => { __resetPrimitiveCache(); seed([FIELD_RECORD]); });
+  afterEach(() => { __resetPrimitiveCache(); seed([]); load.mockReset(); });
+
+  it("asks the loader for the export matching EACH primitive, not just the module", () => {
+    for (const name of ["TextField", "TextArea", "SelectField"] as const) {
+      load.mockReset();
+      load.mockResolvedValue(() => <i data-testid={`graph-${name}`} />);
+      const Comp = primitiveFor(name)!;
+      render(<Comp />);
+      expect(load).toHaveBeenCalledWith(FIELD_RECORD.srcText, expect.anything(), name);
+    }
+  });
+
+  it("gives each primitive its OWN wrapper — one record, three components", () => {
+    const [a, b, c] = (["TextField", "TextArea", "SelectField"] as const).map((n) => primitiveFor(n));
+    // Same record id. A wrapper cache keyed on the id alone returned ONE component for all three, which is
+    // the shape of the original defect: the second primitive silently rendered the first one's export.
+    expect(new Set([a, b, c]).size).toBe(3);
   });
 });
