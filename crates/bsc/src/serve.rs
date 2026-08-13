@@ -31,15 +31,19 @@
 //!
 //! No per-request environment. `wire_bsc_stores` sets `BSC_PLAN_DB`/`BSC_DATA_DB` per call from the
 //! project key, and env is process-global — so a warm child can only serve calls carrying NO project
-//! key. That is all of `bsc ui …`, which is the surface the Design Studio waits on.
+//! key. That covers `bsc ui …` (the surface the Design Studio waits on) and the GLOBAL store lists —
+//! persona, teams, skills, blueprints, project links + rows — which
+//! #the-warm-bsc-answers-the-boot-reads-too added after `bsc perf spawns` caught the app launching
+//! eighteen processes in one second on every page load, most of them exactly those reads. Per-project
+//! reads like `plan list` stay one-shot.
 
 use std::io::{BufRead, Write};
 
 /// The commands a warm process may answer.
 ///
 /// READ-ONLY and project-less, both load-bearing: a write would need per-request store env this process
-/// cannot safely switch, and anything outside `bsc ui` either needs a project key or has not been shown
-/// to funnel its output through the capture helpers.
+/// cannot safely switch, and a verb not shown to funnel its output through the capture helpers would
+/// write into the protocol stream instead of its own response.
 /// May `args` be answered by a warm process? The ONE definition lives in `bsc_util` so this loop and
 /// the desktop client that routes to it cannot drift — a client sending something the server refuses
 /// would stall a call that should simply have been spawned.
@@ -131,6 +135,71 @@ mod tests {
         // Degenerate input falls back rather than panicking.
         assert!(!is_servable(&a(&[])));
         assert!(!is_servable(&a(&["ui"])));
+    }
+
+    #[test]
+    fn the_boot_reads_are_servable() {
+        // #the-warm-bsc-answers-the-boot-reads-too — the exact set `bsc perf spawns` caught the app
+        // launching a process for, eighteen in one second, on every page load. Each was confirmed to
+        // emit through the shared print helpers before landing here.
+        for verb in [
+            vec!["persona", "list", "--full"],
+            vec!["teams", "list", "--full"],
+            vec!["blueprint", "list", "--full"],
+            vec!["skill", "list", "--full"],
+            vec!["skill", "group", "list"],
+            vec!["project", "link", "list", "--json"],
+            vec!["project", "db", "list", "--json"],
+        ] {
+            assert!(is_servable(&a(&verb)), "{verb:?} should be answered warm");
+        }
+    }
+
+    #[test]
+    fn a_write_sitting_next_to_a_served_read_is_still_refused() {
+        // The reason every entry is a COMPLETE verb path rather than a prefix. Each of these shares its
+        // first tokens with something on the list, and every one of them is a write: matching on
+        // ("skill","group") or ("project","link") would hand the warm child a mutation it must never
+        // answer, with store env it cannot switch per request.
+        for verb in [
+            vec!["skill", "group", "add"],
+            vec!["skill", "group", "remove", "x"],
+            vec!["project", "link", "add", "a", "b", "uses"],
+            vec!["project", "link", "remove", "l1"],
+            vec!["project", "link", "set", "l1"],
+            vec!["project", "db", "add", "k"],
+            vec!["project", "db", "remove", "k"],
+            vec!["project", "db", "state", "k", "open"],
+            vec!["persona", "set"],
+            vec!["persona", "rename", "x", "Y"],
+            vec!["teams", "set"],
+            vec!["blueprint", "set"],
+        ] {
+            assert!(!is_servable(&a(&verb)), "{verb:?} is a WRITE and must be spawned, never served");
+        }
+    }
+
+    #[test]
+    fn a_read_whose_output_was_not_verified_stays_off_the_list() {
+        // `get` on a json-store noun prints through a plain `println!` on its non-`--raw` path, so it
+        // would write into the protocol stream rather than the capture buffer. It is absent on purpose,
+        // and this pins that — the list is verified, not guessed by shape.
+        assert!(!is_servable(&a(&["persona", "get", "review-bot"])));
+        assert!(!is_servable(&a(&["teams", "get", "core"])));
+        assert!(!is_servable(&a(&["blueprint", "get", "default"])));
+        // Sibling reads on the same commands that were never audited stay off too.
+        assert!(!is_servable(&a(&["project", "list"])));
+        assert!(!is_servable(&a(&["project", "progress"])));
+        assert!(!is_servable(&a(&["skill", "get", "x"])));
+    }
+
+    #[test]
+    fn a_prefix_alone_is_not_enough() {
+        // A bare command, or a served verb's parent, is not itself servable.
+        assert!(!is_servable(&a(&["persona"])));
+        assert!(!is_servable(&a(&["skill", "group"])));
+        assert!(!is_servable(&a(&["project", "link"])));
+        assert!(!is_servable(&a(&["project", "db"])));
     }
 
     #[test]

@@ -136,6 +136,23 @@ mod tests {
     }
 
     #[test]
+    fn a_boot_read_carrying_a_project_key_is_still_refused() {
+        // #the-warm-bsc-answers-the-boot-reads-too widened the allow-list to the GLOBAL store lists, so
+        // the project-key gate now guards more surface than it did when only `bsc ui` was servable. The
+        // gate is the earlier of the two checks on purpose: a servable verb with a key must still fall
+        // back, because this child's store env was fixed when it spawned and cannot be switched per
+        // request. Asserting on the key path only — it returns before any child is spawned.
+        for verb in [
+            vec!["persona", "list", "--full"],
+            vec!["teams", "list", "--full"],
+            vec!["skill", "group", "list"],
+            vec!["project", "link", "list", "--json"],
+        ] {
+            assert!(try_warm(Some("some-project"), &a(&verb)).is_none(), "{verb:?} with a key must spawn");
+        }
+    }
+
+    #[test]
     fn an_empty_project_key_still_counts_as_project_less() {
         // `wire_bsc_stores` treats "" as absent, so this must route the same way the one-shot path does —
         // otherwise an empty key would silently disable the warm path for every global read.

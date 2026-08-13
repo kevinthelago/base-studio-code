@@ -648,12 +648,55 @@ pub fn is_capturing() -> bool {
 /// Commands a WARM `bsc serve` process may answer (#4152).
 ///
 /// READ-ONLY and PROJECT-LESS, both load-bearing: a write would need per-request store env a warm
-/// process cannot safely switch (env is process-global), and anything outside `bsc ui` either needs a
-/// project key or has not been shown to funnel its output through the capture helpers.
+/// process cannot safely switch (env is process-global), and a served verb's output must funnel through
+/// the shared print helpers or it would corrupt the protocol stream it shares with stdout.
 ///
 /// Defined HERE so the serve loop and the desktop client that routes to it cannot disagree — a client
 /// that sent something the server refuses would stall a call that should simply have been spawned.
+///
+/// # Why FULL verb paths, never a prefix
+///
+/// A read sits directly beside its writes: `skill group list` next to `skill group add`, `project link
+/// list` next to `project link remove`, `project db list` next to `project db state`. Matching on
+/// `("skill", "group")` would hand the warm child a write it must never answer. So every entry names the
+/// COMPLETE verb, and a request matches only when it leads with exactly those tokens.
+///
+/// # Why each entry was ADDED, not assumed
+///
+/// #the-warm-bsc-answers-the-boot-reads-too widened this from `bsc ui` alone after `bsc perf spawns`
+/// found the app issuing EIGHTEEN process launches in one second on every page load, most of them
+/// project-less store lists that this loop already knew how to answer at ~10ms. Each verb below was
+/// confirmed by reading its owning crate:
+///
+/// - `persona list` · `teams list` · `blueprint list` — the shared `bsc-json-store` CLI, whose `list`
+///   branch emits via `print_json`. Its `get` branch does NOT (a plain `println!` on the non-`--raw`
+///   path), which is exactly why `get` is absent here.
+/// - `skill list` · `skill group list` — `skilldb`'s CLI prints only through `print_json`.
+/// - `project db list` — already on `bsc_sqlite_util::print_json`.
+/// - `project link list` — was raw `println!` on both its JSON and human branches; moved onto the
+///   shared helpers in the same change that added it here.
+///
+/// Adding a verb without reading its crate is the one mistake that breaks the warm child for every
+/// later request on it, so the list is deliberately tedious to extend.
 pub fn is_servable_warm(args: &[String]) -> bool {
-    const SUBS: &[&str] = &["list", "kit", "theme", "variants", "usage", "shapes", "get"];
-    args.first().is_some_and(|c| c == "ui") && args.get(1).is_some_and(|s| SUBS.contains(&s.as_str()))
+    /// `bsc ui` keeps its own sub-list: every one of these is a read, and `get` there (unlike the
+    /// json-store `get`) is capture-safe.
+    const UI_SUBS: &[&str] = &["list", "kit", "theme", "variants", "usage", "shapes", "get"];
+    /// Complete verb paths — see the note above on why these are not prefixes.
+    const SERVABLE: &[&[&str]] = &[
+        &["persona", "list"],
+        &["teams", "list"],
+        &["blueprint", "list"],
+        &["skill", "list"],
+        &["skill", "group", "list"],
+        &["project", "link", "list"],
+        &["project", "db", "list"],
+    ];
+
+    if args.first().is_some_and(|c| c == "ui") {
+        return args.get(1).is_some_and(|s| UI_SUBS.contains(&s.as_str()));
+    }
+    SERVABLE
+        .iter()
+        .any(|verb| args.len() >= verb.len() && args.iter().zip(verb.iter()).all(|(a, v)| a == v))
 }
