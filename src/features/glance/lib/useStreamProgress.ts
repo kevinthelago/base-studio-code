@@ -11,7 +11,7 @@
 // that just went idle, so it says nothing while a fleet is steadily working, which is exactly when a
 // progress bar is worth having.
 import { useEffect, useState } from "react";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { bscJsonShared } from "@/shared/lib/core/bscShared";
 import { usePoll } from "@/shared/hooks/usePoll";
 import type { OwnedIssue } from "@/shared/lib/fleet/workerEnd";
 import { streamProgress, planDbDoneRefs, planDbClosedByRef, projectProgress, type StreamProgress } from "./streamProgress";
@@ -66,7 +66,7 @@ export function useStreamProgress(projectKey: string | null): PlanDbProgress {
 
   usePoll(async (isCancelled) => {
     if (!projectKey) return;
-    const issues = await bscJson<OwnedIssue[] | null>(projectKey, ["plan", "list", "--full", "--json"], null);
+    const issues = await bscJsonShared<OwnedIssue[] | null>(projectKey, ["plan", "list", "--full", "--json"], null, PROGRESS_POLL_MS);
     if (isCancelled() || !issues) return;   // read failed / no plan.db ⇒ keep the last good answer
     setState({
       byStream: streamProgress(issues),

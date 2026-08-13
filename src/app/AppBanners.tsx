@@ -3,6 +3,7 @@ import { LifeBuoy, RotateCcw, Trash2, ShieldAlert, PartyPopper, GitBranch } from
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { bscJson } from "@/shared/lib/core/bsc";
+import { bscJsonShared } from "@/shared/lib/core/bscShared";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { projectComplete } from "@/shared/lib/fleet/streamCompletion";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
@@ -358,7 +359,10 @@ function ProjectCompleteBanner() {
 
   usePoll(async (isCancelled) => {
     if (!enabled) return;
-    const issues = await bscJson<PlanIssue[]>(key, ["plan", "list", "--full", "--json"], []);
+    // Shared with the Glance readers of the same list (#five-callers-one-spawn-for-the-same-plan-read):
+      // this banner polls on the same 20s cadence, so a reading from inside that window is exactly as
+      // fresh as the one it would have launched a process for.
+      const issues = await bscJsonShared<PlanIssue[]>(key, ["plan", "list", "--full", "--json"], [], COMPLETE_POLL_MS);
     if (isCancelled()) return;
     setCompleteKey(projectComplete(issues) ? key : null);
   }, COMPLETE_POLL_MS, [enabled, key]);
