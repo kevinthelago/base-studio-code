@@ -17,6 +17,9 @@
 /// Which record backs a given file (#4193) — the lookup behind `bsc ui backing` and the write gate.
 pub mod backing;
 pub mod cli;
+/// The RECORD closure a `bsc ui test` materialization writes around a record — the app's own
+/// `provides` resolution chain, so a composing component can be verified and not just a leaf.
+pub(crate) mod closure;
 pub mod folder;
 pub mod graph_health;
 pub mod motion;

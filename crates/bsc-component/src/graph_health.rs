@@ -1039,6 +1039,20 @@ pub(crate) fn unresolved_specifiers(src_text: &str) -> Vec<String> {
     out
 }
 
+/// The specifiers `source` imports that SURVIVE the TypeScript loader — every specifier except the
+/// type-only ones (#4076) — in source order, deduped. The shape a CLOSURE walk needs
+/// ([`crate::closure`]): a type-only import is erased before resolution, so materializing a record for
+/// it would be writing a file nothing ever asks for.
+pub(crate) fn live_specifiers(source: &str) -> Vec<String> {
+    let erased = erased_specifiers(source);
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    import_specifiers(source)
+        .into_iter()
+        .filter(|s| !erased.contains(s))
+        .filter(|s| seen.insert(s.clone()))
+        .collect()
+}
+
 /// Does `…` appear in real CODE — not inside a string/template literal or a comment? Only then is it an
 /// elision marker standing in for omitted code. The plain substring test this replaced (#3470) is a
 /// MEASURED false-positive generator, not a hypothetical one: `…` is ordinary UI copy

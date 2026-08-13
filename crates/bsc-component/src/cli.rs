@@ -358,16 +358,32 @@ SCOPE: components only. An algorithm record is a function LIFTED OUT of a file a
     },
     CmdDoc {
         name: "test",
-        summary: "materialize ONE record + its paired tests into an EMPTY dir and run them there — a pass proves the record is self-contained",
+        summary: "materialize a record + its RECORD CLOSURE + its paired tests into an EMPTY dir and run them there — a pass proves every dependency is a record",
         usage: "\
 USAGE:
-  bsc ui test <id> --out <dir> [--run]      # one record, alone
+  bsc ui test <id> --out <dir> [--run]      # one record + its closure
   bsc ui test --all --out <dir> [--run]     # every record carrying a paired test, each in its own dir
+  bsc ui test <id> --out <dir> --no-closure # the STRICT form: the record utterly alone
 
-The components twin of `bsc graph test`. Materializing exactly ONE record is what makes the run mean
-something: a suite that passes in a directory holding only that record has PROVED the record is
-self-contained, which no run inside the repo can prove — there every import resolves whether the record
-declares it or not.
+The components twin of `bsc graph test`. Materializing OUT OF THE REPO is what makes the run mean
+something: inside the repo every import resolves whether the record declares it or not.
+
+What goes in with the record is its RECORD CLOSURE — every record its code imports, transitively
+(materialize-a-records-record-closure). Components COMPOSE components, so a strict one-record
+materialization can only ever verify leaves, and most of a UI library is not leaves. The closure resolves
+the way the running app resolves: a `@/components/<id>` sibling, then a component whose `provides` is the
+specifier, then an algorithm impl's. Members are written into a `_closure/` MIRROR of `src/` that `@` is
+aliased to, so each sits at its real position and its own imports resolve with no source rewriting.
+
+That keeps the isolation claim and sharpens it. What is withheld is APP CONTEXT — the repo tree, the
+app's aliases, the store; what is supplied is the record's DECLARED dependency graph. An import that
+resolves to NO record is left out and the run FAILS on it, which is the honest signal that the closure is
+incomplete — the point is that a record's dependencies are records, not that everything resolves. Every
+run reports `closure` (what came in, and from which store) and `missing` (what is not a record yet).
+
+--no-closure restores the strict one-record form: a pass there proves the record is a LEAF, importing no
+other app module at all. That is the RETIRABILITY signal, and it runs opposite to usefulness — the
+records that verify alone are the primitives everything imports.
 
 The directory gets its own `vitest.config.ts`, or vitest walks UP, finds the repo's, and lends the record
 the aliases and setup file isolation exists to withhold. The component file takes its ORIGINAL basename,
@@ -2305,6 +2321,17 @@ fn open_component_store(dir: &Option<String>) -> Result<bsc_json_store::Store, S
     Ok(store)
 }
 
+/// Where a materialization writes the record's CLOSURE — a mirror of `src/` that the generated config
+/// aliases `@` to. Underscore-led so it sorts away from the record's own files and can never collide
+/// with a real `src/` top-level dir.
+const MIRROR_DIR: &str = "_closure";
+
+/// A string as a JSON/JS literal — the generated config is source, so every path it embeds goes through
+/// the same escaping the store's own JSON does rather than being pasted between quotes.
+fn json_str(s: &str) -> String {
+    serde_json::Value::String(s.to_owned()).to_string()
+}
+
 /// Materialize ONE component record into `out` and, when `run`, execute its paired tests there.
 ///
 /// The algorithms twin (`bsc graph test`) is the template, and most of the design is settled by it: one
@@ -2315,10 +2342,16 @@ fn open_component_store(dir: &Option<String>) -> Result<bsc_json_store::Store, S
 /// One difference from that twin: a component test normally RENDERS, so `jsdom` is the common case here
 /// rather than the exception. `@testing-library` is HARNESS — present in the image, and exactly what the
 /// isolation rule already allows a record's test to use.
+///
+/// A second difference, and the reason a composing record can be verified at all: the record does not go
+/// in ALONE — its transitive RECORD closure ([`crate::closure`]) is written beside it into a `_closure/`
+/// mirror of `src/` that `@` is aliased to. Components compose components, so one-record materialization
+/// verified only leaves. An import that resolves to no record is still left out and still fails.
 fn materialize_component_test(
     comp: &serde_json::Value,
     out: &str,
     run: bool,
+    index: Option<&crate::closure::Index<'_>>,
 ) -> Result<serde_json::Value, String> {
     let id = comp.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
     let tests = comp.get("tests").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
@@ -2391,14 +2424,79 @@ fn materialize_component_test(
     } else {
         ""
     };
+    // The record's DECLARED dependency graph, written into a mirror of `src/`. The record's own code is
+    // what is walked — a record whose IMPORTS reach sideways is only revealed by materializing (and
+    // running) it, never by reading its test.
+    let provides = non_blank("provides");
+    // `--no-closure` (index: None) is the STRICT form the runner used to be: nothing but the record. A
+    // pass there proves it is a LEAF — kept because that is the RETIRABILITY signal, and it answers a
+    // different question from "are this record's dependencies records".
+    let cl = index
+        .map(|ix| crate::closure::resolve_closure(src_text, id, provides, ix))
+        .unwrap_or_default();
+    let mirror = dir.join(MIRROR_DIR);
+    for m in &cl.members {
+        let p = mirror.join(&m.rel);
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        std::fs::write(&p, &m.source).map_err(|e| format!("cannot write {}: {e}", m.rel))?;
+        written.push(p.to_string_lossy().into_owned());
+    }
+    // ABSOLUTE, forward-slashed. A relative replacement would be re-resolved against the IMPORTER
+    // rather than this config, so `@/x` inside a mirror member two levels down would miss.
+    let abs = |p: &std::path::Path| -> String {
+        let a = if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            std::env::current_dir().map(|c| c.join(p)).unwrap_or_else(|_| p.to_path_buf())
+        };
+        a.to_string_lossy().replace('\\', "/")
+    };
+    let resolve_block = if index.is_none() {
+        // No alias at all, so `@/…` resolves to nothing — exactly the contract before the closure.
+        String::new()
+    } else {
+        // A specifier naming the RECORD UNDER TEST maps to the one module the test already imports, so
+        // a cycle resolves without a second copy. These must PRECEDE the `@` entry — the alias list is
+        // first-match-wins, and `@` matches every `@/…`.
+        let mut aliases: Vec<String> = cl
+            .self_specifiers
+            .iter()
+            .map(|s| {
+                format!("      {{ find: {}, replacement: {} }},\n", json_str(s), json_str(&abs(&module)))
+            })
+            .collect();
+        aliases.push(format!("      {{ find: \"@\", replacement: {} }},\n", json_str(&abs(&mirror))));
+        format!("  resolve: {{ alias: [\n{}    ] }},\n", aliases.concat())
+    };
+    // The header states the contract THIS run was materialized under. A scratch dir is read by whoever
+    // is chasing a red record, and a config describing an alias it does not carry sends them looking for
+    // a resolution bug that is really the strict mode doing its job.
+    let contract = if index.is_none() {
+        "// --no-closure: NOTHING but the record is here and there is no alias, so any `@/…` import\n\
+         // fails to resolve. A pass proves the record is a LEAF — it imports no other app module.\n"
+            .to_string()
+    } else {
+        format!(
+            "// `@` points at `{MIRROR_DIR}/`, which holds ONLY this record's transitive record closure\n\
+             // — not the repo's `src/`. So a composing record resolves its dependencies, every one of\n\
+             // them is a record, and a specifier no record claims still fails to resolve.\n"
+        )
+    };
     std::fs::write(
         dir.join("vitest.config.ts"),
         format!(
             "// Generated by `bsc ui test` — the record's own test contract.\n\
              // Present so vitest does NOT walk up and load the repo's config, which would lend this\n\
-             // record the aliases and app setup that isolation exists to withhold.\n\
+             // record the app context that isolation exists to withhold.\n\
+             //\n\
+             {contract}\
              import {{ defineConfig }} from \"vitest/config\";\n\
-             export default defineConfig({{ test: {{ environment: \"{env}\", include: [\"*.test.tsx\"]{setup} }} }});\n"
+             export default defineConfig({{\n\
+             {resolve_block}\
+             \x20 test: {{ environment: \"{env}\", include: [\"*.test.tsx\"]{setup} }},\n\
+             }});\n"
         ),
     )
     .map_err(|e| format!("cannot write the test config: {e}"))?;
@@ -2406,6 +2504,12 @@ fn materialize_component_test(
 
     let mut result = serde_json::json!({
         "id": id, "dir": out, "written": written, "tests": tests.len(), "environment": env, "ran": false,
+        "closure": cl.members.iter().map(|m| serde_json::json!({
+            "specifier": m.specifier, "id": m.id, "origin": m.origin.as_str(), "path": m.rel,
+        })).collect::<Vec<_>>(),
+        // Named, never silently tolerated: these are the imports that are NOT records yet, and they are
+        // why the run below fails. Reporting them is what turns a red record into a work item.
+        "missing": cl.missing,
     });
     if run {
         // `.cmd` on Windows: `Command` resolves an exact filename and does not consult PATHEXT, so a
@@ -2426,9 +2530,9 @@ fn materialize_component_test(
     Ok(result)
 }
 
-/// `bsc ui test <id> --out <dir> [--run]` / `bsc ui test --all --out <dir> [--run]`.
+/// `bsc ui test <id> --out <dir> [--run] [--no-closure]` / `bsc ui test --all --out <dir> [--run]`.
 fn cmd_component_test(args: &[String]) -> Result<(), String> {
-    let usage = "usage: bsc ui test <id> --out <dir> [--run]   |   bsc ui test --all --out <dir> [--run]";
+    let usage = "usage: bsc ui test <id> --out <dir> [--run] [--no-closure]   |   bsc ui test --all --out <dir> [--run] [--no-closure]";
     let flag = |name: &str| -> Option<String> {
         args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
     };
@@ -2441,6 +2545,12 @@ fn cmd_component_test(args: &[String]) -> Result<(), String> {
         .iter()
         .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
         .collect();
+    // The algorithms store is read here for the SAME reason the runtime resolver reads it: a logic
+    // module authored as a record (`bsc graph harvest --module`) is a record, and a component importing
+    // one has a dependency that IS resolvable. Indexed once for the whole sweep.
+    let impls = bsc_graph::implementations();
+    let built = crate::closure::Index::new(&comps, &impls);
+    let index = (!args.iter().any(|a| a == "--no-closure")).then_some(&built);
     if args.iter().any(|a| a == "--all") {
         let mut results = Vec::new();
         let (mut passed, mut failed, mut skipped) = (0usize, 0usize, 0usize);
@@ -2455,7 +2565,7 @@ fn cmd_component_test(args: &[String]) -> Result<(), String> {
             // Its OWN directory. Sharing one would let a record's test import a sibling record's file
             // that happens to sit beside it and pass on it.
             let sub = std::path::Path::new(&out).join(id);
-            match materialize_component_test(c, &sub.to_string_lossy(), run) {
+            match materialize_component_test(c, &sub.to_string_lossy(), run, index) {
                 Ok(v) => {
                     let ok = v.get("passed").and_then(serde_json::Value::as_bool).unwrap_or(!run);
                     if run && !ok {
@@ -2490,7 +2600,7 @@ fn cmd_component_test(args: &[String]) -> Result<(), String> {
         .iter()
         .find(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str()))
         .ok_or_else(|| format!("no component '{id}' in the store"))?;
-    println!("{}", serde_json::to_string(&materialize_component_test(comp, &out, run)?).map_err(|e| e.to_string())?);
+    println!("{}", serde_json::to_string(&materialize_component_test(comp, &out, run, index)?).map_err(|e| e.to_string())?);
     Ok(())
 }
 
@@ -4742,6 +4852,72 @@ export const P = () => <X />;"
         let _ = std::fs::remove_file(format!("{}.db", d.to_string_lossy()));
         std::fs::create_dir_all(&d).unwrap();
         d.to_string_lossy().into_owned()
+    }
+
+    /// The whole point of the closure (materialize-a-records-record-closure): a COMPOSING record — the
+    /// 108-of-116 failure shape — materializes with the record it imports beside it, at that record's
+    /// REAL position under a `_closure/` mirror, with `@` aliased there. Asserted on the files, because
+    /// the walker being right and the materialization being right are two different things: the first
+    /// batch of this work resolved perfectly and still wrote a config vitest could not use.
+    #[test]
+    fn materialize_writes_the_record_closure_into_a_mirror_and_aliases_at_to_it() {
+        let out = tmp_store_dir("closure-mirror");
+        let comps = vec![serde_json::json!({
+            "id": "ui-empty-state", "name": "EmptyState", "provides": "@/shared/ui/feedback/EmptyState",
+            "src": "src/shared/ui/feedback/EmptyState.tsx",
+            "srcText": "export function EmptyState() { return null; }",
+        })];
+        let index = crate::closure::Index::new(&comps, &[]);
+        let root = serde_json::json!({
+            "id": "activityfeed", "name": "ActivityFeed", "src": "src/shared/ui/data/ActivityFeed.tsx",
+            "srcText": "import { EmptyState } from \"@/shared/ui/feedback/EmptyState\";\n\
+                        export const ActivityFeed = EmptyState;",
+            "tests": [{ "src": "import { ActivityFeed } from \"./ActivityFeed\";\n" }],
+        });
+        let v = materialize_component_test(&root, &out, false, Some(&index)).unwrap();
+
+        let member = std::path::Path::new(&out).join(MIRROR_DIR).join("shared/ui/feedback/EmptyState.tsx");
+        assert!(member.is_file(), "the imported record is written at its real position in the mirror");
+        assert_eq!(
+            std::fs::read_to_string(&member).unwrap(),
+            "export function EmptyState() { return null; }",
+            "VERBATIM — a member that differs from the store would make a failure the runner's, not the record's"
+        );
+        let cfg = std::fs::read_to_string(std::path::Path::new(&out).join("vitest.config.ts")).unwrap();
+        assert!(cfg.contains("resolve: { alias: ["), "the config aliases, or the mirror is unreachable");
+        assert!(
+            cfg.contains(&format!("{}/{MIRROR_DIR}", out.replace('\\', "/"))),
+            "`@` points at THIS record's mirror by absolute path — a relative one re-resolves against the \
+             importer, so a member two levels down would miss: {cfg}"
+        );
+        assert!(v["missing"].as_array().unwrap().is_empty(), "every import was a record");
+        assert_eq!(v["closure"][0]["origin"], "component");
+        assert_eq!(v["closure"][0]["path"], "shared/ui/feedback/EmptyState.tsx");
+    }
+
+    /// `--no-closure` is the STRICT contract the runner used to have, kept because a pass there proves
+    /// the record is a LEAF — the retirability signal. It must emit NO alias at all: an `@` pointing at
+    /// an empty mirror would still resolve nothing, but a future member landing there would silently
+    /// turn the strict run into a closure run.
+    #[test]
+    fn no_closure_writes_the_record_utterly_alone_with_no_alias() {
+        let out = tmp_store_dir("closure-strict");
+        let root = serde_json::json!({
+            "id": "activityfeed", "name": "ActivityFeed", "src": "src/shared/ui/data/ActivityFeed.tsx",
+            "srcText": "import { EmptyState } from \"@/shared/ui/feedback/EmptyState\";\nexport const A = EmptyState;",
+            "tests": [{ "src": "import { A } from \"./ActivityFeed\";\n" }],
+        });
+        let v = materialize_component_test(&root, &out, false, None).unwrap();
+        assert!(!std::path::Path::new(&out).join(MIRROR_DIR).exists(), "no mirror at all");
+        let cfg = std::fs::read_to_string(std::path::Path::new(&out).join("vitest.config.ts")).unwrap();
+        assert!(!cfg.contains("resolve:"), "no alias, so `@/…` resolves to nothing: {cfg}");
+        assert!(
+            cfg.contains("--no-closure"),
+            "and the config SAYS which contract it was written under — a header describing an alias it \
+             does not carry sends a reader hunting a resolution bug that is the strict mode working: {cfg}"
+        );
+        assert!(v["closure"].as_array().unwrap().is_empty());
+        assert!(v["missing"].as_array().unwrap().is_empty(), "strict mode makes no claim about what is missing");
     }
 
     #[test]

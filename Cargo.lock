@@ -790,6 +790,7 @@ name = "bsc-component"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-graph",
  "bsc-json-store",
  "bsc-sound",
  "bsc-util",
