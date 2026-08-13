@@ -1,86 +1,54 @@
-// The always-on coordinator (#199, scoped down in #1039): polls the coordination log and resumes a
-// worker the DIRECTOR has answered. It no longer auto-wakes on dependency-landed — the runtime
-// dependency-WAIT was removed: planning already defines the integration contracts/seams between
-// streams, so workers build against the contract IN PARALLEL rather than parking until an upstream
-// lands (see fleet-protocol.md). Mount once (ConsoleWorkspace stays mounted across screens, so the
-// coordinator runs regardless of the active screen).
+// The always-on coordinator (#199, scoped down in #1039, and again in
+// #coordinator-stops-waking-sessions): polls the coordination log, projects the maintenance set, and
+// tells the HUMAN. It no longer resumes anything.
 //
-// What remains:
-//   • Director answer (#369): a worker that asked the director a question (`bsc-ask`) is resumed
-//     when the director replies (`bsc-answer`), recency-gated, independent of any toggle.
-//   • Mobile push (#366): coordination notifications to a paired phone, deduped + once each — the
-//     surviving alert path (a stuck/failed signal still reaches the human).
-import { useRef } from "react";
+// WHAT IT USED TO DO, AND WHY THAT WAS WRONG. Two loops lived here: a `bsc-answer` fired `injectWake`
+// into the asking worker, and a `bsc-assign` fired `actuateWake` (kill + relaunch with the prompt
+// baked in) at the assignee. Both were recency-gated on FRESH_MS (15 minutes) — and that gate was the
+// bug, not the safeguard it looked like. This hook re-derives from the WHOLE coord log on mount, so
+// starting the app replayed a quarter-hour of coordination traffic as live wakes: five to nine panes
+// opening a Claude turn within the same second, repeatedly, with nobody having clicked anything. That
+// is the boot-time cause the maintainer reported as "sessions automatically start on app start".
+//
+// THE RULE NOW: the app never resumes a session. Only the user does — the Coordination inbox's Wake
+// button, or a director running `bsc fleet wake <pane>` on purpose. Telling a person something
+// happened is NOT waking a session, so both surviving paths stay:
+//   • the maintenance projection (#4025) — the reaper needs it, and it moves no session;
+//   • mobile push (#366) — a stuck/failed signal still reaches the human, deduped + once each.
+//
+// NOTHING IS LOST from the record: asks, answers and assignments are all still in the coord log and
+// still reach the Coordination inbox. What changed is who acts on them.
+//
+// THE CONSEQUENCE IS REAL AND IS HANDLED IN PROSE, not left implicit: an assignment no longer resumes
+// its worker, so the director/worker protocols that promised "resumes you automatically" were updated
+// in the same change. A promise the code no longer keeps is how a fleet stalls silently, waiting on a
+// wake that never comes.
 import { useAppStore } from "@/store";
-import {
-  ingestCoordLog,
-  answerWakePrompt,
-  assignWakePrompt,
-  coordNotifications,
-  buildProducerOf,
-  producesFromPaneStreams,
-} from "@/shared/lib/fleet/coordination";
+import { ingestCoordLog, coordNotifications, buildProducerOf, producesFromPaneStreams } from "@/shared/lib/fleet/coordination";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { useLogStream } from "@/shared/hooks/useLogStream";
 import type { SessionMeta } from "@/features/tunnel";
-import { injectWake, actuateWake } from "@/shared/lib/fleet/coordinatorActuate";
 import { tunnelStatus, tunnelSetSessions } from "@/features/tunnel";
 import { log } from "@/shared/lib/core/log";
-
-// #3638: coord reads are event-driven now — the wake fires on the `logs://coord` change (instant,
-// better than the old ~1s poll), plus a mount read + a slow safety-net backstop.
-const FRESH_MS = 15 * 60 * 1000;
+import { useRef } from "react";
 
 export function useCoordinator(): void {
-  const inFlight = useRef<Set<string>>(new Set());
-  // Notification keys already pushed to mobile this app run -- so the poll loop fires
-  // each alert exactly once (FCM is a push, not a poll).
+  // Notification keys already pushed to mobile this app run -- so the loop fires each alert exactly
+  // once (FCM is a push, not a poll).
   const notified = useRef<Set<string>>(new Set());
   useLogStream("coord", async (isCancelled) => {
     if (isCancelled()) return;
     const res = await readCoordState(1000);
     if (isCancelled() || !res) return;
-    const { state, ready, answered, assigned } = res;
-    const now = Date.now();
+    const { state, ready } = res;
     // #4025 — project the declared-maintenance set into the store. This hook already reduces the
     // whole coord log, so the alternative was a SECOND poll of the same file in the reaper.
     useAppStore.getState().setPaneMaintaining(
       Object.fromEntries(state.maintaining.map((m) => [m.session, true])),
     );
 
-    // A director answer (#369) always resumes the asking worker, recency-gated -- this is the
-    // surviving wake path: deferring a worker's question to the director only works if its
-    // answer reliably wakes the worker.
-    for (const a of answered) {
-      if (inFlight.current.has(a.session)) continue;
-      if (now - a.at >= FRESH_MS) continue;
-      inFlight.current.add(a.session);
-      void injectWake(a.session, answerWakePrompt(a))
-        .finally(() => inFlight.current.delete(a.session));
-    }
-
-    // #4025 — DELIVER ASSIGNMENTS. `bsc-assign` has always produced an `AssignedWork` here and
-    // `assignWakePrompt` has always existed, but nothing consumed either: this hook destructured only
-    // `answered`. So the director protocol told the director to dispatch with `bsc-assign` in three
-    // places, the worker protocol promised workers it would "resume you automatically", and the wire
-    // between them was never connected.
-    //
-    // Delivered via `actuateWake` (kill + relaunch with the prompt BAKED IN), not `injectWake`
-    // (type into the live pane). That choice is what makes a REAPED worker reachable: a maintaining
-    // session's PTY is gone, so an injected prompt would be dropped by the backend ("write to missing
-    // session"). A relaunch works identically whether the pane is live, dormant, or reaped — and it
-    // is the same mechanism the fleet kickoff uses, so there is no readiness race to lose the
-    // assignment to.
-    for (const a of assigned) {
-      if (inFlight.current.has(a.session)) continue;
-      if (now - a.at >= FRESH_MS) continue;
-      inFlight.current.add(a.session);
-      void actuateWake(a.session, assignWakePrompt(a), useAppStore.getState().wakePane)
-        .then((ok) => { if (!ok) log.warn(`assign: no open tab hosts ${a.session} — assignment not delivered`); })
-        .finally(() => inFlight.current.delete(a.session));
-    }
-
-    // Mobile push (#366): alerts to a paired phone, deduped + once each.
+    // Mobile push (#366): alerts to a paired phone, deduped + once each. This is the one thing that
+    // still reaches OUT — to a person, not into a session.
     void pushNotifications(state, ready, notified.current).catch((e) =>
       log.error(`coordinator: notify failed: ${e}`),
     );

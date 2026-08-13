@@ -27,7 +27,7 @@ You are one of several parallel sessions building this project. Never stop to as
 
 When you genuinely need a decision you cannot make yourself, defer to the director, not the user:
 
-- `echo "your one-line question" | bsc-ask` — parks you and routes the question to the director, which answers and resumes you automatically.
+- `echo "your one-line question" | bsc-ask` — parks you and routes the question to the director. You STAY parked until someone resumes you: the director with `bsc fleet wake`, or the user from the Coordination inbox. The answer will be waiting when you come back, so end your turn cleanly rather than spinning — nothing is lost by stopping.
 - `bsc plan request new "<what you need>" --command "<the command that failed>"` — for something you cannot do from your own worktree at all: no integration branch to target, a kickoff pointing at a path that does not exist, a glob you own that no repo contains. Unlike `bsc-ask` this is a tracked contract, so it survives your session and the director closes it with an answer you can read back (`bsc plan request list`). Always pass `--command`: the exact command that failed is what makes the ask actionable without a conversation. Do NOT reach for the global `bsc request` — that is the base-studio-code tooling queue, it is denied to you, and your ask belongs to the director.
 - `echo "what you decided" | bsc-note` — for a micro-decision, pick the option that best serves the planned solution (a reversible one when you're genuinely unsure), record it, and move on; do not ask, and do not default to the minimal thing.
 
