@@ -30,6 +30,7 @@ import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { Box } from "@/shared/ui/layout/Box";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { BUILTIN_PERSONAS } from "@/features/personas";
+import type { PaneKind } from "@/features/tunnel";
 import { STUDIO_INIT_CMD, STUDIO_SESSIONS, studioScopeDirective, type StudioId, type StudioSessionDef } from "./lib/studioSessions";
 
 /** The studio persona's start prompt — the store copy (user edits win), else the packaged seed. */
@@ -56,6 +57,23 @@ export function studioStartPrompt(personaId: string): string {
  *     skill firehose. Empty when the studio declares no defaults, preserving the same confinement.
  * Exported for the unit test — the permission payload is the security-critical half of this migration.
  */
+/**
+ * The `PaneKind` this studio reports to a paired PHONE (#2497).
+ *
+ * Deliberately NOT `def.id` any more. `PaneKind` is a mobile WIRE CONTRACT shared with
+ * mobile-studio-code, and since #system-sessions-are-per-technology the studio ids are per-tech
+ * (`librarianRust`) while the contract's members are not. Widening the union would be a breaking
+ * protocol change needing a coordinated release in the other repo — for a distinction the phone's
+ * session roster does not need: it lists sessions, and `rosterName` already carries the technology
+ * ("Algorithms Studio · Rust"). So the ROLE is what goes on the wire, and the tech rides in the name.
+ */
+function tunnelKind(def: StudioSessionDef): PaneKind {
+  if (def.role === "designer") return "designer";
+  if (def.role === "librarian") return "librarian";
+  // The single-technology studios keep their id, which IS a PaneKind member.
+  return def.id as PaneKind;
+}
+
 export function seedStudioLaunchState(def: StudioSessionDef): void {
   const persona = studioStartPrompt(def.personaId);
   // #system-sessions-are-per-technology: the line that scopes a per-tech session to its own partition.
@@ -108,7 +126,7 @@ export function StudioSessionMount({ studio }: { studio: StudioId }) {
       // console/fleet/planner panes. Plain store state — useTunnelSync only pushes while the relay runs,
       // so this is inert without a tunnel. Deregistered in the cleanup below.
       useAppStore.getState().registerTunnelPanes(def.id, [{
-        id: def.paneId, cwd: dir, name: def.rosterName, status: "running", kind: def.id,
+        id: def.paneId, cwd: dir, name: def.rosterName, status: "running", kind: tunnelKind(def),
       }]);
       setCwd(dir);
     })();

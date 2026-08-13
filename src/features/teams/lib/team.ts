@@ -150,15 +150,24 @@ const DEBUGGER_NODE = "debugger";
 /** The Studio Network position that IS the architect — the hub of the drill-in below. */
 export const ARCHITECT_NODE = "architect";
 
-/** The system sessions an architect can start / stop / ask — the same closed set `bsc session`
- *  resolves against (`crates/bsc-session`), spelled as Studio Network node ids. The debugger and the
- *  request-pool sessions are deliberately absent: neither is reachable from any architect verb. */
-const ARCHITECT_COMMANDED: ReadonlySet<string> = new Set([
-  "designer",
-  "librarian",
-  "sound-designer",
-  "integrator",
-]);
+/** How each per-technology studio expands, keyed by the SINGULAR Studio Network position it replaces.
+ *  The ids are the ones `studioPaneIdForNode` resolves, so each expanded node opens its own session.
+ *
+ *  EXPANDED HERE rather than in the packaged team JSON, deliberately. The team describes ROLES — one
+ *  designer, one librarian, wired to the planner and to the library each stewards — and that is the
+ *  right shape for the base-studio-code drill, which answers "what does the app run". The architect's
+ *  drill answers "what can I command", and since #system-sessions-are-per-technology those are the
+ *  per-technology SESSIONS. Editing the packaged JSON would have forced one of the two views to be
+ *  wrong, changed the other drill's layout, and re-seeded a store record for a presentational reason. */
+const PER_TECH_EXPANSION: Readonly<Record<string, readonly string[]>> = {
+  designer: ["designer-react", "designer-react-native"],
+  librarian: ["librarian-rust", "librarian-typescript", "librarian-python"],
+};
+
+/** The single-technology sessions the architect commands, passed through unchanged — their stores
+ *  carry no tech facet at any level, so there is nothing to split. The debugger and the request-pool
+ *  sessions are deliberately absent: neither is reachable from any architect verb. */
+const SINGLE_TECH_COMMANDED: readonly string[] = ["sound-designer", "integrator"];
 
 /**
  * The Studio Network as the ARCHITECT commands it (#architect-node-expands-into-system-sessions) —
@@ -181,11 +190,24 @@ const ARCHITECT_COMMANDED: ReadonlySet<string> = new Set([
  */
 export function studioNetworkForArchitect(org: Team): Team {
   if (org.id !== STUDIO_NETWORK_ID) return org;
-  // Derived from the position set rather than a second literal list: a session added to the network
-  // joins the architect's drill automatically, and one removed cannot leave a dangling edge behind.
-  const commanded = org.positions.filter((p) => ARCHITECT_COMMANDED.has(p.nodeId));
   const architect = org.positions.find((p) => p.nodeId === ARCHITECT_NODE);
   if (!architect) return org; // a seed without an architect: show what is there rather than nothing
+
+  // Each SINGULAR studio position becomes one node PER TECHNOLOGY, fanned out from the slot it
+  // occupied so the expansion inherits the packaged layout instead of inventing one. Everything else
+  // the architect commands passes through unchanged.
+  const commanded = org.positions.flatMap((p) => {
+    const expand = PER_TECH_EXPANSION[p.nodeId];
+    if (expand) {
+      return expand.map((nodeId, i) => ({
+        ...p,
+        nodeId,
+        x: (p.x ?? 0) + (i - (expand.length - 1) / 2) * 132,
+        y: p.y,
+      }));
+    }
+    return SINGLE_TECH_COMMANDED.includes(p.nodeId) ? [p] : [];
+  });
   return {
     ...org,
     positions: [architect, ...commanded],

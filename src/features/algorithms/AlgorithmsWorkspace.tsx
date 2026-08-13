@@ -132,7 +132,7 @@ export function AlgorithmsWorkspace() {
       dock={
         <Box style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
           <Box className="resize-y" {...term.handleProps} title="Drag to resize" />
-          <LibrarianTerminal height={term.size} />
+          <LibrarianTerminal height={term.size} tech={activeTech} />
         </Box>
       }
     >

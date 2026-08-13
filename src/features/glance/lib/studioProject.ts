@@ -7,9 +7,9 @@ import { augmentStudioNetworkForDebug, augmentStudioNetworkForRequests, studioNe
 import { poolSlotFromNodeId, poolPaneId } from "@/shared/lib/session/requestSpawn";
 import type { Persona } from "@/features/personas";
 import {
-  DEBUG_STUDIO_SESSION_ID, DESIGN_STUDIO_SESSION_ID,
-  ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID, SOUND_STUDIO_SESSION_ID,
-  INTEGRATION_STUDIO_SESSION_ID,
+  DEBUG_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID, SOUND_STUDIO_SESSION_ID,
+  INTEGRATION_STUDIO_SESSION_ID, LIBRARIAN_TECHS, DESIGNER_TECHS,
+  librarianSessionId, designerSessionId,
 } from "@/shared/lib/session/systemSessions";
 import { buildOrgFleetData } from "./glanceFleet";
 import type { GlanceData, ProjectLite } from "./glanceData";
@@ -79,8 +79,12 @@ export function buildArchitectFleetData(teams: readonly Team[], personas: Person
  * have no fixed session, so they return null. Pure.
  */
 const STUDIO_NODE_SESSION: Record<string, string> = {
-  designer: DESIGN_STUDIO_SESSION_ID,
-  librarian: ALGORITHMS_STUDIO_SESSION_ID,
+  // #system-sessions-are-per-technology: one node per per-tech session, so each is a COMPLETELY
+  // NORMAL node — openable, morphable and live-status-reporting exactly like every other, with no
+  // special case anywhere downstream. `studioNodeHome` derives from this map, so adding a technology
+  // here makes its node openable in the same edit.
+  ...Object.fromEntries(DESIGNER_TECHS.map((t) => [`designer-${t}`, designerSessionId(t)])),
+  ...Object.fromEntries(LIBRARIAN_TECHS.map((t) => [`librarian-${t}`, librarianSessionId(t)])),
   architect: TEAMS_STUDIO_SESSION_ID,
   "sound-designer": SOUND_STUDIO_SESSION_ID,
   integrator: INTEGRATION_STUDIO_SESSION_ID,

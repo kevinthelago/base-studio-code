@@ -10,17 +10,22 @@ import { STUDIO_SESSIONS, type StudioId } from "./lib/studioSessions";
 
 /** Pure rule: which page is showing, given the shell state and (for a tear-off) this window's identity. */
 export function studioPageShowing(
-  id: StudioId,
+  id: StudioId | null | undefined,
   s: { activeWorkspace: string; projectsPageMode: string },
   detached: { page: string; section: string } | null,
 ): boolean {
+  // Null-tolerant for the same reason `useStudioViewer` is (#system-sessions-are-per-technology): a
+  // per-technology dock resolves its session from the page's current selection, and a technology with
+  // no session yields null. The rules of hooks require the call to be unconditional, so the NULL has to
+  // be absorbed here rather than at the call site.
+  if (!id) return false;
   const def = STUDIO_SESSIONS[id];
   // A torn-off section window renders exactly ONE page and has no rail — it is showing iff it IS this page.
   if (detached) return detached.page === def.pageKey && detached.section === def.sectionId;
   return s.activeWorkspace === "projects" && s.projectsPageMode === def.sectionId;
 }
 
-export function useStudioPageShowing(id: StudioId): boolean {
+export function useStudioPageShowing(id: StudioId | null | undefined): boolean {
   const activeWorkspace = useAppStore((st) => st.activeWorkspace);
   const projectsPageMode = useAppStore((st) => st.projectsPageMode);
   return studioPageShowing(id, { activeWorkspace, projectsPageMode }, detachedSection());

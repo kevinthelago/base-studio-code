@@ -243,6 +243,23 @@ export function studioScopeDirective(def: StudioSessionDef): string {
   );
 }
 
+/**
+ * The studio session that curates `tech`, for a role whose store is partitioned
+ * (#system-sessions-are-per-technology).
+ *
+ * This is how a PAGE follows its own selection: the Algorithms page's language rail and the Design
+ * page's kit both already name a technology, so the dock resolves that to a session id rather than
+ * holding a second selection of its own. Two selections for one concept is how they drift apart.
+ *
+ * Null for a technology with no session — a graph that grows a fourth language, or a kit whose `tech`
+ * is not one this app ships a designer for. The dock then shows nothing rather than defaulting to
+ * SOME session, because silently docking the rust librarian on a page showing go algorithms is worse
+ * than an empty dock: it looks like it is working.
+ */
+export function studioForTech(role: "librarian" | "designer", tech: string): StudioId | null {
+  return STUDIO_IDS.find((id) => STUDIO_SESSIONS[id].role === role && STUDIO_SESSIONS[id].tech === tech) ?? null;
+}
+
 /** Narrow an arbitrary string (a Glance node id, a persisted value) to a StudioId. */
 export function isStudioId(value: string | null | undefined): value is StudioId {
   return !!value && (STUDIO_IDS as readonly string[]).includes(value);
