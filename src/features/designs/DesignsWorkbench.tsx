@@ -35,6 +35,9 @@ import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
+import { timedSync, PHASE_MS } from "@/shared/lib/core/perf";
+import { log } from "@/shared/lib/core/log";
+import { cullSummary, worthReporting, type CullReading } from "@/shared/lib/graph/cullReport";
 import { useVisibleRect } from "@/shared/ui/layouts/useVisibleRect";
 import { isNodeVisible } from "@/shared/lib/graph/viewportCull";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
@@ -292,13 +295,19 @@ export function DesignsWorkbench() {
 
   // ── graph layout (#2455) — hierarchical top-down: composers above, dependencies below, role-tier
   // banding for edge-less nodes, `used`-desc ordering within a row. Pure model: lib/compositionLayout.
-  const graph = useMemo(() => layoutComposition(kitComps), [kitComps]);
+  // #measure-where-the-components-graph-spends-its-commit — each derivation is timed under its OWN
+  // label at a QUARTER-FRAME threshold (PHASE_MS), not `timedSync`'s 16ms default. Culling halved the
+  // mounted nodes and bought only 22%, which says a large per-commit cost does not scale with what is
+  // mounted; these labels are how we find out which one. Each RE-RUN logs, so the log answers "how
+  // often" as well as "how much" — a 5ms derivation on every commit costs more than a 30ms one that
+  // runs once. Quiet when healthy, and kept permanently: this graph is expected to get much bigger.
+  const graph = useMemo(() => timedSync("designs:layout", () => layoutComposition(kitComps), PHASE_MS), [kitComps]);
 
   // ── Cross-graph composition (#3116 algorithms, #3117 sounds) — the LIBRARY nodes a kit's components
   // `require` (via a `@bsc/algorithms/…` or `@bsc/sounds/…` import), rendered in a FENCED BAND across the top
   // with dashed `requires` edges into them (A's `layoutBand`). A kit with NO library imports yields no band →
   // the graph is byte-identical to today (the band memo returns 0 nodes, `bandShift` = 0, `world` === `graph.world`).
-  const libComp = useMemo(() => resolveComponentLibraryRefs(kitComps), [kitComps]);
+  const libComp = useMemo(() => timedSync("designs:libRefs", () => resolveComponentLibraryRefs(kitComps), PHASE_MS), [kitComps]);
   const band = useMemo(
     () => layoutBand(libComp.nodes.length, {
       spanX0: BAND_PAD, spanX1: Math.max(BAND_PAD, graph.world.w - BAND_PAD),
@@ -342,7 +351,7 @@ export function DesignsWorkbench() {
   // badge dead/duplicated nodes. `nodeHealth` maps each flagged node to its MOST-SEVERE category.
   // Topology findings + the #3163 MOTION findings (`bsc ui doctor --motion`) — badge both from the graph.
   const healthFindings = useMemo(
-    () => [...analyzeGraphHealth(kitComps, libResolver), ...analyzeMotion(kitComps)],
+    () => timedSync("designs:health", () => [...analyzeGraphHealth(kitComps, libResolver), ...analyzeMotion(kitComps)], PHASE_MS),
     [kitComps, libResolver],
   );
   const nodeHealth = useMemo(() => {
@@ -368,6 +377,25 @@ export function DesignsWorkbench() {
   // on resize, and `visibleWorldRect` carries a full viewport of margin on every side to cover the drag
   // in between. `null` (unmeasured) means render everything.
   const visibleRect = useVisibleRect(gvp);
+  // How much culling is actually doing, counted rather than assumed
+  // (#measure-where-the-components-graph-spends-its-commit). The margin makes the mounted rect wider
+  // than this world at any realistic zoom, so the reach is entirely a runtime question — see cullReport.
+  const shownIds = useMemo(
+    () => new Set(kitComps.filter((c) => {
+      const p = graph.pos.get(c.id);
+      return p ? isNodeVisible(visibleRect, p.x, p.y + bandShift, NODE_W, NODE_H) : false;
+    }).map((c) => c.id)),
+    [kitComps, graph.pos, bandShift, visibleRect],
+  );
+  const lastCull = useRef<CullReading | null>(null);
+  useEffect(() => {
+    const reading: CullReading = { shown: shownIds.size, total: kitComps.length, scale: gvp.view.scale };
+    if (!worthReporting(lastCull.current, reading)) return;
+    const line = cullSummary(reading);
+    if (!line) { lastCull.current = reading; return; }
+    lastCull.current = reading;
+    log.warn(line, "perf");
+  }, [shownIds, kitComps.length, gvp.view.scale]);
   // Auto-pan the AI-touched node into view (#2525) — center it, keeping zoom (least-disruptive). Only
   // when the node lives in the CURRENT kit's graph; a touch in another kit just doesn't pan.
   const gvpCenter = gvp.centerOn;
@@ -390,7 +418,10 @@ export function DesignsWorkbench() {
   // softer ring; incident edges render LAST so they sit above the dim ones. Hoisted out of the old
   // GraphView wrapper (#2766) now that the graph IS the page's one GraphCanvas.
   const selId = sel?.id ?? "";
-  const { incidentEdges, relatedNodes } = selectionNeighborhood(graph.edges, selId);
+  // NOT memoized (today): this runs on EVERY render and returns fresh objects, so `edgeBatch` below —
+  // which keys on `incidentEdges` — re-runs over every edge on every commit no matter what changed.
+  // That is the prime suspect for the cost culling could not touch; timed here to prove or kill it.
+  const { incidentEdges, relatedNodes } = timedSync("designs:selection", () => selectionNeighborhood(graph.edges, selId), PHASE_MS);
   // #4150: the edge layer as MERGED paths. Three elements per edge (a `<g>` + a stroke path + a filled
   // arrowhead) is ~2,400 elements at 248 components and ~9,600 at 1000; the non-highlighted bulk all
   // draws identically and the layer is `pointer-events: none`, so it has neither per-edge styling nor
@@ -398,7 +429,7 @@ export function DesignsWorkbench() {
   // the only ones whose appearance differs. Holding them back also paints them last, which is what the
   // old per-render `orderedEdges` sort existed to do.
   const edgeBatch = useMemo(
-    () => batchEdges(
+    () => timedSync("designs:edgeBatch", () => batchEdges(
       graph.edges,
       (e) => {
         const a = graph.pos.get(e.from), b = graph.pos.get(e.to);
@@ -411,13 +442,13 @@ export function DesignsWorkbench() {
         );
       },
       (e) => incidentEdges.has(e.id),
-    ),
+    ), PHASE_MS),
     [graph.edges, graph.pos, bandShift, incidentEdges],
   );
   // The dashed `requires` edges into the library band (#3116/#3117) — one visual class, so they merge
   // whole; none of them is ever highlighted.
   const reqBatch = useMemo(
-    () => batchEdges(libComp.edges, (e) => {
+    () => timedSync("designs:reqBatch", () => batchEdges(libComp.edges, (e) => {
       const from = parseNodeUrn(e.fromUrn);
       const compPos = from ? graph.pos.get(from.id) : undefined;
       const libPos = bandPosByUrn.get(e.toUrn);
@@ -426,7 +457,7 @@ export function DesignsWorkbench() {
         { x: compPos.x, y: compPos.y + bandShift, w: NODE_W, h: NODE_H },
         { x: libPos.x, y: libPos.y, w: NODE_W, h: NODE_H },
       );
-    }),
+    }), PHASE_MS),
     [libComp.edges, graph.pos, bandPosByUrn, bandShift],
   );
 
@@ -698,9 +729,9 @@ export function DesignsWorkbench() {
         })}
         {kitComps.map((c) => {
           const pos = graph.pos.get(c.id); if (!pos) return null;
-          // The cull. Tested at the SAME coords the node renders at (`pos.y + bandShift`) — testing the
-          // unshifted y would drop the wrong row whenever a library band is present.
-          if (!isNodeVisible(visibleRect, pos.x, pos.y + bandShift, NODE_W, NODE_H)) return null;
+          // The cull — read from the SAME set the report counts, so the number in the log is the number
+          // on the screen rather than a second computation that could disagree.
+          if (!shownIds.has(c.id)) return null;
           return (
             <ComponentNode
               key={c.id}

@@ -192,6 +192,16 @@ export async function timed<T>(label: string, fn: () => Promise<T>, thresholdMs 
  * doesn't fit — e.g. the Glance graph layout (#3618), where we want to separate layout-compute time from
  * React-render time.
  */
+/**
+ * The threshold for ONE derivation inside a render — a quarter frame.
+ *
+ * Deliberately far below `timedSync`'s 16ms default, because a per-phase timer set at a whole frame
+ * cannot see the failure it exists to find. When a 37ms commit is six 5ms derivations, a 16ms threshold
+ * reports NOTHING and the log reads as "every phase is cheap" — which is how the cost stays invisible.
+ * A phase worth a quarter of a frame on its own is worth a line.
+ */
+export const PHASE_MS = 4;
+
 export function timedSync<T>(label: string, fn: () => T, thresholdMs = 16): T {
   const t0 = performance.now();
   try {
