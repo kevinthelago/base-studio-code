@@ -8,14 +8,14 @@
 // `componentScan.ts` and is unit-tested with a mocked bundle + run; this hook only wires it to the real
 // esbuild-wasm `bundleComponent` + the DOM `probeComponentRuntime` (neither runs under jsdom) and the
 // store, with cancellation.
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import reactUiArtifact from "@data/components/react-ui.json";
 import { useAppStore } from "@/store";
 import { bundleComponent } from "@/shared/lib/preview/componentBundle";
 import { probeComponentRuntime } from "@/shared/lib/preview/componentRuntimeProbe";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { scannableComponents, pendingScans, scanComponents, durableLogSync, type ComponentScanResult, type ComponentBuildStatus } from "./componentScan";
-import { recordPreviewError } from "./componentBridge";
+import { recordPreviewError, loadScanCache, saveScanCache, type CachedScan } from "./componentBridge";
 import { type KitArtifact, type LibraryModuleResolver } from "./componentPreview";
 import { libraryModuleResolver } from "./libraryModules";
 import type { ComponentRecord } from "./model";
@@ -55,9 +55,34 @@ export function useComponentScan(
   // The signature we last recorded a result for, per component id — survives kit switches + revisits, so
   // an already-built component is never re-bundled unless its source changed.
   const scannedSigs = useRef<Map<string, string>>(new Map());
+  // Whether the durable cache has been read yet (#the-component-scan-remembers-what-it-already-built).
+  // The sweep WAITS for this: starting before the cache lands would rebuild everything it was about to
+  // learn it could skip, which is the whole cost this exists to remove.
+  const cacheLoaded = useRef(false);
+  const [cacheReady, setCacheReady] = useState(false);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || cacheLoaded.current) return;
+    let cancelled = false;
+    void loadScanCache().then((cached) => {
+      if (cancelled) return;
+      // Seed BOTH halves from one read: the signatures the sweep may skip, and the statuses that badge
+      // the graph. Without the statuses a cached visit would skip the work AND show no badges — worse
+      // than scanning, because the graph would claim everything is healthy.
+      const seeded: ComponentScanResult[] = [];
+      for (const [id, e] of Object.entries(cached)) {
+        scannedSigs.current.set(id, e.sig);
+        seeded.push({ id, status: e.status, stateBlanks: e.stateBlanks });
+      }
+      if (seeded.length) applyResults(seeded);
+      cacheLoaded.current = true;
+      setCacheReady(true);
+    });
+    return () => { cancelled = true; };
+  }, [active, applyResults]);
+
+  useEffect(() => {
+    if (!active || !cacheReady) return;
     const scannable = scannableComponents(comps, artifact, libResolver);
     const pending = pendingScans(scannable, scannedSigs.current);
     if (pending.length === 0) return;
@@ -80,6 +105,18 @@ export function useComponentScan(
       const batch = buffer;
       buffer = [];
       applyResults(batch);
+      // Persist on the SAME #4132 batch, never per result: the flush window exists because per-component
+      // main-thread work is what made this sweep expensive, and a cache that reintroduced it would cost
+      // more than it saves. Fire-and-forget — a failed write costs a re-scan next visit, which is simply
+      // the behaviour before this cache existed.
+      const entries: Record<string, CachedScan> = {};
+      for (const r of batch) {
+        const sig = scannedSigs.current.get(r.id);
+        // No signature ⇒ nothing to key the entry on, so it could never be a hit. Skip rather than
+        // write a row that can only ever be dead weight.
+        if (sig) entries[r.id] = { sig, status: r.status, stateBlanks: r.stateBlanks };
+      }
+      void saveScanCache(entries);
     };
     const enqueue = (result: ComponentScanResult) => {
       buffer.push(result);

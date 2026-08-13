@@ -635,6 +635,30 @@ null). Mirrors the TS sampler (samplePropValue/bootstrapSource, componentPreview
 fixture pins the two. --state narrows to one state. Read-only; errors when <id> is absent.",
     },
     CmdDoc {
+        name: "scan-cache",
+        summary: "what the Design Studio's preview sweep already built, keyed by source signature",
+        usage: "USAGE:
+  bsc ui scan-cache [get] [--pretty]   # every cached entry, as { <id>: { sig, status, stateBlanks } }
+  bsc ui scan-cache put                # merge entries from a JSON object on stdin
+  bsc ui scan-cache clear              # drop the cache so the next visit rebuilds everything
+
+The Design Studio's on-visit sweep esbuild-builds every component in the kit and runs each in a hidden
+iframe. Its memory of what it already built used to be a React ref, so it died with the mount and every
+app start re-built the whole kit on the first visit — measured at 111.8s of main-thread blocking across
+770 jank events on a 459-component kit. This is where that memory lives now
+(~/.base-studio-code/component-scan.json, or $BSC_SCAN_CACHE).
+
+THE SIGNATURE IS PART OF THE KEY. An entry answers \"has THIS SOURCE been scanned\", not \"has this id\" —
+so an edited component re-scans and an untouched one never does. A stale entry cannot mask a change.
+
+`put` MERGES (the sweep flushes in batches, so each write carries only what it just finished). A
+missing or malformed cache reads as EMPTY, which makes the app scan everything — this cache may only
+ever save work, never withhold a scan that should run.
+
+`clear` is the lever for when a badge looks stale for a reason the signature cannot see (a toolchain
+change, say): the next visit rebuilds from scratch.",
+    },
+    CmdDoc {
         name: "preview-errors",
         summary: "tail the live preview's captured runtime errors (#3165)",
         usage: "\
@@ -1070,6 +1094,17 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_preview_props(&args[1..])
+            }
+        }
+        // `scan-cache` — the preview sweep's durable memory. Like `preview-error` this is a diagnostic
+        // /cache channel rather than a store mutation, so it is intentionally NOT ui-scope gated: it can
+        // only ever save the app work, never change what a component IS.
+        Some("scan-cache") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "scan-cache"));
+                Ok(())
+            } else {
+                cmd_scan_cache(&args[1..], prog)
             }
         }
         // `preview-errors` (#3165) — tail the captured preview runtime errors (read).
@@ -3697,6 +3732,49 @@ fn cmd_preview_props(args: &[String]) -> Result<(), String> {
 }
 
 /// `preview-errors [-n N] [--pretty]` (#3165) — tail the last N captured preview runtime errors. Read-only.
+/// `scan-cache [get|put|clear]` — the preview sweep's durable memory.
+///
+/// `get` prints the whole map so the frontend can seed BOTH halves in one read: the signatures it may
+/// skip, and the statuses that badge the graph before anything is rebuilt.
+///
+/// `put` reads a JSON object of `{ <id>: { sig, status, stateBlanks } }` and MERGES it, because the sweep
+/// flushes in batches and each write carries only what it just finished.
+fn cmd_scan_cache(args: &[String], prog: &str) -> Result<(), String> {
+    let pretty = args.iter().any(|a| a == "--pretty");
+    let verb = args.iter().find(|a| !a.starts_with('-')).map(String::as_str).unwrap_or("get");
+    match verb {
+        "get" => {
+            let all = serde_json::Value::Object(crate::scan_cache::load());
+            println!("{}", if pretty {
+                serde_json::to_string_pretty(&all).unwrap_or_else(|_| "{}".into())
+            } else {
+                serde_json::to_string(&all).unwrap_or_else(|_| "{}".into())
+            });
+            Ok(())
+        }
+        "put" => {
+            use std::io::Read;
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+            let parsed: serde_json::Value = serde_json::from_str(buf.trim())
+                .map_err(|e| format!("{prog} scan-cache put: stdin is not JSON: {e}"))?;
+            let serde_json::Value::Object(entries) = parsed else {
+                return Err(format!("{prog} scan-cache put: expected a JSON OBJECT of {{ id: entry }}"));
+            };
+            let n = entries.len();
+            crate::scan_cache::put(entries)?;
+            println!("{n}");
+            Ok(())
+        }
+        "clear" => {
+            crate::scan_cache::clear()?;
+            println!("cleared");
+            Ok(())
+        }
+        other => Err(format!("{prog} scan-cache: unknown verb '{other}' (get | put | clear)")),
+    }
+}
+
 fn cmd_preview_errors(args: &[String]) -> Result<(), String> {
     let (mut n, mut pretty) = (20usize, false);
     let mut it = args.iter();
