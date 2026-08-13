@@ -7,6 +7,13 @@
 // (`bsc plan list`) with coord.log as a tiebreaker (`classifyWorkerEnd`) — NOT the worker's
 // say-so. The ended state is persisted + recovery-gated, so a restart never re-opens a finished
 // worker. Mounted once at the app root.
+//
+// THIS MODULE WRITES TO NO SESSION'S STDIN. It ends and reaps panes; it never types at one. Two raw
+// `pty_write` calls into the DIRECTOR's pane lived here until
+// #the-fleet-went-pull-but-nobody-told-the-director-to-pull — a raw invoke, so the injector ratchet
+// (which matches `injectPrompt` imports) could not see them, and `pty_kill` reads as the same kind of
+// call at a glance. If you are about to add a message for a director, it belongs in a queue the
+// director PULLS (`bsc logs waiting`, `bsc fleet list`), not in its input.
 
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -74,17 +81,15 @@ async function evaluateExit(paneId: string, opts: { kill?: boolean } = {}): Prom
   useAppStore.getState().markPaneEnded(paneId, {
     state: verdict.state, streamId: stream.id, summary: verdict.summary, at: Date.now(),
   });
-  // Director close-open-issues nudge (#1379): a develop self-merge doesn't fire `Closes #N` (that's
-  // default-branch only), so a done stream's issues linger OPEN on the board. Nudge the project's
-  // director (if one is live) to close them — the app never closes GitHub issues itself.
-  if (verdict.state === "done") {
-    const directorPane = `${projectKey}:director`;
-    if (useAppStore.getState().paneRoles[directorPane] === "director") {
-      const refs = issues.map((i) => i.ref).join(", ");
-      const msg = `Stream ${stream.id} finished — its issues (${refs}) are complete in the plan. Close any still open on GitHub with \`gh issue close <ref>\`; a develop push doesn't auto-close them.`;
-      await safeInvoke("pty_write", { paneId: directorPane, data: `${msg}\r` }, undefined);
-    }
-  }
+  // The director close-open-issues nudge (#1379) USED TO BE HERE and is gone
+  // (#the-fleet-went-pull-but-nobody-told-the-director-to-pull). It typed a message into the
+  // director's stdin with a trailing CR, which submits it — opening a Claude turn in a session
+  // nobody clicked. That is the symptom the maintainer reported, arriving through the one path the
+  // injector ratchet could not see (it matches `injectPrompt` imports; this was a raw `pty_write`).
+  //
+  // NOTHING REPLACES IT, deliberately. It told the director to run `gh issue close`, and the
+  // GitHub-ownership clause was removed from director-protocol.md under local-first — the protocol
+  // tests now assert its ABSENCE. So the nudge instructed work the director no longer claims.
   // bsc-done (#1379): the worker is still live and asked to close, so actually kill its PTY.
   if (opts.kill) {
     await safeInvoke("pty_kill", { paneId }, undefined, (e) => log.error(`auto-end: pty_kill failed for ${paneId}: ${e}`));
@@ -189,17 +194,18 @@ export function useWorkerAutoEnd(): void {
         await evaluateExit(paneId);
       } else if (action === "resurface-question" && !resurfacedRef.current.has(paneId)) {
         // Lost-question resurface (#1379 stage 4): the worker has waited too long on a director
-        // answer — its ask may have been missed. Re-surface it to the live director ONCE so it
-        // handles it when ready (never close it, never make the worker repeat itself). Re-arms
-        // once the ask is answered (it drops out of coord.asking; cleared above).
+        // answer. This used to TYPE the question into the director's pane; it now only records the
+        // observation (#the-fleet-went-pull-but-nobody-told-the-director-to-pull).
+        //
+        // NOTHING IS LOST, because the push had a pull all along: `bsc logs waiting` lists every
+        // unanswered ask oldest-first, and the director's protocol now tells it to sweep that queue.
+        // The pull is strictly better than this was — it shows EVERY stale ask on every sweep, where
+        // this fired once per pane per idle period and then went quiet.
         const ask = coord.asking.find((a) => a.session === paneId);
-        const directorPane = `${projectKey}:director`;
-        if (ask && s.paneRoles[directorPane] === "director") {
+        if (ask) {
           resurfacedRef.current.add(paneId);
           const waited = Math.max(1, Math.round((now - ask.at) / 60_000));
-          const msg = `Worker ${stream.id} (${paneId}) asked "${ask.question}" ~${waited}m ago and is still waiting with no answer — it may have been missed. Answer it when ready: echo "<answer>" | bsc-answer ${paneId} (or reassign). Don't leave it parked.`;
-          log.info(`auto-end: resurfacing ${paneId}'s lost question to the director`);
-          await safeInvoke("pty_write", { paneId: directorPane, data: `${msg}\r` }, undefined);
+          log.info(`auto-end: ${paneId} has waited ~${waited}m on an unanswered ask — it is in \`bsc logs waiting\` for its director to sweep`);
         }
       }
     }
