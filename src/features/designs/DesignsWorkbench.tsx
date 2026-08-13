@@ -35,6 +35,8 @@ import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
+import { useVisibleRect } from "@/shared/ui/layouts/useVisibleRect";
+import { isNodeVisible } from "@/shared/lib/graph/viewportCull";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 import { batchEdges } from "./lib/edgeBatch";
 import { selectionNeighborhood } from "@/shared/lib/graph/selectionNeighborhood";
@@ -357,6 +359,15 @@ export function DesignsWorkbench() {
   }, [healthFindings, componentStateHealth]);
 
   const gvp = useGraphPage(world, [kitId]); // re-fit on mount + whenever the kit switches (band-aware world)
+  // VIEWPORT CULLING (#components-graph-culls-offscreen-nodes) — the kit is 459 components and every one
+  // used to mount, ~9 DOM elements each, whatever the viewport showed; the profiler logged
+  // `[render] designs update` at 30-62ms. This rect is what a node is tested against below.
+  //
+  // It does NOT track the pan-drag, on purpose: #4140 made panning imperative so a drag re-renders
+  // nothing, and this must not undo that. It recomputes when the view COMMITS (pan end / zoom / fit) and
+  // on resize, and `visibleWorldRect` carries a full viewport of margin on every side to cover the drag
+  // in between. `null` (unmeasured) means render everything.
+  const visibleRect = useVisibleRect(gvp);
   // Auto-pan the AI-touched node into view (#2525) — center it, keeping zoom (least-disruptive). Only
   // when the node lives in the CURRENT kit's graph; a touch in another kit just doesn't pan.
   const gvpCenter = gvp.centerOn;
@@ -672,6 +683,9 @@ export function DesignsWorkbench() {
             source. The card is graph-aware: an algorithm vendors its real code, a sound a generated player. */}
         {libComp.nodes.map((n) => {
           const pos = bandPosByUrn.get(n.urn); if (!pos) return null;
+          // Band cards cost the same as kit cards, so they cull on the same rule. They carry no
+          // `bandShift` — they ARE the band, positioned in their own lane above the fence.
+          if (!isNodeVisible(visibleRect, pos.x, pos.y, NODE_W, NODE_H)) return null;
           const vendored = n.graph === "sound" ? "a generated player module" : "its real code";
           return (
             <Box key={n.urn} className="ds-algonode" style={{ left: pos.x, top: pos.y, width: NODE_W }} title={`${n.label} — @bsc/${LIBRARY_SEGMENT[n.graph]} (library ${n.kind}); the preview vendors ${vendored}`}>
@@ -684,6 +698,9 @@ export function DesignsWorkbench() {
         })}
         {kitComps.map((c) => {
           const pos = graph.pos.get(c.id); if (!pos) return null;
+          // The cull. Tested at the SAME coords the node renders at (`pos.y + bandShift`) — testing the
+          // unshifted y would drop the wrong row whenever a library band is present.
+          if (!isNodeVisible(visibleRect, pos.x, pos.y + bandShift, NODE_W, NODE_H)) return null;
           return (
             <ComponentNode
               key={c.id}
