@@ -41,6 +41,10 @@ bsc-shot = { path = "../bsc-shot" }
 # `bsc navigate` — steer the running app to a view so a capture can target it (#3274, epic #3260).
 bsc-navigate = { path = "../bsc-navigate" }
 bsc-fleet = { path = "../bsc-fleet" }
+# `bsc session` — start/stop/list the app-owned SYSTEM SESSIONS over a closed registry
+# (#architect-starts-and-stops-system-sessions). Sibling to `bsc fleet`: that one reads a project's
+# fleet, this one drives the app's own studios.
+bsc-session = { path = "../bsc-session" }
 # Read-only inspection of the RUNNING app (#3437) — the third leg beside shot + navigate.
 bsc-debug = { path = "../bsc-debug" }
 # `bsc loop` — the conversation loop store: two participants exchange turns until a signal, or never (#3262, epic #3260).

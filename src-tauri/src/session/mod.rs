@@ -16,3 +16,7 @@ pub mod librarian;
 pub mod sound_designer;
 pub mod integrator;
 pub mod debug;
+/// `bsc session` — start/stop/list the app-owned system sessions over a closed registry
+/// (#architect-starts-and-stops-system-sessions). Lives here rather than under `fleet/` because these
+/// are the APP's own studios, not a project's fleet.
+pub mod system;

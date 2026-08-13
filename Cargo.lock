@@ -511,6 +511,7 @@ dependencies = [
  "bsc-llm",
  "bsc-navigate",
  "bsc-project",
+ "bsc-session",
  "bsc-shot",
  "bsc-tunnel",
  "bsc-util",
@@ -710,6 +711,7 @@ dependencies = [
  "bsc-persona",
  "bsc-project",
  "bsc-request",
+ "bsc-session",
  "bsc-shot",
  "bsc-sound",
  "bsc-studio",
@@ -928,6 +930,17 @@ dependencies = [
  "bsc-cli-util",
  "bsc-sqlite-util",
  "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-session"
+version = "0.1.0"
+dependencies = [
+ "bsc-appchan",
+ "bsc-cli-util",
+ "bsc-util",
  "serde",
  "serde_json",
 ]
