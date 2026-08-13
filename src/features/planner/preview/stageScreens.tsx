@@ -11,10 +11,15 @@
 // handler is pure but its surface, PlanPreviewPane, is a component.
 
 import type { ComponentType } from "react";
-// Preview module: import renderers (side-effects) + the new shell component (#581).
-import "./renderers/htmlRenderer";
-import "./renderers/gltfRenderer";
-import "./renderers/canvasRenderer";
+// Preview module: the renderers + the shell component (#581). Imported for their VALUE and
+// registered below at a named site — NOT as an import side effect. A bare `import "./x"` whose only
+// purpose is to run `registerRenderer` makes the import load-bearing in a way nothing can see, so it
+// survives only as long as nobody tidies it away; and a module that must RUN to be correct cannot be
+// a record (renderers-register-at-a-named-site-not-on-import).
+import { registerRenderer } from "./registry";
+import { htmlRenderer } from "./renderers/htmlRenderer";
+import { gltfRenderer } from "./renderers/gltfRenderer";
+import { canvasRenderer } from "./renderers/canvasRenderer";
 import { PreviewPaneShell } from "./PreviewPaneShell";
 import { RENDER_PREVIEW_ID } from "./renderPreview";
 import { FileIntakePane } from "../bodies/FileIntakePane";
@@ -33,6 +38,12 @@ export interface StageScreenProps {
 }
 
 export type StageScreenComponent = ComponentType<StageScreenProps>;
+
+// The renderer set, registered ONCE and explicitly. `registerRenderer` is a keyed upsert, so a
+// repeat is a replace rather than a duplicate — but naming the call is what makes the set readable.
+registerRenderer(htmlRenderer);
+registerRenderer(gltfRenderer);
+registerRenderer(canvasRenderer);
 
 const STAGE_SCREENS: Record<string, StageScreenComponent> = {
   // Modular streaming feed consumer (#581): PreviewPaneShell routes chunks through the
