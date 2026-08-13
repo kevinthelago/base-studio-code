@@ -34,6 +34,12 @@ pub struct Candidate {
     /// derived from the bare function name (`dismiss.ts`, `approve.ts`, `app.ts` all recur across this
     /// repo's tree).
     pub src: String,
+    /// The TOP-LEVEL mutable bindings this module holds — its MODULE STATE, empty for a pure module.
+    ///
+    /// Recorded because it is the property that decides whether vendoring the record is equivalent to
+    /// importing the module: with state, a graph consumer gets a SECOND instance of it. Naming the
+    /// bindings puts that on the record instead of leaving each caller to rediscover it.
+    pub module_state: Vec<String>,
     /// The cross-language `domain` collection (#3120) this candidate belongs to, derived from [`Self::src`].
     ///
     /// Neither `harvest` nor `curate` used to set one, and per #3607 an impl with no domain does not
@@ -675,6 +681,10 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
         None => Vec::new(),
     };
     let mut c = Candidate {
+        // What this module HOLDS. A module harvest is the whole file, so its top-level mutable
+        // bindings come with it — recorded here so the record can say so rather than each caller
+        // rediscovering it by reading the code.
+        module_state: module_state(_tree.root_node(), &src_bytes),
         id: format!("{}.{}", kebab(stem), ext_of(tech)),
         name: stem.to_string(),
         tech: tech.to_string(),
@@ -742,6 +752,9 @@ fn build_candidates(defs: Vec<Def>, raw: Vec<(String, String, String)>, test_roo
             }
             let role = if composes.is_empty() { "primitive" } else { "algorithm" };
             let mut c = Candidate {
+                // A FUNCTION is not a module: whatever the file holds at top level is not this
+                // candidate's, and claiming it would misreport every fragment lifted from a stateful file.
+                module_state: Vec::new(),
                 id: format!("{}.{}", kebab(&name), ext_of(&tech)),
                 role,
                 composes,
@@ -910,6 +923,75 @@ fn fn_def_name(node: Node, src: &[u8]) -> Option<String> {
     }
 }
 
+/// The TOP-LEVEL mutable bindings a module holds — its MODULE STATE, named so it can be seen.
+///
+/// This is the property that decides whether a module is safe to vendor. `provides` makes the loader
+/// hand a record's source to graph consumers instead of using the bundled module: for a pure module
+/// that is identical behaviour, but a module holding state gets a SECOND instance — a second queue, a
+/// second cache, a second timer — and the two copies diverge with nothing to show for it. Recording
+/// the bindings makes that visible on the record rather than something each caller has to rediscover
+/// by reading the source.
+///
+/// The test is MUTABILITY, not the presence of a collection: a `const` bound to `new Set([...])` and
+/// only ever read is a frozen lookup table and is NOT state. So `let`/`var` always count, and a
+/// `const` counts only when it binds a container that something later mutates.
+fn module_state(root: Node, src: &[u8]) -> Vec<String> {
+    let text = std::str::from_utf8(src).unwrap_or_default();
+    let mut out: Vec<String> = Vec::new();
+    let mut cursor = root.walk();
+    for top in root.named_children(&mut cursor) {
+        // `export let x` wraps the declaration; look through it.
+        let decl = if top.kind() == "export_statement" {
+            top.child_by_field_name("declaration").unwrap_or(top)
+        } else {
+            top
+        };
+        if !matches!(decl.kind(), "lexical_declaration" | "variable_declaration") {
+            continue;
+        }
+        let head = decl.utf8_text(src).unwrap_or("");
+        let is_const = head.trim_start().starts_with("const");
+        let mut c2 = decl.walk();
+        for d in decl.named_children(&mut c2) {
+            if d.kind() != "variable_declarator" {
+                continue;
+            }
+            let Some(name) = field_text(d, "name", src) else { continue };
+            if is_const && !mutated_after(&name, text, d.end_byte()) {
+                continue;
+            }
+            if !out.contains(&name) {
+                out.push(name);
+            }
+        }
+    }
+    out
+}
+
+/// Is `name` mutated anywhere after byte `from`? A container method that writes, or an index
+/// assignment. Deliberately textual and deliberately loose in the SAFE direction — over-reporting a
+/// binding as state costs a module its automatic migration and asks a human; under-reporting ships a
+/// second copy of live state.
+fn mutated_after(name: &str, text: &str, from: usize) -> bool {
+    let Some(rest) = text.get(from..) else { return false };
+    const WRITES: [&str; 10] =
+        [".push(", ".pop(", ".shift(", ".unshift(", ".splice(", ".set(", ".add(", ".delete(", ".clear(", ".sort("];
+    if WRITES.iter().any(|w| rest.contains(&format!("{name}{w}"))) {
+        return true;
+    }
+    // `name[…] =` / `name.field =` — an index or property write, but not `==`/`=>`/`===`.
+    rest.match_indices(name).any(|(i, _)| {
+        let after = &rest[i + name.len()..];
+        let assign = |s: &str| {
+            s.trim_start().starts_with('=')
+                && !s.trim_start().starts_with("==")
+                && !s.trim_start().starts_with("=>")
+        };
+        (after.starts_with('[') && after.find(']').is_some_and(|j| assign(&after[j + 1..])))
+            || (after.starts_with('.') && after.find(' ').is_some_and(|j| assign(&after[j..])))
+    })
+}
+
 /// The UTF-8 text of `node`'s `field` child, if present and valid UTF-8.
 fn field_text(node: Node, field: &str, src: &[u8]) -> Option<String> {
     node.child_by_field_name(field)
@@ -1029,6 +1111,55 @@ mod tests {
         // This fixture is not under `src/`, so there is no specifier to claim — and inventing one
         // would be worse than none, since a wrong `provides` is a global override (#3660).
         assert_eq!(c.provides, None, "a path outside src/ claims no specifier");
+    }
+
+    /// The module-state detector: the property that decides whether vendoring a record is equivalent
+    /// to importing the module. Over-reporting costs a module its automatic migration and asks a
+    /// human; under-reporting ships a SECOND copy of live state, so the bias is deliberate.
+    #[test]
+    fn module_state_names_the_mutable_bindings_and_ignores_frozen_ones() {
+        let root = std::env::temp_dir().join(format!("bsc-graph-modstate-{}", std::process::id()));
+        let dir = root.join("src").join("x");
+        std::fs::create_dir_all(&dir).unwrap();
+        let cases: [(&str, &str, Vec<&str>); 5] = [
+            // a top-level `let` is state, always
+            ("a.ts", "let done = false;
+export const go = () => { done = true; };
+", vec!["done"]),
+            // `export let` too — the export wrapper must not hide it
+            ("b.ts", "export let seq = 0;
+export const next = () => ++seq;
+", vec!["seq"]),
+            // a MUTATED const container is state
+            ("c.ts", "const q: number[] = [];
+export const add = (n: number) => { q.push(n); };
+", vec!["q"]),
+            ("d.ts", "const m = new Map();
+export const put = (k: string) => { m.set(k, 1); };
+", vec!["m"]),
+            // a FROZEN lookup read only with `.has()` is NOT state — this is the case that makes the
+            // detector useful rather than a blanket "contains a collection" reject
+            ("e.ts", "const EX = new Set([\"a\"]);
+export const skip = (s: string) => EX.has(s);
+", vec![]),
+        ];
+        for (name, body, want) in cases {
+            let f = dir.join(name);
+            std::fs::write(&f, body).unwrap();
+            let c = harvest_module(&f, &root).expect("harvests");
+            let want: Vec<String> = want.into_iter().map(str::to_string).collect();
+            assert_eq!(c.module_state, want, "{name}: {body}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A FUNCTION-granularity candidate is not a module, so it never claims the file's module state —
+    /// otherwise every fragment lifted from a stateful file would misreport it as its own.
+    #[test]
+    fn a_function_candidate_claims_no_module_state() {
+        for c in harvest_file(&fixtures().join("sample.ts")) {
+            assert!(c.module_state.is_empty(), "{} claimed module state", c.id);
+        }
     }
 
     /// A `.tsx` module drops its extension like every other. The bug this covers shipped five records

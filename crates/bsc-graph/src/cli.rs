@@ -505,6 +505,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     if let Some(f) = bsc_util::folder_from_src(&c.src) {
                         im["folder"] = Value::String(f);
                     }
+                    // The module's own STATE, named on the record. Only when NON-EMPTY, like
+                    // `tests`: the additive contract omits an absent key rather than writing one.
+                    if !c.module_state.is_empty() {
+                        im["moduleState"] = Value::Array(
+                            c.module_state.iter().map(|n| Value::String(n.clone())).collect(),
+                        );
+                    }
                     // Set only when present. `impl set` is a MERGE (#4154), so writing an explicit null
                     // would CLEAR a specifier a previous run established rather than leaving it alone.
                     if let Some(p) = &c.provides {
