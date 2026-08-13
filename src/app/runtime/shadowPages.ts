@@ -94,7 +94,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     modules: [
       { recordId: "accessibilitypage", file: "/src/features/settings/pages/AccessibilityPage.tsx" },
     ],
-    ensurePlatform: () => import("@/features/settings"),
+    ensurePlatform: () => import("@/features/settings/graphPlatform").then((m) => m.registerSettingsPlatform()),
   },
   {
     pageId: "fleetpage",
@@ -110,7 +110,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ],
     // Fleet's host is not on the planner barrel; Glance is the workspace that mounts it, and importing
     // that barrel evaluates `FleetGraphHost` → `registerFleetPlatform()`.
-    ensurePlatform: () => import("@/features/glance"),
+    ensurePlatform: () => import("@/features/glance/graphPlatform").then((m) => m.registerGlancePlatform()),
   },
   {
     pageId: "consolepage",
@@ -177,7 +177,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "plan-body-collapsible-card", file: "/src/features/planner/bodies/collapsibleCard.tsx" },
       { recordId: "plan-body-primitives", file: "/src/features/planner/bodies/bodyPrimitives.tsx" },
     ],
-    ensurePlatform: () => import("@/features/planner"),
+    ensurePlatform: () => import("@/features/planner/graphPlatform").then((m) => m.registerPlannerPlatform()),
   },
   {
     pageId: "algorithmspage",
@@ -191,7 +191,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "algorithms-kit-graph", file: "/src/features/algorithms/AlgorithmsKitGraph.tsx" },
       { recordId: "algorithms-librarian-terminal", file: "/src/features/algorithms/LibrarianTerminal.tsx" },
     ],
-    ensurePlatform: () => import("@/features/algorithms"),
+    ensurePlatform: () => import("@/features/algorithms/graphPlatform").then((m) => m.registerAlgorithmsPlatform()),
   },
   {
     pageId: "soundspage",
@@ -204,7 +204,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "sounds-inspector", file: "/src/features/sounds/SoundsInspector.tsx" },
       { recordId: "sounds-kit-graph", file: "/src/features/sounds/SoundsKitGraph.tsx" },
     ],
-    ensurePlatform: () => import("@/features/sounds"),
+    ensurePlatform: () => import("@/features/sounds/graphPlatform").then((m) => m.registerSoundsPlatform()),
   },
   {
     pageId: "glancepage",
@@ -220,7 +220,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "glance-chat-dock", file: "/src/features/glance/GlanceChatDock.tsx" },
       { recordId: "glance-session-log", file: "/src/features/glance/GlanceSessionLog.tsx" },
     ],
-    ensurePlatform: () => import("@/features/glance"),
+    ensurePlatform: () => import("@/features/glance/graphPlatform").then((m) => m.registerGlancePlatform()),
   },
   {
     pageId: "projectspage",
@@ -243,7 +243,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     // first RENDER, to break an import cycle (see its comment). Shadow mode renders nothing, so it must
     // call the registration itself — without this the whole planner-list surface reads as unbound, which
     // is a 12-entry lie in the middle of the worklist this report exists to be.
-    ensurePlatform: () => import("@/features/planner").then((m) => m.registerProjectsPlatform()),
+    ensurePlatform: () => import("@/features/planner/graphPlatform").then((m) => m.registerPlannerPlatform()).then(() => import("@/features/planner/list/graphPlatform").then((b) => b.registerProjectsPlatform())),
   },
   {
     pageId: "githubpage",
@@ -272,7 +272,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "github-open-prs", file: null },
       { recordId: "github-repos-grid", file: null },
     ],
-    ensurePlatform: () => import("@/features/github"),
+    ensurePlatform: () => import("@/features/github/graphPlatform").then((m) => m.registerGithubPlatform()),
   },
   {
     pageId: "automationspage",
@@ -289,7 +289,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "automations-history", file: null },
       { recordId: "automations-hook-analytics", file: null },
     ],
-    ensurePlatform: () => import("@/features/automations"),
+    ensurePlatform: () => import("@/features/automations/graphPlatform").then((m) => m.registerAutomationsPlatform()),
   },
   {
     pageId: "mcppage",
@@ -303,7 +303,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "mcppage", file: null },
       { recordId: "mcp-analytics", file: null },
     ],
-    ensurePlatform: () => import("@/features/mcp"),
+    ensurePlatform: () => import("@/features/mcp/graphPlatform").then((m) => m.registerMcpPlatform()),
   },
   {
     pageId: "skillspage",
@@ -318,7 +318,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "skills-lessons-tab", file: "/src/features/skills/LessonsTab.tsx" },
       { recordId: "skills-runs-tab", file: "/src/features/skills/RunsTab.tsx" },
     ],
-    ensurePlatform: () => import("@/features/skills"),
+    ensurePlatform: () => import("@/features/skills/graphPlatform").then((m) => m.registerSkillsPlatform()),
   },
   {
     pageId: "securitypage",
@@ -336,7 +336,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "security-activity", file: null },
       { recordId: "security-flow", file: null },
     ],
-    ensurePlatform: () => import("@/features/security"),
+    ensurePlatform: () => import("@/features/security/graphPlatform").then((m) => m.registerSecurityPlatform()),
   },
 ];
 

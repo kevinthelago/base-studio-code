@@ -1,9 +1,8 @@
-// Register this feature's graph-platform modules at module load — so `import("@/features/personas")`
-// (what the shadow catalogue's ensurePlatform does) is what makes a record importing them resolvable.
-// Idempotent; mirrors the *GraphHost pattern for features that have one.
-import { registerPersonasPlatform } from "./graphPlatform";
+// The shadow catalogue registers this feature's graph-platform modules by importing
+// `./graphPlatform` DIRECTLY and calling its register function (see `shadowPages.ts`). This barrel
+// therefore has NO import-time side effect — it is re-exports only, which is what lets it be a
+// record rather than a file that must run to be correct.
 
-registerPersonasPlatform();
 // Personas feature (#2094) — the CRUD-able agent-identity library (behavior: start prompt + skills +
 // model, over a referenced role). Public API barrel.
 export { PersonasPanel } from "./PersonasPanel";
