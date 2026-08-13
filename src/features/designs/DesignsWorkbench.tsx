@@ -36,6 +36,7 @@ import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
 import { timedSync, PHASE_MS } from "@/shared/lib/core/perf";
+import { runWhenIdle } from "@/shared/lib/core/idle";
 import { log } from "@/shared/lib/core/log";
 import { cullSummary, worthReporting, type CullReading } from "@/shared/lib/graph/cullReport";
 import { useVisibleRect } from "@/shared/ui/layouts/useVisibleRect";
@@ -47,7 +48,7 @@ import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import { parseNodeUrn, LIBRARY_SEGMENT } from "@/shared/lib/graph/nodeUrn";
 import { resolveComponentLibraryRefs } from "./lib/libraryComposition";
 import { layoutComposition, NODE_W, NODE_H } from "./lib/compositionLayout";
-import { analyzeGraphHealth, analyzeMotion, isActionProp, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
+import { analyzeGraphHealth, analyzeMotion, isActionProp, HEALTH_SEVERITY, type HealthCategory, type HealthFinding } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
@@ -86,6 +87,11 @@ const BAND_PAD = 60;         // left/right inset the band centers over (matches 
 const BAND_TOP = 40;         // y of the band cards' top edge
 const BAND_GAP = 34;         // clearance from the band cards down to the fence divider
 const BAND_BOTTOM_GAP = 30;  // clearance from the fence down to the (shifted) composition graph
+
+/** A STABLE empty findings array (#graph-health-stops-blocking-first-paint). A fresh `[]` on every clear
+ *  would re-identify `nodeHealth`, which re-renders every mounted node for no change — the exact cost
+ *  this line of work exists to remove. */
+const NO_FINDINGS: HealthFinding[] = [];
 
 // The role dot + kit chip live in kitChrome.tsx (#2420) — shared with the Planner Components pane.
 
@@ -350,10 +356,26 @@ export function DesignsWorkbench() {
   // Graph health (#2680) — the same taxonomy `bsc ui doctor` reports (lib/graphHealth), mirrored to
   // badge dead/duplicated nodes. `nodeHealth` maps each flagged node to its MOST-SEVERE category.
   // Topology findings + the #3163 MOTION findings (`bsc ui doctor --motion`) — badge both from the graph.
-  const healthFindings = useMemo(
-    () => timedSync("designs:health", () => [...analyzeGraphHealth(kitComps, libResolver), ...analyzeMotion(kitComps)], PHASE_MS),
-    [kitComps, libResolver],
-  );
+  // #graph-health-stops-blocking-first-paint — computed on IDLE, not on the render path.
+  //
+  // This was a `useMemo`, so ~121ms of analysis over 459 components ran BEFORE a single node reached the
+  // screen, twice per open (measured: `designs:health`, 2 runs, 242ms). Nothing about the graph's
+  // structure, layout or interactivity depends on the result — it feeds corner badges and a toolbar
+  // count — so the graph paints first and the decoration follows a beat later.
+  //
+  // The findings are CLEARED when the inputs change rather than left up while the new ones compute: a
+  // badge from the previous kit is not an old badge, it is a WRONG one, pointing at components that are
+  // no longer on screen. No badge beats a false badge, and the graph is visibly changing at that moment
+  // anyway.
+  const [healthFindings, setHealthFindings] = useState<HealthFinding[]>(NO_FINDINGS);
+  useEffect(() => {
+    setHealthFindings(NO_FINDINGS);
+    return runWhenIdle(() => {
+      setHealthFindings(
+        timedSync("designs:health", () => [...analyzeGraphHealth(kitComps, libResolver), ...analyzeMotion(kitComps)], PHASE_MS),
+      );
+    });
+  }, [kitComps, libResolver]);
   const nodeHealth = useMemo(() => {
     const m = new Map<string, HealthCategory>();
     const consider = (id: string, cat: HealthCategory) => {
