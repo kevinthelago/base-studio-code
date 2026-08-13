@@ -137,18 +137,7 @@ export function worstFault(faults: FaultLite[]): FaultLite | null {
     .sort((a, b) => rank(b.level) - rank(a.level) || b.count - a.count || a.fingerprint.localeCompare(b.fingerprint))[0] ?? null;
 }
 
-/** The director-facing message routing this cycle's faults. One paste covers the batch; the director
- *  runs the emitters (`bsc-issue` → `bsc-assign`) per its protocol and resolves each on land. */
-export function faultDispatchPrompt(dispatch: FaultDispatch[]): string {
-  const lines = dispatch
-    .map((d) => `• [${d.level} · ${d.count}×] ${d.title} (fp ${d.fingerprint})`)
-    .join("\n");
-  return [
-    "[fault-triage] New runtime fault(s) crossed the auto-triage threshold — route a fix for each:",
-    lines,
-    "For each fault: capture it with `bsc-issue` (a well-formed title + the detail from " +
-      "`bsc errors get <fingerprint>`), then `bsc-assign <session>` the worker in whose `owns` lane the " +
-      "fault lives (open a GitHub issue first if it should be tracked). When the fix merges to develop, " +
-      "clear it: `bsc errors resolve <fingerprint>`.",
-  ].join("\n");
-}
+// `faultDispatchPrompt` was DELETED here (#coord-prefix-names-the-sender): it built a
+// `[fault-triage] ...` string for useFaultTriage, which no longer injects, and had no other
+// reference. The classification above still runs and still records — observing is not dispatching.
+

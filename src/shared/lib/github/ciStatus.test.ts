@@ -1,7 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  rollupChecks, isTerminalCi, ciWorkerPrompt, ciDirectorMergePrompt, ciDevelopRedPrompt, type CheckRun,
-} from "./ciStatus";
+import { rollupChecks, isTerminalCi, type CheckRun } from "./ciStatus";
 
 const run = (name: string, status: string, conclusion: string | null = null): CheckRun => ({ name, status, conclusion });
 
@@ -35,39 +33,6 @@ describe("isTerminalCi", () => {
   });
 });
 
-describe("prompts", () => {
-  it("worker passed prompt tells it to continue, not reopen", () => {
-    const p = ciWorkerPrompt(42, "passed", []);
-    expect(p).toMatch(/passed on your PR #42/);
-    expect(p).toMatch(/continue with your next/i);
-    expect(p).toMatch(/director will merge/i);
-  });
-  it("worker failed prompt names the failing checks and says fix + push", () => {
-    const p = ciWorkerPrompt(42, "failed", ["test", "e2e"]);
-    expect(p).toMatch(/FAILED on your PR #42/);
-    expect(p).toContain("test, e2e");
-    expect(p).toMatch(/fix the cause/i);
-    expect(p).toMatch(/do not ask the user/i);
-  });
-  it("director merge prompt references the PR + branch", () => {
-    const p = ciDirectorMergePrompt(42, "auth-ui");
-    expect(p).toMatch(/PR #42/);
-    expect(p).toContain("auth-ui");
-    expect(p).toMatch(/merge/i);
-  });
-});
-
-describe("ciDevelopRedPrompt (#378)", () => {
-  it("names the repo, short sha, and failing checks, and tells the watchdog to revert + ping", () => {
-    const p = ciDevelopRedPrompt("own/web", "abcdef1234567890", ["build", "test"]);
-    expect(p).toMatch(/develop CI is RED in own\/web/);
-    expect(p).toContain("abcdef1");
-    expect(p).toContain("build, test");
-    expect(p).toMatch(/REVERT/);
-    expect(p).toMatch(/bsc-answer/);
-  });
-  it("falls back to a generic phrase when no failing checks are named", () => {
-    const p = ciDevelopRedPrompt("own/web", "abcdef1234567890", []);
-    expect(p).toMatch(/one or more checks/);
-  });
-});
+// The "prompts" and "ciDevelopRedPrompt" suites were DELETED with their subjects
+// (#coord-prefix-names-the-sender). rollupChecks/isTerminalCi above are the module's surviving
+// behaviour — they read GitHub check runs and say nothing to anybody.

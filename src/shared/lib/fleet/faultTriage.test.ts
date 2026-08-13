@@ -5,7 +5,6 @@ import { describe, it, expect } from "vitest";
 import {
   planFaultDispatch,
   unresolvedCount,
-  faultDispatchPrompt,
   DEFAULT_FAULT_TRIAGE,
   type FaultLite,
   type FaultTriageConfig,
@@ -144,17 +143,12 @@ describe("planFaultDispatch — resolve → clear path", () => {
   });
 });
 
-describe("unresolvedCount + faultDispatchPrompt", () => {
+describe("unresolvedCount", () => {
   it("counts only unresolved faults", () => {
     expect(unresolvedCount([fault("a"), fault("b", { resolvedAt: 123 }), fault("c")])).toBe(2);
   });
 
-  it("builds a director prompt that names each fault and the emitters", () => {
-    const p = faultDispatchPrompt([{ fingerprint: "abc", level: "fatal", title: "boom", count: 3 }]);
-    expect(p).toContain("boom");
-    expect(p).toContain("abc");
-    expect(p).toContain("bsc-issue");
-    expect(p).toContain("bsc-assign");
-    expect(p).toContain("bsc errors resolve");
-  });
+  // The "builds a director prompt" case went with `faultDispatchPrompt`
+  // (#coord-prefix-names-the-sender) — nothing injected it. The CLASSIFICATION above still runs and
+  // is still tested; only the prose the app used to type at a director is gone.
 });

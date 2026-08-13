@@ -1,14 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  briefInjections, briefRouteKey, resolveBriefTarget,
-  directorBriefPrompt, targetedBriefPrompt, undeliverableBriefPrompt,
-  type BriefRouteContext,
-} from "./briefRouting";
-import type { ReceivedBrief } from "./coordination.types";
-
-const brief = (over: Partial<ReceivedBrief> = {}): ReceivedBrief => ({
-  id: "planner@1", from: "planner", target: "director", body: "scope grew: add CSV export", at: 1, ...over,
-});
+import { briefRouteKey, resolveBriefTarget, type BriefRouteContext } from "./briefRouting";
 
 const ctx = (over: Partial<BriefRouteContext> = {}): BriefRouteContext => ({
   directorPanes: ["studio-code:director"],
@@ -59,147 +50,12 @@ describe("briefRouteKey", () => {
   });
 });
 
-describe("briefInjections", () => {
-  it("THE BUG: a director briefing a worker does not brief itself", () => {
-    const b = brief({ from: "studio-code:director", target: "studio-code:security", id: "d@2", at: 2 });
-    const due = briefInjections([b], ctx());
-    expect(due.map((d) => d.paneId)).toEqual(["studio-code:security"]);
-    expect(due.map((d) => d.paneId)).not.toContain("studio-code:director");
-  });
-
-  it("a worker's brief carries worker prose — no board, no bsc-assign", () => {
-    const due = briefInjections([brief({ target: "security" })], ctx());
-    expect(due[0].prompt).toMatch(/authoritative context for YOUR lane/);
-    expect(due[0].prompt).not.toMatch(/bsc-assign/);
-    expect(due[0].prompt).not.toMatch(/update the board/);
-  });
-
-  it("a director-targeted brief still gets the reconcile-and-route prose", () => {
-    const due = briefInjections([brief({ target: "director" })], ctx());
-    expect(due[0].paneId).toBe("studio-code:director");
-    expect(due[0].prompt).toMatch(/bsc-assign/);
-    expect(due[0].prompt).toMatch(/Reconcile the running plan/);
-  });
-
-  it("batches several briefs for one pane into a single injection carrying every key", () => {
-    const due = briefInjections(
-      [brief({ id: "a", at: 1, target: "security" }), brief({ id: "b", at: 2, target: "security" })],
-      ctx(),
-    );
-    expect(due).toHaveLength(1);
-    expect(due[0].keys).toHaveLength(2);
-    expect(due[0].prompt).toMatch(/2 update\(s\)/);
-  });
-
-  it("reports an undeliverable target to the director instead of dropping it", () => {
-    const due = briefInjections([brief({ target: "not-launched" })], ctx());
-    expect(due.map((d) => d.paneId)).toEqual(["studio-code:director"]);
-    expect(due[0].prompt).toMatch(/could NOT be delivered/);
-    expect(due[0].prompt).toMatch(/not-launched/);
-    expect(due[0].prompt).toMatch(/bsc fleet wake/);
-  });
-
-  it("injects each brief exactly once per pane", () => {
-    const b = brief({ target: "security" });
-    const first = briefInjections([b], ctx());
-    const surfaced = new Set(first.flatMap((d) => d.keys));
-    expect(briefInjections([b], ctx({ surfaced }))).toEqual([]);
-  });
-
-  it("does not re-report an undeliverable brief every tick", () => {
-    const b = brief({ target: "gone" });
-    const first = briefInjections([b], ctx());
-    const surfaced = new Set(first.flatMap((d) => d.keys));
-    expect(briefInjections([b], ctx({ surfaced }))).toEqual([]);
-  });
-
-  it("delivers to a pane that only became reachable later (restart-safe, must-not-drop)", () => {
-    const b = brief({ target: "late-stream" });
-    // Not reachable yet ⇒ reported to the director, not delivered.
-    expect(briefInjections([b], ctx())[0].paneId).toBe("studio-code:director");
-    // Once its pane exists, the SAME brief delivers — its delivery key was never surfaced.
-    const later = ctx({ knownPanes: [...ctx().knownPanes, "studio-code:late-stream"] });
-    expect(briefInjections([b], later).map((d) => d.paneId)).toEqual(["studio-code:late-stream"]);
-  });
-
-  it("a ref is named in the prose so the recipient can act on it", () => {
-    const due = briefInjections(
-      [brief({ target: "security", ref: { kind: "issue", number: 412 } })],
-      ctx(),
-    );
-    expect(due[0].prompt).toContain("#412");
-  });
-});
-
-describe("the prompts", () => {
-  it("each names every brief it carries", () => {
-    const bs = [brief({ body: "one" }), brief({ body: "two", id: "x", at: 2 })];
-    for (const p of [directorBriefPrompt(bs), targetedBriefPrompt(bs, "planner"), undeliverableBriefPrompt(bs)]) {
-      expect(p).toContain("one");
-      expect(p).toContain("two");
-    }
-  });
-
-  it("the targeted prompt tells a worker to refuse out-of-lane work rather than take it", () => {
-    const p = targetedBriefPrompt([brief()], "studio-code:director");
-    expect(p).toMatch(/outside your owned globs/);
-    expect(p).toMatch(/bsc-ask/);
-  });
-});
-
-// #funnel-generalize-brief-channel — the architect reaches directors, and only directors.
+// DELETED WITH THEIR SUBJECT (#coord-prefix-names-the-sender): every suite below this point drove
+// `briefInjections` and the three prompt builders, which are gone — nothing injected them.
 //
-// Two enforcement points guard this; these cover the ROUTING half (the GRANT half — the emitter being
-// in the architect's restricted allow-list — is asserted in roleModel's own suite). Either alone is
-// weak: the grant decides what the architect can RUN, the routing decides where what it sends can LAND.
-describe("an architect brief is constrained to directors", () => {
-  const DIRECTORS = ["proj:director", "other:director"];
-  const KNOWN = [...DIRECTORS, "proj:api", "proj:issuer"];
-  const ctx = (roleOf?: (p: string) => string | undefined) => ({
-    directorPanes: DIRECTORS, knownPanes: KNOWN, surfaced: new Set<string>(), roleOf,
-  });
-  const arch = () => (p: string) => (p === "arch:1" ? "architect" : p.endsWith(":director") ? "director" : "worker");
-  const brief = (target: string) => ([{ id: "b1", from: "arch:1", target, body: "ship it", at: 1 }] as never);
-
-  it("reaches ONE named director — a targeted brief stays targeted", () => {
-    const out = briefInjections(brief("proj:director"), ctx(arch()));
-    expect(out.map((i) => i.paneId)).toEqual(["proj:director"]);
-  });
-
-  it("reaches EVERY director when untargeted", () => {
-    const out = briefInjections(brief(""), ctx(arch()));
-    expect(out.map((i) => i.paneId).sort()).toEqual([...DIRECTORS].sort());
-  });
-
-  it("REFUSES a worker named by exact pane id — the tier boundary the funnel exists to keep", () => {
-    // Refused LOUDLY: it resolves to the worker, intersects to empty, and is reported undeliverable
-    // on the director panes rather than silently re-routed (which would look like it worked).
-    const out = briefInjections(brief("proj:api"), ctx(arch()));
-    expect(out.every((i) => i.prompt.includes("could NOT be delivered"))).toBe(true);
-    expect(out.some((i) => i.paneId === "proj:api")).toBe(false);
-  });
-
-  it("REFUSES a bare stream id, and REFUSES the issuer audience", () => {
-    for (const t of ["api", "issuer"]) {
-      const out = briefInjections(brief(t), ctx(arch()));
-      expect(out.some((i) => i.paneId === "proj:api" || i.paneId === "proj:issuer"), t).toBe(false);
-    }
-  });
-
-  it("leaves a NON-architect sender routing exactly as before — this constrains one tier, not the fleet", () => {
-    const fromPlanner = [{ id: "b2", from: "proj:planner", target: "proj:api", body: "x", at: 1 }] as never;
-    const out = briefInjections(fromPlanner, ctx(arch()));
-    expect(out.map((i) => i.paneId)).toEqual(["proj:api"]);
-  });
-
-  it("with NO roleOf supplied, nothing is treated as an architect (every existing caller is unchanged)", () => {
-    const out = briefInjections(brief("proj:api"), ctx(undefined));
-    expect(out.map((i) => i.paneId)).toEqual(["proj:api"]);
-  });
-
-  it("names the SENDING TIER in the director's prose instead of hardcoding the planner", () => {
-    const out = briefInjections(brief("proj:director"), ctx(arch()));
-    expect(out[0].prompt).toContain("architect");
-    expect(out[0].prompt).not.toContain("the planner");
-  });
-});
+// ONE OF THEM WAS LOAD-BEARING and its loss is the real cost of deleting rather than emptying: the
+// "an architect brief is constrained to directors" suite was the only EXECUTABLE statement of the
+// #funnel-generalize-brief-channel tier rule (an architect reaches directors and nothing else;
+// intersect, never replace; refuse loudly rather than re-route). The rule is preserved as prose at
+// the foot of briefRouting.ts. If brief delivery is rebuilt, restore these tests from git history
+// (they were exact and hard-won) rather than re-deriving the rule from the prose.
