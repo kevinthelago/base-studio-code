@@ -24,6 +24,7 @@ export {
   BUILTIN_ORGS, RELATIONSHIP_ARCHETYPES, COMMUNICATION_FORMS,
   makeBuiltinOrgs, reconcileOrgs, blankOrg, orgSlug, orgIssues, deriveCommunication,
   augmentStudioNetworkForDebug, augmentStudioNetworkForRequests, STUDIO_NETWORK_ID,
+  studioNetworkForArchitect, ARCHITECT_NODE,
   archetypeById, formById,
   type Team, type Position, type Relationship, type RelationshipArchetype,
   type CommunicationForm, type CommEdge, type PositionKind,

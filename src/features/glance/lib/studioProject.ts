@@ -3,7 +3,7 @@
 // drilled-in graph is the STUDIO NETWORK team (`org-planning-studio`, completed in #3317), rendered
 // through the existing Team→Glance adapter (`buildOrgFleetData`). The debugger node is gated by the
 // Settings `debugSession` toggle via #3317's pure augmentation. Pure + React-free so it's unit-testable.
-import { augmentStudioNetworkForDebug, augmentStudioNetworkForRequests, STUDIO_NETWORK_ID, type Team } from "@/features/teams";
+import { augmentStudioNetworkForDebug, augmentStudioNetworkForRequests, studioNetworkForArchitect, STUDIO_NETWORK_ID, type Team } from "@/features/teams";
 import { poolSlotFromNodeId, poolPaneId } from "@/shared/lib/session/requestSpawn";
 import type { Persona } from "@/features/personas";
 import {
@@ -49,6 +49,27 @@ export function buildStudioFleetData(
 }
 
 /**
+ * The ARCHITECT node's drilled graph (#architect-node-expands-into-system-sessions) — the system
+ * sessions it commands, rendered through the SAME Team→Glance adapter the base-studio-code node uses.
+ *
+ * Re-pointed machinery, not a second one: `buildOrgFleetData` already turns a team into a Glance
+ * graph, and `studioNetworkForArchitect` is a plain team transform (the shape
+ * `augmentStudioNetworkForDebug` established). Everything downstream — node opening
+ * (`studioPaneIdForNode`), live status (`applyStudioLiveStatus`), the morph — works unchanged,
+ * because the node ids are the same Studio Network position ids in both graphs.
+ *
+ * Returns `null` when the team is absent, so the caller falls back to the empty graph rather than
+ * crashing. Pure.
+ */
+export function buildArchitectFleetData(teams: readonly Team[], personas: Persona[]): GlanceData | null {
+  const team = teams.find((t) => t.id === STUDIO_NETWORK_ID);
+  if (!team) return null;
+  // NOT augmented for debug or the request pool: neither is reachable from an architect verb, so
+  // neither belongs in the graph of what the architect commands.
+  return buildOrgFleetData(studioNetworkForArchitect(team), personas);
+}
+
+/**
  * The stable, app-owned session pane id for each base-studio-code studio graph node (#3319) — the studio
  * analogue of `fleetPaneId`. The node ids are the Studio Network team position ids
  * (`data/teams/orgs/planning-studio.json`), and each maps to its ONE app-owned session's fixed id
@@ -88,15 +109,17 @@ export type StudioNodeHome =
 export function studioNodeHome(nodeId: string): StudioNodeHome | null {
   // #3535: an overflow-pool session opens exactly like the studios it is one of.
   if (poolSlotFromNodeId(nodeId) !== null) return { kind: "morph" };
-  switch (nodeId) {
-    case "debugger":
-    case "designer":
-    case "librarian":
-    case "architect":
-    case "sound-designer":
-      return { kind: "morph" };
-    default: return null;
-  }
+  // DERIVED from `studioPaneIdForNode`, not a second hand-maintained list
+  // (#architect-node-expands-into-system-sessions). This used to be a `switch` enumerating the studio
+  // node ids, and it had silently fallen one behind: the INTEGRATOR (#4023) was added to
+  // `STUDIO_NODE_SESSION` — so it had a pane and reported live status — but never to this switch, so
+  // its node returned null and could not be opened at all. A node that draws and does nothing is the
+  // worst failure mode here, and it was invisible because nothing asserted the two lists agreed.
+  //
+  // The rule is exactly "a node that resolves to an app-owned pane opens as a morph", which is true by
+  // construction since #3357 put every studio session on the shared TerminalHost. Deriving it means a
+  // studio added to the registry is openable the same day.
+  return studioPaneIdForNode(nodeId) ? { kind: "morph" } : null;
 }
 
 /**
