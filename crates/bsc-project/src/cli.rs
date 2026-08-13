@@ -654,19 +654,25 @@ fn cmd_link(args: &Args, prog: &str) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("list");
     match sub {
         "list" => {
+            // Output goes through the SHARED print helpers, not `println!`
+            // (#the-warm-bsc-answers-the-boot-reads-too): this verb is answered by the warm `bsc serve`
+            // child, which captures a request's output off the same stdout it speaks its protocol on.
+            // A raw `println!` here would land in the protocol stream and corrupt every later response
+            // on that child. Both helpers are byte-identical to `println!` when nothing is capturing,
+            // which is what keeps the served and one-shot answers interchangeable.
             let links = load_links();
             if args.json {
                 // Every row emits its target endpoint (#3786) so the desktop cache + agents see the full
                 // contract; a legacy project link reads back as `{ "type": "project" }`.
                 let arr: Vec<serde_json::Value> = links.iter().map(link_row_json).collect();
-                println!("{}", serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into()));
+                bsc_sqlite_util::print_json(&arr, false);
             } else if links.is_empty() {
-                println!("(no project links)");
+                bsc_cli_util::print_raw("(no project links)");
             } else {
                 for l in &links {
                     // Human view: annotate a non-project target so the endpoint kind is visible at a glance.
                     let via = if l.target.kind == "project" { String::new() } else { format!(" [{}]", l.target.kind) };
-                    println!("{}\t{} -> {}{} ({})", l.id, l.from, l.to, via, l.kind);
+                    bsc_cli_util::print_raw(&format!("{}\t{} -> {}{} ({})", l.id, l.from, l.to, via, l.kind));
                 }
             }
             Ok(())
@@ -981,6 +987,37 @@ mod tests {
                 "bsc project",
             )
             .is_err());
+        });
+    }
+
+    /// #the-warm-bsc-answers-the-boot-reads-too — `project link list` is answered by the WARM `bsc
+    /// serve` child, which captures a request's output off the same stdout it speaks its protocol on.
+    /// This verb printed with raw `println!` on both branches, which would have written straight into
+    /// that protocol stream and corrupted every later response on the child. The claim under test is
+    /// therefore not "it prints the right thing" but "its output is CAPTURABLE" — an assertion that
+    /// fails the moment someone reaches for `println!` here again.
+    #[test]
+    fn link_list_output_is_capturable_by_the_warm_serve_loop() {
+        crate::testhome::with_home(|_home| {
+            run(vec!["link".into(), "add".into(), "app".into(), "billing".into(), "api".into()], "bsc project").unwrap();
+
+            let (r, captured) =
+                bsc_util::capture_output(|| run(vec!["link".into(), "list".into(), "--json".into()], "bsc project"));
+            r.unwrap();
+            let rows: serde_json::Value = serde_json::from_str(captured.trim()).expect("captured JSON");
+            assert_eq!(rows.as_array().unwrap().len(), 1, "the row reached the buffer, not stdout");
+            assert_eq!(rows[0]["id"], "app>billing:api");
+
+            // The human branch too — it shares the protocol stream just the same.
+            let (r, captured) = bsc_util::capture_output(|| run(vec!["link".into(), "list".into()], "bsc project"));
+            r.unwrap();
+            assert!(captured.contains("app>billing:api"), "human view captured too: {captured:?}");
+
+            // And the empty case, which is its own `print` call and its own chance to leak.
+            run(vec!["link".into(), "remove".into(), "app>billing:api".into()], "bsc project").unwrap();
+            let (r, captured) = bsc_util::capture_output(|| run(vec!["link".into(), "list".into()], "bsc project"));
+            r.unwrap();
+            assert!(captured.contains("no project links"), "{captured:?}");
         });
     }
 
