@@ -37,7 +37,6 @@ import * as GraphPlatform7 from "@/features/planner/preview/graphPlatform";
 // the LOADER, so its own imports become the graph's problem. None of these were registered before,
 // because no record imported them DIRECTLY — each arrives transitively with the hook that was retired.
 import * as PlanStageDerive from "@/features/planner/stages/planStageDerive";
-import * as LintPlan from "@/features/planner/lib/lintPlan";
 import * as BlueprintMcp from "@/features/planner/blueprints/blueprintMcp";
 import * as McpContext from "@/features/planner/lib/mcpContext";
 import * as PlanExtensions from "@/features/planner/lib/planExtensions";
@@ -79,7 +78,6 @@ export function registerPlannerPlatform(): void {
   registerAppModule("@/features/planner/bodies/graphPlatform", GraphPlatform6);
   registerAppModule("@/features/planner/preview/graphPlatform", GraphPlatform7);
   registerAppModule("@/features/planner/stages/planStageDerive", PlanStageDerive);
-  registerAppModule("@/features/planner/lib/lintPlan", LintPlan);
   registerAppModule("@/features/planner/blueprints/blueprintMcp", BlueprintMcp);
   registerAppModule("@/features/planner/lib/mcpContext", McpContext);
   registerAppModule("@/features/planner/lib/planExtensions", PlanExtensions);
