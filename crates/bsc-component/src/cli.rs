@@ -2657,7 +2657,26 @@ fn provided_specifiers(store: &bsc_json_store::Store) -> std::collections::HashS
         .iter()
         .filter_map(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
         .filter_map(|j| j.get("provides").and_then(serde_json::Value::as_str).map(str::to_owned))
+        // The ALGORITHM impls too, because the runtime resolver reads BOTH stores: a logic module
+        // authored as a record (`bsc graph harvest --module`) provides its specifier exactly as a
+        // component does. Leaving them out made every tool judging resolvability disagree with the
+        // loader for the whole logic tier.
+        .chain(bsc_graph::implementations().iter().filter_map(|im| {
+            im.get("provides").and_then(serde_json::Value::as_str).map(str::to_owned)
+        }))
+        .filter(|s| !s.trim().is_empty())
         .collect()
+}
+
+/// Publish the RECORD provides-set for the buildability predicates, for a caller that judges imports
+/// without otherwise touching the store — `bsc ui harvest`, which used to ask only the platform registry
+/// and so could never see that a dependency had been migrated.
+pub fn publish_provided_specifiers(dir: &Option<String>) {
+    // Best-effort: a missing/unreadable store leaves the set empty, and every predicate then behaves
+    // exactly as it did before records were consulted at all.
+    if let Ok(store) = open_component_store(dir) {
+        drop(store);
+    }
 }
 
 /// Resolve the KIT store with the same flag → env (`BSC_KIT_DIR`) → default (`~/.base-studio-code/kits/`)

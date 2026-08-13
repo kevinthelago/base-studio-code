@@ -348,6 +348,16 @@ fn provided_specifiers() -> std::collections::HashSet<String> {
     PROVIDED.read().ok().and_then(|g| g.clone()).unwrap_or_default()
 }
 
+/// Does some RECORD `provides` this specifier? The loader's FIRST resolution path, so every tool that
+/// judges whether an import resolves has to ask it — otherwise a dependency that has been MIGRATED still
+/// reads as unresolvable, and promoting a keystone component unblocks nothing that imports it.
+///
+/// Empty until a caller publishes the set ([`set_provided_specifiers`], via `open_component_store` or
+/// `publish_provided_specifiers`), so a tool that never opens a store behaves exactly as before.
+pub fn is_provided_specifier(spec: &str) -> bool {
+    PROVIDED.read().ok().and_then(|g| g.as_ref().map(|s| s.contains(spec))).unwrap_or(false)
+}
+
 /// The registered platform specifiers, matched LITERALLY (exactly as the loader's `isAppModule` does).
 pub(crate) fn platform_modules() -> &'static BTreeSet<String> {
     static M: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
@@ -2679,7 +2689,17 @@ mod provides_resolution_tests {
         );
         assert!(!renders_at_runtime(&page_importing(UNKNOWN)));
 
+        // The same answer through the accessor `bsc ui harvest` asks, so a candidate whose dependency
+        // has already been MIGRATED is reported buildable. Without it, promoting a keystone component
+        // unblocks nothing that imports it and the migration cannot cascade.
+        assert!(is_provided_specifier(PROVIDED_SPEC), "harvest must see what the loader resolves first");
+        assert!(!is_provided_specifier(UNKNOWN));
+
         set_provided_specifiers(std::collections::HashSet::new());
+        assert!(
+            !is_provided_specifier(PROVIDED_SPEC),
+            "and with nothing published it reports nothing — a tool that never opens a store is unaffected",
+        );
     }
 }
 

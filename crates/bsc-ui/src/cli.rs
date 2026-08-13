@@ -616,6 +616,11 @@ fn cmd_harvest(args: &[String]) -> Result<(), String> {
     }
     let target = target
         .ok_or("usage: bsc ui harvest <repo-dir-or-file> [--kit K] [--worthy-only] [--out <name>] [--pretty]")?;
+    // Publish the RECORD provides-set BEFORE harvesting: buildability asks whether an import resolves,
+    // and a record providing it is the loader's first answer. Without this the predicate can only ever
+    // see the platform registry, so a dependency that has already been MIGRATED still reads as
+    // unresolvable — and promoting a keystone component unblocks nothing that imports it.
+    bsc_component::cli::publish_provided_specifiers(&None);
     let path = std::path::Path::new(target);
     // #3722: a single FILE is a valid target now (scope to one component's module) — not only a dir.
     let is_file = path.is_file();
