@@ -3744,8 +3744,15 @@ fn cmd_scan_cache(args: &[String], prog: &str) -> Result<(), String> {
     let verb = args.iter().find(|a| !a.starts_with('-')).map(String::as_str).unwrap_or("get");
     match verb {
         "get" => {
+            // Through the SHARED emitter, not `println!`
+            // (#the-scan-cache-read-is-the-last-boot-spawn): this read is answered by the warm `bsc
+            // serve` child, which captures a request's output off the same stdout it speaks its
+            // protocol on. `emit_line` is byte-identical to the `println!` it replaces when nothing
+            // is capturing — which is what keeps the served and one-shot answers interchangeable, and
+            // it is the same helper this crate's other JSON read already uses. `put`/`clear` below
+            // are WRITES and stay one-shot, so their printing is left alone.
             let all = serde_json::Value::Object(crate::scan_cache::load());
-            println!("{}", if pretty {
+            bsc_util::emit_line(&if pretty {
                 serde_json::to_string_pretty(&all).unwrap_or_else(|_| "{}".into())
             } else {
                 serde_json::to_string(&all).unwrap_or_else(|_| "{}".into())
@@ -5287,6 +5294,36 @@ export const P = () => <X />;"
         assert!(ov.contains("eslint-preset"));
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "eslint-preset");
         assert!(d.contains("--kit") && d.contains("eslint config"));
+    }
+
+    /// #the-scan-cache-read-is-the-last-boot-spawn — `ui scan-cache get` is answered by the WARM
+    /// `bsc serve` child, which captures a request's output off the same stdout it speaks its
+    /// protocol on. This branch printed with a raw `println!`, which would have written straight into
+    /// that protocol stream and corrupted every later response on the child. The claim under test is
+    /// "its output is CAPTURABLE", not "it prints the right thing" — so it fails the moment someone
+    /// reaches for `println!` here again.
+    ///
+    /// `put`/`clear` are deliberately NOT covered: they are writes, are never served, and keep their
+    /// own printing.
+    #[test]
+    fn scan_cache_get_output_is_capturable_by_the_warm_serve_loop() {
+        let dir = tempdir_shim::Dir::new("bsc-scan-cache-capture");
+        let cache = format!("{}/component-scan.json", dir.path());
+        std::fs::write(&cache, r#"{"widget":{"sig":"abc","status":"ok"}}"#).unwrap();
+        // The store honours $BSC_SCAN_CACHE, so the test never touches the real one. That var is
+        // process-global and this is the ONLY test in the crate that sets it — `scan_cache::tests`
+        // drive the path-injectable `load_from`/`put_to` instead. The CLI path resolves its own file,
+        // so the env var is the only injection point available here.
+        std::env::set_var("BSC_SCAN_CACHE", &cache);
+
+        let (r, captured) =
+            bsc_util::capture_output(|| cmd_scan_cache(&["get".to_string()], "bsc ui"));
+        std::env::remove_var("BSC_SCAN_CACHE");
+        r.unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(captured.trim()).expect("the payload reached the BUFFER, not stdout");
+        assert_eq!(v["widget"]["sig"], "abc");
     }
 
     #[test]

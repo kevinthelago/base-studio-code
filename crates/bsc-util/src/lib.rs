@@ -675,6 +675,9 @@ pub fn is_capturing() -> bool {
 /// - `project db list` — already on `bsc_sqlite_util::print_json`.
 /// - `project link list` — was raw `println!` on both its JSON and human branches; moved onto the
 ///   shared helpers in the same change that added it here.
+/// - `ui scan-cache get` — the last spawn left at boot once the burst went warm
+///   (#the-scan-cache-read-is-the-last-boot-spawn). Same story: raw `println!`, moved onto
+///   `print_json` in the change that listed it. Its `put`/`clear` siblings are writes and stay off.
 ///
 /// Adding a verb without reading its crate is the one mistake that breaks the warm child for every
 /// later request on it, so the list is deliberately tedious to extend.
@@ -691,12 +694,22 @@ pub fn is_servable_warm(args: &[String]) -> bool {
         &["skill", "group", "list"],
         &["project", "link", "list"],
         &["project", "db", "list"],
+        // A `ui` verb one level deeper than `UI_SUBS` can express
+        // (#the-scan-cache-read-is-the-last-boot-spawn). The COMPLETE three tokens, never
+        // `["ui","scan-cache"]`: the bare form defaults to `get`, but a two-token entry would also
+        // match `ui scan-cache put` — a write, and the highest-volume call in the whole log.
+        &["ui", "scan-cache", "get"],
     ];
 
-    if args.first().is_some_and(|c| c == "ui") {
-        return args.get(1).is_some_and(|s| UI_SUBS.contains(&s.as_str()));
-    }
-    SERVABLE
+    // The full-path table is consulted FIRST so a `ui` verb can be named by its complete path. This
+    // used to early-return on `ui`, which meant the two mechanisms could not compose and
+    // `ui scan-cache get` was inexpressible — the sub-list would answer for the whole command and
+    // reject it. The `ui` sub-list is now the FALLBACK, so its existing surface is unchanged.
+    if SERVABLE
         .iter()
         .any(|verb| args.len() >= verb.len() && args.iter().zip(verb.iter()).all(|(a, v)| a == v))
+    {
+        return true;
+    }
+    args.first().is_some_and(|c| c == "ui") && args.get(1).is_some_and(|s| UI_SUBS.contains(&s.as_str()))
 }
