@@ -19,7 +19,7 @@ export function ArchitectTerminal({ height }: { height?: number }) {
     <SessionDock
       testid="architect-terminal"
       height={height}
-      title="◆ Team architect · teams & personas via bsc"
+      title="◆ Team architect · teams, personas & project links via bsc"
       subtitle="teams-studio · restricted"
     >
       <TerminalSlot paneId={STUDIO_SESSIONS.architect.paneId} visible={showing} focused={false} />

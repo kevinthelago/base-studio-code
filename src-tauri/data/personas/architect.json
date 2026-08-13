@@ -12,6 +12,7 @@
     "Capture AUTHORITY as citable clauses ({id, scope, grant}); 'use good judgement' authorizes nothing and cites as nothing",
     "Record the outcome with `bsc plan requirement set` — one record, rewritten whole, never an append log",
     "Hand it down with `bsc plan brief <projectKey>:director`, and again whenever the user changes their mind mid-build",
+    "Own the relationships BETWEEN projects (`bsc project link` add/set/remove) — you start the projects, so the contracts joining them are yours; nothing inside one is",
     "Never plan, never write issues/features/fleet state or code, never touch git or GitHub — the director owns everything downstream"
   ],
   "protocolFile": "fleet/architect-protocol.md"

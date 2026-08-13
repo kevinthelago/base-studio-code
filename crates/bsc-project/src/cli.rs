@@ -10,8 +10,8 @@
 
 use crate::store::{self, ProjectRow};
 use crate::{
-    add_contract, is_published, list_projects, load_github_state, load_links, mark_published,
-    remove_link, save_github_state, target_to_json, ContractTarget,
+    add_contract, is_published, link_row_json, list_projects, load_github_state, load_links,
+    mark_published, remove_link, save_github_state, update_contract, ContractPatch, ContractTarget,
 };
 use bsc_cli_util::CmdDoc;
 use serde::Deserialize;
@@ -121,14 +121,15 @@ moves the hub directory. For a single project's plan + prose, use `bsc plan` ins
     },
     CmdDoc {
         name: "link",
-        summary: "list / add / remove inter-app contracts (the Glance network edges, #2253/#3786)",
+        summary: "list / add / set / remove inter-app contracts (the Glance network edges, #2253/#3786)",
         usage: "\
 USAGE:
   bsc project link list [--json]              # every contract (--json includes the target endpoint)
   bsc project link add <from> <to> <kind> [target flags]   # add from->to over api|data|events (idempotent; prints the id)
+  bsc project link set <id> [--kind <k>] [target flags]    # MODIFY an existing contract; prints the stored row
   bsc project link remove <id>                # remove by id (id is \"<from>><to>:<kind>\")
 
-  target flags for `add` (#3786 — default is another project):
+  target flags for `add` and `set` (#3786 — default is another project):
     --target-type project|service|mcp   # what <to> is: another project (default), an external service, or an mcp server
     --name <name>                       # display name of the external endpoint
     --url <url>                         # endpoint URL (an http service / mcp server)
@@ -140,8 +141,19 @@ tied to one plan.db); stored in ~/.base-studio-code/project-links.json. Agents r
 to learn what their project consumes; the desktop Glance draws each contract as an edge (external
 service/mcp targets render as their own contract node).
 
+MODIFYING one is `set`, not a second `add`: `add` is idempotent BY ID, so re-adding an existing
+contract with different flags is a silent no-op. `set` takes the id and patches only the flags you
+pass — an EMPTY value clears a descriptor (--url \"\"), and an absent flag leaves that field alone.
+
+  · `set` on an id that does not exist is an ERROR, never a create. Run `link list` first.
+  · --kind RE-KEYS the contract, because the id derives from it; the new id is printed. A re-key onto
+    an id that already exists is refused rather than merging the two.
+  · `set` always prints the stored row as JSON (like `db`), since a re-key changes the id.
+
   e.g.  bsc project link add my-app postgres data --target-type mcp --app-type serverless
-        bsc project link add my-app stripe api --target-type service --url https://api.stripe.com --app-type api",
+        bsc project link add my-app stripe api --target-type service --url https://api.stripe.com --app-type api
+        bsc project link set \"my-app>stripe:api\" --url https://api.stripe.com/v2
+        bsc project link set \"my-app>billing:api\" --kind events        # re-keys to my-app>billing:events",
     },
     CmdDoc {
         name: "github-state",
@@ -176,9 +188,13 @@ it stamps createdAt on a NEW key and preserves it on an update, always bumping u
     },
 ];
 
-/// Parsed global flags + the `link add` contract-target flags (#3786) + leftover positional args.
+/// Parsed global flags + the `link add`/`link set` contract-target flags (#3786) + leftover positional
+/// args.
 struct Args {
     json: bool,
+    /// `--kind api|data|events` — `link set` only: the contract kind, which RE-KEYS the link. `add`
+    /// takes its kind positionally, so this flag never applies there.
+    kind: Option<String>,
     /// `--target-type project|service|mcp` (default project) — the endpoint kind a contract points at.
     target_type: Option<String>,
     /// `--name` — display name of an external endpoint.
@@ -194,8 +210,16 @@ struct Args {
     positional: Vec<String>,
 }
 
+/// A flag value that is actually a value: trimmed, with an empty one dropped to `None`. `link add`
+/// uses it so an empty descriptor is stored as ABSENT rather than as `""` — the same normalization
+/// `update_contract` applies when a `set` clears one, so the two verbs cannot disagree about what an
+/// empty flag means.
+fn nonempty(v: &Option<String>) -> Option<String> {
+    v.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
+}
+
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, target_type: None, name: None, url: None, app_type: None, pitch: None, blueprint: None, positional: Vec::new() };
+    let mut a = Args { json: false, kind: None, target_type: None, name: None, url: None, app_type: None, pitch: None, blueprint: None, positional: Vec::new() };
     // A value flag consumes the NEXT token, so iterate with an index rather than a plain for-each.
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
@@ -205,6 +229,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--json" => a.json = true,
             // `-h`/`--help` route to the help command (anywhere on the line).
             "-h" | "--help" => a.positional.insert(0, "help".into()),
+            "--kind" => a.kind = Some(take("--kind")?),
             "--target-type" => a.target_type = Some(take("--target-type")?),
             "--name" => a.name = Some(take("--name")?),
             "--url" => a.url = Some(take("--url")?),
@@ -508,7 +533,7 @@ fn cmd_published(args: &Args, prog: &str) -> Result<(), String> {
     }
 }
 
-/// `link list|add|remove` — the project-relationship edges (#2253). Defaults to `list`.
+/// `link list|add|set|remove` — the project-relationship edges (#2253). Defaults to `list`.
 fn cmd_link(args: &Args, prog: &str) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("list");
     match sub {
@@ -517,10 +542,7 @@ fn cmd_link(args: &Args, prog: &str) -> Result<(), String> {
             if args.json {
                 // Every row emits its target endpoint (#3786) so the desktop cache + agents see the full
                 // contract; a legacy project link reads back as `{ "type": "project" }`.
-                let arr: Vec<serde_json::Value> = links
-                    .iter()
-                    .map(|l| serde_json::json!({ "id": l.id, "from": l.from, "to": l.to, "kind": l.kind, "target": target_to_json(&l.target) }))
-                    .collect();
+                let arr: Vec<serde_json::Value> = links.iter().map(link_row_json).collect();
                 println!("{}", serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into()));
             } else if links.is_empty() {
                 println!("(no project links)");
@@ -538,14 +560,47 @@ fn cmd_link(args: &Args, prog: &str) -> Result<(), String> {
             let to = args.positional.get(3).ok_or("usage: bsc project link add <from> <to> <kind>")?;
             let kind = args.positional.get(4).ok_or("usage: bsc project link add <from> <to> <kind>")?;
             // The target endpoint (#3786) — default is another project when no --target-type is given.
+            // Empty descriptors are dropped rather than stored: `--name ""` means "no name", and
+            // keeping it as `Some("")` would both write a meaningless `"name": ""` and — because
+            // `is_nontrivial` only asks whether the field is SET — drag a `target` key onto a plain
+            // project link that is supposed to serialize without one.
             let target = ContractTarget {
                 kind: args.target_type.clone().unwrap_or_else(|| "project".into()),
+                name: nonempty(&args.name),
+                url: nonempty(&args.url),
+                app_type: nonempty(&args.app_type),
+            };
+            let id = add_contract(from, to, kind, target)?;
+            println!("{id}");
+            Ok(())
+        }
+        // MODIFY (#architect-wires-project-relationships) — the verb `add` cannot be, because `add` is
+        // idempotent by id and therefore discards the flags on a second call.
+        "set" => {
+            let id = args.positional.get(2).ok_or(
+                "usage: bsc project link set <id> [--kind api|data|events] \
+                 [--target-type project|service|mcp] [--name …] [--url …] [--app-type …]",
+            )?;
+            let patch = ContractPatch {
+                kind: args.kind.clone(),
+                target_type: args.target_type.clone(),
                 name: args.name.clone(),
                 url: args.url.clone(),
                 app_type: args.app_type.clone(),
             };
-            let id = add_contract(from, to, kind, target)?;
-            println!("{id}");
+            // A `set` with no flags would read the contract, write it back unchanged and report
+            // success — indistinguishable from a real edit to any caller reading the exit code. Say
+            // so instead, and name the flags, since a caller here has usually mistyped one.
+            if [&patch.kind, &patch.target_type, &patch.name, &patch.url, &patch.app_type].iter().all(|f| f.is_none()) {
+                return Err(format!(
+                    "{prog} link set: nothing to change — pass at least one of --kind / --target-type / \
+                     --name / --url / --app-type (an EMPTY value clears a descriptor)"
+                ));
+            }
+            // Always JSON, regardless of --json (the `db` verbs' contract): a --kind change RE-KEYS the
+            // link, so the caller's next command needs the id this prints.
+            let link = update_contract(id, &patch)?;
+            println!("{}", serde_json::to_string(&link_row_json(&link)).unwrap_or_else(|_| "null".into()));
             Ok(())
         }
         "remove" => {
@@ -807,6 +862,43 @@ mod tests {
         });
     }
 
+    /// `link set` (#architect-wires-project-relationships) — the MODIFY verb, through the dispatcher.
+    #[test]
+    fn link_set_dispatch_patches_rekeys_and_refuses_a_no_op() {
+        crate::testhome::with_home(|_home| {
+            run(vec!["link".into(), "add".into(), "app".into(), "stripe".into(), "api".into(), "--target-type".into(), "service".into()], "bsc project").unwrap();
+
+            // Patch the endpoint descriptor of a contract that already exists — the case a second
+            // `add` silently discards.
+            run(vec!["link".into(), "set".into(), "app>stripe:api".into(), "--url".into(), "https://api.stripe.com".into()], "bsc project").unwrap();
+            assert_eq!(crate::load_links()[0].target.url.as_deref(), Some("https://api.stripe.com"));
+
+            // `--kind` re-keys through the dispatcher too.
+            run(vec!["link".into(), "set".into(), "app>stripe:api".into(), "--kind".into(), "data".into()], "bsc project").unwrap();
+            assert_eq!(crate::load_links()[0].id, "app>stripe:data");
+
+            // A flagless `set` would read-and-write-back unchanged and report success — say so instead.
+            let err = run(vec!["link".into(), "set".into(), "app>stripe:data".into()], "bsc project").unwrap_err();
+            assert!(err.contains("nothing to change"), "{err}");
+            // As does a missing id, and an id that names no contract.
+            assert!(run(vec!["link".into(), "set".into()], "bsc project").is_err());
+            assert!(run(vec!["link".into(), "set".into(), "ghost>x:api".into(), "--url".into(), "u".into()], "bsc project").is_err());
+            assert_eq!(crate::load_links().len(), 1, "no refusal wrote a row");
+        });
+    }
+
+    /// An empty descriptor flag on `add` means ABSENT, not `""` — otherwise `is_nontrivial` would drag
+    /// a `target` key onto a plain project link and break the #3786 byte-compat guarantee.
+    #[test]
+    fn link_add_treats_an_empty_descriptor_flag_as_absent() {
+        crate::testhome::with_home(|_home| {
+            run(vec!["link".into(), "add".into(), "app".into(), "billing".into(), "api".into(), "--name".into(), "   ".into()], "bsc project").unwrap();
+            assert!(crate::load_links()[0].target.name.is_none());
+            let raw = std::fs::read_to_string(crate::links_path().unwrap()).unwrap();
+            assert!(!raw.contains("target"), "a plain project link still writes no target: {raw}");
+        });
+    }
+
     #[test]
     fn parse_args_routes_help_flag_to_the_help_command() {
         let a = parse_args(vec!["--help".into()]).unwrap();
@@ -842,6 +934,11 @@ mod tests {
         assert!(link.contains("add"));
         assert!(link.contains("--target-type"));
         assert!(link.contains("--app-type"));
+        // …and into `set`, incl. the two things a caller cannot guess: that `add` will NOT modify, and
+        // that --kind re-keys.
+        assert!(link.contains("link set"));
+        assert!(link.contains("--kind"));
+        assert!(link.contains("RE-KEYS"));
         // Per-command help shows that one command's detail (incl. its subcommands).
         let one = bsc_cli_util::help_for("bsc project", TAGLINE, COMMANDS, "published");
         assert!(one.contains("bsc project published"));

@@ -244,6 +244,17 @@ fn link_to_json(l: &ProjectLink) -> serde_json::Value {
     o
 }
 
+/// One contract as a CALLER-facing row (`link list --json`, and what `link set` prints).
+///
+/// Deliberately NOT [`link_to_json`]: the target is ALWAYS present here (a legacy link reads back as
+/// `{ "type": "project" }`), whereas the on-disk form omits a trivial one to stay byte-identical to the
+/// pre-#3786 file. The two shapes serve different readers, so they are two functions rather than one
+/// with a flag — and sharing this one between `list` and `set` is what stops the row a modify prints
+/// from drifting from the row a list shows.
+pub fn link_row_json(l: &ProjectLink) -> serde_json::Value {
+    serde_json::json!({ "id": l.id, "from": l.from, "to": l.to, "kind": l.kind, "target": target_to_json(&l.target) })
+}
+
 /// Load every project link. Empty when the file is missing/unreadable/malformed (never errors — a
 /// fresh install simply has no links).
 pub fn load_links() -> Vec<ProjectLink> {
@@ -311,6 +322,111 @@ pub fn remove_link(id: &str) -> Result<(), String> {
         save_links(&links)?;
     }
     Ok(())
+}
+
+/// A patch over the MUTABLE fields of an existing contract (#architect-wires-project-relationships).
+///
+/// Every field is an `Option<String>` because each carries THREE states, not two: `None` leaves the
+/// field alone, `Some("")` CLEARS an optional descriptor, and `Some(v)` sets it. Without the clear
+/// state a descriptor could be set and never unset, and the only route back would be deleting the
+/// contract and re-adding it — which discards a relationship in order to edit a label on it.
+#[derive(Debug, Clone, Default)]
+pub struct ContractPatch {
+    /// The contract kind (api | data | events). Changing it RE-KEYS the link, because the id is
+    /// derived from it — see [`update_contract`]. Clearing is meaningless (a contract always has a
+    /// kind), so an empty value is rejected rather than treated as a clear.
+    pub kind: Option<String>,
+    /// The endpoint type (project | service | mcp). Same: a target always has one.
+    pub target_type: Option<String>,
+    /// Display name of the endpoint — clearable.
+    pub name: Option<String>,
+    /// Endpoint URL — clearable.
+    pub url: Option<String>,
+    /// Endpoint app type — clearable.
+    pub app_type: Option<String>,
+}
+
+/// Apply one descriptor patch: `None` keeps `cur`, an empty value CLEARS, anything else sets (trimmed).
+fn patch_field(cur: &Option<String>, patch: &Option<String>) -> Option<String> {
+    match patch {
+        None => cur.clone(),
+        Some(v) if v.trim().is_empty() => None,
+        Some(v) => Some(v.trim().to_string()),
+    }
+}
+
+/// Modify an EXISTING contract in place — the one thing [`add_contract`] cannot do
+/// (#architect-wires-project-relationships).
+///
+/// `add` is idempotent BY ID, and the id is `<from>><to>:<kind>`. So re-adding a contract that already
+/// exists silently discards the endpoint descriptor passed the second time, which left a contract's
+/// target unchangeable once written: there was no verb anywhere that could alter one.
+///
+/// AN UNKNOWN ID IS AN ERROR, NEVER A CREATE. Modifying and creating are different acts, and a caller
+/// that mistypes an id meant the first. Quietly doing the second would leave the contract it meant to
+/// change untouched while inventing a second one beside it — the failure would surface later, as a
+/// duplicate nobody drew.
+///
+/// CHANGING `kind` RE-KEYS the link, since the id derives from it, and the re-key is REFUSED when the
+/// destination id already exists rather than overwriting it. Two contracts collapsing into one is a
+/// deletion the caller did not ask for, so it is named and refused instead.
+///
+/// Returns the stored link — with its NEW id when the kind changed, which is why the caller is handed
+/// the record rather than a bool.
+pub fn update_contract(id: &str, patch: &ContractPatch) -> Result<ProjectLink, String> {
+    let mut links = load_links();
+    let idx = links.iter().position(|l| l.id == id).ok_or_else(|| {
+        format!("update_contract: no contract '{id}' (list them with `bsc project link list`)")
+    })?;
+    let cur = links[idx].clone();
+
+    let kind = match patch.kind.as_deref().map(str::trim) {
+        Some("") => return Err("update_contract: --kind needs a value (a contract always has a kind)".into()),
+        Some(k) => k.to_string(),
+        None => cur.kind.clone(),
+    };
+    if !LINK_KINDS.contains(&kind.as_str()) {
+        return Err(format!("update_contract: unknown kind '{kind}' (want one of {LINK_KINDS:?})"));
+    }
+    let target_kind = match patch.target_type.as_deref().map(str::trim) {
+        Some("") => return Err("update_contract: --target-type needs a value (a target always has one)".into()),
+        Some(t) => t.to_string(),
+        None => cur.target.kind.clone(),
+    };
+    if !TARGET_TYPES.contains(&target_kind.as_str()) {
+        return Err(format!("update_contract: unknown target type '{target_kind}' (want one of {TARGET_TYPES:?})"));
+    }
+    // The same self-loop rule `add_contract` enforces, re-checked because a PATCH can reach it: an
+    // external endpoint may legitimately share the consumer's name, so flipping such a link back to
+    // `project` would otherwise store a project depending on itself through the side door.
+    if target_kind == "project" && cur.from == cur.to {
+        return Err("update_contract: a project can't link to itself".into());
+    }
+
+    let new_id = link_id(&cur.from, &cur.to, &kind);
+    if new_id != cur.id && links.iter().any(|l| l.id == new_id) {
+        return Err(format!(
+            "update_contract: changing kind to '{kind}' would collide with the existing contract \
+             '{new_id}'. Remove one of them first — merging two contracts into one would drop a \
+             relationship nobody asked to drop."
+        ));
+    }
+
+    let updated = ProjectLink {
+        id: new_id,
+        from: cur.from,
+        to: cur.to,
+        kind,
+        target: ContractTarget {
+            kind: target_kind,
+            name: patch_field(&cur.target.name, &patch.name),
+            url: patch_field(&cur.target.url, &patch.url),
+            app_type: patch_field(&cur.target.app_type, &patch.app_type),
+        },
+    };
+    links[idx] = updated.clone();
+    save_links(&links)?;
+    Ok(updated)
 }
 
 // ── Persisted GitHub board state (#2446, epic #2444) ────────────────────────────────────────────────
@@ -470,6 +586,105 @@ mod tests {
             assert_eq!(links[0].kind, "data");
             remove_link("missing").unwrap(); // no-op, not an error
             assert_eq!(load_links().len(), 1);
+        });
+    }
+
+    /// MODIFY (#architect-wires-project-relationships) — the gap `add` leaves. These pin the three
+    /// things a caller can get wrong and the one thing `add` silently did instead.
+    #[test]
+    fn update_patches_only_the_fields_it_is_given() {
+        with_home(|_home| {
+            add_contract(
+                "app",
+                "stripe",
+                "api",
+                ContractTarget { kind: "service".into(), name: Some("Stripe".into()), url: Some("https://api.stripe.com".into()), app_type: None },
+            )
+            .unwrap();
+
+            // The bug this verb exists for: a second `add` with different flags changes NOTHING,
+            // because `add` is idempotent by id.
+            add_contract("app", "stripe", "api", ContractTarget { kind: "service".into(), url: Some("https://v2".into()), ..Default::default() }).unwrap();
+            assert_eq!(load_links()[0].target.url.as_deref(), Some("https://api.stripe.com"), "add is a no-op on an existing id");
+
+            // `set` patches exactly what it is handed and leaves the rest alone.
+            let out = update_contract("app>stripe:api", &ContractPatch { url: Some("https://api.stripe.com/v2".into()), ..Default::default() }).unwrap();
+            assert_eq!(out.target.url.as_deref(), Some("https://api.stripe.com/v2"));
+            assert_eq!(out.target.name.as_deref(), Some("Stripe"), "an absent flag leaves the field alone");
+            assert_eq!(out.id, "app>stripe:api", "no kind change ⇒ no re-key");
+            assert_eq!(load_links().len(), 1, "a modify never adds a row");
+
+            // An EMPTY value clears a descriptor — without this a name could be set and never unset.
+            let cleared = update_contract("app>stripe:api", &ContractPatch { name: Some("  ".into()), ..Default::default() }).unwrap();
+            assert!(cleared.target.name.is_none());
+            assert_eq!(cleared.target.url.as_deref(), Some("https://api.stripe.com/v2"), "clearing one field leaves the others");
+        });
+    }
+
+    #[test]
+    fn update_rekeys_on_a_kind_change_and_refuses_to_merge_two_contracts() {
+        with_home(|_home| {
+            add_link("app", "billing", "api").unwrap();
+
+            // The id derives from the kind, so changing it MOVES the contract to a new id.
+            let out = update_contract("app>billing:api", &ContractPatch { kind: Some("events".into()), ..Default::default() }).unwrap();
+            assert_eq!(out.id, "app>billing:events");
+            assert_eq!(out.kind, "events");
+            let links = load_links();
+            assert_eq!(links.len(), 1, "a re-key MOVES the contract, it does not duplicate it");
+            assert_eq!(links[0].id, "app>billing:events");
+            assert!(update_contract("app>billing:api", &ContractPatch::default()).is_err(), "the old id is gone");
+
+            // A re-key onto an occupied id must be refused, not merged: merging is a deletion the
+            // caller did not ask for.
+            add_link("app", "billing", "data").unwrap();
+            let err = update_contract("app>billing:data", &ContractPatch { kind: Some("events".into()), ..Default::default() }).unwrap_err();
+            assert!(err.contains("app>billing:events"), "the refusal names what is already there: {err}");
+            assert_eq!(load_links().len(), 2, "a refused re-key writes nothing");
+        });
+    }
+
+    #[test]
+    fn update_refuses_an_unknown_id_rather_than_creating_one() {
+        with_home(|_home| {
+            // Modifying and creating are different acts; a mistyped id meant the first one.
+            let err = update_contract("ghost>nobody:api", &ContractPatch { url: Some("x".into()), ..Default::default() }).unwrap_err();
+            assert!(err.contains("ghost>nobody:api"), "{err}");
+            assert!(load_links().is_empty(), "a refused modify creates nothing");
+        });
+    }
+
+    #[test]
+    fn update_validates_the_two_closed_enums_and_the_self_loop_rule() {
+        with_home(|_home| {
+            add_contract("app", "app", "api", ContractTarget { kind: "service".into(), ..Default::default() }).unwrap();
+
+            assert!(update_contract("app>app:api", &ContractPatch { kind: Some("nope".into()), ..Default::default() }).is_err());
+            assert!(update_contract("app>app:api", &ContractPatch { target_type: Some("widget".into()), ..Default::default() }).is_err());
+            // Neither enum is clearable — a contract always has a kind and a target always has a type.
+            assert!(update_contract("app>app:api", &ContractPatch { kind: Some("".into()), ..Default::default() }).is_err());
+            assert!(update_contract("app>app:api", &ContractPatch { target_type: Some("".into()), ..Default::default() }).is_err());
+            // `from == to` is legitimate for a service endpoint (own namespace) but NOT for a project
+            // one — so the patch that would flip it back is the side door `add_contract` closes.
+            let err = update_contract("app>app:api", &ContractPatch { target_type: Some("project".into()), ..Default::default() }).unwrap_err();
+            assert!(err.contains("itself"), "{err}");
+            assert_eq!(load_links()[0].target.kind, "service", "every refusal left the record untouched");
+        });
+    }
+
+    #[test]
+    fn a_modify_that_leaves_a_bare_project_target_writes_no_target_key() {
+        with_home(|_home| {
+            // BYTE-COMPAT (#3786) survives the new verb: a contract patched back down to a plain
+            // project endpoint must serialize exactly like one that was never external.
+            add_contract("app", "billing", "api", ContractTarget { kind: "service".into(), name: Some("Billing".into()), ..Default::default() }).unwrap();
+            update_contract("app>billing:api", &ContractPatch { target_type: Some("project".into()), name: Some("".into()), ..Default::default() }).unwrap();
+
+            let raw = std::fs::read_to_string(links_path().unwrap()).unwrap();
+            let arr: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+            assert!(arr[0].get("target").is_none(), "a trivial project target is not serialized: {raw}");
+            // …and it still reads back as the default project endpoint.
+            assert_eq!(load_links()[0].target, ContractTarget::default());
         });
     }
 
