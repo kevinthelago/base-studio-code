@@ -25,7 +25,8 @@ import type * as Esbuild from "esbuild-wasm";
 import type { ComponentType } from "react";
 import { ensureEsbuild } from "@/shared/lib/preview/componentBundle";
 import { resolveAppModule, isAppModule, registeredSpecifiers } from "./moduleRegistry";
-import { evaluateEntry, linkGraphModules } from "./graphModules";
+import { evaluateEntry, linkGraphModules, pruneUnsatisfiableOverrides } from "./graphModules";
+import { log } from "@/shared/lib/core/log";
 
 /** Resolve a first-party specifier to another graph component's SOURCE (its `srcText`), so the loader can
  *  vendor siblings into one compile. Returns `null`/`undefined` when the specifier is NOT a graph component
@@ -179,7 +180,21 @@ export async function loadComponentFromSource(
   resolveGraphSource?: GraphSourceResolver,
   exportName?: string,
 ): Promise<ComponentType<Record<string, unknown>>> {
-  const linked = await linkGraphModules(source, resolveGraphSource, (src) => compileToCjs(src));
+  const linkedAll = await linkGraphModules(source, resolveGraphSource, (src) => compileToCjs(src));
+  // Decline any override that cannot resolve its own closure, so `require` falls back to the platform
+  // module it was shadowing rather than the whole page dying on one unreachable leaf
+  // (#an-incomplete-override-falls-back-instead-of-killing-the-page).
+  const { linked, declined } = pruneUnsatisfiableOverrides(linkedAll, isAppModule);
+  for (const d of declined) {
+    // WARN, once per declined override per load: the fallback keeps the app working, and this is the
+    // only signal that a harvested module is inert. Silence here would turn a broken migration into a
+    // permanent no-op nobody ever sees.
+    log.warn(
+      `graph-loader: declined the graph override for "${d.specifier}" — its closure needs "${d.missing}", ` +
+        `which is neither registered nor a record. Falling back to the platform module.`,
+      "graph-loader",
+    );
+  }
   const exports = evaluateEntry(linked, makeRequire());
   const comp = pickComponent(exports, exportName);
   if (!comp) {
