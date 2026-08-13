@@ -60,7 +60,7 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   bsc-answer, the worker never gets the answer at all. NOTE the answer does NOT resume the
   worker -- it parks with your reply waiting for it. If the worker should carry on now rather
   than when the user next looks, resume it yourself: bsc fleet wake <session>. Decide it
-  yourself; never punt a worker question to the user. Decide it yourself; never punt a worker question to the user.
+  yourself; never punt a worker question to the user.
 - OWN THE INTEGRATION CONTRACTS. The `contracts/` directory (one doc per feature seam) is YOURS.
   Each feature is its own stream, built in isolation; workers build against `contracts/` as the
   source of truth and never negotiate interfaces with each other -- they ask YOU. When a worker's
