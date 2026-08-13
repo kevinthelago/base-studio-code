@@ -2,6 +2,13 @@
 // the scheduler tick and the mobile "run now" path dispatch identically — resolve the
 // target pane, build the payload, write it, and record the run. No React here; the host
 // (PTY write, store record, clock) is injected so it's unit-testable.
+//
+// THE `write` DEP IS A SESSION'S STDIN, and this is one of the very few places allowed to reach it
+// (#only-the-user-resumes-a-session). The app does not resume sessions; automations are the single
+// unattended exception, because a cron rule is a standing instruction the USER wrote — the app is
+// executing their decision at a time they chose, not deciding a session needs prompting. See
+// `useScheduler` for the full statement, and `injectCallers.test.ts` for the enforced allow-list of
+// every module that may write into a pane.
 
 import { resolveTargetPane, dispatchPayload, type Automation, type AutomationRun, type TabLike } from "./scheduler";
 import { log } from "@/shared/lib/core/log";
