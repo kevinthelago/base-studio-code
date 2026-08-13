@@ -196,6 +196,34 @@ describe("studioPageShowing (#3357)", () => {
     expect(studioPageShowing("librarianRust", at("teams"), null)).toBe(false);
   });
 
+  // #a-stale-studio-id-in-a-record-must-not-kill-a-page — the regression, pinned.
+  //
+  // A component compiled from a RECORD can name a studio the app no longer defines: its source is
+  // data the type system never checked. Before this guard `STUDIO_SESSIONS[retired]` was undefined
+  // and `.sectionId` threw, escaping to GraphErrorBoundary and falling back the WHOLE Algorithms
+  // page. One stale id in one dock, and the page was gone.
+  it("returns false for an id the registry does not know, instead of throwing", () => {
+    const at = { activeWorkspace: "projects", projectsPageMode: "algorithms" };
+    for (const stale of ["librarian", "designer", "soundDesigner-typo", "planner"]) {
+      // The cast is the POINT: this models a record naming a studio that no longer exists, which is
+      // precisely what the type system cannot catch.
+      const id = stale as unknown as Parameters<typeof studioPageShowing>[0];
+      expect(() => studioPageShowing(id, at, null)).not.toThrow();
+      expect(studioPageShowing(id, at, null)).toBe(false);
+      // The torn-off branch reads `def.pageKey` too, so it needs the same guard.
+      expect(() => studioPageShowing(id, at, { page: "projects", section: "algorithms" })).not.toThrow();
+    }
+  });
+
+  // The NULL case was already handled and is a different one: null means "this dock resolved no
+  // session for its technology", while a retired id is a non-null string that is simply not in the
+  // registry. Keeping both pinned so a future simplification cannot collapse them.
+  it("still returns false for a null/absent id", () => {
+    const at = { activeWorkspace: "projects", projectsPageMode: "designs" };
+    expect(studioPageShowing(null, at, null)).toBe(false);
+    expect(studioPageShowing(undefined, at, null)).toBe(false);
+  });
+
   it("a torn-off section window is showing exactly the page it was detached for", () => {
     const bg = { activeWorkspace: "glance", projectsPageMode: "projects" };
     expect(studioPageShowing("designerReact", bg, { page: "projects", section: "designs" })).toBe(true);
