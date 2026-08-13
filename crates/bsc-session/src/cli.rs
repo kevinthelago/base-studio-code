@@ -74,22 +74,57 @@ model, have no route back except the user's click. Ending one is the user's act.
 Not running ⇒ reported as `not-running` rather than an error: stopping something already stopped is
 the state the caller wanted.",
     },
+    CmdDoc {
+        name: "ask",
+        summary: "put a request to a system session and get its answer — a call, not a launch",
+        usage: "\
+USAGE:
+  bsc session ask <id> \"<request>\" [--wait SECS] [--json|--pretty]
+
+Asks a system session for something and returns its answer. THE COMMON CASE — you want a kit from the
+designer or an implementation from the librarian, not a studio to look after. Asking does not make you
+the owner of that session's lifecycle: a session already running is left exactly as it was.
+
+HOW IT REACHES THE SESSION. Through `bsc loop`, whose `watch` verb BLOCKS — the session parks in a
+read it entered itself and your request returns it. Nothing writes into a running session's terminal.
+
+A session that is NOT running is started for the request, with the loop id in its launch prompt, so it
+comes up already watching. That is the one case where ask changes lifecycle, and the reply says so.
+
+IF IT DOES NOT ANSWER IN TIME this reports the open loop rather than failing — the request is not
+lost, and `bsc loop show <id>` collects the answer whenever it lands. Re-asking would leave the
+session two requests to answer and orphan the first. A running session that is mid-conversation with
+its user will not see your request until it next looks; that is the cost of having no way to interrupt
+it, and it is reported rather than hidden.
+
+--wait bounds the ANSWER (default 300s). --timeout bounds the app round trip, which is a different and
+much shorter thing.",
+    },
 ];
 
 struct Args {
     json: bool,
     pretty: bool,
     timeout_ms: Option<i64>,
+    /// `ask` only: how long to wait for the ANSWER. Distinct from `--timeout`, which bounds the
+    /// app round trip — an agent can take minutes to answer while the app replies in milliseconds,
+    /// so one number could not serve both.
+    wait_secs: Option<u64>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, pretty: false, timeout_ms: None, positional: Vec::new() };
+    let mut a =
+        Args { json: false, pretty: false, timeout_ms: None, wait_secs: None, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
+            "--wait" => {
+                let v = it.next().ok_or("--wait needs a value (seconds)")?;
+                a.wait_secs = Some(v.parse().map_err(|_| format!("--wait: not a number: {v}"))?);
+            }
             "--timeout" => {
                 let v = it.next().ok_or("--timeout needs a value")?;
                 a.timeout_ms = Some(v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?);
@@ -111,6 +146,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "list" => cmd_list(&args),
         "start" => cmd_lifecycle(&args, prog, LifecycleAction::Start),
         "stop" => cmd_lifecycle(&args, prog, LifecycleAction::Stop),
+        "ask" => cmd_ask(&args, prog),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
@@ -135,7 +171,7 @@ fn cmd_lifecycle(args: &Args, prog: &str, action: LifecycleAction) -> Result<(),
         LifecycleAction::Stop => crate::resolve_stoppable(id)?,
     };
 
-    let req = LifecycleRequest { id: session.id.to_string(), action };
+    let req = LifecycleRequest { id: session.id.to_string(), action, loop_id: None };
     let res: LifecycleResult = ask(LIFECYCLE_KIND, &req, args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS))?;
     bsc_cli_util::emit(args.pretty, args.json, &res, || describe(&res));
     Ok(())
@@ -152,6 +188,39 @@ fn describe(res: &LifecycleResult) -> String {
         LifecycleOutcome::Stopped => format!("stopped {} ({})", res.id, res.pane_id),
         LifecycleOutcome::NotRunning => format!("{} was not running ({})", res.id, res.pane_id),
     }
+}
+
+/// `bsc session ask <id> "<request>"` — the common case: a call, not a launch.
+fn cmd_ask(args: &Args, prog: &str) -> Result<(), String> {
+    let id = args
+        .positional
+        .get(1)
+        .ok_or_else(|| format!("usage: {prog} ask <id> \"<request>\"\n\nValid ids: {}", crate::valid_ids().join(" · ")))?;
+    let request = args
+        .positional
+        .get(2)
+        .ok_or_else(|| format!("usage: {prog} ask {id} \"<request>\" — the request is the whole point"))?;
+
+    let env = crate::ask::ChannelEnv { timeout_ms: args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS) };
+    let wait = std::time::Duration::from_secs(
+        args.wait_secs.unwrap_or(crate::ask::DEFAULT_ANSWER_TIMEOUT_SECS),
+    );
+    let res = crate::ask::ask(&env, id, request, wait)?;
+
+    bsc_cli_util::emit(args.pretty, args.json, &res, || match &res.answer {
+        Some(a) => a.clone(),
+        // NOT an error, and phrased so the caller collects rather than re-asks: a second ask would
+        // leave the session two loops to answer and the first answer orphaned.
+        None => format!(
+            "{} has not answered yet (loop {} is still open{}).\n\
+             Collect it with `bsc loop show {}` — the request is not lost.",
+            res.id,
+            res.loop_id,
+            if res.started { ", and it was started for this" } else { "" },
+            res.loop_id,
+        ),
+    });
+    Ok(())
 }
 
 fn cmd_list(args: &Args) -> Result<(), String> {
@@ -187,6 +256,27 @@ fn ask<Q: serde::Serialize, R: serde::de::DeserializeOwned>(
     req: &Q,
     timeout: i64,
 ) -> Result<R, String> {
+    ask_app(kind, req, timeout)
+}
+
+/// The same round trip, reachable from the sibling `ask` module (which needs `list` + `start` to
+/// compose its verb). Named for what it does rather than re-exported under `ask`, which is a verb here.
+pub(crate) fn ask_app<Q: serde::Serialize, R: serde::de::DeserializeOwned>(
+    kind: &str,
+    req: &Q,
+    timeout: i64,
+) -> Result<R, String> {
+    ask_app_value(kind, &serde_json::to_value(req).map_err(|e| e.to_string())?, timeout)
+}
+
+/// The round trip over an already-built payload — for a request that carries a field the typed shape
+/// does not (the `loopId` `bsc session ask` bolts onto a start).
+pub(crate) fn ask_app_value<R: serde::de::DeserializeOwned>(
+    kind: &str,
+    payload: &serde_json::Value,
+    timeout: i64,
+) -> Result<R, String> {
+    let req = payload;
     let chan = bsc_appchan::chan_dir()?;
     let now = bsc_util::now_ms();
     let _ = bsc_appchan::sweep_stale(&chan, now, STALE_MS);

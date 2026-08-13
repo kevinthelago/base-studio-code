@@ -35,6 +35,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod ask;
 pub mod cli;
 
 /// The READ verb's routing key — answered in Rust.
@@ -211,6 +212,14 @@ pub struct LifecycleRequest {
     /// the only writer; re-resolving is what keeps the closed set closed rather than merely tidy.
     pub id: String,
     pub action: LifecycleAction,
+    /// Set by `bsc session ask` when this start exists to SERVE a loop. The app turns it into a launch
+    /// directive appended to the session's persona prompt, so the session comes up already running
+    /// `bsc loop watch` — which is what makes ask compose with start rather than racing it.
+    ///
+    /// A launch ARGUMENT, not a write into a live terminal: it goes exactly where the persona prompt
+    /// goes. `injectPrompt` keeps its empty caller set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loop_id: Option<i64>,
 }
 
 /// What actually happened — distinguished, not collapsed into a bare success.
@@ -334,7 +343,7 @@ mod tests {
     /// field as "the app did nothing".
     #[test]
     fn the_wire_contract_round_trips() {
-        let req = LifecycleRequest { id: "designer".into(), action: LifecycleAction::Stop };
+        let req = LifecycleRequest { id: "designer".into(), action: LifecycleAction::Stop, loop_id: None };
         let back: LifecycleRequest = serde_json::from_str(&serde_json::to_string(&req).unwrap()).unwrap();
         assert_eq!(back, req);
 

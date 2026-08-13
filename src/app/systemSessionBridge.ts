@@ -32,6 +32,9 @@ export interface LifecycleRequest {
   action: "start" | "stop";
   /** Whether a PTY exists for `paneId`, measured in Rust just before the emit. */
   ptyLive: boolean;
+  /** Present when this start exists to serve a `bsc session ask` — the launch directive that has the
+   *  session come up already running `bsc loop watch`. Built in Rust so the prose has one authority. */
+  askDirective?: string | null;
 }
 
 /** What we send back via `system_session_ack`. Kebab-case matches the Rust `LifecycleOutcome`. */
@@ -53,6 +56,8 @@ export interface LifecycleDeps {
   openStudio: (id: StudioId) => void;
   /** `closeStudio` — drops it from the wanted list, unmounting its host claim. */
   closeStudio: (id: StudioId) => void;
+  /** Queue the ask directive for the launch `openStudio` is about to trigger. */
+  setPendingDirective: (id: StudioId, directive: string) => void;
   /** `pty_kill` for the pane. A no-op when there is no PTY, which is why it is safe to call
    *  unconditionally rather than probing first — Rust already owns the liveness answer. */
   killPane: (paneId: string) => Promise<void>;
@@ -84,9 +89,14 @@ export async function applyLifecycle(req: LifecycleRequest, deps: LifecycleDeps)
 
   if (req.action === "start") {
     if (running) return { id, outcome: "already-running" };
-    // Nothing else is needed: `openStudio` is the whole start. The mount reads the studio's launch
-    // inputs from `STUDIO_SESSIONS` and its stable pane id means the session RESUMES its previous
-    // conversation rather than beginning blank.
+    // ORDER IS LOAD-BEARING: queue the directive BEFORE `openStudio`. The mount's effect runs off the
+    // wanted list and calls `seedStudioLaunchState`, which TAKES the directive — set afterwards, it
+    // would arrive after the seed had already read an empty slot and the session would come up
+    // without knowing which loop it was started for.
+    if (req.askDirective) deps.setPendingDirective(studio, req.askDirective);
+    // Otherwise nothing else is needed: `openStudio` is the whole start. The mount reads the studio's
+    // launch inputs from `STUDIO_SESSIONS` and its stable pane id means the session RESUMES its
+    // previous conversation rather than beginning blank.
     deps.openStudio(studio);
     return { id, outcome: "started" };
   }

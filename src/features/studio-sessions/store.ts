@@ -24,6 +24,20 @@ export interface StudiosSlice {
   wantedStudios: StudioId[];
   /** studio id → number of mounted surfaces currently SHOWING it (page dock + Glance morph). Transient. */
   studioViewers: Record<string, number>;
+  /** A launch DIRECTIVE waiting to be baked into a studio's next start, keyed by studio id.
+   *
+   *  Set by `bsc session ask` when it starts a session to serve a loop, and consumed (once) by
+   *  `seedStudioLaunchState` as an appendix to the persona prompt — so the session comes up already
+   *  running `bsc loop watch`. Transient like the rest of this slice: a directive that outlived the
+   *  app restart it was written for would send a session to watch a loop nobody is waiting on. */
+  studioPendingDirective: Partial<Record<StudioId, string>>;
+  /** Queue a launch directive for a studio's NEXT start. Overwrites any unconsumed one — a second ask
+   *  supersedes the first, and two directives in one launch prompt would have the session watching two
+   *  loops and answering neither. */
+  setStudioPendingDirective: (id: StudioId, directive: string) => void;
+  /** Take the directive, clearing it — so it is baked in exactly once and a later relaunch of the same
+   *  studio (a reaper reclaim, a user re-open) does not resurrect a stale request. */
+  takeStudioPendingDirective: (id: StudioId) => string | undefined;
   /** Mark a studio as wanted — the lazy start. Idempotent, so every viewer can call it on mount. */
   openStudio: (id: StudioId) => void;
   /** Drop a studio from the wanted list → its persistent mount unmounts. Called by the idle reaper and by
@@ -35,9 +49,27 @@ export interface StudiosSlice {
   removeStudioViewer: (id: StudioId) => void;
 }
 
-export const createStudiosSlice: StateCreator<AppStore, [], [], StudiosSlice> = (set) => ({
+export const createStudiosSlice: StateCreator<AppStore, [], [], StudiosSlice> = (set, get) => ({
   wantedStudios: [],
   studioViewers: {},
+  studioPendingDirective: {},
+
+  setStudioPendingDirective: (id, directive) =>
+    set((s) => ({ studioPendingDirective: { ...s.studioPendingDirective, [id]: directive } })),
+
+  // A GET-AND-CLEAR rather than a selector plus a separate clear: two callers reading before either
+  // cleared would both bake the directive in, and the second launch would watch a loop already served.
+  takeStudioPendingDirective: (id) => {
+    const current = get().studioPendingDirective[id];
+    if (current !== undefined) {
+      set((s) => {
+        const next = { ...s.studioPendingDirective };
+        delete next[id];
+        return { studioPendingDirective: next };
+      });
+    }
+    return current;
+  },
 
   openStudio: (id) =>
     set((s) => (s.wantedStudios.includes(id) ? {} : { wantedStudios: [...s.wantedStudios, id] })),

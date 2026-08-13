@@ -37,6 +37,7 @@ export function useSystemSessionBridge(): void {
           wantedStudios: st.wantedStudios,
           openStudio: (id) => useAppStore.getState().openStudio(id),
           closeStudio: (id) => useAppStore.getState().closeStudio(id),
+          setPendingDirective: (id, d) => useAppStore.getState().setStudioPendingDirective(id, d),
           // Killing is explicit, exactly as the idle reaper does it: dropping the host claim only
           // unmounts the <TerminalView> — its cleanup deliberately leaves the backend session alive
           // so a console tab-switch reconnects rather than respawns.

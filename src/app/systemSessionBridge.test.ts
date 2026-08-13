@@ -23,6 +23,7 @@ function deps(over: Partial<LifecycleDeps> = {}): LifecycleDeps & {
     wantedStudios: [],
     openStudio: vi.fn(),
     closeStudio: vi.fn(),
+    setPendingDirective: vi.fn(),
     killPane: vi.fn(async () => {}),
     ...over,
   } as never;
@@ -52,6 +53,34 @@ describe("applyLifecycle — start", () => {
     const ack = await applyLifecycle(req({ ptyLive: true }), d);
     expect(ack.outcome).toBe("already-running");
     expect(d.openStudio).not.toHaveBeenCalled();
+  });
+
+  it("queues the ask directive BEFORE opening the studio", async () => {
+    // Order is load-bearing: `seedStudioLaunchState` TAKES the directive off the store during the
+    // mount effect that `openStudio` triggers. Queued afterwards, the seed reads an empty slot and the
+    // session comes up not knowing which loop it was started for.
+    const calls: string[] = [];
+    const d = deps({
+      setPendingDirective: vi.fn(() => { calls.push("directive"); }),
+      openStudio: vi.fn(() => { calls.push("open"); }),
+    } as never);
+    await applyLifecycle(req({ askDirective: "watch loop 9" }), d);
+    expect(calls).toEqual(["directive", "open"]);
+    expect(d.setPendingDirective).toHaveBeenCalledWith("designer", "watch loop 9");
+  });
+
+  it("queues no directive for an ordinary start", async () => {
+    const d = deps();
+    await applyLifecycle(req(), d);
+    expect(d.setPendingDirective).not.toHaveBeenCalled();
+  });
+
+  it("does not queue a directive when the session is already running", async () => {
+    // An ask against a live session reaches it through the loop it is already able to watch. Queuing
+    // here would strand the directive until some LATER, unrelated launch baked it in.
+    const d = deps({ wantedStudios: ["designer"] });
+    await applyLifecycle(req({ askDirective: "watch loop 9" }), d);
+    expect(d.setPendingDirective).not.toHaveBeenCalled();
   });
 
   it("never kills anything on the start path", async () => {

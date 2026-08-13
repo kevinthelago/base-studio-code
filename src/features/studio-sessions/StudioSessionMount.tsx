@@ -76,10 +76,20 @@ function tunnelKind(def: StudioSessionDef): PaneKind {
 
 export function seedStudioLaunchState(def: StudioSessionDef): void {
   const persona = studioStartPrompt(def.personaId);
-  // #system-sessions-are-per-technology: the line that scopes a per-tech session to its own partition.
-  // Appended, never substituted — without the persona the session answers as a generic agent; without
-  // the scope, five sessions share one persona and each curates the whole store.
-  const prompt = [persona, studioScopeDirective(def)].filter(Boolean).join("\n\n");
+  // TWO appendices, both landing where the persona prompt already goes — a launch ARGUMENT, never a
+  // write into a live terminal.
+  //
+  //  · the SCOPE (#system-sessions-are-per-technology) — what this session's technology is. Without it
+  //    five sessions share one persona and each curates the whole store.
+  //  · the ASK DIRECTIVE (#architect-asks-a-system-session-for-a-service) — present only when this
+  //    launch exists to SERVE a loop. TAKEN, not read, so it is baked in once: a later relaunch of the
+  //    same studio must not resurrect a request already served.
+  //
+  // ORDER: identity, then partition, then the errand. The persona says who it is, the scope says what
+  // it owns, the directive says what it was woken for — and the last one is the only one that can be
+  // absent, so it goes last and `filter(Boolean)` drops it cleanly.
+  const directive = useAppStore.getState().takeStudioPendingDirective(def.id);
+  const prompt = [persona, studioScopeDirective(def), directive].filter(Boolean).join("\n\n");
   useAppStore.setState((st) => {
     const startupPrompts = { ...st.paneStartupPromptText };
     if (prompt) startupPrompts[def.paneId] = prompt;
