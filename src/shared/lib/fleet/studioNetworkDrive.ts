@@ -13,18 +13,25 @@
 //      is injected back into the REQUESTER's pane (which is the live planning/designer session).
 import type { OpenCommission } from "./coordination.types";
 import { refKey } from "./coordinationState";
-import {
-  DESIGN_STUDIO_SESSION_ID,
-  ALGORITHMS_STUDIO_SESSION_ID,
-} from "@/shared/lib/session/systemSessions";
+import { designerSessionId, librarianSessionId } from "@/shared/lib/session/systemSessions";
 
 /** The commissionable studio nodes. The planner is a requester, never a target (plan-only). */
 export type StudioTarget = "designer" | "librarian";
 
-/** Target → its app-owned studio session pane id (where the author task is injected). */
+/** Target → its app-owned studio session pane id (where the author task is injected).
+ *
+ *  #system-sessions-are-per-technology made these per-tech, but a COMMISSION does not carry a
+ *  technology — the planner asks for "a component" or "an algorithm", not "a react component". So each
+ *  target resolves to its DEFAULT technology: the one the app itself is built in, which is also what
+ *  the overwhelming majority of generated apps use.
+ *
+ *  KNOWN LIMITATION, stated rather than hidden: a commission for a react-native component or a rust
+ *  algorithm lands on the wrong session's queue. Fixing it properly means putting a `tech` on the
+ *  commission (a coordination.types change + the emitters that write one), which is its own item —
+ *  not something to smuggle into the registry split. */
 export const STUDIO_PANE: Record<StudioTarget, string> = {
-  designer: DESIGN_STUDIO_SESSION_ID,
-  librarian: ALGORITHMS_STUDIO_SESSION_ID,
+  designer: designerSessionId("react"),
+  librarian: librarianSessionId("typescript"),
 };
 
 /** Human label + the store CLI a target authors into — for the injected task prose. */

@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_ORGS, STUDIO_NETWORK_ID } from "@/features/teams";
 import { BUILTIN_PERSONAS } from "@/features/personas";
-import { buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "./studioProject";
+import { buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "./studioProject";
 import {
-  DEBUG_STUDIO_SESSION_ID, DESIGN_STUDIO_SESSION_ID,
-  ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID,
+  DEBUG_STUDIO_SESSION_ID, designerSessionId,
+  librarianSessionId, TEAMS_STUDIO_SESSION_ID,
 } from "@/shared/lib/session/systemSessions";
 
 describe("studioProject (#3319)", () => {
@@ -38,7 +38,7 @@ describe("studioProject (#3319)", () => {
   it("marks library resource positions so the canvas draws them distinctly, not as agents (#3322)", () => {
     const d = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, false)!;
     expect(d.rawNodes.find((n) => n.id === "library")?.resource).toBe(true);
-    expect(d.rawNodes.find((n) => n.id === "designer")?.resource).toBeFalsy(); // an agent is not a resource
+    expect(d.rawNodes.find((n) => n.id === "designer-react")?.resource).toBeFalsy(); // an agent is not a resource
   });
 });
 
@@ -55,14 +55,26 @@ describe("studioPaneIdForNode (#3326)", () => {
   // #glance-resume: the designer/librarian/architect now map to their OWN app-owned session ids too, so
   // the graph recognises a running studio session instead of treating the node as session-less.
   it("maps every studio agent node to its stable app-owned session id", () => {
-    expect(studioPaneIdForNode("designer")).toBe(DESIGN_STUDIO_SESSION_ID);
-    expect(studioPaneIdForNode("librarian")).toBe(ALGORITHMS_STUDIO_SESSION_ID);
+    expect(studioPaneIdForNode("designer-react")).toBe(designerSessionId("react"));
+    expect(studioPaneIdForNode("librarian-rust")).toBe(librarianSessionId("rust"));
     expect(studioPaneIdForNode("architect")).toBe(TEAMS_STUDIO_SESSION_ID);
-    // The mapped ids are the ACTUAL node ids buildStudioFleetData emits, so the wiring can't drift.
-    const d = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, false)!;
-    for (const id of ["designer", "librarian", "architect"]) {
-      expect(d.rawNodes.some((n) => n.id === id)).toBe(true);
-      expect(studioPaneIdForNode(id)).not.toBeNull();
+    // The anti-drift check, over BOTH drills (#system-sessions-are-per-technology): every node either
+    // graph emits must resolve to a pane. The two emit DIFFERENT ids — base-studio-code renders the
+    // packaged ROLE team (`designer`), the architect renders per-tech SESSIONS (`designer-react`) —
+    // and a node that draws but cannot open is the failure mode this pins.
+    for (const d of [
+      buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, false)!,
+      buildArchitectFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS)!,
+    ]) {
+      // RESOURCE positions (the libraries each studio stewards) are not sessions and correctly resolve
+      // to null — the check is about AGENT nodes.
+      const resources = new Set(
+        BUILTIN_ORGS.find((t) => t.id === STUDIO_NETWORK_ID)!
+          .positions.filter((p) => p.kind === "resource").map((p) => p.nodeId),
+      );
+      for (const n of d.rawNodes.filter((x) => !resources.has(x.id) && x.id !== "planner")) {
+        expect(studioPaneIdForNode(n.id), `${n.id} resolves to a pane`).not.toBeNull();
+      }
     }
   });
 
@@ -83,7 +95,7 @@ describe("studioNodeHome (#glance-resume / #3357)", () => {
     // which the host could not re-parent — so opening one had to navigate to its workspace page. They are
     // now TerminalHost-hosted like the debugger, so the graph morphs the node into the live terminal
     // instead of throwing the user onto another page.
-    for (const id of ["designer", "librarian", "architect", "debugger"]) {
+    for (const id of ["designer-react", "librarian-rust", "architect", "debugger"]) {
       expect(studioNodeHome(id)).toEqual({ kind: "morph" });
     }
   });
@@ -104,14 +116,14 @@ describe("studioSessionLive (#glance-resume)", () => {
   });
 
   it("recognises a RUNNING designer session (the node reflects the live session, not a planned position)", () => {
-    expect(studioSessionLive("designer", { ...none, paneClaudeActive: { [DESIGN_STUDIO_SESSION_ID]: true } })).toBe(true);
-    expect(studioSessionLive("designer", { ...none, paneStatus: { [DESIGN_STUDIO_SESSION_ID]: "run" } })).toBe(true);
-    expect(studioSessionLive("designer", { ...none, paneStatus: { [DESIGN_STUDIO_SESSION_ID]: "on" } })).toBe(true);
+    expect(studioSessionLive("designer-react", { ...none, paneClaudeActive: { [designerSessionId("react")]: true } })).toBe(true);
+    expect(studioSessionLive("designer-react", { ...none, paneStatus: { [designerSessionId("react")]: "run" } })).toBe(true);
+    expect(studioSessionLive("designer-react", { ...none, paneStatus: { [designerSessionId("react")]: "on" } })).toBe(true);
   });
 
   it("is false when the session isn't up, and for a node with no session at all", () => {
-    expect(studioSessionLive("designer", none)).toBe(false);
-    expect(studioSessionLive("designer", { ...none, paneStatus: { [DESIGN_STUDIO_SESSION_ID]: "idle" } })).toBe(false);
+    expect(studioSessionLive("designer-react", none)).toBe(false);
+    expect(studioSessionLive("designer-react", { ...none, paneStatus: { [designerSessionId("react")]: "idle" } })).toBe(false);
     expect(studioSessionLive("library", { ...none, debugSession: true })).toBe(false);
   });
 });
@@ -128,31 +140,31 @@ describe("applyStudioLiveStatus (#3421)", () => {
     Object.fromEntries(applyStudioLiveStatus(nodes, s).map((n) => [n.id, { health: n.health, activity: n.activity }]));
 
   it("a studio with no mounted session reads off — not idle", () => {
-    expect(of([node("designer")], sig())).toEqual({ designer: { health: "off", activity: "idle" } });
+    expect(of([node("designer-react")], sig())).toEqual({ "designer-react": { health: "off", activity: "idle" } });
   });
 
   it("a MOUNTED but quiet studio reads idle — the session exists, it just is not working", () => {
-    const r = of([node("designer")], sig({ paneClaudeActive: { [DESIGN_STUDIO_SESSION_ID]: true } }));
-    expect(r).toEqual({ designer: { health: "off", activity: "idle" } });
+    const r = of([node("designer-react")], sig({ paneClaudeActive: { [designerSessionId("react")]: true } }));
+    expect(r).toEqual({ "designer-react": { health: "off", activity: "idle" } });
   });
 
   it("a WORKING studio reads healthy · building", () => {
-    const r = of([node("designer")], sig({ paneStatus: { [DESIGN_STUDIO_SESSION_ID]: "run" } }));
-    expect(r).toEqual({ designer: { health: "healthy", activity: "building" } });
+    const r = of([node("designer-react")], sig({ paneStatus: { [designerSessionId("react")]: "run" } }));
+    expect(r).toEqual({ "designer-react": { health: "healthy", activity: "building" } });
   });
 
   // The regression itself: turning a studio ON must move it off `off`.
   it("turning a studio on moves it off `off` — the #3421 regression", () => {
-    const before = of([node("designer")], sig());
-    const after = of([node("designer")], sig({ paneStatus: { [DESIGN_STUDIO_SESSION_ID]: "run" } }));
-    expect(before.designer.health).toBe("off");
-    expect(after.designer.health).not.toBe("off");
+    const before = of([node("designer-react")], sig());
+    const after = of([node("designer-react")], sig({ paneStatus: { [designerSessionId("react")]: "run" } }));
+    expect(before["designer-react"].health).toBe("off");
+    expect(after["designer-react"].health).not.toBe("off");
   });
 
   it("keys each studio by its OWN session id — one running studio never lights up another", () => {
-    const r = of([node("designer"), node("librarian"), node("architect")], sig({ paneStatus: { [ALGORITHMS_STUDIO_SESSION_ID]: "run" } }));
-    expect(r.librarian.health).toBe("healthy");
-    expect(r.designer.health).toBe("off");
+    const r = of([node("designer-react"), node("librarian-rust"), node("architect")], sig({ paneStatus: { [librarianSessionId("rust")]: "run" } }));
+    expect(r["librarian-rust"].health).toBe("healthy");
+    expect(r["designer-react"].health).toBe("off");
     expect(r.architect.health).toBe("off");
   });
 
@@ -177,7 +189,11 @@ describe("overflow pool sessions appear as openable nodes (#3535)", () => {
   });
 
   it("still resolves the fixed studios, and still refuses a non-session node", () => {
-    expect(studioPaneIdForNode("designer")).toBe("design-studio:designer");
+    expect(studioPaneIdForNode("designer-react")).toBe(designerSessionId("react"));
+    // The packaged team's ROLE nodes still resolve, to their default technology — the base-studio-code
+    // drill renders roles, and a node that draws but cannot open is worse than no node.
+    expect(studioPaneIdForNode("designer")).toBe(designerSessionId("react"));
+    expect(studioPaneIdForNode("librarian")).toBe(librarianSessionId("typescript"));
     expect(studioPaneIdForNode("debugger")).toBe("debug-studio:debugger");
     expect(studioPaneIdForNode("some-library")).toBeNull();
     expect(studioPaneIdForNode("debugger-pool-")).toBeNull();
@@ -186,7 +202,7 @@ describe("overflow pool sessions appear as openable nodes (#3535)", () => {
 
   it("opens a request session as a morph, like every other session node", () => {
     expect(studioNodeHome("debugger-pool-3")).toEqual({ kind: "morph" });
-    expect(studioNodeHome("designer")).toEqual({ kind: "morph" });
+    expect(studioNodeHome("designer-react")).toEqual({ kind: "morph" });
     expect(studioNodeHome("not-a-session")).toBeNull();
   });
 });

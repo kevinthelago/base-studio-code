@@ -5,7 +5,8 @@ import {
   deliverBackPrompt, isStudioTarget, isOpen, STUDIO_PANE,
 } from "./studioNetworkDrive";
 import {
-  DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID,
+  designerSessionId,
+  librarianSessionId,
 } from "@/shared/lib/session/systemSessions";
 
 const c = (over: Partial<OpenCommission>): OpenCommission => ({
@@ -46,7 +47,7 @@ describe("studioNetworkDrive — author-task injections (settle-gated, once)", (
     // Settled → one injection into the DESIGNER pane.
     const due = authorInjections(list, activatedAt, 4000, 3000, new Set());
     expect(due).toHaveLength(1);
-    expect(due[0].paneId).toBe(DESIGN_STUDIO_SESSION_ID);
+    expect(due[0].paneId).toBe(designerSessionId("react"));
     expect(due[0].key).toBe("author:planner@1");
     expect(due[0].prompt).toContain("bsc ui list");           // reuse-first
     expect(due[0].prompt).toContain("bsc-deliver planner@1"); // closes the loop
@@ -55,7 +56,7 @@ describe("studioNetworkDrive — author-task injections (settle-gated, once)", (
   it("routes a librarian commission to the algorithms studio pane", () => {
     const list = [c({ id: "x", target: "librarian", body: "graph-layout algo" })];
     const due = authorInjections(list, { librarian: 0 }, 9999, 3000, new Set());
-    expect(due[0].paneId).toBe(ALGORITHMS_STUDIO_SESSION_ID);
+    expect(due[0].paneId).toBe(librarianSessionId("typescript"));
     expect(due[0].prompt).toContain("bsc graph impl list");
   });
 
@@ -103,7 +104,7 @@ describe("studioNetworkDrive — prompt shape", () => {
     expect(p).toContain("rust:quicksort");
   });
   it("STUDIO_PANE maps both targets to their session ids", () => {
-    expect(STUDIO_PANE.designer).toBe(DESIGN_STUDIO_SESSION_ID);
-    expect(STUDIO_PANE.librarian).toBe(ALGORITHMS_STUDIO_SESSION_ID);
+    expect(STUDIO_PANE.designer).toBe(designerSessionId("react"));
+    expect(STUDIO_PANE.librarian).toBe(librarianSessionId("typescript"));
   });
 });

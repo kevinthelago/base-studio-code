@@ -457,7 +457,7 @@ export function DesignsWorkbench() {
         dock={
           <Box style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
             <Box className="resize-y" {...term.handleProps} title="Drag to resize" />
-            <DesignerTerminal height={term.size} />
+            <DesignerTerminal height={term.size} tech={kit?.tech ?? ""} />
           </Box>
         }
         // Theme try-on (#2849): hide the graph chrome in preview mode — no toolbar → GraphCanvas drops

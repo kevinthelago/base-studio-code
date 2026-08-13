@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL } from "./sessionLaunch";
-import { DEBUG_STUDIO_SESSION_ID, DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
+import { DEBUG_STUDIO_SESSION_ID, designerSessionId,
+  librarianSessionId, TEAMS_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 import { aiderProvider } from "@/app/console/lib/providers/providers/aider";
 import { roleCapability, roleDeniedCommands, roleDeniedTools, scopeWriteGlobs, bscAgentPerms, sessionScopes, restrictedRoleCommands } from "@/shared/lib/session/sessionRoles";
 import { flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
@@ -602,7 +603,7 @@ describe("resolveStartupPromptFreshOnly (#2052)", () => {
     // Migrating the designer/librarian/architect onto the generic launch path had to preserve the bespoke
     // `startupPromptFreshOnly: true`: they launch with `claude --continue`, so re-baking the persona
     // kickoff would re-instruct an already-running conversation on every re-open.
-    for (const id of [DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID]) {
+    for (const id of [designerSessionId("react"), librarianSessionId("rust"), TEAMS_STUDIO_SESSION_ID]) {
       expect(resolveStartupPromptFreshOnly(mkStore(), id, true)).toBe(true);
     }
   });
@@ -614,7 +615,7 @@ describe("resolveStartupPromptFreshOnly (#2052)", () => {
 // restrictedAllow and no denies: an unconfined general shell on the app's most restricted surface.
 // The role is now derived from the (stable, app-owned) pane id, so confinement travels with identity.
 describe("studio confinement survives an unseeded store (#3423)", () => {
-  const STUDIOS = [DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID];
+  const STUDIOS = [designerSessionId("react"), librarianSessionId("rust"), TEAMS_STUDIO_SESSION_ID];
 
   it("a studio pane with an EMPTY paneRoles is still confined — the regression", () => {
     for (const paneId of STUDIOS) {
@@ -627,16 +628,16 @@ describe("studio confinement survives an unseeded store (#3423)", () => {
   });
 
   it("derives the SAME settings whether the store seeded the role or not", () => {
-    const seeded = buildSessionSettings(mkStore({ paneRoles: { [DESIGN_STUDIO_SESSION_ID]: "designer" } }), DESIGN_STUDIO_SESSION_ID);
-    const bare = buildSessionSettings(mkStore({ paneRoles: {} }), DESIGN_STUDIO_SESSION_ID);
+    const seeded = buildSessionSettings(mkStore({ paneRoles: { [designerSessionId("react")]: "designer" } }), designerSessionId("react"));
+    const bare = buildSessionSettings(mkStore({ paneRoles: {} }), designerSessionId("react"));
     expect(bare.allowedCommands).toEqual(seeded.allowedCommands);
     expect(bare.deniedCommands).toEqual(seeded.deniedCommands);
     expect(bare.restrictedAllow).toEqual(seeded.restrictedAllow);
   });
 
   it("each studio pane derives its OWN role, never another's surface", () => {
-    const designer = buildSessionSettings(mkStore({ paneRoles: {} }), DESIGN_STUDIO_SESSION_ID);
-    const librarian = buildSessionSettings(mkStore({ paneRoles: {} }), ALGORITHMS_STUDIO_SESSION_ID);
+    const designer = buildSessionSettings(mkStore({ paneRoles: {} }), designerSessionId("react"));
+    const librarian = buildSessionSettings(mkStore({ paneRoles: {} }), librarianSessionId("typescript"));
     expect(designer.allowedCommands).toContain("bsc ui");
     expect(librarian.allowedCommands).not.toContain("bsc ui");
     expect(librarian.allowedCommands).toContain("bsc graph");

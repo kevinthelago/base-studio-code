@@ -108,8 +108,8 @@ describe("TerminalHost parked holding claims (#3357)", () => {
    *  would unmount/remount the holding div, briefly dropping the pane to ZERO claims and making the host
    *  tear the terminal down — which would test React's reconciler, not the parked-ownership rule. */
   function StudioHarness({ mountFirst, dockOpen = true }: { mountFirst: boolean; dockOpen?: boolean }) {
-    const mount = <div key="m" data-testid="holding"><TerminalSlot paneId="design-studio:designer" primary parked visible={false} initialCwd="/design" /></div>;
-    const dock = <div key="d" data-testid="page-dock"><TerminalSlot paneId="design-studio:designer" visible /></div>;
+    const mount = <div key="m" data-testid="holding"><TerminalSlot paneId="design-studio:designer-react" primary parked visible={false} initialCwd="/design" /></div>;
+    const dock = <div key="d" data-testid="page-dock"><TerminalSlot paneId="design-studio:designer-react" visible /></div>;
     const both = mountFirst ? [mount, dock] : [dock, mount];
     return <TerminalHost>{dockOpen ? both : [mount]}</TerminalHost>;
   }
@@ -137,8 +137,8 @@ describe("TerminalHost parked holding claims (#3357)", () => {
     // renders alongside the page for the session's whole life and the mount's own slot is what arrives late.
     const Opening = ({ mounted }: { mounted: boolean }) => (
       <TerminalHost>
-        <div key="d" data-testid="page-dock"><TerminalSlot paneId="design-studio:designer" visible /></div>
-        {mounted && <div key="m" data-testid="holding"><TerminalSlot paneId="design-studio:designer" primary parked visible={false} initialCwd="/design" /></div>}
+        <div key="d" data-testid="page-dock"><TerminalSlot paneId="design-studio:designer-react" visible /></div>
+        {mounted && <div key="m" data-testid="holding"><TerminalSlot paneId="design-studio:designer-react" primary parked visible={false} initialCwd="/design" /></div>}
       </TerminalHost>
     );
     // First commit: the dock has claimed, the mount's async setup has not resolved. No terminal yet —
@@ -150,7 +150,7 @@ describe("TerminalHost parked holding claims (#3357)", () => {
     // The mount resolves its workspace dir and registers: NOW the session launches, with its real cwd,
     // into the dock the user is already looking at.
     rerender(<Opening mounted />);
-    expect(rec.mounts).toEqual(["design-studio:designer"]);
+    expect(rec.mounts).toEqual(["design-studio:designer-react"]);
     const tv = queryByTestId("tv")!;
     expect(tv.getAttribute("data-cwd")).toBe("/design");
     expect(tv.closest("[data-testid='page-dock']")).toBeTruthy();

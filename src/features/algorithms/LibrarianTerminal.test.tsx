@@ -43,7 +43,7 @@ describe("LibrarianTerminal dock (#3357)", () => {
   // `ensure_session_settings` skips an empty cwd — NO ROLE GATE. So the dock alone claiming the pane is
   // the bug, not the contract; these two tests pin both halves of it.
   it("does NOT create the terminal from the dock alone — it waits for the session mount (#3427)", () => {
-    const { container } = render(<TerminalHost><LibrarianTerminal /></TerminalHost>);
+    const { container } = render(<TerminalHost><LibrarianTerminal tech="rust" /></TerminalHost>);
     expect(screen.getByTestId("librarian-terminal")).toBeInTheDocument();
     expect(claimedPanes(container)).toEqual([]);
   });
@@ -52,35 +52,68 @@ describe("LibrarianTerminal dock (#3357)", () => {
     const { container } = render(
       <TerminalHost>
         {/* Stands in for StudioSessionMount: the PRIMARY claim carrying cwd/initCmd. */}
-        <TerminalSlot paneId={STUDIO_SESSIONS.librarian.paneId} primary parked visible={false} initialCwd="/tmp/librarian" />
-        <LibrarianTerminal />
+        <TerminalSlot paneId={STUDIO_SESSIONS.librarianRust.paneId} primary parked visible={false} initialCwd="/tmp/librarian" />
+        <LibrarianTerminal tech="rust" />
       </TerminalHost>,
     );
     expect(screen.getByTestId("librarian-terminal")).toBeInTheDocument();
-    expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.librarian.paneId);
+    expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.librarianRust.paneId);
   });
 
   it("showing the Algorithms page STARTS the session (lazy) and holds a viewer", () => {
-    render(<TerminalHost><LibrarianTerminal /></TerminalHost>);
-    expect(useAppStore.getState().wantedStudios).toContain("librarian");
-    expect(useAppStore.getState().studioViewers.librarian).toBe(1);
+    render(<TerminalHost><LibrarianTerminal tech="rust" /></TerminalHost>);
+    expect(useAppStore.getState().wantedStudios).toContain("librarianRust");
+    expect(useAppStore.getState().studioViewers.librarianRust).toBe(1);
   });
 
   it("keeps the session warm when the page is left — only the reaper reclaims it now", () => {
     // The Algorithms page is kept mounted (#2827); leaving it moves the shell's page mode, which drops the
     // VIEWER. Before #3357 an unmount here killed the PTY; the session must now survive both, so the
     // Glance morph can keep showing it.
-    const { rerender, unmount } = render(<TerminalHost><LibrarianTerminal /></TerminalHost>);
+    const { rerender, unmount } = render(<TerminalHost><LibrarianTerminal tech="rust" /></TerminalHost>);
     useAppStore.setState({ projectsPageMode: "projects" });
-    rerender(<TerminalHost><LibrarianTerminal /></TerminalHost>);
-    expect(useAppStore.getState().studioViewers.librarian).toBe(0);
-    expect(useAppStore.getState().wantedStudios).toContain("librarian");
+    rerender(<TerminalHost><LibrarianTerminal tech="rust" /></TerminalHost>);
+    expect(useAppStore.getState().studioViewers.librarianRust).toBe(0);
+    expect(useAppStore.getState().wantedStudios).toContain("librarianRust");
     unmount();
-    expect(useAppStore.getState().wantedStudios).toContain("librarian");
+    expect(useAppStore.getState().wantedStudios).toContain("librarianRust");
+  });
+
+  // #system-sessions-are-per-technology — the dock FOLLOWS the page's language rather than holding a
+  // selection of its own, and only the ACTIVE language's session is started.
+  it("starts the session for the language it is given, and no other", () => {
+    render(<TerminalHost><LibrarianTerminal tech="python" /></TerminalHost>);
+    const st = useAppStore.getState();
+    expect(st.wantedStudios).toEqual(["librarianPython"]);
+    expect(st.studioViewers.librarianRust ?? 0).toBe(0);
+    expect(st.studioViewers.librarianTypescript ?? 0).toBe(0);
+  });
+
+  it("switching language starts the new one and releases the old — three languages, one process", () => {
+    // The lazy-per-tech guarantee: a rail with three languages must not cost three Claude processes.
+    const { rerender } = render(<TerminalHost><LibrarianTerminal tech="rust" /></TerminalHost>);
+    expect(useAppStore.getState().studioViewers.librarianRust).toBe(1);
+
+    rerender(<TerminalHost><LibrarianTerminal tech="typescript" /></TerminalHost>);
+    const st = useAppStore.getState();
+    expect(st.studioViewers.librarianTypescript).toBe(1);
+    // The one you left drops to zero viewers, which is what ARMS its reaper. It stays WANTED (warm) —
+    // switching back inside the idle window reattaches to the same conversation.
+    expect(st.studioViewers.librarianRust).toBe(0);
+    expect(st.wantedStudios).toContain("librarianRust");
+  });
+
+  it("shows an EMPTY dock for a language with no session rather than another language's", () => {
+    // A wrong-but-populated dock looks like it is working. `go` has no librarian, so nothing is claimed
+    // and nothing is started.
+    const { container } = render(<TerminalHost><LibrarianTerminal tech="go" /></TerminalHost>);
+    expect(screen.getByTestId("librarian-terminal")).toBeInTheDocument();
+    expect(claimedPanes(container)).toEqual([]);
+    expect(useAppStore.getState().wantedStudios).toEqual([]);
   });
 
   it("is inert with no <TerminalHost> ancestor (renders in isolation without crashing)", () => {
-    expect(() => render(<LibrarianTerminal />)).not.toThrow();
+    expect(() => render(<LibrarianTerminal tech="rust" />)).not.toThrow();
     expect(screen.getByTestId("librarian-terminal")).toBeInTheDocument();
   });
 });
@@ -91,12 +124,12 @@ describe("AlgorithmsWorkspace librarian dock (#2787)", () => {
     // the terminal, and this test is about WHERE the dock sits, not about that gate.
     const { container } = render(
       <TerminalHost>
-        <TerminalSlot paneId={STUDIO_SESSIONS.librarian.paneId} primary parked visible={false} initialCwd="/tmp/librarian" />
+        <TerminalSlot paneId={STUDIO_SESSIONS.librarianRust.paneId} primary parked visible={false} initialCwd="/tmp/librarian" />
         <AlgorithmsWorkspace />
       </TerminalHost>,
     );
     expect(screen.getByTestId("librarian-terminal")).toBeInTheDocument();
-    expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.librarian.paneId);
+    expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.librarianRust.paneId);
   });
 
   // Vocabulary updated for the impl-only model (#3390). This asserted the ABSTRACT CONCEPT layer — it

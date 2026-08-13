@@ -17,32 +17,32 @@ describe("studios slice (#3357)", () => {
 
   it("openStudio marks a studio wanted and is idempotent (every viewer may call it)", () => {
     const { openStudio } = useAppStore.getState();
-    openStudio("designer");
-    openStudio("designer");
-    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
+    openStudio("designerReact");
+    openStudio("designerReact");
+    expect(useAppStore.getState().wantedStudios).toEqual(["designerReact"]);
   });
 
   it("closeStudio drops exactly that studio — its mount unmounts and the PTY is torn down", () => {
     const st = useAppStore.getState();
-    st.openStudio("designer");
-    st.openStudio("librarian");
-    st.closeStudio("designer");
-    expect(useAppStore.getState().wantedStudios).toEqual(["librarian"]);
+    st.openStudio("designerReact");
+    st.openStudio("librarianRust");
+    st.closeStudio("designerReact");
+    expect(useAppStore.getState().wantedStudios).toEqual(["librarianRust"]);
     // Closing something not wanted is a no-op (the reaper may race an explicit End session).
-    useAppStore.getState().closeStudio("designer");
-    expect(useAppStore.getState().wantedStudios).toEqual(["librarian"]);
+    useAppStore.getState().closeStudio("designerReact");
+    expect(useAppStore.getState().wantedStudios).toEqual(["librarianRust"]);
   });
 
   it("ref-counts viewers so two surfaces showing one studio don't cancel each other", () => {
     const st = useAppStore.getState();
     // The page dock and the Glance morph can both show the SAME session at once.
-    st.addStudioViewer("designer");
-    st.addStudioViewer("designer");
-    expect(useAppStore.getState().studioViewers.designer).toBe(2);
-    st.removeStudioViewer("designer");
-    expect(useAppStore.getState().studioViewers.designer).toBe(1); // still watched — reaper stays disarmed
-    st.removeStudioViewer("designer");
-    expect(useAppStore.getState().studioViewers.designer).toBe(0);
+    st.addStudioViewer("designerReact");
+    st.addStudioViewer("designerReact");
+    expect(useAppStore.getState().studioViewers.designerReact).toBe(2);
+    st.removeStudioViewer("designerReact");
+    expect(useAppStore.getState().studioViewers.designerReact).toBe(1); // still watched — reaper stays disarmed
+    st.removeStudioViewer("designerReact");
+    expect(useAppStore.getState().studioViewers.designerReact).toBe(0);
   });
 
   it("clamps the viewer count at zero — a double-unmount must never make it 'permanently watched'", () => {
@@ -53,7 +53,7 @@ describe("studios slice (#3357)", () => {
   });
 
   it("orderedWantedStudios renders the wanted mounts in stable rail order", () => {
-    expect(orderedWantedStudios(["architect", "designer"])).toEqual(["designer", "architect"]);
+    expect(orderedWantedStudios(["architect", "designerReact"])).toEqual(["designerReact", "architect"]);
     expect(orderedWantedStudios([])).toEqual([]);
   });
 });

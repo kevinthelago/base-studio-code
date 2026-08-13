@@ -68,21 +68,30 @@ describe("the architect node expands into the sessions it commands", () => {
     const t = studioNetworkForArchitect(studioTeam());
     const ids = t.positions.map((p) => p.nodeId);
     expect(ids[0]).toBe(ARCHITECT_NODE); // the hub comes first
-    expect([...ids].sort()).toEqual(["architect", "designer", "integrator", "librarian", "sound-designer"]);
+    // #system-sessions-are-per-technology: the singular designer/librarian POSITIONS expand into one
+    // node per technology, so the architect commands seven sessions rather than four.
+    expect([...ids].sort()).toEqual([
+      "architect",
+      "designer-react", "designer-react-native",
+      "integrator",
+      "librarian-python", "librarian-rust", "librarian-typescript",
+      "sound-designer",
+    ]);
   });
 
   it("excludes what no architect verb can reach — the planner, the libraries, the debugger", () => {
     // The drill-in's whole claim is that it shows what the architect COMMANDS. A node it cannot start,
     // stop or ask would be a promise the verbs do not keep.
     const ids = new Set(studioNetworkForArchitect(studioTeam()).positions.map((p) => p.nodeId));
-    for (const absent of ["planner", "debugger", "teams", "components", "algorithms"]) {
+    // The un-teched role ids are absent too: they are ROLES, not sessions, since the split.
+    for (const absent of ["planner", "debugger", "teams", "components", "algorithms", "designer", "librarian"]) {
       expect(ids.has(absent), `${absent} must not be in the architect's drill-in`).toBe(false);
     }
   });
 
   it("wires the architect to every session it commands — the L0 relationship, moved inside", () => {
     const t = studioNetworkForArchitect(studioTeam());
-    expect(t.relationships).toHaveLength(4);
+    expect(t.relationships).toHaveLength(7);
     for (const r of t.relationships) {
       expect(r.from).toBe(ARCHITECT_NODE);
       expect(r.to).not.toBe(ARCHITECT_NODE);
@@ -97,8 +106,14 @@ describe("the architect node expands into the sessions it commands", () => {
     const d = buildArchitectFleetData(BUILTIN_ORGS, []);
     expect(d).toBeTruthy();
     const ids = d!.rawNodes.map((n) => n.id).sort();
-    expect(ids).toEqual(["architect", "designer", "integrator", "librarian", "sound-designer"]);
-    expect(d!.rawEdges).toHaveLength(4);
+    expect(ids).toEqual([
+      "architect",
+      "designer-react", "designer-react-native",
+      "integrator",
+      "librarian-python", "librarian-rust", "librarian-typescript",
+      "sound-designer",
+    ]);
+    expect(d!.rawEdges).toHaveLength(7);
   });
 
   it("keeps the node ids that make a session OPENABLE — the morph path is unchanged", async () => {
