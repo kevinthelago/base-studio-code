@@ -39,9 +39,7 @@ export function LibrarianTerminal({ height, tech }: { height?: number; tech: str
       title={`◆ Knowledge librarian · ${tech} · the graph via bsc graph`}
       subtitle="algorithms-studio · restricted"
     >
-      {def ? (
-        <TerminalSlot paneId={def.paneId} visible={showing} focused={false} />
-      ) : null}
+      {def ? <TerminalSlot paneId={def.paneId} visible={showing} focused={false} /> : null}
     </SessionDock>
   );
 }
