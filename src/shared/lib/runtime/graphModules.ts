@@ -137,6 +137,93 @@ export async function linkGraphModules(
   return linked;
 }
 
+/** One override the prune declined, for the caller to log. `specifier` is the module the record claimed;
+ *  `missing` is the first specifier in its closure that nothing could answer. */
+export interface DeclinedOverride {
+  specifier: string;
+  missing: string;
+}
+
+/** What {@link pruneUnsatisfiableOverrides} produced: the linked set to evaluate, and what it declined. */
+export interface PruneResult {
+  linked: Map<string, LinkedModule>;
+  declined: DeclinedOverride[];
+}
+
+/**
+ * PRUNE PHASE — decline a graph module whose own closure cannot be resolved, so `require` falls back to
+ * the platform module it was overriding instead of the page dying.
+ *
+ * THE FAILURE THIS EXISTS FOR. `provides` is a GLOBAL override and resolution is graph-first (#3660), so
+ * a record claiming `@/shared/hooks/usePageTabs` wins over the registered one everywhere. That is correct
+ * when the record can stand on its own — and catastrophic when it cannot: a harvested module whose own
+ * imports were never registered takes down EVERY page whose closure touches that specifier. Measured on
+ * a live store: 67 of 544 overrides in that state, and the two that mattered killed Glance and Console
+ * outright ("`glancepage` failed to load: import `@/shared/lib/core/arrayMove` is not a registered app
+ * module").
+ *
+ * An override that cannot resolve its own imports is not a working override. Declining it is not a
+ * workaround for a bad record — it is the honest reading of what the record can currently deliver.
+ *
+ * ONLY WHERE THERE IS A FALLBACK. A module is declined only if `isAvailable(specifier)` — i.e. the
+ * platform genuinely has something to answer with. A specifier with no registered module (a
+ * `@/components/<id>` sibling, an entry) is left in place so the page still fails loudly; inventing a
+ * fallback that does not exist would turn a named error into a blank screen.
+ *
+ * ONE PASS, and the reason it needs no fixed point is the load-bearing insight: a dependency that is
+ * ITSELF available can never be the cause of a failure. If module A imports B and B is an override with
+ * a platform fallback, then B resolves either as a graph module or — if B is declined too — as the
+ * bundled one. Either way A's import of B resolves, so the walk stops at B instead of inheriting its
+ * problems. Only a dependency with NO fallback (a `@/components/<id>` sibling) propagates, and those are
+ * never declined, so the outcome is stable after a single sweep and independent of map order.
+ *
+ * Getting this wrong is not academic: descending through available dependencies declines A as well as B,
+ * which silently reverts a perfectly good migration because something one hop away was broken.
+ *
+ * Pure: a map plus a predicate. No esbuild, no DOM, no store — which is what lets the rule be tested.
+ */
+export function pruneUnsatisfiableOverrides(
+  linked: Map<string, LinkedModule>,
+  isAvailable: (specifier: string) => boolean,
+): PruneResult {
+  const kept = new Map(linked);
+  const declined: DeclinedOverride[] = [];
+
+  /** The first specifier in `spec`'s closure that nothing can answer, or null when it is satisfiable.
+   *  `seen` guards an import CYCLE, which is a normal module shape the linker and the eval cache both
+   *  already tolerate. */
+  const firstUnreachable = (spec: string): string | null => {
+    const seen = new Set<string>([spec]);
+    const queue = [...scanRequires(linked.get(spec)?.cjs ?? "")];
+    while (queue.length) {
+      const dep = queue.shift() as string;
+      if (seen.has(dep)) continue;
+      seen.add(dep);
+      // Has a fallback ⇒ always resolvable ⇒ stop here (see the one-pass note above).
+      if (isAvailable(dep)) continue;
+      const mod = linked.get(dep);
+      // No fallback and not a graph module ⇒ nothing can answer it. This is the failure.
+      if (!mod) return dep;
+      // No fallback but IS a graph module (a sibling) ⇒ its failure is our failure; keep walking.
+      queue.push(...scanRequires(mod.cjs));
+    }
+    return null;
+  };
+
+  for (const spec of kept.keys()) {
+    // The ENTRY is never declined: it is the thing being loaded, it overrides nothing, and there is no
+    // module to fall back to. Its unresolved imports are a real failure and must still throw.
+    if (spec === ENTRY_SPECIFIER) continue;
+    // Nothing to fall back to ⇒ leave it in place and let the page fail loudly. Declining here would
+    // swap a named error for a blank screen.
+    if (!isAvailable(spec)) continue;
+    const missing = firstUnreachable(spec);
+    if (missing) declined.push({ specifier: spec, missing });
+  }
+  for (const d of declined) kept.delete(d.specifier);
+  return { linked: kept, declined };
+}
+
 /** Evaluate CommonJS with an injected `require`, returning its `module.exports`. Kept here (rather than
  *  reusing the loader's) so the eval + cache insertion order below is one readable unit. */
 function evaluate(cjs: string, require: (s: string) => unknown): Record<string, unknown> {
