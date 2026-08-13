@@ -66,7 +66,7 @@ describe("applyLifecycle — start", () => {
     } as never);
     await applyLifecycle(req({ askDirective: "watch loop 9" }), d);
     expect(calls).toEqual(["directive", "open"]);
-    expect(d.setPendingDirective).toHaveBeenCalledWith("designer", "watch loop 9");
+    expect(d.setPendingDirective).toHaveBeenCalledWith("designerReact", "watch loop 9");
   });
 
   it("queues no directive for an ordinary start", async () => {
@@ -78,7 +78,7 @@ describe("applyLifecycle — start", () => {
   it("does not queue a directive when the session is already running", async () => {
     // An ask against a live session reaches it through the loop it is already able to watch. Queuing
     // here would strand the directive until some LATER, unrelated launch baked it in.
-    const d = deps({ wantedStudios: ["designer"] });
+    const d = deps({ wantedStudios: ["designerReact"] });
     await applyLifecycle(req({ askDirective: "watch loop 9" }), d);
     expect(d.setPendingDirective).not.toHaveBeenCalled();
   });
