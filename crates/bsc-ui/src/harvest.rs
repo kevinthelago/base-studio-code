@@ -186,7 +186,12 @@ pub fn harvest(dir: &Path, kit_id: &str) -> Vec<Candidate> {
 pub fn harvest_file(file: &Path, kit_id: &str) -> Vec<Candidate> {
     let mut found: Vec<Found> = Vec::new();
     if let Some((src, tree)) = parse(file) {
-        let rel = file.file_name().and_then(|n| n.to_str()).unwrap_or("").replace('\\', "/");
+        // The file's PATH, not its basename. Two things depended on this and both were broken by the
+        // bare name: every stored record carries a full `src/…` path (it is what `bsc ui backing`,
+        // `doctor` and `folder_from_src` key off, and a basename derives no folder and matches no file),
+        // and a RELATIVE import has nothing to resolve against without the directory it was written in.
+        let rel = file.to_string_lossy().replace('\\', "/");
+        let rel = rel.strip_prefix("./").unwrap_or(&rel).to_string();
         collect_file(tree.root_node(), &src, &rel, &mut found);
     }
     build_candidates(found, kit_id)
@@ -387,7 +392,7 @@ fn buildability(
         // simply wrong — 45 of this repo's 289 unbuildable candidates were blocked by nothing else.
         .filter(|i| !i.type_only)
         .filter(|i| !i.is_sibling(siblings, from_rel))
-        .filter(|i| !bsc_component::graph_health::is_registered_platform_module(&i.spec))
+        .filter(|i| !resolves_outside_the_set(&i.spec, from_rel))
         .map(|i| i.spec.as_str())
         .collect();
     if !unresolved.is_empty() {
@@ -395,6 +400,36 @@ fn buildability(
         why.push(format!("unresolved internal import(s): {list} — resolve or vendor them"));
     }
     (why.is_empty(), why)
+}
+
+/// Does `spec`, imported from `from_rel`, resolve to something OUTSIDE the harvested set — a record, or
+/// a module the platform registry declares?
+///
+/// This is the runtime resolver's own chain, and harvest has to run it or the two disagree: a candidate
+/// certified `buildable: true` here then reporting `no-implementation` in `doctor`, with nothing to say
+/// why. A RECORD comes first, exactly as `resolveGraphSource` puts it first — a dependency that has
+/// already been migrated is resolvable by definition, and that is what lets a migration CASCADE (promote
+/// a keystone component, and everything importing it becomes buildable).
+///
+/// A RELATIVE specifier is normalized to its `@/` form before any of that. Testing it raw against a
+/// registry that only ever holds `@/…` entries could never match, which is why 41 of this repo's 59
+/// remaining components reported unresolved imports that were mostly `./log`-shaped.
+///
+/// Matching is deliberately EXACT — the normalized base, then the base minus a leading `src/` (the
+/// harvest root is often the repo rather than the alias root). No suffix scan: harvest's honesty is the
+/// property that matters, and a too-eager match manufactures the promotion trap `buildable` exists to
+/// prevent (#3470).
+fn resolves_outside_the_set(spec: &str, from_rel: &str) -> bool {
+    let Some(base) = bsc_component::graph_health::resolve_internal_base(spec, from_rel) else {
+        // Not an internal specifier at all — a bare package, which the bundler resolves.
+        return true;
+    };
+    let known = |b: &str| {
+        let s = format!("@/{b}");
+        bsc_component::graph_health::is_registered_platform_module(&s)
+            || bsc_component::graph_health::is_provided_specifier(&s)
+    };
+    known(&base) || base.strip_prefix("src/").is_some_and(known)
 }
 
 /// One INTERNAL (`@/…` alias OR relative `./`/`../`) import in a closure: the specifier and the names it
@@ -1132,10 +1167,40 @@ mod tests {
         // module `./space`) was certified `buildable: true` regardless. `doctor`'s stricter, sibling-aware
         // check then correctly flagged it `no-implementation` once promoted — with harvest's own verdict
         // giving no hint why. Scanning `./`/`../` here closes that gap.
-        let src = "import { space } from \"./space\";\nexport function Box() { return space; }";
+        // The specifier must name something the platform does NOT declare and no record provides —
+        // `./space` was the original example and stopped serving as one the moment
+        // `@/shared/ui/layout/space` was registered and then migrated to a record, which is precisely
+        // the resolution this test must not be fooled by.
+        let src = "import { q } from \"./quiddity\";\nexport function Box() { return q; }";
         let (ok, why) = buildability_with_at(src, &[], "src/shared/ui/layout/Box.tsx");
         assert!(!ok, "an unresolved relative import is not buildable: {why:?}");
-        assert!(why.iter().any(|r| r.contains("`./space`")), "the reason NAMES the import: {why:?}");
+        assert!(why.iter().any(|r| r.contains("`./quiddity`")), "the reason NAMES the import: {why:?}");
+    }
+
+    /// The other half of the same rule: a relative import IS resolvable when it normalizes onto something
+    /// the platform declares. Testing the raw `./space` against a registry that only ever holds `@/…`
+    /// entries could never match, which is why 41 of this repo's 59 remaining components were reported
+    /// unreachable over imports that were mostly `./log`-shaped.
+    #[test]
+    fn a_relative_import_that_normalizes_onto_a_declared_module_resolves() {
+        let src = "import { space } from \"./space\";\nexport function Box() { return space; }";
+        let (ok, why) = buildability_with_at(src, &[], "src/shared/ui/layout/Box.tsx");
+        assert!(ok, "`./space` from src/shared/ui/layout IS @/shared/ui/layout/space: {why:?}");
+    }
+
+    /// The harvest root is often the REPO rather than the alias root, so the normalized base keeps a
+    /// leading `src/` the registry's `@/…` entries do not have. Both spellings must resolve — and only
+    /// those two, never a suffix scan, because a false `buildable: true` is the promotion trap.
+    #[test]
+    fn a_leading_src_segment_is_tolerated_but_matching_stays_exact() {
+        assert!(
+            resolves_outside_the_set("@/src/shared/ui/layout/space", "anywhere.tsx"),
+            "a repo-rooted base resolves once the leading `src/` is dropped",
+        );
+        assert!(
+            !resolves_outside_the_set("@/layout/space", "anywhere.tsx"),
+            "a TAIL of a declared specifier must NOT resolve — that would manufacture a false buildable",
+        );
     }
 
     #[test]
@@ -1254,7 +1319,12 @@ mod tests {
         assert!(names.contains(&"Chip") && names.contains(&"Bar"), "both components lifted: {names:?}");
         let bar = cands.iter().find(|c| c.name == "Bar").unwrap();
         assert_eq!(bar.composes, vec!["Chip".to_string()], "a sibling in the same file is a composes edge");
-        assert_eq!(bar.src, "Widgets.tsx", "src is the file name for a single-file harvest");
+        // The PATH, not the basename. Every stored record carries a full `src/…` path — it is what
+        // `bsc ui backing`, `doctor` and `folder_from_src` key off — and it is also the only anchor a
+        // RELATIVE import can be resolved against. A bare name derived no folder and matched no file.
+        assert!(bar.src.ends_with("/Widgets.tsx"), "src carries the file's path: {}", bar.src);
+        assert!(bar.src.contains("bsc-harvest-file-"), "including the directory it came from: {}", bar.src);
+        assert!(!bar.src.contains('\\'), "forward-slashed like every stored src: {}", bar.src);
 
         // A non-parseable single file (a test file) yields nothing — same skip the dir walk applies.
         let test = base.join("Widgets.test.tsx");
