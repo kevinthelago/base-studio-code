@@ -15,6 +15,7 @@
 //! The agent-facing CLI lives in [`cli`] (`bsc logs …`), dispatched by the unified `bsc` binary
 //! (#1877) and by the legacy `bsc-logs` shim.
 
+pub mod instrument;
 pub mod cli;
 pub mod scope;
 pub mod waiting;

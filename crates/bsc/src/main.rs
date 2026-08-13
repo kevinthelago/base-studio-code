@@ -94,6 +94,8 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "serve" => serve::run(),
         "ui" => bsc_ui::cli::run(rest, "bsc ui"),
         "logs" => logs::cli::run(rest, "bsc logs"),
+        // The FRONTEND instrumentation reader — distinct from `bsc logs perf` (perf.db process samples).
+        "perf" => logs::instrument::run(rest, "bsc perf"),
         "metrics" => logs::metrics::run(rest, "bsc metrics"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
         "shot" => bsc_shot::cli::run(rest, "bsc shot"),
