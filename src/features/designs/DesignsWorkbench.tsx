@@ -418,10 +418,17 @@ export function DesignsWorkbench() {
   // softer ring; incident edges render LAST so they sit above the dim ones. Hoisted out of the old
   // GraphView wrapper (#2766) now that the graph IS the page's one GraphCanvas.
   const selId = sel?.id ?? "";
-  // NOT memoized (today): this runs on EVERY render and returns fresh objects, so `edgeBatch` below —
-  // which keys on `incidentEdges` — re-runs over every edge on every commit no matter what changed.
-  // That is the prime suspect for the cost culling could not touch; timed here to prove or kill it.
-  const { incidentEdges, relatedNodes } = timedSync("designs:selection", () => selectionNeighborhood(graph.edges, selId), PHASE_MS);
+  // MEMOIZED (#a-graph-node-costs-five-elements-not-eight). It used to run on every render and return
+  // FRESH objects, so `edgeBatch` below — which keys on `incidentEdges` — rebuilt every edge path on
+  // every commit no matter what changed. The instrumentation priced that at 4-6ms a commit for nothing.
+  //
+  // `selectionNeighborhood` itself never crossed the 4ms phase threshold, so the cost was never in this
+  // call — it was in what its identity invalidated downstream. The timer stays: it is what would catch
+  // the same mistake being reintroduced.
+  const { incidentEdges, relatedNodes } = useMemo(
+    () => timedSync("designs:selection", () => selectionNeighborhood(graph.edges, selId), PHASE_MS),
+    [graph.edges, selId],
+  );
   // #4150: the edge layer as MERGED paths. Three elements per edge (a `<g>` + a stroke path + a filled
   // arrowhead) is ~2,400 elements at 248 components and ~9,600 at 1000; the non-highlighted bulk all
   // draws identically and the layer is `pointer-events: none`, so it has neither per-edge styling nor

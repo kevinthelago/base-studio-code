@@ -11,10 +11,10 @@
 // derived from — `pos`, the `relatedNodes` Set and the `nodeHealth` Map are all rebuilt each render, so
 // passing them would defeat the memo on identity alone. `onSelect` takes the record, letting the parent
 // pass ONE stable callback instead of a fresh closure per node.
-import { memo } from "react";
+import { memo, type CSSProperties } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { RoleDot } from "./kitChrome";
+import { ROLE_COLOR } from "./lib/model";
 import { HEALTH_BADGE, type HealthCategory } from "./lib/graphHealth";
 import { NODE_W } from "./lib/compositionLayout";
 import type { ComponentBuildStatus } from "./lib/componentScan";
@@ -53,7 +53,9 @@ export const ComponentNode = memo(function ComponentNode({
       data-node
       onClick={() => onSelect(c)}
       className={`ds-node${state}${working ? " working" : ""}${badge ? " unhealthy" : ""}`}
-      style={{ left: x, top: y, width: NODE_W }}
+      // `--ds-role` feeds the `::before` dot. A custom property is the only channel a pseudo-element
+      // has, and it is what lets the dot stop being an element of its own.
+      style={{ left: x, top: y, width: NODE_W, "--ds-role": ROLE_COLOR[c.role] } as CSSProperties}
     >
       {badge && (
         <Text as="span" className={`ds-health ds-health-${badge}`} title={`${badge} — ${HEALTH_BADGE[badge].label}`}>{HEALTH_BADGE[badge].glyph}</Text>
@@ -64,16 +66,14 @@ export const ComponentNode = memo(function ComponentNode({
       {emptyRender && (
         <Text as="span" className="ds-emptyrender" title={emptyRender}>▢</Text>
       )}
-      <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, minWidth: 0 }}>
-        {/* name truncates to ONE line (#3699) — a long name (GitHubCrossRepoActivity) must fit the
-            fixed-width node, not wrap + overflow. Full name on hover via `title`. */}
-        <RoleDot role={c.role} /><Text weight={600} size={13} title={c.name} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</Text>
-      </Box>
-      <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minWidth: 0 }}>
-        {/* folder indicator (#3048) — the component's folder path, read inline on the existing role line.
-            Truncates to one line (#3699); the ×used count is kept, never squeezed off. */}
-        <Text size={10} tone="dim" title={c.folder ? `${c.role} · ${c.folder}` : c.role} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.role}{c.folder ? <Text as="span" tone="muted"> · {c.folder}</Text> : ""}</Text><Text mono size="xxs" tone="muted" style={{ flexShrink: 0, marginLeft: 6 }}>×{c.used}</Text>
-      </Box>
+      {/* Four leaves in one grid — see the `.ds-node` rules. The two flex wrappers they used to sit in
+          did nothing but position them, which the grid now does without the elements or their
+          per-render style objects. */}
+      <Text className="ds-node-name" weight={600} size={13} title={c.name}>{c.name}</Text>
+      <Text className="ds-node-role" size={10} tone="dim" title={c.folder ? `${c.role} · ${c.folder}` : c.role}>
+        {c.role}{c.folder ? <Text as="span" tone="muted"> · {c.folder}</Text> : ""}
+      </Text>
+      <Text className="ds-node-used" mono size="xxs" tone="muted">×{c.used}</Text>
     </Box>
   );
 });

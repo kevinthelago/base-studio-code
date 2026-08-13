@@ -48,6 +48,35 @@
    +1000 DOM nodes at the target scale — a bad trade when JS viewport culling removes those nodes
    outright. Deferred to the culling slice; do not re-add this rule without re-running that pixel diff. */
 .ds-node { position: absolute; cursor: pointer; border-radius: 11px; padding: 11px 13px; background: var(--bg-elev, var(--bg-soft)); border: 1px solid var(--border); box-shadow: 0 6px 20px rgba(0,0,0,.3); transition: border-color .12s; }
+/* #a-graph-node-costs-five-elements-not-eight — the card lays ITSELF out.
+   It used to be a block wrapping two nested flex `Box`es and a `StatusDot`: eight elements to draw a
+   dot, a name, a role, a folder and a count, of which three existed purely to position the other four.
+   At 232 mounted nodes that is ~700 elements of scaffolding, each carrying an inline style object
+   rebuilt on every render. One grid does the same job for free, so the wrappers are gone and the
+   layout lives here instead of in per-node JS.
+
+   The dot is a `::before` because it is DECORATIVE — `StatusDot` already marked it `aria-hidden` when
+   it carries no title, so nothing is lost to a screen reader. The role, folder and count deliberately
+   stay real elements: those are information, and CSS `content` would hide them. */
+.ds-node {
+  display: grid;
+  grid-template-columns: 8px 1fr auto;
+  grid-template-areas: "dot name name" "role role used";
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 5px;   /* was the name row's marginBottom */
+}
+.ds-node::before {
+  content: ""; grid-area: dot;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ds-role, var(--fg-dim));
+}
+/* Both text runs truncate to ONE line (#3699) — a long name must fit the fixed-width card, not wrap. */
+.ds-node-name, .ds-node-role { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-node-name { grid-area: name; }
+.ds-node-role { grid-area: role; }
+.ds-node-used { grid-area: used; }
+
 /* Selection must NOT touch the background (#2491) — the node keeps its elevated surface; the solid
    accent ring + border alone carry the selected state. */
 .ds-node.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 10px 30px rgba(0,0,0,.4); }
