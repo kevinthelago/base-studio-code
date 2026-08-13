@@ -57,3 +57,43 @@ describe("studios slice (#3357)", () => {
     expect(orderedWantedStudios([])).toEqual([]);
   });
 });
+
+/** #architect-asks-a-system-session-for-a-service — the launch directive `bsc session ask` queues when
+ *  it starts a session to serve a loop. Take-once semantics are the whole point: a directive that
+ *  survived its launch would send a LATER session to watch a loop that was already answered. */
+describe("studio pending launch directive", () => {
+  beforeEach(() => {
+    useAppStore.setState({ studioPendingDirective: {} });
+  });
+
+  it("starts empty, so an ordinary launch bakes in nothing", () => {
+    expect(useAppStore.getState().studioPendingDirective).toEqual({});
+    expect(useAppStore.getState().takeStudioPendingDirective("designer")).toBeUndefined();
+  });
+
+  it("takes the directive exactly once", () => {
+    const st = useAppStore.getState();
+    st.setStudioPendingDirective("designer", "watch loop 7");
+    expect(useAppStore.getState().takeStudioPendingDirective("designer")).toBe("watch loop 7");
+    // The second take is the relaunch case — a reaper reclaim, or the user re-opening the studio.
+    expect(useAppStore.getState().takeStudioPendingDirective("designer")).toBeUndefined();
+    expect(useAppStore.getState().studioPendingDirective).toEqual({});
+  });
+
+  it("keeps each studio's directive separate", () => {
+    const st = useAppStore.getState();
+    st.setStudioPendingDirective("designer", "loop 1");
+    st.setStudioPendingDirective("librarian", "loop 2");
+    expect(useAppStore.getState().takeStudioPendingDirective("designer")).toBe("loop 1");
+    expect(useAppStore.getState().takeStudioPendingDirective("librarian")).toBe("loop 2");
+  });
+
+  it("a second ask supersedes an unconsumed first rather than stacking", () => {
+    // Two directives in one launch prompt would have the session watching two loops and answering
+    // neither — the newer request is the one that is still being waited on.
+    const st = useAppStore.getState();
+    st.setStudioPendingDirective("designer", "loop 1");
+    st.setStudioPendingDirective("designer", "loop 2");
+    expect(useAppStore.getState().takeStudioPendingDirective("designer")).toBe("loop 2");
+  });
+});

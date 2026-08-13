@@ -57,7 +57,15 @@ export function studioStartPrompt(personaId: string): string {
  * Exported for the unit test — the permission payload is the security-critical half of this migration.
  */
 export function seedStudioLaunchState(def: StudioSessionDef): void {
-  const prompt = studioStartPrompt(def.personaId);
+  const persona = studioStartPrompt(def.personaId);
+  // #architect-asks-a-system-session-for-a-service: when this launch exists to SERVE an ask, the
+  // directive rides in as an appendix to the persona prompt — a launch ARGUMENT, exactly where the
+  // persona prompt already goes, never a write into a live terminal. Taken (not read) so it is baked
+  // in once: a later relaunch of the same studio must not resurrect a request already served.
+  const directive = useAppStore.getState().takeStudioPendingDirective(def.id);
+  // Appended, never substituted — a session that came up without its persona prompt would answer the
+  // loop as a generic agent instead of as the designer/librarian being asked.
+  const prompt = [persona, directive].filter(Boolean).join("\n\n");
   useAppStore.setState((st) => {
     const startupPrompts = { ...st.paneStartupPromptText };
     if (prompt) startupPrompts[def.paneId] = prompt;
