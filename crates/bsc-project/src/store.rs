@@ -42,6 +42,20 @@ pub struct ProjectRow {
     /// reading a raw zustand blob. The desktop keeps an in-memory cache; THIS is the source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub triaged_at: Option<i64>,
+    /// The ARCHITECT persona id that owns this project (#architects-own-projects), or `None` when it
+    /// is unassigned.
+    ///
+    /// This is the field `glanceData.ts` was written waiting for: the L0 graph connected every
+    /// architect to every project and said so in as many words ("FIRST CUT ... the provenance field
+    /// does not exist yet"), because with nothing to filter on, narrowing would have drawn an
+    /// architect with no edges at all.
+    ///
+    /// OWNERSHIP, NOT PROVENANCE. It is reassignable — a project can move to a different architect
+    /// without rewriting who created it — which is why the graph edge it drives stopped calling itself
+    /// `created-by`. Written only by [`set_architect`] / [`clear_architect`], never by [`upsert`], for
+    /// the same reason `triaged_at` isn't.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub architect: Option<String>,
     /// Creation time (epoch millis), stamped once at first insert and preserved across updates.
     pub created_at: i64,
     /// Last-update time (epoch millis).
@@ -87,7 +101,8 @@ pub fn ensure_schema(conn: &Connection) -> Result<(), String> {
         );",
     )
     .map_err(|e| format!("projects schema: {e}"))?;
-    add_column_if_missing(conn, "triaged_at", "INTEGER")
+    add_column_if_missing(conn, "triaged_at", "INTEGER")?;
+    add_column_if_missing(conn, "architect", "TEXT")
 }
 
 /// Add `<name> <ty>` to `projects` when it is not already there (#4088) — the store's first schema
@@ -113,7 +128,7 @@ fn add_column_if_missing(conn: &Connection, name: &str, ty: &str) -> Result<(), 
 }
 
 /// The column list every read selects, in `ProjectRow` field order.
-const COLS: &str = "key, title, pitch, blueprint, category, state, created_at, updated_at, triaged_at";
+const COLS: &str = "key, title, pitch, blueprint, category, state, created_at, updated_at, triaged_at, architect";
 
 /// Map a full-`COLS` row into a [`ProjectRow`].
 fn row_to_project(r: &rusqlite::Row) -> rusqlite::Result<ProjectRow> {
@@ -127,14 +142,18 @@ fn row_to_project(r: &rusqlite::Row) -> rusqlite::Result<ProjectRow> {
         created_at: r.get(6)?,
         updated_at: r.get(7)?,
         triaged_at: r.get(8)?,
+        architect: r.get(9)?,
     })
 }
 
 /// Insert or update a project by `key`. On a conflict the update touches every field EXCEPT
-/// `created_at` and `triaged_at` — both are stamped once and owned elsewhere. `triaged_at` (#4088)
-/// matters here in particular: the desktop upserts every project on boot to migrate drafts forward,
-/// and letting that carry a `None` through would UNTRIAGE every project on every launch, emptying
-/// the Glance network. It is written only by [`set_triaged`] / [`clear_triaged`].
+/// `created_at`, `triaged_at` and `architect` — all three are stamped once and owned elsewhere.
+/// `triaged_at` (#4088) matters here in particular: the desktop upserts every project on boot to
+/// migrate drafts forward, and letting that carry a `None` through would UNTRIAGE every project on
+/// every launch, emptying the Glance network. It is written only by [`set_triaged`] /
+/// [`clear_triaged`]; `architect` likewise only by [`set_architect`] / [`clear_architect`], and for
+/// exactly the same reason — a routine boot upsert knows nothing about ownership and would silently
+/// unassign every project it touched.
 ///
 /// The original creation time is preserved (only `updated_at` moves), so callers can
 /// pass any `created_at` on an update without clobbering it. Idempotent per `key`.
@@ -143,8 +162,8 @@ fn row_to_project(r: &rusqlite::Row) -> rusqlite::Result<ProjectRow> {
 /// The write fails.
 pub fn upsert(conn: &Connection, row: &ProjectRow) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO projects (key, title, pitch, blueprint, category, state, created_at, updated_at, triaged_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "INSERT INTO projects (key, title, pitch, blueprint, category, state, created_at, updated_at, triaged_at, architect)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(key) DO UPDATE SET
             title = excluded.title,
             pitch = excluded.pitch,
@@ -162,6 +181,7 @@ pub fn upsert(conn: &Connection, row: &ProjectRow) -> Result<(), String> {
             row.created_at,
             row.updated_at,
             row.triaged_at,
+            row.architect,
         ],
     )
     .map_err(|e| format!("projects upsert: {e}"))?;
@@ -192,6 +212,34 @@ pub fn clear_triaged(conn: &Connection, key: &str, now: i64) -> Result<bool, Str
             params![key, now],
         )
         .map_err(|e| format!("projects clear_triaged: {e}"))?;
+    Ok(n > 0)
+}
+
+/// Assign `key` to the architect persona `persona` (#architects-own-projects). Returns whether a row
+/// was updated — `false` means the key is absent.
+///
+/// NOT idempotent-by-first-write the way [`set_triaged`] is, and the difference is the point:
+/// triaging is an event that happened once, while ownership is a current fact that moves. Re-assigning
+/// to a different architect is the normal case, not a history rewrite.
+pub fn set_architect(conn: &Connection, key: &str, persona: &str, now: i64) -> Result<bool, String> {
+    let n = conn
+        .execute(
+            "UPDATE projects SET architect = ?2, updated_at = ?3 WHERE key = ?1",
+            params![key, persona, now],
+        )
+        .map_err(|e| format!("projects set_architect: {e}"))?;
+    Ok(n > 0)
+}
+
+/// Unassign `key` from its architect (#architects-own-projects). Returns whether a row changed
+/// (`false` when the key is absent or was already unassigned).
+pub fn clear_architect(conn: &Connection, key: &str, now: i64) -> Result<bool, String> {
+    let n = conn
+        .execute(
+            "UPDATE projects SET architect = NULL, updated_at = ?2 WHERE key = ?1 AND architect IS NOT NULL",
+            params![key, now],
+        )
+        .map_err(|e| format!("projects clear_architect: {e}"))?;
     Ok(n > 0)
 }
 
@@ -269,6 +317,7 @@ mod tests {
             created_at: created,
             updated_at: updated,
             triaged_at: None,
+            architect: None,
         }
     }
 
@@ -311,7 +360,46 @@ mod tests {
         assert_eq!(stored.title, "Alpha renamed", "…while the rest of the row still updates");
     }
 
-    /// The store's first schema migration: an EXISTING projects.db (pre-#4088, no `triaged_at`) must
+    /// Ownership (#architects-own-projects) — assign, REassign, clear.
+    #[test]
+    fn architect_assignment_moves_and_clears() {
+        let conn = mem();
+        upsert(&conn, &row("alpha", "Alpha", 1, 1)).unwrap();
+        assert_eq!(get(&conn, "alpha").unwrap().architect, None, "starts unassigned");
+
+        assert!(set_architect(&conn, "alpha", "persona-net", 500).unwrap());
+        assert_eq!(get(&conn, "alpha").unwrap().architect.as_deref(), Some("persona-net"));
+
+        // REASSIGNMENT is the normal case — unlike triaging, ownership is a current fact that moves,
+        // so a second write must win rather than being kept-first.
+        assert!(set_architect(&conn, "alpha", "persona-platform", 600).unwrap());
+        assert_eq!(get(&conn, "alpha").unwrap().architect.as_deref(), Some("persona-platform"));
+
+        assert!(clear_architect(&conn, "alpha", 700).unwrap());
+        assert_eq!(get(&conn, "alpha").unwrap().architect, None);
+        assert!(!clear_architect(&conn, "alpha", 800).unwrap(), "clearing twice reports no change");
+        assert!(!set_architect(&conn, "ghost", "persona-net", 900).unwrap(), "an absent key updates nothing");
+    }
+
+    /// The regression the `triaged_at` carve-out already guards, for the ownership field: the desktop
+    /// upserts every project on boot to migrate drafts forward, and that upsert knows nothing about
+    /// ownership. If it carried `None` through, every launch would silently unassign every project.
+    #[test]
+    fn an_upsert_cannot_unassign_a_project() {
+        let conn = mem();
+        upsert(&conn, &row("alpha", "Alpha", 1, 1)).unwrap();
+        set_architect(&conn, "alpha", "persona-net", 500).unwrap();
+
+        let mut later = row("alpha", "Alpha renamed", 1, 900);
+        later.architect = None; // exactly what a boot migration builds
+        upsert(&conn, &later).unwrap();
+
+        let stored = get(&conn, "alpha").unwrap();
+        assert_eq!(stored.architect.as_deref(), Some("persona-net"), "the assignment must survive an upsert");
+        assert_eq!(stored.title, "Alpha renamed", "…while the fields an upsert DOES own still update");
+    }
+
+    /// The store's schema migration: an EXISTING projects.db (pre-#4088, no `triaged_at`) must
     /// gain the column in place, keeping its rows. Recreating the table would drop every project.
     #[test]
     fn ensure_schema_adds_the_column_to_a_pre_existing_table() {
@@ -330,11 +418,15 @@ mod tests {
         ensure_schema(&conn).unwrap();
         let stored = get(&conn, "legacy").expect("the pre-existing row must survive the migration");
         assert_eq!(stored.triaged_at, None);
+        // …and the SECOND migrated column (#architects-own-projects) lands on the same old table. Both
+        // are added in one `ensure_schema`, so a db that predates either upgrades in one open.
+        assert_eq!(stored.architect, None);
 
         // Idempotent — ensure_schema runs on every open.
         ensure_schema(&conn).unwrap();
         assert!(get(&conn, "legacy").is_some());
         assert!(set_triaged(&conn, "legacy", 42).unwrap(), "the new column is usable");
+        assert!(set_architect(&conn, "legacy", "persona-net", 43).unwrap(), "…as is the ownership column");
     }
 
     #[test]

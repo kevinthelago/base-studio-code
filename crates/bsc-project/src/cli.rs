@@ -109,6 +109,30 @@ could only be diagnosed by reading a raw zustand blob.
 `set` is IDEMPOTENT: an already-triaged project keeps its FIRST timestamp.",
     },
     CmdDoc {
+        name: "architect",
+        summary: "which ARCHITECT owns a project — list / set / clear (#architects-own-projects)",
+        usage: "USAGE:
+  bsc project architect list [--json]        # every project + the architect that owns it
+  bsc project architect set <key> <persona>  # assign <key> to an architect persona; prints the row
+  bsc project architect clear <key>          # unassign it; prints the row
+
+An architect OWNS a set of projects rather than all of them — so a networking architect can hold the
+LAN/WAN applications while another holds the rest. The Glance project network draws each project
+edged to ITS architect, and this command is the ONLY way to change that: there is no picker in the
+UI, by design. The AI configures ownership.
+
+<persona> is a persona id from `bsc persona list` whose role is `architect`. A persona that does not
+exist, or whose role is something else, is REFUSED rather than stored — an assignment to nobody would
+silently drop the project off its architect in the graph and look like a rendering bug.
+
+UNASSIGNED IS A REAL STATE, not a broken one. A project with no architect edges to the sole architect
+when there is exactly one (so a single-architect setup looks exactly as it always did), and to none
+once there are several — at which point the graph is telling you to say which.
+
+`set` is not idempotent-by-first-write the way `triaged set` is: ownership is a current fact that
+moves, so re-assigning to a different architect is the normal case rather than a history rewrite.",
+    },
+    CmdDoc {
         name: "published",
         summary: "read or set a project's .published marker",
         usage: "\
@@ -259,6 +283,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "list" => cmd_list(&args),
         "progress" => cmd_progress(&args),
         "triaged" => cmd_triaged(&args, prog),
+        "architect" => cmd_architect(&args, prog),
         "published" => cmd_published(&args, prog),
         "link" => cmd_link(&args, prog),
         "github-state" => cmd_github_state(&args, prog),
@@ -313,6 +338,7 @@ fn cmd_new(args: &Args, prog: &str) -> Result<(), String> {
         // `drafted` is the honest state: nothing is planned, published or on disk yet.
         state: "drafted".into(),
         triaged_at: None,
+        architect: None,
         created_at: now,
         updated_at: now,
     };
@@ -504,6 +530,96 @@ fn cmd_triaged(args: &Args, prog: &str) -> Result<(), String> {
     }
 }
 
+/// `architect list|set|clear` — which architect owns a project (#architects-own-projects).
+fn cmd_architect(args: &Args, prog: &str) -> Result<(), String> {
+    let conn = store::open()?;
+    match args.positional.get(1).map(String::as_str).unwrap_or("list") {
+        "list" => {
+            // EVERY project, assigned or not — an unassigned one is a fact worth seeing, and it is
+            // precisely the row a caller is looking for when a project is missing its architect edge.
+            let rows: Vec<serde_json::Value> = store::list(&conn)
+                .into_iter()
+                .map(|r| serde_json::json!({ "key": r.key, "architect": r.architect }))
+                .collect();
+            if args.json {
+                println!("{}", serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into()));
+            } else if rows.is_empty() {
+                println!("(no projects)");
+            } else {
+                for r in &rows {
+                    println!("{}\t{}", r["key"].as_str().unwrap_or(""), r["architect"].as_str().unwrap_or("(unassigned)"));
+                }
+            }
+            Ok(())
+        }
+        "set" => {
+            let key = args.positional.get(2).ok_or_else(|| format!("usage: {prog} architect set <key> <persona>"))?;
+            let persona = args.positional.get(3).ok_or_else(|| format!("usage: {prog} architect set <key> <persona>"))?;
+            check_architect_persona(persona)?;
+            if !store::set_architect(&conn, key, persona, bsc_util::now_ms())? {
+                return Err(format!("{prog} architect set: no such project '{key}' (list them with `{prog} list`)"));
+            }
+            print_architect_row(&conn, key, prog)
+        }
+        "clear" => {
+            let key = args.positional.get(2).ok_or_else(|| format!("usage: {prog} architect clear <key>"))?;
+            // A no-op clear (already unassigned) is NOT an error — the caller asked for a state, and
+            // that state is what it gets. An absent KEY is different, and is caught by the read below.
+            store::clear_architect(&conn, key, bsc_util::now_ms())?;
+            print_architect_row(&conn, key, prog)
+        }
+        other => Err(format!("{prog} architect: unknown verb '{other}' (list | set | clear)")),
+    }
+}
+
+/// Print the resulting `{ key, architect }` row, so a caller sees the STATE rather than inferring it
+/// from an exit code. Errors when the key names no project.
+fn print_architect_row(conn: &rusqlite::Connection, key: &str, prog: &str) -> Result<(), String> {
+    let row = store::get(conn, key)
+        .ok_or_else(|| format!("{prog} architect: no such project '{key}' (list them with `{prog} list`)"))?;
+    println!("{}", serde_json::json!({ "key": row.key, "architect": row.architect }));
+    Ok(())
+}
+
+/// Refuse a persona that is not an architect (#architects-own-projects).
+///
+/// WHY VALIDATE AT ALL, when `link add` happily takes free-text endpoints: a bad endpoint draws a
+/// visibly wrong edge, whereas a bad architect id draws NOTHING — the project silently detaches from
+/// every architect and reads as a rendering bug rather than a typo. The cheapest place to catch it is
+/// the moment it is typed.
+///
+/// CANNOT-VERIFY IS NOT INVALID. The persona store is seeded by the desktop on first hydrate, so a
+/// fresh install (or any environment where the app has never run) has an EMPTY store — refusing there
+/// would make a correct assignment impossible on exactly the machines that need to bootstrap. An empty
+/// or unreadable store therefore skips the check; a populated one enforces it.
+fn check_architect_persona(persona: &str) -> Result<(), String> {
+    let Some(base) = bsc_util::bsc_base_dir() else { return Ok(()) };
+    let personas = bsc_json_store::Store::new(base.join("personas"), "persona").list();
+    if personas.is_empty() {
+        return Ok(()); // never seeded — cannot verify, so do not pretend to
+    }
+    let mut found_role: Option<String> = None;
+    for raw in &personas {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) else { continue };
+        if v.get("id").and_then(|i| i.as_str()) == Some(persona) {
+            found_role = Some(v.get("role").and_then(|r| r.as_str()).unwrap_or("").to_string());
+            break;
+        }
+    }
+    match found_role.as_deref() {
+        Some("architect") => Ok(()),
+        Some(role) => Err(format!(
+            "architect set: persona '{persona}' has role '{role}', not 'architect'.\n\
+             Only an architect can own projects — list the candidates with `bsc persona list`."
+        )),
+        None => Err(format!(
+            "architect set: no persona '{persona}' (list them with `bsc persona list`).\n\
+             An assignment to a persona that does not exist would detach the project from every \
+             architect in the graph, which reads as a rendering bug rather than a typo."
+        )),
+    }
+}
+
 /// `published get|set <key>` — read or set a project's in-place `.published` marker.
 fn cmd_published(args: &Args, prog: &str) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
@@ -668,6 +784,11 @@ fn cmd_db(args: &Args, prog: &str) -> Result<(), String> {
             // #4088 — carry the existing triaged marker through. The upsert SQL already preserves it
             // on conflict; this keeps the INSERT branch and the printed row correct too.
             let triaged_at = prior.as_ref().and_then(|r| r.triaged_at);
+            // …and the same for the architect assignment (#architects-own-projects). The stdin shape
+            // carries no `architect` on purpose — ownership is set by `project architect set`, never by
+            // a routine upsert — so without carrying the prior value the desktop's boot-time
+            // draft-migration upsert would unassign every project it touched.
+            let architect = prior.as_ref().and_then(|r| r.architect.clone());
             let row = ProjectRow {
                 key: input.key,
                 title: input.title,
@@ -678,6 +799,7 @@ fn cmd_db(args: &Args, prog: &str) -> Result<(), String> {
                 created_at,
                 updated_at: now,
                 triaged_at,
+                architect,
             };
             store::upsert(&conn, &row)?;
             let stored = store::get(&conn, &row.key).ok_or("db add: row vanished after upsert")?;
@@ -899,6 +1021,108 @@ mod tests {
         });
     }
 
+    /// `architect list|set|clear` (#architects-own-projects) — the ONLY surface that assigns a project
+    /// to an architect, since there is deliberately no picker in the UI.
+    #[test]
+    fn architect_dispatch_assigns_reassigns_and_clears() {
+        crate::testhome::with_home(|home| {
+            std::env::set_var("BSC_PROJECT_DB", home.join("projects-arch.db"));
+            // Two architect personas in the store the validation reads.
+            let personas = bsc_json_store::Store::new(home.join(".base-studio-code").join("personas"), "persona");
+            personas.set("persona-net", r#"{"id":"persona-net","name":"Networking architect","role":"architect"}"#).unwrap();
+            personas.set("persona-plat", r#"{"id":"persona-plat","name":"Platform architect","role":"architect"}"#).unwrap();
+            personas.set("persona-worker", r#"{"id":"persona-worker","name":"Worker","role":"worker"}"#).unwrap();
+
+            let conn = store::open().unwrap();
+            store::upsert(&conn, &ProjectRow {
+                key: "wan-relay".into(), title: "WAN Relay".into(), pitch: String::new(),
+                blueprint: None, category: None, state: "drafted".into(),
+                created_at: 1, updated_at: 1, triaged_at: None, architect: None,
+            }).unwrap();
+            drop(conn);
+
+            run(vec!["architect".into(), "set".into(), "wan-relay".into(), "persona-net".into()], "bsc project").unwrap();
+            let conn = store::open().unwrap();
+            assert_eq!(store::get(&conn, "wan-relay").unwrap().architect.as_deref(), Some("persona-net"));
+            drop(conn);
+
+            // Reassignment — the normal case for ownership.
+            run(vec!["architect".into(), "set".into(), "wan-relay".into(), "persona-plat".into()], "bsc project").unwrap();
+            let conn = store::open().unwrap();
+            assert_eq!(store::get(&conn, "wan-relay").unwrap().architect.as_deref(), Some("persona-plat"));
+            drop(conn);
+
+            run(vec!["architect".into(), "clear".into(), "wan-relay".into()], "bsc project").unwrap();
+            let conn = store::open().unwrap();
+            assert_eq!(store::get(&conn, "wan-relay").unwrap().architect, None);
+            drop(conn);
+
+            // Both list modes dispatch; an unknown verb errors.
+            run(vec!["architect".into(), "list".into(), "--json".into()], "bsc project").unwrap();
+            run(vec!["architect".into(), "list".into()], "bsc project").unwrap();
+            assert!(run(vec!["architect".into(), "nope".into()], "bsc project").is_err());
+            std::env::remove_var("BSC_PROJECT_DB");
+        });
+    }
+
+    /// The refusals. A bad architect id draws NOTHING in the graph rather than something visibly wrong,
+    /// so it has to be caught at the moment it is typed.
+    #[test]
+    fn architect_set_refuses_a_non_architect_an_unknown_persona_and_an_unknown_project() {
+        crate::testhome::with_home(|home| {
+            std::env::set_var("BSC_PROJECT_DB", home.join("projects-arch-refuse.db"));
+            let personas = bsc_json_store::Store::new(home.join(".base-studio-code").join("personas"), "persona");
+            personas.set("persona-net", r#"{"id":"persona-net","name":"Net","role":"architect"}"#).unwrap();
+            personas.set("persona-worker", r#"{"id":"persona-worker","name":"Worker","role":"worker"}"#).unwrap();
+
+            let conn = store::open().unwrap();
+            store::upsert(&conn, &ProjectRow {
+                key: "lan-tools".into(), title: "LAN Tools".into(), pitch: String::new(),
+                blueprint: None, category: None, state: "drafted".into(),
+                created_at: 1, updated_at: 1, triaged_at: None, architect: None,
+            }).unwrap();
+            drop(conn);
+
+            // A persona that exists but is not an architect — refused, and the message says its role.
+            let err = run(vec!["architect".into(), "set".into(), "lan-tools".into(), "persona-worker".into()], "bsc project").unwrap_err();
+            assert!(err.contains("worker"), "the refusal names the role it found: {err}");
+            // A persona that does not exist at all.
+            let err = run(vec!["architect".into(), "set".into(), "lan-tools".into(), "typo".into()], "bsc project").unwrap_err();
+            assert!(err.contains("typo"), "{err}");
+            // A project that does not exist.
+            let err = run(vec!["architect".into(), "set".into(), "ghost".into(), "persona-net".into()], "bsc project").unwrap_err();
+            assert!(err.contains("ghost"), "{err}");
+            // …and every refusal left the row untouched.
+            let conn = store::open().unwrap();
+            assert_eq!(store::get(&conn, "lan-tools").unwrap().architect, None);
+            drop(conn);
+            std::env::remove_var("BSC_PROJECT_DB");
+        });
+    }
+
+    /// CANNOT-VERIFY IS NOT INVALID: the persona store is seeded by the desktop on first hydrate, so a
+    /// machine where the app has never run has an EMPTY one. Refusing there would make a correct
+    /// assignment impossible on exactly the installs that need to bootstrap.
+    #[test]
+    fn architect_set_skips_validation_when_the_persona_store_was_never_seeded() {
+        crate::testhome::with_home(|home| {
+            std::env::set_var("BSC_PROJECT_DB", home.join("projects-arch-empty.db"));
+            let conn = store::open().unwrap();
+            store::upsert(&conn, &ProjectRow {
+                key: "sd-wan".into(), title: "SD-WAN".into(), pitch: String::new(),
+                blueprint: None, category: None, state: "drafted".into(),
+                created_at: 1, updated_at: 1, triaged_at: None, architect: None,
+            }).unwrap();
+            drop(conn);
+
+            run(vec!["architect".into(), "set".into(), "sd-wan".into(), "persona-architect".into()], "bsc project").unwrap();
+            let conn = store::open().unwrap();
+            assert_eq!(store::get(&conn, "sd-wan").unwrap().architect.as_deref(), Some("persona-architect"));
+            drop(conn);
+            std::env::remove_var("BSC_PROJECT_DB");
+        });
+    }
+
     #[test]
     fn parse_args_routes_help_flag_to_the_help_command() {
         let a = parse_args(vec!["--help".into()]).unwrap();
@@ -1069,6 +1293,7 @@ mod tests {
                     created_at: 1,
                     updated_at: 1,
                     triaged_at: None,
+                    architect: None,
                 },
             )
             .unwrap();

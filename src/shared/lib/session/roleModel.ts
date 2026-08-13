@@ -452,7 +452,18 @@ const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> 
     // is record a contract that is not true — visible in Glance, undone by one `link remove`, and
     // reaching no filesystem, process or network.
     "bsc project link",
-    // Discovery for the two verbs above, and the reason it is granted rather than assumed: the
+    // #architects-own-projects — which architect OWNS a project. An architect holds a SET of projects
+    // (the networking one takes the LAN/WAN apps), and this verb is the ONLY way that is ever set:
+    // there is deliberately no picker in the UI, so if this grant is absent the feature has no surface
+    // at all rather than a slower one.
+    //
+    // Reaching other architects is the point, not a leak — naming and assignment are both things one
+    // architect does on behalf of the set. The blast radius is bounded by what the verb can express:
+    // it moves a project between EXISTING architect personas and cannot create, delete or re-role one.
+    // `set` refuses a persona that is not an architect, so the reachable states are exactly the
+    // assignments a user could already have asked for.
+    "bsc project architect",
+    // Discovery for the verbs above, and the reason it is granted rather than assumed: the
     // architect's own spec tells it to discover before it changes and never to guess an id, and it
     // cannot follow that rule against a store it cannot read — wiring `a → b` blind would invent
     // contracts between projects that do not exist. Read-only and the FULL verb; `bsc project list`

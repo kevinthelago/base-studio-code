@@ -23,6 +23,11 @@ export interface DbProject {
    *  Gates the Glance network — `projects.db` is the source; the store keeps an in-memory cache
    *  hydrated from here. Optional so an older sidecar's payload still shape-gates cleanly. */
   triagedAt?: number | null;
+  /** The ARCHITECT persona id that OWNS this project (#architects-own-projects), `null`/ABSENT when
+   *  unassigned (or on a pre-#architects-own-projects binary). Set only by `bsc project architect
+   *  set` -- there is no UI that writes it, by design. Drives which architect a project edges to on
+   *  the Glance network. */
+  architect?: string | null;
 }
 
 /** Shape-gate ONE raw list row into a {@link DbProject}, or `null` to drop it. `key` + `state` are the
@@ -45,6 +50,9 @@ function toDbProject(raw: unknown): DbProject | null {
     // Absent on a pre-#4088 binary — `null` reads as "not triaged", which is the safe default: it
     // hides an unknown project from Glance rather than inventing a triage that never happened.
     triagedAt: typeof o.triagedAt === "number" ? o.triagedAt : null,
+    // Absent on a pre-#architects-own-projects binary — `null` reads as "unassigned", which is the
+    // honest default: an unknown owner is not an owner, and the graph's unassigned rule handles it.
+    architect: typeof o.architect === "string" && o.architect ? o.architect : null,
   };
 }
 

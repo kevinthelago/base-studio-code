@@ -52,13 +52,13 @@ describe("L0 no longer carries the system sessions", () => {
   });
 
   it("keeps the architect a SINK for provenance, with no cycle", () => {
-    // `created-by` points AT the architect. That is what stops a project↔architect cycle blanking the
+    // `owned-by` points AT the architect. That is what stops a project↔architect cycle blanking the
     // graph (glance-planner-edge-isolation) — a cycle here takes the whole board down, so it is pinned
     // even though this item removed the edges that used to point the other way.
     const d = build();
     const m = buildGraph(d.rawNodes, d.rawEdges);
     const archId = architectNodeId("persona-architect");
-    for (const e of m.edges.filter((x) => x.kind === "created-by")) expect(e.to).toBe(archId);
+    for (const e of m.edges.filter((x) => x.kind === "owned-by")) expect(e.to).toBe(archId);
     expect(m.cycleNodeIds.size).toBe(0);
   });
 });

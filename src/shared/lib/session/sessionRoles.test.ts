@@ -800,7 +800,10 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     //  · #architect-starts-a-new-project added `bsc project new`.
     //  · #architect-wires-project-relationships added `bsc project link` (create/modify/remove a
     //    contract) + `bsc project list` (the read it needs to wire one without guessing an id).
-    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet director", "bsc session", "bsc project new", "bsc project link", "bsc project list", ...LOOP, "bsc request new", "bsc request list"]);
+    //  · #architects-own-projects added `bsc project architect` — which architect OWNS a project. It
+    //    is the ONLY surface that sets it (there is no picker in the UI), so an absent grant would
+    //    leave the feature with no way to be used at all.
+    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet director", "bsc session", "bsc project new", "bsc project link", "bsc project architect", "bsc project list", ...LOOP, "bsc request new", "bsc request list"]);
     // The two prefix boundaries that must hold, asserted separately: the array equality above would
     // still pass if an entry were merely REPLACED by its wider form.
     //
@@ -831,6 +834,16 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     // It can see what it is wiring — without this the spec's discover-before-you-change rule is
     // unfollowable and the architect would be inventing project keys.
     expect(surface).toContain("bsc project list");
+
+    // #architects-own-projects — all three ownership verbs resolve through the one grant. `set` is the
+    // load-bearing one: it is how a project is split onto a named architect, and nothing else anywhere
+    // can do it.
+    for (const verb of ["bsc project architect list", "bsc project architect set", "bsc project architect clear"]) {
+      expect(surface.some((c) => verb.startsWith(c)), `${verb} must be auto-runnable`).toBe(true);
+    }
+    // Naming needs no new grant — `bsc persona` is already held, and `rename` resolves through it.
+    expect("bsc persona rename".startsWith("bsc persona")).toBe(true);
+    expect(surface).toContain("bsc persona");
 
     // …and the lifecycle verbs stay out. `published`/`triaged` mark a project's state and `db` rewrites
     // its durable row — none of which is a relationship between two of them.
