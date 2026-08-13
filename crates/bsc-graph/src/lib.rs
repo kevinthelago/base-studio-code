@@ -406,6 +406,23 @@ fn ensure_array<'a>(g: &'a mut Value, key: &str) -> &'a mut Vec<Value> {
 /// Upsert an implementation by id (#2863) — a language-kit node (`primitive` | `algorithm`, with
 /// `code` + `composes`). Validates a non-empty `id` + `tech` and a known `role`. Returns `true` when it
 /// replaced an existing impl, `false` when it inserted a new one.
+/// The platform manifest — the SAME file `bsc_component::graph_health` embeds.
+///
+/// Read here rather than called there because `bsc-component` already depends on THIS crate, so the
+/// reverse would be a cycle. The duplication is of the EMBED, not of a rule: both read
+/// `src-tauri/data/ui/platform-modules.json`, so neither can drift from the source of truth — only
+/// from each other's caching, which is why this is a plain set lookup with no interpretation.
+const PLATFORM_MODULES_JSON: &str = include_str!("../../../src-tauri/data/ui/platform-modules.json");
+
+/// Is `spec` bound to a LIVE platform module at runtime (`registerAppModule`)?
+fn is_registered_platform_module(spec: &str) -> bool {
+    static M: std::sync::OnceLock<std::collections::BTreeSet<String>> = std::sync::OnceLock::new();
+    M.get_or_init(|| {
+        serde_json::from_str::<Vec<String>>(PLATFORM_MODULES_JSON).unwrap_or_default().into_iter().collect()
+    })
+    .contains(spec)
+}
+
 pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
     let id = im
         .get("id")
@@ -420,6 +437,27 @@ pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
     let role = im.get("role").and_then(Value::as_str).ok_or("an implementation needs a `role`")?;
     if !ROLES.contains(&role) {
         return Err(format!("unknown role '{role}' — want one of: {}", ROLES.join(" | ")));
+    }
+    // A record must never claim a specifier that a LIVE platform module already owns while holding
+    // module state. `resolveGraphSource` checks records BEFORE the platform registry, so such a record
+    // WINS: a graph consumer gets this source vendored instead of the running module, and a module
+    // holding state becomes a SECOND instance whose divergence is silent — unlike a broken override,
+    // which declines and falls back, a stateful shadow works, just against the wrong copy.
+    //
+    // Pure shadows are fine and deliberately allowed: same code, same behaviour, so which copy wins
+    // does not matter. Only STATE makes the identity load-bearing.
+    if let Some(spec) = im.get("provides").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+        let state: Vec<String> = im
+            .get("moduleState")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+            .unwrap_or_default();
+        if !state.is_empty() && is_registered_platform_module(spec) {
+            return Err(format!(
+                "'{id}' cannot provide `{spec}`: that specifier is a REGISTERED platform module, and this                  record holds module state ({}). A record wins over the registry, so this would vendor a                  SECOND copy of that state to every graph consumer. Drop the `provides` (the record stays                  for provenance), or move the state out of the module.",
+                state.join(", ")
+            ));
+        }
     }
     let arr = ensure_array(g, "implementations");
     if let Some(existing) = arr.iter_mut().find(|x| x.get("id").and_then(Value::as_str) == Some(id.as_str())) {
@@ -718,6 +756,37 @@ pub fn doctor_with_entities(g: &Value, entities: &[String]) -> Vec<Finding> {
 
 #[cfg(test)]
 mod tests {
+    /// A record must not claim a specifier a LIVE platform module owns while holding state:
+    /// `resolveGraphSource` checks records FIRST, so it would win and vendor a SECOND copy of that
+    /// state to every graph consumer. Silent, unlike a broken override, which declines and falls back.
+    #[test]
+    fn a_stateful_record_cannot_provide_a_registered_platform_module() {
+        let mut g = seed();
+        // `@/store` is registered — the app store's own specifier.
+        let stateful = serde_json::json!({
+            "id": "x.ts", "tech": "typescript", "role": "algorithm", "name": "X",
+            "code": "export const x = 1;", "provides": "@/store", "moduleState": ["cache"],
+        });
+        let err = set_impl(&mut g, stateful).expect_err("a stateful shadow is refused");
+        assert!(err.contains("@/store"), "the error NAMES the specifier: {err}");
+        assert!(err.contains("cache"), "…and the state it holds: {err}");
+
+        // The SAME record without state is fine — a pure shadow is the same code either way, so which
+        // copy wins does not matter. Only state makes module identity load-bearing.
+        let pure = serde_json::json!({
+            "id": "y.ts", "tech": "typescript", "role": "algorithm", "name": "Y",
+            "code": "export const y = 1;", "provides": "@/store",
+        });
+        assert!(set_impl(&mut g, pure).is_ok(), "a pure shadow is allowed");
+
+        // …and state alone is fine when the specifier is NOT a live platform module.
+        let unclaimed = serde_json::json!({
+            "id": "z.ts", "tech": "typescript", "role": "algorithm", "name": "Z",
+            "code": "export const z = 1;", "provides": "@/nobody/owns/this", "moduleState": ["cache"],
+        });
+        assert!(set_impl(&mut g, unclaimed).is_ok(), "nothing live owns it, so nothing is shadowed");
+    }
+
     /// The SURFACE RESTRICTION is only a restriction if something checks it. A declaration naming no
     /// entity is reported; a correct one is silent; and with NO entity list supplied the check is
     /// skipped rather than condemning every declaration — the caller simply did not open the store.
