@@ -32,7 +32,7 @@ pub const BOOL_FLAGS: [&str; 8] =
     ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 27] = [
+pub const FLAGS: [&str; 28] = [
     "--pretty",
     "--all",
     "--id",
@@ -50,6 +50,7 @@ pub const FLAGS: [&str; 27] = [
     "--src",
     "--folder",
     "--provides",
+    "--module-state",
     "--module",
     "--composes",
     "--worthy-only",
@@ -303,6 +304,25 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // same field the component store already carries. Additive like `--domain`: written only
                 // when supplied, so no existing impl gains one by accident.
                 if let Some(p) = flag_value(&args, "--provides") { im["provides"] = Value::String(p); }
+                // The module's own STATE, comma-separated. A module harvest sets this itself, but an
+                // impl written through THIS verb could not carry it at all — which stranded 27 of the
+                // 58 stateful modules with no record of what they hold, precisely because a colliding
+                // id forced them down the `impl set` path instead of `--apply`.
+                //
+                // SETS only. `im` is the MERGE payload (#4154), so dropping a key here means "leave it
+                // alone", never "remove it" — clearing is what `--clear moduleState` is for, and having
+                // two ways to clear one field is how they drift apart.
+                if let Some(ms) = flag_value(&args, "--module-state") {
+                    let names: Vec<Value> = ms
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(|s| Value::String(s.to_string()))
+                        .collect();
+                    if !names.is_empty() {
+                        im["moduleState"] = Value::Array(names);
+                    }
+                }
                 // #4136: an ALGORITHM must declare its provenance, or explicitly declare it has none.
                 //
                 // The librarian curated 10 algorithms through this verb with no `--src`, so none could
@@ -1062,7 +1082,7 @@ fn help(prog: &str) -> String {
   \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--no-src] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder)\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--no-src] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes)\n  \
          {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n  \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
@@ -1154,6 +1174,49 @@ fn collect_emitted_files(
 
 #[cfg(test)]
 mod tests {
+    /// `impl set` must be able to WRITE the module state, not only a harvest. 27 of the 58 stateful
+    /// modules took this path (a colliding id forced them off `--apply`) and landed with no record of
+    /// what they hold — the field existed and nothing could set it.
+    #[test]
+    fn impl_set_writes_and_clears_module_state() {
+        let dir = std::env::temp_dir().join(format!("bsc-graph-msflag-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        let set = |extra: Vec<&str>| {
+            let mut a: Vec<String> = ["impl", "set", "--tech", "typescript", "--id", "s.ts", "--role",
+                                      "algorithm", "--name", "S", "--code", "export const s = 1;",
+                                      "--src", "src/x/s.ts"]
+                .iter().map(|s| s.to_string()).collect();
+            a.extend(extra.into_iter().map(str::to_string));
+            run(a, "bsc graph").unwrap();
+        };
+        let state_of = || {
+            crate::implementations()
+                .into_iter()
+                .find(|i| i.get("id").and_then(Value::as_str) == Some("s.ts"))
+                .and_then(|i| i.get("moduleState").cloned())
+        };
+
+        set(vec!["--module-state", "seq, pending"]);
+        assert_eq!(state_of(), Some(serde_json::json!(["seq", "pending"])), "writes the bindings");
+
+        // A MERGE leaves it alone when unsupplied (#4154) — otherwise every later edit would wipe it.
+        set(vec!["--summary", "unchanged"]);
+        assert_eq!(state_of(), Some(serde_json::json!(["seq", "pending"])), "preserved when not supplied");
+
+        // …and CLEARING is `--clear`'s job, not an empty value's. `im` is the merge payload, so an
+        // absent key means "leave it alone" — two ways to clear one field is how they drift apart.
+        set(vec!["--clear", "moduleState"]);
+        assert_eq!(state_of(), None, "--clear moduleState removes it");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
 
     /// [`VERBS`] is only trustworthy as a source of truth if it tracks the dispatcher, so pin it to
