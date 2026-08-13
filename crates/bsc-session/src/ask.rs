@@ -281,7 +281,7 @@ mod tests {
         }
         fn whose_turn(&self, _l: i64) -> Result<Option<String>, String> {
             let mut s = self.turn_script.borrow_mut();
-            Ok(if s.is_empty() { Some("designer".into()) } else { s.remove(0) })
+            Ok(if s.is_empty() { Some("designerReact".into()) } else { s.remove(0) })
         }
         fn last_message(&self, _l: i64) -> Result<Option<String>, String> {
             Ok(self.last.clone())
@@ -294,7 +294,7 @@ mod tests {
     fn a_running_session_is_asked_without_being_started() {
         // The distinction that makes this a call and not a launch: asking must not touch lifecycle.
         let f = Fake::new(true, vec![Some(ARCHITECT_PARTICIPANT.into())], Some("here is the kit"));
-        let r = ask(&f, "designer", "make me a card", T).unwrap();
+        let r = ask(&f, "designerReact", "make me a card", T).unwrap();
         assert_eq!(r.answer.as_deref(), Some("here is the kit"));
         assert!(!r.started);
         assert!(f.started.borrow().is_empty(), "a live session is never started");
@@ -305,16 +305,16 @@ mod tests {
         // Ask COMPOSES with start — and the loop must exist first, or the session comes up with
         // nothing to watch.
         let f = Fake::new(false, vec![Some(ARCHITECT_PARTICIPANT.into())], Some("done"));
-        let r = ask(&f, "librarian", "implement dijkstra in rust", T).unwrap();
+        let r = ask(&f, "librarianRust", "implement dijkstra in rust", T).unwrap();
         assert!(r.started);
-        assert_eq!(f.started.borrow().as_slice(), &[("librarian".to_string(), 77)]);
-        assert_eq!(f.opened.borrow()[0].0, "librarian", "the SESSION is participant a");
+        assert_eq!(f.started.borrow().as_slice(), &[("librarianRust".to_string(), 77)]);
+        assert_eq!(f.opened.borrow()[0].0, "librarianRust", "the SESSION is participant a");
     }
 
     #[test]
     fn the_request_becomes_the_seed_the_session_replies_to() {
         let f = Fake::new(true, vec![Some(ARCHITECT_PARTICIPANT.into())], Some("ok"));
-        ask(&f, "designer", "  make me a card  ", T).unwrap();
+        ask(&f, "designerReact", "  make me a card  ", T).unwrap();
         assert_eq!(f.opened.borrow()[0].1, "make me a card", "trimmed, and used verbatim as the seed");
     }
 
@@ -323,25 +323,25 @@ mod tests {
         // The session holds the turn for the first two polls, then answers.
         let f = Fake::new(
             true,
-            vec![Some("designer".into()), Some("designer".into()), Some(ARCHITECT_PARTICIPANT.into())],
+            vec![Some("designerReact".into()), Some("designerReact".into()), Some(ARCHITECT_PARTICIPANT.into())],
             Some("the answer"),
         );
-        assert_eq!(ask(&f, "designer", "q", T).unwrap().answer.as_deref(), Some("the answer"));
+        assert_eq!(ask(&f, "designerReact", "q", T).unwrap().answer.as_deref(), Some("the answer"));
     }
 
     #[test]
     fn a_closed_loop_is_an_answer_not_a_failure() {
         // The session answered WITH the sentinel, which closes the loop — the one-shot common case.
         let f = Fake::new(true, vec![None], Some("final answer ANSWERED"));
-        assert_eq!(ask(&f, "designer", "q", T).unwrap().answer.as_deref(), Some("final answer ANSWERED"));
+        assert_eq!(ask(&f, "designerReact", "q", T).unwrap().answer.as_deref(), Some("final answer ANSWERED"));
     }
 
     #[test]
     fn an_unanswered_ask_reports_the_loop_rather_than_failing() {
         // The honest gap: a running session that is not parked in `watch` may not look for a while.
         // Reporting failure would send the caller to re-ask and leave the session two loops to answer.
-        let f = Fake::new(true, vec![Some("designer".into()); 8], None);
-        let r = ask(&f, "designer", "q", Duration::from_millis(300)).unwrap();
+        let f = Fake::new(true, vec![Some("designerReact".into()); 8], None);
+        let r = ask(&f, "designerReact", "q", Duration::from_millis(300)).unwrap();
         assert!(r.answer.is_none());
         assert_eq!(r.loop_id, 77, "the loop id comes back so the answer can be collected later");
     }
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn an_empty_request_is_refused_before_a_loop_is_opened() {
         let f = Fake::new(true, vec![], None);
-        assert!(ask(&f, "designer", "   ", T).is_err());
+        assert!(ask(&f, "designerReact", "   ", T).is_err());
         assert!(f.opened.borrow().is_empty());
     }
 
@@ -375,7 +375,7 @@ mod tests {
     /// nowhere and the caller waits out its whole timeout.
     #[test]
     fn the_watch_directive_names_the_loop_the_verb_and_the_reply() {
-        let d = watch_directive("designer", 12);
+        let d = watch_directive("designerReact", 12);
         assert!(d.contains("bsc loop watch 12 --as designer"));
         assert!(d.contains("bsc loop say 12 --as designer"));
         assert!(d.contains(ANSWER_SIGNAL));
