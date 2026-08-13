@@ -793,17 +793,19 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     // #architect-starts-and-stops-system-sessions adds `bsc session` — start/stop/list over the
     // app's OWN studios. Safe on a prose-ingesting session because the verb's argument is an id from a
     // closed app-owned registry, not a command or a path; see the grant's comment in roleModel.ts.
-    // The architect's surface after the whole epic. THREE grants landed on it, each the FULL verb:
+    // The architect's surface after the whole epic. FOUR grants landed on it, each the FULL verb:
     //  · #architect-creates-a-director-with-discovery replaced the plural READ with the SINGULAR
     //    `bsc fleet director`, which covers `directors` through its prefix and adds `director new`.
     //  · #architect-starts-and-stops-system-sessions added `bsc session`.
     //  · #architect-starts-a-new-project added `bsc project new`.
-    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet director", "bsc session", "bsc project new", ...LOOP, "bsc request new", "bsc request list"]);
+    //  · #architect-wires-project-relationships added `bsc project link` (create/modify/remove a
+    //    contract) + `bsc project list` (the read it needs to wire one without guessing an id).
+    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet director", "bsc session", "bsc project new", "bsc project link", "bsc project list", ...LOOP, "bsc request new", "bsc request list"]);
     // The two prefix boundaries that must hold, asserted separately: the array equality above would
     // still pass if an entry were merely REPLACED by its wider form.
     //
-    // A bare `bsc project` would auto-run every project lifecycle verb (published/link/triaged/db)
-    // across every project, not just create one.
+    // A bare `bsc project` would auto-run every project lifecycle verb (published/triaged/db) across
+    // every project, not just the three the architect holds.
     expect(restrictedRoleCommands("architect")).not.toContain("bsc project");
     // A bare `bsc fleet` would carry `bsc fleet wake` — the DIRECTOR's lever over a worker, one tier
     // below where this session belongs. An architect reaching past its director is back in the middle
@@ -813,6 +815,32 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     expect("bsc fleet directors".startsWith("bsc fleet director")).toBe(true); // the read still resolves
     expect("bsc fleet wake".startsWith("bsc fleet director")).toBe(false);     // the wake still does not
     expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound", ...LOOP, "bsc request new", "bsc request list"]);
+  });
+
+  // #architect-wires-project-relationships — the architect creates, removes AND modifies the contracts
+  // between projects. Grants are prefix matches expanded to `Bash(<cmd> *)`, so what a grant actually
+  // reaches is a question about strings; these assert BOTH directions of that, because the array
+  // equality above proves the entry is present and proves nothing about what it covers.
+  it("gives the architect every project-relationship verb, and no other project verb (#architect-wires-project-relationships)", () => {
+    const surface = restrictedRoleCommands("architect");
+    // All four link verbs resolve through the one grant — create, modify and remove included, which is
+    // the whole point: a grant that reached only `list` would leave the wiring unchanged.
+    for (const verb of ["bsc project link list", "bsc project link add", "bsc project link set", "bsc project link remove"]) {
+      expect(surface.some((c) => verb.startsWith(c)), `${verb} must be auto-runnable`).toBe(true);
+    }
+    // It can see what it is wiring — without this the spec's discover-before-you-change rule is
+    // unfollowable and the architect would be inventing project keys.
+    expect(surface).toContain("bsc project list");
+
+    // …and the lifecycle verbs stay out. `published`/`triaged` mark a project's state and `db` rewrites
+    // its durable row — none of which is a relationship between two of them.
+    for (const verb of ["bsc project published set", "bsc project triaged clear", "bsc project db remove"]) {
+      expect(surface.some((c) => verb.startsWith(c)), `${verb} must NOT be auto-runnable`).toBe(false);
+    }
+    // The classic prefix trap, pinned as strings so it cannot be re-introduced by "simplifying" the
+    // three grants into one: `bsc project` would reach every verb above.
+    expect("bsc project db remove".startsWith("bsc project link")).toBe(false);
+    expect("bsc project db remove".startsWith("bsc project")).toBe(true);
   });
 
   // #4090 — the librarian may LOOK UP a component and may never write one. Both halves are load-bearing

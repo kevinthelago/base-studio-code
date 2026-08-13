@@ -427,16 +427,37 @@ const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> 
     // #architect-starts-a-new-project — creation begins where the conversation is, instead of the
     // architect having to hand the user back to the UI to start what they just agreed on.
     //
-    // THE FULL VERB, never the `bsc project` prefix: that would also carry `published`, `link`,
-    // `triaged` and `db` — read/write access to every project's lifecycle markers, which is a much
-    // larger surface than "make a new one".
+    // THE FULL VERB, never the `bsc project` prefix: that would also carry `published`, `triaged` and
+    // `db` — read/write access to every project's lifecycle markers, which is a much larger surface
+    // than "make a new one".
     //
-    // This is the ONE architect verb whose argument is genuinely free text rather than an id from a
-    // closed registry, so the containment is the SLUG: `projectSlug(name)` is `[a-z0-9-]`, capped at
-    // 60 and never empty, and the hub is always `projects/<slug>/`. Prose cannot reach outside that
-    // directory — `../../etc/passwd` becomes `etc-passwd`. `projectSlug.fixtures.json` pins the rule
-    // across both implementations of it.
+    // Its argument is free text rather than an id from a closed registry, so the containment is the
+    // SLUG: `projectSlug(name)` is `[a-z0-9-]`, capped at 60 and never empty, and the hub is always
+    // `projects/<slug>/`. Prose cannot reach outside that directory — `../../etc/passwd` becomes
+    // `etc-passwd`. `projectSlug.fixtures.json` pins the rule across both implementations of it.
     "bsc project new",
+    // #architect-wires-project-relationships — the inter-app CONTRACTS between those projects
+    // (#2253/#3786): `link list` / `add` / `set` / `remove`. The architect creates the projects, and
+    // the relationships BETWEEN them are the same act one level up. Nothing else could perform it
+    // either: the Glance right pane that used to draw them was retired, so before this grant the only
+    // way to edit a contract was to hand-edit `project-links.json`.
+    //
+    // THE FULL VERB, never the `bsc project` prefix, for exactly the reason stated above it.
+    //
+    // ITS CONTAINMENT IS A DIFFERENT ARGUMENT FROM `new`'s, so it is made rather than inherited.
+    // `new`'s free text is contained by the slug because it names a DIRECTORY. These arguments name
+    // nothing on disk: `from` / `to` / `--name` / `--url` become JSON string VALUES inside one fixed
+    // global file whose path comes from the base dir and never from an argument, while `kind` and
+    // `--target-type` are closed enums the CLI rejects outside of. The worst an injected string can do
+    // is record a contract that is not true — visible in Glance, undone by one `link remove`, and
+    // reaching no filesystem, process or network.
+    "bsc project link",
+    // Discovery for the two verbs above, and the reason it is granted rather than assumed: the
+    // architect's own spec tells it to discover before it changes and never to guess an id, and it
+    // cannot follow that rule against a store it cannot read — wiring `a → b` blind would invent
+    // contracts between projects that do not exist. Read-only and the FULL verb; `bsc project list`
+    // prints key + published + path and mutates nothing.
+    "bsc project list",
     ...LOOP_PARTICIPANT_COMMANDS,
     "bsc request new",
     "bsc request list",

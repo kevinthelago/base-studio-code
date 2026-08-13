@@ -119,6 +119,18 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // `paneClaudeActive` tells us whether that stable-id session is already running.
   const paneClaudeActive = useAppStore((s) => s.paneClaudeActive);
   const projectLinks = useAppStore((s) => s.projectLinks);
+  // Re-read the contracts whenever this workspace mounts (#architect-wires-project-relationships).
+  //
+  // `projectLinks` is a write-through cache and boot was its ONLY authoritative read, which held while
+  // the app was the only writer. It no longer is: the architect edits contracts through
+  // `bsc project link` from its own session, and that write lands in the global store with nothing to
+  // tell zustand. Without this the relationship the user just asked for stays invisible until the next
+  // app restart — which reads as "it did not work", not as "the view is stale".
+  //
+  // On mount rather than on a poll: Glance is where the network is drawn, so opening it is exactly when
+  // a re-read is worth one process spawn, and a poll would pay that cost every few seconds forever.
+  const hydrateProjectLinks = useAppStore((s) => s.hydrateProjectLinks);
+  useEffect(() => { void hydrateProjectLinks(); }, [hydrateProjectLinks]);
   // The UI-kit consumer index + kit library (#2571): drives the kit NODES on the L0 network (one per
   // distinct kit in use, edged to every consuming project — showing which projects share a kit).
   const kitUsage = useAppStore((s) => s.kitUsage);
