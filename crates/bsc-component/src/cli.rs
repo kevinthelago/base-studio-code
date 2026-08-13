@@ -2657,6 +2657,15 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     };
     let opts = crate::graph_health::HealthOptions { sound_kit_json: sound_kit_json.as_deref() };
     let mut findings = crate::graph_health::analyze_with(&comps, &opts);
+    // A `provides` COLLISION is a correctness defect, not a tidiness suggestion: `provides` is a global
+    // override, so the loader resolves the specifier to ONE record and every other claimant is a dead
+    // override that still reads as live — decided by store iteration order.
+    //
+    // The detection (#4138) was reachable only from `dupes`, the propose-only dedup surface. `doctor` is
+    // the report people run as a health check, and it returned 560 findings across 14 categories without
+    // mentioning four live collisions. Reported in BOTH places now; `dupes` keeps it because that is
+    // where the keeper recommendation belongs.
+    findings.extend(crate::similarity::provides_collision_findings(&comps));
     if motion {
         // #3163: append the motion findings (re-ranked with the render errors below).
         findings.extend(crate::graph_health::analyze_motion(&comps));
