@@ -34,6 +34,16 @@ import { registerPanePlatform } from "@/features/planner/pane/graphPlatform";
 import { registerBodiesPlatform } from "@/features/planner/bodies/graphPlatform";
 import { registerPreviewPlatform } from "@/features/planner/preview/graphPlatform";
 import { registerPlannerGithubPlatform } from "@/features/planner/github/graphPlatform";
+// These six used to arrive INCIDENTALLY: their feature barrel called `register…Platform()` at module
+// load, so any transitive import of the barrel registered them and this list did not need to name
+// them. The barrels no longer do that (ensure-platform-imports-the-platform-not-the-barrel), which is
+// what exposed the gap — the test was passing on a side effect rather than on the path it documents.
+import { registerDebugPlatform } from "@/features/debug/graphPlatform";
+import { registerDesignsPlatform } from "@/features/designs/graphPlatform";
+import { registerPersonasPlatform } from "@/features/personas/graphPlatform";
+import { registerStudioSessionsPlatform } from "@/features/studio-sessions/graphPlatform";
+import { registerTeamsPlatform } from "@/features/teams/graphPlatform";
+import { registerTunnelPlatform } from "@/features/tunnel/graphPlatform";
 import { isAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import algorithmsSeed from "@data/knowledge/algorithms.json";
 
@@ -82,6 +92,12 @@ beforeAll(() => {
   registerBodiesPlatform();
   registerPreviewPlatform();
   registerPlannerGithubPlatform();
+  registerDebugPlatform();
+  registerDesignsPlatform();
+  registerPersonasPlatform();
+  registerStudioSessionsPlatform();
+  registerTeamsPlatform();
+  registerTunnelPlatform();
 });
 
 describe("the platform-kernel boundary (#3858)", () => {

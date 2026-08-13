@@ -1,9 +1,8 @@
-// Register this feature's graph-platform modules at module load — so `import("@/features/tunnel")`
-// (what the shadow catalogue's ensurePlatform does) is what makes a record importing them resolvable.
-// Idempotent; mirrors the *GraphHost pattern for features that have one.
-import { registerTunnelPlatform } from "./graphPlatform";
+// The shadow catalogue registers this feature's graph-platform modules by importing
+// `./graphPlatform` DIRECTLY and calling its register function (see `shadowPages.ts`). This barrel
+// therefore has NO import-time side effect — it is re-exports only, which is what lets it be a
+// record rather than a file that must run to be correct.
 
-registerTunnelPlatform();
 // Tunnel feature — public API (#1309): the optional mobile relay bridge (Noise-IK E2E over a
 // zero-knowledge Cloudflare relay). The Tunnel settings page, the always-on sync/automation/coord
 // hooks the app mounts, and the protocol/client live here.
