@@ -4,7 +4,12 @@ import type { RendererHandle } from '../registry';
 import type { RenderableChunk } from '../types';
 
 // Import renderer — side-effect registers it in the module-level registry.
-import './htmlRenderer';
+// Registered HERE rather than by importing for a side effect: the renderer module is a pure
+// definition now, so a test that wants it in the registry must say so
+// (renderers-register-at-a-named-site-not-on-import).
+import { registerRenderer } from '../registry';
+import { htmlRenderer } from './htmlRenderer';
+registerRenderer(htmlRenderer);
 
 // previewBundle is used by streamingRuntime; mock it so no esm.sh or wasm loads.
 vi.mock('../previewBundle', () => ({

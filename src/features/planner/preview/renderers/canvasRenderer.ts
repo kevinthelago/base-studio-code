@@ -10,7 +10,6 @@
 
 import type { PreviewRenderer, RendererHandle } from '../registry';
 import type { RenderableChunk, PreviewStatus } from '../types';
-import { registerRenderer } from '../registry';
 
 type CanvasPayload = { dataUrl: string; width?: number; height?: number };
 
@@ -58,4 +57,3 @@ function createCanvasRenderer(): PreviewRenderer {
 }
 
 export const canvasRenderer = createCanvasRenderer();
-registerRenderer(canvasRenderer);
