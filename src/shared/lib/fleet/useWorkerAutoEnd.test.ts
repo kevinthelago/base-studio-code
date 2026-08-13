@@ -172,7 +172,7 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     expect(invoke).not.toHaveBeenCalledWith("pty_kill", { paneId: WORKER });
   });
 
-  it("nudges the director to close still-open issues when a worker finishes done (#1379 stage 3)", async () => {
+  it("does NOT type at the director when a worker finishes done (#the-fleet-went-pull-but-nobody-told-the-director-to-pull)", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string, _payload?: unknown) => {
       if (cmd === "logs_done_panes") return Promise.resolve([WORKER]); // worker self-reported done
       if (cmd === "logs_pane_activity" || cmd === "logs_tail") return Promise.resolve([]);
@@ -188,13 +188,19 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     renderHook(() => useWorkerAutoEnd());
 
     await waitFor(() => expect(useAppStore.getState().endedPanes[WORKER]?.state).toBe("done"));
-    // The live director pane gets a close-the-open-issues prompt.
+    // THIS ASSERTION IS INVERTED FROM WHAT IT WAS. It used to require a close-the-open-issues prompt
+    // typed into the director's pane. That write ended with a CR, which submits — opening a Claude
+    // turn in a session nobody clicked, through the one path the injector ratchet could not see.
+    //
+    // It also instructed `gh issue close`, and the GitHub-ownership clause was removed from
+    // director-protocol.md under local-first (its own tests assert the absence). So the nudge asked
+    // for work the director no longer claims. Nothing replaces it.
     const dirMsg = vi.mocked(invoke).mock.calls.find(([c, a]) => c === "pty_write" && (a as { paneId: string }).paneId === DIRECTOR);
-    expect(dirMsg, "director should be nudged to close issues").toBeTruthy();
-    expect((dirMsg?.[1] as { data: string }).data).toContain("gh issue close");
+    expect(dirMsg, "the app must not type into the director's session").toBeUndefined();
+    // The verdict itself is unchanged — the pane still ends `done`, which the waitFor above pins.
   });
 
-  it("resurfaces a lost director question to the director after the long wait (#1379 stage 4)", async () => {
+  it("does NOT resurface a lost question INTO the director — the queue carries it instead", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string, _payload?: unknown) => {
       if (cmd === "logs_pane_activity") return Promise.resolve([{ pane: WORKER, state: "idle", at: 1 }]); // idle ages ago
       // An outstanding bsc-ask for the worker, never answered (the coord read is `logs_tail` stream=coord).
@@ -205,11 +211,18 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     });
     renderHook(() => useWorkerAutoEnd());
 
-    await waitFor(() => expect(
+    // Let the sweep run — `logs_done_panes` resolving is the signal a tick completed.
+    await waitFor(() => expect(vi.mocked(invoke).mock.calls.some(([c]) => c === "bsc")).toBe(true));
+
+    // INVERTED, same reason as above: the resurface used to type the worker's question into the
+    // director. It does not any more. The information is NOT lost — `bsc logs waiting` lists every
+    // unanswered ask oldest-first, and the director's protocol now tells it to sweep that queue on
+    // every turn. The pull is strictly better: it shows EVERY stale ask on every sweep, where this
+    // fired once per pane per idle period and then went quiet.
+    expect(
       vi.mocked(invoke).mock.calls.some(([c, a]) => c === "pty_write" && (a as { paneId: string }).paneId === DIRECTOR),
-    ).toBe(true));
-    const m = vi.mocked(invoke).mock.calls.find(([c, a]) => c === "pty_write" && (a as { paneId: string }).paneId === DIRECTOR);
-    expect((m?.[1] as { data: string }).data).toContain(`bsc-answer ${WORKER}`); // routes the answer back to the worker
+      "the app must not type into the director's session",
+    ).toBe(false);
     expect(useAppStore.getState().endedPanes[WORKER]).toBeUndefined();           // never closes a waiting worker
   });
 });

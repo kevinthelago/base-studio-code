@@ -52,8 +52,51 @@ const KNOWN_INJECTORS: readonly string[] = [
 
 /** Files that import `injectPrompt`, as repo-relative paths, sorted. */
 function callers(): string[] {
+  return matching(IMPORT_RE);
+}
+
+/**
+ * The OTHER way to write to a session's stdin, and the one that got past this test.
+ *
+ * `injectPrompt` is a convenience wrapper; the actual capability is the `pty_write` command, and
+ * anything can `invoke` it directly. useWorkerAutoEnd did exactly that — twice, into the DIRECTOR's
+ * pane with a trailing CR, which submits the line and opens a Claude turn in a session nobody
+ * clicked. It sat there through an inventory that named eight injectors and believed itself complete,
+ * because the inventory matched the wrapper rather than the capability.
+ *
+ * So this ratchet guards the raw command too. The allow-list below is USER-ACTION paths plus the one
+ * deliberate exception; a module that is neither has to argue its way on.
+ */
+const PTY_WRITE_RE = /["']pty_write["']/;
+
+const KNOWN_PTY_WRITERS: readonly string[] = [
+  // The terminal itself: keystrokes, paste, and a repaint write. This IS the user typing.
+  "/src/app/console/panes/views/TerminalView.tsx",
+  "/src/app/useHotkeys.ts",
+  "/src/shared/lib/session/terminalClipboard.ts",
+  "/src/shared/lib/session/useScreenSession.ts",
+  // THE ONE UNATTENDED PATH, and it is deliberate: a cron automation the USER configured. It is the
+  // stated exception in #only-the-user-resumes-a-session — the user set it up on purpose, so it is
+  // their standing instruction rather than the app deciding. Nothing else may join it on that
+  // argument.
+  "/src/features/automations/lib/dispatch.ts",
+  "/src/features/automations/useScheduler.ts",
+  "/src/features/tunnel/lib/useTunnelAutomations.ts",
+  // The user pressing confirm/skip on a plan section, and the phone's keyboard — both a person.
+  "/src/features/planner/session/usePlanConfirmations.ts",
+  "/src/features/planner/session/usePlannerTunnelSync.ts",
+  // The wrapper's own definition, and the launch/restore handshake.
+  "/src/shared/lib/fleet/paneInject.ts",
+  "/src/shared/lib/session/ensureClaudeRunning.ts",
+];
+
+function ptyWriters(): string[] {
+  return matching(PTY_WRITE_RE);
+}
+
+function matching(re: RegExp): string[] {
   return Object.entries(SOURCES)
-    .filter(([path, src]) => !path.endsWith(".test.ts") && !path.endsWith(".test.tsx") && IMPORT_RE.test(src))
+    .filter(([path, src]) => !path.endsWith(".test.ts") && !path.endsWith(".test.tsx") && re.test(src))
     .map(([path]) => path)
     .sort();
 }
@@ -71,6 +114,26 @@ describe("who may write to a session's stdin (#only-the-user-resumes-a-session)"
     const present = new Set(Object.keys(SOURCES));
     for (const f of KNOWN_INJECTORS) {
       expect(present.has(f), `${f} is listed as a known injector but no longer exists`).toBe(true);
+    }
+  });
+
+  it("guards the RAW pty_write too — the wrapper is not the capability", () => {
+    // The bypass that made this necessary: useWorkerAutoEnd wrote to the director's stdin twice via
+    // `invoke("pty_write", …)` while the injectPrompt list above read EMPTY. An allow-list that names
+    // one route to a capability certifies nothing about the capability.
+    expect(ptyWriters()).toEqual([...KNOWN_PTY_WRITERS].sort());
+  });
+
+  it("keeps useWorkerAutoEnd off the stdin list — it reaps panes, it does not type at them", () => {
+    // Named explicitly because it is the one that got through, and because `pty_kill` (which it does
+    // still call, legitimately) reads like `pty_write` at a glance in a diff.
+    expect(ptyWriters()).not.toContain("/src/shared/lib/fleet/useWorkerAutoEnd.ts");
+  });
+
+  it("names only pty_write modules that still EXIST — a stale entry hides a regression", () => {
+    const present = new Set(Object.keys(SOURCES));
+    for (const f of KNOWN_PTY_WRITERS) {
+      expect(present.has(f), `${f} is listed as a known pty_write caller but no longer exists`).toBe(true);
     }
   });
 

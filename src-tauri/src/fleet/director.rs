@@ -30,6 +30,43 @@ mod relocated_tests {
     use super::*;
     use crate::testutil::prelude::*;
 
+    /// #the-fleet-went-pull-but-nobody-told-the-director-to-pull.
+    ///
+    /// The app stopped pushing prompts into sessions, but this file still described the push world:
+    /// a worker's question "arrives as a `[coordinator] <session> asks: ...` message". Nothing
+    /// arrives. A director waiting on a channel that was switched off never sweeps a parked worker,
+    /// and the fleet reads as stalled for no reason.
+    ///
+    /// Stale prose is the whole failure mode here, so it is guarded as prose.
+    #[test]
+    fn director_protocol_tells_the_director_to_look_rather_than_wait() {
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+
+        // The PULL is named, in this file — not only in a prompt builder of a pump that is inert.
+        assert!(p.contains("logs waiting"),
+            "the director must be told to sweep `bsc logs waiting`; it is the queue that replaced the push");
+
+        // And the promise of delivery is GONE. Guarding its absence is the point: a director told a
+        // message will arrive will wait for one.
+        assert!(!p.contains("asks: ...\" message") && !p.contains("asks: ...' message"),
+            "the protocol must not promise that a worker's question arrives as a message");
+
+        // The superseded roster helper must not be the one it reaches for first: it cannot see the
+        // request lane or the permission-prompt signal, which are two of the four queue kinds.
+        assert!(!p.contains("Run `bsc-fleet` from the project hub"),
+            "the roster instruction must name `bsc fleet list`, not the superseded bsc-fleet helper");
+    }
+
+    /// The same file said `bsc-assign` "resumes the chosen worker" in one bullet and "does NOT resume
+    /// the worker" in another, twenty lines apart. A director acting on the first leaves work sitting
+    /// in an inbox nobody opens.
+    #[test]
+    fn director_protocol_does_not_claim_assign_resumes_a_worker() {
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+        assert!(!p.contains("That resumes the chosen worker"),
+            "bsc-assign delivers to the inbox; it does not resume — follow it with `bsc fleet wake`");
+    }
+
     #[test]
     fn director_protocol_assigns_contract_ownership() {
         // The director owns the integration contracts and is the worker's help desk for them. That
