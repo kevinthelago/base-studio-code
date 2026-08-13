@@ -22,3 +22,9 @@ serde_json = "1"
 bsc-sound = { path = "../bsc-sound" }
 # The `usage` consumer-index store (#2277) resolves ~/.base-studio-code (bsc_base_dir).
 bsc-util = { path = "../bsc-util" }
+# The ALGORITHMS store (materialize-a-records-record-closure) — a test materialization resolves a
+# record's imports the way the running app does, and the last link in that chain is an algorithm impl
+# whose `provides` is the specifier (a logic module authored as a record). Read-only, and one-way:
+# bsc-graph knows nothing of components.
+bsc-graph = { path = "../bsc-graph" }
+
