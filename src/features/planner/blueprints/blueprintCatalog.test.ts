@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { STAGE_KINDS, STAGE_KIND_KEYS, stageKind } from "./blueprintCatalog";
-import { ICONS } from "./blueprintIcons";
+import { ICONS } from "@/shared/ui/icons";
 import { STAGE_DEFS } from "../stages/blueprints";
 
 describe("STAGE_KINDS ↔ project-pane stage coverage", () => {
