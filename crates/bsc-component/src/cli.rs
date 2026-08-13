@@ -5293,6 +5293,11 @@ export const P = () => <X />;"
     fn command_docs_expose_the_component_surface_for_the_ui_mount() {
         // `bsc ui` composes this catalog (#2469): every store verb is present, and the usage text
         // teaches the CANONICAL `bsc ui …` form (the `bsc component` alias is deprecated).
+        //
+        // The list is EXACT and ORDERED on purpose: a verb added to `COMPONENT_COMMANDS` without a
+        // matching entry here fails loudly, which is the mistake it caught when `scan-cache` landed
+        // (#the-ui-command-catalog-test-never-learned-scan-cache). Keep it exact — a `contains` check
+        // would have let that verb through silently, and the catalog is what the `bsc ui` mount renders.
         let names: Vec<&str> = command_docs().iter().map(|c| c.name).collect();
         assert_eq!(
             names,
@@ -5300,7 +5305,7 @@ export const P = () => <X />;"
                 "list", "shapes", "get", "log", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
                 "backing", "test", "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
-                "set-src", "patch", "refolder", "preview-props", "preview-errors", "preview-error"
+                "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
