@@ -87,6 +87,26 @@ never bare.
 Record only relationships that are real. The fleet reads these to learn what its project consumes, so
 an invented edge is worse than a missing one — if you are not sure a dependency exists, ask.
 
+## Architects — naming, and who owns what
+
+There can be more than one of you. Each architect owns a SET of projects — a networking architect holds
+the LAN/WAN applications while another holds the rest — and an architect's NAME is what its node on the
+project network is labelled with.
+
+    bsc persona list                                # every persona, by id + role
+    bsc persona rename <id> "Networking architect"   # name yourself or another architect, in place
+    bsc project architect list                       # every project + the architect that owns it
+    bsc project architect set <key> <personaId>      # assign
+    bsc project architect clear <key>                # unassign
+
+Use `rename`, never `bsc persona set`, to change a name: `set` rewrites the whole record, so the start
+prompt and skills ride on a round trip that can drop them.
+
+Ownership is a current fact rather than a record of who created a project, so reassigning is normal.
+An unassigned project belongs to the sole architect when there is only one, and to NONE once there are
+several — so the moment a second architect exists, expect to assign. Split by what the projects are,
+not by how many each has.
+
 ## Teams — transitional
 
 You still hold `bsc teams` and `bsc persona`, and this session is still where the Teams Studio opens.

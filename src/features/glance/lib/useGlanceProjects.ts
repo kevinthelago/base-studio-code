@@ -491,6 +491,12 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   // projects DB. Computed once and used for BOTH the merge and the `isDraft` signal below, so a
   // DB-only project is a draft for colouring purposes exactly as a cached one is.
   const effectiveDrafts = useMemo(() => mergeDbIntoDrafts(drafts, dbProjects), [drafts, dbProjects]);
+  // #architects-own-projects — which architect OWNS each project, straight off the durable row. The
+  // ONLY writer is `bsc project architect set`; nothing in the UI edits it, so this is a pure read.
+  const architectByKey = useMemo(
+    () => Object.fromEntries(dbProjects.filter((r) => r.architect).map((r) => [r.key, r.architect as string])),
+    [dbProjects],
+  );
   return useMemo(
     // Merge (drafts + local published + GitHub published), FILTER to triaged/working projects (#2541 —
     // a draft/plan never shows), then overlay activity from real signals: liveness → `live` (#2263),
@@ -509,6 +515,9 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
                 // #4062 — the discovered lifecycle intent. NOT `lifecycleOf`: that applies the
                 // stage-gating default, and an unclassified project must show no chip at all.
                 lifecycle: planClassification[p.id]?.lifecycle,
+                // #architects-own-projects — absent ⇒ unassigned, which the graph resolves against
+                // the architect set (sole architect adopts it; several ⇒ no edge until assigned).
+                architect: architectByKey[p.id],
               })),
               triagedProjects,
             ),
@@ -522,6 +531,6 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
       activeKeys,
       openIssueKeys,
     ), projectProgress),
-    [effectiveDrafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification, openIssueKeys, projectProgress],
+    [effectiveDrafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification, architectByKey, openIssueKeys, projectProgress],
   );
 }

@@ -4,7 +4,7 @@
 // wiring real edges later is a drop-in — the page + graph core never change.
 import sampleGraphEmbedded from "@data/glance/sample-graph.json";
 import type { GRawNode, GRawEdge, GRole, GHealth, GActivity } from "./glanceGraph";
-import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId, architectNodeId, createdByEdgeId } from "./glanceGraph";
+import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId, architectNodeId, ownedByEdgeId } from "./glanceGraph";
 import { isProjectContract, type ProjectLink } from "./projectLinks";
 // Cross-feature types only, via the barrel (#1309 boundary): the consumer index (`kitUsage`) whose
 // (projectKey, kitId) edges the kit nodes are built from, plus the kit→library `requires` roll-up
@@ -20,7 +20,7 @@ export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample
  *  resolved (#2541): `health` (idle/healthy/warning/error) and `activity` (the lifecycle word), with an
  *  optional `reason` (the fault title) shown when health is degraded. `appType` (#3786) is the project's
  *  application architecture — the contract endpoint-type discriminator, absent ⇒ read as "application". */
-export interface ProjectLite { id: string; name: string; role?: GRole; lifecycle?: string; health?: GHealth; activity?: GActivity; reason?: string; faults?: number; appType?: AppType; /** Issue completion (#4118) — carried onto the L0 node so a project shows the same bar a worker does. */ progress?: { done: number; total: number } }
+export interface ProjectLite { id: string; name: string; role?: GRole; lifecycle?: string; health?: GHealth; activity?: GActivity; reason?: string; faults?: number; appType?: AppType; /** Issue completion (#4118) — carried onto the L0 node so a project shows the same bar a worker does. */ progress?: { done: number; total: number }; /** The ARCHITECT persona id that OWNS this project (#architects-own-projects), absent ⇒ unassigned. Set only by `bsc project architect set`; see {@link architectForProject} for how an unassigned project resolves. */ architect?: string }
 
 /** A UI kit as the adapter needs it (#2571) — id + display name, so a kit node reads the kit's NAME
  *  (falling back to the id). The store's `Kit[]` is structurally assignable, so the caller passes it as-is. */
@@ -34,6 +34,28 @@ export interface McpLite { id: string; name: string; projects: string[]; transpo
 /** An ARCHITECT persona, pared to what the L0 band needs (#glance-architect-band) — the funnel tier-1
  *  personas from the persona store, filtered to `role: "architect"` by the caller. */
 export interface ArchitectLite { id: string; name: string }
+
+/**
+ * Which architect a project belongs to on the network (#architects-own-projects), or `null` for none.
+ *
+ * Three cases, and the middle one is the whole design:
+ *
+ *  1. ASSIGNED to an architect that exists → that architect. The normal case, set by
+ *     `bsc project architect set`.
+ *  2. UNASSIGNED, and there is exactly ONE architect → that architect. Ownership only means something
+ *     once there is a choice to make, and this is what keeps a single-architect install looking
+ *     exactly as it always did instead of every project silently detaching the day this shipped.
+ *  3. UNASSIGNED with SEVERAL architects → none. There is no honest answer, and guessing one would
+ *     put a project under an architect that never claimed it. The empty edge is the graph asking.
+ *
+ * An assignment naming an architect that no longer exists (its persona was deleted or re-roled) falls
+ * through to the unassigned rules rather than drawing an edge to nothing — a stale id is a missing
+ * owner, not a different one.
+ */
+export function architectForProject(project: ProjectLite, architects: readonly ArchitectLite[]): string | null {
+  if (project.architect && architects.some((a) => a.id === project.architect)) return project.architect;
+  return architects.length === 1 ? architects[0].id : null;
+}
 
 /** The packaged SAMPLE project network — the spec's example (roles · edge kinds · a dependency CYCLE:
  *  reporting → analytics → reporting · hazards). No longer an auto-fallback for an empty app (#2272 — an
@@ -112,13 +134,13 @@ export function buildGlanceData(
     .map((l) => ({ id: l.id, from: l.from, to: l.to, kind: l.kind }));
 
   // The ARCHITECT dimension (#glance-architect-band) — the funnel's tier 1 lifted into the same fenced
-  // band as the library + contract dimensions. One node per architect persona, edged from EVERY project.
+  // band as the library + contract dimensions. One node per architect persona, edged from the projects
+  // it OWNS (#architects-own-projects).
   //
-  // FIRST CUT: connected to every project rather than the ones it created. The provenance field
-  // (`createdBy` on the project record) does not exist yet and nothing writes it, so filtering by it
-  // today would draw an architect with no edges at all. Once it exists — and once there is more than one
-  // architect to distinguish — this narrows to `projects.filter(p => p.createdBy === a.id)` and the rest
-  // of the shape is unchanged.
+  // This replaces the FIRST CUT, which edged every architect to every project because the ownership
+  // field did not exist and filtering on it would have drawn an architect with no edges at all. It now
+  // exists (`ProjectRow.architect`, written only by `bsc project architect set`), so a networking
+  // architect draws exactly its LAN/WAN projects and nobody else's.
   //
   // Edge direction follows the graph's consumer→provider convention (`from depends on to`), the same as
   // every other band dimension: the PROJECT is `from` and the lifted architect is `to`. That is also
@@ -134,7 +156,8 @@ export function buildGlanceData(
       activity: "idle",
     });
     for (const p of projects) {
-      rawEdges.push({ id: createdByEdgeId(p.id, a.id), from: p.id, to: nodeId, kind: "created-by" });
+      if (architectForProject(p, architects) !== a.id) continue;
+      rawEdges.push({ id: ownedByEdgeId(p.id, a.id), from: p.id, to: nodeId, kind: "owned-by" });
     }
   }
 

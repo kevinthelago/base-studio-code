@@ -73,7 +73,7 @@ export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" 
  *  CONTRACT edges (#3786): `uses-mcp` (an MCP server) and `uses-service` (a third-party service). Every
  *  band edge ({@link isBandEdge}) routes vertically into the fenced band; the project contracts flow
  *  left→right. */
-export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "uses-mcp" | "uses-service" | "created-by" | "served-by";
+export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "uses-mcp" | "uses-service" | "owned-by" | "served-by";
 /** A Glance node's KIND (#2571 → generalized #3119 → external contracts #3786). A PROJECT (the default), a
  *  UI-KIT node (`kit`, the `ui` library graph — kept as-is so existing fixtures + persisted ids are
  *  unaffected), a generalized cross-graph `library` node (an algorithm / sound, carrying
@@ -203,9 +203,9 @@ export const isArchitectNodeId = (nodeId: string): boolean => nodeId.startsWith(
 /** The persona id behind an `architect:<personaId>` node id (identity for anything already bare). */
 export const architectIdOfNode = (nodeId: string): string =>
   nodeId.startsWith(ARCHITECT_NODE_PREFIX) ? nodeId.slice(ARCHITECT_NODE_PREFIX.length) : nodeId;
-/** Stable id for a project→architect `created-by` edge — prefixed so it never collides with any other
+/** Stable id for a project→architect `owned-by` edge — prefixed so it never collides with any other
  *  edge id. */
-export const createdByEdgeId = (projectKey: string, personaId: string): string => `createdby:${projectKey}>${personaId}`;
+export const ownedByEdgeId = (projectKey: string, personaId: string): string => `ownedby:${projectKey}>${personaId}`;
 
 /** Namespace prefix for a KIT node id (#2571). */
 export const KIT_NODE_PREFIX = "kit:";
@@ -272,7 +272,7 @@ export const isLibraryEdge = (kind: GEdgeKind): boolean => kind === "uses-kit" |
  *  node in this graph is a shared DEPENDENCY — a kit, an algorithm, an MCP server — and lifting those
  *  keeps their health out of a project's roll-up and their edges out of the project DAG. An architect is
  *  the opposite relationship: it CREATED these projects rather than being consumed by them, so it belongs
- *  beside them in the same network. It is safe there because it is a SINK — every `created-by` edge
+ *  beside them in the same network. It is safe there because it is a SINK — every `owned-by` edge
  *  points AT it — and a cycle needs a path back out.
  *
  *  Is `n` a fenced-BAND node (#3786) — ANY lifted non-project node: a library node (kit/algorithm/sound)
@@ -543,7 +543,11 @@ export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: 
   // The PROVENANCE dimension (#glance-architect-band): the architect session that created this project.
   // Dashed amber, matching ARCHITECT_META, so the tier that CREATES a project reads apart from the
   // dependencies it consumes.
-  "created-by": { label: "created by", color: ARCHITECT_COLOR, dash: "4 4", w: 1.6, surface: "created by an architect session · funnel provenance" },
+  // #architects-own-projects: OWNERSHIP, not provenance. It was `created-by`/"created by", which stopped
+  // being true the moment a project could be REASSIGNED — an edge that can move cannot claim to record
+  // who created the thing. The surface names the command because there is no picker anywhere: `bsc` is
+  // the only surface that sets this, so the graph is where a user has to learn the verb exists.
+  "owned-by": { label: "architect", color: ARCHITECT_COLOR, dash: "4 4", w: 1.6, surface: "this project's architect · reassign with `bsc project architect set <key> <persona>`" },
   // The SYSTEM-SESSION dimension (#glance-reads-left-to-right-sessions-to-libraries): the architect is
   // SERVED BY the app-owned studio sessions that produce the material its projects are built from.
   // Dashed slate, matching SESSION_META, and drawn architect→session so the session sits one layer

@@ -909,6 +909,8 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
+ "bsc-util",
+ "serde_json",
 ]
 
 [[package]]
@@ -916,6 +918,7 @@ name = "bsc-project"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-json-store",
  "bsc-sqlite-util",
  "bsc-util",
  "plandb",
