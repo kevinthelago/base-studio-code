@@ -802,7 +802,9 @@ name = "bsc-data"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-json-store",
  "bsc-sqlite-util",
+ "bsc-util",
  "csv",
  "duckdb",
  "keyring",
@@ -849,6 +851,7 @@ name = "bsc-graph"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-data",
  "bsc-util",
  "serde",
  "serde_json",

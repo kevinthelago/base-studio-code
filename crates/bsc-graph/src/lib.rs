@@ -636,7 +636,40 @@ pub struct Finding {
 /// primitives) that is `untyped` (no `kind`), carries an `invalid-kind` or a likely-`mistyped` one, or has
 /// `missing-viz` (no `vizCode` AND no in-app program). Pure over the graph.
 pub fn doctor(g: &Value) -> Vec<Finding> {
+    doctor_with_entities(g, &[])
+}
+
+/// [`doctor`], plus the DATA-GRAPH surface check when the entity ids are supplied
+/// (the-data-graph-a-global-third-pillar).
+///
+/// A node declares the entities it reads or writes; this is what holds it to the declaration. A name
+/// that matches no entity is reported — a surface restriction nothing verifies is a comment, and the
+/// failure it invites is the worst kind: a node believed to be bounded that is not.
+///
+/// `entities` empty means the caller did not open the data graph, and the check is SKIPPED rather
+/// than failing every declaration — the same shape the provides-set uses when no store is open.
+pub fn doctor_with_entities(g: &Value, entities: &[String]) -> Vec<Finding> {
     let mut out = Vec::new();
+    if !entities.is_empty() {
+        for im in implementations_of(g) {
+            let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            for key in ["reads", "writes"] {
+                for name in im.get(key).and_then(Value::as_array).into_iter().flatten() {
+                    let Some(n) = name.as_str() else { continue };
+                    if !entities.iter().any(|e| e == n) {
+                        out.push(Finding {
+                            id: id.clone(),
+                            category: "unknown-entity",
+                            detail: format!("`{key}` names `{n}`, which is not an entity in the data graph"),
+                            suggestion: Some(format!(
+                                "create it (`bsc data entity set`) or correct the `--{key}` declaration"
+                            )),
+                        });
+                    }
+                }
+            }
+        }
+    }
     for im in implementations_of(g) {
         if im.get("role").and_then(Value::as_str) != Some("algorithm") {
             continue; // primitives describe a built-in — nothing to type or visualize
@@ -685,6 +718,29 @@ pub fn doctor(g: &Value) -> Vec<Finding> {
 
 #[cfg(test)]
 mod tests {
+    /// The SURFACE RESTRICTION is only a restriction if something checks it. A declaration naming no
+    /// entity is reported; a correct one is silent; and with NO entity list supplied the check is
+    /// skipped rather than condemning every declaration — the caller simply did not open the store.
+    #[test]
+    fn doctor_reports_a_declaration_naming_no_entity() {
+        let g = serde_json::json!({ "implementations": [{
+            "id": "a.ts", "tech": "typescript", "role": "algorithm", "name": "A", "code": "export const a=1;",
+            "kind": "accumulate", "reads": ["console-state"], "writes": ["ghost-entity"],
+        }]});
+        let unknown = |fs: &[Finding]| -> Vec<String> {
+            fs.iter().filter(|f| f.category == "unknown-entity").map(|f| f.detail.clone()).collect()
+        };
+
+        let found = unknown(&doctor_with_entities(&g, &["console-state".to_string()]));
+        assert_eq!(found.len(), 1, "exactly the undeclared one: {found:?}");
+        assert!(found[0].contains("ghost-entity"), "and it NAMES it: {found:?}");
+
+        let both = doctor_with_entities(&g, &["console-state".into(), "ghost-entity".into()]);
+        assert!(unknown(&both).is_empty(), "a correct declaration is silent");
+
+        assert!(unknown(&doctor(&g)).is_empty(), "no entity list ⇒ skipped, not all-condemned");
+    }
+
     use super::*;
 
     #[test]
