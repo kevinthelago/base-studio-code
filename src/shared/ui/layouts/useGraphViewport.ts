@@ -68,6 +68,14 @@ export interface GraphViewport {
   setWorld: (el: HTMLElement | null) => void;
   /** The `transform` style to spread onto the world layer. */
   worldTransform: React.CSSProperties;
+  /** The viewport (clipping) element, for a consumer that must MEASURE it — viewport culling needs the
+   *  visible size to invert the transform into world coords.
+   *
+   *  Read it in an EFFECT, never during render: the react-compiler rule forbids ref access on the render
+   *  path, and the value is meaningless there anyway (the element has no size until it is laid out).
+   *  Exposed rather than duplicated because this hook already owns the element — a consumer attaching a
+   *  second ref to the same node would be a second source of truth for one measurement. */
+  vpEl: React.MutableRefObject<HTMLDivElement | null>;
 }
 
 /**
@@ -365,5 +373,6 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
   return {
     view, setVp, setWorld, onCanvasDown, fit, centerOn, zoomBy, zoomTo, zoomToCentered, dragMoved, panBy, zoomAtClient,
     worldTransform: { transform: `translate(${view.tx}px,${view.ty}px) scale(${view.scale})`, transformOrigin: "0 0" },
+    vpEl: vpRef,
   };
 }

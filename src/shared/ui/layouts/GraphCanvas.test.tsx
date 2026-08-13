@@ -20,6 +20,9 @@ function fakeVp(over: Partial<GraphViewport> = {}): GraphViewport {
     zoomAtClient: () => {},
     dragMoved: { current: false },
     worldTransform: { transform: "translate(0px,0px) scale(1)" },
+    // The viewport element the real hook owns (#components-graph-culls-offscreen-nodes) — a consumer
+    // measures it for viewport culling. Null here: GraphCanvas itself never reads it.
+    vpEl: { current: null },
     ...over,
   };
 }
