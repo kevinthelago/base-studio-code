@@ -88,6 +88,21 @@ function ImplInspector({ graph, impl, onSelectImpl, onExpandViz }: {
           </Row>
         )}
 
+        {/* MODULE STATE — the top-level mutable bindings this module holds, named. Surfaced because it
+            decides whether vendoring the record is equivalent to importing the module: `provides` hands
+            a graph consumer THIS source instead of the bundled one, so a module with state gives that
+            consumer a second instance of it. Without this the fact lives only in the source. */}
+        {!!impl.moduleState?.length && (
+          <Row gap={8} align="center" style={{ minWidth: 0, flexWrap: "wrap" }}>
+            <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase", flex: "none" }}>
+              Module state
+            </Text>
+            {impl.moduleState.map((n) => (
+              <Text key={n} as="code" mono size={11} tone="accent">{n}</Text>
+            ))}
+          </Row>
+        )}
+
         {/* The visualization is always rendered inline (#3199) — an auto-playing preview; clicking it
             promotes the animation to the full graph canvas (#3205, via the workbench). Code stays below. */}
         {viz && onExpandViz && <VizPreview viz={viz} onExpand={onExpandViz} />}

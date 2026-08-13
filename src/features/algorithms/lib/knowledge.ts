@@ -65,6 +65,16 @@ export interface AlgoImpl {
   /** PROVENANCE (#4091/#4107) — the scanned-root-relative path of the file this was harvested from.
    *  The Rust mirror is `AlgoImpl.src`. Absent on anything authored before it (every seeded impl). */
   src?: string;
+  /** The module's TOP-LEVEL MUTABLE BINDINGS — the state it holds, named. Set by a module-granularity
+   *  harvest; absent (never `[]`) on a pure module and on any function-granularity impl, which is a
+   *  fragment of a file and so holds none of the file's module state.
+   *
+   *  This is the property that decides whether vendoring the record is equivalent to importing the
+   *  module. `provides` makes the loader hand a graph consumer this source INSTEAD of the bundled
+   *  module, so a module holding state gives that consumer a SECOND instance of it — a second queue,
+   *  a second cache, a second timer — and the two diverge with nothing on screen to say so. Naming the
+   *  bindings is what makes that visible rather than something each reader rediscovers in the source. */
+  moduleState?: string[];
   /** The FOLDER (#4107) — the nested, `/`-delimited path this impl organizes under, derived from
    *  {@link src} by the SAME derivation components use (`bsc_util::folder_from_src`). Harvest is 1:1:
    *  the folder mirrors where the code actually lives, so the library reads like the tree it came from.
