@@ -12,7 +12,11 @@ vi.mock('./previewBundle', () => ({
 }));
 
 // Register the html renderer so the shell can mount it.
-import './renderers/htmlRenderer';
+// The shell looks a renderer up by kind; registering it here is what puts it there. It used to
+// arrive as an import side effect (renderers-register-at-a-named-site-not-on-import).
+import { registerRenderer } from './registry';
+import { htmlRenderer } from './renderers/htmlRenderer';
+registerRenderer(htmlRenderer);
 import { PreviewPaneShell } from './PreviewPaneShell';
 
 describe('PreviewPaneShell (#581)', () => {

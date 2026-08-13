@@ -12,7 +12,12 @@ vi.mock('../previewBundle', () => ({
   lookupMem: () => null,
 }));
 
-import './gltfRenderer';
+// Registered HERE rather than by importing for a side effect: the renderer module is a pure
+// definition now, so a test that wants it in the registry must say so
+// (renderers-register-at-a-named-site-not-on-import).
+import { registerRenderer } from '../registry';
+import { gltfRenderer } from './gltfRenderer';
+registerRenderer(gltfRenderer);
 
 function makeContainer(): HTMLDivElement {
   const div = document.createElement('div');

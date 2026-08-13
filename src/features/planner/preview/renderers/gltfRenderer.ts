@@ -11,7 +11,6 @@
 
 import type { PreviewRenderer, RendererHandle } from '../registry';
 import type { RenderableChunk, PreviewStatus } from '../types';
-import { registerRenderer } from '../registry';
 import { buildGltfRuntimeHtml } from '../streamingRuntime';
 
 type GltfPayload = { url?: string; base64?: string };
@@ -91,4 +90,3 @@ function createGltfRenderer(): PreviewRenderer {
 }
 
 export const gltfRenderer = createGltfRenderer();
-registerRenderer(gltfRenderer);
