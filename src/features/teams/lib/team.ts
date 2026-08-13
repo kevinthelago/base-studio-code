@@ -147,6 +147,62 @@ export const BUILTIN_ORGS: Team[] = makeBuiltinOrgs();
 export const STUDIO_NETWORK_ID = "org-planning-studio";
 const DEBUGGER_NODE = "debugger";
 
+/** The Studio Network position that IS the architect — the hub of the drill-in below. */
+export const ARCHITECT_NODE = "architect";
+
+/** The system sessions an architect can start / stop / ask — the same closed set `bsc session`
+ *  resolves against (`crates/bsc-session`), spelled as Studio Network node ids. The debugger and the
+ *  request-pool sessions are deliberately absent: neither is reachable from any architect verb. */
+const ARCHITECT_COMMANDED: ReadonlySet<string> = new Set([
+  "designer",
+  "librarian",
+  "sound-designer",
+  "integrator",
+]);
+
+/**
+ * The Studio Network as the ARCHITECT commands it (#architect-node-expands-into-system-sessions) —
+ * the graph its L0 node expands into.
+ *
+ * WHY THIS IS A DIFFERENT GRAPH FROM THE WHOLE NETWORK, and not a second entrance to the same one.
+ * The base-studio-code project node drills into every app-owned session, which is the honest answer to
+ * "what does the app itself run" — it includes the debugger (Settings-toggled, full-capability) and
+ * each auto-spawned request session. The ARCHITECT commands neither of those. What it commands is
+ * exactly the closed registry its verbs reach (`bsc session start|stop|ask`), so that is what its
+ * drill-in shows. Two nodes, two questions, two answers — which is the overlap this item was told not
+ * to leave unresolved.
+ *
+ * The architect itself STAYS in the graph, as the hub the `served-by` edges hang off. Those edges are
+ * the L0 relationship work from #glance-reads-left-to-right-sessions-to-libraries moved INSIDE rather
+ * than deleted: the direction it settled (the architect points at what serves it) is preserved.
+ *
+ * A no-op returning the team unchanged for any non-studio team, so a caller cannot accidentally narrow
+ * a user's own team to five positions.
+ */
+export function studioNetworkForArchitect(org: Team): Team {
+  if (org.id !== STUDIO_NETWORK_ID) return org;
+  // Derived from the position set rather than a second literal list: a session added to the network
+  // joins the architect's drill automatically, and one removed cannot leave a dangling edge behind.
+  const commanded = org.positions.filter((p) => ARCHITECT_COMMANDED.has(p.nodeId));
+  const architect = org.positions.find((p) => p.nodeId === ARCHITECT_NODE);
+  if (!architect) return org; // a seed without an architect: show what is there rather than nothing
+  return {
+    ...org,
+    positions: [architect, ...commanded],
+    // Only the architect->session edges. The network's own relationships (designer<->librarian, the
+    // planner's sourcing) describe collaboration BETWEEN sessions, which is the base-studio-code
+    // node's story, not this one — and half of them would dangle here anyway, since the planner and
+    // the libraries are not in this position set.
+    relationships: commanded.map((p) => ({
+      id: `r-commands-${p.nodeId}`,
+      archetype: "stewards",
+      from: ARCHITECT_NODE,
+      to: p.nodeId,
+      bow: 0,
+    })),
+  };
+}
+
 /**
  * A RUNTIME overlay on the Studio Network (#3317): when the debug session is toggled on (Settings,
  * `debugSession`, #3298), the **debugger** joins the graph and SERVES the designer — it drains the

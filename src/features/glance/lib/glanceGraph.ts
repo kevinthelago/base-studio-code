@@ -172,7 +172,15 @@ export const SESSION_META: BandMeta = {
 };
 
 /** Namespace prefix for a SYSTEM-SESSION node id — its own namespace, for the same reason the architect
- *  has one: a bare `designer` would be indistinguishable from a project key. */
+ *  has one: a bare `designer` would be indistinguishable from a project key.
+ *
+ *  NOTE (#architect-node-expands-into-system-sessions): the L0 graph no longer EMITS these. The system
+ *  sessions moved into the architect node's drill-in, which is built by the Team→Glance adapter and so
+ *  produces `agent` nodes. This vocabulary — the id namespace, `SESSION_META`, `SESSION_COLOR` and the
+ *  `served-by` edge row — is kept rather than deleted because it is shared presentation the inspector
+ *  and legend still read from, and because the L0 row is a layout decision that could reasonably come
+ *  back. Nothing constructs a `session` NODE today; if that is still true next time someone is here,
+ *  retiring the kind is a contained edit in this file. */
 export const SESSION_NODE_PREFIX = "session:";
 /** The stable, collision-proof id of the graph node for an app-owned system session. */
 export const sessionNodeId = (sessionId: string): string => `${SESSION_NODE_PREFIX}${sessionId}`;
@@ -188,6 +196,10 @@ export const servedByEdgeId = (personaId: string, sessionId: string): string => 
 export const ARCHITECT_NODE_PREFIX = "architect:";
 /** The stable, collision-proof id of the graph node for an architect persona. */
 export const architectNodeId = (personaId: string): string => `${ARCHITECT_NODE_PREFIX}${personaId}`;
+/** Whether a node id names an ARCHITECT persona — the L0 node that expands into the system sessions
+ *  it commands (#architect-node-expands-into-system-sessions). Prefix-keyed, like every other band
+ *  namespace, so it can never mistake a project key (a `[a-z0-9-]` slug, no colon) for one. */
+export const isArchitectNodeId = (nodeId: string): boolean => nodeId.startsWith(ARCHITECT_NODE_PREFIX);
 /** The persona id behind an `architect:<personaId>` node id (identity for anything already bare). */
 export const architectIdOfNode = (nodeId: string): string =>
   nodeId.startsWith(ARCHITECT_NODE_PREFIX) ? nodeId.slice(ARCHITECT_NODE_PREFIX.length) : nodeId;

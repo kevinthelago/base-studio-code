@@ -36,11 +36,11 @@ import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 import { resumeProjectFleet, nothingToResume, completedPanes } from "./lib/resumeProject";
 import { decideExpand } from "./lib/expandNode";
 import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
-import { buildGraph, focusSets, isBandNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
+import { buildGraph, focusSets, isBandNode, isArchitectNodeId, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
 import { timedSync } from "@/shared/lib/core/perf";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
-import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode, studioNodeHome, applyStudioLiveStatus } from "./lib/studioProject";
+import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, applyStudioLiveStatus } from "./lib/studioProject";
 import { DEBUG_PANE_ID } from "@/features/debug";
 import { isStudioId, useStudioViewers } from "@/features/studio-sessions";
 import { useProjectComplete } from "./lib/useProjectComplete";
@@ -245,9 +245,17 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // lifecycle is the Settings toggle, not the reaper.)
   // MULTI (#3361): every open studio node must be pinned, not just the newest — otherwise the idle
   // reaper could kill a session the user has on screen in another morph.
+  // Whether the current drill shows APP-OWNED STUDIO SESSIONS rather than a project's fleet. TWO
+  // drills do (#architect-node-expands-into-system-sessions): the base-studio-code project (every
+  // app-owned session, incl. the debugger + request pool) and the ARCHITECT node (just the sessions
+  // its verbs command). They differ in WHICH sessions they show, but every downstream behaviour —
+  // pinning them against the reaper, live status, opening a node, the morph, no fleet-resume — is
+  // identical, because both graphs use the same Studio Network position ids. One predicate, so a new
+  // studio drill cannot pick up four of the six behaviours and silently miss the rest.
+  const isStudioDrill = !!drill && (drill === BASE_STUDIO_PROJECT_ID || isArchitectNodeId(drill));
   const openStudioIds = useMemo(
-    () => (drill === BASE_STUDIO_PROJECT_ID ? occupants(placements).filter(isStudioId) : []),
-    [drill, placements],
+    () => (isStudioDrill ? occupants(placements).filter(isStudioId) : []),
+    [isStudioDrill, placements],
   );
   useStudioViewers(openStudioIds);
   const closeStudio = useAppStore((s) => s.closeStudio);
@@ -364,6 +372,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     // The synthetic base-studio-code project (#3319) drills into the app's OWN studio-session graph — the
     // Studio Network team, with the debugger node gated by the Settings toggle (#3317). No plan.db fleet.
     if (drillNode.id === BASE_STUDIO_PROJECT_ID) return buildStudioFleetData(teams, personas, debugSession, activeDebugSlots);
+    // #architect-node-expands-into-system-sessions: the architect's node EXPANDS into the system
+    // sessions it commands, rather than standing beside them at L0.
+    if (isArchitectNodeId(drillNode.id)) return buildArchitectFleetData(teams, personas);
     // Team-driven fleet (#3101/#3103): fold the team's ROLE-ACTOR streams (curator/documentor/…) into
     // the drilled graph so what SHOWS matches what LAUNCHES — the same `teamRoleStreams` the launch
     // composes (`usePlanPublish`). A team position for a seedable role becomes a node even before the
@@ -388,7 +399,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             // (`studioPaneIdForNode`) — not `fleetPaneId(project, node)`. Running the fleet overlay over them
             // looked up a pane that never exists, so none was ever found live (#3421).
             rawNodes:
-              drill === BASE_STUDIO_PROJECT_ID
+              isStudioDrill
                 ? applyStudioLiveStatus(fleetData.rawNodes, { debugSession, paneClaudeActive, paneStatus })
                 : applyFleetLiveStatus(withStreamProgress(fleetData.rawNodes, streamDoneWithDirector), drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes, ended: endedPanes }),
           }
@@ -433,7 +444,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // library/resource node or any non-studio drill returns null. Non-null ⇒ this node opens an app-owned
   // session, not a fleet cell.
   const studioPaneId = (nodeId: string): string | null =>
-    drill === BASE_STUDIO_PROJECT_ID ? studioPaneIdForNode(nodeId) : null;
+    isStudioDrill ? studioPaneIdForNode(nodeId) : null;
   // A node is MORPHABLE — its terminal openable inline via the in-graph morph — iff its identity pane id
   // (`<project>:<stream>` or `<project>:director`) is a live cell of a launched fleet tab. EVERY fleet
   // node — workers AND the director — gets the morph (#2534/#2542). Drilled only. In the base-studio-code
@@ -444,7 +455,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // the same conversation, never a second session).
   const isLiveAgent = (nodeId: string) => {
     if (!drill) return false;
-    if (drill === BASE_STUDIO_PROJECT_ID) {
+    if (isStudioDrill) {
       if (studioNodeHome(nodeId)?.kind !== "morph") return false;
       return nodeId === "debugger" ? debugSession : true;
     }
@@ -490,7 +501,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
    */
   const expandNode = (id: string) => {
     if (!drill) return;
-    const isStudio = drill === BASE_STUDIO_PROJECT_ID;
+    const isStudio = isStudioDrill;
     const paneId = isStudio ? "" : fleetPaneId(drill, id);
     const action = decideExpand({
       isStudioProject: isStudio,
@@ -587,7 +598,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Scoped to a drilled REAL (plan.db) project. The base-studio-code studio project (#3319) has no
   // plan.db fleet — its sessions are app-managed (the debugger toggle, the always-on Studio team) — so
   // it doesn't take a fleet-resume; its live nodes still open via the graph morph as before.
-  const canResume = !!drill && drill !== BASE_STUDIO_PROJECT_ID;
+  // Neither studio drill takes a fleet-resume: their sessions are app-managed, not plan.db workers.
+  const canResume = !!drill && !isStudioDrill;
   // The project's display title (for the recreated "· build" tab name); falls back to the graph slug.
   // Cosmetic — the build tab is matched/reused by the stable key.
   const projectDisplayName = (key: string) =>

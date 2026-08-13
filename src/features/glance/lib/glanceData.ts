@@ -4,8 +4,7 @@
 // wiring real edges later is a drop-in — the page + graph core never change.
 import sampleGraphEmbedded from "@data/glance/sample-graph.json";
 import type { GRawNode, GRawEdge, GRole, GHealth, GActivity } from "./glanceGraph";
-import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId, architectNodeId, createdByEdgeId, sessionNodeId, servedByEdgeId } from "./glanceGraph";
-import { SYSTEM_SESSION_IDS } from "./glanceFleet";
+import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId, architectNodeId, createdByEdgeId } from "./glanceGraph";
 import { isProjectContract, type ProjectLink } from "./projectLinks";
 // Cross-feature types only, via the barrel (#1309 boundary): the consumer index (`kitUsage`) whose
 // (projectKey, kitId) edges the kit nodes are built from, plus the kit→library `requires` roll-up
@@ -139,37 +138,17 @@ export function buildGlanceData(
     }
   }
 
-  // The SYSTEM-SESSION dimension (#glance-reads-left-to-right-sessions-to-libraries) — the app-owned
-  // studio singletons that produce the material a build runs on: UI kits (designer), algorithms
-  // (librarian), sounds (sound-designer) and integration connectors (integrator).
+  // The SYSTEM-SESSION dimension MOVED (#architect-node-expands-into-system-sessions). It used to emit
+  // one L0 node per app-owned session as a SIBLING to the architect's left, wired `architect -> session`
+  // (#glance-reads-left-to-right-sessions-to-libraries). The maintainer's directive is that the
+  // architect's node EXPANDS INTO them instead, so they are now the architect node's DRILL-IN
+  // (`buildArchitectFleetData`) and no longer appear at L0 at all.
   //
-  // The ARCHITECT is itself in `SYSTEM_SESSION_IDS` and is EXCLUDED here: it already has its own L0 node
-  // above, and emitting it twice would draw a session that serves itself.
+  // The edge-direction work from that item is not lost — it moved INSIDE. `studioNetworkForArchitect`
+  // wires the architect to each session it commands, so the relationship the L0 row expressed is still
+  // drawn, one level down, where the drill-in needs it.
   //
-  // Edge direction is what places them. The graph lays a dependency at a LOWER layer (further LEFT), and
-  // the convention is `from depends on to` — so the ARCHITECT is `from` and the session is `to`, which
-  // puts the sessions one layer left of the architect: system sessions → architect → projects → libraries,
-  // one axis, one reading order.
-  //
-  // Emitted only when there IS an architect. Without one these would be a row of unconnected cards
-  // floating beside the network, which says less than drawing nothing.
-  if (architects.length > 0) {
-    for (const sessionId of SYSTEM_SESSION_IDS) {
-      if (sessionId === "architect") continue;
-      const nodeId = sessionNodeId(sessionId);
-      rawNodes.push({
-        id: nodeId,
-        slug: sessionId,
-        kind: "session",
-        role: "infra",   // app-owned + foundational, like a kit — the canvas draws it from `kind`
-        health: "off",   // a studio singleton is launched on demand, not a standing process
-        activity: "idle",
-      });
-      for (const a of architects) {
-        rawEdges.push({ id: servedByEdgeId(a.id, sessionId), from: architectNodeId(a.id), to: nodeId, kind: "served-by" });
-      }
-    }
-  }
+  // The ARCHITECT node itself is unchanged and still emitted above: it is the thing that expands.
 
   // The UI-KIT dimension (#2571): one node per DISTINCT kit that has ≥1 consumer AMONG the current
   // projects, edged from every consuming project to the shared kit node. The edge follows the graph's
