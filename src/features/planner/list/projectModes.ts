@@ -26,4 +26,8 @@ export const PROJECT_MODES: TabItem[] = [
   // The Sounds library (#3072, epic #3071) — the synthesis-first audio pillar, structured like
   // Components/Algorithms: a kit of live-synthesized cues. A no-PTY page (like Teams), folded in here.
   { id: "sounds",     label: "Sounds",      hint: "the sound library — synthesized UI cues, organized into kits" },
+  // The DATA GRAPH (the-data-graph-a-global-third-pillar) — the third pillar beside Components and
+  // Algorithms. Global, like they are: our own data model, not a project's. Folded in here as a tab
+  // for the same reason they were — a single read-only page needs no rail destination of its own.
+  { id: "data",       label: "Data",        hint: "the data graph — our own entities, and what reads and writes them" },
 ];

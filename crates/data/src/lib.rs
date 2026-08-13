@@ -22,6 +22,10 @@ pub mod schema;
 pub mod shape;
 pub mod ddl;
 pub mod connector;
+/// The DATA GRAPH (the-data-graph-a-global-third-pillar) — the GLOBAL store of our own entities,
+/// the third pillar beside `bsc ui` and `bsc graph`. Distinct from the per-project Data Model in the
+/// rest of this crate: one data concept, two scopes.
+pub mod entity;
 pub mod reconcile;
 pub mod error;
 pub mod behavior;

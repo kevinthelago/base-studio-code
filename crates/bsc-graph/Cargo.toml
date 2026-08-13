@@ -6,6 +6,11 @@ description = "The Algorithms knowledge graph (#2760/#2761) — the curated conc
 
 [dependencies]
 bsc-util = { path = "../bsc-util" }
+# The DATA GRAPH (the-data-graph-a-global-third-pillar) — `doctor` holds a node to the entities it
+# declares, so it must be able to READ the entity store. One-way: bsc-data knows nothing of the
+# algorithms graph.
+bsc-data = { path = "../data" }
+
 # The shared FS-confinement gate (#3475) — `require_within_repo_root`, the CLI twin of the
 # `bsc-confine` hook, so a harvest cannot read outside a confined session's root.
 bsc-cli-util = { path = "../bsc-cli-util" }

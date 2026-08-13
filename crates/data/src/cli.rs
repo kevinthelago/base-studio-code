@@ -260,6 +260,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     if cmd == "connector" {
         return cmd_connector(&args, prog);
     }
+    // `entity` is the GLOBAL data graph (~/.base-studio-code/entities/) — our own entities, not a
+    // project's DuckDB — so like `connector` it must NOT require --db / BSC_DATA_DB. Dispatched first.
+    if cmd == "entity" {
+        return cmd_entity(&args);
+    }
     let db = resolve_db(&args.db)?;
     match (cmd.as_str(), sub) {
         ("model", "get") => {
@@ -449,6 +454,59 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 /// an authored connector becomes a native, app-wide integration like the built-ins. The spec is
 /// validated + **secret-free** on add (credentials go to the keychain, #1194). This is the same store
 /// and semantics the deprecated `bsc plan integration` reaches.
+/// `bsc data entity set|get|list|remove` — the GLOBAL data graph, the third pillar beside `bsc ui`
+/// and `bsc graph`. Reaches no database: an entity is a DESCRIPTION (name, fields, shape, instance
+/// cardinality), not a table of rows.
+fn cmd_entity(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let store = crate::entity::open(args.db.as_deref())?;
+    match sub {
+        // Upsert one entity or an array, by id. Validated BEFORE anything is written, and a bad batch
+        // is rejected WHOLE — a half-applied batch is the state nobody can reason about.
+        "set" => {
+            let raw: serde_json::Value = bsc_sqlite_util::read_stdin_json_one("entity JSON")?;
+            let items: Vec<crate::entity::Entity> = match raw {
+                serde_json::Value::Array(a) => a
+                    .into_iter()
+                    .map(|v| serde_json::from_value(v).map_err(|e| e.to_string()))
+                    .collect::<Result<_, _>>()?,
+                v => vec![serde_json::from_value(v).map_err(|e| e.to_string())?],
+            };
+            for e in &items {
+                e.validate()?;
+            }
+            let mut ids = Vec::new();
+            for e in &items {
+                let body = serde_json::to_string(e).map_err(|e| e.to_string())?;
+                store.set(&e.id, &body)?;
+                ids.push(e.id.clone());
+            }
+            println!("{}", serde_json::to_string(&ids).map_err(|e| e.to_string())?);
+            Ok(())
+        }
+        "get" => {
+            let id = args.positional.get(2).ok_or("usage: bsc data entity get <id>")?;
+            match store.get(id)? {
+                Some(raw) => println!("{raw}"),
+                None => println!("null"),
+            }
+            Ok(())
+        }
+        "list" => {
+            let all = crate::entity::list(&store);
+            println!("{}", serde_json::to_string(&all).map_err(|e| e.to_string())?);
+            Ok(())
+        }
+        "remove" => {
+            let id = args.positional.get(2).ok_or("usage: bsc data entity remove <id>")?;
+            store.remove(id)?;
+            println!("{id}");
+            Ok(())
+        }
+        _ => Err("usage: bsc data entity set|get <id>|list|remove <id>".into()),
+    }
+}
+
 fn cmd_connector(args: &Args, prog: &str) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
     let path = crate::runtime_store_path();

@@ -21,6 +21,12 @@ csv = "1"
 # Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper), `resolve_store_path` (--db→env→default),
 # and `emit` (the lean-TSV-vs-JSON dispatch) the `bsc-data` CLI shares with `bsc-plan` / `bsc-logs` / ….
 bsc-cli-util = { path = "../bsc-cli-util" }
+# The DATA GRAPH's global entity store (the-data-graph-a-global-third-pillar) — the same
+# verbatim-JSON-per-id store the component + kit libraries use. An entity is a DESCRIPTION, not rows,
+# so the global pillar reaches no database at all.
+bsc-json-store = { path = "../bsc-json-store" }
+bsc-util = { path = "../bsc-util" }
+
 # Shared stdin/print helpers (#2170): `read_stdin_json_one` (trim + parse one JSON object from stdin)
 # and `print_json` (compact/pretty stdout) — the rusqlite-free JSON side of the shared SQLite CLI util,
 # so `bsc data` shares the exact stdin/print behavior of `bsc plan` / `bsc skill`.

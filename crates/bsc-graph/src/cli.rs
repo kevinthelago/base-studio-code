@@ -32,7 +32,7 @@ pub const BOOL_FLAGS: [&str; 8] =
     ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 28] = [
+pub const FLAGS: [&str; 30] = [
     "--pretty",
     "--all",
     "--id",
@@ -51,6 +51,8 @@ pub const FLAGS: [&str; 28] = [
     "--folder",
     "--provides",
     "--module-state",
+    "--reads",
+    "--writes",
     "--module",
     "--composes",
     "--worthy-only",
@@ -159,6 +161,16 @@ fn single_record_test(id: &str, out: &str, run: bool, g: &Value) -> Result<Value
             }
             Ok(result)
         }
+
+/// Every entity id in the GLOBAL data graph, for the surface-restriction check
+/// (the-data-graph-a-global-third-pillar). Best-effort: an unreadable or absent store yields an EMPTY
+/// list, which SKIPS the check rather than condemning every declaration — a machine that has never
+/// written an entity must not be told all of its nodes are wrong.
+fn entity_ids() -> Vec<String> {
+    bsc_data::entity::open(None)
+        .map(|s| bsc_data::entity::list(&s).into_iter().map(|e| e.id).collect())
+        .unwrap_or_default()
+}
 
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     // Before anything reads a flag: an unknown one is an ERROR, never a silent no-op (#4154).
@@ -312,6 +324,24 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // SETS only. `im` is the MERGE payload (#4154), so dropping a key here means "leave it
                 // alone", never "remove it" — clearing is what `--clear moduleState` is for, and having
                 // two ways to clear one field is how they drift apart.
+                // THE SURFACE RESTRICTION (the-data-graph-a-global-third-pillar). A node declares the
+                // data-graph entities it is responsible for, and is held to it — the algorithm↔data
+                // leg, which was the one edge of the three-pillar model with no mechanism at all.
+                // Declared here rather than inferred, because the point is to BOUND a node's reach:
+                // an inferred set can only ever describe what the code already does.
+                for (flag, key) in [("--reads", "reads"), ("--writes", "writes")] {
+                    if let Some(v) = flag_value(&args, flag) {
+                        let names: Vec<Value> = v
+                            .split(',')
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .map(|s| Value::String(s.to_string()))
+                            .collect();
+                        if !names.is_empty() {
+                            im[key] = Value::Array(names);
+                        }
+                    }
+                }
                 if let Some(ms) = flag_value(&args, "--module-state") {
                     let names: Vec<Value> = ms
                         .split(',')
@@ -887,10 +917,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if !fixed.is_empty() {
                     crate::save(&g)?;
                 }
-                let remaining = crate::doctor(&g);
+                let remaining = crate::doctor_with_entities(&g, &entity_ids());
                 emit(&serde_json::json!({ "fixed": fixed, "remaining": remaining, "remaining_count": remaining.len() }))
             } else {
-                let findings = crate::doctor(&g);
+                let findings = crate::doctor_with_entities(&g, &entity_ids());
                 // EDGE COVERAGE (integration-tests-become-graph-edges). `composes` says A builds on B;
                 // an edge says someone CHECKED. Reporting the gap makes coverage a property of the
                 // graph rather than of a file tree — the first question the node tier could never ask.
@@ -1087,7 +1117,7 @@ fn help(prog: &str) -> String {
   \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--no-src] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes)\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes)\n  \
          {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n  \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\

@@ -29,6 +29,7 @@ export { registerPlannerGithubPlatform } from "./github/graphPlatform";
 import { PlanningGraphHost } from "./session/PlanningGraphHost";
 import { TeamsPanel } from "@/features/teams";
 import { SoundsGraphHost } from "@/features/sounds";
+import { DataGraphPage } from "@/features/data";
 import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
@@ -160,6 +161,14 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       {mode === "sounds" && (
         <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
           <SoundsGraphHost />
+        </Box>
+      )}
+
+      {/* Data — the global data graph. Read-only and PTY-free like Sounds/Teams, so it renders
+          directly with no keep-mounted / tear-off handoff. */}
+      {mode === "data" && (
+        <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          <DataGraphPage />
         </Box>
       )}
 
