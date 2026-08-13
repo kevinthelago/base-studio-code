@@ -67,12 +67,13 @@ export { addDbProject, setDbTriaged } from "./list/projectsDbBridge";
 // #3966: Glance needs the durable project list too — it was reading the persisted `localDraftProjects`
 // cache, which misses any project the cache never got, so a real project could have no graph node.
 export { listDbProjects, type DbProject } from "./list/projectsDbBridge";
+// `decideDirectorAction`, `pendingAskPrompt`, `pendingRequestPrompt` and `idleReminderPrompt` were
+// re-exported here and are DELETED (#coord-prefix-names-the-sender) — this barrel was their last
+// reference, which is what made them look reachable to a grep.
 export {
-  decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
+  resolveDirectorDrive, askKey,
   requestKey,
-  pendingRequestPrompt,
   shouldRemind,
-  idleReminderPrompt,
   ASK_REMINDER_MS, DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
 } from "./fleet/directorDrive";
 

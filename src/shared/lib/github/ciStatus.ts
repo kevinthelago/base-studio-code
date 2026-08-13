@@ -38,22 +38,11 @@ export function isTerminalCi(s: CiState): s is "passed" | "failed" {
   return s === "passed" || s === "failed";
 }
 
-/** Message injected into the WORKER pane when its PR's CI finishes. Single line. */
-export function ciWorkerPrompt(pr: number, state: "passed" | "failed", failing: string[]): string {
-  if (state === "passed") {
-    return `[ci] CI passed on your PR #${pr}. The director will merge it -- continue with your next assigned issue, or stop if you have none left. Do not reopen or duplicate this PR.`;
-  }
-  const list = failing.length ? failing.join(", ") : "see the PR checks";
-  return `[ci] CI FAILED on your PR #${pr} (${list}). Inspect the failing job (gh pr checks ${pr}, gh run view --log-failed), fix the cause on your branch, commit, and push. Do not ask the user.`;
-}
-
-/** Message injected into the DIRECTOR pane when a worker's PR turns green. Single line. */
-export function ciDirectorMergePrompt(pr: number, branch: string): string {
-  return `[coordinator] PR #${pr} (branch ${branch}) is green and ready to merge. Review it and merge into develop (e.g. gh pr merge ${pr} --squash --delete-branch), then mark it with bsc-merged and keep the board/milestones current.`;
-}
-
-/** Prompt injected to a watchdog director when develop's CI goes red (#378). */
-export function ciDevelopRedPrompt(repo: string, sha: string, failing: string[]): string {
-  const jobs = failing.length ? failing.join(", ") : "one or more checks";
-  return `[coordinator] develop CI is RED in ${repo} at ${sha.slice(0, 7)} (failing: ${jobs}). A worker self-merged a breaking change. Act now: identify the breaking commit (git log origin/develop), REVERT it to restore develop to green, then ping the owning worker — match the commit's changed paths to a stream's owned globs in CLAUDE.local.md and pipe a one-line fix-forward instruction into bsc-answer <session> on stdin. Do not let develop stay red.`;
-}
+// THE THREE PROMPT BUILDERS ARE GONE (#coord-prefix-names-the-sender): ciWorkerPrompt,
+// ciDirectorMergePrompt and ciDevelopRedPrompt had NO reference anywhere in src/ outside their own
+// definitions — the watcher that injected them was removed with the rest of the pumps.
+//
+// ciDirectorMergePrompt is the reason DELETING beat leaving them inert: it told the director to run
+// `gh pr merge`, and under local-first the director holds no GitHub write — `director.rs` now asserts
+// the protocol does NOT contain that string. An inert builder would have preserved the contradiction
+// for whoever revived it.
