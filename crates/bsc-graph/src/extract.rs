@@ -898,6 +898,32 @@ fn language_for(path: &Path) -> Option<(&'static str, Language)> {
 
 /// Read + tree-sitter-parse `path`, returning `(tech, source bytes, parse tree)`. `None` on an
 /// unparsable/unknown file or any read/parse error (the caller skips it). Shared by both walks.
+/// The module-state bindings in a source STRING, for a record that has no file on disk.
+///
+/// `harvest_module` reads a path, which is right for a harvest but useless to the COMPONENT store: a
+/// component record carries its source as `srcText` and has no `moduleState` field at all. That gap is
+/// why the stateful-shadow refusal covered impls only, and why a component record could claim a
+/// registered platform specifier while holding module state with nothing to stop it.
+///
+/// `tsx` picks the dialect — a `.tsx` body parsed as plain TS mis-reads JSX as comparison operators and
+/// the top-level scan silently finds nothing.
+pub fn module_state_of(src: &str, tsx: bool) -> Vec<String> {
+    let language: tree_sitter::Language = if tsx {
+        tree_sitter_typescript::LANGUAGE_TSX.into()
+    } else {
+        tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
+    };
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let bytes = src.as_bytes();
+    match parser.parse(bytes, None) {
+        Some(tree) => module_state(tree.root_node(), bytes),
+        None => Vec::new(),
+    }
+}
+
 fn parse(path: &Path) -> Option<(&'static str, Vec<u8>, tree_sitter::Tree)> {
     let (tech, language) = language_for(path)?;
     let src = std::fs::read(path).ok()?;
@@ -963,7 +989,8 @@ fn module_state(root: Node, src: &[u8]) -> Vec<String> {
                 continue;
             }
             let Some(name) = field_text(d, "name", src) else { continue };
-            if is_const && !mutated_after(&name, text, d.end_byte()) {
+            let factory = field_text(d, "value", src).is_some_and(|v| is_state_factory(&v));
+            if is_const && !factory && !mutated_after(&name, text, d.end_byte()) {
                 continue;
             }
             if !out.contains(&name) {
@@ -972,6 +999,52 @@ fn module_state(root: Node, src: &[u8]) -> Vec<String> {
         }
     }
     out
+}
+
+/// Does this initializer BUILD a stateful thing, so the binding is module state even though nothing
+/// ever assigns to it?
+///
+/// `mutated_after` looks for a write, which finds `let` and a mutated container but is structurally
+/// blind to the commonest shape of all: `export const useAnnouncer = create<S>(…)`. That is a `const`,
+/// never textually mutated, and the state lives inside the closure the factory returns. It read as
+/// PURE, kept its `provides`, and shadowed the specifier `appModules.ts` registers — so a graph-loaded
+/// caller of `announce()` wrote to a SECOND store while the mounted `<LiveRegion>` subscribed to the
+/// first, and the screen reader stayed silent.
+///
+/// Identity is the test, not mutation: each of these returns a thing whose VALUE IS ITS IDENTITY (a
+/// store, a context, an event hub), so a second copy is a different one even if neither is ever
+/// reassigned.
+///
+/// ⚠️ Deliberately a NAMED list, not "any call". `const rows = parse(raw)` is pure data and must stay
+/// migratable, and so must a frozen `new Map()` — see the test below, which pins exactly that.
+fn is_state_factory(init: &str) -> bool {
+    let init = init.trim_start();
+    // `create<S>(…)` / `createStore(…)` — zustand and friends. Match the call head, so a mere mention
+    // in a comment or a longer identifier (`createStoreLabel`) does not count.
+    const CALLS: [&str; 3] = ["create", "createStore", "createContext"];
+    let head: String =
+        init.chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$').collect();
+    if CALLS.contains(&head.as_str()) {
+        let rest = init[head.len()..].trim_start();
+        if rest.starts_with('(') || rest.starts_with('<') {
+            return true;
+        }
+    }
+    // `React.createContext(…)` — the same thing reached through the namespace import.
+    if init.starts_with("React.createContext") {
+        return true;
+    }
+    // Live objects whose identity is the whole point: listeners registered on one are invisible to a
+    // second copy.
+    const NEWS: [&str; 4] = ["EventTarget", "EventEmitter", "BroadcastChannel", "AbortController"];
+    if let Some(rest) = init.strip_prefix("new ") {
+        let ctor: String =
+            rest.trim_start().chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        if NEWS.contains(&ctor.as_str()) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Is `name` mutated anywhere after byte `from`? A container method that writes, or an index
@@ -1127,7 +1200,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("bsc-graph-modstate-{}", std::process::id()));
         let dir = root.join("src").join("x");
         std::fs::create_dir_all(&dir).unwrap();
-        let cases: [(&str, &str, Vec<&str>); 5] = [
+        let cases: [(&str, &str, Vec<&str>); 10] = [
             // a top-level `let` is state, always
             ("a.ts", "let done = false;
 export const go = () => { done = true; };
@@ -1147,6 +1220,25 @@ export const put = (k: string) => { m.set(k, 1); };
             // detector useful rather than a blanket "contains a collection" reject
             ("e.ts", "const EX = new Set([\"a\"]);
 export const skip = (s: string) => EX.has(s);
+", vec![]),
+            // A STATE FACTORY is state with no mutation anywhere — the hole that let `announcer.ts`
+            // shadow a registered specifier and swallow every screen-reader announcement.
+            ("f.ts", "import { create } from \"zustand\";
+export const useAnnouncer = create<S>((set) => ({ msg: \"\" }));
+", vec!["useAnnouncer"]),
+            ("g.ts", "export const Ctx = createContext<T | null>(null);
+", vec!["Ctx"]),
+            ("h.ts", "const bus = new EventTarget();
+export const on = (f: () => void) => bus.addEventListener(\"x\", f);
+", vec!["bus"]),
+            // …but a plain call returning DATA is not. Widening this to \"any call\" would re-block
+            // hundreds of pure modules, which is the obvious wrong fix.
+            ("i.ts", "const rows = parseRows(RAW);
+export const all = () => rows;
+", vec![]),
+            // a longer identifier that merely STARTS with a factory name is not one
+            ("j.ts", "const createStoreLabel = (s: string) => s.trim();
+export const lbl = createStoreLabel;
 ", vec![]),
         ];
         for (name, body, want) in cases {

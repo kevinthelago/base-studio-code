@@ -415,7 +415,10 @@ fn ensure_array<'a>(g: &'a mut Value, key: &str) -> &'a mut Vec<Value> {
 const PLATFORM_MODULES_JSON: &str = include_str!("../../../src-tauri/data/ui/platform-modules.json");
 
 /// Is `spec` bound to a LIVE platform module at runtime (`registerAppModule`)?
-fn is_registered_platform_module(spec: &str) -> bool {
+///
+/// Public so the COMPONENT store can apply the same refusal — it holds records that `provides` the
+/// very same specifiers, and duplicating the manifest lookup there would let the two drift.
+pub fn is_registered_platform_module(spec: &str) -> bool {
     static M: std::sync::OnceLock<std::collections::BTreeSet<String>> = std::sync::OnceLock::new();
     M.get_or_init(|| {
         serde_json::from_str::<Vec<String>>(PLATFORM_MODULES_JSON).unwrap_or_default().into_iter().collect()

@@ -2230,8 +2230,46 @@ fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
         // it. Skip the buildability advisory for these (buildability is judged by `doctor`); the syntax check
         // below still runs, so real corruption is still caught.
         let provides = item.get("provides").and_then(serde_json::Value::as_str).unwrap_or_default();
+        // A STATEFUL record must not claim a REGISTERED platform specifier. `bsc graph impl set` has
+        // refused this since the 36-shadow sweep, but the component store never did, and component
+        // records carry no `moduleState` field to refuse on — so the whole tier was ungoverned. 88 of
+        // the double-covered specifiers come from component records, and one was already wrong:
+        // `plan-relationship-graph` holds a top-level `let _ctx` and provides
+        // `@/features/planner/relationship/RelationshipGraphView`, registered at
+        // `features/planner/bodies/graphPlatform.ts:90`.
+        //
+        // `provides` BEATS the registry, so this vendors a second copy of live state to every graph
+        // consumer — and unlike a broken override, which declines and falls back visibly, a stateful
+        // shadow WORKS, just against the wrong copy. Detected from `srcText` with the graph crate's own
+        // detector rather than a second rule here, so the two stores cannot disagree about what state is.
+        if !provides.trim().is_empty() && bsc_graph::is_registered_platform_module(provides) {
+            let tsx = src_text.contains('<') && src_text.contains("/>") || src_text.contains("</");
+            let state = bsc_graph::extract::module_state_of(src_text, tsx);
+            if !state.is_empty() {
+                let id = item.get("id").and_then(serde_json::Value::as_str).unwrap_or("<no id>");
+                return Err(format!(
+                    "'{id}' cannot provide `{provides}`: that specifier is a REGISTERED platform module \
+                     and this record holds module state ({}). A record wins over the registry, so this \
+                     would vendor a SECOND copy of that state to every graph consumer. Drop the \
+                     `provides` (the record stays for provenance), or move the state out of the module.",
+                    state.join(", ")
+                ));
+            }
+        }
         // #3470: not-a-module is REPORTED, never an unchecked skip. Still permissive — it stores.
-        if provides.trim().is_empty() && !crate::graph_health::looks_buildable_module(src_text) {
+        // …and ask the LOADER's oracle before warning. The `provides` skip above is a band-aid
+        // `runtime_module_defects` already names as one: it silences the advisory for a record that
+        // CLAIMS a specifier, when the thing that actually matters is whether the loader can resolve the
+        // imports. Dropping a stateful record's claim (just above) exposed that immediately —
+        // `plan-relationship-graph` lost its `provides` and instantly drew "unresolved first-party
+        // `@/features/planner/relationship/relationshipGraph`", an import the loader resolves fine.
+        //
+        // So warn only when BOTH oracles object. Strictly fewer false positives, and it cannot create a
+        // new one: a record the loader cannot resolve still warns exactly as before.
+        if provides.trim().is_empty()
+            && !crate::graph_health::looks_buildable_module(src_text)
+            && !crate::graph_health::runtime_module_defects(src_text).is_empty()
+        {
             // #3849: for a `role: page` this is FATAL, not advisory. A page record IS the page — there is
             // no `.tsx` behind `fleetpage` at all — so storing one that cannot render ships a blank
             // screen, and the failure surfaces at mount, far from the write that caused it. Every other
@@ -4585,6 +4623,41 @@ mod tests {
         assert!(store.get("kit").unwrap().is_none(), "the bundle wrapper itself is NOT stored as a component");
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The component half of the stateful-shadow refusal. `bsc graph impl set` has enforced this since
+    /// the 36-shadow sweep; the component store never did, and 88 double-covered specifiers come from
+    /// component records — so this tier was ungoverned entirely.
+    #[test]
+    fn validate_component_batch_refuses_a_stateful_record_that_provides_a_registered_specifier() {
+        // A specifier the manifest really registers, so the test moves with the manifest instead of
+        // asserting against a name invented here.
+        let spec = "@/shared/lib/a11y/announcer";
+        assert!(
+            bsc_graph::is_registered_platform_module(spec),
+            "fixture assumes {spec} is registered; update the fixture if the manifest changed"
+        );
+
+        let stateful = serde_json::json!({
+            "id": "announcer-shadow", "name": "Announcer", "provides": spec,
+            "srcText": "import { create } from \"zustand\";\nexport const useAnnouncer = create((set) => ({ msg: \"\" }));\n",
+        });
+        let err = validate_component_batch(std::slice::from_ref(&stateful)).unwrap_err();
+        assert!(err.contains("announcer-shadow"), "names the record; got: {err}");
+        assert!(err.contains("useAnnouncer"), "names the STATE, not just the rule; got: {err}");
+
+        // The same record without the claim is fine — the refusal is about the specifier, not the state.
+        let mut no_claim = stateful.clone();
+        no_claim["provides"] = serde_json::Value::String(String::new());
+        assert!(validate_component_batch(std::slice::from_ref(&no_claim)).is_ok());
+
+        // And a PURE record may still provide it: a second copy of the same code behaves identically,
+        // which is why 315 pure shadows are deliberately allowed to stand.
+        let pure = serde_json::json!({
+            "id": "pure-shadow", "name": "Pure", "provides": spec,
+            "srcText": "export const label = (s: string) => s.trim();\n",
+        });
+        assert!(validate_component_batch(std::slice::from_ref(&pure)).is_ok());
     }
 
     #[test]
