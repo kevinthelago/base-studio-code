@@ -34,6 +34,19 @@ export interface Waiter {
 }
 
 /** The coordinator's persistable state: the latch table + the waiter table. */
+/** A coordination event REFUSED at delivery because its target belongs to a different project
+ *  (#coord-log-is-app-wide-answers-cross-projects). Kept rather than dropped: a silently swallowed
+ *  answer looks to the director exactly like one that was delivered, so it would go on believing it
+ *  had unblocked a worker it never reached. */
+export interface CrossProjectRefusal {
+  kind: "answer" | "assign";
+  /** The emitting pane, and therefore the project with authority over this event. */
+  from: string;
+  /** The pane it tried to reach — in a DIFFERENT project. */
+  target: string;
+  at: number;
+}
+
 export interface CoordState {
   latches: Record<string, LatchStatus>;
   waiters: Waiter[];
@@ -226,7 +239,10 @@ export type CoordEvent =
   | { type: "woke"; session: string; at: number }
   | { type: "waiting"; session: string; reason: string; checkpoint?: string; at: number }
   | { type: "ask"; session: string; question: string; checkpoint?: string; at: number }
-  | { type: "answer"; target: string; answer: string; at: number }
+  // `from` is the EMITTER's pane (the `session` column). It was parsed and thrown away until
+  // #coord-log-is-app-wide-answers-cross-projects: without it there is nothing to compare the target
+  // against, so an answer from another project's director was indistinguishable from this project's.
+  | { type: "answer"; from: string; target: string; answer: string; at: number }
   // Issuer flow (#376): the issuer captures new work; the director routes it to a worker.
   | { type: "issue"; session: string; id: string; title: string; body?: string; suggested?: string; at: number }
   | { type: "assign"; session: string; target: string; body: string; issueId?: string; title?: string; at: number }

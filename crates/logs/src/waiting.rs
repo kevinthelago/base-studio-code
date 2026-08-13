@@ -58,6 +58,36 @@ fn parked(w: &WaitingSession) -> bool {
     w.kind == "ask" || w.kind == "wait"
 }
 
+/// The project a pane id belongs to — everything before the FIRST colon of `<projectKey>:<stream>`
+/// (`alpha:repo:triage` is alpha's). A pane id with no colon yields the whole string; see
+/// [`same_coord_project`] for how an unplaceable id is then treated.
+///
+/// Mirrors `coordProjectOf` in `coordinationLog.ts`. The two cannot share an implementation (one is
+/// TypeScript), so both are tested independently against the same rule.
+pub fn coord_project_of(pane: &str) -> &str {
+    match pane.find(':') {
+        Some(i) => &pane[..i],
+        None => pane,
+    }
+}
+
+/// May an event emitted by `from` act on `target`? REFUSES ONLY ON PROOF OF CROSSING.
+///
+/// `coord.log` is one app-wide file, so an event names its actor and its subject with no project
+/// field — the project is carried by the pane-id grammar and nowhere else. When BOTH ids are
+/// project-qualified and the projects differ, the event is crossing and is refused. When either id
+/// cannot be placed (a bare id: the retired positional ids, a hand-run emitter, `?` from an
+/// unset `BSC_AUDIT_PANE`) it is ALLOWED, because refusing what we cannot place would break
+/// single-project coordination that never used prefixed ids.
+pub fn same_coord_project(from: &str, target: &str) -> bool {
+    let a = coord_project_of(from);
+    let b = coord_project_of(target);
+    if a == from || b == target {
+        return true; // one side is unplaceable — no proof of crossing
+    }
+    a == b
+}
+
 /// Every session currently blocked on a human, oldest first.
 ///
 /// MUST agree with the frontend reducer (`coordinationLog.ts`), which computes the same queue for the
@@ -65,6 +95,20 @@ fn parked(w: &WaitingSession) -> bool {
 /// its protocol tells it to run `bsc logs waiting` and drive the queue to empty, so a stale row here
 /// is a question it is asked forever. The clearing set is `answer` · `assign` · `woke` · `maintain`.
 pub fn waiting(dir: &Path) -> Vec<WaitingSession> {
+    waiting_in(dir, None)
+}
+
+/// [`waiting`], narrowed to one project's rows.
+///
+/// `scope` is the CALLER's pane id (`$BSC_AUDIT_PANE`), not a project key — the caller knows who it
+/// is, and deriving the project here keeps the pane-id grammar the single place that defines it.
+/// `None` (or an unplaceable id) returns the whole queue, which is what the app and a human at a
+/// plain shell want.
+///
+/// This is the display half of the same rule the clearing arms enforce: a director sweeping its queue
+/// must not be handed another project's blocked workers, because the queue's whole contract is "these
+/// are yours to clear" and it has no authority over any of them.
+pub fn waiting_in(dir: &Path, scope: Option<&str>) -> Vec<WaitingSession> {
     let mut open: Vec<WaitingSession> = Vec::new();
 
     for e in read_stream(dir, "coord") {
@@ -91,11 +135,21 @@ pub fn waiting(dir: &Path) -> Vec<WaitingSession> {
             }
             // `bsc-answer <target>` — the director's universal unblock: it resumes the target whatever
             // it was parked on, so it clears BOTH an ask and a wait, not just the ask.
-            "answer" if !a.is_empty() => open.retain(|w| !(w.pane == a && parked(w))),
+            //
+            // SCOPED to the emitter's project (#coord-log-is-app-wide-answers-cross-projects). Without
+            // the guard, another project's director answering `alpha:api` erases alpha's row from
+            // alpha's OWN queue — so alpha's real director runs `bsc logs waiting`, sees nothing
+            // outstanding, and never replies. That is the quiet half of the same bug: not a wrong
+            // answer delivered, but a real question made invisible.
+            "answer" if !a.is_empty() && same_coord_project(&e.session, a) => {
+                open.retain(|w| !(w.pane == a && parked(w)))
+            }
             // `bsc-assign <target>` — dispatching work to a worker ANSWERS it. The frontend reducer has
             // always cleared `asking` for the assign target alongside `answer`; this had no arm at all,
-            // so an assigned worker stayed in the queue as though still asking.
-            "assign" if !a.is_empty() => open.retain(|w| !(w.pane == a && parked(w))),
+            // so an assigned worker stayed in the queue as though still asking. Same project guard.
+            "assign" if !a.is_empty() && same_coord_project(&e.session, a) => {
+                open.retain(|w| !(w.pane == a && parked(w)))
+            }
             // The coordinator woke a parked session. This cleared ONLY a `wait`, which is the bug: the
             // frontend reducer clears `asking` on `woke` too, so a woken session's ASK was immortal
             // here and the director was re-handed it every sweep.
@@ -111,7 +165,12 @@ pub fn waiting(dir: &Path) -> Vec<WaitingSession> {
                 open.retain(|w| !(w.kind == "request" && w.id == a));
                 open.push(WaitingSession { pane: e.session.clone(), kind: "request".into(), detail: b.to_string(), at, id: a.to_string() });
             }
-            "request-resolved" if !a.is_empty() => open.retain(|w| !(w.kind == "request" && w.id == a)),
+            // Scoped too, and here the guard also settles a COLLISION: request ids are per-project
+            // sequence numbers, so `7` exists in every project that has had seven requests. Unscoped,
+            // one director resolving its own #7 closed everybody else's.
+            "request-resolved" if !a.is_empty() => {
+                open.retain(|w| !(w.kind == "request" && w.id == a && same_coord_project(&e.session, &w.pane)))
+            }
             _ => {}
         }
     }
@@ -126,6 +185,9 @@ pub fn waiting(dir: &Path) -> Vec<WaitingSession> {
         }
     }
 
+    if let Some(me) = scope {
+        open.retain(|w| same_coord_project(me, &w.pane));
+    }
     open.sort_by_key(|w| w.at);
     open
 }
@@ -385,6 +447,110 @@ mod tests {
         let rows = waiting(&d);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].detail, "second");
+    }
+
+    // -- Cross-project scoping (#coord-log-is-app-wide-answers-cross-projects) -------------------
+    //
+    // `coord.log` is ONE app-wide file and this query replays the whole tail, so before these guards
+    // any project's director could reach into any other's queue. The frontend reducer
+    // (`coordinationLog.ts`) enforces the same rule on delivery; these tests state it independently
+    // because the two implementations cannot share code and MUST NOT drift.
+
+    #[test]
+    fn the_project_is_read_off_the_pane_id() {
+        assert_eq!(coord_project_of("alpha:api"), "alpha");
+        assert_eq!(coord_project_of("alpha:repo:triage"), "alpha", "only the FIRST colon delimits");
+        assert_eq!(coord_project_of("bare"), "bare");
+    }
+
+    #[test]
+    fn an_unplaceable_id_is_allowed_refusal_needs_proof_of_crossing() {
+        // Bare ids (the retired positional ids, a hand-run emitter, `?` from an unset
+        // BSC_AUDIT_PANE) cannot be placed in a project. Refusing them would break single-project
+        // coordination that never used prefixed ids — which this item requires to be UNCHANGED.
+        assert!(same_coord_project("director", "auth"));
+        assert!(same_coord_project("alpha:director", "auth"));
+        assert!(same_coord_project("director", "alpha:api"));
+        assert!(same_coord_project("alpha:director", "alpha:api"));
+        assert!(!same_coord_project("beta:director", "alpha:api"), "both placed, and they differ");
+    }
+
+    #[test]
+    fn another_projects_answer_does_not_clear_the_ask() {
+        // THE REPORTED INCIDENT, in its quiet form. If beta's answer clears alpha's row here, then
+        // alpha's OWN director runs `bsc logs waiting`, sees an empty queue, and never replies — the
+        // worker waits forever on a question nobody can see.
+        let d = dir();
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "alpha:api", "ask", "which pagination?", ""),
+            &c("2026-07-30T10:01:00Z", "beta:director", "answer", "alpha:api", "proceed, do not ask the user"),
+        ]);
+        let rows = waiting(&d);
+        assert_eq!(rows.len(), 1, "alpha is still asking: {rows:?}");
+        assert_eq!(rows[0].pane, "alpha:api");
+
+        // ...and its real director still clears it.
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "alpha:api", "ask", "which pagination?", ""),
+            &c("2026-07-30T10:01:00Z", "beta:director", "answer", "alpha:api", "proceed, do not ask the user"),
+            &c("2026-07-30T10:02:00Z", "alpha:director", "answer", "alpha:api", "use cursors"),
+        ]);
+        assert!(waiting(&d).is_empty(), "the OWNING director clears it");
+    }
+
+    #[test]
+    fn another_projects_assign_does_not_clear_the_ask() {
+        let d = dir();
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "alpha:api", "ask", "what should I pick up?", ""),
+            &c("2026-07-30T10:01:00Z", "beta:director", "assign", "alpha:api", "refactor the adapter"),
+        ]);
+        assert_eq!(waiting(&d).len(), 1, "an assign from another project is not an answer");
+    }
+
+    #[test]
+    fn a_request_id_collision_across_projects_resolves_only_its_own() {
+        // Request ids are PER-PROJECT sequence numbers, so `7` exists in every project that has had
+        // seven requests. Unscoped, alpha resolving its #7 closed beta's #7 too.
+        let d = dir();
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "alpha:api", "request", "7", "alpha's request"),
+            &c("2026-07-30T10:00:01Z", "beta:api", "request", "7", "beta's request"),
+            &c("2026-07-30T10:01:00Z", "alpha:director", "request-resolved", "7", "done"),
+        ]);
+        let rows = waiting(&d);
+        assert_eq!(rows.len(), 1, "only alpha's #7 closes: {rows:?}");
+        assert_eq!(rows[0].detail, "beta's request");
+    }
+
+    #[test]
+    fn the_queue_is_scoped_to_the_callers_project() {
+        // Criterion 4: the queue's contract is "these are yours to clear". A director handed another
+        // project's blocked workers has no authority over any of them.
+        let d = dir();
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "alpha:api", "ask", "mine", ""),
+            &c("2026-07-30T10:01:00Z", "beta:web", "ask", "not mine", ""),
+        ]);
+        let mine = waiting_in(&d, Some("alpha:director"));
+        assert_eq!(mine.len(), 1);
+        assert_eq!(mine[0].pane, "alpha:api");
+
+        // No scope (a plain shell, or --all) still sees everything.
+        assert_eq!(waiting_in(&d, None).len(), 2);
+    }
+
+    #[test]
+    fn scoping_leaves_a_single_project_log_untouched() {
+        // The compatibility half of criterion 6: a fleet whose panes were never project-prefixed must
+        // behave exactly as before, scope or no scope.
+        let d = dir();
+        coord(&d, &[
+            &c("2026-07-30T10:00:00Z", "auth", "ask", "which base branch?", ""),
+            &c("2026-07-30T10:01:00Z", "web", "waiting", "needs a decision", ""),
+        ]);
+        assert_eq!(waiting_in(&d, Some("director")).len(), 2, "bare ids all coordinate together");
+        assert_eq!(waiting_in(&d, None).len(), 2);
     }
 
     #[test]

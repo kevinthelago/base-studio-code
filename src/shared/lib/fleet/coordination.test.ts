@@ -847,7 +847,9 @@ describe("ask / answer round-trip (#369)", () => {
     expect(parseCoordLine(line("2026-06-01T00:00:00Z", "w1", "ask", "need the API shape", "cp.md")))
       .toEqual({ type: "ask", session: "w1", question: "need the API shape", checkpoint: "cp.md", at: Date.parse("2026-06-01T00:00:00Z") });
     expect(parseCoordLine(line("2026-06-01T00:00:00Z", "dir", "answer", "w1", "use cursor pagination")))
-      .toEqual({ type: "answer", target: "w1", answer: "use cursor pagination", at: Date.parse("2026-06-01T00:00:00Z") });
+      // `from` is the emitter, carried since #coord-log-is-app-wide-answers-cross-projects so
+      // delivery can compare its project with the target's.
+      .toEqual({ type: "answer", from: "dir", target: "w1", answer: "use cursor pagination", at: Date.parse("2026-06-01T00:00:00Z") });
   });
 
   it("ask registers an asking session; an answer resumes it with the answer", () => {

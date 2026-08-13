@@ -16,6 +16,7 @@ import type {
   AssignedWork,
   AnsweredWake,
   CoordEvent,
+  CrossProjectRefusal,
 } from "./coordination.types";
 import { emptyCoordState, parseRef, registerWaiter, satisfy, fail } from "./coordinationState";
 
@@ -26,6 +27,42 @@ import { emptyCoordState, parseRef, registerWaiter, satisfy, fail } from "./coor
  * - landed/merged/closed: payload = `<ref>`
  * - failed: payload = `<ref> \t <reason>`
  */
+/**
+ * The PROJECT a pane belongs to. Pane identity is `<projectKey>:<stream>` (paneIdentity.ts), so the
+ * scope is already on the wire — this only reads it.
+ *
+ * A pane id with no colon (a bare or malformed id) yields the whole string — see
+ * {@link sameCoordProject} for how an unplaceable id is then treated at delivery.
+ */
+export function coordProjectOf(paneId: string): string {
+  const i = paneId.indexOf(":");
+  return i < 0 ? paneId : paneId.slice(0, i);
+}
+
+/**
+ * May `from` direct `target`? Only within one project.
+ *
+ * `coord.log` is ONE app-wide file and every consumer replays the whole tail, so before this a
+ * director in project A could answer a worker in project B — and the instruction arrived through the
+ * same trusted channel the worker's real director uses, with nothing in-band to tell them apart. Two
+ * workers caught it only because the content named an unfamiliar repo.
+ */
+export function sameCoordProject(from: string, target: string): boolean {
+  const a = coordProjectOf(from);
+  const b = coordProjectOf(target);
+  // REFUSE ONLY ON PROOF OF CROSSING. A pane id with no `:` cannot be placed in a project — the
+  // retired positional ids (`t0p2`, #1176) and any bare id look like this — and refusing what we
+  // cannot place would break single-project coordination that never used prefixed ids, which the
+  // item explicitly requires to be unchanged. So an unplaceable id is ALLOWED: we only refuse when
+  // both sides name a project and the projects differ.
+  //
+  // The residual is deliberate and worth stating: a bare-id target is reachable from any project.
+  // That is strictly no worse than before this change, and prefixed ids are what the app mints now,
+  // so the real fleet is covered. Tightening it means retiring bare ids, not tightening this rule.
+  if (a === from || b === target) return true;
+  return a === b;
+}
+
 export function parseCoordLine(line: string): CoordEvent | null {
   const cols = line.replace(/\r?\n$/, "").split("\t");
   if (cols.length < 4) return null;
@@ -63,7 +100,10 @@ export function parseCoordLine(line: string): CoordEvent | null {
     }
     case "answer": {
       const target = (rest[0] ?? "").trim();
-      return target ? { type: "answer", target, answer: rest[1] ?? "", at } : null;
+      // `session` is the EMITTER — carried as `from` since
+      // #coord-log-is-app-wide-answers-cross-projects, because delivery has to compare its project
+      // with the target's. `brief` already carried its emitter for the same reason.
+      return target ? { type: "answer", from: session, target, answer: rest[1] ?? "", at } : null;
     }
     // #4001: `bsc plan request new|resolve` emit these from the CLI (not a shell helper) because the
     // notification has to carry the id the store just assigned. payload = <id> TAB <text|note>.
@@ -134,7 +174,7 @@ export function parseCoordLine(line: string): CoordEvent | null {
 
 /** Fold one event into the latch state, returning what it triggered. */
 export function applyCoordEvent(s: CoordState, e: CoordEvent): {
-  state: CoordState; woken: Waiter[]; ready: boolean; stalled: Waiter[]; answered: AnsweredWake[]; assigned: AssignedWork[];
+  state: CoordState; woken: Waiter[]; ready: boolean; stalled: Waiter[]; answered: AnsweredWake[]; assigned: AssignedWork[]; refused?: CrossProjectRefusal[];
 } {
   switch (e.type) {
     case "blocked": {
@@ -182,6 +222,17 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
       const waiter = s.waiters.find((w) => w.session === e.target);
       const waitS = s.waiting.find((w) => w.session === e.target);
       const checkpoint = ask?.checkpoint ?? waitS?.checkpoint ?? waiter?.checkpoint;
+      // CROSS-PROJECT REFUSAL (#coord-log-is-app-wide-answers-cross-projects). The state is left
+      // untouched as well as the delivery: clearing `asking`/`waiting` here would mark the worker as
+      // answered by an actor with no authority over it, so its REAL director would then see nothing
+      // outstanding and never reply.
+      if (!sameCoordProject(e.from, e.target)) {
+        return {
+          state: s,
+          woken: [], ready: false, stalled: [], answered: [], assigned: [],
+          refused: [{ kind: "answer", from: e.from, target: e.target, at: e.at }],
+        };
+      }
       const answered: AnsweredWake[] = [{ session: e.target, answer: e.answer, checkpoint, at: e.at }];
       return {
         state: {
@@ -226,6 +277,16 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
       const waitS = s.waiting.find((w) => w.session === e.target);
       const ask = s.asking.find((a) => a.session === e.target);
       const checkpoint = ask?.checkpoint ?? waitS?.checkpoint ?? waiter?.checkpoint;
+      // Same refusal as `answer`, and for the stronger reason: an assign hands a worker WORK. Taking
+      // an assignment from another project's director means building something for a plan, repo and
+      // lane that actor has no authority over.
+      if (!sameCoordProject(e.session, e.target)) {
+        return {
+          state: s,
+          woken: [], ready: false, stalled: [], answered: [], assigned: [],
+          refused: [{ kind: "assign", from: e.session, target: e.target, at: e.at }],
+        };
+      }
       const assigned: AssignedWork[] = [{ session: e.target, title: e.title, body: e.body, checkpoint, at: e.at }];
       return {
         state: {
@@ -305,6 +366,10 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
  */
 export function ingestCoordLog(lines: string[], initial: CoordState = emptyCoordState()): {
   state: CoordState; woken: Waiter[]; ready: Waiter[]; answered: AnsweredWake[]; assigned: AssignedWork[];
+  /** Events refused because they crossed a project boundary
+   *  (#coord-log-is-app-wide-answers-cross-projects). Surfaced rather than dropped so the sender can
+   *  be told its answer never landed. */
+  refused: CrossProjectRefusal[];
 } {
   let state = initial;
   const woken: Waiter[] = [];
@@ -317,6 +382,7 @@ export function ingestCoordLog(lines: string[], initial: CoordState = emptyCoord
   const answeredPending = new Map<string, AnsweredWake>();
   // `assignedPending`: workers the director assigned new work (#376), awaiting injection.
   const assignedPending = new Map<string, AssignedWork>();
+  const refused: CrossProjectRefusal[] = [];
   for (const line of lines) {
     const ev = parseCoordLine(line);
     if (!ev) continue;
@@ -335,9 +401,10 @@ export function ingestCoordLog(lines: string[], initial: CoordState = emptyCoord
     }
     for (const a of r.answered) answeredPending.set(a.session, a);
     for (const a of r.assigned) assignedPending.set(a.session, a);
+    if (r.refused) refused.push(...r.refused);
   }
   return {
     state, woken, ready: [...pending.values()],
-    answered: [...answeredPending.values()], assigned: [...assignedPending.values()],
+    answered: [...answeredPending.values()], assigned: [...assignedPending.values()], refused,
   };
 }
