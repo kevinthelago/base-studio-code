@@ -793,14 +793,25 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     // #architect-starts-and-stops-system-sessions adds `bsc session` — start/stop/list over the
     // app's OWN studios. Safe on a prose-ingesting session because the verb's argument is an id from a
     // closed app-owned registry, not a command or a path; see the grant's comment in roleModel.ts.
-    // #architect-starts-a-new-project adds `bsc project new` — the FULL verb, never the `bsc project`
-    // prefix (which would also carry published/link/triaged/db across every project). Its argument is
-    // the one genuinely free-text one the architect has; the slug is what contains it.
-    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet directors", "bsc session", "bsc project new", ...LOOP, "bsc request new", "bsc request list"]);
-    // The prefix that must NOT be there: a bare `bsc project` grant would auto-run every project
-    // lifecycle verb. Asserted separately because the array equality above would still pass if the
-    // entry were merely REPLACED by the wider one.
+    // The architect's surface after the whole epic. THREE grants landed on it, each the FULL verb:
+    //  · #architect-creates-a-director-with-discovery replaced the plural READ with the SINGULAR
+    //    `bsc fleet director`, which covers `directors` through its prefix and adds `director new`.
+    //  · #architect-starts-and-stops-system-sessions added `bsc session`.
+    //  · #architect-starts-a-new-project added `bsc project new`.
+    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet director", "bsc session", "bsc project new", ...LOOP, "bsc request new", "bsc request list"]);
+    // The two prefix boundaries that must hold, asserted separately: the array equality above would
+    // still pass if an entry were merely REPLACED by its wider form.
+    //
+    // A bare `bsc project` would auto-run every project lifecycle verb (published/link/triaged/db)
+    // across every project, not just create one.
     expect(restrictedRoleCommands("architect")).not.toContain("bsc project");
+    // A bare `bsc fleet` would carry `bsc fleet wake` — the DIRECTOR's lever over a worker, one tier
+    // below where this session belongs. An architect reaching past its director is back in the middle
+    // of a fleet it does not run.
+    expect(restrictedRoleCommands("architect")).not.toContain("bsc fleet");
+    expect(restrictedRoleCommands("architect")).not.toContain("bsc fleet wake");
+    expect("bsc fleet directors".startsWith("bsc fleet director")).toBe(true); // the read still resolves
+    expect("bsc fleet wake".startsWith("bsc fleet director")).toBe(false);     // the wake still does not
     expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound", ...LOOP, "bsc request new", "bsc request list"]);
   });
 

@@ -32,6 +32,89 @@ pub const KIND: &str = "fleet";
 /// through the app (frontend emit + ack, not a pure-Rust answer).
 pub const WAKE_KIND: &str = "fleet-wake";
 
+/// `bsc fleet director new` — the architect's one CREATE into the project tier
+/// (#architect-creates-a-director-with-discovery). Its own key for the same reason as
+/// [`WAKE_KIND`]: creating a session is a frontend store action, not a pure-Rust answer.
+pub const DIRECTOR_KIND: &str = "fleet-director";
+
+/// The pane a project's director runs on. Pane identity is `<projectKey>:director`, the same grammar
+/// [`director_project_key`] reads back — one spelling, so create / list / brief all name the same pane.
+pub fn director_pane_id(project_key: &str) -> String {
+    format!("{project_key}:director")
+}
+
+/// Ask the app to CREATE a project's director, seeded with what the architect settled.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectorNewRequest {
+    /// An EXISTING project's key. Resolved against the project set on both sides and refused when it
+    /// names nothing — this verb creates a DIRECTOR, never a project (that is `bsc project new`).
+    pub project_key: String,
+}
+
+/// What happened. `AlreadyRunning` is not an error but it is not a create either: a second
+/// coordinator for one fleet is the failure this distinction exists to prevent, and a caller told
+/// "created" would believe it had just seeded a director with context it never received.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DirectorOutcome {
+    Created,
+    AlreadyRunning,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectorNewResult {
+    pub project_key: String,
+    pub pane_id: String,
+    pub outcome: DirectorOutcome,
+    /// Whether this create AUTHORED the director's kickoff (true) or found one already there and left
+    /// it alone (false). Reported because the two are different directors: one born with the
+    /// architect's discovery, one born with whatever the planner wrote.
+    pub kickoff_written: bool,
+}
+
+/// The kickoff an architect-created director is born with.
+///
+/// CREATION CARRIES CONTEXT is the load-bearing half of this verb: a director started empty and
+/// briefed a moment later is exactly what the item exists to prevent. But context is carried as
+/// SOURCES AND FETCH COMMANDS, never as inlined bodies — #4191's rule is that the store wins over
+/// anything quoted into a session's context, because a quoted body is a second copy and the copy is
+/// what gets read while the record moves on. The architect is still writing discovery when this
+/// director starts; inlining would freeze a half-finished snapshot into its prompt.
+pub fn discovery_kickoff(project_key: &str) -> String {
+    format!(
+        "# Director — {project_key}\n\
+         \n\
+         You coordinate this project's fleet. You do not plan, and you do not write feature code.\n\
+         \n\
+         ## Read what the architect settled, first\n\
+         \n\
+         This project was scoped by the architect before you existed. Read it from the STORE rather\n\
+         than waiting to be told — and re-read it when something looks stale, because the store stays\n\
+         live while this prompt was written once, at your launch:\n\
+         \n\
+         - `bsc plan requirement get` — the user's statement, and the AUTHORITY clauses every decision\n\
+           below you must cite. Start here; it is what you are accountable to.\n\
+         - `bsc plan stage list` then `bsc plan stage get <name>` — the discovery prose (goal, scope,\n\
+           stack, architecture, …). These are the discovery files this director was created with.\n\
+         - `bsc plan feature list` — the feature breakdown.\n\
+         - `bsc plan list` — the issues, with acceptance criteria and owning streams.\n\
+         - `bsc plan fleet get --full` — the streams, their owned globs and their dependencies.\n\
+         \n\
+         If `bsc plan requirement get` comes back empty, the architect has not sealed the requirement\n\
+         yet. Say so and wait — do not invent scope to fill the gap.\n\
+         \n\
+         ## Your lane\n\
+         \n\
+         - You own integration, contracts and the board. Workers own their own streams.\n\
+         - You may START a worker that is parked (`bsc fleet wake <pane>`) and see the fleet\n\
+           (`bsc fleet list`).\n\
+         - Record what you decide with `bsc plan decision`, citing the authority clause it rests on.\n\
+         - A tooling gap a worker files (`bsc plan request`) is yours to judge and escalate.\n"
+    )
+}
+
 /// Which panes to report on. Empty ⇒ every pane the app tracks.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FleetRequest {
