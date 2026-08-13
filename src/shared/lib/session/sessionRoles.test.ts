@@ -793,7 +793,14 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     // #architect-starts-and-stops-system-sessions adds `bsc session` — start/stop/list over the
     // app's OWN studios. Safe on a prose-ingesting session because the verb's argument is an id from a
     // closed app-owned registry, not a command or a path; see the grant's comment in roleModel.ts.
-    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet directors", "bsc session", ...LOOP, "bsc request new", "bsc request list"]);
+    // #architect-starts-a-new-project adds `bsc project new` — the FULL verb, never the `bsc project`
+    // prefix (which would also carry published/link/triaged/db across every project). Its argument is
+    // the one genuinely free-text one the architect has; the slug is what contains it.
+    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet directors", "bsc session", "bsc project new", ...LOOP, "bsc request new", "bsc request list"]);
+    // The prefix that must NOT be there: a bare `bsc project` grant would auto-run every project
+    // lifecycle verb. Asserted separately because the array equality above would still pass if the
+    // entry were merely REPLACED by the wider one.
+    expect(restrictedRoleCommands("architect")).not.toContain("bsc project");
     expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound", ...LOOP, "bsc request new", "bsc request list"]);
   });
 

@@ -38,6 +38,30 @@ const TAGLINE: &str =
 /// per top-level command keeps the overview tiny and the detail one-fetch-away.
 const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
+        name: "new",
+        summary: "create a project from a NAME — creation begins where the conversation is",
+        usage: "\
+USAGE:
+  bsc project new \"<name>\" [--pitch \"<text>\"] [--blueprint <id>] [--json|--pretty]
+
+Creates a project as a DRAFT, so a conversation that arrives at \"build this\" does not have to leave
+the conversation to begin (#architect-starts-a-new-project).
+
+THE NAME BECOMES THE KEY, and the key is FROZEN at creation. `projectSlug(name)` — lowercase,
+[a-z0-9-], capped at 60 — names the hub, its plan.db, its worktrees, its pane ids and its board
+project, for the life of the project. Renaming later is display-only; the folder keeps its birth-slug.
+
+THE SLUG IS ALSO THE CONTAINMENT. This is the one verb here whose argument is genuinely free text, so
+the rule is what keeps it inside `projects/`: `../../etc/passwd` becomes `etc-passwd`, `..` becomes
+`project`. No name can name a directory outside the projects root.
+
+A NAME WHOSE SLUG ALREADY EXISTS IS REFUSED, naming what is already there — the same choice the UI's
+collision modal offers, rather than silently adopting or overwriting someone else's hub. Two projects
+genuinely wanting one name is a decision for a person; pick a different name and run it again.
+
+The new project appears in the app's project list without a restart: the list reads this same store.",
+    },
+    CmdDoc {
         name: "list",
         summary: "key + published + path for every local project",
         usage: "\
@@ -163,11 +187,15 @@ struct Args {
     url: Option<String>,
     /// `--app-type` — the endpoint's application-architecture discriminator (api | serverless | …).
     app_type: Option<String>,
+    /// `--pitch` — `new` only: the one-line brief the project starts from.
+    pitch: Option<String>,
+    /// `--blueprint` — `new` only: the blueprint id that seeds the plan.
+    blueprint: Option<String>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, target_type: None, name: None, url: None, app_type: None, positional: Vec::new() };
+    let mut a = Args { json: false, target_type: None, name: None, url: None, app_type: None, pitch: None, blueprint: None, positional: Vec::new() };
     // A value flag consumes the NEXT token, so iterate with an index rather than a plain for-each.
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
@@ -181,6 +209,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--name" => a.name = Some(take("--name")?),
             "--url" => a.url = Some(take("--url")?),
             "--app-type" => a.app_type = Some(take("--app-type")?),
+            "--pitch" => a.pitch = Some(take("--pitch")?),
+            "--blueprint" => a.blueprint = Some(take("--blueprint")?),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             _ => a.positional.push(arg),
         }
@@ -200,6 +230,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     }
 
     match cmd.as_str() {
+        "new" => cmd_new(&args, prog),
         "list" => cmd_list(&args),
         "progress" => cmd_progress(&args),
         "triaged" => cmd_triaged(&args, prog),
@@ -209,6 +240,66 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "db" => cmd_db(&args, prog),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
+}
+
+/// `new "<name>"` — create a project from a name (#architect-starts-a-new-project).
+///
+/// The whole verb is: derive the frozen key, refuse a collision, write a drafted row. It deliberately
+/// does NOT scaffold the hub directory — `setup_workspaces` owns that and runs when the project is
+/// actually opened, so creating one from a conversation leaves no empty folder behind if the idea is
+/// dropped. The durable row is what makes it a project; the folder is what makes it a workspace.
+fn cmd_new(args: &Args, prog: &str) -> Result<(), String> {
+    let name = args
+        .positional
+        .get(1)
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("usage: {prog} new \"<name>\" [--pitch \"<text>\"] [--blueprint <id>]"))?;
+
+    let key = crate::project_slug(name);
+    let conn = store::open()?;
+
+    // TWO collision checks, because there are two places a project can already exist and either one
+    // makes this name taken. The store row is the durable identity; the hub is what a PRE-store
+    // project (or one whose row was removed) left on disk. Adopting either silently would hand the
+    // caller someone else's plan under a name it believes it just created.
+    if let Some(existing) = store::get(&conn, &key) {
+        return Err(format!(
+            "'{name}' slugs to '{key}', which already exists: \"{}\" ({}).\n\
+             Pick a different name — a project's key is frozen at creation, so two projects cannot \
+             share one.",
+            existing.title, existing.state
+        ));
+    }
+    if crate::project_dir(&key).is_some_and(|d| d.exists()) {
+        return Err(format!(
+            "'{name}' slugs to '{key}', and a project hub already exists at that path.\n\
+             Pick a different name, or open the existing project."
+        ));
+    }
+
+    let now = bsc_util::now_ms();
+    let row = ProjectRow {
+        key: key.clone(),
+        title: name.to_string(),
+        pitch: args.pitch.clone().unwrap_or_default(),
+        blueprint: args.blueprint.clone(),
+        category: None,
+        // `drafted` is the honest state: nothing is planned, published or on disk yet.
+        state: "drafted".into(),
+        triaged_at: None,
+        created_at: now,
+        updated_at: now,
+    };
+    store::upsert(&conn, &row)?;
+    let stored = store::get(&conn, &key).ok_or("project new: row vanished after upsert")?;
+
+    if args.json {
+        bsc_sqlite_util::print_json(&stored, false);
+    } else {
+        println!("{key}");
+    }
+    Ok(())
 }
 
 /// `list` — every local project: key + published + absolute path. Human TSV (one row each) or, with
@@ -765,6 +856,97 @@ mod tests {
         assert!(db.contains("bsc project db"));
         assert!(db.contains("add"));
         assert!(db.contains("state"));
+    }
+
+    /// `new` (#architect-starts-a-new-project) — the create-from-a-name verb the architect drives.
+    #[test]
+    fn new_creates_a_drafted_project_keyed_by_its_name_slug() {
+        crate::testhome::with_home(|home| {
+            std::env::set_var("BSC_PROJECT_DB", home.join("projects-new-test.db"));
+
+            run(vec!["new".into(), "Video Game".into()], "bsc project").unwrap();
+
+            let conn = store::open().unwrap();
+            let row = store::get(&conn, "video-game").expect("keyed by projectSlug(name)");
+            assert_eq!(row.title, "Video Game", "the NAME is kept verbatim as the title");
+            assert_eq!(row.state, "drafted", "nothing is planned or on disk yet");
+            assert_eq!(row.pitch, "");
+            assert!(row.blueprint.is_none());
+        });
+    }
+
+    #[test]
+    fn new_carries_the_pitch_and_blueprint_when_given() {
+        crate::testhome::with_home(|home| {
+            std::env::set_var("BSC_PROJECT_DB", home.join("projects-new-opts.db"));
+            run(
+                vec![
+                    "new".into(), "Acme".into(),
+                    "--pitch".into(), "a thing that does stuff".into(),
+                    "--blueprint".into(), "crm".into(),
+                ],
+                "bsc project",
+            )
+            .unwrap();
+            let conn = store::open().unwrap();
+            let row = store::get(&conn, "acme").unwrap();
+            assert_eq!(row.pitch, "a thing that does stuff");
+            assert_eq!(row.blueprint.as_deref(), Some("crm"));
+        });
+    }
+
+    /// The collision refusal. A key is FROZEN at creation, so adopting the existing project would
+    /// hand the caller someone else's plan under a name it believes it just created — and
+    /// overwriting would destroy it. Refusing, and naming what is there, is the same choice the UI's
+    /// collision modal offers.
+    #[test]
+    fn new_refuses_a_name_whose_slug_is_taken_rather_than_adopting_it() {
+        crate::testhome::with_home(|home| {
+            std::env::set_var("BSC_PROJECT_DB", home.join("projects-new-collide.db"));
+            run(vec!["new".into(), "Video Game".into()], "bsc project").unwrap();
+
+            // The SAME name, and a different name with the same slug — both are the one key.
+            for name in ["Video Game", "video game", "VIDEO  GAME!"] {
+                let err = run(vec!["new".into(), name.into()], "bsc project").unwrap_err();
+                assert!(err.contains("already exists"), "{name}: {err}");
+                assert!(err.contains("video-game"), "the refusal names the key: {err}");
+            }
+
+            // And the original is untouched — not re-stamped, not re-titled.
+            let conn = store::open().unwrap();
+            assert_eq!(store::get(&conn, "video-game").unwrap().title, "Video Game");
+        });
+    }
+
+    /// A free-text name cannot name a directory outside the projects root, and cannot create a row
+    /// under a key that would. This is the containment the whole verb rests on.
+    #[test]
+    fn new_contains_a_hostile_name_inside_the_projects_root() {
+        crate::testhome::with_home(|home| {
+            std::env::set_var("BSC_PROJECT_DB", home.join("projects-new-hostile.db"));
+            run(vec!["new".into(), "../../etc/passwd".into()], "bsc project").unwrap();
+
+            let conn = store::open().unwrap();
+            let rows = store::list(&conn);
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].key, "etc-passwd", "traversal is slugged away, not honoured");
+            assert!(!rows[0].key.contains(".."));
+            // The title keeps what the caller actually said — the KEY is sanitised, not the record.
+            assert_eq!(rows[0].title, "../../etc/passwd");
+        });
+    }
+
+    #[test]
+    fn new_needs_a_non_empty_name() {
+        crate::testhome::with_home(|home| {
+            std::env::set_var("BSC_PROJECT_DB", home.join("projects-new-empty.db"));
+            for args in [vec!["new".into()], vec!["new".into(), "   ".into()]] {
+                let err = run(args, "bsc project").unwrap_err();
+                assert!(err.contains("usage:"), "{err}");
+            }
+            let conn = store::open().unwrap();
+            assert!(store::list(&conn).is_empty(), "a refused create writes nothing");
+        });
     }
 
     #[test]

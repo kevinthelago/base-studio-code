@@ -10,6 +10,10 @@ import {
   deriveTabIdentity,
   findByTitle,
 } from "./projectPaths";
+import slugFixtures from "./projectSlug.fixtures.json";
+
+/** The cross-language case table — see the fixture's own `_comment`. */
+const SLUG_CASES: { name: string; slug: string }[] = slugFixtures.cases;
 
 describe("sanitizeProjectKey", () => {
   it("replaces spaces and slashes with underscores", () => {
@@ -50,6 +54,30 @@ describe("projectSlug (#2409)", () => {
     expect(projectSlug("x".repeat(100))).toHaveLength(60);
     expect(projectSlug("🎮🎮")).toBe("project");
     expect(projectSlug("")).toBe("project");
+  });
+
+  it("matches the SHARED case table, which crates/bsc-project reads too", () => {
+    // Since #architect-starts-a-new-project there are TWO implementations of this rule: this one (the
+    // UI's create path) and `project_slug` in crates/bsc-project/src/lib.rs (`bsc project new`). The
+    // slug is a project's FROZEN identity, so a divergence would let the two doors create two
+    // different hubs for one name — and the second would look like a project that lost its plan.
+    // Both sides read this fixture, so drift fails a gate instead of shipping.
+    expect(SLUG_CASES.length).toBeGreaterThan(0); // an empty table would make this vacuous
+    for (const c of SLUG_CASES) {
+      expect(projectSlug(c.name), `projectSlug(${JSON.stringify(c.name)})`).toBe(c.slug);
+    }
+  });
+
+  it("contains every fixture name inside the projects root", () => {
+    // The containment property, which is what makes a free-text project name safe to hand a session
+    // that reads untrusted prose: no name produces an empty key, a traversal, or anything outside
+    // [a-z0-9-].
+    for (const c of SLUG_CASES) {
+      const key = projectSlug(c.name);
+      expect(key).toMatch(/^[a-z0-9-]+$/);
+      expect(key).not.toContain("..");
+      expect(key.length).toBeLessThanOrEqual(60);
+    }
   });
 
   it("is deterministic — the SAME name yields the SAME key (a collision the create modal resolves)", () => {

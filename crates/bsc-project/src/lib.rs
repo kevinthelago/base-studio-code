@@ -38,6 +38,45 @@ pub fn project_dir(key: &str) -> Option<PathBuf> {
     projects_root().map(|r| r.join(key))
 }
 
+/// A project's key, derived from its name (#2409) — **frozen at creation**, and the one value that
+/// names the hub, its plan.db, its worktrees, its pane ids and its board project.
+///
+/// A byte-exact mirror of `projectSlug` in `src/shared/lib/core/projectPaths.ts`, which is how the UI
+/// creates projects. `bsc project new` is a SECOND door onto the same act, so the two must agree — a
+/// divergence would let one name produce two different hubs depending on who created it.
+/// `projectSlug.fixtures.json` holds the shared case table and both sides' tests read it.
+///
+/// It is also the CONTAINMENT for the one architect verb whose argument is genuinely free text
+/// (`#architect-starts-a-new-project`). The output is `[a-z0-9-]`, capped, and non-empty, so a name —
+/// however it was arrived at, including from prose an architect was handed — cannot escape
+/// `projects/<key>/`: `../../etc/passwd` becomes `etc-passwd`, and `..` becomes `project`.
+pub fn project_slug(name: &str) -> String {
+    // Runs of non-alphanumerics collapse to ONE dash, matching the JS `[^a-z0-9]+` (a `+` quantifier,
+    // not a per-character replace) — otherwise "a/b c" would slug as `a-b-c` on one side and `a--b-c`
+    // on the other.
+    let lowered = name.to_lowercase();
+    let mut out = String::with_capacity(lowered.len());
+    let mut in_run = false;
+    for ch in lowered.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            in_run = false;
+        } else if !in_run {
+            out.push('-');
+            in_run = true;
+        }
+    }
+    // Trim, THEN cap — the same order as the JS, quirk included: a cut that lands on a dash leaves a
+    // trailing one. Reordering would be "tidier" and would produce a different key for a long name.
+    let trimmed = out.trim_matches('-');
+    let capped: String = trimmed.chars().take(60).collect();
+    if capped.is_empty() {
+        "project".to_string()
+    } else {
+        capped
+    }
+}
+
 /// The path of a project's `.published` marker file. `None` when no home dir is resolvable.
 pub fn published_marker(key: &str) -> Option<PathBuf> {
     project_dir(key).map(|d| d.join(".published"))
@@ -546,5 +585,87 @@ mod tests {
             let v: serde_json::Value = serde_json::from_str(&load_github_state().unwrap()).unwrap();
             assert_eq!(v["fetchedAt"], 7);
         });
+    }
+}
+
+#[cfg(test)]
+mod slug_tests {
+    use super::*;
+
+    /// The shared case table — the SAME file `projectPaths.test.ts` reads.
+    ///
+    /// Two implementations of one rule is a real risk, not a theoretical one: the slug is a project's
+    /// FROZEN identity, so if `bsc project new` and the UI disagreed about one name, the two doors
+    /// would create two different hubs for it and the second would look like a project that had lost
+    /// its plan. A shared fixture is the only version of this test that can actually fail on drift —
+    /// a hand-copied table in each language drifts silently the moment one is edited.
+    fn cases() -> Vec<(String, String)> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../src/shared/lib/core/projectSlug.fixtures.json");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+        let v: serde_json::Value = serde_json::from_str(&text).expect("fixture is valid JSON");
+        let arr = v["cases"].as_array().expect("fixture has a `cases` array").clone();
+        assert!(!arr.is_empty(), "an empty case table would make this test vacuous");
+        arr.iter()
+            .map(|c| {
+                (
+                    c["name"].as_str().expect("case.name").to_string(),
+                    c["slug"].as_str().expect("case.slug").to_string(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn project_slug_matches_the_shared_case_table() {
+        for (name, want) in cases() {
+            assert_eq!(project_slug(&name), want, "projectSlug({name:?})");
+        }
+    }
+
+    /// The containment property, asserted over EVERY case rather than only the traversal ones: no
+    /// input may produce a key that is empty, absolute, or able to climb out of `projects/`. This is
+    /// what makes a free-text argument safe to hand a session that reads untrusted prose.
+    #[test]
+    fn no_name_can_escape_the_projects_directory() {
+        for (name, _) in cases() {
+            let key = project_slug(&name);
+            assert!(!key.is_empty(), "{name:?} produced an empty key");
+            assert!(
+                key.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+                "{name:?} produced {key:?}, which is not [a-z0-9-]"
+            );
+            assert!(!key.contains(".."), "{name:?} produced a traversal: {key:?}");
+            assert!(key.len() <= 60, "{name:?} produced an over-long key");
+            // The decisive check: joining it onto the root cannot leave the root.
+            let root = std::path::Path::new("/projects");
+            let joined = root.join(&key);
+            assert!(joined.starts_with(root), "{name:?} escaped: {}", joined.display());
+        }
+    }
+
+    /// Adversarial inputs beyond the fixture — the fixture documents the CONTRACT, this sweeps for a
+    /// hole in it. Every one of these is a plausible thing to find inside prose handed to an
+    /// architect.
+    #[test]
+    fn hostile_names_still_land_inside_the_root() {
+        for name in [
+            "../../../../etc/shadow",
+            "....//....//x",
+            "/absolute/path",
+            r"\\server\share",
+            "con", // a reserved Windows device name — still just a directory name here
+            "a".repeat(5000).as_str(),
+            "%2e%2e%2f",
+            "\u{202e}reversed",
+            "; rm -rf /",
+            "name\nwith\nnewlines",
+        ] {
+            let key = project_slug(name);
+            assert!(!key.is_empty());
+            assert!(key.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'), "{name:?} -> {key:?}");
+            assert!(key.len() <= 60);
+        }
     }
 }
