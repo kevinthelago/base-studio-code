@@ -134,7 +134,6 @@
   "@/features/personas/lib/persona",
   "@/features/planner",
   "@/features/planner/blueprints/blueprintCatalog",
-  "@/features/planner/blueprints/blueprintIcons",
   "@/features/planner/blueprints/blueprintMcp",
   "@/features/planner/blueprints/blueprintShare",
   "@/features/planner/blueprints/blueprintSkills",

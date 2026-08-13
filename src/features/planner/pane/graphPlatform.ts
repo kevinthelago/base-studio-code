@@ -15,7 +15,6 @@
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as Designs from "@/features/designs";
 import * as BlueprintCatalog from "@/features/planner/blueprints/blueprintCatalog";
-import * as BlueprintIcons from "@/features/planner/blueprints/blueprintIcons";
 import * as DiscoveryBody from "@/features/planner/bodies/DiscoveryBody";
 import * as FileIntakePane from "@/features/planner/bodies/FileIntakePane";
 import * as FocusedAutomationsBody from "@/features/planner/bodies/FocusedAutomationsBody";
@@ -48,7 +47,6 @@ export function registerPanePlatform(): void {
   done = true;
   registerAppModule("@/features/designs", Designs);
   registerAppModule("@/features/planner/blueprints/blueprintCatalog", BlueprintCatalog);
-  registerAppModule("@/features/planner/blueprints/blueprintIcons", BlueprintIcons);
   registerAppModule("@/features/planner/bodies/DiscoveryBody", DiscoveryBody);
   registerAppModule("@/features/planner/bodies/FileIntakePane", FileIntakePane);
   registerAppModule("@/features/planner/bodies/FocusedAutomationsBody", FocusedAutomationsBody);
