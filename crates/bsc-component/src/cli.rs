@@ -357,6 +357,28 @@ SCOPE: components only. An algorithm record is a function LIFTED OUT of a file a
 `src` (#4192), so a path-based gate cannot be honest about them yet.",
     },
     CmdDoc {
+        name: "test",
+        summary: "materialize ONE record + its paired tests into an EMPTY dir and run them there — a pass proves the record is self-contained",
+        usage: "\
+USAGE:
+  bsc ui test <id> --out <dir> [--run]      # one record, alone
+  bsc ui test --all --out <dir> [--run]     # every record carrying a paired test, each in its own dir
+
+The components twin of `bsc graph test`. Materializing exactly ONE record is what makes the run mean
+something: a suite that passes in a directory holding only that record has PROVED the record is
+self-contained, which no run inside the repo can prove — there every import resolves whether the record
+declares it or not.
+
+The directory gets its own `vitest.config.ts`, or vitest walks UP, finds the repo's, and lends the record
+the aliases and setup file isolation exists to withhold. The component file takes its ORIGINAL basename,
+because the paired test imports it the way it always did (`./WorkerModals`, not `worker-modals`).
+`environment` follows the test — jsdom when it reaches for @testing-library or `document`, node otherwise.
+
+A record with NO paired test is refused rather than reported green: a vacuous pass would claim `verified`
+about a record nothing checks. A test that reaches other app modules is not paired onto the record at all
+— it belongs on an edge. `--all` exits non-zero when any record fails, and COUNTS the ones it skipped.",
+    },
+    CmdDoc {
         name: "doctor",
         summary: "graph-health report — orphans, dead branches, duplicates, cycles, unbuildable + self-referential components (#2678)",
         usage: "\
@@ -945,6 +967,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         }
         // `dupes` / `similar` (#3544) — the fuzzy DEDUP surface over the whole library (name + contract
         // distance), the LLM-native "what should I merge?" / "does this already exist?" reads. Propose-only.
+        // `test` (component-records-need-a-test-runner) — the components twin of `bsc graph test`.
+        // 131 records already carry paired tests and nothing ran any of them.
+        Some("test") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "test"));
+                Ok(())
+            } else {
+                cmd_component_test(&args[1..])
+            }
+        }
         Some("dupes") => {
             if args.get(1).map(String::as_str) == Some("help") {
                 print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "dupes"));
@@ -2271,6 +2303,195 @@ fn open_component_store(dir: &Option<String>) -> Result<bsc_json_store::Store, S
     let store = bsc_json_store::Store::new(dir, "component");
     crate::graph_health::set_provided_specifiers(provided_specifiers(&store));
     Ok(store)
+}
+
+/// Materialize ONE component record into `out` and, when `run`, execute its paired tests there.
+///
+/// The algorithms twin (`bsc graph test`) is the template, and most of the design is settled by it: one
+/// record per directory, the record's OWN `vitest.config.ts` so vitest cannot walk up and borrow the
+/// repo's aliases and setup file, the module file named after its ORIGINAL basename so the paired test's
+/// `./Thing` import resolves, and a refusal — never a vacuous pass — when a record has no paired test.
+///
+/// One difference from that twin: a component test normally RENDERS, so `jsdom` is the common case here
+/// rather than the exception. `@testing-library` is HARNESS — present in the image, and exactly what the
+/// isolation rule already allows a record's test to use.
+fn materialize_component_test(
+    comp: &serde_json::Value,
+    out: &str,
+    run: bool,
+) -> Result<serde_json::Value, String> {
+    let id = comp.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+    let tests = comp.get("tests").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+    if tests.is_empty() {
+        return Err(format!(
+            "'{id}' has no paired test — nothing to run. A test that reaches other app modules is not \
+             paired onto the record; it belongs on an edge."
+        ));
+    }
+    let src_text = comp.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+    // The ORIGINAL basename, not the record id: a paired test imports `./WorkerModals`, and
+    // `worker-modals` would not resolve.
+    // BLANK IS MISSING. A retired record carries `src: ""` alongside a real `srcRetired`, and treating
+    // the empty string as present produced an empty stem — a component written to `.tsx` and its test to
+    // `.test.tsx`, so the test's `./Dropdown` import resolved to nothing and every run failed to collect.
+    let non_blank = |k: &str| {
+        comp.get(k).and_then(serde_json::Value::as_str).map(str::trim).filter(|s| !s.is_empty())
+    };
+    let stem = non_blank("src")
+        .or_else(|| non_blank("srcRetired"))
+        .and_then(|p| p.rsplit('/').next())
+        .map(|f| f.trim_end_matches(".tsx").trim_end_matches(".ts").to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| non_blank("name").map(str::to_owned))
+        .unwrap_or_else(|| id.to_string());
+    let dir = std::path::Path::new(out);
+    std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {out}: {e}"))?;
+    let module = dir.join(format!("{stem}.tsx"));
+    std::fs::write(&module, src_text).map_err(|e| format!("cannot write the component: {e}"))?;
+    let mut written = vec![module.to_string_lossy().into_owned()];
+    for (i, t) in tests.iter().enumerate() {
+        let src = t.get("src").and_then(serde_json::Value::as_str).unwrap_or_default();
+        let name = if i == 0 { format!("{stem}.test.tsx") } else { format!("{stem}.{i}.test.tsx") };
+        let p = dir.join(&name);
+        std::fs::write(&p, src).map_err(|e| format!("cannot write {name}: {e}"))?;
+        written.push(p.to_string_lossy().into_owned());
+    }
+    // A component that needs a DOM should SAY so by reaching for testing-library or `document`; one that
+    // does not should never silently receive a DOM it never declared it needed.
+    let needs_dom = tests.iter().any(|t| {
+        t.get("src")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|src| src.contains("@testing-library") || src.contains("document"))
+    });
+    let env = if needs_dom { "jsdom" } else { "node" };
+    // The jest-dom MATCHERS are harness, like testing-library itself: `toHaveTextContent` and friends are
+    // registered by the repo's `src/test/setup.ts`, which this run deliberately does not load. Without
+    // them a rendering record fails with `Invalid Chai property: toHaveTextContent` — a missing matcher,
+    // not a broken component. Supplying them here keeps the withheld thing APP CONTEXT (aliases, the
+    // store, other modules) rather than the test toolkit.
+    let setup = if needs_dom {
+        // The `/vitest` entrypoint, not the bare one: the bare import registers against a GLOBAL
+        // `expect`, which exists in the repo's suite only because its config sets `globals: true`.
+        // Here it produced `ReferenceError: expect is not defined` — again a harness gap reading as a
+        // broken record.
+        std::fs::write(
+            dir.join("setup.ts"),
+            "import \"@testing-library/jest-dom/vitest\";\n\
+             import { cleanup } from \"@testing-library/react\";\n\
+             import { afterEach } from \"vitest\";\n\
+             // RTL auto-registers cleanup only when `globals` is on, which this config deliberately is\n\
+             // not. Without it every render in a file accumulates and the second test sees the first\n\
+             // one's DOM — \"Found multiple elements with the role button\", which reads as a broken\n\
+             // component and is a missing afterEach.\n\
+             afterEach(cleanup);\n",
+        )
+            .map_err(|e| format!("cannot write the test setup: {e}"))?;
+        written.push(dir.join("setup.ts").to_string_lossy().into_owned());
+        ", setupFiles: [\"./setup.ts\"]"
+    } else {
+        ""
+    };
+    std::fs::write(
+        dir.join("vitest.config.ts"),
+        format!(
+            "// Generated by `bsc ui test` — the record's own test contract.\n\
+             // Present so vitest does NOT walk up and load the repo's config, which would lend this\n\
+             // record the aliases and app setup that isolation exists to withhold.\n\
+             import {{ defineConfig }} from \"vitest/config\";\n\
+             export default defineConfig({{ test: {{ environment: \"{env}\", include: [\"*.test.tsx\"]{setup} }} }});\n"
+        ),
+    )
+    .map_err(|e| format!("cannot write the test config: {e}"))?;
+    written.push(dir.join("vitest.config.ts").to_string_lossy().into_owned());
+
+    let mut result = serde_json::json!({
+        "id": id, "dir": out, "written": written, "tests": tests.len(), "environment": env, "ran": false,
+    });
+    if run {
+        // `.cmd` on Windows: `Command` resolves an exact filename and does not consult PATHEXT, so a
+        // bare "npx" is simply "program not found" there.
+        let npx = if cfg!(windows) { "npx.cmd" } else { "npx" };
+        let output = std::process::Command::new(npx)
+            .args(["vitest", "run", "--root", "."])
+            .current_dir(dir)
+            .output()
+            .map_err(|e| format!("cannot run vitest: {e}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        result["ran"] = serde_json::Value::Bool(true);
+        result["passed"] = serde_json::Value::Bool(output.status.success());
+        result["output"] =
+            serde_json::Value::String(if stdout.trim().is_empty() { stderr } else { stdout });
+    }
+    Ok(result)
+}
+
+/// `bsc ui test <id> --out <dir> [--run]` / `bsc ui test --all --out <dir> [--run]`.
+fn cmd_component_test(args: &[String]) -> Result<(), String> {
+    let usage = "usage: bsc ui test <id> --out <dir> [--run]   |   bsc ui test --all --out <dir> [--run]";
+    let flag = |name: &str| -> Option<String> {
+        args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+    };
+    let out = flag("--out").ok_or(usage)?;
+    let run = args.iter().any(|a| a == "--run");
+    let dir = flag("--dir");
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> = store
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .collect();
+    if args.iter().any(|a| a == "--all") {
+        let mut results = Vec::new();
+        let (mut passed, mut failed, mut skipped) = (0usize, 0usize, 0usize);
+        for c in &comps {
+            let Some(id) = c.get("id").and_then(serde_json::Value::as_str) else { continue };
+            if c.get("tests").and_then(serde_json::Value::as_array).is_none_or(|t| t.is_empty()) {
+                // Counted, never hidden: a total that omits untested records reads as full coverage of a
+                // library most of which nothing checks.
+                skipped += 1;
+                continue;
+            }
+            // Its OWN directory. Sharing one would let a record's test import a sibling record's file
+            // that happens to sit beside it and pass on it.
+            let sub = std::path::Path::new(&out).join(id);
+            match materialize_component_test(c, &sub.to_string_lossy(), run) {
+                Ok(v) => {
+                    let ok = v.get("passed").and_then(serde_json::Value::as_bool).unwrap_or(!run);
+                    if run && !ok {
+                        failed += 1;
+                    } else {
+                        passed += 1;
+                    }
+                    results.push(v);
+                }
+                Err(e) => {
+                    failed += 1;
+                    results.push(serde_json::json!({ "id": id, "error": e }));
+                }
+            }
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&serde_json::json!({
+                "records": results.len(), "passed": passed, "failed": failed,
+                "skippedNoTest": skipped, "ran": run, "results": results,
+            }))
+            .map_err(|e| e.to_string())?
+        );
+        // A runner nothing can fail is not a gate.
+        if failed > 0 {
+            return Err(format!("{failed} component record(s) failed their paired tests"));
+        }
+        return Ok(());
+    }
+    let id = args.iter().find(|a| !a.starts_with("--")).ok_or(usage)?;
+    let comp = comps
+        .iter()
+        .find(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str()))
+        .ok_or_else(|| format!("no component '{id}' in the store"))?;
+    println!("{}", serde_json::to_string(&materialize_component_test(comp, &out, run)?).map_err(|e| e.to_string())?);
+    Ok(())
 }
 
 /// Every specifier some record in the store `provides` — the loader's FIRST resolution path, which the
@@ -4762,7 +4983,7 @@ export const P = () => <X />;"
             vec![
                 "list", "shapes", "get", "log", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
+                "backing", "test", "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "preview-errors", "preview-error"
             ]
         );
