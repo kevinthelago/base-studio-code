@@ -9,6 +9,7 @@
 // whose degrade-to-`[]` would blank the seed.
 import { bsc, bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import type { ComponentRecord, Kit, Role } from "./model";
+import type { ComponentBuildStatus, RuntimeStateCategory } from "./componentScan";
 import { ROLES } from "./model";
 
 /**
@@ -158,6 +159,48 @@ export async function pushKit(kit: Kit): Promise<void> {
 /** Write-through a kit removal (`bsc ui kit remove <id>`). Never throws. */
 export async function dropKit(id: string): Promise<void> {
   try { await bscRun(null, ["ui", "kit", "remove", id]); } catch { /* store unreachable — cache-only */ }
+}
+
+/** One cached scan outcome, as the durable store holds it. `status`/`stateBlanks` ride VERBATIM — the
+ *  store is a courier for the frontend's own shapes, so there is no second definition to drift. */
+export interface CachedScan {
+  sig: string;
+  status: ComponentBuildStatus;
+  stateBlanks: RuntimeStateCategory[];
+}
+
+/**
+ * Read the durable scan cache (`bsc ui scan-cache`, #the-component-scan-remembers-what-it-already-built).
+ *
+ * Empty on ANY failure — no bridge, an old binary, malformed JSON. That is the safe direction and the
+ * whole safety argument for this cache: an empty read makes the sweep scan everything, which is exactly
+ * what it did before the cache existed. It may only ever save work, never withhold a scan, because a
+ * withheld scan leaves a stale badge on a component that is actually broken.
+ */
+export async function loadScanCache(): Promise<Record<string, CachedScan>> {
+  try {
+    const out = await bsc(null, ["ui", "scan-cache", "get"]);
+    const parsed = JSON.parse(out.trim() || "{}") as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const rows: Record<string, CachedScan> = {};
+    for (const [id, v] of Object.entries(parsed as Record<string, unknown>)) {
+      const e = v as Partial<CachedScan>;
+      // A row without a signature can never be a hit (the sig is half the key), so drop it here rather
+      // than let it look like a valid entry that simply never matches.
+      if (!e || typeof e.sig !== "string" || !e.sig || !e.status) continue;
+      rows[id] = { sig: e.sig, status: e.status, stateBlanks: Array.isArray(e.stateBlanks) ? e.stateBlanks : [] };
+    }
+    return rows;
+  } catch {
+    return {};
+  }
+}
+
+/** Merge scan outcomes into the durable cache (`bsc ui scan-cache put`). Fire-and-forget: a failed write
+ *  costs a re-scan next visit, which is the same thing that happened before the cache existed. */
+export async function saveScanCache(entries: Record<string, CachedScan>): Promise<void> {
+  if (Object.keys(entries).length === 0) return;
+  try { await bsc(null, ["ui", "scan-cache", "put"], JSON.stringify(entries)); } catch { /* re-scan next visit */ }
 }
 
 /** Record a captured preview RUNTIME error to the durable log `bsc ui preview-errors` tails (#3165). The
