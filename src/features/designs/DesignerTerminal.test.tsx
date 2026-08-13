@@ -56,7 +56,7 @@ describe("DesignerTerminal dock (#3357)", () => {
   // `ensure_session_settings` skips an empty cwd — NO ROLE GATE. So the dock alone claiming the pane is
   // the bug, not the contract; these two tests pin both halves of it.
   it("does NOT create the terminal from the dock alone — it waits for the session mount (#3427)", () => {
-    const { container } = render(<TerminalHost><DesignerTerminal /></TerminalHost>);
+    const { container } = render(<TerminalHost><DesignerTerminal tech="react" /></TerminalHost>);
     expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
     expect(claimedPanes(container)).toEqual([]);
   });
@@ -65,22 +65,22 @@ describe("DesignerTerminal dock (#3357)", () => {
     const { container } = render(
       <TerminalHost>
         {/* Stands in for StudioSessionMount: the PRIMARY claim carrying cwd/initCmd. */}
-        <TerminalSlot paneId={STUDIO_SESSIONS.designer.paneId} primary parked visible={false} initialCwd="/tmp/designer" />
-        <DesignerTerminal />
+        <TerminalSlot paneId={STUDIO_SESSIONS.designerReact.paneId} primary parked visible={false} initialCwd="/tmp/designer" />
+        <DesignerTerminal tech="react" />
       </TerminalHost>,
     );
     expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
-    expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.designer.paneId);
+    expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.designerReact.paneId);
   });
 
   it("opening the page STARTS the session (lazy) and holds a viewer while it is shown", () => {
-    render(<TerminalHost><DesignerTerminal /></TerminalHost>);
-    expect(useAppStore.getState().wantedStudios).toContain("designer");
-    expect(useAppStore.getState().studioViewers.designer).toBe(1);
+    render(<TerminalHost><DesignerTerminal tech="react" /></TerminalHost>);
+    expect(useAppStore.getState().wantedStudios).toContain("designerReact");
+    expect(useAppStore.getState().studioViewers.designerReact).toBe(1);
   });
 
   it("is inert with no <TerminalHost> ancestor (renders in isolation without crashing)", () => {
-    expect(() => render(<DesignerTerminal />)).not.toThrow();
+    expect(() => render(<DesignerTerminal tech="react" />)).not.toThrow();
     expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
   });
 });
@@ -134,33 +134,64 @@ describe("designer session survives a planner-tab switch (#2826, re-based on #33
   // explicit End session) reclaims it. This asserts the new contract at both levels.
   it("releases only the VIEWER when the page is hidden — the session stays wanted (and warm)", () => {
     const { rerender, container } = render(
-      <TerminalHost><KeptMountedPage active={true}><DesignerTerminal /></KeptMountedPage></TerminalHost>,
+      <TerminalHost><KeptMountedPage active={true}><DesignerTerminal tech="react" /></KeptMountedPage></TerminalHost>,
     );
     const wrapper = container.firstElementChild as HTMLElement;
     expect(wrapper.style.display).toBe("flex");
-    expect(useAppStore.getState().studioViewers.designer).toBe(1);
+    expect(useAppStore.getState().studioViewers.designerReact).toBe(1);
 
     // Switch planner tabs: the page CSS-hides and the shell's page mode moves off "designs".
     showDesigns(false);
-    rerender(<TerminalHost><KeptMountedPage active={false}><DesignerTerminal /></KeptMountedPage></TerminalHost>);
+    rerender(<TerminalHost><KeptMountedPage active={false}><DesignerTerminal tech="react" /></KeptMountedPage></TerminalHost>);
     expect(screen.getByTestId("designer-terminal")).toBeInTheDocument(); // still mounted, just hidden
-    expect(useAppStore.getState().studioViewers.designer).toBe(0);       // …but no longer WATCHED
-    expect(useAppStore.getState().wantedStudios).toContain("designer");  // session kept warm
+    expect(useAppStore.getState().studioViewers.designerReact).toBe(0);       // …but no longer WATCHED
+    expect(useAppStore.getState().wantedStudios).toContain("designerReact");  // session kept warm
 
     // Back to Designs: the same session is re-shown (never re-created).
     showDesigns(true);
-    rerender(<TerminalHost><KeptMountedPage active={true}><DesignerTerminal /></KeptMountedPage></TerminalHost>);
-    expect(useAppStore.getState().studioViewers.designer).toBe(1);
-    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
+    rerender(<TerminalHost><KeptMountedPage active={true}><DesignerTerminal tech="react" /></KeptMountedPage></TerminalHost>);
+    expect(useAppStore.getState().studioViewers.designerReact).toBe(1);
+    expect(useAppStore.getState().wantedStudios).toEqual(["designerReact"]);
   });
 
   it("UNMOUNTING the dock no longer tears the session down — the terminal is the host's, not the dock's", () => {
-    const { unmount } = render(<TerminalHost><DesignerTerminal /></TerminalHost>);
-    expect(useAppStore.getState().wantedStudios).toContain("designer");
+    const { unmount } = render(<TerminalHost><DesignerTerminal tech="react" /></TerminalHost>);
+    expect(useAppStore.getState().wantedStudios).toContain("designerReact");
     unmount();
     // The old contract killed the PTY here (the tear-off gate case). The session now outlives the dock so
     // the Glance morph can still show it; reclamation is the reaper's job alone.
-    expect(useAppStore.getState().studioViewers.designer).toBe(0);
-    expect(useAppStore.getState().wantedStudios).toContain("designer");
+    expect(useAppStore.getState().studioViewers.designerReact).toBe(0);
+    expect(useAppStore.getState().wantedStudios).toContain("designerReact");
+  });
+
+  // #system-sessions-are-per-technology — the dock FOLLOWS the workbench's selected KIT's technology
+  // (the component store carries `tech` on the kit, one level up from the algorithms graph), and only
+  // the ACTIVE technology's session is started.
+  it("starts the session for the kit technology it is given, and no other", () => {
+    render(<TerminalHost><DesignerTerminal tech="react-native" /></TerminalHost>);
+    const st = useAppStore.getState();
+    expect(st.wantedStudios).toEqual(["designerReactNative"]);
+    expect(st.studioViewers.designerReact ?? 0).toBe(0);
+  });
+
+  it("switching kit technology starts the new one and releases the old", () => {
+    const { rerender } = render(<TerminalHost><DesignerTerminal tech="react" /></TerminalHost>);
+    expect(useAppStore.getState().studioViewers.designerReact).toBe(1);
+
+    rerender(<TerminalHost><DesignerTerminal tech="react-native" /></TerminalHost>);
+    const st = useAppStore.getState();
+    expect(st.studioViewers.designerReactNative).toBe(1);
+    // Zero viewers ARMS the reaper; it stays WANTED, so switching back reattaches to the same session.
+    expect(st.studioViewers.designerReact).toBe(0);
+    expect(st.wantedStudios).toContain("designerReact");
+  });
+
+  it("shows an EMPTY dock for a kit whose technology has no designer", () => {
+    // A user-authored kit may declare no `tech` at all (the field is optional), which must not fall
+    // back to the react designer — a wrong-but-populated dock looks like it is working.
+    const { container } = render(<TerminalHost><DesignerTerminal tech="" /></TerminalHost>);
+    expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
+    expect(claimedPanes(container)).toEqual([]);
+    expect(useAppStore.getState().wantedStudios).toEqual([]);
   });
 });

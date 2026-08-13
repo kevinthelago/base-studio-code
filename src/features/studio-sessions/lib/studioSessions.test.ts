@@ -9,8 +9,14 @@ import { restrictedRoleCommands, isRestrictedRole, roleCapability, roleDeniedToo
 import { BUILTIN_PERSONAS } from "@/features/personas";
 
 describe("studio session registry (#3357)", () => {
-  it("covers exactly the five page-docked app-owned studios, each on a stable systemSessions id", () => {
-    expect(STUDIO_IDS).toEqual(["designer", "librarian", "architect", "soundDesigner", "integrator"]);
+  it("covers exactly the page-docked app-owned studios, each on a stable systemSessions id", () => {
+    // #system-sessions-are-per-technology: the librarian and designer are one session PER TECHNOLOGY
+    // (their stores are partitioned); the architect, sound-designer and integrator stay single.
+    expect(STUDIO_IDS).toEqual([
+      "designerReact", "designerReactNative",
+      "librarianRust", "librarianTypescript", "librarianPython",
+      "architect", "soundDesigner", "integrator",
+    ]);
     for (const id of STUDIO_IDS) {
       const def = STUDIO_SESSIONS[id];
       expect(def.id).toBe(id);
@@ -56,7 +62,7 @@ describe("studio session registry (#3357)", () => {
   // The role name overlaps the designer's; the SESSIONS must stay wholly separate or opening one would
   // reuse the other's terminal (they key off paneId) or its permission surface.
   it("keeps the sound studio distinct from the Design Studio in every identifying field", () => {
-    const sound = STUDIO_SESSIONS.soundDesigner, design = STUDIO_SESSIONS.designer;
+    const sound = STUDIO_SESSIONS.soundDesigner, design = STUDIO_SESSIONS.designerReact;
     expect(sound.paneId).not.toBe(design.paneId);
     expect(sound.role).not.toBe(design.role);
     expect(sound.setupCommand).not.toBe(design.setupCommand);
@@ -98,7 +104,9 @@ describe("studio session registry (#3357)", () => {
       STUDIO_IDS.map((id) => [id, roleCapability(STUDIO_SESSIONS[id].role).net]),
     );
     expect(netByStudio).toEqual({
-      designer: "none", librarian: "none", architect: "none", soundDesigner: "none",
+      designerReact: "none", designerReactNative: "none",
+      librarianRust: "none", librarianTypescript: "none", librarianPython: "none",
+      architect: "none", soundDesigner: "none",
       integrator: "read",
     });
     const cap = roleCapability("integrator");
@@ -150,20 +158,23 @@ describe("studio session registry (#3357)", () => {
     expect(STUDIO_INIT_CMD).toContain("claude --continue");
   });
 
-  it("isStudioId narrows only the three studio ids (a Glance node id is an arbitrary string)", () => {
-    expect(isStudioId("designer")).toBe(true);
-    for (const other of ["debugger", "library", "planner", "director", "", null, undefined]) {
+  it("isStudioId narrows only the studio ids (a Glance node id is an arbitrary string)", () => {
+    for (const id of STUDIO_IDS) expect(isStudioId(id)).toBe(true);
+    // The un-teched ROLE names are NOT studio ids since the per-technology split — `designer` is a
+    // role and a Glance node id, never a session. Narrowing one would key store maps by a value that
+    // resolves to no pane.
+    for (const other of ["designer", "librarian", "debugger", "library", "planner", "director", "", null, undefined]) {
       expect(isStudioId(other)).toBe(false);
     }
     expect(studioForPaneId("proj:api")).toBeNull();
   });
 
   it("studioDetached reports the single-owner handoff — the main window must release a torn-off studio", () => {
-    expect(studioDetached("designer", {})).toBe(false);
-    expect(studioDetached("designer", { projects: ["designs"] })).toBe(true);
+    expect(studioDetached("designerReact", {})).toBe(false);
+    expect(studioDetached("designerReact", { projects: ["designs"] })).toBe(true);
     // Scoped per section: tearing off Algorithms leaves the designer mounted here.
-    expect(studioDetached("designer", { projects: ["algorithms"] })).toBe(false);
-    expect(studioDetached("librarian", { projects: ["algorithms"] })).toBe(true);
+    expect(studioDetached("designerReact", { projects: ["algorithms"] })).toBe(false);
+    expect(studioDetached("librarianRust", { projects: ["algorithms"] })).toBe(true);
   });
 });
 
@@ -172,22 +183,22 @@ describe("studioPageShowing (#3357)", () => {
   // viewer count keyed off mounting it would never fall to 0 after a first visit and the reaper could
   // never fire. This is the rule that makes leaving the page actually count as leaving.
   it("is true only while its page is the active Projects page", () => {
-    expect(studioPageShowing("designer", { activeWorkspace: "projects", projectsPageMode: "designs" }, null)).toBe(true);
-    expect(studioPageShowing("designer", { activeWorkspace: "projects", projectsPageMode: "teams" }, null)).toBe(false);
+    expect(studioPageShowing("designerReact", { activeWorkspace: "projects", projectsPageMode: "designs" }, null)).toBe(true);
+    expect(studioPageShowing("designerReact", { activeWorkspace: "projects", projectsPageMode: "teams" }, null)).toBe(false);
     // Kept mounted but the user is on another WORKSPACE (Glance/Console) → not showing.
-    expect(studioPageShowing("designer", { activeWorkspace: "glance", projectsPageMode: "designs" }, null)).toBe(false);
+    expect(studioPageShowing("designerReact", { activeWorkspace: "glance", projectsPageMode: "designs" }, null)).toBe(false);
   });
 
   it("maps each studio to its own page", () => {
     const at = (mode: string) => ({ activeWorkspace: "projects", projectsPageMode: mode });
-    expect(studioPageShowing("librarian", at("algorithms"), null)).toBe(true);
+    expect(studioPageShowing("librarianRust", at("algorithms"), null)).toBe(true);
     expect(studioPageShowing("architect", at("teams"), null)).toBe(true);
-    expect(studioPageShowing("librarian", at("teams"), null)).toBe(false);
+    expect(studioPageShowing("librarianRust", at("teams"), null)).toBe(false);
   });
 
   it("a torn-off section window is showing exactly the page it was detached for", () => {
     const bg = { activeWorkspace: "glance", projectsPageMode: "projects" };
-    expect(studioPageShowing("designer", bg, { page: "projects", section: "designs" })).toBe(true);
-    expect(studioPageShowing("librarian", bg, { page: "projects", section: "designs" })).toBe(false);
+    expect(studioPageShowing("designerReact", bg, { page: "projects", section: "designs" })).toBe(true);
+    expect(studioPageShowing("librarianRust", bg, { page: "projects", section: "designs" })).toBe(false);
   });
 });

@@ -90,8 +90,8 @@ describe("reconcileSessions (#1266)", () => {
     // never restored — so they must never appear, while a real worker still does.
     const out = reconcileSessions(
       [
-        sess("design-studio:designer", "running"),
-        sess("algorithms-studio:librarian", "dormant"),
+        sess("design-studio:designer-react", "running"),
+        sess("algorithms-studio:librarian-rust", "dormant"),
         sess("teams-studio:architect", "running"),
         sess("proj:auth", "dormant"),
       ],

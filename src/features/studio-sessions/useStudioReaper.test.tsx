@@ -30,56 +30,56 @@ afterEach(() => vi.useRealTimers());
 
 describe("useStudioReaper (#3357)", () => {
   it("does nothing while a surface is showing the studio", () => {
-    useAppStore.setState({ wantedStudios: ["designer"], studioViewers: { designer: 1 } });
+    useAppStore.setState({ wantedStudios: ["designerReact"], studioViewers: { designerReact: 1 } });
     renderHook(() => useStudioReaper());
     act(() => { vi.advanceTimersByTime(STUDIO_IDLE_MS * 3); });
-    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
+    expect(useAppStore.getState().wantedStudios).toEqual(["designerReact"]);
   });
 
   it("arms on the viewer count dropping to 0 and reaps at expiry", () => {
-    useAppStore.setState({ wantedStudios: ["designer"], studioViewers: { designer: 1 } });
+    useAppStore.setState({ wantedStudios: ["designerReact"], studioViewers: { designerReact: 1 } });
     const { rerender } = renderHook(() => useStudioReaper());
 
-    act(() => { useAppStore.getState().removeStudioViewer("designer"); });
+    act(() => { useAppStore.getState().removeStudioViewer("designerReact"); });
     rerender();
     // Still warm right up to the deadline — leaving the page must not kill the session.
     act(() => { vi.advanceTimersByTime(STUDIO_IDLE_MS - 1); });
-    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
+    expect(useAppStore.getState().wantedStudios).toEqual(["designerReact"]);
 
     act(() => { vi.advanceTimersByTime(1); });
     expect(useAppStore.getState().wantedStudios).toEqual([]);
     // The reclaim must be COMPLETE: dropping the TerminalHost claim only unmounts the xterm (TerminalView
     // deliberately leaves the backend session alive for reconnect), so the reaper kills the PTY itself.
-    expect(killedPanes()).toEqual([STUDIO_SESSIONS.designer.paneId]);
+    expect(killedPanes()).toEqual([STUDIO_SESSIONS.designerReact.paneId]);
   });
 
   it("re-opening before expiry cancels the reap (and the session is never restarted)", () => {
-    useAppStore.setState({ wantedStudios: ["designer"], studioViewers: { designer: 1 } });
+    useAppStore.setState({ wantedStudios: ["designerReact"], studioViewers: { designerReact: 1 } });
     const { rerender } = renderHook(() => useStudioReaper());
 
-    act(() => { useAppStore.getState().removeStudioViewer("designer"); });
+    act(() => { useAppStore.getState().removeStudioViewer("designerReact"); });
     rerender();
     act(() => { vi.advanceTimersByTime(STUDIO_IDLE_MS / 2); });
     // The user comes back (page dock or the Glance morph) → viewer count > 0 → disarm.
-    act(() => { useAppStore.getState().addStudioViewer("designer"); });
+    act(() => { useAppStore.getState().addStudioViewer("designerReact"); });
     rerender();
     act(() => { vi.advanceTimersByTime(STUDIO_IDLE_MS * 2); });
-    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
+    expect(useAppStore.getState().wantedStudios).toEqual(["designerReact"]);
   });
 
   it("DEFERS the kill while Claude is actively running, then reaps once the turn ends", () => {
     useAppStore.setState({
-      wantedStudios: ["librarian"],
-      studioViewers: { librarian: 0 },
-      paneClaudeActive: { [STUDIO_SESSIONS.librarian.paneId]: true },
+      wantedStudios: ["librarianRust"],
+      studioViewers: { librarianRust: 0 },
+      paneClaudeActive: { [STUDIO_SESSIONS.librarianRust.paneId]: true },
     });
     renderHook(() => useStudioReaper());
 
     // Expiry lands mid-turn: re-arm instead of cutting the agent off.
     act(() => { vi.advanceTimersByTime(STUDIO_IDLE_MS); });
-    expect(useAppStore.getState().wantedStudios).toEqual(["librarian"]);
+    expect(useAppStore.getState().wantedStudios).toEqual(["librarianRust"]);
     act(() => { vi.advanceTimersByTime(STUDIO_BUSY_RECHECK_MS * 5); });
-    expect(useAppStore.getState().wantedStudios).toEqual(["librarian"]);
+    expect(useAppStore.getState().wantedStudios).toEqual(["librarianRust"]);
     expect(killedPanes()).toEqual([]); // never cut a working session off mid-turn
 
     // The turn closes → the next recheck reclaims it.
@@ -90,8 +90,8 @@ describe("useStudioReaper (#3357)", () => {
 
   it("reaps each studio independently — one going idle never touches another", () => {
     useAppStore.setState({
-      wantedStudios: ["designer", "architect"],
-      studioViewers: { designer: 0, architect: 1 },
+      wantedStudios: ["designerReact", "architect"],
+      studioViewers: { designerReact: 0, architect: 1 },
     });
     renderHook(() => useStudioReaper());
     act(() => { vi.advanceTimersByTime(STUDIO_IDLE_MS); });
@@ -99,7 +99,7 @@ describe("useStudioReaper (#3357)", () => {
   });
 
   it("does not restart the countdown when an unrelated studio's viewer count changes", () => {
-    useAppStore.setState({ wantedStudios: ["designer", "architect"], studioViewers: { designer: 0, architect: 1 } });
+    useAppStore.setState({ wantedStudios: ["designerReact", "architect"], studioViewers: { designerReact: 0, architect: 1 } });
     const { rerender } = renderHook(() => useStudioReaper());
     act(() => { vi.advanceTimersByTime(STUDIO_IDLE_MS - 1000); });
     // A churn event on the OTHER studio re-runs the reconcile effect; the armed timer must survive it.
@@ -120,28 +120,28 @@ describe("useStudioReaper — configurable timeout (#3357)", () => {
 
   it("honours a configured timeout shorter than the default", () => {
     cfg({ studioIdleMs: 5 * 60_000 });
-    useAppStore.setState({ wantedStudios: ["designer"], studioViewers: { designer: 0 } });
+    useAppStore.setState({ wantedStudios: ["designerReact"], studioViewers: { designerReact: 0 } });
     renderHook(() => useStudioReaper());
 
     act(() => { vi.advanceTimersByTime(5 * 60_000 - 1); });
-    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
+    expect(useAppStore.getState().wantedStudios).toEqual(["designerReact"]);
     act(() => { vi.advanceTimersByTime(1); });
     expect(useAppStore.getState().wantedStudios).toEqual([]);
-    expect(killedPanes()).toContain(STUDIO_SESSIONS.designer.paneId);
+    expect(killedPanes()).toContain(STUDIO_SESSIONS.designerReact.paneId);
   });
 
   it("never reaps while the master idle-reaper switch is off", () => {
     cfg({ enabled: false, studioIdleMs: 5 * 60_000 });
-    useAppStore.setState({ wantedStudios: ["designer"], studioViewers: { designer: 0 } });
+    useAppStore.setState({ wantedStudios: ["designerReact"], studioViewers: { designerReact: 0 } });
     renderHook(() => useStudioReaper());
     act(() => { vi.advanceTimersByTime(5 * 60_000 * 10); });
-    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
+    expect(useAppStore.getState().wantedStudios).toEqual(["designerReact"]);
     expect(killedPanes()).toEqual([]);
   });
 
   it("re-arms at the new threshold when the setting changes mid-countdown", () => {
     cfg({ studioIdleMs: 60 * 60_000 });
-    useAppStore.setState({ wantedStudios: ["designer"], studioViewers: { designer: 0 } });
+    useAppStore.setState({ wantedStudios: ["designerReact"], studioViewers: { designerReact: 0 } });
     const { rerender } = renderHook(() => useStudioReaper());
     act(() => { vi.advanceTimersByTime(10 * 60_000 ); });
 
@@ -157,12 +157,12 @@ describe("useStudioReaper — configurable timeout (#3357)", () => {
     // before #3357 rehydrates with no `studioIdleMs` at all. It must not become `undefined` ms.
     useAppStore.setState({
       idleReaper: { enabled: true, idleMs: 30 * 60_000, workerIdleMs: null } as ReaperConfig,
-      wantedStudios: ["designer"],
-      studioViewers: { designer: 0 },
+      wantedStudios: ["designerReact"],
+      studioViewers: { designerReact: 0 },
     });
     renderHook(() => useStudioReaper());
     act(() => { vi.advanceTimersByTime(STUDIO_IDLE_MS - 1); });
-    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
+    expect(useAppStore.getState().wantedStudios).toEqual(["designerReact"]);
     act(() => { vi.advanceTimersByTime(1); });
     expect(useAppStore.getState().wantedStudios).toEqual([]);
   });
@@ -170,13 +170,13 @@ describe("useStudioReaper — configurable timeout (#3357)", () => {
   it("a busy deferral is not reset to a full idle wait by an unrelated reconcile", () => {
     cfg({ studioIdleMs: 5 * 60_000 });
     useAppStore.setState({
-      wantedStudios: ["designer", "architect"],
-      studioViewers: { designer: 0, architect: 1 },
-      paneClaudeActive: { [STUDIO_SESSIONS.designer.paneId]: true },
+      wantedStudios: ["designerReact", "architect"],
+      studioViewers: { designerReact: 0, architect: 1 },
+      paneClaudeActive: { [STUDIO_SESSIONS.designerReact.paneId]: true },
     });
     const { rerender } = renderHook(() => useStudioReaper());
     act(() => { vi.advanceTimersByTime(5 * 60_000); });      // due, but busy ⇒ deferred
-    expect(useAppStore.getState().wantedStudios).toContain("designer");
+    expect(useAppStore.getState().wantedStudios).toContain("designerReact");
 
     // Churn on the other studio re-runs the reconcile. The deferral is on the short recheck loop and
     // must survive it — resetting it here would restart a full idle wait on a session that's working.

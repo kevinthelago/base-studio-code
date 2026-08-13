@@ -39,7 +39,7 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-const mountDesigner = () => render(<TerminalHost><StudioSessionMount studio="designer" /></TerminalHost>);
+const mountDesigner = () => render(<TerminalHost><StudioSessionMount studio="designerReact" /></TerminalHost>);
 
 describe("StudioSessionMount (#3357)", () => {
   it("resolves the studio workspace, then hosts the terminal off-screen at that cwd", async () => {
@@ -48,7 +48,7 @@ describe("StudioSessionMount (#3357)", () => {
     await waitFor(() => expect(getByTestId("tv")).toBeInTheDocument());
 
     const tv = getByTestId("tv");
-    expect(tv.dataset.pane).toBe(STUDIO_SESSIONS.designer.paneId);
+    expect(tv.dataset.pane).toBe(STUDIO_SESSIONS.designerReact.paneId);
     expect(tv.dataset.cwd).toBe(DESIGN_DIR);
     expect(tv.dataset.init).toBe(STUDIO_INIT_CMD);
     // The holding claim is never the visible one — a dock/morph slot shows it.
@@ -57,9 +57,9 @@ describe("StudioSessionMount (#3357)", () => {
 
   it("seeds ONLY the role (no profile) plus the kickoff/resume/extension fields the generic launch reads", async () => {
     mountDesigner();
-    await waitFor(() => expect(useAppStore.getState().paneRoles[STUDIO_SESSIONS.designer.paneId]).toBe("designer"));
+    await waitFor(() => expect(useAppStore.getState().paneRoles[STUDIO_SESSIONS.designerReact.paneId]).toBe("designer"));
     const s = useAppStore.getState();
-    const pid = STUDIO_SESSIONS.designer.paneId;
+    const pid = STUDIO_SESSIONS.designerReact.paneId;
 
     // The security-critical half: a ROLE and nothing profile-shaped. `buildSessionSettings` turns the
     // role into the restricted payload; a profile would ADD auto-approved commands on top of it.
@@ -83,12 +83,16 @@ describe("StudioSessionMount (#3357)", () => {
 
   it("registers the session on the mobile roster and deregisters it on unmount (#2497)", async () => {
     const { unmount } = mountDesigner();
-    await waitFor(() => expect(useAppStore.getState().tunnelExtraPanes.designer).toBeTruthy());
-    expect(useAppStore.getState().tunnelExtraPanes.designer).toEqual([
-      { id: STUDIO_SESSIONS.designer.paneId, cwd: DESIGN_DIR, name: "Design Studio", status: "running", kind: "designer" },
+    await waitFor(() => expect(useAppStore.getState().tunnelExtraPanes.designerReact).toBeTruthy());
+    expect(useAppStore.getState().tunnelExtraPanes.designerReact).toEqual([
+      // `name` carries the TECHNOLOGY and `kind` does NOT (#system-sessions-are-per-technology):
+      // PaneKind is a mobile wire contract shared with mobile-studio-code, so the ROLE goes on the
+      // wire and the tech rides in the roster name — widening the union would need a coordinated
+      // release in the other repo for a distinction the phone's roster does not need.
+      { id: STUDIO_SESSIONS.designerReact.paneId, cwd: DESIGN_DIR, name: "Design Studio · React", status: "running", kind: "designer" },
     ]);
     unmount();
-    expect(useAppStore.getState().tunnelExtraPanes.designer).toBeUndefined();
+    expect(useAppStore.getState().tunnelExtraPanes.designerReact).toBeUndefined();
   });
 
   it("does NOT host a terminal when the workspace setup fails — never an ungated session on an empty cwd (#1819)", async () => {
@@ -99,6 +103,6 @@ describe("StudioSessionMount (#3357)", () => {
     const { queryByTestId } = mountDesigner();
     await waitFor(() => expect(callsTo("setup_designer_workspace")).toHaveLength(1));
     expect(queryByTestId("tv")).toBeNull();
-    expect(useAppStore.getState().paneRoles[STUDIO_SESSIONS.designer.paneId]).toBeUndefined();
+    expect(useAppStore.getState().paneRoles[STUDIO_SESSIONS.designerReact.paneId]).toBeUndefined();
   });
 });

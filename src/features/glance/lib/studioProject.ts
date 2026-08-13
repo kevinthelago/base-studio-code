@@ -85,6 +85,14 @@ const STUDIO_NODE_SESSION: Record<string, string> = {
   // here makes its node openable in the same edit.
   ...Object.fromEntries(DESIGNER_TECHS.map((t) => [`designer-${t}`, designerSessionId(t)])),
   ...Object.fromEntries(LIBRARIAN_TECHS.map((t) => [`librarian-${t}`, librarianSessionId(t)])),
+  // The base-studio-code drill renders the PACKAGED team, which describes ROLES — its positions are
+  // still the singular `designer` / `librarian` (see `studioNetworkForArchitect` for why the per-tech
+  // expansion lives in the transform rather than the JSON). Those role nodes stay openable, and open
+  // their DEFAULT technology: the one the app itself is built in. Without these two entries the
+  // base-studio drill's designer and librarian nodes would draw and do nothing — the exact failure
+  // #system-sessions-are-per-technology's own `studioNodeHome` fix was written to end.
+  designer: designerSessionId("react"),
+  librarian: librarianSessionId("typescript"),
   architect: TEAMS_STUDIO_SESSION_ID,
   "sound-designer": SOUND_STUDIO_SESSION_ID,
   integrator: INTEGRATION_STUDIO_SESSION_ID,

@@ -4,19 +4,22 @@ import {
   isStudioSessionPaneId,
   isFullCapabilitySession,
   STUDIO_SESSION_PANE_IDS,
-  DESIGN_STUDIO_SESSION_ID,
-  ALGORITHMS_STUDIO_SESSION_ID,
+  designerSessionId,
+  librarianSessionId,
   TEAMS_STUDIO_SESSION_ID,
   DEBUG_STUDIO_SESSION_ID,
 } from "./systemSessions";
 
 describe("isStudioSessionPaneId (#3137)", () => {
   it("matches each app-owned studio session id", () => {
-    for (const id of [DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID, DEBUG_STUDIO_SESSION_ID]) {
+    for (const id of [designerSessionId("react"), librarianSessionId("rust"), TEAMS_STUDIO_SESSION_ID, DEBUG_STUDIO_SESSION_ID]) {
       expect(isStudioSessionPaneId(id)).toBe(true);
     }
-    expect(STUDIO_SESSION_PANE_IDS).toContain("design-studio:designer");
-    expect(STUDIO_SESSION_PANE_IDS).toContain("algorithms-studio:librarian");
+    // #system-sessions-are-per-technology: the pane ids are per-tech, and the TAIL carries the
+    // technology after a HYPHEN — a second colon would change what anything splitting the tail sees.
+    expect(STUDIO_SESSION_PANE_IDS).toContain("design-studio:designer-react");
+    expect(STUDIO_SESSION_PANE_IDS).toContain("algorithms-studio:librarian-rust");
+    for (const id of STUDIO_SESSION_PANE_IDS) expect(id.split(":")).toHaveLength(2);
     expect(STUDIO_SESSION_PANE_IDS).toContain("teams-studio:architect");
     expect(STUDIO_SESSION_PANE_IDS).toContain("debug-studio:debugger");
   });
@@ -27,9 +30,14 @@ describe("isStudioSessionPaneId (#3137)", () => {
     }
   });
 
-  it("is exactly the six studios (a new studio must be added here to be excluded)", () => {
+  it("is exactly the app-owned studios — a new one must be added here to be excluded", () => {
     expect([...STUDIO_SESSION_PANE_IDS].sort()).toEqual(
-      ["algorithms-studio:librarian", "debug-studio:debugger", "design-studio:designer",
+      // #system-sessions-are-per-technology: one pane id per per-tech session for the two studios whose
+      // store is partitioned. Every id keeps the `<key>:<tail>` grammar — the technology rides in the
+      // TAIL after a hyphen, never as a second colon.
+      ["algorithms-studio:librarian-python", "algorithms-studio:librarian-rust",
+       "algorithms-studio:librarian-typescript", "debug-studio:debugger",
+       "design-studio:designer-react", "design-studio:designer-react-native",
        "integration-studio:integrator", "sound-studio:sound-designer", "teams-studio:architect"],
     );
   });
@@ -50,7 +58,7 @@ describe("isFullCapabilitySession (#3326)", () => {
   });
 
   it("is false for the other studios (they keep their bespoke launch postures)", () => {
-    for (const id of [DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID]) {
+    for (const id of [designerSessionId("react"), librarianSessionId("rust"), TEAMS_STUDIO_SESSION_ID]) {
       expect(isFullCapabilitySession(id)).toBe(false);
     }
   });

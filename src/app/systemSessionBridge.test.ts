@@ -6,8 +6,8 @@ import { STUDIO_SESSIONS } from "@/features/studio-sessions";
 function req(over: Partial<LifecycleRequest> = {}): LifecycleRequest {
   return {
     id: "r1",
-    sessionId: "designer",
-    paneId: STUDIO_SESSIONS.designer.paneId,
+    sessionId: "designerReact",
+    paneId: STUDIO_SESSIONS.designerReact.paneId,
     action: "start",
     ptyLive: false,
     ...over,
@@ -33,13 +33,13 @@ describe("applyLifecycle — start", () => {
     const d = deps();
     const ack = await applyLifecycle(req(), d);
     expect(ack.outcome).toBe("started");
-    expect(d.openStudio).toHaveBeenCalledWith("designer");
+    expect(d.openStudio).toHaveBeenCalledWith("designerReact");
   });
 
   it("reports a no-op rather than a fresh start when the studio is already mounted", async () => {
     // The #4025 shape: a caller told "started" waits on a session it did not create. A singleton pane
     // cannot host two sessions, so the honest answer is that nothing was needed.
-    const d = deps({ wantedStudios: ["designer"] });
+    const d = deps({ wantedStudios: ["designerReact"] });
     const ack = await applyLifecycle(req(), d);
     expect(ack.outcome).toBe("already-running");
     expect(d.openStudio).not.toHaveBeenCalled();
@@ -63,11 +63,11 @@ describe("applyLifecycle — start", () => {
 
 describe("applyLifecycle — stop", () => {
   it("stops a running session and reports the change", async () => {
-    const d = deps({ wantedStudios: ["designer"] });
+    const d = deps({ wantedStudios: ["designerReact"] });
     const ack = await applyLifecycle(req({ action: "stop" }), d);
     expect(ack.outcome).toBe("stopped");
-    expect(d.killPane).toHaveBeenCalledWith(STUDIO_SESSIONS.designer.paneId);
-    expect(d.closeStudio).toHaveBeenCalledWith("designer");
+    expect(d.killPane).toHaveBeenCalledWith(STUDIO_SESSIONS.designerReact.paneId);
+    expect(d.closeStudio).toHaveBeenCalledWith("designerReact");
   });
 
   it("reclaims a stray PTY and reports it as stopped, not as a no-op", async () => {
@@ -88,7 +88,7 @@ describe("applyLifecycle — stop", () => {
   it("does not fail the stop when the kill throws", async () => {
     // The common reason a kill fails is that there was nothing to kill. Aborting the stop for that
     // would leave the studio mounted after the caller was told to expect otherwise.
-    const d = deps({ wantedStudios: ["designer"], killPane: vi.fn(async () => { throw new Error("no session"); }) } as never);
+    const d = deps({ wantedStudios: ["designerReact"], killPane: vi.fn(async () => { throw new Error("no session"); }) } as never);
     const ack = await applyLifecycle(req({ action: "stop" }), d);
     expect(ack.outcome).toBe("stopped");
     expect(ack.error).toBeUndefined();
@@ -119,7 +119,7 @@ describe("applyLifecycle — the closed set", () => {
   });
 
   it("always echoes the request id back, so the Rust waiter is never stranded", async () => {
-    for (const sessionId of ["designer", "nonsense"]) {
+    for (const sessionId of ["designerReact", "nonsense"]) {
       const ack = await applyLifecycle(req({ id: "corr-7", sessionId }), deps());
       expect(ack.id).toBe("corr-7");
     }

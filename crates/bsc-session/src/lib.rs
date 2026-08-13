@@ -56,7 +56,13 @@ pub struct SystemSession {
     pub stoppable: bool,
 }
 
-/// **The closed set.** Mirrors `STUDIO_SESSIONS` in
+/// **The closed set**, one entry per app-owned session — and since
+/// #system-sessions-are-per-technology that is one per TECHNOLOGY for the two studios whose store is
+/// partitioned (the librarian by `impl.tech`, the designer by `kit.tech`). A per-tech pane id takes a
+/// HYPHEN, never a second colon: the pane grammar is `<key>:<tail>` and the key is read as
+/// `paneId.split(":")[0]` in several places.
+///
+/// Mirrors `STUDIO_SESSIONS` in
 /// `src/features/studio-sessions/lib/studioSessions.ts`; the ids and pane ids are the same strings on
 /// both sides, and `systemSessionRegistry.test.ts` fails when they drift. Two authorities is one more
 /// than ideal, but the alternative — Rust reading a TS module at runtime — trades a compile-time table
@@ -64,15 +70,33 @@ pub struct SystemSession {
 /// being refused, which the drift test catches at gate time instead.
 pub const SYSTEM_SESSIONS: &[SystemSession] = &[
     SystemSession {
-        id: "designer",
-        pane_id: "design-studio:designer",
-        summary: "the Design Studio — components, pages and animations via `bsc ui`",
+        id: "designerReact",
+        pane_id: "design-studio:designer-react",
+        summary: "the Design Studio for REACT kits — components, pages and animations via `bsc ui`",
         stoppable: true,
     },
     SystemSession {
-        id: "librarian",
-        pane_id: "algorithms-studio:librarian",
-        summary: "the Algorithms Studio — the per-language implementation graph via `bsc graph`",
+        id: "designerReactNative",
+        pane_id: "design-studio:designer-react-native",
+        summary: "the Design Studio for REACT-NATIVE kits",
+        stoppable: true,
+    },
+    SystemSession {
+        id: "librarianRust",
+        pane_id: "algorithms-studio:librarian-rust",
+        summary: "the Algorithms Studio for RUST — `bsc graph impl list --tech rust`",
+        stoppable: true,
+    },
+    SystemSession {
+        id: "librarianTypescript",
+        pane_id: "algorithms-studio:librarian-typescript",
+        summary: "the Algorithms Studio for TYPESCRIPT",
+        stoppable: true,
+    },
+    SystemSession {
+        id: "librarianPython",
+        pane_id: "algorithms-studio:librarian-python",
+        summary: "the Algorithms Studio for PYTHON",
         stoppable: true,
     },
     SystemSession {
@@ -287,6 +311,9 @@ mod tests {
     fn a_near_miss_is_refused_and_told_the_valid_set() {
         let err = resolve("sound-designer").unwrap_err();
         assert!(err.contains("soundDesigner"), "the refusal names the id the caller meant");
+        // The realistic per-tech near-miss: the pane id is kebab, the studio id is camel.
+        assert!(resolve("librarian-rust").is_err(), "the PANE id is not the studio id");
+        assert!(resolve("librarian").is_err(), "the un-teched role is not a session any more");
         for id in valid_ids() {
             assert!(err.contains(id), "the refusal lists {id}");
         }
@@ -297,7 +324,7 @@ mod tests {
     /// space injected prose can reach.
     #[test]
     fn resolution_is_exact_rather_than_forgiving() {
-        for near in ["Designer", "DESIGNER", " designer", "designer ", "design-studio:designer"] {
+        for near in ["DesignerReact", "DESIGNERREACT", " designerReact", "designerReact ", "design-studio:designer-react"] {
             assert!(resolve(near).is_err(), "{near} must not resolve");
         }
     }
