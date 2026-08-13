@@ -11,19 +11,35 @@
 // `pty_create` call. This file is that data.
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
 import {
-  DESIGN_STUDIO_SESSION_ID,
-  ALGORITHMS_STUDIO_SESSION_ID,
+  designerSessionId,
+  librarianSessionId,
   TEAMS_STUDIO_SESSION_ID,
   SOUND_STUDIO_SESSION_ID,
   INTEGRATION_STUDIO_SESSION_ID,
 } from "@/shared/lib/session/systemSessions";
 
-/** The five app-owned studio sessions. (The DEBUG session is app-owned too but is full-capability and
- *  Settings-toggled, so it keeps its own `DebugSessionMount` — see `@/features/debug`.) */
-export type StudioId = "designer" | "librarian" | "architect" | "soundDesigner" | "integrator";
+/** The app-owned studio sessions. (The DEBUG session is app-owned too but is full-capability and
+ *  Settings-toggled, so it keeps its own `DebugSessionMount` — see `@/features/debug`.)
+ *
+ *  PER TECHNOLOGY (#system-sessions-are-per-technology) for the two studios whose store is partitioned:
+ *  the LIBRARIAN by `impl.tech` on the algorithms graph, the DESIGNER by `kit.tech` on the component
+ *  store. The sound-designer and integrator stay single — their stores carry no tech facet at any
+ *  level, and splitting a studio with nothing to split just doubles the sessions.
+ *
+ *  These are LITERALS, not generated, because a `StudioId` is a compile-time key: it types
+ *  `wantedStudios`, `studioViewers`, every store map and the closed set `bsc session` resolves against.
+ *  A runtime-materialised session would have none of those. */
+export type StudioId =
+  | "designerReact" | "designerReactNative"
+  | "librarianRust" | "librarianTypescript" | "librarianPython"
+  | "architect" | "soundDesigner" | "integrator";
 
 /** Every studio id, in rail order. */
-export const STUDIO_IDS: readonly StudioId[] = ["designer", "librarian", "architect", "soundDesigner", "integrator"];
+export const STUDIO_IDS: readonly StudioId[] = [
+  "designerReact", "designerReactNative",
+  "librarianRust", "librarianTypescript", "librarianPython",
+  "architect", "soundDesigner", "integrator",
+];
 
 export interface StudioSessionDef {
   id: StudioId;
@@ -46,6 +62,12 @@ export interface StudioSessionDef {
    *  (`detachedSections[pageKey]` containing `sectionId` ⇒ another WINDOW owns this studio's terminal). */
   pageKey: string;
   sectionId: string;
+  /** The TECHNOLOGY this session curates (#system-sessions-are-per-technology), for the studios whose
+   *  store is partitioned. Absent for a single-technology studio (architect / sound-designer /
+   *  integrator). Drives {@link studioScopeDirective}, which is what actually makes a per-tech session
+   *  behave differently from its siblings — without it, three librarians would launch identically and
+   *  each would curate the whole graph, which is the state this split exists to end. */
+  tech?: string;
   /** The studio's CURATED default skill ids — resolved from the library into `paneSkills` at launch
    *  (#3766). Unlike the global-enabled firehose a normal session gets, a restricted studio session is
    *  pinned to exactly this set (absent/empty ⇒ none, preserving the confinement boundary). This is how
@@ -54,28 +76,67 @@ export interface StudioSessionDef {
 }
 
 export const STUDIO_SESSIONS: Record<StudioId, StudioSessionDef> = {
-  designer: {
-    id: "designer",
-    paneId: DESIGN_STUDIO_SESSION_ID,
+  designerReact: {
+    id: "designerReact",
+    paneId: designerSessionId("react"),
     role: "designer",
+    tech: "react",
     setupCommand: "setup_designer_workspace",
     dirKey: "design_dir",
     personaId: "persona-designer",
-    rosterName: "Design Studio",
+    rosterName: "Design Studio · React",
     pageKey: "projects",
     sectionId: "designs",
     // Build components accessible + compliant BY CONSTRUCTION (#3766) — the author-time skills, not
     // the post-hoc *-audit/*-review ones the reviewer runs.
     defaultSkillIds: ["author-accessible-components", "author-compliant-components"],
   },
-  librarian: {
-    id: "librarian",
-    paneId: ALGORITHMS_STUDIO_SESSION_ID,
+  designerReactNative: {
+    id: "designerReactNative",
+    paneId: designerSessionId("react-native"),
+    role: "designer",
+    tech: "react-native",
+    setupCommand: "setup_designer_workspace",
+    dirKey: "design_dir",
+    personaId: "persona-designer",
+    rosterName: "Design Studio · React Native",
+    pageKey: "projects",
+    sectionId: "designs",
+    defaultSkillIds: ["author-accessible-components", "author-compliant-components"],
+  },
+  librarianRust: {
+    id: "librarianRust",
+    paneId: librarianSessionId("rust"),
     role: "librarian",
+    tech: "rust",
     setupCommand: "setup_librarian_workspace",
     dirKey: "algorithms_dir",
     personaId: "persona-librarian",
-    rosterName: "Algorithms Studio",
+    rosterName: "Algorithms Studio · Rust",
+    pageKey: "projects",
+    sectionId: "algorithms",
+  },
+  librarianTypescript: {
+    id: "librarianTypescript",
+    paneId: librarianSessionId("typescript"),
+    role: "librarian",
+    tech: "typescript",
+    setupCommand: "setup_librarian_workspace",
+    dirKey: "algorithms_dir",
+    personaId: "persona-librarian",
+    rosterName: "Algorithms Studio · TypeScript",
+    pageKey: "projects",
+    sectionId: "algorithms",
+  },
+  librarianPython: {
+    id: "librarianPython",
+    paneId: librarianSessionId("python"),
+    role: "librarian",
+    tech: "python",
+    setupCommand: "setup_librarian_workspace",
+    dirKey: "algorithms_dir",
+    personaId: "persona-librarian",
+    rosterName: "Algorithms Studio · Python",
     pageKey: "projects",
     sectionId: "algorithms",
   },
@@ -142,6 +203,45 @@ export const STUDIO_RESUME_LOG = "studio-resume.log";
 export const STUDIO_INIT_CMD =
   `claude --continue 2>>"\${BSC_LOG_DIR:-/tmp}/${STUDIO_RESUME_LOG}"` +
   ` || { echo "[studio] no prior session resumed — starting fresh (why: \${BSC_LOG_DIR:-/tmp}/${STUDIO_RESUME_LOG})"; claude; }`;
+
+/**
+ * The scoping line a per-technology studio launches with, appended to its persona prompt.
+ *
+ * THIS IS WHAT MAKES THE SPLIT REAL. Five sessions sharing one persona and one workspace would launch
+ * identically and each would curate the whole store — the split would cost five processes and change
+ * nothing. The directive names the session's technology AND the filtered read that scopes it, so the
+ * session knows what it owns from its first turn.
+ *
+ * The two studios are scoped by DIFFERENT queries, because their stores carry `tech` at different
+ * levels: an algorithms implementation carries it directly (`bsc graph impl list --tech <t>`), while a
+ * component carries it via its KIT (`bsc ui kit list` → the kits whose tech matches → `--kit <id>`).
+ * A single generic "filter by tech" would be wrong for one of them, so the two are written out.
+ *
+ * Empty for a studio with no `tech` — the architect, sound-designer and integrator curate everything
+ * their store holds, and appending a scoping line that names no scope would be noise.
+ */
+export function studioScopeDirective(def: StudioSessionDef): string {
+  if (!def.tech) return "";
+  const read =
+    def.role === "librarian"
+      ? `Your partition is \`bsc graph impl list --tech ${def.tech}\`. Every implementation you curate, ` +
+        `harvest or optimize is a ${def.tech} one.`
+      : `Your partition is the kits whose \`tech\` is \`${def.tech}\` — list them with ` +
+        `\`bsc ui kit list\`, then read each with \`bsc ui list --kit <kitId>\`. Every component you ` +
+        `author or edit belongs to one of those kits.`;
+  return (
+    `## Your technology: ${def.tech}
+
+` +
+    `You are the ${def.tech} ${def.role}. ${read}
+
+` +
+    `Sibling sessions curate the other technologies — do NOT edit records outside your partition. ` +
+    `A ${def.tech} artifact and its equivalent in another technology are different artifacts, not two ` +
+    `copies of one, which is exactly why there is a session per technology rather than one over all ` +
+    `of them.`
+  );
+}
 
 /** Narrow an arbitrary string (a Glance node id, a persisted value) to a StudioId. */
 export function isStudioId(value: string | null | undefined): value is StudioId {

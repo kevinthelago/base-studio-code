@@ -30,7 +30,7 @@ import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { Box } from "@/shared/ui/layout/Box";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { BUILTIN_PERSONAS } from "@/features/personas";
-import { STUDIO_INIT_CMD, STUDIO_SESSIONS, type StudioId, type StudioSessionDef } from "./lib/studioSessions";
+import { STUDIO_INIT_CMD, STUDIO_SESSIONS, studioScopeDirective, type StudioId, type StudioSessionDef } from "./lib/studioSessions";
 
 /** The studio persona's start prompt — the store copy (user edits win), else the packaged seed. */
 export function studioStartPrompt(personaId: string): string {
@@ -57,7 +57,11 @@ export function studioStartPrompt(personaId: string): string {
  * Exported for the unit test — the permission payload is the security-critical half of this migration.
  */
 export function seedStudioLaunchState(def: StudioSessionDef): void {
-  const prompt = studioStartPrompt(def.personaId);
+  const persona = studioStartPrompt(def.personaId);
+  // #system-sessions-are-per-technology: the line that scopes a per-tech session to its own partition.
+  // Appended, never substituted — without the persona the session answers as a generic agent; without
+  // the scope, five sessions share one persona and each curates the whole store.
+  const prompt = [persona, studioScopeDirective(def)].filter(Boolean).join("\n\n");
   useAppStore.setState((st) => {
     const startupPrompts = { ...st.paneStartupPromptText };
     if (prompt) startupPrompts[def.paneId] = prompt;

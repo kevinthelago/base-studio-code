@@ -12,10 +12,32 @@
 // is excluded everywhere at once. The PLANNER is the sibling app-owned session, but it has a DYNAMIC
 // per-project id (`planning_<key>`) and its own `isPlanningPaneId` guard, so it isn't listed here.
 
-/** The Design Studio's app-owned designer session. */
-export const DESIGN_STUDIO_SESSION_ID = "design-studio:designer";
-/** The Algorithms studio's app-owned librarian session. */
-export const ALGORITHMS_STUDIO_SESSION_ID = "algorithms-studio:librarian";
+/** The Design Studio's app-owned designer session, one per kit technology. */
+export const designerSessionId = (tech: DesignerTech): string => `design-studio:designer-${tech}`;
+/** The ALGORITHMS techs that get their own librarian (#system-sessions-are-per-technology) — the
+ *  partition the algorithms graph already carries on every implementation (`impl.tech`), reachable as
+ *  `bsc graph impl list --tech <t>`. One librarian per language kit, not one over all of them: a rust
+ *  impl and a typescript impl of the same concept are different artifacts (concept-IS-impl, #2863), and
+ *  curating both from one session means one context holding two languages' idioms.
+ *
+ *  A FOURTH tech appearing in the graph needs a fourth entry here — the list is declared rather than
+ *  derived because these ids are compile-time `StudioId` literals, and a session that materialises at
+ *  runtime would have no pane id, no role and no place in the closed set `bsc session` resolves against. */
+export const LIBRARIAN_TECHS = ["rust", "typescript", "python"] as const;
+export type LibrarianTech = (typeof LIBRARIAN_TECHS)[number];
+
+/** The UI-KIT techs that get their own designer. The component store partitions on `tech` at the KIT
+ *  level (`bsc ui kit list`), one level up from where the algorithms graph carries it — react today
+ *  (base-studio-code · harvested · react-d3) and react-native (mobile-studio-code). */
+export const DESIGNER_TECHS = ["react", "react-native"] as const;
+export type DesignerTech = (typeof DESIGNER_TECHS)[number];
+
+/** The Algorithms studio's app-owned librarian session, one per technology.
+ *
+ *  A HYPHEN, never a second colon: the pane-id grammar is `<key>:<tail>` and several call sites read
+ *  the project key as `paneId.split(":")[0]`. A second colon would not break that read, but it changes
+ *  what the TAIL means for anything that splits further — so the tech rides in the tail. */
+export const librarianSessionId = (tech: LibrarianTech): string => `algorithms-studio:librarian-${tech}`;
 /** The Teams studio's app-owned architect session. */
 export const TEAMS_STUDIO_SESSION_ID = "teams-studio:architect";
 /** The Sound studio's app-owned sound-designer session (#3369, epic #3071 phase 4). */
@@ -36,8 +58,8 @@ export const DEBUG_STUDIO_PANE_PREFIX = "debug-studio:";
 
 /** Every fixed, app-owned studio session pane id. */
 export const STUDIO_SESSION_PANE_IDS: readonly string[] = [
-  DESIGN_STUDIO_SESSION_ID,
-  ALGORITHMS_STUDIO_SESSION_ID,
+  ...DESIGNER_TECHS.map(designerSessionId),
+  ...LIBRARIAN_TECHS.map(librarianSessionId),
   TEAMS_STUDIO_SESSION_ID,
   SOUND_STUDIO_SESSION_ID,
   INTEGRATION_STUDIO_SESSION_ID,
