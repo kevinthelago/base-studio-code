@@ -40,7 +40,17 @@ export function useCoordinator(): void {
     if (isCancelled()) return;
     const res = await readCoordState(1000);
     if (isCancelled() || !res) return;
-    const { state, ready } = res;
+    const { state, ready, refused } = res;
+    // CROSS-PROJECT REFUSALS (#coord-log-is-app-wide-answers-cross-projects) are REPORTED, not
+    // dropped. A silently swallowed answer looks to the sending director exactly like a delivered
+    // one, so it would go on believing it had unblocked a worker it never reached — and the worker's
+    // real director would never know it still owed a reply.
+    for (const r of refused) {
+      log.warn(
+        `coordination: refused a cross-project ${r.kind} — ${r.from} tried to reach ${r.target}, ` +
+        `which belongs to another project. Coordination is scoped to the project that raised it.`,
+      );
+    }
     // #4025 — project the declared-maintenance set into the store. This hook already reduces the
     // whole coord log, so the alternative was a SECOND poll of the same file in the reaper.
     useAppStore.getState().setPaneMaintaining(

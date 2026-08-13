@@ -80,13 +80,17 @@ desktop's per-stream log readers (#2144).",
         name: "waiting",
         summary: "every session BLOCKED ON A HUMAN (the queue to clear)",
         usage: "\nUSAGE:
-  bsc logs waiting [--json]
+  bsc logs waiting [--all] [--json]
 
 Every session waiting on a person, oldest first — the queue, not a feed. Four kinds:
   wait        parked by `bsc-wait`               → answer with `bsc-answer <pane>`
   ask         an unanswered `bsc-ask` question   → answer with `bsc-answer <pane>`
   request     an open change request (#4001)     → `bsc plan request resolve <id> --note ...`
   permission  stopped at a permission prompt     → needs the USER, not the director
+
+YOUR project only. coord.log is one app-wide file, so an unscoped queue hands you workers you have
+no authority over; the scope comes from your own pane id. --all shows every project (for a human
+asking who is blocked anywhere), and outside a session there is no pane id, so --all is the default.
 
 Re-derived from the whole log each call, so it is correct across an app restart. Empty output means
 nothing is blocked.",
@@ -155,6 +159,9 @@ struct Args {
     oldest: bool,
     /// `cost`: emit the desktop per-pane token-usage shape (with session_id + `*_tokens`) (#2144).
     full: bool,
+    /// `waiting`: every project's rows, not just the caller's
+    /// (#coord-log-is-app-wide-answers-cross-projects).
+    all: bool,
     dir: Option<PathBuf>,
 }
 
@@ -169,6 +176,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         pretty: false,
         oldest: false,
         full: false,
+        all: false,
         dir: None,
     };
     let mut it = raw.into_iter();
@@ -178,6 +186,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--pretty" => { a.json = true; a.pretty = true; }
             "--oldest" => a.oldest = true,
             "--full" => a.full = true,
+            "--all" => a.all = true,
             "--session" => a.session = Some(it.next().ok_or("--session needs a value")?),
             "--stream" => a.stream = Some(it.next().ok_or("--stream needs a value")?),
             "--since" => a.since = Some(it.next().ok_or("--since needs a value")?.parse().map_err(|_| "--since must be epoch ms")?),
@@ -299,7 +308,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         }
         // Every session blocked on a human (#4015) — the queue the director sweeps.
         "waiting" => {
-            let rows = crate::waiting::waiting(&dir);
+            // Scoped to the CALLER's project unless --all. `coord.log` is one app-wide file, so an
+            // unscoped queue hands a director workers it has no authority over
+            // (#coord-log-is-app-wide-answers-cross-projects). `BSC_AUDIT_PANE` is the session's own
+            // pane id, set by `pty_create` — absent (a plain shell), the scope is None and the whole
+            // queue prints, which is what a human asking "who is blocked anywhere?" wants.
+            let me = std::env::var("BSC_AUDIT_PANE").ok().filter(|s| !s.is_empty() && s != "?");
+            let scope = if a.all { None } else { me.as_deref() };
+            let rows = crate::waiting::waiting_in(&dir, scope);
             emit(a.pretty, a.json, &rows, || {
                 let mut lines = vec!["pane	kind	id	detail".to_string()];
                 for w in &rows {
