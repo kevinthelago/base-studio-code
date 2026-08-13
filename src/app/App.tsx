@@ -13,6 +13,7 @@ import { useHotkeys } from "./useHotkeys";
 import { useNavigateBridge } from "./useNavigateBridge";
 import { useFleetWakeBridge } from "./useFleetWakeBridge";
 import { useSystemSessionBridge } from "./useSystemSessionBridge";
+import { useFleetDirectorBridge } from "./useFleetDirectorBridge";
 import { useDebugChannel } from "./useDebugChannel";
 import { useDockBack } from "./useDockBack";
 import { useScheduler } from "@/features/automations";
@@ -58,6 +59,9 @@ export default function App() {
   // #architect-starts-and-stops-system-sessions: apply `bsc session start|stop` — the architect's
   // lever over the app-owned studios, over a closed registry it cannot extend.
   useSystemSessionBridge();
+  // #architect-creates-a-director-with-discovery: apply `bsc fleet director new` — the architect's
+  // one create into the project tier, launched through the same fleet path a full launch uses.
+  useFleetDirectorBridge();
   // #3437: answer `bsc debug` — read-only inspection of the live DOM + preview state, so a session can
   // ask what is actually on screen instead of inferring it from source.
   useDebugChannel();

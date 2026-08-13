@@ -390,10 +390,20 @@ const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> 
     // it ran, and the AUTHORITY clauses the tiers below cite. Scoped to the one noun, so the architect
     // still cannot reach issues, features, the fleet or any other plan state.
     "bsc plan requirement",
-    // #architect-sees-director-state — the architect's view of the tier it hands work to. The FULL verb,
-    // never the "bsc fleet" prefix: that prefix would also carry `bsc fleet wake`, handing the architect
-    // a lever to START a director. Seeing is not reaching — its only outbound channel stays the brief.
-    "bsc fleet directors",
+    // The architect's window onto the tier below it, AND its one create into that tier.
+    //
+    // #architect-sees-director-state gave the READ (`bsc fleet directors`) and framed it as read-only:
+    // "seeing is not reaching". #architect-creates-a-director-with-discovery SUPERSEDES that framing —
+    // the architect does create directors. What survives is the read, which gets more useful rather
+    // than less: an architect that can create one needs to see which already run first.
+    //
+    // The singular verb covers BOTH (`directors` shares its prefix), and still stops short of
+    // `bsc fleet wake` — waking a WORKER is the director's lever, not the architect's, and an
+    // architect reaching past its director is back in the middle of a fleet it does not run.
+    //
+    // Creation is ADDITIVE, which is exactly why it is allowed while stopping is not: `bsc fleet
+    // director` has no `stop`, and the CLI refuses one by name rather than by omission.
+    "bsc fleet director",
     // #architect-starts-and-stops-system-sessions — the architect's lever over the app's OWN studios:
     // start · stop · list the designer, librarian, sound-designer and integrator.
     //

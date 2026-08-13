@@ -115,18 +115,27 @@ describe("the director's team-design surface (#funnel-planner-takes-team-and-con
   });
 });
 
-describe("the architect's view of its tier (#architect-sees-director-state)", () => {
-  it("can read director state", () => {
-    expect(restrictedRoleCommands("architect")).toContain("bsc fleet directors");
+describe("the architect's view of its tier (#architect-sees-director-state, revised)", () => {
+  // SUPERSEDED IN PART by #architect-creates-a-director-with-discovery. This item framed the grant as
+  // READ-ONLY ("seeing is not reaching"), and that half is gone: the architect DOES create directors.
+  // What survives — and is what these tests now pin — is that the READ still resolves, and that the
+  // grant still stops short of `bsc fleet wake`.
+  it("can still read director state — the read got MORE useful, not less", () => {
+    // An architect that can create a director needs to see which already run before creating another.
+    // The grant is now the singular verb, and `directors` resolves through its prefix.
+    const surface = restrictedRoleCommands("architect");
+    expect(surface).toContain("bsc fleet director");
+    expect(surface.some((c) => "bsc fleet directors".startsWith(c))).toBe(true);
   });
 
   it("is granted the FULL verb, never the `bsc fleet` prefix — that would carry `wake`", () => {
     // Grants are prefix matches expanded to `Bash(<cmd> *)`. `"bsc fleet"` would auto-run
-    // `bsc fleet wake` too, which STARTS a director — a lever this tier must not hold. Seeing is not
-    // reaching: the architect's only outbound channel is the brief.
+    // `bsc fleet wake` too — the DIRECTOR's lever over a stopped worker, one tier below where this
+    // session belongs. Creating a director is additive and allowed; reaching into its fleet is not.
     const surface = restrictedRoleCommands("architect");
     expect(surface).not.toContain("bsc fleet");
-    expect(surface.filter((c) => c.startsWith("bsc fleet"))).toEqual(["bsc fleet directors"]);
+    expect(surface.filter((c) => c.startsWith("bsc fleet"))).toEqual(["bsc fleet director"]);
+    expect("bsc fleet wake".startsWith("bsc fleet director")).toBe(false);
   });
 
   it("still cannot reach WORKERS — the tier boundary is one level, not two", () => {

@@ -793,7 +793,18 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     // #architect-starts-and-stops-system-sessions adds `bsc session` — start/stop/list over the
     // app's OWN studios. Safe on a prose-ingesting session because the verb's argument is an id from a
     // closed app-owned registry, not a command or a path; see the grant's comment in roleModel.ts.
-    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet directors", "bsc session", ...LOOP, "bsc request new", "bsc request list"]);
+    // #architect-creates-a-director-with-discovery replaces the plural READ with the SINGULAR verb:
+    // `bsc fleet director` covers `directors` (its prefix) and adds `director new`, superseding the
+    // read-only framing of #architect-sees-director-state.
+    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc plan brief", "bsc plan requirement", "bsc fleet director", "bsc session", ...LOOP, "bsc request new", "bsc request list"]);
+    // The prefix boundary that matters most on the fleet side: the grant covers the singular CREATE
+    // and the plural READ, and must never widen to `bsc fleet` — which would carry `bsc fleet wake`,
+    // the director's lever over a WORKER. An architect reaching past its director is back in the
+    // middle of a fleet it does not run.
+    expect(restrictedRoleCommands("architect")).not.toContain("bsc fleet");
+    expect(restrictedRoleCommands("architect")).not.toContain("bsc fleet wake");
+    expect("bsc fleet directors".startsWith("bsc fleet director")).toBe(true); // the read still resolves
+    expect("bsc fleet wake".startsWith("bsc fleet director")).toBe(false);     // the wake still does not
     expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound", ...LOOP, "bsc request new", "bsc request list"]);
   });
 

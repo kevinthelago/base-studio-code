@@ -1,6 +1,9 @@
 //! The `bsc fleet` subcommand (#4098) — real per-pane liveness, joined onto the roster.
 
-use crate::{FleetRequest, FleetResult, PaneLive, WakeRequest, WakeResult, KIND, WAKE_KIND};
+use crate::{
+    DirectorNewRequest, DirectorNewResult, DirectorOutcome, FleetRequest, FleetResult, PaneLive,
+    WakeRequest, WakeResult, DIRECTOR_KIND, KIND, WAKE_KIND,
+};
 use bsc_cli_util::CmdDoc;
 
 const DEFAULT_TIMEOUT_MS: i64 = 8_000;
@@ -57,6 +60,39 @@ brief will reach anything: briefing a director that is not running is how work g
 which is the same failure the director protocol already warns about for assigns to stopped workers.
 
 Requires the desktop app, like `list` — liveness is the app's fact, not the filesystem's.",
+},
+CmdDoc {
+    name: "director",
+    summary: "create a project's DIRECTOR, seeded with what the architect settled",
+    usage: "USAGE:
+  bsc fleet director new <projectKey> [--json|--pretty]
+
+Creates the director session for an EXISTING project. This is the architect's one create into the
+project tier (#architect-creates-a-director-with-discovery).
+
+CREATION CARRIES CONTEXT. The director is BORN knowing what the architect settled: it comes up with a
+kickoff naming the requirement, the authority clauses, the discovery prose, the features and the
+streams — and the commands to read each of them. That is deliberately different from
+`bsc plan brief <key>:director`, which is the RUNTIME voice for a mid-build correction. Creation
+seeds; briefing corrects. A director started empty and briefed a moment later is what this verb
+exists to prevent.
+
+The context is carried as SOURCES, never as inlined text: the store stays live while a prompt is
+written once, so a quoted body would be a second copy that goes stale the moment the architect writes
+another discovery file.
+
+THE PROJECT MUST ALREADY EXIST. The key is resolved against the project set and refused when it names
+nothing — this creates a DIRECTOR, not a project (`bsc project new` does that).
+
+A PROJECT THAT ALREADY HAS A RUNNING DIRECTOR IS REFUSED, reporting the one that is there. Two
+coordinators for one fleet is worse than none: both would merge, both would answer, and each would be
+working from a different picture.
+
+An existing `prompts/director-kickoff.md` is LEFT ALONE — a planner-authored kickoff is not
+overwritten, and the reply says which director you got.
+
+THERE IS NO STOP HERE, deliberately. A director coordinates a running fleet whose workers, under the
+no-app-injection model, have no route back except the user's click. Ending one is the user's act.",
 },
 CmdDoc {
     name: "wake",
@@ -150,6 +186,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     match args.positional.first().map(String::as_str).unwrap_or("list") {
         "list" => cmd_list(&args),
         "directors" => cmd_directors(&args),
+        // Singular vs plural is a real distinction, not a typo tolerance: `directors` READS the tier,
+        // `director` acts on one. Both live under the `bsc fleet director` grant prefix (which still
+        // does not reach `bsc fleet wake`).
+        "director" => cmd_director(&args, prog),
         "wake" => cmd_wake(&args, prog),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
@@ -172,6 +212,57 @@ fn cmd_wake(args: &Args, prog: &str) -> Result<(), String> {
         format!("woke {}{note}", res.pane_id)
     });
     Ok(())
+}
+
+/// `bsc fleet director new <projectKey>` — the architect's create into the project tier.
+///
+/// Only `new` exists, and that is the design rather than an unfinished switch: there is no `stop`
+/// here because a director coordinates a running fleet, and the epic settles that ending one is the
+/// user's act. An unknown subcommand says so instead of falling through to a generic error.
+fn cmd_director(args: &Args, prog: &str) -> Result<(), String> {
+    match args.positional.get(1).map(String::as_str).unwrap_or("") {
+        "new" => {
+            let key = args.positional.get(2).ok_or_else(|| {
+                format!("usage: {prog} director new <projectKey>\n\n`bsc project list` shows the keys.")
+            })?;
+            if key.trim().is_empty() {
+                return Err(format!("usage: {prog} director new <projectKey>"));
+            }
+            let req = DirectorNewRequest { project_key: key.trim().to_string() };
+            let res: DirectorNewResult =
+                ask(DIRECTOR_KIND, &req, args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS))?;
+            bsc_cli_util::emit(args.pretty, args.json, &res, || describe_director(&res));
+            Ok(())
+        }
+        "stop" | "kill" | "end" => Err(format!(
+            "there is no `{prog} director stop`. A director coordinates a RUNNING fleet, and under \
+             the no-app-injection model its workers have no route back except the user's click — so \
+             ending one is the user's act, not a caller's. `bsc fleet directors` shows what is running."
+        )),
+        other => Err(format!(
+            "unknown director command '{other}'\n\nusage: {prog} director new <projectKey>"
+        )),
+    }
+}
+
+fn describe_director(res: &DirectorNewResult) -> String {
+    match res.outcome {
+        DirectorOutcome::Created => format!(
+            "created the director for {} ({}){}",
+            res.project_key,
+            res.pane_id,
+            if res.kickoff_written {
+                " — seeded with the discovery sources"
+            } else {
+                " — kept the existing prompts/director-kickoff.md"
+            }
+        ),
+        DirectorOutcome::AlreadyRunning => format!(
+            "{} already has a running director ({}) — nothing created.\n\
+             Brief it with `bsc plan brief {}:director` rather than creating a second one.",
+            res.project_key, res.pane_id, res.project_key
+        ),
+    }
 }
 
 /// The DIRECTOR pane-id suffix. Pane identity is `<projectKey>:director` (paneIdentity.ts), so the
@@ -330,6 +421,120 @@ mod tests {
 #[cfg(test)]
 mod director_tests {
     use super::*;
+
+    /// The pane id one spelling, used by create / list / brief alike — a second spelling would create
+    /// a director the `directors` read could not see.
+    #[test]
+    fn the_created_pane_id_is_the_one_the_read_looks_for() {
+        let id = crate::director_pane_id("studio-code");
+        assert_eq!(id, "studio-code:director");
+        assert!(id.ends_with(DIRECTOR_SUFFIX), "the `directors` filter must match what `new` creates");
+        assert_eq!(director_project_key(&id), "studio-code");
+    }
+
+    /// `stop` is refused with the REASON, not with a generic unknown-command error. An architect that
+    /// tries it should learn the asymmetry is deliberate rather than assume a typo.
+    #[test]
+    fn there_is_no_director_stop_and_the_refusal_says_why() {
+        for verb in ["stop", "kill", "end"] {
+            let args = parse_args(vec!["director".into(), verb.into(), "studio-code".into()]).unwrap();
+            let err = cmd_director(&args, "bsc fleet").unwrap_err();
+            assert!(err.contains("no `bsc fleet director stop`"), "{verb}: {err}");
+            assert!(err.contains("user's act"), "{verb}: the refusal explains the asymmetry");
+        }
+    }
+
+    /// A missing key fails BEFORE any request is written, and points at where the keys come from.
+    #[test]
+    fn a_missing_project_key_is_a_usage_error_naming_where_keys_come_from() {
+        for a in [vec!["director".into(), "new".into()], vec!["director".into(), "new".into(), "  ".into()]] {
+            let args = parse_args(a).unwrap();
+            let err = cmd_director(&args, "bsc fleet").unwrap_err();
+            assert!(err.contains("usage:"), "{err}");
+        }
+        let args = parse_args(vec!["director".into(), "new".into()]).unwrap();
+        assert!(cmd_director(&args, "bsc fleet").unwrap_err().contains("bsc project list"));
+    }
+
+    #[test]
+    fn an_unknown_director_subcommand_points_at_new() {
+        let args = parse_args(vec!["director".into(), "restart".into()]).unwrap();
+        let err = cmd_director(&args, "bsc fleet").unwrap_err();
+        assert!(err.contains("unknown director command 'restart'"));
+        assert!(err.contains("director new"));
+    }
+
+    /// The two outcomes must read differently in PROSE too, not only in the JSON — and the
+    /// already-running line has to point at BRIEFING rather than leaving the caller to retry, because
+    /// retrying is how a project ends up with two coordinators.
+    #[test]
+    fn the_outcomes_read_differently_and_already_running_points_at_the_brief() {
+        let mk = |o, w| DirectorNewResult {
+            project_key: "studio-code".into(),
+            pane_id: "studio-code:director".into(),
+            outcome: o,
+            kickoff_written: w,
+        };
+        let created = describe_director(&mk(DirectorOutcome::Created, true));
+        let kept = describe_director(&mk(DirectorOutcome::Created, false));
+        let running = describe_director(&mk(DirectorOutcome::AlreadyRunning, false));
+
+        assert!(created.contains("seeded with the discovery"));
+        assert!(kept.contains("kept the existing"), "a planner kickoff is not silently overwritten");
+        assert_ne!(created, kept, "which director you got is visible");
+        assert!(running.contains("already has a running director"));
+        assert!(running.contains("bsc plan brief"), "the alternative to a second director is a brief");
+    }
+
+    /// The kickoff is what makes creation carry context. It must name the requirement FIRST (the thing
+    /// the director is accountable to), cite sources as COMMANDS, and never inline a body.
+    #[test]
+    fn the_kickoff_names_the_discovery_sources_as_commands() {
+        let k = crate::discovery_kickoff("studio-code");
+        for needle in [
+            "bsc plan requirement get",
+            "bsc plan stage list",
+            "bsc plan feature list",
+            "bsc plan fleet get",
+            "studio-code",
+        ] {
+            assert!(k.contains(needle), "the kickoff must cite `{needle}`");
+        }
+        // The director's lane, stated — it coordinates and never writes feature code.
+        assert!(k.contains("do not write feature code"));
+        // The empty-requirement case is called out: an architect may still be sealing it, and a
+        // director that invents scope to fill the gap is worse than one that waits.
+        assert!(k.contains("do not invent scope"));
+    }
+
+    /// The wire shapes round-trip verbatim — a rename on either side would surface as "the app did
+    /// nothing" rather than as a parse error.
+    #[test]
+    fn the_director_wire_contract_round_trips() {
+        let req = DirectorNewRequest { project_key: "studio-code".into() };
+        let back: DirectorNewRequest = serde_json::from_str(&serde_json::to_string(&req).unwrap()).unwrap();
+        assert_eq!(back, req);
+
+        let res = DirectorNewResult {
+            project_key: "studio-code".into(),
+            pane_id: "studio-code:director".into(),
+            outcome: DirectorOutcome::AlreadyRunning,
+            kickoff_written: false,
+        };
+        let json = serde_json::to_string(&res).unwrap();
+        assert!(json.contains("\"projectKey\""), "camelCase on the wire");
+        assert!(json.contains("\"already-running\""), "kebab-case outcome");
+        assert_eq!(serde_json::from_str::<DirectorNewResult>(&json).unwrap(), res);
+    }
+
+    /// One channel, routed by kind — the third fleet key must not collide with its siblings.
+    #[test]
+    fn the_director_routing_key_is_distinct() {
+        assert_eq!(DIRECTOR_KIND, "fleet-director");
+        for other in [KIND, WAKE_KIND] {
+            assert_ne!(DIRECTOR_KIND, other);
+        }
+    }
 
     #[test]
     fn reads_the_project_key_out_of_a_director_pane_id() {
