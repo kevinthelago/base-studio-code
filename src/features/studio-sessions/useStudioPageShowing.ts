@@ -18,8 +18,19 @@ export function studioPageShowing(
   // per-technology dock resolves its session from the page's current selection, and a technology with
   // no session yields null. The rules of hooks require the call to be unconditional, so the NULL has to
   // be absorbed here rather than at the call site.
-  if (!id) return false;
-  const def = STUDIO_SESSIONS[id];
+  //
+  // UNRECOGNISED-tolerant too, which is a DIFFERENT case and the one that actually bit
+  // (#a-stale-studio-id-in-a-record-must-not-kill-a-page). Callers include components compiled from
+  // component RECORDS, whose source is data the type system never checked — so `id` can be a
+  // non-null string naming a studio that no longer exists. `STUDIO_SESSIONS[retired]` is `undefined`,
+  // and reading `.sectionId` off it threw all the way out to `GraphErrorBoundary`, which fell the
+  // WHOLE page back: one stale id in one dock took down Algorithms entirely.
+  //
+  // A record is untrusted input by construction — the loader error-boundaries a render throw for
+  // exactly that reason — so a helper it calls degrades instead of throwing. The dock shows nothing;
+  // the page renders.
+  const def = id ? STUDIO_SESSIONS[id] : undefined;
+  if (!def) return false;
   // A torn-off section window renders exactly ONE page and has no rail — it is showing iff it IS this page.
   if (detached) return detached.page === def.pageKey && detached.section === def.sectionId;
   return s.activeWorkspace === "projects" && s.projectsPageMode === def.sectionId;
