@@ -55,6 +55,15 @@ describe("newlyLaunchable (#3971)", () => {
 // baked kickoff prompts — measured at boot as `claude --continue "You are the OPNsense adapter worker…"`.
 // The guard is written against the ACTUATOR: if the injected launcher is ever called, a fleet started.
 describe("useFleetGate performs no launch", () => {
+  // TIMEOUT RAISED FROM THE 5s DEFAULT (#the-suite-fails-intermittently-under-load...). The four
+  // dynamic imports below drag the store + testing-library + the hook through vitest's transform, so
+  // this is IMPORT-bound; under several concurrent worktree agents it blew the 5s budget and failed
+  // with "Test timed out", never an assertion.
+  //
+  // Worth fixing rather than tolerating BECAUSE OF WHAT THIS GUARDS: useFleetGate is the launch pump
+  // that survived two removal attempts (a source grep cannot see its record-based mount point). A
+  // guard that goes green-on-retry is a guard that can go red for the RIGHT reason and be waved
+  // through as "just the flake".
   it("never calls its launcher — with the store ARMED exactly as it is at a real boot", async () => {
     // The state matters: an empty store makes the old pump bail at `gatedProjects` before it could
     // launch, so a naive version of this test passes against the unfixed code and proves nothing.
@@ -85,7 +94,7 @@ describe("useFleetGate performs no launch", () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(launch, "the app must not start a fleet on its own").not.toHaveBeenCalled();
-  });
+  }, 15_000);
 
   it("keeps its pure core, so re-enabling is restoring a body rather than a rewrite", async () => {
     const m = await import("./useFleetGate");

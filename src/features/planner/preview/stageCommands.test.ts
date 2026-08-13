@@ -55,6 +55,14 @@ describe("stageCommands — bus", () => {
 });
 
 describe("stageCommands — render-preview module", () => {
+  // TIMEOUT RAISED FROM THE 5s DEFAULT (#the-suite-fails-intermittently-under-load...). This test is
+  // IMPORT-bound, not logic-bound: the two dynamic imports below pull renderPreview's whole
+  // transitive graph through vitest's transform, and the assertion itself is instant. On a machine
+  // running several worktree agents it exceeded 5s and failed with "Test timed out" — never an
+  // assertion failure, and fail/pass/pass when re-run in isolation.
+  //
+  // Raising it is the right fix rather than papering over a hang: a genuine deadlock still fails,
+  // just 15s later, whereas a green-on-retry flake trains everyone to re-run instead of read.
   it("render-preview registers a command module on import", async () => {
     // Mock the bundler so importing renderPreview's transitive deps is jsdom-safe.
     vi.resetModules();
@@ -65,5 +73,5 @@ describe("stageCommands — render-preview module", () => {
     const { RENDER_PREVIEW_ID } = await import("../preview/renderPreview");
     const { hasStageModule: has } = await import("./stageCommands");
     expect(has(RENDER_PREVIEW_ID)).toBe(true);
-  });
+  }, 15_000);
 });
