@@ -358,12 +358,14 @@ SCOPE: components only. An algorithm record is a function LIFTED OUT of a file a
     },
     CmdDoc {
         name: "test",
-        summary: "materialize a record + its RECORD CLOSURE + its paired tests into an EMPTY dir and run them there — a pass proves every dependency is a record",
+        summary: "materialize a record + its CLOSURE + its paired tests into an EMPTY dir and run them there — a pass proves every dependency is a record or the declared platform",
         usage: "\
 USAGE:
-  bsc ui test <id> --out <dir> [--run]      # one record + its closure
-  bsc ui test --all --out <dir> [--run]     # every record carrying a paired test, each in its own dir
-  bsc ui test <id> --out <dir> --no-closure # the STRICT form: the record utterly alone
+  bsc ui test <id> --out <dir> [--run]         # one record + its closure
+  bsc ui test --all --out <dir> [--run]        # every record carrying a paired test, each in its own dir
+  bsc ui test <id> --out <dir> --records-only  # is every dependency a RECORD yet? (migration progress)
+  bsc ui test <id> --out <dir> --no-closure    # the STRICT form: the record utterly alone
+  bsc ui test <id> --out <dir> --repo <dir>    # where the boundary's real files live (default: cwd)
 
 The components twin of `bsc graph test`. Materializing OUT OF THE REPO is what makes the run mean
 something: inside the repo every import resolves whether the record declares it or not.
@@ -375,11 +377,25 @@ the way the running app resolves: a `@/components/<id>` sibling, then a componen
 specifier, then an algorithm impl's. Members are written into a `_closure/` MIRROR of `src/` that `@` is
 aliased to, so each sits at its real position and its own imports resolve with no source rewriting.
 
-That keeps the isolation claim and sharpens it. What is withheld is APP CONTEXT — the repo tree, the
-app's aliases, the store; what is supplied is the record's DECLARED dependency graph. An import that
-resolves to NO record is left out and the run FAILS on it, which is the honest signal that the closure is
-incomplete — the point is that a record's dependencies are records, not that everything resolves. Every
-run reports `closure` (what came in, and from which store) and `missing` (what is not a record yet).
+The loader's OTHER half comes in too: a dependency may be a record, or a module the PLATFORM REGISTRY
+(`platform-modules.json`) declares. The two are supplied differently on purpose — a record is COPIED out
+of the store into the mirror, a boundary module is ALIASED to the app's real file, one exact alias per
+specifier actually reached. Never a blanket `@` onto `src/`: that would resolve everything and leave the
+run proving nothing.
+
+What is withheld is still APP CONTEXT — the repo tree, the app's aliases, the store. An import that is
+NEITHER a record nor declared is left out and the run FAILS on it, even when the file is sitting right
+there. Every run reports `closure` (records that came in, and from which store), `boundary` (what the app
+still supplies from a FILE — this IS the per-record migration list) and `missing`.
+
+The record under test is JUDGED; the boundary is SUPPLIED, not judged. Inside a boundary module the app's
+own resolution applies, so its imports are followed whether declared or not, and those are reported with
+`registered: false`. Judging the platform's internals would fail records over modules the app resolves
+perfectly well — measuring the registry instead of the record.
+
+--records-only empties the registry, so the run answers the MIGRATION question instead: is every one of
+this record's dependencies a record YET? That is the progress measure, and it is a different question
+from whether the record works.
 
 --no-closure restores the strict one-record form: a pass there proves the record is a LEAF, importing no
 other app module at all. That is the RETIRABILITY signal, and it runs opposite to usefulness — the
@@ -2467,6 +2483,12 @@ fn materialize_component_test(
                 format!("      {{ find: {}, replacement: {} }},\n", json_str(s), json_str(&abs(&module)))
             })
             .collect();
+        // Then the DECLARED BOUNDARY, one exact alias per specifier actually reached — never a blanket
+        // `@` onto the repo's `src/`, which would resolve EVERYTHING and leave the run proving nothing.
+        // These precede the catch-all for the same first-match-wins reason.
+        aliases.extend(cl.boundary.iter().map(|b| {
+            format!("      {{ find: {}, replacement: {} }},\n", json_str(&b.specifier), json_str(&b.path))
+        }));
         aliases.push(format!("      {{ find: \"@\", replacement: {} }},\n", json_str(&abs(&mirror))));
         format!("  resolve: {{ alias: [\n{}    ] }},\n", aliases.concat())
     };
@@ -2507,8 +2529,15 @@ fn materialize_component_test(
         "closure": cl.members.iter().map(|m| serde_json::json!({
             "specifier": m.specifier, "id": m.id, "origin": m.origin.as_str(), "path": m.rel,
         })).collect::<Vec<_>>(),
-        // Named, never silently tolerated: these are the imports that are NOT records yet, and they are
-        // why the run below fails. Reporting them is what turns a red record into a work item.
+        // The MIGRATION LIST. Every entry is a dependency the app supplies from a file rather than from
+        // a record — so this is what is left to move in, per record, reported on every run rather than
+        // rediscovered by a sweep. `registered: false` means the specifier is not even in the registry
+        // and was only reached from inside another boundary module.
+        "boundary": cl.boundary.iter().map(|b| serde_json::json!({
+            "specifier": b.specifier, "path": b.path, "registered": b.registered,
+        })).collect::<Vec<_>>(),
+        // Named, never silently tolerated: neither a record NOR the declared boundary, so the run below
+        // fails. Reporting them is what turns a red record into a work item.
         "missing": cl.missing,
     });
     if run {
@@ -2549,7 +2578,20 @@ fn cmd_component_test(args: &[String]) -> Result<(), String> {
     // module authored as a record (`bsc graph harvest --module`) is a record, and a component importing
     // one has a dependency that IS resolvable. Indexed once for the whole sweep.
     let impls = bsc_graph::implementations();
-    let built = crate::closure::Index::new(&comps, &impls);
+    // The DECLARED boundary. `--records-only` empties it, which restores the records-only contract —
+    // the honest answer to "is this record's dependency a record YET", which is the migration's own
+    // progress measure and a different question from "does this record work".
+    let empty = std::collections::BTreeSet::new();
+    let platform = if args.iter().any(|a| a == "--records-only") {
+        &empty
+    } else {
+        crate::graph_health::platform_modules()
+    };
+    // Where the boundary's real files live. The repo, not the store — a boundary module is supplied AS
+    // the app's own module. `--repo` for an explicit root, else the cwd (a sweep is normally run from
+    // the repo). Nothing is read unless a boundary specifier is actually reached.
+    let repo = flag("--repo").map(std::path::PathBuf::from).or_else(|| std::env::current_dir().ok());
+    let built = crate::closure::Index::new(&comps, &impls, platform, repo.as_deref());
     let index = (!args.iter().any(|a| a == "--no-closure")).then_some(&built);
     if args.iter().any(|a| a == "--all") {
         let mut results = Vec::new();
@@ -4867,7 +4909,8 @@ export const P = () => <X />;"
             "src": "src/shared/ui/feedback/EmptyState.tsx",
             "srcText": "export function EmptyState() { return null; }",
         })];
-        let index = crate::closure::Index::new(&comps, &[]);
+        let plat = std::collections::BTreeSet::new();
+        let index = crate::closure::Index::new(&comps, &[], &plat, None);
         let root = serde_json::json!({
             "id": "activityfeed", "name": "ActivityFeed", "src": "src/shared/ui/data/ActivityFeed.tsx",
             "srcText": "import { EmptyState } from \"@/shared/ui/feedback/EmptyState\";\n\

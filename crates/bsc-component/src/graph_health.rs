@@ -349,7 +349,7 @@ fn provided_specifiers() -> std::collections::HashSet<String> {
 }
 
 /// The registered platform specifiers, matched LITERALLY (exactly as the loader's `isAppModule` does).
-fn platform_modules() -> &'static BTreeSet<String> {
+pub(crate) fn platform_modules() -> &'static BTreeSet<String> {
     static M: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
     M.get_or_init(|| {
         serde_json::from_str::<Vec<String>>(PLATFORM_MODULES_JSON).unwrap_or_default().into_iter().collect()
