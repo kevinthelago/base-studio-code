@@ -1,0 +1,31 @@
+{
+  "_comment": "The projectSlug rule, as CASES rather than as prose — a cross-language contract fixture, the same pattern tunnelProtocol.fixtures.json uses. There are now TWO implementations of one rule: projectSlug (src/shared/lib/core/projectPaths.ts), which the UI creates projects with, and project_slug (crates/bsc-project/src/lib.rs), which `bsc project new` creates them with. They MUST agree: the slug is what contains a free-text project name to one fixed directory, and it is also the project's frozen identity, so a divergence would let the two paths create two different hubs for one name. Both sides read this file in their tests.",
+  "cases": [
+    { "name": "Video Game", "slug": "video-game" },
+    { "name": "Acme Payments v2!", "slug": "acme-payments-v2" },
+    { "name": "  Trim  Me  ", "slug": "trim-me" },
+    { "name": "MiXeD CaSe 123", "slug": "mixed-case-123" },
+    { "name": "café.dot!", "slug": "caf-dot" },
+    { "name": "a/b c", "slug": "a-b-c" },
+    { "name": "under_score", "slug": "under-score" },
+    { "name": "dash---collapse", "slug": "dash-collapse" },
+    { "name": "---leading and trailing---", "slug": "leading-and-trailing" },
+
+    { "_why": "empty and non-latin names fall back rather than producing an empty key, which would name the projects root itself",
+      "name": "", "slug": "project" },
+    { "name": "🎮🎮", "slug": "project" },
+    { "name": "!!!", "slug": "project" },
+
+    { "_why": "the 60-char cap — the containment that keeps a long injected name from becoming a long path",
+      "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "slug": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" },
+
+    { "_why": "path traversal cannot survive the rule — this is the containment property, pinned as a case",
+      "name": "../../etc/passwd", "slug": "etc-passwd" },
+    { "name": "..", "slug": "project" },
+    { "name": "C:\\Windows\\System32", "slug": "c-windows-system32" },
+    { "name": "a\u0000b", "slug": "a-b" },
+    { "name": "$(rm -rf /)", "slug": "rm-rf" },
+    { "name": ".hidden", "slug": "hidden" }
+  ]
+}

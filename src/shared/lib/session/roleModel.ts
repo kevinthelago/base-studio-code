@@ -414,6 +414,19 @@ const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> 
     // running fleet whose workers, under the no-app-injection model, have no route back except the
     // user's click.
     "bsc session",
+    // #architect-starts-a-new-project — creation begins where the conversation is, instead of the
+    // architect having to hand the user back to the UI to start what they just agreed on.
+    //
+    // THE FULL VERB, never the `bsc project` prefix: that would also carry `published`, `link`,
+    // `triaged` and `db` — read/write access to every project's lifecycle markers, which is a much
+    // larger surface than "make a new one".
+    //
+    // This is the ONE architect verb whose argument is genuinely free text rather than an id from a
+    // closed registry, so the containment is the SLUG: `projectSlug(name)` is `[a-z0-9-]`, capped at
+    // 60 and never empty, and the hub is always `projects/<slug>/`. Prose cannot reach outside that
+    // directory — `../../etc/passwd` becomes `etc-passwd`. `projectSlug.fixtures.json` pins the rule
+    // across both implementations of it.
+    "bsc project new",
     ...LOOP_PARTICIPANT_COMMANDS,
     "bsc request new",
     "bsc request list",
