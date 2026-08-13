@@ -592,6 +592,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         // The integration test routed to an edge, if any — visible in a dry harvest so
                         // the routing can be inspected before it is applied.
                         "edgeMembers": c.edge_members,
+                        // The module's own STATE. `--apply` already stored this, but the printed
+                        // candidate omitted it — so a DRY harvest could not show the one property that
+                        // decides whether vendoring the record equals importing the module, and any
+                        // script reading the output saw a stateful module as stateless.
+                        "moduleState": c.module_state,
                     })
                 })
                 .collect();
