@@ -16,6 +16,7 @@ import { probeComponentRuntime } from "@/shared/lib/preview/componentRuntimeProb
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { scannableComponents, pendingScans, scanComponents, durableLogSync, type ComponentScanResult, type ComponentBuildStatus } from "./componentScan";
 import { recordPreviewError, loadScanCache, saveScanCache, type CachedScan } from "./componentBridge";
+import { makeBatchWriter } from "@/shared/lib/core/batchWriter";
 import { type KitArtifact, type LibraryModuleResolver } from "./componentPreview";
 import { libraryModuleResolver } from "./libraryModules";
 import type { ComponentRecord } from "./model";
@@ -32,6 +33,20 @@ const SCAN_CONCURRENCY = 3;
 /** How long results buffer before one batched store commit (#4132). Long enough that a burst of builds
  *  collapses into a single render, short enough that badges still stream in visibly during a sweep. */
 const SCAN_FLUSH_MS = 150;
+
+/**
+ * How long cache entries buffer before one DURABLE write.
+ *
+ * Deliberately far slower than {@link SCAN_FLUSH_MS}, because the two flushes pay different currencies.
+ * The store flush is an in-memory setState, so 150ms is cheap and keeps badges streaming in visibly. The
+ * cache flush is a PROCESS SPAWN, and hanging it on the same timer fired ~400 of them per sweep — 157
+ * SECONDS of process churn, measured, each one re-reading and rewriting the whole file.
+ *
+ * THE TRADE: a crash mid-sweep loses at most one window of results, and those components are simply
+ * re-scanned next visit. That is cheap by construction — this cache may only ever save work, never
+ * withhold a scan — which is what makes a slow cadence the right call rather than a risky one.
+ */
+const CACHE_FLUSH_MS = 5_000;
 
 /**
  * Scan the active kit's components for preview-build errors while `active`, recording each result in the
@@ -99,24 +114,26 @@ export function useComponentScan(
     // O(sweep-duration / 150ms) commits rather than O(2N).
     let buffer: ComponentScanResult[] = [];
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    // The DURABLE half runs on its OWN clock — see CACHE_FLUSH_MS. `makeBatchWriter` owns the three
+    // parts of that rule (coalesce by id, fire on a slow window, lose nothing on teardown) and is tested
+    // without React; this line is just the wiring.
+    const cacheWriter = makeBatchWriter<CachedScan>((batch) => { void saveScanCache(batch); }, CACHE_FLUSH_MS);
     const flush = () => {
       flushTimer = null;
       if (cancelled || buffer.length === 0) return;
       const batch = buffer;
       buffer = [];
       applyResults(batch);
-      // Persist on the SAME #4132 batch, never per result: the flush window exists because per-component
-      // main-thread work is what made this sweep expensive, and a cache that reintroduced it would cost
-      // more than it saves. Fire-and-forget — a failed write costs a re-scan next visit, which is simply
-      // the behaviour before this cache existed.
+      // Queue the durable half — written on ITS own slower clock, not this one. Fire-and-forget: a
+      // failed write costs a re-scan next visit, which is simply the behaviour before this cache existed.
       const entries: Record<string, CachedScan> = {};
       for (const r of batch) {
         const sig = scannedSigs.current.get(r.id);
         // No signature ⇒ nothing to key the entry on, so it could never be a hit. Skip rather than
-        // write a row that can only ever be dead weight.
+        // queue a row that can only ever be dead weight.
         if (sig) entries[r.id] = { sig, status: r.status, stateBlanks: r.stateBlanks };
       }
-      void saveScanCache(entries);
+      cacheWriter.queue(entries);
     };
     const enqueue = (result: ComponentScanResult) => {
       buffer.push(result);
@@ -159,6 +176,10 @@ export function useComponentScan(
       if (flushTimer) clearTimeout(flushTimer);
       if (buffer.length) applyResults(buffer);
       buffer = [];
+      // …and write whatever the slow clock has not reached yet. Those builds really happened, and their
+      // signatures are already marked scanned — dropping them here would leave work that never re-queues
+      // AND never reaches the cache.
+      cacheWriter.flush();
       cancelled = true;
     };
   }, [active, comps, artifact, libResolver, applyResults]);
