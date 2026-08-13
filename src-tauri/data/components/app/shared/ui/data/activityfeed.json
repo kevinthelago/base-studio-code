@@ -9,7 +9,6 @@
     "EmptyState",
     "Skeleton"
   ],
-  "provides": "@/shared/ui/data/ActivityFeed",
   "tests": [
     {
       "name": "ActivityFeed",

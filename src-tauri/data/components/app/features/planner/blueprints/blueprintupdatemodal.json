@@ -9,7 +9,6 @@
     "Button",
     "Dialog"
   ],
-  "provides": "@/features/planner/blueprints/BlueprintUpdateModal",
   "tests": [
     {
       "name": "BlueprintUpdateModal (#827)",

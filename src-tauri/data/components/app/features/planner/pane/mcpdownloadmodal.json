@@ -16,7 +16,6 @@
     "Stack",
     "Text"
   ],
-  "provides": "@/features/planner/pane/McpDownloadModal",
   "tests": [
     {
       "name": "McpDownloadModal",
