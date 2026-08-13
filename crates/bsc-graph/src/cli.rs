@@ -62,29 +62,15 @@ pub const FLAGS: [&str; 27] = [
     "--run",
 ];
 
-pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
-    // Before anything reads a flag: an unknown one is an ERROR, never a silent no-op (#4154).
-    reject_unknown_flags(&args)?;
-    let pretty = args.iter().any(|a| a == "--pretty");
-    let positional: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
-    let verb = positional.first().copied().unwrap_or("help");
-    let emit = |v: &Value| -> Result<(), String> {
-        let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
-        println!("{}", s.map_err(|e| e.to_string())?);
-        Ok(())
-    };
-    match verb {
-        // `test <id> --out <dir> [--run]` (run-a-records-paired-test-in-isolation) — materialize ONE
-        // record into an empty directory and, optionally, run its paired tests there.
-        //
-        // Materializing exactly one record is what makes the run mean something: a suite that passes in
-        // a directory containing only the record has PROVED the record is self-contained, which no run
-        // inside the repo can prove — there, every import resolves whether the record declares it or not.
-        "test" => {
-            let id = positional.get(1).ok_or("usage: bsc graph test <id> --out <dir> [--run]")?;
-            let out = flag_value(&args, "--out").ok_or("usage: bsc graph test <id> --out <dir> [--run]")?;
-            let g = crate::load();
-            let im = crate::implementations_of(&g)
+/// Materialize ONE record into `out` and, when `run`, execute its paired tests there.
+///
+/// Shared by `test <id>` and `test --all` so there is a single answer to "what does a record's
+/// filesystem contain" — two materializers would drift the moment one learned something.
+fn single_record_test(id: &str, out: &str, run: bool, g: &Value) -> Result<Value, String> {
+
+            let id = &id;
+            let out = out.to_string();
+                        let im = crate::implementations_of(g)
                 .into_iter()
                 .find(|x| x.get("id").and_then(Value::as_str) == Some(*id))
                 .ok_or_else(|| format!("no implementation '{id}'"))?;
@@ -146,7 +132,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let mut result = serde_json::json!({
                 "id": id, "dir": out, "written": written, "tests": tests.len(), "environment": env, "ran": false,
             });
-            if args.iter().any(|a| a == "--run") {
+            if run {
                 // `npx vitest run` in the materialized dir. The dir has no config and no node_modules of
                 // its own, so resolution walks UP — which is why the directory's location is the whole
                 // isolation story, and why the sealed distro is the eventual home.
@@ -170,7 +156,75 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 result["passed"] = Value::Bool(output.status.success());
                 result["output"] = Value::String(if stdout.trim().is_empty() { stderr } else { stdout });
             }
-            emit(&result)
+            Ok(result)
+        }
+
+pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    // Before anything reads a flag: an unknown one is an ERROR, never a silent no-op (#4154).
+    reject_unknown_flags(&args)?;
+    let pretty = args.iter().any(|a| a == "--pretty");
+    let positional: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
+    let verb = positional.first().copied().unwrap_or("help");
+    let emit = |v: &Value| -> Result<(), String> {
+        let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
+        println!("{}", s.map_err(|e| e.to_string())?);
+        Ok(())
+    };
+    match verb {
+        // `test <id> --out <dir> [--run]` (run-a-records-paired-test-in-isolation) — materialize ONE
+        // record into an empty directory and, optionally, run its paired tests there.
+        //
+        // Materializing exactly one record is what makes the run mean something: a suite that passes in
+        // a directory containing only the record has PROVED the record is self-contained, which no run
+        // inside the repo can prove — there, every import resolves whether the record declares it or not.
+        "test" if args.iter().any(|a| a == "--all") => {
+            // EVERY record carrying a paired test, each in its OWN directory. Sharing one would let a
+            // record's test import a sibling record's file and pass on it — the cross-contamination the
+            // single-record materializer exists to prevent.
+            let out = flag_value(&args, "--out").ok_or("usage: bsc graph test --all --out <dir> [--run]")?;
+            let run = args.iter().any(|a| a == "--run");
+            let g = crate::load();
+            let mut results = Vec::new();
+            let (mut passed, mut failed, mut skipped) = (0usize, 0usize, 0usize);
+            for im in crate::implementations_of(&g) {
+                let Some(id) = im.get("id").and_then(Value::as_str) else { continue };
+                if im.get("tests").and_then(Value::as_array).is_none_or(|t| t.is_empty()) {
+                    // Counted, never hidden: a total that silently omits untested records reads as full
+                    // coverage of a library most of which nothing checks.
+                    skipped += 1;
+                    continue;
+                }
+                let dir = std::path::Path::new(&out).join(id);
+                // Reuse the single-record path rather than a second materializer — one implementation
+                // of "what a record's filesystem contains" is the point.
+                match single_record_test(id, &dir.to_string_lossy(), run, &g) {
+                    Ok(v) => {
+                        let ok = v.get("passed").and_then(Value::as_bool).unwrap_or(!run);
+                        if run && !ok { failed += 1 } else { passed += 1 }
+                        results.push(v);
+                    }
+                    Err(e) => {
+                        failed += 1;
+                        results.push(serde_json::json!({ "id": id, "error": e }));
+                    }
+                }
+            }
+            emit(&serde_json::json!({
+                "records": results.len(), "passed": passed, "failed": failed,
+                "skippedNoTest": skipped, "ran": run, "results": results,
+            }))?;
+            // A runner nothing can fail is not a gate.
+            if failed > 0 {
+                return Err(format!("{failed} record(s) failed their paired tests"));
+            }
+            Ok(())
+        }
+        "test" => {
+            let id = positional.get(1).ok_or("usage: bsc graph test <id> --out <dir> [--run]")?;
+            let out = flag_value(&args, "--out").ok_or("usage: bsc graph test <id> --out <dir> [--run]")?;
+            let run = args.iter().any(|a| a == "--run");
+            let g = crate::load();
+            emit(&single_record_test(id, &out, run, &g)?)
         }
         // `edge …` (integration-tests-become-graph-edges) — the RELATIONSHIP tier. A test spanning two
         // records is evidence about the edge between them, not a property of either node, so it lives
@@ -966,7 +1020,7 @@ fn help(prog: &str) -> String {
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
-         {prog} test <id> --out <dir> [--run]   # materialize ONE record + its paired tests into an EMPTY dir and optionally run them there — a pass in a directory holding only the record proves it is self-contained (run-a-records-paired-test-in-isolation)
+         {prog} test <id> --out <dir> [--run] | test --all --out <dir> [--run]   # materialize ONE record + its paired tests into an EMPTY dir and optionally run them there — a pass in a directory holding only the record proves it is self-contained (run-a-records-paired-test-in-isolation)
   \n  {prog} edge set --id <id> --members a,b [--src <test-file>] | edge list | edge get <id> | edge remove <id>   # the RELATIONSHIP tier (integration-tests-become-graph-edges): a test spanning two records is evidence about the EDGE between them, not a property of either node; --src is READ from disk so a large test never has to fit through argv
     {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
   \
