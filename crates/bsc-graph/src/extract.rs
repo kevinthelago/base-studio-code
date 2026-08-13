@@ -639,6 +639,12 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
             .iter()
             .find_map(|e| rest.strip_suffix(e))
             .unwrap_or(rest);
+        // …and a trailing `/index`, because a DIRECTORY import resolves to it. `features/data/index.ts`
+        // is imported as `@/features/data`, never `@/features/data/index`, so keeping the segment gave
+        // 13 barrel records a specifier no import in the tree writes — the same failure as the `.tsx`
+        // extension bug: a record `provides` cannot resolve through. Only when something remains, so a
+        // root `index.ts` does not collapse to `@/`.
+        let base = base.strip_suffix("/index").filter(|b| !b.is_empty()).unwrap_or(base);
         format!("@/{base}")
     });
     let dir = file.parent().unwrap_or(Path::new("."));
@@ -1160,6 +1166,29 @@ export const skip = (s: string) => EX.has(s);
         for c in harvest_file(&fixtures().join("sample.ts")) {
             assert!(c.module_state.is_empty(), "{} claimed module state", c.id);
         }
+    }
+
+    /// A DIRECTORY-index module claims the directory, not the index file. Importers write
+    /// `@/features/data`; keeping `/index` gave 13 barrel records a specifier nothing resolves through.
+    #[test]
+    fn an_index_module_claims_its_directory() {
+        let root = std::env::temp_dir().join(format!("bsc-graph-idxprov-{}", std::process::id()));
+        for (rel, want) in [
+            ("features/data/index.ts", "@/features/data"),
+            ("shared/ui/kit/index.tsx", "@/shared/ui/kit"),
+            // not an index — untouched
+            ("features/data/model.ts", "@/features/data/model"),
+            // a file whose NAME merely ends in "index" keeps it: only the SEGMENT is a directory index
+            ("features/data/reindex.ts", "@/features/data/reindex"),
+        ] {
+            let f = root.join("src").join(rel);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(&f, "export const x = 1;
+").unwrap();
+            let c = harvest_module(&f, &root).expect("harvests");
+            assert_eq!(c.provides.as_deref(), Some(want), "{rel}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A `.tsx` module drops its extension like every other. The bug this covers shipped five records
