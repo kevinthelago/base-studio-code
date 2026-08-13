@@ -150,9 +150,35 @@ mod tests {
             vec!["skill", "group", "list"],
             vec!["project", "link", "list", "--json"],
             vec!["project", "db", "list", "--json"],
+            // #the-scan-cache-read-is-the-last-boot-spawn — the one row `bsc perf spawns` still
+            // showed once the rest of the burst went warm.
+            vec!["ui", "scan-cache", "get"],
         ] {
             assert!(is_servable(&a(&verb)), "{verb:?} should be answered warm");
         }
+    }
+
+    #[test]
+    fn a_ui_verb_can_be_named_by_its_complete_path() {
+        // The full-path table is consulted BEFORE the `ui` sub-list. It used to early-return on `ui`,
+        // so the sub-list answered for the whole command and a deeper `ui` verb was inexpressible:
+        // `scan-cache` is not a `UI_SUBS` member, so `ui scan-cache get` could never be allowed no
+        // matter what the table said.
+        assert!(is_servable(&a(&["ui", "scan-cache", "get"])));
+        // …and the existing `bsc ui <sub>` surface still resolves through the fallback, unchanged.
+        assert!(is_servable(&a(&["ui", "list", "--full"])));
+        assert!(is_servable(&a(&["ui", "get", "some-id"])));
+        assert!(!is_servable(&a(&["ui", "nope"])));
+    }
+
+    #[test]
+    fn the_scan_cache_writes_are_still_refused() {
+        // `put` is the highest-volume call in the whole log (219 in one session). A two-token
+        // `["ui","scan-cache"]` entry would have matched it — which is why the entry is the complete
+        // three tokens even though the bare form defaults to `get`.
+        assert!(!is_servable(&a(&["ui", "scan-cache", "put"])));
+        assert!(!is_servable(&a(&["ui", "scan-cache", "clear"])));
+        assert!(!is_servable(&a(&["ui", "scan-cache"])), "the bare form defaults to get but is not listed");
     }
 
     #[test]
