@@ -7,7 +7,12 @@
 
 import { useState } from "react";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { bscJsonShared } from "@/shared/lib/core/bscShared";
+
+/** How stale a plan read this hook accepts (#five-callers-one-spawn-for-the-same-plan-read). Matched to
+ *  the other plan readers' 20s cadence so the five of them collapse onto ONE process launch per window;
+ *  a held/blocked signal minutes old would be stale, seconds old is not. */
+const HELD_TTL_MS = 20_000;
 import { useLogStream } from "@/shared/hooks/useLogStream";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
@@ -31,7 +36,7 @@ export function useFleetHeld(projectKey: string | null, streams: readonly GateSt
     if (!projectKey || !streams || !hasDeps) { setHeld({}); return; }
     const [merged, dbIssues, coord, closedRefs] = await Promise.all([
       safeInvoke<string[]>("fleet_landed_streams", { projectKey }, []),
-      bscJson<PlanIssue[]>(projectKey, ["plan", "list", "--full", "--json"], []),
+      bscJsonShared<PlanIssue[]>(projectKey, ["plan", "list", "--full", "--json"], [], HELD_TTL_MS),
       readCoordState(),
       // #4103: plan.db's issue rows are empty for a hand-assembled fleet, so the done-set was empty and
       // the gate held streams whose upstreams had actually landed. GitHub is the other evidence source.

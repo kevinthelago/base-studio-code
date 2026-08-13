@@ -14,6 +14,7 @@ import { useAppStore } from "@/store";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { log } from "@/shared/lib/core/log";
 import { bscJson } from "@/shared/lib/core/bsc";
+import { bscJsonShared } from "@/shared/lib/core/bscShared";
 import { parseFleetFile, withDerivedStreamIssues, type FleetPlan } from "@/features/planner/fleet/planFleet";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
 import { resolveClosedRefs } from "./fleetIssueState";
@@ -221,7 +222,11 @@ export async function resumeProjectFleet(opts: {
   const resolvedFleet = fleet;
 
   // 2. Progress-gate against plan.db.
-  const dbIssues = await bscJson<PlanIssue[]>(projectKey, ["plan", "list", "--full", "--json"], []);
+  // TTL 0 on purpose (#five-callers-one-spawn-for-the-same-plan-read): a resume is a deliberate user
+  // action, not a poll, so it must read the plan as it is NOW — a 20-second-old view could relaunch a
+  // worker for an issue that has since landed. It still JOINS an in-flight read, which is free and
+  // cannot serve stale data.
+  const dbIssues = await bscJsonShared<PlanIssue[]>(projectKey, ["plan", "list", "--full", "--json"], [], 0);
   // #4103: plan.db's `issues` table is EMPTY for a fleet assembled outside a full planner run (measured:
   // 40 streams, 0 issue rows), so `doneIssueRefs` returned nothing and NO stream ever read as complete —
   // a relaunch restarted finished workers and maintenance mode (#1957) never engaged. The stream's own

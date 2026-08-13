@@ -4,7 +4,7 @@
 // appears exactly when there's a finished app to render.
 import { useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { bscJsonShared } from "@/shared/lib/core/bscShared";
 import { projectComplete } from "@/shared/lib/fleet/streamCompletion";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 
@@ -14,7 +14,7 @@ export function useProjectComplete(projectKey: string | null): boolean {
   const [complete, setComplete] = useState(false);
   usePoll(async (isCancelled) => {
     if (!projectKey) { setComplete(false); return; }
-    const issues = await bscJson<PlanIssue[]>(projectKey, ["plan", "list", "--full", "--json"], []);
+    const issues = await bscJsonShared<PlanIssue[]>(projectKey, ["plan", "list", "--full", "--json"], [], POLL_MS);
     if (isCancelled()) return;
     setComplete(projectComplete(issues));
   }, POLL_MS, [projectKey]);
