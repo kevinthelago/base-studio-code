@@ -1,14 +1,15 @@
 //! Team-architect session workspace (#2755) — the Teams Studio's dedicated, heavily-restricted
 //! session. Mirrors the designer workspace (`session::designer::setup_designer_workspace`) exactly:
 //! one global workspace dir (`~/.base-studio-code/teams-studio/`) whose `CLAUDE.md` is the architect
-//! spec — the team/persona model, the `bsc teams` + `bsc persona` contract, and the "teams & personas
-//! only" scope guard. The spec prose is a packaged seed under `data/architect/`
+//! spec — the team/persona model, the `bsc teams` · `bsc persona` · `bsc project link` ·
+//! `bsc project architect` contract, and the scope guard bounding the session to those stores. The spec prose is a packaged seed under `data/architect/`
 //! (externalized-config pattern, #2027) loaded via [`crate::platform::config::load_str`], so a user
 //! can edit it under the config dir with no rebuild.
 //!
 //! The session's permissions are NOT written here — the frontend's `useArchitectTerminal` renders the
 //! `architect` role capability (#219): none on every axis. It launches with `restrictedAllow: true`,
-//! so the whole auto-runnable surface is `bsc teams` + `bsc persona`.
+//! so the whole auto-runnable surface is `bsc teams`, `bsc persona`, `bsc project link` and
+//! `bsc project architect`.
 
 use crate::StrErr;
 
@@ -88,7 +89,8 @@ mod tests {
     }
 
     /// The PACKAGED seed (ignoring any config-dir override) carries the content pillars the issue
-    /// requires: the two command surfaces, the team/persona model, and the scope guard.
+    /// requires: the command surfaces (`bsc teams` · `bsc persona` · `bsc project link` ·
+    /// `bsc project architect`), the team/persona model, and the scope guard that bounds them.
     #[test]
     fn packaged_architect_spec_carries_surfaces_model_and_scope_guard() {
         let seed = crate::platform::config::embedded_str("architect/claude.md");
@@ -103,10 +105,28 @@ mod tests {
             "positions",      // the team model vocabulary
             "relationship",
             "role",           // a persona rides a role (its permission floor)
-            "ONLY",           // the scope guard
         ] {
             assert!(seed.contains(needle), "architect seed must mention `{needle}`");
         }
+
+        // The scope guard, pinned by WHAT IT SAYS rather than by a word's casing
+        // (#the-architect-seed-test-pins-a-word-not-the-guard). This asserted the bare literal `ONLY`
+        // as a stand-in for "a guard exists", so rewriting the guard's prose — which is a thing this
+        // seed is MEANT to allow — turned it red while the guard itself never moved. A needle like that
+        // pins typography, and its failure invites re-adding a stray word instead of checking anything.
+        //
+        // What actually bounds an architect session is the READ FIRST block: the stores it may touch,
+        // and the refusal for everything else. Those are the claims worth breaking a build over.
+        assert!(seed.contains("READ FIRST"), "the guard must lead the file — it is read top-down");
+        assert!(seed.contains("scope guard"), "the guard must name itself");
+        for bounded in ["bsc project link", "bsc project architect"] {
+            assert!(seed.contains(bounded), "the guard must name the `{bounded}` surface it bounds");
+        }
+        assert!(
+            seed.contains("do **not** write code files"),
+            "the guard must state what is OUT of scope, not only what is in it",
+        );
+        assert!(seed.contains("refuse"), "the guard must say what to DO when asked out of scope");
     }
 
     /// #3376 — the read-side companion to "Authoring: write, then apply". The seed must name the lean
