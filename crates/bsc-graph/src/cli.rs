@@ -458,6 +458,32 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 .collect();
             if apply {
                 let mut g = crate::load();
+                // A module id is derived from the file STEM, so two `registry.tsx` in different
+                // directories produce one id — and `impl set` is a MERGE by id, so the second harvest
+                // silently REPLACED the first. One command, one record lost, no warning. Refuse the
+                // write instead. A guard rather than a new id scheme on purpose: path-derived ids would
+                // rename every module record already migrated and break the specifiers pointing at them.
+                let existing = crate::implementations_of(&g);
+                for c in &picked {
+                    let clash = existing.iter().find(|im| {
+                        im.get("id").and_then(Value::as_str) == Some(c.id.as_str())
+                            && im
+                                .get("src")
+                                .and_then(Value::as_str)
+                                .is_some_and(|s| !s.is_empty() && s != c.src)
+                    });
+                    if let Some(im) = clash {
+                        let other = im.get("src").and_then(Value::as_str).unwrap_or_default();
+                        return Err(format!(
+                            "'{}' already names a DIFFERENT module: {other}\n\
+                             This harvest would overwrite it, because a module id comes from the file \
+                             stem and `impl set` merges by id.\n\
+                             Rename one of the files, or write the record deliberately with \
+                             `bsc graph impl set --id <a-distinct-id>`.",
+                            c.id
+                        ));
+                    }
+                }
                 for c in &picked {
                     // The same field set `curate --apply` writes — `domain` (invisible without it,
                     // #3607), `src` provenance (#4091), the `folder` derived from it (#4107), and the

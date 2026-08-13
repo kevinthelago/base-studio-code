@@ -391,6 +391,10 @@ pub fn curation_plan(worthy: &[Candidate], existing: &[serde_json::Value]) -> Ve
 }
 
 /// The file extension (impl id suffix) for a tech.
+/// The module extensions a specifier drops, LONGEST FIRST so `.tsx` is tried before `.ts` — otherwise
+/// `Thing.tsx` would strip to `Thing.x`.
+const MODULE_EXTS: [&str; 5] = [".tsx", ".jsx", ".ts", ".js", ".rs"];
+
 fn ext_of(tech: &str) -> &'static str {
     match tech {
         "rust" => "rs",
@@ -619,9 +623,18 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
         .replace('\\', "/");
     let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("module");
     // `@/x/y` mirrors the app's alias: the tracked path minus its `src/` root and extension.
-    let provides = src_rel
-        .strip_prefix("src/")
-        .map(|rest| format!("@/{}", rest.trim_end_matches(&format!(".{}", ext_of(tech)))));
+    //
+    // The FILE's extension, not one guessed from `tech`. `ext_of("typescript")` is `ts`, so a `.tsx`
+    // module kept its extension and claimed `@/app/console/useConsoleTabs.tsx` — a specifier no import
+    // ever writes, so the record resolved through nothing, which is the one thing `provides` exists to
+    // prevent. The `.ts` case passing is exactly what hid it.
+    let provides = src_rel.strip_prefix("src/").map(|rest| {
+        let base = MODULE_EXTS
+            .iter()
+            .find_map(|e| rest.strip_suffix(e))
+            .unwrap_or(rest);
+        format!("@/{base}")
+    });
     let dir = file.parent().unwrap_or(Path::new("."));
     // `test_path_for` pairs a FILE NAME against its sibling `*.test.*`, so it must get the basename —
     // handing it the root-relative path silently finds nothing, which is indistinguishable from
@@ -1016,6 +1029,25 @@ mod tests {
         // This fixture is not under `src/`, so there is no specifier to claim — and inventing one
         // would be worse than none, since a wrong `provides` is a global override (#3660).
         assert_eq!(c.provides, None, "a path outside src/ claims no specifier");
+    }
+
+    /// A `.tsx` module drops its extension like every other. The bug this covers shipped five records
+    /// claiming `@/app/console/useConsoleTabs.tsx` — a specifier no import ever writes, so each record
+    /// resolved through nothing. The `.ts` path was correct throughout, which is exactly what hid it.
+    #[test]
+    fn a_tsx_module_drops_its_extension_in_the_specifier_it_provides() {
+        let root = std::env::temp_dir().join(format!("bsc-graph-tsx-provides-{}", std::process::id()));
+        let dir = root.join("src").join("app").join("console");
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, want) in
+            [("useConsoleTabs.tsx", "@/app/console/useConsoleTabs"), ("bridge.ts", "@/app/console/bridge")]
+        {
+            let f = dir.join(name);
+            std::fs::write(&f, "export const useConsoleTabs = () => 1;\n").unwrap();
+            let c = harvest_module(&f, &root).expect("harvests as a module");
+            assert_eq!(c.provides.as_deref(), Some(want), "{name} must claim {want}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
