@@ -13,11 +13,56 @@ import { lastGood } from "./renderGate";
 import { log } from "@/shared/lib/core/log";
 import { ThemeProvider } from "@/shared/ui/kit";
 
-// Per-id COMPILE counter (module-level, survives re-renders) — the loop probe. A healthy page compiles
-// ONCE (`#1`) and never again, because the load effect keys on the srcText VALUE and a re-hydrate re-reads
-// the same string (`Object.is` true → effect skipped). A fast-climbing `#N` in the `graph-loader` log means
-// the source is churning (a new srcText value each hydrate) and the page is recompiling — the real lag risk.
+// Per-id COMPILE counter (module-level, survives re-renders AND remounts) — the loop probe. A healthy page
+// compiles ONCE (`#1`) and never again.
+//
+// A climbing `#N` has TWO causes, and the difference matters
+// (#three-compiles-race-for-every-graph-page-mount). This comment used to name only the first:
+//
+//   1. THE SOURCE IS CHURNING — a new `srcText` value each hydrate. The effect keys on the srcText VALUE,
+//      so an equal string is `Object.is` true and the effect is skipped; a climbing count therefore means
+//      the value really is changing.
+//   2. THE HOST IS REMOUNTING — this map is module-level, so it survives the remount that resets the
+//      component's own state, and the count climbs with an IDENTICAL source. This is what the Console page
+//      actually did: three compiles of the same 18,462 chars inside one second, 72 compiles for 24 mounts
+//      across a whole log. Reading that as churn sends you hunting a hydration bug that is not there.
+//
+// The two are told apart by the `(source N chars)` in the log: a constant N across a climbing #N is a
+// remount, a varying N is churn.
 const compileCounts = new Map<string, number>();
+
+/**
+ * IN-FLIGHT compiles, keyed by record + export (never the record alone — see `cacheKey`).
+ *
+ * WHY (#three-compiles-race-for-every-graph-page-mount): each remount started its OWN compile of the
+ * identical source, so three raced and two were discarded — which is why the surviving mount took ~2.1s
+ * rather than the ~700ms one compile costs. A remount whose source matches an entry here awaits THAT
+ * promise instead of starting a second compile.
+ *
+ * This is the same in-flight join the `bsc` read coalescer uses, and for the same reason: two identical
+ * pieces of work happening at the same moment should never be two pieces of work.
+ *
+ * IN-FLIGHT ONLY — an entry is evicted the moment its promise settles, and that is deliberate. Keeping
+ * settled compiles would make returning to a page instant, but a compile vendors its SIBLINGS at build
+ * time (#3606) while the load effect re-fires only on this record's OWN source; a retained entry would
+ * therefore serve a remount a component built from stale siblings, trading the designer's live-edit loop
+ * for speed. Everything after the race is left exactly as it was.
+ *
+ * NOT a replacement for {@link lastGood}, which is a different and stronger claim: this is what
+ * COMPILED, `lastGood` is what actually RENDERED without the boundary catching, and only that is
+ * eligible to serve as a degraded fallback.
+ */
+const compiles = new Map<
+  string,
+  { source: string; n: number; promise: Promise<ComponentType<Record<string, unknown>>> }
+>();
+
+/** Drop every in-flight compile — for tests, which must see each mount reach the loader rather than
+ *  joining an entry a previous test left behind. */
+export function resetGraphCompiles(): void {
+  compiles.clear();
+  compileCounts.clear();
+}
 
 /** Catches a RENDER throw from the loaded component (load-time throws are caught by the effect below).
  *  Keyed by the caller so a new source remounts a fresh boundary (React boundaries don't self-reset).
@@ -111,11 +156,30 @@ export function GraphComponent({
     setDegraded(false);
     /* eslint-enable react-hooks/set-state-in-effect */
     if (!source) return;
-    const n = (compileCounts.get(cacheKey) ?? 0) + 1;
-    compileCounts.set(cacheKey, n);
+    // JOIN an existing compile of this exact source rather than starting a second one
+    // (#three-compiles-race-for-every-graph-page-mount). A source that CHANGED never joins — the entry is
+    // replaced — so a designer edit is always compiled fresh and is never served a stale component.
     const startedAt = performance.now();
-    log.info(`graph-loader: compile #${n} "${id}" (source ${source.length} chars)`, "graph-loader");
-    loadComponentFromSource(source, resolveGraphSource, exportName) // vendor sibling panels (#3606)
+    let entry = compiles.get(cacheKey);
+    if (entry && entry.source === source) {
+      log.info(`graph-loader: joined compile #${entry.n} "${id}" — no second compile`, "graph-loader");
+    } else {
+      const n = (compileCounts.get(cacheKey) ?? 0) + 1;
+      compileCounts.set(cacheKey, n);
+      log.info(`graph-loader: compile #${n} "${id}" (source ${source.length} chars)`, "graph-loader");
+      const promise = loadComponentFromSource(source, resolveGraphSource, exportName); // vendor sibling panels (#3606)
+      entry = { source, n, promise };
+      compiles.set(cacheKey, entry);
+      // EVICT ON SETTLE — this is an in-flight join, deliberately NOT a compile cache. A compile
+      // vendors its SIBLINGS at build time (#3606) while the effect only re-fires on this record's own
+      // source, so a settled entry kept around would serve a remount a component built from stale
+      // siblings — trading the designer's live-edit loop for speed. Identity-checked so a newer entry
+      // for a changed source is never evicted by an older one settling late.
+      const evict = () => { if (compiles.get(cacheKey) === entry) compiles.delete(cacheKey); };
+      promise.then(evict, evict);
+    }
+    const { n } = entry;
+    entry.promise
       // setState((prev) => …) treats a function arg as an UPDATER — a component IS a function, so wrap it.
       .then((c) => {
         if (cancelled) return;
