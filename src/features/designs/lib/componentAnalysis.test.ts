@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveComposes, deriveRole, renderedComponentCount, analyzeComponent, buildNameResolver, deriveProps } from "./componentAnalysis";
+import { deriveComposes, deriveRole, renderedComponentCount, analyzeComponent, buildNameResolver, deriveProps } from "@/features/designs/lib/componentAnalysis";
 
 const RECORDS = [
   { id: "githubpage", name: "GitHubWorkspace", provides: undefined, kitId: "base-studio-code" },

@@ -2,7 +2,7 @@
 // resolver. Verifies cue (primary) / voice (fallback) / primitive resolution, the miss, and the code
 // carry-through (a cue/voice carries a player module; a primitive is a code-less descriptor).
 import { describe, it, expect } from "vitest";
-import { soundNodeLookup } from "./crossGraphAdapter";
+import { soundNodeLookup } from "@/features/sounds/lib/crossGraphAdapter";
 import type { SoundKit } from "@/features/sounds/lib/soundDescriptor";
 
 const kit: SoundKit = {

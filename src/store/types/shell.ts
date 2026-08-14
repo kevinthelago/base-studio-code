@@ -2,7 +2,7 @@
 // and perf + log config. Split from store/types (#1634).
 import type { PerfConfig } from "./perf";
 import type { LogConfig } from "./log";
-import type { AppStateSnapshot } from "../appState";
+import type { AppStateSnapshot } from "@/store/appState";
 
 /** App-chrome slice of {@link AppStore}. */
 export interface ShellState {

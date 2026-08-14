@@ -9,9 +9,9 @@
 export { TunnelSettings } from "./Tunnel";
 export { useTunnelSync } from "@/features/tunnel/useTunnelSync";
 export { useStoreProjector } from "@/features/tunnel/useStoreProjector";
-export { useTunnelAutomations } from "./lib/useTunnelAutomations";
+export { useTunnelAutomations } from "@/features/tunnel/lib/useTunnelAutomations";
 export { useTunnelHookTelemetry } from "@/features/tunnel/lib/useTunnelHookTelemetry";
-export { useTunnelCoordControl } from "./lib/useTunnelCoordControl";
+export { useTunnelCoordControl } from "@/features/tunnel/lib/useTunnelCoordControl";
 
 // #1545: public API for cross-feature consumers (app/console, planner, components).
 export type { PlanMessage, SessionMeta, PaneDescriptor, PaneKind } from "@/features/tunnel/lib/tunnel";

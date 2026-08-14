@@ -20,13 +20,13 @@ import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
 import { type AppStore } from "./types";
-import { persistedState, migrateAutoResumeOff } from "./persist";
+import { persistedState, migrateAutoResumeOff } from "@/store/persist";
 import { createSessionSlice } from "./slices/session";
 import { createPlanSlice } from "./slices/plan";
 import { createProjectsSlice } from "./slices/projects";
 import { createAutomationsSlice } from "@/features/automations/store";
-import { createCoreSlice } from "./slices/core";
-import { createLlmSettingsSlice } from "./slices/llmSettings";
+import { createCoreSlice } from "@/store/slices/core";
+import { createLlmSettingsSlice } from "@/store/slices/llmSettings";
 import { createGithubSlice } from "@/features/github/store";
 import { createShellSlice } from "./slices/shell";
 import { createTunnelSlice } from "@/features/tunnel/store";

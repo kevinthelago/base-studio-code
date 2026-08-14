@@ -7,7 +7,7 @@ import {
   DESIGNER,
   type LoopRow,
   type LoopTurn,
-} from "./designerLoopDrive";
+} from "@/features/designs/lib/designerLoopDrive";
 import type { DesignDirective } from "./designerQueue";
 
 const loop = (over: Partial<LoopRow> = {}): LoopRow => ({ id: 1, a: DRIVER, b: DESIGNER, status: "open", ...over });

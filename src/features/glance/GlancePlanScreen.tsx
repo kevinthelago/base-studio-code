@@ -13,7 +13,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { normalizeRef } from "@/features/glance/lib/fleetPlanProgress";
-import type { StreamProgress } from "./lib/streamProgress";
+import type { StreamProgress } from "@/features/glance/lib/streamProgress";
 
 export interface PlanScreenIssue {
   /** As stored, e.g. `#3898` — shown verbatim so it matches the plan and the board. */

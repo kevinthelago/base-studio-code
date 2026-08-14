@@ -25,7 +25,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSy
 import { spawnSync } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { norm, codeOnly, splitPreamble, fileAsRecordSource } from "./lib/recordSource.mjs";
+import { norm, codeOnly, splitPreamble, fileAsRecordSource, runtimeImports } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
@@ -92,6 +92,7 @@ for (const im of algorithms.implementations ?? []) if (typeof im?.provides === "
 const specOf = (f) => "@/" + f.replace(/\.(tsx?|jsx?)$/, "").replace(/\/index$/, "");
 
 const promote = { component: [], impl: [] };
+let skippedAtWrite = 0; // written-guard declines, subtracted from the final count (see the tail of this file)
 const skipped = { bodyDiffers: 0, buildTimeOnly: [], alreadySeeded: 0, noRecord: 0, pageRecord: [], unresolvable: [], uncompilable: [] };
 
 for (const file of listModules()) {
@@ -105,7 +106,8 @@ for (const file of listModules()) {
   // demands every one be catalogued. Promoting a page therefore fails the suite until someone adds it to
   // SHADOW_PAGES with its `ensurePlatform` — a deliberate, per-page act, not a bulk promotion.
   if (hit.kind === "component" && hit.rec.role === "page" && hit.rec.pageKind !== "kit") { skipped.pageRecord.push(file); continue; }
-  const unresolved = [...new Set([...hit.source.matchAll(/(?:from|import|require)\s*\(?\s*['"](@\/[^'"]+)['"]/g)].map((m) => m[1]))]
+  const unresolved = runtimeImports(hit.source)
+    .filter((sp) => sp.startsWith("@/"))
     .filter((sp) => !resolvable.has(sp) && !/\.(css|svg|png)$/.test(sp));
   if (unresolved.length) { skipped.unresolvable.push(`${file} — needs ${unresolved.slice(0, 3).join(", ")}`); continue; }
 
@@ -129,8 +131,7 @@ for (const file of listModules()) {
 // `detachedtabstrip` failed on `@tauri-apps/api/window` after an earlier pass that only looked at `@/`.
 const REGISTERED = new Set(JSON.parse(readFileSync(join(REPO, "src-tauri/data/ui/platform-modules.json"), "utf8")));
 const importsOf = (src) =>
-  [...new Set([...src.matchAll(/(?:from|import|require)\s*\(?\s*['"]([^'"]+)['"]/g)].map((m) => m[1]))]
-    .filter((sp) => !/^\.\.?\//.test(sp) && !/\.(css|svg|png)$/.test(sp));
+  runtimeImports(src).filter((sp) => !/^\.\.?\//.test(sp) && !/\.(css|svg|png)$/.test(sp));
 
 for (let pass = 0; pass < 20; pass++) {
   const willExist = new Set([...REGISTERED, ...seeded]);
@@ -208,7 +209,7 @@ for (const { rec, file } of promote.component) {
   // NEVER overwrite an existing seed. The skip above keys on `provides`, but the write keys on
   // `<folder>/<id>` — a record whose `provides` differs from the seed occupying that path slips through
   // and clobbers it. Seven curated seeds were overwritten before this guard existed.
-  if (existsSync(path)) { console.log(`   SKIPPED (a seed already occupies that path): ${file} → ${rec.id}.json`); continue; }
+  if (existsSync(path)) { console.log(`   SKIPPED (a seed already occupies that path): ${file} → ${rec.id}.json`); skippedAtWrite++; continue; }
   const out = {};
   for (const k of SEED_FIELDS) if (rec[k] !== undefined) out[k] = rec[k];
   mkdirSync(dir, { recursive: true });

@@ -1,7 +1,7 @@
 // Self-contained cue-player emit (#3117) — the vendorable "code" for a sound the Design Studio preview
 // imports as `@bsc/sounds/<id>`. Verifies the emitted module embeds the compiled schedule + exports `play`.
 import { describe, it, expect } from "vitest";
-import { cuePlayerModule } from "./cuePlayerModule";
+import { cuePlayerModule } from "@/features/sounds/lib/cuePlayerModule";
 import { compileCue } from "./synth";
 import type { SoundKit } from "@/features/sounds/lib/soundDescriptor";
 

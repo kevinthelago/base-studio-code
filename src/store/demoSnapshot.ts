@@ -42,7 +42,7 @@ import { makeBlueprints, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
 import type { Schedule, Command } from "@/shared/data/mock";
 import type { Automation } from "@/features/automations/lib/scheduler";
-import type { AppStateSnapshot } from "./appState";
+import type { AppStateSnapshot } from "@/store/appState";
 
 /**
  * The gist the empty states offer as the official one-click demo. EMPTY by default — the local

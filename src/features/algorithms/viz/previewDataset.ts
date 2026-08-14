@@ -10,7 +10,7 @@ import { runAlgorithm, runGraphAlgorithm } from "@/features/algorithms/lib/trace
 import { TRACE_PROGRAMS } from "./examples/sorts";
 import { GRAPH_PROGRAMS } from "./examples/graphAlgos";
 import { bstShape, TREE_PROGRAMS } from "./examples/treeAlgos";
-import { vizRunToDataset, type VizDataset, type TreeDatasetNode } from "./vizDataset";
+import { vizRunToDataset, type VizDataset, type TreeDatasetNode } from "@/features/algorithms/viz/vizDataset";
 
 /** The structures the shape tier can source a real dataset for. */
 export type PreviewStructure = "array" | "graph" | "tree";

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyWorkerEnd, type OwnedIssue } from "./workerEnd";
+import { classifyWorkerEnd, type OwnedIssue } from "@/shared/lib/fleet/workerEnd";
 import { emptyCoordState, satisfy, parseRef, type CoordState } from "./coordination";
 
 const empty = emptyCoordState();

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { load } from "@tauri-apps/plugin-store";
-import { persistStorage } from "./storage";
+import { persistStorage } from "@/shared/lib/core/storage";
 
 // persistStorage falls back to localStorage when not inside Tauri (jsdom env)
 

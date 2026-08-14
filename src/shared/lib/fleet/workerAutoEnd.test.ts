@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { decideWorkerAutoEnd, DEFAULT_AUTO_END_THRESHOLDS, type AutoEndSignals } from "./workerAutoEnd";
-import type { WorkerEndVerdict } from "./workerEnd";
+import { decideWorkerAutoEnd, DEFAULT_AUTO_END_THRESHOLDS, type AutoEndSignals } from "@/shared/lib/fleet/workerAutoEnd";
+import type { WorkerEndVerdict } from "@/shared/lib/fleet/workerEnd";
 
 const T = DEFAULT_AUTO_END_THRESHOLDS;
 const done: WorkerEndVerdict = { state: "done", summary: "2/2 complete" };

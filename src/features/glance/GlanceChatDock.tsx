@@ -18,7 +18,7 @@ import { IconButton } from "@/shared/ui/controls/IconButton";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { GlanceSessionLog } from "./GlanceSessionLog";
 import { GlancePlanScreen, planScreenIssues } from "./GlancePlanScreen";
-import type { StreamProgress } from "./lib/streamProgress";
+import type { StreamProgress } from "@/features/glance/lib/streamProgress";
 
 type DockTab = "stream" | "logs" | "plan";
 

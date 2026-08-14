@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { ProjectsHeader } from "../list/ProjectsHeader";
-import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
+import { useActiveProjectGithub, QueryBanner } from "@/features/planner/github/useActiveProjectGithub";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Text } from "@/shared/ui/typography/Text";

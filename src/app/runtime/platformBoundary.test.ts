@@ -46,6 +46,8 @@ import { registerTeamsPlatform } from "@/features/teams/graphPlatform";
 import { registerTunnelPlatform } from "@/features/tunnel/graphPlatform";
 import { isAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import algorithmsSeed from "@data/knowledge/algorithms.json";
+// A relative path on purpose: `scripts/` is outside the `@/` alias (which maps to `src/`).
+import { runtimeImports } from "../../../scripts/lib/recordSource.mjs";
 
 interface SeedRecord {
   id: string;
@@ -67,10 +69,15 @@ const RECORDS: SeedRecord[] = Object.values(seedModules)
  *  Includes `export … from`, since esbuild compiles a re-export to the same `require` an import produces
  *  (the #3874 defect). EXCLUDES `import type` / `export type`, which erase at compile time and emit no
  *  require at all — counting them is what made #3858 read as broken when it was not. A MIXED
- *  `import { type A, B }` still requires, so only the whole-statement form is skipped. */
-function importsOf(src: string): string[] {
-  return [...src.matchAll(/^\s*(?:import|export)\s+(?!type\s)[^"']*from\s+["']([^"']+)["']/gm)].map((m) => m[1]);
-}
+ *  `import { type A, B }` still requires, so only the whole-statement form is skipped.
+ *
+ *  SHARED with `scripts/promote-records.mjs` rather than restated. Promotion is the act this guard
+ *  judges, so a promoter reading imports differently is wrong in whichever direction it differs: more
+ *  permissive and it packages a record that turns this suite red; STRICTER and it silently refuses
+ *  records that were always fine — which is what it did, blocking 170 modules on `import type` and on the
+ *  word `from` appearing in a comment. Two regexes that agree today are the setup for that, not a
+ *  safeguard against it. */
+const importsOf = runtimeImports;
 
 beforeAll(() => {
   // The REAL registration path, not a duplicated list — a list would drift from the thing it describes,

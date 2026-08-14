@@ -56,8 +56,8 @@ export type { VizExample } from "./viz/examples/registry";
 // preview can bind to (the algorithms-drive-previews payoff).
 export { runInSandbox } from "./viz/examples/vizSandbox";
 export type { VizRun } from "./viz/examples/vizProgram";
-export { vizRunToDataset } from "./viz/vizDataset";
-export type { VizDataset } from "./viz/vizDataset";
+export { vizRunToDataset } from "@/features/algorithms/viz/vizDataset";
+export type { VizDataset } from "@/features/algorithms/viz/vizDataset";
 // Shape tier (#3439): a synchronous real dataset for a target structure (array / graph), sourced from a
 // canonical in-app trace program — feeds the Design Studio's DataShape-driven preview data.
 export { datasetForStructure, type PreviewStructure } from "./viz/previewDataset";

@@ -8,7 +8,7 @@
 import { Component, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { loadComponentFromSource } from "@/shared/lib/runtime/componentLoader";
-import { resolveGraphSource } from "./graphResolver";
+import { resolveGraphSource } from "@/shared/lib/runtime/graphResolver";
 import { lastGood } from "./renderGate";
 import { recoveryLadder } from "./recoveryLadder";
 import { log } from "@/shared/lib/core/log";

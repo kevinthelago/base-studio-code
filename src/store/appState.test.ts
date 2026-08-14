@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEMOABLE_KEYS, pickDemoable, snapshotAppState, isDemoableKey, mergeSnapshotInto } from "./appState";
+import { DEMOABLE_KEYS, pickDemoable, snapshotAppState, isDemoableKey, mergeSnapshotInto } from "@/store/appState";
 
 describe("app-state snapshot (#2272)", () => {
   it("snapshots only the demoable keys from a full-ish state", () => {

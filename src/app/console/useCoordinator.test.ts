@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { useCoordinator } from "./useCoordinator";
+import { useCoordinator } from "@/app/console/useCoordinator";
 import { injectWake, actuateWake } from "@/shared/lib/fleet/coordinatorActuate";
 
 vi.mock("@/shared/lib/fleet/coordinatorActuate", () => ({

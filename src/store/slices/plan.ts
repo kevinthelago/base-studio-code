@@ -12,7 +12,7 @@ import { emptyFleet } from "@/features/planner/fleet/planFleet";
 import { defaultStageConfig, discoveryOnlyStageConfig, enabledOrderedStages } from "@/features/planner/stages/planStages";
 import { normalizeFlow, resolveFlow } from "@/features/planner/fleet/agentFlow";
 import { setMapEntry } from "@/store/updateHelpers";
-import { dropProjectScoped } from "./projectScopedMaps";
+import { dropProjectScoped } from "@/store/slices/projectScopedMaps";
 /** The `repoPublic` key for one repo within a project (#1227): `<projectKey>::<repoFullName>`,
  *  the repo-scoped convention used elsewhere (e.g. repoStartupPromptDoc). */
 export function repoVisibilityKey(projectKey: string, repoId: string): string {

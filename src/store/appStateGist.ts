@@ -8,7 +8,7 @@ import {
   wrapExtension, validateManifest, type ExtensionManifest,
 } from "@/features/planner/lib/gist/manifest";
 import { installFromGist, publishGist } from "@/features/planner/lib/gist/gist";
-import { pickDemoable, snapshotAppState, type AppStateSnapshot } from "./appState";
+import { pickDemoable, snapshotAppState, type AppStateSnapshot } from "@/store/appState";
 import { useAppStore } from ".";
 
 /** The manifest kind an app-state snapshot ships as (#2272). */

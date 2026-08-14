@@ -15,7 +15,7 @@
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 // — the pane system's pure helpers + hooks —
 import * as ConsoleFocus from "@/app/console/lib/consoleFocus";
-import * as ModelDisplay from "./lib/modelDisplay";
+import * as ModelDisplay from "@/app/console/lib/modelDisplay";
 import * as Models from "./lib/models";
 import * as PaneIdentity from "@/app/console/lib/paneIdentity";
 import * as PaneStatus from "@/app/console/lib/paneStatus";
@@ -28,7 +28,7 @@ import * as ViewDefs from "@/app/console/panes/viewDefs";
 // — the pane VIEWS: the behaviour a pane cell hosts —
 import * as TerminalSlot from "./terminal/TerminalSlot";
 // — the pumps the page mounts —
-import * as UseCoordinator from "./useCoordinator";
+import * as UseCoordinator from "@/app/console/useCoordinator";
 import * as UseDirectorPump from "@/app/console/useDirectorPump";
 import * as UseFaultTriage from "@/app/console/useFaultTriage";
 import * as UseKitDispatch from "@/app/console/useKitDispatch";

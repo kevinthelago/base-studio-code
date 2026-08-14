@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "@/store";
-import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "./lib/reactUiKit";
+import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
 import type { ComponentRecord, Kit } from "./lib/model";
 
 // #3543: the packaged seed is now a single EMPTY kit. This collision test needs a built-in kit + component

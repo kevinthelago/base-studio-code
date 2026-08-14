@@ -20,7 +20,7 @@ export { buildGlanceData, SAMPLE_GRAPH, type GlanceData, type ProjectLite, type 
 // workspace reads, so the data hooks are public API alongside the graph model.
 export { useGlanceProjects, applyFaultHealth, applyLiveness, applyRunningActivity, deriveBuildingKeys, mergeGlanceProjects } from "./lib/useGlanceProjects";
 export { useGlanceFaults, type GlanceFault } from "./lib/useGlanceFaults";
-export { applyStallHealth, projectKeyOfSession, STALL_WARN_MS, type WaitLite } from "./lib/agentStall";
+export { applyStallHealth, projectKeyOfSession, STALL_WARN_MS, type WaitLite } from "@/features/glance/lib/agentStall";
 export { useProjectFleet } from "@/features/glance/lib/useProjectFleet";
 export { type ProjectLink } from "@/features/glance/lib/projectLinks";
 // #3931: the fleet resume is the launch pump's actuator (mounted in the app shell), so it is public API.

@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { listen } from "@tauri-apps/api/event";
-import { useLogStream } from "./useLogStream";
+import { useLogStream } from "@/shared/hooks/useLogStream";
 
 // Capture each `listen(name, cb)` so a test can FIRE the stream-change event, and count unlistens.
 const handlers: Record<string, () => void> = {};

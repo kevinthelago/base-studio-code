@@ -13,7 +13,7 @@ vi.mock("@/shared/lib/core/bsc", () => ({
 
 import { bsc, bscRun } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
-import { DEFAULT_MAX_TURNS } from "./lib/designerLoopDrive";
+import { DEFAULT_MAX_TURNS } from "@/features/designs/lib/designerLoopDrive";
 import type { DesignDirective } from "./lib/designerQueue";
 
 const directive = (id: string): DesignDirective => ({ id, kind: "polish", title: `T ${id}`, detail: `D ${id}` });

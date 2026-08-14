@@ -23,7 +23,7 @@ import { catalogLink } from "@/features/mcp";
 import { scriptDocRelpath } from "@/features/planner/session/planningSession";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import { wantsSandboxLaunch } from "@/features/planner/session/plannerSandbox";
-import { plannerLaunchConfig } from "./plannerLaunch";
+import { plannerLaunchConfig } from "@/features/planner/session/plannerLaunch";
 
 /** A per-repo startup script row from plan.db (`bsc plan startup`, #2010). */
 interface StartupScriptRow { repo: string; mode: "dev" | "triage"; path: string }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SHORTCUT_GROUPS } from "../lib/shortcuts";
+import { SHORTCUT_GROUPS } from "@/features/settings/lib/shortcuts";
 import { useAppStore } from "@/store";
 import { Card } from "@/shared/ui/data/Card";
 import { InlineError } from "@/shared/ui/feedback/InlineError";

@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import { type AppStore, DEFAULT_PERF_CONFIG, DEFAULT_LOG_CONFIG } from "../types";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { setMapEntry } from "@/store/updateHelpers";
-import { pickDemoable, mergeSnapshotInto } from "../appState";
+import { pickDemoable, mergeSnapshotInto } from "@/store/appState";
 
 type ShellSlice = Pick<AppStore,
   "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "activePageTab" | "setActivePageTab" | "crumbEntity" | "setCrumbEntity" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "sandboxNudgeDismissCount" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig" | "demoActive" | "demoBackup" | "loadDemoState" | "clearDemoState"

@@ -12,7 +12,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, ProjectsWorkspace,
   SkillsWorkspace, SecurityWorkspace, WorkspaceFallback,
-} from "./lazyWorkspaces";
+} from "@/app/lazyWorkspaces";
 
 // Render a detached page's section. A switch over literal cases (not a dynamic
 // lookup keyed by the URL-supplied `page`) so there's no user-controlled dispatch.

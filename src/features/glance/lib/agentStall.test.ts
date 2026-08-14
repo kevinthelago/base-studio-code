@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ACTIVITY_META } from "./glanceGraph";
-import { applyStallHealth, applyFleetLiveStatus, liveWaits, projectKeyOfSession, STALL_WARN_MS, type WaitLite, type FleetLiveSignals } from "./agentStall";
+import { applyStallHealth, applyFleetLiveStatus, liveWaits, projectKeyOfSession, STALL_WARN_MS, type WaitLite, type FleetLiveSignals } from "@/features/glance/lib/agentStall";
 import type { ProjectLite } from "./glanceData";
 import type { GRawNode } from "./glanceGraph";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";

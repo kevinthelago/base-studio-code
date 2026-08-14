@@ -13,7 +13,7 @@ import type { PreviewState } from "./lib/componentPreview";
 import type { KitConsumer, KitChange, Dispatch } from "@/features/designs/lib/propagation";
 import type { SeedNotice } from "./lib/seedRefresh";
 import type { DesignDirective } from "./lib/designerQueue";
-import { DEFAULT_MAX_TURNS, DRIVER, DESIGNER } from "./lib/designerLoopDrive";
+import { DEFAULT_MAX_TURNS, DRIVER, DESIGNER } from "@/features/designs/lib/designerLoopDrive";
 import { bsc, bscRun } from "@/shared/lib/core/bsc";
 import { kitUsageId, makeChange, planPropagation, dispatchKey } from "@/features/designs/lib/propagation";
 import { SEED_COMPONENTS, SEED_KITS, planComponentRestamp, reconcileComponents, reconcileKits } from "./lib/seed";

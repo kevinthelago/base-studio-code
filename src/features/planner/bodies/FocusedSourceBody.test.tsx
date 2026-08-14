@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { defaultSourceConfig } from "../lib/sourceConfig";
+import { defaultSourceConfig } from "@/features/planner/lib/sourceConfig";
 import { SourceBody } from "@/features/planner/bodies/FocusedSourceBody";
 
 // The body is store-backed (planSourceConfig keyed by projectId). Reset that slice between tests so

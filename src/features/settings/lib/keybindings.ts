@@ -11,7 +11,7 @@
 // digit, not a single chord, so they stay fixed. Pure data + functions (no React
 // / DOM types beyond the structural event shape) so this is unit-testable.
 
-import { SHORTCUT_GROUPS } from "./shortcuts";
+import { SHORTCUT_GROUPS } from "@/features/settings/lib/shortcuts";
 
 /** The shortcut ids that can be rebound (single modifier+key chords). Screen
  *  navigation (single F-keys) and terminal zoom (single Ctrl chords) are single

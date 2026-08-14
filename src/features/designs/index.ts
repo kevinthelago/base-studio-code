@@ -39,7 +39,7 @@ export {
 export {
   deriveRules, mergeRules, kitRules, componentRules, ruleMessage, toEslintRules, toEslintPreset, ESCAPE_HATCH,
   type EslintRulesConfig,
-} from "./lib/rules";
+} from "@/features/designs/lib/rules";
 // Kit-change propagation (#2277) — the fan-out decision spine (classify → plan dispatch to consumers)
 // + the delivery drain (plan which dispatches to fire this cycle, and the per-rail messages).
 export {

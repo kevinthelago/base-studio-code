@@ -25,7 +25,7 @@ const { rectRef } = vi.hoisted(() => ({ rectRef: { current: null as GraphBox | n
 vi.mock("@/shared/ui/layouts/useVisibleRect", () => ({ useVisibleRect: () => rectRef.current }));
 
 import { DesignsWorkbench } from "./DesignsWorkbench";
-import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "./lib/reactUiKit";
+import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
 import { SEED_THEMES } from "./lib/themes";
 
 const nodeCount = (c: HTMLElement) => c.querySelectorAll(".ds-node").length;

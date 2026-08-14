@@ -2,7 +2,7 @@
 // flip (the page still renders, just an older skeleton), an unbound behaviour does (the page throws on
 // load and shows its fallback).
 import { describe, it, expect } from "vitest";
-import { buildPageShadow, formatShadowLine, formatShadowSummary, type ModuleShadow } from "./shadowReport";
+import { buildPageShadow, formatShadowLine, formatShadowSummary, type ModuleShadow } from "@/shared/lib/runtime/shadow/shadowReport";
 import type { OutlineDiff } from "./outlineDiff";
 
 const clean: OutlineDiff = { identical: true, differing: 0, fileNodes: 10, graphNodes: 10, onlyInFile: [], onlyInGraph: [] };
