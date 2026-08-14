@@ -207,6 +207,60 @@ impl Store {
         let n = self.conn.execute("DELETE FROM requests WHERE id = ?1", params![id])?;
         Ok(n > 0)
     }
+
+    /// Append a note to a request's thread (#bsc-request-gains-a-note-verb) — a reply that does NOT
+    /// close it.
+    ///
+    /// The status is deliberately untouched. Before this, the only way to answer a request was
+    /// `resolve`, which asserts it is fixed: request #50 was resolved, the designer measured the
+    /// behaviour as unchanged, and burned three probes filing #52 to ask what "resolved" had meant. A
+    /// channel that can only be answered by closing it will keep producing that.
+    ///
+    /// APPEND-ONLY by construction — there is no update or delete path to a note, which is the same
+    /// guarantee `bsc plan change note` makes and for the same reason: a thread whose earlier entries can
+    /// be rewritten is not a record of what was said.
+    ///
+    /// `Ok(false)` when no such request exists, so the caller can REFUSE rather than accept a reply that
+    /// goes nowhere.
+    pub fn add_note(&self, id: i64, body: &str, author: Option<&str>, ts: i64) -> rusqlite::Result<bool> {
+        // Existence is checked rather than left to the foreign key: a FK violation is an opaque error,
+        // and this needs to tell the caller "no request 61" in a form it can turn into a message.
+        if self.get(id)?.is_none() {
+            return Ok(false);
+        }
+        self.conn.execute(
+            "INSERT INTO request_notes (request_id, body, author, at) VALUES (?1, ?2, ?3, ?4)",
+            params![id, body, author, ts],
+        )?;
+        Ok(true)
+    }
+
+    /// A request's notes, oldest first — the thread in the order it was written.
+    pub fn notes(&self, id: i64) -> rusqlite::Result<Vec<RequestNote>> {
+        self.conn
+            .prepare("SELECT id, request_id, body, author, at FROM request_notes WHERE request_id = ?1 ORDER BY id ASC")?
+            .query_map(params![id], |r| {
+                Ok(RequestNote {
+                    id: r.get(0)?,
+                    request_id: r.get(1)?,
+                    body: r.get(2)?,
+                    author: r.get(3)?,
+                    at: r.get(4)?,
+                })
+            })?
+            .collect()
+    }
+}
+
+/// One reply on a request's thread (#bsc-request-gains-a-note-verb).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct RequestNote {
+    pub id: i64,
+    pub request_id: i64,
+    pub body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    pub at: i64,
 }
 
 /// The column list `row_to_request` decodes, in one place so the SELECTs can't drift from the mapper.
@@ -375,6 +429,93 @@ mod tests {
         assert_eq!(all[0].text, "graph gap", "newest first");
         assert_eq!(s.list(&Filter { surface: Some("bsc ui".into()), ..Default::default() }).unwrap().len(), 1);
         assert_eq!(s.list(&Filter { limit: Some(1), ..Default::default() }).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_note_replies_without_touching_the_status() {
+        // THE POINT of the verb (#bsc-request-gains-a-note-verb). `resolve` was the only way to answer a
+        // request, and it asserts the thing is fixed — request #50 was resolved, the designer measured no
+        // change, and burned three probes filing #52 to ask what "resolved" had meant.
+        let s = Store::open_in_memory().unwrap();
+        let r = s.create(&req("preview shows a stale overlay", None, 1)).unwrap();
+        assert!(s.add_note(r.id, "half of this is fixed; the field-loss half is not", Some("claude"), 2).unwrap());
+        assert_eq!(s.get(r.id).unwrap().unwrap().status, "open", "a reply is NOT a close");
+        assert_eq!(s.get(r.id).unwrap().unwrap().resolved_at, None);
+    }
+
+    #[test]
+    fn notes_are_append_only_and_ordered() {
+        // A second note must never overwrite the first — the lost-update class this store already suffered
+        // elsewhere. There is no update path to a note at all; this pins that both survive, in order.
+        let s = Store::open_in_memory().unwrap();
+        let r = s.create(&req("doctor cache is stale", None, 1)).unwrap();
+        s.add_note(r.id, "first", Some("claude"), 2).unwrap();
+        s.add_note(r.id, "second", Some("kevin"), 3).unwrap();
+        let notes = s.notes(r.id).unwrap();
+        assert_eq!(notes.iter().map(|n| n.body.as_str()).collect::<Vec<_>>(), ["first", "second"]);
+        assert_eq!(notes[1].author.as_deref(), Some("kevin"));
+    }
+
+    #[test]
+    fn the_resolve_stamp_and_the_thread_are_separate_fields() {
+        // The `note` COLUMN is what `resolve` stamps. Threading replies through it would make each reply
+        // destroy the last, which is exactly why the thread has its own table.
+        let s = Store::open_in_memory().unwrap();
+        let r = s.create(&req("navigate has a stale list", None, 1)).unwrap();
+        s.add_note(r.id, "a reply", Some("claude"), 2).unwrap();
+        s.resolve(r.id, Some("fixed by invalidating on write"), 3).unwrap();
+        let got = s.get(r.id).unwrap().unwrap();
+        assert_eq!(got.note.as_deref(), Some("fixed by invalidating on write"), "the resolve stamp is intact");
+        assert_eq!(s.notes(r.id).unwrap()[0].body, "a reply", "and the thread is still there");
+    }
+
+    #[test]
+    fn a_note_on_an_unknown_request_is_refused_not_swallowed() {
+        // A reply that goes nowhere is worse than a refusal: the writer believes it was delivered.
+        let s = Store::open_in_memory().unwrap();
+        assert!(!s.add_note(9999, "into the void", None, 1).unwrap());
+        assert!(s.notes(9999).unwrap().is_empty());
+    }
+
+    #[test]
+    fn removing_a_request_takes_its_thread_with_it() {
+        // ON DELETE CASCADE — which is inert unless `PRAGMA foreign_keys = ON` is set per connection, so
+        // this is really a test that the pragma is applied by `open`. Without it the notes outlive the
+        // request and nothing ever reads them again.
+        let s = Store::open_in_memory().unwrap();
+        let r = s.create(&req("gone soon", None, 1)).unwrap();
+        s.add_note(r.id, "a reply", None, 2).unwrap();
+        assert!(s.remove(r.id).unwrap());
+        assert!(s.notes(r.id).unwrap().is_empty(), "no orphaned notes");
+    }
+
+    #[test]
+    fn pruning_resolved_requests_takes_their_threads_too() {
+        let s = Store::open_in_memory().unwrap();
+        let r = s.create(&req("will be pruned", None, 1)).unwrap();
+        s.add_note(r.id, "a reply", None, 2).unwrap();
+        s.resolve(r.id, None, 3).unwrap();
+        assert_eq!(s.prune_resolved().unwrap(), 1);
+        assert!(s.notes(r.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_thread_survives_across_reopen() {
+        // The notes table is created by `migrate`, which runs on EVERY open — so an existing requests.db
+        // gains it in place rather than needing a rebuild.
+        let dir = std::env::temp_dir().join(format!("bsc-request-notes-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("requests.db");
+        let _ = std::fs::remove_file(&path);
+        let id = {
+            let s = Store::open(&path).unwrap();
+            let r = s.create(&req("persist my thread", None, 1)).unwrap();
+            s.add_note(r.id, "a reply that must survive", Some("claude"), 2).unwrap();
+            r.id
+        };
+        let s2 = Store::open(&path).unwrap();
+        assert_eq!(s2.notes(id).unwrap()[0].body, "a reply that must survive");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

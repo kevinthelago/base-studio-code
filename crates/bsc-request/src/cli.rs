@@ -7,7 +7,7 @@
 //! Reads are lean by default; `--json`/`--pretty` for machine-readable JSON. Help is per-command:
 //! `bsc request help` · `bsc request <cmd> help`.
 
-use crate::{Filter, NewRequest, Request, Store};
+use crate::{Filter, NewRequest, Request, RequestNote, Store};
 use bsc_cli_util::CmdDoc;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -44,6 +44,24 @@ USAGE:
   bsc request get <id> [--json|--pretty]
 
 One request's full record — the failing command + the resolve note the lean list omits.",
+    },
+    CmdDoc {
+        name: "note",
+        summary: "reply to a request WITHOUT closing it (append-only)",
+        usage: "USAGE:
+  bsc request note <id> \"<text>\" [--from <who>]
+
+Appends a reply to the request's thread and leaves its STATUS ALONE. `resolve` is the only other way to
+answer a request, and it asserts the thing is fixed — so a partial fix, a question, or a correction had
+nowhere to go. Request #50 was resolved, the designer measured no change, and spent three probes filing
+#52 to ask what \"resolved\" had meant; that is the gap this closes.
+
+Notes are APPEND-ONLY: nothing edits or deletes one, so a thread is a record of what was said rather
+than of what someone last thought. They ride their own table, NOT the single `--note` field `resolve`
+stamps — a reply written there would overwrite the previous one.
+
+An unknown id is an ERROR, not a silent no-op: a reply that goes nowhere is worse than a refusal.
+Reading them: `bsc request get <id>`.",
     },
     CmdDoc {
         name: "resolve",
@@ -112,6 +130,10 @@ struct Args {
     shot: Option<String>,
     note: Option<String>,
     by: Option<String>,
+    /// The author of a `note` (#bsc-request-gains-a-note-verb). Spelled `--from`, not `--by`, to match
+    /// `bsc plan change note --from` — the same act in the other store. `--by` here stays what it
+    /// already was: WHICH SESSION holds a `claim`, which is a different question about a different verb.
+    from: Option<String>,
     open: bool,
     limit: Option<i64>,
     positional: Vec<String>,
@@ -127,6 +149,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         shot: None,
         note: None,
         by: None,
+        from: None,
         open: false,
         limit: None,
         positional: Vec::new(),
@@ -144,6 +167,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--shot" => a.shot = Some(val("--shot")?),
             "--note" => a.note = Some(val("--note")?),
             "--by" => a.by = Some(val("--by")?),
+            "--from" => a.from = Some(val("--from")?),
             "--limit" => a.limit = Some(val("--limit")?.parse().map_err(|_| "--limit needs an integer")?),
             "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -166,6 +190,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "new" => cmd_new(&args),
         "list" => cmd_list(&args),
         "get" => cmd_get(&args),
+        "note" => cmd_note(&args),
         "resolve" => cmd_resolve(&args),
         "claim" => cmd_claim(&args),
         "unclaim" => cmd_unclaim(&args),
@@ -207,12 +232,36 @@ fn cmd_list(args: &Args) -> Result<(), String> {
 /// `get <id>` — one request's full record.
 fn cmd_get(args: &Args) -> Result<(), String> {
     let id = positional_id(args)?;
-    let r = open_store(&args.db)?
+    let store = open_store(&args.db)?;
+    let r = store
         .get(id)
         .map_err(|e| format!("reading request: {e}"))?
         .ok_or_else(|| format!("no request {id}"))?;
-    bsc_cli_util::emit(args.pretty, args.json, &r, || request_block(&r));
+    // The thread rides along (#bsc-request-gains-a-note-verb) — this is where a designer re-reading its
+    // own request finds out anything was said. A note nobody can read is the same as no note.
+    let notes = store.notes(id).map_err(|e| format!("reading request notes: {e}"))?;
+    let view = RequestView { request: &r, notes: &notes };
+    bsc_cli_util::emit(args.pretty, args.json, &view, || {
+        let mut out = request_block(&r);
+        for n in &notes {
+            out.push_str(&format!("
+
+note ({}): {}", n.author.as_deref().unwrap_or("?"), n.body));
+        }
+        out
+    });
     Ok(())
+}
+
+/// A request PLUS its thread, for `get`. Flattened so the JSON shape is the request's own with a `notes`
+/// array added, and `notes` is omitted entirely when empty — a request with no replies serializes byte
+/// for byte as it did before this verb existed, so nothing reading `--json` has to change.
+#[derive(serde::Serialize)]
+struct RequestView<'a> {
+    #[serde(flatten)]
+    request: &'a Request,
+    #[serde(skip_serializing_if = "<[RequestNote]>::is_empty")]
+    notes: &'a [RequestNote],
 }
 
 /// `resolve <id>` — mark a request resolved.
@@ -221,6 +270,27 @@ fn cmd_resolve(args: &Args) -> Result<(), String> {
     let matched =
         open_store(&args.db)?.resolve(id, args.note.as_deref(), now_ms()).map_err(|e| format!("resolving request: {e}"))?;
     println!("{}", if matched { format!("resolved request {id}") } else { format!("no open request {id}") });
+    Ok(())
+}
+
+/// `note <id> "<text>" [--from <who>]` — append a reply WITHOUT touching the status.
+fn cmd_note(args: &Args) -> Result<(), String> {
+    let id = positional_id(args)?;
+    let body = args
+        .positional
+        .get(2)
+        .ok_or("usage: bsc request note <id> \"<text>\" [--from <who>]")?;
+    // An unknown id ERRORS rather than printing a miss like `resolve` does. The two are not the same
+    // shape: a resolve that finds nothing has changed nothing and the queue still reads correctly, while
+    // a note that finds nothing has SWALLOWED a reply somebody wrote — and the whole point of the verb is
+    // that a designer's answer reaches them.
+    let ok = open_store(&args.db)?
+        .add_note(id, body, args.from.as_deref(), now_ms())
+        .map_err(|e| format!("noting request: {e}"))?;
+    if !ok {
+        return Err(format!("no request {id} — nothing to note (list them with `bsc request list`)"));
+    }
+    println!("noted request {id}");
     Ok(())
 }
 
@@ -366,6 +436,36 @@ mod tests {
         assert!(open_store(&None).unwrap().list(&Filter { open_only: true, ..Default::default() }).unwrap().is_empty());
 
         std::env::remove_var("BSC_REQUEST_DB");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn note_over_a_temp_db_replies_without_closing_and_refuses_an_unknown_id() {
+        // Select the db via `--db`, never a global env var — cargo runs tests as parallel threads of one
+        // process (#3382).
+        let dir = std::env::temp_dir().join(format!("bsc-request-note-cli-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("requests.db");
+        let _ = std::fs::remove_file(&path);
+        let db = || Some(path.to_string_lossy().into_owned());
+
+        cmd_new(&args_for(vec!["new", "the preview shows a stale overlay"], |a| a.db = db())).unwrap();
+        cmd_note(&args_for(vec!["note", "1", "half fixed; the field-loss half is not"], |a| {
+            a.db = db();
+            a.from = Some("claude".into());
+        }))
+        .unwrap();
+
+        let store = open_store(&db()).unwrap();
+        assert_eq!(store.get(1).unwrap().unwrap().status, "open", "a reply must not close the request");
+        let notes = store.notes(1).unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].author.as_deref(), Some("claude"));
+
+        // An unknown id is an ERROR — a reply that silently goes nowhere is worse than a refusal.
+        let err = cmd_note(&args_for(vec!["note", "404", "into the void"], |a| a.db = db())).unwrap_err();
+        assert!(err.contains("no request 404"), "{err}");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 
