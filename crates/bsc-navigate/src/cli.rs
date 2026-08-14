@@ -191,6 +191,27 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Steer to one component and return the view that actually landed — the reusable half of `send`,
+/// exported for the baseline sweep (#a-baseline-sweep-walks-the-kit-itself).
+///
+/// It is EXPORTED rather than reimplemented on the caller's side because the request/reply round-trip
+/// (stale sweep, id minting, the timeout message that tells you the app is not running) is the part a
+/// second copy would get subtly wrong — and a duplicated resolver in this same preview stack is already
+/// its own open item.
+///
+/// `force` is deliberately NOT a parameter. A sweep is the background loop the presence gate (#4248)
+/// exists to stop, so it must never be able to take the screen from someone using the app.
+pub fn navigate_component(kit: &str, component: &str, timeout: i64) -> Result<NavResult, String> {
+    send(
+        &NavRequest {
+            kit: Some(kit.to_string()),
+            component: Some(component.to_string()),
+            ..Default::default()
+        },
+        timeout,
+    )
+}
+
 /// Drop the request, wait for the frontend's ack, return the view that landed.
 fn send(req: &NavRequest, timeout: i64) -> Result<NavResult, String> {
     let chan = bsc_appchan::chan_dir()?;
