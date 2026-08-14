@@ -133,6 +133,43 @@ describe("navigateBridge — component (the case #3261 needed a human click for)
   });
 });
 
+// The ack used to report the store SELECTION it had just written, so a component the preview refused to
+// build acked exactly like one that rendered. The pure half decides only WHETHER a mount is owed; the
+// adapter observes the frame (see useNavigateBridge.test.tsx).
+describe("navigateBridge — the ack owes a mount only when one is actually coming", () => {
+  it("marks the component to await when the Studio is the visible page", () => {
+    const ack = applyNavigate({ kit: "react-d3", component: "Heatmap" }, makeVocab(onStudio));
+    expect(ack.awaitMount).toBe("Heatmap");
+  });
+
+  it("marks it on an EXPLICIT steer from off-Studio too — the view really does switch", () => {
+    const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
+    const ack = applyNavigate({ workspace: "projects", page: "designs", kit: "react-d3", component: "Heatmap" }, v);
+    expect(ack.awaitMount).toBe("Heatmap");
+  });
+
+  it("awaits NOTHING on a #3599 decline — no frame will rebuild, so waiting would only burn the budget", () => {
+    const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
+    const ack = applyNavigate({ kit: "react-d3", component: "Heatmap" }, v);
+    expect(ack.declined).toBeDefined();
+    expect(ack.awaitMount).toBeUndefined();
+  });
+
+  it("awaits nothing for a navigate that names no component", () => {
+    expect(applyNavigate({ theme: "nord" }, makeVocab(onStudio)).awaitMount).toBeUndefined();
+  });
+
+  it("awaits nothing when the presence gate (#4248) left the view alone", () => {
+    const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
+    const ack = applyNavigate(
+      { workspace: "projects", page: "designs", kit: "react-d3", component: "Heatmap" },
+      { ...v, humanPresent: () => true },
+    );
+    expect(ack.declined).toContain("someone is using the app");
+    expect(ack.awaitMount).toBeUndefined();
+  });
+});
+
 describe("navigateBridge — unknown ids are errors, not silent no-ops", () => {
   it("rejects an unknown component and names what the kit does have", () => {
     // Silence here would be the worst outcome: the caller captures the previous view believing it moved.

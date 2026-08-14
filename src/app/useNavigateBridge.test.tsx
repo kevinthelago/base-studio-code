@@ -10,6 +10,7 @@ import { useAppStore } from "@/store";
 import { useNavigateBridge } from "./useNavigateBridge";
 import * as tauriEvent from "@tauri-apps/api/event";
 import * as tauriCore from "@tauri-apps/api/core";
+import { registerPreviewFrame, resetPreviewFrames } from "@/features/designs";
 
 /** Fire the `bsc://navigate` payload the bridge listens for, by invoking the handler it registered. */
 function emitNavigate(payload: Record<string, unknown>): void {
@@ -89,5 +90,93 @@ describe("useNavigateBridge re-reads the store on a resolvable miss (#55)", () =
 
     await waitFor(() => expect(sentAck()).toBeTruthy());
     expect(hydrate).not.toHaveBeenCalled();
+  });
+});
+
+// The ack reported the store SELECTION — the value it had just written — so a component the preview
+// REFUSED to build acked exactly like one that rendered. Since the caller's next move is `bsc shot
+// preview`, that produced a capture of the previously-mounted component with nothing reporting it.
+// Observed directly: `navigate plan-body-deployment` acked success while the frame still showed
+// `ui-tab-bar`. The adapter is the only half that can be tested for this — the pure bridge decides only
+// that a mount is owed.
+describe("useNavigateBridge reports what the preview actually MOUNTED", () => {
+  /** On the Studio, with one component the bridge can resolve. */
+  const onStudio = () =>
+    useAppStore.setState({
+      activeWorkspace: "projects", projectsPageMode: "designs", designsKitId: "react-d3",
+      kits: [{ id: "react-d3", name: "D3" }],
+      components: [{ id: "Heatmap", name: "Heatmap", kitId: "react-d3" }],
+      hydrateComponents: vi.fn(async () => {}),
+    } as never);
+
+  // CONNECTED on purpose: `mountedPreviewFrames` drops entries whose iframe has left the document, so a
+  // detached element registers and is then invisible to the reader — the frame would read as "never
+  // settled" for reasons that have nothing to do with the code under test.
+  const iframe = () => document.body.appendChild(document.createElement("iframe"));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetPreviewFrames();
+    onStudio();
+  });
+
+  it("reports `mounted` once the frame settles on the requested component", async () => {
+    registerPreviewFrame("f1", { component: "Heatmap", iframe: iframe(), status: "ready", engineRequested: false, engineInSrcdoc: false });
+    renderHook(() => useNavigateBridge());
+    emitNavigate({ id: "m1", kit: "react-d3", component: "Heatmap" });
+
+    await waitFor(() => expect(sentAck()).toBeTruthy());
+    expect(sentAck()?.mounted).toBe("Heatmap");
+    expect(sentAck()?.mountError).toBeUndefined();
+  });
+
+  it("REPRODUCER: a component the preview refused to build acks the refusal, not a mount", async () => {
+    registerPreviewFrame("f1", {
+      component: "Heatmap", iframe: iframe(), status: "error",
+      error: '"Heatmap" has no implementation source yet', engineRequested: false, engineInSrcdoc: false,
+    });
+    renderHook(() => useNavigateBridge());
+    emitNavigate({ id: "m2", kit: "react-d3", component: "Heatmap" });
+
+    await waitFor(() => expect(sentAck()).toBeTruthy());
+    expect(sentAck()?.mounted, "nothing is on screen, so nothing is claimed").toBeUndefined();
+    expect(String(sentAck()?.mountError)).toContain("refused to build 'Heatmap'");
+    expect(String(sentAck()?.mountError)).toContain("no implementation source yet");
+    // The SELECTION still lands and is still reported — the navigate did its half.
+    expect(sentAck()?.component).toBe("Heatmap");
+  });
+
+  it("says 'did not settle' rather than success when no frame ever settles", async () => {
+    renderHook(() => useNavigateBridge()); // no frame registered at all
+    emitNavigate({ id: "m3", kit: "react-d3", component: "Heatmap" });
+
+    await waitFor(() => expect(sentAck()).toBeTruthy(), { timeout: 4_000 });
+    expect(sentAck()?.mounted).toBeUndefined();
+    expect(String(sentAck()?.mountError)).toContain("had not settled");
+    expect(String(sentAck()?.mountError)).toContain("do not capture yet");
+  }, 10_000);
+
+  it("never ships the internal awaitMount marker to Rust", async () => {
+    registerPreviewFrame("f1", { component: "Heatmap", iframe: iframe(), status: "ready", engineRequested: false, engineInSrcdoc: false });
+    renderHook(() => useNavigateBridge());
+    emitNavigate({ id: "m4", kit: "react-d3", component: "Heatmap" });
+
+    await waitFor(() => expect(sentAck()).toBeTruthy());
+    expect(sentAck()).not.toHaveProperty("awaitMount");
+  });
+
+  it("does not wait at all when the navigate DECLINED — nothing is going to rebuild", async () => {
+    useAppStore.setState({ activeWorkspace: "github", projectsPageMode: "projects" } as never);
+    renderHook(() => useNavigateBridge());
+    const started = Date.now();
+    emitNavigate({ id: "m5", kit: "react-d3", component: "Heatmap" });
+
+    await waitFor(() => expect(sentAck()).toBeTruthy());
+    // The whole point of the decline path: it acks immediately instead of burning the caller's budget
+    // waiting for a frame that will never rebuild.
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(sentAck()?.mounted).toBeUndefined();
+    expect(sentAck()?.mountError).toBeUndefined();
+    expect(String(sentAck()?.declined)).toContain("view unchanged");
   });
 });

@@ -195,21 +195,40 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     setStatus("building");
     setError("");
     /* eslint-enable react-hooks/set-state-in-effect */
+    // Drop the PREVIOUS settled entry the moment a rebuild starts, so the registry only ever describes a
+    // frame that has settled on the CURRENT selection. Without this an observer reading it during the
+    // rebuild window sees the last component reported `ready` — the same stale answer, just narrower.
+    unregisterPreviewFrame(frameKey);
+    // A settled FAILURE is registered exactly like a settled success, and the stale srcdoc goes with it.
+    // Registering only successes left the previous component named in the registry and still rendered
+    // underneath the error overlay — so `bsc debug frames` reported a mount that was gone and the next
+    // `bsc shot preview` photographed the wrong component with nothing reporting it.
+    const failed = (why: string) => {
+      if (!iframeRef.current) return;
+      iframeRef.current.srcdoc = "";
+      registerPreviewFrame(frameKey, {
+        component: comp.id, iframe: iframeRef.current, status: "error", error: why,
+        engineRequested: !!zoomEngine, engineInSrcdoc: false,
+      });
+    };
     // #4072 — a LITE record carries the graph projection only; its source has not been read yet. Say
     // so and wait: the full-fidelity read is already in flight and re-runs this effect when it lands.
     // Falling through would blame the component for source the app simply has not fetched.
+    // Deliberately NOT registered: the frame has not settled, and an observer must see "still building"
+    // as absence rather than as a verdict.
     if (comp.lite) {
       setStatus("building");
       return;
     }
     const build = componentPreviewFiles(comp, ARTIFACT, siblings, libResolver, previewState, previewData, liveStates);
     if (!build) {
-      setStatus("error");
-      setError(
+      const why =
         `"${comp.name}" has no implementation source yet — its stored source is only a usage snippet, ` +
-          `not a runnable module. Add a self-contained component (imports only libraries; exports the ` +
-          `component) via the designer session or the Source tab to preview it.`,
-      );
+        `not a runnable module. Add a self-contained component (imports only libraries; exports the ` +
+        `component) via the designer session or the Source tab to preview it.`;
+      setStatus("error");
+      setError(why);
+      failed(why);
       return;
     }
     (async () => {
@@ -255,6 +274,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
           registerPreviewFrame(frameKey, {
             component: comp.id,
             iframe: iframeRef.current,
+            status: "ready",
             engineRequested: !!zoomEngine,
             engineInSrcdoc: srcDoc.includes("__cmd"),
           });
@@ -262,8 +282,10 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         setStatus("ready");
       } catch (e) {
         if (cancelled) return;
+        const why = e instanceof Error ? e.message : String(e);
         setStatus("error");
-        setError(e instanceof Error ? e.message : String(e));
+        setError(why);
+        failed(why);
       }
     })();
     return () => { cancelled = true; };
