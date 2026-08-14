@@ -13,14 +13,23 @@
 //   • `server.fs.strict: false` — same reason `vitest.config.ts` sets it (#1669): a NESTED, install-free
 //     git worktree resolves `react`/`esbuild-wasm` from the shared repo-root `node_modules`, which is an
 //     ANCESTOR of the Vite root and therefore outside the default fs sandbox. Without this the harness
-//     runs only from the main checkout. No-op for the main checkout (its files are already inside root).
+//     runs only from the main checkout. No-op for the main checkout (its files are already inside root);
+//   • `bscRecords` — the RETIRED-MODULE fallback, and the reason this comment now lists four resolvers
+//     instead of three. `emit-records.mjs` names tsc, vite and vitest as the three that must each be
+//     taught about records; this config is a FOURTH, standalone by design (see above), so it inherited
+//     none of it. Retiring `Spacer` therefore broke the whole harness silently: the page could not
+//     resolve one import, the module never evaluated, `window.__graphPagesHarness` never appeared, and
+//     every spec timed out waiting for it. Nothing caught that, because `e2e/` is deliberately outside
+//     the default gate. A standalone config buys isolation and pays for it in exactly this way — so
+//     anything that changes how a module RESOLVES has to be added here too, not just to the app's config.
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
+import { bscRecords } from "../vite/bscRecords";
 
 export default defineConfig({
   root: fileURLToPath(new URL("..", import.meta.url)),
-  plugins: [react()],
+  plugins: [bscRecords({ repoRoot: fileURLToPath(new URL("..", import.meta.url)) }), react()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("../src", import.meta.url)),

@@ -20,6 +20,26 @@ function setSource(srcText: string) {
   useAppStore.setState({ components: [{ id: "x", srcText }] as never });
 }
 
+/** A record whose CURRENT source is `srcText` and whose change history retained `prevSrcs` (oldest-first,
+ *  as the store holds it) — the on-disk shape a fresh boot reads after a designer edit. */
+function setSourceWithHistory(srcText: string, prevSrcs: string[]) {
+  useAppStore.setState({
+    components: [
+      {
+        id: "x",
+        srcText,
+        history: prevSrcs.map((prevSrc, i) => ({
+          rev: i + 2,
+          at: "2026-08-14T01:39:00Z",
+          by: "designer",
+          changed: ["srcText"],
+          prevSrc,
+        })),
+      },
+    ] as never,
+  });
+}
+
 describe("GraphComponent render gate (#graph-render-gate)", () => {
   beforeEach(() => {
     resetLastGood();
@@ -79,6 +99,76 @@ describe("GraphComponent render gate (#graph-render-gate)", () => {
     setSource("export default () => 'THIRD';");
     view.rerender(<GraphComponent id="x" fallback={<div>fallback</div>} />);
     await waitFor(() => expect(screen.getByText("good")).toBeTruthy());
+  });
+});
+
+describe("durable fallback — the record's retained history", () => {
+  beforeEach(() => {
+    resetLastGood();
+    resetGraphCompiles();
+    load.mockReset();
+    useAppStore.setState({ components: [] as never });
+  });
+
+  it("mounts a retained earlier version on a FRESH BOOT, where lastGood is empty", async () => {
+    // THE incident. A designer rewrote five rendering-critical records at 01:39; the app was restarted;
+    // on the fresh boot the first version the gate ever saw of each was the broken one. `lastGood` is
+    // per-session and therefore empty here — which is precisely when it is needed — so the only rung
+    // left is the source the write itself retained.
+    load.mockRejectedValueOnce(new Error("Unexpected token"));
+    load.mockResolvedValueOnce(() => <div>good</div>);
+    setSourceWithHistory(NEXT, [GOOD]);
+    render(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("good")).toBeTruthy();
+    expect(screen.queryByText("fallback")).toBeNull();
+  });
+
+  it("walks PAST a rung that is also broken", async () => {
+    // A designer working around breakage writes several bad versions in a row — the incident's own notes
+    // read "bypass both broken …". Stopping at the first rung would strand the app on another failure.
+    load.mockRejectedValueOnce(new Error("current is broken"));
+    load.mockRejectedValueOnce(new Error("and so is the rung before it"));
+    load.mockResolvedValueOnce(() => <div>good</div>);
+    setSourceWithHistory("export default () => 'THIRD';", [GOOD, NEXT]);
+    render(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("good")).toBeTruthy();
+  });
+
+  it("prefers the in-session lastGood over the history, and never compiles a rung it does not need", async () => {
+    // `lastGood` is already BUILT and is a stronger claim besides — it RENDERED, where a rung has only
+    // ever compiled. Reaching for the history first would spend a compile to reach a weaker answer.
+    load.mockResolvedValueOnce(() => <div>good</div>);
+    setSource(GOOD);
+    const view = render(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("good")).toBeTruthy();
+
+    load.mockRejectedValueOnce(new Error("boom"));
+    setSourceWithHistory(NEXT, ["export default () => 'OLDER';"]);
+    view.rerender(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    await waitFor(() => expect(screen.getByText("good")).toBeTruthy());
+    expect(load).toHaveBeenCalledTimes(2); // the good compile + the failed one — the rung was never built
+  });
+
+  it("still shows the caller's fallback when every retained version is broken too", async () => {
+    // The gate must never invent a component. A record with no working version anywhere degrades to the
+    // caller's fallback — one dead surface, not a dead app.
+    load.mockRejectedValue(new Error("Unexpected token"));
+    setSourceWithHistory(NEXT, [GOOD]);
+    render(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("fallback")).toBeTruthy();
+  });
+
+  it("recovers a version that COMPILED but threw on its first render", async () => {
+    // The null-dispatcher shape: a hook resolving against the wrong React instance compiles perfectly
+    // well and only fails once something mounts it, which is why no syntax-level write gate could catch
+    // it. The boundary catches the throw and the ladder has to serve the second failure path too.
+    load.mockResolvedValueOnce(() => {
+      throw new Error("Cannot read properties of null (reading 'useCallback')");
+    });
+    load.mockResolvedValueOnce(() => <div>good</div>);
+    setSourceWithHistory(NEXT, [GOOD]);
+    render(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("good")).toBeTruthy();
   });
 });
 

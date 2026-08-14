@@ -27,3 +27,30 @@ test("every packaged graph page compiles and exports a component", async ({ page
   // failure, which mounted a row component instead of the page.
   for (const r of results) expect(r.component, `${r.pageId} exported a component`).toBeTruthy();
 });
+
+// The oracle the compile sweep above is NOT. A record can compile, export a good component, and still
+// take the app down the moment something mounts it — `Cannot read properties of null (reading
+// 'useCallback')` is a hook resolving against a null dispatcher, which is a property of the RUNNING
+// module and has no static signature. At 02:00 a designer's five rewrites left 8 of 9 workspaces dead
+// while every compile-level check stayed green, and `bsc ui set`'s syntax gate had passed each write.
+test("every packaged graph page MOUNTS, not merely compiles", async ({ page }) => {
+  await page.goto(HARNESS);
+  await page.waitForFunction(() => !!window.__graphPagesHarness);
+  const results = await page.evaluate(() => window.__graphPagesHarness!.mountAll());
+
+  expect(results.length).toBeGreaterThanOrEqual(8); // non-vacuity, as above
+
+  const failed = results.filter((r) => r.error);
+  expect(failed, `pages that failed to MOUNT:\n${failed.map((r) => `  ${r.pageId} → ${r.error}`).join("\n")}`)
+    .toEqual([]);
+
+  // A page that mounts to an EMPTY tree passed the boundary without rendering anything, which reads as a
+  // pass and is not one. Every real page paints SOME DOM — a header, an empty state, a grid shell.
+  //
+  // Elements, not text: `consolepage` on a pristine store renders its grid with zero panes in it, so a
+  // character count called the app's central surface blank on the first run. That is the false finding
+  // the harness header warns about, and the cheapest place to not have it is here.
+  const blank = results.filter((r) => !r.error && !r.nodes);
+  expect(blank, `pages that mounted but rendered no DOM:\n${blank.map((r) => `  ${r.pageId}`).join("\n")}`)
+    .toEqual([]);
+});

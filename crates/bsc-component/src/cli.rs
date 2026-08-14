@@ -116,9 +116,39 @@ log, NEWEST-FIRST, one entry per write: its `rev`, `at` (ISO-8601), `by` (the wr
 (`bsc ui set --note <text>`), and `changed` (the top-level fields that moved, `[\"created\"]` on the first
 write). An entry also carries `dropped` (#4197) — the fields that write REMOVED — but ONLY when it
 removed some, so a destructive write is legible at a glance instead of hiding inside `changed`.
+An entry that MOVED `srcText` also carries `prevSrc` — the source it replaced — which is what makes the
+write revertible (`bsc ui revert`). Retained on the most recent 5 such entries only: srcText is 77.6% of a
+record's payload, so keeping it for all 30 would multiply the store. The metadata log still runs the full
+30, so an aged-out entry reads as a write with no `prevSrc`, never as a write that changed nothing.
 Capped to the most recent 30 writes. Review it before editing so you know what changed and why.
 --kit logs a KIT record instead of a component. Read-only. Use the `rev` to guard your next write:
 `bsc ui set --if-version <rev>` refuses to overwrite if the record has moved on.",
+    },
+    CmdDoc {
+        name: "revert",
+        summary: "restore a record's srcText from the retained change history — undo a bad write",
+        usage: "\
+USAGE:
+  bsc ui revert <id> [--to <rev>] [--kit] [--by <tag>] [--dir D] [--pretty]
+
+Restores `srcText` to a version the change log retained (`prevSrc`, see `bsc ui log`). With no --to it
+undoes the LAST write that moved the source; `--to <rev>` restores the source as the record held it at
+that revision.
+
+WHY IT EXISTS. Recovery from a bad write used to be \"re-seed from the packaged seed\", which is no
+recovery at all for a record that has no seed — and 25 of 47 `role: page` records had none. A designer
+session that rewrote five rendering-critical records at 01:39 left three of them with the broken version
+as the only copy that had ever existed, because the log recorded THAT `srcText` changed and never what it
+was. This is the way back.
+
+The revert is itself a WRITE: it stamps a new rev and its own history entry (noting where it came from),
+so the version it replaced becomes revertible in turn and a mistaken revert is not a second unrecoverable
+act. It restores ONLY `srcText` — every other field is left exactly as it stands, so a revert of a bad
+source never also rewinds a good `composes` edit.
+
+A revision whose source has aged past the retention cap is REFUSED, naming the revisions that are still
+reachable. It never falls back to a nearer version: silently reverting to bytes the record never held at
+the revision you asked for is worse than refusing. A ui-scope MUTATION.",
     },
     CmdDoc {
         name: "set",
@@ -855,7 +885,7 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("regroup") | Some("import") | Some("suppress") | Some("unsuppress")
+        Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("regroup") | Some("import") | Some("suppress") | Some("unsuppress")
     ) && next.map(String::as_str) != Some("help")
 }
 
@@ -1189,6 +1219,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         }
         Some("set") => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "set"));
+            Ok(())
+        }
+        // `revert` — restore `srcText` from the retained history. The recovery path a record with no
+        // packaged seed had no way to reach. The scope gate above already refused a read-scoped session.
+        Some("revert") if args.get(1).map(String::as_str) != Some("help") => cmd_revert(&args[1..]),
+        Some("revert") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "revert"));
             Ok(())
         }
         // `rename` (#3576) — id-stable rename that sweeps the NAME-keyed composes/rules references across
@@ -2189,6 +2226,87 @@ fn cmd_log(args: &[String]) -> Result<(), String> {
     let record: serde_json::Value =
         serde_json::from_str(&raw).map_err(|e| format!("stored record '{id}' is not valid JSON: {e}"))?;
     let out_val = crate::record::log_value(&id, &record);
+    let out = if pretty { serde_json::to_string_pretty(&out_val) } else { serde_json::to_string(&out_val) };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `revert <id> [--to <rev>] [--kit] [--by <tag>] [--dir D] [--pretty]` — restore a record's `srcText`
+/// from the retained change history. The recovery half of the 02:00 incident: before this, `bsc ui log`
+/// recorded THAT a write moved `srcText` and never WHAT it replaced, so a bad write on a record with no
+/// packaged seed had no way back and the designer's version was the only copy that had ever existed.
+///
+/// No `--to` reverts the LAST write that moved the source. `--to <rev>` restores the source as the record
+/// held it at that revision. Either way the revert is itself a WRITE — it stamps a new rev and its own
+/// history entry, so the version being replaced becomes revertible in turn and a mistaken revert is not a
+/// second unrecoverable act. A ui-scope MUTATION.
+fn cmd_revert(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut pretty, mut kit, mut id) = (None::<String>, false, false, None::<String>);
+    let (mut to, mut by) = (None::<i64>, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--kit" => kit = true,
+            "--by" => by = it.next().cloned(),
+            "--to" => {
+                let raw = it.next().ok_or("--to needs a revision number")?;
+                to = Some(raw.parse::<i64>().map_err(|_| format!("--to '{raw}' is not a revision number"))?);
+            }
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            positional => id = Some(positional.to_string()),
+        }
+    }
+    let id = id.ok_or("usage: bsc ui revert <id> [--to <rev>] [--kit]")?;
+    let store = if kit { open_kit_store(&dir)? } else { open_component_store(&dir)? };
+    let raw = store
+        .get(&id)?
+        .ok_or_else(|| format!("no record '{id}' in the store — nothing to revert"))?;
+    let record: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("stored record '{id}' is not valid JSON: {e}"))?;
+
+    let reachable = crate::record::revertible_revs(&record);
+    // No `--to` ⇒ undo the last write that moved the source, which is the newest anchor.
+    let target = match to {
+        Some(r) => r,
+        None => *reachable.last().ok_or_else(|| {
+            format!(
+                "'{id}' has no retained earlier source — nothing to revert to. Only writes made since the \
+                 change log started retaining source can be undone, and the most recent {} are kept.",
+                crate::record::PREV_SRC_CAP
+            )
+        })?,
+    };
+    let restored = crate::record::src_at_rev(&record, target).ok_or_else(|| {
+        let offer = if reachable.is_empty() {
+            "no revision's source is retained".to_string()
+        } else {
+            format!(
+                "revertible revisions: {}",
+                reachable.iter().map(i64::to_string).collect::<Vec<_>>().join(", ")
+            )
+        };
+        format!("'{id}' cannot be reverted to rev {target} — its source is no longer retained ({offer})")
+    })?;
+
+    let writer = crate::record::resolve_writer(by.as_deref());
+    let from_rev = crate::record::read_rev(&record);
+    let mut next = record.clone();
+    if let Some(obj) = next.as_object_mut() {
+        obj.insert(crate::record::SRC_TEXT.to_string(), serde_json::Value::from(restored.as_str()));
+    }
+    let note = format!("revert: srcText restored to rev {target} (was rev {from_rev})");
+    crate::record::stamp_with_history(&mut next, &record, &writer, &crate::record::now_iso(), Some(&note));
+    store.set(&id, &serde_json::to_string(&next).map_err(|e| e.to_string())?)?;
+
+    let out_val = serde_json::json!({
+        "id": id,
+        "revertedTo": target,
+        "fromRev": from_rev,
+        "rev": crate::record::read_rev(&next),
+        "srcTextChars": restored.len(),
+    });
     let out = if pretty { serde_json::to_string_pretty(&out_val) } else { serde_json::to_string(&out_val) };
     println!("{}", out.map_err(|e| e.to_string())?);
     Ok(())
@@ -5412,7 +5530,7 @@ export const P = () => <X />;"
         assert_eq!(
             names,
             vec![
-                "list", "shapes", "get", "log", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
+                "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
                 "backing", "test", "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
@@ -6473,6 +6591,77 @@ export const P = () => <X />;"
         // …and the fields really are gone from the stored record — the warning describes a real deletion,
         // it does not merely predict one.
         assert!(after.get("composes").is_none() && after.get("role").is_none());
+    }
+
+    /// The valid-JSX source the write-time syntax gate accepts, parameterised so two revisions differ.
+    fn page_src(marker: &str) -> String {
+        format!("export function GraphPrimitive() {{ return <div>{marker}</div>; }}\n")
+    }
+
+    #[test]
+    fn revert_restores_the_source_a_bad_write_replaced() {
+        // THE incident, end to end through the store. `graphprimitive` had no packaged seed, so once the
+        // designer overwrote it at 01:39 the broken version was the only copy that had ever existed.
+        let store = tmp_component_store("revert-restores");
+        let good = serde_json::json!({
+            "id": "graphprimitive", "name": "GraphPrimitive", "kitId": "base-studio-code",
+            "role": "primitive", "provides": "@/shared/ui/spec/graphPrimitive", "srcText": page_src("good"),
+        });
+        set_stamped(&store, std::slice::from_ref(&good), None, "seed", "component", None, WritePlan::default()).unwrap();
+        let broken = serde_json::json!({ "id": "graphprimitive", "srcText": page_src("broken") });
+        set_stamped(&store, std::slice::from_ref(&broken), None, "designer", "component", None, WritePlan::default()).unwrap();
+        assert_eq!(stored(&store, "graphprimitive")["srcText"], page_src("broken"));
+
+        cmd_revert(&["graphprimitive".into(), "--dir".into(), store.dir().to_string_lossy().to_string(), "--by".into(), "rescue".into()]).unwrap();
+
+        let after = stored(&store, "graphprimitive");
+        assert_eq!(after["srcText"], page_src("good"), "the source the bad write replaced is back");
+        assert_eq!(after["rev"], serde_json::json!(3), "a revert is a WRITE — it stamps forward, never rewinds rev");
+        assert_eq!(after["updatedBy"], "rescue");
+        // Every other field is untouched — a revert of a bad SOURCE must not also rewind good metadata.
+        assert_eq!(after["provides"], "@/shared/ui/spec/graphPrimitive");
+        assert_eq!(after["role"], "primitive");
+        // ...and the version it replaced is itself revertible now, so a mistaken revert is not terminal.
+        let entry = after["history"].as_array().unwrap().last().unwrap();
+        assert_eq!(entry["prevSrc"], page_src("broken"));
+        assert!(entry["note"].as_str().unwrap().starts_with("revert: srcText restored to rev 1"), "{entry}");
+    }
+
+    #[test]
+    fn revert_to_an_explicit_rev_and_a_refusal_when_it_is_out_of_reach() {
+        let store = tmp_component_store("revert-to-rev");
+        let mut rec = serde_json::json!({ "id": "kitrenderer", "srcText": page_src("v0") });
+        set_stamped(&store, std::slice::from_ref(&rec), None, "seed", "component", None, WritePlan::default()).unwrap();
+        for i in 1..=(crate::record::PREV_SRC_CAP + 2) {
+            rec = serde_json::json!({ "id": "kitrenderer", "srcText": page_src(&format!("v{i}")) });
+            set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None, WritePlan::default()).unwrap();
+        }
+        let dir = store.dir().to_string_lossy().to_string();
+        let latest = crate::record::read_rev(&stored(&store, "kitrenderer"));
+
+        // An explicit --to inside the retained window lands on exactly that revision's source.
+        cmd_revert(&["kitrenderer".into(), "--to".into(), (latest - 2).to_string(), "--dir".into(), dir.clone()]).unwrap();
+        assert_eq!(stored(&store, "kitrenderer")["srcText"], page_src(&format!("v{}", latest - 3)));
+
+        // Past the content cap it REFUSES, and names what is still reachable — it never silently lands on
+        // a nearer version, which would report success while restoring bytes that revision never held.
+        let err = cmd_revert(&["kitrenderer".into(), "--to".into(), "1".into(), "--dir".into(), dir]).unwrap_err();
+        assert!(err.contains("no longer retained"), "{err}");
+        assert!(err.contains("revertible revisions:"), "the refusal says what IS possible: {err}");
+    }
+
+    #[test]
+    fn revert_refuses_a_record_with_nothing_to_go_back_to() {
+        let store = tmp_component_store("revert-nothing");
+        let rec = serde_json::json!({ "id": "insights", "srcText": page_src("only") });
+        set_stamped(&store, std::slice::from_ref(&rec), None, "seed", "component", None, WritePlan::default()).unwrap();
+        let err = cmd_revert(&["insights".into(), "--dir".into(), store.dir().to_string_lossy().to_string()]).unwrap_err();
+        assert!(err.contains("no retained earlier source"), "{err}");
+        // Refused ⇒ nothing was written; the record is exactly as it was.
+        assert_eq!(crate::record::read_rev(&stored(&store, "insights")), 1);
+
+        let err = cmd_revert(&["nosuch".into(), "--dir".into(), store.dir().to_string_lossy().to_string()]).unwrap_err();
+        assert!(err.contains("nothing to revert"), "{err}");
     }
 
     #[test]

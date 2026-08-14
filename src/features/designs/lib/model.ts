@@ -112,6 +112,14 @@ export interface ChangeEntry {
   note?: string;
   /** The top-level fields that changed on this write; `["created"]` on the very first write. */
   changed: string[];
+  /** The top-level fields this write REMOVED (#4197) — present only when it removed some, so an ordinary
+   *  edit and a destructive write are distinguishable in `bsc ui log`. */
+  dropped?: string[];
+  /** The `srcText` this write REPLACED — the rung back, retained by the Rust stamp boundary on the most
+   *  recent few source-moving writes. Present only on an entry that moved `srcText` and is still inside
+   *  the content-retention window; `bsc ui revert` restores it, and the runtime render gate falls back
+   *  through these when a record fails to compile or throws on its first render. */
+  prevSrc?: string;
 }
 
 /** One analytics event a component declares it emits (#3810, epic #3809) — DATA, not code. `event` is the
