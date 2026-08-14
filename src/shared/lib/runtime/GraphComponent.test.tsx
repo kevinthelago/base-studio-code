@@ -172,6 +172,66 @@ describe("durable fallback — the record's retained history", () => {
   });
 });
 
+describe("a lost hydration race heals itself", () => {
+  beforeEach(() => {
+    resetLastGood();
+    resetGraphCompiles();
+    load.mockReset();
+    useAppStore.setState({ components: [] as never, algorithmImpls: [] as never });
+  });
+
+  it("retries the compile when the ALGORITHM IMPLS land after it failed", async () => {
+    // THE Projects-page bug. `resolveGraphSource` reads `algorithmImpls` from the store as a snapshot at
+    // COMPILE time, and `useAppBoot` fires `hydrateComponents()` and `hydrateAlgorithms()` as parallel
+    // `void` calls. A page whose record imports an algorithm-record specifier — `projectspage` imports
+    // `@/shared/hooks/useFleetLive` — can therefore compile the instant its own source lands, while the
+    // impls are still `[]`, and fail with "is not a registered app module".
+    //
+    // Losing that race used to be PERMANENT: the load effect keyed on the page's own source, which never
+    // changes afterwards, so the impls arriving re-fired nothing.
+    load.mockRejectedValueOnce(new Error('runtime loader: import "@/shared/hooks/useFleetLive" is not a registered app module'));
+    setSource(GOOD);
+    render(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("fallback")).toBeTruthy();
+
+    // …the impls hydrate. Nothing about the page's own record changed.
+    load.mockResolvedValueOnce(() => <div>good</div>);
+    useAppStore.setState({ algorithmImpls: [{ id: "use-fleet-live.ts", provides: "@/shared/hooks/useFleetLive", code: "x" }] as never });
+
+    await waitFor(() => expect(screen.getByText("good")).toBeTruthy());
+  });
+
+  it("does NOT recompile a page already mounted from the current source", async () => {
+    // The cost side of the same dependency. Without the mounted-guard, the impls landing would tear down
+    // and recompile EVERY graph page on screen — trading one broken surface for a boot-wide stall at
+    // ~700ms per page. A page that is already up must not notice.
+    load.mockResolvedValueOnce(() => <div>good</div>);
+    setSource(GOOD);
+    render(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("good")).toBeTruthy();
+    expect(load).toHaveBeenCalledTimes(1);
+
+    useAppStore.setState({ algorithmImpls: [{ id: "a", provides: "@/x", code: "y" }] as never });
+    await waitFor(() => expect(screen.getByText("good")).toBeTruthy());
+    expect(load, "the impls landing did not trigger a second compile").toHaveBeenCalledTimes(1);
+  });
+
+  it("still recompiles when the page's OWN source changes, impls or not", async () => {
+    // The guard keys on (cacheKey, source), so a designer edit must still get through it — otherwise the
+    // live-edit loop would be the thing this fix broke.
+    load.mockResolvedValueOnce(() => <div>good</div>);
+    setSource(GOOD);
+    const view = render(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("good")).toBeTruthy();
+
+    load.mockResolvedValueOnce(() => <div>next</div>);
+    setSource(NEXT);
+    view.rerender(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("next")).toBeTruthy();
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("compile coalescing (#three-compiles-race-for-every-graph-page-mount)", () => {
   beforeEach(() => {
     resetLastGood();
