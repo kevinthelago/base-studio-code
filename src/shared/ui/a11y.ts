@@ -6,7 +6,8 @@
 // A raw `onClick` on a `<div>`/`<span>` still trips the jsx-a11y guardrail (#3773) — that's deliberate:
 // new interactive containers must come through here (or use a real Button/IconButton primitive).
 
-import type { AriaRole, KeyboardEvent, MouseEvent } from "react";
+import { useEffect } from "react";
+import type { AriaRole, KeyboardEvent, MouseEvent, RefObject } from "react";
 
 // Typed mouse-only to match the ordinary `onClick` handlers call sites already have (`(e: MouseEvent) =>
 // void` or `() => void`); the keydown path casts, which is safe because activation handlers use the
@@ -48,4 +49,94 @@ export function clickable<T extends Element = HTMLElement>(
     onClick,
     onKeyDown: onEnterOrSpace<T>(onClick),
   };
+}
+
+// ── Modal focus management (#2725 Tier 0) ────────────────────────────────────────────────────────────
+
+/** Elements that can hold focus, in DOM order. `:not([disabled])` and the negative-tabindex filter matter:
+ *  a disabled button and a `tabIndex={-1}` container are both focusable-looking and both wrong to land on. */
+const FOCUSABLE = [
+  "a[href]", "button", "input", "select", "textarea",
+  '[tabindex]:not([tabindex="-1"])',
+].map((s) => `${s}:not([disabled]):not([aria-hidden="true"])`).join(",");
+
+function focusableWithin(root: HTMLElement): HTMLElement[] {
+  // Filtered on DECLARED hiddenness only — `hidden`, `aria-hidden`, `disabled` (in the selector above) —
+  // never on layout.
+  //
+  // The textbook check is `offsetParent !== null`, and it is untestable here: jsdom has no layout, so
+  // `offsetParent` is null for EVERY element and the filter silently returns an empty list. That is not a
+  // hypothetical — it made all six focus tests fail on the first run, reporting "focus never moved" for a
+  // trap that was working. The e2e harness cannot cover it either; it drives the preview srcdoc, not the
+  // app shell.
+  //
+  // Little is lost: the browser already skips hidden elements during native Tab, and the trap only
+  // intervenes at the two ends. A `display:none` element sitting exactly at an end would wrap to something
+  // unfocusable — at which point the browser keeps focus where it is, which is still inside the modal.
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE))
+    .filter((el) => !el.hidden && el.getAttribute("aria-hidden") !== "true");
+}
+
+/**
+ * Trap focus inside `ref` while `enabled`, and put it back where it came from on close.
+ *
+ * A modal that does not do this is not "slightly less polished" — it is unusable with a screen reader.
+ * Focus stays on the trigger BEHIND the overlay, so the reader never enters the dialog and never says one
+ * opened; Tab then walks out into the page underneath, which is visually covered and obviously not
+ * interactive to everyone except the person who cannot see it.
+ *
+ * Lives on `ModalScrim` rather than `Dialog` because 7 modal surfaces render through the scrim, including
+ * the custom-bodied ones that supply their own card — fixing `Dialog` alone would miss them.
+ *
+ * Deliberately NOT tied to `onDismiss`: a non-dismissable modal (a destructive op in flight) is exactly
+ * the one you must not be able to Tab out of.
+ */
+export function useFocusTrap(ref: RefObject<HTMLElement | null>, enabled = true) {
+  useEffect(() => {
+    const root = ref.current;
+    if (!enabled || !root) return;
+
+    // Captured BEFORE we move focus, so close returns the user where they were rather than at the top of
+    // the document. `body` is the fallback when focus was nowhere in particular.
+    const restoreTo = document.activeElement as HTMLElement | null;
+
+    const first = focusableWithin(root)[0];
+    // Falls back to the container itself (it carries `tabIndex={-1}`) so a modal with no focusable content
+    // — a spinner, a message — still moves the reader inside instead of leaving it behind the scrim.
+    (first ?? root).focus();
+
+    // `globalThis.KeyboardEvent`, NOT the React one this module already imports — a native listener gets
+    // the DOM event, and the React synthetic type would typecheck while describing the wrong object.
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const items = focusableWithin(root);
+      if (items.length === 0) {
+        // Nothing to cycle between: hold focus on the container rather than letting Tab escape.
+        e.preventDefault();
+        root.focus();
+        return;
+      }
+      const firstItem = items[0];
+      const lastItem = items[items.length - 1];
+      const active = document.activeElement;
+      // Wrap at each end. The `!root.contains(active)` case catches focus that has already escaped (a
+      // programmatic focus elsewhere) and pulls it back rather than letting Tab continue outward.
+      if (e.shiftKey && (active === firstItem || !root.contains(active))) {
+        e.preventDefault();
+        lastItem.focus();
+      } else if (!e.shiftKey && (active === lastItem || !root.contains(active))) {
+        e.preventDefault();
+        firstItem.focus();
+      }
+    };
+
+    root.addEventListener("keydown", onKeyDown);
+    return () => {
+      root.removeEventListener("keydown", onKeyDown);
+      // Only restore if focus is still inside the closing modal. If something else has deliberately taken
+      // focus (a toast, a newly opened second modal), stealing it back would be the bug.
+      if (!root.contains(document.activeElement) && document.activeElement !== document.body) return;
+      restoreTo?.focus?.();
+    };
+  }, [ref, enabled]);
 }

@@ -12,7 +12,9 @@ export function Modal({ title, children, onClose, footer }: {
 }) {
   return (
     <ModalScrim onDismiss={onClose}>
-      <Box bg="var(--bg-panel)" border radius="lg" style={{ width: 440, maxWidth: "90vw", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+      {/* The CARD is the dialog, not the scrim behind it — `aria-modal` is what marks the covered page
+          inert to a screen reader. Named by its own title, which is already on screen. */}
+      <Box role="dialog" aria-modal="true" aria-label={title} bg="var(--bg-panel)" border radius="lg" style={{ width: 440, maxWidth: "90vw", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
         <Row style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-soft)" }}>
           <Text as="h3" style={{ margin: 0 }}>{title}</Text>
           <Spacer />

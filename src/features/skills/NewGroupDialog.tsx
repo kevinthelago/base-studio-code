@@ -10,7 +10,8 @@ export function NewGroupDialog({ onCreate, onClose }: { onCreate: (name: string)
   const [name, setName] = useState("");
   return (
     <ModalScrim onDismiss={onClose}>
-      <Box pad={18} bg="var(--bg-panel)" border radius="lg" style={{ width: 360, boxShadow: "0 20px 60px rgba(0,0,0,.5)" }}>
+      {/* The CARD is the dialog, not the scrim behind it — `aria-modal` marks the covered page inert. */}
+      <Box role="dialog" aria-modal="true" aria-label="New task group" pad={18} bg="var(--bg-panel)" border radius="lg" style={{ width: 360, boxShadow: "0 20px 60px rgba(0,0,0,.5)" }}>
         <Text as="div" size={14} weight={600} style={{ marginBottom: 4 }}>New task group</Text>
         <Text as="div" size={11.5} tone="muted" style={{ marginBottom: 12 }}>A named ⬡ bundle of skills you can toggle onto a session or fleet stream at once.</Text>
         {/* eslint-disable-next-line no-restricted-syntax, jsx-a11y/no-autofocus -- bespoke autofocus dialog input (intentional: focus the group-name field on open) with Enter-to-submit and a layout-critical marginBottom that TextField's .field wrapper would displace */}
