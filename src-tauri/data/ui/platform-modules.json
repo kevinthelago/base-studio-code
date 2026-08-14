@@ -382,6 +382,7 @@
   "@/shared/lib/preview/componentBundle",
   "@/shared/lib/preview/previewReview",
   "@/shared/lib/preview/previewSource",
+  "@/shared/lib/runtime/GraphComponent",
   "@/shared/lib/runtime/componentLoader",
   "@/shared/lib/runtime/graphResolver",
   "@/shared/lib/runtime/renderGate",

@@ -180,7 +180,18 @@ export async function loadComponentFromSource(
   resolveGraphSource?: GraphSourceResolver,
   exportName?: string,
 ): Promise<ComponentType<Record<string, unknown>>> {
-  const linkedAll = await linkGraphModules(source, resolveGraphSource, (src) => compileToCjs(src));
+  const { linked: linkedAll, failures } = await linkGraphModules(source, resolveGraphSource, (src) => compileToCjs(src));
+  for (const f of failures) {
+    // A record that will not COMPILE is declined like one whose closure is unsatisfiable — one bad record
+    // costs its own surface, not the page. Logged per load and NAMED: the Projects page died on
+    // "Build failed with 2 errors" with a 241-member closure and nothing to point at, and finding
+    // `graphcomponent` took a log dive. This line is what makes the next one a read instead of a hunt.
+    log.warn(
+      `graph-loader: declined the graph override for "${f.specifier}" — its source does not compile ` +
+        `(${f.error}). Falling back to the platform module.`,
+      "graph-loader",
+    );
+  }
   // Decline any override that cannot resolve its own closure, so `require` falls back to the platform
   // module it was shadowing rather than the whole page dying on one unreachable leaf
   // (#an-incomplete-override-falls-back-instead-of-killing-the-page).
