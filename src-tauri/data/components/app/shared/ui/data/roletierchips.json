@@ -1,0 +1,11 @@
+{
+  "id": "roletierchips",
+  "name": "RoleTierChips",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/shared/ui/data/RoleTierChips",
+  "srcText": "import { Row } from \"@/shared/ui/layout/Row\";\nimport { Chip } from \"@/shared/ui/data/Chip\";\nimport { roleCapability, type SessionRole } from \"@/shared/lib/session/sessionRoles\";\n\nconst TIER_COLOR: Record<string, string> = { none: \"var(--fg-dim)\", read: \"var(--info)\", write: \"var(--accent)\" };\nexport interface RoleTierChipsProps {\r\n  /** The session role whose capability floor to render. */\r\n  role: SessionRole;\r\n}\nexport function RoleTierChips({ role }: RoleTierChipsProps) {\r\n  const cap = roleCapability(role);\r\n  const tiers: [string, string][] = [[\"git\", cap.git], [\"github\", cap.github], [\"code\", cap.code], [\"net\", cap.net]];\r\n  return (\r\n    <Row gap={5} wrap>\r\n      {/* One template-literal text node — `{k} · {v}` renders three nodes, which breaks exact-text queries. */}\r\n      {tiers.map(([k, v]) => <Chip key={k} color={TIER_COLOR[v] ?? \"var(--fg-dim)\"}>{`${k} · ${v}`}</Chip>)}\r\n    </Row>\r\n  );\r\n}",
+  "composes": [],
+  "src": "src/shared/ui/data/RoleTierChips.tsx",
+  "folder": "shared/ui/data"
+}

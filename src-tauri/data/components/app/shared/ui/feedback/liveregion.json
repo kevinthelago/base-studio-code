@@ -1,0 +1,11 @@
+{
+  "id": "liveregion",
+  "name": "LiveRegion",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/shared/ui/feedback/LiveRegion",
+  "srcText": "import { useAnnouncer } from \"@/shared/lib/a11y/announcer\";\n\nconst ZWSP = String.fromCharCode(0x200b);\nconst mark = (n: number) => ZWSP.repeat(n % 2);\nexport function LiveRegion() {\n  const polite = useAnnouncer((s) => s.polite);\n  const assertive = useAnnouncer((s) => s.assertive);\n  const politeSeq = useAnnouncer((s) => s.politeSeq);\n  const assertiveSeq = useAnnouncer((s) => s.assertiveSeq);\n  return (\n    <>\n      <div className=\"sr-only\" aria-live=\"polite\" aria-atomic=\"true\">{polite}{mark(politeSeq)}</div>\n      <div className=\"sr-only\" role=\"alert\" aria-live=\"assertive\" aria-atomic=\"true\">{assertive}{mark(assertiveSeq)}</div>\n    </>\n  );\n}",
+  "composes": [],
+  "src": "src/shared/ui/feedback/LiveRegion.tsx",
+  "folder": "shared/ui/feedback"
+}
