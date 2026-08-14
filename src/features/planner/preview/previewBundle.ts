@@ -30,9 +30,30 @@ export function bootstrapSource(screenEntry: string): string {
   return `import { createRoot } from "react-dom/client";\nimport Screen from "${spec}";\ncreateRoot(document.getElementById("root")).render(<Screen />);\n`;
 }
 
-/** Resolve a relative import against its importer's directory. Pure. */
-export function resolveMemPath(importer: string, spec: string): string {
-  const fromDir = importer.includes("/") ? importer.slice(0, importer.lastIndexOf("/")) : "";
+/** The index suffixes this bundler's `lookupMem` appends for a bare DIRECTORY id. Kept beside the
+ *  resolver so the two cannot disagree about what "index-backed" means. */
+const INDEX_SUFFIXES = ["/index.tsx", "/index.ts", "/index.jsx"] as const;
+
+/**
+ * Resolve a relative import against its importer's directory. Pure.
+ *
+ * SECOND COPY of the shared bundler's resolver (`shared/lib/preview/componentBundle.ts`) and it carried
+ * the SAME bug, so it gets the same fix (#a-barrel-import-resolves-against-its-own-directory): an
+ * importer that is only reachable through an index suffix is a DIRECTORY, and is its own `fromDir`.
+ * Stripping its last segment sent a barrel's `./theme` one level too high, to a module that does not
+ * exist.
+ *
+ * That the two copies exist at all is the real finding — a fix in one is not a fix. Unifying them is
+ * filed separately rather than smuggled into a bug fix.
+ */
+export function resolveMemPath(importer: string, spec: string, files?: Record<string, string>): string {
+  const isDirId =
+    !!files && files[importer] == null && INDEX_SUFFIXES.some((s) => files[importer + s] != null);
+  const fromDir = isDirId
+    ? importer
+    : importer.includes("/")
+      ? importer.slice(0, importer.lastIndexOf("/"))
+      : "";
   const parts = (fromDir ? fromDir.split("/") : []).concat(spec.split("/"));
   const out: string[] = [];
   for (const p of parts) {
@@ -74,7 +95,7 @@ function inMemoryPlugin(files: Record<string, string>): Esbuild.Plugin {
       build.onResolve({ filter: /.*/ }, (args) => {
         if (args.kind === "entry-point") return { path: BOOTSTRAP_ENTRY, namespace: "mem" };
         if (PREVIEW_EXTERNALS.includes(args.path)) return { path: args.path, external: true };
-        if (args.path.startsWith(".")) return { path: resolveMemPath(args.importer, args.path), namespace: "mem" };
+        if (args.path.startsWith(".")) return { path: resolveMemPath(args.importer, args.path, files), namespace: "mem" };
         // #3696: any OTHER bare import resolves to a bundled-in LOCAL shim/stub (never esm.sh at large), so a
         // skeleton that pulls in a native/npm package still bundles + renders instead of failing to resolve.
         return { path: args.path, namespace: PREVIEW_SHIM_NAMESPACE };

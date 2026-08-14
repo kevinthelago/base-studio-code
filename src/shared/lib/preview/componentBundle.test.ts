@@ -13,6 +13,40 @@ describe("componentBundle — resolveMemPath", () => {
     expect(resolveMemPath("shared/ui/data/Card.tsx", "../feedback/Skeleton")).toBe("shared/ui/feedback/Skeleton");
     expect(resolveMemPath("a/b/c.tsx", "../../x")).toBe("x");
   });
+
+  it("resolves a BARREL's relative import against its own directory, not its parent", () => {
+    // #a-barrel-import-resolves-against-its-own-directory. `lookupMem` accepts `shared/ui/kit` by trying
+    // `/index.ts`, so a barrel loads under its DIRECTORY id while its contents come from the index.
+    // Stripping the last segment then resolved `./theme` to `shared/ui/theme` — which does not exist —
+    // and every component importing the kit failed to build: 34 of them, every *GraphHost among them.
+    const files = {
+      "shared/ui/kit/index.ts": "export * from './theme';",
+      "shared/ui/kit/theme.ts": "export const t = 1;",
+      "shared/ui/kit/ThemeScope.tsx": "export const S = 1;",
+    };
+    expect(resolveMemPath("shared/ui/kit", "./theme", files)).toBe("shared/ui/kit/theme");
+    expect(resolveMemPath("shared/ui/kit", "./ThemeScope", files)).toBe("shared/ui/kit/ThemeScope");
+  });
+
+  it("still strips the basename for a REAL file importer — and `..` climbs the same from both", () => {
+    // The half a naive fix breaks. `..` must mean the same thing whether the importer id is a file or an
+    // index-backed directory, because in the real tree they are the same position.
+    const files = {
+      "shared/ui/kit/index.ts": "x",
+      "shared/ui/data/Card.tsx": "x",
+      "shared/ui/feedback/Skeleton.tsx": "x",
+    };
+    expect(resolveMemPath("shared/ui/data/Card.tsx", "./chip", files)).toBe("shared/ui/data/chip");
+    expect(resolveMemPath("shared/ui/data/Card.tsx", "../feedback/Skeleton", files)).toBe("shared/ui/feedback/Skeleton");
+    expect(resolveMemPath("shared/ui/kit", "../feedback/Skeleton", files)).toBe("shared/ui/feedback/Skeleton");
+  });
+
+  it("without a file map, behaves exactly as it did — the parameter is additive", () => {
+    // Existing callers and the pure tests pass two args; only the esbuild plugin passes three. A change
+    // in the two-arg behaviour would be a silent regression in whatever still calls it that way.
+    expect(resolveMemPath("shared/ui/kit", "./theme")).toBe("shared/ui/theme");
+    expect(resolveMemPath("shared/ui/data/Card.tsx", "./chip")).toBe("shared/ui/data/chip");
+  });
 });
 
 // The DECLARED BOUNDARY (#3897): a registered `@/…` the files do not vendor resolves to a bundled-in stub
