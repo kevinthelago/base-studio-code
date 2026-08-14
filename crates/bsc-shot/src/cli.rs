@@ -109,6 +109,7 @@ NO COMPONENT SHOWN
         summary: "compare two captures — how much changed, and WHERE (scalars only)",
         usage: "USAGE:
   bsc shot diff <baseline.png> <current.png> [--tolerance <f>] [--json|--pretty]
+  bsc shot diff <component>                  [--tolerance <f>]   # against its saved baseline
 
 Reports how far `current` moved from `baseline`. NO IMAGE DATA is produced or returned — the answer is
 numbers, so an agent can act on a render it never has to look at:
@@ -129,6 +130,35 @@ it the command only reports.
 
 Different dimensions are their own answer (`mismatch: dimensions`), never rescaled — a resized render
 means the layout moved, which is the strongest evidence available.",
+    },
+    CmdDoc {
+        name: "baseline",
+        summary: "save a component's NAMED reference render — the thing `diff <component>` compares against",
+        usage: "USAGE:
+  bsc shot baseline <component> [--timeout <ms>] [--json|--pretty]
+  bsc shot baseline list
+
+Captures the mounted preview of <component> and keeps it as that component's reference, under
+<shots>/baselines/<component>.png. Same subject resolution and same NOT-MOUNTED error as `frame` —
+only the destination differs, and it is not yours to choose (no --out).
+
+WHY A NAMED ONE. `diff` already tells you how far two captures moved. What it could not do is know
+WHICH two you meant: a before/after check meant capturing to one path, remembering which was the
+'before', capturing again, and passing both. Across a 45-component refactor that is 45 chances to
+compare the wrong pair — and a wrong pair fails SILENTLY, reporting a plausible number about two
+images nobody intended to compare.
+
+  bsc navigate component <kit> <id>   # land it
+  bsc shot baseline <id>              # save the reference
+  … change the component …
+  bsc shot frame <id>                 # capture the current render
+  bsc shot diff <id>                  # compare the two, by name
+
+`baseline list` prints which components have a reference saved.
+
+NOT BATCHED YET. `--kit` / `--all` forms are not here: `frame` deliberately does not navigate (it
+errors and tells you to land the component first), so sweeping a kit would mean `bsc shot` driving
+`bsc navigate` — a coupling decision that deserves its own change.",
     },
     CmdDoc {
         name: "frame",
@@ -191,7 +221,7 @@ Prints both: the PNG output dir (BSC_SHOT_DIR, else ~/.base-studio-code/shots) a
     },
 ];
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Args {
     positional: Vec<String>,
     rect: Option<Rect>,
@@ -272,6 +302,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "take" => cmd_take(&args),
         "preview" => cmd_preview(&args),
         "frame" => cmd_frame(&args),
+        "baseline" => cmd_baseline(&args),
         "diff" => cmd_diff(&args),
         "pending" => cmd_pending(&args),
         "sweep" => cmd_sweep(&args),
@@ -317,12 +348,90 @@ fn cmd_frame(args: &Args) -> Result<(), String> {
     run_capture(args, Some(&format!("{FRAME_PREFIX}{component}")))
 }
 
+/// `baseline <component>` / `baseline list` (#a-shot-baseline-is-a-named-reference-render) — capture the
+/// mounted preview and keep it as that component's NAMED reference.
+///
+/// It is a thin wrapper on `frame`: same subject resolution, same not-mounted error, only the
+/// destination differs. The value is not the capture, it is that the path stops being the caller's to
+/// remember — a 45-component sweep otherwise offers 45 chances to diff the wrong pair, and a wrong pair
+/// fails SILENTLY with a plausible number about two images nobody meant to compare.
+fn cmd_baseline(args: &Args) -> Result<(), String> {
+    let arg = args.positional.get(1).map(String::as_str).unwrap_or_default();
+    if arg == "list" {
+        let dir = baseline_path(&shots_dir()?, "x")
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        let mut ids: Vec<String> = std::fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                n.strip_suffix(".png").map(str::to_string)
+            })
+            .collect();
+        ids.sort();
+        bsc_cli_util::emit(args.pretty, args.json, &ids, || {
+            if ids.is_empty() {
+                "no baselines yet — `bsc shot baseline <component>` saves one".to_string()
+            } else {
+                ids.join("
+")
+            }
+        });
+        return Ok(());
+    }
+    if arg.is_empty() {
+        return Err("`bsc shot baseline` needs a component: `bsc shot baseline <component>` (or `baseline list`)".into());
+    }
+    if args.out.is_some() {
+        return Err("`bsc shot baseline` owns its destination — drop --out (use `bsc shot frame --out` for an arbitrary path)".into());
+    }
+    let dest = baseline_path(&shots_dir()?, arg);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    }
+    // Reuse the frame path wholesale — `run_capture` resolves the subject, enforces the mounted check and
+    // writes the PNG; only `out` is ours.
+    let mut a = args.clone();
+    a.out = Some(dest.to_string_lossy().into_owned());
+    run_capture(&a, Some(&format!("{FRAME_PREFIX}{arg}")))
+}
+
 /// `diff <baseline.png> <current.png>` — compare two captures; scalars only.
 fn cmd_diff(args: &Args) -> Result<(), String> {
     let base = args.positional.get(1).map(String::as_str).unwrap_or_default();
     let cur = args.positional.get(2).map(String::as_str).unwrap_or_default();
+    // THE ID FORM (#a-shot-baseline-is-a-named-reference-render): one positional that is not a path names
+    // a COMPONENT — compare its saved baseline against `frame`'s default output for the same id. Pure
+    // sugar over the two-path form below, which is the older contract and stays byte-identical.
+    let (base, cur) = if cur.is_empty() && !base.is_empty() && !looks_like_a_path(base) {
+        let shots = shots_dir()?;
+        let saved = baseline_path(&shots, base);
+        if !saved.is_file() {
+            // A verdict against a baseline that does not exist would be a number about nothing. Say what
+            // is missing and how to make it, rather than reporting `changed` on an absence.
+            return Err(format!(
+                "no baseline for '{base}' — capture one first:
+  bsc navigate component <kit> {base}
+  bsc shot baseline {base}"
+            ));
+        }
+        let current = shots.join(format!("{base}.png"));
+        if !current.is_file() {
+            return Err(format!(
+                "no current capture for '{base}' at {} — take one with `bsc shot frame {base}`",
+                current.display()
+            ));
+        }
+        (saved.to_string_lossy().into_owned(), current.to_string_lossy().into_owned())
+    } else {
+        (base.to_string(), cur.to_string())
+    };
+    let (base, cur) = (base.as_str(), cur.as_str());
     if base.is_empty() || cur.is_empty() {
-        return Err("usage: bsc shot diff <baseline.png> <current.png> [--tolerance <f>]".into());
+        return Err("usage: bsc shot diff <baseline.png> <current.png> [--tolerance <f>]   (or `bsc shot diff <component>`)".into());
     }
     let a = crate::compare::load(std::path::Path::new(base))?;
     let b = crate::compare::load(std::path::Path::new(cur))?;
@@ -434,6 +543,20 @@ fn run_capture(args: &Args, target: Option<&str>) -> Result<(), String> {
 /// OWN (global) dir / cwd: the #3662 mismatch where `bsc shot dir` and the real PNG path disagreed and
 /// every capture landed outside the studio session's confined workspace. No `--out` ⇒ `<shots>/<id>.png`;
 /// a relative `--out` ⇒ inside the shots dir; an absolute `--out` ⇒ as-is.
+/// Where a component's NAMED reference render lives (#a-shot-baseline-is-a-named-reference-render):
+/// `<shots>/baselines/<component>.png`, under the SESSION's shots dir so `$BSC_SHOT_DIR` is honoured
+/// exactly as it is for every other capture — a confined session must be able to read what it wrote.
+fn baseline_path(shots: &std::path::Path, component: &str) -> std::path::PathBuf {
+    shots.join("baselines").join(format!("{component}.png"))
+}
+
+/// Does this `diff` positional name a FILE, or a component id? A path is anything that ends `.png` or
+/// carries a separator — everything else is an id. Deliberately narrow: the two-path form is the older
+/// contract and must keep winning any ambiguity, so a real file is never re-read as an id.
+fn looks_like_a_path(s: &str) -> bool {
+    s.ends_with(".png") || s.contains('/') || s.contains('\\')
+}
+
 fn resolve_out(out: Option<&str>, shots: &std::path::Path, id: &str) -> String {
     match out {
         Some(o) if std::path::Path::new(o).is_absolute() => o.to_string(),
@@ -745,5 +868,42 @@ mod tests {
         assert!(same_dir("C:/ws/shots/", "C:/ws/shots"));
         assert!(same_dir("C:/WS/Shots", "c:/ws/shots"));
         assert!(!same_dir("C:/ws/shots", "C:/ws/other"));
+    }
+
+    #[test]
+    fn a_baseline_lives_under_the_sessions_shots_dir_keyed_by_component() {
+        // Under `<shots>/baselines/<id>.png` so `$BSC_SHOT_DIR` is honoured exactly as it is for every
+        // other capture — a confined session must be able to READ what it wrote (#3662).
+        let shots = std::path::Path::new("/tmp/shots");
+        let p = baseline_path(shots, "settings-general");
+        assert!(p.ends_with("baselines/settings-general.png"), "{}", p.display());
+        assert!(p.starts_with(shots), "it stays inside the session's shots dir: {}", p.display());
+    }
+
+    #[test]
+    fn diff_tells_a_component_id_from_a_file_path() {
+        // The two-path form is the OLDER contract and must win any ambiguity: a real file is never
+        // re-read as an id. So the id form is deliberately narrow — no extension, no separator.
+        assert!(looks_like_a_path("before.png"));
+        assert!(looks_like_a_path("shots/before.png"));
+        assert!(looks_like_a_path(r"C:\shots\before.png"));
+        assert!(!looks_like_a_path("settings-general"));
+        assert!(!looks_like_a_path("ui-tab-bar"));
+    }
+
+    #[test]
+    fn diff_by_id_refuses_when_no_baseline_was_ever_saved() {
+        // A verdict against a baseline that does not exist would be a NUMBER ABOUT NOTHING — worse than
+        // an error, because it looks like an answer. Say what is missing and how to make it.
+        let dir = std::env::temp_dir().join(format!("bsc-shot-nobase-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // SAFETY: single-threaded test process; the var is read by `shots_dir()` on the next line only.
+        unsafe { std::env::set_var("BSC_SHOT_DIR", &dir) };
+
+        let args = Args { positional: vec!["diff".into(), "never-captured".into()], ..Default::default() };
+        let err = cmd_diff(&args).unwrap_err();
+        assert!(err.contains("no baseline for 'never-captured'"), "{err}");
+        assert!(err.contains("bsc shot baseline never-captured"), "it names the fix: {err}");
     }
 }
