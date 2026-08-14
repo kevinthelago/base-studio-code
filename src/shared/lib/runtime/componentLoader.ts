@@ -206,7 +206,18 @@ export async function loadComponentFromSource(
       "graph-loader",
     );
   }
-  const exports = evaluateEntry(linked, makeRequire());
+  const exports = evaluateEntry(linked, makeRequire(), (specifier, error) => {
+    // A graph module that COMPILED and LINKED but throws while EVALUATING falls back to the registry.
+    // The commonest cause is a build-time-only form — `import.meta.glob` is a Vite transform esbuild
+    // emits verbatim, so it is "not a function" at runtime. Judged at eval rather than by reading the
+    // source, because 19 records contain that call and most WORK: the call sits in a path the page never
+    // takes, and a source-level check declined those too and regressed the Planning page.
+    log.warn(
+      `graph-loader: declined the graph override for "${specifier}" — it compiled but threw while ` +
+        `evaluating (${String(error).slice(0, 160)}). Falling back to the platform module.`,
+      "graph-loader",
+    );
+  });
   const comp = pickComponent(exports, exportName);
   if (!comp) {
     throw new Error(

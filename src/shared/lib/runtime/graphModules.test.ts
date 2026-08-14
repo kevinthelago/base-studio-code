@@ -154,6 +154,42 @@ describe("makeGraphRequire — resolution order and cycles", () => {
   const linkedOf = (mods: Record<string, string>) =>
     new Map(Object.entries(mods).map(([specifier, cjs]) => [specifier, { specifier, source: cjs, cjs }]));
 
+  it("falls back to the REGISTRY when a graph module throws while evaluating", () => {
+    // The Projects page, one layer past the compile fix. `import.meta.glob` is a VITE transform: esbuild
+    // emits `import_meta.glob(...)` verbatim, so a record using it links fine and dies at eval with
+    // "is not a function", taking the page with it.
+    //
+    // Judged at EVAL and not by reading the source, which was my first attempt and was wrong: 19 records
+    // contain that call and most WORK, because it sits in a path the page never takes. Declining them all
+    // regressed the Planning page. Throwing is the only honest evidence that a record cannot stand up.
+    const appRequire = (s: string) => ({ from: "registry", s });
+    const linked = linkedOf({
+      "@/features/planner/stages/planTopics": 'throw new TypeError("import_meta.glob is not a function");',
+    });
+    const declined: string[] = [];
+    const require = makeGraphRequire(linked, appRequire, (spec) => declined.push(spec));
+
+    expect(require("@/features/planner/stages/planTopics")).toEqual({
+      from: "registry",
+      s: "@/features/planner/stages/planTopics",
+    });
+    expect(declined).toEqual(["@/features/planner/stages/planTopics"]);
+  });
+
+  it("does not cache the half-evaluated exports of a module that threw", () => {
+    // The cycle guard seeds `exports` BEFORE evaluating. If a throw left that seed behind, the next
+    // require would hand back an empty object instead of the registry's real module — a silent, much
+    // worse failure than the one being fixed.
+    let attempts = 0;
+    const appRequire = (s: string) => ({ from: "registry", s });
+    const linked = linkedOf({ "@/x": 'throw new Error("boom");' });
+    const require = makeGraphRequire(linked, appRequire, () => { attempts++; });
+
+    expect(require("@/x")).toEqual({ from: "registry", s: "@/x" });
+    expect(require("@/x"), "the second require also reaches the registry").toEqual({ from: "registry", s: "@/x" });
+    expect(attempts, "…by re-evaluating and failing again, not by serving a poisoned cache entry").toBe(2);
+  });
+
   it("resolves a graph module BEFORE the app registry — this is what keeps `provides` overrides working (#3660)", () => {
     const appRequire = (s: string) => ({ from: "registry", s });
     const linked = linkedOf({ "@/shared/ui/data/Chip": 'module.exports = { from: "graph" };' });

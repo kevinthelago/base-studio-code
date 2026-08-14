@@ -286,6 +286,7 @@ function evaluate(cjs: string, require: (s: string) => unknown): Record<string, 
 export function makeGraphRequire(
   linked: Map<string, LinkedModule>,
   appRequire: (specifier: string) => unknown,
+  onEvalFailure?: (specifier: string, error: unknown) => void,
 ): (specifier: string) => unknown {
   const evaluated = new Map<string, Record<string, unknown>>();
 
@@ -296,13 +297,31 @@ export function makeGraphRequire(
     if (!mod) return appRequire(specifier);
     const exports: Record<string, unknown> = {};
     evaluated.set(specifier, exports); // BEFORE evaluating — the cycle guard
-    const produced = evaluate(mod.cjs, require);
+    let produced: unknown;
+    try {
+      produced = evaluate(mod.cjs, require);
+    } catch (e) {
+      // A GRAPH MODULE THAT THROWS WHILE EVALUATING FALLS BACK TO THE REGISTRY. It compiled and linked;
+      // it simply cannot RUN — the commonest cause being a build-time-only form, since `import.meta.glob`
+      // is a Vite transform that esbuild emits verbatim and that is not a function at runtime.
+      //
+      // Eval, not source, is the right place to judge it: 19 records contain `import.meta.glob` and most
+      // WORK, because the call sits in a path the page never takes. A source-level check declined those
+      // too and regressed the Planning page. Throwing is the only honest signal that this record cannot
+      // stand up.
+      //
+      // The entry is exempt — `evaluateEntry` calls `evaluate` on it directly, not through here — so a
+      // page's own source still fails loudly rather than resolving to a shadow of itself.
+      evaluated.delete(specifier);
+      onEvalFailure?.(specifier, e);
+      return appRequire(specifier);
+    }
     // esbuild's CJS output assigns `module.exports = …` wholesale, so the object the factory ends up
     // with is usually NOT the one seeded above. Copy the result onto the seeded object so a cyclic
     // importer that already captured the seed still observes the finished exports.
     if (produced !== exports) {
       Object.assign(exports, produced);
-      evaluated.set(specifier, produced);
+      evaluated.set(specifier, produced as Record<string, unknown>);
     }
     return evaluated.get(specifier);
   };
@@ -314,7 +333,8 @@ export function makeGraphRequire(
 export function evaluateEntry(
   linked: Map<string, LinkedModule>,
   appRequire: (specifier: string) => unknown,
+  onEvalFailure?: (specifier: string, error: unknown) => void,
 ): Record<string, unknown> {
-  const require = makeGraphRequire(linked, appRequire);
+  const require = makeGraphRequire(linked, appRequire, onEvalFailure);
   return require(ENTRY_SPECIFIER) as Record<string, unknown>;
 }
