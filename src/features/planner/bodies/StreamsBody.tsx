@@ -8,10 +8,10 @@
 import { useState } from "react";
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import { type RelFocus, type Topology } from "@/features/planner/relationship/relationshipGraph";
-import { StreamFocusCards } from "./StreamFocusCards";
+import { StreamFocusCards } from "@/features/planner/bodies/StreamFocusCards";
 import { PlanBody } from "@/features/planner/bodies/FocusedPlanBody";
-import { CoordinationControls } from "./FocusedPermissionsBody";
-import { CollapsibleCard } from "./collapsibleCard";
+import { CoordinationControls } from "@/features/planner/bodies/FocusedPermissionsBody";
+import { CollapsibleCard } from "@/features/planner/bodies/collapsibleCard";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";

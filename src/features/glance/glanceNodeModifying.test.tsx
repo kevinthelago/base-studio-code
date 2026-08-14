@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { GlanceNode } from "./GlanceNode";
+import { GlanceNode } from "@/features/glance/GlanceNode";
 import { HEALTH_META, buildGraph, type GHealth } from "./lib/glanceGraph";
 
 /** Render one node card at `health`, with the canvas's own HEALTH_META-derived pulse props.

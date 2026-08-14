@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { RelationshipGraphView } from "./RelationshipGraphView";
-import { RelationshipInspector } from "./RelationshipInspector";
+import { RelationshipInspector } from "@/features/planner/relationship/RelationshipInspector";
 import {
   buildRelationshipGraph, computeSpotlight, hardLabel, restOpacity, runtimeNote,
   type RelStream, type RelationshipArtifact, type AgentRelationship,

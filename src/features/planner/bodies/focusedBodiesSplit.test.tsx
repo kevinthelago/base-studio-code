@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { DiscoveryBody } from "./DiscoveryBody";
-import { SkillsBody } from "./FocusedSkillsBody";
+import { DiscoveryBody } from "@/features/planner/bodies/DiscoveryBody";
+import { SkillsBody } from "@/features/planner/bodies/FocusedSkillsBody";
 
 // Smoke tests for bodies extracted from FocusedBodies.tsx (#1757) — confirm the moved files render
 // standalone (imports resolve) for the empty case. (The plain FocusedReposBody was removed with the

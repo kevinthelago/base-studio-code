@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DeploymentBody } from "./ReposDeployView";
+import { DeploymentBody } from "@/features/planner/bodies/ReposDeployView";
 import { defaultDeployConfig, type DeployConfig } from "../lib/deployConfig";
 import type { Repo } from "../pane/projectPane.types";
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, cleanup } from "@testing-library/react";
-import { GlanceNode } from "./GlanceNode";
+import { GlanceNode } from "@/features/glance/GlanceNode";
 import { GLANCE_NODE_ANIM_CLASSES } from "./glanceNodeMotion";
 import type { GNode } from "./lib/glanceGraph";
 

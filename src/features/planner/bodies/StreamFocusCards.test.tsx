@@ -3,7 +3,7 @@
 // when unassigned); the picker + model/flow segs drive the handlers.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { StreamFocusCards } from "./StreamFocusCards";
+import { StreamFocusCards } from "@/features/planner/bodies/StreamFocusCards";
 import type { Agent } from "../pane/projectPane.types";
 import type { Persona } from "@/features/personas";
 import { useAppStore } from "@/store";

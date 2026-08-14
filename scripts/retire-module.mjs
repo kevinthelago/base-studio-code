@@ -9,6 +9,11 @@
 // would move its assertions into the record's `tests` data, where nothing in the gate executes them; that
 // cost 31 assertions across the first two tranches. `src/app/runtime/retiredTests.test.ts` guards it.
 //
+// AFTERWARDS, run `node scripts/sync-shadow-catalogue.mjs` — a module catalogued in `shadowPages.ts`
+// must become `file: null` and leave its glob, or `shadowPages.test.ts` fails. It is a separate sweep
+// because it reconciles the whole catalogue against disk in one pass, which is cheaper and safer than
+// each retirement editing the same file.
+//
 // Quote-agnostic on purpose: a double-quote-only sweep missed `PreviewPaneShell.tsx`'s
 // `from './StageScreenFrame'` and the typecheck found it instead. Rewriting is still not a substitute for
 // running tsc afterwards — this handles the mechanical bulk, tsc is the oracle.

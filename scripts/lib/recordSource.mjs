@@ -40,8 +40,25 @@ export function absolutizeImports(src, fromRel) {
   );
 }
 
-/** A file read as a record would hold it: LF-normalized, imports absolutized. */
-export const fileAsRecordSource = (absPath, relPath) => absolutizeImports(norm(readFileSync(absPath, "utf8")), relPath);
+/**
+ * Drop side-effect imports of ASSETS — `import "./sessionDock.css";` and friends.
+ *
+ * A file loads its stylesheet as a module because the bundler turns that into a CSS emit. A RECORD is
+ * compiled at runtime by the graph loader, which resolves every `require()` against the platform registry
+ * and the record store — and a stylesheet is in neither, so the import is a hard "not a registered app
+ * module" at load. The app's CSS is already loaded globally through the bundled entry, so the import is
+ * redundant for a record as well as fatal.
+ *
+ * The hand migration did exactly this (`ui-session-dock`'s record has no CSS import while its file does),
+ * and re-adding them broke 10 records. The default gate stayed GREEN — it was the e2e mount sweep that
+ * failed, because this is a property of the module the loader builds, not of the source it is built from.
+ */
+const dropAssetImports = (src) =>
+  src.replace(/^[ \t]*import\s+['"][^'"]+\.(?:css|scss|sass|less|svg|png|jpg|jpeg|gif|webp)['"];?[ \t]*\n?/gm, "");
+
+/** A file read as a record would hold it: LF-normalized, asset imports dropped, imports absolutized. */
+export const fileAsRecordSource = (absPath, relPath) =>
+  absolutizeImports(dropAssetImports(norm(readFileSync(absPath, "utf8"))), relPath);
 
 /**
  * Source reduced to its CODE — comments gone, whitespace collapsed. Two sources equal under this differ

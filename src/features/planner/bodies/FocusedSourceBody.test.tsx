@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { defaultSourceConfig } from "../lib/sourceConfig";
-import { SourceBody } from "./FocusedSourceBody";
+import { SourceBody } from "@/features/planner/bodies/FocusedSourceBody";
 
 // The body is store-backed (planSourceConfig keyed by projectId). Reset that slice between tests so
 // each starts from an empty config.

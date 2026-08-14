@@ -6,7 +6,7 @@
 // now fills, and the fill FADES — a soft edge reads as an estimate, a hard one reads as a measurement.
 import { describe, it, expect, afterEach } from "vitest";
 import { render, cleanup, screen } from "@testing-library/react";
-import { GlanceNode, nodeFill } from "./GlanceNode";
+import { GlanceNode, nodeFill } from "@/features/glance/GlanceNode";
 import type { GNode } from "./lib/glanceGraph";
 
 const node = (over: Partial<GNode> = {}): GNode => ({

@@ -20,9 +20,9 @@ import { registerRenderer } from "./registry";
 import { htmlRenderer } from "./renderers/htmlRenderer";
 import { gltfRenderer } from "./renderers/gltfRenderer";
 import { canvasRenderer } from "./renderers/canvasRenderer";
-import { PreviewPaneShell } from "./PreviewPaneShell";
+import { PreviewPaneShell } from "@/features/planner/preview/PreviewPaneShell";
 import { RENDER_PREVIEW_ID } from "./renderPreview";
-import { FileIntakePane } from "../bodies/FileIntakePane";
+import { FileIntakePane } from "@/features/planner/bodies/FileIntakePane";
 import { FILE_INTAKE_ID } from "../lib/fileIntake";
 
 /** Props every pipeline second screen receives. `onClose`, when provided, renders a

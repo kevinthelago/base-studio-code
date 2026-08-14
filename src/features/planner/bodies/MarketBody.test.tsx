@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { useAppStore } from "@/store";
 import { MARKET_DIMENSIONS, marketWeights, weightedMarketScore, type MarketConfig } from "../lib/marketConfig";
-import { MarketBody } from "./MarketBody";
+import { MarketBody } from "@/features/planner/bodies/MarketBody";
 
 const PID = "p-market";
 

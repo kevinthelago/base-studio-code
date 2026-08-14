@@ -17,7 +17,7 @@ vi.mock('./previewBundle', () => ({
 import { registerRenderer } from './registry';
 import { htmlRenderer } from './renderers/htmlRenderer';
 registerRenderer(htmlRenderer);
-import { PreviewPaneShell } from './PreviewPaneShell';
+import { PreviewPaneShell } from '@/features/planner/preview/PreviewPaneShell';
 
 describe('PreviewPaneShell (#581)', () => {
   beforeEach(() => {
