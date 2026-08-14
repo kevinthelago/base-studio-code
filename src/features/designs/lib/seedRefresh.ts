@@ -325,7 +325,20 @@ export function planRestamp<T extends SeedRecord>(
   const deferred: RestampDeferral[] = [];
 
   for (const rec of loaded) {
-    if (rec.suppressed || rec.builtin) continue; // a tombstone, or already in the reconcile path
+    // A tombstone, or a record the reconcile ALREADY handles correctly.
+    //
+    // The `builtin` half used to be unqualified, commented "already in the reconcile path"
+    // (#a-builtin-that-lost-its-stamp-falls-between-both-guards). That is only true of a record whose
+    // stamp is INTACT. A builtin that has lost its `seedHash` falls between the two guards: restamp
+    // skipped it because `builtin` was set, and the reconcile refreshed it because `contentHash` is
+    // undefined when `seedHash` is — so `modified` reads false, the seed has moved, and the packaged
+    // copy is adopted. Each guard assumed the other covered the case.
+    //
+    // That cost 38 records on 2026-08-14 (designer request #63): a `--graph` LITE `--replace` push
+    // strips the stamp (that projection carries no `seedHash`) and the next hydrate overwrote a
+    // designer's fixes with the seed. Claiming it here restores the stamp with the SEED's hash, which
+    // reads as edited-against-an-unmoved-seed — the verdict that KEEPS the store copy.
+    if (rec.suppressed || (rec.builtin && rec.seedHash)) continue;
     const seeded = seedById.get(rec.id);
     if (!seeded) continue; // no packaged seed ⇒ genuinely user-authored — never claim it
     if (opts?.seedAuthoritative?.(rec)) {
