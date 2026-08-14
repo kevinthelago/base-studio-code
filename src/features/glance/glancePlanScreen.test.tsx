@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { GlancePlanScreen, planScreenIssues, progressLabel } from "./GlancePlanScreen";
+import { GlancePlanScreen, planScreenIssues, progressLabel } from "@/features/glance/GlancePlanScreen";
 
 describe("planScreenIssues", () => {
   it("keeps PLAN order rather than sorting by state", () => {

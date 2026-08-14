@@ -59,6 +59,21 @@ function listModules(dir = join(REPO, "src"), rel = "") {
   return out;
 }
 
+/** Every `id` the packaged component seed already uses, from ANY folder. `SEED_COMPONENTS` globs the tree
+ *  flat, so an id is unique across the whole seed, not per directory. */
+function seededIds() {
+  const out = new Set();
+  (function walk(dir) {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!e.name.endsWith(".json") || statSync(p).size > 4_000_000) continue;
+      try { const r = JSON.parse(readFileSync(p, "utf8")); if (r?.id) out.add(r.id); } catch { /* not a record */ }
+    }
+  })(join(REPO, "src-tauri", "data", "components", "app"));
+  return out;
+}
+
 /** Specifiers a packaged seed already provides — promoting one of these again would be a duplicate. */
 function seededSpecifiers() {
   const out = new Set();
@@ -86,6 +101,7 @@ for (const c of components) if (typeof c.provides === "string" && (c.srcText || 
 for (const i of impls) if (typeof i.provides === "string" && (i.code || "").trim() && !bySpec.has(i.provides.trim())) bySpec.set(i.provides.trim(), { kind: "impl", rec: i, source: i.code });
 
 const seeded = seededSpecifiers();
+const seedIds = seededIds();
 
 /** Every specifier a RECORD may import: a registered platform module, or one some record provides.
  *  Mirrors what `platformBoundary.test.ts` asserts — promoting a record whose imports nothing can answer
@@ -216,6 +232,15 @@ for (const { rec, file } of promote.component) {
   // `<folder>/<id>` — a record whose `provides` differs from the seed occupying that path slips through
   // and clobbers it. Seven curated seeds were overwritten before this guard existed.
   if (existsSync(path)) { console.log(`   SKIPPED (a seed already occupies that path): ${file} → ${rec.id}.json`); skippedAtWrite++; continue; }
+  // AND the ID must be free ANYWHERE in the seed, not just at this path. The check above keys on
+  // `<folder>/<id>.json`, so the same id under a DIFFERENT folder sails past it — which is what happened:
+  // `console-pane-menu` already existed under `app/console/`, this wrote a second under
+  // `app/console/panes/`, and `SEED_COMPONENTS` (a flat glob) then held two records with one id. Every
+  // boot, `reconcileSeed` reported the id as pristine-but-changed and re-pushed it, forever. The app still
+  // worked; three unrelated `store.test.ts` cases were the only thing that noticed, and they named the
+  // RECORD rather than the duplication.
+  if (seedIds.has(rec.id)) { console.log(`   SKIPPED (that id is already in the seed elsewhere): ${file} → ${rec.id}`); skippedAtWrite++; continue; }
+  seedIds.add(rec.id);
   const out = {};
   for (const k of SEED_FIELDS) if (rec[k] !== undefined) out[k] = rec[k];
   mkdirSync(dir, { recursive: true });

@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
-import { DesignerTerminal } from "./DesignerTerminal";
+import { DesignerTerminal } from "@/features/designs/DesignerTerminal";
 import { DesignerLoopBanner } from "./DesignerLoopBanner";
 import { useDesignerLoopPump } from "@/features/designs/useDesignerLoopPump";
 import { Box } from "@/shared/ui/layout/Box";
@@ -70,7 +70,7 @@ import type { PreviewState } from "./lib/componentPreview";
 import { ThemesMenu } from "./ThemesMenu";
 import { AnimationsMenu } from "./AnimationsMenu";
 import { PaletteStrip } from "./PaletteStrip";
-import { PaletteToggle } from "./PaletteToggle";
+import { PaletteToggle } from "@/features/designs/PaletteToggle";
 import { DEFAULT_THEME } from "@/shared/ui/kit";
 
 /** The preview surface's light/dark axis, read off the selected theme's `base`. */

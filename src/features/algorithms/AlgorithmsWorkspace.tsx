@@ -20,7 +20,7 @@ import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { AlgorithmsKitGraph } from "./AlgorithmsKitGraph";
 import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { AlgorithmsRail } from "./AlgorithmsRail";
-import { LibrarianTerminal } from "./LibrarianTerminal";
+import { LibrarianTerminal } from "@/features/algorithms/LibrarianTerminal";
 import { VizStage } from "./viz/VizPanel";
 import { useVizForImpl } from "@/features/algorithms/viz/useVizForImpl";
 import {

@@ -10,7 +10,7 @@ vi.mock("@/app/console/terminal/TerminalSlot", () => ({
     <div data-testid="terminal" data-pane={paneId} data-visible={visible} />
   ),
 }));
-vi.mock("./GlanceSessionLog", () => ({
+vi.mock("@/features/glance/GlanceSessionLog", () => ({
   GlanceSessionLog: ({ paneId }: { paneId: string }) => <div data-testid="logs" data-pane={paneId} />,
 }));
 

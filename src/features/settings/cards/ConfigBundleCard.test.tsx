@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { ConfigBundleCard } from "./ConfigBundleCard";
+import { ConfigBundleCard } from "@/features/settings/cards/ConfigBundleCard";
 
 beforeEach(() => {
   vi.mocked(invoke).mockReset();

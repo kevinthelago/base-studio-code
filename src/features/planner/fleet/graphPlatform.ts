@@ -18,7 +18,7 @@ import * as FleetHealthLib from "./lib/fleetHealth";
 // what the detail panel reaches, and these five are what it reaches.
 import * as FleetWorker from "@/features/planner/fleet/fleetWorker";
 import * as WorkerDetailHelpers from "@/features/planner/fleet/workerDetail.helpers";
-import * as WorkerDetailPlaceholder from "./WorkerDetailPlaceholder";
+import * as WorkerDetailPlaceholder from "@/features/planner/fleet/WorkerDetailPlaceholder";
 import * as WorkerModals from "./WorkerModals";
 import * as Security from "@/features/security";
 

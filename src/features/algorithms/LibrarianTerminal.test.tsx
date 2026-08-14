@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
-import { LibrarianTerminal } from "./LibrarianTerminal";
+import { LibrarianTerminal } from "@/features/algorithms/LibrarianTerminal";
 import { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";

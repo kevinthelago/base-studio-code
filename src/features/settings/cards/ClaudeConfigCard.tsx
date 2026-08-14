@@ -10,9 +10,9 @@ import { Text } from "@/shared/ui/typography/Text";
 import { deriveAllRepos } from "@/features/settings/cards/claudeConfig.helpers";
 import { TargetSelector } from "./TargetSelector";
 import { ProfileBar } from "./ProfileBar";
-import { ClaudeMdEditor } from "./ClaudeMdEditor";
+import { ClaudeMdEditor } from "@/features/settings/cards/ClaudeMdEditor";
 import { ToolPermissionsPanel } from "./ToolPermissionsPanel";
-import { WriteBar } from "./WriteBar";
+import { WriteBar } from "@/features/settings/cards/WriteBar";
 
 export function ClaudeConfigCard() {
   const {
