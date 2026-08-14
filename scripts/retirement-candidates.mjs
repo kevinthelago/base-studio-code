@@ -25,6 +25,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { norm, codeOnly, splitPreamble, exportedNames, fileAsRecordSource } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SHOW_ALL = process.argv.includes("--all");
@@ -79,47 +80,6 @@ function collectSeeds() {
   return seeds;
 }
 
-const norm = (s) => s.replace(/\r\n/g, "\n").trimEnd();
-
-/** Drop the seed's "AS GRAPH SOURCE" preamble: everything before the first line the FILE also contains.
- *  Bounded to the head of the source so a coincidental match deep in a long module cannot eat real code. */
-function stripPreamble(seedSrc, fileSrc) {
-  const lines = seedSrc.split("\n");
-  const fileLines = new Set(fileSrc.split("\n").map((l) => l.trim()).filter((l) => l.length > 8));
-  for (let i = 0; i < Math.min(lines.length, 60); i++) {
-    const t = lines[i].trim();
-    if (t.length > 8 && fileLines.has(t)) return lines.slice(i).join("\n");
-  }
-  return seedSrc;
-}
-
-/** Source with its import statements removed. Load-bearing for {@link symbols}: `import { type Foo }`
- *  otherwise reads as a `type Foo` DECLARATION, and three deploy modules were reported as drifted purely
- *  because their seed formats that import differently. A false "drifted" costs as much as a missed one —
- *  it blocks a retirement that was safe, and the next reader has no way to tell the two apart. */
-const withoutImports = (src) =>
-  src.replace(/^\s*import\s[\s\S]*?from\s*["'][^"']+["'];?[ \t]*$/gm, "").replace(/^\s*import\s+["'][^"']+["'];?[ \t]*$/gm, "");
-
-/** Source reduced to its CODE: comments gone, whitespace collapsed. Two sources equal under this differ
- *  only in formatting and prose, which is exactly what a migration's transcription is allowed to change.
- *
- *  This is the bar, and symbol equality is NOT. `connectorForm.tsx` proved it: its record declares every
- *  symbol the file does and is a PREVIEW-GRADE transcription — `SourceCard` destructures `runtime` and
- *  then never uses it, where the file passes it to `connector(src.connectorId, runtime)`. Retiring that
- *  file would have shipped a card that silently resolves the wrong connector identity, and only tsc's
- *  unused-local check happened to notice. A body that quietly does less is precisely the failure a
- *  symbol-level comparison cannot see, and it is the one that costs a feature.
- *
- *  String literals are left alone: a changed string is a changed behaviour (a label, a key, a class name),
- *  not formatting. */
-function codeOnly(src) {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 /** The identifiers a source DECLARES, split by whether they are exported — the comparison that survives
  *  reformatting. Comparing bytes calls a reflowed comment "drift"; comparing SYMBOLS asks the question
  *  that matters, which is whether retiring the file would take an export or a helper with it.
@@ -129,7 +89,9 @@ function codeOnly(src) {
  *  files render), while a missing internal name means the seed is merely an older revision — still drift,
  *  still a reason to refresh the seed first, but not an immediate break. */
 function symbols(src) {
-  const body = withoutImports(src);
+  // Imports stripped first, or `import { type Foo }` reads as a `type Foo` DECLARATION and three deploy
+  // modules get reported as drifted when they are not. A false "drifted" costs as much as a missed one.
+  const body = src.replace(/^[ \t]*import\s+[^;]*?from\s*["'][^"']+["'];?[ \t]*$/gm, "");
   const all = new Set(), exported = new Set();
   const re = /(?:^|\n)[ \t]*(export\s+)?(?:default\s+)?(?:async\s+)?(?:function|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
   for (const m of body.matchAll(re)) {
@@ -171,8 +133,10 @@ const rows = [];
 for (const [spec, seed] of seeds) {
   const file = fileFor(srcFiles, spec);
   if (!file) continue; // already retired, or record-native — not a candidate, and not a defect
-  const fileSrc = norm(readFileSync(join(REPO, "src", file), "utf8"));
-  const seedSrc = norm(stripPreamble(norm(seed.source), fileSrc));
+  // As a RECORD would hold it: LF-normalized with relative imports absolutized. Comparing the raw file
+  // graded 21 candidates "body differs" purely on import FORM — the migration absolutized by hand.
+  const fileSrc = fileAsRecordSource(join(REPO, "src", file), file);
+  const seedSrc = splitPreamble(norm(seed.source), fileSrc)[1];
   const fileSyms = symbols(fileSrc), seedSyms = symbols(seedSrc);
   const missing = [...fileSyms.all].filter((s) => !seedSyms.all.has(s));
   const missingExports = missing.filter((s) => fileSyms.exported.has(s));
