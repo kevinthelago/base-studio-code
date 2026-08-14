@@ -32,7 +32,10 @@ describe("reconcileThemes — the #2483 refresh reused for themes", () => {
     const r = reconcileThemes([...SEED_THEMES.filter((t) => t.id !== "nord"), stale]);
     expect(r.records.find((t) => t.id === "nord")).toEqual(soft); // refreshed to the new seed copy
     expect(r.pushes).toEqual([soft]);
-    expect(r.notices).toEqual([]);
+    // Was `toEqual([])`. Themes ride the SAME `reconcileSeed`, so they inherit the `refreshed` notice
+    // (#a-reseed-must-not-silently-overwrite-a-designer-edit) — and correctly: a stored theme replaced by
+    // the packaged copy is the same event as a component being replaced, and was equally silent.
+    expect(r.notices.map((n) => n.kind)).toEqual(["refreshed"]);
   });
 
   it("keeps a designer-EDITED built-in with an updated-upstream notice named by its label", () => {

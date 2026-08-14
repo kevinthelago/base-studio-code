@@ -114,7 +114,7 @@ export interface SeedNotice {
    *  reconcile treats it as user-authored and never refreshes it — while the app renders it (#4216). The
    *  record is left exactly as it is (changing 44 pages at once is not a reconcile's call); this makes
    *  the state visible so it can be judged per record. */
-  kind: "updated-upstream" | "orphaned" | "reset-to-seed" | "unstamped";
+  kind: "updated-upstream" | "orphaned" | "reset-to-seed" | "unstamped" | "refreshed";
   type: SeedNoticeType;
   id: string;
   name: string;
@@ -227,6 +227,20 @@ export function reconcileSeed<T extends SeedRecord>(
       if (!modified && seedMoved) {
         records.push(seeded); // pristine + stale → refresh to the new seed copy
         pushes.push(seeded);
+        // SAY SO WHEN IT ACTUALLY REPLACED SOMETHING (#a-reseed-must-not-silently-overwrite-a-designer-edit).
+        //
+        // This branch was the one verdict that changed a record and reported nothing. A designer's only
+        // signal was noticing their fix had stopped working — which is how request #63 was found, twice,
+        // mid-task. The banner's own rule already covers this case: `reset-to-seed` is carried as
+        // actionable because "it means a store copy was OVERWRITTEN, which is the most actionable verdict
+        // there is". A content-replacing refresh is the same event.
+        //
+        // Only when the CONTENT differs. A refresh whose seed copy is byte-identical is a stamp
+        // correction — the tolerant re-stamp path (#2514) routes through here — and reporting those would
+        // bury the real ones, which is exactly why plain divergence is not surfaced either.
+        if (seedHashOf(seeded) !== seedHashOf(rec)) {
+          notices.push({ kind: "refreshed", type, id: rec.id, name: displayName(rec) });
+        }
       } else {
         records.push(rec); // current, or customized (store wins)
         if (modified && seedMoved) notices.push({ kind: "updated-upstream", type, id: rec.id, name: displayName(rec) });
