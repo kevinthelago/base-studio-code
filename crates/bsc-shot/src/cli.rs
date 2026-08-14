@@ -105,6 +105,32 @@ NO COMPONENT SHOWN
   about. Capture when the Studio is showing, or leave the frame for the unattended loop.",
     },
     CmdDoc {
+        name: "diff",
+        summary: "compare two captures — how much changed, and WHERE (scalars only)",
+        usage: "USAGE:
+  bsc shot diff <baseline.png> <current.png> [--tolerance <f>] [--json|--pretty]
+
+Reports how far `current` moved from `baseline`. NO IMAGE DATA is produced or returned — the answer is
+numbers, so an agent can act on a render it never has to look at:
+
+  distance         mean absolute RGB difference over the frame, 0..1
+  worstTile        the highest per-tile difference on an 8x8 grid, same scale
+  tile             [col,row] of that tile — WHERE it moved
+  changedFraction  fraction of pixels differing at all, 0..1
+
+READ `worstTile`, NOT `changedFraction`. Measured on two captures of an unchanged component: 2.6% of
+pixels differed at an amplitude of 0.33/255. Anti-aliasing and subpixel text move a LOT of pixels by a
+tiny amount, so a pixel COUNT — and a hash, which is stricter still — reports `changed` on every run. A
+real change is CONCENTRATED, which is what the tile grid measures.
+
+CALIBRATE, do not guess. Capture the same subject twice with nothing changed and use that `distance` as
+the subject's noise floor; `--tolerance` then decides same/changed against a number you measured. Without
+it the command only reports.
+
+Different dimensions are their own answer (`mismatch: dimensions`), never rescaled — a resized render
+means the layout moved, which is the strongest evidence available.",
+    },
+    CmdDoc {
         name: "frame",
         summary: "capture the mounted preview of ONE named component — you choose what to look at",
         usage: "\
@@ -174,6 +200,9 @@ struct Args {
     max_age_ms: Option<i64>,
     frames: Option<i64>,
     interval_ms: Option<i64>,
+    /// `shot diff --tolerance <f>` — the caller's MEASURED noise floor for this subject, which is the
+    /// only thing that can turn the numbers into a same/changed verdict. Absent ⇒ report, do not judge.
+    tolerance: Option<f64>,
     json: bool,
     pretty: bool,
 }
@@ -194,6 +223,10 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
             "--max-age" => {
                 let v = it.next().ok_or("--max-age needs a value in ms")?;
                 a.max_age_ms = Some(v.parse().map_err(|_| format!("--max-age: not a number: {v}"))?);
+            }
+            "--tolerance" => {
+                let v = it.next().ok_or("--tolerance needs a number, e.g. --tolerance 0.01")?;
+                a.tolerance = Some(v.parse::<f64>().map_err(|_| format!("--tolerance '{v}' is not a number"))?);
             }
             "--frames" => {
                 let v = it.next().ok_or("--frames needs a count")?;
@@ -239,6 +272,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "take" => cmd_take(&args),
         "preview" => cmd_preview(&args),
         "frame" => cmd_frame(&args),
+        "diff" => cmd_diff(&args),
         "pending" => cmd_pending(&args),
         "sweep" => cmd_sweep(&args),
         "dir" => cmd_dir(&args),
@@ -281,6 +315,52 @@ fn cmd_frame(args: &Args) -> Result<(), String> {
         return Err("`bsc shot frame` needs a component: `bsc shot frame <component>` (see `bsc shot frame help`)".into());
     }
     run_capture(args, Some(&format!("{FRAME_PREFIX}{component}")))
+}
+
+/// `diff <baseline.png> <current.png>` — compare two captures; scalars only.
+fn cmd_diff(args: &Args) -> Result<(), String> {
+    let base = args.positional.get(1).map(String::as_str).unwrap_or_default();
+    let cur = args.positional.get(2).map(String::as_str).unwrap_or_default();
+    if base.is_empty() || cur.is_empty() {
+        return Err("usage: bsc shot diff <baseline.png> <current.png> [--tolerance <f>]".into());
+    }
+    let a = crate::compare::load(std::path::Path::new(base))?;
+    let b = crate::compare::load(std::path::Path::new(cur))?;
+    match crate::compare::compare(&a, &b) {
+        // A size change is a RESULT, not a failure — and the loudest one available, so it is reported in
+        // the same shape rather than as an error string a caller has to parse.
+        Err(crate::compare::Mismatch::Dimensions { baseline, current }) => {
+            let v = serde_json::json!({
+                "mismatch": "dimensions", "baseline": baseline, "current": current,
+                "verdict": "changed",
+            });
+            bsc_cli_util::emit(args.pretty, args.json, &v, || {
+                format!(
+                    "changed — dimensions differ: baseline {}x{}, current {}x{} (the layout moved)",
+                    baseline[0], baseline[1], current[0], current[1]
+                )
+            });
+            Ok(())
+        }
+        Ok(d) => {
+            // The verdict is only rendered when the caller supplied a tolerance IT measured. Absent one,
+            // this reports and says nothing about same/changed — a default constant here would be a guess
+            // presented as a measurement.
+            let verdict = args.tolerance.map(|t| if d.worst_tile <= t { "same" } else { "changed" });
+            let mut v = serde_json::to_value(&d).map_err(|e| e.to_string())?;
+            if let (Some(o), Some(verd)) = (v.as_object_mut(), verdict) {
+                o.insert("verdict".into(), serde_json::Value::String(verd.into()));
+            }
+            bsc_cli_util::emit(args.pretty, args.json, &v, || {
+                format!(
+                    "{}distance {:.5} · worst tile {:.5} at [{},{}] · {:.1}% of pixels differ",
+                    verdict.map(|x| format!("{x} — ")).unwrap_or_default(),
+                    d.distance, d.worst_tile, d.tile[0], d.tile[1], d.changed_fraction * 100.0
+                )
+            });
+            Ok(())
+        }
+    }
 }
 
 /// The shared capture path for `take`/`preview`: one frame, or a `--frames` burst. `target` is `None` for
