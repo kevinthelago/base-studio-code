@@ -254,8 +254,26 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     // NO reconcile here, deliberately. `reconcileComponents` decides which built-ins are stale and
     // PUSHES the fixed copies back to the store — fed lite records it would write their empty
     // `srcText` over real source. Phase 1 only ever sets state; phase 2 owns convergence.
-    const graph = await loadComponentsGraph();
-    if (graph?.length) set({ components: graph });
+    // COLD STORE ONLY (#the-fast-paint-phase-remounts-every-page-on-every-rehydrate).
+    //
+    // Phase 1 blanks `srcText` on every record — the lite projection carries none. That is harmless on
+    // a cold store (there is nothing to blank) and destructive on a RE-hydrate: every `GraphComponent`
+    // selects `srcText`, so each page goes real → "" → real, dropping to its fallback — which unmounts
+    // its whole subtree — and RECOMPILING when phase 2 restores the source.
+    //
+    // The console page is one of those pages and it holds the terminal, so the remount destroys and
+    // recreates the xterm instance. Measured in the app log as `compile #2 "consolepage"` firing minutes
+    // apart with no page load anywhere near it; felt by the user as focus being taken away mid-keystroke.
+    // `useUiActivity` re-runs this hydrate on every `ui-touch`, so a designer working normally triggers
+    // it continuously.
+    //
+    // The optimisation is worth keeping exactly where it pays: a cold store blocks up to 8s on `--full`.
+    // Once full records are in hand there is nothing left to optimise, and the fast path costs a remount
+    // while buying nothing. `lite` is the discriminator the projection already stamps.
+    if (!get().components.some((c) => !c.lite)) {
+      const graph = await loadComponentsGraph();
+      if (graph?.length) set({ components: graph });
+    }
     // ── PHASE 2: the full-fidelity read, off the critical path ──────────────────────────────────
     const [loadedC, loadedK] = await Promise.all([loadComponents(), loadKits()]);
     // Compile each KIT's MOTION library (#2942) into the managed <style> — on boot (useAppBoot calls
