@@ -5,7 +5,7 @@
 // (`repoReadme.ts`) and the stack matcher (`stackTopics.ts`) so the public surface is one import.
 
 export { deriveTopics, gettingStartedCmds, STACK_TOPICS } from "./stackTopics";
-export { buildReadme, type ReadmeFeature, type ReadmeOpts } from "./repoReadme";
+export { buildReadme, type ReadmeFeature, type ReadmeOpts } from "@/features/planner/lib/repoReadme";
 
 export interface ScaffoldFile {
   /** Repo-relative path. */

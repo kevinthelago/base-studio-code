@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { AlertKind } from "@/features/tunnel";
-import { shouldSpeak } from "./coordSpeech";
+import { shouldSpeak } from "@/app/a11y/coordSpeech";
 
 const NEEDS_YOU: AlertKind[] = ["agent-paused", "prompt-waiting", "worker-question", "planner-waiting", "fleet-failed"];
 const PROGRESS: AlertKind[] = ["fleet-landed", "gate-ready"];

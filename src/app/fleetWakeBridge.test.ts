@@ -3,7 +3,7 @@
 // shell outlived its agent reconnects instead of spawning, so the wake lands nowhere while reporting
 // success (#wake-restarts-a-pane-whose-shell-outlived-claude).
 import { describe, it, expect, vi } from "vitest";
-import { applyWake, DEFAULT_WAKE_PROMPT } from "./fleetWakeBridge";
+import { applyWake, DEFAULT_WAKE_PROMPT } from "@/app/fleetWakeBridge";
 
 /** Deps with a recording kill, defaulting to a wake that lands. */
 function deps(over: { wakePane?: (p: string, t: string) => boolean; killPane?: (p: string) => Promise<void> } = {}) {

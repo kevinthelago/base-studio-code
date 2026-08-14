@@ -9,7 +9,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { markStateAttrs, nodeOpStateAttrs } from "../../lib/binding";
 import type { TreeFrame } from "../../lib/trace";
 import type { StructureRenderer } from "../registry";
-import { TREE_VIZ_ANIM_CLASSES, ensureTreeViewMotion } from "./treeViewMotion";
+import { TREE_VIZ_ANIM_CLASSES, ensureTreeViewMotion } from "@/features/algorithms/viz/renderers/treeViewMotion";
 import { treeLayout, TREE_VIEW as VIEW } from "./treeLayout";
 import "./treeView.css";
 

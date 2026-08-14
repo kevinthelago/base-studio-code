@@ -19,7 +19,7 @@ import {
   tunnelSetPlanState, tunnelEmitPlanState, tunnelEmitPlanStatus, tunnelEmitPlanEvent,
   publishTunnelDomain, recordTunnelAlerts, gateReadyAlert, plannerWaitingAlert,
 } from "@/features/tunnel";
-import { usePlannerMessages } from "./usePlannerMessages";
+import { usePlannerMessages } from "@/features/planner/session/usePlannerMessages";
 import { SKIPPED_KEY, FEATURES_KEY } from "../stages/planTopics";
 import { FLEET_KEY } from "../fleet/planFleet";
 import { DEPENDENCIES_KEY } from "../issues/dependencies";

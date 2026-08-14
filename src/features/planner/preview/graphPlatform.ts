@@ -15,7 +15,7 @@
 // single code module so those registrations happen exactly once.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as RenderPreview from "./renderPreview";
-import * as ClaudeDesignBrief from "./claudeDesignBrief";
+import * as ClaudeDesignBrief from "@/features/planner/preview/claudeDesignBrief";
 import * as Registry from "./registry";
 
 let done = false;

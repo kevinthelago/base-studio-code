@@ -21,7 +21,7 @@ import { log } from "@/shared/lib/core/log";
 import {
   inspectDebug, REPORTED_STYLES,
   type DebugRequest, type DebugResult, type EngineProbe, type InspectDeps,
-} from "./debugBridge";
+} from "@/app/debugBridge";
 
 /** How long to wait for one preview engine's `__probeReply`. Short: the engine answers in the same tick
  *  when it is alive, so anything longer only delays reporting a SILENT engine — the interesting case. */

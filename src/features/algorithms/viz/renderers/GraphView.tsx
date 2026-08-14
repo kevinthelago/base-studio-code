@@ -9,7 +9,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { markStateAttrs, nodeOpStateAttrs, roleStateAttrs } from "../../lib/binding";
 import type { GraphFrame } from "../../lib/trace";
 import type { StructureRenderer } from "../registry";
-import { GRAPH_VIZ_ANIM_CLASSES, ensureGraphViewMotion } from "./graphViewMotion";
+import { GRAPH_VIZ_ANIM_CLASSES, ensureGraphViewMotion } from "@/features/algorithms/viz/renderers/graphViewMotion";
 import { layoutFor, GRAPH_VIEW as VIEW } from "./graphLayout";
 import "./graphView.css";
 

@@ -22,7 +22,7 @@ import { WORKSPACES, type Workspace } from "@/app/registry";
 import { PROJECT_MODES } from "@/features/planner";
 import { log } from "@/shared/lib/core/log";
 import { applyNavigate, type NavRequest, type NavAck } from "./navigateBridge";
-import { installHumanPresence, humanPresent } from "./humanPresence";
+import { installHumanPresence, humanPresent } from "@/app/humanPresence";
 
 /**
  * Listen for `bsc://navigate` and apply it. Mounted once by the shell.

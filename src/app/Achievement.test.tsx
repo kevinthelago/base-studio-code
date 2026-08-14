@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { useAppStore } from "@/store";
-import { Achievements } from "./Achievement";
+import { Achievements } from "@/app/Achievement";
 
 // The generic, registry-driven achievement toast. The super-user achievement (trigger
 // `liveAgents > 10`) stands in for "any achievement" here.

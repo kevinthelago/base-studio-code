@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { applyLifecycle, type LifecycleRequest, type LifecycleDeps } from "./systemSessionBridge";
+import { applyLifecycle, type LifecycleRequest, type LifecycleDeps } from "@/app/systemSessionBridge";
 import { STUDIO_SESSIONS } from "@/features/studio-sessions";
 
 /** A request with the shape Rust emits. */

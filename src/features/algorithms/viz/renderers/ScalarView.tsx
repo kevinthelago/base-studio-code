@@ -10,7 +10,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import type { OpStateAttrs } from "../../lib/binding";
 import type { ScalarFrame } from "../../lib/trace";
 import type { StructureRenderer } from "../registry";
-import { SCALAR_VIZ_ANIM_CLASSES, ensureScalarViewMotion } from "./scalarViewMotion";
+import { SCALAR_VIZ_ANIM_CLASSES, ensureScalarViewMotion } from "@/features/algorithms/viz/renderers/scalarViewMotion";
 import "./scalarView.css";
 
 /** The `data-op` for variable `name` — read straight from the frame's per-variable `ops` record (a scalar

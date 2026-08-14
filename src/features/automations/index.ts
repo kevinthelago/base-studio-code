@@ -13,7 +13,7 @@ import "./automations.css";
 // Re-exported feature surface — this index is the automations feature's public API barrel (#1309).
 export { AutomationsGraphHost } from "./AutomationsGraphHost"; // the graph-hosted workspace (#3642)
 export { AutomationsStatus } from "./AutomationsStatus";
-export { useScheduler } from "./useScheduler";
+export { useScheduler } from "@/features/automations/useScheduler";
 
 // #1545: public API for cross-feature consumers (tunnel).
 export { type Automation, type AutomationWhen } from "./lib/scheduler";

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { integrationGaps } from "./integrationGaps";
+import { integrationGaps } from "@/features/planner/lib/integrationGaps";
 import { BUILTIN_MCP_SERVERS, type McpServer } from "@/features/mcp/lib/mcpServers";
 import type { DeclaredSource } from "./sourceConfig";
 
