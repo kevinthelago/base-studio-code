@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { planResume, ensureClaudeRunning, CONTINUE_OR_FRESH, type PaneRuntime } from "./ensureClaudeRunning";
+import { planResume, ensureClaudeRunning, CONTINUE_OR_FRESH, type PaneRuntime } from "@/shared/lib/session/ensureClaudeRunning";
 
 const rt = (paneId: string, live: boolean, busy: boolean): PaneRuntime => ({ paneId, live, busy });
 

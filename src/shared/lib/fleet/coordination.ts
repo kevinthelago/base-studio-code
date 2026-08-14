@@ -17,10 +17,10 @@
 
 // Re-export the coordination types (split into ./coordination.types.ts, #1633) so the
 // public import surface `@/shared/lib/fleet/coordination` is unchanged for every importer.
-export type * from "./coordination.types";
+export type * from "@/shared/lib/fleet/coordination.types";
 
-export * from "./coordinationState";
-export * from "./coordinationLog";
+export * from "@/shared/lib/fleet/coordinationState";
+export * from "@/shared/lib/fleet/coordinationLog";
 export * from "./coordinationWakes";
 export * from "./coordinationPredicates";
 export * from "./coordinationNotifications";

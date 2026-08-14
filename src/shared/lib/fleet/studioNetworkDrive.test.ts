@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { OpenCommission } from "./coordination.types";
+import type { OpenCommission } from "@/shared/lib/fleet/coordination.types";
 import {
   activeTargets, authorInjections, deliverBackInjections, authorTaskPrompt,
   deliverBackPrompt, isStudioTarget, isOpen, STUDIO_PANE,

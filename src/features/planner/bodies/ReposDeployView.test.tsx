@@ -3,7 +3,7 @@ import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { DeploymentBody } from "@/features/planner/bodies/ReposDeployView";
 import { defaultDeployConfig, type DeployConfig } from "../lib/deployConfig";
-import type { Repo } from "../pane/projectPane.types";
+import type { Repo } from "@/features/planner/pane/projectPane.types";
 
 const repo = (id: string, over: Partial<Repo> = {}): Repo => ({
   id, branch: "main", ahead: 0, behind: 0, agents: [], primary: false, branches: [], cloned: true, ...over,

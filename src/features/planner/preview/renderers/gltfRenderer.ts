@@ -10,7 +10,7 @@
 //            The iframe constructs a data URI: data:model/gltf+json;base64,<base64>.
 
 import type { PreviewRenderer, RendererHandle } from '../registry';
-import type { RenderableChunk, PreviewStatus } from '../types';
+import type { RenderableChunk, PreviewStatus } from '@/features/planner/preview/types';
 import { buildGltfRuntimeHtml } from '../streamingRuntime';
 
 type GltfPayload = { url?: string; base64?: string };

@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const graphql = vi.fn();
 vi.mock("@/shared/lib/github/github", () => ({ githubGraphql: (...a: unknown[]) => graphql(...a) }));
 
-const { resolveClosedRefs } = await import("./fleetIssueState");
+const { resolveClosedRefs } = await import("@/features/glance/lib/fleetIssueState");
 const { planResumeLaunch } = await import("./resumeProject");
 
 const stream = (id: string, issues: string[]) =>

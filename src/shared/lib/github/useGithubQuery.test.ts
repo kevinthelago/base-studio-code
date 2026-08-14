@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { useGithubQuery } from "./useGithubQuery";
+import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { useAppStore } from "@/store";
 
 describe("useGithubQuery", () => {

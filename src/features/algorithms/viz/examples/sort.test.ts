@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import { sortSteps, sort, SORT_MOCK, parseSortInput } from "./sort";
 import { programVizForImpl } from "./registry";
-import type { ArrayFrame } from "../../lib/trace";
+import type { ArrayFrame } from "@/features/algorithms/lib/trace";
 
 /** The number of inversions in `a` — pairs out of order. A perfect measure of "sortedness": strictly
  *  decreases toward 0 as an ascending sort makes progress, and is 0 exactly when `a` is sorted. */

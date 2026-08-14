@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Maximize2, Minimize2, Power, PowerOff, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { type ViewKey, VIEW_DEFS } from "./viewDefs";
+import { type ViewKey, VIEW_DEFS } from "@/app/console/panes/viewDefs";
 import { type ModelId, MODELS } from "@/app/console/lib/models";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";

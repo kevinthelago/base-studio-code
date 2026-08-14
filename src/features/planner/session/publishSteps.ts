@@ -10,12 +10,12 @@
 
 import { resolveRepoPublic } from "@/store/slices/plan";
 import type { GhStatusMap, GhItemState } from "./GitHubStructureCard";
-import { parseFeaturesFile, featuresToPlanIssues } from "../issues/featureList";
-import { depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, type parseDependencyManifest } from "../issues/dependencies";
+import { parseFeaturesFile, featuresToPlanIssues } from "@/features/planner/issues/featureList";
+import { depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, type parseDependencyManifest } from "@/features/planner/issues/dependencies";
 import { resolveIssueAssignee } from "@/features/planner/fleet/fleetAssignee";
-import type { AgentStream } from "../fleet/planFleet";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "@/features/planner/lib/repoScaffold";
-import { renderIssueBody, subIssueLinks, type PlanIssue } from "../issues/planIssues";
+import { renderIssueBody, subIssueLinks, type PlanIssue } from "@/features/planner/issues/planIssues";
 import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "@/shared/lib/github/issueProvenance";
 
 /** The injected GitHub transport — the same closures handlePublish built over `invoke`. */

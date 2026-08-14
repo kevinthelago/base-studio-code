@@ -14,7 +14,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { dispatchAutomation } from "@/features/automations";
 import { automationToFrame, planArm } from "@/features/tunnel/lib/automationControl";
-import { tunnelSetAutomations, tunnelAutomationFailed } from "./tunnelClient";
+import { tunnelSetAutomations, tunnelAutomationFailed } from "@/features/tunnel/lib/tunnelClient";
 import { log } from "@/shared/lib/core/log";
 
 export function useTunnelAutomations(): void {

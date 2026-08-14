@@ -10,7 +10,7 @@
 // Together these tell us whether the lag is rendering load (jank high, terms high)
 // vs. data volume (pty high) vs. handler cost (pty ms high).
 
-import { fireInvoke } from "./safeInvoke";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { log } from "./log";
 
 /** Long tasks at or above this many ms count toward the jank tally. */

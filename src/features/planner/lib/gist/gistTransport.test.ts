@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { gistIdFromUrl, pickManifestContent, publishGist, updateGist, installFromGist, fetchGistManifestText, MANIFEST_FILENAME } from "./gist";
-import { wrapExtension } from "./manifest";
+import { gistIdFromUrl, pickManifestContent, publishGist, updateGist, installFromGist, fetchGistManifestText, MANIFEST_FILENAME } from "@/features/planner/lib/gist/gist";
+import { wrapExtension } from "@/features/planner/lib/gist/manifest";
 
 describe("gist transport — pure helpers (#598)", () => {
   it("extracts a gist id from URLs, api URLs, and bare ids", () => {

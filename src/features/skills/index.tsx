@@ -15,13 +15,13 @@ import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useAppStore } from "@/store";
 import {
   blankSkill, deriveSkillKpis, groupSkillCount, type SkillDef,
-} from "./lib/skills";
+} from "@/features/skills/lib/skills";
 import {
   mergeSkillStats, indexGroupsBySkill, buildFacetDefs, filterSkills, buildGroupedSections,
   SORTS, type Density, type SortKey, type FacetSelection,
-} from "./lib/skillsFilter";
-import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
-import { tintBg } from "./skillStyles";
+} from "@/features/skills/lib/skillsFilter";
+import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "@/features/skills/lib/skillTelemetry";
+import { tintBg } from "@/features/skills/skillStyles";
 import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { Button } from "@/shared/ui/controls/Button";
@@ -390,5 +390,5 @@ export { SessionSkillsModal, type SessionSkillsModalProps } from "./SessionSkill
 export {
   type SkillDef, skillFromPayload, resolveSkills, effectiveSessionSkills,
   expandGroups, toSkillCfgs,
-} from "./lib/skills";
-export { loadPendingLessons, lessonTitle, type Lesson } from "./lib/lessons";
+} from "@/features/skills/lib/skills";
+export { loadPendingLessons, lessonTitle, type Lesson } from "@/features/skills/lib/lessons";

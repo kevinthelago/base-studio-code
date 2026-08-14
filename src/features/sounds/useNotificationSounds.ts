@@ -12,7 +12,7 @@ import { usePoll } from "@/shared/hooks/usePoll";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { playCue } from "./lib/synth";
 import { STARTER_KIT } from "./lib/soundKits";
-import { cuesForLines } from "./lib/notifyCues";
+import { cuesForLines } from "@/features/sounds/lib/notifyCues";
 
 /** Poll cadence for the coord-log watch (ms). Matches the coordinator's own 1 Hz read. */
 const POLL_MS = 1000;

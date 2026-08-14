@@ -4,7 +4,7 @@ import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { DEFAULT_AUTO_FOCUS_MODE } from "@/app/console/lib/focusQueue";
 import { DEFAULT_MODEL_ID } from "@/app/console/lib/models";
-import { setMapEntry } from "../updateHelpers";
+import { setMapEntry } from "@/store/updateHelpers";
 
 // NOTE: skills moved to the Skills feature slice (@/features/skills/store) and MCP servers + hooks
 // to the MCP feature slice (@/features/mcp/store) (#1309). The standalone

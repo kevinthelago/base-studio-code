@@ -6,10 +6,10 @@
 // page's `require()` runs. Mirrors registerFleetPlatform / registerAutomationsPlatform.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as AgentProfiles from "./lib/agentProfiles";
-import * as ConsoleModel from "./lib/consoleModel";
-import * as AuditRows from "./lib/auditRows";
-import * as BadgeTone from "./lib/badgeTone";
-import * as AppSession from "./lib/appSession";
+import * as ConsoleModel from "@/features/security/lib/consoleModel";
+import * as AuditRows from "@/features/security/lib/auditRows";
+import * as BadgeTone from "@/features/security/lib/badgeTone";
+import * as AppSession from "@/features/security/lib/appSession";
 import * as FlowModel from "@/features/security/lib/flowModel";
 import * as GraphPlatform from "@/features/security/graphPlatform";
 

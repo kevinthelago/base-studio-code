@@ -9,7 +9,7 @@ import {
   ALGO_VIZ_ANIM_CLASSES,
   ALGO_VIZ_MOTION_CSS,
   ensureArrayViewMotion,
-} from "./arrayViewMotion";
+} from "@/features/algorithms/viz/renderers/arrayViewMotion";
 
 describe("algo-viz kit animations (#3178, data-defined #2942)", () => {
   it("defines each verb as data, a STATE trigger on the data-state selector", () => {

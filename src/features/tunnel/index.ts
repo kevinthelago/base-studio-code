@@ -14,18 +14,18 @@ export { useTunnelHookTelemetry } from "@/features/tunnel/lib/useTunnelHookTelem
 export { useTunnelCoordControl } from "./lib/useTunnelCoordControl";
 
 // #1545: public API for cross-feature consumers (app/console, planner, components).
-export type { PlanMessage, SessionMeta, PaneDescriptor, PaneKind } from "./lib/tunnel";
-export { TUNNEL_PROTOCOL_VERSION } from "./lib/tunnel";
+export type { PlanMessage, SessionMeta, PaneDescriptor, PaneKind } from "@/features/tunnel/lib/tunnel";
+export { TUNNEL_PROTOCOL_VERSION } from "@/features/tunnel/lib/tunnel";
 export {
   tunnelStatus, tunnelSetSessions, tunnelSetPlanState,
   tunnelEmitPlanState, tunnelEmitPlanStatus, tunnelEmitPlanEvent,
   tunnelSetStoreState, STORE_DOMAINS,
-} from "./lib/tunnelClient";
-export type { StoreDomain } from "./lib/tunnelClient";
+} from "@/features/tunnel/lib/tunnelClient";
+export type { StoreDomain } from "@/features/tunnel/lib/tunnelClient";
 
 // #2498: the store projector + alert pipeline. The planner publishes its stage/gate board as
 // the `plan` domain and contributes gate-ready / planner-waiting alerts through these.
-export { publishTunnelDomain } from "./lib/tunnelDomains";
-export { recordTunnelAlerts } from "./lib/alertHub";
-export { gateReadyAlert, plannerWaitingAlert, coordAlerts } from "./lib/alerts";
-export type { AlertEvent, AlertKind } from "./lib/alerts";
+export { publishTunnelDomain } from "@/features/tunnel/lib/tunnelDomains";
+export { recordTunnelAlerts } from "@/features/tunnel/lib/alertHub";
+export { gateReadyAlert, plannerWaitingAlert, coordAlerts } from "@/features/tunnel/lib/alerts";
+export type { AlertEvent, AlertKind } from "@/features/tunnel/lib/alerts";

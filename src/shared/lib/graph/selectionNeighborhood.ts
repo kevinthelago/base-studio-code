@@ -3,7 +3,7 @@
 // incident to it and the nodes on the far end of those edges. React-free and layout-agnostic (it
 // only needs `from`/`to`/`id` on each edge), so it lives alongside the other shared graph model
 // helpers rather than in any one feature.
-import type { GraphEdge } from "./types";
+import type { GraphEdge } from "@/shared/lib/graph/types";
 
 export interface SelectionNeighborhood {
   /** Edge ids incident to the selected node (`from === selId || to === selId`). */

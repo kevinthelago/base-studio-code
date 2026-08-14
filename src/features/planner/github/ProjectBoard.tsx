@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
-import { reposFromItems } from "../list/projectScan";
+import { reposFromItems } from "@/features/planner/list/projectScan";
 import { GH_OPTION_COLORS } from "@/shared/lib/github/colors";
 import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/shared/lib/github/projectV2";
 import { Row } from "@/shared/ui/layout/Row";
@@ -12,7 +12,7 @@ import { Skeleton, SkeletonText } from "@/shared/ui/feedback/Skeleton";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import type { GhLabel } from "@/shared/lib/github/types";
 import { BOARD_QUERY } from "@/features/planner/github/projectBoard.query";
-import type { GhUser, BoardIssue, BoardColumn } from "./projectBoard.types";
+import type { GhUser, BoardIssue, BoardColumn } from "@/features/planner/github/projectBoard.types";
 import { Column } from "./Column";
 import { IssueDrawer } from "./IssueDrawer";
 

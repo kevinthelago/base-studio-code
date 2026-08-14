@@ -4,7 +4,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 const loadGraph = vi.fn();
 vi.mock("@/features/algorithms/lib/graphBridge", () => ({ loadGraph: () => loadGraph() }));
 
-import { useKnowledgeGraph } from "./useKnowledgeGraph";
+import { useKnowledgeGraph } from "@/features/algorithms/useKnowledgeGraph";
 import { KNOWLEDGE } from "./lib/knowledge";
 
 describe("useKnowledgeGraph (#2856)", () => {

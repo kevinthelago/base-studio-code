@@ -9,11 +9,11 @@ export { playCue, compileCue, voiceDuration, type CompiledCue, type CompiledVoic
 export {
   validateKit, SOUND_CATEGORIES, CATEGORY_LABEL,
   type Primitive, type Voice, type Cue, type SoundKit, type SoundCategory, type Envelope,
-} from "./lib/soundDescriptor";
+} from "@/features/sounds/lib/soundDescriptor";
 // Cross-graph composition (#3117) — the sound-graph NodeLookup another pillar composes into its resolver,
 // and the self-contained cue-player emit its preview vendors.
 export { soundNodeLookup } from "./lib/crossGraphAdapter";
 export { cuePlayerModule } from "./lib/cuePlayerModule";
 // Consumer runtime (#3082, P4a) — opt-in app notification sounds voicing fleet coord events.
 export { useNotificationSounds } from "./useNotificationSounds";
-export { coordEventCue, cuesForLines, type NotifyCue } from "./lib/notifyCues";
+export { coordEventCue, cuesForLines, type NotifyCue } from "@/features/sounds/lib/notifyCues";

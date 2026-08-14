@@ -4,7 +4,7 @@ import {
   stackTagsFromSection,
   excludeCommonsFromOwns,
   UNION_MERGE_COMMONS,
-} from "./commons";
+} from "@/shared/lib/session/commons";
 import { matchGlob } from "./sessionRoles";
 
 describe("commonsGlobsForStack (#851 — stack-derived commons set)", () => {

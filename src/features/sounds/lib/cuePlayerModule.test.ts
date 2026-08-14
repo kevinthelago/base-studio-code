@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import { cuePlayerModule } from "./cuePlayerModule";
 import { compileCue } from "./synth";
-import type { SoundKit } from "./soundDescriptor";
+import type { SoundKit } from "@/features/sounds/lib/soundDescriptor";
 
 const kit: SoundKit = {
   id: "signal",

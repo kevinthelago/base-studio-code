@@ -12,8 +12,8 @@ import type {
   WakeAction,
   BlockedView,
   ProducerOf,
-} from "./coordination.types";
-import { refKey } from "./coordinationState";
+} from "@/shared/lib/fleet/coordination.types";
+import { refKey } from "@/shared/lib/fleet/coordinationState";
 import { detectDeadlocks, defaultProducerOf } from "./coordinationDeadlock";
 
 /** A ref's latch status as a short label (for prompts + the inbox view). */

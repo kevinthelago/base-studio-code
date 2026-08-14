@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectPools, collapseOrg, poolSubgraph, poolLayoutSizes, applyPoolLayout, organizeDrilledPool, POOL_STACK_OFFSET } from "./orgPools";
+import { detectPools, collapseOrg, poolSubgraph, poolLayoutSizes, applyPoolLayout, organizeDrilledPool, POOL_STACK_OFFSET } from "@/features/teams/lib/orgPools";
 import { autoLayout, AUTO_ROW, NODE_SIZE } from "./orgLayout";
 import type { Team } from "./team";
 import type { Persona } from "@/features/personas";

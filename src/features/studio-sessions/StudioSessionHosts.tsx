@@ -8,9 +8,9 @@
 // the pages already had (`KeptMountedPage`'s `gate`) thus survives the migration.
 import { useAppStore } from "@/store";
 import { StudioSessionMount } from "./StudioSessionMount";
-import { useStudioReaper } from "./useStudioReaper";
+import { useStudioReaper } from "@/features/studio-sessions/useStudioReaper";
 import { orderedWantedStudios } from "./store";
-import { studioDetached } from "./lib/studioSessions";
+import { studioDetached } from "@/features/studio-sessions/lib/studioSessions";
 
 export function StudioSessionHosts() {
   useStudioReaper();

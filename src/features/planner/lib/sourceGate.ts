@@ -5,8 +5,8 @@
 // lives in dataModelDerivation.ts and the type model in sourceSpecs.ts.
 
 import type { ReadinessCheck } from "@/features/planner/lib/readiness";
-import { deriveDataModel } from "./dataModelDerivation";
-import type { DeclaredSource, SourceConfig } from "./sourceSpecs";
+import { deriveDataModel } from "@/features/planner/lib/dataModelDerivation";
+import type { DeclaredSource, SourceConfig } from "@/features/planner/lib/sourceSpecs";
 
 /** A source counts as "connected" once it is scanning or fully scanned (authorized, secret on device). */
 export function isConnected(s: DeclaredSource): boolean {

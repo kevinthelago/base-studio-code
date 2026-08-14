@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { StyleDescriptor } from "./styleContract";
+import type { StyleDescriptor } from "@/features/designs/lib/styleContract";
 
 // #2567 follow-up: the style descriptor (src-tauri/data/ui/style-descriptor.json) is the SoT that
 // generates `tokens-contract.css` (the emit contract for a GENERATED app) AND backs `bsc ui tokens`.

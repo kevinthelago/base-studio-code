@@ -7,7 +7,7 @@ import type { StateCreator } from "zustand";
 // module-init cycle — it broke five unrelated tunnel tests when this first went in as a barrel.
 import { setDbTriaged } from "@/features/planner/list/projectsDbBridge";
 import type { AppStore } from "../types";
-import { setMapEntry, deleteMapEntry } from "../updateHelpers";
+import { setMapEntry, deleteMapEntry } from "@/store/updateHelpers";
 import { projectLinkId } from "@/features/glance/lib/projectLinks";
 import { loadProjectLinks, pushProjectLink, dropProjectLink } from "@/features/glance/lib/projectLinksBridge";
 

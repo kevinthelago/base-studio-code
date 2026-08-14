@@ -7,7 +7,7 @@ import {
   DEFAULT_TERMINAL_FONT_SIZE,
   MIN_TERMINAL_FONT_SIZE,
   MAX_TERMINAL_FONT_SIZE,
-} from "./terminal";
+} from "@/app/console/lib/terminal";
 
 describe("scrollbackForPaneCount", () => {
   it("keeps a deep buffer for a single pane", () => {

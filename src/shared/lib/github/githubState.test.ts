@@ -5,7 +5,7 @@ import { describe, it, expect } from "vitest";
 import {
   toMinimalGhProjects, minimalToGhProject, filterRecordsToLocal,
   type GhProjectShape, type MinimalGhProject,
-} from "./githubState";
+} from "@/shared/lib/github/githubState";
 
 const wire = (over: Partial<GhProjectShape> = {}): GhProjectShape => ({
   id: "PVT_1", number: 3, title: "Acme CRM", shortDescription: "a crm", url: "https://gh/p/3",

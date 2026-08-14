@@ -13,8 +13,8 @@ import {
   KIND, PROFILE_COLOR,
   type SkillKind, type SkillSource, type SkillProfile,
 } from "@/shared/data/skills";
-import { skillSlug, type SkillDef, type SkillGroup } from "./lib/skills";
-import { glyphTile, pill } from "./skillStyles";
+import { skillSlug, type SkillDef, type SkillGroup } from "@/features/skills/lib/skills";
+import { glyphTile, pill } from "@/features/skills/skillStyles";
 import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
 
 const KIND_KEYS = Object.keys(KIND) as SkillKind[];

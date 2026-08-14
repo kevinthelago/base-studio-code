@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { buildProjectPaneData } from "./projectPaneData";
 import type { BuildProjectPaneInput } from "./projectPaneData";
-import { emptyFleet } from "../fleet/planFleet";
-import type { FleetPlan } from "../fleet/planFleet";
-import type { PlanIssue } from "../issues/planIssues";
-import type { Section } from "../github/ghStructure";
+import { emptyFleet } from "@/features/planner/fleet/planFleet";
+import type { FleetPlan } from "@/features/planner/fleet/planFleet";
+import type { PlanIssue } from "@/features/planner/issues/planIssues";
+import type { Section } from "@/features/planner/github/ghStructure";
 import { PROFILES } from "@/features/security/lib/agentProfiles";
 
 function base(over: Partial<BuildProjectPaneInput> = {}): BuildProjectPaneInput {

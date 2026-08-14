@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { resolveReopen } from "@/features/planner/list/reopenProject";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
-import type { LocalProjectLite } from "./drafts";
+import type { LocalProjectLite } from "@/features/planner/list/drafts";
 
 const lp = (over: Partial<LocalProjectLite> & { key: string }): LocalProjectLite => ({
   title: over.key, hasPlan: true, updatedAt: 0, published: false, ...over,

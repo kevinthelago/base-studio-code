@@ -11,9 +11,9 @@ import { Text } from "@/shared/ui/typography/Text";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { RELATIONSHIP_ARCHETYPES, archetypeById, type Team } from "./lib/team";
 import { CANVAS_W, CANVAS_H, nodeBox, edgeGeometry, styleDash } from "./lib/orgLayout";
-import { positionDisplay, hueColor, type PositionDisplay } from "./lib/orgView";
+import { positionDisplay, hueColor, type PositionDisplay } from "@/features/teams/lib/orgView";
 import { Chip } from "@/shared/ui/data/Chip";
-import { POOL_STACK_OFFSET, type Pool } from "./lib/orgPools";
+import { POOL_STACK_OFFSET, type Pool } from "@/features/teams/lib/orgPools";
 import type { Persona } from "@/features/personas";
 
 export interface Selection { type: "node" | "edge"; id: string }

@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   githubRequest, githubGraphql, isGithubAuthError, rateLimitedUntil, rateLimitNote,
   DEFAULT_MAX_AGE_SECS,
-} from "./github";
+} from "@/shared/lib/github/github";
 import { useAppStore } from "@/store";
 
 const mockInvoke = vi.mocked(invoke);

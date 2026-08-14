@@ -11,6 +11,13 @@ export default defineConfig(async ({ command }) => ({
   // ~950 modules whose records already exist. `enforce: "pre"` puts it ahead of the alias so it matches the
   // specifier exactly rather than guessing which extension the alias resolved to.
   plugins: [bscRecords({ repoRoot: fileURLToPath(new URL(".", import.meta.url)) }), react(), startupLog()],
+  // A WORKER IS A SEPARATE BUILD WITH A SEPARATE PLUGIN LIST. `resolve.alias` is config-level so the
+  // worker inherits it, but `plugins` is not — `worker.plugins` defaults to empty, so inside a worker's
+  // graph `@/features/algorithms/lib/tracer` aliased straight to a path on disk and nothing was left to
+  // answer for the record once the file went. Only `vite build` sees this: tsc reads `tsconfig.paths`,
+  // and vitest never bundles a worker, so all three of them stay green while the shipped bundle cannot
+  // be produced. Same class as #the-deletion-gate-is-the-bundle, one resolver further in.
+  worker: { plugins: () => [bscRecords({ repoRoot: fileURLToPath(new URL(".", import.meta.url)) })] },
   // `@/…` → `src/…` (#1309) so the feature-first reorg doesn't churn deep-relative imports.
   // `@data/…` → `src-tauri/data/…` (#1462): the unified packaged-data root. The stage/blueprint
   // JSON lives there now (outside src/) and is build-time-bundled via import.meta.glob.

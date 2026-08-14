@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { migrateLegacyExtensions } from "./migrateExtensions";
+import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 
 describe("migrateLegacyExtensions", () => {
   it("splits a persisted extensions list into mcpServers + hooks by kind", () => {

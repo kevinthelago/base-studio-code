@@ -2,9 +2,9 @@
 // algorithm), the two produce genuinely different op profiles, and the `probe`/`found` vocabulary behaves:
 // a probe is a single-cell verb, and the terminal `found` mark survives as the trace's resting state.
 import { describe, it, expect } from "vitest";
-import { TracedArray } from "../../lib/tracer";
-import { opStateAttrs } from "../../lib/binding";
-import type { ArrayFrame, ArrayOp } from "../../lib/trace";
+import { TracedArray } from "@/features/algorithms/lib/tracer";
+import { opStateAttrs } from "@/features/algorithms/lib/binding";
+import type { ArrayFrame, ArrayOp } from "@/features/algorithms/lib/trace";
 import { linearSearch, binarySearch, SEARCH_PROGRAMS, parseSearchInput, searchToText } from "./searches";
 import { programVizForImpl } from "./registry";
 

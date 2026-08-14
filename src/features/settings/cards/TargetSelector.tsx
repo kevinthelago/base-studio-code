@@ -4,7 +4,7 @@
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
-import type { RepoTarget } from "./claudeConfig.helpers";
+import type { RepoTarget } from "@/features/settings/cards/claudeConfig.helpers";
 
 export function TargetSelector({
   allRepos, target, setTarget,

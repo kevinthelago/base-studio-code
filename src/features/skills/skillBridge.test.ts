@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { loadLibrary, pushSkill, dropSkill, pushGroup, dropGroup } from "@/features/skills/lib/skillBridge";
-import { blankSkill, seedSkills, type SkillDef } from "./lib/skills";
+import { blankSkill, seedSkills, type SkillDef } from "@/features/skills/lib/skills";
 import { useAppStore } from "@/store";
 
 const sk = (over: Partial<SkillDef> & { id: string; name: string }): SkillDef =>

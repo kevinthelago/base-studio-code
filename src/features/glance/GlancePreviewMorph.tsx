@@ -10,7 +10,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { previewRender, type PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { ReviewFinding, ReviewSeverity } from "@/shared/lib/preview/previewReview";
-import type { PreviewReview } from "./usePreviewReview";
+import type { PreviewReview } from "@/features/glance/usePreviewReview";
 import { NW, NH } from "./lib/glanceGraph";
 
 const SEV_COLOR: Record<ReviewSeverity, string> = {

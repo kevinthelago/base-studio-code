@@ -6,7 +6,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { formColor, formArrow } from "./lib/orgView";
+import { formColor, formArrow } from "@/features/teams/lib/orgView";
 import type { CommunicationForm } from "./lib/team";
 
 // The role-capability tier row lives in the shared kit since #2420 — `RoleTierChips`

@@ -18,7 +18,7 @@ import { scannableComponents, pendingScans, scanComponents, durableLogSync, type
 import { recordPreviewError, loadScanCache, saveScanCache, type CachedScan } from "./componentBridge";
 import { makeBatchWriter } from "@/shared/lib/core/batchWriter";
 import { type KitArtifact, type LibraryModuleResolver } from "./componentPreview";
-import { libraryModuleResolver } from "./libraryModules";
+import { libraryModuleResolver } from "@/features/designs/lib/libraryModules";
 import type { ComponentRecord } from "./model";
 
 /** The packaged kit artifact (built-in `source` + `runtime` closure), same import the single-component

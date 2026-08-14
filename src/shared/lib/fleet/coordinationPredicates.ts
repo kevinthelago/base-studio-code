@@ -11,8 +11,8 @@ import type {
   CoordState,
   Predicate,
   PredicateEvaluator,
-} from "./coordination.types";
-import { refKey, isSatisfied, satisfy } from "./coordinationState";
+} from "@/shared/lib/fleet/coordination.types";
+import { refKey, isSatisfied, satisfy } from "@/shared/lib/fleet/coordinationState";
 
 /** Parse a predicate's inner expr (the part after `predicate:`) into a typed {@link
  *  Predicate}. Never throws -- an unrecognized/headless expr becomes `custom`. Pure. */

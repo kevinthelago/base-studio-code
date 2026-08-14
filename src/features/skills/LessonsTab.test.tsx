@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { LessonsTab } from "./LessonsTab";
 import { useAppStore } from "@/store";
-import type { Lesson } from "./lib/lessons";
+import type { Lesson } from "@/features/skills/lib/lessons";
 
 const LESSON: Lesson = {
   id: "L1", mistake: "Blind-deleted conflict markers", cause: "", rule: "Verify the build after resolving",

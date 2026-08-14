@@ -9,7 +9,7 @@ import {
   findProjectTabIdx,
   deriveTabIdentity,
   findByTitle,
-} from "./projectPaths";
+} from "@/shared/lib/core/projectPaths";
 import slugFixtures from "./projectSlug.fixtures.json";
 
 /** The cross-language case table — see the fixture's own `_comment`. */

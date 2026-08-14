@@ -7,7 +7,7 @@
 // verb IS `b += a` (the recurrence itself, as an accumulation), and the `set` verbs are the roll-forward.
 // This is the first caller of `runScalarAlgorithm` — the `<ScalarView>` renderer previously only appeared
 // as a scene panel.
-import type { TracedScalar } from "../../lib/tracer";
+import type { TracedScalar } from "@/features/algorithms/lib/tracer";
 
 /** A visualizable scalar algorithm — its real logic over a {@link TracedScalar} + the initial variable map
  *  to seed it (the algorithm reads its parameters straight out of that state). */

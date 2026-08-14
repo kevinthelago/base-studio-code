@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ScalarView } from "./ScalarView";
-import type { ScalarFrame } from "../../lib/trace";
-import { TracedScalar } from "../../lib/tracer";
+import type { ScalarFrame } from "@/features/algorithms/lib/trace";
+import { TracedScalar } from "@/features/algorithms/lib/tracer";
 import { fibonacci } from "../examples/scalarAlgos";
 
 const frame = (over: Partial<ScalarFrame>): ScalarFrame => ({

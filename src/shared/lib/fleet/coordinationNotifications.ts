@@ -14,8 +14,8 @@ import type {
   ProducerOf,
   CoordNotificationKind,
   CoordNotification,
-} from "./coordination.types";
-import { refKey, isSatisfied } from "./coordinationState";
+} from "@/shared/lib/fleet/coordination.types";
+import { refKey, isSatisfied } from "@/shared/lib/fleet/coordinationState";
 import { detectDeadlocks, defaultProducerOf } from "./coordinationDeadlock";
 
 function notificationSummary(kind: CoordNotificationKind, session: string, refs: string[]): string {

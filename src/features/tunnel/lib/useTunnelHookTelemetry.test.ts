@@ -9,7 +9,7 @@ vi.mock("@/shared/lib/core/bsc", () => ({
   bscJson: vi.fn(async (_key: string | null, _args: string[], fallback: unknown) => fallback),
   bscWrite: vi.fn(async () => {}),
 }));
-vi.mock("./tunnelClient", () => ({
+vi.mock("@/features/tunnel/lib/tunnelClient", () => ({
   tunnelSetHookTelemetry: vi.fn().mockResolvedValue(undefined),
 }));
 // The hook reads the fire log through `logsTail`, which is a Tauri `logs_tail` invoke — NOT the
@@ -20,7 +20,7 @@ vi.mock("@/shared/lib/core/logsBridge", () => ({
 }));
 
 import { logsTail } from "@/shared/lib/core/logsBridge";
-import { tunnelSetHookTelemetry } from "./tunnelClient";
+import { tunnelSetHookTelemetry } from "@/features/tunnel/lib/tunnelClient";
 import { useTunnelHookTelemetry, toHookTelemetryFrame } from "@/features/tunnel/lib/useTunnelHookTelemetry";
 
 // A day the fixed `now` below falls inside the 14-day window of.

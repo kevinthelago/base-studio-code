@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { reviewShot } from "./reviewShot";
-import type { PreviewShot } from "./previewReview";
+import { reviewShot } from "@/shared/lib/preview/reviewShot";
+import type { PreviewShot } from "@/shared/lib/preview/previewReview";
 import type { LlmConfig } from "@/shared/lib/core/llmConfig";
 
 const cfg: LlmConfig = { provider: "anthropic", model: "claude-sonnet-4-6", apiKey: "sk-x", baseUrl: "" };

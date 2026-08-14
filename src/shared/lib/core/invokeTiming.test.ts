@@ -1,7 +1,7 @@
 // Invoke round-trip timing (#3626).
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { slowInvokeLine, startInvokeTimer, bscLabel, SLOW_INVOKE_MS } from "./invokeTiming";
+import { slowInvokeLine, startInvokeTimer, bscLabel, SLOW_INVOKE_MS } from "@/shared/lib/core/invokeTiming";
 
 describe("slowInvokeLine", () => {
   it("returns null under the threshold", () => {

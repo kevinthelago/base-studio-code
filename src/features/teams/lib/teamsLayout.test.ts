@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { teamsGrid, teamsBounds, teamStats, TEAM_CARD_W, TEAM_CARD_H } from "./teamsLayout";
+import { teamsGrid, teamsBounds, teamStats, TEAM_CARD_W, TEAM_CARD_H } from "@/features/teams/lib/teamsLayout";
 import type { Team } from "./team";
 
 const team = (over: Partial<Team>): Team => ({ id: "t", name: "T", positions: [], relationships: [], ...over });

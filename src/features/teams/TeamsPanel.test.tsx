@@ -6,7 +6,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { TeamsPanel } from "./TeamsPanel";
 import { useAppStore } from "@/store";
 import { nodeBox } from "./lib/orgLayout";
-import { positionDisplay } from "./lib/orgView";
+import { positionDisplay } from "@/features/teams/lib/orgView";
 
 /** Select an existing position by clicking its LEFT-RAIL row (not the canvas [data-node] card) — the
  *  pattern that replaced the removed "＋ new" add button (#2750). */

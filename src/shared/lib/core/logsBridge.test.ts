@@ -1,7 +1,7 @@
 // In-process log-stream reads (#3630).
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { logsTail, logsPaneActivity, logsDonePanes, canonicalStream, logEventName } from "./logsBridge";
+import { logsTail, logsPaneActivity, logsDonePanes, canonicalStream, logEventName } from "@/shared/lib/core/logsBridge";
 
 describe("logsTail", () => {
   beforeEach(() => vi.mocked(invoke).mockReset());

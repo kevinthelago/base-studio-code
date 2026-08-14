@@ -16,7 +16,7 @@ const HELD_TTL_MS = 20_000;
 import { useLogStream } from "@/shared/hooks/useLogStream";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
-import { resolveClosedRefs } from "./fleetIssueState";
+import { resolveClosedRefs } from "@/features/glance/lib/fleetIssueState";
 import { partitionByDeps, heldReason, sessionDoneStreams, type GateStream, type LandedEvidence } from "@/shared/lib/fleet/streamGate";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 

@@ -9,7 +9,7 @@
 //
 // Keyed by base name (`binary-search`, `linear-search`) like the sorts, so the seeded Rust impls
 // (`binary-search.rs` / `linear-search.rs`) animate via their JS trace-program.
-import type { TracedArray } from "../../lib/tracer";
+import type { TracedArray } from "@/features/algorithms/lib/tracer";
 import { parseSortInput } from "./sort";
 
 /** A search's input — the cells to search plus the target being looked for (the value that is NOT in the

@@ -9,7 +9,7 @@
 // This is the pure decision half, modelled on `studioNetworkDrive`'s `authorInjections` — the pump
 // stays a thin actuator. Free of React/Tauri so the routing table is unit-testable on its own.
 
-import type { ReceivedBrief } from "./coordination.types";
+import type { ReceivedBrief } from "@/shared/lib/fleet/coordination.types";
 
 export interface BriefRouteContext {
   /** Panes launched with a director drive — the `director` audience, and where an undeliverable

@@ -15,25 +15,25 @@
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 // — glance's own domain: the hooks + pure derivations the cockpit is thin over —
 import * as AgentStall from "./lib/agentStall";
-import * as ExpandNode from "./lib/expandNode";
-import * as FleetPlanProgress from "./lib/fleetPlanProgress";
+import * as ExpandNode from "@/features/glance/lib/expandNode";
+import * as FleetPlanProgress from "@/features/glance/lib/fleetPlanProgress";
 import * as GlanceData from "./lib/glanceData";
-import * as GlanceFleet from "./lib/glanceFleet";
+import * as GlanceFleet from "@/features/glance/lib/glanceFleet";
 import * as GlanceGraph from "./lib/glanceGraph";
-import * as GlancePush from "./lib/glancePush";
+import * as GlancePush from "@/features/glance/lib/glancePush";
 import * as MorphGrid from "./lib/morphGrid";
 import * as ResumeProject from "./lib/resumeProject";
 import * as StreamProgress from "./lib/streamProgress";
-import * as StudioProject from "./lib/studioProject";
+import * as StudioProject from "@/features/glance/lib/studioProject";
 import * as UseFleetHeld from "./lib/useFleetHeld";
 import * as UseFleetIssueState from "@/features/glance/lib/useFleetIssueState";
 import * as UseGlanceFaults from "./lib/useGlanceFaults";
 import * as UseGlanceProjects from "./lib/useGlanceProjects";
 import * as UseProjectComplete from "./lib/useProjectComplete";
-import * as UseProjectFleet from "./lib/useProjectFleet";
+import * as UseProjectFleet from "@/features/glance/lib/useProjectFleet";
 import * as UseStreamProgress from "./lib/useStreamProgress";
-import * as UsePreviewReview from "./usePreviewReview";
-import * as GlanceNodeMotion from "./glanceNodeMotion";
+import * as UsePreviewReview from "@/features/glance/usePreviewReview";
+import * as GlanceNodeMotion from "@/features/glance/glanceNodeMotion";
 // — the surfaces Glance COMPOSES from elsewhere —
 import * as FleetGraphHost from "@/features/planner/fleet/FleetGraphHost";
 import * as TeamFleet from "@/features/planner/fleet/teamFleet";

@@ -14,7 +14,7 @@
 // longer drift, while each op's exact set is preserved byte-for-byte.
 
 import type { AppStore } from "../types";
-import { deleteMapEntry, deleteMapEntries } from "../updateHelpers";
+import { deleteMapEntry, deleteMapEntries } from "@/store/updateHelpers";
 
 /** The three project-scoped mutations, each with its own subset of the maps below. */
 export type ProjectMapOp = "delete" | "rekey" | "clearPlan";

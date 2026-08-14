@@ -4,7 +4,7 @@ import {
   applyMcpAssign,
   isDownloadableMcp,
   type McpStoreLike,
-} from "./planExtensions";
+} from "@/features/planner/lib/planExtensions";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 
 describe("mcpAssignToServer", () => {

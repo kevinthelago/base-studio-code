@@ -84,7 +84,7 @@ import { SEED_COMPONENTS, SEED_KITS, reconcileComponents } from "./seed";
 import { SEED_THEMES } from "./themes";
 import { SEED_HASH_EXCLUDED, stableStringify, seedHashOf, type SeedRecord } from "./seedRefresh";
 import { loadComponents, loadKits, pushComponent, pushKit } from "./componentBridge";
-import { loadThemes, pushTheme } from "./themeBridge";
+import { loadThemes, pushTheme } from "@/features/designs/lib/themeBridge";
 import { setActiveKitThemes } from "@/shared/ui/kit";
 import broken from "./seedHeal2514.fixtures.json";
 

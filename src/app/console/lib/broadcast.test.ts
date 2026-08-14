@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeBroadcastTargets } from "@/app/console/lib/broadcast";
-import type { PaneIdentityTab } from "./paneIdentity";
+import type { PaneIdentityTab } from "@/app/console/lib/paneIdentity";
 
 // A positional/legacy tab (no id, no kind) → paneIdFor yields `t{idx}p{n}`.
 const ptab = (layout: string): PaneIdentityTab & { layout: string } => ({ layout });

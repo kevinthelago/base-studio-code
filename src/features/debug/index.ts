@@ -9,7 +9,7 @@
 // Settings `debugSession` flag is on. The separate OS window (#3298) was removed in #3327; the terminal
 // now lives on the app-level TerminalHost (#3326) — kept warm by `DebugSessionMount` and shown in the
 // in-graph morph when the node is opened.
-export { DebugSessionMount, DEBUG_PANE_ID } from "./DebugSessionMount";
+export { DebugSessionMount, DEBUG_PANE_ID } from "@/features/debug/DebugSessionMount";
 // #3535: the standing debug session is the always-on primary; RequestSessionsMount is the paced,
 // capped OVERFLOW pool beside it. Inert unless the Settings auto-spawn toggle is on (off by default).
 export { RequestSessionsMount } from "./RequestSessionsMount";

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { HooksView } from "./";
 import { useAppStore } from "@/store";
 import type { McpServer } from "./lib/mcpServers";
-import type { Hook } from "./lib/hooks";
+import type { Hook } from "@/features/mcp/lib/hooks";
 
 // Two MCP servers (one enabled, one off) → 1 enabled on the MCP page.
 const MCP_SEED: McpServer[] = [

@@ -3,7 +3,7 @@
 //                voices with absolute start times + durations. No Web Audio; fully unit-tested.
 //   playCue    — THIN: realizes that schedule on a Web Audio graph. No-op where AudioContext is absent
 //                (SSR / jsdom), so it's safe to call from anywhere; not unit-tested (needs a real ctx).
-import type { Cue, Envelope, SoundKit, VoiceFilter, Waveform } from "./soundDescriptor";
+import type { Cue, Envelope, SoundKit, VoiceFilter, Waveform } from "@/features/sounds/lib/soundDescriptor";
 
 /** One voice of a cue, resolved to everything the player needs — no more kit lookups downstream. */
 export interface CompiledVoice {

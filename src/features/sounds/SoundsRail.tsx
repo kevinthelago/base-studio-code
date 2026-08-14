@@ -9,8 +9,8 @@ import { SearchField } from "@/shared/ui/controls/SearchField";
 import { useRailSections } from "@/shared/hooks/useRailSections";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { SOUND_CATEGORIES, CATEGORY_LABEL } from "./lib/soundDescriptor";
-import { type SoundGraph, type SoundNode } from "./lib/soundGraph";
+import { SOUND_CATEGORIES, CATEGORY_LABEL } from "@/features/sounds/lib/soundDescriptor";
+import { type SoundGraph, type SoundNode } from "@/features/sounds/lib/soundGraph";
 
 const KIND_DOT: Record<SoundNode["kind"], string> = {
   cue: "var(--accent)",

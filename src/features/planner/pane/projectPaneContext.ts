@@ -2,7 +2,7 @@
 // `ContextFile` cards (kind, token size, pinned state). Extracted from
 // projectPaneData (#2151); pure, no logic changes.
 
-import type { ContextFile } from "./projectPane.types";
+import type { ContextFile } from "@/features/planner/pane/projectPane.types";
 import type { BuildProjectPaneInput } from "./projectPaneInput";
 
 export function buildContext(input: BuildProjectPaneInput): ContextFile[] {

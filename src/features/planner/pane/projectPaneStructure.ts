@@ -2,8 +2,8 @@
 // overlay) into the ProjectPane repo-first `Milestone` structure. Extracted from
 // projectPaneData (#2151); pure, no logic changes.
 
-import type { PlanIssue } from "../issues/planIssues";
-import type { Issue, Milestone } from "./projectPane.types";
+import type { PlanIssue } from "@/features/planner/issues/planIssues";
+import type { Issue, Milestone } from "@/features/planner/pane/projectPane.types";
 import type { BuildProjectPaneInput } from "./projectPaneInput";
 
 /** Shared issue derivation for the repo-first structure builder: how an issue

@@ -10,7 +10,7 @@
 // come from `UI_KIT` (`shared/ui/manifest.ts`), so adding a primitive there makes it authorable here
 // with no edit to this file. A hand-maintained mirror would drift, and a contract that drifts from the
 // code is worse than no contract — agents author against it.
-import { UI_KIT, type PrimitiveName, type PropSpec } from "../manifest";
+import { UI_KIT, type PrimitiveName, type PropSpec } from "@/shared/ui/manifest";
 
 /** A node addressing any primitive in the manifest. `props` is open; the validator constrains it. */
 export interface GeneralNode {

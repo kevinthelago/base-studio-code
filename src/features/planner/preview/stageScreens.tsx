@@ -23,7 +23,7 @@ import { canvasRenderer } from "@/features/planner/preview/renderers/canvasRende
 import { PreviewPaneShell } from "@/features/planner/preview/PreviewPaneShell";
 import { RENDER_PREVIEW_ID } from "./renderPreview";
 import { FileIntakePane } from "@/features/planner/bodies/FileIntakePane";
-import { FILE_INTAKE_ID } from "../lib/fileIntake";
+import { FILE_INTAKE_ID } from "@/features/planner/lib/fileIntake";
 
 /** Props every pipeline second screen receives. `onClose`, when provided, renders a
  *  dismiss affordance (stage-driven screens omit it — they're bound to the stage). */

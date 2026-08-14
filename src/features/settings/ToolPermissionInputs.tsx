@@ -11,7 +11,7 @@
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { COMMON_TOOLS } from "./lib/toolPresets";
+import { COMMON_TOOLS } from "@/features/settings/lib/toolPresets";
 
 /** A removable tool badge in the allow/deny lists. */
 export function ToolChip({

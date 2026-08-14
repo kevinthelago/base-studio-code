@@ -5,11 +5,11 @@
 // data + library assembly in blueprintBuiltins.ts.
 
 import { PLAN_STAGES, type StageConfig, type StageId } from "./planStages";
-import { evalGate, gateApplies, type PlanSignals } from "./stageGate";
+import { evalGate, gateApplies, type PlanSignals } from "@/features/planner/stages/stageGate";
 import type {
   Blueprint, BlueprintStage, SectionStatus,
   StageRenderStatus, IncompleteStage, SectionDef, ModelCapabilityTier, StageSeed,
-} from "./blueprintTypes";
+} from "@/features/planner/stages/blueprintTypes";
 import { uid, makeBlueprints, dedupeSections } from "./blueprintBuiltins";
 
 // ── Dynamic-blueprint resolution (#1854 Phase a) ──────────────────────────────

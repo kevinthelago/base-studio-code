@@ -20,8 +20,8 @@
 // never drift apart.
 
 import { parse } from "acorn";
-import type { SourceRange } from "../../lib/trace";
-import { TracedArray, TracedGraph, TracedMatrix, TracedScalar, TracedScene, TracedStack, TracedTree } from "../../lib/tracer";
+import type { SourceRange } from "@/features/algorithms/lib/trace";
+import { TracedArray, TracedGraph, TracedMatrix, TracedScalar, TracedScene, TracedStack, TracedTree } from "@/features/algorithms/lib/tracer";
 
 /** The identifier the instrumented program calls to announce its current source range. Deliberately
  *  unlikely to collide with anything a trace-program declares. */

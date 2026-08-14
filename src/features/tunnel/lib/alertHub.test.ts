@@ -1,8 +1,8 @@
 // Alert hub (#2498) — fold → publish the alerts domain → one FCM push per FRESH alert.
 import { describe, it, expect, vi } from "vitest";
-import { createAlertHub } from "./alertHub";
-import type { AlertEvent } from "./alerts";
-import type { AlertsPayload } from "./storeProjections";
+import { createAlertHub } from "@/features/tunnel/lib/alertHub";
+import type { AlertEvent } from "@/features/tunnel/lib/alerts";
+import type { AlertsPayload } from "@/features/tunnel/lib/storeProjections";
 
 const alert = (id: string, kind: AlertEvent["kind"] = "agent-paused", at = 1): AlertEvent => ({
   id, kind, paneId: "demo:auth", text: `text for ${id}`, at,

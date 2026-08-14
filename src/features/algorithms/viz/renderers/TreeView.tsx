@@ -6,9 +6,9 @@
 // state — never writes animation CSS.
 import { useEffect } from "react";
 import { Box } from "@/shared/ui/layout/Box";
-import { markStateAttrs, nodeOpStateAttrs } from "../../lib/binding";
-import type { TreeFrame } from "../../lib/trace";
-import type { StructureRenderer } from "../registry";
+import { markStateAttrs, nodeOpStateAttrs } from "@/features/algorithms/lib/binding";
+import type { TreeFrame } from "@/features/algorithms/lib/trace";
+import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import { TREE_VIZ_ANIM_CLASSES, ensureTreeViewMotion } from "@/features/algorithms/viz/renderers/treeViewMotion";
 import { treeLayout, TREE_VIEW as VIEW } from "@/features/algorithms/viz/renderers/treeLayout";
 import "./treeView.css";

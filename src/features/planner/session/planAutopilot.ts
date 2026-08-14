@@ -7,7 +7,7 @@
 // here), and the app (confirms sections, advances, publishes). The driver decides, each
 // tick, what the user/app should do next given the planning state.
 
-import type { Stage } from "../stages/focusedPlan";
+import type { Stage } from "@/features/planner/stages/focusedPlan";
 import autopilotSimEmbedded from "@data/planner/autopilot-sim.json";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
 import { fillTemplate } from "@/shared/lib/core/template";

@@ -2,7 +2,7 @@
 // graph. Direction is "from → deeper" (a node points at the nodes that sit below it).
 import { describe, it, expect } from "vitest";
 import { layerDag } from "./layers";
-import type { GraphEdge } from "./types";
+import type { GraphEdge } from "@/shared/lib/graph/types";
 
 describe("layerDag (#2214)", () => {
   it("assigns longest-path layers over a chain", () => {

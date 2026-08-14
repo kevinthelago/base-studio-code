@@ -24,7 +24,7 @@
 import type * as Esbuild from "esbuild-wasm";
 import type { ComponentType } from "react";
 import { ensureEsbuild } from "@/shared/lib/preview/componentBundle";
-import { resolveAppModule, isAppModule, registeredSpecifiers } from "./moduleRegistry";
+import { resolveAppModule, isAppModule, registeredSpecifiers } from "@/shared/lib/runtime/moduleRegistry";
 import { evaluateEntry, linkGraphModules, pruneUnsatisfiableOverrides } from "./graphModules";
 import { log } from "@/shared/lib/core/log";
 

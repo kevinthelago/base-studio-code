@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { SkillsWorkspace } from "./";
 import { useAppStore } from "@/store";
-import { blankSkill } from "./lib/skills";
+import { blankSkill } from "@/features/skills/lib/skills";
 
 const ROW = ".skill-row"; // the redesign's dense list rows (default density)
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useDraft } from "./useDraft";
+import { useDraft } from "@/shared/hooks/useDraft";
 
 interface Item { id: string; name: string; n?: number }
 

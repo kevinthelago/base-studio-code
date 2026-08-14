@@ -8,7 +8,7 @@
 // could only ever be MET inside a multi-structure scene (bfs's frontier, dijkstra's queue), never SELECTED
 // as an algorithm in its own right. The renderer was finished and unreachable; these two programs are the
 // keys that open it.
-import type { TracedStack, StackMode } from "../../lib/tracer";
+import type { TracedStack, StackMode } from "@/features/algorithms/lib/tracer";
 
 /**
  * A visualizable stack algorithm — its real logic over a {@link TracedStack}, plus its own input seam.

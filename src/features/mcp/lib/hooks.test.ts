@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveHooks, toHookPayload, hookFromCatalog, blankHook, SYSTEM_HOOKS, type Hook } from "./hooks";
+import { resolveHooks, toHookPayload, hookFromCatalog, blankHook, SYSTEM_HOOKS, type Hook } from "@/features/mcp/lib/hooks";
 
 const mk = (over: Partial<Hook>): Hook => ({
   id: "h", name: over.id ?? "h", enabled: true, projects: [], event: "PostToolUse", command: "fmt", ...over,

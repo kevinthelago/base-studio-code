@@ -13,9 +13,9 @@ import { Grid } from "@/shared/ui/layout/Grid";
 import { Text } from "@/shared/ui/typography/Text";
 import { DataTableRow, DataTableHeader } from "@/shared/ui/data/DataTableRow";
 import { Card } from "@/shared/ui/data/Card";
-import type { SkillDef, SkillGroup } from "./lib/skills";
-import type { GroupedSection } from "./lib/skillsFilter";
-import { glyphTile, hueTile, pill, tintBg, sourcePill, scopePill, successColor } from "./skillStyles";
+import type { SkillDef, SkillGroup } from "@/features/skills/lib/skills";
+import type { GroupedSection } from "@/features/skills/lib/skillsFilter";
+import { glyphTile, hueTile, pill, tintBg, sourcePill, scopePill, successColor } from "@/features/skills/skillStyles";
 
 /** List/grouped row grid template; a leading checkbox column appears in select mode. */
 const colTemplate = (sel: boolean) => (sel ? "26px " : "") + "24px minmax(190px,1fr) 90px minmax(120px,170px) 96px 150px 26px 40px";

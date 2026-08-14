@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { blankSkill, skillSlug, type SkillDef, type SkillGroup } from "./skills";
-import type { SkillStats } from "./skillTelemetry";
+import { blankSkill, skillSlug, type SkillDef, type SkillGroup } from "@/features/skills/lib/skills";
+import type { SkillStats } from "@/features/skills/lib/skillTelemetry";
 import {
   mergeSkillStats, indexGroupsBySkill, buildFacetDefs, filterSkills, buildGroupedSections,
   hashN, SORTS, type FacetSelection,
-} from "./skillsFilter";
+} from "@/features/skills/lib/skillsFilter";
 
 const mk = (over: Partial<SkillDef>): SkillDef => ({ ...blankSkill(), id: "x", ...over });
 

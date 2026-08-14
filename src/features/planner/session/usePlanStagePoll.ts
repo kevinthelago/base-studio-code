@@ -10,19 +10,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { bscJson, bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import { hashString } from "@/shared/lib/core/hashString";
 import { useAppStore, type AutomationSuggestion } from "@/store";
-import { FLEET_KEY } from "../fleet/planFleet";
+import { FLEET_KEY } from "@/features/planner/fleet/planFleet";
 import { FEATURES_KEY, canonicalTopicKey } from "../stages/planTopics";
 import { reconcileConfirmations, reconcileSkips, type ConfirmRow } from "../stages/confirmReconcile";
-import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";
+import { parseDependencyManifest, DEPENDENCIES_KEY } from "@/features/planner/issues/dependencies";
 import { parseDeployConfigTag } from "../lib/deployConfig";
 import { coerceMarketConfig } from "../lib/marketConfig";
-import { coerceClassifyConfig } from "../lib/classifyConfig";
+import { coerceClassifyConfig } from "@/features/planner/lib/classifyConfig";
 import { coerceTransformationRows } from "../lib/transformations";
-import { applyMcpAssign } from "../lib/planExtensions";
+import { applyMcpAssign } from "@/features/planner/lib/planExtensions";
 import { catalogLink } from "@/features/mcp";
-import { scriptDocRelpath } from "./planningSession";
+import { scriptDocRelpath } from "@/features/planner/session/planningSession";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
-import { wantsSandboxLaunch } from "./plannerSandbox";
+import { wantsSandboxLaunch } from "@/features/planner/session/plannerSandbox";
 import { plannerLaunchConfig } from "./plannerLaunch";
 
 /** A per-repo startup script row from plan.db (`bsc plan startup`, #2010). */

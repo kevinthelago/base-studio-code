@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAppStore } from "@/store";
 import { type CatalogItem } from "@/shared/data/mcpCatalog";
 import { HOOK_CATALOG } from "@/shared/data/hookCatalog";
-import { hookFromCatalog, blankHook, SYSTEM_HOOKS, type Hook } from "./lib/hooks";
+import { hookFromCatalog, blankHook, SYSTEM_HOOKS, type Hook } from "@/features/mcp/lib/hooks";
 import {
   useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard,
 } from "@/features/mcp/shared";
@@ -27,11 +27,11 @@ export {
   type McpServer, type McpTransport, BUILTIN_MCP_SERVERS, resolveMcpServers,
   mcpFromCatalog, resolveAllInstalledMcp, toBscAgentMcp,
 } from "./lib/mcpServers";
-export { catalogLink, resolveMcpInstallDir, repoNameFromLink, mcpRepoName } from "./lib/mcpInstall";
-export { toSessionPayloads, mcpAllowRules } from "./lib/sessionConfig";
-export { resolveHooks, type Hook } from "./lib/hooks";
-export { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "./lib/hookTelemetry";
-export { migrateLegacyExtensions } from "./lib/migrateExtensions";
+export { catalogLink, resolveMcpInstallDir, repoNameFromLink, mcpRepoName } from "@/features/mcp/lib/mcpInstall";
+export { toSessionPayloads, mcpAllowRules } from "@/features/mcp/lib/sessionConfig";
+export { resolveHooks, type Hook } from "@/features/mcp/lib/hooks";
+export { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "@/features/mcp/lib/hookTelemetry";
+export { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 
 // The MCP servers SCREEN is not here — it is the `mcppage` RECORD, mounted by `McpGraphHost`, which is
 // what `lazyWorkspaces` resolves `McpWorkspace` to. Both shells already render the graph copy, so the

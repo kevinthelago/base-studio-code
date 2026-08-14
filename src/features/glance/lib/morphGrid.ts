@@ -24,7 +24,7 @@
 // as a tidy tile grid rather than a scatter. The trade is deliberate: an individual left-hand node may
 // land in the anchor's own column when that is what completes the square, because a uniform block beats
 // a strictly-sided but ragged one.
-import type { MorphRect } from "./glancePush";
+import type { MorphRect } from "@/features/glance/lib/glancePush";
 import { NW, NH } from "./glanceGraph";
 
 /** A cell's DEFAULT size, in WORLD units (it renders at world-size × the current zoom). Matches the

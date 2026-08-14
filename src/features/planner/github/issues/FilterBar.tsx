@@ -1,7 +1,7 @@
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Text } from "@/shared/ui/typography/Text";
-import type { Filters, StateFilter, SortKey } from "./issuesModel";
+import type { Filters, StateFilter, SortKey } from "@/features/planner/github/issues/issuesModel";
 
 export function FilterBar({
   filters, onChange, labels, milestones, total, shown,

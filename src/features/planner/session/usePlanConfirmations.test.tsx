@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { usePlanConfirmations } from "./usePlanConfirmations";
+import { usePlanConfirmations } from "@/features/planner/session/usePlanConfirmations";
 import { FEATURES_KEY } from "../stages/planTopics";
 
 type Props = Parameters<typeof usePlanConfirmations>[0];

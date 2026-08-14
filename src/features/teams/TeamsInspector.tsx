@@ -15,7 +15,7 @@ import { SectionLabel, type SectionLabelProps } from "@/shared/ui/layout/Section
 import { PersonaEditor } from "@/features/personas";
 import type { Persona } from "@/features/personas";
 import { RELATIONSHIP_ARCHETYPES, archetypeById, formById, type Team } from "./lib/team";
-import { positionDisplay, positionComms, hueColor } from "./lib/orgView";
+import { positionDisplay, positionComms, hueColor } from "@/features/teams/lib/orgView";
 import { FormChip, FormLane } from "./components";
 import type { Selection } from "./TeamsCanvas";
 

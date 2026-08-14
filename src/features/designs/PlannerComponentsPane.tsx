@@ -14,7 +14,7 @@ import { Toggle } from "@/shared/ui/controls/Toggle";
 import { SearchField } from "@/shared/ui/controls/SearchField";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import { RoleDot, KitChip } from "./kitChrome";
+import { RoleDot, KitChip } from "@/features/designs/kitChrome";
 import { ROLE_COLOR, matchesQuery, NO_COMPONENTS_TITLE, type ComponentRecord, type Role } from "./lib/model";
 import "./plannerComponentsPane.css";
 

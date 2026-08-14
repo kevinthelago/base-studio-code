@@ -8,7 +8,7 @@ import { Grid } from "@/shared/ui/layout/Grid";
 import { Text } from "@/shared/ui/typography/Text";
 import { Box } from "@/shared/ui/layout/Box";
 import { Button } from "@/shared/ui/controls/Button";
-import type { FlatIssue } from "./issuesModel";
+import type { FlatIssue } from "@/features/planner/github/issues/issuesModel";
 
 export function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: boolean; onClick: () => void }) {
   return (

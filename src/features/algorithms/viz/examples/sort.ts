@@ -12,7 +12,7 @@
 // hand `sortSteps` a FRESH COPY of its fixed input, never a shared array. The viz registry does exactly
 // that (`() => sortSteps([...SORT_MOCK])`), keeping the module-level {@link SORT_MOCK} immutable.
 
-import type { ArrayFrame } from "../../lib/trace";
+import type { ArrayFrame } from "@/features/algorithms/lib/trace";
 
 /** A small, watchable mock input for the sort proof — short enough to teach, unsorted enough that the
  *  compare/swap animations have visible work to do. Treated as IMMUTABLE: hand `sortSteps` a copy of it

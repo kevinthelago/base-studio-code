@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { usePlanFocusedPane, type PlanFocusedPaneOpts } from "@/features/planner/session/usePlanFocusedPane";
-import type { Stage } from "../stages/focusedPlan";
+import type { Stage } from "@/features/planner/stages/focusedPlan";
 
 const stage = (key: string, status: Stage["status"] = "upcoming"): Stage => ({
   key, name: key, glyph: "x", blurb: "", gate: "", index: 0, total: 3, status, fraction: 0,

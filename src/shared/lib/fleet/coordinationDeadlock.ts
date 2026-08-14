@@ -19,8 +19,8 @@ import type {
   ProducerOf,
   SessionProduces,
   Deadlock,
-} from "./coordination.types";
-import { isSatisfied } from "./coordinationState";
+} from "@/shared/lib/fleet/coordination.types";
+import { isSatisfied } from "@/shared/lib/fleet/coordinationState";
 
 /** The default resolver: only a `session:<id>` dep yields a producer (itself). All other
  *  kinds are unknown until plan-derived Produces/Consumes is supplied (#199 AC#7). */

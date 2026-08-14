@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { gatedProjects, newlyLaunchable } from "@/shared/lib/fleet/useFleetGate";
-import type { GateStream } from "./streamGate";
+import type { GateStream } from "@/shared/lib/fleet/streamGate";
 
 describe("gatedProjects", () => {
   it("derives the distinct project keys from the pane roster", () => {

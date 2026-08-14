@@ -2,7 +2,7 @@
 // a TracedGraph, so the animation is DERIVED from the traversal's own execution: the frontier expands,
 // nodes turn visited, edges relax. BFS is the proof; dfs / dijkstra / a-star / topological-sort follow.
 // Keyed by base name (bfs.rs → bfs), so the existing Rust graph impls animate via their JS trace-program.
-import type { TracedGraph, GraphInput } from "../../lib/tracer";
+import type { TracedGraph, GraphInput } from "@/features/algorithms/lib/tracer";
 
 /** A visualizable graph algorithm — its real logic over a {@link TracedGraph} + the graph to seed it. */
 export interface GraphProgram {

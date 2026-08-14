@@ -10,7 +10,7 @@ import {
   findingKey,
   reviewSystemPrompt,
   type ReviewFinding,
-} from "./previewReview";
+} from "@/shared/lib/preview/previewReview";
 
 const f = (over: Partial<ReviewFinding>): ReviewFinding => ({
   id: "f1", shotId: "s1", severity: "issue", title: "Buttons overlap", detail: "Fix the flex gap.", status: "pending", ...over,

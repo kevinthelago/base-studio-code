@@ -1,4 +1,4 @@
-import type { ConsoleProvider } from "./types";
+import type { ConsoleProvider } from "@/app/console/lib/providers/types";
 import { claudeProvider } from "@/app/console/lib/providers/providers/claude";
 import { geminiProvider } from "@/app/console/lib/providers/providers/gemini";
 import { codexProvider } from "@/app/console/lib/providers/providers/codex";

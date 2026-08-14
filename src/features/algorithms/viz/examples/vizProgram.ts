@@ -65,8 +65,8 @@ import {
   type TracedScalar,
   type TracedScene,
   type TreeNode,
-} from "../../lib/tracer";
-import type { Frame } from "../../lib/trace";
+} from "@/features/algorithms/lib/tracer";
+import type { Frame } from "@/features/algorithms/lib/trace";
 import { instrumentVizCode, LOC_HOOK } from "./vizInstrument";
 
 /** The structure a stored trace-program drives — selects the runner, renderer(s), and input seam. One per

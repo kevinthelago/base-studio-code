@@ -6,8 +6,8 @@
 // The split is the usual one at a smaller scale: the graph carries the LAYOUT (rail, inspector, kit
 // canvas), and everything that makes a noise or derives a graph stays code.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
-import * as SoundDescriptor from "./lib/soundDescriptor";
-import * as SoundGraph from "./lib/soundGraph";
+import * as SoundDescriptor from "@/features/sounds/lib/soundDescriptor";
+import * as SoundGraph from "@/features/sounds/lib/soundGraph";
 import * as SoundKits from "./lib/soundKits";
 import * as Synth from "./lib/synth";
 import * as UseSoundKits from "@/features/sounds/useSoundKits";

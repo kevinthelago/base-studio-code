@@ -8,9 +8,9 @@
 // thing in the feature to express as layout data.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as Knowledge from "./lib/knowledge";
-import * as UseKnowledgeGraph from "./useKnowledgeGraph";
+import * as UseKnowledgeGraph from "@/features/algorithms/useKnowledgeGraph";
 import * as VizPanel from "./viz/VizPanel";
-import * as UseVizForImpl from "./viz/useVizForImpl";
+import * as UseVizForImpl from "@/features/algorithms/viz/useVizForImpl";
 // `record-link-debt` — the transport bar `vizpreview`/`vizstage` compose. It was registered nowhere, so
 // both records threw the loader's named error on mount. It stays code for the same reason VizPanel does:
 // it drives the instrumented executor's playhead, which is behaviour, not layout.

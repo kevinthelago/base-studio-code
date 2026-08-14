@@ -3,8 +3,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import {
   loadPendingLessons, confirmLesson, discardLesson, lessonTitle, lessonToSkill, type Lesson,
-} from "./lessons";
-import { skillSlug } from "./skills";
+} from "@/features/skills/lib/lessons";
+import { skillSlug } from "@/features/skills/lib/skills";
 
 const lesson = (over: Partial<Lesson> = {}): Lesson => ({
   id: "lesson-abc", mistake: "Ran targeted vitest", cause: "", rule: "Run the full suite",

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import departments from "@data/teams/departments.json";
-import { ROLE_META } from "./orgView";
+import { ROLE_META } from "@/features/teams/lib/orgView";
 
 // Guard for the externalized left-rail department order (@data/teams/departments.json, #2419).
 describe("team departments (loaded from @data/teams/departments.json)", () => {

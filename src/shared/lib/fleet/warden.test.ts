@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { allChanges } from "./worktreeChanges";
+import { allChanges } from "@/shared/lib/fleet/worktreeChanges";
 import { planWarden, summarizeTrips, parseAuditCommands, type WardenSession, zipWorktreeChanges, wardenSweepTargets, livePaneIdsOf } from "@/shared/lib/fleet/warden";
 import { roleCapability } from "../session/sessionRoles";
 import { DEFAULT_FLOW } from "@/features/planner/fleet/agentFlow";

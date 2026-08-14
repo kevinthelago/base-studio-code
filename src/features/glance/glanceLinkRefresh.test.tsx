@@ -9,8 +9,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, waitFor } from "@testing-library/react";
 import { useAppStore } from "@/store";
-import * as bridge from "./lib/projectLinksBridge";
-import type { ProjectLink } from "./lib/projectLinks";
+import * as bridge from "@/features/glance/lib/projectLinksBridge";
+import type { ProjectLink } from "@/features/glance/lib/projectLinks";
 
 // Same viewport stub the other GlanceWorkspace tests use — jsdom does no layout measurement.
 vi.mock("@/shared/ui/layouts/useGraphViewport", async (orig) => {

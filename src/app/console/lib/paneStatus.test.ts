@@ -7,7 +7,7 @@ import {
   clearTabStatuses,
   type PaneStatus,
   type StatusTab,
-} from "./paneStatus";
+} from "@/app/console/lib/paneStatus";
 
 // A legacy/positional tab (no id, no kind) → paneIdFor yields `t{idx}p{n}`.
 const ptab = (layout: string): StatusTab => ({ layout });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fleetPlanProgress, mergeStreamProgress, unionDone, normalizeRef } from "./fleetPlanProgress";
+import { fleetPlanProgress, mergeStreamProgress, unionDone, normalizeRef } from "@/features/glance/lib/fleetPlanProgress";
 import type { StreamProgress } from "./streamProgress";
 
 describe("fleetPlanProgress", () => {

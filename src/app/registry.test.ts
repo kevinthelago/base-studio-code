@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { WORKSPACES, workspaceLabel, effectiveWorkspace, type Workspace } from "./registry";
+import { WORKSPACES, workspaceLabel, effectiveWorkspace, type Workspace } from "@/app/registry";
 
 describe("screen registry (#nav-pass)", () => {
   it("gives every screen a non-empty label, a unique key, and an icon", () => {

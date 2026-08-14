@@ -3,7 +3,7 @@ import { render, screen, fireEvent, within, waitFor } from "@testing-library/rea
 import { invoke } from "@tauri-apps/api/core";
 import { SkillsWorkspace } from "./";
 import { useAppStore } from "@/store";
-import { blankSkill, skillSlug } from "./lib/skills";
+import { blankSkill, skillSlug } from "@/features/skills/lib/skills";
 
 const ROW = ".skill-row";
 

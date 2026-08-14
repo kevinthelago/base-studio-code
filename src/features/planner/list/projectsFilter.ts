@@ -5,10 +5,10 @@
 // Tauri so it's unit-testable in isolation; the composer (`ProjectsList`) owns the state + the
 // open/delete handlers and the surrounding chrome.
 
-import { projStatus, projectProgress, type GhProject } from "./published/publishedModel";
+import { projStatus, projectProgress, type GhProject } from "@/features/planner/list/published/publishedModel";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
-import type { DraftRow } from "./drafts";
-import type { LocalPublishedRow } from "./localPublished";
+import type { DraftRow } from "@/features/planner/list/drafts";
+import type { LocalPublishedRow } from "@/features/planner/list/localPublished";
 import type { ChipTone } from "@/shared/ui/data/Chip";
 import { type AppType, APP_TYPES, type ClassifyConfig } from "@/features/planner/lib/classifyConfig";
 import { serviceMode, type DeployConfig, type DeployService } from "@/features/planner/lib/deployServices";

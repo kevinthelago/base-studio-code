@@ -14,7 +14,7 @@ import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Button } from "@/shared/ui/controls/Button";
 import { TextField } from "@/shared/ui/controls/Field";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
-import type { Frame } from "../lib/trace";
+import type { Frame } from "@/features/algorithms/lib/trace";
 import { TracePlayer } from "./TracePlayer";
 import type { VizExample } from "./examples/registry";
 import "./vizPanel.css";

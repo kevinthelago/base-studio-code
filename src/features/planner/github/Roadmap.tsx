@@ -7,7 +7,7 @@ import {
   buildGantt, tickIntervalWeeks, tickLabel, windowStartFrom,
   WINDOW_PRESETS, DEFAULT_WINDOW_WEEKS,
   type GhMilestone,
-} from "./roadmapGantt";
+} from "@/features/planner/github/roadmapGantt";
 import { StatCard } from "@/shared/ui/charts";
 import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";

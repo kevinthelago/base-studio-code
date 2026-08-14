@@ -133,6 +133,12 @@ const rows = [];
 for (const [spec, seed] of seeds) {
   const file = fileFor(srcFiles, spec);
   if (!file) continue; // already retired, or record-native — not a candidate, and not a defect
+  // NEVER RETIRABLE: the algorithms SEED modules exist precisely to BE files. Their whole point
+  // (`seedAlgorithms.gen.test.ts`, #3465) is that a packaged node's `code` is generated FROM a real
+  // module — so tsc checks it, its sibling test executes it, and the standalone guarantee is enforced
+  // rather than claimed. Retiring one turns that generator back into a claim, which is the state it was
+  // built to end. `llmEnergy.ts` went in a tranche before this guard existed.
+  if (/^shared\/lib\/algorithms\/[^/]+\.ts$/.test(file)) continue;
   // As a RECORD would hold it: LF-normalized with relative imports absolutized. Comparing the raw file
   // graded 21 candidates "body differs" purely on import FORM — the migration absolutized by hand.
   const fileSrc = fileAsRecordSource(join(REPO, "src", file), file);

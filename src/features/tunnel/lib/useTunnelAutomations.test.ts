@@ -5,12 +5,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { Automation } from "@/features/automations/lib/scheduler";
 
-vi.mock("./tunnelClient", () => ({
+vi.mock("@/features/tunnel/lib/tunnelClient", () => ({
   tunnelSetAutomations: vi.fn().mockResolvedValue(undefined),
   tunnelAutomationFailed: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { tunnelSetAutomations, tunnelAutomationFailed } from "./tunnelClient";
+import { tunnelSetAutomations, tunnelAutomationFailed } from "@/features/tunnel/lib/tunnelClient";
 import { useTunnelAutomations } from "./useTunnelAutomations";
 
 const handlers: Record<string, (e: { payload: unknown }) => void> = {};

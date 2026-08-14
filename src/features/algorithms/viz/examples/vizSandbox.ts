@@ -5,7 +5,7 @@
 // which we TERMINATE on timeout so the app never freezes.
 
 import type { VizRun } from "./vizProgram";
-import type { Frame } from "../../lib/trace";
+import type { Frame } from "@/features/algorithms/lib/trace";
 import type { VizDatatype } from "./vizProgram";
 
 /** Main → worker: run this program (optionally on an overriding input). `id` correlates the reply. */

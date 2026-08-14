@@ -12,13 +12,13 @@
 // from the impl's STORED code in the preview sandbox (`shared/lib/preview/`, #3177), so the librarian
 // authors visualizations as data — no per-algorithm app change.
 
-import type { Frame } from "../../lib/trace";
+import type { Frame } from "@/features/algorithms/lib/trace";
 import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
 import { classifyKind, type Classifiable } from "@/features/algorithms/lib/classifyKind";
-import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm, runStackAlgorithm, runTreeAlgorithm, runScene, type GraphInput } from "../../lib/tracer";
+import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm, runStackAlgorithm, runTreeAlgorithm, runScene, type GraphInput } from "@/features/algorithms/lib/tracer";
 import { runInSandbox } from "./vizSandbox";
 import type { VizRun } from "./vizProgram";
-import type { RendererRegistry } from "../registry";
+import type { RendererRegistry } from "@/features/algorithms/viz/registry";
 import { ArrayView } from "../renderers/ArrayView";
 import { MatrixView } from "../renderers/MatrixView";
 import { GraphView } from "../renderers/GraphView";

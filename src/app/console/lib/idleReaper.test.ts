@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { panesToReap, isReapable, thresholdFor, DEFAULT_REAPER_CONFIG, type ReaperPane, type ReaperConfig } from "./idleReaper";
+import { panesToReap, isReapable, thresholdFor, DEFAULT_REAPER_CONFIG, type ReaperPane, type ReaperConfig } from "@/app/console/lib/idleReaper";
 
 const NOW = 1_000_000_000;
 const cfg: ReaperConfig = { enabled: true, idleMs: 30 * 60_000, workerIdleMs: null };

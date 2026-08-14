@@ -5,7 +5,7 @@
 // the sync layer transmits. Also applies a received push back to a HubSnapshot
 // so the calling code can update the store.
 
-import type { CanonicalFile, PlanMeta, CanonicalSectionState } from "../plannerCore/types";
+import type { CanonicalFile, PlanMeta, CanonicalSectionState } from "@/features/planner/lib/plannerCore/types";
 import { projectId as mintProjectId } from "../plannerCore/ids";
 import { parseSkipped } from "@/features/planner/stages/planTopics";
 

@@ -20,7 +20,7 @@ import { componentPreviewFiles, supportedStates, type KitArtifact, type PreviewS
 import { usePreviewData } from "@/features/designs/usePreviewData";
 import { recordPreviewError } from "./lib/componentBridge";
 import { registerPreviewFrame, unregisterPreviewFrame } from "./lib/previewRegistry";
-import { makeLibraryResolvers } from "./lib/libraryModules";
+import { makeLibraryResolvers } from "@/features/designs/lib/libraryModules";
 import { useActiveSoundKit } from "@/features/designs/lib/useActiveSoundKit";
 import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
 

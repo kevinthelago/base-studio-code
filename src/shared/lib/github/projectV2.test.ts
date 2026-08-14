@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "./projectV2";
+import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/shared/lib/github/projectV2";
 
 const node: ProjectV2Node = {
   fields: {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SessionsBehaviorCard } from "./SessionsBehaviorCard";
-import { SESSIONS_BEHAVIOR_SPEC } from "./sessionsBehaviorSpec";
+import { SESSIONS_BEHAVIOR_SPEC } from "@/features/settings/cards/sessionsBehaviorSpec";
 import { validateGeneralNode } from "@/shared/ui/spec";
 import { useAppStore } from "@/store";
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAuditRows, filterAuditRows, auditDecisionCounts, fmtAuditTime, type AuditDisplayRow } from "./auditRows";
+import { buildAuditRows, filterAuditRows, auditDecisionCounts, fmtAuditTime, type AuditDisplayRow } from "@/features/security/lib/auditRows";
 import type { AgentProfile } from "./agentProfiles";
 
 const TS = "2026-05-30T18:00:00Z";

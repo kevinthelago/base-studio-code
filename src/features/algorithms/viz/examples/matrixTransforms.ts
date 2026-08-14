@@ -2,7 +2,7 @@
 // TracedMatrix, so the animation is DERIVED from the transform's own execution and looks distinct:
 // transpose swaps across the diagonal, rotate cycles each ring 90°, reflect swaps columns. In-place +
 // square (so the grid keeps its shape). Keyed by base name (transpose / rotate / reflect), like the sorts.
-import { TracedMatrix } from "../../lib/tracer";
+import { TracedMatrix } from "@/features/algorithms/lib/tracer";
 
 /** A visualizable matrix algorithm — its real logic over a {@link TracedMatrix} + the grid to seed it. */
 export interface MatrixProgram {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseAuditLog, toRow, decideAudit, type AuditRecord } from "./auditLog";
-import { resolveProfileSettings } from "./profileEnforcement";
+import { parseAuditLog, toRow, decideAudit, type AuditRecord } from "@/features/security/lib/auditLog";
+import { resolveProfileSettings } from "@/features/security/lib/profileEnforcement";
 import { findProfile } from "./agentProfiles";
 import { roleCapability } from "@/shared/lib/session/sessionRoles";
 

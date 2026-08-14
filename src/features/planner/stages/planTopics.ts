@@ -10,7 +10,7 @@
 // isolation and shared between Planning.tsx and its tests. (The fleet/agent-stream
 // machinery that used to live here moved to fleet/planFleet.ts in #1615.)
 
-import { FLEET_KEY } from "../fleet/planFleet";
+import { FLEET_KEY } from "@/features/planner/fleet/planFleet";
 
 /** The coverage record: topics considered but deliberately not documented. */
 export const SKIPPED_KEY = "_skipped";

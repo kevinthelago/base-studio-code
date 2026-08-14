@@ -1,6 +1,6 @@
 // The structural half of the shadow verdict (#4169) — "graph-identical" vs "differs in N nodes".
 import { describe, it, expect } from "vitest";
-import { outlineJsx } from "./jsxOutline";
+import { outlineJsx } from "@/shared/lib/runtime/shadow/jsxOutline";
 import { diffOutlines } from "./outlineDiff";
 
 const diff = (file: string, graph: string) => diffOutlines(outlineJsx(file), outlineJsx(graph));

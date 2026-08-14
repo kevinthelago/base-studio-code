@@ -6,7 +6,7 @@
 // met inside a scene, never selected. These two open it, and they are a matched pair on purpose: BUILD the
 // structure (insert, which is where the compares live) then READ it (in-order, which is what makes a BST
 // worth building — the sorted walk).
-import type { TracedTree, TreeNode } from "../../lib/tracer";
+import type { TracedTree, TreeNode } from "@/features/algorithms/lib/tracer";
 
 /** A visualizable tree algorithm — its logic over a {@link TracedTree}, plus the nodes the tree STARTS with.
  *  `seed` is what separates the pair: insert starts from nothing and builds; in-order starts from a finished

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildMcpLibrary, collectBlueprintMcp, applyBlueprintMcp } from "@/features/planner/blueprints/blueprintMcp";
-import { addMcpServer, removeMcpServer } from "./blueprintEdit";
-import { type McpStoreLike } from "../lib/planExtensions";
+import { addMcpServer, removeMcpServer } from "@/features/planner/blueprints/blueprintEdit";
+import { type McpStoreLike } from "@/features/planner/lib/planExtensions";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Blueprint, BlueprintStage } from "../stages/blueprints";
 

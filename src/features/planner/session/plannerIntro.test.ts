@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { plannerIntroMode, composePlannerIntro, plannerTreatAsExisting } from "./plannerIntro";
+import { plannerIntroMode, composePlannerIntro, plannerTreatAsExisting } from "@/features/planner/session/plannerIntro";
 
 describe("plannerIntro — mode selection (#1240)", () => {
   it("existing project → existing, else new", () => {

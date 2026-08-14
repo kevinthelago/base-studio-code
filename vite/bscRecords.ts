@@ -14,6 +14,17 @@ import { join, resolve } from "node:path";
 import type { Plugin } from "vite";
 import { emitRecords } from "../scripts/emit-records.mjs";
 
+/** ONCE PER PROCESS, across every plugin instance — module-level on purpose.
+ *
+ *  `emitRecords` starts by `rmSync`-ing the whole tree and rebuilding it, which is right for one emitter
+ *  and catastrophic for two. A WORKER is a separate build with its own plugin list, and its `buildStart`
+ *  fires from inside the MAIN build's transform phase — so a second instance deleted the tree while
+ *  rolldown was concurrently loading modules out of it. The failure surfaced as "Could not load
+ *  .bsc-records/…", naming a DIFFERENT module on every run, for files that were plainly on disk by the
+ *  time anyone looked. Nothing about the seeds changes mid-build, so emitting once is not just a fix for
+ *  the race — it is the only emission that was ever meaningful. */
+let emitted = false;
+
 export function bscRecords(opts: { repoRoot: string }): Plugin {
   const { repoRoot } = opts;
   const records = resolve(repoRoot, ".bsc-records");
@@ -32,6 +43,8 @@ export function bscRecords(opts: { repoRoot: string }): Plugin {
     // It also explains why the gate stayed green: every gate command regenerated first, so no gate could
     // observe the broken state — and the one command nobody gates on is the one a person runs all day.
     buildStart() {
+      if (emitted) return; // see `emitted` above — a second emitter deletes the tree mid-build
+      emitted = true;
       emitRecords({ quiet: true });
     },
     // Ahead of the `@` alias, so the specifier is still in `@/…` form and matches exactly instead of

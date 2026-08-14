@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { useAppStore } from "@/store";
 import type { ComponentRecord, Kit } from "./lib/model";
-import type { Dispatch } from "./lib/propagation";
-import { makeChange } from "./lib/propagation";
+import type { Dispatch } from "@/features/designs/lib/propagation";
+import { makeChange } from "@/features/designs/lib/propagation";
 import { contractChanged, mergeDispatches } from "./store";
 import { SEED_COMPONENTS, SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./lib/seed";
 import { SEED_THEMES, type KitThemeRecord } from "./lib/themes";
 import { stampSeedHash } from "./lib/seedRefresh";
 import * as bridge from "./lib/componentBridge";
-import * as themeBridge from "./lib/themeBridge";
-import * as usageBridge from "./lib/kitUsageBridge";
+import * as themeBridge from "@/features/designs/lib/themeBridge";
+import * as usageBridge from "@/features/designs/lib/kitUsageBridge";
 import { setActiveKitThemes, activeKitThemes, themeById } from "@/shared/ui/kit";
 
 // The packaged seed is now a single EMPTY kit (#3543): SEED_KITS = [base-studio-code], SEED_COMPONENTS = [].

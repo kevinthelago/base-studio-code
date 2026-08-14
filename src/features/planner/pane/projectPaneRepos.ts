@@ -2,7 +2,7 @@
 // ProjectPane `Repo` cards (clone state, per-stream planned branches). Extracted
 // from projectPaneData (#2151); pure, no logic changes.
 
-import type { Repo } from "./projectPane.types";
+import type { Repo } from "@/features/planner/pane/projectPane.types";
 import type { BuildProjectPaneInput } from "./projectPaneInput";
 
 export function buildRepos(input: BuildProjectPaneInput): Repo[] {
