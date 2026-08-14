@@ -53,11 +53,21 @@ export default tseslint.config(
     //     every sibling worktree gets walked (8 on a typical dev box) and the run explodes.
     //   - `crates/**/tests/fixtures/**` — Rust-owned test DATA, not app code. Its shape (e.g. the
     //     deliberately-unreferenced fns in bsc-graph's sample.ts) is the fixture's whole point.
+    //   - `.bsc-records/**` — the GENERATED tree `scripts/emit-records.mjs` materializes from the
+    //     packaged seeds. Git-ignored, rebuilt on every build/typecheck/test, and holding a SECOND
+    //     copy of source the store owns — the same status `node_modules` has. Linting it is wrong in
+    //     both directions: a finding there is unfixable in place (the next run overwrites the edit;
+    //     the fix belongs in the record), and every finding that IS in `src/` gets reported twice.
+    //     It was also actively RED — the emitted records carry `eslint-disable jsx-a11y/…` comments
+    //     and the a11y rules are registered only for the JSX block, so each disable named an
+    //     unregistered rule: 7 errors, in files no one can edit. Retiring more files would have added
+    //     more, which makes this a precondition of the deletion track rather than tidying.
     ignores: [
       "dist",
       "target",
       "node_modules",
       "relay",
+      ".bsc-records",
       "**/wt*/**",
       "**/.claude/worktrees/**",
       "crates/**/tests/fixtures/**",

@@ -10,6 +10,7 @@ import { useAppStore } from "@/store";
 import { loadComponentFromSource } from "@/shared/lib/runtime/componentLoader";
 import { resolveGraphSource } from "./graphResolver";
 import { lastGood } from "./renderGate";
+import { recoveryLadder } from "./recoveryLadder";
 import { log } from "@/shared/lib/core/log";
 import { ThemeProvider } from "@/shared/ui/kit";
 
@@ -127,6 +128,12 @@ export function GraphComponent({
   // resolved token VALUES; "css"/absent → it follows the CSS cascade as today. A primitive selector (string
   // | undefined), so it never churns re-renders (mirrors the `srcText` selector above).
   const themeSystem = useAppStore((s) => s.components.find((c) => c.id === id)?.themeSystem);
+  // The DURABLE half of the gate: the sources this record's own change history retained. `lastGood` below
+  // is per-session and therefore empty on a fresh boot, which is precisely when a bad write does its
+  // damage — the 02:00 incident's five records were rewritten, the app was restarted, and the first
+  // version the gate ever saw of each was the broken one. These rungs live in the store, so they survive
+  // the restart. Selected as the ARRAY (not the record) so an unrelated field moving cannot re-render.
+  const history = useAppStore((s) => s.components.find((c) => c.id === id)?.history);
   // Both caches key on record + EXPORT, never the record alone: the same id serves a different component
   // per export, so an id-keyed `lastGood` would hand TextArea the component it cached for TextField.
   const cacheKey = exportName ? `${id}#${exportName}` : id;
@@ -146,6 +153,39 @@ export function GraphComponent({
     setActiveSource(good.source);
     setDegraded(true);
     return true;
+  };
+
+  /** Walk the record's retained history, mounting the newest rung that compiles.
+   *
+   *  The tier BELOW `mountLastGood`, reached when this session never saw a version work — a fresh boot
+   *  onto a record a designer broke while the app was down. Each rung is compiled on demand (unlike
+   *  `lastGood`, which holds an already-built component), so this costs a compile per rung tried; it runs
+   *  only on the failure path, where the alternative is an empty surface or a dead app.
+   *
+   *  Deliberately does NOT write `lastGood`: a rung that compiles has not yet RENDERED, and conflating
+   *  the two is the distinction the gate is built on. It mounts inside the same error boundary, so a rung
+   *  that compiles and then throws falls through to the caller's fallback exactly as before. */
+  const mountFromHistory = async (why: string): Promise<boolean> => {
+    const rungs = recoveryLadder(history, source);
+    for (const rung of rungs) {
+      try {
+        const Comp = await loadComponentFromSource(rung, resolveGraphSource, exportName);
+        log.warn(
+          `graph-loader: "${id}" ${why} and this session has no last-good — falling back to a retained ` +
+            `earlier version from the record's history (${rung.length} chars). Recover it properly with ` +
+            `\`bsc ui revert ${id}\`.`,
+          "graph-loader",
+        );
+        setLoaded(() => Comp);
+        setActiveSource(rung);
+        setDegraded(true);
+        return true;
+      } catch {
+        // This rung is broken too — try the one before it. A record can accumulate several bad writes in
+        // a row, which is exactly what a designer working around breakage produces.
+      }
+    }
+    return false;
   };
 
   useEffect(() => {
@@ -190,8 +230,12 @@ export function GraphComponent({
       .catch((e) => {
         if (cancelled) return;
         log.warn(`graph-loader: "${id}" failed to load: ${String(e).slice(0, 160)}`, "graph-loader");
-        // GATE, path 1 — it did not COMPILE. Prefer the last version that rendered over an empty surface.
-        if (!mountLastGood("failed to compile")) setLoaded(null);
+        // GATE, path 1 — it did not COMPILE. Prefer the last version that rendered over an empty surface,
+        // then a version the record's own history retained, then the caller's fallback.
+        if (mountLastGood("failed to compile")) return;
+        void mountFromHistory("failed to compile").then((recovered) => {
+          if (!cancelled && !recovered) setLoaded(null);
+        });
       });
     return () => { cancelled = true; };
     // `mountLastGood` is re-created each render and reads only `id`/`source`, which are already deps —
@@ -223,9 +267,19 @@ export function GraphComponent({
       id={id}
       fallback={fallback}
       // GATE, path 2 — it COMPILED but threw while rendering. Same preference: the last version that
-      // worked beats an empty surface. Guarded by `degraded` so a throw from the last-good version
-      // itself cannot loop — it falls through to the caller's fallback, as before.
-      onRenderThrow={degraded ? undefined : () => { mountLastGood("threw while rendering"); }}
+      // worked beats an empty surface, then a retained earlier one. Guarded by `degraded` so a throw from
+      // a fallback version itself cannot loop — it falls through to the caller's fallback, as before.
+      //
+      // This is the path the null-dispatcher failure takes: a hook resolving against the wrong React
+      // instance compiles perfectly well and only throws once something mounts it, which is why a
+      // syntax-level write gate could never have caught it.
+      onRenderThrow={
+        degraded
+          ? undefined
+          : () => {
+              if (!mountLastGood("threw while rendering")) void mountFromHistory("threw while rendering");
+            }
+      }
     >
       {themeSystem === "js" ? <ThemeProvider themeId={themeId}>{el}</ThemeProvider> : el}
     </GraphErrorBoundary>

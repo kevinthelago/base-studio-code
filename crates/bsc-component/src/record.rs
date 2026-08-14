@@ -30,6 +30,19 @@ pub const HISTORY: &str = "history";
 /// stays bounded; the recent log is what a session reviews before an edit.
 pub const HISTORY_CAP: usize = 30;
 
+/// The source field a component record renders from — the one field whose loss is unrecoverable.
+pub const SRC_TEXT: &str = "srcText";
+/// The history entry's retained PRIOR source — the record's `srcText` as it was *before* that write.
+pub const PREV_SRC: &str = "prevSrc";
+/// How many of the most recent history entries retain their [`PREV_SRC`] content.
+///
+/// The log keeps [`HISTORY_CAP`] entries of METADATA but only this many of CONTENT, and the asymmetry is
+/// deliberate: `srcText` is 77.6% of a record's payload, so retaining it on all 30 would multiply the
+/// store by roughly the number of times a record has been edited. Five is the undo depth that matters —
+/// the 02:00 incident needed exactly one, and a session that has written a record five times since the
+/// last good version has bigger problems than a missing sixth rung.
+pub const PREV_SRC_CAP: usize = 5;
+
 /// The record's current `rev` as an integer — **0** when absent, null, or a non-integer, so a legacy
 /// record with no `rev` reads as rev 0 (the backward-compat contract). Never errors.
 pub fn read_rev(record: &Value) -> i64 {
@@ -154,11 +167,37 @@ pub fn changed_fields(prior: &Value, next: &Value) -> Vec<String> {
     changed.into_iter().collect()
 }
 
+/// Strip [`PREV_SRC`] from all but the most recent [`PREV_SRC_CAP`] entries that carry one.
+///
+/// Called on the history AFTER the new entry is pushed, so the newest write always keeps its content and
+/// the sixth-oldest loses it. Entry METADATA is untouched — `bsc ui log` still shows that a write changed
+/// `srcText` at rev 12, it just can no longer hand you the bytes. That is the honest shape: a rung that
+/// has aged out reads as absent rather than as "this write changed nothing".
+fn prune_prev_src(history: &mut [Value]) {
+    let mut kept = 0usize;
+    for entry in history.iter_mut().rev() {
+        let Some(obj) = entry.as_object_mut() else { continue };
+        if !obj.contains_key(PREV_SRC) {
+            continue;
+        }
+        kept += 1;
+        if kept > PREV_SRC_CAP {
+            obj.remove(PREV_SRC);
+        }
+    }
+}
+
 /// Stamp a record for a write AND append a change-history entry (#3568): the provenance [`stamp`] plus one
 /// `{ rev, at, by, note?, changed }` row appended to a capped `history[]`, carried forward from `prior`
 /// (the CURRENT stored record). `changed` is [`changed_fields`] (the first write records `["created"]`).
 /// SERVER-MANAGED — the incoming record's own `history` is discarded and replaced, so a session never
 /// authors it. `note` (trimmed, non-empty) is optional. A no-op on a non-object `record` (defensive).
+///
+/// A write that MOVES `srcText` also retains the PRIOR source on its entry as `prevSrc` — which is what
+/// makes the write revertible (`bsc ui revert`). Before this the log recorded *that* `srcText` changed and
+/// never *what it was*, so recovery from a bad write meant re-seeding from the packaged seed — and a
+/// record with no seed (25 of 47 pages, including `graphprimitive`/`kitrenderer`/`insights`) had no way
+/// back at all. Retained on the most recent [`PREV_SRC_CAP`] entries only; see [`prune_prev_src`].
 pub fn stamp_with_history(record: &mut Value, prior: &Value, writer: &str, now_iso: &str, note: Option<&str>) {
     let prior_rev = read_rev(prior);
     let mut history: Vec<Value> =
@@ -181,14 +220,81 @@ pub fn stamp_with_history(record: &mut Value, prior: &Value, writer: &str, now_i
     if !dropped.is_empty() {
         entry.insert("dropped".to_string(), Value::from(dropped));
     }
+    // The rung back. Only when the source actually MOVED — an unchanged `srcText` would otherwise store a
+    // duplicate of itself on every write, and a `null` prior (a create) has nothing to go back to.
+    let prior_src = prior.get(SRC_TEXT).and_then(Value::as_str);
+    let next_src = record.get(SRC_TEXT).and_then(Value::as_str);
+    if let Some(was) = prior_src.filter(|was| Some(*was) != next_src) {
+        entry.insert(PREV_SRC.to_string(), Value::from(was));
+    }
     history.push(Value::Object(entry));
     let overflow = history.len().saturating_sub(HISTORY_CAP);
     if overflow > 0 {
         history.drain(0..overflow); // drop the oldest, keep the most recent HISTORY_CAP
     }
+    prune_prev_src(&mut history);
     if let Some(obj) = record.as_object_mut() {
         obj.insert(HISTORY.to_string(), Value::from(history));
     }
+}
+
+/// Did this history entry's write MOVE the source? True when `srcText` is named in either `changed` or
+/// `dropped` — a deletion moves it as surely as an edit does.
+fn entry_moved_src(entry: &Value) -> bool {
+    ["changed", "dropped"].iter().any(|k| {
+        entry
+            .get(*k)
+            .and_then(Value::as_array)
+            .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(SRC_TEXT)))
+    })
+}
+
+/// The record's `srcText` as it stood at revision `rev`, from the retained history — the read behind
+/// `bsc ui revert`. `None` when no rung reaches back that far (aged past [`PREV_SRC_CAP`], or the record
+/// has no history at all); `Some(current)` is never synthesised, so the caller can tell "already there"
+/// from "cannot get there".
+///
+/// The rung is the FIRST write above `rev` that moved the source — that write is by definition the one
+/// that replaced what `rev` held, so its `prevSrc` is the answer. Metadata-only writes in between are
+/// read straight through, which is why reverting to a rev whose own write never touched `srcText` still
+/// lands on the right bytes.
+///
+/// It must be the first MOVING write and not merely the first RETAINED one. Taking the first `prevSrc`
+/// found returns the wrong revision's source once the true rung has aged out: the search runs on past it
+/// and lands on a LATER version, reporting success while handing back bytes the record never held at
+/// `rev`. Silently reverting to the wrong version is worse than refusing, so a moving write whose content
+/// is gone terminates the search as unreachable.
+pub fn src_at_rev(record: &Value, rev: i64) -> Option<String> {
+    let history = record.get(HISTORY).and_then(Value::as_array)?;
+    let rung = history
+        .iter()
+        .filter(|e| e.get(REV).and_then(Value::as_i64).is_some_and(|r| r > rev))
+        .find(|e| entry_moved_src(e))?;
+    rung.get(PREV_SRC).and_then(Value::as_str).map(str::to_owned)
+}
+
+/// The revisions a [`src_at_rev`] revert can still reach, ascending — the retained rungs, so an error can
+/// say what IS possible rather than only what is not. Entry at rev N holding a `prevSrc` means rev N-1's
+/// source survives, so the reachable anchor is one below each retained entry.
+///
+/// These are the ANCHORS, not the whole reachable set: a rev between two anchors is reachable too (its
+/// source is the anchor's — nothing moved in between), and [`src_at_rev`] accepts it. Listing the anchors
+/// keeps the offer to the revisions at which the source actually differs.
+pub fn revertible_revs(record: &Value) -> Vec<i64> {
+    let mut revs: Vec<i64> = record
+        .get(HISTORY)
+        .and_then(Value::as_array)
+        .map(|h| {
+            h.iter()
+                .filter(|e| e.get(PREV_SRC).is_some())
+                .filter_map(|e| e.get(REV).and_then(Value::as_i64))
+                .map(|r| r - 1)
+                .collect()
+        })
+        .unwrap_or_default();
+    revs.sort_unstable();
+    revs.dedup();
+    revs
 }
 
 /// Resolve the writer tag for a write: an explicit `--by <tag>` wins, else `$BSC_UI_WRITER`, else
@@ -402,6 +508,92 @@ mod tests {
         let hist = forged["history"].as_array().unwrap();
         assert_eq!(hist.len(), 3, "grew from the PRIOR's 2, not the forged 1");
         assert!(hist.iter().all(|e| e["by"] != json!("attacker")), "the forged entry is gone");
+    }
+
+    /// Write `srcText` `n` times, returning the final record — the fixture the revert tests share.
+    fn write_sources(sources: &[&str]) -> Value {
+        let mut rec = Value::Null;
+        let mut prior = Value::Null;
+        for (i, s) in sources.iter().enumerate() {
+            rec = json!({ "id": "graphprimitive", "srcText": s });
+            stamp_with_history(&mut rec, &prior, "designer", &format!("2026-08-14T00:0{i}:00Z"), None);
+            prior = rec.clone();
+        }
+        rec
+    }
+
+    #[test]
+    fn a_write_retains_the_source_it_replaced_so_it_can_be_reverted() {
+        // THE incident, in miniature: `bsc ui log` recorded that `srcText` changed and never what it was,
+        // so a bad designer write on a record with no packaged seed was unrecoverable.
+        let rec = write_sources(&["good", "broken"]);
+        let hist = rec["history"].as_array().unwrap();
+        assert!(hist[0].get("prevSrc").is_none(), "a CREATE replaced nothing: {}", hist[0]);
+        assert_eq!(hist[1]["prevSrc"], "good", "the write that broke it carries the version it broke");
+        assert_eq!(src_at_rev(&rec, 1).as_deref(), Some("good"), "rev 1's source is reachable");
+        assert_eq!(revertible_revs(&rec), vec![1]);
+    }
+
+    #[test]
+    fn an_unchanged_source_stores_no_duplicate_and_a_revert_reads_through_it() {
+        // A metadata-only write must not store a second copy of an identical source — that is the whole
+        // reason `prevSrc` is conditional. But it must also not BLOCK the rung: reverting to rev 2 (whose
+        // own write never touched the source) still has to find the bytes rev 2 actually held.
+        let mut rec = write_sources(&["good"]);
+        let prior = rec.clone();
+        let mut meta = json!({ "id": "graphprimitive", "srcText": "good", "folder": "shared/ui/spec" });
+        stamp_with_history(&mut meta, &prior, "refolder", "2026-08-14T00:01:00Z", None);
+        rec = meta;
+        let prior = rec.clone();
+        let mut broken = json!({ "id": "graphprimitive", "srcText": "broken", "folder": "shared/ui/spec" });
+        stamp_with_history(&mut broken, &prior, "designer", "2026-08-14T00:02:00Z", None);
+
+        let hist = broken["history"].as_array().unwrap();
+        assert!(hist[1].get("prevSrc").is_none(), "the metadata write stored no duplicate: {}", hist[1]);
+        assert_eq!(hist[2]["prevSrc"], "good");
+        // Both revs land on the same bytes — which is correct, because both revs HELD the same bytes.
+        assert_eq!(src_at_rev(&broken, 2).as_deref(), Some("good"), "rev 2 reads through the metadata write");
+        assert_eq!(src_at_rev(&broken, 1).as_deref(), Some("good"));
+    }
+
+    #[test]
+    fn a_write_that_deletes_the_source_entirely_is_still_revertible() {
+        // `--replace` (and `--clear srcText`) can drop the field outright. `dropped` names it; without a
+        // retained copy the record's only source would be gone, which is the unrecoverable case itself.
+        let prior = write_sources(&["good"]);
+        let mut gone = json!({ "id": "graphprimitive" });
+        stamp_with_history(&mut gone, &prior, "replace", "2026-08-14T01:00:00Z", None);
+        let last = gone["history"].as_array().unwrap().last().unwrap();
+        assert_eq!(last["dropped"], json!(["srcText"]), "the removal stays legible");
+        assert_eq!(last["prevSrc"], "good", "...and the bytes survive it");
+        assert_eq!(src_at_rev(&gone, 1).as_deref(), Some("good"));
+    }
+
+    #[test]
+    fn only_the_most_recent_prev_src_cap_entries_retain_their_source() {
+        // srcText is 77.6% of a record's payload, so the CONTENT is capped far below the METADATA. Past
+        // the cap a revert must report that it cannot reach, not silently land on the wrong revision.
+        let sources: Vec<String> = (0..(PREV_SRC_CAP + 4)).map(|i| format!("v{i}")).collect();
+        let rec = write_sources(&sources.iter().map(String::as_str).collect::<Vec<_>>());
+        let hist = rec["history"].as_array().unwrap();
+        let retained = hist.iter().filter(|e| e.get("prevSrc").is_some()).count();
+        assert_eq!(retained, PREV_SRC_CAP, "content is capped at PREV_SRC_CAP");
+        assert_eq!(hist.len(), sources.len(), "...while the METADATA log keeps every entry");
+
+        let reachable = revertible_revs(&rec);
+        assert_eq!(reachable.len(), PREV_SRC_CAP);
+        let newest = *reachable.last().unwrap();
+        assert_eq!(src_at_rev(&rec, newest).as_deref(), Some(sources[newest as usize - 1].as_str()));
+        // One rung below the oldest retained one is out of reach — and says so rather than guessing.
+        assert_eq!(src_at_rev(&rec, reachable[0] - 1), None, "aged-out revisions report unreachable");
+    }
+
+    #[test]
+    fn src_at_rev_is_none_when_there_is_nothing_to_go_back_to() {
+        assert_eq!(src_at_rev(&json!({ "id": "x" }), 1), None, "no history at all");
+        let fresh = write_sources(&["only"]);
+        assert_eq!(src_at_rev(&fresh, 1), None, "a record written once has no earlier source");
+        assert!(revertible_revs(&fresh).is_empty());
     }
 
     #[test]

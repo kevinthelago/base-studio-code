@@ -188,6 +188,97 @@ async function renderPage(
 }
 
 
+export interface MountResult {
+  pageId: string;
+  /** The error that stopped it mounting — absent when it mounted and painted. */
+  error?: string;
+  /** DOM elements rendered. A page that mounts to NOTHING passed a boundary it should have failed.
+   *
+   *  ELEMENTS, not characters. Text was the first metric and it produced a false finding immediately:
+   *  `consolepage` on a pristine store renders its grid shell with zero panes in it — real DOM, no text —
+   *  so a character count reported the app's central surface as blank. The harness's own header warns
+   *  that an oracle which does not match the thing it guards invents work; this is that, caught once. */
+  nodes?: number;
+  /** Rendered characters — informational, so a page that renders chrome but no content is still legible
+   *  in the report without failing the sweep over it. */
+  chars?: number;
+}
+
+/**
+ * MOUNT every packaged page — the oracle `loadAll` stops one step short of.
+ *
+ * `loadAll` proves a page COMPILES and exports a component. That is a weaker claim than it sounds, and
+ * the 02:00 incident is the proof: the app died with `Cannot read properties of null (reading
+ * 'useCallback')` — a hook resolving against a null dispatcher. Such a module compiles perfectly, exports
+ * a perfectly good component, and only fails when something MOUNTS it. Every check that stopped at
+ * compile was green while 8 of 9 workspaces were dead.
+ *
+ * So this runs each page all the way to a painted tree, in its OWN container that is unmounted after —
+ * a shared root would let one page's surviving effects (timers, listeners, store subscriptions) decide
+ * the next page's verdict, which is how a sweep starts inventing findings.
+ *
+ * Each page is reported independently and the store is reset between them, so one broken page cannot
+ * hide the verdict on the rest. Pages are NOT given marker stubs or seeded state: the question here is
+ * whether the shipped record mounts at all, and a page that needs a fake to survive is a page whose real
+ * failure this sweep should be showing rather than papering over. `renderPage` remains the surface for
+ * the behavioural specs that legitimately need both.
+ */
+async function mountAll(): Promise<MountResult[]> {
+  registerPlatformModules();
+  installTauriShim();
+  const [{ useAppStore }, React, ReactDOMClient] = await Promise.all([
+    import("@/store"),
+    import("react"),
+    import("react-dom/client"),
+  ]);
+  const pristine = useAppStore.getState();
+  const results: MountResult[] = [];
+
+  for (const def of SHADOW_PAGES) {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    let root: { unmount: () => void } | undefined;
+    // A page that throws during render throws inside React's own error handling, which re-raises to
+    // `window.onerror` rather than out of `render()`. Catching it here is what turns "the harness page
+    // crashed" into "this page failed", which is the difference between a verdict and a mystery.
+    const thrown: string[] = [];
+    const onError = (e: ErrorEvent) => thrown.push(String(e.error ?? e.message));
+    window.addEventListener("error", onError);
+    try {
+      await def.ensurePlatform();
+      const record = BY_ID.get(def.pageId);
+      if (!record?.srcText) throw new Error("no packaged record");
+      const Loaded = await loadComponentFromSource(record.srcText, resolveGraphSource);
+      root = ReactDOMClient.createRoot(host);
+      root.render(React.createElement(Loaded));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      if (thrown.length) throw new Error(thrown[0]);
+      results.push({
+        pageId: def.pageId,
+        nodes: host.querySelectorAll("*").length,
+        chars: host.textContent?.length ?? 0,
+      });
+    } catch (e) {
+      results.push({ pageId: def.pageId, error: String(e).slice(0, 300) });
+    } finally {
+      window.removeEventListener("error", onError);
+      try {
+        root?.unmount();
+      } catch {
+        /* an unmount that throws is the page's problem, already recorded above */
+      }
+      host.remove();
+      // Reset the store so a page that wrote state cannot decide the next page's verdict.
+      useAppStore.setState(pristine as never, true);
+      useAppStore.setState({
+        components: RECORDS as never,
+        algorithmImpls: (algorithmsSeed as { implementations?: unknown[] }).implementations as never,
+      });
+    }
+  }
+  return results;
+}
+
 export interface VerifyResult {
   id: string;
   ok: boolean;
@@ -231,10 +322,11 @@ declare global {
   interface Window {
     __graphPagesHarness?: {
       loadAll: () => Promise<PageResult[]>;
+      mountAll: () => Promise<MountResult[]>;
       verifyAll: () => Promise<VerifyResult[]>;
       renderPage: typeof renderPage;
     };
   }
 }
 
-window.__graphPagesHarness = { loadAll, verifyAll, renderPage };
+window.__graphPagesHarness = { loadAll, mountAll, verifyAll, renderPage };
