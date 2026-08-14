@@ -236,6 +236,19 @@ import * as Speech from "@/shared/lib/a11y/speech";
 import * as ComponentLoader from "@/shared/lib/runtime/componentLoader";
 import * as GraphResolver from "@/shared/lib/runtime/graphResolver";
 import * as RenderGate from "@/shared/lib/runtime/renderGate";
+// The loader HOST, and the one runtime module that was left unregistered while its three siblings above
+// were not. That gap had consequences: `resolveGraphSource` checks records BEFORE the registry, so with
+// nothing registered the `graphcomponent` RECORD was the only thing serving the specifier — and every
+// graph consumer that imports it (`AlgorithmsGraphHost`, `SoundsGraphHost`, and through them the whole
+// Projects page) got that record vendored into its closure, where it failed to compile and took the page
+// down with it.
+//
+// It must be ONE instance, which is the deeper reason: `GraphComponent` owns the loader's caches —
+// `compiles`, `compileCounts`, and the `lastGood` map it imports. A second copy is a second set of those,
+// so a page mounted through the record would compile against a different in-flight map and a different
+// last-good memory than the app's own. That is the stateful-record-shadows-a-live-module hazard
+// `bsc ui set` refuses at write time now; registering it here is the other half.
+import * as GraphComponentHost from "@/shared/lib/runtime/GraphComponent";
 import * as Announcer from "@/shared/lib/a11y/announcer";
 import * as Theme from "@/shared/ui/kit/theme";
 import * as Resolve from "@/shared/ui/kit/resolve";
@@ -490,6 +503,7 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/runtime/componentLoader": ComponentLoader,
   "@/shared/lib/runtime/graphResolver": GraphResolver,
   "@/shared/lib/runtime/renderGate": RenderGate,
+  "@/shared/lib/runtime/GraphComponent": GraphComponentHost,
   "@/shared/lib/a11y/announcer": Announcer,
   "@/shared/ui/kit/theme": Theme,
   "@/shared/ui/kit/resolve": Resolve,

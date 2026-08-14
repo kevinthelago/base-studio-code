@@ -117,8 +117,9 @@ export async function linkGraphModules(
   entrySource: string,
   resolveSource: SourceResolver | undefined,
   compile: CompileFn,
-): Promise<Map<string, LinkedModule>> {
+): Promise<LinkResult> {
   const linked = new Map<string, LinkedModule>();
+  const failures: CompileFailure[] = [];
   const entryCjs = await compileCached(ENTRY_SPECIFIER, entrySource, compile);
   linked.set(ENTRY_SPECIFIER, { specifier: ENTRY_SPECIFIER, source: entrySource, cjs: entryCjs });
 
@@ -130,11 +131,42 @@ export async function linkGraphModules(
     seen.add(spec);
     const source = resolveSource?.(spec);
     if (source == null) continue; // not a record → external → the app registry answers it
-    const cjs = await compileCached(spec, source, compile);
+    let cjs: string;
+    try {
+      cjs = await compileCached(spec, source, compile);
+    } catch (e) {
+      // AN OVERRIDE THAT WILL NOT COMPILE IS DECLINED, not fatal. The entry above is compiled outside
+      // this loop and still throws — that is the page's OWN source, and a page that cannot compile has
+      // no render to salvage. But everything in here is a record shadowing something the registry can
+      // answer, so one bad record must cost its own surface rather than the whole page.
+      //
+      // This is the same principle as the unsatisfiable-closure prune below, for the other way a record
+      // fails. It was worth a page: the `graphcomponent` record compiled clean standalone and failed when
+      // vendored, and because the throw escaped the link phase it took the entire Projects page down with
+      // "Build failed with 2 errors" and no indication of which of its 241 closure members was at fault.
+      // Naming the specifier here is half the fix — the diagnosis took a log dive to reach.
+      failures.push({ specifier: spec, error: String(e).slice(0, 200) });
+      continue;
+    }
     linked.set(spec, { specifier: spec, source, cjs });
     queue.push(...scanRequires(cjs));
   }
-  return linked;
+  return { linked, failures };
+}
+
+/** An override that would not COMPILE — declined during the link phase so the registry answers instead. */
+export interface CompileFailure {
+  specifier: string;
+  error: string;
+}
+
+/** What {@link linkGraphModules} produced: the modules it linked, and the overrides it had to decline
+ *  because their source does not compile. Both halves matter to the caller — the second is the only
+ *  place a broken record is NAMED, and without it the page reports a build error against a closure of
+ *  hundreds with nothing to point at. */
+export interface LinkResult {
+  linked: Map<string, LinkedModule>;
+  failures: CompileFailure[];
 }
 
 /** One override the prune declined, for the caller to log. `specifier` is the module the record claimed;

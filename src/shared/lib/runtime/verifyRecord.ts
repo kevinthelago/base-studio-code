@@ -60,8 +60,11 @@ export async function verifyGraphRecord(
 ): Promise<LinkVerdict> {
   const { resolveSource, isRegistered, compile } = opts;
   let linked;
+  // Declared without an initializer: the try below assigns BOTH halves, and the catch returns, so an
+  // initial value would only ever be dead.
+  let linkFailures: { specifier: string; error: string }[];
   try {
-    linked = await linkGraphModules(source, resolveSource, compile);
+    ({ linked, failures: linkFailures } = await linkGraphModules(source, resolveSource, compile));
   } catch (e) {
     // A record that does not parse is a compile failure, not a link failure. Reported rather than
     // thrown: a sweep over hundreds of records must not stop at the first bad one.
@@ -76,7 +79,20 @@ export async function verifyGraphRecord(
   // require chain answers at mount.
   const unresolved = [...imports].filter((spec) => !linked.has(spec) && !isRegistered(spec)).sort();
 
-  return { ok: unresolved.length === 0, unresolved, imports: [...imports].sort(), linkedCount: linked.size };
+  // A closure member that would not COMPILE is declined at RUNTIME (the registry answers instead), but for
+  // VERIFICATION it is exactly the thing worth naming — the sweep exists to find records that are inert.
+  const compileError =
+    linkFailures.length > 0
+      ? `override "${linkFailures[0].specifier}" does not compile: ${linkFailures[0].error}`
+      : undefined;
+
+  return {
+    ok: unresolved.length === 0 && !compileError,
+    compileError,
+    unresolved,
+    imports: [...imports].sort(),
+    linkedCount: linked.size,
+  };
 }
 
 /** A one-line human summary of a verdict — what a Studio would show, and what a sweep prints per row. */

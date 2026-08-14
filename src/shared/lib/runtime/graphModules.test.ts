@@ -51,7 +51,7 @@ describe("linkGraphModules", () => {
       "@/components/panel": 'require("@/components/leaf"); require("react");',
       "@/components/leaf": 'require("@/store");',
     };
-    const linked = await linkGraphModules(
+    const { linked } = await linkGraphModules(
       'require("@/components/panel"); require("react");',
       (s) => graph[s] ?? null,
       compile,
@@ -70,13 +70,13 @@ describe("linkGraphModules", () => {
       "@/components/a": 'require("@/components/b");',
       "@/components/b": 'require("@/components/a");',
     };
-    const linked = await linkGraphModules('require("@/components/a");', (s) => graph[s] ?? null, compile);
+    const { linked } = await linkGraphModules('require("@/components/a");', (s) => graph[s] ?? null, compile);
     expect([...linked.keys()].sort()).toEqual([ENTRY_SPECIFIER, "@/components/a", "@/components/b"].sort());
   });
 
   it("with no resolver, links only the entry — every import stays external", async () => {
     const { compile, calls } = fakeCompiler();
-    const linked = await linkGraphModules('require("@/components/panel");', undefined, compile);
+    const { linked } = await linkGraphModules('require("@/components/panel");', undefined, compile);
     expect([...linked.keys()]).toEqual([ENTRY_SPECIFIER]);
     expect(calls).toHaveLength(1);
   });
@@ -108,6 +108,45 @@ describe("linkGraphModules", () => {
     // build and editing it invalidated every ancestor.
     expect(calls).toHaveLength(3);
     expect(calls[2]).toBe(panel);
+  });
+
+  it("DECLINES an override that will not compile instead of failing the whole link", async () => {
+    // THE Projects-page bug. `graphcomponent` compiled clean standalone and failed when vendored, and
+    // because the throw escaped the link phase it took the entire page down — 241 closure members, one
+    // broken, and the report was "Build failed with 2 errors" with nothing to point at.
+    //
+    // A record in the closure is by definition shadowing something the registry can answer, so a bad one
+    // must cost its OWN surface and let `require` fall back. Same principle as the unsatisfiable-closure
+    // prune, for the other way a record fails.
+    const graph: Record<string, string> = {
+      "@/components/ok": 'require("@/store");',
+      "@/shared/lib/runtime/GraphComponent": "!!! not valid source !!!",
+    };
+    const compile: CompileFn = async (src) => {
+      if (src.startsWith("!!!")) throw new Error("Build failed: unexpected token");
+      return src;
+    };
+    const { linked, failures } = await linkGraphModules(
+      'require("@/components/ok"); require("@/shared/lib/runtime/GraphComponent");',
+      (s) => graph[s] ?? null,
+      compile,
+    );
+    // The good half linked; the entry survived.
+    expect(linked.has(ENTRY_SPECIFIER)).toBe(true);
+    expect(linked.has("@/components/ok")).toBe(true);
+    // The broken override is absent from the linked set, so `require` falls through to the registry…
+    expect(linked.has("@/shared/lib/runtime/GraphComponent")).toBe(false);
+    // …and it is NAMED, which is the half that turns the next diagnosis into a read instead of a hunt.
+    expect(failures).toEqual([
+      { specifier: "@/shared/lib/runtime/GraphComponent", error: expect.stringContaining("Build failed") },
+    ]);
+  });
+
+  it("still THROWS when the ENTRY itself will not compile", async () => {
+    // The entry is the page's own source. There is no fallback for it and nothing to salvage, so the
+    // decline above must not quietly swallow a broken page into an empty render.
+    const compile: CompileFn = async () => { throw new Error("Build failed: entry is broken"); };
+    await expect(linkGraphModules("!!! broken entry !!!", undefined, compile)).rejects.toThrow("entry is broken");
   });
 });
 
@@ -166,7 +205,7 @@ describe("evaluateEntry", () => {
   it("runs the linked entry and returns its exports", async () => {
     const { compile } = fakeCompiler();
     const graph: Record<string, string> = { "@/components/panel": 'module.exports = { Panel: "P" };' };
-    const linked = await linkGraphModules(
+    const { linked } = await linkGraphModules(
       'const p = require("@/components/panel"); module.exports = { default: p.Panel };',
       (s) => graph[s] ?? null,
       compile,
