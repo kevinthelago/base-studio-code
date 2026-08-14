@@ -9,7 +9,7 @@ import { useState } from "react";
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import { type RelFocus, type Topology } from "@/features/planner/relationship/relationshipGraph";
 import { StreamFocusCards } from "./StreamFocusCards";
-import { PlanBody } from "./FocusedPlanBody";
+import { PlanBody } from "@/features/planner/bodies/FocusedPlanBody";
 import { CoordinationControls } from "./FocusedPermissionsBody";
 import { CollapsibleCard } from "./collapsibleCard";
 import { Stack } from "@/shared/ui/layout/Stack";

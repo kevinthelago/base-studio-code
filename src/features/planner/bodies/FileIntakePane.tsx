@@ -11,7 +11,7 @@ import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from "@tauri-apps/api/core";
-import { StageScreenFrame } from "../preview/StageScreenFrame";
+import { StageScreenFrame } from "@/features/planner/preview/StageScreenFrame";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake, hashContent,
   INTAKE_DIR, INTAKE_MANIFEST, type IntakeEntry, type IntakeKind,

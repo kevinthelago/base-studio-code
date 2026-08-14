@@ -30,16 +30,16 @@ import { Toggle } from "./controls/Toggle";
 import { SegmentedControl } from "./controls/SegmentedControl";
 import { TextField, TextArea, SelectField } from "./controls/Field";
 import { Option } from "./controls/Option";
-import { BackButton } from "./controls/BackButton";
+import { BackButton } from "@/shared/ui/controls/BackButton";
 import { ColorSwatch } from "./controls/ColorSwatch";
 import { ConfirmButton } from "./controls/ConfirmButton";
 import { Card } from "./data/Card";
 import { Chip } from "./data/Chip";
 import { StatTile } from "./data/StatTile";
-import { FillBar } from "./data/FillBar";
+import { FillBar } from "@/shared/ui/data/FillBar";
 import { Code } from "./data/Code";
 import { Avatar } from "./data/Avatar";
-import { IconBox } from "./data/IconBox";
+import { IconBox } from "@/shared/ui/data/IconBox";
 import { CardListRow } from "./data/CardListRow";
 import { DataTableRow } from "./data/DataTableRow";
 import { RoleTierChips } from "./data/RoleTierChips";
@@ -48,14 +48,14 @@ import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars }
 import { Banner } from "./feedback/Banner";
 import { InlineError } from "./feedback/InlineError";
 // #4172 — failure containment, composable from a spec.
-import { PageBoundary } from "./layouts/PageBoundary";
+import { PageBoundary } from "@/shared/ui/layouts/PageBoundary";
 import { EmptyState } from "./feedback/EmptyState";
 import { StatusDot } from "./feedback/StatusDot";
 import { Skeleton } from "./feedback/Skeleton";
-import { MasterDetail } from "./layouts/MasterDetail";
-import { SplitView } from "./layouts/SplitView";
+import { MasterDetail } from "@/shared/ui/layouts/MasterDetail";
+import { SplitView } from "@/shared/ui/layouts/SplitView";
 import { GraphCanvas } from "./layouts/GraphCanvas";
-import { PaneGrid } from "./layouts/PaneGrid";
+import { PaneGrid } from "@/shared/ui/layouts/PaneGrid";
 import { Sequence } from "./layouts/Sequence";
 import { Tree } from "./layouts/Tree";
 // #2421 gap-fill

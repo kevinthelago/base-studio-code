@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Card } from "./data/Card";
 import { Chip } from "./data/Chip";
-import { FillBar } from "./data/FillBar";
+import { FillBar } from "@/shared/ui/data/FillBar";
 import { Code } from "./data/Code";
 import { Text } from "./typography/Text";
 import { TextField } from "./controls/Field";

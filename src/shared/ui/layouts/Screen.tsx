@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { TabBar, type TabItem } from "./TabBar";
-import { PageBoundary } from "./PageBoundary";
+import { PageBoundary } from "@/shared/ui/layouts/PageBoundary";
 import { setPageNav } from "./pageNav";
 import { Box } from "@/shared/ui/layout/Box";
 

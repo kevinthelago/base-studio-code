@@ -11,7 +11,7 @@
 // Algorithms inside it.
 import { useState } from "react";
 import type { PlanFeature } from "@/features/planner/issues/featureList";
-import { FeaturesBody } from "./FocusedFeaturesBody";
+import { FeaturesBody } from "@/features/planner/bodies/FocusedFeaturesBody";
 import { PlannerLibraryPane } from "./PlannerLibraryPane";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
