@@ -3,6 +3,10 @@ import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import { startupLog, teeLogger } from "./vite-startup-log";
 import { bscRecords } from "./vite/bscRecords";
+import { devWatchIgnored } from "./src/shared/lib/core/devWatchIgnore";
+
+/** Absolute, forward-slashed, no trailing slash — the shape chokidar matches against. */
+const REPO_ROOT = fileURLToPath(new URL(".", import.meta.url)).replace(/\\/g, "/").replace(/\/$/, "");
 
 export default defineConfig(async ({ command }) => ({
   // `bscRecords` is a FALLBACK resolver: it answers an `@/…` import from a packaged seed's srcText only
@@ -58,13 +62,10 @@ export default defineConfig(async ({ command }) => ({
       clientFiles: ["./src/app/main.tsx", "./src/app/App.tsx", "./src/store/index.ts", "./src/app/console/ConsoleGraphHost.tsx"],
     },
     watch: {
-      // Vite watches the project root, but this is a Cargo *workspace* — all Rust build output
-      // lands in the repo-root `target/` (tens of thousands of churning artifacts), and
-      // `coverage/`/`dist/` accumulate too. chokidar watching that many files starves Vite's event
-      // loop on Windows, so the dev server is slow to answer the WebView's module requests and the
-      // initial load stalls (instant on a fresh clone → ~50s once `target/` fills up). Ignoring the
-      // build/output dirs keeps the watcher to source files only. (#perf)
-      ignored: ["**/src-tauri/**", "**/target/**", "**/coverage/**", "**/dist/**"],
+      // The three large NON-source trees inside the watched root — build output, and the nested
+      // worktrees the parallel-agent workflow creates. Why each one is here, and the two glob traps
+      // behind the worktree patterns, are documented at the source: `devWatchIgnore.ts`. (#perf)
+      ignored: devWatchIgnored(REPO_ROOT),
     },
   },
 }));
