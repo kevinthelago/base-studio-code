@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
-import { Toggle } from "./Toggle";
+import { Toggle } from "@/shared/ui/controls/Toggle";
 import { ConfirmButton } from "./ConfirmButton";
 
 describe("Toggle", () => {

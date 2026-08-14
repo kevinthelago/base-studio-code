@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Field, TextField, TextArea, SelectField } from "./Field";
+import { Field, TextField, TextArea, SelectField } from "@/shared/ui/controls/Field";
 
 describe("Field family", () => {
   it("Field renders the label, hint, and children in the .field stack", () => {

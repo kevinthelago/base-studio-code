@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Button } from "./Button";
+import { Button } from "@/shared/ui/controls/Button";
 
 describe("Button", () => {
   it("renders the base .btn class and the label", () => {

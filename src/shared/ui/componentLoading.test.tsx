@@ -5,7 +5,7 @@ import { Chip } from "./data/Chip";
 import { FillBar } from "@/shared/ui/data/FillBar";
 import { Code } from "./data/Code";
 import { Text } from "./typography/Text";
-import { TextField } from "./controls/Field";
+import { TextField } from "@/shared/ui/controls/Field";
 
 // #2302 — every content component renders its own shape-matched skeleton when `loading`, via the
 // shared Skeleton (an aria-hidden shimmer Box), and hides its real content.

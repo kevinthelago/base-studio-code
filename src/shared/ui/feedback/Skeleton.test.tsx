@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Skeleton, SkeletonText } from "./Skeleton";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 
 describe("Skeleton (#2234)", () => {
   it("renders a shimmer block at the given size", () => {

@@ -2,7 +2,7 @@
 // body · optional footer. These lock the slots the three graph pages (Teams/Glance/Designs) depend on.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { GraphRail } from "./GraphRail";
+import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 
 describe("GraphRail", () => {
   it("renders the label + count header over the scroll body", () => {

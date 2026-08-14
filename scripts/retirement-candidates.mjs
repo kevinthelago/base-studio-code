@@ -14,6 +14,12 @@
 // The comparison skips the seed's "AS GRAPH SOURCE" preamble, which the file never had. The preamble ends
 // at the first line the file also contains — the same rule the migration used to add it.
 //
+// ⚠️ RETIRE THE MODULE, KEEP ITS TEST. A `[+test]` below is not a thing to delete alongside the file. The
+// record carries the test as data, but nothing in the default gate RUNS carried tests, so deleting the
+// colocated file trades executed coverage for stored coverage with a green gate — it cost 31 assertions
+// before anyone noticed. Rewrite the test's relative import to `@/…` and leave it: it then resolves to the
+// emitted record and the gate verifies the module that actually ships. `retiredTests.test.ts` enforces it.
+//
 //   node scripts/retirement-candidates.mjs            # the summary + the retirable list
 //   node scripts/retirement-candidates.mjs --all      # ...including the drifted ones, with byte deltas
 import { readFileSync, readdirSync, statSync } from "node:fs";
