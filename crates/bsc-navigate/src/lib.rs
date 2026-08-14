@@ -94,6 +94,18 @@ pub struct NavResult {
     pub theme: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// The navigation deliberately left the VIEW alone (#3599/#4248) and this says why. Not an error —
+    /// the focus landed. Carried all the way to the caller so a decline cannot read as a success with an
+    /// unexpected view, which is what made the designer loop force the view every few seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declined: Option<String>,
+    /// What the preview frame actually SHOWS, observed after it settled — not what was selected. When
+    /// this differs from `component`, a capture taken now would photograph the wrong thing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mounted: Option<String>,
+    /// Why the selected component is not on screen (refused build, bundle error, or did not settle).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount_error: Option<String>,
 }
 
 #[cfg(test)]
@@ -140,6 +152,9 @@ mod tests {
             component: Some("Heatmap".into()),
             theme: Some("default".into()),
             state: Some("loading".into()),
+            declined: None,
+            mounted: Some("Heatmap".into()),
+            mount_error: None,
         };
         let ok = bsc_appchan::Reply::ok("a", &landed, 1);
         assert_eq!(bsc_appchan::take_payload::<NavResult>(ok).unwrap(), landed);

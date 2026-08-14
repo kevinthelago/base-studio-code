@@ -59,6 +59,23 @@ export interface NavAck {
    *  every ~7s by the designer loop, IS the yank. Saying "declined, and why" is what makes the refusal
    *  legible instead of looking like a bug to route around. */
   declined?: string;
+  /** INTERNAL, never sent to Rust — the adapter strips it after using it.
+   *
+   *  The component id whose preview frame is expected to REBUILD because of this navigate. Set only when
+   *  the Studio is actually the visible page, so a declined or human-blocked navigate never waits for a
+   *  mount that will not happen.
+   *
+   *  This module stays PURE: it says what to wait for, and `useNavigateBridge` owns the bounded wait and
+   *  fills in `mounted`/`mountError`. Deliberately NOT a buildability check here — re-deriving that
+   *  predicate is exactly how the doctor and the preview came to disagree. The frame registry reports
+   *  what actually happened, including failures the predicate cannot see (a bundle that threw). */
+  awaitMount?: string;
+
+  /** What the preview frame is actually SHOWING once it settled. Absent when nothing was expected to
+   *  mount, or when the frame did not settle inside the budget — `mountError` then says which. */
+  mounted?: string;
+  /** Why the selected component is not on screen. */
+  mountError?: string;
 
   workspace?: string;
   page?: string;
@@ -180,10 +197,14 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
   // steer, not a background focus). Off-Studio, we still set the focus so it's there when the user opens
   // the Studio themselves — their current view is untouched.
   let declined: string | undefined;
+  let awaitMount: string | undefined;
   if (comp) {
     if (wasShowingStudio || req.workspace !== undefined || req.page !== undefined) {
       s.setWorkspace(DESIGNS_WORKSPACE);
       s.setProjectsPageMode(DESIGNS_PAGE as AppStore["projectsPageMode"]);
+      // The Studio is the visible page, so its frame WILL rebuild for this selection. Anywhere else,
+      // nothing rebuilds and waiting would only burn the caller's ack budget.
+      awaitMount = comp.id;
     } else {
       // The #3599 refusal, stated (#4248). It is deliberate, so it must not read as a failure.
       declined =
@@ -198,13 +219,14 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
     s.setDesignsKit(req.kit);
   }
 
-  return landed(read, declined);
+  return landed(read, declined, awaitMount);
 }
 
 /** Read the resulting view back OUT of the store — a FRESH read, never the pre-mutation snapshot. */
-function landed(read: () => AppStore, declined?: string): NavAck {
+function landed(read: () => AppStore, declined?: string, awaitMount?: string): NavAck {
   const s = read();
   return {
+    awaitMount,
     workspace: s.activeWorkspace,
     page: s.projectsPageMode,
     kit: s.designsKitId || undefined,

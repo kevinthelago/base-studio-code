@@ -30,7 +30,16 @@ const ACK_TIMEOUT: Duration = Duration::from_millis(5_000);
 
 /// What the frontend sends back once it has applied the navigation — the view that ACTUALLY landed.
 /// Deserialized straight into the CLI's result shape so there is one contract, not two.
+///
+/// EVERY field the frontend sends must be declared here. Serde drops unknown fields silently, so a field
+/// added on the TS side and not here is not a compile error, not a runtime error, and not visible in any
+/// log — it simply never reaches the caller. That is what happened to `declined`: #4248 shipped a refusal
+/// message explaining why a background steer left the view alone, the frontend has been sending it ever
+/// since, and no caller has ever seen it. The designer loop consequently read a decline as an ordinary
+/// success with the wrong view and "fixed" it by forcing `navigate page designs` every few seconds — the
+/// exact yank #4248 was written to stop.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NavAck {
     pub id: String,
     /// Set when the frontend could not do it (unknown component, unknown workspace, …).
@@ -48,6 +57,20 @@ pub struct NavAck {
     pub theme: Option<String>,
     #[serde(default)]
     pub state: Option<String>,
+    /// Set when the navigation deliberately left the VIEW alone (#3599/#4248) — a background follow-along
+    /// off the Studio, or a steer refused because a human is using the app. Not an error: the focus did
+    /// land. It exists so a decline reads as a decline instead of as a success with the wrong view.
+    #[serde(default)]
+    pub declined: Option<String>,
+    /// What the preview frame is actually SHOWING once it settled — read from the frame registry, never
+    /// echoed from the request or from the store selection. Absent when no frame was expected to rebuild
+    /// (a declined navigate) or when it had not settled in time; then `mount_error` says which.
+    #[serde(default)]
+    pub mounted: Option<String>,
+    /// Why the selected component is not on screen — the preview refused to build it, the bundle threw,
+    /// or the frame did not settle within the frontend's budget.
+    #[serde(default)]
+    pub mount_error: Option<String>,
 }
 
 /// In-flight navigations, keyed by request id. The watcher parks on the receiver; `navigate_ack`
@@ -96,6 +119,9 @@ pub fn apply(
         component: ack.component,
         theme: ack.theme,
         state: ack.state,
+        declined: ack.declined,
+        mounted: ack.mounted,
+        mount_error: ack.mount_error,
     })
 }
 
@@ -149,6 +175,35 @@ mod tests {
         assert!(ack.theme.is_none(), "an absent field is absent, not an error");
     }
 
+    /// REGRESSION. Serde drops an undeclared field silently, so a field the frontend sends and this
+    /// struct does not name never reaches the caller and nothing anywhere reports it. `declined` lived
+    /// in exactly that gap: #4248 shipped the refusal message, the frontend has sent it ever since, and
+    /// no caller ever saw one — so a decline read as a success with an unexpected view, and the designer
+    /// loop "corrected" it by forcing `navigate page designs` every few seconds.
+    #[test]
+    fn every_field_the_frontend_sends_survives_the_boundary() {
+        let ack: NavAck = serde_json::from_str(
+            r#"{"id":"a","workspace":"github","component":"plan-body-deployment",
+                "declined":"view unchanged: the Studio is not showing",
+                "mountError":"the preview refused to build it"}"#,
+        )
+        .unwrap();
+        assert_eq!(ack.declined.as_deref(), Some("view unchanged: the Studio is not showing"));
+        assert_eq!(ack.mount_error.as_deref(), Some("the preview refused to build it"));
+        // Nothing mounted, so nothing is claimed — the caller must not photograph this view.
+        assert!(ack.mounted.is_none());
+    }
+
+    /// The camelCase rename is load-bearing: the frontend sends `mountError`, and a snake_case-only
+    /// struct would deserialize it to `None` with no error — the same silent drop, one rename later.
+    #[test]
+    fn the_mount_report_is_read_from_the_frontends_camel_case_spelling() {
+        let ack: NavAck =
+            serde_json::from_str(r#"{"id":"a","mounted":"Heatmap","mountError":null}"#).unwrap();
+        assert_eq!(ack.mounted.as_deref(), Some("Heatmap"));
+        assert!(ack.mount_error.is_none());
+    }
+
     #[test]
     fn an_error_ack_deserializes_and_carries_no_view() {
         let ack: NavAck = serde_json::from_str(r#"{"id":"a","error":"no such component: Nope"}"#).unwrap();
@@ -173,6 +228,9 @@ mod tests {
             component: None,
             theme: None,
             state: None,
+            declined: None,
+            mounted: None,
+            mount_error: None,
         })
         .unwrap();
 

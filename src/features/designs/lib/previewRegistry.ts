@@ -11,10 +11,19 @@
 // Deliberately module-level and React-free: the shell's debug channel reads it without a store round-trip
 // or a context, and a frame that unmounts removes itself, so the list is never stale.
 export interface PreviewFrameEntry {
-  /** The previewed component's id. */
+  /** The component this frame is CURRENTLY showing — or, when `status` is `error`, the one it tried and
+   *  failed to show. Registered on every settled outcome, not only on success: a frame that registered
+   *  only its successes kept naming the LAST component that built, so `bsc debug frames` reported a mount
+   *  that was no longer on screen and `bsc navigate` acked a component it never mounted. */
   component: string;
   /** The live iframe element — the host side of the sandbox boundary. */
   iframe: HTMLIFrameElement;
+  /** Did the build SETTLE, and how? `ready` — the srcdoc is mounted and is this component. `error` — the
+   *  build was refused or threw, and nothing of this component is on screen. A frame still building is
+   *  not registered at all, so "absent" and "settled" are never confused. */
+  status: "ready" | "error";
+  /** Why the build failed, when `status` is `error`. The same text the frame's overlay shows. */
+  error?: string;
   /** Was the pan/zoom engine asked for (the `zoomEngine` prop)? */
   engineRequested: boolean;
   /** Did the built srcdoc actually carry the engine? Diverges from `engineRequested` on a builder bug. */

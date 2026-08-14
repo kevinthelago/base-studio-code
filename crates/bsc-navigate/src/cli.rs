@@ -229,6 +229,18 @@ fn lean(r: &NavResult) -> String {
     if let Some(st) = &r.state {
         parts.push(format!("state={st}"));
     }
+    // The three fields a caller acts on go LAST and in full prose, because each one changes what the next
+    // command should be. `mounted` is what a capture would actually photograph — printed only when it
+    // disagrees with the selection, since agreement is the ordinary case and repeating it is noise.
+    if r.mounted.is_some() && r.mounted != r.component {
+        parts.push(format!("mounted={}", r.mounted.as_deref().unwrap_or("(nothing)")));
+    }
+    if let Some(e) = &r.mount_error {
+        parts.push(format!("NOT ON SCREEN: {e}"));
+    }
+    if let Some(d) = &r.declined {
+        parts.push(format!("DECLINED: {d}"));
+    }
     parts.join(" · ")
 }
 
@@ -300,6 +312,9 @@ mod tests {
             component: Some("Heatmap".into()),
             theme: Some("nord".into()),
             state: Some("loading".into()),
+            declined: None,
+            mounted: Some("Heatmap".into()),
+            mount_error: None,
         });
         assert_eq!(
             out,
@@ -316,7 +331,46 @@ mod tests {
             component: None,
             theme: None,
             state: None,
+            declined: None,
+            mounted: None,
+            mount_error: None,
         });
         assert_eq!(out, "workspace=console");
+    }
+
+    /// `mounted` is printed only when it DISAGREES with the selection. Agreement is the ordinary case,
+    /// and repeating it on every line would bury the disagreement that matters.
+    #[test]
+    fn the_lean_line_stays_quiet_when_the_mount_matches_the_selection() {
+        let out = lean(&NavResult {
+            workspace: "projects".into(),
+            page: None,
+            kit: None,
+            component: Some("Heatmap".into()),
+            theme: None,
+            state: None,
+            declined: None,
+            mounted: Some("Heatmap".into()),
+            mount_error: None,
+        });
+        assert_eq!(out, "workspace=projects · component=Heatmap");
+    }
+
+    /// The whole point of the surface: a selection the preview never mounted must not read as a success.
+    #[test]
+    fn the_lean_line_says_what_is_not_on_screen_and_what_was_declined() {
+        let out = lean(&NavResult {
+            workspace: "github".into(),
+            page: None,
+            kit: None,
+            component: Some("plan-body-deployment".into()),
+            theme: None,
+            state: None,
+            declined: Some("view unchanged: the Studio is not showing".into()),
+            mounted: None,
+            mount_error: Some("the preview refused to build it".into()),
+        });
+        assert!(out.contains("NOT ON SCREEN: the preview refused to build it"), "{out}");
+        assert!(out.contains("DECLINED: view unchanged"), "{out}");
     }
 }

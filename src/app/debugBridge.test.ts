@@ -129,6 +129,7 @@ describe("inspectDebug — frames", () => {
   const frame = (over: Partial<PreviewFrameEntry> = {}): PreviewFrameEntry => ({
     component: "invoicespage",
     iframe: document.createElement("iframe"),
+    status: "ready",
     engineRequested: true,
     engineInSrcdoc: true,
     ...over,

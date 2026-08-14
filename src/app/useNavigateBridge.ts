@@ -20,9 +20,30 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { WORKSPACES, type Workspace } from "@/app/registry";
 import { PROJECT_MODES } from "@/features/planner";
+import { mountedPreviewFrames, type PreviewFrameEntry } from "@/features/designs";
 import { log } from "@/shared/lib/core/log";
 import { applyNavigate, type NavRequest, type NavAck } from "./navigateBridge";
 import { installHumanPresence, humanPresent } from "@/app/humanPresence";
+
+/** How long to wait for the preview frame to settle before acking. Well inside the Rust `ACK_TIMEOUT`
+ *  (5s), with room left for the hydrate retry that can precede it — an ack that arrives late is a
+ *  "the frontend did not apply the navigation" error, which sends the reader to debug the wrong thing. */
+const MOUNT_BUDGET_MS = 1_800;
+const MOUNT_POLL_MS = 40;
+
+/** Wait for the preview frame showing `id` to SETTLE (built, or failed), or give up. Polls because the
+ *  registry is deliberately React-free and module-level — it has no subscribe, and giving it one would
+ *  make every frame's build path depend on a listener that only this bridge reads. A frame mid-rebuild is
+ *  absent from the registry by construction, so "absent" here means "not settled yet", never "fine". */
+async function settledFrame(id: string): Promise<PreviewFrameEntry | null> {
+  const deadline = Date.now() + MOUNT_BUDGET_MS;
+  for (;;) {
+    const hit = mountedPreviewFrames().find((f) => f.component === id);
+    if (hit) return hit;
+    if (Date.now() >= deadline) return null;
+    await new Promise((r) => setTimeout(r, MOUNT_POLL_MS));
+  }
+}
 
 /**
  * Listen for `bsc://navigate` and apply it. Mounted once by the shell.
@@ -74,9 +95,27 @@ export function useNavigateBridge(): void {
           ack = { id, error: `navigate threw: ${err instanceof Error ? err.message : String(err)}` };
           log.error(`navigate ${id} threw: ${String(err)}`);
         }
-        // `retryAfterHydrate` is OURS — strip it rather than shipping a field the Rust `NavAck` never
-        // declared.
-        const { retryAfterHydrate: _retry, ...wire } = ack;
+        // OBSERVE THE FRAME rather than trusting the selection. `landed()` reports the store value it
+        // just wrote, so before this a component the preview REFUSED to build acked exactly like one
+        // that rendered — and since the caller's next move is `bsc shot preview`, that produced a
+        // capture of the previously-mounted component with nothing reporting it.
+        if (ack.awaitMount) {
+          const settled = await settledFrame(ack.awaitMount);
+          if (disposed) return;
+          if (!settled) {
+            ack.mountError =
+              `the preview had not settled on '${ack.awaitMount}' within ${MOUNT_BUDGET_MS}ms — do not ` +
+              `capture yet; re-read with a bare \`bsc navigate\` before shooting`;
+          } else if (settled.status === "error") {
+            ack.mountError = `the preview refused to build '${ack.awaitMount}': ${settled.error ?? "no reason given"}`;
+          } else {
+            ack.mounted = settled.component;
+          }
+        }
+        // `retryAfterHydrate` and `awaitMount` are OURS — strip them rather than shipping fields the
+        // Rust `NavAck` never declared. (A field Rust does not declare is dropped SILENTLY, which is how
+        // `declined` reached no caller for as long as it existed.)
+        const { retryAfterHydrate: _retry, awaitMount: _await, ...wire } = ack;
         void invoke("navigate_ack", { ack: { ...wire, id } }).catch((e2) => {
           // Nothing left to do — the caller will time out. Log it so the cause isn't a mystery.
           log.error(`navigate_ack failed for ${id}: ${String(e2)}`);
