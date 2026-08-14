@@ -63,6 +63,24 @@ export function sameCoordProject(from: string, target: string): boolean {
   return a === b;
 }
 
+/**
+ * Stable per-EVENT key for a refusal, so a consumer can report each one exactly once
+ * (#the-refusal-warning-replays-the-whole-log-every-minute).
+ *
+ * Every consumer re-derives `refused` from the WHOLE log tail on each read, so the same historical
+ * refusals come back on every single read — forever, since nothing prunes them out of the tail. A
+ * consumer that reports without a guard therefore repeats itself for as long as the app runs.
+ *
+ * `at` IS PART OF THE KEY, and that is the whole point of keying per event rather than per pair
+ * (which is what {@link CoordNotification}'s `<kind>:<session>` does, correctly, for a STATE). A
+ * refusal is not a state that resolves — it is a thing that happened. The same director really can
+ * misdirect the same worker again a minute later, and that second attempt is news; a pair-keyed guard
+ * would swallow it behind the stale first key and the sender would never be told.
+ */
+export function refusalKey(r: CrossProjectRefusal): string {
+  return `${r.kind}@${r.from}@${r.target}@${r.at}`;
+}
+
 export function parseCoordLine(line: string): CoordEvent | null {
   const cols = line.replace(/\r?\n$/, "").split("\t");
   if (cols.length < 4) return null;
