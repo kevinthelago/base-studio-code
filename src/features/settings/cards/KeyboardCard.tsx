@@ -24,7 +24,7 @@ import {
   findLeaderConflict,
   type RebindableId,
   type LeaderId,
-} from "../lib/keybindings";
+} from "@/features/settings/lib/keybindings";
 
 const REBINDABLE_SET = new Set<string>(REBINDABLE_IDS);
 const LEADER_SET = new Set<string>(LEADER_IDS);

@@ -40,14 +40,14 @@ export type { SearchInput, SearchProgram } from "./viz/examples/searches";
 // The `scalar` datatype (#3220) — renderer + the accumulate programs (fibonacci).
 export { ScalarView } from "./viz/renderers/ScalarView";
 export { TracedScalar, runScalarAlgorithm } from "@/features/algorithms/lib/tracer";
-export { SCALAR_PROGRAMS, fibonacci, parseScalarInput, scalarToText, type ScalarProgram } from "./viz/examples/scalarAlgos";
+export { SCALAR_PROGRAMS, fibonacci, parseScalarInput, scalarToText, type ScalarProgram } from "@/features/algorithms/viz/examples/scalarAlgos";
 // The `matrix` datatype (#3221, epic #3220) — renderer + transform programs.
 export { MatrixView } from "./viz/renderers/MatrixView";
-export { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./viz/examples/matrixTransforms";
+export { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "@/features/algorithms/viz/examples/matrixTransforms";
 // The `graph` datatype (#3224, epic #3220) — renderer + traversal/shortest-path programs.
 export { GraphView } from "./viz/renderers/GraphView";
 export { circularLayout, coordinateLayout, layoutFor } from "@/features/algorithms/viz/renderers/graphLayout";
-export { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./viz/examples/graphAlgos";
+export { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "@/features/algorithms/viz/examples/graphAlgos";
 export { programVizForImpl, resolveVizExample, resolveKind } from "./viz/examples/registry";
 export { useVizForImpl } from "@/features/algorithms/viz/useVizForImpl";
 export { classifyKind, type Classifiable } from "@/features/algorithms/lib/classifyKind";

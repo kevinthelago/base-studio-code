@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { overScrollableChild } from "./useGraphViewport";
+import { overScrollableChild } from "@/shared/ui/layouts/useGraphViewport";
 
 // jsdom gives every element scrollHeight/clientHeight of 0 and no real cascade, so this behaviour is
 // structurally unobservable through a render — the #3251 lesson, one layer down. Drive it with explicit

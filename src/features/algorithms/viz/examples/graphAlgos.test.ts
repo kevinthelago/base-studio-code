@@ -2,7 +2,7 @@
 // the animation is faithful), and the adjacency-list parser round-trips.
 import { describe, it, expect } from "vitest";
 import { TracedGraph, type GraphInput } from "@/features/algorithms/lib/tracer";
-import { bfs, dfs, dijkstra, aStar, topologicalSort, GRAPH_PROGRAMS, parseGraphInput, graphToText } from "./graphAlgos";
+import { bfs, dfs, dijkstra, aStar, topologicalSort, GRAPH_PROGRAMS, parseGraphInput, graphToText } from "@/features/algorithms/viz/examples/graphAlgos";
 import type { GraphFrame } from "@/features/algorithms/lib/trace";
 
 const G: GraphInput = {

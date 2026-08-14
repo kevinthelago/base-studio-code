@@ -27,12 +27,12 @@ import { ScalarView } from "../renderers/ScalarView";
 import { TreeView } from "../renderers/TreeView";
 import { parseSortInput } from "./sort";
 import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "./sorts";
-import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./matrixTransforms";
-import { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./graphAlgos";
+import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "@/features/algorithms/viz/examples/matrixTransforms";
+import { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "@/features/algorithms/viz/examples/graphAlgos";
 import { SEARCH_PROGRAMS, parseSearchInput, searchToText, type SearchInput, type SearchProgram } from "./searches";
-import { SCALAR_PROGRAMS, parseScalarInput, parseScalarSeed, scalarToText, scalarSeedToText, type ScalarProgram } from "./scalarAlgos";
-import { STACK_PROGRAMS, parseStackText, stackToText, type StackProgram } from "./stackAlgos";
-import { TREE_PROGRAMS, parseTreeInput, treeToText, type TreeProgram } from "./treeAlgos";
+import { SCALAR_PROGRAMS, parseScalarInput, parseScalarSeed, scalarToText, scalarSeedToText, type ScalarProgram } from "@/features/algorithms/viz/examples/scalarAlgos";
+import { STACK_PROGRAMS, parseStackText, stackToText, type StackProgram } from "@/features/algorithms/viz/examples/stackAlgos";
+import { TREE_PROGRAMS, parseTreeInput, treeToText, type TreeProgram } from "@/features/algorithms/viz/examples/treeAlgos";
 import { SCENE_PROGRAMS, type SceneProgram } from "./scenes";
 
 /** A ready-to-play visualization: a stable default factory (the inline preview) + the per-structure

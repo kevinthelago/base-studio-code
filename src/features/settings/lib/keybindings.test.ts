@@ -18,7 +18,7 @@ import {
   findLeaderConflict,
   leaderToCaps,
   type ChordEvent,
-} from "./keybindings";
+} from "@/features/settings/lib/keybindings";
 import { SCREEN_HOTKEYS } from "@/features/settings/lib/shortcuts";
 
 const ev = (over: Partial<ChordEvent>): ChordEvent => ({

@@ -4,7 +4,7 @@
 // each program declares NAMED panels (`scene.graph`, `scene.array`) and drives them with the ordinary
 // tracer verbs; the scene folds every op into a `PanelsFrame` and the player lays the panels side by side.
 import { type TracedScene, type TracedTree, type GraphInput } from "@/features/algorithms/lib/tracer";
-import { WEIGHTED_GRAPH, DEFAULT_GRAPH, graphToText, parseGraphInput } from "./graphAlgos";
+import { WEIGHTED_GRAPH, DEFAULT_GRAPH, graphToText, parseGraphInput } from "@/features/algorithms/viz/examples/graphAlgos";
 import { SORT_MOCK, parseSortInput } from "./sort";
 
 /** A scene's INPUT SEAM (#3284) — its default seed plus how to render/parse that seed as the editable "your

@@ -31,7 +31,7 @@ import { resolveKitLibraryRefs } from "@/features/designs";
 import { FleetGraphHost } from "@/features/planner/fleet/FleetGraphHost";
 import { teamRoleStreams } from "@/features/planner/fleet/teamFleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
-import { cellRect, placeByDirection, releaseCell, occupants, clampCell, DEFAULT_CELL, type CellSize, type MorphPlacement } from "./lib/morphGrid";
+import { cellRect, placeByDirection, releaseCell, occupants, clampCell, DEFAULT_CELL, type CellSize, type MorphPlacement } from "@/features/glance/lib/morphGrid";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 import { resumeProjectFleet, nothingToResume, completedPanes } from "./lib/resumeProject";
 import { decideExpand } from "@/features/glance/lib/expandNode";

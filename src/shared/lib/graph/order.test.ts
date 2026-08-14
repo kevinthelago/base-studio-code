@@ -1,7 +1,7 @@
 // orderLayers (#2418) — the shared barycenter crossing-reduction primitive: determinism, crossing
 // reduction on a small fixture, the no-neighbor fallback, and the tunables (passes / sweep).
 import { describe, it, expect } from "vitest";
-import { orderLayers } from "./order";
+import { orderLayers } from "@/shared/lib/graph/order";
 
 /** Two layers, two nodes each, wired in an X: a1–q and a2–p cross in the seed order. */
 const crossed = () => {

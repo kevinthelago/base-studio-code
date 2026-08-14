@@ -3,7 +3,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { GraphCanvas, ZoomControls } from "./GraphCanvas";
-import type { GraphViewport } from "./useGraphViewport";
+import type { GraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 
 function fakeVp(over: Partial<GraphViewport> = {}): GraphViewport {
   return {

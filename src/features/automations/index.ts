@@ -16,6 +16,6 @@ export { AutomationsStatus } from "./AutomationsStatus";
 export { useScheduler } from "@/features/automations/useScheduler";
 
 // #1545: public API for cross-feature consumers (tunnel).
-export { type Automation, type AutomationWhen } from "./lib/scheduler";
-export { isValidCron } from "./lib/cron";
+export { type Automation, type AutomationWhen } from "@/features/automations/lib/scheduler";
+export { isValidCron } from "@/features/automations/lib/cron";
 export { dispatchAutomation } from "@/features/automations/lib/dispatch";

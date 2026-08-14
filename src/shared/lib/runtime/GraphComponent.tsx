@@ -10,7 +10,7 @@ import { useAppStore } from "@/store";
 import { loadComponentFromSource } from "@/shared/lib/runtime/componentLoader";
 import { resolveGraphSource } from "@/shared/lib/runtime/graphResolver";
 import { lastGood } from "./renderGate";
-import { recoveryLadder } from "./recoveryLadder";
+import { recoveryLadder } from "@/shared/lib/runtime/recoveryLadder";
 import { log } from "@/shared/lib/core/log";
 import { ThemeProvider } from "@/shared/ui/kit";
 

@@ -23,7 +23,7 @@ import * as Providers from "./lib/providers";
 import * as UseIdleReaper from "@/app/console/lib/useIdleReaper";
 import * as UsePaneActivityFeed from "./lib/usePaneActivityFeed";
 import * as UsePaneTokenUsage from "@/app/console/lib/usePaneTokenUsage";
-import * as MenuPlacement from "./panes/menuPlacement";
+import * as MenuPlacement from "@/app/console/panes/menuPlacement";
 import * as ViewDefs from "@/app/console/panes/viewDefs";
 // — the pane VIEWS: the behaviour a pane cell hosts —
 import * as TerminalSlot from "./terminal/TerminalSlot";

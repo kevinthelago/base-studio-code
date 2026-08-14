@@ -7,7 +7,7 @@ import type { Flow, ContextFile, McpServer, ProjectPaneData } from "./projectPan
 import { type ModelId } from "@/app/console/lib/models";
 import type { Stage } from "@/features/planner/stages/focusedPlan";
 import type { DeployConfig } from "../lib/deployConfig";
-import type { Topology } from "../relationship/relationshipGraph";
+import type { Topology } from "@/features/planner/relationship/relationshipGraph";
 import type { DirectorDrive } from "../fleet/directorDrive";
 // The merged Repositories & Deployment pane + source body (pre-existing files). #1914 collapsed the
 // stage vocabulary: the `deployment` stage (repos+deploy) renders the merged Repositories & Deployment

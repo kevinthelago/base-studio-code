@@ -9,11 +9,11 @@
 // over the whole manifest. A spec now names real components, so adding a primitive makes it
 // authorable with no edit to the renderer, the validator, or the contract.
 
-export type { GeneralNode } from "./generalNode";
-export { validateGeneralNode, PRIMITIVE_NAMES, VALIDATION_COVERAGE } from "./generalNode";
+export type { GeneralNode } from "@/shared/ui/spec/generalNode";
+export { validateGeneralNode, PRIMITIVE_NAMES, VALIDATION_COVERAGE } from "@/shared/ui/spec/generalNode";
 export { KitRenderer } from "./KitRenderer";
 export type { KitRendererProps, KitBindings } from "./KitRenderer";
 export { SelfWiredKitRenderer } from "./SelfWiredKitRenderer";
 export type { SelfWiredKitRendererProps } from "./SelfWiredKitRenderer";
-export { visitNodes, collectActions } from "./specWalk";
+export { visitNodes, collectActions } from "@/shared/ui/spec/specWalk";
 export { demoSpec } from "@/shared/ui/spec/demoSpec";

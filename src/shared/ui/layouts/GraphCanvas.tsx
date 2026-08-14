@@ -19,7 +19,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { ProfiledRegion } from "@/shared/lib/core/renderProfiler";
-import type { GraphViewport } from "./useGraphViewport";
+import type { GraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import "./graphCanvas.css"; // the shared .graph-drill-anim drill transition (#2418)
 
 export interface GraphCanvasProps {

@@ -10,7 +10,7 @@
 // reading the same JSON. A case added here is automatically enforced on both sides.
 import { describe, it, expect } from "vitest";
 import FIXTURES from "@data/ui/node-validation.fixtures.json";
-import { validateGeneralNode } from "./generalNode";
+import { validateGeneralNode } from "@/shared/ui/spec/generalNode";
 
 interface Case {
   name: string;

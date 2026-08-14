@@ -14,7 +14,7 @@ import { Fragment, type ComponentType, type ReactNode } from "react";
 import { Text } from "@/shared/ui/typography/Text";
 import { primitiveFor } from "./graphPrimitive";
 import { UI_KIT } from "@/shared/ui/manifest";
-import type { GeneralNode } from "./generalNode";
+import type { GeneralNode } from "@/shared/ui/spec/generalNode";
 
 /** Primitive name → its manifest spec, for looking up a prop's declared TYPE at render time. */
 const SPEC_BY_NAME = new Map(UI_KIT.map((p) => [p.name as string, p]));

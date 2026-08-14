@@ -61,7 +61,7 @@ import { useComponentScan } from "./lib/useComponentScan";
 import { designStudioVisible } from "@/features/designs/lib/studioVisibility";
 import { makeLibraryResolvers } from "@/features/designs/lib/libraryModules";
 import { useActiveSoundKit } from "@/features/designs/lib/useActiveSoundKit";
-import { groupKits } from "./lib/kitGroups";
+import { groupKits } from "@/features/designs/lib/kitGroups";
 import { supportedStates, previewCycleStates } from "./lib/componentPreview";
 import { usePreviewStateCycle } from "@/features/designs/lib/usePreviewStateCycle";
 import { expandedPreviewFit } from "@/features/designs/lib/expandedPreviewFit";

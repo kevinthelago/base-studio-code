@@ -12,7 +12,7 @@ import {
   coordNotifications, assignWakePrompt,
   triageLanding, aggregateVerdicts, tallyVerdicts, planJuryAction,
   type JurorVerdict,
-} from "./coordination";
+} from "@/shared/lib/fleet/coordination";
 
 const w = (session: string, deps: Waiter["deps"], checkpoint?: string): Waiter =>
   ({ session, deps, checkpoint, registeredAt: 1 });

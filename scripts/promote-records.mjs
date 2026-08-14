@@ -48,7 +48,13 @@ function listModules(dir = join(REPO, "src"), rel = "") {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const r = rel ? `${rel}/${e.name}` : e.name;
     if (e.isDirectory()) out.push(...listModules(join(dir, e.name), r));
-    else if (/\.(ts|tsx)$/.test(e.name) && !/\.(test|spec)\.tsx?$/.test(e.name)) out.push(r);
+    // `.d.ts` is AMBIENT TYPE INFORMATION, not a module. tsc reads it because it is INCLUDED, never
+    // because something imports it — so no resolver can substitute a record for it, and no record can
+    // carry its meaning. `src/vite-env.d.ts` matched `\.ts$`, was harvested as a module, promoted, and
+    // retired; the whole typecheck then failed on `*.css` and `*?raw` side-effect imports, because the
+    // file that declared those wildcards was gone. Nothing downstream could have caught it: there is no
+    // importer to break, which is exactly why it has to be excluded HERE.
+    else if (/\.(ts|tsx)$/.test(e.name) && !/\.(test|spec)\.tsx?$/.test(e.name) && !/\.d\.ts$/.test(e.name)) out.push(r);
   }
   return out;
 }
@@ -229,4 +235,12 @@ if (promote.impl.length) {
   algorithms.implementations.sort((a, b) => String(a.id).localeCompare(String(b.id)));
   writeFileSync(ALGOS_PATH, JSON.stringify(algorithms, null, 2) + "\n");
 }
-console.log(`\npromoted ${promote.component.length + promote.impl.length} record(s) into the seed`);
+// COUNT WHAT LANDED, NOT WHAT WAS PLANNED. This used to print the size of the promote list — the number
+// taken BEFORE the never-overwrite-a-seed guard runs — so a run that wrote 43 records reported 49, and the
+// six it declined were visible only as loose SKIPPED lines further up. A tool that overstates its own
+// output is worse than one that does nothing, because the next step trusts the number.
+const landed = promote.component.length + promote.impl.length - skippedAtWrite;
+console.log(
+  `\npromoted ${landed} record(s) into the seed` +
+    (skippedAtWrite ? ` (${skippedAtWrite} declined — a seed already occupied the path)` : ""),
+);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { recoveryLadder, hasRecoveryPath } from "./recoveryLadder";
+import { recoveryLadder, hasRecoveryPath } from "@/shared/lib/runtime/recoveryLadder";
 import type { ChangeEntry } from "@/features/designs/lib/model";
 
 /** A history entry, with only the fields the ladder reads. */

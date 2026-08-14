@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fillTemplate } from "./template";
+import { fillTemplate } from "@/shared/lib/core/template";
 
 describe("fillTemplate (#2416)", () => {
   it("substitutes every known {{NAME}} placeholder", () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue,
-} from "./tabReorder";
+} from "@/app/console/lib/tabReorder";
 
 // moveInArray's own tests live next to it at shared/lib/core/arrayMove.test.ts
 // (#1703); tabReorder re-exports it, and the maps below exercise it transitively.

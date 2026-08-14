@@ -3,7 +3,7 @@
 // load and shows its fallback).
 import { describe, it, expect } from "vitest";
 import { buildPageShadow, formatShadowLine, formatShadowSummary, type ModuleShadow } from "@/shared/lib/runtime/shadow/shadowReport";
-import type { OutlineDiff } from "./outlineDiff";
+import type { OutlineDiff } from "@/shared/lib/runtime/shadow/outlineDiff";
 
 const clean: OutlineDiff = { identical: true, differing: 0, fileNodes: 10, graphNodes: 10, onlyInFile: [], onlyInGraph: [] };
 const drifted: OutlineDiff = { identical: false, differing: 3, fileNodes: 10, graphNodes: 8, onlyInFile: ["Screen>New"], onlyInGraph: [] };

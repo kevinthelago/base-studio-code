@@ -1,7 +1,7 @@
 // layers (#2214, graph-core epic) — the shared longest-path layerer used by Glance + the relationship
 // graph. Direction is "from → deeper" (a node points at the nodes that sit below it).
 import { describe, it, expect } from "vitest";
-import { layerDag } from "./layers";
+import { layerDag } from "@/shared/lib/graph/layers";
 import type { GraphEdge } from "@/shared/lib/graph/types";
 
 describe("layerDag (#2214)", () => {

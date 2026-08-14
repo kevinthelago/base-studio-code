@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { TracedScalar } from "@/features/algorithms/lib/tracer";
 import type { ScalarFrame } from "@/features/algorithms/lib/trace";
-import { fibonacci, SCALAR_PROGRAMS, parseScalarInput, parseScalarSeed, scalarToText, scalarSeedToText } from "./scalarAlgos";
+import { fibonacci, SCALAR_PROGRAMS, parseScalarInput, parseScalarSeed, scalarToText, scalarSeedToText } from "@/features/algorithms/viz/examples/scalarAlgos";
 import { programVizForImpl } from "./registry";
 
 /** Run fibonacci for `n` and return its recorded trace. */

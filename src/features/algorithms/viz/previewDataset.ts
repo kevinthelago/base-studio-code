@@ -8,8 +8,8 @@
 // a preview never flickers between renders.
 import { runAlgorithm, runGraphAlgorithm } from "@/features/algorithms/lib/tracer";
 import { TRACE_PROGRAMS } from "./examples/sorts";
-import { GRAPH_PROGRAMS } from "./examples/graphAlgos";
-import { bstShape, TREE_PROGRAMS } from "./examples/treeAlgos";
+import { GRAPH_PROGRAMS } from "@/features/algorithms/viz/examples/graphAlgos";
+import { bstShape, TREE_PROGRAMS } from "@/features/algorithms/viz/examples/treeAlgos";
 import { vizRunToDataset, type VizDataset, type TreeDatasetNode } from "@/features/algorithms/viz/vizDataset";
 
 /** The structures the shape tier can source a real dataset for. */

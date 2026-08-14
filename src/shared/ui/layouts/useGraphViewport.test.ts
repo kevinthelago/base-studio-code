@@ -3,7 +3,7 @@
 // plus the wheel-listener lifecycle owned by the `setVp` ref callback (#2454).
 import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useGraphViewport, zoomAboutPoint, fitView, centerView, centeredView, fitBox, centeredBox, type GraphView } from "./useGraphViewport";
+import { useGraphViewport, zoomAboutPoint, fitView, centerView, centeredView, fitBox, centeredBox, type GraphView } from "@/shared/ui/layouts/useGraphViewport";
 
 const V0: GraphView = { tx: 0, ty: 0, scale: 1 };
 

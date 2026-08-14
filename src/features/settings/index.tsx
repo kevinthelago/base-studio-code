@@ -30,7 +30,7 @@ export { SettingsPageHeader, SettingsSubHeader } from "@/features/settings/pages
 export {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,
-} from "./lib/keybindings";
+} from "@/features/settings/lib/keybindings";
 
 // The settings sections — the SINGLE source for the nav, the known-section guard, and the rendered
 // Page, so the three can't drift. Grouped by app area (mirrors the rail). Each section's body is a
