@@ -140,6 +140,31 @@ export async function pushComponent(
   component: ComponentRecord,
   opts?: { ifVersion?: number },
 ): Promise<void> {
+  // A LITE RECORD IS NEVER A WRITE PAYLOAD (#a-lite-record-must-never-be-written-back).
+  //
+  // `loadComponentsGraph` (the `--graph` read, #4072) returns records whose `srcText`, `props`, `tags`,
+  // `version`, `used`, `variants`, `whenUse` and `whenNot` are DEFAULTS rather than values — that is the
+  // whole point of it (33KB instead of 1.72MB, so the Studio paints instead of blocking ~8s). They land
+  // in the SAME `components` array every writer reads, and with `--replace` a push of one overwrites real
+  // data with those defaults.
+  //
+  // That is not hypothetical: on 2026-08-14 at 17:36:50-51Z, one second after an app boot, THIRTY-EIGHT
+  // records took exactly this write — 34 replaced by smaller content, `ui-tree` losing 6,887 characters —
+  // and `glance-node`'s change entry names `srcText` plus precisely those six defaulted fields. Designer
+  // request #63.
+  //
+  // The rev guard below does NOT cover it: those writes were not stale (the store had not moved), so they
+  // passed. Lossy is not stale, which is why the #61 fix did not prevent #63.
+  //
+  // Guarded HERE, at the bridge, rather than at each caller — so it holds for the converge loop,
+  // `setComponent`, `importKit`, and any path added later.
+  if (component.lite) {
+    log.warn(
+      `ui-bridge: refused to write "${component.id}" — it is a LITE record (graph projection); its fields are defaults, not values`,
+      "ui-bridge",
+    );
+    return;
+  }
   const args = ["ui", "set", "--replace"];
   // OPTIMISTIC CONCURRENCY (#a-stale-app-copy-overwrites-a-designer-edit). Two independent writers share
   // this store — the app, and out-of-band `bsc ui set` sessions — so last-write-wins means whoever writes
@@ -174,7 +199,12 @@ export async function dropComponent(id: string): Promise<void> {
 }
 /** Write-through a kit upsert (`bsc ui kit set`). Never throws. `--replace` for the same reason
  *  `pushComponent` needs it (#4197) — the app holds the whole record and the kit seed reconcile must be
- *  able to force a diverged copy back. */
+ *  able to force a diverged copy back.
+ *
+ *  NO LITE GUARD NEEDED here, and that is a fact about the reads rather than an oversight
+ *  (#a-lite-record-must-never-be-written-back): `loadKits` only ever reads `--full`. There is no
+ *  `--graph` projection for kits, so a kit record is never a bag of defaults the way a lite component is.
+ *  If a lean kit read is ever added, this needs the same guard `pushComponent` has. */
 export async function pushKit(kit: Kit): Promise<void> {
   try { await bscWrite(null, ["ui", "kit", "set", "--replace"], kit); } catch { /* store unreachable — cache-only */ }
 }
