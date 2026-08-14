@@ -11,7 +11,7 @@ vi.mock("@/shared/lib/core/bsc", () => ({
 
 import { bsc, bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import type { ComponentRecord, Kit } from "./model";
-import { dropComponent, dropKit, loadComponents, loadKits, pushComponent, pushKit, recordPreviewError } from "./componentBridge";
+import { dropComponent, dropKit, loadComponents, loadKits, projectComponent, pushComponent, pushKit, recordPreviewError } from "./componentBridge";
 import { dropKitUsage, loadKitUsage, pushKitUsage } from "./kitUsageBridge";
 
 beforeEach(() => {
@@ -139,6 +139,32 @@ describe("componentBridge → bsc ui (#2469)", () => {
     // "my edit vanished" no counterpart anywhere in the log.
     vi.mocked(bscWrite).mockRejectedValueOnce(new Error("version conflict on component 'x': its current rev is 8, not 7"));
     await expect(pushComponent({ id: "x" } as unknown as ComponentRecord, { ifVersion: 7 })).resolves.toBeUndefined();
+  });
+
+  it("REFUSES to write a lite record — the #63 bulk-overwrite shape", async () => {
+    // #a-lite-record-must-never-be-written-back. On 2026-08-14 at 17:36:50-51Z, one second after an app
+    // boot, THIRTY-EIGHT records took an srcText write; 34 shrank (`ui-tree` lost 6,887 chars) and
+    // `glance-node`'s change entry named srcText plus exactly the six fields `projectComponent` defaults.
+    //
+    // That is a `--graph` LITE record being pushed with `--replace`: its emptiness is the projection's
+    // defaults, not the component's content. The rev guard does not catch it — those writes were not
+    // stale, so they passed. Lossy is not stale.
+    const lite = {
+      ...projectComponent({ id: "ui-tab-bar", name: "TabBar", kitId: "base-studio-code" }),
+      lite: true as const,
+    };
+    // The exact shape: everything the real record carries is a default here.
+    expect(lite.srcText).toBe("");
+    expect([lite.tags, lite.variants, lite.whenUse, lite.whenNot].map((v) => v.length)).toEqual([0, 1, 0, 0]);
+
+    await pushComponent(lite);
+    expect(bscWrite, "a defaults-only record must never reach the store").not.toHaveBeenCalled();
+  });
+
+  it("still writes a FULL record — the fast-paint hydrate is not disabled, only its records are barred", async () => {
+    const full = projectComponent({ id: "ui-tab-bar", name: "TabBar", kitId: "base-studio-code", srcText: "export const TabBar = () => null;" });
+    await pushComponent(full);
+    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--replace"], full);
   });
 
   it("writes kit upsert/removal through the ui surface, replacing the whole record", async () => {
