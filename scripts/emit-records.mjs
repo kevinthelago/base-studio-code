@@ -84,7 +84,7 @@ function fileExists(spec) {
 /** JSX needs `.tsx`; a module without it gets `.ts` so `tsc` does not widen every generic to a JSX tag. */
 const extFor = (code) => (/<[A-Za-z][^>]*>/.test(code) ? ".tsx" : ".ts");
 
-function main() {
+export function emitRecords({ quiet = false } = {}) {
   const seeds = collectSeeds();
   // A full rebuild each run: a stale emitted file for a module that came BACK would shadow nothing (src
   // wins) but would still be dead weight the next reader has to explain.
@@ -108,8 +108,13 @@ function main() {
   }
   mkdirSync(OUT, { recursive: true });
   writeFileSync(join(OUT, ".gitignore"), "*\n", "utf8"); // the tree ignores itself, wherever it is checked out
-  console.log(`emit-records: ${emitted.length} retired specifier(s) materialized from seeds`);
-  for (const s of emitted.sort()) console.log("   " + s);
+  if (!quiet) {
+    console.log(`emit-records: ${emitted.length} retired specifier(s) materialized from seeds`);
+    for (const s of emitted.sort()) console.log("   " + s);
+  }
+  return emitted;
 }
 
-main();
+// Still a CLI: `tsc` does not run through vite, so `npm run typecheck` needs a way to materialize the
+// tree before type resolution. Everything that DOES go through vite is served by the plugin instead.
+if (process.argv[1] && process.argv[1].endsWith("emit-records.mjs")) emitRecords();
