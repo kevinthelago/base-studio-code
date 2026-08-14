@@ -7,7 +7,7 @@ import { ArrayView } from "./ArrayView";
 import { ALGO_VIZ_ANIM_CLASSES, ALGO_VIZ_MOTION_CSS } from "@/features/algorithms/viz/renderers/arrayViewMotion";
 import type { ArrayFrame } from "@/features/algorithms/lib/trace";
 import { TracedArray } from "@/features/algorithms/lib/tracer";
-import { binarySearch } from "../examples/searches";
+import { binarySearch } from "@/features/algorithms/viz/examples/searches";
 
 /** Render an ArrayFrame and return its cell elements (in index order) + the container. */
 function renderFrame(frame: ArrayFrame) {

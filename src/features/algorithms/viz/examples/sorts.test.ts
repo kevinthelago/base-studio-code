@@ -2,7 +2,7 @@
 // and the programs produce genuinely DIFFERENT op profiles (not the one shared animation).
 import { describe, it, expect } from "vitest";
 import { TracedArray } from "@/features/algorithms/lib/tracer";
-import { bubbleSort, insertionSort, quickSort, heapSort, mergeSort, TRACE_PROGRAMS, programKey, programForImpl } from "./sorts";
+import { bubbleSort, insertionSort, quickSort, heapSort, mergeSort, TRACE_PROGRAMS, programKey, programForImpl } from "@/features/algorithms/viz/examples/sorts";
 import type { ArrayFrame } from "@/features/algorithms/lib/trace";
 
 const PROGRAMS: Record<string, (a: TracedArray) => void> = { bubbleSort, insertionSort, quickSort, heapSort, mergeSort };

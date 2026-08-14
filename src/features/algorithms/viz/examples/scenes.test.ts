@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TracedScene, TracedStack, TracedScalar, TracedTree, runScene, type GraphInput } from "@/features/algorithms/lib/tracer";
 import { isPanelsFrame, type PanelsFrame, type ArrayFrame, type GraphFrame, type StackFrame, type ScalarFrame, type TreeFrame } from "@/features/algorithms/lib/trace";
-import { dijkstraScene, bfsScene, mergeSortScene } from "./scenes";
+import { dijkstraScene, bfsScene, mergeSortScene } from "@/features/algorithms/viz/examples/scenes";
 import { WEIGHTED_GRAPH, DEFAULT_GRAPH } from "@/features/algorithms/viz/examples/graphAlgos";
 import { programVizForImpl } from "./registry";
 

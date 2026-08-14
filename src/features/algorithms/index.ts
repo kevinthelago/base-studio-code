@@ -29,14 +29,14 @@ export { ArrayView } from "./viz/renderers/ArrayView";
 // future Designs kit-store integration can register + edit it in the AnimationsMenu (see the module's
 // RESIDUAL note).
 export { ALGO_VIZ_KIT_ID, ALGO_VIZ_ANIMATIONS, ALGO_VIZ_ANIM_CLASSES } from "@/features/algorithms/viz/renderers/arrayViewMotion";
-export { sortSteps, sort, SORT_MOCK, parseSortInput } from "./viz/examples/sort";
+export { sortSteps, sort, SORT_MOCK, parseSortInput } from "@/features/algorithms/viz/examples/sort";
 // Instrumented execution (#3216) — the algorithm's real code drives the animation via the tracer.
 export { TracedArray, runAlgorithm, TracedMatrix, runMatrixAlgorithm, TracedGraph, runGraphAlgorithm } from "@/features/algorithms/lib/tracer";
 export type { ArrayMark, GraphInput, GraphMark, GraphRole, Neighbour, CellWrite } from "@/features/algorithms/lib/tracer";
-export { TRACE_PROGRAMS, programKey, programForImpl, type AlgoProgram } from "./viz/examples/sorts";
+export { TRACE_PROGRAMS, programKey, programForImpl, type AlgoProgram } from "@/features/algorithms/viz/examples/sorts";
 // Array SEARCH (#3220) — the `probe`/`found` vocabulary over the SAME ArrayView the sorts use.
-export { SEARCH_PROGRAMS, linearSearch, binarySearch, parseSearchInput, searchToText } from "./viz/examples/searches";
-export type { SearchInput, SearchProgram } from "./viz/examples/searches";
+export { SEARCH_PROGRAMS, linearSearch, binarySearch, parseSearchInput, searchToText } from "@/features/algorithms/viz/examples/searches";
+export type { SearchInput, SearchProgram } from "@/features/algorithms/viz/examples/searches";
 // The `scalar` datatype (#3220) — renderer + the accumulate programs (fibonacci).
 export { ScalarView } from "./viz/renderers/ScalarView";
 export { TracedScalar, runScalarAlgorithm } from "@/features/algorithms/lib/tracer";
@@ -60,4 +60,4 @@ export { vizRunToDataset } from "@/features/algorithms/viz/vizDataset";
 export type { VizDataset } from "@/features/algorithms/viz/vizDataset";
 // Shape tier (#3439): a synchronous real dataset for a target structure (array / graph), sourced from a
 // canonical in-app trace program — feeds the Design Studio's DataShape-driven preview data.
-export { datasetForStructure, type PreviewStructure } from "./viz/previewDataset";
+export { datasetForStructure, type PreviewStructure } from "@/features/algorithms/viz/previewDataset";

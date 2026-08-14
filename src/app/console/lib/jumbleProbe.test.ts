@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { probeJumble } from "./jumbleProbe";
+import { probeJumble } from "@/app/console/lib/jumbleProbe";
 
 const box = (cols: number) => "╭" + "─".repeat(cols - 2) + "╮";
 const boxBottom = (cols: number) => "╰" + "─".repeat(cols - 2) + "╯";

@@ -16,8 +16,8 @@ import { TREE_PROGRAMS } from "@/features/algorithms/viz/examples/treeAlgos";
 import { GRAPH_PROGRAMS } from "@/features/algorithms/viz/examples/graphAlgos";
 import { MATRIX_PROGRAMS } from "@/features/algorithms/viz/examples/matrixTransforms";
 import { SCALAR_PROGRAMS } from "@/features/algorithms/viz/examples/scalarAlgos";
-import { SEARCH_PROGRAMS } from "./searches";
-import { TRACE_PROGRAMS } from "./sorts";
+import { SEARCH_PROGRAMS } from "@/features/algorithms/viz/examples/searches";
+import { TRACE_PROGRAMS } from "@/features/algorithms/viz/examples/sorts";
 
 /** Every structure that has selectable programs, and the renderer key each example must carry. */
 const DATATYPES = [

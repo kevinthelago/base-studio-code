@@ -961,6 +961,7 @@ dependencies = [
  "bsc-appchan",
  "bsc-cli-util",
  "bsc-util",
+ "png 0.18.1",
  "serde",
  "serde_json",
  "tempfile",

@@ -21,7 +21,7 @@ import { createSkillsSlice } from "@/features/skills/store";
 
 import { type AppStore } from "./types";
 import { persistedState, migrateAutoResumeOff } from "@/store/persist";
-import { createSessionSlice } from "./slices/session";
+import { createSessionSlice } from "@/store/slices/session";
 import { createPlanSlice } from "./slices/plan";
 import { createProjectsSlice } from "./slices/projects";
 import { createAutomationsSlice } from "@/features/automations/store";

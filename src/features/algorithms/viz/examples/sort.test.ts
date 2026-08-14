@@ -1,7 +1,7 @@
 // The seeded sort proof (#3177) — `sortSteps` yields a monotonically-improving (by inversion count)
 // sequence that ends fully sorted, and `sort` returns the sorted array (draining the same generator).
 import { describe, it, expect } from "vitest";
-import { sortSteps, sort, SORT_MOCK, parseSortInput } from "./sort";
+import { sortSteps, sort, SORT_MOCK, parseSortInput } from "@/features/algorithms/viz/examples/sort";
 import { programVizForImpl } from "./registry";
 import type { ArrayFrame } from "@/features/algorithms/lib/trace";
 

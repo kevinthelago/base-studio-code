@@ -1055,11 +1055,20 @@ mod tests {
         // collection (#3607) — in the graph but ungrouped until tagged, so `bsc graph` surfaced none.
         let mut fleet = in_domain("fleet");
         fleet.sort();
-        assert_eq!(
-            fleet,
-            ["group-totals.ts", "llm-energy.ts", "order-by-rank.ts", "precedence-resolve.ts", "stream-merge.ts", "windowed-tally.ts"],
-            "the fleet collection is the FleetPage dashboard's harvested algorithms"
-        );
+        // The six the FleetPage brought in are its FLOOR, not its ceiling. This used to pin the exact
+        // list, which made every module migrated into the fleet domain edit this test — churn that says
+        // nothing, since the property being guarded is that the facet DISCRIMINATES, not that the
+        // collection stopped growing. A graph whose collections cannot grow is the opposite of the point.
+        for seedling in ["group-totals.ts", "llm-energy.ts", "order-by-rank.ts", "precedence-resolve.ts", "stream-merge.ts", "windowed-tally.ts"] {
+            assert!(fleet.iter().any(|id| id == seedling), "fleet keeps '{seedling}' (the FleetPage set)");
+        }
+        // ...and it still discriminates: nothing from another domain leaks in, which is the assertion the
+        // exact list was standing in for.
+        for other in ["logistics", "graphics", "signal-processing"] {
+            for id in in_domain(other) {
+                assert!(!fleet.contains(&id), "'{id}' is {other}, not fleet");
+            }
+        }
 
         // The facet is ADDITIVE: the seed's general-purpose sorts/searches stay UNTAGGED rather than
         // being forced into a domain, so a domain collection never surfaces an unrelated algorithm.

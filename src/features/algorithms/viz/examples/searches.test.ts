@@ -5,7 +5,7 @@ import { describe, it, expect } from "vitest";
 import { TracedArray } from "@/features/algorithms/lib/tracer";
 import { opStateAttrs } from "@/features/algorithms/lib/binding";
 import type { ArrayFrame, ArrayOp } from "@/features/algorithms/lib/trace";
-import { linearSearch, binarySearch, SEARCH_PROGRAMS, parseSearchInput, searchToText } from "./searches";
+import { linearSearch, binarySearch, SEARCH_PROGRAMS, parseSearchInput, searchToText } from "@/features/algorithms/viz/examples/searches";
 import { programVizForImpl } from "./registry";
 
 type Search = (a: TracedArray, target: number) => number;
