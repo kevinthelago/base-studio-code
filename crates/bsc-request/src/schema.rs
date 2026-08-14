@@ -8,11 +8,16 @@
 use rusqlite::Connection;
 
 /// Every table (single source of truth for `clear`).
-pub(crate) const ALL_TABLES: &[&str] = &["requests"];
+pub(crate) const ALL_TABLES: &[&str] = &["requests", "request_notes"];
 
 pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
-        "PRAGMA journal_mode = WAL;
+        // `foreign_keys` is OFF by default in SQLite and is PER-CONNECTION, so it belongs here (which
+        // every `Store::open` runs) rather than in the CREATE. Without it the notes table's
+        // `ON DELETE CASCADE` is silently inert and `remove`/`prune` would strand a thread pointing at a
+        // deleted request — the failure mode is invisible until someone reads orphaned rows.
+        "PRAGMA foreign_keys = ON;
+         PRAGMA journal_mode = WAL;
          CREATE TABLE IF NOT EXISTS requests (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             text         TEXT NOT NULL,               -- what the surface couldn't do
@@ -31,6 +36,25 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // busy session from an idle one; `claimed_at` is when. Both null until a `claim`.
     add_column_if_missing(conn, "claimed_by", "TEXT")?;
     add_column_if_missing(conn, "claimed_at", "INTEGER")?;
+    // The REPLY thread (#bsc-request-gains-a-note-verb) — its own table, not the `note` column above.
+    //
+    // That column is the RESOLVE stamp: one TEXT, written when a request is closed. Threading replies
+    // through it would make each reply destroy the last, which is the same lost-update class as the bug
+    // that prompted this verb. A separate table makes notes APPEND-ONLY by construction — there is no
+    // UPDATE path to them at all, matching what `bsc plan change note` already established.
+    //
+    // `ON DELETE CASCADE` + the `foreign_keys` pragma below so `remove`/`prune` take a request's thread
+    // with it rather than stranding notes pointing at a row that is gone.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS request_notes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+            body       TEXT NOT NULL,               -- the reply
+            author     TEXT,                        -- who wrote it (--from); null when unattributed
+            at         INTEGER NOT NULL DEFAULT 0   -- epoch ms
+         );
+         CREATE INDEX IF NOT EXISTS idx_request_notes ON request_notes(request_id, id);",
+    )?;
     Ok(())
 }
 
