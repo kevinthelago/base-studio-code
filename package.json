@@ -24,7 +24,9 @@
     "fixtures:store": "node scripts/gen-store-fixtures.mjs",
     "test:e2e": "playwright test",
     "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
-    "emit:records": "node scripts/emit-records.mjs"
+    "emit:records": "node scripts/emit-records.mjs",
+    "dev-boot-check": "node scripts/dev-boot-check.mjs",
+    "retirement-candidates": "node scripts/retirement-candidates.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -237,7 +237,7 @@ async function mountAll(): Promise<MountResult[]> {
   for (const def of SHADOW_PAGES) {
     const host = document.createElement("div");
     document.body.appendChild(host);
-    let root: { unmount: () => void } | undefined;
+    let root: ReturnType<(typeof ReactDOMClient)["createRoot"]> | undefined;
     // A page that throws during render throws inside React's own error handling, which re-raises to
     // `window.onerror` rather than out of `render()`. Catching it here is what turns "the harness page
     // crashed" into "this page failed", which is the difference between a verdict and a mystery.

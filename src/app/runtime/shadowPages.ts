@@ -159,7 +159,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "plan-body-automations", file: "/src/features/planner/bodies/FocusedAutomationsBody.tsx" },
       { recordId: "plan-body-skills", file: "/src/features/planner/bodies/FocusedSkillsBody.tsx" },
       { recordId: "plan-body-mcps", file: "/src/features/planner/bodies/McpsBody.tsx" },
-      { recordId: "plan-body-features", file: "/src/features/planner/bodies/FocusedFeaturesBody.tsx" },
+      { recordId: "plan-body-features", file: null }, // RETIRED — the record is the only copy
       { recordId: "plan-body-file-intake", file: "/src/features/planner/bodies/FileIntakePane.tsx" },
       { recordId: "plan-body-deployment", file: "/src/features/planner/bodies/ReposDeployView.tsx" },
       { recordId: "plan-body-deploy-card", file: "/src/features/planner/bodies/DeployView.tsx" },
@@ -171,7 +171,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "plan-body-connector-form", file: "/src/features/planner/bodies/connectorForm.tsx" },
       { recordId: "plan-body-streams", file: "/src/features/planner/bodies/StreamsBody.tsx" },
       { recordId: "plan-body-permissions", file: "/src/features/planner/bodies/FocusedPermissionsBody.tsx" },
-      { recordId: "plan-body-plan", file: "/src/features/planner/bodies/FocusedPlanBody.tsx" },
+      { recordId: "plan-body-plan", file: null }, // RETIRED — the record is the only copy
       { recordId: "plan-body-stream-cards", file: "/src/features/planner/bodies/StreamFocusCards.tsx" },
       { recordId: "plan-body-shared-deps", file: "/src/features/planner/bodies/SharedDependencies.tsx" },
       { recordId: "plan-body-collapsible-card", file: "/src/features/planner/bodies/collapsibleCard.tsx" },
@@ -351,7 +351,7 @@ const FILE_SOURCES = import.meta.glob<string>(
     // Named, not `bodies/*.tsx` — the glob is the file half of the parity diff, and a wildcard sweeps up
     // the directory's twelve `.test.tsx` files, which the catalogue guard correctly rejects as globbed
     // sources nothing declares.
-    "/src/features/planner/bodies/{DiscoveryBody,MarketBody,TransformationsBody,FocusedAutomationsBody,FocusedSkillsBody,McpsBody,FocusedFeaturesBody,FileIntakePane,ReposDeployView,DeployView,deployShipSections,deployTargetSection,deployPrimitives,FocusedSourceBody,ScanViews,connectorForm,StreamsBody,FocusedPermissionsBody,FocusedPlanBody,StreamFocusCards,SharedDependencies,collapsibleCard,bodyPrimitives}.tsx",
+    "/src/features/planner/bodies/{DiscoveryBody,MarketBody,TransformationsBody,FocusedAutomationsBody,FocusedSkillsBody,McpsBody,FileIntakePane,ReposDeployView,DeployView,deployShipSections,deployTargetSection,deployPrimitives,FocusedSourceBody,ScanViews,connectorForm,StreamsBody,FocusedPermissionsBody,StreamFocusCards,SharedDependencies,collapsibleCard,bodyPrimitives}.tsx",
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
     "/src/features/algorithms/{AlgorithmsWorkspace,AlgorithmsRail,AlgorithmsInspector,AlgorithmsKitGraph,LibrarianTerminal}.tsx",
     "/src/app/console/panes/PaneMenu.tsx",

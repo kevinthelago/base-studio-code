@@ -30,7 +30,7 @@ import { Toggle } from "./controls/Toggle";
 import { SegmentedControl } from "./controls/SegmentedControl";
 import { TextField, TextArea, SelectField } from "./controls/Field";
 import { Option } from "./controls/Option";
-import { BackButton } from "./controls/BackButton";
+import { BackButton } from "@/shared/ui/controls/BackButton";
 import { ColorSwatch } from "./controls/ColorSwatch";
 import { ConfirmButton } from "./controls/ConfirmButton";
 import { Card } from "./data/Card";
@@ -48,7 +48,7 @@ import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars }
 import { Banner } from "./feedback/Banner";
 import { InlineError } from "./feedback/InlineError";
 // #4172 — failure containment, composable from a spec.
-import { PageBoundary } from "./layouts/PageBoundary";
+import { PageBoundary } from "@/shared/ui/layouts/PageBoundary";
 import { EmptyState } from "./feedback/EmptyState";
 import { StatusDot } from "./feedback/StatusDot";
 import { Skeleton } from "./feedback/Skeleton";

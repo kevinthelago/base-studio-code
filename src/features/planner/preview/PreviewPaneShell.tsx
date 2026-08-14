@@ -16,7 +16,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from '@tauri-apps/api/core';
 import { safeInvoke } from '@/shared/lib/core/safeInvoke';
 import { useAppStore } from '../../../store';
-import { StageScreenFrame } from './StageScreenFrame';
+import { StageScreenFrame } from '@/features/planner/preview/StageScreenFrame';
 import { dispatchRenderPreview, RENDER_PREVIEW_ID } from './renderPreview';
 import { buildClaudeDesignBrief } from './claudeDesignBrief';
 import { getRenderer } from './registry';

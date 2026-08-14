@@ -49,7 +49,13 @@ export default defineConfig(async ({ command }) => ({
     // WebView pull it module-by-module in a serial waterfall on first load. This overlaps with
     // the native/WebView2 launch, so by the time the page loads the boot modules are cached.
     warmup: {
-      clientFiles: ["./src/app/main.tsx", "./src/app/App.tsx", "./src/store/index.ts", "./src/app/console/index.tsx"],
+      // Every entry must EXIST. A path that does not is not a silent no-op — Vite logs a "Failed to load
+      // url" pre-transform error on every boot, which is worded identically to a genuine unresolvable
+      // module. `./src/app/console/index.tsx` was one: the console barrel went in the feature-first reorg
+      // and the warmup list kept naming it, so the dev server has been printing a resolution failure at
+      // every start. Harmless in itself, and expensive for exactly the reason `dev-boot-check` exists —
+      // it makes a real retirement failure indistinguishable from standing noise.
+      clientFiles: ["./src/app/main.tsx", "./src/app/App.tsx", "./src/store/index.ts", "./src/app/console/ConsoleGraphHost.tsx"],
     },
     watch: {
       // Vite watches the project root, but this is a Cargo *workspace* — all Rust build output
