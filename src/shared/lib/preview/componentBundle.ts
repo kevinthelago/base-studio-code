@@ -11,6 +11,7 @@ import wasmURL from "esbuild-wasm/esbuild.wasm?url";
 import importmapEmbedded from "@data/ui/preview-importmap.json";
 import { collapseSegments } from "./importPath";
 import { PREVIEW_SHIM_NAMESPACE, shimModuleFor, scanStubImports, previewCspMeta } from "./previewShims";
+import { isPlatformModule } from "./platformModules";
 
 /** The esm.sh import-map for the externals (React et al.), shared with the skeleton preview (#2419). This is
  *  the ONLY set of specifiers fetched from a CDN; every OTHER bare import resolves to a bundled-in local
@@ -70,10 +71,31 @@ export function ensureEsbuild(): Promise<typeof Esbuild> {
 
 const CSS_NOOP = "css-noop";
 
+/**
+ * Does `spec` — a first-party `@/…` — resolve to a bundled-in STUB rather than to the mem filesystem?
+ *
+ * True only when it is a REGISTERED platform module (`@data/ui/platform-modules.json`) that `files` does
+ * not vendor: the second half of the declared boundary (#3897). The closure runner supplies these by
+ * ALIASING each one to the app's real file; a preview iframe is a separate realm with no source to alias,
+ * so it supplies a stub instead — the same treatment every non-curated bare specifier already gets (#3696).
+ *
+ * Vendored is checked FIRST so real source always wins over a stub (many kit components sit at a
+ * registered `@/…` position and are handed in with the artifact). An UNregistered `@/…` is never stubbed —
+ * a missing sibling stays the honest "module not found" the doctor reports as `no-implementation`.
+ *
+ * Pure, and exported so the resolution decision is unit-testable without esbuild (which cannot run under
+ * jsdom); that the stub then BUILDS and RENDERS is covered in real Chromium by `e2e/previewShims.spec.ts`.
+ */
+export function stubsBoundaryModule(files: Record<string, string>, spec: string): boolean {
+  if (!spec.startsWith("@/")) return false;
+  return !lookupMem(files, spec.slice(2)) && isPlatformModule(spec);
+}
+
 function componentPlugin(files: Record<string, string>, entry: string): Esbuild.Plugin {
+  const isBoundaryStub = (spec: string) => stubsBoundaryModule(files, spec);
   // The named bindings each universal-stubbed package is imported with — so a generated stub exports exactly
   // those (#3696). Scanned once from the component's own files (the dedicated shims have static exports).
-  const stubExports = scanStubImports(files, (s) => COMPONENT_EXTERNALS.includes(s));
+  const stubExports = scanStubImports(files, (s) => COMPONENT_EXTERNALS.includes(s), isBoundaryStub);
   return {
     name: "component-preview",
     setup(build) {
@@ -81,8 +103,17 @@ function componentPlugin(files: Record<string, string>, entry: string): Esbuild.
         if (args.kind === "entry-point") return { path: entry, namespace: "mem" };
         // `.css` (+ style assets) → an empty module; the app's real styles are injected into the iframe.
         if (/\.(css|scss|sass|less)$/.test(args.path)) return { path: CSS_NOOP, namespace: "empty" };
-        // First-party `@/…` → the source file handed in (built-in kit source/runtime).
-        if (args.path.startsWith("@/")) return { path: args.path.slice(2), namespace: "mem" };
+        // First-party `@/…` → the source file handed in. A registered PLATFORM MODULE (#3897) the files
+        // do not vendor is the second half of the declared boundary: the closure runner aliases it to the
+        // app's real file, but a preview iframe is a separate realm with no source to alias — so its half
+        // is a local stub, the same treatment every non-curated bare specifier already gets (#3696).
+        // Vendored wins over the stub (a kit component is real source, not a stub), and an UNregistered
+        // `@/…` stays in mem, where a miss is the honest "module not found" a missing sibling should be.
+        if (args.path.startsWith("@/")) {
+          const mem = args.path.slice(2);
+          if (isBoundaryStub(args.path)) return { path: args.path, namespace: PREVIEW_SHIM_NAMESPACE };
+          return { path: mem, namespace: "mem" };
+        }
         // `@bsc/…` LIBRARY reference (#3116) → its VENDORED module in `files` (an algorithm's real code,
         // keyed by the literal specifier + `.ts`; `componentPreviewFiles` put it there). Resolved like a
         // first-party import — kept in the mem filesystem, NOT external — so the preview runs the library

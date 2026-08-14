@@ -36,6 +36,48 @@ root.appendChild(el);
 export {};
 `;
 
+// The DECLARED BOUNDARY (#3897). A registered platform module is not in the preview's mem filesystem, so
+// before its stub arm existed esbuild failed the whole bundle with "Could not resolve @/store" — which is
+// why the doctor called these components healthy and the preview refused to build them. jsdom can't run
+// esbuild-wasm, so only real Chromium can observe that the stub actually BUILDS and its bindings are usable.
+const BOUNDARY_FIXTURE = `
+import { useAppStore } from "@/store";
+import { Stack } from "@/shared/ui/layout/Stack";
+const root = document.getElementById("root");
+let out;
+try {
+  const projects = useAppStore((s) => s.projects); // a stubbed hook → a black-hole value
+  const n = [...projects].length;                  // iterating a black-hole is safe
+  void n;
+  out = [typeof useAppStore, typeof Stack].join(",");
+} catch (e) {
+  out = "ERR:" + (e && e.message);
+}
+const el = document.createElement("div");
+el.id = "marker";
+el.textContent = out;
+root.appendChild(el);
+export {};
+`;
+
+test("a component importing a REGISTERED platform module bundles + renders (the declared boundary, #3897)", async ({ page }: { page: Page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
+  page.on("pageerror", (e) => consoleErrors.push(String(e)));
+
+  await page.goto(HARNESS);
+  await page.waitForFunction(() => !!window.__previewHarness);
+  // `files` holds ONLY the fixture, so `@/store` and `@/shared/ui/layout/Stack` are unvendored — exactly
+  // the path under test. Without the boundary stub, bundleComponent throws here and mountRaw rejects.
+  await page.evaluate((src) => window.__previewHarness!.mountRaw(src), BOUNDARY_FIXTURE);
+
+  const frame = await (await page.locator("#preview").elementHandle())!.contentFrame();
+  const marker = await frame!.evaluate(() => document.getElementById("marker")?.textContent ?? "");
+  expect(marker).toBe("function,function");
+
+  expect(consoleErrors.filter((e) => /Content Security Policy|Refused to|resolve module/i.test(e))).toEqual([]);
+});
+
 test("a component importing native/unknown packages bundles + renders under CSP (never 'failed to resolve')", async ({ page }: { page: Page }) => {
   const consoleErrors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });

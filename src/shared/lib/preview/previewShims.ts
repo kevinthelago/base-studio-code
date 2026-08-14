@@ -176,8 +176,17 @@ export const PREVIEW_SHIM_NAMESPACE = "preview-shim";
  * `@bsc/`), NOT a curated external, and NOT a dedicated shim (those have static exports, no scan needed).
  * Pure; over-collection is harmless (an extra export never hurts). Returns spec → the union of its imported
  * names across all files.
+ *
+ * `isFirstPartyStub` widens that to the caller's declared boundary (#3897): a `@/…` the caller stubs rather
+ * than vendors is scanned too, so its stub exports the bindings it is imported with instead of failing the
+ * build on a missing export. It defaults to none — a `@/…` is a mem-filesystem lookup unless a caller says
+ * otherwise, and `@bsc/…` is never stubbed (an unvendored one is an honest unresolvable-import).
  */
-export function scanStubImports(files: Record<string, string>, isExternal: (spec: string) => boolean): Map<string, string[]> {
+export function scanStubImports(
+  files: Record<string, string>,
+  isExternal: (spec: string) => boolean,
+  isFirstPartyStub: (spec: string) => boolean = () => false,
+): Map<string, string[]> {
   const importRe = /import\s+([^;'"]*?)\s+from\s*['"]([^'"]+)['"]/g;
   const acc = new Map<string, Set<string>>();
   for (const src of Object.values(files)) {
@@ -185,7 +194,8 @@ export function scanStubImports(files: Record<string, string>, isExternal: (spec
     let m: RegExpExecArray | null;
     while ((m = importRe.exec(src))) {
       const [, clause, spec] = m;
-      if (/^[./]/.test(spec) || spec.startsWith("@/") || spec.startsWith("@bsc/")) continue; // relative / first-party / library
+      if (/^[./]/.test(spec) || spec.startsWith("@bsc/")) continue;                           // relative / library
+      if (spec.startsWith("@/") && !isFirstPartyStub(spec)) continue;                         // first-party, vendored
       if (isExternal(spec) || spec in DEDICATED_SHIMS) continue;                              // real resolution, not a stub
       const set = acc.get(spec) ?? new Set<string>();
       const braces = /\{([^}]*)\}/.exec(clause);
