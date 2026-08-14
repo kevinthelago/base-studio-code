@@ -11,7 +11,7 @@ import { useProjectsSummaryData } from "./summary/useProjectsSummaryData";
 import { AISummary } from "./summary/AISummary";
 import { ProjectAllocation } from "./summary/ProjectAllocation";
 import { RiskRegister } from "./summary/RiskRegister";
-import { ProjectsGrid } from "./summary/ProjectsGrid";
+import { ProjectsGrid } from "@/features/planner/list/summary/ProjectsGrid";
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 

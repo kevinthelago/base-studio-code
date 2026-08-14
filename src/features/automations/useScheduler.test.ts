@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useScheduler } from "./useScheduler";
+import { useScheduler } from "@/features/automations/useScheduler";
 import { dueAutomations } from "./lib/scheduler";
 
 // Mock the pure lib so we can assert tick cadence without real automations/dispatch.

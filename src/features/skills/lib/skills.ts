@@ -9,14 +9,14 @@
 // the original public API intact so every importer works unchanged.
 
 export { type SkillDef, skillSlug, skillContentKey, blankSkill } from "./skillsModel";
-export { skillFromPayload, seedSkills, refreshPackagedSkills } from "./skillsSeed";
+export { skillFromPayload, seedSkills, refreshPackagedSkills } from "@/features/skills/lib/skillsSeed";
 export {
   resolveSkills, sessionSkillState, effectiveSessionSkills, applySessionSkillChoice,
   type SessionSkillOverride, type SessionSkillReason, type SessionSkillState,
-} from "./skillsSession";
+} from "@/features/skills/lib/skillsSession";
 export {
   expandGroups, groupSkillCount, parseSkillGroupsFile, type SkillGroup,
 } from "./skillGroups";
-export { toSkillCfgs, type SkillCfg } from "./skillsPayload";
-export { parseSkillsFile, type PlannerSkill } from "./skillsParser";
-export { deriveSkillKpis, type DerivedSkillKpis } from "./skillsKpis";
+export { toSkillCfgs, type SkillCfg } from "@/features/skills/lib/skillsPayload";
+export { parseSkillsFile, type PlannerSkill } from "@/features/skills/lib/skillsParser";
+export { deriveSkillKpis, type DerivedSkillKpis } from "@/features/skills/lib/skillsKpis";

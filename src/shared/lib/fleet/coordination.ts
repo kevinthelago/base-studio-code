@@ -25,4 +25,4 @@ export * from "./coordinationWakes";
 export * from "./coordinationPredicates";
 export * from "./coordinationNotifications";
 export * from "./coordinationDeadlock";
-export * from "./coordinationJury";
+export * from "@/shared/lib/fleet/coordinationJury";

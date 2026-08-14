@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isBenign } from "./fatalOverlay";
+import { isBenign } from "@/app/safety/fatalOverlay";
 
 // Regression: the crash overlay must NOT fire on benign browser warnings — notably the
 // ResizeObserver loop message the planner's resizable split panes emit on resize, which was

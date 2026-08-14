@@ -17,14 +17,41 @@
 // The list is the honest state of the item, not a claim that the work is done: the launch half is
 // fixed and confirmed, the injection half is still being converted pump by pump.
 import { describe, it, expect } from "vitest";
+import algorithmsSeed from "@data/knowledge/algorithms.json";
 
 /** Every first-party source file, raw. `query: "?raw"` keeps these as TEXT rather than making a module
  *  out of the whole app — the same reason `shadowPages.ts` enumerates its raw globs. */
-const SOURCES = import.meta.glob<string>("/src/**/*.{ts,tsx}", {
+const FILE_SOURCES = import.meta.glob<string>("/src/**/*.{ts,tsx}", {
   eager: true,
   query: "?raw",
   import: "default",
 });
+
+/** Every packaged RECORD's source, keyed by the specifier it provides.
+ *
+ *  THE GUARD GOES BLIND WITHOUT THIS. It scans `src/`, and the graph migration is steadily moving modules
+ *  OUT of `src/` and into records — so a module that writes to a pane keeps doing so while disappearing
+ *  from the only place this looked. `useScheduler.ts` is the first to cross that line, and it is a
+ *  `pty_write` caller: without the records in scope, retiring it would have quietly removed an entry from
+ *  a security allow-list and left the capability in place, unwatched.
+ *
+ *  A capability boundary has to follow the code, not the directory. */
+const RECORD_SOURCES: Record<string, string> = {};
+{
+  const seeds = import.meta.glob<{ provides?: string; srcText?: string }>("@data/components/app/**/*.json", { eager: true, import: "default" });
+  for (const rec of Object.values(seeds)) {
+    if (typeof rec?.provides === "string" && typeof rec.srcText === "string") RECORD_SOURCES[rec.provides.trim()] = rec.srcText;
+  }
+  const algos = (algorithmsSeed as { implementations?: { provides?: string; code?: string }[] }).implementations ?? [];
+  for (const im of algos) {
+    if (typeof im?.provides === "string" && typeof im.code === "string") RECORD_SOURCES[im.provides.trim()] = im.code;
+  }
+}
+
+/** Files AND records, in one map. A record is keyed by its `@/…` specifier, a file by its `/src/…` path —
+ *  so an allow-list entry names whichever form that module currently takes, and MOVING a module between
+ *  the two is a visible edit here rather than a silent removal. */
+const SOURCES: Record<string, string> = { ...FILE_SOURCES, ...RECORD_SOURCES };
 
 /** The import specifier every caller reaches for. Matching the IMPORT (not a bare `injectPrompt(`)
  *  avoids counting the definition, the doc comments that name it in prose, and this test. */
@@ -80,7 +107,6 @@ const KNOWN_PTY_WRITERS: readonly string[] = [
   // their standing instruction rather than the app deciding. Nothing else may join it on that
   // argument.
   "/src/features/automations/lib/dispatch.ts",
-  "/src/features/automations/useScheduler.ts",
   "/src/features/tunnel/lib/useTunnelAutomations.ts",
   // The user pressing confirm/skip on a plan section, and the phone's keyboard — both a person.
   "/src/features/planner/session/usePlanConfirmations.ts",
@@ -88,6 +114,30 @@ const KNOWN_PTY_WRITERS: readonly string[] = [
   // The wrapper's own definition, and the launch/restore handshake.
   "/src/shared/lib/fleet/paneInject.ts",
   "/src/shared/lib/session/ensureClaudeRunning.ts",
+
+  // ── THE SAME MODULES AS RECORDS ──────────────────────────────────────────────────────────────────
+  // A migrated module keeps its capability; only its FORM changes. These four are the record copies of
+  // entries above and carry the identical argument. They are listed separately rather than folded in
+  // because the two copies can DRIFT — a designer edit to a record is not an edit to the file — and a
+  // capability list that cannot tell them apart could not show that.
+  "@/features/automations/lib/dispatch",
+  "@/features/planner/session/usePlanConfirmations",
+  "@/shared/lib/fleet/paneInject",
+  "@/shared/lib/session/ensureClaudeRunning",
+
+  // RECORD-ONLY, and the reason this test now scans records at all. `WorkerDetail`'s file was retired
+  // before anyone noticed it holds a `pty_write` — so it left this allow-list silently, taking its
+  // capability off the record while keeping it in the app. It writes `text + "\r"`, which SUBMITS the
+  // line and opens a turn, and that is precisely the shape the header describes useWorkerAutoEnd getting
+  // away with.
+  //
+  // It is legitimate: `send("steer" | "answer")` is a person typing into the worker-detail modal and
+  // pressing send. It belongs here for the same reason the terminal does — a human is the author. What
+  // was NOT acceptable is that nothing was watching it.
+  "@/features/planner/fleet/WorkerDetail",
+
+  // RETIRED to a record (#seed-the-store-only-records) — same capability, same argument, different form.
+  "@/features/automations/useScheduler",
 ];
 
 function ptyWriters(): string[] {

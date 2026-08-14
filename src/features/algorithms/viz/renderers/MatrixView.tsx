@@ -8,7 +8,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { cellOpStateAttrs } from "../../lib/binding";
 import type { MatrixFrame } from "../../lib/trace";
 import type { StructureRenderer } from "../registry";
-import { MATRIX_VIZ_ANIM_CLASSES, ensureMatrixViewMotion } from "./matrixViewMotion";
+import { MATRIX_VIZ_ANIM_CLASSES, ensureMatrixViewMotion } from "@/features/algorithms/viz/renderers/matrixViewMotion";
 import "./matrixView.css";
 
 /**

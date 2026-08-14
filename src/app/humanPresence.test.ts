@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   noteHumanActivity, humanPresent, msSinceHumanActivity,
   __resetHumanPresence, installHumanPresence, PRESENT_WINDOW_MS,
-} from "./humanPresence";
+} from "@/app/humanPresence";
 
 beforeEach(() => __resetHumanPresence());
 

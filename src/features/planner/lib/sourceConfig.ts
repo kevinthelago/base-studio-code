@@ -39,5 +39,5 @@ export {
   migrationActive, dataModelSignals, downstreamImpact,
 } from "./sourceGate";
 export { deriveDataModel } from "./dataModelDerivation";
-export type { ScanViewField, ScanViewEntity } from "./sourceScanViews";
-export { scanEntities, scanEdges, aggregatePlatform, isMultiSource } from "./sourceScanViews";
+export type { ScanViewField, ScanViewEntity } from "@/features/planner/lib/sourceScanViews";
+export { scanEntities, scanEdges, aggregatePlatform, isMultiSource } from "@/features/planner/lib/sourceScanViews";

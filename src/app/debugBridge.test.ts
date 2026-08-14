@@ -1,7 +1,7 @@
 // #3437 — the decisions behind `bsc debug`. Every capability jsdom cannot provide (hit-testing, real
 // rects) is injected, so the logic that MATTERS is pinned here rather than only in a browser.
 import { describe, it, expect, vi } from "vitest";
-import { inspectDebug, describeElement, labelOf, type InspectDeps } from "./debugBridge";
+import { inspectDebug, describeElement, labelOf, type InspectDeps } from "@/app/debugBridge";
 import type { PreviewFrameEntry } from "@/features/designs";
 
 /** A DOM tree built in jsdom; rects + hit-testing come from the injected deps, not from jsdom.

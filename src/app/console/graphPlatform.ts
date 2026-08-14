@@ -20,7 +20,7 @@ import * as Models from "./lib/models";
 import * as PaneIdentity from "./lib/paneIdentity";
 import * as PaneStatus from "./lib/paneStatus";
 import * as Providers from "./lib/providers";
-import * as UseIdleReaper from "./lib/useIdleReaper";
+import * as UseIdleReaper from "@/app/console/lib/useIdleReaper";
 import * as UsePaneActivityFeed from "./lib/usePaneActivityFeed";
 import * as UsePaneTokenUsage from "./lib/usePaneTokenUsage";
 import * as MenuPlacement from "./panes/menuPlacement";
@@ -29,10 +29,10 @@ import * as ViewDefs from "./panes/viewDefs";
 import * as TerminalSlot from "./terminal/TerminalSlot";
 // — the pumps the page mounts —
 import * as UseCoordinator from "./useCoordinator";
-import * as UseDirectorPump from "./useDirectorPump";
-import * as UseFaultTriage from "./useFaultTriage";
-import * as UseKitDispatch from "./useKitDispatch";
-import * as UseStudioNetworkPump from "./useStudioNetworkPump";
+import * as UseDirectorPump from "@/app/console/useDirectorPump";
+import * as UseFaultTriage from "@/app/console/useFaultTriage";
+import * as UseKitDispatch from "@/app/console/useKitDispatch";
+import * as UseStudioNetworkPump from "@/app/console/useStudioNetworkPump";
 // The one cross-feature surface the console page composes — the cockpit's public API. The shell may
 // reach a feature BARREL (#1545 restricts internals), and this coupling already exists in the live file.
 import * as Glance from "@/features/glance";
