@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { Code } from "./Code";
+import { Code } from "@/shared/ui/data/Code";
 
 function pre(node: HTMLElement): HTMLPreElement {
   return node.querySelector("pre") as HTMLPreElement;

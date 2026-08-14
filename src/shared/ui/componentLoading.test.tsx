@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Card } from "./data/Card";
-import { Chip } from "./data/Chip";
+import { Card } from "@/shared/ui/data/Card";
+import { Chip } from "@/shared/ui/data/Chip";
 import { FillBar } from "@/shared/ui/data/FillBar";
-import { Code } from "./data/Code";
-import { Text } from "./typography/Text";
-import { TextField } from "./controls/Field";
+import { Code } from "@/shared/ui/data/Code";
+import { Text } from "@/shared/ui/typography/Text";
+import { TextField } from "@/shared/ui/controls/Field";
 
 // #2302 — every content component renders its own shape-matched skeleton when `loading`, via the
 // shared Skeleton (an aria-hidden shimmer Box), and hides its real content.

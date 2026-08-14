@@ -1,7 +1,7 @@
 // GraphLegend (#2909) — the shared on-canvas graph legend.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { GraphLegend } from "./GraphLegend";
+import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 
 describe("GraphLegend", () => {
   it("renders node + edge rows for non-empty sections", () => {

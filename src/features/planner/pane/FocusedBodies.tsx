@@ -13,16 +13,16 @@ import type { DirectorDrive } from "../fleet/directorDrive";
 // stage vocabulary: the `deployment` stage (repos+deploy) renders the merged Repositories & Deployment
 // pane, the `streams` stage (structure+permissions) renders the plan graph + the folded-in fleet
 // permissions, and `source` stays (it's in `complete`).
-import { FileIntakePane } from "../bodies/FileIntakePane";
-import { DeploymentBody } from "../bodies/ReposDeployView";
-import { SourceBody } from "../bodies/FocusedSourceBody";
+import { FileIntakePane } from "@/features/planner/bodies/FileIntakePane";
+import { DeploymentBody } from "@/features/planner/bodies/ReposDeployView";
+import { SourceBody } from "@/features/planner/bodies/FocusedSourceBody";
 // Core planning-stage bodies (#1757 split out of this file).
-import { DiscoveryBody } from "../bodies/DiscoveryBody";
-import { MarketBody } from "../bodies/MarketBody";
-import { TransformationsBody } from "../bodies/TransformationsBody";
-import { AutomationsBody } from "../bodies/FocusedAutomationsBody";
-import { SkillsBody } from "../bodies/FocusedSkillsBody";
-import { McpsBody } from "../bodies/McpsBody";
+import { DiscoveryBody } from "@/features/planner/bodies/DiscoveryBody";
+import { MarketBody } from "@/features/planner/bodies/MarketBody";
+import { TransformationsBody } from "@/features/planner/bodies/TransformationsBody";
+import { AutomationsBody } from "@/features/planner/bodies/FocusedAutomationsBody";
+import { SkillsBody } from "@/features/planner/bodies/FocusedSkillsBody";
+import { McpsBody } from "@/features/planner/bodies/McpsBody";
 import { StreamsBody } from "../bodies/StreamsBody";
 import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
@@ -31,7 +31,7 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 // none do, since #4249) keeps rendering it so a user blueprint carrying that stage still resolves.
 import { PlannerLibraryPane } from "../bodies/PlannerLibraryPane";
 import { FeaturesStageBody } from "../bodies/FeaturesStageBody";
-import { PreviewPaneShell } from "../preview/PreviewPaneShell";
+import { PreviewPaneShell } from "@/features/planner/preview/PreviewPaneShell";
 import { useAppStore } from "@/store";
 
 // Re-export the shared body types so existing `from "./FocusedBodies"` imports keep resolving.

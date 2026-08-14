@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 
 describe("EmptyState", () => {
   it("renders title, description, icon, and fires action clicks", () => {

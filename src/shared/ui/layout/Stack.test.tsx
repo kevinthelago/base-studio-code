@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Stack } from "./Stack";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 describe("Stack", () => {
   it("renders a flex column with the resolved gap and children", () => {

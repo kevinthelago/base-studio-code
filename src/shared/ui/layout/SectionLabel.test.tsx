@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { SectionLabel } from "./SectionLabel";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 
 describe("SectionLabel", () => {
   it("renders uppercase mono children with the dim tone by default", () => {

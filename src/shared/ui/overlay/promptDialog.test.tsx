@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { usePromptDialog, useConfirmDialog, type PromptOpts, type ConfirmOpts } from "./promptDialog";
+import { usePromptDialog, useConfirmDialog, type PromptOpts, type ConfirmOpts } from "@/shared/ui/overlay/promptDialog";
 
 function PromptHarness({ opts }: { opts?: Partial<PromptOpts> }) {
   const { prompt, dialog } = usePromptDialog();

@@ -16,7 +16,7 @@ import { DemoStateCard } from "../cards/DemoStateCard";
 import { StudioCard } from "../cards/StudioCard";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
-import { SettingsPageHeader, SettingsSubHeader as Sub } from "./SettingsPageHeader";
+import { SettingsPageHeader, SettingsSubHeader as Sub } from "@/features/settings/pages/SettingsPageHeader";
 
 export function GeneralPage() {
   return (

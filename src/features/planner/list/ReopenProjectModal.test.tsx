@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { useReopenProject } from "./ReopenProjectModal";
+import { useReopenProject } from "@/features/planner/list/ReopenProjectModal";
 import type { LocalProjectLite } from "./drafts";
 
 const open = vi.fn();

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Checkbox } from "./Checkbox";
+import { Checkbox } from "@/shared/ui/controls/Checkbox";
 
 describe("Checkbox", () => {
   it("shows the ✓ only when checked", () => {

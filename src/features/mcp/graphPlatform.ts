@@ -10,7 +10,7 @@ import * as McpInstall from "./lib/mcpInstall";
 import * as McpServers from "./lib/mcpServers";
 import * as Hooks from "./lib/hooks";
 import * as McpTelemetry from "./lib/mcpTelemetry";
-import * as Shared from "./shared";
+import * as Shared from "@/features/mcp/shared";
 import * as GraphPlatform from "@/features/mcp/graphPlatform";
 import * as SessionConfig from "@/features/mcp/lib/sessionConfig";
 import * as HookTelemetry from "@/features/mcp/lib/hookTelemetry";

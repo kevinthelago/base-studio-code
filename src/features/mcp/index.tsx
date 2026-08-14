@@ -5,7 +5,7 @@ import { HOOK_CATALOG } from "@/shared/data/hookCatalog";
 import { hookFromCatalog, blankHook, SYSTEM_HOOKS, type Hook } from "./lib/hooks";
 import {
   useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard,
-} from "./shared";
+} from "@/features/mcp/shared";
 import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { Pane } from "@/shared/ui/overlay/Pane";
 import { Chip } from "@/shared/ui/data/Chip";

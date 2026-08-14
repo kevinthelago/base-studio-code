@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { StatusDot } from "./StatusDot";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 
 describe("StatusDot", () => {
   const dot = (c: HTMLElement) => c.querySelector("span") as HTMLSpanElement;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { InlineError } from "./InlineError";
+import { InlineError } from "@/shared/ui/feedback/InlineError";
 
 describe("InlineError", () => {
   it("renders its message children with the mono danger styling", () => {

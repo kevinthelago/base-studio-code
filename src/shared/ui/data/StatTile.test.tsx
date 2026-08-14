@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { StatTile } from "./StatTile";
+import { StatTile } from "@/shared/ui/data/StatTile";
 
 describe("StatTile", () => {
   it("renders k/v/sub and applies the value tone", () => {

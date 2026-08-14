@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { ColorSwatch } from "./ColorSwatch";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 
 describe("ColorSwatch", () => {
   it("renders a sized square with the given colour", () => {

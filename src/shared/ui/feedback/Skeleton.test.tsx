@@ -1,8 +1,8 @@
 // Skeleton (#2234) — the shared loading placeholder (Box + the shimmer style atom).
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Skeleton, SkeletonText } from "./Skeleton";
-import { EmptyState } from "./EmptyState";
+import { Skeleton, SkeletonText } from "@/shared/ui/feedback/Skeleton";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 
 describe("Skeleton (#2234)", () => {
   it("renders a shimmer block at the given size", () => {

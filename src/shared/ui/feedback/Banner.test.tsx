@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Banner } from "./Banner";
+import { Banner } from "@/shared/ui/feedback/Banner";
 
 describe("Banner", () => {
   it("renders the tone class, lead, and content", () => {

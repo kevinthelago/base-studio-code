@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { RailRow } from "./RailRow";
+import { RailRow } from "@/shared/ui/layouts/RailRow";
 
 describe("RailRow (#2789)", () => {
   it("renders the label, leading, and trailing slots", () => {

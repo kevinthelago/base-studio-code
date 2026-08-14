@@ -28,11 +28,32 @@ const META_FILE = join(process.cwd(), "src-tauri/data/ui/react-ui-kit.meta.json"
  *  real code to write; the mutable component store deliberately drops it (`builtinKits.withoutSource`). */
 const withSource = (components: typeof REACT_UI_COMPONENTS) =>
   components.map((c) => {
-    const path = join(process.cwd(), "src", c.src);
-    return existsSync(path) ? { ...c, source: readFileSync(path, "utf8").replace(/\r\n/g, "\n") } : c;
+    const source = readSrc(c.src);
+    return source === null ? c : { ...c, source };
   });
 
 const SRC = join(process.cwd(), "src");
+/** The generated tree `scripts/emit-records.mjs` materializes retired modules into (mirroring `src/`). */
+const RECORDS = join(process.cwd(), ".bsc-records");
+
+/** The two-step resolve — `src/` first, then the emitted record tree — for a path relative to `src/`.
+ *
+ *  The kit generator is the FIFTH consumer that has to know about retired modules, after tsc
+ *  (`tsconfig.paths`), vite + vitest (`vite/bscRecords.ts`) and the e2e config. It reads `src/<c.src>`
+ *  directly to bundle each component's verbatim implementation, so retiring `Button.tsx` made it throw
+ *  ENOENT on a path the app resolves perfectly well. Every such reader needs the fallback, and the shape
+ *  is always the same: the file wins while it exists, and the record answers only what `src/` no longer
+ *  has. Returns LF-normalized source, or `null` when neither has it (a pure stub legitimately has none). */
+function readSrc(rel: string): string | null {
+  for (const root of [SRC, RECORDS]) {
+    const p = join(root, rel);
+    if (existsSync(p)) return readFileSync(p, "utf8").replace(/\r\n/g, "\n");
+  }
+  return null;
+}
+
+/** Does `rel` (relative to `src/`) exist in either tree? The `existsSync` half of {@link readSrc}. */
+const hasSrc = (rel: string) => existsSync(join(SRC, rel)) || existsSync(join(RECORDS, rel));
 
 /** Resolve a FIRST-PARTY import specifier — a `@/…` OR a RELATIVE (`./`,`../`) path — to a path relative
  *  to `src/` (with extension), trying TS module-resolution order. `fromRel` is the src/-relative path of
@@ -56,7 +77,7 @@ function resolveImport(spec: string, fromRel: string): string | null {
     return null; // external npm dep (react, node, d3, …)
   }
   for (const cand of [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`]) {
-    if (existsSync(join(SRC, cand))) return cand;
+    if (hasSrc(cand)) return cand;
   }
   return null;
 }
@@ -85,13 +106,12 @@ function collectRuntime(components: typeof REACT_UI_COMPONENTS): Record<string, 
   const walk = (relPath: string) => {
     if (visited.has(relPath)) return;
     visited.add(relPath);
-    const abs = join(SRC, relPath);
-    if (!existsSync(abs)) return;
-    const source = readFileSync(abs, "utf8");
+    const source = readSrc(relPath);
+    if (source === null) return;
     for (const spec of importSpecifiers(source)) {
       const resolved = resolveImport(spec, relPath);
       if (!resolved || componentSrc.has(resolved)) continue; // external, unresolved, or a kit component
-      if (!collected.has(resolved)) collected.set(resolved, readFileSync(join(SRC, resolved), "utf8").replace(/\r\n/g, "\n"));
+      if (!collected.has(resolved)) collected.set(resolved, readSrc(resolved) ?? "");
       walk(resolved);
     }
   };
@@ -143,7 +163,7 @@ describe("data/components/react-ui.json ↔ manifest (#2305 slice 1b)", () => {
     for (const id of ["card", "button"]) {
       const c = byId.get(id);
       expect(c, `${id} present in the artifact`).toBeTruthy();
-      const onDisk = readFileSync(join(process.cwd(), "src", c!.src), "utf8").replace(/\r\n/g, "\n");
+      const onDisk = readSrc(c!.src);
       expect(c!.source, `${id} bundles its verbatim source`).toBe(onDisk);
     }
     // Most components resolve to a real file — the artifact is now source-bearing, not just a catalog
@@ -162,13 +182,17 @@ describe("data/components/react-ui.json ↔ manifest (#2305 slice 1b)", () => {
     // A known support module the components import (`core/format`) is vendored, verbatim.
     const fmtKey = Object.keys(rt).find((k) => k.startsWith("shared/lib/core/format"));
     expect(fmtKey, "core/format is in the runtime closure").toBeTruthy();
-    expect(rt[fmtKey!]).toBe(readFileSync(join(SRC, fmtKey!), "utf8").replace(/\r\n/g, "\n"));
+    expect(rt[fmtKey!]).toBe(readSrc(fmtKey!));
     // No COMPONENT module leaked into `runtime` — those are `source` (emitted via `composes`), never
     // the support runtime. And every runtime entry resolves to a real on-disk file.
     const componentSrc = new Set(artifact.components.map((c) => c.src));
     for (const path of Object.keys(rt)) {
       expect(componentSrc.has(path), `${path} is a support module, not a component`).toBe(false);
-      expect(existsSync(join(SRC, path)), `${path} exists on disk`).toBe(true);
+      // EITHER tree: a retired module still exists as a file, just in the generated record mirror rather
+      // than `src/`. Asserting `src/` alone would fail the moment the closure reaches a retired module —
+      // which is what happened when `FocusedFeaturesBody.tsx` went — and the assertion's real point is
+      // that the closure names something real, not which of the two trees holds it.
+      expect(hasSrc(path), `${path} exists on disk (src/ or .bsc-records/)`).toBe(true);
     }
   });
 

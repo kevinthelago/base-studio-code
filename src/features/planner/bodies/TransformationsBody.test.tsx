@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { verbMeta, type TransformationRow } from "../lib/transformations";
-import { TransformationsBody } from "./TransformationsBody";
+import { TransformationsBody } from "@/features/planner/bodies/TransformationsBody";
 
 const PID = "p-transforms";
 

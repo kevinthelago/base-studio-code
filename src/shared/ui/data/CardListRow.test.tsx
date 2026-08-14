@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { CardListRow } from "./CardListRow";
+import { CardListRow } from "@/shared/ui/data/CardListRow";
 
 describe("CardListRow", () => {
   it("renders lead/title/badge/subtitle/trailing and fires onClick", () => {

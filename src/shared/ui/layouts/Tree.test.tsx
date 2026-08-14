@@ -3,7 +3,7 @@
 // shared-edge SVG inside a GraphCanvas).
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Tree } from "./Tree";
+import { Tree } from "@/shared/ui/layouts/Tree";
 import { layoutTree, treeEdges, flattenTree, type TreeNodeData } from "./treeLayout";
 
 const NODES: TreeNodeData[] = [

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { IconButton, CLOSE_GLYPH } from "./IconButton";
+import { IconButton, CLOSE_GLYPH } from "@/shared/ui/controls/IconButton";
 
 describe("IconButton", () => {
   it("renders the canonical close glyph by default and exposes its aria-label", () => {

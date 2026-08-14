@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { renderHook, act } from "@testing-library/react";
-import { RailSection } from "./RailSection";
+import { RailSection } from "@/shared/ui/layouts/RailSection";
 import { useRailSections } from "@/shared/hooks/useRailSections";
 
 describe("RailSection (#2797)", () => {

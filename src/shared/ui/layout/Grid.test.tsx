@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Grid } from "./Grid";
+import { Grid } from "@/shared/ui/layout/Grid";
 
 describe("Grid", () => {
   it("renders a grid with a numeric cols expanded to repeat(n, 1fr) and the resolved gap", () => {

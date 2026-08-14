@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { TabBar, type TabItem } from "./TabBar";
+import { TabBar, type TabItem } from "@/shared/ui/layouts/TabBar";
 
 const TABS: TabItem[] = [
   { id: "board", label: "Board", hint: "kanban · per column" },

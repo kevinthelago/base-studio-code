@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Box } from "./Box";
+import { Box } from "@/shared/ui/layout/Box";
 
 describe("Box", () => {
   it("renders a plain div by default and passes children + className through", () => {

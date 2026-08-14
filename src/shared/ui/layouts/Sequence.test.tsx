@@ -4,7 +4,7 @@
 // uncontrolled selection, both orientations, and the overflow containers.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Sequence, type SequenceStep } from "./Sequence";
+import { Sequence, type SequenceStep } from "@/shared/ui/layouts/Sequence";
 
 const STEPS: SequenceStep[] = [
   { id: "plan", label: "Plan", status: "complete" },

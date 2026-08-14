@@ -2,7 +2,7 @@ import { useAppStore } from "@/store";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
 import { Box } from "@/shared/ui/layout/Box";
-import { SettingsPageHeader } from "./SettingsPageHeader";
+import { SettingsPageHeader } from "@/features/settings/pages/SettingsPageHeader";
 
 const prose: React.CSSProperties = { fontFamily: "var(--sans)", fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" };
 

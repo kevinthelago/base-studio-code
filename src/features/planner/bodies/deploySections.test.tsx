@@ -7,8 +7,8 @@
 import { describe, it, expect } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ServiceTargetEditor } from "./deployTargetSection";
-import { ServiceDeploySections } from "./deployShipSections";
+import { ServiceTargetEditor } from "@/features/planner/bodies/deployTargetSection";
+import { ServiceDeploySections } from "@/features/planner/bodies/deployShipSections";
 import { defaultDeployConfig, type DeployService } from "../lib/deployConfig";
 
 function svc0() {

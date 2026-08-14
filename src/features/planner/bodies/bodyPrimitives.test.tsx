@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Card, Kv, ModeChip, EntityChip, Readiness, ListItemCard } from "./bodyPrimitives";
+import { Card, Kv, ModeChip, EntityChip, Readiness, ListItemCard } from "@/features/planner/bodies/bodyPrimitives";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
 
 describe("bodyStyles — shared inline-style constants", () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
-import { Toggle } from "./Toggle";
-import { ConfirmButton } from "./ConfirmButton";
+import { Toggle } from "@/shared/ui/controls/Toggle";
+import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 
 describe("Toggle", () => {
   it("fires onClick when clicked", () => {

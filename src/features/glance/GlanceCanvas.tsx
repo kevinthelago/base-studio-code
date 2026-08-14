@@ -14,7 +14,7 @@ import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { unionRects } from "./lib/morphGrid";
 import type { DockPlan } from "./GlanceChatDock";
 import { archetypeById, hueColor } from "@/features/teams";
-import { GlanceNode } from "./GlanceNode";
+import { GlanceNode } from "@/features/glance/GlanceNode";
 
 const ERR = "var(--graph-health-error)";
 // The legend lists the states a node can actually READ as. `complete` leads (#4048): the rest of the

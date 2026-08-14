@@ -3,7 +3,7 @@
 // single-owner note.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { StreamSharedDeps } from "./SharedDependencies";
+import { StreamSharedDeps } from "@/features/planner/bodies/SharedDependencies";
 import type { Agent } from "../pane/projectPane.types";
 import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 

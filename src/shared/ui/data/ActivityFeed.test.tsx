@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ActivityFeed, type ActivityItem } from "./ActivityFeed";
+import { ActivityFeed, type ActivityItem } from "@/shared/ui/data/ActivityFeed";
 
 const items: ActivityItem[] = [
   { login: "alice", action: "merged", target: "#12 fix bug", repo: "org/web", createdAt: new Date().toISOString() },

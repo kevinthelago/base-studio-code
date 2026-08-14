@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { Avatar } from "./Avatar";
+import { Avatar } from "@/shared/ui/data/Avatar";
 import { LabelChip } from "./LabelChip";
 
 describe("Avatar", () => {

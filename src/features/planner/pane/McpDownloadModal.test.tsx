@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { McpDownloadModal, type McpDownloadItem } from "./McpDownloadModal";
+import { McpDownloadModal, type McpDownloadItem } from "@/features/planner/pane/McpDownloadModal";
 
 const item = (over: Partial<McpDownloadItem> = {}): McpDownloadItem => ({
   name: "Research", repo: "research-mcp-server", link: "https://github.com/kevinthelago/research-mcp-server",

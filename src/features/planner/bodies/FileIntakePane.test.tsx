@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { FileIntakePane } from "./FileIntakePane";
+import { FileIntakePane } from "@/features/planner/bodies/FileIntakePane";
 import { useAppStore } from "@/store";
 
 describe("FileIntakePane (#604)", () => {
