@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bindingFor, adaptDataset, PREVIEW_BINDINGS } from "./previewBindings";
+import { bindingFor, adaptDataset, PREVIEW_BINDINGS } from "@/features/designs/lib/previewBindings";
 import type { VizDataset } from "@/features/algorithms";
 
 describe("previewBindings — bindingFor (#2940)", () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { applyDirectorNew, directorOnlyPlan, type DirectorRequest, type DirectorDeps } from "./fleetDirectorBridge";
+import { applyDirectorNew, directorOnlyPlan, type DirectorRequest, type DirectorDeps } from "@/app/fleetDirectorBridge";
 
 function req(over: Partial<DirectorRequest> = {}): DirectorRequest {
   return {

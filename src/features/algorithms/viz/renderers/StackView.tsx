@@ -10,7 +10,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { opStateAttrs, type OpStateAttrs } from "../../lib/binding";
 import type { StackFrame } from "../../lib/trace";
 import type { StructureRenderer } from "../registry";
-import { STACK_VIZ_ANIM_CLASSES, ensureStackViewMotion } from "./stackViewMotion";
+import { STACK_VIZ_ANIM_CLASSES, ensureStackViewMotion } from "@/features/algorithms/viz/renderers/stackViewMotion";
 import "./stackView.css";
 
 /** The `data-op`/`data-mark` for the cell at `index`. `peek` (indexed) resolves via the shared

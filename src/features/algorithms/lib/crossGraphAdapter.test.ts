@@ -1,7 +1,7 @@
 // The algo-graph NodeLookup adapter (#3116) — the map from the algorithms store onto the shared
 // cross-graph resolver. Verifies bare-name + exact-id resolution, the miss, and the code/kind carry-through.
 import { describe, it, expect } from "vitest";
-import { algoNodeLookup } from "./crossGraphAdapter";
+import { algoNodeLookup } from "@/features/algorithms/lib/crossGraphAdapter";
 import { buildKnowledge } from "./knowledge";
 
 const graph = buildKnowledge({

@@ -4,7 +4,7 @@
 // blueprintBuiltins.ts and the pure helpers in blueprintStages.ts (both re-exported by
 // the ./blueprints barrel).
 
-import { type ClassificationSignals } from "./classification";
+import { type ClassificationSignals } from "@/features/planner/stages/classification";
 import { type StageGate, type Requirement } from "./stageGate";
 import { type AgentFlow } from "../fleet/agentFlow";
 // Type-only cross-feature import (allowed by the #1545 boundary): the blueprint team (#2450)

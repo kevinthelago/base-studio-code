@@ -7,7 +7,7 @@
 // zero-knowledge Cloudflare relay). The Tunnel settings page, the always-on sync/automation/coord
 // hooks the app mounts, and the protocol/client live here.
 export { TunnelSettings } from "./Tunnel";
-export { useTunnelSync } from "./useTunnelSync";
+export { useTunnelSync } from "@/features/tunnel/useTunnelSync";
 export { useStoreProjector } from "./useStoreProjector";
 export { useTunnelAutomations } from "./lib/useTunnelAutomations";
 export { useTunnelHookTelemetry } from "./lib/useTunnelHookTelemetry";

@@ -18,7 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { log } from "@/shared/lib/core/log";
-import { applyLifecycle, type LifecycleRequest, type LifecycleAck } from "./systemSessionBridge";
+import { applyLifecycle, type LifecycleRequest, type LifecycleAck } from "@/app/systemSessionBridge";
 
 /**
  * Listen for `bsc://session-lifecycle` and apply it. Mounted once by the shell.

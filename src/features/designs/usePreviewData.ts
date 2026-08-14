@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { KNOWLEDGE, implById, runInSandbox, vizRunToDataset, datasetForStructure } from "@/features/algorithms";
 import type { ComponentRecord } from "./lib/model";
-import { bindingFor, adaptDataset } from "./lib/previewBindings";
+import { bindingFor, adaptDataset } from "@/features/designs/lib/previewBindings";
 import { shapePreviewData } from "./lib/shapePreview";
 
 const EMPTY: Record<string, string> = {};

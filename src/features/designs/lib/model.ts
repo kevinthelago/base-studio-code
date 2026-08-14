@@ -202,6 +202,14 @@ export interface ComponentRecord {
    *  excludes it; the Rust doctor skips it; `bsc ui suppress`/`unsuppress` write/clear it. Absent on every
    *  real record. */
   suppressed?: boolean;
+  /** WHAT replaced this retired builtin (#a-tombstone-can-name-what-superseded-it) — the id named by
+   *  `bsc ui suppress <id> --superseded-by <new-id>`. Only ever set alongside `suppressed`.
+   *
+   *  It lives on the TOMBSTONE because the tombstone is the one record `reconcileSeed` never overwrites,
+   *  so the fact outlives every hydrate — which is exactly what a consolidation (45 card wrappers into
+   *  composed widgets) needs to stay readable months later. The CLI refuses a dangling or self pointer,
+   *  so a value here always names a record that existed at the time it was written. */
+  supersededBy?: string;
   /** LITE record (#4072) — hydrated from `bsc ui list --graph`, so it carries only what the graph
    *  renders: the node card + `composes`. Its `srcText`/`props`/`variants` are EMPTY DEFAULTS, not
    *  real values.

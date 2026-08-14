@@ -1,0 +1,11 @@
+{
+  "id": "graphpagefallback",
+  "name": "GraphPageFallback",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/shared/lib/runtime/GraphPageFallback",
+  "srcText": "import { useState, type ReactNode } from \"react\";\nimport { useAppStore } from \"@/store\";\nimport { EmptyState } from \"@/shared/ui/feedback/EmptyState\";\nimport { Button } from \"@/shared/ui/controls/Button\";\n\nexport function GraphPageFallback({ page, icon = \"⑃\" }: { page: string; icon?: ReactNode }) {\r\n  const hydrateComponents = useAppStore((s) => s.hydrateComponents);\r\n  const [status, setStatus] = useState<\"idle\" | \"seeding\" | \"seeded\" | \"error\">(\"idle\");\r\n\r\n  async function reseed() {\r\n    setStatus(\"seeding\");\r\n    try {\r\n      // If the record seeds AND its platform is already registered, GraphComponent re-renders into the page\r\n      // and this unmounts. If it's still here after, the page was just added/updated → Reload to apply.\r\n      await hydrateComponents();\r\n      setStatus(\"seeded\");\r\n    } catch {\r\n      setStatus(\"error\");\r\n    }\r\n  }\r\n\r\n  const description =\r\n    status === \"seeded\"\r\n      ? `Re-seeded the library in place. If ${page} is still blank it was just added or updated — use Reload to apply it.`\r\n      : status === \"error\"\r\n        ? \"Re-seed failed. Use Reload to apply the latest.\"\r\n        : `${page} loads from the components graph. If ${page} was just added or updated, Reload to apply it; if the library only lost its record, Re-seed restores it in place.`;\r\n\r\n  return (\r\n    <EmptyState\r\n      icon={icon}\r\n      title={`${page} page unavailable`}\r\n      description={description}\r\n      actions={\r\n        <>\r\n          <Button variant=\"primary\" onClick={() => window.location.reload()}>Reload to apply</Button>\r\n          <Button onClick={reseed} disabled={status === \"seeding\"}>\r\n            {status === \"seeding\" ? \"Re-seeding…\" : \"Re-seed in place\"}\r\n          </Button>\r\n        </>\r\n      }\r\n      style={{ padding: 48 }}\r\n    />\r\n  );\r\n}",
+  "composes": [],
+  "src": "src/shared/lib/runtime/GraphPageFallback.tsx",
+  "folder": "shared/lib/runtime"
+}

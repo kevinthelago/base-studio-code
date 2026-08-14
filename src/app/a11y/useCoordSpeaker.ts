@@ -14,7 +14,7 @@ import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { coordAlerts } from "@/features/tunnel";
 import { useAppStore } from "@/store";
 import { speak } from "@/shared/lib/a11y/speech";
-import { shouldSpeak } from "./coordSpeech";
+import { shouldSpeak } from "@/app/a11y/coordSpeech";
 
 export function useCoordSpeaker(): void {
   const { state } = useCoordLog();

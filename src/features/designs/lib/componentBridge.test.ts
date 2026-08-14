@@ -50,6 +50,22 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(comps?.[1].folder).toBeUndefined();
   });
 
+  it("a tombstone's `supersededBy` rides the projection — a dropped field would be silently erased on write-back", async () => {
+    // #a-tombstone-can-name-what-superseded-it. `projectComponent` is an ALLOWLIST, and this projection is
+    // ALSO what the app pushes back with `--replace` — so a stored field the projection does not model is
+    // destroyed by the next app write. That is exactly how request #63 wiped 38 records.
+    //
+    // It would be a particularly bad place to repeat it: the tombstone's whole purpose is to be the one
+    // fact that survives every reseed, so a pointer that the app quietly strips is worse than none.
+    vi.mocked(bsc).mockResolvedValueOnce(JSON.stringify([
+      { id: "oldcard", suppressed: true, supersededBy: "newwidget" },
+      { id: "plain", suppressed: true }, // a bare tombstone ⇒ absent stays absent
+    ]));
+    const comps = await loadComponents();
+    expect(comps?.[0].supersededBy).toBe("newwidget");
+    expect(comps?.[1].supersededBy).toBeUndefined();
+  });
+
   it("a component's #3878 `tests` + #3810 `analytics` manifests ride verbatim — absent stays absent (#3884)", async () => {
     // `projectComponent` is an ALLOWLIST: a field missing from it is dropped on EVERY hydrate. Both of
     // these were declared as contracts before anything populated them, so the gap was invisible until the

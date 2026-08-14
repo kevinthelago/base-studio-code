@@ -17,7 +17,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { log } from "@/shared/lib/core/log";
-import { applyWake, type WakeRequest, type WakeAck } from "./fleetWakeBridge";
+import { applyWake, type WakeRequest, type WakeAck } from "@/app/fleetWakeBridge";
 
 /**
  * Listen for `bsc://fleet-wake` and apply it. Mounted once by the shell.

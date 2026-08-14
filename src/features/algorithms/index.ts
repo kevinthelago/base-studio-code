@@ -9,7 +9,7 @@ export { AlgorithmsGraphHost } from "./AlgorithmsGraphHost";
 export { PlannerAlgorithmsPane } from "./PlannerAlgorithmsPane";
 export * from "./lib/knowledge";
 // The cross-graph adapter (#3116) — the algo-graph NodeLookup another pillar composes into its resolver.
-export { algoNodeLookup } from "./lib/crossGraphAdapter";
+export { algoNodeLookup } from "@/features/algorithms/lib/crossGraphAdapter";
 
 // Algorithm-visualization foundation (#3176, epic #3171) — the trace-frame contract, the streaming
 // engine, the verb→state binding helpers, the generic player, and the pluggable renderer registry the
