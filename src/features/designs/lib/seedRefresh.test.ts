@@ -328,6 +328,40 @@ describe("planRestamp — repairing the unstamped (#4207)", () => {
   // seed, which is the verdict that KEEPS the store copy. Stamped with its OWN hash it would read as
   // pristine-and-stale — the REFRESH verdict — and the next hydrate would replace the store content
   // with the seed's. This test is the difference between a repair and a silent data loss.
+  it("claims a builtin that LOST its stamp — the #63 shape", () => {
+    // #a-builtin-that-lost-its-stamp-falls-between-both-guards. `planRestamp` used to skip ANY record
+    // carrying `builtin`, commented "already in the reconcile path". A builtin that has lost its
+    // `seedHash` is NOT: the reconcile computes `contentHash` as undefined when `seedHash` is, so
+    // `modified` is false, the seed has moved, and the `!modified && seedMoved` branch adopts the
+    // packaged copy. Each guard assumed the other covered it, so nothing did.
+    //
+    // That is what happened to 38 records on 2026-08-14 (designer request #63): a `--graph` LITE
+    // `--replace` push strips the stamp — that projection carries no `seedHash` — and the next hydrate
+    // overwrote a designer's edits with the seed.
+    const strippedBuiltin = comp({ version: "1.0.0", name: "ButtonEdited", builtin: true, seedHash: undefined });
+    const { stamps } = planRestamp([strippedBuiltin], [seeded]);
+    expect(stamps, "a stamp-less builtin must be re-claimed, not skipped").toHaveLength(1);
+    expect(stamps[0].seedHash).toBe(seeded.seedHash);
+
+    // And with the stamp restored, the reconcile KEEPS the edited store copy instead of refreshing it.
+    const r = reconcileSeed(applyStamps([strippedBuiltin], stamps), [seeded], "component");
+    expect(r.pushes, "the packaged copy must NOT be pushed over the designer's edit").toEqual([]);
+    expect(r.records[0].name).toBe("ButtonEdited");
+  });
+
+  it("still skips a FULLY stamped builtin — the reconcile path is unchanged for those", () => {
+    // The guard narrows, it does not disappear: a record that is correctly stamped is still the
+    // reconcile's business alone, so the ordinary refresh/keep behaviour is untouched.
+    const healthy = stampSeedHash(comp({ version: "1.0.0", name: "Button", builtin: true }));
+    expect(planRestamp([healthy], [seeded]).stamps).toEqual([]);
+  });
+
+  it("still refuses to claim a record with NO packaged seed", () => {
+    // Restamp must never invent provenance for genuinely user-authored work, stamp or no stamp.
+    const mine = comp({ id: "mine", name: "Mine", builtin: true, seedHash: undefined });
+    expect(planRestamp([mine], [seeded]).stamps).toEqual([]);
+  });
+
   it("stamps with the SEED's hash, so the next reconcile KEEPS the store copy", () => {
     const { stamps } = planRestamp([unstamped], [seeded]);
     expect(stamps[0].seedHash).toBe(seeded.seedHash);
