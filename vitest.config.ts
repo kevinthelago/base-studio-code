@@ -3,11 +3,14 @@
 //   setInterval/setTimeout return types across src (the DOM lib keeps them `number`). (#1309)
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { bscRecords } from "./vite/bscRecords";
 import { fileURLToPath } from "node:url";
 import { testExclude } from "./vitest.excludes";
 
 export default defineConfig({
-  plugins: [react()],
+  // Same record fallback as the build. vitest loads THIS config, not vite.config.ts — a plugin added
+  // only there is invisible here, which is one of the three ways deleting a single file broke.
+  plugins: [bscRecords({ repoRoot: fileURLToPath(new URL(".", import.meta.url)) }), react()],
   // Disable Vite's fs sandbox for tests so a NESTED git worktree (e.g. .claude/worktrees/<branch>/)
   // running install-free can read files from the shared repo-root node_modules — specifically
   // esbuild-wasm's .wasm, which the preview tests load via `?url` and which lives in an ancestor dir.

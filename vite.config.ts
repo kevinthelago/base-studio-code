@@ -2,9 +2,15 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import { startupLog, teeLogger } from "./vite-startup-log";
+import { bscRecords } from "./vite/bscRecords";
 
 export default defineConfig(async ({ command }) => ({
-  plugins: [react(), startupLog()],
+  // `bscRecords` is a FALLBACK resolver: it answers an `@/…` import from a packaged seed's srcText only
+  // when no file exists at that path. While the file is there it wins, so this plugin changes nothing by
+  // itself — it is what makes DELETING a file survivable, which is the one thing that blocked retiring the
+  // ~950 modules whose records already exist. `enforce: "pre"` puts it ahead of the alias so it matches the
+  // specifier exactly rather than guessing which extension the alias resolved to.
+  plugins: [bscRecords({ repoRoot: fileURLToPath(new URL(".", import.meta.url)) }), react(), startupLog()],
   // `@/…` → `src/…` (#1309) so the feature-first reorg doesn't churn deep-relative imports.
   // `@data/…` → `src-tauri/data/…` (#1462): the unified packaged-data root. The stage/blueprint
   // JSON lives there now (outside src/) and is build-time-bundled via import.meta.glob.

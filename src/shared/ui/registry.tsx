@@ -12,7 +12,9 @@ import type { PrimitiveName } from "./manifest";
 import { Box } from "./layout/Box";
 import { Stack } from "./layout/Stack";
 import { Row } from "./layout/Row";
-import { Spacer } from "./layout/Spacer";
+// `@/` form, not `./layout/Spacer`: the module is RETIRED and now resolves through the record
+// fallback, which matches on the alias. A relative specifier bypasses that and finds nothing.
+import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Slot } from "./layout/Slot";
 import { Grid } from "./layout/Grid";
 import { SectionHeader } from "./layout/SectionHeader";

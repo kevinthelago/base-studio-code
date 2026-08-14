@@ -12,7 +12,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "paths": { "@/*": ["./src/*"], "@data/*": ["./src-tauri/data/*"] },
+    "paths": { "@/*": ["./src/*", "./.bsc-records/*"], "@data/*": ["./src-tauri/data/*"] },
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
