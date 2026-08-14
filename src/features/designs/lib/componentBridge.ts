@@ -268,3 +268,19 @@ export async function saveScanCache(entries: Record<string, CachedScan>): Promis
 export async function recordPreviewError(id: string, message: string): Promise<void> {
   try { await bsc(null, ["ui", "preview-error", id], message); } catch { /* bridge/binary absent — banner-only */ }
 }
+
+/**
+ * Clear `id`'s recorded preview error because its preview just RENDERED (#45/#60).
+ *
+ * The missing half of {@link recordPreviewError}. Editing a component clears its error (#43) and so does
+ * `bsc ui preview-error clear`, but nothing did when the preview simply started working — so a component
+ * fixed by a change ELSEWHERE (a shared dependency, or a resolver bug in the preview itself) kept its
+ * finding forever, and `bsc ui doctor` reported a failure a live `bsc shot preview` disproved.
+ *
+ * A successful render is the strongest evidence available that the recorded error is stale: it means the
+ * component built AND ran. Fire-and-forget like its sibling — observability must never break a preview —
+ * and already a no-op in `bsc` when the id holds no error, so a healthy component writes nothing.
+ */
+export async function clearPreviewError(id: string): Promise<void> {
+  try { await bsc(null, ["ui", "preview-error", "clear", id]); } catch { /* bridge/binary absent — no-op */ }
+}
