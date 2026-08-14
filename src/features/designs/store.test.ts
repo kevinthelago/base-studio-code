@@ -93,6 +93,36 @@ describe("components store slice (#2281)", () => {
     expect(pushK).not.toHaveBeenCalled(); // every kit already present → nothing to re-seed
   });
 
+  it("skips the LITE fast path on a re-hydrate, so pages are not remounted", async () => {
+    // #the-fast-paint-phase-remounts-every-page-on-every-rehydrate. Phase 1 blanks srcText (the lite
+    // projection carries none). On a re-hydrate that sends every GraphComponent real -> "" -> real,
+    // which drops each page to its fallback (unmounting its subtree) and recompiles it. The console
+    // page holds the terminal, so the user loses focus mid-keystroke — reported live, and visible in
+    // the log as `compile #2 "consolepage"` firing minutes from any page load.
+    useAppStore.setState({ components: [{ ...FIXTURE_BUTTON }] } as never); // a FULL record already held
+    const lite = vi.spyOn(bridge, "loadComponentsGraph").mockResolvedValue([]);
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([FIXTURE_BUTTON]);
+    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
+    vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
+    vi.spyOn(bridge, "pushKit").mockResolvedValue(undefined);
+
+    await useAppStore.getState().hydrateComponents();
+    expect(lite, "a warm store must not re-read the lite projection").not.toHaveBeenCalled();
+  });
+
+  it("still TAKES the lite fast path on a cold store — the paint win is kept", async () => {
+    // The optimisation is worth keeping where it pays: `--full` is 1.72MB and measured up to 8s.
+    useAppStore.setState({ components: [] } as never);
+    const lite = vi.spyOn(bridge, "loadComponentsGraph").mockResolvedValue([{ ...FIXTURE_BUTTON, lite: true }] as never);
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([FIXTURE_BUTTON]);
+    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
+    vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
+    vi.spyOn(bridge, "pushKit").mockResolvedValue(undefined);
+
+    await useAppStore.getState().hydrateComponents();
+    expect(lite).toHaveBeenCalledTimes(1);
+  });
+
   it("guards every converge push with the rev it READ (#a-stale-app-copy-overwrites-a-designer-edit)", async () => {
     // The converge writes records the app did not author, from the snapshot taken at the top of
     // `hydrateComponents` — so anything written to the store between that read and the push is
