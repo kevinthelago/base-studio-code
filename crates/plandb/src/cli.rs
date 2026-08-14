@@ -413,6 +413,8 @@ Usually captured via the `bsc-learned` helper. Candidates de-dupe on a normalize
         summary: "hand a plan update DOWN a tier — the architect's one outbound channel (#2377)",
         usage: "USAGE:
   echo \"<what changed and why>\" | bsc plan brief <projectKey>:director [--ref <ref>]
+  bsc plan brief list                                    # awaiting YOUR acknowledgement
+  bsc plan brief ack <id> --note \"<what you reconciled>\"
 
 Writes a `brief` to the coordination log addressed to <target>. This is how a requirement, or a
 mid-build change of mind, reaches the tier that acts on it — the ARCHITECT's only way to talk
@@ -431,9 +433,17 @@ bsc-assign) and carries on. Send another whenever the requirement moves again.
 The body is read from STDIN so a multi-line update needs no quoting gymnastics; an empty body is an
 error rather than an empty brief.
 
-NOT DELIVERED TO A SESSION'S SCREEN. The app pushes nothing into a session, so a brief sits in the
-coord log until the receiver looks: `$BSC_BIN logs coord`. (There is no dedicated queue verb for
-briefs yet — unlike `bsc logs waiting`, which pairs opens with closes.)",
+NOT DELIVERED TO A SESSION'S SCREEN. The app pushes nothing into a session, so nothing announces a
+brief — `bsc plan brief list` is where the receiver finds one, scoped to the pane it is addressed to.
+
+ACKNOWLEDGE WHAT YOU RECONCILE. `bsc plan brief ack <id> --note \"...\"` closes it, and the note is the
+only way the SENDER learns what its brief caused — briefing is otherwise fire-and-forget, a poor
+property for the channel carrying authoritative plan changes. An unacked brief stays listed
+indefinitely and is never expired: a director that was busy when one arrived is the one that most
+needs to still see it.
+
+The id is printed when the brief is sent, and by `list`. It is DERIVED from the row (sender,
+timestamp, target), so there is no second store to fall out of step with the log.",
     },
     CmdDoc {
         name: "request",

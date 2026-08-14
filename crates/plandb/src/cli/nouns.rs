@@ -797,8 +797,16 @@ fn render_feature(f: &PlanFeature) -> String {
 /// the delivery end rather than the emitter is what makes it hold for a replayed log too.
 pub(crate) fn cmd_brief(args: &Args) -> Result<(), String> {
     let target = args.positional.get(1).cloned().unwrap_or_default();
+    // `list` / `ack` are SUB-VERBS of brief, not separate nouns: a brief's whole lifecycle stays under
+    // one word, the way `bsc plan request` keeps new/list/resolve together.
+    match target.trim() {
+        "list" => return cmd_brief_list(args),
+        "ack" => return cmd_brief_ack(args),
+        _ => {}
+    }
     if target.trim().is_empty() {
-        return Err("usage: bsc plan brief <target> [--ref <ref>]   # body on stdin".into());
+        return Err("usage: bsc plan brief <target> [--ref <ref>]   # body on stdin
+   or: bsc plan brief list | bsc plan brief ack <id> --note \"<what you reconciled>\"".into());
     }
     let mut body = String::new();
     std::io::stdin().read_to_string(&mut body).map_err(|e| format!("reading stdin: {e}"))?;
@@ -806,7 +814,79 @@ pub(crate) fn cmd_brief(args: &Args) -> Result<(), String> {
         return Err("a brief needs a body on stdin".into());
     }
     crate::coord::emit3(crate::coord::KIND_BRIEF, target.trim(), body.trim(), args.brief_ref.as_deref().unwrap_or(""));
-    println!("briefed {}", target.trim());
+    // PRINT THE ID. A sender that cannot name what it just sent has no way to ask about it later — and
+    // the architect's whole complaint is that briefing is fire-and-forget. Re-derived from the log rather
+    // than remembered, so it is the same id `list` and `ack` use.
+    let id = coord_log_path()
+        .map(|p| crate::coord::open_briefs(&p))
+        .unwrap_or_default()
+        .into_iter()
+        .rev()
+        .find(|b| b.target == target.trim())
+        .map(|b| b.id);
+    match id {
+        Some(id) => println!("briefed {} — {}", target.trim(), id),
+        // No coord log configured: the brief still emitted (best-effort, as every coord write is), there
+        // is simply nothing to read an id back from. Say so rather than printing a fabricated one.
+        None => println!("briefed {} (no $BSC_COORD_LOG — no id to read back)", target.trim()),
+    }
+    Ok(())
+}
+
+/// The coord log this session writes to, if it has one.
+fn coord_log_path() -> Option<std::path::PathBuf> {
+    let p = std::env::var("BSC_COORD_LOG").ok()?;
+    if p.is_empty() { None } else { Some(std::path::PathBuf::from(p)) }
+}
+
+/// `bsc plan brief list` — briefs awaiting acknowledgement, addressed to THIS session.
+fn cmd_brief_list(args: &Args) -> Result<(), String> {
+    let Some(log) = coord_log_path() else {
+        return Err("no $BSC_COORD_LOG — a brief queue needs the coordination log this session writes to".into());
+    };
+    let mut open = crate::coord::open_briefs(&log);
+    // SCOPED BY EXACT TARGET, not by project prefix. A brief is ADDRESSED (`<project>:director`), and the
+    // receiving session's own pane is that exact string — so exact match is both simpler and more precise
+    // than the project rule the ask queue needs for broadcast traffic. A bare shell (no pane) sees all.
+    if let Ok(me) = std::env::var("BSC_AUDIT_PANE") {
+        if !me.is_empty() && me != "?" {
+            open.retain(|b| b.target == me);
+        }
+    }
+    bsc_cli_util::emit(args.pretty, args.json, &open, || {
+        if open.is_empty() {
+            return "no briefs awaiting acknowledgement".to_string();
+        }
+        let mut lines = vec!["id	from	body".to_string()];
+        for b in &open {
+            lines.push(format!("{}	{}	{}", b.id, b.from, b.body));
+        }
+        lines.join("
+")
+    });
+    Ok(())
+}
+
+/// `bsc plan brief ack <id> --note "<what you reconciled>"` — close one brief.
+fn cmd_brief_ack(args: &Args) -> Result<(), String> {
+    let id = args.positional.get(2).cloned().unwrap_or_default();
+    if id.trim().is_empty() {
+        return Err("usage: bsc plan brief ack <id> --note \"<what you reconciled>\"   (ids from `bsc plan brief list`)".into());
+    }
+    let Some(log) = coord_log_path() else {
+        return Err("no $BSC_COORD_LOG — nothing to acknowledge against".into());
+    };
+    // REFUSED, NOT RECORDED, on an unknown id. An ack for nothing would empty nothing while printing
+    // success — and the sender would go on believing its brief was reconciled.
+    if !crate::coord::open_briefs(&log).iter().any(|b| b.id == id.trim()) {
+        return Err(format!(
+            "no brief awaiting acknowledgement with id '{}' — run `bsc plan brief list` (an already-acked brief is gone)",
+            id.trim()
+        ));
+    }
+    let note = args.note.clone().unwrap_or_default();
+    crate::coord::emit(crate::coord::KIND_BRIEF_ACK, id.trim(), note.trim());
+    println!("acked {}", id.trim());
     Ok(())
 }
 

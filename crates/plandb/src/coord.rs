@@ -40,6 +40,70 @@ pub const KIND_REQUEST: &str = "request";
 pub const KIND_BRIEF: &str = "brief";
 /// The coord kind announcing that a request was answered, so the pump stops surfacing it.
 pub const KIND_REQUEST_RESOLVED: &str = "request-resolved";
+/// A brief was RECONCILED by its receiver (#a-brief-can-be-acknowledged-so-its-queue-empties). Without
+/// a closing event a brief queue can never empty, and the receiver is re-handed the same plan updates
+/// forever — the failure `logs-waiting-honours-every-clearing-event` fixed for asks after two weeks.
+pub const KIND_BRIEF_ACK: &str = "brief-ack";
+
+/// One brief still awaiting acknowledgement.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenBrief {
+    /// `<from>@<ts>@<target>` — DERIVED from the row, so no new storage and the log stays append-only.
+    /// It includes the target because a sender can brief two different panes in the same second; keying
+    /// on `<from>@<ts>` alone would collide and silently suppress the second (the bug `briefRouteKey`
+    /// was widened to fix).
+    pub id: String,
+    pub from: String,
+    pub target: String,
+    pub body: String,
+    pub at: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub reference: String,
+}
+
+/// The briefs that have been sent and not yet acked, oldest first.
+///
+/// Re-derived from the WHOLE log on every call, exactly as the ask queue is: the answer is then correct
+/// across an app restart and does not depend on having observed the opening event live.
+pub fn open_briefs(log: &std::path::Path) -> Vec<OpenBrief> {
+    let text = std::fs::read_to_string(log).unwrap_or_default();
+    let mut open: Vec<OpenBrief> = Vec::new();
+    let mut acked: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        // ts, pane, kind, then the payload
+        if f.len() < 4 {
+            continue;
+        }
+        let (at, from, kind) = (f[0], f[1], f[2]);
+        match kind {
+            KIND_BRIEF if f.len() >= 5 => {
+                let target = f[3];
+                open.push(OpenBrief {
+                    id: brief_id(from, at, target),
+                    from: from.to_string(),
+                    target: target.to_string(),
+                    body: f[4].to_string(),
+                    at: at.to_string(),
+                    reference: f.get(5).unwrap_or(&"").to_string(),
+                });
+            }
+            KIND_BRIEF_ACK => {
+                acked.insert(f[3].to_string());
+            }
+            _ => {}
+        }
+    }
+    open.retain(|b| !acked.contains(&b.id));
+    open
+}
+
+/// The derived identity of a brief row. Public so the emitter can PRINT it — a sender that cannot name
+/// what it just sent has no way to ask about it later.
+pub fn brief_id(from: &str, at: &str, target: &str) -> String {
+    format!("{from}@{at}@{target}")
+}
 
 /// Strip the field separators, matching the shell emitters' `tr '\t\n' '  '`.
 fn clean(s: &str) -> String {
@@ -140,5 +204,77 @@ mod tests {
         if let Some(p) = prev {
             unsafe { std::env::set_var("BSC_COORD_LOG", p) };
         }
+    }
+
+    /// A brief queue that cannot empty re-hands the receiver the same plan updates forever — the exact
+    /// failure `logs-waiting-honours-every-clearing-event` fixed for asks after two weeks unnoticed.
+    #[test]
+    fn an_ack_closes_exactly_its_own_brief_and_the_close_survives_a_restart() {
+        let dir = std::env::temp_dir().join(format!("bsc-briefq-{}-a", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("coord.log");
+        std::fs::write(
+            &log,
+            "2026-08-14T10:00:00Z	architect	brief	p:director	descope CSV	#42
+             2026-08-14T10:00:01Z	architect	brief	p:director	add audit log	
+",
+        )
+        .unwrap();
+
+        let open = open_briefs(&log);
+        assert_eq!(open.len(), 2, "both are awaiting ack: {open:?}");
+        assert_eq!(open[0].reference, "#42", "the --ref rides the row");
+
+        // Ack ONLY the first. The pairing is re-derived from the whole log, so this holds across a
+        // restart — the queue does not depend on having watched the brief arrive.
+        let first = open[0].id.clone();
+        let mut f = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
+        use std::io::Write as _;
+        writeln!(f, "2026-08-14T10:05:00Z	p:director	brief-ack	{first}	dropped the CSV issues").unwrap();
+
+        let after = open_briefs(&log);
+        assert_eq!(after.len(), 1, "exactly one closed: {after:?}");
+        assert_eq!(after[0].body, "add audit log", "the OTHER brief is untouched");
+    }
+
+    /// The id carries the TARGET for a reason: a sender can brief two panes within the same second, and
+    /// keying on `<from>@<ts>` alone would collide — acking one would silently close the other. This is
+    /// the same widening `briefRouteKey` needed on the frontend.
+    #[test]
+    fn two_briefs_in_the_same_second_to_different_targets_do_not_collide() {
+        let dir = std::env::temp_dir().join(format!("bsc-briefq-{}-b", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("coord.log");
+        std::fs::write(
+            &log,
+            "2026-08-14T10:00:00Z	architect	brief	a:director	for a	
+             2026-08-14T10:00:00Z	architect	brief	b:director	for b	
+",
+        )
+        .unwrap();
+        let open = open_briefs(&log);
+        assert_eq!(open.len(), 2);
+        assert_ne!(open[0].id, open[1].id, "same sender, same second, different target: {open:?}");
+    }
+
+    #[test]
+    fn a_malformed_or_unrelated_row_is_skipped_rather_than_panicking() {
+        // coord.log is one APP-WIDE append-only file every emitter writes to, so a brief reader meets
+        // rows it does not understand constantly — and a rotated log can truncate one mid-line.
+        let dir = std::env::temp_dir().join(format!("bsc-briefq-{}-c", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("coord.log");
+        std::fs::write(
+            &log,
+            "2026-08-14T10:00:00Z	w	ask	which branch?
+             short
+             
+             2026-08-14T10:00:02Z	architect	brief	p:director	real one	
+",
+        )
+        .unwrap();
+        let open = open_briefs(&log);
+        assert_eq!(open.len(), 1, "only the brief: {open:?}");
+        assert_eq!(open[0].body, "real one");
     }
 }
