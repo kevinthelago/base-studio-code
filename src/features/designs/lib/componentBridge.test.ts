@@ -114,6 +114,33 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(bscRun).toHaveBeenCalledWith(null, ["ui", "remove", "c1"]);
   });
 
+  it("guards a push with the rev the caller READ, so a store that moved refuses the write", async () => {
+    // #a-stale-app-copy-overwrites-a-designer-edit — the rev8/rev9 sequence, exactly. The app read
+    // plan-body-streams at rev 7, a designer edited it out of band to rev 8, and 23 minutes later the
+    // app's converge pushed its pre-edit copy back — destroying the fix with no notice to anyone.
+    //
+    // `--if-version` names the rev this write is BASED on; the store refuses when it has moved. The
+    // guard already existed in `bsc ui set` and nothing was sending it.
+    const comp = { id: "plan-body-streams", srcText: "pre-edit" } as unknown as ComponentRecord;
+    await pushComponent(comp, { ifVersion: 7 });
+    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--replace", "--if-version", "7"], comp);
+  });
+
+  it("leaves an UNGUARDED push exactly as it was — no rev, no flag", async () => {
+    // Every existing caller must be unaffected: a record the store lacks has no prior rev to name.
+    const comp = { id: "c-new" } as unknown as ComponentRecord;
+    await pushComponent(comp, { ifVersion: undefined });
+    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--replace"], comp);
+  });
+
+  it("does not throw when the store REFUSES the write, and says so", async () => {
+    // A refused write must not break the caller's render — but it must stop being indistinguishable
+    // from an unreachable store, which is what made this class invisible: the old bare `catch {}` gave
+    // "my edit vanished" no counterpart anywhere in the log.
+    vi.mocked(bscWrite).mockRejectedValueOnce(new Error("version conflict on component 'x': its current rev is 8, not 7"));
+    await expect(pushComponent({ id: "x" } as unknown as ComponentRecord, { ifVersion: 7 })).resolves.toBeUndefined();
+  });
+
   it("writes kit upsert/removal through the ui surface, replacing the whole record", async () => {
     const kit = { id: "k1" } as unknown as Kit;
     await pushKit(kit);

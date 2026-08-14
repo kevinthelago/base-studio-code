@@ -92,6 +92,36 @@ describe("components store slice (#2281)", () => {
     expect(pushC).not.toHaveBeenCalledWith(expect.objectContaining({ id: "my-widget" }));
     expect(pushK).not.toHaveBeenCalled(); // every kit already present → nothing to re-seed
   });
+
+  it("guards every converge push with the rev it READ (#a-stale-app-copy-overwrites-a-designer-edit)", async () => {
+    // The converge writes records the app did not author, from the snapshot taken at the top of
+    // `hydrateComponents` — so anything written to the store between that read and the push is
+    // destroyed. That is what happened to a designer's `srcText` fix: read pre-edit, edited out of
+    // band, converged back 23 minutes later with no notice.
+    //
+    // Every push must name the rev THIS load saw, so a store that has moved refuses the write.
+    // A stored copy that is PRISTINE against its own (older) stamp while the packaged seed has moved on
+    // — the REFRESH verdict, which is the branch that pushes. Re-stamping an altered body is what makes
+    // it self-consistent-but-older; a merely stale stamp would read as "modified" and be KEPT instead.
+    const seedComp = SEED_COMPONENTS[0];
+    expect(seedComp, "the packaged component seed must be non-empty for this to exercise a push").toBeTruthy();
+    const stored = stampSeedHash({ ...seedComp, srcText: "OLDER BODY", rev: 7 });
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([stored]);
+    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
+    const pushC = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
+    vi.spyOn(bridge, "pushKit").mockResolvedValue(undefined);
+    await useAppStore.getState().hydrateComponents();
+
+    const guarded = pushC.mock.calls.filter(([c]) => c.id === stored.id);
+    expect(guarded.length, "the REFRESH verdict must actually push — otherwise this asserts nothing").toBeGreaterThan(0);
+    for (const [, opts] of guarded) {
+      expect(opts?.ifVersion, `a push of ${stored.id} must carry the rev the load saw`).toBe(7);
+    }
+    // A record the store did NOT hold has no prior rev to name — it is written unguarded, as before.
+    for (const [c, opts] of pushC.mock.calls) {
+      if (c.id !== stored.id) expect(opts?.ifVersion).toBeUndefined();
+    }
+  });
 });
 
 describe("designer AI live-focus (#2525)", () => {

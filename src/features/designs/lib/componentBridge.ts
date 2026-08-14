@@ -8,6 +8,7 @@
 // web shell / an old bundled `bsc`) so the store keeps its seed rather than blanking it — NOT `bscJson`,
 // whose degrade-to-`[]` would blank the seed.
 import { bsc, bscRun, bscWrite } from "@/shared/lib/core/bsc";
+import { log } from "@/shared/lib/core/log";
 import type { ComponentRecord, Kit, Role } from "./model";
 import type { ComponentBuildStatus, RuntimeStateCategory } from "./componentScan";
 import { ROLES } from "./model";
@@ -135,8 +136,29 @@ export async function loadKits(): Promise<Kit[] | null> {
  *  seed-authoritative reset (#3723) depends on the store copy being overwritten field-for-field. Under a
  *  merge a store-only field would survive every reset, its content hash would stay off the seed's, and
  *  the reconcile would re-fire forever instead of converging. */
-export async function pushComponent(component: ComponentRecord): Promise<void> {
-  try { await bscWrite(null, ["ui", "set", "--replace"], component); } catch { /* store unreachable — cache-only */ }
+export async function pushComponent(
+  component: ComponentRecord,
+  opts?: { ifVersion?: number },
+): Promise<void> {
+  const args = ["ui", "set", "--replace"];
+  // OPTIMISTIC CONCURRENCY (#a-stale-app-copy-overwrites-a-designer-edit). Two independent writers share
+  // this store — the app, and out-of-band `bsc ui set` sessions — so last-write-wins means whoever writes
+  // second wins regardless of what they knew. A designer's `srcText` fix (rev8) was destroyed 23 minutes
+  // later by a converge push carrying the copy the app had read BEFORE it (rev9), with no notice to
+  // anyone; it was found only because the render error came back.
+  //
+  // `--if-version` names the rev this write is BASED on and the store refuses if it has moved. The guard
+  // already existed in `bsc ui set`; nothing was sending it. Passed only where the caller can name the
+  // rev it actually READ — an unguarded call still behaves exactly as before.
+  if (typeof opts?.ifVersion === "number") args.push("--if-version", String(opts.ifVersion));
+  try {
+    await bscWrite(null, args, component);
+  } catch (e) {
+    // NOT silent. The old bare `catch {}` is what made this class invisible: a refused write and an
+    // unreachable store were the same non-event, so "my edit vanished" had no counterpart in any log.
+    // Still never throws — a write-through failure must not break the caller's render.
+    log.warn(`ui-bridge: "${component.id}" not written: ${String(e).slice(0, 200)}`, "ui-bridge");
+  }
 }
 /** Write-through JUST the seed stamp on an existing record (#4207) — a MERGING `bsc ui set`, which is
  *  the whole point: this is the one component write whose input came from READING the store, so a

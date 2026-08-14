@@ -286,7 +286,16 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     applyAnimationsToRoot(kitAnimations(rk.records));
     // Converge the store to the verdicts (#2483): push refreshed + missing built-ins (stamped with the
     // new seedHash), drop pristine copies of retired built-ins. User records are never pushed/dropped.
-    for (const c of rc.pushes) void pushComponent(c);
+    //
+    // GUARDED BY THE REV WE READ (#a-stale-app-copy-overwrites-a-designer-edit). This converge writes
+    // records the app did not author, from a snapshot taken at the top of this function — so anything
+    // written to the store between that read and here is silently destroyed by the push. That is exactly
+    // what happened to a designer's `srcText` fix: read pre-edit, edited out of band, converged back 23
+    // minutes later. The guard is the rev from THIS load, so a store that moved refuses the write and the
+    // next hydrate picks up the newer copy instead. A record the store lacks has no prior rev to name and
+    // is written unguarded, as before.
+    const revById = new Map((loadedC ?? []).map((c) => [c.id, c.rev]));
+    for (const c of rc.pushes) void pushComponent(c, { ifVersion: revById.get(c.id) });
     for (const id of rc.drops) void dropComponent(id);
     for (const k of rk.pushes) void pushKit(k);
     for (const id of rk.drops) void dropKit(id);
