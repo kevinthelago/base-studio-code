@@ -16,7 +16,7 @@ import { LogsRetentionCard } from "../cards/LogsRetentionCard";
 import { SessionLogCard } from "../cards/SessionLogCard";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
-import { SettingsPageHeader, SettingsSubHeader as Sub } from "./SettingsPageHeader";
+import { SettingsPageHeader, SettingsSubHeader as Sub } from "@/features/settings/pages/SettingsPageHeader";
 
 export function PlannerPage() {
   const [selectedStream, setSelectedStream] = useState<string | null>(null);

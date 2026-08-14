@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Pane } from "./Pane";
+import { Pane } from "@/shared/ui/overlay/Pane";
 
 describe("Pane (#1824)", () => {
   it("drawer mode renders header, body, and the standard remove/done footer", () => {

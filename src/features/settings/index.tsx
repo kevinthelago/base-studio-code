@@ -26,7 +26,7 @@ export { SCREEN_HOTKEYS } from "./lib/shortcuts";
 // (#1545). The packaged `accessibilitypage` record imports it, and an unregistered specifier makes that
 // record unstorable. The registry KEY stays the deep specifier the record actually carries
 // (`@/features/settings/pages/SettingsPageHeader`); only the registering module's import path changes.
-export { SettingsPageHeader, SettingsSubHeader } from "./pages/SettingsPageHeader";
+export { SettingsPageHeader, SettingsSubHeader } from "@/features/settings/pages/SettingsPageHeader";
 export {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,

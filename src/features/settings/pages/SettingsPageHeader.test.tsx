@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
-import { SettingsPageHeader, SettingsSubHeader } from "./SettingsPageHeader";
+import { SettingsPageHeader, SettingsSubHeader } from "@/features/settings/pages/SettingsPageHeader";
 
 describe("SettingsPageHeader", () => {
   it("renders the title as a mono h2 and the description as a muted paragraph", () => {

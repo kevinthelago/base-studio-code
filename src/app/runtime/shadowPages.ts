@@ -175,7 +175,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "plan-body-stream-cards", file: null }, // RETIRED — the record is the only copy,
       { recordId: "plan-body-shared-deps", file: null }, // RETIRED — the record is the only copy,
       { recordId: "plan-body-collapsible-card", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-primitives", file: "/src/features/planner/bodies/bodyPrimitives.tsx" },
+      { recordId: "plan-body-primitives", file: null }, // RETIRED — the record is the only copy,
     ],
     ensurePlatform: () => import("@/features/planner/graphPlatform").then((m) => m.registerPlannerPlatform()),
   },
@@ -347,11 +347,11 @@ const FILE_SOURCES = import.meta.glob<string>(
   [
     "/src/features/planner/list/ReopenProjectModal.tsx",
     "/src/features/planner/session/GitHubStructureCard.tsx",
-    "/src/features/planner/pane/{FocusedBodies,}.tsx",
+    "/src/features/planner/pane/FocusedBodies.tsx",
     // Named, not `bodies/*.tsx` — the glob is the file half of the parity diff, and a wildcard sweeps up
     // the directory's twelve `.test.tsx` files, which the catalogue guard correctly rejects as globbed
     // sources nothing declares.
-    "/src/features/planner/bodies/{,StreamsBody,bodyPrimitives}.tsx",
+    "/src/features/planner/bodies/StreamsBody.tsx",
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
     "/src/features/algorithms/{AlgorithmsWorkspace,AlgorithmsRail,AlgorithmsInspector,AlgorithmsKitGraph,LibrarianTerminal}.tsx",
     "/src/app/console/panes/PaneMenu.tsx",

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { useRef } from "react";
 import { render, screen } from "@testing-library/react";
-import { SessionDock } from "./SessionDock";
+import { SessionDock } from "@/shared/ui/layouts/SessionDock";
 
 function Harness({ height, testid = "dock", subtitle }: { height?: number; testid?: string; subtitle?: string }) {
   const ref = useRef<HTMLDivElement>(null);

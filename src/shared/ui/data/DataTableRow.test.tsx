@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DataTableHeader, DataTableRow } from "./DataTableRow";
+import { DataTableHeader, DataTableRow } from "@/shared/ui/data/DataTableRow";
 
 describe("DataTableRow", () => {
   it("header + row share the template and render their cells", () => {

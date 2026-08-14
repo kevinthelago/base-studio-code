@@ -2,7 +2,7 @@
 // 6-hex color. Consolidates the near-identical copies in the planner Issues / ProjectBoard views.
 
 import type { GhLabel } from "@/shared/lib/github/types";
-import { Chip } from "./Chip";
+import { Chip } from "@/shared/ui/data/Chip";
 
 export function LabelChip({ label }: { label: GhLabel }) {
   // A GitHub label's colour is dynamic (6-hex) → the Chip `color` path. bg/border alphas approximate

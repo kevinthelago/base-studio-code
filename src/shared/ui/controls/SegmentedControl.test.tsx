@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SegmentedControl } from "./SegmentedControl";
+import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 
 describe("SegmentedControl", () => {
   it("renders options, marks the active one, and fires onClick", () => {

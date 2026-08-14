@@ -34,7 +34,18 @@ for (const p of retired) {
 }
 // Tidy the separators the removals left behind, so the glob stays a valid brace expansion.
 text = text.replace(/\{,/g, "{").replace(/,\}/g, "}").replace(/,{2,}/g, ",");
+// A brace list worn down to ONE alternative does not expand — `{FocusedBodies}.tsx` matches nothing, and
+// the catalogue then reports its own entry as "declared, but the glob missed it". Unwrap it. A list worn
+// down to NONE means every module under that directory is retired, so the whole pattern goes.
+text = text
+  .replace(/\{([A-Za-z0-9_$.-]+)\}/g, "$1")
+  .replace(/^[ \t]*"[^"]*\{\}[^"]*",?[ \t]*\r?\n/gm, "");
 
 console.log(`${DRY ? "would declare" : "declared"} graph-only: ${retired.length}`);
 for (const p of retired) console.log(`   ${p}`);
-if (!DRY && retired.length) writeFileSync(CATALOGUE, text);
+// Written whenever the TEXT moved, not whenever a retirement was found — the brace tidy-ups above can be
+// the only change (an earlier run left a one-alternative `{X}` behind), and gating the write on
+// `retired.length` made a re-run a no-op that reported success while the glob stayed broken.
+const original = readFileSync(CATALOGUE, "utf8");
+if (text === original) console.log("   (catalogue already in sync)");
+else if (!DRY) { writeFileSync(CATALOGUE, text); console.log("   catalogue updated"); }

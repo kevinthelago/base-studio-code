@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Text } from "./Text";
+import { Text } from "@/shared/ui/typography/Text";
 
 describe("Text", () => {
   it("renders a bare span with no size/color/weight forced by default", () => {

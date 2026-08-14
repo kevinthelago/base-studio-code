@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Screen } from "./Screen";
+import { Screen } from "@/shared/ui/layouts/Screen";
 import { getPageNav, setPageNav } from "./pageNav";
-import type { TabItem } from "./TabBar";
+import type { TabItem } from "@/shared/ui/layouts/TabBar";
 
 // The shared Screen shell (#1878): the root tabbed device a Workspace renders through —
 // a PageTabs strip (the TabBar) over one active Page body. See docs/frontend-structure.md.

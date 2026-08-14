@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Row } from "./Row";
+import { Row } from "@/shared/ui/layout/Row";
 
 describe("Row", () => {
   it("renders a flex row centered by default with the resolved gap", () => {

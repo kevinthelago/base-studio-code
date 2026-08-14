@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { RailGroupHeader } from "./RailGroupHeader";
+import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
 
 describe("RailGroupHeader (#2789)", () => {
   it("renders the label and a trailing count", () => {

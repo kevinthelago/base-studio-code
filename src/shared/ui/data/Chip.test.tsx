@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { Chip } from "./Chip";
+import { Chip } from "@/shared/ui/data/Chip";
 
 describe("Chip", () => {
   it("renders children and derives bg/border from the text color", () => {
