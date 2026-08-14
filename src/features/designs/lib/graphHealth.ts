@@ -30,13 +30,13 @@
 // artifact — only a node in NEITHER the artifact NOR carrying its own module/`source` is flagged.
 import reactUiArtifact from "@data/components/react-ui.json";
 import previewImportmap from "@data/ui/preview-importmap.json";
-import platformModules from "@data/ui/platform-modules.json";
 import { buildComposesEdges } from "./compositionLayout";
 import { componentBuildable, looksBuildableModule, isPreviewBuildable, hasCodeElision, erasedSpecs, type KitArtifact } from "./componentPreview";
 import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
 import type { LibraryModuleResolver } from "./componentPreview";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import { resolveInternalBase } from "@/shared/lib/preview/importPath";
+import { PLATFORM_MODULES as PLATFORM_MODULE_SPECS } from "@/shared/lib/preview/platformModules";
 import type { ComponentRecord, PropSpec } from "./model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
 
@@ -45,8 +45,8 @@ import type { KitAnimation } from "@/shared/ui/kit/animations";
  *  preview time (#2934). Kept in lockstep with the Rust twin (which embeds the SAME json). */
 const RESOLVABLE_SPECIFIERS = new Set(Object.keys(previewImportmap));
 
-/** The specifiers the runtime module REGISTRY resolves (#3897) — generated from the real registry into
- *  `@data/ui/platform-modules.json` (see platformModules.gen.test.ts).
+/** The specifiers the runtime module REGISTRY resolves (#3897) — the second half of the declared
+ *  boundary, now shared with the preview it reports on (`shared/lib/preview/platformModules`).
  *
  *  Without this the buildability check resolved `@/…` against the packaged artifact and sibling node `src`
  *  paths ONLY, so a record honestly importing a registered platform module
@@ -54,7 +54,7 @@ const RESOLVABLE_SPECIFIERS = new Set(Object.keys(previewImportmap));
  *  mounted it fine. Worse, the finding pressured the next author to STUB the import to silence it, which is
  *  the corruption `reimplemented-component` exists to catch (#3892/#3895). Matched LITERALLY, exactly as
  *  the loader's `isAppModule` does. Rust twin embeds the same json. */
-const PLATFORM_MODULES = new Set<string>(platformModules as string[]);
+const PLATFORM_MODULES = PLATFORM_MODULE_SPECS;
 
 /** Is `p` a CONTENT-SLOT prop — a non-`children` prop typed as a React node? Matches how the preview
  *  samples props (`samplePropValue` treats any `reactnode`/`node`-typed prop as a slot), so a component

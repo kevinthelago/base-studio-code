@@ -212,11 +212,16 @@ BUILTIN comes back on the next hydrate (the seed re-adds it) — use `suppress` 
         summary: "PERMANENTLY remove a packaged builtin component — it won't re-seed (#3725)",
         usage: "\
 USAGE:
-  bsc ui suppress <id> [--pretty]
+  bsc ui suppress <id> [--superseded-by <new-id>] [--pretty]
 
 Writes a `{ id, suppressed: true }` TOMBSTONE for <id>, so the frontend seed-reconcile stops re-adding
 the packaged builtin (a plain `remove` re-seeds on the next hydrate). The library and the doctor both
 skip a tombstone. Use for a builtin you never want back; `unsuppress` restores it (re-seeds from source).
+
+--superseded-by <new-id> records WHAT replaced this one, on the tombstone — the one record the
+seed-reconcile never overwrites, so the fact survives every hydrate. Use it when retiring a wrapper into
+its replacement, so the consolidation is still readable months later. The target must EXIST (a dangling
+pointer is refused, not stored) and cannot be the id itself.
 A ui-scope MUTATION.",
     },
     CmdDoc {
@@ -899,10 +904,38 @@ fn cmd_suppress(
     noun: &str,
 ) -> Result<(), String> {
     let kit_prefix = if noun == "kit" { "kit " } else { "" };
-    let (pos, dir, _pretty) = parse_anim_args(args)?;
-    let id = pos.first().ok_or_else(|| format!("usage: bsc ui {kit_prefix}suppress <id>"))?;
+    let SuppressArgs { positionals, dir, superseded_by } = parse_suppress_args(args)?;
+    let id = positionals.first().ok_or_else(|| format!("usage: bsc ui {kit_prefix}suppress <id>"))?;
     let store = open(&dir)?;
-    let tombstone = serde_json::json!({ "id": id, "suppressed": true });
+    let mut tombstone = serde_json::json!({ "id": id, "suppressed": true });
+    // `--superseded-by` (#a-tombstone-can-name-what-superseded-it) — WHAT replaced this record, stored on
+    // the tombstone because the tombstone is the one thing the seed-reconcile never overwrites. A
+    // consolidation that retires 45 wrappers into composed widgets is otherwise unauditable a month later.
+    if let Some(new_id) = superseded_by {
+        // REFUSED, NOT STORED, on a dangling or self pointer — the same discipline `bsc project architect
+        // set` applies to an unknown persona. A pointer to nothing is worse than no pointer: it reads as
+        // provenance while naming a record no one can open, and the tombstone is durable, so the lie
+        // outlives everyone who could correct it.
+        if new_id == *id {
+            return Err(format!("'{id}' cannot supersede itself"));
+        }
+        // `current_record` returns Null for a missing id rather than Err, so ABSENCE is the Null check —
+        // `.is_err()` here would never fire and the guard would be decorative.
+        let target = current_record(&store, &new_id)?;
+        if target.is_null() {
+            return Err(format!(
+                "--superseded-by '{new_id}' is not a {noun} in the store — author it first, or omit the flag"
+            ));
+        }
+        // A target that is ITSELF a tombstone is dangling in the way that matters: the pointer names
+        // something no one can open, which is the whole failure this guard exists to prevent.
+        if target.get("suppressed").and_then(serde_json::Value::as_bool) == Some(true) {
+            return Err(format!(
+                "--superseded-by '{new_id}' is itself suppressed — a retired {noun} cannot be the replacement"
+            ));
+        }
+        tombstone["supersededBy"] = serde_json::Value::String(new_id);
+    }
     stamped_set(&store, id, tombstone, &crate::record::resolve_writer(None))?;
     // A suppressed component carries no live preview — clear any stale render-error keyed to it (#3707).
     if noun == "component" {
@@ -4276,6 +4309,38 @@ fn load_component_object(store: &bsc_json_store::Store, id: &str) -> Result<serd
 /// Parse the shared `--dir`/`--pretty` flags + the trailing positionals from an animation-verb's args.
 /// Unknown flags error specifically; each caller pulls the `<component-id>` (+ `<name>`) it needs and
 /// emits its own usage line when a positional is missing.
+/// [`parse_anim_args`] plus `--superseded-by <id>` — the suppress-only flag
+/// (#a-tombstone-can-name-what-superseded-it). Kept separate rather than widening `parse_anim_args`,
+/// which a dozen other verbs share: an unknown flag must stay an ERROR everywhere else, so
+/// `bsc ui define-animation --superseded-by x` still refuses.
+struct SuppressArgs {
+    positionals: Vec<String>,
+    dir: Option<String>,
+    superseded_by: Option<String>,
+}
+
+fn parse_suppress_args(args: &[String]) -> Result<SuppressArgs, String> {
+    let mut passthrough: Vec<String> = Vec::new();
+    let mut superseded_by = None::<String>;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--superseded-by" {
+            let v = it
+                .next()
+                .cloned()
+                .ok_or("--superseded-by needs a component id")?;
+            if v.trim().is_empty() {
+                return Err("--superseded-by needs a component id".into());
+            }
+            superseded_by = Some(v);
+        } else {
+            passthrough.push(a.clone());
+        }
+    }
+    let (positionals, dir, _pretty) = parse_anim_args(&passthrough)?;
+    Ok(SuppressArgs { positionals, dir, superseded_by })
+}
+
 fn parse_anim_args(args: &[String]) -> Result<(Vec<String>, Option<String>, bool), String> {
     let (mut dir, mut pretty) = (None::<String>, false);
     let mut positionals: Vec<String> = Vec::new();
@@ -4864,6 +4929,69 @@ mod tests {
         store.set("real", r#"{"id":"real","name":"Real","kitId":"k"}"#).unwrap();
         let err = run(vec!["unsuppress".into(), "real".into(), "--dir".into(), dir], "bsc ui").unwrap_err();
         assert!(err.contains("not a suppression tombstone"), "{err}");
+    }
+
+    #[test]
+    fn suppress_records_what_superseded_the_retired_component() {
+        // #a-tombstone-can-name-what-superseded-it. Retiring 45 card wrappers into composed widgets is
+        // unauditable unless the tombstone says WHAT replaced each one — and the tombstone is the only
+        // record `reconcileSeed` never overwrites, so it is the one durable place to put it.
+        let dir = tmp_store_dir("superseded");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("oldcard", r#"{"id":"oldcard","name":"OldCard","kitId":"base-studio-code","builtin":true}"#).unwrap();
+        store.set("newwidget", r#"{"id":"newwidget","name":"NewWidget","kitId":"base-studio-code"}"#).unwrap();
+
+        run(
+            vec!["suppress".into(), "oldcard".into(), "--superseded-by".into(), "newwidget".into(), "--dir".into(), dir.clone()],
+            "bsc ui",
+        )
+        .unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("oldcard").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["suppressed"], serde_json::Value::Bool(true));
+        assert_eq!(rec["supersededBy"], "newwidget", "the pointer rides the tombstone: {rec}");
+    }
+
+    #[test]
+    fn suppress_refuses_a_dangling_or_self_supersession() {
+        // REFUSED, NOT STORED — the same discipline `bsc project architect set` applies to an unknown
+        // persona. A durable record that names a component nobody can open is worse than no record: it
+        // reads as provenance and outlives everyone who could correct it.
+        let dir = tmp_store_dir("superseded-bad");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("oldcard", r#"{"id":"oldcard","name":"OldCard","kitId":"k","builtin":true}"#).unwrap();
+
+        let err = run(
+            vec!["suppress".into(), "oldcard".into(), "--superseded-by".into(), "ghost".into(), "--dir".into(), dir.clone()],
+            "bsc ui",
+        )
+        .unwrap_err();
+        assert!(err.contains("not a component in the store"), "{err}");
+
+        let err = run(
+            vec!["suppress".into(), "oldcard".into(), "--superseded-by".into(), "oldcard".into(), "--dir".into(), dir.clone()],
+            "bsc ui",
+        )
+        .unwrap_err();
+        assert!(err.contains("cannot supersede itself"), "{err}");
+
+        // A target that is ITSELF retired is refused too — pointing at a tombstone names something
+        // nobody can open, which is the same defect as pointing at nothing.
+        store.set("retired", r#"{"id":"retired","suppressed":true}"#).unwrap();
+        let err = run(
+            vec!["suppress".into(), "oldcard".into(), "--superseded-by".into(), "retired".into(), "--dir".into(), dir.clone()],
+            "bsc ui",
+        )
+        .unwrap_err();
+        assert!(err.contains("is itself suppressed"), "{err}");
+
+        // NONE of the attempts wrote anything — a refused flag must not leave a half-made tombstone behind.
+        assert!(store.get("oldcard").unwrap().unwrap().contains("OldCard"), "the real record is untouched");
+
+        // And a BARE suppress still behaves exactly as before (the flag is optional).
+        run(vec!["suppress".into(), "oldcard".into(), "--dir".into(), dir], "bsc ui").unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("oldcard").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["suppressed"], serde_json::Value::Bool(true));
+        assert!(rec.get("supersededBy").is_none(), "no pointer when the flag is absent: {rec}");
     }
 
     #[test]

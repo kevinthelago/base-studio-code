@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
 import {
-  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureEngineScript, inspectEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
+  resolveMemPath, lookupMem, stubsBoundaryModule, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureEngineScript, inspectEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
 } from "./componentBundle";
 
 // The esbuild-wasm bundle can't run under jsdom; these cover the PURE pieces (path resolution + srcdoc
@@ -12,6 +12,32 @@ describe("componentBundle — resolveMemPath", () => {
     expect(resolveMemPath("shared/ui/data/Card.tsx", "./chip")).toBe("shared/ui/data/chip");
     expect(resolveMemPath("shared/ui/data/Card.tsx", "../feedback/Skeleton")).toBe("shared/ui/feedback/Skeleton");
     expect(resolveMemPath("a/b/c.tsx", "../../x")).toBe("x");
+  });
+});
+
+// The DECLARED BOUNDARY (#3897): a registered `@/…` the files do not vendor resolves to a bundled-in stub
+// instead of a mem-filesystem miss. Vendored wins; unregistered is never stubbed. (That the stub then
+// BUILDS and RENDERS needs real Chromium — `e2e/previewShims.spec.ts`.)
+describe("componentBundle — stubsBoundaryModule", () => {
+  const files = { "shared/ui/data/Card.tsx": "export function Card() {}" };
+
+  it("stubs a REGISTERED platform module the files do not vendor", () => {
+    expect(stubsBoundaryModule(files, "@/store")).toBe(true);
+    expect(stubsBoundaryModule(files, "@/shared/ui/layout/Stack")).toBe(true);
+  });
+
+  it("prefers the VENDORED source over a stub, even for a registered specifier", () => {
+    // `@/shared/ui/data/Card` is registered, but it is handed in — real source must win.
+    expect(stubsBoundaryModule(files, "@/shared/ui/data/Card")).toBe(false);
+  });
+
+  it("never stubs an UNREGISTERED @/ — a missing sibling stays an honest 'module not found'", () => {
+    expect(stubsBoundaryModule(files, "@/react-d3/Nope")).toBe(false);
+  });
+
+  it("never stubs a non-first-party specifier (@bsc/ libraries and bare packages are unchanged)", () => {
+    expect(stubsBoundaryModule(files, "@bsc/algorithms/fib")).toBe(false);
+    expect(stubsBoundaryModule(files, "expo-router")).toBe(false);
   });
 });
 

@@ -100,6 +100,27 @@ describe("scanStubImports — collects the names each stubbed package is importe
     expect(map.has("react-native")).toBe(false);
     expect(map.has("@/shared/ui/Card")).toBe(false);
   });
+
+  // The declared boundary (#3897): a caller that STUBS a `@/…` rather than vendoring it needs its
+  // bindings scanned too, or the generated stub is missing the export and the build fails on it.
+  it("scans a first-party specifier the caller declares stubbed — and never a @bsc/ library", () => {
+    const files = {
+      "a.ts":
+        "import { useAppStore } from '@/store';\n" +
+        "import { Stack } from '@/shared/ui/layout/Stack';\n" + // stubbed too → collected
+        "import { Card } from '@/shared/ui/data/Card';\n" +     // vendored → NOT stubbed, skipped
+        "import { fib } from '@bsc/algorithms/fib';\n",         // library → never stubbed
+    };
+    const map = scanStubImports(files, () => false, (s) => s === "@/store" || s === "@/shared/ui/layout/Stack");
+    expect(map.get("@/store")).toEqual(["useAppStore"]);
+    expect(map.get("@/shared/ui/layout/Stack")).toEqual(["Stack"]);
+    expect(map.has("@/shared/ui/data/Card")).toBe(false);
+    expect(map.has("@bsc/algorithms/fib")).toBe(false);
+  });
+
+  it("generates a stub exporting exactly the bindings a boundary module is imported with", () => {
+    expect(shimModuleFor("@/store", ["useAppStore"])).toContain('export const useAppStore = makeStub("useAppStore");');
+  });
 });
 
 describe("shim resolution + CSP", () => {
