@@ -143,6 +143,25 @@ describe("navigateBridge — unknown ids are errors, not silent no-ops", () => {
     expect(ack.error).toContain("Heatmap");
   });
 
+  it("marks a component miss RETRYABLE so the adapter re-reads the store once", () => {
+    // #navigate-answers-from-a-stale-app-snapshot / request #55: this resolves against the app's HYDRATED
+    // copy, which only refreshes while the Design Studio is visible. A component written from a shell
+    // while the app shows Console is therefore "unknown" here despite existing in the store. The pure
+    // function cannot hydrate — it says the miss is worth a re-read and the adapter does it.
+    const v = makeVocab();
+    expect(applyNavigate({ kit: "react-d3", component: "Nope" }, v).retryAfterHydrate).toBe(true);
+    expect(applyNavigate({ kit: "nope-kit" }, v).retryAfterHydrate).toBe(true);
+  });
+
+  it("does NOT mark a miss retryable when re-reading components cannot help", () => {
+    // A hydrate refreshes components and kits. Vocabulary that does not come from the store — a bad
+    // workspace, page or state — is never fixed by re-reading, so retrying would just cost a store read
+    // and report the same error twice.
+    const v = makeVocab();
+    expect(applyNavigate({ workspace: "nowhere" }, v).retryAfterHydrate).toBeUndefined();
+    expect(applyNavigate({ state: "sideways" }, v).retryAfterHydrate).toBeUndefined();
+  });
+
   it("rejects a component in the WRONG kit even though the id exists elsewhere", () => {
     const v = makeVocab();
     const ack = applyNavigate({ kit: "react-ui", component: "Heatmap" }, v);

@@ -40,6 +40,17 @@ export interface NavRequest {
 export interface NavAck {
   id?: string;
   error?: string;
+  /** INTERNAL, never sent to Rust — the adapter strips it (#navigate-answers-from-a-stale-app-snapshot).
+   *
+   *  Set when the error is a miss that a RE-READ could plausibly fix: this resolves against the app's
+   *  hydrated copy of the store, and an external `bsc ui set` only reaches that copy while the Design
+   *  Studio is visible (`useUiActivity` is mounted there and gated on it). So a session writing a
+   *  component from a shell, with the app showing Console, gets "unknown component" for a record that
+   *  demonstrably exists — request #55.
+   *
+   *  This function stays PURE, so it only says the miss is retryable; `useNavigateBridge` owns the
+   *  async hydrate and the single retry. */
+  retryAfterHydrate?: boolean;
   /** Set when a `component` intent focused the record but did NOT switch the view (#3599/#4248).
    *
    *  Without it the ack reports the CURRENT view and reads as an ordinary success — so a caller that
@@ -98,7 +109,7 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
     return { error: `unknown page '${req.page}' — one of: ${pages.join(", ")}` };
   }
   if (req.kit !== undefined && !s.kits.some((k) => k.id === req.kit)) {
-    return { error: `unknown kit '${req.kit}' — one of: ${s.kits.map((k) => k.id).join(", ")}` };
+    return { error: `unknown kit '${req.kit}' — one of: ${s.kits.map((k) => k.id).join(", ")}`, retryAfterHydrate: true };
   }
   if (req.theme !== undefined && !s.kitThemes.some((t) => t.id === req.theme)) {
     return { error: `unknown theme '${req.theme}' — one of: ${s.kitThemes.map((t) => t.id).join(", ")}` };
@@ -119,6 +130,7 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
           ? `unknown component '${req.component}' in kit '${kitId}'` +
             (inKit.length ? ` — one of: ${inKit.join(", ")}` : " (the kit has no components)")
           : `unknown component '${req.component}' — name a kit: bsc navigate component <kit> ${req.component}`,
+        retryAfterHydrate: true,
       };
     }
   }

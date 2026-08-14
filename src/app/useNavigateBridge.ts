@@ -39,9 +39,8 @@ export function useNavigateBridge(): void {
     let disposed = false;
     const un = listen<NavRequest & { id: string }>("bsc://navigate", (e) => {
       const { id, ...req } = e.payload;
-      let ack: NavAck;
-      try {
-        ack = applyNavigate(req, {
+      const resolve = (): NavAck =>
+        applyNavigate(req, {
           // A LIVE getter, not `getState()` once: zustand hands out a new object per update, so a
           // captured snapshot would make the ack report the PRE-navigation view — a confident lie.
           read: () => useAppStore.getState(),
@@ -49,15 +48,40 @@ export function useNavigateBridge(): void {
           pages: PROJECT_MODES.map((p: { id: string }) => p.id),
           humanPresent,
         });
-      } catch (err) {
-        // A throw here would silently strand the Rust waiter. Turn it into a stated error instead.
-        ack = { id, error: `navigate threw: ${err instanceof Error ? err.message : String(err)}` };
-        log.error(`navigate ${id} threw: ${String(err)}`);
-      }
-      void invoke("navigate_ack", { ack: { ...ack, id } }).catch((e2) => {
-        // Nothing left to do — the caller will time out. Log it so the cause isn't a mystery.
-        log.error(`navigate_ack failed for ${id}: ${String(e2)}`);
-      });
+
+      void (async () => {
+        let ack: NavAck;
+        try {
+          ack = resolve();
+          // RE-READ ONCE ON A RESOLVABLE MISS (#navigate-answers-from-a-stale-app-snapshot).
+          //
+          // `applyNavigate` resolves against the app's HYDRATED copy of the component store, and that
+          // copy only refreshes while the Design Studio is visible (`useUiActivity` is mounted there and
+          // gated on it). A session that writes a component from a shell while the app shows Console
+          // therefore gets "unknown component" for a record `bsc ui get` can print — request #55.
+          //
+          // A miss is the one moment the app has evidence its snapshot may be behind, so it is where the
+          // re-read belongs. Bounded to a SINGLE retry by construction — there is no loop here — so a
+          // genuinely unknown id still errors after one extra hydrate instead of spinning. Cheaper than
+          // un-gating the activity watcher, which would poll in every workspace to serve a rare write.
+          if (ack.retryAfterHydrate) {
+            await useAppStore.getState().hydrateComponents();
+            if (disposed) return;
+            ack = resolve();
+          }
+        } catch (err) {
+          // A throw here would silently strand the Rust waiter. Turn it into a stated error instead.
+          ack = { id, error: `navigate threw: ${err instanceof Error ? err.message : String(err)}` };
+          log.error(`navigate ${id} threw: ${String(err)}`);
+        }
+        // `retryAfterHydrate` is OURS — strip it rather than shipping a field the Rust `NavAck` never
+        // declared.
+        const { retryAfterHydrate: _retry, ...wire } = ack;
+        void invoke("navigate_ack", { ack: { ...wire, id } }).catch((e2) => {
+          // Nothing left to do — the caller will time out. Log it so the cause isn't a mystery.
+          log.error(`navigate_ack failed for ${id}: ${String(e2)}`);
+        });
+      })();
     });
     return () => {
       disposed = true;
