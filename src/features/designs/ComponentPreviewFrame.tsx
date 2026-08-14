@@ -17,11 +17,11 @@ import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/comp
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { compileAnimationsCss, animClassName, type AnimationDef } from "@/shared/ui/kit";
 import { componentPreviewFiles, supportedStates, type KitArtifact, type PreviewState } from "./lib/componentPreview";
-import { usePreviewData } from "./usePreviewData";
+import { usePreviewData } from "@/features/designs/usePreviewData";
 import { recordPreviewError } from "./lib/componentBridge";
 import { registerPreviewFrame, unregisterPreviewFrame } from "./lib/previewRegistry";
 import { makeLibraryResolvers } from "./lib/libraryModules";
-import { useActiveSoundKit } from "./lib/useActiveSoundKit";
+import { useActiveSoundKit } from "@/features/designs/lib/useActiveSoundKit";
 import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
 
 // The packaged kit artifact carries each built-in's verbatim `source` + the `runtime` (@/) closure

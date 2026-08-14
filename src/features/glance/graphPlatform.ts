@@ -26,7 +26,7 @@ import * as ResumeProject from "./lib/resumeProject";
 import * as StreamProgress from "./lib/streamProgress";
 import * as StudioProject from "./lib/studioProject";
 import * as UseFleetHeld from "./lib/useFleetHeld";
-import * as UseFleetIssueState from "./lib/useFleetIssueState";
+import * as UseFleetIssueState from "@/features/glance/lib/useFleetIssueState";
 import * as UseGlanceFaults from "./lib/useGlanceFaults";
 import * as UseGlanceProjects from "./lib/useGlanceProjects";
 import * as UseProjectComplete from "./lib/useProjectComplete";

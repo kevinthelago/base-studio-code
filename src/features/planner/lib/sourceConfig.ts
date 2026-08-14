@@ -31,8 +31,8 @@ export { defaultSourceConfig, newDeclaredSource } from "./sourceSpecs";
 // catalog, so `connector(id)` resolves any id to a generic fallback shape (a one-click token connector).
 export {
   connector, connectorColor, sampleScan, proposeFromPitch, redactedHandle,
-} from "./sourceCatalog";
-export type { RuntimeConnectorView } from "./sourceCatalog";
+} from "@/features/planner/lib/sourceCatalog";
+export type { RuntimeConnectorView } from "@/features/planner/lib/sourceCatalog";
 
 export {
   isConnected, connectedCount, allSourcesConnected, sourceChecks,

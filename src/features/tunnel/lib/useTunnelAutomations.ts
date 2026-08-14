@@ -13,7 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { dispatchAutomation } from "@/features/automations";
-import { automationToFrame, planArm } from "./automationControl";
+import { automationToFrame, planArm } from "@/features/tunnel/lib/automationControl";
 import { tunnelSetAutomations, tunnelAutomationFailed } from "./tunnelClient";
 import { log } from "@/shared/lib/core/log";
 

@@ -8,9 +8,9 @@
 // hooks the app mounts, and the protocol/client live here.
 export { TunnelSettings } from "./Tunnel";
 export { useTunnelSync } from "@/features/tunnel/useTunnelSync";
-export { useStoreProjector } from "./useStoreProjector";
+export { useStoreProjector } from "@/features/tunnel/useStoreProjector";
 export { useTunnelAutomations } from "./lib/useTunnelAutomations";
-export { useTunnelHookTelemetry } from "./lib/useTunnelHookTelemetry";
+export { useTunnelHookTelemetry } from "@/features/tunnel/lib/useTunnelHookTelemetry";
 export { useTunnelCoordControl } from "./lib/useTunnelCoordControl";
 
 // #1545: public API for cross-feature consumers (app/console, planner, components).

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveStreamFlow, resolveStreamProfile } from "./fleetPolicy";
+import { resolveStreamFlow, resolveStreamProfile } from "@/features/planner/fleet/fleetPolicy";
 import { DEFAULT_FLOW, type AgentFlow } from "./agentFlow";
 
 const STREAM_FLOW: AgentFlow = { autonomy: "confirm", push: "commit-only", trigger: "on-green", gate: "soft" };

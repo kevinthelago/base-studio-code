@@ -9,4 +9,4 @@ export {
   exportStudioToGist,
   importStudioFromGist,
   type Studio,
-} from "./lib/studioGist";
+} from "@/features/studio/lib/studioGist";

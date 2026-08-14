@@ -18,7 +18,7 @@ import { roleCapability } from "../session/sessionRoles";
 import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "../core/llmConfig";
 import { oneShotComplete } from "../core/claudeComplete";
 import type { WorktreeChanges } from "./worktreeChanges";
-import { planWarden, parseAuditCommands, zipWorktreeChanges, wardenSweepTargets, livePaneIdsOf, type WardenSession } from "./warden";
+import { planWarden, parseAuditCommands, zipWorktreeChanges, wardenSweepTargets, livePaneIdsOf, type WardenSession } from "@/shared/lib/fleet/warden";
 import { buildJudgePrompt, parseJudgeVerdict, selectForJudging } from "./wardenJudge";
 import { completedWorkerPanes, doneIssueRefs } from "./streamCompletion";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";

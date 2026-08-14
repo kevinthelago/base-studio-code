@@ -9,7 +9,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { AlgoImpl } from "./lib/knowledge";
-import { loadGraph } from "./lib/graphBridge";
+import { loadGraph } from "@/features/algorithms/lib/graphBridge";
 
 export interface AlgorithmsSlice {
   /** Every implementation in the writable store — the set `resolveGraphSource` matches `provides` against.

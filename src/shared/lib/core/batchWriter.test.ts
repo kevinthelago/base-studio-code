@@ -4,7 +4,7 @@
 // per sweep (measured: 157.1s). Nothing about the result would reveal it, so the assertions here are about
 // the WRITE COUNT — the same shape as #4132's store-commit-count test one layer down.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { makeBatchWriter } from "./batchWriter";
+import { makeBatchWriter } from "@/shared/lib/core/batchWriter";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());

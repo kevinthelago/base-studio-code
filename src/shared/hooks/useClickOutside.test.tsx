@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { useRef } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { useClickOutside } from "./useClickOutside";
+import { useClickOutside } from "@/shared/hooks/useClickOutside";
 
 function Harness({ onClose, active, withIgnore = false }: { onClose: () => void; active: boolean; withIgnore?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);

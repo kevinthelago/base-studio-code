@@ -10,7 +10,7 @@ import * as SoundDescriptor from "./lib/soundDescriptor";
 import * as SoundGraph from "./lib/soundGraph";
 import * as SoundKits from "./lib/soundKits";
 import * as Synth from "./lib/synth";
-import * as UseSoundKits from "./useSoundKits";
+import * as UseSoundKits from "@/features/sounds/useSoundKits";
 import * as GraphPlatform from "@/features/sounds/graphPlatform";
 
 let done = false;

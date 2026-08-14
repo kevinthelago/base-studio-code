@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fontSize, toneColor } from "./type";
+import { fontSize, toneColor } from "@/shared/ui/typography/type";
 
 describe("fontSize()", () => {
   it("maps named rungs to their pixel values", () => {

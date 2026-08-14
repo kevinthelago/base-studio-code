@@ -41,7 +41,7 @@ vi.mock("@/shared/lib/core/bsc", async (orig) => ({
   bscJson: vi.fn().mockResolvedValue([]),
 }));
 
-import { useStoreProjector } from "./useStoreProjector";
+import { useStoreProjector } from "@/features/tunnel/useStoreProjector";
 import { publishTunnelDomain, resetTunnelDomains } from "./lib/tunnelDomains";
 
 const publishedDomains = () =>

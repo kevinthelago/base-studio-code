@@ -4,7 +4,7 @@
 // are thin pass-throughs to focusedPlan's pure fns (tested there), so they aren't re-asserted here.
 import { describe, it, expect } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { usePlanFocusedPane, type PlanFocusedPaneOpts } from "./usePlanFocusedPane";
+import { usePlanFocusedPane, type PlanFocusedPaneOpts } from "@/features/planner/session/usePlanFocusedPane";
 import type { Stage } from "../stages/focusedPlan";
 
 const stage = (key: string, status: Stage["status"] = "upcoming"): Stage => ({

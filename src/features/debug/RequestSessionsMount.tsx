@@ -27,7 +27,7 @@ import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { planPool, type PoolSession, type RequestRow } from "@/shared/lib/session/poolPlan";
 import { poolPaneId, poolSlotFromPaneId } from "@/shared/lib/session/requestSpawn";
 import { DEBUG_INIT_CMD } from "./DebugSessionMount";
-import { poolCharter } from "./requestSession";
+import { poolCharter } from "@/features/debug/requestSession";
 
 /** How often to reconcile the pool against the queue. Slow on purpose: a request is not urgent, and this
  *  is also the cadence `pollsWarming` advances at (`poolPlan.MAX_WARM_POLLS` × this ≈ the warm-out grace). */

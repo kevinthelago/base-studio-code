@@ -1,4 +1,4 @@
-import type { FirstRunInstall } from "./providers/claudeInstall";
+import type { FirstRunInstall } from "@/app/console/lib/providers/providers/claudeInstall";
 import type { LlmConfig } from "@/shared/lib/core/llmConfig";
 
 export interface ProviderLaunchConfig {

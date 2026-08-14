@@ -7,7 +7,7 @@ import type { AgentProfile } from "@/features/security";
 import type { FleetPlan } from "../fleet/planFleet";
 import type { PlanIssue } from "../issues/planIssues";
 import type { Section } from "../github/ghStructure";
-import type { NodeProgress } from "../github/ghProgress";
+import type { NodeProgress } from "@/features/planner/github/ghProgress";
 import type { PaneAutomation, PaneSkill } from "./projectPane.types";
 import type { PlanFeature } from "../issues/featureList";
 import type { DeployConfig } from "../lib/deployConfig";

@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useAppStore } from "@/store";
-import { usePlannerPromptDelivery } from "./usePlannerPromptDelivery";
+import { usePlannerPromptDelivery } from "@/features/planner/session/usePlannerPromptDelivery";
 
 describe("usePlannerPromptDelivery", () => {
   beforeEach(() => {

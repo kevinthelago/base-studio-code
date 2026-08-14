@@ -1,7 +1,7 @@
 // #3616 — the Design Studio's preview-error scan must PAUSE while the Studio is kept-mounted but hidden,
 // or it esbuild-builds + iframe-probes 154 components forever (~40% renderer CPU for a page nobody's on).
 import { describe, it, expect } from "vitest";
-import { designStudioVisible } from "./studioVisibility";
+import { designStudioVisible } from "@/features/designs/lib/studioVisibility";
 
 describe("designStudioVisible (#3616)", () => {
   it("is true ONLY on the designs page of the projects workspace", () => {

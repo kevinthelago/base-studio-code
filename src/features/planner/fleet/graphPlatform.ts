@@ -16,8 +16,8 @@ import * as FleetHealthLib from "./lib/fleetHealth";
 // #4238 — `WorkerDetail` is now a `provides` RECORD, so the loader vendors its source rather than
 // handing back this module (which stays as the fallback). Vendoring makes the loader responsible for
 // what the detail panel reaches, and these five are what it reaches.
-import * as FleetWorker from "./fleetWorker";
-import * as WorkerDetailHelpers from "./workerDetail.helpers";
+import * as FleetWorker from "@/features/planner/fleet/fleetWorker";
+import * as WorkerDetailHelpers from "@/features/planner/fleet/workerDetail.helpers";
 import * as WorkerDetailPlaceholder from "./WorkerDetailPlaceholder";
 import * as WorkerModals from "./WorkerModals";
 import * as Security from "@/features/security";

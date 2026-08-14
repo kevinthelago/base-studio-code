@@ -50,7 +50,7 @@ export { circularLayout, coordinateLayout, layoutFor } from "./viz/renderers/gra
 export { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./viz/examples/graphAlgos";
 export { programVizForImpl, resolveVizExample, resolveKind } from "./viz/examples/registry";
 export { useVizForImpl } from "./viz/useVizForImpl";
-export { classifyKind, type Classifiable } from "./lib/classifyKind";
+export { classifyKind, type Classifiable } from "@/features/algorithms/lib/classifyKind";
 export type { VizExample } from "./viz/examples/registry";
 // Studio network (#2940): run an impl's vizCode in the sandbox → a normalized dataset a component
 // preview can bind to (the algorithms-drive-previews payoff).

@@ -10,7 +10,7 @@ import * as ConsoleModel from "./lib/consoleModel";
 import * as AuditRows from "./lib/auditRows";
 import * as BadgeTone from "./lib/badgeTone";
 import * as AppSession from "./lib/appSession";
-import * as FlowModel from "./lib/flowModel";
+import * as FlowModel from "@/features/security/lib/flowModel";
 import * as GraphPlatform from "@/features/security/graphPlatform";
 
 let done = false;

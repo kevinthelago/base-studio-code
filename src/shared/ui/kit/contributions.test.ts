@@ -4,7 +4,7 @@ import {
   applyContributionsToRoot,
   contributionFromCategories,
   graphCategoryToken,
-} from "./contributions";
+} from "@/shared/ui/kit/contributions";
 
 describe("design contributions overlay (#2650)", () => {
   it("graphCategoryToken maps a category key to its --graph-category-<key> slot", () => {

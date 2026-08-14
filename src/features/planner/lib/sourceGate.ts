@@ -4,7 +4,7 @@
 // without a round-trip to the store). Split out of sourceValidate.ts (#1712); the Data Model derivation
 // lives in dataModelDerivation.ts and the type model in sourceSpecs.ts.
 
-import type { ReadinessCheck } from "./readiness";
+import type { ReadinessCheck } from "@/features/planner/lib/readiness";
 import { deriveDataModel } from "./dataModelDerivation";
 import type { DeclaredSource, SourceConfig } from "./sourceSpecs";
 

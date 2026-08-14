@@ -15,7 +15,7 @@ import { useFleetWakeBridge } from "./useFleetWakeBridge";
 import { useSystemSessionBridge } from "./useSystemSessionBridge";
 import { useFleetDirectorBridge } from "./useFleetDirectorBridge";
 import { useDebugChannel } from "./useDebugChannel";
-import { useDockBack } from "./useDockBack";
+import { useDockBack } from "@/app/useDockBack";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 // #4186: Console renders FROM THE GRAPH — the host mounts the authored `consolepage` node. The file

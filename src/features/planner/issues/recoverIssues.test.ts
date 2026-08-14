@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { recoverIssue, recoverIssues, type GitHubIssueLike } from "./recoverIssues";
+import { recoverIssue, recoverIssues, type GitHubIssueLike } from "@/features/planner/issues/recoverIssues";
 import { renderIssueBody, type PlanIssue } from "./planIssues";
 
 const issue = (p: Partial<PlanIssue>): PlanIssue => ({

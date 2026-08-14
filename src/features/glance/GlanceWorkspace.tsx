@@ -53,7 +53,7 @@ import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "./lib/useProjectFleet";
 import { useStreamProgress } from "./lib/useStreamProgress";
 import { withStreamProgress } from "./lib/streamProgress";
-import { useFleetIssueState } from "./lib/useFleetIssueState";
+import { useFleetIssueState } from "@/features/glance/lib/useFleetIssueState";
 import type { DockPlan } from "./GlanceChatDock";
 import { fleetPlanProgress, unionDone, mergeStreamProgress } from "./lib/fleetPlanProgress";
 import { useFleetHeld } from "./lib/useFleetHeld";

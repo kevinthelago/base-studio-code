@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveReopen } from "./reopenProject";
+import { resolveReopen } from "@/features/planner/list/reopenProject";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
 import type { LocalProjectLite } from "./drafts";
 

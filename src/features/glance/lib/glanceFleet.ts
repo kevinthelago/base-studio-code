@@ -5,7 +5,7 @@
 // sample project topology) — isolated here so wiring the real fleet later is a drop-in.
 import type { GRawNode, GRawEdge, GRole, GEdgeKind, GNodeComm } from "./glanceGraph";
 import type { GlanceData, ProjectLite } from "./glanceData";
-import { hashAbs } from "./hash";
+import { hashAbs } from "@/features/glance/lib/hash";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 import { archetypeById, positionComms, type Team, type Position, type Relationship } from "@/features/teams";

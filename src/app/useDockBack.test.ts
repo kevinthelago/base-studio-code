@@ -17,7 +17,7 @@ vi.mock("@/shared/lib/core/dockBack", () => ({
   },
 }));
 
-import { useDockBack } from "./useDockBack";
+import { useDockBack } from "@/app/useDockBack";
 import { useAppStore } from "@/store";
 
 beforeEach(() => {

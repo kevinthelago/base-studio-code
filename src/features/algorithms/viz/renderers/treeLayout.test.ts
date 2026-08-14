@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { treeLayout, TREE_VIEW } from "./treeLayout";
+import { treeLayout, TREE_VIEW } from "@/features/algorithms/viz/renderers/treeLayout";
 
 describe("treeLayout (#3270)", () => {
   it("returns an empty map for an empty tree", () => {

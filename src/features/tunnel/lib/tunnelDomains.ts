@@ -2,7 +2,7 @@
 // planner's plan-domain push share, bound to the real `tunnel_set_store_state` command.
 // Kept apart from domainPublisher.ts so the engine stays Tauri-free and unit-testable.
 
-import { createDomainPublisher } from "./domainPublisher";
+import { createDomainPublisher } from "@/features/tunnel/lib/domainPublisher";
 import { tunnelSetStoreState, type StoreDomain } from "./tunnelClient";
 import { log } from "@/shared/lib/core/log";
 

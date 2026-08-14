@@ -21,7 +21,7 @@ vi.mock("@/shared/lib/core/logsBridge", () => ({
 
 import { logsTail } from "@/shared/lib/core/logsBridge";
 import { tunnelSetHookTelemetry } from "./tunnelClient";
-import { useTunnelHookTelemetry, toHookTelemetryFrame } from "./useTunnelHookTelemetry";
+import { useTunnelHookTelemetry, toHookTelemetryFrame } from "@/features/tunnel/lib/useTunnelHookTelemetry";
 
 // A day the fixed `now` below falls inside the 14-day window of.
 const NOW = new Date("2026-05-29T12:00:00.000Z");

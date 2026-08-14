@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAppStore } from "@/store";
 import { BUILTIN_ORGS } from "./lib/team";
-import * as bridge from "./lib/orgBridge";
+import * as bridge from "@/features/teams/lib/orgBridge";
 
 describe("org store slice (#2193)", () => {
   beforeEach(() => {

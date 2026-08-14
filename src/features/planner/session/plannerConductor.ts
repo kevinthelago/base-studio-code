@@ -6,7 +6,7 @@
 // ConductorState) lives in Planning.tsx. No React/Tauri — unit-testable.
 import type { BlueprintStage, ModelCapabilityTier } from "../stages/blueprints";
 import { resolveStagePrompt } from "../stages/blueprints";
-import { activeSubstep } from "../stages/planSubsteps";
+import { activeSubstep } from "@/features/planner/stages/planSubsteps";
 
 export interface StagePrompt {
   /** Human label for the picker row (the stage name, or a substep's label/key). */

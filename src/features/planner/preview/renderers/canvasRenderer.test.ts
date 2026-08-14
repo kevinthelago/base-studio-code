@@ -7,7 +7,7 @@ import type { RenderableChunk } from '../types';
 // definition now, so a test that wants it in the registry must say so
 // (renderers-register-at-a-named-site-not-on-import).
 import { registerRenderer } from '../registry';
-import { canvasRenderer } from './canvasRenderer';
+import { canvasRenderer } from '@/features/planner/preview/renderers/canvasRenderer';
 registerRenderer(canvasRenderer);
 
 function makeContainer(): HTMLDivElement {

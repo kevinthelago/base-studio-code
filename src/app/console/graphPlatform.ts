@@ -14,7 +14,7 @@
 // why the terminals were moved out of the page in the first place.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 // — the pane system's pure helpers + hooks —
-import * as ConsoleFocus from "./lib/consoleFocus";
+import * as ConsoleFocus from "@/app/console/lib/consoleFocus";
 import * as ModelDisplay from "./lib/modelDisplay";
 import * as Models from "./lib/models";
 import * as PaneIdentity from "./lib/paneIdentity";
@@ -22,7 +22,7 @@ import * as PaneStatus from "./lib/paneStatus";
 import * as Providers from "./lib/providers";
 import * as UseIdleReaper from "@/app/console/lib/useIdleReaper";
 import * as UsePaneActivityFeed from "./lib/usePaneActivityFeed";
-import * as UsePaneTokenUsage from "./lib/usePaneTokenUsage";
+import * as UsePaneTokenUsage from "@/app/console/lib/usePaneTokenUsage";
 import * as MenuPlacement from "./panes/menuPlacement";
 import * as ViewDefs from "./panes/viewDefs";
 // — the pane VIEWS: the behaviour a pane cell hosts —

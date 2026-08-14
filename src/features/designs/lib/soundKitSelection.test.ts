@@ -17,7 +17,7 @@ import { bsc } from "@/shared/lib/core/bsc";
 import type { SoundKit } from "@/features/sounds";
 import type { BlueprintSoundKit } from "@/features/planner/stages/blueprints";
 import { makeLibraryResolvers, resolveLibrarySpec, libraryModuleResolver, DEFAULT_SOUND_KIT } from "./libraryModules";
-import { selectSoundKit } from "./soundKitSelection";
+import { selectSoundKit } from "@/features/designs/lib/soundKitSelection";
 
 const mockBsc = vi.mocked(bsc);
 

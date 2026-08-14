@@ -3,7 +3,7 @@ import {
   CLAUDE_CLI_PKG,
   claudeFirstRunAction,
   claudeFirstRunInstall,
-} from "./claudeInstall";
+} from "@/app/console/lib/providers/providers/claudeInstall";
 
 describe("claudeFirstRunAction (#1277)", () => {
   it("is a no-op when the CLI is already present", () => {

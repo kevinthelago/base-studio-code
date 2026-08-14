@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { uiNeedsRouting, type DesignRouteState } from "./useDesignRouteState";
+import { uiNeedsRouting, type DesignRouteState } from "@/features/planner/session/useDesignRouteState";
 
 const design = (over: Partial<DesignRouteState> = {}): DesignRouteState => ({ hasFiles: false, changed: false, ...over });
 

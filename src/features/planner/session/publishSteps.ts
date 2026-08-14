@@ -12,9 +12,9 @@ import { resolveRepoPublic } from "@/store/slices/plan";
 import type { GhStatusMap, GhItemState } from "./GitHubStructureCard";
 import { parseFeaturesFile, featuresToPlanIssues } from "../issues/featureList";
 import { depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, type parseDependencyManifest } from "../issues/dependencies";
-import { resolveIssueAssignee } from "../fleet/fleetAssignee";
+import { resolveIssueAssignee } from "@/features/planner/fleet/fleetAssignee";
 import type { AgentStream } from "../fleet/planFleet";
-import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../lib/repoScaffold";
+import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "@/features/planner/lib/repoScaffold";
 import { renderIssueBody, subIssueLinks, type PlanIssue } from "../issues/planIssues";
 import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "@/shared/lib/github/issueProvenance";
 

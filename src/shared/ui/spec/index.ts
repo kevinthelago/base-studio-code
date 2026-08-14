@@ -16,4 +16,4 @@ export type { KitRendererProps, KitBindings } from "./KitRenderer";
 export { SelfWiredKitRenderer } from "./SelfWiredKitRenderer";
 export type { SelfWiredKitRendererProps } from "./SelfWiredKitRenderer";
 export { visitNodes, collectActions } from "./specWalk";
-export { demoSpec } from "./demoSpec";
+export { demoSpec } from "@/shared/ui/spec/demoSpec";

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { findPlanInjections, injectionSignature, injectionGate } from "./planInjection";
+import { findPlanInjections, injectionSignature, injectionGate } from "@/features/planner/lib/planInjection";
 
 const POISONED = {
   "context/goal.md": "Build a CRM.",

@@ -10,7 +10,7 @@ import { markStateAttrs, nodeOpStateAttrs } from "../../lib/binding";
 import type { TreeFrame } from "../../lib/trace";
 import type { StructureRenderer } from "../registry";
 import { TREE_VIZ_ANIM_CLASSES, ensureTreeViewMotion } from "@/features/algorithms/viz/renderers/treeViewMotion";
-import { treeLayout, TREE_VIEW as VIEW } from "./treeLayout";
+import { treeLayout, TREE_VIEW as VIEW } from "@/features/algorithms/viz/renderers/treeLayout";
 import "./treeView.css";
 
 const NODE_R = 16;

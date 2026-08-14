@@ -14,7 +14,7 @@
 
 import type { Frame } from "../../lib/trace";
 import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
-import { classifyKind, type Classifiable } from "../../lib/classifyKind";
+import { classifyKind, type Classifiable } from "@/features/algorithms/lib/classifyKind";
 import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm, runStackAlgorithm, runTreeAlgorithm, runScene, type GraphInput } from "../../lib/tracer";
 import { runInSandbox } from "./vizSandbox";
 import type { VizRun } from "./vizProgram";

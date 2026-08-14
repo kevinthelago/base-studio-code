@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { expandedPreviewFit } from "./expandedPreviewFit";
+import { expandedPreviewFit } from "@/features/designs/lib/expandedPreviewFit";
 
 describe("expandedPreviewFit (#3551)", () => {
   it("fills the whole canvas at scale 1 in fluid (auto) mode — width-first, no host downscale", () => {

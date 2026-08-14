@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { createHash, webcrypto } from "node:crypto";
-import { kitToManifest, kitFromManifest, kitShareCode, kitFromCode, publishKitToGist, KIT_KIND, type KitPayload } from "./kitGist";
+import { kitToManifest, kitFromManifest, kitShareCode, kitFromCode, publishKitToGist, KIT_KIND, type KitPayload } from "@/features/designs/lib/kitGist";
 import { validateManifest, type ExtensionManifest } from "@/features/planner/lib/gist/manifest";
 import type { ComponentRecord, Kit } from "./model";
 

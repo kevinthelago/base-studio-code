@@ -1,5 +1,5 @@
 import { useAppStore } from "@/store";
-import { armedSummary } from "./format";
+import { armedSummary } from "@/features/automations/format";
 import { fmtClock } from "@/shared/lib/core/format";
 import { Box } from "@/shared/ui/layout/Box";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";

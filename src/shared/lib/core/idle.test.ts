@@ -6,7 +6,7 @@
 // The third is cancellation, because a superseded computation landing after its inputs changed is how a
 // deferred derivation shows the wrong answer.
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { runWhenIdle, IDLE_TIMEOUT_MS } from "./idle";
+import { runWhenIdle, IDLE_TIMEOUT_MS } from "@/shared/lib/core/idle";
 
 type IdleGlobal = {
   requestIdleCallback?: unknown;

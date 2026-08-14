@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseMcpLog, aggregateMcpTelemetry } from "./mcpTelemetry";
+import { parseMcpLog, aggregateMcpTelemetry } from "@/features/mcp/lib/mcpTelemetry";
 
 const NOW = new Date("2026-06-15T12:00:00Z");
 const day = (n: number) => NOW.getTime() - n * 86_400_000;

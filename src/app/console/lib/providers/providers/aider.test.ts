@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aiderProvider, buildAiderCommand, aiderFirstRunInstall } from "./aider";
+import { aiderProvider, buildAiderCommand, aiderFirstRunInstall } from "@/app/console/lib/providers/providers/aider";
 import type { LlmConfig } from "@/shared/lib/core/llmConfig";
 
 const anthropic: LlmConfig = { provider: "anthropic", model: "claude-sonnet-4-6", apiKey: "k", baseUrl: "" };

@@ -3,7 +3,7 @@ import type { OpenCommission } from "./coordination.types";
 import {
   activeTargets, authorInjections, deliverBackInjections, authorTaskPrompt,
   deliverBackPrompt, isStudioTarget, isOpen, STUDIO_PANE,
-} from "./studioNetworkDrive";
+} from "@/shared/lib/fleet/studioNetworkDrive";
 import {
   designerSessionId,
   librarianSessionId,

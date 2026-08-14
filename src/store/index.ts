@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { persistStorage } from "@/shared/lib/core/storage";
-import { grandfatherTriaged, grandfatherLocalPublished } from "./triagedMigration";
+import { grandfatherTriaged, grandfatherLocalPublished } from "@/store/triagedMigration";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
 import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blueprints";

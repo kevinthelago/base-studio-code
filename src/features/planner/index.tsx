@@ -30,7 +30,7 @@ import { PlanningGraphHost } from "./session/PlanningGraphHost";
 import { TeamsPanel } from "@/features/teams";
 import { SoundsGraphHost } from "@/features/sounds";
 import { DataGraphPage } from "@/features/data";
-import { useProjectScan } from "./list/useProjectScan";
+import { useProjectScan } from "@/features/planner/list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
 

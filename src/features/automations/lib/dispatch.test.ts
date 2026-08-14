@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { dispatchAutomation, type DispatchDeps } from "./dispatch";
+import { dispatchAutomation, type DispatchDeps } from "@/features/automations/lib/dispatch";
 import type { Automation, AutomationRun } from "./scheduler";
 
 function auto(over: Partial<Automation> = {}): Automation {

@@ -16,7 +16,7 @@ import { SoundsInspector } from "./SoundsInspector";
 import { buildSoundGraph, layoutSoundGraph, playableCueForNode, NODE_W, NODE_H, type SoundNode } from "./lib/soundGraph";
 import { playCue } from "./lib/synth";
 import { BUILTIN_KITS } from "./lib/soundKits";
-import { useSoundKits } from "./useSoundKits";
+import { useSoundKits } from "@/features/sounds/useSoundKits";
 import "./sounds.css";
 
 export function SoundsWorkspace() {

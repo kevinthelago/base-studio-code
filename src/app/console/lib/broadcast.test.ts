@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeBroadcastTargets } from "./broadcast";
+import { computeBroadcastTargets } from "@/app/console/lib/broadcast";
 import type { PaneIdentityTab } from "./paneIdentity";
 
 // A positional/legacy tab (no id, no kind) → paneIdFor yields `t{idx}p{n}`.

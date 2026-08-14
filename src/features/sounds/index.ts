@@ -4,7 +4,7 @@ export { SoundsWorkspace } from "./SoundsWorkspace";
 // both copies coexist under the record<->file parity guard.
 export { SoundsGraphHost } from "./SoundsGraphHost";
 export { BUILTIN_KITS, STARTER_KIT, mergeKits } from "./lib/soundKits";
-export { loadKits, pushKit, dropKit } from "./lib/soundBridge";
+export { loadKits, pushKit, dropKit } from "@/features/sounds/lib/soundBridge";
 export { playCue, compileCue, voiceDuration, type CompiledCue, type CompiledVoice } from "./lib/synth";
 export {
   validateKit, SOUND_CATEGORIES, CATEGORY_LABEL,

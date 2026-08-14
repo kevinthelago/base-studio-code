@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { gatedProjects, newlyLaunchable } from "./useFleetGate";
+import { gatedProjects, newlyLaunchable } from "@/shared/lib/fleet/useFleetGate";
 import type { GateStream } from "./streamGate";
 
 describe("gatedProjects", () => {
@@ -72,7 +72,7 @@ describe("useFleetGate performs no launch", () => {
     const { renderHook } = await import("@testing-library/react");
     const { useAppStore } = await import("@/store");
     const { invoke } = await import("@tauri-apps/api/core");
-    const { useFleetGate } = await import("./useFleetGate");
+    const { useFleetGate } = await import("@/shared/lib/fleet/useFleetGate");
 
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "fleet_landed_streams") return Promise.resolve(["core"]);  // core has landed…
@@ -97,7 +97,7 @@ describe("useFleetGate performs no launch", () => {
   }, 15_000);
 
   it("keeps its pure core, so re-enabling is restoring a body rather than a rewrite", async () => {
-    const m = await import("./useFleetGate");
+    const m = await import("@/shared/lib/fleet/useFleetGate");
     expect(typeof m.gatedProjects).toBe("function");
     expect(typeof m.newlyLaunchable).toBe("function");
   });

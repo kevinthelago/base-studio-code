@@ -4,7 +4,7 @@
 // raw stdout (a JSON string) the bridge parses, writes feed the JSON body on stdin.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { loadLibrary, pushSkill, dropSkill, pushGroup, dropGroup } from "./lib/skillBridge";
+import { loadLibrary, pushSkill, dropSkill, pushGroup, dropGroup } from "@/features/skills/lib/skillBridge";
 import { blankSkill, seedSkills, type SkillDef } from "./lib/skills";
 import { useAppStore } from "@/store";
 

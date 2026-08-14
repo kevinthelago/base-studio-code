@@ -11,7 +11,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Skeleton, SkeletonText } from "@/shared/ui/feedback/Skeleton";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import type { GhLabel } from "@/shared/lib/github/types";
-import { BOARD_QUERY } from "./projectBoard.query";
+import { BOARD_QUERY } from "@/features/planner/github/projectBoard.query";
 import type { GhUser, BoardIssue, BoardColumn } from "./projectBoard.types";
 import { Column } from "./Column";
 import { IssueDrawer } from "./IssueDrawer";

@@ -7,7 +7,7 @@
 import { useRef, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { KNOWLEDGE, type KnowledgeGraph } from "./lib/knowledge";
-import { loadGraph } from "./lib/graphBridge";
+import { loadGraph } from "@/features/algorithms/lib/graphBridge";
 
 /** How often to re-read the store. The dump is a fast local read; the librarian edits show within a tick. */
 const HYDRATE_MS = 5000;

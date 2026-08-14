@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveIssueAssignee } from "./fleetAssignee";
+import { resolveIssueAssignee } from "@/features/planner/fleet/fleetAssignee";
 import type { AgentStream } from "./planFleet";
 
 const stream = (over: Partial<AgentStream>): AgentStream => ({
