@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { componentPreviewFiles, bootstrapSource, samplePropValue, isErrorProp, supportedStates, previewCycleStates, looksBuildableModule, isPreviewBuildable, hasCodeElision, erasedSpecs, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, componentBuildable, bootstrapSource, samplePropValue, isErrorProp, supportedStates, previewCycleStates, looksBuildableModule, isPreviewBuildable, hasCodeElision, erasedSpecs, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord, PropSpec } from "./model";
 
 const prop = (name: string, type: string, req = false): PropSpec => ({ name, type, req, desc: "" });
@@ -149,6 +149,39 @@ describe("componentPreviewFiles — sibling vendoring (#3112)", () => {
       srcText: 'import { Nope } from "@/react-d3/Nope";\nexport function X() { return null; }',
     };
     expect(componentPreviewFiles(dangling, ARTIFACT, [chartFrame, axis])).toBeNull();
+  });
+});
+
+// The DECLARED BOUNDARY, preview side. The doctor has always exempted a registered platform module; the
+// preview never did, so it REFUSED to build components the doctor called healthy — and `navigate` then
+// acked a mount that never happened, which is what made it read as a stale cache. `@/store` and
+// `@/shared/ui/layout/Stack` are registered in `platform-modules.json`; `@/react-d3/Nope` is not.
+describe("componentPreviewFiles — the declared boundary (#3897)", () => {
+  const importer = (spec: string): ComponentRecord => ({
+    ...base, id: "x", name: "X", kitId: "react-d3", src: "react-d3/X.tsx", source: undefined,
+    srcText: `import { useAppStore } from "${spec}";\nexport function X() { void useAppStore; return null; }`,
+  });
+
+  it("BUILDS a component importing a registered platform module — the preview stubs it", () => {
+    const build = componentPreviewFiles(importer("@/store"), ARTIFACT);
+    expect(build).not.toBeNull();
+    // Not vendored: the stub is supplied by the bundler's resolver, so nothing is added to `files`.
+    expect(Object.keys(build!.files)).not.toContain("store.tsx");
+  });
+
+  it("still returns null for an UNregistered @/ sibling that nothing vendors", () => {
+    expect(componentPreviewFiles(importer("@/react-d3/Nope"), ARTIFACT)).toBeNull();
+  });
+
+  it("keeps componentBuildable in lockstep with it (both arms)", () => {
+    expect(componentBuildable(importer("@/store"), ARTIFACT)).toBe(true);
+    expect(componentBuildable(importer("@/react-d3/Nope"), ARTIFACT)).toBe(false);
+  });
+
+  it("resolves a registered module the artifact DOES vendor from its real source, not a stub", () => {
+    // `@/shared/lib/core/format` is registered AND in the artifact's runtime closure — real source wins.
+    const build = componentPreviewFiles(base, ARTIFACT)!;
+    expect(build.files["shared/lib/core/format.ts"]).toContain("export const fmt");
   });
 });
 

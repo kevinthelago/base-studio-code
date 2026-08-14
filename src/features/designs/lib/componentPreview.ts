@@ -23,6 +23,7 @@
 // component with required props still renders something representative (not a curated mock).
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import { resolveInternalBase } from "@/shared/lib/preview/importPath";
+import { isPlatformModule } from "@/shared/lib/preview/platformModules";
 import type { ComponentRecord, PropSpec } from "./model";
 
 /**
@@ -637,6 +638,7 @@ export function componentBuildable(
 
   const resolvesInternal = (spec: string, fromRel: string): boolean => {
     if (hasProvideSpec(spec)) return true;
+    if (isPlatformModule(spec)) return true; // the DECLARED BOUNDARY — stubbed by the bundler
     const base = resolveInternalBase(spec, fromRel);
     return base !== null && (bases.has(base) || hasProvideMod(`${base}.tsx`) || hasSibBase(base));
   };
@@ -732,13 +734,14 @@ export function componentPreviewFiles(
 
   const resolvesInternal = (spec: string, fromRel: string): boolean => {
     if (providesSpecs.has(spec)) return true; // (a) exact `provides` match
+    if (isPlatformModule(spec)) return true; // (d) the DECLARED BOUNDARY — stubbed by the bundler
     const base = resolveInternalBase(spec, fromRel);
     return base !== null && (artifactBases.has(base) || providesMod.has(`${base}.tsx`) || sibByBase.has(base)); // (b)/(a)/(c)
   };
 
   // Buildable? An explicit `source` is trusted; a `srcText` must be a module whose internal imports all
-  // resolve (provides / artifact / sibling). `looksBuildableModule` (no `@/` at all) is the fallback when
-  // there is nothing to resolve against.
+  // resolve (provides / artifact / sibling / declared boundary). `looksBuildableModule` (no `@/` at all)
+  // is the fallback when there is nothing to resolve against.
   const canResolveInternal = providesMod.size > 0 || sibByBase.size > 0 || artifactBases.size > 0;
   const buildable = explicitSource !== null
     || (canResolveInternal ? isPreviewBuildable(userSource, path, resolvesInternal) : looksBuildableModule(userSource));
