@@ -30,6 +30,9 @@ import {
 } from "./componentPreview";
 import type { HealthCategory } from "./graphHealth";
 import { libraryModuleResolver } from "./libraryModules";
+// The feature's existing hash — reused rather than adding a second one
+// (#the-scan-signature-is-the-whole-source-not-a-digest).
+import { fnv1a } from "./seedRefresh";
 import type { ComponentRecord } from "./model";
 
 /** The two RUNTIME data-state health categories the scan render-confirms (#3191) — a subset of
@@ -104,10 +107,41 @@ export interface ScannableComponent {
   states?: StateProbe[];
 }
 
-/** A component's build signature — the fields that decide what gets bundled. A change to any of them
- *  (a designer edit, a re-authored source) means a stale ok/error, so the scan re-queues it. */
-export function buildSignature(c: ComponentRecord): string {
+/** The raw material a signature is computed FROM — the fields that decide what gets bundled. Kept
+ *  separate from {@link buildSignature} so the vendored/state extension below can fold its own text in
+ *  BEFORE hashing, rather than hashing twice and concatenating digests. Never persisted, never held. */
+function signatureSource(c: ComponentRecord): string {
   return [c.id, c.src ?? "", c.source ?? "", c.srcText ?? ""].join(" ");
+}
+
+/**
+ * Reduce signature material to a short digest.
+ *
+ * WHY THIS EXISTS (#the-scan-signature-is-the-whole-source-not-a-digest). A signature used to BE its
+ * material — the component's whole source, plus every vendored dependency's body. As a purely
+ * in-memory comparison key that was fine: the only operation anyone performs on a signature is
+ * equality. Then the scan cache persisted it, and a comparison key became **216,810,972 bytes** on
+ * disk — 371 entries averaging 584 KB — read in full at every boot and written back on every sweep.
+ *
+ * Hashing happens HERE, at the source, and not at the persistence boundary: `scannedSigs` holds a
+ * signature per component for the life of the page, so hashing only on the way to disk would still
+ * leave ~200 MB of source text in memory being compared for equality.
+ *
+ * The length is folded in alongside the hash because a missed re-queue is the failure that matters —
+ * it leaves a stale error badge on a component the designer just fixed. FNV-1a is 32-bit, so a
+ * birthday collision across a few hundred components is already ~1e-5; requiring an edit to preserve
+ * both the hash AND the exact byte length puts it out of reach in practice. Not cryptographic and
+ * does not need to be: this detects a designer's edit, it is not a security boundary.
+ */
+function digest(material: string): string {
+  return `${fnv1a(material)}-${material.length.toString(36)}`;
+}
+
+/** A component's build signature — a digest of the fields that decide what gets bundled. A change to
+ *  any of them (a designer edit, a re-authored source) means a stale ok/error, so the scan re-queues
+ *  it. Equality is the ONLY operation defined on this value. */
+export function buildSignature(c: ComponentRecord): string {
+  return digest(signatureSource(c));
 }
 
 /** The subset of `comps` that HAS buildable preview source (`componentPreviewFiles` non-null) — the scan
@@ -173,9 +207,18 @@ export function scannableComponents(
     }
     // Fold the qualifying states into the sig so adding/removing a collection/loading prop re-queues the
     // component. Appends "" for a stateless component ⇒ sig === buildSignature(c) exactly (pre-#3191 contract).
-    const sig = (vendored.length
-      ? buildSignature(c) + vendored.map((k) => `${k} ${build.files[k]}`).join("")
-      : buildSignature(c)) + states.map((s) => s.category).join("");
+    //
+    // The whole concatenation is hashed ONCE, at the end
+    // (#the-scan-signature-is-the-whole-source-not-a-digest) — folding the vendored bodies in and THEN
+    // digesting, rather than digesting first and concatenating, which would have left every vendored
+    // dependency's full text in the signature and kept the 207 MB. The no-dependency contract still
+    // holds exactly: with no vendored files and no states this is `digest(signatureSource(c) + "")`,
+    // which IS `buildSignature(c)`.
+    const sig = digest(
+      (vendored.length
+        ? signatureSource(c) + vendored.map((k) => `${k} ${build.files[k]}`).join("")
+        : signatureSource(c)) + states.map((s) => s.category).join(""),
+    );
     out.push({ id: c.id, sig, files: build.files, entry: build.entry, states: states.length ? states : undefined });
   }
   return out;

@@ -38,6 +38,26 @@ describe("buildSignature", () => {
     expect(buildSignature({ ...base, srcText: "import * as d3 from 'd3'; export const X = 1;" })).not.toBe(a);
     expect(buildSignature({ ...base, src: "other/Path.tsx" })).not.toBe(a);
   });
+
+  it("is a DIGEST, not the source it is computed from", () => {
+    // THE regression (#the-scan-signature-is-the-whole-source-not-a-digest). This returned
+    // `[id, src, source, srcText].join(" ")` — the component's whole source. Fine as a comparison key,
+    // until #the-component-scan-remembers-what-it-already-built persisted it: 371 entries at ~584 KB
+    // each made `component-scan.json` 216,810,972 bytes, read in full at every boot and written back
+    // on every sweep. The tests above pass with EITHER implementation, because equality is all they
+    // check — so a size assertion is the only thing that would have caught it.
+    const fat = "x".repeat(200_000);
+    const sig = buildSignature({ ...base, srcText: fat });
+    expect(sig.length).toBeLessThan(64);
+    expect(sig).not.toContain(fat.slice(0, 64));
+    expect(sig).not.toContain(base.id);
+  });
+
+  it("distinguishes two records that differ ONLY in length", () => {
+    // The length is folded in beside the 32-bit hash because a missed re-queue is the failure that
+    // matters — it leaves a stale error badge on a component the designer just fixed.
+    expect(buildSignature({ ...base, srcText: "a" })).not.toBe(buildSignature({ ...base, srcText: "aa" }));
+  });
 });
 
 describe("scannableComponents", () => {
@@ -409,5 +429,18 @@ describe("the signature covers the vendored closure, not a path guess (#4092)", 
     const lone: ComponentRecord = { ...base, id: "lone", src: "lone.tsx", srcText: "export function Lone() { return <i />; }" };
     const s = scannableComponents([lone], artifact).find((x) => x.id === "lone")!;
     expect(s.sig).toBe(buildSignature(lone));
+  });
+
+  it("digests the vendored bodies too, rather than carrying them", () => {
+    // The other half of the 207 MB: the extended signature appended every vendored dependency's FULL
+    // body. It must still CHANGE when a dependency changes (the #3112 contract, pinned above) while
+    // staying short — so the fold happens before the hash, not after.
+    const dep: ComponentRecord = { ...base, id: "dep", name: "Dep", src: "dep.tsx", srcText: `export function Dep() { return <span>${"y".repeat(120_000)}</span>; }` };
+    const consumer: ComponentRecord = { ...base, id: "consumer", name: "Consumer", src: "consumer.tsx", srcText: "import { Dep } from './dep'; export function Consumer() { return <Dep />; }" };
+    const s = scannableComponents([consumer, dep], artifact).find((x) => x.id === "consumer")!;
+    // Differs from the component's own signature ⇒ the dependency really WAS folded in, so the size
+    // assertion below is about digested material rather than an empty vendored list.
+    expect(s.sig).not.toBe(buildSignature(consumer));
+    expect(s.sig.length).toBeLessThan(64);
   });
 });
