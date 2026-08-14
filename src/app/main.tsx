@@ -8,6 +8,25 @@ import { markBoot } from "@/shared/lib/core/startupTrace";
 import { primeConfigOverrides } from "@/shared/lib/core/configOverrides";
 import "@/styles/tokens.css";
 
+// EVERY stylesheet, eagerly — because a component can no longer be trusted to import its own.
+//
+// A component's CSS used to reach the bundle because the component's FILE imported it
+// (`import "./banner.css"`). A RECORD cannot do that: the runtime loader resolves each import against
+// the platform registry and the record store, and a stylesheet is in neither, so the seed projection
+// drops it. That is harmless while the file still exists and does the importing — and the moment the
+// file is RETIRED, the last importer goes with it. Ten stylesheets stopped shipping that way (banner,
+// rail, sessionDock, pane, statTile, dataTable, cardListRow, dropdown, segmentedControl, sectionHeader)
+// and every component they style rendered unstyled.
+//
+// Nothing caught it, and nothing could have: every module still RESOLVED, so typecheck, lint, vitest,
+// `vite build`, `dev-boot-check` and the e2e mount sweep were all green. A missing stylesheet is not a
+// missing module — the app boots, mounts, and looks wrong.
+//
+// A glob makes the whole class impossible rather than fixing the ten: styling stops depending on which
+// modules happen to still be files. `tokens.css` keeps its explicit import ABOVE this one so the token
+// layer is always first in the cascade; re-importing it here is a no-op (module cache).
+import.meta.glob("@/**/*.css", { eager: true });
+
 // #2047: prime the runtime config-dir overrides BEFORE importing App (and its config modules), so
 // their eager `@data` consts (STAGE_DEFS / blueprints / roles / skills / taxonomies) build from the
 // config dir over the embedded default. Fail-safe (a no-op without a Tauri backend), and the dynamic
