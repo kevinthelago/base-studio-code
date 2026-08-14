@@ -12,6 +12,7 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Plugin } from "vite";
+import { emitRecords } from "../scripts/emit-records.mjs";
 
 export function bscRecords(opts: { repoRoot: string }): Plugin {
   const { repoRoot } = opts;
@@ -22,6 +23,17 @@ export function bscRecords(opts: { repoRoot: string }): Plugin {
 
   return {
     name: "bsc-records",
+
+    // GENERATE HERE, not in an npm script. Wiring generation into `typecheck`/`test`/`build` meant the
+    // tree existed only if a developer typed one of those — `npm run dev`, `npx vite`, `npm run tauri --
+    // dev` and an IDE launch all skipped it, and the dev server booted with a retired module unresolvable:
+    // "Failed to fetch dynamically imported module: /src/app/runtime/appModules.ts", which killed the whole
+    // boot chain. The tree is a precondition of RESOLUTION, so it belongs to the thing that resolves.
+    // It also explains why the gate stayed green: every gate command regenerated first, so no gate could
+    // observe the broken state — and the one command nobody gates on is the one a person runs all day.
+    buildStart() {
+      emitRecords({ quiet: true });
+    },
     // Ahead of the `@` alias, so the specifier is still in `@/…` form and matches exactly instead of
     // guessing which extension the alias resolved to.
     enforce: "pre",
