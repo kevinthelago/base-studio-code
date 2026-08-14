@@ -960,6 +960,8 @@ version = "0.1.0"
 dependencies = [
  "bsc-appchan",
  "bsc-cli-util",
+ "bsc-json-store",
+ "bsc-navigate",
  "bsc-util",
  "png 0.18.1",
  "serde",
