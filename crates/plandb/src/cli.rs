@@ -409,6 +409,33 @@ USAGE:
 Usually captured via the `bsc-learned` helper. Candidates de-dupe on a normalized mistake|rule key.",
     },
     CmdDoc {
+        name: "brief",
+        summary: "hand a plan update DOWN a tier — the architect's one outbound channel (#2377)",
+        usage: "USAGE:
+  echo \"<what changed and why>\" | bsc plan brief <projectKey>:director [--ref <ref>]
+
+Writes a `brief` to the coordination log addressed to <target>. This is how a requirement, or a
+mid-build change of mind, reaches the tier that acts on it — the ARCHITECT's only way to talk
+downward, and the planner's runtime voice into a running fleet.
+
+DIRECTORS ONLY. An architect naming a WORKER is refused rather than re-routed: relationships between
+projects are the architect's, anything inside one is the director's, and silently redirecting a
+mis-addressed brief would look like it worked while crossing that line.
+
+A BRIEF IS INFORMATION, NOT A QUESTION. Nothing answers it and nothing is waiting on a reply — the
+receiver reconciles the running plan against it (update the board/issues, route new work onward with
+bsc-assign) and carries on. Send another whenever the requirement moves again.
+
+  --ref <ref>   the issue/feature this update concerns, when it names one.
+
+The body is read from STDIN so a multi-line update needs no quoting gymnastics; an empty body is an
+error rather than an empty brief.
+
+NOT DELIVERED TO A SESSION'S SCREEN. The app pushes nothing into a session, so a brief sits in the
+coord log until the receiver looks: `$BSC_BIN logs coord`. (There is no dedicated queue verb for
+briefs yet — unlike `bsc logs waiting`, which pairs opens with closes.)",
+    },
+    CmdDoc {
         name: "request",
         summary: "worker->director change requests (the project ask lane; #4000)",
         usage: "USAGE:
