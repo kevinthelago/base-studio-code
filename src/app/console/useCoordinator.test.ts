@@ -9,12 +9,14 @@
 // A recency gate cannot fix that, which is why there is no "shorter FRESH_MS" version of this test:
 // any window replays whatever falls inside it. The rule is that the app does not resume sessions at
 // all, so these assertions are about ZERO wakes, not fewer.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useCoordinator } from "./useCoordinator";
 import { injectWake, actuateWake } from "@/shared/lib/fleet/coordinatorActuate";
+import { log } from "@/shared/lib/core/log";
+import { ingestCoordLog } from "@/shared/lib/fleet/coordination";
 
 vi.mock("@/shared/lib/fleet/coordinatorActuate", () => ({
   injectWake: vi.fn().mockResolvedValue(true),
@@ -105,5 +107,93 @@ describe("useCoordinator (#coordinator-stops-waking-sessions)", () => {
     renderHook(() => useCoordinator());
     await waitFor(() => expect(spy).toHaveBeenCalled());
     spy.mockRestore();
+  });
+});
+
+// #the-refusal-warning-replays-the-whole-log-every-minute — report each refusal once, not once a minute.
+//
+// THE BUG THIS PINS. Same root cause as the block above, on the one surviving reporting path: the hook
+// re-derives `refused` from the WHOLE tail on every read, and nothing ever prunes those lines out of the
+// tail. Warning unguarded therefore re-announced the same fixed, months-old refusals on every change
+// event AND on `useLogStream`'s 60s backstop — measured at 1,729 warnings from 19 real events, a block
+// of 19 every minute for as long as the app ran, all of it about a fault already fixed.
+//
+// The assertions are about the SECOND read, because the first one was always correct. A test that only
+// mounts the hook passes just as well against the unguarded version.
+const OTHER_DIRECTOR = "other:director"; // a DIFFERENT project from WORKER (`demo:api`) — hence refused.
+
+/** One cross-project `answer` line: `<ts> \t <emitter> \t answer \t <target> \t <body>`. */
+function refusalLine(iso: string, target = WORKER): string {
+  return [iso, OTHER_DIRECTOR, "answer", target, "not my fleet"].join("	");
+}
+
+describe("useCoordinator — the cross-project refusal report", () => {
+  const FIRST = "2026-08-12T15:09:25Z";
+  const LATER = "2026-08-12T16:00:00Z";
+  let lines: string[];
+  let fireChange: (() => void)[];
+  let warned: string[];
+  let warnSpy: { mockRestore(): void };
+
+  /** How many reads the hook has issued — what a re-read is awaited on. */
+  const reads = () =>
+    vi.mocked(invoke).mock.calls.filter((c: unknown[]) => String(c[0]).startsWith("logs_")).length;
+  /** Only the refusal warnings; the hook may legitimately warn about other things. */
+  const refusalWarns = () => warned.filter((m) => m.includes("refused a cross-project"));
+
+  /** Fire the `logs://coord` change event and wait for the read it triggers to land. */
+  async function reread(): Promise<void> {
+    const before = reads();
+    fireChange.forEach((f) => f());
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+  }
+
+  beforeEach(() => {
+    lines = [refusalLine(FIRST)];
+    fireChange = [];
+    warned = [];
+    vi.mocked(listen).mockImplementation((_event: string, handler: (e: never) => void) => {
+      fireChange.push(() => handler(undefined as never));
+      return Promise.resolve(() => {});
+    });
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "logs_tail" || cmd === "logs_coord") return Promise.resolve([...lines]);
+      if (cmd.startsWith("logs_")) return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+    warnSpy = vi.spyOn(log, "warn").mockImplementation((m: string) => { warned.push(m); });
+  });
+
+  afterEach(() => { warnSpy.mockRestore(); });
+
+  it("the fixture is REAL — the line ingests as one refusal", () => {
+    // GUARD THE GUARD, as above. "Warned exactly once" is satisfied just as well by a fixture that
+    // produces NO refusal at all, so pin that this log really does refuse something.
+    const r = ingestCoordLog([refusalLine(FIRST)]);
+    expect(r.refused).toHaveLength(1);
+    expect(r.refused[0]).toMatchObject({ kind: "answer", from: OTHER_DIRECTOR, target: WORKER });
+  });
+
+  it("warns once for a refusal, and NOT again when the same log is re-read", async () => {
+    renderHook(() => useCoordinator());
+    await waitFor(() => expect(refusalWarns()).toHaveLength(1));
+
+    // The unguarded version warns again here, and again on every read after it — forever, because the
+    // entry never leaves the tail.
+    await reread();
+    await reread();
+    expect(refusalWarns()).toHaveLength(1);
+  });
+
+  it("warns AGAIN for a new refusal — the guard is per event, not per sender/target pair", async () => {
+    // The reason `refusalKey` carries `at`. The same director really can misdirect the same worker
+    // again, and that second attempt is news the sender has to hear; a pair-keyed guard would swallow
+    // it behind the first key and silently under-report a live fault.
+    renderHook(() => useCoordinator());
+    await waitFor(() => expect(refusalWarns()).toHaveLength(1));
+
+    lines.push(refusalLine(LATER));
+    await reread();
+    expect(refusalWarns()).toHaveLength(2);
   });
 });

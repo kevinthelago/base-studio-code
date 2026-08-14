@@ -24,7 +24,7 @@
 // in the same change. A promise the code no longer keeps is how a fleet stalls silently, waiting on a
 // wake that never comes.
 import { useAppStore } from "@/store";
-import { ingestCoordLog, coordNotifications, buildProducerOf, producesFromPaneStreams } from "@/shared/lib/fleet/coordination";
+import { ingestCoordLog, coordNotifications, buildProducerOf, producesFromPaneStreams, refusalKey } from "@/shared/lib/fleet/coordination";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { useLogStream } from "@/shared/hooks/useLogStream";
 import type { SessionMeta } from "@/features/tunnel";
@@ -36,6 +36,10 @@ export function useCoordinator(): void {
   // Notification keys already pushed to mobile this app run -- so the loop fires each alert exactly
   // once (FCM is a push, not a poll).
   const notified = useRef<Set<string>>(new Set());
+  // The same guard, for the same reason, on the refusal report
+  // (#the-refusal-warning-replays-the-whole-log-every-minute). Both loops below read a log that is
+  // re-derived WHOLE on every read; the push path had this from the start and the report did not.
+  const warnedRefusals = useRef<Set<string>>(new Set());
   useLogStream("coord", async (isCancelled) => {
     if (isCancelled()) return;
     const res = await readCoordState(1000);
@@ -45,7 +49,17 @@ export function useCoordinator(): void {
     // dropped. A silently swallowed answer looks to the sending director exactly like a delivered
     // one, so it would go on believing it had unblocked a worker it never reached — and the worker's
     // real director would never know it still owed a reply.
+    //
+    // ONCE EACH, though (#the-refusal-warning-replays-the-whole-log-every-minute). `refused` is
+    // re-derived from the WHOLE tail on every read and nothing prunes those lines out of it, so
+    // reporting unguarded meant re-announcing the same fixed, months-old events on every change event
+    // AND on `useLogStream`'s 60s backstop — measured at 1,729 warnings from 19 real refusals, a
+    // block of 19 every minute for as long as the app ran. Keyed per EVENT (see `refusalKey`), so a
+    // genuine recurrence still warns; the pruning of the LOG is not this hook's business.
     for (const r of refused) {
+      const key = refusalKey(r);
+      if (warnedRefusals.current.has(key)) continue;
+      warnedRefusals.current.add(key);
       log.warn(
         `coordination: refused a cross-project ${r.kind} — ${r.from} tried to reach ${r.target}, ` +
         `which belongs to another project. Coordination is scoped to the project that raised it.`,
