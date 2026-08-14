@@ -65,7 +65,11 @@ describe("reconcileSeed verdicts (#2483)", () => {
     expect(r.records).toEqual([seedNew]);
     expect(r.pushes).toEqual([seedNew]);
     expect(r.drops).toEqual([]);
-    expect(r.notices).toEqual([]);
+    // Was `toEqual([])` — this branch used to report NOTHING
+    // (#a-reseed-must-not-silently-overwrite-a-designer-edit). The refresh itself is unchanged; what
+    // changed is that replacing a store copy is now stated. It was the one verdict that altered a record
+    // and said nothing, which is how 38 records were replaced unnoticed on 2026-08-14 (request #63).
+    expect(r.notices.map((n) => n.kind)).toEqual(["refreshed"]);
   });
 
   it("keeps an unmodified current built-in with no ops (idempotent hydrate)", () => {
@@ -300,6 +304,30 @@ describe("reconcileSeed — unstamped built-ins (#4216)", () => {
     // It survives untouched. (`records` also gains `seedNew` — a packaged built-in the store lacks is
     // re-seeded, which is the pre-existing behaviour and not what this case is about.)
     expect(r.records).toContainEqual(mine);
+  });
+});
+
+describe("a refresh that REPLACES content says so (#a-reseed-must-not-silently-overwrite-a-designer-edit)", () => {
+  it("emits a `refreshed` notice when the packaged copy replaced the store copy", () => {
+    // THE silent verdict. This branch adopts the seed copy and pushes it, and reported nothing — so a
+    // designer's only signal was noticing their fix had stopped working, which is how request #63 was
+    // found mid-task, twice. 38 records were replaced this way on 2026-08-14 with no notice at all.
+    const stale = stampSeedHash(comp({ version: "1.0.0", name: "Button" }));
+    const moved = stampSeedHash(comp({ version: "2.0.0", name: "ButtonRenamed" }));
+    const r = reconcileSeed([stale], [moved], "component");
+
+    expect(r.records[0].name).toBe("ButtonRenamed"); // the refresh still happens
+    expect(r.notices.map((n) => n.kind)).toContain("refreshed");
+    expect(r.notices.find((n) => n.kind === "refreshed")?.id).toBe(stale.id);
+  });
+
+  it("stays QUIET for a stamp-only correction, where nothing was replaced", () => {
+    // The tolerant re-stamp (#2514) routes through the same branch with byte-identical content. Reporting
+    // those would bury the real ones — the same reason plain divergence is not surfaced.
+    const rec = comp({ version: "1.0.0", name: "Button", seedHash: "a-stale-but-wrong-stamp" });
+    const seed = stampSeedHash(comp({ version: "1.0.0", name: "Button" }));
+    const r = reconcileSeed([rec], [seed], "component");
+    expect(r.notices.map((n) => n.kind)).not.toContain("refreshed");
   });
 });
 

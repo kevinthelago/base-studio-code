@@ -620,8 +620,13 @@ function InterruptedLoopBanner() {
  *
  *  `reset-to-seed` is unreachable today (no caller passes `seedAuthoritative` any more) but stays in the
  *  set: if it is ever re-enabled it means a store copy was OVERWRITTEN, which is the most actionable
- *  verdict there is. A banner that would silently miss that is worse than one carrying a dead branch. */
-const ACTIONABLE_SEED_KINDS = new Set(["orphaned", "unstamped", "reset-to-seed"]);
+ *  verdict there is. A banner that would silently miss that is worse than one carrying a dead branch.
+ *
+ *  `refreshed` is that same event on the branch that IS reachable
+ *  (#a-reseed-must-not-silently-overwrite-a-designer-edit): the packaged copy replaced the store copy.
+ *  It fires only when the content actually differed, so a stamp-only correction stays quiet. This is the
+ *  verdict that ate 38 records on 2026-08-14 while reporting nothing at all. */
+const ACTIONABLE_SEED_KINDS = new Set(["orphaned", "unstamped", "reset-to-seed", "refreshed"]);
 
 /**
  * Seed-notice banner (#4216) — the reader `seedNotices` never had.
@@ -713,6 +718,17 @@ export function SeedDriftBanner() {
                     <Chip key={`${it.type}:${it.id}`}>{it.name || it.id}</Chip>
                   ))}
                 </Row>
+                {kind === "refreshed" && (
+                  // REPORT-ONLY, deliberately — same reason `orphaned` is: which side is right is a
+                  // per-record judgement and a one-click bulk revert would make the opposite mistake at
+                  // the same scale. What a designer needs here is not a button but the fact that the old
+                  // source is not gone: every write records `prevSrc`, which is what made the 38 records
+                  // of request #63 recoverable.
+                  <Text size={11} tone="dim">
+                    The packaged copy replaced yours. The previous source is kept —{" "}
+                    <code>bsc ui log &lt;id&gt;</code> shows it, and <code>bsc ui set</code> puts it back.
+                  </Text>
+                )}
                 {kind === "unstamped" && (
                   // The ONE verdict with a safe automatic repair (#4207). The others each need a human to
                   // pick a side; this one does not, because it does not adjudicate content at all — it
