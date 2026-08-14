@@ -45,6 +45,12 @@ export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
     srcText: c.srcText ?? "",
     builtin: c.builtin,
     suppressed: c.suppressed, // #3725 — the tombstone marker; reconcile intercepts it, doctor skips it
+    // #a-tombstone-can-name-what-superseded-it — WHAT replaced a retired builtin. It MUST ride the
+    // projection, not merely be stored: this projection is what the app pushes back with `--replace`, so
+    // a field it does not model is silently dropped on write-back. That is precisely how request #63
+    // destroyed 38 records, and it would be a especially poor failure here — the tombstone's entire
+    // purpose is to be the durable fact that outlives every reseed.
+    supersededBy: c.supersededBy,
     wraps: c.wraps,
     provides: c.provides, // #3660 — the platform specifier this component overrides; rides verbatim (loader reads it)
     // `record-src-reconcile` — WHY this record deliberately differs from its `src` file. Must ride this
