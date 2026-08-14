@@ -62,6 +62,9 @@ export function ModalCard({
       <Box
         className={className}
         role="dialog"
+        // Marks everything outside inert to assistive tech — without it a reader can still wander the
+        // covered page behind the modal, which is the failure `role="dialog"` alone does not prevent.
+        aria-modal="true"
         aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
         style={{
           width, maxWidth: "100%", maxHeight,
