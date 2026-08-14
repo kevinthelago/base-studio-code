@@ -136,6 +136,7 @@ means the layout moved, which is the strongest evidence available.",
         summary: "save a component's NAMED reference render — the thing `diff <component>` compares against",
         usage: "USAGE:
   bsc shot baseline <component> [--timeout <ms>] [--json|--pretty]
+  bsc shot baseline --kit <kit>  [--timeout <ms>] [--json|--pretty]   # sweep the whole kit
   bsc shot baseline list
 
 Captures the mounted preview of <component> and keeps it as that component's reference, under
@@ -156,9 +157,18 @@ images nobody intended to compare.
 
 `baseline list` prints which components have a reference saved.
 
-NOT BATCHED YET. `--kit` / `--all` forms are not here: `frame` deliberately does not navigate (it
-errors and tells you to land the component first), so sweeping a kit would mean `bsc shot` driving
-`bsc navigate` — a coupling decision that deserves its own change.",
+SWEEPING A KIT (--kit). Captures a reference for EVERY component in the kit, landing each one itself
+so you do not run 45 navigate+shot cycles by hand. It reports one line per component — captured, or
+skipped and why — because a sweep that named only its successes would leave you trusting baselines
+that were never taken.
+
+  One failure does not abort it. The rest are still captured and the failures are listed at the end.
+
+  It never FORCES the view. A steer is declined while someone is using the app (the presence gate),
+  and a declined steer is reported as a skip, not an error — a background sweep must not take the
+  screen. It also verifies the app actually LANDED each component before capturing: photographing
+  whatever happened to be on screen under a component's name is the one mistake a baseline cannot
+  make.",
     },
     CmdDoc {
         name: "frame",
@@ -233,6 +243,9 @@ struct Args {
     /// `shot diff --tolerance <f>` — the caller's MEASURED noise floor for this subject, which is the
     /// only thing that can turn the numbers into a same/changed verdict. Absent ⇒ report, do not judge.
     tolerance: Option<f64>,
+    /// `baseline --kit <k>` — sweep every component of the kit instead of one named component
+    /// (#a-baseline-sweep-walks-the-kit-itself).
+    kit: Option<String>,
     json: bool,
     pretty: bool,
 }
@@ -246,6 +259,7 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
             "--pretty" => a.pretty = true,
             "--rect" => a.rect = Some(parse_rect(&it.next().ok_or("--rect needs x,y,w,h")?)?),
             "--out" => a.out = Some(it.next().ok_or("--out needs a path")?),
+            "--kit" => a.kit = Some(it.next().ok_or("--kit needs a kit id")?),
             "--timeout" => {
                 let v = it.next().ok_or("--timeout needs a value in ms")?;
                 a.timeout_ms = Some(v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?);
@@ -348,6 +362,44 @@ fn cmd_frame(args: &Args) -> Result<(), String> {
     run_capture(args, Some(&format!("{FRAME_PREFIX}{component}")))
 }
 
+
+/// The first line of a multi-line error — a sweep report stays one line per component, and the detail
+/// is still reachable by re-running that single component.
+fn first_line(e: &str) -> String {
+    e.lines().next().unwrap_or(e).trim().to_string()
+}
+
+/// One component's outcome in a `baseline --kit` sweep. A sweep that reported only successes would be
+/// worse than none: the designer's whole reason for baselines is to trust them afterwards, and a
+/// silently-missing one turns into a `diff` that cannot run — or a comparison against a stale reference.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SweepOutcome {
+    id: String,
+    /// `captured` | `skipped`
+    status: &'static str,
+    /// Why it was skipped. Empty when captured.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    reason: String,
+}
+
+/// Every component id in `kit`, read straight from the component store. Sorted, so a sweep and its
+/// report are stable across runs.
+fn kit_component_ids(kit: &str) -> Result<Vec<String>, String> {
+    let store = bsc_json_store::Store::open_default("components", "component")?;
+    let mut ids: Vec<String> = store
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .filter(|v| v.get("kitId").and_then(|k| k.as_str()) == Some(kit))
+        // A suppression tombstone occupies an id but has no component to render (#3725).
+        .filter(|v| v.get("suppressed").and_then(serde_json::Value::as_bool) != Some(true))
+        .filter_map(|v| v.get("id").and_then(|i| i.as_str()).map(str::to_string))
+        .collect();
+    ids.sort();
+    Ok(ids)
+}
+
 /// `baseline <component>` / `baseline list` (#a-shot-baseline-is-a-named-reference-render) — capture the
 /// mounted preview and keep it as that component's NAMED reference.
 ///
@@ -382,8 +434,74 @@ fn cmd_baseline(args: &Args) -> Result<(), String> {
         });
         return Ok(());
     }
+    // THE SWEEP (#a-baseline-sweep-walks-the-kit-itself). Lands each component itself, because the actor
+    // that needs this — a designer session under `restrictedAllow` — cannot compose two commands in a
+    // shell loop. Its auto-runnable surface is its grant list, and bash is not on it.
+    if let Some(kit) = args.kit.clone() {
+        if !arg.is_empty() {
+            // Refused rather than silently preferring one: a caller who passed both means something we
+            // cannot know, and guessing would capture the wrong set without saying so.
+            return Err(format!(
+                "`bsc shot baseline` takes a component OR --kit, not both (got '{arg}' and --kit {kit})"
+            ));
+        }
+        let ids = kit_component_ids(&kit)?;
+        if ids.is_empty() {
+            return Err(format!("no components in kit '{kit}' — check `bsc ui list --kit {kit}`"));
+        }
+        let timeout = args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+        let shots = shots_dir()?;
+        let mut out: Vec<SweepOutcome> = Vec::new();
+        for id in ids {
+            // ONE FAILURE DOES NOT ABORT THE SWEEP. A kit where three components fail is still 42
+            // baselines the designer did not have to take by hand — and the three are named at the end.
+            match bsc_navigate::cli::navigate_component(&kit, &id, timeout) {
+                Err(e) => {
+                    out.push(SweepOutcome { id, status: "skipped", reason: first_line(&e) });
+                    continue;
+                }
+                Ok(view) => {
+                    // The ack reports what actually MOUNTED. A declined steer (the presence gate, #4248 —
+                    // someone is using the app) answers without the component, and capturing then would
+                    // photograph whatever is on screen under this component's name. That is the failure
+                    // a baseline must never make.
+                    if view.component.as_deref() != Some(id.as_str()) {
+                        out.push(SweepOutcome {
+                            id,
+                            status: "skipped",
+                            reason: "the app did not land it (a steer is declined while someone is using the app)".into(),
+                        });
+                        continue;
+                    }
+                }
+            }
+            let dest = baseline_path(&shots, &id);
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+            }
+            let mut a = args.clone();
+            a.out = Some(dest.to_string_lossy().into_owned());
+            a.json = false;
+            a.pretty = false;
+            match run_capture(&a, Some(&format!("{FRAME_PREFIX}{id}"))) {
+                Ok(()) => out.push(SweepOutcome { id, status: "captured", reason: String::new() }),
+                Err(e) => out.push(SweepOutcome { id, status: "skipped", reason: first_line(&e) }),
+            }
+        }
+        let captured = out.iter().filter(|o| o.status == "captured").count();
+        let skipped = out.len() - captured;
+        bsc_cli_util::emit(args.pretty, args.json, &out, || {
+            let mut lines = vec![format!("{captured} captured, {skipped} skipped — kit {kit}")];
+            for o in out.iter().filter(|o| o.status == "skipped") {
+                lines.push(format!("  skipped {}: {}", o.id, o.reason));
+            }
+            lines.join("
+")
+        });
+        return Ok(());
+    }
     if arg.is_empty() {
-        return Err("`bsc shot baseline` needs a component: `bsc shot baseline <component>` (or `baseline list`)".into());
+        return Err("`bsc shot baseline` needs a component: `bsc shot baseline <component>` (or `--kit <k>`, or `baseline list`)".into());
     }
     if args.out.is_some() {
         return Err("`bsc shot baseline` owns its destination — drop --out (use `bsc shot frame --out` for an arbitrary path)".into());
@@ -905,5 +1023,46 @@ mod tests {
         let err = cmd_diff(&args).unwrap_err();
         assert!(err.contains("no baseline for 'never-captured'"), "{err}");
         assert!(err.contains("bsc shot baseline never-captured"), "it names the fix: {err}");
+    }
+
+    #[test]
+    fn baseline_refuses_a_component_and_a_kit_together() {
+        // Guessing which the caller meant would sweep the wrong set WITHOUT SAYING SO — the exact class
+        // of silent-wrong-answer this whole feature exists to remove.
+        let args = Args {
+            positional: vec!["baseline".into(), "settings-general".into()],
+            kit: Some("base-studio-code".into()),
+            ..Default::default()
+        };
+        let err = cmd_baseline(&args).unwrap_err();
+        assert!(err.contains("takes a component OR --kit, not both"), "{err}");
+        assert!(err.contains("settings-general") && err.contains("base-studio-code"), "it names both: {err}");
+    }
+
+    #[test]
+    fn a_sweep_report_names_every_skip_with_its_reason() {
+        // The report IS the feature. A sweep that listed only successes leaves the designer trusting
+        // baselines that were never taken — and a missing baseline surfaces later as a `diff` that
+        // cannot run, or a comparison against a stale reference.
+        let out = vec![
+            SweepOutcome { id: "a".into(), status: "captured", reason: String::new() },
+            SweepOutcome { id: "b".into(), status: "skipped", reason: "the app did not land it".into() },
+            SweepOutcome { id: "c".into(), status: "captured", reason: String::new() },
+        ];
+        let json = serde_json::to_string(&out).unwrap();
+        assert!(json.contains(r#""status":"skipped""#), "{json}");
+        assert!(json.contains("the app did not land it"), "the reason rides the row: {json}");
+        // A captured row carries no empty `reason` noise.
+        assert!(!json.contains(r#""id":"a","status":"captured","reason""#), "{json}");
+    }
+
+    #[test]
+    fn a_multiline_failure_collapses_to_one_line_per_component() {
+        // The navigate timeout error is four lines of diagnosis. In a 45-row sweep that is a wall; the
+        // detail stays reachable by re-running the one component.
+        let e = "timed out after 8000ms waiting for the app to answer.
+The request is at C:/x.
+Is the desktop app running?";
+        assert_eq!(first_line(e), "timed out after 8000ms waiting for the app to answer.");
     }
 }
