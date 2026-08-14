@@ -22,7 +22,7 @@ import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Text } from "@/shared/ui/typography/Text";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
-import { MasterDetail } from "./MasterDetail";
+import { MasterDetail } from "@/shared/ui/layouts/MasterDetail";
 import { GraphCanvas, ZoomControls } from "./GraphCanvas";
 import { useGraphViewport } from "./useGraphViewport";
 import { flattenTree, layoutTree, TREE_NODE_W, TREE_NODE_H, type TreeNodeData } from "./treeLayout";
