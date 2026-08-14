@@ -5,7 +5,7 @@
 // modules), and renders the result — with an ERROR BOUNDARY + fallback around it, because the loaded code
 // is graph-authored: a compile error, an unresolved import, or a render throw must degrade to a fallback,
 // never white-screen the shell. Re-loads when the store's source changes (a designer edit shows live).
-import { Component, useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { Component, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { loadComponentFromSource } from "@/shared/lib/runtime/componentLoader";
 import { resolveGraphSource } from "./graphResolver";
@@ -134,6 +134,17 @@ export function GraphComponent({
   // version the gate ever saw of each was the broken one. These rungs live in the store, so they survive
   // the restart. Selected as the ARRAY (not the record) so an unrelated field moving cannot re-render.
   const history = useAppStore((s) => s.components.find((c) => c.id === id)?.history);
+  // How many ALGORITHM impls the resolver can currently see. `resolveGraphSource` reads them from the
+  // store as a SNAPSHOT at compile time, and `useAppBoot` fires `hydrateComponents()` and
+  // `hydrateAlgorithms()` as parallel `void` calls — so a page whose record imports an algorithm-record
+  // specifier (the Projects page imports `@/shared/hooks/useFleetLive`) can compile the instant its own
+  // source lands, while the impls are still `[]`, and fail with "is not a registered app module".
+  //
+  // Losing that race used to be PERMANENT: the load effect keys on the page's own source, which never
+  // changes afterwards, so the impls arriving re-fired nothing and the page sat on its fallback until a
+  // reload — which just runs the same race again. A COUNT is the right dependency: a primitive that goes
+  // 0 → N exactly once, so it cannot churn renders the way selecting the array would.
+  const implCount = useAppStore((s) => s.algorithmImpls.length);
   // Both caches key on record + EXPORT, never the record alone: the same id serves a different component
   // per export, so an id-keyed `lastGood` would hand TextArea the component it cached for TextField.
   const cacheKey = exportName ? `${id}#${exportName}` : id;
@@ -143,6 +154,12 @@ export function GraphComponent({
   // source good just because a fallback rendered under it.
   const [activeSource, setActiveSource] = useState<string | null>(null);
   const [degraded, setDegraded] = useState(false);
+  /** What is currently mounted, as `{ key, source }` — the load effect's "already done" check.
+   *
+   *  A ref rather than state because the effect both READS and WRITES it: as a dep it would loop, and as
+   *  state it would trail a render behind the thing it guards. Cleared whenever a load starts, so a
+   *  failed attempt leaves it null and the next resolver-input change is free to retry. */
+  const mountedRef = useRef<{ key: string; source: string } | null>(null);
 
   /** Mount the last version that worked, if there is one and it is not the source we just tried. */
   const mountLastGood = (why: string): boolean => {
@@ -189,7 +206,16 @@ export function GraphComponent({
   };
 
   useEffect(() => {
+    // ALREADY MOUNTED FROM THIS EXACT SOURCE ⇒ nothing to do. The guard exists for `implCount`: that dep
+    // is here so a page whose compile LOST the hydration race gets a second chance, and without this the
+    // impls landing would tear down and recompile every graph page on screen — trading one broken surface
+    // for a boot-wide stall of ~700ms per page. Read from a ref rather than from `Loaded`, which cannot
+    // be a dep (the effect sets it, so listing it would loop).
+    if (mountedRef.current?.key === cacheKey && mountedRef.current.source === source) return;
     let cancelled = false;
+    // Nothing is mounted from the source we are about to try. Clearing it here is what leaves a FAILED
+    // attempt retryable: the guard above then lets the next resolver-input change back in.
+    mountedRef.current = null;
     /* eslint-disable react-hooks/set-state-in-effect -- reset to loading on each (id, source) change */
     setLoaded(null);
     setActiveSource(null);
@@ -224,6 +250,7 @@ export function GraphComponent({
       .then((c) => {
         if (cancelled) return;
         log.info(`graph-loader: mounted "${id}" (compile #${n}) in ${Math.round(performance.now() - startedAt)}ms`, "graph-loader");
+        mountedRef.current = { key: cacheKey, source };
         setLoaded(() => c);
         setActiveSource(source);
       })
@@ -240,8 +267,13 @@ export function GraphComponent({
     return () => { cancelled = true; };
     // `mountLastGood` is re-created each render and reads only `id`/`source`, which are already deps —
     // listing it would re-fire the effect on every render and recompile in a loop.
+    //
+    // `implCount` IS a dep, and deliberately: `resolveGraphSource` reads `algorithmImpls` as a snapshot at
+    // compile time, so a page that compiled before they hydrated resolved nothing and stayed failed
+    // forever. It re-fires only for a surface the guard above did not short-circuit — i.e. one with
+    // nothing mounted from the current source.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, source, exportName]);
+  }, [id, source, exportName, implCount]);
 
   // MARK GOOD — after a commit in which the boundary did NOT catch. This effect cannot run for a render
   // that threw, which is exactly the distinction the gate needs: compiling is a weaker claim than
