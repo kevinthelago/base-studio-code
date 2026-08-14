@@ -60,6 +60,41 @@ root.appendChild(el);
 export {};
 `;
 
+// An INDEX module must be identified by its index file, or its own `./sibling` imports resolve against
+// the index's PARENT. jsdom cannot see this — only a real esbuild run resolves module identities — and it
+// is what made `@/shared/ui/kit` fail with 19 "module not found: shared/ui/<x>" errors for files that sit
+// at `shared/ui/kit/<x>`, breaking every component that reaches the kit barrel transitively.
+const INDEX_FIXTURE = `
+import { ThemeScope, token } from "@/shared/ui/kit";
+const root = document.getElementById("root");
+const el = document.createElement("div");
+el.id = "marker";
+el.textContent = [typeof ThemeScope, token].join(",");
+root.appendChild(el);
+export {};
+`;
+
+test("an index module resolves its OWN siblings, not its parent's (the kit barrel, #57)", async ({ page }: { page: Page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
+  page.on("pageerror", (e) => consoleErrors.push(String(e)));
+
+  await page.goto(HARNESS);
+  await page.waitForFunction(() => !!window.__previewHarness);
+  // A hand-built mem filesystem standing in for the packaged closure: the barrel re-exports two
+  // siblings by RELATIVE path, exactly as `shared/ui/kit/index.ts` does.
+  await page.evaluate((src) => window.__previewHarness!.mountFiles!({
+    "fixture.ts": src,
+    "shared/ui/kit/index.ts": 'export { ThemeScope } from "./ThemeScope";\nexport { token } from "./theme";\n',
+    "shared/ui/kit/ThemeScope.tsx": "export function ThemeScope() { return null; }\n",
+    "shared/ui/kit/theme.ts": 'export const token = "kit-theme";\n',
+  }, "fixture.ts"), INDEX_FIXTURE);
+
+  const frame = await (await page.locator("#preview").elementHandle())!.contentFrame();
+  expect(await frame!.evaluate(() => document.getElementById("marker")?.textContent ?? "")).toBe("function,kit-theme");
+  expect(consoleErrors.filter((e) => /resolve module|module not found/i.test(e))).toEqual([]);
+});
+
 test("a component importing a REGISTERED platform module bundles + renders (the declared boundary, #3897)", async ({ page }: { page: Page }) => {
   const consoleErrors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });

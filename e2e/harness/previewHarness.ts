@@ -123,7 +123,7 @@ export interface MountOptions {
 declare global {
   interface Window {
     /** The Playwright-facing entry point, installed below. */
-    __previewHarness?: { mount: (opts?: MountOptions) => Promise<void>; mountRaw: (source: string) => Promise<void> };
+    __previewHarness?: { mount: (opts?: MountOptions) => Promise<void>; mountRaw: (source: string) => Promise<void>; mountFiles?: (files: Record<string, string>, entry: string) => Promise<void> };
     /** #3596: every `{__navigate}` the inspect layer posts, in order — the spec reads this. */
     __navigations?: string[];
     /** #3596: per-child click counters set inside the composing fixture's iframe (`ChildA`/`ChildB`),
@@ -198,6 +198,21 @@ async function mountRaw(source: string): Promise<void> {
   await assignAndWait(iframe, srcDoc);
 }
 
+/**
+ * Like {@link mountRaw}, but the caller supplies the WHOLE mem filesystem — so a spec can stand up a
+ * multi-module shape (a barrel plus the siblings it re-exports) instead of a single fixture file.
+ *
+ * Needed because module IDENTITY only misbehaves across module boundaries: an index module resolving its
+ * own `./sibling` one directory too high cannot be reproduced with one flat file, and jsdom cannot run
+ * esbuild to observe it at all.
+ */
+async function mountFiles(files: Record<string, string>, entry: string): Promise<void> {
+  const iframe = document.getElementById("preview") as HTMLIFrameElement;
+  const js = await bundleComponent(files, entry);
+  const srcDoc = buildComponentSrcDoc(js, { injectedCss: collectAppCss(), theme: "dark" });
+  await assignAndWait(iframe, srcDoc);
+}
+
 // #3596: record every `{__navigate}` the inspect layer posts from a mounted preview, so the spec can
 // assert Alt-click navigation. Correlating by source window is unnecessary here (only one preview mounts).
 window.__navigations = [];
@@ -206,4 +221,4 @@ window.addEventListener("message", (e: MessageEvent) => {
   if (d && typeof d.__navigate === "string") window.__navigations!.push(d.__navigate);
 });
 
-window.__previewHarness = { mount, mountRaw };
+window.__previewHarness = { mount, mountRaw, mountFiles };

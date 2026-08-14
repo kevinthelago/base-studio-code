@@ -21,9 +21,37 @@ export const COMPONENT_IMPORTMAP: Record<string, string> = importmapEmbedded;
 /** Bare specifiers resolved in the iframe by the import-map (everything else bare → esm.sh at large). */
 export const COMPONENT_EXTERNALS = Object.keys(COMPONENT_IMPORTMAP);
 
-/** Resolve a relative import against its importer's directory. Pure. */
-export function resolveMemPath(importer: string, spec: string): string {
-  const fromDir = importer.includes("/") ? importer.slice(0, importer.lastIndexOf("/")) : "";
+/** The suffixes {@link lookupMem} appends when a bare id names a DIRECTORY rather than a file. Shared
+ *  with the importer-kind check below so the two can never disagree about what "index-backed" means. */
+const INDEX_SUFFIXES = ["/index.tsx", "/index.ts", "/index.jsx"] as const;
+
+/**
+ * Resolve a relative import against its importer's directory. Pure.
+ *
+ * THE IMPORTER MAY BE A DIRECTORY, NOT A FILE (#a-barrel-import-resolves-against-its-own-directory).
+ * `lookupMem` accepts a bare id like `shared/ui/kit` by trying `/index.ts`, so a barrel is loaded under
+ * the id of its DIRECTORY while its contents come from `<dir>/index.ts`. Stripping the last segment is
+ * right for a file (`a/b/c.ts` → `a/b`) and wrong for that id (`shared/ui/kit` → `shared/ui`), which is
+ * how the kit barrel's `./theme` resolved to `shared/ui/theme` — a module that does not exist — and took
+ * 34 components down with it, every *GraphHost among them.
+ *
+ * `files` is what tells the two apart: an importer present as a KEY is a file; one reachable only through
+ * an index suffix is a directory and is its own `fromDir`. It is optional so existing callers and the
+ * pure tests keep the old behaviour, but the esbuild plugin passes it — resolution is only correct when
+ * it does.
+ */
+export function resolveMemPath(importer: string, spec: string, files?: Record<string, string>): string {
+  const isDirId =
+    !!files &&
+    files[importer] == null && // not a file key itself…
+    INDEX_SUFFIXES.some((s) => files[importer + s] != null); // …but an index lives under it
+  // A directory id is ALREADY the from-dir; a file id drops its basename. `..` then behaves identically
+  // in both cases, which is the part a naive "never strip" fix breaks.
+  const fromDir = isDirId
+    ? importer
+    : importer.includes("/")
+      ? importer.slice(0, importer.lastIndexOf("/"))
+      : "";
   return collapseSegments((fromDir ? fromDir.split("/") : []).concat(spec.split("/")));
 }
 
@@ -121,7 +149,7 @@ function componentPlugin(files: Record<string, string>, entry: string): Esbuild.
         // "module not found" — the honest build failure graphHealth flags as unresolvable-import.
         if (args.path.startsWith("@bsc/")) return { path: args.path, namespace: "mem" };
         // Relative → resolve against the importer within the mem filesystem.
-        if (args.path.startsWith(".")) return { path: resolveMemPath(args.importer, args.path), namespace: "mem" };
+        if (args.path.startsWith(".")) return { path: resolveMemPath(args.importer, args.path, files), namespace: "mem" };
         // Any other bare specifier: a curated external (React et al.) stays external — resolved in the iframe
         // by the import-map (esm.sh). EVERYTHING ELSE resolves to a bundled-in LOCAL shim/stub (#3696), NEVER
         // esm.sh at large — so resolution can't fail (dynamic + always works) and no uncurated CDN code runs
