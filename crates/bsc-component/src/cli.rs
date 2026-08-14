@@ -3973,6 +3973,37 @@ fn cmd_preview_error(args: &[String]) -> Result<(), String> {
         .iter()
         .find(|a| !a.starts_with("--"))
         .ok_or("usage: preview-error <id>   # error message / stack trace on stdin (or `clear <id>`)")?;
+    // REFUSE AN ID THAT IS NOT A COMPONENT, and do it BEFORE touching stdin
+    // (#preview-error-list-silently-records-a-component-named-list).
+    //
+    // The listing verb is `preview-errors` — PLURAL — so the natural-looking `preview-error list` parses
+    // as "record an error for the component `list`", then BLOCKS on stdin (ten minutes, in the run that
+    // found this) and, on an empty stdin, silently appends a junk row for a component that does not
+    // exist. That row lands in the very log someone reads to decide whether a render error is stale,
+    // which is the question requests #57 and #60 are about — a bad place to be quietly wrong.
+    //
+    // Validating first is what removes the hang: a mistyped verb fails immediately instead of waiting
+    // for input that is never coming. The frontend only ever records against a real component, so this
+    // refuses nothing legitimate. `clear` is handled above and stays unvalidated on purpose — an
+    // already-junk row must always be clearable, including one written before this check existed.
+    // A store that cannot be opened at all is NOT treated as "unknown id" — the record path must keep
+    // working when the store is unreachable, exactly as it did before this check.
+    let known: Option<Vec<String>> = open_component_store(&None).ok().map(|s| {
+        s.list()
+            .iter()
+            .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+            .filter_map(|v| v.get("id").and_then(|x| x.as_str()).map(str::to_string))
+            .collect()
+    });
+    if let Some(ids) = known {
+        if !ids.iter().any(|k| k == id) {
+            return Err(format!(
+                "preview-error: no component '{id}' — nothing to record against.\n\
+                 To LIST captured errors use the plural verb: `bsc ui preview-errors`.\n\
+                 To clear a stale one: `bsc ui preview-error clear <id>`."
+            ));
+        }
+    }
     let mut message = String::new();
     std::io::stdin().read_to_string(&mut message).map_err(|e| format!("cannot read stdin: {e}"))?;
     crate::preview_errors::record(id, message.trim())?;
@@ -7245,6 +7276,41 @@ mod list_kit_tests {
 }
 
 /// A minimal scoped temp dir for the tests above — the crate has no dev-dependency on `tempfile`.
+#[cfg(test)]
+mod preview_error_guard_tests {
+    use super::*;
+
+    /// #preview-error-list-silently-records-a-component-named-list — the exact shape that produced this.
+    ///
+    /// The listing verb is `preview-errors` (PLURAL). `preview-error list` therefore parses as "record an
+    /// error for the component `list`", and before this guard it blocked on stdin and then appended a junk
+    /// row for a component that does not exist — into the very log a designer reads to decide whether a
+    /// render error is stale.
+    ///
+    /// The assertion is that it is REFUSED **and never reads stdin**: this test would hang rather than fail
+    /// if the validation moved back below the read, which is the failure mode that cost ten minutes.
+    #[test]
+    fn preview_error_refuses_an_id_that_is_not_a_component() {
+        let dir = tempdir_shim::Dir::new("bsc-preview-error-guard");
+        std::env::set_var("BSC_COMPONENT_DIR", dir.path());
+        let err = cmd_preview_error(&["list".to_string()]).unwrap_err();
+        std::env::remove_var("BSC_COMPONENT_DIR");
+        assert!(err.contains("no component 'list'"), "{err}");
+        assert!(err.contains("preview-errors"), "names the plural listing verb: {err}");
+    }
+
+    /// `clear` stays reachable for ANY id — including a junk row written before the guard existed. If the
+    /// guard applied to clear too, an already-bad row would be permanently unclearable.
+    #[test]
+    fn clear_is_not_gated_by_the_component_check() {
+        let dir = tempdir_shim::Dir::new("bsc-preview-error-clear");
+        std::env::set_var("BSC_COMPONENT_DIR", dir.path());
+        let r = cmd_preview_error(&["clear".to_string(), "not-a-component".to_string()]);
+        std::env::remove_var("BSC_COMPONENT_DIR");
+        assert!(r.is_ok(), "clear must work for any id: {r:?}");
+    }
+}
+
 #[cfg(test)]
 mod tempdir_shim {
     pub struct Dir(std::path::PathBuf);
