@@ -18,7 +18,7 @@ import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { compileAnimationsCss, animClassName, type AnimationDef } from "@/shared/ui/kit";
 import { componentPreviewFiles, supportedStates, type KitArtifact, type PreviewState } from "./lib/componentPreview";
 import { usePreviewData } from "./usePreviewData";
-import { recordPreviewError } from "./lib/componentBridge";
+import { recordPreviewError, clearPreviewError } from "./lib/componentBridge";
 import { registerPreviewFrame, unregisterPreviewFrame } from "./lib/previewRegistry";
 import { makeLibraryResolvers } from "./lib/libraryModules";
 import { useActiveSoundKit } from "./lib/useActiveSoundKit";
@@ -342,6 +342,13 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         setError(message);
         void recordPreviewError(comp.id, message);
       }
+      // #45/#60: a render that SUCCEEDS retires the recorded error. Without this half, a component fixed
+      // by a change elsewhere — a shared dependency, or a resolver bug in the preview itself — kept its
+      // `render-error` finding forever, so doctor reported a failure a live `bsc shot preview` disproved.
+      // Measured after the barrel-resolution fix landed: components that mounted fine still carried 54
+      // findings between them. Same window filter as the error path, so a concurrent scan probe (#2908)
+      // can never clear another component's error.
+      if (d.__preview === "ready") void clearPreviewError(comp.id);
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
