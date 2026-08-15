@@ -197,6 +197,61 @@ fn same_module_path(src: &str) -> String {
     trimmed.strip_prefix("src/").unwrap_or(trimmed).to_string()
 }
 
+/// Do two normalized module paths name the same module, one possibly being the ABSOLUTE form?
+///
+/// A harvest target is typically absolute (`C:/…/src/features/x/y.ts`) while a record's `src` is
+/// repo-relative (`src/features/x/y.ts`), so equality is the wrong test and a bare `ends_with` is too
+/// loose — `…/colorHue.ts` would match a record for `myColorHue.ts`. The suffix has to begin at a
+/// path BOUNDARY.
+fn module_paths_agree(a: &str, b: &str) -> bool {
+    let boundary_suffix = |hay: &str, needle: &str| {
+        !needle.is_empty()
+            && hay.len() > needle.len()
+            && hay.ends_with(needle)
+            && hay.as_bytes()[hay.len() - needle.len() - 1] == b'/'
+    };
+    a == b || boundary_suffix(a, b) || boundary_suffix(b, a)
+}
+
+/// The record that already covers `target`, and WHICH signal matched — `src` provenance or the
+/// `provides` specifier (#75, designer request).
+///
+/// A harvest target absent from disk is the NORMAL end state for an already-migrated module in this
+/// codebase, not an error: the file is retired once the record supersedes it. `no such path`
+/// describes only the filesystem, so the one reading left is that the tool cannot see the tree —
+/// which is exactly the false conclusion that got filed, then generalized into a claim that
+/// `bsc ui harvest` and `bsc graph harvest` have different allowed roots. They do not.
+fn record_covering_path(target: &str) -> Option<(String, String)> {
+    record_covering_path_in(&crate::implementations(), target)
+}
+
+/// [`record_covering_path`] over an explicit impl list — the pure half, so the lookup is testable
+/// without redirecting the process-global store env var.
+fn record_covering_path_in(impls: &[Value], target: &str) -> Option<(String, String)> {
+    let want = same_module_path(target);
+    // `provides` carries no extension (`@/features/designs/lib/colorHue`), so the specifier compares
+    // against the target's STEM rather than its filename.
+    let want_stem = want.rsplit_once('.').map(|(s, _)| s.to_string()).unwrap_or_else(|| want.clone());
+    for im in impls {
+        let id = im.get("id").and_then(Value::as_str).unwrap_or_default();
+        if id.is_empty() {
+            continue;
+        }
+        if let Some(src) = im.get("src").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+            if module_paths_agree(&same_module_path(src), &want) {
+                return Some((id.to_string(), format!("its `src` is `{src}`")));
+            }
+        }
+        if let Some(p) = im.get("provides").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+            let spec = same_module_path(p.trim_start_matches("@/"));
+            if module_paths_agree(&spec, &want_stem) {
+                return Some((id.to_string(), format!("it provides `{p}`")));
+            }
+        }
+    }
+    None
+}
+
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     // Before anything reads a flag: an unknown one is an ERROR, never a silent no-op (#4154).
     reject_unknown_flags(&args)?;
@@ -593,6 +648,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // A missing path must SAY so. Previously the dir walk's `read_dir` failed silently on
             // anything that was not a readable dir, so a typo and an empty tree were the same answer.
             if !target.exists() {
+                // …but ASK THE STORE FIRST (#75). A target absent from disk is the normal end state
+                // for an already-migrated module here — the file is retired once the record
+                // supersedes it — so answering with the filesystem alone describes the least
+                // interesting half of the truth and reads as a broken tool.
+                if let Some((id, how)) = record_covering_path(dir) {
+                    return Err(format!(
+                        "nothing at {dir} — that module is ALREADY HARVESTED: `{id}` ({how}).\n\
+                         Its file was retired when the record superseded it, which is the expected \
+                         end state, not a missing path.\n\
+                         Read the record with `{prog} impl get {id}`."
+                    ));
+                }
                 return Err(format!("no such path: {dir}"));
             }
             bsc_cli_util::require_harvestable_root(target)?;
@@ -1883,5 +1950,75 @@ mod batch_retired_tests {
         let bad = serde_json::json!({ "id": "b.ts", "tech": "typescript", "role": "not-a-role", "name": "B" });
         assert!(set_impl_skipping_retired(&mut g, bad, &mut skipped).is_err(), "a bad role still aborts");
         assert!(skipped.is_empty());
+    }
+}
+
+/// #75 — an absent harvest target is resolved against the STORE before the filesystem answers.
+#[cfg(test)]
+mod already_harvested_tests {
+    use super::module_paths_agree;
+
+    /// The absolute-vs-relative case is the whole reason equality will not do: the reporter passed an
+    /// absolute Windows path, and the record's `src` is repo-relative.
+    #[test]
+    fn an_absolute_target_agrees_with_a_repo_relative_src() {
+        let abs = super::same_module_path("C:/Users/k/proj/src/features/designs/lib/colorHue.ts");
+        let rel = super::same_module_path("src/features/designs/lib/colorHue.ts");
+        assert!(module_paths_agree(&abs, &rel), "{abs} vs {rel}");
+        // Backslashes too — Windows contributes them and the store holds both conventions.
+        let win = super::same_module_path(r"C:\Users\k\proj\src\features\designs\lib\colorHue.ts");
+        assert!(module_paths_agree(&win, &rel), "{win} vs {rel}");
+    }
+
+    /// The suffix must begin at a path BOUNDARY. A bare `ends_with` would call these the same module,
+    /// which would name the WRONG record — worse than the unhelpful message being replaced.
+    #[test]
+    fn a_partial_segment_is_not_a_match() {
+        assert!(!module_paths_agree("a/b/myColorHue.ts", "colorHue.ts"), "not a boundary");
+        assert!(!module_paths_agree("features/x/y.ts", "features/x/z.ts"), "different files");
+        assert!(module_paths_agree("a/b/colorHue.ts", "colorHue.ts"), "a real boundary DOES match");
+        assert!(module_paths_agree("x.ts", "x.ts"), "equality still holds");
+        assert!(!module_paths_agree("a/b/c.ts", ""), "an empty side never matches");
+    }
+
+    /// The three cases the message has to tell apart — the reporter's exact path, resolved by `src`
+    /// provenance, by `provides` specifier, and a genuinely unknown path that must still be a plain
+    /// miss.
+    #[test]
+    fn a_covering_record_is_found_by_src_by_provides_and_not_invented() {
+        let impls = vec![
+            serde_json::json!({
+                "id": "colour-hue.ts", "tech": "typescript", "role": "algorithm", "name": "hueOfColor",
+                "src": "src/features/designs/lib/colorHue.ts",
+            }),
+            serde_json::json!({
+                "id": "focus-queue.ts", "tech": "typescript", "role": "algorithm", "name": "focusQueue",
+                // NO `src` — provenance-free records exist (`--no-src`, #4136), so `provides` is the
+                // only signal that can resolve this one.
+                "provides": "@/app/console/lib/focusQueue",
+            }),
+        ];
+        // The reporter's actual failing target.
+        let (id, how) = super::record_covering_path_in(
+            &impls,
+            "C:/Users/Kevin/Projects/rust/base-studio-code/src/features/designs/lib/colorHue.ts",
+        )
+        .expect("resolved by src provenance");
+        assert_eq!(id, "colour-hue.ts", "and NOT by guessing the id from the filename");
+        assert!(how.contains("src"), "says which signal matched: {how}");
+
+        let (id, how) = super::record_covering_path_in(
+            &impls,
+            "C:/Users/Kevin/proj/src/app/console/lib/focusQueue.ts",
+        )
+        .expect("resolved by the provides specifier, extension and all");
+        assert_eq!(id, "focus-queue.ts");
+        assert!(how.contains("provides"), "says which signal matched: {how}");
+
+        assert!(
+            super::record_covering_path_in(&impls, "C:/Users/Kevin/proj/src/nope/missing.ts").is_none(),
+            "a genuinely unknown path stays a plain miss — inventing a record here would be worse \
+             than the message this replaces"
+        );
     }
 }
