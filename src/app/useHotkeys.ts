@@ -58,6 +58,30 @@ function stepPage(e: KeyboardEvent, bindings: Parameters<typeof matchesBinding>[
   return true;
 }
 
+/** Ctrl+1–9 → select the Nth PAGE of the active Workspace. Returns true when it handled the event.
+ *
+ *  The same intent as the Console's tab switch — "go to tab N of whatever this screen shows" — so it
+ *  shares that action's REBINDABLE LEADER rather than owning a second one: rebinding the leader moves
+ *  both, because to the user they are one idea, not two.
+ *
+ *  Digits were rejected for page STEPPING (#4167) on the grounds that "every digit combination is already
+ *  a console selector leader". True on the Console, where `Ctrl+Shift+<digits>` selects a pane and the
+ *  view switchers take the rest — but this runs only in the OFF-Console effect, where that listener is
+ *  never attached, so the digits are unclaimed there.
+ *
+ *  Out of range is a deliberate NO-OP: `Ctrl+7` on a four-page Workspace does nothing rather than
+ *  clamping to the last page, so a mistyped digit never silently navigates somewhere. */
+function pickPage(e: KeyboardEvent, bindings: Parameters<typeof matchesBinding>[1]): boolean {
+  const digit = e.code.match(/^Digit([1-9])$/);
+  if (!digit || !matchesLeader(e, bindings, "tab-switch")) return false;
+  const nav = getPageNav();
+  if (!nav) return false;
+  const target = nav.ids[parseInt(digit[1], 10) - 1];
+  if (!target || target === nav.active) return false;
+  nav.select(target);
+  return true;
+}
+
 function keyToTermBytes(e: KeyboardEvent): string | null {
   const { key, ctrlKey, altKey, shiftKey } = e;
 
@@ -153,7 +177,10 @@ export function useHotkeys() {
       // Ctrl+← / Ctrl+→ step the active Workspace's PAGES (#4167) — arrows, not digits, because the
       // console selectors own every digit combination (Ctrl / Ctrl+Shift / Alt / Alt+Shift + a digit).
       // `pageNav` is published by the mounted `Screen`; it is null on a Workspace with no page bar.
-      if (stepPage(e, bindings)) e.preventDefault();
+      if (stepPage(e, bindings)) { e.preventDefault(); return; }
+      // Ctrl+1–9 → jump straight to a page, the digit half of the same idea. Console-only until now, so
+      // the shortcut read as broken from every other screen.
+      if (pickPage(e, bindings)) e.preventDefault();
     }
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);

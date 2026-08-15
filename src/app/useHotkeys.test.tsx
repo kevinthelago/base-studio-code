@@ -246,3 +246,60 @@ describe("useHotkeys — Ctrl+arrow page navigation (#4167)", () => {
   });
 });
 
+// Ctrl+1–9 → jump straight to a page. The shortcut existed only on the CONSOLE (tab switch), so from any
+// other screen it read as broken — the user's model is one idea ("go to tab N of whatever this screen
+// shows"), which is why this shares the console tab-switch LEADER instead of owning a second binding.
+describe("useHotkeys — Ctrl+digit page selection", () => {
+  const PAGES = ["library", "runs", "logs"];
+
+  function withPages(active: string, select = vi.fn()) {
+    // Off the Console: the always-on listener owns page navigation, and the Console has no PageTabs.
+    useAppStore.setState({ activeWorkspace: "settings" });
+    setPageNav({ ids: PAGES, active, select });
+    renderHook(() => useHotkeys());
+    return select;
+  }
+
+  it("REPRODUCER: selects the Nth page from a non-Console screen", () => {
+    const select = withPages("library");
+    const ev = pressKey({ code: "Digit3", ctrlKey: true });
+    expect(select).toHaveBeenCalledWith("logs");
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it("is a NO-OP beyond the last page rather than clamping to it", () => {
+    // A mistyped digit must not silently navigate — Ctrl+7 on a three-page strip goes nowhere.
+    const select = withPages("library");
+    expect(pressKey({ code: "Digit7", ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the digit names the page already showing", () => {
+    const select = withPages("runs");
+    pressKey({ code: "Digit2", ctrlKey: true });
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("ignores a digit without the leader, so plain typing is untouched", () => {
+    const select = withPages("library");
+    pressKey({ code: "Digit2" });
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("does nothing on a Workspace with no page strip", () => {
+    useAppStore.setState({ activeWorkspace: "settings" });
+    setPageNav(null);
+    renderHook(() => useHotkeys());
+    expect(pressKey({ code: "Digit1", ctrlKey: true }).defaultPrevented).toBe(false);
+  });
+
+  it("leaves the CONSOLE path alone — there the digit still switches console tabs", () => {
+    // The console effect owns Ctrl+digit on its own screen; this must not shadow or double-handle it.
+    const select = vi.fn();
+    useAppStore.setState({ activeWorkspace: "console", showConsolePage: true });
+    setPageNav({ ids: PAGES, active: "library", select });
+    renderHook(() => useHotkeys());
+    pressKey({ code: "Digit3", ctrlKey: true });
+    expect(select, "the page selector must not fire on the Console").not.toHaveBeenCalled();
+  });
+});
