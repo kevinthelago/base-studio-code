@@ -497,7 +497,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if !known(id) && !crate::is_seeded(id) {
                     return Err(format!("unknown implementation '{id}'"));
                 }
-                let mut tomb = serde_json::json!({ "id": id, "suppressed": true });
+                let mut tomb = serde_json::json!({ "id": id });
                 if let Some(new_id) = flag_value(&args, "--superseded-by") {
                     // REFUSED, not stored, on a dangling or self pointer — the tombstone is durable, so a
                     // pointer naming something nobody can open outlives everyone who could correct it.
@@ -512,22 +512,21 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     tomb["supersededBy"] = Value::String(new_id);
                 }
                 crate::remove_impl(&mut g, id);
-                crate::ensure_array(&mut g, "implementations").push(tomb.clone());
+                crate::ensure_array(&mut g, "suppressed").push(tomb.clone());
                 crate::save(&g)?;
                 emit(&serde_json::json!({ "ok": true, "suppressed": id, "supersededBy": tomb.get("supersededBy") }))
             }
             Some("unsuppress") => {
                 let id = positional.get(2).ok_or("usage: bsc graph impl unsuppress <id>")?;
                 let mut g = crate::load();
-                let is_tomb = crate::raw_implementations_of(&g).iter().any(|im| {
-                    im.get("id").and_then(Value::as_str) == Some(*id) && crate::is_tombstone(im)
-                });
+                let is_tomb = crate::is_suppressed(&g, id);
                 // REFUSES on a live impl: a real record goes through `remove`, never this. Otherwise
                 // `unsuppress` becomes a second, quieter delete.
                 if !is_tomb {
                     return Err(format!("'{id}' is not a suppression tombstone — nothing to restore"));
                 }
-                crate::remove_impl(&mut g, id);
+                crate::ensure_array(&mut g, "suppressed")
+                    .retain(|t| t.get("id").and_then(Value::as_str) != Some(*id));
                 let reseeded = crate::reconcile_seed(&mut g);
                 crate::save(&g)?;
                 emit(&serde_json::json!({ "ok": true, "unsuppressed": id, "reseeded": reseeded }))
