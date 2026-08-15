@@ -1051,15 +1051,44 @@ mod tests {
         graphics.sort();
         assert_eq!(graphics, ["reflect.ts", "rotate.ts", "transpose.ts"], "the graphics collection");
         assert_eq!(in_domain("signal-processing"), ["fft.rs"]);
-        // The FleetPage dashboard's harvested algorithms (#3462/#3465) form a discoverable "fleet"
-        // collection (#3607) — in the graph but ungrouped until tagged, so `bsc graph` surfaced none.
-        let mut fleet = in_domain("fleet");
-        fleet.sort();
-        assert_eq!(
-            fleet,
-            ["group-totals.ts", "llm-energy.ts", "order-by-rank.ts", "precedence-resolve.ts", "stream-merge.ts", "windowed-tally.ts"],
-            "the fleet collection is the FleetPage dashboard's harvested algorithms"
-        );
+        // `fleet` is an OPEN domain and the three above are CLOSED — which is why this one is asserted
+        // by PROPERTY rather than by membership. Logistics is the graph-traversal/pathfinding set and
+        // graphics is the in-place matrix transforms: finite, classical, and an exact list is right for
+        // them. `fleet` is fed by directory harvest, so pinning its exact membership meant every later
+        // curation of the subsystem turned develop red — it sat at 91 pass / 1 fail once a sweep of
+        // `src/shared/lib/fleet/` took it from 6 members to 21, and the failure said nothing about what
+        // had gone wrong. A red test on develop is worse than no test: it trains the next reader to see
+        // a real failure as noise, and this one was already mistaken for collateral damage once.
+        //
+        // The property still has the teeth the list had. The six FleetPage-dashboard originals
+        // (#3462/#3465) were extracted from the PAGE, so they carry no `src`; everything harvested since
+        // carries a `src` under the fleet subsystem. So a member is one or the other — and an impl from
+        // ANYWHERE ELSE tagged `fleet`, which is the over-tagging the list was guarding against, still
+        // fails.
+        const FLEET_DASHBOARD: [&str; 6] = [
+            "group-totals.ts", "llm-energy.ts", "order-by-rank.ts",
+            "precedence-resolve.ts", "stream-merge.ts", "windowed-tally.ts",
+        ];
+        let fleet = in_domain("fleet");
+        for id in FLEET_DASHBOARD {
+            assert!(fleet.iter().any(|f| f == id), "the dashboard original '{id}' stays in the fleet collection");
+        }
+        for id in &fleet {
+            if FLEET_DASHBOARD.contains(&id.as_str()) {
+                continue;
+            }
+            let im = impls.iter().find(|im| im["id"] == id.as_str()).expect("a listed id resolves");
+            let src = im.get("src").and_then(Value::as_str).unwrap_or_default();
+            // A no-`src` member is the interesting failure, not an edge case: that shape is reserved
+            // for the six dashboard originals, so a SEVENTH is either a new dashboard extraction that
+            // belongs on the list above, or a mis-tag. Say which rather than printing an empty path.
+            let from = if src.is_empty() { "no src — extracted, not lifted".to_string() } else { format!("'{src}'") };
+            assert!(
+                src.contains("shared/lib/fleet/"),
+                "fleet member '{id}' ({from}) is outside the fleet subsystem — mis-tagged rather than \
+                 curated, or a new dashboard extraction that belongs in FLEET_DASHBOARD"
+            );
+        }
 
         // The facet is ADDITIVE: the seed's general-purpose sorts/searches stay UNTAGGED rather than
         // being forced into a domain, so a domain collection never surfaces an unrelated algorithm.
