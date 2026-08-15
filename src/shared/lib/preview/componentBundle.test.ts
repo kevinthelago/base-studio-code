@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
 import {
   resolveMemPath, lookupMem, loaderFor, stubsBoundaryModule, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureEngineScript, inspectEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
+  PREVIEW_DEFINE, PREVIEW_GLOB_BANNER, PREVIEW_GLOB_SHIM,
 } from "./componentBundle";
 
 // The esbuild-wasm bundle can't run under jsdom; these cover the PURE pieces (path resolution + srcdoc
@@ -158,6 +159,40 @@ describe("componentBundle — loaderFor (#79, designer request)", () => {
     for (const src of [GENERIC_ARROW, "import type { X } from 'y';", "export const C = () => <p>a</p>;"]) {
       expect(loaderFor("some/module", src)).not.toBe("jsx");
     }
+  });
+});
+
+describe("componentBundle — the import.meta.glob shim (#81, designer request)", () => {
+  // `import.meta.glob` is a VITE BUILD MACRO with no esbuild equivalent, so in a preview build it is
+  // undefined and calling it throws `(intermediate value).glob is not a function` BEFORE the component
+  // function runs. `agentProfiles.ts` calls it at MODULE TOP LEVEL and `store/index.ts` imports that,
+  // so every component reaching `useAppStore` inherited the crash — 44 of the store's 49 render-errors.
+  //
+  // esbuild-wasm cannot initialise under jsdom, so these cover the WIRING; the transform itself was
+  // verified against the real esbuild-wasm over the real `agentProfiles.ts` (see the change record).
+
+  it("routes import.meta.glob to a shim the banner declares", () => {
+    expect(PREVIEW_DEFINE["import.meta.glob"]).toBe(PREVIEW_GLOB_SHIM);
+    expect(PREVIEW_GLOB_BANNER).toContain(PREVIEW_GLOB_SHIM);
+    // The define VALUE must be a bare identifier: esbuild rejects a function literal outright with
+    // `Invalid define value (must be an entity name or JS literal)`, which is why the banner exists.
+    expect(PREVIEW_GLOB_SHIM).toMatch(/^[A-Za-z_$][A-Za-z0-9_$]*$/);
+  });
+
+  it("the shim RETURNS an empty object rather than throwing or being undefined", () => {
+    // Evaluate the banner exactly as esbuild prepends it, then call what it declared.
+    const shim = new Function(`${PREVIEW_GLOB_BANNER} return ${PREVIEW_GLOB_SHIM};`)() as
+      (pattern: string, opts?: unknown) => Record<string, unknown>;
+    expect(typeof shim).toBe("function");
+    // Called with the real call's shape — a pattern plus Vite's options bag.
+    expect(shim("@data/roles/*.json", { eager: true })).toEqual({});
+    // The consuming code does `Object.values(...)` / `Object.keys(...)` on the result, so an empty
+    // OBJECT is what keeps the module body running; undefined or null would throw one line later.
+    expect(Object.values(shim("@data/a/*.png", { eager: true, query: "?url" }))).toEqual([]);
+  });
+
+  it("names a shim unlikely to collide with anything in a bundled module", () => {
+    expect(PREVIEW_GLOB_SHIM.startsWith("__bsc")).toBe(true);
   });
 });
 

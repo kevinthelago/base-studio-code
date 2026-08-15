@@ -14,7 +14,9 @@ import importmapEmbedded from "@data/ui/preview-importmap.json";
 import { PREVIEW_SHIM_NAMESPACE, shimModuleFor, scanStubImports, previewCspMeta } from "@/shared/lib/preview/previewShims";
 // #79 — ONE loader rule for both bundlers. This copy had drifted to the opposite extensionless
 // default, so the same module could build differently depending on which preview reached it.
-import { loaderFor, type MemLoader } from "@/shared/lib/preview/componentBundle";
+import {
+  loaderFor, PREVIEW_DEFINE, PREVIEW_GLOB_BANNER, type MemLoader,
+} from "@/shared/lib/preview/componentBundle";
 
 /** esm.sh import-map for the externals (pinned; `deps` params keep React deduped) — the pins live in
  *  `@data/ui/preview-importmap.json` (#2419; ONE source, also read by streamingRuntime.ts), a plain
@@ -135,6 +137,10 @@ export async function bundleSkeleton(files: Record<string, string>, screenEntry:
     write: false,
     jsx: "automatic",
     logLevel: "silent",
+    // #81 — the same `import.meta.glob` shim the component bundler uses, IMPORTED not restated. The
+    // two copies of the loader rule drifted to opposite defaults (#79); this one is shared by design.
+    define: PREVIEW_DEFINE,
+    banner: { js: PREVIEW_GLOB_BANNER },
     plugins: [inMemoryPlugin(withBootstrap)],
   });
   return result.outputFiles?.[0]?.text ?? "";
