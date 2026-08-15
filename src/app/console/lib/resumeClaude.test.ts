@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveInitCmd } from "./resumeClaude";
+import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 
 // #3937: `--continue` is emitted with a shell fallback, because a resume with no conversation exits 1
 // having written ZERO bytes to stdout — which showed up as a dead `$` prompt rather than a failed

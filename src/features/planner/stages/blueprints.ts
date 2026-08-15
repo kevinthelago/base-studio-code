@@ -15,5 +15,5 @@
 //                            stage status/progress engine, template-change detection).
 
 export * from "@/features/planner/stages/blueprintTypes";
-export * from "./blueprintBuiltins";
+export * from "@/features/planner/stages/blueprintBuiltins";
 export * from "./blueprintStages";

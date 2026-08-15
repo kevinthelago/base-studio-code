@@ -6,7 +6,7 @@
 // node with nothing to do reports, which is how "idle won against completed".
 import { describe, it, expect } from "vitest";
 import { applyFleetLiveStatus } from "@/features/glance/lib/agentStall";
-import type { GRawNode } from "./lib/glanceGraph";
+import type { GRawNode } from "@/features/glance/lib/glanceGraph";
 
 const node = (id: string, progress?: { done: number; total: number }): GRawNode =>
   ({ id, slug: id, role: "service", health: "off", activity: "idle", progress }) as GRawNode;

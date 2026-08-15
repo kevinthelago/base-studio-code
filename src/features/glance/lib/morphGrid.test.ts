@@ -5,7 +5,7 @@ import {
   CELL_MIN_W, CELL_MIN_H, CELL_MAX_W, CELL_MAX_H,
   type MorphPlacement, type GridCell,
 } from "@/features/glance/lib/morphGrid";
-import { NW, NH } from "./glanceGraph";
+import { NW, NH } from "@/features/glance/lib/glanceGraph";
 import type { MorphRect } from "@/features/glance/lib/glancePush";
 
 const ANCHOR = { x: 100, y: 100 };

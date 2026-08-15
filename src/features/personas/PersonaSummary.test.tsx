@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { PersonaSummary } from "./PersonaSummary";
-import type { Persona } from "./lib/persona";
+import type { Persona } from "@/features/personas/lib/persona";
 import { useAppStore } from "@/store";
 
 const persona = (over: Partial<Persona> = {}): Persona => ({

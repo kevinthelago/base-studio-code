@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
-import { buildGraph, libraryNodeId, requiresEdgeId, type GRawNode, type GRawEdge } from "./lib/glanceGraph";
+import { buildGraph, libraryNodeId, requiresEdgeId, type GRawNode, type GRawEdge } from "@/features/glance/lib/glanceGraph";
 // #3133 — the REAL data path: the designs roll-up + the Glance adapter, joined end to end below.
 import { buildGlanceData } from "./lib/glanceData";
 import { resolveKitLibraryRefs, type ComponentRecord } from "@/features/designs";

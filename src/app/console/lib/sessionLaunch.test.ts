@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL } from "./sessionLaunch";
+import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL } from "@/app/console/lib/sessionLaunch";
 import { DEBUG_STUDIO_SESSION_ID, designerSessionId,
   librarianSessionId, TEAMS_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 import { aiderProvider } from "@/app/console/lib/providers/providers/aider";

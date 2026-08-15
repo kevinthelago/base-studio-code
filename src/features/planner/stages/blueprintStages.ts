@@ -10,7 +10,7 @@ import type {
   Blueprint, BlueprintStage, SectionStatus,
   StageRenderStatus, IncompleteStage, SectionDef, ModelCapabilityTier, StageSeed,
 } from "@/features/planner/stages/blueprintTypes";
-import { uid, makeBlueprints, dedupeSections } from "./blueprintBuiltins";
+import { uid, makeBlueprints, dedupeSections } from "@/features/planner/stages/blueprintBuiltins";
 
 // ── Dynamic-blueprint resolution (#1854 Phase a) ──────────────────────────────
 

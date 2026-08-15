@@ -7,7 +7,7 @@
 // are the mcp INTERNALS, a disjoint set of specifiers.)
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as McpInstall from "@/features/mcp/lib/mcpInstall";
-import * as McpServers from "./lib/mcpServers";
+import * as McpServers from "@/features/mcp/lib/mcpServers";
 import * as Hooks from "@/features/mcp/lib/hooks";
 import * as McpTelemetry from "@/features/mcp/lib/mcpTelemetry";
 import * as Shared from "@/features/mcp/shared";

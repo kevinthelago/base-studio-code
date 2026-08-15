@@ -7,7 +7,7 @@ import { render } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { GlanceNode } from "@/features/glance/GlanceNode";
-import { HEALTH_META, buildGraph, type GHealth } from "./lib/glanceGraph";
+import { HEALTH_META, buildGraph, type GHealth } from "@/features/glance/lib/glanceGraph";
 
 /** Render one node card at `health`, with the canvas's own HEALTH_META-derived pulse props.
  *  Defaults to an L0 PROJECT node — no function chip (that is fleet-only, #4052) but WITH its axis-2

@@ -9,4 +9,4 @@ export { PersonasPanel } from "./PersonasPanel";
 export { PersonaEditor } from "./PersonaEditor";
 export { PersonaSummary } from "./PersonaSummary";
 export { createPersonasSlice, type PersonasSlice } from "@/features/personas/store";
-export { BUILTIN_PERSONAS, blankPersona, personaSlug, reconcilePersonas, type Persona } from "./lib/persona";
+export { BUILTIN_PERSONAS, blankPersona, personaSlug, reconcilePersonas, type Persona } from "@/features/personas/lib/persona";

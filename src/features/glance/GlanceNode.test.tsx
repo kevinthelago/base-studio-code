@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, cleanup } from "@testing-library/react";
 import { GlanceNode } from "@/features/glance/GlanceNode";
 import { GLANCE_NODE_ANIM_CLASSES } from "@/features/glance/glanceNodeMotion";
-import type { GNode } from "./lib/glanceGraph";
+import type { GNode } from "@/features/glance/lib/glanceGraph";
 
 const node = (over: Partial<GNode> = {}): GNode => ({
   id: "auth", slug: "auth", role: "service", health: "healthy", activity: "building",

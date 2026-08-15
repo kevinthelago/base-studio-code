@@ -7,7 +7,7 @@
 import type { Persona } from "@/features/personas";
 import { roleCapability, hasScopedWriteCarveOut } from "@/shared/lib/session/sessionRoles";
 import { resolveFlow } from "@/features/planner/fleet/agentFlow";
-import { flowKickoffText } from "./flowKickoff";
+import { flowKickoffText } from "@/features/planner/fleet/flowKickoff";
 import { strategySettings, DEFAULT_STRATEGY, type IntegrationStrategy } from "@/features/planner/lib/integrationStrategy";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import personaKickoffEmbedded from "@data/fleet/persona-kickoff.json";

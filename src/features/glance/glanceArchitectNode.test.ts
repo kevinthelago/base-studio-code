@@ -17,7 +17,7 @@ import { describe, it, expect } from "vitest";
 import { buildGlanceData, type ArchitectLite, type ProjectLite } from "./lib/glanceData";
 import {
   buildGraph, isBandNode, isBandEdge, bandNodeMeta, architectNodeId, architectIdOfNode, ownedByEdgeId,
-} from "./lib/glanceGraph";
+} from "@/features/glance/lib/glanceGraph";
 
 const projects: ProjectLite[] = [
   { id: "app-a", name: "App A" },

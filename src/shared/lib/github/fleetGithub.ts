@@ -4,7 +4,7 @@
 // durations). Reuses the day-bucketing + review-latency helpers from
 // repoPulseLive. Framework-free + unit-tested; fetch orchestration is in
 // hooks/useFleetGithub.
-import { mapReviewLatency, medianLatencyH, type GhPull } from "./repoPulseLive";
+import { mapReviewLatency, medianLatencyH, type GhPull } from "@/shared/lib/github/repoPulseLive";
 import { orderByRank } from "@/shared/lib/algorithms/orderByRank";
 import { windowedTally } from "@/shared/lib/algorithms/windowedTally";
 import type { GhIssueItem } from "@/shared/lib/github/types";

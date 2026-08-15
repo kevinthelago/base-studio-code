@@ -6,7 +6,7 @@ import type { DbProject } from "@/features/planner";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
 import type { ProjectLite } from "./glanceData";
-import type { GlanceFault } from "./useGlanceFaults";
+import type { GlanceFault } from "@/features/glance/lib/useGlanceFaults";
 import { useAppStore } from "@/store";
 
 /** A GhProject with the fields the merge reads; the rest filled so the cast is honest. */

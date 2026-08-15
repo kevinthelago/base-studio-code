@@ -6,7 +6,7 @@ import type { Tier, ToolKey } from "@/features/security";
 import { resolveFlow, LOCAL_ONLY_PUSH } from "@/features/planner/fleet/agentFlow";
 import { resolveStrategy } from "@/features/planner/lib/integrationStrategy";
 import { depsForRepo } from "@/features/planner/issues/dependencies";
-import { buildWorkerScope } from "../fleet/workerScope";
+import { buildWorkerScope } from "@/features/planner/fleet/workerScope";
 import { buildStreamPrompt } from "@/store/helpers";
 import { resolveStreamPersona, personaStreamPrompt } from "../fleet/streamPersona";
 import type { AgentProfile } from "@/features/security";
