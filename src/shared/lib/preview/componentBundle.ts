@@ -55,18 +55,85 @@ export function resolveMemPath(importer: string, spec: string, files?: Record<st
   return collapseSegments((fromDir ? fromDir.split("/") : []).concat(spec.split("/")));
 }
 
+/** The esbuild loaders a preview module can be built with. */
+export type MemLoader = "jsx" | "tsx" | "ts";
+
+/**
+ * Which esbuild loader builds `contents`, given the key it was found under (#79, designer request).
+ *
+ * TSX IS NOT A SUPERSET OF TS, which is the assumption this replaces. A generic arrow is valid
+ * TypeScript in a `.ts` file and is JSX in a `.tsx` file — the two grammars genuinely conflict, so no
+ * single loader parses both. Measured against `deployEnv.ts`'s
+ * `const clone = <T>(v: T): T => structuredClone(v)`:
+ *
+ *     ts    OK
+ *     tsx   FAIL  The character ">" is not valid inside a JSX element
+ *     jsx   FAIL  Expected ";" but found "P"
+ *
+ * So a JSX-free TypeScript module reached through a barrel could not be built at all, and previewing
+ * any component that transitively imported one failed at BUILD time with a JSX parse error against a
+ * file containing no JSX.
+ *
+ * An explicit extension answers it outright. An EXTENSIONLESS key cannot — app-library modules are
+ * keyed by their `provides` specifier, which carries no extension — so the SOURCE decides: `</` and
+ * `/>` are unambiguous JSX (a closing tag, a self-closing tag) and appear in neither a generic arrow
+ * nor a type annotation. Guessing wrong is a loud parse error, never silent wrong output.
+ */
+export function loaderFor(key: string, contents: string): MemLoader {
+  if (key.endsWith(".jsx") || key.endsWith(".js")) return "jsx";
+  if (key.endsWith(".tsx")) return "tsx";
+  if (key.endsWith(".ts")) return "ts";
+  return /<\/|\/>/.test(withoutStringsAndComments(contents)) ? "tsx" : "ts";
+}
+
+/**
+ * `src` with comments and string/template literals removed — so a JSX sniff reads CODE, not prose.
+ *
+ * Measured, and it is why the naive sniff was not enough: `graphHealth.ts` is a JSX-free analysis
+ * module that nonetheless contains `<Name/>` in a doc comment and `` `(<${c.name}/>)` `` in a template
+ * literal — it REPORTS on components, so it talks about JSX in strings. Sniffing the raw text called
+ * it tsx and it still failed to build with `The character ">" is not valid inside a JSX element`.
+ *
+ * A regex literal containing `/>` would still fool this (telling a regex from division needs a real
+ * parse), which is accepted: an explicit extension always wins, and the failure mode is a loud parse
+ * error rather than wrong output.
+ */
+function withoutStringsAndComments(src: string): string {
+  let out = "";
+  for (let i = 0; i < src.length; ) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (c === "/" && next === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && next === "*") {
+      i += 2;
+      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      i += 2;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      i++;
+      while (i < src.length) {
+        if (src[i] === "\\") { i += 2; continue; } // an escaped quote does not close the literal
+        if (src[i] === c) { i++; break; }
+        i++;
+      }
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 /** Look up an in-memory file, trying common TS/JS extensions + index files. Pure. */
-export function lookupMem(files: Record<string, string>, path: string): { contents: string; loader: "jsx" | "tsx" } | null {
+export function lookupMem(files: Record<string, string>, path: string): { contents: string; loader: MemLoader } | null {
   for (const ext of ["", ".tsx", ".ts", ".jsx", ".js", "/index.tsx", "/index.ts", "/index.jsx"]) {
     const key = path + ext;
     if (files[key] != null) {
-      // A component source is TypeScript/TSX. `.tsx`/`.ts` are obviously tsx; an EXTENSIONLESS key
-      // (a `src` recorded as a directory, e.g. WorkspaceShellPage's `src/shared/ui/layouts` — #3549)
-      // is ALSO a component source, so DEFAULT to tsx and use jsx only for an explicit `.jsx`/`.js`.
-      // The tsx loader is a superset (parses TS + JS + JSX), so this can only widen what parses — a
-      // TS-only source loaded as `jsx` fails on `import type {…}` with `Expected "from" but found "{"`.
-      const loader: "jsx" | "tsx" = key.endsWith(".jsx") || key.endsWith(".js") ? "jsx" : "tsx";
-      return { contents: files[key], loader };
+      return { contents: files[key], loader: loaderFor(key, files[key]) };
     }
   }
   return null;
