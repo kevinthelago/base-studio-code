@@ -279,7 +279,7 @@ Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context 
 
 ### Per-agent configuration set during planning
 - **Profiles** (#289, `src/features/security/`): a least-privilege `AgentProfile` (commands / tools / write-paths / net) per stream, applied at launch.
-- **Flows** (#297, `src/features/planner/fleet/agentFlow.ts`): `autonomy` (continuous/checkpoint/confirm) + `push` (auto-pr/push-confirm/commit-only/none) + `trigger` + `gate` — drives each agent's git/gh permissions, kickoff prose, and pause-visibility.
+- **Flows** (#297, `@/features/planner/fleet/agentFlow` — a record): `autonomy` (continuous/checkpoint/confirm) + `push` (auto-pr/push-confirm/commit-only/none) + `trigger` + `gate` — drives each agent's git/gh permissions, kickoff prose, and pause-visibility.
 
 ### Session roles + the CLAUDE.md model (and a known issue)
 Three kinds of session live around a project, each needing **different** context:
@@ -328,7 +328,7 @@ One click fills a build tab:
 ### Per-agent flow at launch (#297)
 Drives: which git/gh writes auto-approve vs **prompt** (the `ask` tier for a hard push-confirm gate) vs deny; the autonomy + push paragraph in the kickoff; and a coordination wake when a checkpoint/confirm agent pauses. The flow's push policy is the **authority** over `git push` / `gh pr create` and lifts the role gate's broad gh-write deny for exactly those two (#304) — so an `auto-pr` worker can open its own PR while `gh pr merge` / repo-delete stay role-denied.
 
-### Coordination (#199, `src/shared/lib/fleet/coordination.ts`)
+### Coordination (#199, `@/shared/lib/fleet/coordination` — a record)
 Agents emit structured events to an app-wide `coord.log`: `bsc-wait` (paused for the user, #297), the worker↔director Q&A pair `bsc-ask`/`bsc-answer`, the `bsc-issue`/`bsc-assign` capture-and-route emitters, the planner→director/issuer `bsc-brief` channel (#2377 — the planner's runtime voice, pushing a mid-build plan update into the running fleet; folds into `CoordState.briefs` and the director pump surfaces it, once per pane, to reconcile + route onward via `bsc-assign`), and the completion emitters `bsc-landed/merged/closed/failed`. The **Coordination inbox** (`CoordinatorInbox`) surfaces paused / blocked-on-a-question / ready sessions for the user. **Runtime dependency-wait was removed (#1039):** there is no `bsc-blocked --on` and no coordinator auto-wake — `dependsOn` is a *planning-time* sequencing hint only; at run time workers build against the planned contracts in parallel and never park on an upstream, and the director owns contracts + integration.
 
 ### bsc-* shell helpers + the runtime state-CLI surface (#1325)

@@ -14,7 +14,7 @@
   behind **two** axes: `uiSystem` (who renders) and `algorithmSystem` (where the computation comes
   from, and whose `vizCode` we execute) — plus `uiSystemOf`/`rendersFromStudio`,
   `algorithmSystemOf`/`computesFromStudio`, and `hostRunsProjectArtifacts` (an OR over both — the
-  isolate-before-render question). `src/features/planner/lib/classifyConfig.ts`, with the
+  isolate-before-render question). `@/features/planner/lib/classifyConfig` (a record), with the
   `SYSTEM_SOURCES` lockstep twin in `crates/plandb/src/validate.rs` and both echoed by
   `classify_readiness`. Unset reads as `studio` on both.
 - **2 · the Discovery ask — DONE.** `src-tauri/data/stages/discovery.json` asks BOTH, separately and
@@ -71,7 +71,7 @@ way to opt out of a UI system it is not using.
 
 `uiMode` has exactly **one** functional consumer:
 
-- `src/features/planner/pane/FocusedBodies.tsx:99` — `PreviewPaneShell` vs `FileIntakePane`
+- `src/features/planner/pane/FocusedBodies.tsx` — `PreviewPaneShell` vs `FileIntakePane`
 - (plus `classifyConfig.ts` parsing and `crates/plandb/src/validate.rs` validation, kept in lockstep)
 
 So the field is cheap to extend. The work is not the branch — it is deciding **what the answer should

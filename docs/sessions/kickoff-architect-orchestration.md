@@ -1,5 +1,9 @@
 # Kickoff — architect orchestration
 
+> **SESSION ARTIFACT — not maintained.** A KICKOFF BRIEF, consumed by the session it was written for.
+> See [`README.md`](README.md) for why this lives here.
+
+
 Paste the block below to start the next session.
 
 ---

@@ -1,8 +1,12 @@
 # bsc-data
 
 The data-platform substrate for base-studio-code — the canonical **Data Model** store
-(#781) and the **connector framework** (#784). See `docs/data-platform-spec.md` for the
-full design and `docs/data-platform-spec.md §9` for the locked decisions.
+(#781) and the **connector framework** (#784).
+
+> This used to point at `docs/data-platform-spec.md` for the full design and its §9 for the locked
+> decisions. **That document no longer exists**, and nothing replaced it — so this README and
+> `bsc data <command> help` are now the design of record. Said plainly rather than left as a link to
+> nowhere, because a pointer to a missing spec reads like the spec is somewhere you have not looked.
 
 ## What it does
 

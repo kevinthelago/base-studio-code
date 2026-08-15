@@ -1,5 +1,9 @@
 # Investigation — retiring `react-ui.json` and the DB-driven UI
 
+> **SESSION ARTIFACT — not maintained.** AN INVESTIGATION answering the kickoff beside it. Superseded by what actually shipped.
+> See [`README.md`](README.md) for why this lives here.
+
+
 Answer to the kickoff in `docs/kickoff-retire-packaged-kit-artifact.md`.
 Epic: **#3856**. Slices: **#3857 · #3858 · #3859 · #3860 · #3861**. Filed separately: **#3862**.
 
