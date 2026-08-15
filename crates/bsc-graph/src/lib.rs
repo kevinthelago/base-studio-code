@@ -64,7 +64,10 @@ pub fn load() -> Value {
     // FRONTEND reads. That asymmetry is the whole bug: Rust readers were fine while the graph page
     // died on a record Rust had filtered. Best-effort and only when something actually changed, so a
     // normal load still writes nothing.
-    if migrate_inline_tombstones(&mut g) {
+    // Both heals run before anything reads, and both PERSIST — an in-memory fix would leave the file
+    // untouched, and the file is what the FRONTEND reads. `|` not `||`: short-circuiting would skip
+    // the dedupe whenever the migration already reported a change.
+    if migrate_inline_tombstones(&mut g) | dedupe_suppressions(&mut g) {
         if let Some(p) = store_path() {
             let _ = save_at(&p, &g);
         }
@@ -426,6 +429,76 @@ pub fn is_suppressed(g: &Value, id: &str) -> bool {
     suppressions_of(g).iter().any(|t| t.get("id").and_then(Value::as_str) == Some(id))
 }
 
+/// What retired `id`, if anything did — the tombstone's `supersededBy`.
+pub fn superseded_by(g: &Value, id: &str) -> Option<String> {
+    suppressions_of(g)
+        .iter()
+        .find(|t| t.get("id").and_then(Value::as_str) == Some(id))
+        .and_then(|t| t.get("supersededBy").and_then(Value::as_str).map(str::to_owned))
+        .filter(|s| !s.trim().is_empty())
+}
+
+/// Record `id` as retired, carrying what replaced it. IDEMPOTENT — returns whether it was NEW.
+///
+/// Retiring an already-retired id must not append a second tombstone. The live store proved this is
+/// not theoretical: it carried FOUR entries for TWO ids (`llm-energy.ts` and `stream-merge.ts` each
+/// twice), because the reporter of designer request #77 ran the same merge again after the record
+/// came back. Duplicates are harmless to the reconcile — which only asks whether an id is in the
+/// list — but a list that grows on every retry cannot be read as a history of retirements.
+///
+/// An existing entry KEEPS its `supersededBy` unless this call supplies one: re-retiring without a
+/// pointer must not erase the pointer an earlier retirement recorded.
+pub fn add_suppression(g: &mut Value, id: &str, superseded_by: Option<&str>) -> bool {
+    let arr = ensure_array(g, "suppressed");
+    if let Some(existing) = arr.iter_mut().find(|t| t.get("id").and_then(Value::as_str) == Some(id)) {
+        if let Some(b) = superseded_by {
+            existing["supersededBy"] = Value::String(b.to_string());
+        }
+        return false;
+    }
+    let mut entry = serde_json::json!({ "id": id });
+    if let Some(b) = superseded_by {
+        entry["supersededBy"] = Value::String(b.to_string());
+    }
+    arr.push(entry);
+    true
+}
+
+/// Collapse duplicate tombstones to one per id. Runs on load beside [`migrate_inline_tombstones`], so
+/// a store that already accumulated them self-repairs rather than carrying them forever — the live
+/// store has four entries for two ids right now. Returns whether it changed `g`.
+pub fn dedupe_suppressions(g: &mut Value) -> bool {
+    // Collect each id's pointer BEFORE pruning: the copy that carries `supersededBy` is not
+    // necessarily the first one, and dropping it would lose WHAT replaced the record — the only
+    // thing a tombstone knows that a plain delete would not.
+    let mut pointer: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for t in suppressions_of(g) {
+        if let (Some(id), Some(b)) = (
+            t.get("id").and_then(Value::as_str),
+            t.get("supersededBy").and_then(Value::as_str).filter(|s| !s.trim().is_empty()),
+        ) {
+            pointer.entry(id.to_string()).or_insert_with(|| b.to_string());
+        }
+    }
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let arr = ensure_array(g, "suppressed");
+    let before = arr.len();
+    arr.retain(|t| match t.get("id").and_then(Value::as_str) {
+        Some(id) => seen.insert(id.to_string()),
+        // An entry with no id can never be matched by the reconcile — it is noise either way.
+        None => false,
+    });
+    for t in arr.iter_mut() {
+        let Some(id) = t.get("id").and_then(Value::as_str).map(str::to_owned) else { continue };
+        if t.get("supersededBy").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).is_none() {
+            if let Some(b) = pointer.get(&id) {
+                t["supersededBy"] = Value::String(b.clone());
+            }
+        }
+    }
+    arr.len() != before
+}
+
 /// Sweep any LEGACY in-array tombstone into the suppression list. Runs on load, so a store written by
 /// the first cut heals itself without anyone running a command — two of them are already in a live
 /// store, and one of them is what crashed the graph.
@@ -518,6 +591,30 @@ pub fn set_impl_by(g: &mut Value, im: Value, writer: &str, note: Option<&str>) -
         .filter(|s| !s.trim().is_empty())
         .ok_or("an implementation needs a non-empty `id`")?
         .to_string();
+    // A RETIRED id is refused here, not merely kept out of the seed reconcile (#77, designer request).
+    //
+    // The tombstone used to guard exactly one path — `reconcile_seed` — and `is_suppressed` was
+    // consulted in exactly one place, the `unsuppress` verb. Nothing checked it on the way IN, so
+    // every authoring path (`impl set`, `harvest --apply`, `curate --apply`) wrote a retired record
+    // straight back while its tombstone sat untouched beside it. That is what was reported as the
+    // tombstone "not being durable": two ids were merged away, confirmed gone, verified across a
+    // fresh doctor run, and reappeared later in the same session — because a second harvest pass
+    // re-authored them. They came back with no history, which is what a fresh write looks like, so
+    // the reconcile took the blame for something it never did.
+    //
+    // Refusing at the single write path is what makes retirement mean the same thing to every caller,
+    // including ones not written yet. `unsuppress` stays the one deliberate way back.
+    if is_suppressed(g, &id) {
+        let by = superseded_by(g, &id)
+            .map(|b| format!(", superseded by '{b}'"))
+            .unwrap_or_default();
+        return Err(format!(
+            "'{id}' is RETIRED{by} — refusing to re-author it. A tombstone means the id was folded \
+             away on purpose, so writing it back would silently undo that (it is how a re-harvest \
+             resurrected two records after they were merged, #77). Write the record that superseded \
+             it, or run `bsc graph impl unsuppress {id}` first if the retirement was wrong."
+        ));
+    }
     im.get("tech")
         .and_then(Value::as_str)
         .filter(|s| !s.trim().is_empty())
@@ -707,7 +804,8 @@ pub fn merge_impls(g: &mut Value, from: &str, into: &str) -> Result<Vec<String>,
     // this very store, and the merge just repointed every consumer at it.
     if is_seeded(from) {
         remove_impl(g, from);
-        ensure_array(g, "suppressed").push(serde_json::json!({ "id": from, "supersededBy": into }));
+        // Idempotent (#77): running the same merge twice must not leave two tombstones for one id.
+        add_suppression(g, from, Some(into));
     } else {
         remove_impl(g, from); // its refs are already repointed; the scrub is a harmless no-op
     }
@@ -816,6 +914,39 @@ pub fn doctor(g: &Value) -> Vec<Finding> {
 /// than failing every declaration — the same shape the provides-set uses when no store is open.
 pub fn doctor_with_entities(g: &Value, entities: &[String]) -> Vec<Finding> {
     let mut out = Vec::new();
+    // AN ID THAT IS BOTH LIVE AND RETIRED — the residue of the resurrection bug (#77).
+    //
+    // The guard in `set_impl_by` stops this from being CREATED, but stores already carry it: at the
+    // time that fix was written the live store held `llm-energy.ts` and `stream-merge.ts` in
+    // `implementations` AND in `suppressed` at the same time. Nothing could see that, which is how it
+    // survived two rounds of someone actively looking for it.
+    //
+    // REPORTED, NEVER AUTO-RESOLVED. Dropping the record would discard whatever was written into it
+    // since; dropping the tombstone would discard a deliberate retirement. Both are destructive and
+    // only the operator knows which one is the mistake — so this names the contradiction and the two
+    // verbs that settle it.
+    for im in implementations_of(g) {
+        let Some(id) = im.get("id").and_then(Value::as_str) else { continue };
+        if !is_suppressed(g, id) {
+            continue;
+        }
+        let by = superseded_by(g, id)
+            .map(|b| format!(" (superseded by `{b}`)"))
+            .unwrap_or_default();
+        out.push(Finding {
+            id: id.to_string(),
+            category: "retired-but-live",
+            detail: format!(
+                "`{id}` is RETIRED{by} yet still present as a live implementation — it was re-authored \
+                 after being folded away, which is the resurrection #77 fixed at the write path"
+            ),
+            suggestion: Some(format!(
+                "keep the retirement: `bsc graph impl remove {id}` — or reverse it: \
+                 `bsc graph impl unsuppress {id}`. Not auto-resolved: one discards the record, the \
+                 other discards the decision to retire it"
+            )),
+        });
+    }
     if !entities.is_empty() {
         for im in implementations_of(g) {
             let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
@@ -967,6 +1098,135 @@ mod tests {
             .find(|t| t["id"] == "llm-energy.ts")
             .expect("the suppression is listed");
         assert_eq!(tomb.get("supersededBy").and_then(Value::as_str), Some("algorithms-llm-energy.ts"));
+    }
+
+    /// REQUEST #77 — the reported shape, reproduced end to end.
+    ///
+    /// `llm-energy.ts` was merged into its algorithms-domain survivor, confirmed gone, verified across
+    /// a fresh doctor run, and then reappeared later in the same session. It was reported as the
+    /// tombstone not being durable, but the tombstone never moved: the live store carried FOUR entries
+    /// for TWO ids, which is the SECOND merge writing a duplicate of one already there.
+    ///
+    /// The tombstone guarded `reconcile_seed` and nothing else — `is_suppressed` was consulted in one
+    /// place, the `unsuppress` verb — so every authoring path wrote the retired record straight back
+    /// while its tombstone sat beside it untouched. The reporter was running bulk harvest passes,
+    /// which is exactly that path. The record returned with no history, which is what a fresh write
+    /// looks like, so the reconcile took the blame for something it never did.
+    ///
+    /// BEFORE THIS FIX the `set_impl` below returned `Ok` and the final assertion failed.
+    #[test]
+    fn a_retired_impl_cannot_be_re_authored_by_a_later_write() {
+        let mut g = seed();
+        merge_impls(&mut g, "llm-energy.ts", "algorithms-llm-energy.ts").expect("merge succeeds");
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "llm-energy.ts"), "gone after the fold");
+
+        // The resurrection: a later pass re-authors the same id, exactly as a re-harvest would.
+        let err = set_impl(
+            &mut g,
+            serde_json::json!({
+                "id": "llm-energy.ts", "tech": "typescript", "role": "algorithm",
+                "name": "llmEnergy", "code": "export const e = 1;",
+            }),
+        )
+        .expect_err("re-authoring a RETIRED id must be refused");
+        assert!(err.contains("llm-energy.ts"), "names the id: {err}");
+        assert!(err.contains("algorithms-llm-energy.ts"), "names what superseded it: {err}");
+        assert!(err.contains("unsuppress"), "names the way back, or the refusal is a dead end: {err}");
+
+        // The point of the whole thing: it is STILL gone, with no second merge needed.
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "llm-energy.ts"), "stays retired");
+    }
+
+    /// The refusal must not be a one-way door. `unsuppress` is the deliberate way back, and after it
+    /// the SAME write succeeds — otherwise a wrong retirement would be unrecoverable.
+    #[test]
+    fn unsuppress_reopens_the_id_and_the_same_write_then_succeeds() {
+        let mut g = seed();
+        merge_impls(&mut g, "stream-merge.ts", "windowed-tally.ts").expect("merge succeeds");
+        let write = || {
+            serde_json::json!({
+                "id": "stream-merge.ts", "tech": "typescript", "role": "algorithm",
+                "name": "streamMerge", "code": "export const s = 1;",
+            })
+        };
+        assert!(set_impl(&mut g, write()).is_err(), "refused while retired");
+
+        // `unsuppress` as the CLI performs it — drop the tombstone, then write.
+        ensure_array(&mut g, "suppressed")
+            .retain(|t| t.get("id").and_then(Value::as_str) != Some("stream-merge.ts"));
+        assert!(set_impl(&mut g, write()).is_ok(), "and allowed once the retirement is lifted");
+        assert!(implementations_of(&g).iter().any(|im| im["id"] == "stream-merge.ts"), "it is back");
+    }
+
+    /// Retiring an already-retired id is IDEMPOTENT. The live store carried two tombstones for each of
+    /// two ids because the same merge ran twice; duplicates do not fool the reconcile (it only asks
+    /// whether an id is listed) but a list that grows on every retry cannot be read as a history.
+    #[test]
+    fn retiring_an_already_retired_id_does_not_append_a_second_tombstone() {
+        let mut g = seed();
+        assert!(add_suppression(&mut g, "x.ts", Some("y.ts")), "first is new");
+        assert!(!add_suppression(&mut g, "x.ts", Some("y.ts")), "second is not");
+        assert_eq!(suppressions_of(&g).iter().filter(|t| t["id"] == "x.ts").count(), 1, "one entry");
+
+        // Re-retiring with NO pointer must not erase the pointer already recorded.
+        assert!(!add_suppression(&mut g, "x.ts", None));
+        assert_eq!(superseded_by(&g, "x.ts").as_deref(), Some("y.ts"), "the pointer survives");
+        // …and a NEW pointer refreshes it rather than being dropped on the floor.
+        add_suppression(&mut g, "x.ts", Some("z.ts"));
+        assert_eq!(superseded_by(&g, "x.ts").as_deref(), Some("z.ts"));
+    }
+
+    /// A store that ALREADY accumulated duplicates heals itself on load — the live store has four
+    /// entries for two ids right now, and nobody should have to run a command to fix that.
+    #[test]
+    fn dedupe_collapses_existing_duplicates_and_keeps_what_superseded_them() {
+        // The exact live shape, including the case that matters: the copy carrying `supersededBy` is
+        // NOT the first one, so a naive keep-the-first would drop what replaced the record.
+        let mut g = serde_json::json!({
+            "implementations": [],
+            "suppressed": [
+                { "id": "llm-energy.ts" },
+                { "id": "stream-merge.ts", "supersededBy": "algorithms-stream-merge.ts" },
+                { "id": "llm-energy.ts", "supersededBy": "algorithms-llm-energy.ts" },
+                { "id": "stream-merge.ts", "supersededBy": "algorithms-stream-merge.ts" },
+            ],
+        });
+        assert!(dedupe_suppressions(&mut g), "it changed the store");
+        assert_eq!(suppressions_of(&g).len(), 2, "one per id: {:?}", suppressions_of(&g));
+        assert_eq!(superseded_by(&g, "llm-energy.ts").as_deref(), Some("algorithms-llm-energy.ts"));
+        assert_eq!(superseded_by(&g, "stream-merge.ts").as_deref(), Some("algorithms-stream-merge.ts"));
+        assert!(!dedupe_suppressions(&mut g), "idempotent — a clean store reports no change");
+    }
+
+    /// The RESIDUE of #77, which the write-path guard cannot undo. Measured on the live store WHILE
+    /// this fix was being written: `llm-energy.ts` and `stream-merge.ts` were each listed in
+    /// `suppressed` and simultaneously present in `implementations`. Nothing surfaced it, which is how
+    /// it survived two rounds of someone actively hunting it.
+    #[test]
+    fn doctor_reports_an_id_that_is_both_retired_and_live() {
+        let g = serde_json::json!({
+            "implementations": [{
+                "id": "llm-energy.ts", "tech": "typescript", "role": "algorithm",
+                "name": "llmEnergy", "code": "export const e = 1;", "kind": "accumulate",
+            }],
+            "suppressed": [{ "id": "llm-energy.ts", "supersededBy": "algorithms-llm-energy.ts" }],
+        });
+        let all = doctor(&g);
+        let found: Vec<&Finding> = all.iter().filter(|f| f.category == "retired-but-live").collect();
+        assert_eq!(found.len(), 1, "the contradiction is reported: {all:?}");
+        assert!(found[0].detail.contains("algorithms-llm-energy.ts"), "names what superseded it");
+        let s = found[0].suggestion.clone().unwrap_or_default();
+        assert!(s.contains("remove") && s.contains("unsuppress"), "offers BOTH resolutions: {s}");
+
+        // A healthy store is silent — the check must not fire on an ordinary retirement.
+        let clean = serde_json::json!({
+            "implementations": [],
+            "suppressed": [{ "id": "llm-energy.ts", "supersededBy": "algorithms-llm-energy.ts" }],
+        });
+        assert!(
+            !doctor(&clean).iter().any(|f| f.category == "retired-but-live"),
+            "a properly retired id is not a finding"
+        );
     }
 
     /// A tombstone must never surface AS an algorithm. It lives in the same array as the impls (that is
