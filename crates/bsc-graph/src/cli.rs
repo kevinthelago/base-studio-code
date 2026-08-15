@@ -32,7 +32,7 @@ pub const BOOL_FLAGS: [&str; 8] =
     ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 34] = [
+pub const FLAGS: [&str; 36] = [
     "--pretty",
     // #71 — names WHAT replaced a suppressed algorithm, stored on the tombstone.
     "--superseded-by",
@@ -49,11 +49,14 @@ pub const FLAGS: [&str; 34] = [
     "--summary",
     "--ref",
     "--code",
+    // #76 — the same value, READ FROM DISK instead of pushed through argv.
+    "--code-file",
     "--domain",
     "--clear",
     "--tags",
     "--kind",
     "--viz-code",
+    "--viz-code-file",
     "--src",
     "--folder",
     "--provides",
@@ -304,7 +307,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             Some(other) => Err(format!("unknown edge subverb '{other}' — want one of: {}", EDGE_SUBVERBS.join(" | "))),
         },
         // `impl …` — read / curate the language-kit implementation tier (#2863/#2961/#2972/#3120):
-        //   impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b]
+        //   impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>|--code-file <p>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b]
+        //     #76: `--code-file`/`--viz-code-file` read the value from DISK. Prefer them — argv cannot
+        //     carry source intact (the shell eats backticks and `${…}`), and it fails silently.
         //     (algorithm: real --code; primitive: DESCRIBE a language built-in via --ref, e.g. std::vec::Vec — never re-coded, #2972)
         //   impl remove <id>                             # delete an implementation + scrub it from every composes
         //   impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]  # a language kit's implementations, optionally a domain collection (#3120)
@@ -324,7 +329,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if let Some(s) = flag_value(&args, "--summary") { im["summary"] = Value::String(s); }
                 // A primitive DESCRIBES a language built-in via `--ref` (std path), rather than re-coding it (#2972).
                 if let Some(r) = flag_value(&args, "--ref") { im["ref"] = Value::String(r); }
-                if let Some(code) = flag_value(&args, "--code") { im["code"] = Value::String(code); }
+                // #76 — `--code` OR `--code-file`; the file form is the one large or backtick-bearing
+                // source can survive, since argv cannot carry it intact.
+                if let Some(code) = source_flag(&args, "--code")? { im["code"] = Value::String(code); }
                 // The domain facet (#3120) — additive: only written when supplied, so existing impls are untouched.
                 if let Some(d) = flag_value(&args, "--domain") { im["domain"] = Value::String(d); }
                 // #4107: settable directly, but normally DERIVED — pass `--src` and the folder follows,
@@ -409,7 +416,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // The kind facet (#3210) — the manipulation type that selects the live animation. Additive.
                 if let Some(k) = flag_value(&args, "--kind") { im["kind"] = Value::String(k); }
                 // The viz-code facet (#3218) — the algorithm's visualization as a JS trace-program. Additive.
-                if let Some(v) = flag_value(&args, "--viz-code") { im["vizCode"] = Value::String(v); }
+                // A trace-program is JS and routinely carries both backticks and `${…}`, so this is the
+                // flag most likely to be corrupted in transit — see `source_flag`.
+                if let Some(v) = source_flag(&args, "--viz-code")? { im["vizCode"] = Value::String(v); }
                 let replaced = crate::set_impl_by(&mut g, im.clone(), &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()), flag_value(&args, "--note").as_deref())?;
                 crate::save(&g)?;
                 // Report the STORED record, not the write payload (#4154). Echoing `im` showed only the
@@ -1219,6 +1228,44 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
 }
 
+/// Resolve a SOURCE-bearing flag from either its inline form (`--code`) or its file form
+/// (`--code-file`), reading the file verbatim (#76, designer request).
+///
+/// Source on the command line does not survive the shell, and it fails SILENTLY in both directions:
+/// a literal `\n` stays two characters inside a double-quoted bash argument, and a backtick or a
+/// `${…}` is COMMAND-SUBSTITUTED before the binary ever sees it — so the record is written, just not
+/// with the code that was meant. Nothing downstream can detect that, because the value that arrived
+/// is perfectly well-formed. This repo has already lost content to exactly that (four `bsc plan`
+/// notes), and the standing workaround was to rewrite the source to avoid backticks and newlines —
+/// i.e. to change the code being stored to suit its transport.
+///
+/// `edge set --src` already reads from disk for the same reason, and `harvest --module --apply`
+/// exists because two modules (71 KB and 42 KB) are past the Windows `CreateProcess` argv limit and
+/// could not be written at all. This gives `impl set` the same door.
+///
+/// Both forms at once is an ERROR rather than a precedence rule: whichever way it resolved, the
+/// caller believed the other one was being stored.
+fn source_flag(args: &[String], flag: &str) -> Result<Option<String>, String> {
+    let file_flag = format!("{flag}-file");
+    match (flag_value(args, flag), flag_value(args, &file_flag)) {
+        (Some(_), Some(_)) => {
+            Err(format!("{flag} and {file_flag} were both given — pass one, not both"))
+        }
+        (Some(v), None) => Ok(Some(v)),
+        (None, Some(p)) => {
+            let path = std::path::Path::new(&p);
+            // #3475: reading file CONTENTS through an allow-listed CLI must honor the same boundary
+            // the file tools do, or a confined session reads any path on disk through this verb.
+            // Outside a confined session this is a no-op, so it costs the ordinary caller nothing.
+            bsc_cli_util::require_harvestable_root(path)?;
+            // An unreadable path is an ERROR, never an empty field: silently storing "" would erase
+            // the record's source, which is the very corruption this flag exists to prevent.
+            std::fs::read_to_string(path).map(Some).map_err(|err| format!("cannot read {p}: {err}"))
+        }
+        (None, None) => Ok(None),
+    }
+}
+
 /// Split a `--flag a,b,c` value into a JSON string array (empty when absent/blank) — for `--composes`
 /// on `impl set` (#2863).
 fn list_flag(s: Option<&str>) -> Value {
@@ -1249,7 +1296,7 @@ fn help(prog: &str) -> String {
   \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes)\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
          {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)
   \
          {prog} impl suppress <id> [--superseded-by <new-id>]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored)
@@ -1673,5 +1720,82 @@ mod same_module_path_tests {
         assert_eq!(same_module_path("src/features/src/thing.ts"), "features/src/thing.ts");
         assert_eq!(same_module_path("features/src/thing.ts"), "features/src/thing.ts");
         assert_ne!(same_module_path("src/a/src/b.ts"), same_module_path("src/a/b.ts"));
+    }
+}
+
+/// `--code-file` / `--viz-code-file` — source read from DISK instead of argv (#76, designer request).
+///
+/// Driven at [`source_flag`] rather than through `run(…)` DELIBERATELY. An end-to-end assertion would
+/// have to redirect `BSC_GRAPH_STORE`, which is process-global while Rust tests run in parallel; the
+/// note above `mod tests` records that adding a second mutator of it already broke an unrelated test
+/// that reads the packaged seed. `source_flag` IS the behaviour under test — it is the only thing
+/// between the flag and the stored string — and testing it here is exact rather than incidental.
+#[cfg(test)]
+mod source_flag_tests {
+    use super::source_flag;
+
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// A temp file whose NAME is unique per test AND per process, so a parallel run cannot collide.
+    fn write_temp(tag: &str, body: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("bsc-graph-codefile-{}-{tag}.ts", std::process::id()));
+        std::fs::write(&p, body).unwrap();
+        p
+    }
+
+    /// THE WHOLE POINT. This body is the exact shape argv destroys: a backtick template literal with
+    /// an interpolation the shell would command-substitute, and real newlines a double-quoted `\n`
+    /// never becomes. It must arrive byte-identical.
+    #[test]
+    fn code_file_reads_backticks_interpolation_and_newlines_verbatim() {
+        let body = "export function x() {\n  const n = 1;\n  return `a${n}b`;\n}\n";
+        let p = write_temp("verbatim", body);
+        let got = source_flag(&args(&["--code-file", p.to_str().unwrap()]), "--code").unwrap();
+        assert_eq!(got.as_deref(), Some(body), "read back byte-identical");
+        // And specifically that nothing collapsed: three real newlines, a live backtick, a live ${}.
+        let got = got.unwrap();
+        assert_eq!(got.matches('\n').count(), 4, "real newlines survived: {got:?}");
+        assert!(got.contains("`a${n}b`"), "the template literal survived intact: {got:?}");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    /// The same door for the trace-program, which is the field MOST likely to carry a backtick.
+    #[test]
+    fn viz_code_file_uses_the_same_door() {
+        let body = "({ run(a) { a.mark(`i${0}`); } })";
+        let p = write_temp("viz", body);
+        let got = source_flag(&args(&["--viz-code-file", p.to_str().unwrap()]), "--viz-code").unwrap();
+        assert_eq!(got.as_deref(), Some(body));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    /// The inline form still works — this ADDS a door, it does not close the existing one.
+    #[test]
+    fn the_inline_flag_still_resolves_and_absence_is_none() {
+        let got = source_flag(&args(&["--code", "export const s = 1;"]), "--code").unwrap();
+        assert_eq!(got.as_deref(), Some("export const s = 1;"));
+        assert_eq!(source_flag(&args(&["--id", "x.ts"]), "--code").unwrap(), None, "absent ⇒ None, not empty");
+    }
+
+    /// REFUSED, not resolved by precedence. Whichever one won, the caller believed the other was
+    /// being stored — and a silently-wrong record is the exact failure this flag exists to prevent.
+    #[test]
+    fn both_forms_at_once_is_refused() {
+        let p = write_temp("both", "export const s = 2;");
+        let err = source_flag(&args(&["--code", "inline", "--code-file", p.to_str().unwrap()]), "--code")
+            .unwrap_err();
+        assert!(err.contains("--code") && err.contains("--code-file"), "names both flags: {err}");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    /// An unreadable path is an ERROR naming the path. Storing `""` would ERASE the record's source —
+    /// the same corruption by a quieter route.
+    #[test]
+    fn an_unreadable_path_is_an_error_naming_it_never_an_empty_field() {
+        let missing = std::env::temp_dir().join("bsc-graph-codefile-does-not-exist.ts");
+        let err = source_flag(&args(&["--code-file", missing.to_str().unwrap()]), "--code").unwrap_err();
+        assert!(err.contains("does-not-exist"), "names the path it could not read: {err}");
     }
 }
