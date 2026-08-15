@@ -32,7 +32,7 @@ pub const BOOL_FLAGS: [&str; 8] =
     ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 36] = [
+pub const FLAGS: [&str; 37] = [
     "--pretty",
     // #71 — names WHAT replaced a suppressed algorithm, stored on the tombstone.
     "--superseded-by",
@@ -68,6 +68,8 @@ pub const FLAGS: [&str; 36] = [
     "--worthy-only",
     "--apply",
     "--fix",
+    // #78 — the dedup pass over the impl set, a focused mode of `doctor`.
+    "--dedup",
     "--dry-run",
     "--no-src",
     "--members",
@@ -180,6 +182,239 @@ fn entity_ids() -> Vec<String> {
     bsc_data::entity::open(None)
         .map(|s| bsc_data::entity::list(&s).into_iter().map(|e| e.id).collect())
         .unwrap_or_default()
+}
+
+/// Token 5-grams of a body, hashed — the shape used to tell "the same implementation twice" from
+/// "two implementations that happen to share words".
+///
+/// Tokenizing first is what makes it robust to the only difference the real duplicates actually had:
+/// `llm-energy.ts` and `algorithms-llm-energy.ts` differ by 21 characters of formatting and wrapper,
+/// so their raw `code` is NOT equal — yet their shingle sets are IDENTICAL. A byte comparison misses
+/// the exact pair this was requested for.
+fn code_shingles(code: &str) -> std::collections::HashSet<u64> {
+    let mut tokens: Vec<&str> = Vec::new();
+    let bytes = code.as_bytes();
+    let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$';
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b.is_ascii_whitespace() {
+            i += 1;
+        } else if word(b) {
+            let start = i;
+            while i < bytes.len() && word(bytes[i]) {
+                i += 1;
+            }
+            tokens.push(&code[start..i]);
+        } else {
+            // Every other byte is its own token, so punctuation-heavy code still shingles. Stepping by
+            // the CHAR width keeps a multi-byte character from being split into invalid slices.
+            let w = code[i..].chars().next().map_or(1, char::len_utf8);
+            tokens.push(&code[i..i + w]);
+            i += w;
+        }
+    }
+    const N: usize = 5;
+    tokens
+        .windows(N)
+        .map(|w| {
+            // FNV-1a over the window — a set of hashes is far cheaper to intersect than a set of
+            // string tuples, and a collision only ever costs a slightly higher score.
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+            for t in w {
+                for b in t.as_bytes() {
+                    h ^= u64::from(*b);
+                    h = h.wrapping_mul(0x1000_0000_01b3);
+                }
+                h ^= 0xff;
+                h = h.wrapping_mul(0x1000_0000_01b3);
+            }
+            h
+        })
+        .collect()
+}
+
+/// A body shorter than this carries no evidence. `export const x = 1;` repeated across records is a
+/// language, not a duplicate — and at four or five tokens any two such lines score 1.0.
+const MIN_SHINGLES: usize = 8;
+
+/// Shingle overlap at or above which two bodies are the SAME implementation. Measured on the real
+/// store: the two known duplicate pairs score **1.00**, while 400 random pairs have a median of
+/// 0.0008 and a maximum of **0.037**. There is no distribution between those, so the threshold is a
+/// chasm rather than a tuned knob.
+const NEAR_DUPLICATE: f64 = 0.8;
+
+/// Minimum share of a group's possible pairs that must be observed for it to report as one cluster —
+/// the anti-chaining guard, matching the component-side detector (#74). `A~B` and `B~C` with `A` and
+/// `C` unrelated is a chain, and collapsing it asserts a similarity no member exhibits.
+const CLUSTER_DENSITY: f64 = 0.5;
+
+/// Duplicate-candidate GROUPS over the impl set — the algorithms-graph dedup pass (#78).
+///
+/// The library had no duplicate detection at all, so a session hunting duplicates built ad-hoc grep
+/// regexes against the raw `impl list` dump and found ~30 by hand — `llm-energy.ts` /
+/// `algorithms-llm-energy.ts`, `layer-dag.ts` / `layers.ts`, `tab-index-map.ts` / `tab-reorder.ts`,
+/// and a tail from a second module-level harvest that re-added function-level nodes already stored.
+///
+/// TWO SIGNALS, AND NEITHER IS THE ONE THE REQUEST NAMED — because both of those were measured first
+/// and both are noise at this scale:
+///
+/// * **a shared `name`** puts 24 records in one group (`graphPlatform`), 20 in another (`index`), 10
+///   in another (`store`). Those are naming conventions, not duplication.
+/// * **a shared `src`** puts 10 records in one group, because harvest at FUNCTION granularity lifts
+///   many functions out of one file — `dayKey`, `fmtBytes`, `fmtClock` all legitimately carry
+///   `shared/lib/core/format.ts`.
+///
+/// Implemented literally, those two produced **110 groups over 356 impls** against a store the
+/// reporter had already cleaned to ~2 real duplicates: the #74 failure this request is the twin of,
+/// rebuilt. What actually separates a duplicate is the BODY, plus name-and-src together as a
+/// corroborated pair. See [`NEAR_DUPLICATE`] for the measurement.
+///
+/// GROUPS, NOT PAIRS — N duplicates report as ONE row naming every member, and groups sharing the
+/// same members merge, carrying every signal. Three signals over one pair is still one fact.
+///
+/// PROPOSE-ONLY. `bsc graph merge` is the verb that acts and it repoints every consumer; which record
+/// survives is not a decision a diagnostic gets to make.
+fn dedup_findings(g: &Value) -> Vec<Value> {
+    let text = |im: &Value, k: &str| im.get(k).and_then(Value::as_str).unwrap_or("").trim().to_string();
+    // A RETIRED id is not a duplicate candidate — it is already folded away, and proposing a merge for
+    // it would send the reader to redo one that already happened (#77).
+    let impls: Vec<Value> = crate::implementations_of(g)
+        .into_iter()
+        .filter(|im| im.get("id").and_then(Value::as_str).is_some_and(|id| !crate::is_suppressed(g, id)))
+        .collect();
+
+    // ── signal 1: the same body ──
+    let bodies: Vec<(String, std::collections::HashSet<u64>)> = impls
+        .iter()
+        .filter_map(|im| {
+            let id = text(im, "id");
+            let code = text(im, "code");
+            if id.is_empty() || code.is_empty() {
+                return None;
+            }
+            let sh = code_shingles(&code);
+            (sh.len() >= MIN_SHINGLES).then_some((id, sh))
+        })
+        .collect();
+    let mut pairs: Vec<(&str, &str)> = Vec::new();
+    for (a, (id_a, sh_a)) in bodies.iter().enumerate() {
+        for (id_b, sh_b) in bodies.iter().skip(a + 1) {
+            // Cheap reject first: bodies of wildly different size cannot clear the bar, and this keeps
+            // the all-pairs sweep affordable at a thousand records.
+            if sh_a.len() * 2 < sh_b.len() || sh_b.len() * 2 < sh_a.len() {
+                continue;
+            }
+            let inter = sh_a.intersection(sh_b).count();
+            if inter == 0 {
+                continue;
+            }
+            let union = sh_a.len() + sh_b.len() - inter;
+            if union > 0 && (inter as f64) / (union as f64) >= NEAR_DUPLICATE {
+                pairs.push((id_a.as_str(), id_b.as_str()));
+            }
+        }
+    }
+
+    // (signal, key) → the ids sharing it. Body pairs are clustered below; this holds the exact signal.
+    let mut buckets: std::collections::BTreeMap<(&'static str, String), std::collections::BTreeSet<String>> =
+        std::collections::BTreeMap::new();
+    for im in &impls {
+        let (id, name, src) = (text(im, "id"), text(im, "name"), text(im, "src"));
+        // ── signal 2: the same NAME **and** the same src MODULE ──
+        // Together, not either. Two records claiming the same function in the same file are one
+        // record twice; either half alone is a naming convention or a function-granularity harvest.
+        if !id.is_empty() && !name.is_empty() && !src.is_empty() {
+            let key = format!("{name}\u{0}{}", same_module_path(&src));
+            buckets.entry(("name-and-src", key)).or_default().insert(id);
+        }
+    }
+
+    // Cluster the body pairs into connected components, with the same density guard the component
+    // detector uses — a sparse component is a chain, and collapsing it invents a group.
+    let mut adj: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
+        std::collections::BTreeMap::new();
+    for (a, b) in &pairs {
+        adj.entry(a).or_default().insert(b);
+        adj.entry(b).or_default().insert(a);
+    }
+    let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for start in adj.keys().copied() {
+        if seen.contains(start) {
+            continue;
+        }
+        let (mut stack, mut group): (Vec<&str>, Vec<&str>) = (vec![start], Vec::new());
+        while let Some(n) = stack.pop() {
+            if !seen.insert(n) {
+                continue;
+            }
+            group.push(n);
+            for m in adj.get(n).into_iter().flatten() {
+                if !seen.contains(m) {
+                    stack.push(m);
+                }
+            }
+        }
+        if group.len() < 2 {
+            continue;
+        }
+        let members: std::collections::BTreeSet<&str> = group.iter().copied().collect();
+        let observed = pairs.iter().filter(|(a, b)| members.contains(a) && members.contains(b)).count();
+        let possible = group.len() * (group.len() - 1) / 2;
+        if possible == 0 || (observed as f64) / (possible as f64) < CLUSTER_DENSITY {
+            continue; // a chain, not a group
+        }
+        // Keyed on the cluster's own smallest id, NOT a constant. A constant key merged every body
+        // cluster into one bucket, so two unrelated duplicate pairs (measured 0.002 similar to each
+        // other) reported as a single group of four — a confident wrong grouping, which is exactly
+        // what the density guard above exists to prevent. Connected components are disjoint, so the
+        // smallest member is a stable unique name for the cluster.
+        group.sort_unstable();
+        buckets
+            .entry(("same-body", group[0].to_string()))
+            .or_default()
+            .extend(group.iter().map(|s| (*s).to_string()));
+    }
+
+    // Collapse to one entry per MEMBER SET, carrying every signal that grouped it.
+    let mut by_members: std::collections::BTreeMap<Vec<String>, Vec<String>> = std::collections::BTreeMap::new();
+    for ((signal, key), ids) in buckets {
+        if ids.len() < 2 {
+            continue;
+        }
+        let desc = match signal {
+            "name-and-src" => {
+                let (name, src) = key.split_once('\u{0}').unwrap_or((key.as_str(), ""));
+                format!("the same `name` (`{name}`) in the same module (`{src}`)")
+            }
+            // The body itself is never echoed — that it is the same body IS the finding.
+            _ => format!("a near-identical body (≥{}% shingle overlap)", (NEAR_DUPLICATE * 100.0) as u32),
+        };
+        by_members.entry(ids.into_iter().collect()).or_default().push(desc);
+    }
+
+    let mut out: Vec<(usize, Value)> = by_members
+        .into_iter()
+        .map(|(ids, signals)| {
+            let n = ids.len();
+            let v = serde_json::json!({
+                "category": "duplicate-candidate",
+                "ids": ids,
+                "signals": signals,
+                "detail": format!("{n} implementations share {} — {}", signals.join(" and "), ids.join(", ")),
+                "suggestion": format!(
+                    "pick the survivor, then fold the others into it with `bsc graph merge <from> <into>` \
+                     (it repoints every consumer). PROPOSE-ONLY — nothing is merged automatically, because \
+                     which one survives is not a diagnostic's call. Candidates: {}",
+                    ids.join(", ")
+                ),
+            });
+            (n, v)
+        })
+        .collect();
+    // Biggest groups first — the widest duplication is the one worth acting on.
+    out.sort_by_key(|g| std::cmp::Reverse(g.0));
+    out.into_iter().map(|(_, v)| v).collect()
 }
 
 /// A record's `src` reduced to the module it names, so two spellings of one path compare equal.
@@ -1127,6 +1362,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "doctor" => {
             let fix = args.iter().any(|a| a == "--fix");
             let mut g = crate::load();
+            // #78 — a FOCUSED mode, not another section bolted onto the default report. The default
+            // doctor already emits well over a thousand findings on the real store; folding duplicate
+            // groups into that would bury them exactly the way #74's pairs buried theirs.
+            if args.iter().any(|a| a == "--dedup") {
+                let groups = dedup_findings(&g);
+                return emit(&serde_json::json!({ "duplicates": groups, "count": groups.len() }));
+            }
             if fix {
                 let mut fixed = Vec::new();
                 for im in crate::implementations_of(&g) {
@@ -1400,7 +1642,7 @@ fn help(prog: &str) -> String {
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
   \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
-  \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
+  \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
@@ -2020,5 +2262,179 @@ mod already_harvested_tests {
             "a genuinely unknown path stays a plain miss — inventing a record here would be worse \
              than the message this replaces"
         );
+    }
+}
+
+
+/// #78 — the dedup pass over the impl set.
+#[cfg(test)]
+mod dedup_tests {
+    use super::{code_shingles, dedup_findings};
+    use serde_json::Value;
+
+    fn im(id: &str, name: &str, extra: Value) -> Value {
+        let mut v = serde_json::json!({ "id": id, "tech": "typescript", "role": "algorithm", "name": name });
+        if let (Some(o), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+            for (k, val) in e {
+                o.insert(k.clone(), val.clone());
+            }
+        }
+        v
+    }
+
+    fn ids_of(f: &Value) -> Vec<String> {
+        f["ids"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect()
+    }
+
+    /// A real body, long enough to clear the shingle floor — a fixture has to behave like the records
+    /// do, since a three-token body scores 1.0 against anything.
+    fn body(unit: &str) -> String {
+        format!(
+            "export function estimate(tokens, model) {{\n  \
+               const rate = TABLE[model] ?? DEFAULT_RATE;\n  \
+               const joules = tokens * rate * OVERHEAD;\n  \
+               return {{ value: joules / 3600, unit: \"{unit}\" }};\n}}"
+        )
+    }
+
+    /// THE PAIR THE REQUEST WAS FILED FOR. `llm-energy.ts` and `algorithms-llm-energy.ts` differ by
+    /// formatting and a wrapper — their raw `code` is NOT equal, their names differ, and one has no
+    /// `src` at all. A byte comparison, a name match and a src match ALL miss it; the shingled body
+    /// scores 1.00 on the real records.
+    #[test]
+    fn a_reformatted_copy_is_caught_though_name_src_and_bytes_all_differ() {
+        let squashed = body("Wh").replace('\n', " ").replace("  ", " ");
+        assert_ne!(squashed, body("Wh"), "the fixture must NOT be byte-identical, or it proves nothing");
+        let g = serde_json::json!({ "implementations": [
+            im("llm-energy.ts", "estimateEnergyWh", serde_json::json!({ "code": body("Wh") })),
+            im("algorithms-llm-energy.ts", "llmEnergy", serde_json::json!({
+                "code": squashed,
+                "src": "src/shared/lib/algorithms/llmEnergy.ts",
+            })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "the reported pair is caught: {found:#?}");
+        assert_eq!(ids_of(&found[0]), vec!["algorithms-llm-energy.ts", "llm-energy.ts"]);
+        assert!(found[0]["signals"][0].as_str().unwrap().contains("body"), "names the signal");
+    }
+
+    /// THE NOISE THE FIRST CUT PRODUCED, now pinned as a test. Implemented as the request literally
+    /// asked — a shared name OR a shared src — these fixtures were 110 groups over 356 impls on the
+    /// real store. Neither is a duplicate, and neither may report.
+    #[test]
+    fn a_shared_name_or_a_shared_src_alone_is_not_a_duplicate() {
+        // Every feature has a `store`, an `index`, a `graphPlatform`. That is a convention.
+        let g = serde_json::json!({ "implementations": [
+            im("github-store.ts", "store", serde_json::json!({ "code": body("a"), "src": "src/features/github/store.ts" })),
+            im("skills-store.ts", "store", serde_json::json!({ "code": body("b").replace("rate", "ratio"), "src": "src/features/skills/store.ts" })),
+        ]});
+        assert!(dedup_findings(&g).is_empty(), "a shared name alone: {:#?}", dedup_findings(&g));
+
+        // Function-granularity harvest lifts MANY functions out of ONE file, so they share `src` by
+        // construction — ten records carry `shared/lib/core/format.ts` on the real store.
+        let g = serde_json::json!({ "implementations": [
+            im("fmt-bytes.ts", "fmtBytes", serde_json::json!({ "code": body("B"), "src": "src/shared/lib/core/format.ts" })),
+            im("fmt-clock.ts", "fmtClock", serde_json::json!({
+                "code": body("s").replace("joules", "seconds").replace("rate", "unitRate"),
+                "src": "shared/lib/core/format.ts",
+            })),
+        ]});
+        assert!(dedup_findings(&g).is_empty(), "a shared src alone: {:#?}", dedup_findings(&g));
+    }
+
+    /// Name AND src TOGETHER is the corroborated signal — two records claiming the same function in
+    /// the same file are one record twice. The `src/` prefix is normalized, or the pair is invisible.
+    #[test]
+    fn the_same_name_in_the_same_module_is_a_candidate_across_both_src_spellings() {
+        let g = serde_json::json!({ "implementations": [
+            im("layers.ts", "layerDag", serde_json::json!({ "src": "src/features/glance/lib/layers.ts" })),
+            im("layer-dag.ts", "layerDag", serde_json::json!({ "src": "features/glance/lib/layers.ts" })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "caught across both spellings: {found:#?}");
+        assert!(found[0]["signals"][0].as_str().unwrap().contains("same module"));
+    }
+
+    /// THE #74 LESSON, which this request explicitly invokes. Four mutually-duplicate impls are ONE
+    /// row naming all four — as pairs they would be six rows restating one fact.
+    #[test]
+    fn n_duplicates_report_as_one_group_naming_every_member() {
+        let c = serde_json::json!({ "code": body("Wh") });
+        let g = serde_json::json!({ "implementations": [
+            im("a.ts", "a", c.clone()), im("b.ts", "b", c.clone()),
+            im("c.ts", "c", c.clone()), im("d.ts", "d", c.clone()),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "ONE group, not 6 pairs: {found:#?}");
+        assert_eq!(ids_of(&found[0]).len(), 4, "naming every member");
+        let s = found[0]["suggestion"].as_str().unwrap();
+        assert!(s.contains("bsc graph merge") && s.contains("PROPOSE-ONLY"), "propose-only: {s}");
+    }
+
+    /// TWO INDEPENDENT clusters stay TWO groups. This caught a real bug: every body cluster was
+    /// keyed on the same constant, so all of them merged into one bucket and the real store reported
+    /// `llm-energy` + `stream-merge` as a single group of four — two pairs that are 0.002 similar to
+    /// each other. A confident wrong grouping is worse than the noise it replaces, which is the whole
+    /// reason the density guard exists; the constant key was routing around it.
+    #[test]
+    fn two_unrelated_duplicate_clusters_report_separately() {
+        let two = "export function tally(items) {\n  \
+                     const seen = new Map();\n  \
+                     for (const it of items) seen.set(it.key, (seen.get(it.key) ?? 0) + it.n);\n  \
+                     return [...seen.entries()].sort((a, b) => b[1] - a[1]);\n}";
+        let g = serde_json::json!({ "implementations": [
+            im("llm-energy.ts", "energy", serde_json::json!({ "code": body("Wh") })),
+            im("algorithms-llm-energy.ts", "llmEnergy", serde_json::json!({ "code": body("Wh") })),
+            im("stream-merge.ts", "merge", serde_json::json!({ "code": two })),
+            im("algorithms-stream-merge.ts", "streamMerge", serde_json::json!({ "code": two })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 2, "TWO groups of two, not one of four: {found:#?}");
+        assert!(found.iter().all(|f| ids_of(f).len() == 2), "each names its own pair: {found:#?}");
+    }
+
+    /// Two signals over the SAME members is still one fact, so it is one row carrying both.
+    #[test]
+    fn signals_over_the_same_members_merge_into_one_row() {
+        let g = serde_json::json!({ "implementations": [
+            im("x.ts", "shared", serde_json::json!({ "code": body("Wh"), "src": "src/a/b.ts" })),
+            im("y.ts", "shared", serde_json::json!({ "code": body("Wh"), "src": "a/b.ts" })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "one row, not one per signal: {found:#?}");
+        assert_eq!(found[0]["signals"].as_array().unwrap().len(), 2, "carrying BOTH signals");
+    }
+
+    /// A retired id is already folded away (#77) — proposing a merge for it sends the reader to redo
+    /// one that already happened. Measured: the ONLY near-duplicates left on the real store are the
+    /// two resurrection artifacts, and both are suppressed.
+    #[test]
+    fn a_retired_id_is_never_a_duplicate_candidate() {
+        let g = serde_json::json!({
+            "implementations": [
+                im("gone.ts", "dupe", serde_json::json!({ "code": body("Wh") })),
+                im("kept.ts", "dupe", serde_json::json!({ "code": body("Wh") })),
+            ],
+            "suppressed": [{ "id": "gone.ts", "supersededBy": "kept.ts" }],
+        });
+        assert!(dedup_findings(&g).is_empty(), "{:#?}", dedup_findings(&g));
+    }
+
+    /// A trivial body must not score. Below the floor any two one-liners are 1.0 against each other,
+    /// which floods the report with the language rather than with duplication.
+    #[test]
+    fn a_body_below_the_shingle_floor_carries_no_signal() {
+        assert!(code_shingles("export const x = 1;").len() < super::MIN_SHINGLES, "too short to score");
+        let g = serde_json::json!({ "implementations": [
+            im("p.ts", "p", serde_json::json!({ "code": "export const x = 1;" })),
+            im("q.ts", "q", serde_json::json!({ "code": "export const x = 1;" })),
+        ]});
+        assert!(dedup_findings(&g).is_empty(), "identical one-liners are not a finding");
+    }
+
+    /// Unicode in a body must not panic the tokenizer — it steps by CHAR width, not by byte.
+    #[test]
+    fn a_multibyte_body_tokenizes_without_panicking() {
+        assert!(!code_shingles("const s = \"h\u{e9}llo \u{2192} w\u{f6}rld\"; // ok ok ok ok").is_empty());
     }
 }
