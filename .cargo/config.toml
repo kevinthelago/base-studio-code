@@ -1,0 +1,47 @@
+# Share the Rust build ACROSS WORKTREES.
+#
+# This repo is worked by many agents at once, one git worktree each (7 at the time of writing). Every
+# worktree has its own `target/`, so each one compiled DuckDB (bundled C++), arrow, tree-sitter and ~8000
+# dependency units from scratch. Measured: touching one line in `crates/bsc-graph` cost 58s to rebuild the
+# `bsc` binary and 425s to run that crate's tests the FIRST time each profile ran in a tree — against 9s and
+# 7s once warm. The expense was never the edit→rebuild loop; it was cold, paid per worktree.
+#
+# `sccache` caches compiler INVOCATIONS in one shared store (`~/.cache/sccache` by default), keyed on the
+# inputs. Two worktrees compiling identical dependency sources hit the same entry, so the second tree's cold
+# build is served from cache.
+#
+# WHY NOT A SHARED `CARGO_TARGET_DIR` — the obvious alternative, and the wrong one here. It broke tauri
+# builds before, and it puts every concurrent cargo behind ONE target-dir lock, so seven parallel agents
+# serialize on each other. That is the opposite of what this repo needs. sccache keeps the per-tree
+# `target/` and shares only the compilation.
+#
+# REQUIRES `sccache` ON PATH. It lives in `~/.cargo/bin/sccache.exe` (where `cargo install sccache` puts
+# it), so any shell that can run cargo can run it. Install: `winget install Mozilla.sccache` or
+# `cargo install sccache --locked`. If it is missing, cargo fails loudly with "could not execute process
+# sccache" rather than silently building slowly — which is the right failure, but it IS a hard one, so a
+# fresh clone needs the install before its first build.
+#
+# NOTE ON INCREMENTAL: sccache cannot cache incrementally-compiled crates, so the workspace's own crates
+# still compile normally — that is deliberate, and costs nothing worth having. Our crates are the small,
+# fast part (7-9s warm); the dependencies are the 8000-unit mass this exists to share, and they are never
+# built incrementally.
+[build]
+rustc-wrapper = "sccache"
+
+# THE C++ HALF IS NOT SOLVED HERE, and it is most of what remains. `rustc-wrapper` covers Rust only, while
+# `duckdb` is vendored with `features = ["bundled"]` — so `libduckdb-sys` compiles the DuckDB amalgamation
+# through the `cc` crate, outside anything cargo or sccache sees. Measured on a warm-cache, wiped-target
+# build: 200s total, of which `libduckdb-sys` ALONE was 151s.
+#
+# The obvious wiring does NOT work, and was tried:
+#
+#     [env]
+#     CC  = "sccache cl.exe"
+#     CXX = "sccache cl.exe"
+#
+# `cc` passes the value through verbatim, so the build script runs `sccache cl.exe …` — and sccache fails
+# with "cannot find binary path", because bare `cl.exe` is not on PATH. `cc` normally locates MSVC itself
+# and invokes it by ABSOLUTE path; overriding CC skips that discovery. An absolute path here would work on
+# this machine and break on every other one, which is not something to check in.
+#
+# Tracked as `cache-the-duckdb-c-build-across-worktrees` with the numbers attached.

@@ -23,3 +23,11 @@ opt-level = 3
 
 [profile.test.package."*"]
 debug = false
+# ...and the SAME opt-level as the dev override above, or every dependency compiles TWICE per worktree.
+# Package overrides do not inherit (which is why `debug` is restated here at all), so with this line
+# missing the deps under `test` fell back to `[profile.dev] opt-level = 1` — a different fingerprint from
+# the `opt-level = 3` the build profile had already produced, and cargo rebuilt the entire tree. Measured
+# in one worktree before this line existed: duckdb 3 rlibs, arrow 3, serde_json 4; and the first
+# `cargo test -p bsc-graph` after a one-line edit took 425s against 7s warm. Matching the two makes
+# `cargo test` reuse what `cargo build` already compiled.
+opt-level = 3
