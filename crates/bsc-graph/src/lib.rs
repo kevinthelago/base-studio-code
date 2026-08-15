@@ -59,6 +59,16 @@ pub fn load() -> Value {
         Some(p) => load_at(&p),
         None => seed(),
     };
+    // Heal a store written by the first cut BEFORE anything reads it (#the-tombstone-crash), and
+    // PERSIST the heal — an in-memory fix would leave the file untouched, and the file is what the
+    // FRONTEND reads. That asymmetry is the whole bug: Rust readers were fine while the graph page
+    // died on a record Rust had filtered. Best-effort and only when something actually changed, so a
+    // normal load still writes nothing.
+    if migrate_inline_tombstones(&mut g) {
+        if let Some(p) = store_path() {
+            let _ = save_at(&p, &g);
+        }
+    }
     reconcile_seed(&mut g);
     g
 }
@@ -72,16 +82,23 @@ pub fn load() -> Value {
 /// Returns whether it changed `g`. Order-stable: the store's own impls keep their order; missing seed
 /// impls are appended in seed order.
 pub fn reconcile_seed(g: &mut Value) -> bool {
-    // RAW, deliberately: a tombstone occupies its id precisely so this check finds it and the packaged
-    // impl is not re-added. Using the filtered view would make every suppression undo itself here.
-    let have: std::collections::HashSet<String> = raw_implementations_of(g)
+    let suppressed: std::collections::HashSet<String> = suppressions_of(g)
+        .iter()
+        .filter_map(|t| t.get("id").and_then(Value::as_str).map(str::to_owned))
+        .collect();
+    let have: std::collections::HashSet<String> = implementations_of(g)
         .iter()
         .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
         .collect();
     let missing: Vec<Value> = implementations_of(&seed())
         .into_iter()
         .filter(|im| {
-            im.get("id").and_then(Value::as_str).map(|id| !have.contains(id)).unwrap_or(false)
+            // A SUPPRESSED id is not "missing" — it was retired on purpose, and re-adding it is the
+            // exact bug the tombstone exists to prevent (#71).
+            im.get("id")
+                .and_then(Value::as_str)
+                .map(|id| !have.contains(id) && !suppressed.contains(id))
+                .unwrap_or(false)
         })
         .collect();
     if missing.is_empty() {
@@ -382,26 +399,64 @@ pub fn implementations() -> Vec<Value> {
     implementations_of(&load())
 }
 
-/// The implementation objects of `g` — TOMBSTONES EXCLUDED, so no reader ever sees one.
+/// The implementation objects of `g`.
 ///
-/// A tombstone is a `{ id, suppressed: true }` record occupying a retired impl's id. It has to live in
-/// the same array (that is what makes [`reconcile_seed`] skip the packaged impl — see there), so the
-/// single place every read funnels through is where it must be filtered out. Filtering at each call
-/// site instead would mean `impl get` hid them while `impl list` or a domain sweep did not, and a
-/// tombstone surfacing as an algorithm is worse than the removal not sticking.
+/// Suppression does NOT live here. The first cut parked a `{ id, suppressed: true }` tombstone inside
+/// this array — borrowing the component store's trick, where occupying the id is what makes the seed
+/// reconcile skip the packaged record — and filtered it out in this one function, on the reasoning that
+/// every read funnels through here. That was true of RUST. The frontend reads the same JSON directly
+/// and had never heard of `suppressed`, so the Algorithms graph iterated a tombstone, called `.join` on
+/// its missing `composes`, and died on render.
+///
+/// The lesson is about SHAPE, not about a missing filter: a record parked in an array of
+/// implementations will eventually be read by something that does not know to skip it, and the next
+/// such reader is as likely to be a chart or an export as a page. So the list below is the only place
+/// suppression exists, and this array holds implementations and nothing else.
 pub fn implementations_of(g: &Value) -> Vec<Value> {
-    raw_implementations_of(g).into_iter().filter(|im| !is_tombstone(im)).collect()
-}
-
-/// Every record in the array INCLUDING tombstones — for the few callers that must see them: the seed
-/// reconcile, `suppress`/`unsuppress`, and the writer's id-collision check.
-pub fn raw_implementations_of(g: &Value) -> Vec<Value> {
     g.get("implementations").and_then(Value::as_array).cloned().unwrap_or_default()
 }
 
-/// Is `im` a suppression tombstone rather than an implementation?
-pub fn is_tombstone(im: &Value) -> bool {
-    im.get("suppressed").and_then(Value::as_bool) == Some(true)
+/// The suppression list — retired ids the seed reconcile must not re-add, each with what replaced it.
+pub fn suppressions_of(g: &Value) -> Vec<Value> {
+    g.get("suppressed").and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
+/// Is `id` retired?
+pub fn is_suppressed(g: &Value, id: &str) -> bool {
+    suppressions_of(g).iter().any(|t| t.get("id").and_then(Value::as_str) == Some(id))
+}
+
+/// Sweep any LEGACY in-array tombstone into the suppression list. Runs on load, so a store written by
+/// the first cut heals itself without anyone running a command — two of them are already in a live
+/// store, and one of them is what crashed the graph.
+pub fn migrate_inline_tombstones(g: &mut Value) -> bool {
+    let inline: Vec<Value> = implementations_of(g)
+        .into_iter()
+        .filter(|im| im.get("suppressed").and_then(Value::as_bool) == Some(true))
+        .collect();
+    if inline.is_empty() {
+        return false;
+    }
+    for t in &inline {
+        if let Some(id) = t.get("id").and_then(Value::as_str) {
+            let known = is_suppressed(g, id);
+            if !known {
+                let mut entry = serde_json::Map::new();
+                entry.insert("id".into(), Value::from(id));
+                if let Some(sb) = t.get("supersededBy") {
+                    entry.insert("supersededBy".into(), sb.clone());
+                }
+                ensure_array(g, "suppressed").push(Value::Object(entry));
+            }
+        }
+    }
+    let ids: std::collections::BTreeSet<String> = inline
+        .iter()
+        .filter_map(|t| t.get("id").and_then(Value::as_str).map(str::to_owned))
+        .collect();
+    ensure_array(g, "implementations")
+        .retain(|im| !im.get("id").and_then(Value::as_str).is_some_and(|id| ids.contains(id)));
+    true
 }
 
 /// Whether `im` belongs to `domain` (#3120) — the predicate behind `bsc graph impl list --domain`. An
@@ -652,9 +707,7 @@ pub fn merge_impls(g: &mut Value, from: &str, into: &str) -> Result<Vec<String>,
     // this very store, and the merge just repointed every consumer at it.
     if is_seeded(from) {
         remove_impl(g, from);
-        ensure_array(g, "implementations").push(serde_json::json!({
-            "id": from, "suppressed": true, "supersededBy": into,
-        }));
+        ensure_array(g, "suppressed").push(serde_json::json!({ "id": from, "supersededBy": into }));
     } else {
         remove_impl(g, from); // its refs are already repointed; the scrub is a harmless no-op
     }
@@ -667,7 +720,7 @@ pub fn merge_impls(g: &mut Value, from: &str, into: &str) -> Result<Vec<String>,
 /// something a caller can infer from the record it holds: a seeded impl and a harvested one look
 /// identical in the store.
 pub fn is_seeded(id: &str) -> bool {
-    raw_implementations_of(&seed())
+    implementations_of(&seed())
         .iter()
         .any(|im| im.get("id").and_then(Value::as_str) == Some(id))
 }
@@ -909,11 +962,10 @@ mod tests {
         assert!(!after.iter().any(|im| im["id"] == "llm-energy.ts"), "the reconcile must not resurrect it");
 
         // The tombstone records WHAT replaced it — the audit trail a consolidation needs later.
-        let tomb = raw_implementations_of(&g)
+        let tomb = suppressions_of(&g)
             .into_iter()
-            .find(|im| im["id"] == "llm-energy.ts")
-            .expect("the tombstone occupies the id");
-        assert!(is_tombstone(&tomb));
+            .find(|t| t["id"] == "llm-energy.ts")
+            .expect("the suppression is listed");
         assert_eq!(tomb.get("supersededBy").and_then(Value::as_str), Some("algorithms-llm-energy.ts"));
     }
 
@@ -921,11 +973,11 @@ mod tests {
     /// what makes the reconcile skip it), so the single filtered reader is the only thing standing
     /// between it and every consumer — doctor, domain sweeps, `impl list`.
     #[test]
-    fn a_tombstone_is_invisible_to_every_read_but_visible_to_the_raw_view() {
+    fn a_retired_impl_leaves_the_array_entirely_and_is_recorded_in_the_list() {
         let mut g = seed();
         merge_impls(&mut g, "stream-merge.ts", "windowed-tally.ts").expect("merge succeeds");
-        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "stream-merge.ts"), "filtered out");
-        assert!(raw_implementations_of(&g).iter().any(|im| im["id"] == "stream-merge.ts"), "still present raw");
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "stream-merge.ts"), "gone from the impls");
+        assert!(is_suppressed(&g, "stream-merge.ts"), "recorded in the suppression list instead");
         // …and it does not leak into a domain collection either.
         assert!(!in_domain_ids(&g, "fleet").contains(&"stream-merge.ts".to_string()));
     }
@@ -939,7 +991,8 @@ mod tests {
             "id": "zz-user.ts", "tech": "typescript", "role": "algorithm", "name": "ZZ", "code": "export const z=1;",
         })).expect("user impl writes");
         merge_impls(&mut g, "zz-user.ts", "windowed-tally.ts").expect("merge succeeds");
-        assert!(!raw_implementations_of(&g).iter().any(|im| im["id"] == "zz-user.ts"), "gone entirely");
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "zz-user.ts"), "gone entirely");
+        assert!(!is_suppressed(&g, "zz-user.ts"), "and NOT tombstoned — a plain delete is durable for it");
     }
 
     /// Helper: the ids a domain collection reports, through the FILTERED reader.
@@ -989,6 +1042,40 @@ mod tests {
         // the one store-specific thing in the shared stamp, and the reason it takes a parameter.
         assert_eq!(last.get("prevSrc").and_then(Value::as_str), Some("export const z = 1;"),
                    "the previous code is retained, so a revert has something to reach");
+    }
+
+    /// THE CRASH (#the-tombstone-crash). The first cut parked `{ id, suppressed: true }` INSIDE
+    /// `implementations`, filtered it in the Rust reader, and called that the single funnel. The
+    /// frontend reads the same JSON directly, had never heard of `suppressed`, and died on render:
+    /// `TypeError: Cannot read properties of undefined (reading 'join')` — `graphSig` mapping over a
+    /// record with no `composes`.
+    ///
+    /// So the invariant is about SHAPE: everything in that array is an implementation. A store written
+    /// by the first cut heals on load rather than needing a command, because two of them are already in
+    /// a live store.
+    #[test]
+    fn a_legacy_inline_tombstone_is_swept_out_of_the_impl_array() {
+        let mut g = seed();
+        ensure_array(&mut g, "implementations").push(serde_json::json!({
+            "id": "llm-energy.ts", "suppressed": true, "supersededBy": "algorithms-llm-energy.ts",
+        }));
+
+        assert!(migrate_inline_tombstones(&mut g), "it reports having healed something");
+
+        // Nothing a reader iterates is a tombstone, and every impl has what an impl has — the two
+        // fields `graphSig` reached for.
+        for im in implementations_of(&g) {
+            assert!(im.get("suppressed").is_none(), "no tombstone survives in the array: {im}");
+            assert!(im.get("composes").is_some(), "every impl a reader sees has composes: {im}");
+        }
+        // …and the retirement is still recorded, with what replaced it.
+        assert!(is_suppressed(&g, "llm-energy.ts"));
+        let t = suppressions_of(&g).into_iter().find(|t| t["id"] == "llm-energy.ts").expect("listed");
+        assert_eq!(t.get("supersededBy").and_then(Value::as_str), Some("algorithms-llm-energy.ts"));
+        // Idempotent: a second load neither duplicates nor re-adds.
+        assert!(!migrate_inline_tombstones(&mut g), "nothing left to heal");
+        reconcile_seed(&mut g);
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "llm-energy.ts"), "stays retired");
     }
 
     #[test]
