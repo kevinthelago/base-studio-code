@@ -1122,7 +1122,8 @@ fn help(prog: &str) -> String {
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
-         Implementation techs (#2770): typescript · rust — each `composes` other same-tech impls, rooted in the language's primitives.\n\
+         Implementation techs (#2770): ANY language — `--tech` is not validated and never has been. Each impl `composes` other same-tech impls, rooted in that language's primitives, so a new tech simply starts its own kit (`--tech python` works today; the packaged kits are typescript · rust).\n\
+         WHAT IS language-bound is the MINING half: `harvest`/`curate`/`relink` parse real source with tree-sitter and only carry grammars for ts/tsx/rs. Curating code you already have has no such limit — a session that could not harvest a Python project once concluded it could not curate one either, and left 12 real algorithms unstored rather than try (#53).\n\
          The library is the per-language implementation tier; `harvest`/`curate` (#2745) mine a project's real code into candidate implementations.\n",
     )
 }
@@ -1209,6 +1210,23 @@ fn collect_emitted_files(
 
 #[cfg(test)]
 mod tests {
+    /// The help is the thing that misled, so it is the thing under test: it must NOT present the
+    /// packaged kits as the accepted set, and must still say which half is grammar-bound.
+    ///
+    /// The BEHAVIOUR (any `--tech` is accepted) is deliberately NOT tested here. It would need a
+    /// second `BSC_GRAPH_STORE` mutator, and that env var is process-global while Rust tests run in
+    /// parallel — adding one made `the_packaged_seed_carries_domain_collections` fail, an unrelated
+    /// test reading the packaged seed through the store this one had redirected. The existing
+    /// store-backed test gets away with it only by being the sole mutator. Verified instead by
+    /// running the real CLI against a throwaway store (see the change record); pinning it properly
+    /// needs the store to take a path rather than an env var.
+    #[test]
+    fn the_help_does_not_claim_tech_is_limited_to_the_packaged_kits() {
+        let h = help("bsc graph");
+        assert!(h.contains("ANY language"), "curation must be described as open: {h:.0}");
+        assert!(h.contains("harvest"), "the grammar-bound half must still be named");
+    }
+
     /// `impl set` must be able to WRITE the module state, not only a harvest. 27 of the 58 stateful
     /// modules took this path (a colliding id forced them off `--apply`) and landed with no record of
     /// what they hold — the field existed and nothing could set it.
