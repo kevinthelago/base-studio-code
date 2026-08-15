@@ -27,6 +27,8 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
     setDesignsKit: (v: string) => { s.designsKitId = v; s.designsCompId = null; },
     setDesignsComp: (v: string | null) => { s.designsCompId = v; },
     setDesignsPreviewState: (v: string) => { s.designsPreviewState = v; },
+    dismissedNotices: [] as string[],
+    dismissNotice: (id: string) => { (s.dismissedNotices as string[]).push(id); },
     ...over,
   };
   return {
@@ -320,5 +322,47 @@ describe("the presence gate (#4248)", () => {
     const ack = applyNavigate({ theme: "nord" }, v);
     expect(ack.declined).toBeUndefined();
     expect(v.s.kitTheme).toBe("nord");
+  });
+});
+
+
+// #54 — a session driving the app from a shell could SEE a banner in a capture and had no way to clear
+// it: every banner hides through its own local React state. `dismiss` is the affordance a human already
+// had, reachable from the CLI.
+describe("navigateBridge — dismissing an app notice", () => {
+  it("clears a named notice and reports what it cleared", () => {
+    const v = makeVocab(onStudio);
+    const ack = applyNavigate({ dismiss: "seed-drift" }, v);
+    expect(ack.error).toBeUndefined();
+    expect(ack.dismissed).toEqual(["seed-drift"]);
+    expect(v.s.dismissedNotices).toContain("seed-drift");
+  });
+
+  it("REFUSES a decision-bearing notice, and mutates nothing", () => {
+    // "restore or discard?" — hiding it removes the only place the answer can be given.
+    const v = makeVocab(onStudio);
+    const ack = applyNavigate({ dismiss: "session-recovery" }, v);
+    expect(ack.error).toContain("asks a question");
+    expect(v.s.dismissedNotices ?? []).toEqual([]);
+  });
+
+  it("`all` sweeps the ordinary notices and leaves the question standing", () => {
+    const v = makeVocab(onStudio);
+    const ack = applyNavigate({ dismiss: "all" }, v);
+    expect(ack.dismissed).toContain("seed-drift");
+    expect(ack.dismissed).not.toContain("session-recovery");
+  });
+
+  it("refuses an unknown id BEFORE mutating anything, like every other validation", () => {
+    // A half-applied navigation that also refused a dismissal would leave the caller guessing which
+    // half happened — so this is validated with the rest, ahead of the commit.
+    const v = makeVocab(onStudio);
+    const ack = applyNavigate({ dismiss: "not-a-banner", theme: "nord" }, v);
+    expect(ack.error).toContain("unknown notice");
+    expect(v.s.kitTheme, "the theme must NOT have been applied").not.toBe("nord");
+  });
+
+  it("reports nothing when no dismissal was asked for", () => {
+    expect(applyNavigate({ theme: "nord" }, makeVocab(onStudio)).dismissed).toBeUndefined();
   });
 });
