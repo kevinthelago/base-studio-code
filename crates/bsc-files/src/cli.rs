@@ -164,6 +164,13 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
 /// The `files` subcommand entrypoint: `args` is everything after `bsc files`; `prog` is the display
 /// name for help/errors (`"bsc files"` from the umbrella, `"bsc-files"` from the legacy shim).
 /// Handles help (no command / `help` / `help <cmd>` / `<cmd> help`) before any work.
+/// The verbs this CLI actually has — so the `bsc` overview row can be CHECKED against the catalog
+/// rather than trusted (#82). The old row advertised four verbs that never existed, and nothing could
+/// tell.
+pub fn command_names() -> Vec<&'static str> {
+    COMMANDS.iter().map(|c| c.name).collect()
+}
+
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     let args = parse_args(args)?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
@@ -235,6 +242,23 @@ fn cmd_read(args: &Args) -> Result<(), String> {
     let rel = args.positional.get(1).ok_or("usage: bsc files read <path> [--from n] [--to n]")?;
     let full = root.join(rel);
     if !full.exists() {
+        // ASK THE STORE BEFORE BLAMING THE FILESYSTEM (#82, designer request; same fix as #75).
+        //
+        // A path missing from disk is the NORMAL end state for a module that has been migrated into a
+        // record — the file is retired once the record supersedes it, and the record keeps the old
+        // path only as PROVENANCE. Answering with `no such file` describes the least interesting half
+        // of the truth: the reporter of #82 hit exactly this on `lazyWorkspaces`, whose record even
+        // cites `src/app/lazyWorkspaces.tsx`, and spent the request guessing extensions for a file
+        // that was deliberately deleted.
+        if let Some((id, how)) = bsc_graph::cli::record_covering_path(&full.display().to_string()) {
+            return Err(format!(
+                "no file at {} — that module is a RECORD: `{id}` ({how}).\n\
+                 Its file was retired when the record superseded it, so the path survives only as \
+                 provenance.\n\
+                 Read it with `bsc graph impl get {id}`.",
+                full.display()
+            ));
+        }
         return Err(format!("no such file: {}", full.display()));
     }
     bsc_cli_util::require_harvestable_root(&full)?;
@@ -392,5 +416,85 @@ mod tests {
         // An unknown command falls back to the overview.
         let miss = bsc_cli_util::help_for("bsc files", TAGLINE, COMMANDS, "nope");
         assert!(miss.contains("COMMANDS:"));
+    }
+}
+
+/// #82 — a missing path is resolved against the STORE before it is called absent.
+#[cfg(test)]
+mod retired_module_tests {
+    use super::run;
+
+    /// A store keyed by `BSC_GRAPH_STORE`, holding one record that covers a path whose FILE is gone —
+    /// the `lazyWorkspaces` shape from the request.
+    fn with_store<T>(records: &str, body: impl FnOnce() -> T) -> T {
+        let dir = std::env::temp_dir().join(format!("bsc-files-retired-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let store = dir.join("algorithms.json");
+        std::fs::write(&store, records).unwrap();
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let out = body();
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        out
+    }
+
+    const STORE: &str = r#"{
+      "implementations": [
+        { "id": "lazy-workspaces.ts", "tech": "typescript", "role": "algorithm", "name": "lazyWorkspaces",
+          "src": "src/app/lazyWorkspaces.tsx", "provides": "@/app/lazyWorkspaces" },
+        { "id": "focus-queue.ts", "tech": "typescript", "role": "algorithm", "name": "focusQueue",
+          "provides": "@/app/console/lib/focusQueue" }
+      ]
+    }"#;
+
+    fn read_err(root: &str, path: &str) -> String {
+        run(vec!["read".into(), path.into(), "--root".into(), root.into()], "bsc files")
+            .expect_err("the file does not exist")
+    }
+
+    /// THE REPORTED CASE. `lazyWorkspaces` is not on disk — it is a record, and its `src` survives only
+    /// as provenance. Answering with the filesystem sent the reporter guessing extensions.
+    #[test]
+    fn a_path_a_record_covers_by_src_names_the_record() {
+        let root = std::env::temp_dir().join(format!("bsc-files-root-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&root);
+        let root_s = root.to_string_lossy().into_owned();
+        with_store(STORE, || {
+            let err = read_err(&root_s, "src/app/lazyWorkspaces.tsx");
+            assert!(err.contains("lazy-workspaces.ts"), "NAMES the record: {err}");
+            assert!(err.contains("RECORD"), "says what happened: {err}");
+            assert!(err.contains("bsc graph impl get"), "hands over the verb that reads it: {err}");
+            assert!(err.contains("provenance"), "explains why the path still appears: {err}");
+        });
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A record with NO `src` is still found, through its `provides` specifier.
+    #[test]
+    fn a_path_a_record_covers_by_provides_is_also_found() {
+        let root = std::env::temp_dir().join(format!("bsc-files-root2-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&root);
+        let root_s = root.to_string_lossy().into_owned();
+        with_store(STORE, || {
+            let err = read_err(&root_s, "src/app/console/lib/focusQueue.ts");
+            assert!(err.contains("focus-queue.ts"), "found by provides: {err}");
+        });
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A genuinely unknown path keeps the plain message — inventing a record here would be worse than
+    /// the answer it replaces.
+    #[test]
+    fn a_genuinely_missing_path_still_says_no_such_file() {
+        let root = std::env::temp_dir().join(format!("bsc-files-root3-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&root);
+        let root_s = root.to_string_lossy().into_owned();
+        with_store(STORE, || {
+            let err = read_err(&root_s, "src/nope/missing.ts");
+            assert!(err.contains("no such file"), "unchanged for a real miss: {err}");
+            assert!(!err.contains("RECORD"), "and it does NOT invent one: {err}");
+        });
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -28,7 +28,11 @@ const COMMANDS: &[(&str, &str)] = &[
     ("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)"),
     ("ui", "UI design surface: the primitive contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)"),
     ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
-    ("files", "file-ops toolkit: read/write/edit/list/info"),
+    // #82: this line USED to advertise `read/write/edit/list/info` — four of which have never
+    // existed. A designer followed it, ran `bsc files list`, got `unknown command 'list'`, and filed
+    // a request for the directory listing that `tree` had been providing all along. An overview that
+    // names verbs the CLI lacks is worse than no overview: it is a map to a door that is not there.
+    ("files", "read-only file toolkit: tree (folder structure) · stat · read · refs"),
     ("shot", "capture the RUNNING app's real pixels — a webview snapshot (needs the app running)"),
     ("navigate", "steer the RUNNING app to a view — so a capture can target something"),
     ("fleet", "which fleet panes are ACTUALLY alive — real liveness + pid from the running app"),
@@ -169,6 +173,30 @@ mod tests {
         let h = mcp_help();
         assert!(h.contains("channel-mock"), "the bundled mock marketing channel is listed (#3146)");
         assert!(h.contains("research") && h.contains("compliance"), "the existing servers stay listed");
+    }
+
+    /// THE OVERVIEW MAY NOT NAME A VERB THE SUBCOMMAND DOES NOT HAVE (#82, designer request).
+    ///
+    /// The `files` row advertised `read/write/edit/list/info`; only `read` was real. A designer
+    /// followed it, ran `bsc files list`, got `unknown command 'list'`, and filed a request for the
+    /// directory listing `tree` had been providing all along. Prose cannot be checked in general —
+    /// but this row is a verb LIST, so it can be checked against the catalog it claims to summarise.
+    #[test]
+    fn the_files_overview_names_only_verbs_the_files_cli_actually_has() {
+        let row = COMMANDS.iter().find(|(n, _)| *n == "files").expect("a files row").1;
+        let real = bsc_files::cli::command_names();
+        assert!(!real.is_empty(), "the files catalog is reachable");
+        for verb in &real {
+            assert!(row.contains(verb), "the overview omits the real verb `{verb}`: {row}");
+        }
+        // …and none of the four it used to invent.
+        for ghost in ["write", "edit", "list", "info"] {
+            assert!(
+                !real.contains(&ghost), // guard the guard: if one is ever added, this test must be updated
+                "`{ghost}` is now a real verb — update this assertion rather than deleting it"
+            );
+            assert!(!row.contains(ghost), "the overview names `{ghost}`, which does not exist: {row}");
+        }
     }
 
     #[test]

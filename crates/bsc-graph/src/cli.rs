@@ -456,7 +456,7 @@ fn module_paths_agree(a: &str, b: &str) -> bool {
 /// describes only the filesystem, so the one reading left is that the tool cannot see the tree —
 /// which is exactly the false conclusion that got filed, then generalized into a claim that
 /// `bsc ui harvest` and `bsc graph harvest` have different allowed roots. They do not.
-fn record_covering_path(target: &str) -> Option<(String, String)> {
+pub fn record_covering_path(target: &str) -> Option<(String, String)> {
     record_covering_path_in(&crate::implementations(), target)
 }
 
