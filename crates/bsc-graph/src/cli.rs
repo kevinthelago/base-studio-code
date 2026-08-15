@@ -32,7 +32,7 @@ pub const BOOL_FLAGS: [&str; 8] =
     ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 34] = [
+pub const FLAGS: [&str; 37] = [
     "--pretty",
     // #71 — names WHAT replaced a suppressed algorithm, stored on the tombstone.
     "--superseded-by",
@@ -49,11 +49,14 @@ pub const FLAGS: [&str; 34] = [
     "--summary",
     "--ref",
     "--code",
+    // #76 — the same value, READ FROM DISK instead of pushed through argv.
+    "--code-file",
     "--domain",
     "--clear",
     "--tags",
     "--kind",
     "--viz-code",
+    "--viz-code-file",
     "--src",
     "--folder",
     "--provides",
@@ -65,6 +68,8 @@ pub const FLAGS: [&str; 34] = [
     "--worthy-only",
     "--apply",
     "--fix",
+    // #78 — the dedup pass over the impl set, a focused mode of `doctor`.
+    "--dedup",
     "--dry-run",
     "--no-src",
     "--members",
@@ -179,6 +184,239 @@ fn entity_ids() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Token 5-grams of a body, hashed — the shape used to tell "the same implementation twice" from
+/// "two implementations that happen to share words".
+///
+/// Tokenizing first is what makes it robust to the only difference the real duplicates actually had:
+/// `llm-energy.ts` and `algorithms-llm-energy.ts` differ by 21 characters of formatting and wrapper,
+/// so their raw `code` is NOT equal — yet their shingle sets are IDENTICAL. A byte comparison misses
+/// the exact pair this was requested for.
+fn code_shingles(code: &str) -> std::collections::HashSet<u64> {
+    let mut tokens: Vec<&str> = Vec::new();
+    let bytes = code.as_bytes();
+    let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$';
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b.is_ascii_whitespace() {
+            i += 1;
+        } else if word(b) {
+            let start = i;
+            while i < bytes.len() && word(bytes[i]) {
+                i += 1;
+            }
+            tokens.push(&code[start..i]);
+        } else {
+            // Every other byte is its own token, so punctuation-heavy code still shingles. Stepping by
+            // the CHAR width keeps a multi-byte character from being split into invalid slices.
+            let w = code[i..].chars().next().map_or(1, char::len_utf8);
+            tokens.push(&code[i..i + w]);
+            i += w;
+        }
+    }
+    const N: usize = 5;
+    tokens
+        .windows(N)
+        .map(|w| {
+            // FNV-1a over the window — a set of hashes is far cheaper to intersect than a set of
+            // string tuples, and a collision only ever costs a slightly higher score.
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+            for t in w {
+                for b in t.as_bytes() {
+                    h ^= u64::from(*b);
+                    h = h.wrapping_mul(0x1000_0000_01b3);
+                }
+                h ^= 0xff;
+                h = h.wrapping_mul(0x1000_0000_01b3);
+            }
+            h
+        })
+        .collect()
+}
+
+/// A body shorter than this carries no evidence. `export const x = 1;` repeated across records is a
+/// language, not a duplicate — and at four or five tokens any two such lines score 1.0.
+const MIN_SHINGLES: usize = 8;
+
+/// Shingle overlap at or above which two bodies are the SAME implementation. Measured on the real
+/// store: the two known duplicate pairs score **1.00**, while 400 random pairs have a median of
+/// 0.0008 and a maximum of **0.037**. There is no distribution between those, so the threshold is a
+/// chasm rather than a tuned knob.
+const NEAR_DUPLICATE: f64 = 0.8;
+
+/// Minimum share of a group's possible pairs that must be observed for it to report as one cluster —
+/// the anti-chaining guard, matching the component-side detector (#74). `A~B` and `B~C` with `A` and
+/// `C` unrelated is a chain, and collapsing it asserts a similarity no member exhibits.
+const CLUSTER_DENSITY: f64 = 0.5;
+
+/// Duplicate-candidate GROUPS over the impl set — the algorithms-graph dedup pass (#78).
+///
+/// The library had no duplicate detection at all, so a session hunting duplicates built ad-hoc grep
+/// regexes against the raw `impl list` dump and found ~30 by hand — `llm-energy.ts` /
+/// `algorithms-llm-energy.ts`, `layer-dag.ts` / `layers.ts`, `tab-index-map.ts` / `tab-reorder.ts`,
+/// and a tail from a second module-level harvest that re-added function-level nodes already stored.
+///
+/// TWO SIGNALS, AND NEITHER IS THE ONE THE REQUEST NAMED — because both of those were measured first
+/// and both are noise at this scale:
+///
+/// * **a shared `name`** puts 24 records in one group (`graphPlatform`), 20 in another (`index`), 10
+///   in another (`store`). Those are naming conventions, not duplication.
+/// * **a shared `src`** puts 10 records in one group, because harvest at FUNCTION granularity lifts
+///   many functions out of one file — `dayKey`, `fmtBytes`, `fmtClock` all legitimately carry
+///   `shared/lib/core/format.ts`.
+///
+/// Implemented literally, those two produced **110 groups over 356 impls** against a store the
+/// reporter had already cleaned to ~2 real duplicates: the #74 failure this request is the twin of,
+/// rebuilt. What actually separates a duplicate is the BODY, plus name-and-src together as a
+/// corroborated pair. See [`NEAR_DUPLICATE`] for the measurement.
+///
+/// GROUPS, NOT PAIRS — N duplicates report as ONE row naming every member, and groups sharing the
+/// same members merge, carrying every signal. Three signals over one pair is still one fact.
+///
+/// PROPOSE-ONLY. `bsc graph merge` is the verb that acts and it repoints every consumer; which record
+/// survives is not a decision a diagnostic gets to make.
+fn dedup_findings(g: &Value) -> Vec<Value> {
+    let text = |im: &Value, k: &str| im.get(k).and_then(Value::as_str).unwrap_or("").trim().to_string();
+    // A RETIRED id is not a duplicate candidate — it is already folded away, and proposing a merge for
+    // it would send the reader to redo one that already happened (#77).
+    let impls: Vec<Value> = crate::implementations_of(g)
+        .into_iter()
+        .filter(|im| im.get("id").and_then(Value::as_str).is_some_and(|id| !crate::is_suppressed(g, id)))
+        .collect();
+
+    // ── signal 1: the same body ──
+    let bodies: Vec<(String, std::collections::HashSet<u64>)> = impls
+        .iter()
+        .filter_map(|im| {
+            let id = text(im, "id");
+            let code = text(im, "code");
+            if id.is_empty() || code.is_empty() {
+                return None;
+            }
+            let sh = code_shingles(&code);
+            (sh.len() >= MIN_SHINGLES).then_some((id, sh))
+        })
+        .collect();
+    let mut pairs: Vec<(&str, &str)> = Vec::new();
+    for (a, (id_a, sh_a)) in bodies.iter().enumerate() {
+        for (id_b, sh_b) in bodies.iter().skip(a + 1) {
+            // Cheap reject first: bodies of wildly different size cannot clear the bar, and this keeps
+            // the all-pairs sweep affordable at a thousand records.
+            if sh_a.len() * 2 < sh_b.len() || sh_b.len() * 2 < sh_a.len() {
+                continue;
+            }
+            let inter = sh_a.intersection(sh_b).count();
+            if inter == 0 {
+                continue;
+            }
+            let union = sh_a.len() + sh_b.len() - inter;
+            if union > 0 && (inter as f64) / (union as f64) >= NEAR_DUPLICATE {
+                pairs.push((id_a.as_str(), id_b.as_str()));
+            }
+        }
+    }
+
+    // (signal, key) → the ids sharing it. Body pairs are clustered below; this holds the exact signal.
+    let mut buckets: std::collections::BTreeMap<(&'static str, String), std::collections::BTreeSet<String>> =
+        std::collections::BTreeMap::new();
+    for im in &impls {
+        let (id, name, src) = (text(im, "id"), text(im, "name"), text(im, "src"));
+        // ── signal 2: the same NAME **and** the same src MODULE ──
+        // Together, not either. Two records claiming the same function in the same file are one
+        // record twice; either half alone is a naming convention or a function-granularity harvest.
+        if !id.is_empty() && !name.is_empty() && !src.is_empty() {
+            let key = format!("{name}\u{0}{}", same_module_path(&src));
+            buckets.entry(("name-and-src", key)).or_default().insert(id);
+        }
+    }
+
+    // Cluster the body pairs into connected components, with the same density guard the component
+    // detector uses — a sparse component is a chain, and collapsing it invents a group.
+    let mut adj: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
+        std::collections::BTreeMap::new();
+    for (a, b) in &pairs {
+        adj.entry(a).or_default().insert(b);
+        adj.entry(b).or_default().insert(a);
+    }
+    let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for start in adj.keys().copied() {
+        if seen.contains(start) {
+            continue;
+        }
+        let (mut stack, mut group): (Vec<&str>, Vec<&str>) = (vec![start], Vec::new());
+        while let Some(n) = stack.pop() {
+            if !seen.insert(n) {
+                continue;
+            }
+            group.push(n);
+            for m in adj.get(n).into_iter().flatten() {
+                if !seen.contains(m) {
+                    stack.push(m);
+                }
+            }
+        }
+        if group.len() < 2 {
+            continue;
+        }
+        let members: std::collections::BTreeSet<&str> = group.iter().copied().collect();
+        let observed = pairs.iter().filter(|(a, b)| members.contains(a) && members.contains(b)).count();
+        let possible = group.len() * (group.len() - 1) / 2;
+        if possible == 0 || (observed as f64) / (possible as f64) < CLUSTER_DENSITY {
+            continue; // a chain, not a group
+        }
+        // Keyed on the cluster's own smallest id, NOT a constant. A constant key merged every body
+        // cluster into one bucket, so two unrelated duplicate pairs (measured 0.002 similar to each
+        // other) reported as a single group of four — a confident wrong grouping, which is exactly
+        // what the density guard above exists to prevent. Connected components are disjoint, so the
+        // smallest member is a stable unique name for the cluster.
+        group.sort_unstable();
+        buckets
+            .entry(("same-body", group[0].to_string()))
+            .or_default()
+            .extend(group.iter().map(|s| (*s).to_string()));
+    }
+
+    // Collapse to one entry per MEMBER SET, carrying every signal that grouped it.
+    let mut by_members: std::collections::BTreeMap<Vec<String>, Vec<String>> = std::collections::BTreeMap::new();
+    for ((signal, key), ids) in buckets {
+        if ids.len() < 2 {
+            continue;
+        }
+        let desc = match signal {
+            "name-and-src" => {
+                let (name, src) = key.split_once('\u{0}').unwrap_or((key.as_str(), ""));
+                format!("the same `name` (`{name}`) in the same module (`{src}`)")
+            }
+            // The body itself is never echoed — that it is the same body IS the finding.
+            _ => format!("a near-identical body (≥{}% shingle overlap)", (NEAR_DUPLICATE * 100.0) as u32),
+        };
+        by_members.entry(ids.into_iter().collect()).or_default().push(desc);
+    }
+
+    let mut out: Vec<(usize, Value)> = by_members
+        .into_iter()
+        .map(|(ids, signals)| {
+            let n = ids.len();
+            let v = serde_json::json!({
+                "category": "duplicate-candidate",
+                "ids": ids,
+                "signals": signals,
+                "detail": format!("{n} implementations share {} — {}", signals.join(" and "), ids.join(", ")),
+                "suggestion": format!(
+                    "pick the survivor, then fold the others into it with `bsc graph merge <from> <into>` \
+                     (it repoints every consumer). PROPOSE-ONLY — nothing is merged automatically, because \
+                     which one survives is not a diagnostic's call. Candidates: {}",
+                    ids.join(", ")
+                ),
+            });
+            (n, v)
+        })
+        .collect();
+    // Biggest groups first — the widest duplication is the one worth acting on.
+    out.sort_by_key(|g| std::cmp::Reverse(g.0));
+    out.into_iter().map(|(_, v)| v).collect()
+}
+
 /// A record's `src` reduced to the module it names, so two spellings of one path compare equal.
 ///
 /// The store holds both conventions — `src/shared/ui/registry.tsx` and `app/console/lib/focusQueue.ts` —
@@ -192,6 +430,61 @@ fn same_module_path(src: &str) -> String {
     let unix = src.replace('\\', "/");
     let trimmed = unix.trim_start_matches("./");
     trimmed.strip_prefix("src/").unwrap_or(trimmed).to_string()
+}
+
+/// Do two normalized module paths name the same module, one possibly being the ABSOLUTE form?
+///
+/// A harvest target is typically absolute (`C:/…/src/features/x/y.ts`) while a record's `src` is
+/// repo-relative (`src/features/x/y.ts`), so equality is the wrong test and a bare `ends_with` is too
+/// loose — `…/colorHue.ts` would match a record for `myColorHue.ts`. The suffix has to begin at a
+/// path BOUNDARY.
+fn module_paths_agree(a: &str, b: &str) -> bool {
+    let boundary_suffix = |hay: &str, needle: &str| {
+        !needle.is_empty()
+            && hay.len() > needle.len()
+            && hay.ends_with(needle)
+            && hay.as_bytes()[hay.len() - needle.len() - 1] == b'/'
+    };
+    a == b || boundary_suffix(a, b) || boundary_suffix(b, a)
+}
+
+/// The record that already covers `target`, and WHICH signal matched — `src` provenance or the
+/// `provides` specifier (#75, designer request).
+///
+/// A harvest target absent from disk is the NORMAL end state for an already-migrated module in this
+/// codebase, not an error: the file is retired once the record supersedes it. `no such path`
+/// describes only the filesystem, so the one reading left is that the tool cannot see the tree —
+/// which is exactly the false conclusion that got filed, then generalized into a claim that
+/// `bsc ui harvest` and `bsc graph harvest` have different allowed roots. They do not.
+fn record_covering_path(target: &str) -> Option<(String, String)> {
+    record_covering_path_in(&crate::implementations(), target)
+}
+
+/// [`record_covering_path`] over an explicit impl list — the pure half, so the lookup is testable
+/// without redirecting the process-global store env var.
+fn record_covering_path_in(impls: &[Value], target: &str) -> Option<(String, String)> {
+    let want = same_module_path(target);
+    // `provides` carries no extension (`@/features/designs/lib/colorHue`), so the specifier compares
+    // against the target's STEM rather than its filename.
+    let want_stem = want.rsplit_once('.').map(|(s, _)| s.to_string()).unwrap_or_else(|| want.clone());
+    for im in impls {
+        let id = im.get("id").and_then(Value::as_str).unwrap_or_default();
+        if id.is_empty() {
+            continue;
+        }
+        if let Some(src) = im.get("src").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+            if module_paths_agree(&same_module_path(src), &want) {
+                return Some((id.to_string(), format!("its `src` is `{src}`")));
+            }
+        }
+        if let Some(p) = im.get("provides").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+            let spec = same_module_path(p.trim_start_matches("@/"));
+            if module_paths_agree(&spec, &want_stem) {
+                return Some((id.to_string(), format!("it provides `{p}`")));
+            }
+        }
+    }
+    None
 }
 
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
@@ -304,7 +597,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             Some(other) => Err(format!("unknown edge subverb '{other}' — want one of: {}", EDGE_SUBVERBS.join(" | "))),
         },
         // `impl …` — read / curate the language-kit implementation tier (#2863/#2961/#2972/#3120):
-        //   impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b]
+        //   impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>|--code-file <p>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b]
+        //     #76: `--code-file`/`--viz-code-file` read the value from DISK. Prefer them — argv cannot
+        //     carry source intact (the shell eats backticks and `${…}`), and it fails silently.
         //     (algorithm: real --code; primitive: DESCRIBE a language built-in via --ref, e.g. std::vec::Vec — never re-coded, #2972)
         //   impl remove <id>                             # delete an implementation + scrub it from every composes
         //   impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]  # a language kit's implementations, optionally a domain collection (#3120)
@@ -324,7 +619,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if let Some(s) = flag_value(&args, "--summary") { im["summary"] = Value::String(s); }
                 // A primitive DESCRIBES a language built-in via `--ref` (std path), rather than re-coding it (#2972).
                 if let Some(r) = flag_value(&args, "--ref") { im["ref"] = Value::String(r); }
-                if let Some(code) = flag_value(&args, "--code") { im["code"] = Value::String(code); }
+                // #76 — `--code` OR `--code-file`; the file form is the one large or backtick-bearing
+                // source can survive, since argv cannot carry it intact.
+                if let Some(code) = source_flag(&args, "--code")? { im["code"] = Value::String(code); }
                 // The domain facet (#3120) — additive: only written when supplied, so existing impls are untouched.
                 if let Some(d) = flag_value(&args, "--domain") { im["domain"] = Value::String(d); }
                 // #4107: settable directly, but normally DERIVED — pass `--src` and the folder follows,
@@ -409,7 +706,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // The kind facet (#3210) — the manipulation type that selects the live animation. Additive.
                 if let Some(k) = flag_value(&args, "--kind") { im["kind"] = Value::String(k); }
                 // The viz-code facet (#3218) — the algorithm's visualization as a JS trace-program. Additive.
-                if let Some(v) = flag_value(&args, "--viz-code") { im["vizCode"] = Value::String(v); }
+                // A trace-program is JS and routinely carries both backticks and `${…}`, so this is the
+                // flag most likely to be corrupted in transit — see `source_flag`.
+                if let Some(v) = source_flag(&args, "--viz-code")? { im["vizCode"] = Value::String(v); }
                 let replaced = crate::set_impl_by(&mut g, im.clone(), &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()), flag_value(&args, "--note").as_deref())?;
                 crate::save(&g)?;
                 // Report the STORED record, not the write payload (#4154). Echoing `im` showed only the
@@ -512,7 +811,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     tomb["supersededBy"] = Value::String(new_id);
                 }
                 crate::remove_impl(&mut g, id);
-                crate::ensure_array(&mut g, "suppressed").push(tomb.clone());
+                // Idempotent (#77) — suppressing an already-suppressed id refreshes its pointer
+                // instead of appending a second tombstone for the same id.
+                crate::add_suppression(&mut g, id, tomb.get("supersededBy").and_then(Value::as_str));
                 crate::save(&g)?;
                 emit(&serde_json::json!({ "ok": true, "suppressed": id, "supersededBy": tomb.get("supersededBy") }))
             }
@@ -582,6 +883,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // A missing path must SAY so. Previously the dir walk's `read_dir` failed silently on
             // anything that was not a readable dir, so a typo and an empty tree were the same answer.
             if !target.exists() {
+                // …but ASK THE STORE FIRST (#75). A target absent from disk is the normal end state
+                // for an already-migrated module here — the file is retired once the record
+                // supersedes it — so answering with the filesystem alone describes the least
+                // interesting half of the truth and reads as a broken tool.
+                if let Some((id, how)) = record_covering_path(dir) {
+                    return Err(format!(
+                        "nothing at {dir} — that module is ALREADY HARVESTED: `{id}` ({how}).\n\
+                         Its file was retired when the record superseded it, which is the expected \
+                         end state, not a missing path.\n\
+                         Read the record with `{prog} impl get {id}`."
+                    ));
+                }
                 return Err(format!("no such path: {dir}"));
             }
             bsc_cli_util::require_harvestable_root(target)?;
@@ -626,6 +939,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 .filter(|c| tech.as_deref().is_none_or(|t| c.tech == t))
                 .filter(|c| !worthy_only || c.classification.worthy)
                 .collect();
+            // #77 — ids this run declined to write back because they are RETIRED. Declared out here so
+            // it reaches the emit: a skip nobody is told about is how a caller comes to believe a
+            // record was written when it was not.
+            let mut retired: Vec<String> = Vec::new();
             if apply {
                 let mut g = crate::load();
                 // A module id is derived from the file STEM, so two `registry.tsx` in different
@@ -699,7 +1016,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     if let Some(p) = &c.provides {
                         im["provides"] = Value::String(p.clone());
                     }
-                    crate::set_impl(&mut g, im)?;
+                    set_impl_skipping_retired(&mut g, im, &mut retired)?;
                     // ROUTE THE INTEGRATION TEST (edges-fill-themselves-at-retirement). A colocated test
                     // that reaches other modules is not paired onto the node — but it must not be left
                     // behind either, because the file it lives in goes when the module retires. It
@@ -762,7 +1079,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     })
                 })
                 .collect();
-            emit(&serde_json::json!({ "applied": apply, "candidates": candidates, "count": candidates.len() }))
+            emit(&serde_json::json!({
+                "applied": apply,
+                "candidates": candidates,
+                "count": candidates.len(),
+                // #77 — named, not just counted: the caller needs to know WHICH module it asked to
+                // store and did not get, so it can look up what superseded it.
+                "skippedRetired": retired,
+            }))
         }
         // `curate <dir> [--tech t] [--apply]` — the curation + optimize gate (#2745 slice 3): harvest +
         // classify a project, keep only the WORTHY candidates, and plan each into the library — an `add`,
@@ -786,6 +1110,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     .filter(|c| c.classification.worthy)
                     .collect();
             let plan = crate::extract::curation_plan(&worthy, &crate::implementations());
+            // #77 — same contract as `harvest --apply`: a retired id is skipped and named, not written
+            // back and not fatal to the rest of the curation.
+            let mut retired: Vec<String> = Vec::new();
             if apply {
                 let mut g = crate::load();
                 for item in &plan {
@@ -809,7 +1136,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     if let Some(f) = bsc_util::folder_from_src(&c.src) {
                         im["folder"] = Value::String(f);
                     }
-                    crate::set_impl(&mut g, im)?;
+                    set_impl_skipping_retired(&mut g, im, &mut retired)?;
                 }
                 crate::save(&g)?;
             }
@@ -828,7 +1155,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     })
                 })
                 .collect();
-            emit(&serde_json::json!({ "applied": apply, "curated": items.len(), "plan": items }))
+            emit(&serde_json::json!({
+                "applied": apply,
+                "curated": items.len(),
+                "plan": items,
+                "skippedRetired": retired,
+            }))
         }
         // `refolder` (#4107) — re-derive every stored impl's `folder` from its `src`, mirroring
         // `bsc ui regroup`. The backfill for a library curated before the folder existed: `src` has
@@ -1030,6 +1362,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "doctor" => {
             let fix = args.iter().any(|a| a == "--fix");
             let mut g = crate::load();
+            // #78 — a FOCUSED mode, not another section bolted onto the default report. The default
+            // doctor already emits well over a thousand findings on the real store; folding duplicate
+            // groups into that would bury them exactly the way #74's pairs buried theirs.
+            if args.iter().any(|a| a == "--dedup") {
+                let groups = dedup_findings(&g);
+                return emit(&serde_json::json!({ "duplicates": groups, "count": groups.len() }));
+            }
             if fix {
                 let mut fixed = Vec::new();
                 for im in crate::implementations_of(&g) {
@@ -1219,6 +1558,63 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
 }
 
+/// Resolve a SOURCE-bearing flag from either its inline form (`--code`) or its file form
+/// (`--code-file`), reading the file verbatim (#76, designer request).
+///
+/// Source on the command line does not survive the shell, and it fails SILENTLY in both directions:
+/// a literal `\n` stays two characters inside a double-quoted bash argument, and a backtick or a
+/// `${…}` is COMMAND-SUBSTITUTED before the binary ever sees it — so the record is written, just not
+/// with the code that was meant. Nothing downstream can detect that, because the value that arrived
+/// is perfectly well-formed. This repo has already lost content to exactly that (four `bsc plan`
+/// notes), and the standing workaround was to rewrite the source to avoid backticks and newlines —
+/// i.e. to change the code being stored to suit its transport.
+///
+/// `edge set --src` already reads from disk for the same reason, and `harvest --module --apply`
+/// exists because two modules (71 KB and 42 KB) are past the Windows `CreateProcess` argv limit and
+/// could not be written at all. This gives `impl set` the same door.
+///
+/// Both forms at once is an ERROR rather than a precedence rule: whichever way it resolved, the
+/// caller believed the other one was being stored.
+fn source_flag(args: &[String], flag: &str) -> Result<Option<String>, String> {
+    let file_flag = format!("{flag}-file");
+    match (flag_value(args, flag), flag_value(args, &file_flag)) {
+        (Some(_), Some(_)) => {
+            Err(format!("{flag} and {file_flag} were both given — pass one, not both"))
+        }
+        (Some(v), None) => Ok(Some(v)),
+        (None, Some(p)) => {
+            let path = std::path::Path::new(&p);
+            // #3475: reading file CONTENTS through an allow-listed CLI must honor the same boundary
+            // the file tools do, or a confined session reads any path on disk through this verb.
+            // Outside a confined session this is a no-op, so it costs the ordinary caller nothing.
+            bsc_cli_util::require_harvestable_root(path)?;
+            // An unreadable path is an ERROR, never an empty field: silently storing "" would erase
+            // the record's source, which is the very corruption this flag exists to prevent.
+            std::fs::read_to_string(path).map(Some).map_err(|err| format!("cannot read {p}: {err}"))
+        }
+        (None, None) => Ok(None),
+    }
+}
+
+/// A BATCH write skips a retired id and records it, instead of aborting the whole run (#77).
+///
+/// `set_impl` now refuses a suppressed id, which is right for `impl set` — the caller named that one
+/// id and deserves to be told no. A batch is different: harvest and curate walk a TREE, and a retired
+/// module's FILE is usually still on disk (retirement is a decision about the store, not the source),
+/// so re-encountering it is the expected case rather than an exceptional one. Aborting would mean one
+/// retired module stops an otherwise good harvest of forty.
+///
+/// Skipped ids are RETURNED, never swallowed: a silent skip is how the caller ends up believing a
+/// record was written when it was not — the same class of quiet wrongness as the resurrection itself.
+fn set_impl_skipping_retired(g: &mut Value, im: Value, skipped: &mut Vec<String>) -> Result<(), String> {
+    let id = im.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+    if !id.is_empty() && crate::is_suppressed(g, &id) {
+        skipped.push(id);
+        return Ok(());
+    }
+    crate::set_impl(g, im).map(|_| ())
+}
+
 /// Split a `--flag a,b,c` value into a JSON string array (empty when absent/blank) — for `--composes`
 /// on `impl set` (#2863).
 fn list_flag(s: Option<&str>) -> Value {
@@ -1246,10 +1642,10 @@ fn help(prog: &str) -> String {
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
   \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
-  \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
+  \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes)\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
          {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)
   \
          {prog} impl suppress <id> [--superseded-by <new-id>]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored)
@@ -1673,5 +2069,372 @@ mod same_module_path_tests {
         assert_eq!(same_module_path("src/features/src/thing.ts"), "features/src/thing.ts");
         assert_eq!(same_module_path("features/src/thing.ts"), "features/src/thing.ts");
         assert_ne!(same_module_path("src/a/src/b.ts"), same_module_path("src/a/b.ts"));
+    }
+}
+
+/// `--code-file` / `--viz-code-file` — source read from DISK instead of argv (#76, designer request).
+///
+/// Driven at [`source_flag`] rather than through `run(…)` DELIBERATELY. An end-to-end assertion would
+/// have to redirect `BSC_GRAPH_STORE`, which is process-global while Rust tests run in parallel; the
+/// note above `mod tests` records that adding a second mutator of it already broke an unrelated test
+/// that reads the packaged seed. `source_flag` IS the behaviour under test — it is the only thing
+/// between the flag and the stored string — and testing it here is exact rather than incidental.
+#[cfg(test)]
+mod source_flag_tests {
+    use super::source_flag;
+
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// A temp file whose NAME is unique per test AND per process, so a parallel run cannot collide.
+    fn write_temp(tag: &str, body: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("bsc-graph-codefile-{}-{tag}.ts", std::process::id()));
+        std::fs::write(&p, body).unwrap();
+        p
+    }
+
+    /// THE WHOLE POINT. This body is the exact shape argv destroys: a backtick template literal with
+    /// an interpolation the shell would command-substitute, and real newlines a double-quoted `\n`
+    /// never becomes. It must arrive byte-identical.
+    #[test]
+    fn code_file_reads_backticks_interpolation_and_newlines_verbatim() {
+        let body = "export function x() {\n  const n = 1;\n  return `a${n}b`;\n}\n";
+        let p = write_temp("verbatim", body);
+        let got = source_flag(&args(&["--code-file", p.to_str().unwrap()]), "--code").unwrap();
+        assert_eq!(got.as_deref(), Some(body), "read back byte-identical");
+        // And specifically that nothing collapsed: three real newlines, a live backtick, a live ${}.
+        let got = got.unwrap();
+        assert_eq!(got.matches('\n').count(), 4, "real newlines survived: {got:?}");
+        assert!(got.contains("`a${n}b`"), "the template literal survived intact: {got:?}");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    /// The same door for the trace-program, which is the field MOST likely to carry a backtick.
+    #[test]
+    fn viz_code_file_uses_the_same_door() {
+        let body = "({ run(a) { a.mark(`i${0}`); } })";
+        let p = write_temp("viz", body);
+        let got = source_flag(&args(&["--viz-code-file", p.to_str().unwrap()]), "--viz-code").unwrap();
+        assert_eq!(got.as_deref(), Some(body));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    /// The inline form still works — this ADDS a door, it does not close the existing one.
+    #[test]
+    fn the_inline_flag_still_resolves_and_absence_is_none() {
+        let got = source_flag(&args(&["--code", "export const s = 1;"]), "--code").unwrap();
+        assert_eq!(got.as_deref(), Some("export const s = 1;"));
+        assert_eq!(source_flag(&args(&["--id", "x.ts"]), "--code").unwrap(), None, "absent ⇒ None, not empty");
+    }
+
+    /// REFUSED, not resolved by precedence. Whichever one won, the caller believed the other was
+    /// being stored — and a silently-wrong record is the exact failure this flag exists to prevent.
+    #[test]
+    fn both_forms_at_once_is_refused() {
+        let p = write_temp("both", "export const s = 2;");
+        let err = source_flag(&args(&["--code", "inline", "--code-file", p.to_str().unwrap()]), "--code")
+            .unwrap_err();
+        assert!(err.contains("--code") && err.contains("--code-file"), "names both flags: {err}");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    /// An unreadable path is an ERROR naming the path. Storing `""` would ERASE the record's source —
+    /// the same corruption by a quieter route.
+    #[test]
+    fn an_unreadable_path_is_an_error_naming_it_never_an_empty_field() {
+        let missing = std::env::temp_dir().join("bsc-graph-codefile-does-not-exist.ts");
+        let err = source_flag(&args(&["--code-file", missing.to_str().unwrap()]), "--code").unwrap_err();
+        assert!(err.contains("does-not-exist"), "names the path it could not read: {err}");
+    }
+}
+
+/// The BATCH half of #77 — `harvest --apply` / `curate --apply` skip a retired id and name it.
+#[cfg(test)]
+mod batch_retired_tests {
+    use super::set_impl_skipping_retired;
+
+    fn impl_json(id: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id, "tech": "typescript", "role": "algorithm",
+            "name": id, "code": "export const a = 1;",
+        })
+    }
+
+    /// A retired module's FILE is usually still on disk — retirement is a decision about the store,
+    /// not about the source — so a tree walk re-encountering it is the EXPECTED case. Aborting would
+    /// let one retired module stop an otherwise good harvest of forty.
+    #[test]
+    fn a_batch_skips_a_retired_id_names_it_and_keeps_going() {
+        let mut g = serde_json::json!({
+            "implementations": [],
+            "suppressed": [{ "id": "llm-energy.ts", "supersededBy": "algorithms-llm-energy.ts" }],
+        });
+        let mut skipped = Vec::new();
+
+        set_impl_skipping_retired(&mut g, impl_json("llm-energy.ts"), &mut skipped).expect("not fatal");
+        set_impl_skipping_retired(&mut g, impl_json("fresh.ts"), &mut skipped).expect("the rest still land");
+
+        assert_eq!(skipped, vec!["llm-energy.ts".to_string()], "the skip is NAMED, not swallowed");
+        let live: Vec<String> = crate::implementations_of(&g)
+            .iter()
+            .filter_map(|im| im.get("id").and_then(serde_json::Value::as_str).map(str::to_owned))
+            .collect();
+        assert_eq!(live, vec!["fresh.ts".to_string()], "retired stayed out, the good one went in");
+    }
+
+    /// A real error is still an error — the skip is scoped to retirement, not a blanket catch that
+    /// would turn every rejected write into a silent no-op.
+    #[test]
+    fn a_genuinely_invalid_record_still_fails_the_batch() {
+        let mut g = serde_json::json!({ "implementations": [] });
+        let mut skipped = Vec::new();
+        let bad = serde_json::json!({ "id": "b.ts", "tech": "typescript", "role": "not-a-role", "name": "B" });
+        assert!(set_impl_skipping_retired(&mut g, bad, &mut skipped).is_err(), "a bad role still aborts");
+        assert!(skipped.is_empty());
+    }
+}
+
+/// #75 — an absent harvest target is resolved against the STORE before the filesystem answers.
+#[cfg(test)]
+mod already_harvested_tests {
+    use super::module_paths_agree;
+
+    /// The absolute-vs-relative case is the whole reason equality will not do: the reporter passed an
+    /// absolute Windows path, and the record's `src` is repo-relative.
+    #[test]
+    fn an_absolute_target_agrees_with_a_repo_relative_src() {
+        let abs = super::same_module_path("C:/Users/k/proj/src/features/designs/lib/colorHue.ts");
+        let rel = super::same_module_path("src/features/designs/lib/colorHue.ts");
+        assert!(module_paths_agree(&abs, &rel), "{abs} vs {rel}");
+        // Backslashes too — Windows contributes them and the store holds both conventions.
+        let win = super::same_module_path(r"C:\Users\k\proj\src\features\designs\lib\colorHue.ts");
+        assert!(module_paths_agree(&win, &rel), "{win} vs {rel}");
+    }
+
+    /// The suffix must begin at a path BOUNDARY. A bare `ends_with` would call these the same module,
+    /// which would name the WRONG record — worse than the unhelpful message being replaced.
+    #[test]
+    fn a_partial_segment_is_not_a_match() {
+        assert!(!module_paths_agree("a/b/myColorHue.ts", "colorHue.ts"), "not a boundary");
+        assert!(!module_paths_agree("features/x/y.ts", "features/x/z.ts"), "different files");
+        assert!(module_paths_agree("a/b/colorHue.ts", "colorHue.ts"), "a real boundary DOES match");
+        assert!(module_paths_agree("x.ts", "x.ts"), "equality still holds");
+        assert!(!module_paths_agree("a/b/c.ts", ""), "an empty side never matches");
+    }
+
+    /// The three cases the message has to tell apart — the reporter's exact path, resolved by `src`
+    /// provenance, by `provides` specifier, and a genuinely unknown path that must still be a plain
+    /// miss.
+    #[test]
+    fn a_covering_record_is_found_by_src_by_provides_and_not_invented() {
+        let impls = vec![
+            serde_json::json!({
+                "id": "colour-hue.ts", "tech": "typescript", "role": "algorithm", "name": "hueOfColor",
+                "src": "src/features/designs/lib/colorHue.ts",
+            }),
+            serde_json::json!({
+                "id": "focus-queue.ts", "tech": "typescript", "role": "algorithm", "name": "focusQueue",
+                // NO `src` — provenance-free records exist (`--no-src`, #4136), so `provides` is the
+                // only signal that can resolve this one.
+                "provides": "@/app/console/lib/focusQueue",
+            }),
+        ];
+        // The reporter's actual failing target.
+        let (id, how) = super::record_covering_path_in(
+            &impls,
+            "C:/Users/Kevin/Projects/rust/base-studio-code/src/features/designs/lib/colorHue.ts",
+        )
+        .expect("resolved by src provenance");
+        assert_eq!(id, "colour-hue.ts", "and NOT by guessing the id from the filename");
+        assert!(how.contains("src"), "says which signal matched: {how}");
+
+        let (id, how) = super::record_covering_path_in(
+            &impls,
+            "C:/Users/Kevin/proj/src/app/console/lib/focusQueue.ts",
+        )
+        .expect("resolved by the provides specifier, extension and all");
+        assert_eq!(id, "focus-queue.ts");
+        assert!(how.contains("provides"), "says which signal matched: {how}");
+
+        assert!(
+            super::record_covering_path_in(&impls, "C:/Users/Kevin/proj/src/nope/missing.ts").is_none(),
+            "a genuinely unknown path stays a plain miss — inventing a record here would be worse \
+             than the message this replaces"
+        );
+    }
+}
+
+
+/// #78 — the dedup pass over the impl set.
+#[cfg(test)]
+mod dedup_tests {
+    use super::{code_shingles, dedup_findings};
+    use serde_json::Value;
+
+    fn im(id: &str, name: &str, extra: Value) -> Value {
+        let mut v = serde_json::json!({ "id": id, "tech": "typescript", "role": "algorithm", "name": name });
+        if let (Some(o), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+            for (k, val) in e {
+                o.insert(k.clone(), val.clone());
+            }
+        }
+        v
+    }
+
+    fn ids_of(f: &Value) -> Vec<String> {
+        f["ids"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect()
+    }
+
+    /// A real body, long enough to clear the shingle floor — a fixture has to behave like the records
+    /// do, since a three-token body scores 1.0 against anything.
+    fn body(unit: &str) -> String {
+        format!(
+            "export function estimate(tokens, model) {{\n  \
+               const rate = TABLE[model] ?? DEFAULT_RATE;\n  \
+               const joules = tokens * rate * OVERHEAD;\n  \
+               return {{ value: joules / 3600, unit: \"{unit}\" }};\n}}"
+        )
+    }
+
+    /// THE PAIR THE REQUEST WAS FILED FOR. `llm-energy.ts` and `algorithms-llm-energy.ts` differ by
+    /// formatting and a wrapper — their raw `code` is NOT equal, their names differ, and one has no
+    /// `src` at all. A byte comparison, a name match and a src match ALL miss it; the shingled body
+    /// scores 1.00 on the real records.
+    #[test]
+    fn a_reformatted_copy_is_caught_though_name_src_and_bytes_all_differ() {
+        let squashed = body("Wh").replace('\n', " ").replace("  ", " ");
+        assert_ne!(squashed, body("Wh"), "the fixture must NOT be byte-identical, or it proves nothing");
+        let g = serde_json::json!({ "implementations": [
+            im("llm-energy.ts", "estimateEnergyWh", serde_json::json!({ "code": body("Wh") })),
+            im("algorithms-llm-energy.ts", "llmEnergy", serde_json::json!({
+                "code": squashed,
+                "src": "src/shared/lib/algorithms/llmEnergy.ts",
+            })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "the reported pair is caught: {found:#?}");
+        assert_eq!(ids_of(&found[0]), vec!["algorithms-llm-energy.ts", "llm-energy.ts"]);
+        assert!(found[0]["signals"][0].as_str().unwrap().contains("body"), "names the signal");
+    }
+
+    /// THE NOISE THE FIRST CUT PRODUCED, now pinned as a test. Implemented as the request literally
+    /// asked — a shared name OR a shared src — these fixtures were 110 groups over 356 impls on the
+    /// real store. Neither is a duplicate, and neither may report.
+    #[test]
+    fn a_shared_name_or_a_shared_src_alone_is_not_a_duplicate() {
+        // Every feature has a `store`, an `index`, a `graphPlatform`. That is a convention.
+        let g = serde_json::json!({ "implementations": [
+            im("github-store.ts", "store", serde_json::json!({ "code": body("a"), "src": "src/features/github/store.ts" })),
+            im("skills-store.ts", "store", serde_json::json!({ "code": body("b").replace("rate", "ratio"), "src": "src/features/skills/store.ts" })),
+        ]});
+        assert!(dedup_findings(&g).is_empty(), "a shared name alone: {:#?}", dedup_findings(&g));
+
+        // Function-granularity harvest lifts MANY functions out of ONE file, so they share `src` by
+        // construction — ten records carry `shared/lib/core/format.ts` on the real store.
+        let g = serde_json::json!({ "implementations": [
+            im("fmt-bytes.ts", "fmtBytes", serde_json::json!({ "code": body("B"), "src": "src/shared/lib/core/format.ts" })),
+            im("fmt-clock.ts", "fmtClock", serde_json::json!({
+                "code": body("s").replace("joules", "seconds").replace("rate", "unitRate"),
+                "src": "shared/lib/core/format.ts",
+            })),
+        ]});
+        assert!(dedup_findings(&g).is_empty(), "a shared src alone: {:#?}", dedup_findings(&g));
+    }
+
+    /// Name AND src TOGETHER is the corroborated signal — two records claiming the same function in
+    /// the same file are one record twice. The `src/` prefix is normalized, or the pair is invisible.
+    #[test]
+    fn the_same_name_in_the_same_module_is_a_candidate_across_both_src_spellings() {
+        let g = serde_json::json!({ "implementations": [
+            im("layers.ts", "layerDag", serde_json::json!({ "src": "src/features/glance/lib/layers.ts" })),
+            im("layer-dag.ts", "layerDag", serde_json::json!({ "src": "features/glance/lib/layers.ts" })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "caught across both spellings: {found:#?}");
+        assert!(found[0]["signals"][0].as_str().unwrap().contains("same module"));
+    }
+
+    /// THE #74 LESSON, which this request explicitly invokes. Four mutually-duplicate impls are ONE
+    /// row naming all four — as pairs they would be six rows restating one fact.
+    #[test]
+    fn n_duplicates_report_as_one_group_naming_every_member() {
+        let c = serde_json::json!({ "code": body("Wh") });
+        let g = serde_json::json!({ "implementations": [
+            im("a.ts", "a", c.clone()), im("b.ts", "b", c.clone()),
+            im("c.ts", "c", c.clone()), im("d.ts", "d", c.clone()),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "ONE group, not 6 pairs: {found:#?}");
+        assert_eq!(ids_of(&found[0]).len(), 4, "naming every member");
+        let s = found[0]["suggestion"].as_str().unwrap();
+        assert!(s.contains("bsc graph merge") && s.contains("PROPOSE-ONLY"), "propose-only: {s}");
+    }
+
+    /// TWO INDEPENDENT clusters stay TWO groups. This caught a real bug: every body cluster was
+    /// keyed on the same constant, so all of them merged into one bucket and the real store reported
+    /// `llm-energy` + `stream-merge` as a single group of four — two pairs that are 0.002 similar to
+    /// each other. A confident wrong grouping is worse than the noise it replaces, which is the whole
+    /// reason the density guard exists; the constant key was routing around it.
+    #[test]
+    fn two_unrelated_duplicate_clusters_report_separately() {
+        let two = "export function tally(items) {\n  \
+                     const seen = new Map();\n  \
+                     for (const it of items) seen.set(it.key, (seen.get(it.key) ?? 0) + it.n);\n  \
+                     return [...seen.entries()].sort((a, b) => b[1] - a[1]);\n}";
+        let g = serde_json::json!({ "implementations": [
+            im("llm-energy.ts", "energy", serde_json::json!({ "code": body("Wh") })),
+            im("algorithms-llm-energy.ts", "llmEnergy", serde_json::json!({ "code": body("Wh") })),
+            im("stream-merge.ts", "merge", serde_json::json!({ "code": two })),
+            im("algorithms-stream-merge.ts", "streamMerge", serde_json::json!({ "code": two })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 2, "TWO groups of two, not one of four: {found:#?}");
+        assert!(found.iter().all(|f| ids_of(f).len() == 2), "each names its own pair: {found:#?}");
+    }
+
+    /// Two signals over the SAME members is still one fact, so it is one row carrying both.
+    #[test]
+    fn signals_over_the_same_members_merge_into_one_row() {
+        let g = serde_json::json!({ "implementations": [
+            im("x.ts", "shared", serde_json::json!({ "code": body("Wh"), "src": "src/a/b.ts" })),
+            im("y.ts", "shared", serde_json::json!({ "code": body("Wh"), "src": "a/b.ts" })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "one row, not one per signal: {found:#?}");
+        assert_eq!(found[0]["signals"].as_array().unwrap().len(), 2, "carrying BOTH signals");
+    }
+
+    /// A retired id is already folded away (#77) — proposing a merge for it sends the reader to redo
+    /// one that already happened. Measured: the ONLY near-duplicates left on the real store are the
+    /// two resurrection artifacts, and both are suppressed.
+    #[test]
+    fn a_retired_id_is_never_a_duplicate_candidate() {
+        let g = serde_json::json!({
+            "implementations": [
+                im("gone.ts", "dupe", serde_json::json!({ "code": body("Wh") })),
+                im("kept.ts", "dupe", serde_json::json!({ "code": body("Wh") })),
+            ],
+            "suppressed": [{ "id": "gone.ts", "supersededBy": "kept.ts" }],
+        });
+        assert!(dedup_findings(&g).is_empty(), "{:#?}", dedup_findings(&g));
+    }
+
+    /// A trivial body must not score. Below the floor any two one-liners are 1.0 against each other,
+    /// which floods the report with the language rather than with duplication.
+    #[test]
+    fn a_body_below_the_shingle_floor_carries_no_signal() {
+        assert!(code_shingles("export const x = 1;").len() < super::MIN_SHINGLES, "too short to score");
+        let g = serde_json::json!({ "implementations": [
+            im("p.ts", "p", serde_json::json!({ "code": "export const x = 1;" })),
+            im("q.ts", "q", serde_json::json!({ "code": "export const x = 1;" })),
+        ]});
+        assert!(dedup_findings(&g).is_empty(), "identical one-liners are not a finding");
+    }
+
+    /// Unicode in a body must not panic the tokenizer — it steps by CHAR width, not by byte.
+    #[test]
+    fn a_multibyte_body_tokenizes_without_panicking() {
+        assert!(!code_shingles("const s = \"h\u{e9}llo \u{2192} w\u{f6}rld\"; // ok ok ok ok").is_empty());
     }
 }

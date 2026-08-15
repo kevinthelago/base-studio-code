@@ -12,6 +12,9 @@ import type * as Esbuild from "esbuild-wasm";
 import wasmURL from "esbuild-wasm/esbuild.wasm?url";
 import importmapEmbedded from "@data/ui/preview-importmap.json";
 import { PREVIEW_SHIM_NAMESPACE, shimModuleFor, scanStubImports, previewCspMeta } from "@/shared/lib/preview/previewShims";
+// #79 — ONE loader rule for both bundlers. This copy had drifted to the opposite extensionless
+// default, so the same module could build differently depending on which preview reached it.
+import { loaderFor, type MemLoader } from "@/shared/lib/preview/componentBundle";
 
 /** esm.sh import-map for the externals (pinned; `deps` params keep React deduped) — the pins live in
  *  `@data/ui/preview-importmap.json` (#2419; ONE source, also read by streamingRuntime.ts), a plain
@@ -64,13 +67,20 @@ export function resolveMemPath(importer: string, spec: string, files?: Record<st
   return out.join("/");
 }
 
-/** Look up an in-memory file, trying common extensions. Pure. */
-export function lookupMem(files: Record<string, string>, path: string): { contents: string; loader: "jsx" | "tsx" } | null {
+/**
+ * Look up an in-memory file, trying common extensions. Pure.
+ *
+ * The loader choice is IMPORTED from the shared bundler rather than restated (#79). This copy had
+ * drifted the other way — it defaulted an extensionless key to `jsx`, where the shared one had
+ * already been corrected to `tsx` under #3549 — so the same module built here and there could pick
+ * different loaders. Two copies of a rule are two rules; sharing the one function is what stops this
+ * from being rediscovered a third time.
+ */
+export function lookupMem(files: Record<string, string>, path: string): { contents: string; loader: MemLoader } | null {
   for (const ext of ["", ".tsx", ".ts", ".jsx", ".js", "/index.tsx", "/index.jsx"]) {
     const key = path + ext;
     if (files[key] != null) {
-      const loader: "jsx" | "tsx" = key.endsWith(".tsx") || key.endsWith(".ts") ? "tsx" : "jsx";
-      return { contents: files[key], loader };
+      return { contents: files[key], loader: loaderFor(key, files[key]) };
     }
   }
   return null;
