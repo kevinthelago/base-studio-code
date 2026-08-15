@@ -1071,6 +1071,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         // The integration test routed to an edge, if any — visible in a dry harvest so
                         // the routing can be inspected before it is applied.
                         "edgeMembers": c.edge_members,
+                        // #80 — specifiers REFUSED as members because they name no module (a mock, a
+                        // `${…}` placeholder, a path to nothing). Reported so a genuinely missing
+                        // module is not hidden by the rule that hides a fixture.
+                        "edgeDeclined": c.edge_declined,
                         // The module's own STATE. `--apply` already stored this, but the printed
                         // candidate omitted it — so a DRY harvest could not show the one property that
                         // decides whether vendoring the record equals importing the module, and any
