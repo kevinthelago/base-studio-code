@@ -114,7 +114,8 @@ base-studio-code/
 │   ├── mcp-rpc/             #   shared stdio JSON-RPC MCP server scaffold
 │   ├── bsc-tunnel/          #   mobile-tunnel wire contract + Noise IK crypto (Tauri-free; shared with mobile-studio-code)
 │   └── bsc-util/ · bsc-sqlite-util/ · bsc-cli-util/   #   shared internal libs (paths, SQLite, CLI arg parsing)
-├── src/                     # React frontend (TS) — FEATURE-FIRST vertical slices (#1309). The four
+├── src/                     # React frontend (TS) — FEATURE-FIRST vertical slices (#1309). MOST OF
+│   │                        #   THIS IS RECORDS, NOT FILES (#3604) — see docs/records.md. The four
 │   │                        #   top-level dirs ARE the architecture; imports use `@/…` → src (no
 │   │                        #   deep `../../` relatives). No more layer dirs (components/lib/hooks/…).
 │   ├── app/                 # the SHELL — knows every feature; features don't know it
@@ -144,6 +145,14 @@ base-studio-code/
 ```
 
 ### Frontend conventions (feature-first, #1309)
+
+> **MOST OF THE FRONTEND IS NOT FILES.** ~930 modules ship as RECORDS — 388 component records under
+> `src-tauri/data/components/app/**` plus 542 implementations in `data/knowledge/algorithms.json` — and
+> the files that held them are deleted (epic #3604, "the graph IS the app"). The paths below still
+> describe where a module *belongs*; they no longer promise it is on disk. If you cannot find a module,
+> it is a record: `bsc ui get <id>` / `bsc graph impl get <id>`, matched by its `provides` specifier.
+> **Read [`docs/records.md`](docs/records.md) before retiring a file, authoring new UI, or wondering why
+> a module you can see imported does not exist.** New UI is authored into the store, never as a new `.tsx`.
 
 The frontend is **feature-first vertical slices** — `app/` (shell) · `features/` (one folder per
 feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`components/`, `lib/`,
