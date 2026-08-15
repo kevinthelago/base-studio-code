@@ -65,6 +65,13 @@ pub struct NavRequest {
     /// drives the Design Studio's state control, the same axis a human toggles there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// #54 — an app NOTICE to clear (a banner id, or `all`). Every banner hides through its own local
+    /// React state, so a session driving the app from a shell could see one in a capture with no way to
+    /// reach the affordance a human has. `all` clears every notice that does not ASK something; a
+    /// decision-bearing one (session recovery's "restore or discard?") is refused BY NAME, because
+    /// hiding a question does not answer it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dismiss: Option<String>,
 }
 
 impl NavRequest {
@@ -76,6 +83,9 @@ impl NavRequest {
             && self.component.is_none()
             && self.theme.is_none()
             && self.state.is_none()
+            // A dismiss MUTATES the app — `show` must stay the only read-only request, or the presence
+            // gate and every "is this a write" caller would treat clearing a banner as a pure look.
+            && self.dismiss.is_none()
     }
 }
 
@@ -106,6 +116,10 @@ pub struct NavResult {
     /// Why the selected component is not on screen (refused build, bundle error, or did not settle).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mount_error: Option<String>,
+    /// #54 — the app NOTICES this request cleared. Reported so `dismiss all` is auditable rather than a
+    /// silent sweep, and so a caller can tell "nothing was showing" from "it worked".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dismissed: Option<Vec<String>>,
 }
 
 #[cfg(test)]
@@ -155,6 +169,7 @@ mod tests {
             declined: None,
             mounted: Some("Heatmap".into()),
             mount_error: None,
+            dismissed: None,
         };
         let ok = bsc_appchan::Reply::ok("a", &landed, 1);
         assert_eq!(bsc_appchan::take_payload::<NavResult>(ok).unwrap(), landed);

@@ -82,6 +82,24 @@ Switches the live kit theme, so a capture shows the component under it. `bsc ui 
 theme from persisted state; this CHANGES it in the running app. Reads: `bsc ui theme get <id>`.",
     },
     CmdDoc {
+        name: "dismiss",
+        summary: "clear an app notice (a banner) — or `all`",
+        usage: "USAGE:
+  bsc navigate dismiss <notice|all> [--timeout <ms>] [--json]
+
+Clears a banner the app is showing. Every banner hides through its own local state, so without this a
+session driving the app from a shell can SEE a notice in a capture and has no way to reach the
+affordance a human has.
+
+`all` clears every notice that does not ASK something. A decision-bearing notice is REFUSED BY NAME —
+session recovery's \"restore or discard?\" is a question, and hiding it does not answer it, it removes
+the only place the answer can be given and leaves those sessions unrestored with nothing on screen to
+say so. Act on that one in the app.
+
+The reply lists what was actually cleared, so `all` is auditable rather than a silent sweep, and an
+empty list distinguishes \"nothing was showing\" from \"it worked\".",
+    },
+    CmdDoc {
         name: "show",
         summary: "what the app is showing right now (read-only)",
         usage: "\
@@ -168,6 +186,10 @@ fn plan(cmd: &str, rest: &[String], theme: Option<String>, state: Option<String>
         "theme" => {
             let id = rest.first().ok_or("usage: bsc navigate theme <id>")?;
             Ok(NavRequest { theme: Some(id.clone()), ..Default::default() })
+        }
+        "dismiss" => {
+            let id = rest.first().ok_or("usage: bsc navigate dismiss <notice|all>")?;
+            Ok(NavRequest { dismiss: Some(id.clone()), force, ..Default::default() })
         }
         "show" => Ok(NavRequest::default()),
         other => Err(format!("unknown command '{other}'")),
@@ -262,6 +284,11 @@ fn lean(r: &NavResult) -> String {
     if let Some(d) = &r.declined {
         parts.push(format!("DECLINED: {d}"));
     }
+    // Printed even when EMPTY: "dismissed=(none)" is the answer to "did it work?" when no banner was up,
+    // and silence would read as a failure.
+    if let Some(ids) = &r.dismissed {
+        parts.push(format!("dismissed={}", if ids.is_empty() { "(none)".into() } else { ids.join(",") }));
+    }
     parts.join(" · ")
 }
 
@@ -336,6 +363,7 @@ mod tests {
             declined: None,
             mounted: Some("Heatmap".into()),
             mount_error: None,
+            dismissed: None,
         });
         assert_eq!(
             out,
@@ -355,6 +383,7 @@ mod tests {
             declined: None,
             mounted: None,
             mount_error: None,
+            dismissed: None,
         });
         assert_eq!(out, "workspace=console");
     }
@@ -373,6 +402,7 @@ mod tests {
             declined: None,
             mounted: Some("Heatmap".into()),
             mount_error: None,
+            dismissed: None,
         });
         assert_eq!(out, "workspace=projects · component=Heatmap");
     }
@@ -390,6 +420,7 @@ mod tests {
             declined: Some("view unchanged: the Studio is not showing".into()),
             mounted: None,
             mount_error: Some("the preview refused to build it".into()),
+            dismissed: None,
         });
         assert!(out.contains("NOT ON SCREEN: the preview refused to build it"), "{out}");
         assert!(out.contains("DECLINED: view unchanged"), "{out}");

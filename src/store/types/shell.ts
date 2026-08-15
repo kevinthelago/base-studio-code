@@ -49,6 +49,13 @@ export interface ShellState {
    * dismissals (not shows) means the nudge persists across launches until the user actually
    * acknowledges it, rather than silently vanishing after a render they may have missed.
    */
+  /** Notices dismissed from the CLI this session (#54, `bsc navigate dismiss`). A banner hides when its
+   *  own local state says so OR when its id is here, so an agent driving the app can clear what a mouse
+   *  could. Deliberately NOT persisted: a dismissal is for the notice ON SCREEN NOW, and persisting it
+   *  would permanently suppress a notice on a future boot that the user has never seen. */
+  dismissedNotices: string[];
+  /** Hide `id` for the rest of this session. Idempotent; a decision-bearing notice is refused upstream. */
+  dismissNotice: (id: string) => void;
   sandboxNudgeDismissCount: number;
   /** Record a ✕ dismissal of the sandbox nudge. */
   dismissSandboxNudge: () => void;
