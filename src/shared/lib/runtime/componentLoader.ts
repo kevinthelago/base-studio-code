@@ -23,7 +23,7 @@
 // (`GraphComponent`), so a bad node can never white-screen the shell.
 import type * as Esbuild from "esbuild-wasm";
 import type { ComponentType } from "react";
-import { ensureEsbuild } from "@/shared/lib/preview/componentBundle";
+import { ensureEsbuild, PREVIEW_DEFINE, PREVIEW_GLOB_BANNER } from "@/shared/lib/preview/componentBundle";
 import { resolveAppModule, isAppModule, registeredSpecifiers } from "@/shared/lib/runtime/moduleRegistry";
 import { evaluateEntry, linkGraphModules, pruneUnsatisfiableOverrides } from "./graphModules";
 import { log } from "@/shared/lib/core/log";
@@ -104,6 +104,11 @@ export async function compileToCjs(source: string, resolveGraphSource?: GraphSou
     write: false,
     jsx: "automatic",
     logLevel: "silent",
+    // #81 — the SAME shim the previews use. A record is transcribed from a real module, so a record
+    // can carry `import.meta.glob` exactly as `agentProfiles.ts` does; without this the runtime
+    // loader throws on it at import time, and this path has no preview to surface the error in.
+    define: PREVIEW_DEFINE,
+    banner: { js: PREVIEW_GLOB_BANNER },
     plugins: [loaderPlugin(resolveGraphSource)],
   });
   return result.outputFiles?.[0]?.text ?? "";

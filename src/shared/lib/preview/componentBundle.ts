@@ -55,6 +55,36 @@ export function resolveMemPath(importer: string, spec: string, files?: Record<st
   return collapseSegments((fromDir ? fromDir.split("/") : []).concat(spec.split("/")));
 }
 
+/**
+ * `import.meta.glob` for a preview build (#81, designer request) — the esbuild `define` target and
+ * the banner that declares it. Both bundlers use these; neither restates them.
+ *
+ * `import.meta.glob` is a VITE BUILD MACRO. It is valid production code that Vite expands at build
+ * time, and it simply does not exist in an esbuild-wasm build — so at runtime `import.meta.glob` is
+ * undefined and calling it throws `(intermediate value).glob is not a function` BEFORE the component
+ * function ever executes. Because `agentProfiles.ts` calls it at MODULE TOP LEVEL and `store/index.ts`
+ * imports that, every component reaching `useAppStore` inherited the crash: 44 of the store's 49
+ * render-errors were this one call. The fully self-contained react-d3 kit, which imports no `@/`
+ * modules, has zero.
+ *
+ * IT RETURNS AN EMPTY OBJECT, deliberately. A preview cannot know what the glob would have matched,
+ * so the honest degradation is an empty set — a component renders with no built-in profiles rather
+ * than not rendering at all. Stubbing the globbing modules in `platform-modules.json` was the
+ * alternative and is worse: hand-authored preview data per module, silently drifting from the real
+ * thing, and the code's own comments warn there are siblings (#1715 mirrors data/skills, data/roles).
+ *
+ * Why a define PLUS a banner rather than just a define: esbuild rejects a function literal as a
+ * define value (`Invalid define value (must be an entity name or JS literal)`), so the value has to
+ * be an identifier that something else declares.
+ */
+export const PREVIEW_GLOB_SHIM = "__bscPreviewImportMetaGlob";
+
+/** Declares {@link PREVIEW_GLOB_SHIM} at the top of the bundle, where every module can see it. */
+export const PREVIEW_GLOB_BANNER = `var ${PREVIEW_GLOB_SHIM} = () => ({});`;
+
+/** The `define` map that routes `import.meta.glob(…)` to the shim. */
+export const PREVIEW_DEFINE: Record<string, string> = { "import.meta.glob": PREVIEW_GLOB_SHIM };
+
 /** The esbuild loaders a preview module can be built with. */
 export type MemLoader = "jsx" | "tsx" | "ts";
 
@@ -249,6 +279,10 @@ export async function bundleComponent(files: Record<string, string>, entry: stri
     write: false,
     jsx: "automatic",
     logLevel: "silent",
+    // #81 — `import.meta.glob` is a Vite macro with no esbuild equivalent; without this every module
+    // that calls it throws at import time and takes every component importing it down with it.
+    define: PREVIEW_DEFINE,
+    banner: { js: PREVIEW_GLOB_BANNER },
     plugins: [componentPlugin(files, entry)],
   });
   return result.outputFiles?.[0]?.text ?? "";
