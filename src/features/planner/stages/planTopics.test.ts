@@ -9,7 +9,7 @@ import {
   KNOWN_DIMENSIONS,
   SKIPPED_KEY,
   FEATURES_KEY,
-} from "./planTopics";
+} from "@/features/planner/stages/planTopics";
 import { FLEET_KEY } from "@/features/planner/fleet/planFleet";
 import discoveryStage from "@data/stages/discovery.json";
 

@@ -11,7 +11,7 @@ import { Button } from "@/shared/ui/controls/Button";
 import { previewRender, type PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { ReviewFinding, ReviewSeverity } from "@/shared/lib/preview/previewReview";
 import type { PreviewReview } from "@/features/glance/usePreviewReview";
-import { NW, NH } from "./lib/glanceGraph";
+import { NW, NH } from "@/features/glance/lib/glanceGraph";
 
 const SEV_COLOR: Record<ReviewSeverity, string> = {
   blocker: "var(--danger, #e5484d)",

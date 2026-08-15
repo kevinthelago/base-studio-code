@@ -14,12 +14,12 @@ export {
   ALGO_COLOR, SOUND_COLOR, LIBRARY_META, LIBRARY_NODE_PREFIX, libraryNodeId, libIdOfNode, requiresEdgeId,
   isLibraryNode, libraryGraphOf, isLibraryEdge,
   type GraphModel, type GNode, type GEdge, type GRawNode, type GRawEdge, type GRole, type GHealth, type GActivity, type GEdgeKind, type GNodeKind, type GLibraryGraph,
-} from "./lib/glanceGraph";
+} from "@/features/glance/lib/glanceGraph";
 export { buildGlanceData, SAMPLE_GRAPH, type GlanceData, type ProjectLite, type KitLite } from "./lib/glanceData";
 // #2498: the mobile store projector mirrors the SAME project/fault/fleet sources the Glance
 // workspace reads, so the data hooks are public API alongside the graph model.
 export { useGlanceProjects, applyFaultHealth, applyLiveness, applyRunningActivity, deriveBuildingKeys, mergeGlanceProjects } from "./lib/useGlanceProjects";
-export { useGlanceFaults, type GlanceFault } from "./lib/useGlanceFaults";
+export { useGlanceFaults, type GlanceFault } from "@/features/glance/lib/useGlanceFaults";
 export { applyStallHealth, projectKeyOfSession, STALL_WARN_MS, type WaitLite } from "@/features/glance/lib/agentStall";
 export { useProjectFleet } from "@/features/glance/lib/useProjectFleet";
 export { type ProjectLink } from "@/features/glance/lib/projectLinks";

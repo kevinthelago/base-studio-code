@@ -5,7 +5,7 @@ import {
   mapReviewLatency, medianLatencyH, mapBranches, deriveKpis,
   type GhCommitItem, type GhCommitDetail, type GhPull, type GhBranchItem,
   type GhWorkflowItem, type GhRun,
-} from "./repoPulseLive";
+} from "@/shared/lib/github/repoPulseLive";
 
 const NOW = new Date("2026-06-10T12:00:00Z"); // window 05-28..06-10
 

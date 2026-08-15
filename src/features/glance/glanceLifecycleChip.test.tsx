@@ -10,7 +10,7 @@ import { render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
-import { buildGraph, LIFECYCLE_META } from "./lib/glanceGraph";
+import { buildGraph, LIFECYCLE_META } from "@/features/glance/lib/glanceGraph";
 import { LIFECYCLES } from "@/features/planner/lib/classifyConfig";
 
 /** Mount the canvas over one project node. `fleet` switches to the L1 (drill) shape. */

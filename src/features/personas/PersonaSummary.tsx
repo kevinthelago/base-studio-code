@@ -4,7 +4,7 @@
 // dropdown label. This surfaces that identity so you can see exactly what the agent will BE before
 // launch. Presentational + read-only — editing a persona still happens on the Personas tab.
 import { useAppStore } from "@/store";
-import type { Persona } from "./lib/persona";
+import type { Persona } from "@/features/personas/lib/persona";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";

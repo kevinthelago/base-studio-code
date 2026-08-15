@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { buildGlanceData } from "./lib/glanceData";
-import { buildGraph } from "./lib/glanceGraph";
+import { buildGraph } from "@/features/glance/lib/glanceGraph";
 
 const projects = [{ id: "app-a", name: "App A" }, { id: "app-b", name: "App B" }];
 const kits = [{ id: "react-ui", name: "React UI" }];

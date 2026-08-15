@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { unlock, isUnlocked, achievementById, ACHIEVEMENTS } from "./achievements";
+import { unlock, isUnlocked, achievementById, ACHIEVEMENTS } from "@/shared/lib/core/achievements";
 
 describe("achievements", () => {
   it("unlock stamps a fresh id once and returns the new map", () => {

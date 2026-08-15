@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import { fleetPlanProgress } from "@/features/glance/lib/fleetPlanProgress";
 import { withStreamProgress } from "@/features/glance/lib/streamProgress";
 import { buildRealFleetData } from "@/features/glance/lib/glanceFleet";
-import { buildGraph } from "./lib/glanceGraph";
+import { buildGraph } from "@/features/glance/lib/glanceGraph";
 import { fleetToOrg } from "@/features/glance/lib/glanceFleet";
 
 // The live shape: streams carrying GitHub refs, exactly as `bsc plan fleet get` returns them.

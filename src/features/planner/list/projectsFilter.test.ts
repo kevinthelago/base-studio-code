@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildProjectItems, statusCounts, typeCounts, filterProjects, resolveAppType, appTypeFromDeploy,
   STATUS_FACETS, TYPE_FACETS, type ProjectItem,
-} from "./projectsFilter";
+} from "@/features/planner/list/projectsFilter";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { DeployConfig, DeployService } from "@/features/planner/lib/deployServices";
 

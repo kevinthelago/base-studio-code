@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { HooksView } from "./";
 import { useAppStore } from "@/store";
-import type { McpServer } from "./lib/mcpServers";
+import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Hook } from "@/features/mcp/lib/hooks";
 
 // Two MCP servers (one enabled, one off) → 1 enabled on the MCP page.

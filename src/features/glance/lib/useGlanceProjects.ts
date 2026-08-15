@@ -26,9 +26,9 @@ import { PROJECTS_QUERY, type GhProject } from "@/features/planner/list/publishe
 import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import type { GRole, GHealth, GActivity } from "./glanceGraph";
+import type { GRole, GHealth, GActivity } from "@/features/glance/lib/glanceGraph";
 import type { ProjectLite } from "./glanceData";
-import type { GlanceFault } from "./useGlanceFaults";
+import type { GlanceFault } from "@/features/glance/lib/useGlanceFaults";
 import { projectKeyOfSession } from "@/features/glance/lib/agentStall";
 // #3966: the SAME durable-projects bridge the Projects page reads, so the two surfaces cannot
 // disagree about which local projects exist. Type-only + the reader; the bridge already degrades to

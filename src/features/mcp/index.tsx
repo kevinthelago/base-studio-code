@@ -26,7 +26,7 @@ export { McpGraphHost } from "./McpGraphHost";
 export {
   type McpServer, type McpTransport, BUILTIN_MCP_SERVERS, resolveMcpServers,
   mcpFromCatalog, resolveAllInstalledMcp, toBscAgentMcp,
-} from "./lib/mcpServers";
+} from "@/features/mcp/lib/mcpServers";
 export { catalogLink, resolveMcpInstallDir, repoNameFromLink, mcpRepoName } from "@/features/mcp/lib/mcpInstall";
 export { toSessionPayloads, mcpAllowRules } from "@/features/mcp/lib/sessionConfig";
 export { resolveHooks, type Hook } from "@/features/mcp/lib/hooks";

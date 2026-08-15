@@ -4,7 +4,7 @@ import {
   libraryNodeId, requiresEdgeId, libIdOfNode, isLibraryNode, libraryGraphOf, isLibraryEdge, LIBRARY_META,
   HEALTH_META, HEALTH_RANK, ACTIVITY_META, nodeStateWord,
   type GHealth, type GActivity,
-  type GRawNode, type GRawEdge, showsBuildingPulse } from "./glanceGraph";
+  type GRawNode, type GRawEdge, showsBuildingPulse } from "@/features/glance/lib/glanceGraph";
 import { buildGlanceData } from "./glanceData";
 
 const NODES: GRawNode[] = [

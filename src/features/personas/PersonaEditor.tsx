@@ -18,7 +18,7 @@ import { IconButton } from "@/shared/ui/controls/IconButton";
 import { TextField, TextArea, SelectField } from "@/shared/ui/controls/Field";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
 import { RoleTierChips } from "@/shared/ui/data/RoleTierChips";
-import type { Persona } from "./lib/persona";
+import type { Persona } from "@/features/personas/lib/persona";
 
 const ROLES = Object.keys(ROLE_DEFAULTS) as SessionRole[];
 

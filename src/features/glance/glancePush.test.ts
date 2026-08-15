@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { partAroundPanel, PUSH_MARGIN, type MorphRect } from "@/features/glance/lib/glancePush";
-import { NW, NH } from "./lib/glanceGraph";
+import { NW, NH } from "@/features/glance/lib/glanceGraph";
 
 // The open terminal panel (#2534/#2662) makes room by PARTING the graph into four rigid curtains (#2671,
 // replacing the soft d3-force relaxation). The two properties that matter — and that the old soft force

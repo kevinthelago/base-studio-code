@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BUILTIN_PERSONAS, makeBuiltinPersonas, blankPersona, personaSlug, reconcilePersonas, type Persona } from "./persona";
+import { BUILTIN_PERSONAS, makeBuiltinPersonas, blankPersona, personaSlug, reconcilePersonas, type Persona } from "@/features/personas/lib/persona";
 import architectProtocolMd from "@data/fleet/architect-protocol.md?raw";
 
 describe("persona built-ins (#2094 / externalized #2185)", () => {

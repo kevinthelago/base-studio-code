@@ -12,7 +12,7 @@ import { describe, it, expect } from "vitest";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildArchitectFleetData } from "@/features/glance/lib/studioProject";
 import { studioNetworkForArchitect, STUDIO_NETWORK_ID, ARCHITECT_NODE, BUILTIN_ORGS } from "@/features/teams";
-import { buildGraph, architectNodeId, kitNodeId } from "./lib/glanceGraph";
+import { buildGraph, architectNodeId, kitNodeId } from "@/features/glance/lib/glanceGraph";
 
 const projects = [
   { id: "app-a", name: "App A" },

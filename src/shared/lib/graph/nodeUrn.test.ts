@@ -9,7 +9,7 @@ import {
   isLibrarySpec,
   urnToImportSpec,
   NODE_GRAPHS,
-} from "./nodeUrn";
+} from "@/shared/lib/graph/nodeUrn";
 
 describe("formatNodeUrn / parseNodeUrn (#3115)", () => {
   it("round-trips a URN for each graph", () => {
