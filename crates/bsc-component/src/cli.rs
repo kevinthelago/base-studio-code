@@ -1601,6 +1601,11 @@ fn cmd_set(
     // kit silently OVERWRITES it. Warn (never reject) so a promote-over-a-builtin clobber is visible.
     if noun == "component" {
         warn_cross_kit_collision(&store, &items);
+        // Deliberately over `items`, not `validated`: this warns the AUTHOR about source they just
+        // wrote, at the moment they can still choose differently. A partial write that never restates
+        // `srcText` gets no warning — re-reporting an import the caller did not touch is noise, and
+        // noise is what made 53 GraphHost findings unreadable.
+        warn_unresolvable_imports(&store, &items);
     }
     let writer = crate::record::resolve_writer(by.as_deref());
     let plan = WritePlan { replace, clear: &clear };
@@ -1641,6 +1646,110 @@ fn cross_kit_collision_warnings(store: &bsc_json_store::Store, items: &[serde_js
 /// deliberate re-home is legitimate and the write still lands.
 fn warn_cross_kit_collision(store: &bsc_json_store::Store, items: &[serde_json::Value]) {
     for w in cross_kit_collision_warnings(store, items) {
+        eprintln!("{w}");
+    }
+}
+
+/// Every `@/components/<id>` specifier `src` imports, in source order, deduped.
+///
+/// A deliberately narrow scan: only this ONE specifier shape is checked, because it is the only
+/// internal form whose resolvability is decidable entirely inside the store. The preview also accepts
+/// PLATFORM modules (`@/shared/ui/…`, `@/store`) — the declared boundary the bundler stubs — and those
+/// are enumerated in TypeScript; duplicating that list here would create two copies to keep in sync,
+/// and a stale copy would warn about imports that are perfectly fine.
+fn component_specifiers(src: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (i, _) in src.match_indices("@/components/") {
+        // Bounded by the quote that opened the specifier — a specifier is a string literal, so the
+        // closing quote is the terminator regardless of which quote style the author used.
+        let rest = &src[i..];
+        let end = rest.find(['"', '\'', '`']).unwrap_or(rest.len());
+        let spec = rest[..end].trim_end();
+        if spec.len() > "@/components/".len() && !out.iter().any(|s| s == spec) {
+            out.push(spec.to_string());
+        }
+    }
+    out
+}
+
+/// Which `@/components/…` specifiers in a `set` batch resolve to NOTHING (#73, designer request).
+///
+/// `bsc ui set` only syntax-checks `srcText`, so a write naming a component that publishes no such
+/// specifier is accepted and the break surfaces two tool-calls later at `bsc navigate` time — after
+/// which the usual recovery is to inline the widget and lose the composition. Five components were
+/// reverted that way in one session.
+///
+/// Resolution mirrors the preview resolver (`componentPreview.ts`, `siblingIndex` + its internal-spec
+/// gate): a specifier resolves when some record `provides` it EXACTLY, or when some record's `src`
+/// minus extension equals the specifier's path. Anything else makes the importer unbuildable — the
+/// build genuinely refuses rather than quietly substituting a stub.
+///
+/// WARNS, never rejects: 30 of the 94 `@/components/` imports already in the store resolve to nothing,
+/// and a hard refusal would make those records unsaveable on their next edit. The point is to tell the
+/// author at the moment they can still choose differently, not to relitigate what is already stored.
+fn unresolvable_component_imports(
+    store: &bsc_json_store::Store,
+    items: &[serde_json::Value],
+) -> Vec<String> {
+    let published = published_specifiers(store, items);
+    let mut out = Vec::new();
+    for item in items {
+        let Some(id) = item.get("id").and_then(serde_json::Value::as_str) else { continue };
+        let src = item.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+        let missing: Vec<String> = component_specifiers(src)
+            .into_iter()
+            .filter(|s| !published.contains(s))
+            .collect();
+        if missing.is_empty() {
+            continue;
+        }
+        let list = missing.join(", ");
+        let target = missing[0].trim_start_matches("@/components/");
+        // The suggested command is the MERGE write (#4197) — `set` reads its record from stdin and has
+        // no `--provides` flag, so the obvious-looking `bsc ui set <id> --provides <spec>` is rejected
+        // twice over (unknown flag, unexpected positional). Naming a command that errors would make
+        // this warning worse than silence, so the exact form here is covered by a test.
+        out.push(format!(
+            "warning: '{id}' imports {list} — no record publishes {}, so the preview will refuse to \
+             build it (an unresolvable internal import is not stubbed). Fix by making the target \
+             publish the specifier: echo '{{\"id\":\"{target}\",\"provides\":\"{}\"}}' | bsc ui set",
+            if missing.len() == 1 { "that specifier" } else { "those specifiers" },
+            missing[0],
+        ));
+    }
+    out
+}
+
+/// The `@/components/…` specifiers the store resolves — every record's `provides`, plus the implied
+/// specifier for a record whose `src` (minus extension) is itself a `components/<id>` path. `items` is
+/// folded in so a batch that introduces BOTH the importer and its target validates as a unit rather
+/// than warning about a specifier the same write is publishing.
+fn published_specifiers(
+    store: &bsc_json_store::Store,
+    items: &[serde_json::Value],
+) -> std::collections::HashSet<String> {
+    let stored = store.list();
+    let parsed = stored.iter().filter_map(|r| serde_json::from_str::<serde_json::Value>(r).ok());
+    let mut out = std::collections::HashSet::new();
+    for rec in parsed.chain(items.iter().cloned()) {
+        if let Some(p) = rec.get("provides").and_then(serde_json::Value::as_str) {
+            let p = p.trim();
+            if !p.is_empty() {
+                out.insert(p.to_string());
+            }
+        }
+        if let Some(s) = rec.get("src").and_then(serde_json::Value::as_str) {
+            let base = s.trim().rsplit_once('.').map_or(s.trim(), |(stem, _)| stem);
+            if base.starts_with("components/") {
+                out.insert(format!("@/{base}"));
+            }
+        }
+    }
+    out
+}
+
+fn warn_unresolvable_imports(store: &bsc_json_store::Store, items: &[serde_json::Value]) {
+    for w in unresolvable_component_imports(store, items) {
         eprintln!("{w}");
     }
 }
@@ -5023,6 +5132,100 @@ mod tests {
         assert!(cross_kit_collision_warnings(&store, std::slice::from_ref(&same)).is_empty(), "same kit is silent");
         let fresh = serde_json::json!({ "id": "newpage", "name": "NewPage", "kitId": "harvested" });
         assert!(cross_kit_collision_warnings(&store, std::slice::from_ref(&fresh)).is_empty(), "a new id is silent");
+    }
+
+    #[test]
+    fn an_import_no_record_publishes_warns_at_write_time() {
+        // DESIGNER REQUEST #73. `@/components/<id>` resolves ONLY when the target declares
+        // `provides: "@/components/<id>"` — the id alone is not a specifier. roledot published nothing,
+        // so the write was accepted and `bsc navigate` refused to build it two tool-calls later.
+        let dir = tmp_store_dir("unresolvable-import");
+        let store = bsc_json_store::Store::new(dir, "component");
+        // A target that publishes its specifier, and one that does not.
+        store
+            .set("roledot", r#"{"id":"roledot","name":"RoleDot","kitId":"harvested","src":"kitChrome.tsx"}"#)
+            .unwrap();
+        store
+            .set(
+                "statusdot",
+                r#"{"id":"statusdot","name":"StatusDot","kitId":"harvested","provides":"@/components/statusdot"}"#,
+            )
+            .unwrap();
+
+        let importer = |spec: &str| {
+            serde_json::json!({
+                "id": "pane", "name": "Pane", "kitId": "harvested",
+                "srcText": format!("import {{ X }} from \"{spec}\";\nexport function Pane() {{ return <X/>; }}"),
+            })
+        };
+
+        let ws = unresolvable_component_imports(&store, std::slice::from_ref(&importer("@/components/roledot")));
+        assert_eq!(ws.len(), 1, "the unpublished import warns: {ws:?}");
+        assert!(ws[0].contains("@/components/roledot"), "names the specifier: {}", ws[0]);
+        // The suggested fix must be a command that RUNS. `bsc ui set` takes its record on stdin and
+        // has no `--provides` flag, so the plausible-looking `bsc ui set <id> --provides <spec>` fails
+        // with BOTH `unknown flag` and `unexpected argument` — the first draft of this warning shipped
+        // exactly that, and a warning naming a broken command is worse than no warning.
+        assert!(
+            ws[0].contains(r#"{"id":"roledot","provides":"@/components/roledot"}"#) && ws[0].contains("| bsc ui set"),
+            "suggests the stdin merge-write, the only form that works: {}",
+            ws[0]
+        );
+        assert!(!ws[0].contains("--provides"), "must not suggest a flag `set` does not have: {}", ws[0]);
+
+        // The target publishes it ⇒ silent. This is the half that proves the check is not just
+        // "warn on every @/components import".
+        assert!(
+            unresolvable_component_imports(&store, std::slice::from_ref(&importer("@/components/statusdot"))).is_empty(),
+            "a published specifier is silent"
+        );
+
+        // A PLATFORM module is the declared boundary and is never a component specifier — it must not
+        // be scanned at all, or every record in the store would warn.
+        let platform = serde_json::json!({
+            "id": "pane", "name": "Pane", "kitId": "harvested",
+            "srcText": "import { Row } from \"@/shared/ui/layout/Row\";",
+        });
+        assert!(
+            unresolvable_component_imports(&store, std::slice::from_ref(&platform)).is_empty(),
+            "@/shared/ui is not a component specifier"
+        );
+
+        // A write introducing BOTH sides at once must validate as a unit, not warn about a specifier
+        // it is itself publishing.
+        let batch = vec![
+            importer("@/components/newdot"),
+            serde_json::json!({ "id": "newdot", "name": "NewDot", "kitId": "harvested", "provides": "@/components/newdot" }),
+        ];
+        assert!(unresolvable_component_imports(&store, &batch).is_empty(), "same-batch target counts");
+    }
+
+    #[test]
+    fn a_src_of_components_path_publishes_its_own_specifier() {
+        // The resolver accepts EITHER an exact `provides` OR a `src` minus extension. Mirroring only
+        // the first would warn about imports that resolve perfectly well through the second.
+        let dir = tmp_store_dir("src-publishes");
+        let store = bsc_json_store::Store::new(dir, "component");
+        store
+            .set("dot", r#"{"id":"dot","name":"Dot","kitId":"k","src":"components/dot.tsx"}"#)
+            .unwrap();
+        let importer = serde_json::json!({
+            "id": "pane", "name": "Pane", "kitId": "k",
+            "srcText": "import { Dot } from \"@/components/dot\";",
+        });
+        assert!(
+            unresolvable_component_imports(&store, std::slice::from_ref(&importer)).is_empty(),
+            "src-derived specifier resolves"
+        );
+    }
+
+    #[test]
+    fn component_specifiers_reads_each_import_once() {
+        let src = "import {A} from \"@/components/a\";\nimport {B} from '@/components/b';\nimport {C} from \"@/components/a\";";
+        assert_eq!(component_specifiers(src), vec!["@/components/a", "@/components/b"], "deduped, source order");
+        assert!(component_specifiers("import {R} from \"@/shared/ui/layout/Row\";").is_empty(), "platform ignored");
+        // The bare prefix is not a specifier — guarding the `len() >` bound.
+        assert!(component_specifiers("import x from \"@/components/\";").is_empty(), "bare prefix ignored");
     }
 
     #[test]
