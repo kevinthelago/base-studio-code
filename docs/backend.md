@@ -46,7 +46,7 @@ that block is the canonical index of the backend's command surface.
 |---|---|---|
 | [`platform/`](../src-tauri/src/platform/) | OS primitives shared by every domain; no domain deps | `paths.rs` (every `~/.base-studio-code` location), `git.rs` (`git_lines`/`git_output`), `shell.rs` (shell resolution + bash⇄native path/quote conversion), `process.rs` (`no_window` — suppress console flashes), `fsx.rs` (`sanitize_project_key`/`worktree_slug`/`map_slug`, `atomic_write`(`_json`), `read_json_object_or_default`, `read_text_files` section-file ingest, `clear_readonly_recursive`, safe-relpath), `docstore.rs` (document library) |
 | [`app/`](../src-tauri/src/app/) | The Tauri shell + lifecycle | `run.rs` (`run()` — plugins, state, the invoke handler, exit cleanup), `state.rs`, `recovery.rs` (`.session-lock` crash detection, #1041), `single_instance.rs` (#1303), `dialog.rs` (native pickers) |
-| [`console/`](../src-tauri/src/console/) | The interactive PTY execution surface | `pty/` (dir-module, #1660 — `pty/mod.rs`: `pty_create` + the `pty_*` commands, the session env; `pty/job.rs`: the Windows Job Object / Unix process-group tree kill), `ledger.rs` (boot-time orphan reaping), `discovery.rs` (durable session discovery), `shell_rc.rs` (the `bsc-*` shell-helper rc constants) |
+| [`console/`](../src-tauri/src/console/) | The interactive PTY execution surface | `pty/` (dir-module, #1660 — `pty/mod.rs`: `pty_create` + the `pty_*` commands, the session env; `pty/job.rs`: the Windows Job Object / Unix process-group tree kill), `ledger.rs` (boot-time orphan reaping), `discovery.rs` (durable session discovery), `shell_rc/` (the `bsc-*` shell-helper rc constants; a dir-module) |
 | [`session/`](../src-tauri/src/session/) | How an agent session is launched, configured & permissioned (one directory, #1917) | `harness.rs` (`HarnessAdapter` seam — `ClaudeCodeAdapter` vs `BscAgentAdapter`), `launch.rs` (`claude_launch`, model flags, history probes), `claude_config.rs` (read/write + self-heal `~/.claude.json` trust state), `settings.rs` (`ensure_session_settings` → `.claude/settings.json`, the role gate, the `DEFAULT_DENY`/mandatory baseline), `llm.rs` (the `llm_complete` one-shot completion → `crates/llm`) |
 | [`project/`](../src-tauri/src/project/) | The on-disk project hub + plan store | `hub.rs` (hub lifecycle, `list_local_projects`, `mark_published`, `delete_project_dir`), `plan_db.rs` (the `plan_*` command wrappers over `crates/plandb`), `plan_files.rs` (read/clear plan sections), `files.rs` (the path-safe hub-file write primitive pipelines call — relocated from `fleet/staging.rs`, #1667), `blueprints.rs` (list/write/delete — now delegates to the Tauri-free `bsc-blueprint` crate, #1761), `dead_code.rs` + `ui_skeleton.rs` (the dead-code scan / UI-skeleton collect, split out of the old `inspect.rs`, #1690) |
 | [`planner/`](../src-tauri/src/planner/) | The planning session | `workspace.rs` (`setup_workspaces` — builds the hub), `prompts.rs` (the planner CLAUDE.md template + `PLANNING_*` intros), `directives.rs` (`planner_intro_prompt`, per-stage directives) |
@@ -232,7 +232,7 @@ no PATH changes; bundled with the app and rebuilt with `npm run build:plan`):
 | `bsc-compliance-mcp` | `compliance` | (stdio MCP) | Current compliance standards for the planner. |
 | `bsc-agent` | `bsc-agent` | `$BSC_AGENT_BIN` (per-console harness) | The model-agnostic agent runtime, when a console's provider is `bsc-agent`. |
 
-**Pure-shell helpers** ([`console/shell_rc.rs`](../src-tauri/src/console/shell_rc.rs)) — rc-file
+**Pure-shell helpers** ([`console/shell_rc/`](../src-tauri/src/console/shell_rc/)) — rc-file
 fragments concatenated into `~/.base-studio-code/bsc-env.sh` and sourced via `BASH_ENV`. They have
 hyphenated names (so they can't be `export -f`'d and must be *defined* in each subshell). Each one is
 best-effort and exits 0 (or `return 2` for a deny) so it never wedges a tool or kills the shell:
@@ -278,7 +278,7 @@ best-effort and exits 0 (or `return 2` for a deny) so it never wedges a tool or 
 ## 7. Testing
 
 - **Where:** unit tests live in a `#[cfg(test)]` module inside the owning domain file (e.g. the rc
-  syntax-validity tests in `shell_rc.rs`, the planner-template tests in `planner/mod.rs`).
+  syntax-validity tests in `shell_rc/`, the planner-template tests in `planner/mod.rs`).
   Cross-cutting integration tests live in [`src-tauri/src/tests.rs`](../src-tauri/src/tests.rs), with
   shared helpers (`temp_home`, `ENV_LOCK`, `write_file`) in `testutil.rs`.
 - **Crates** test independently (`research`/`compliance`/`data` against in-memory or recorded fixtures
@@ -307,7 +307,7 @@ regression test in the same branch.
   workspace also has `skilldb`, `logs`, `compliance`, `mcp-rpc`, `bsc-blueprint`, `bsc-project`, and the
   internal `bsc-util`/`bsc-sqlite-util`/`bsc-cli-util` libs — the full set with package/binary names is
   section [3](#3-workspace-crates) above (and now in CLAUDE.md's structure tree).
-- **rc constants must end with a trailing newline.** In `shell_rc.rs`, every helper constant ends in
+- **rc constants must end with a trailing newline.** In `shell_rc/`, every helper constant ends in
   `"\n"` (or `concat!(…, "\n")`) — otherwise the concatenated functions glue together and the whole
   `bsc-env.sh` breaks with a bash syntax error (#296). The `full_bsc_rc_is_syntactically_valid_bash`
   test guards this; preserve it when adding a helper.
