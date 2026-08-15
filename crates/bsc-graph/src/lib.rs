@@ -72,7 +72,9 @@ pub fn load() -> Value {
 /// Returns whether it changed `g`. Order-stable: the store's own impls keep their order; missing seed
 /// impls are appended in seed order.
 pub fn reconcile_seed(g: &mut Value) -> bool {
-    let have: std::collections::HashSet<String> = implementations_of(g)
+    // RAW, deliberately: a tombstone occupies its id precisely so this check finds it and the packaged
+    // impl is not re-added. Using the filtered view would make every suppression undo itself here.
+    let have: std::collections::HashSet<String> = raw_implementations_of(g)
         .iter()
         .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
         .collect();
@@ -380,9 +382,26 @@ pub fn implementations() -> Vec<Value> {
     implementations_of(&load())
 }
 
-/// The implementation objects of `g`.
+/// The implementation objects of `g` — TOMBSTONES EXCLUDED, so no reader ever sees one.
+///
+/// A tombstone is a `{ id, suppressed: true }` record occupying a retired impl's id. It has to live in
+/// the same array (that is what makes [`reconcile_seed`] skip the packaged impl — see there), so the
+/// single place every read funnels through is where it must be filtered out. Filtering at each call
+/// site instead would mean `impl get` hid them while `impl list` or a domain sweep did not, and a
+/// tombstone surfacing as an algorithm is worse than the removal not sticking.
 pub fn implementations_of(g: &Value) -> Vec<Value> {
+    raw_implementations_of(g).into_iter().filter(|im| !is_tombstone(im)).collect()
+}
+
+/// Every record in the array INCLUDING tombstones — for the few callers that must see them: the seed
+/// reconcile, `suppress`/`unsuppress`, and the writer's id-collision check.
+pub fn raw_implementations_of(g: &Value) -> Vec<Value> {
     g.get("implementations").and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
+/// Is `im` a suppression tombstone rather than an implementation?
+pub fn is_tombstone(im: &Value) -> bool {
+    im.get("suppressed").and_then(Value::as_bool) == Some(true)
 }
 
 /// Whether `im` belongs to `domain` (#3120) — the predicate behind `bsc graph impl list --domain`. An
@@ -596,8 +615,35 @@ pub fn merge_impls(g: &mut Value, from: &str, into: &str) -> Result<Vec<String>,
             }
         }
     }
-    remove_impl(g, from); // remove `from` (its refs are already repointed; scrub is a harmless no-op)
+    // RETIRE `from`. A plain remove is only durable for a USER-MADE impl: the seed reconcile re-adds any
+    // packaged id the store lacks, by design (it is what makes packaged algorithms recoverable), so
+    // removing a seeded impl silently undid itself and `merge` still reported `"removed"` — the defect
+    // behind request #71, which cost a session an afternoon hunting a phantom re-harvester.
+    //
+    // So a seeded `from` becomes a TOMBSTONE instead, carrying WHAT replaced it. The reconcile finds the
+    // id present and leaves it alone, and the fold is finally durable. `supersededBy` is set without the
+    // `suppress` verb's dangling-pointer checks because `into` was validated above — it is an impl in
+    // this very store, and the merge just repointed every consumer at it.
+    if is_seeded(from) {
+        remove_impl(g, from);
+        ensure_array(g, "implementations").push(serde_json::json!({
+            "id": from, "suppressed": true, "supersededBy": into,
+        }));
+    } else {
+        remove_impl(g, from); // its refs are already repointed; the scrub is a harmless no-op
+    }
     Ok(repointed)
+}
+
+/// Is `id` in the PACKAGED seed — i.e. would [`reconcile_seed`] re-add it after a plain remove?
+///
+/// The seeded/user-made split is the whole reason retirement needs two mechanisms, and it is not
+/// something a caller can infer from the record it holds: a seeded impl and a harvested one look
+/// identical in the store.
+pub fn is_seeded(id: &str) -> bool {
+    raw_implementations_of(&seed())
+        .iter()
+        .any(|im| im.get("id").and_then(Value::as_str) == Some(id))
 }
 
 // ── the doctor (#3212) — diagnose visualization typing + coverage ──
@@ -814,6 +860,70 @@ mod tests {
     }
 
     use super::*;
+
+    /// Request #71 — the whole point of the tombstone. `merge` folded a SEEDED impl away, reported
+    /// `"removed"`, and the seed reconcile put it straight back on the next read; a session lost an
+    /// afternoon to a phantom "concurrent re-harvester" that did not exist.
+    ///
+    /// The reconcile is NOT the bug and is unchanged: it re-adds any packaged id the store lacks, which
+    /// is what makes packaged algorithms recoverable. The tombstone works WITH that rule by occupying
+    /// the id, so the absent-id check finds it present.
+    #[test]
+    fn a_merged_away_seed_impl_stays_gone_across_a_reconcile() {
+        let mut g = seed();
+        assert!(is_seeded("llm-energy.ts"), "the fixture depends on this being packaged");
+        merge_impls(&mut g, "llm-energy.ts", "algorithms-llm-energy.ts").expect("merge succeeds");
+
+        // Gone from every READ …
+        let live = implementations_of(&g);
+        assert!(!live.iter().any(|im| im["id"] == "llm-energy.ts"), "the fold removes it");
+        // … and STAYS gone when the reconcile runs, which is where it used to come back.
+        reconcile_seed(&mut g);
+        let after = implementations_of(&g);
+        assert!(!after.iter().any(|im| im["id"] == "llm-energy.ts"), "the reconcile must not resurrect it");
+
+        // The tombstone records WHAT replaced it — the audit trail a consolidation needs later.
+        let tomb = raw_implementations_of(&g)
+            .into_iter()
+            .find(|im| im["id"] == "llm-energy.ts")
+            .expect("the tombstone occupies the id");
+        assert!(is_tombstone(&tomb));
+        assert_eq!(tomb.get("supersededBy").and_then(Value::as_str), Some("algorithms-llm-energy.ts"));
+    }
+
+    /// A tombstone must never surface AS an algorithm. It lives in the same array as the impls (that is
+    /// what makes the reconcile skip it), so the single filtered reader is the only thing standing
+    /// between it and every consumer — doctor, domain sweeps, `impl list`.
+    #[test]
+    fn a_tombstone_is_invisible_to_every_read_but_visible_to_the_raw_view() {
+        let mut g = seed();
+        merge_impls(&mut g, "stream-merge.ts", "windowed-tally.ts").expect("merge succeeds");
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "stream-merge.ts"), "filtered out");
+        assert!(raw_implementations_of(&g).iter().any(|im| im["id"] == "stream-merge.ts"), "still present raw");
+        // …and it does not leak into a domain collection either.
+        assert!(!in_domain_ids(&g, "fleet").contains(&"stream-merge.ts".to_string()));
+    }
+
+    /// A USER-MADE impl keeps removing outright: no tombstone where a plain delete is durable, or the
+    /// store fills with markers for records nothing would have re-seeded.
+    #[test]
+    fn a_user_made_impl_is_removed_outright_not_tombstoned() {
+        let mut g = seed();
+        set_impl(&mut g, serde_json::json!({
+            "id": "zz-user.ts", "tech": "typescript", "role": "algorithm", "name": "ZZ", "code": "export const z=1;",
+        })).expect("user impl writes");
+        merge_impls(&mut g, "zz-user.ts", "windowed-tally.ts").expect("merge succeeds");
+        assert!(!raw_implementations_of(&g).iter().any(|im| im["id"] == "zz-user.ts"), "gone entirely");
+    }
+
+    /// Helper: the ids a domain collection reports, through the FILTERED reader.
+    fn in_domain_ids(g: &Value, domain: &str) -> Vec<String> {
+        implementations_of(g)
+            .iter()
+            .filter(|im| impl_in_domain(im, domain))
+            .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
+            .collect()
+    }
 
     #[test]
     fn seed_parses_impl_only_and_is_primitives_rooted() {

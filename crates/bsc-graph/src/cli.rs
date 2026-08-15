@@ -21,7 +21,7 @@ pub const VERBS: [&str; 14] =
     ["impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "emit", "help"];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
-pub const IMPL_SUBVERBS: [&str; 3] = ["set", "remove", "list"];
+pub const IMPL_SUBVERBS: [&str; 5] = ["set", "remove", "list", "suppress", "unsuppress"];
 
 /// The `edge` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
@@ -32,8 +32,10 @@ pub const BOOL_FLAGS: [&str; 8] =
     ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 30] = [
+pub const FLAGS: [&str; 31] = [
     "--pretty",
+    // #71 — names WHAT replaced a suppressed algorithm, stored on the tombstone.
+    "--superseded-by",
     "--all",
     "--id",
     "--tech",
@@ -403,6 +405,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             }
             Some("remove") => {
                 let id = positional.get(2).ok_or("usage: bsc graph impl remove <id>")?;
+                // A SEEDED id cannot be removed — the seed reconcile re-adds it by design, so reporting
+                // `removed` would be a lie the caller discovers on their next read (request #71). Refuse
+                // and name the verb that does work, rather than succeeding at nothing.
+                if crate::is_seeded(id) {
+                    return Err(format!(
+                        "'{id}' is a PACKAGED algorithm — a plain remove re-seeds on the next load. Use                          `bsc graph impl suppress {id}` to retire it durably (add `--superseded-by <new-id>`                          when something replaces it), or `impl unsuppress` to bring it back."
+                    ));
+                }
                 let mut g = crate::load();
                 if crate::remove_impl(&mut g, id) {
                     crate::save(&g)?;
@@ -410,6 +420,54 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 } else {
                     Err(format!("unknown implementation '{id}'"))
                 }
+            }
+            // #71 — RETIRE a packaged algorithm durably. Mirrors `bsc ui suppress` (#3725): a
+            // `{ id, suppressed: true }` tombstone OCCUPIES the id, so the seed reconcile's absent-id
+            // check finds it present and stops re-adding the packaged impl. `--superseded-by` records
+            // what replaced it, on the tombstone because that is the one record the reconcile never
+            // overwrites — a consolidation is otherwise unauditable a month later.
+            Some("suppress") => {
+                let id = positional.get(2).ok_or("usage: bsc graph impl suppress <id> [--superseded-by <new-id>]")?;
+                let mut g = crate::load();
+                let live: Vec<Value> = crate::implementations_of(&g);
+                let known = |x: &str| live.iter().any(|im| im.get("id").and_then(Value::as_str) == Some(x));
+                if !known(id) && !crate::is_seeded(id) {
+                    return Err(format!("unknown implementation '{id}'"));
+                }
+                let mut tomb = serde_json::json!({ "id": id, "suppressed": true });
+                if let Some(new_id) = flag_value(&args, "--superseded-by") {
+                    // REFUSED, not stored, on a dangling or self pointer — the tombstone is durable, so a
+                    // pointer naming something nobody can open outlives everyone who could correct it.
+                    if new_id == *id {
+                        return Err(format!("'{id}' cannot supersede itself"));
+                    }
+                    if !known(&new_id) {
+                        return Err(format!(
+                            "--superseded-by '{new_id}' is not a live implementation — author it first, or omit the flag"
+                        ));
+                    }
+                    tomb["supersededBy"] = Value::String(new_id);
+                }
+                crate::remove_impl(&mut g, id);
+                crate::ensure_array(&mut g, "implementations").push(tomb.clone());
+                crate::save(&g)?;
+                emit(&serde_json::json!({ "ok": true, "suppressed": id, "supersededBy": tomb.get("supersededBy") }))
+            }
+            Some("unsuppress") => {
+                let id = positional.get(2).ok_or("usage: bsc graph impl unsuppress <id>")?;
+                let mut g = crate::load();
+                let is_tomb = crate::raw_implementations_of(&g).iter().any(|im| {
+                    im.get("id").and_then(Value::as_str) == Some(*id) && crate::is_tombstone(im)
+                });
+                // REFUSES on a live impl: a real record goes through `remove`, never this. Otherwise
+                // `unsuppress` becomes a second, quieter delete.
+                if !is_tomb {
+                    return Err(format!("'{id}' is not a suppression tombstone — nothing to restore"));
+                }
+                crate::remove_impl(&mut g, id);
+                let reseeded = crate::reconcile_seed(&mut g);
+                crate::save(&g)?;
+                emit(&serde_json::json!({ "ok": true, "unsuppressed": id, "reseeded": reseeded }))
             }
             // #4156 (designer request #47): read ONE impl by id. Without it, verifying a record before a
             // write meant dumping a whole language kit — 52.7KB for Rust — which overflows the shell,
@@ -1118,7 +1176,12 @@ fn help(prog: &str) -> String {
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes)\n  \
-         {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n  \
+         {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)
+  \
+         {prog} impl suppress <id> [--superseded-by <new-id>]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored)
+  \
+         {prog} impl unsuppress <id>                    # drop the tombstone so the packaged algorithm re-seeds on the next load (no data loss). REFUSES on a live impl - that goes through `remove`
+  \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
