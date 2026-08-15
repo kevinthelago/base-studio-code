@@ -75,6 +75,13 @@ pub struct Candidate {
     /// module's path: the edge is about the test, so pointing it at the module loses the one path a
     /// reader needs to find the original.
     pub edge_src: Option<String>,
+    /// Specifiers this harvest REFUSED to make members of, because they name no module (#80) — a
+    /// mock, a `${…}` placeholder, a path to nothing.
+    ///
+    /// Reported rather than dropped in silence. The whole defect being fixed is a permanently
+    /// unresolvable member that nobody could account for; replacing it with a silent omission would
+    /// hide a GENUINELY missing module behind the same rule that hides a fixture.
+    pub edge_declined: Vec<String>,
 }
 
 /// One colocated test file carried on a candidate — the `{name, src}` shape a stored impl's `tests`
@@ -524,6 +531,24 @@ fn import_specifier_at(chars: &[char], idx: usize) -> bool {
     ends_with("from") || ends_with("import")
 }
 
+/// The `@/…` member a test specifier becomes, or `None` when it names no module at all (#80).
+///
+/// Three cases, in order:
+/// * a `${…}` interpolation is not a literal specifier — it is a fragment of a template that was
+///   never a module reference, and it is decidable on sight;
+/// * an already-absolute `@/…` is the canonical form and rides through — whether it is a RECORD yet is
+///   the "pending" case doctor exists to report;
+/// * a relative path must resolve to a real module file, which is what [`alias_for`] checks.
+fn edge_member_for(spec: &str, dir: &Path, root: &Path) -> Option<String> {
+    if spec.contains("${") {
+        return None;
+    }
+    if spec.starts_with("@/") {
+        return Some(spec.to_string());
+    }
+    alias_for(spec, dir, root)
+}
+
 /// Resolve a relative specifier against `dir` and express it as `@/…`, or `None` when it names no file.
 fn alias_for(spec: &str, dir: &Path, root: &Path) -> Option<String> {
     // Normalize by hand rather than `canonicalize`: that requires the path to exist BEFORE we know which
@@ -659,6 +684,7 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
     let mut edge_test: Option<CandidateTest> = None;
     let mut edge_members: Vec<String> = Vec::new();
     let mut edge_src: Option<String> = None;
+    let mut edge_declined: Vec<String> = Vec::new();
     let tests = match found_test {
         Some((p, contents)) => {
             let foreign = foreign_app_imports(&contents, stem);
@@ -669,10 +695,29 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
                 // ABSOLUTE, via the same resolution the module's own imports get. A relative member
                 // cannot be matched against `provides` and reads as a bare record id, so doctor would
                 // report it DANGLING when the module has simply not migrated yet.
-                edge_members = foreign
-                    .into_iter()
-                    .map(|spec| alias_for(&spec, dir, root).unwrap_or(spec))
-                    .collect();
+                // A MEMBER MUST NAME A REAL MODULE (#80, designer request).
+                //
+                // This was `.map(|spec| alias_for(…).unwrap_or(spec))`, and that `unwrap_or` did double
+                // duty: it correctly passed an already-absolute `@/…` through, and it INCORRECTLY passed
+                // through a relative path that resolved to nothing. `module_specifiers` scans raw text
+                // for `from "…"`, and a test's own source carries FIXTURE CODE inside string literals —
+                // a test building a fake module map writes `"import { b } from './b';"` as data — so the
+                // quoted fixture's imports became the edge's members. Measured on the real store: 7
+                // dangling edges, 25 unknown members, at least 14 of them mocks (`./a` … `./x`), a
+                // literal `${entry}` placeholder, and `../also/gone`. None can EVER resolve, so doctor
+                // reported them forever.
+                //
+                // Not a deny-list of names that look fake — `gone`/`nope` would be guessing. A member
+                // has to resolve through the loader's own resolution, which `alias_for` already does
+                // against the real filesystem. That KEEPS the pending case the design depends on: a
+                // member that is still a plain file (not yet a record) resolves and stays.
+                let (kept, declined): (Vec<_>, Vec<_>) =
+                    foreign.into_iter().partition(|spec| edge_member_for(spec, dir, root).is_some());
+                edge_members =
+                    kept.iter().filter_map(|spec| edge_member_for(spec, dir, root)).collect();
+                // Reported, not silently dropped: a genuinely missing module must not be hidden by the
+                // same rule that hides a mock.
+                edge_declined = declined;
                 edge_src = Some(
                     p.strip_prefix(root)
                         .unwrap_or(&p)
@@ -705,6 +750,7 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
         classification: Classification::default(),
         edge_test,
         edge_members,
+        edge_declined,
         edge_src,
     };
     c.classification = classify(&c);
@@ -758,6 +804,9 @@ fn build_candidates(defs: Vec<Def>, raw: Vec<(String, String, String)>, test_roo
             }
             let role = if composes.is_empty() { "primitive" } else { "algorithm" };
             let mut c = Candidate {
+                // A FUNCTION harvest never mints an edge — the edge comes from a MODULE's colocated
+                // test, and a fragment has none. Empty, not "declined nothing" (#80).
+                edge_declined: Vec::new(),
                 // A FUNCTION is not a module: whatever the file holds at top level is not this
                 // candidate's, and claiming it would misreport every fragment lifted from a stateful file.
                 module_state: Vec::new(),
@@ -1794,5 +1843,63 @@ export const lbl = createStoreLabel;
         assert!(plan
             .iter()
             .all(|it| it.candidate.name != "helperThing" && it.candidate.name != "some_helper"));
+    }
+}
+
+/// #80 — an edge member must name a real module, not a string that appeared in a test file.
+#[cfg(test)]
+mod edge_member_tests {
+    use super::edge_member_for;
+
+    /// A tree with ONE real sibling module, so "resolves" and "does not resolve" are both real answers
+    /// rather than both being misses.
+    fn tree() -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = std::env::temp_dir().join(format!("bsc-graph-edge-{}", std::process::id()));
+        let dir = root.join("src/features/designs/lib");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("model.ts"), "export const m = 1;\n").unwrap();
+        (root, dir)
+    }
+
+    /// THE REPORTED SHAPES. `component-preview.ts~integration` carried twelve single-letter members
+    /// (`./a` … `./x`) and `html-renderer.ts~integration` a literal `${entry}`; none can ever resolve,
+    /// so doctor reported them forever.
+    #[test]
+    fn a_mock_and_a_template_placeholder_are_not_members() {
+        let (root, dir) = tree();
+        for spec in ["./a", "./b", "./x", "../also/gone", "./Sibling"] {
+            assert_eq!(edge_member_for(spec, &dir, &root), None, "{spec} names no module");
+        }
+        // A `${…}` is not a literal specifier at all — decidable on sight, no filesystem needed.
+        assert_eq!(edge_member_for("../../../../__tests__/preview/${entry}", &dir, &root), None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// THE PENDING CASE MUST SURVIVE, and it is the reason this is a resolution check rather than a
+    /// deny-list: a member that is still a plain FILE (not yet a record) is exactly what doctor means
+    /// by pending, and dropping it would hide real migration work.
+    #[test]
+    fn a_real_sibling_module_still_becomes_an_absolute_member() {
+        let (root, dir) = tree();
+        assert_eq!(
+            edge_member_for("./model", &dir, &root).as_deref(),
+            Some("@/features/designs/lib/model"),
+            "a real file resolves, and is expressed ABSOLUTELY so it can be matched against `provides`"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An already-absolute specifier is the canonical form and rides through untouched — it is not
+    /// resolved against a directory, because it does not name one.
+    #[test]
+    fn an_alias_specifier_is_kept_verbatim() {
+        let (root, dir) = tree();
+        assert_eq!(
+            edge_member_for("@/shared/lib/core/log", &dir, &root).as_deref(),
+            Some("@/shared/lib/core/log"),
+        );
+        // …but an alias with an interpolation in it is still not a specifier.
+        assert_eq!(edge_member_for("@/features/${name}/lib/x", &dir, &root), None);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
