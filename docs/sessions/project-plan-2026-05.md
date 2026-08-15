@@ -1,5 +1,9 @@
 # Studio Code — Project Plan
 
+> **SESSION ARTIFACT — not maintained.** THE CHECKED-IN PRODUCT-PLAN SNAPSHOT, moved here from `.github/`. Superseded by [`../../ROADMAP.md`](../../ROADMAP.md) and the roadmap table in `CLAUDE.md`; last maintained 2026-05-27.
+> See [`README.md`](README.md) for why this lives here.
+
+
 > Consolidated plan for the **studio-code** product (GitHub Project [#16](https://github.com/users/kevinthelago/projects/16)).
 > Two repos: **base-studio-code** (desktop host) and **mobile-studio-code** (mobile IDE).
 > Maintained from the in-app planner; this file is the checked-in snapshot.

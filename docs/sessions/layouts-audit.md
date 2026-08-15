@@ -1,5 +1,9 @@
 # Layouts audit — every page against the template set
 
+> **SESSION ARTIFACT — not maintained.** A POINT-IN-TIME AUDIT. Several files it names are records now rather than files, `GraphCanvas.tsx` among them — see [`../records.md`](../records.md).
+> See [`README.md`](README.md) for why this lives here.
+
+
 Part of the Layouts tier (epic #2197, tracking issue #2213). The shared page-skeleton templates
 built in slices 1–2 are:
 

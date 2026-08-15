@@ -198,7 +198,7 @@ addressable element and are the renderer's own concern — but they must still f
 The verbs above map onto the kit's motion library — the "library of predefined animations": `swap`,
 `compare`, `set`, `insert`, `remove`, `rotate`, `cell-write` (matrix read/write), `visit`, `relax`,
 `path`, `probe`, `push`, `pop`. These are **designed / tried-on / live-previewed in the Designer** and
-fired by the trace. A kit binds each to its state selector; see `src/shared/ui/kit/animations.ts`
+fired by the trace. A kit binds each to its state selector; see `@/shared/ui/kit/animations` (a record)
 (`KitAnimation` + `compileAnimationsCss`).
 
 ---

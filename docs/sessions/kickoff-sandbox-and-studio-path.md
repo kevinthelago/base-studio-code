@@ -1,5 +1,9 @@
 # Kickoff — sandbox-by-default, then the planner/designer/librarian path
 
+> **SESSION ARTIFACT — not maintained.** A KICKOFF BRIEF, partly delivered. Sandbox-by-default is tracked as #4260.
+> See [`README.md`](README.md) for why this lives here.
+
+
 You are picking up a settled plan. The design decisions below are **already made by the maintainer**;
 do not relitigate them. Your job is to execute in order, verify against reality rather than against
 tests alone, and stop to ask only where this document says to.

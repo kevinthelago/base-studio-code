@@ -1,5 +1,9 @@
 # Kickoff — retire `react-ui.json` and move to an entirely DB-driven UI
 
+> **SESSION ARTIFACT — not maintained.** A KICKOFF BRIEF. Answered by [`investigation-retire-packaged-kit-artifact.md`](investigation-retire-packaged-kit-artifact.md); `react-ui.json` is still packaged and still regenerated with `UPDATE_KITS=1`.
+> See [`README.md`](README.md) for why this lives here.
+
+
 **Session role:** investigation → written plan. **Do not write implementation code in this session.**
 The deliverable is an epic + sliced issues with a defensible migration order, or a documented
 recommendation *against* parts of it.

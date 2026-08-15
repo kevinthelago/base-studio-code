@@ -1,5 +1,9 @@
 # UI-kit coverage — the `base-studio-code` kit vs the frontend
 
+> **SESSION ARTIFACT — not maintained.** A POINT-IN-TIME COVERAGE SNAPSHOT, now structurally obsolete: it counts non-test `.tsx` files under `src/`, and the frontend is no longer made of those — see [`../records.md`](../records.md).
+> See [`README.md`](README.md) for why this lives here.
+
+
 A file-level comparison: every non-test `.tsx` under `src/` against the `src` path on each
 `base-studio-code` kit record. Regenerate by re-running the audit described at the bottom.
 

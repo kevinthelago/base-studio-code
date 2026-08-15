@@ -35,6 +35,16 @@ New UI is authored **into the store**, never as a new `.tsx`.
 
 ---
 
+### Naming a module in prose
+
+**Name a module by its specifier, not by a file path** — `@/features/planner/fleet/agentFlow`, not
+`src/features/planner/fleet/agentFlow.ts`. The specifier is what the module *is*; the path is only where it
+used to live, and writing the path asserts a file exists. Several docs said `…/agentFlow.ts` long after that
+file was gone, which sends a reader looking for something deliberately deleted.
+
+`docLinks.test.ts` catches broken markdown **links**, but a backticked path in prose is not a link and
+nothing checks it. The specifier form is what keeps it true.
+
 ## Seed vs store — the distinction everything else depends on
 
 There are two copies of every record and they are not the same thing.

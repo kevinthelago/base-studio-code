@@ -78,13 +78,13 @@ stream's baked line-wrapping lines up; input rides `ClientMsg::PaneInput`, **gat
 - **A new (or removed) `ServerMsg`/`ClientMsg` variant is a protocol change** — coordinate a PR in
   **mobile-studio-code** (a separate repo). Don't ship a *breaking* one one-sided.
 - **Fixtures are byte-exact cross-repo contracts:** `src/features/tunnel/lib/tunnelProtocol.fixtures.json`
-  (the wire *frames*) + `src/features/planner/session/plannerCore.fixtures.json`. The Rust tests resolve
+  (the wire *frames*) + `src/features/planner/lib/plannerCore/plannerCore.fixtures.json`. The Rust tests resolve
   the frame fixtures **by filename** (`find_fixture` in `mobile/tunnel/mod.rs` — exactly one match under
   `src/`), so a fixture **rename** must update the Rust call + mobile in lockstep. Don't casually edit
   fixture bytes.
 - **Per-domain PAYLOAD parity harness (#3762 / Mobile-Studio-Code#246).** Because `store_state.json` is
   opaque, per-domain shape drift crosses the wire unguarded (the glance `status`→`health`/`activity` split
-  + the security invented-shape both shipped green). `src/features/tunnel/lib/storeProjections.fixtures.ts`
+  + the security invented-shape both shipped green). `@/features/tunnel/lib/storeProjections.fixtures` (a record)
   exports `PROJECTION_INPUTS` — canonical inputs, each block `satisfies` its real model (a rename in
   `ProjectLite`/`AgentProfile`/`AuditDisplayRow`/`ConsoleSession` is a compile error here).
   `storePayloads.fixtures.json` is

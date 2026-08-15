@@ -1,5 +1,9 @@
 # record-src-reconcile — record↔file provenance: RESOLVED
 
+> **SESSION ARTIFACT — not maintained.** A TRIAGE, resolved — as its own title says.
+> See [`README.md`](README.md) for why this lives here.
+
+
 `node scripts/reconcile-record-src.cjs` now reports **zero** unresolved records.
 
     384 packaged records:  ok 242 · intentional 119 · null-src 23

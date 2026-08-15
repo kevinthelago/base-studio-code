@@ -1,5 +1,9 @@
 # Kickoff — graph migration, local-first
 
+> **SESSION ARTIFACT — not maintained.** A KICKOFF BRIEF, kept as a record of what was believed at the start. The migration ran; ~930 modules now ship as records. Current reference: [`../records.md`](../records.md).
+> See [`README.md`](README.md) for why this lives here.
+
+
 Paste this as the opening message of the next session.
 
 ---
