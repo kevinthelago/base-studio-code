@@ -445,7 +445,18 @@ pub fn is_registered_platform_module(spec: &str) -> bool {
     .contains(spec)
 }
 
+/// Upsert an implementation with no explicit author — every pre-#72 caller and test. Attributed to
+/// `unknown`, exactly as the component store attributes an unattributed write, rather than inventing a
+/// plausible-looking author.
 pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
+    set_impl_by(g, im, "unknown", None)
+}
+
+/// Upsert an implementation, STAMPING the write with its author, timestamp, rev and history (#72).
+///
+/// `writer` is who to attribute it to (`--by`, else the resolved default) and `note` is the optional
+/// why. Both ride to `bsc-record`, the one stamp shared with the component store.
+pub fn set_impl_by(g: &mut Value, im: Value, writer: &str, note: Option<&str>) -> Result<bool, String> {
     let id = im
         .get("id")
         .and_then(Value::as_str)
@@ -481,8 +492,11 @@ pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
             ));
         }
     }
+    let now = bsc_record::now_iso();
     let arr = ensure_array(g, "implementations");
     if let Some(existing) = arr.iter_mut().find(|x| x.get("id").and_then(Value::as_str) == Some(id.as_str())) {
+        // The pre-write value, cloned BEFORE the merge mutates it — the stamp diffs the two.
+        let prior = existing.clone();
         // MERGE, never replace (#4154). This was `*existing = im`, a whole-record overwrite — so any
         // field the caller did not resupply was SILENTLY DELETED. The designer hit it twice: a
         // domain-only edit wiped `transpose.ts`'s `folder` and `src` (request #49), and `tests` has no
@@ -509,6 +523,15 @@ pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
             // rather than silently keeping a malformed record.
             _ => *existing = im,
         }
+        // #72 — STAMP the write. `bsc graph impl set` recorded nothing: no rev, no author, no timestamp,
+        // no history, so a bad write was both unattributable and unrevertible, and a session hunting
+        // *who* kept recreating a node had nothing to read. Stamped through the SAME `bsc-record` the
+        // component store uses, so `bsc graph impl history` and `bsc ui log` mean the same thing rather
+        // than being two dialects that drift.
+        //
+        // Stamped from the PRIOR value, after the merge: the entry's `changed` set is the diff, so it
+        // must see both sides. `prevCode` (the revert rung) is retained by the same rule `prevSrc` uses.
+        bsc_record::stamp_with_history_of(existing, &prior, writer, &now, note, "code");
         Ok(true)
     } else {
         // A NEW impl still needs the shape the model expects: `composes` is a required array, and the
@@ -517,6 +540,9 @@ pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
         if im.get("composes").is_none() {
             im["composes"] = Value::Array(Vec::new());
         }
+        // A CREATE is stamped too, against a null prior — so rev 1 exists and `history` is never absent.
+        // A record whose log starts at its second write reads as if the first never happened.
+        bsc_record::stamp_with_history_of(&mut im, &Value::Null, writer, &now, note, "code");
         arr.push(im);
         Ok(false)
     }
@@ -923,6 +949,46 @@ mod tests {
             .filter(|im| impl_in_domain(im, domain))
             .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
             .collect()
+    }
+
+    /// #72 — every graph write is now ATTRIBUTED. `impl set` stamped nothing: no rev, author, timestamp
+    /// or history, so a bad write was unattributable and unrevertible, and a session asking "who keeps
+    /// recreating this node" had nothing to read. (Nobody was: that was the seed reconcile, #71.)
+    ///
+    /// Stamped through the SAME `bsc-record` the component store uses, so `bsc ui log` and the graph's
+    /// history mean the same thing instead of being two dialects.
+    #[test]
+    fn a_graph_write_is_stamped_with_its_author_and_history() {
+        let mut g = seed();
+        set_impl_by(&mut g, serde_json::json!({
+            "id": "zz-hist.ts", "tech": "typescript", "role": "algorithm", "name": "ZZ", "code": "export const z = 1;",
+        }), "designer", Some("first cut")).expect("create");
+
+        let rec = |g: &Value| implementations_of(g).into_iter().find(|i| i["id"] == "zz-hist.ts").expect("present");
+        let created = rec(&g);
+        assert_eq!(created.get("rev").and_then(Value::as_i64), Some(1), "a CREATE is rev 1, not unstamped");
+        let h = created.get("history").and_then(Value::as_array).cloned().unwrap_or_default();
+        assert_eq!(h.len(), 1, "the create is in the log — a record whose log starts at its second write lies");
+        assert_eq!(h[0].get("by").and_then(Value::as_str), Some("designer"));
+        assert_eq!(h[0].get("note").and_then(Value::as_str), Some("first cut"));
+
+        // An EDIT diffs against the prior value and retains the rung back.
+        set_impl_by(&mut g, serde_json::json!({
+            "id": "zz-hist.ts", "tech": "typescript", "role": "algorithm", "name": "ZZ", "code": "export const z = 2;",
+        }), "claude", Some("bump")).expect("edit");
+        let edited = rec(&g);
+        assert_eq!(edited.get("rev").and_then(Value::as_i64), Some(2));
+        let h2 = edited.get("history").and_then(Value::as_array).cloned().unwrap_or_default();
+        let last = h2.last().expect("an entry");
+        assert_eq!(last.get("by").and_then(Value::as_str), Some("claude"));
+        assert!(
+            last.get("changed").and_then(Value::as_array).is_some_and(|c| c.iter().any(|v| v == "code")),
+            "the diff names the field that moved: {last}"
+        );
+        // The rung is keyed on the GRAPH's content field (`code`), not the component store's `srcText` —
+        // the one store-specific thing in the shared stamp, and the reason it takes a parameter.
+        assert_eq!(last.get("prevSrc").and_then(Value::as_str), Some("export const z = 1;"),
+                   "the previous code is retained, so a revert has something to reach");
     }
 
     #[test]

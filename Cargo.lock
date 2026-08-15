@@ -792,6 +792,7 @@ dependencies = [
  "bsc-cli-util",
  "bsc-graph",
  "bsc-json-store",
+ "bsc-record",
  "bsc-sound",
  "bsc-util",
  "serde_json",
@@ -852,6 +853,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-data",
+ "bsc-record",
  "bsc-util",
  "serde",
  "serde_json",
@@ -927,6 +929,14 @@ dependencies = [
  "plandb",
  "rusqlite",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-record"
+version = "0.1.0"
+dependencies = [
+ "bsc-util",
  "serde_json",
 ]
 

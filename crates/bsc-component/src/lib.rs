@@ -25,7 +25,10 @@ pub mod graph_health;
 pub mod motion;
 pub mod preview_errors;
 pub mod preview_props;
-pub mod record;
+/// The record stamp now lives in the shared `bsc-record` crate (#72) so the ALGORITHMS graph stamps
+/// writes through the same implementation rather than growing a second one that drifts. Re-exported
+/// under the old path, so every `crate::record::…` call site here is unchanged.
+pub use bsc_record as record;
 pub mod scan_cache;
 pub mod similarity;
 pub mod syntax;
