@@ -5,7 +5,6 @@
     "Row",
     "Text"
   ],
-  "group": "features/teams",
   "id": "teams-agent-face",
   "kitId": "base-studio-code",
   "name": "AgentFace",

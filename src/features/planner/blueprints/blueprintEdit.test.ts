@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   mkStageSection, reorderStages, addStage, deleteStage,
   toggleDep, setOutput, setStageField, depCandidates,
-} from "./blueprintEdit";
-import { STAGE_KINDS, DISPOSITIONS, defaultDisposition } from "./blueprintCatalog";
+} from "@/features/planner/blueprints/blueprintEdit";
+import { STAGE_KINDS, DISPOSITIONS, defaultDisposition } from "@/features/planner/blueprints/blueprintCatalog";
 import { STAGE_DEFS } from "../stages/blueprints";
 
 describe("blueprintCatalog (#609)", () => {

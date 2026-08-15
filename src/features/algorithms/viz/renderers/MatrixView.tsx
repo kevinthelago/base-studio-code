@@ -5,9 +5,9 @@
 // engine (`matrixViewMotion.ts`). Its root carries the applying classes; cells only stamp the state.
 import { useEffect } from "react";
 import { Box } from "@/shared/ui/layout/Box";
-import { cellOpStateAttrs } from "../../lib/binding";
-import type { MatrixFrame } from "../../lib/trace";
-import type { StructureRenderer } from "../registry";
+import { cellOpStateAttrs } from "@/features/algorithms/lib/binding";
+import type { MatrixFrame } from "@/features/algorithms/lib/trace";
+import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import { MATRIX_VIZ_ANIM_CLASSES, ensureMatrixViewMotion } from "@/features/algorithms/viz/renderers/matrixViewMotion";
 import "./matrixView.css";
 

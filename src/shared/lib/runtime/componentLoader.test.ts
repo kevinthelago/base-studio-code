@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import * as React from "react";
-import { registerAppModule, __resetRegistry } from "./moduleRegistry";
+import { registerAppModule, __resetRegistry } from "@/shared/lib/runtime/moduleRegistry";
 import { classifyImport, makeRequire, pickComponent, evalCjsModule, routeImport } from "./componentLoader";
 
 // The compile step (esbuild-wasm, browser-only) is exercised end-to-end by the e2e harness; here we verify

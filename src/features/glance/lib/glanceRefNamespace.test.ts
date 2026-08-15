@@ -11,8 +11,8 @@
 //   studio-code        56 stream refs, ALL GitHub numbers  -> 0/56 resolve, and every owning node read
 //                                                             0/N while plan.db knew the real answer
 import { describe, it, expect } from "vitest";
-import { fleetPlanProgress, knownRefAliases, mergeStreamProgress, unionDone } from "./fleetPlanProgress";
-import { streamProgress, projectProgress } from "./streamProgress";
+import { fleetPlanProgress, knownRefAliases, mergeStreamProgress, unionDone } from "@/features/glance/lib/fleetPlanProgress";
+import { streamProgress, projectProgress } from "@/features/glance/lib/streamProgress";
 import type { OwnedIssue } from "@/shared/lib/fleet/workerEnd";
 
 /** plan.db as `studio-code` actually holds it: slug refs, no GitHub identity anywhere. */

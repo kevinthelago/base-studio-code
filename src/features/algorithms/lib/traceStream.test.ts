@@ -2,8 +2,8 @@
 // generator advances exactly once per `next`), RING-BUFFER eviction, deterministic REPLAY when scrubbing
 // older than the window, and seek (buffered back, replay back, forward-with-clamp).
 import { describe, it, expect } from "vitest";
-import { makeTraceStream } from "./traceStream";
-import type { Frame } from "./trace";
+import { makeTraceStream } from "@/features/algorithms/lib/traceStream";
+import type { Frame } from "@/features/algorithms/lib/trace";
 
 const arr = (n: number): Frame => ({ structure: "array", data: [n] });
 

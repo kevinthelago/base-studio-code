@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGithubConnect } from "./useGithubConnect";
+import { useGithubConnect } from "@/features/settings/lib/useGithubConnect";
 import { useAppStore } from "@/store";
 
 // Focused coverage for the connection state machine extracted out of GitHub.tsx (#1708):

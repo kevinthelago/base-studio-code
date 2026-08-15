@@ -10,7 +10,7 @@ vi.mock("@/shared/lib/preview/componentBundle", () => ({
   COMPONENT_IMPORTMAP: { react: "https://esm.sh/react" },
   COMPONENT_EXTERNALS: ["react"],
 }));
-import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "./lib/reactUiKit";
+import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
 import { SEED_THEMES } from "./lib/themes";
 import type { Kit } from "./lib/model";
 import { useAppStore } from "@/store";

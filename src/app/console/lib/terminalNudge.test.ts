@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nudgeSizes } from "./terminalNudge";
+import { nudgeSizes } from "@/app/console/lib/terminalNudge";
 
 describe("terminalNudge — nudgeSizes (#1221)", () => {
   it("shrinks by exactly one column for the transient, restores the true fitted size", () => {

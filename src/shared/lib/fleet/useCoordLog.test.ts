@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { readCoordState } from "./useCoordLog";
+import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 
 // `invoke` is globally mocked in src/test/setup.ts; drive it per-test.
 const ASK = "2020-01-01T00:00:00Z\tworker-a\task\tWhich pagination?\t";

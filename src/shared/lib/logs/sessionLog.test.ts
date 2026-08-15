@@ -11,7 +11,7 @@ import {
   type SessionCost,
   type SessionLogEvent,
   type SessionStory,
-} from "./sessionLog";
+} from "@/shared/lib/logs/sessionLog";
 
 function ev(ts_ms: number, stream: string, summary = "x"): SessionLogEvent {
   return { ts_ms, session: "k:web", stream, summary, fields: [] };

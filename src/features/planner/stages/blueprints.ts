@@ -14,6 +14,6 @@
 //   • blueprintStages.ts   — the pure helpers (auth-lifecycle, filtering, the blueprint-driven
 //                            stage status/progress engine, template-change detection).
 
-export * from "./blueprintTypes";
+export * from "@/features/planner/stages/blueprintTypes";
 export * from "./blueprintBuiltins";
 export * from "./blueprintStages";

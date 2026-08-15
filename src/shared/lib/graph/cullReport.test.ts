@@ -4,7 +4,7 @@
 // the readings that answer "is culling engaging at this zoom", and stay silent on the ones that do not.
 // A diagnostic that logs on every pan buries the phase timings it was added to sit beside.
 import { describe, it, expect } from "vitest";
-import { cullSummary, worthReporting, type CullReading } from "./cullReport";
+import { cullSummary, worthReporting, type CullReading } from "@/shared/lib/graph/cullReport";
 
 const read = (shown: number, total: number, scale = 1): CullReading => ({ shown, total, scale });
 

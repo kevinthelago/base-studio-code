@@ -10,7 +10,7 @@ vi.mock("@/shared/lib/core/bsc", () => ({
 }));
 
 import { bsc, bscRun, bscWrite } from "@/shared/lib/core/bsc";
-import { loadThemes, pushTheme, dropTheme } from "./themeBridge";
+import { loadThemes, pushTheme, dropTheme } from "@/features/designs/lib/themeBridge";
 import type { KitThemeRecord } from "./themes";
 
 beforeEach(() => {

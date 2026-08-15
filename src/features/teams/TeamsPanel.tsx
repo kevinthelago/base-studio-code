@@ -28,15 +28,15 @@ import { GraphLegend, type LegendNode } from "@/shared/ui/layouts/GraphLegend";
 import { TeamsOverview } from "./TeamsOverview";
 import { TeamsInspector } from "./TeamsInspector";
 import { TeamsContextMenu } from "./TeamsContextMenu";
-import { ArchitectTerminal } from "./ArchitectTerminal";
+import { ArchitectTerminal } from "@/features/teams/ArchitectTerminal";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
 import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { RELATIONSHIP_ARCHETYPES, augmentStudioNetworkForDebug, type Position } from "./lib/team";
 import { autoLayout, nodeBox, contentBounds, CANVAS_W, CANVAS_H, type Box as GBox } from "./lib/orgLayout";
-import { teamsBounds } from "./lib/teamsLayout";
-import { detectPools, collapseOrg, poolLayoutSizes, applyPoolLayout } from "./lib/orgPools";
-import { positionDisplay, hueColor } from "./lib/orgView";
+import { teamsBounds } from "@/features/teams/lib/teamsLayout";
+import { detectPools, collapseOrg, poolLayoutSizes, applyPoolLayout } from "@/features/teams/lib/orgPools";
+import { positionDisplay, hueColor } from "@/features/teams/lib/orgView";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
 
 /** Department display order in the left rail (positionDisplay assigns each a dept) — from

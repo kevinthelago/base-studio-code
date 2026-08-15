@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Card, Kv, ModeChip, EntityChip, Readiness, ListItemCard } from "@/features/planner/bodies/bodyPrimitives";
-import { MONO, grpLabel, monoSm } from "./bodyStyles";
+import { MONO, grpLabel, monoSm } from "@/features/planner/bodies/bodyStyles";
 
 describe("bodyStyles — shared inline-style constants", () => {
   it("exposes the mono token and the byte-identical style objects extracted from the bodies", () => {

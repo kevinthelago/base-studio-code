@@ -20,7 +20,7 @@ import { useAppStore } from "@/store";
 import { githubGraphql } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { toMinimalGhProjects, minimalToGhProject, filterRecordsToLocal } from "@/shared/lib/github/githubState";
-import { useProjectProgressRows } from "./useProjectProgress";
+import { useProjectProgressRows } from "@/features/glance/lib/useProjectProgress";
 import { fetchProjectsWithProbe } from "@/shared/lib/github/githubProbe";
 import { PROJECTS_QUERY, type GhProject } from "@/features/planner/list/published/publishedModel";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
@@ -29,7 +29,7 @@ import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import type { GRole, GHealth, GActivity } from "./glanceGraph";
 import type { ProjectLite } from "./glanceData";
 import type { GlanceFault } from "./useGlanceFaults";
-import { projectKeyOfSession } from "./agentStall";
+import { projectKeyOfSession } from "@/features/glance/lib/agentStall";
 // #3966: the SAME durable-projects bridge the Projects page reads, so the two surfaces cannot
 // disagree about which local projects exist. Type-only + the reader; the bridge already degrades to
 // `null` when it is unreachable, which we treat as "keep the cache".

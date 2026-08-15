@@ -8,7 +8,7 @@
 //
 // These guard that they stay out, and that genuine UI/settings state stays in.
 import { describe, it, expect } from "vitest";
-import { persistedState, migrateAutoResumeOff } from "./persist";
+import { persistedState, migrateAutoResumeOff } from "@/store/persist";
 import { useAppStore } from "@/store";
 
 describe("persistedState — the persist allowlist (#3610)", () => {

@@ -8,7 +8,7 @@ import { GlanceChatDock } from "./GlanceChatDock";
 vi.mock("@/app/console/terminal/TerminalSlot", () => ({
   TerminalSlot: ({ paneId }: { paneId: string }) => <div data-testid="terminal" data-pane={paneId} />,
 }));
-vi.mock("./GlanceSessionLog", () => ({ GlanceSessionLog: () => <div data-testid="logs" /> }));
+vi.mock("@/features/glance/GlanceSessionLog", () => ({ GlanceSessionLog: () => <div data-testid="logs" /> }));
 vi.mock("@/shared/lib/core/safeInvoke", () => ({ fireInvoke: vi.fn() }));
 
 const PLAN = {

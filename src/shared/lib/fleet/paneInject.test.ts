@@ -1,7 +1,7 @@
 // Injection into a live pane (#375, #4253). The ORDER and SEPARATION of the writes is the whole
 // contract — every one of these assertions corresponds to a way the delivery has silently failed.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { injectPrompt, injectRedirect } from "./paneInject";
+import { injectPrompt, injectRedirect } from "@/shared/lib/fleet/paneInject";
 import * as invoker from "@/shared/lib/core/safeInvoke";
 
 const ESC = String.fromCharCode(27);

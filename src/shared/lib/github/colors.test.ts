@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { avatarColor, AVATAR_PALETTE, GH_OPTION_COLORS } from "./colors";
+import { avatarColor, AVATAR_PALETTE, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
 
 describe("avatarColor", () => {
   it("is deterministic and always a palette member", () => {

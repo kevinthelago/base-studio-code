@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseIssuesFile, validateIssues, renderIssueBody, issueTree, subIssueLinks, type PlanIssue } from "./planIssues";
+import { parseIssuesFile, validateIssues, renderIssueBody, issueTree, subIssueLinks, type PlanIssue } from "@/features/planner/issues/planIssues";
 
 const issue = (p: Partial<PlanIssue>): PlanIssue => ({
   ref: "F1", title: "Do the thing", acceptance: [], owns: [], dependsOn: [], labels: [], ...p,

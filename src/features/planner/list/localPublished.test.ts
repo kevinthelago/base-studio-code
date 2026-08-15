@@ -1,7 +1,7 @@
 // #2445 — the local published inventory: published hubs render offline; GitHub records overlay.
 import { describe, it, expect } from "vitest";
-import { buildLocalPublished } from "./localPublished";
-import type { LocalProjectLite } from "./drafts";
+import { buildLocalPublished } from "@/features/planner/list/localPublished";
+import type { LocalProjectLite } from "@/features/planner/list/drafts";
 
 const hub = (key: string, title: string, published = true, updatedAt = 1): LocalProjectLite =>
   ({ key, title, hasPlan: true, updatedAt, published });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { partAroundPanel, PUSH_MARGIN, type MorphRect } from "./lib/glancePush";
+import { partAroundPanel, PUSH_MARGIN, type MorphRect } from "@/features/glance/lib/glancePush";
 import { NW, NH } from "./lib/glanceGraph";
 
 // The open terminal panel (#2534/#2662) makes room by PARTING the graph into four rigid curtains (#2671,

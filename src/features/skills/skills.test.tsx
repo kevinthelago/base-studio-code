@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { SkillsWorkspace } from "./";
 import { useAppStore } from "@/store";
 import { resetPageTabs } from "@/test/storeReset";
-import { blankSkill } from "./lib/skills";
+import { blankSkill } from "@/features/skills/lib/skills";
 
 const ROW = ".skill-row";
 

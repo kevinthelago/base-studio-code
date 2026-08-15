@@ -17,7 +17,7 @@ import { TextField } from "@/shared/ui/controls/Field";
 import { useAppStore } from "@/store";
 import {
   loadPendingLessons, confirmLesson, discardLesson, lessonToSkill, type Lesson,
-} from "./lib/lessons";
+} from "@/features/skills/lib/lessons";
 
 /** A loading placeholder shaped like a {@link LessonCard} — two text lines + a trailing action row (#2245). */
 function LessonSkeleton() {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { recordFleetSessions } from "./fleetRoster";
+import { recordFleetSessions } from "@/shared/lib/fleet/fleetRoster";
 import { bscWrite } from "@/shared/lib/core/bsc";
 
 vi.mock("@/shared/lib/core/bsc", () => ({ bscWrite: vi.fn(() => Promise.resolve()) }));

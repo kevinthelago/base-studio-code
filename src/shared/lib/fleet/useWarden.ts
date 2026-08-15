@@ -9,18 +9,18 @@
 // can't itself be steered by an injection. Mount once at the app root so it runs on any screen.
 
 import { useRef } from "react";
-import { safeInvoke } from "../core/safeInvoke";
-import { bscJson } from "../core/bsc";
-import { logsTail } from "../core/logsBridge";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
+import { logsTail } from "@/shared/lib/core/logsBridge";
 import { useLogStream } from "@/shared/hooks/useLogStream";
 import { useAppStore } from "@/store";
 import { roleCapability } from "../session/sessionRoles";
 import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "../core/llmConfig";
-import { oneShotComplete } from "../core/claudeComplete";
-import type { WorktreeChanges } from "./worktreeChanges";
-import { planWarden, parseAuditCommands, zipWorktreeChanges, wardenSweepTargets, livePaneIdsOf, type WardenSession } from "./warden";
+import { oneShotComplete } from "@/shared/lib/core/claudeComplete";
+import type { WorktreeChanges } from "@/shared/lib/fleet/worktreeChanges";
+import { planWarden, parseAuditCommands, zipWorktreeChanges, wardenSweepTargets, livePaneIdsOf, type WardenSession } from "@/shared/lib/fleet/warden";
 import { buildJudgePrompt, parseJudgeVerdict, selectForJudging } from "./wardenJudge";
-import { completedWorkerPanes, doneIssueRefs } from "./streamCompletion";
+import { completedWorkerPanes, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { log } from "../core/log";
 

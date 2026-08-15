@@ -9,8 +9,8 @@ import {
   PRIMITIVE_NAMES,
   VALIDATION_COVERAGE,
   type GeneralNode,
-} from "./generalNode";
-import { UI_KIT } from "../manifest";
+} from "@/shared/ui/spec/generalNode";
+import { UI_KIT } from "@/shared/ui/manifest";
 
 describe("the vocabulary is derived from the manifest (#3485)", () => {
   it("covers every primitive, so adding one to the manifest needs no edit here", () => {

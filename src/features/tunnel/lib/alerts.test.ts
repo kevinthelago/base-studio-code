@@ -6,7 +6,7 @@ import {
   coordAlerts, promptAlerts, gateReadyAlert, plannerWaitingAlert,
   foldAlerts, alertPushFields, ALERT_INBOX_CAP,
   type AlertEvent,
-} from "./alerts";
+} from "@/features/tunnel/lib/alerts";
 
 const coordState = (over: Partial<CoordState> = {}): CoordState => ({ ...emptyCoordState(), ...over });
 

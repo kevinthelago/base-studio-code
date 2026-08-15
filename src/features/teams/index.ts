@@ -9,16 +9,16 @@ export { TeamsPanel } from "./TeamsPanel";
 export { TeamsCanvas, OrgLegend, type Selection } from "./TeamsCanvas";
 export { TeamsInspector } from "./TeamsInspector";
 export { FormChip, FormLane } from "./components";
-export { createOrgSlice, type OrgSlice } from "./store";
+export { createOrgSlice, type OrgSlice } from "@/features/teams/store";
 export {
   positionDisplay, positionComms, tierChips, formColor, formArrow, hueColor, ROLE_META,
   type PositionDisplay, type CommSummary,
-} from "./lib/orgView";
+} from "@/features/teams/lib/orgView";
 export { nodeBox, edgeGeometry, autoLayout, NODE_SIZE, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
 // `anchor` lives in the shared graph core since #2418 (org's copy was byte-identical); `clampZoom`
 // was dead vs useGraphViewport's clamping and was dropped.
 export { anchor } from "@/shared/lib/graph/edgePath";
-export { detectPools, collapseOrg, poolSubgraph, type Pool, type CollapsedOrg } from "./lib/orgPools";
+export { detectPools, collapseOrg, poolSubgraph, type Pool, type CollapsedOrg } from "@/features/teams/lib/orgPools";
 export {
   BUILTIN_ORGS, RELATIONSHIP_ARCHETYPES, COMMUNICATION_FORMS,
   makeBuiltinOrgs, reconcileOrgs, blankOrg, orgSlug, orgIssues, deriveCommunication,

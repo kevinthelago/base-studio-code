@@ -10,18 +10,18 @@ import type { AppStore } from "@/store/types";
 import type { ComponentRecord, Kit } from "./lib/model";
 import type { ComponentBuildStatus, RuntimeStateCategory, ComponentScanResult } from "./lib/componentScan";
 import type { PreviewState } from "./lib/componentPreview";
-import type { KitConsumer, KitChange, Dispatch } from "./lib/propagation";
+import type { KitConsumer, KitChange, Dispatch } from "@/features/designs/lib/propagation";
 import type { SeedNotice } from "./lib/seedRefresh";
-import type { DesignDirective } from "./lib/designerQueue";
-import { DEFAULT_MAX_TURNS, DRIVER, DESIGNER } from "./lib/designerLoopDrive";
+import type { DesignDirective } from "@/features/designs/lib/designerQueue";
+import { DEFAULT_MAX_TURNS, DRIVER, DESIGNER } from "@/features/designs/lib/designerLoopDrive";
 import { bsc, bscRun } from "@/shared/lib/core/bsc";
-import { kitUsageId, makeChange, planPropagation, dispatchKey } from "./lib/propagation";
+import { kitUsageId, makeChange, planPropagation, dispatchKey } from "@/features/designs/lib/propagation";
 import { SEED_COMPONENTS, SEED_KITS, planComponentRestamp, reconcileComponents, reconcileKits } from "./lib/seed";
 import { applyStamps } from "./lib/seedRefresh";
 import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "./lib/themes";
 import { loadComponents, loadComponentsGraph, loadKits, pushComponent, stampComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
-import { loadThemes, pushTheme, dropTheme, loadVariants } from "./lib/themeBridge";
-import { loadKitUsage, pushKitUsage, dropKitUsage } from "./lib/kitUsageBridge";
+import { loadThemes, pushTheme, dropTheme, loadVariants } from "@/features/designs/lib/themeBridge";
+import { loadKitUsage, pushKitUsage, dropKitUsage } from "@/features/designs/lib/kitUsageBridge";
 import { setActiveKitThemes, applyVariantsToRoot, applyContributionsToRoot, applyAnimationsToRoot, kitAnimations, type DesignContributionOverlay } from "@/shared/ui/kit";
 
 /** Merge fresh kit-change dispatches into the queue, deduped by `dispatchKey` — shared by the two

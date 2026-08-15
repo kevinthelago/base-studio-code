@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { armedSummary } from "./format";
+import { armedSummary } from "@/features/automations/format";
 
 const a = (armed: boolean, nextRunAt: number | null) => ({ armed, nextRunAt });
 

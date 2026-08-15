@@ -4,7 +4,7 @@ import {
   shouldFocus, FOCUS_TARGETS, DEFAULT_FOCUS_TARGET, focusTargetLabel,
   AUTO_FOCUS_MODES, DEFAULT_AUTO_FOCUS_MODE, autoFocusModeLabel,
   type QueuedPane,
-} from "./focusQueue";
+} from "@/app/console/lib/focusQueue";
 
 const p = (tab: number, pane: number): QueuedPane => ({ tab, pane });
 

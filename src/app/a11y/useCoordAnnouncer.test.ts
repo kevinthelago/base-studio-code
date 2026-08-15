@@ -11,7 +11,7 @@ vi.mock("@/shared/lib/a11y/announcer", () => ({ announce: h.announceMock }));
 vi.mock("@/shared/lib/fleet/useCoordLog", () => ({ useCoordLog: () => ({ state: h.coordState }) }));
 vi.mock("@/features/tunnel", () => ({ coordAlerts: (s: typeof h.coordState) => s.alerts }));
 
-import { useCoordAnnouncer } from "./useCoordAnnouncer";
+import { useCoordAnnouncer } from "@/app/a11y/useCoordAnnouncer";
 
 const alerts = (...a: { id: string; kind: string; text: string }[]) => ({ alerts: a });
 

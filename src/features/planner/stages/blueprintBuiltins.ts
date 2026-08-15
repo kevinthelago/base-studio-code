@@ -7,7 +7,7 @@
 import { overlayGlob } from "@/shared/lib/core/configOverrides";
 import type {
   SectionDef, BlueprintStage, Blueprint, BlueprintDef,
-} from "./blueprintTypes";
+} from "@/features/planner/stages/blueprintTypes";
 
 // ── ids ──────────────────────────────────────────────────────────────────────
 let _id = 0;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildWorkerScope, buildWorkerUiThemeBlock, toWorkerUiPairing } from "./workerScope";
-import type { AgentStream } from "./planFleet";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
 
 const stream = (over: Partial<AgentStream> = {}): AgentStream => ({
   id: "auth-ui",

@@ -18,16 +18,16 @@ export { SecurityGraphHost } from "./SecurityGraphHost";
 // Re-exported for tests + back-compat: the pane-profile picker + app-session label
 // helpers used to live here; they moved to ./AssignmentsTab and ./lib/appSession (#1643).
 export { ProfileSelect } from "./AssignmentsTab";
-export { appSessionTag, appSessionOpenLabel, appReachNote } from "./lib/appSession";
+export { appSessionTag, appSessionOpenLabel, appReachNote } from "@/features/security/lib/appSession";
 
 // #1545: public API for cross-feature consumers (planner, app/console, tunnel projector).
 export { type AgentProfile, type Tier, type ToolKey, type ConsoleSession, type ConsolePane, APP_ROLES, PROFILES } from "./lib/agentProfiles";
-export { resolveProfileSettings } from "./lib/profileEnforcement";
-export { parseAuditLog, type AuditRecord } from "./lib/auditLog";
+export { resolveProfileSettings } from "@/features/security/lib/profileEnforcement";
+export { parseAuditLog, type AuditRecord } from "@/features/security/lib/auditLog";
 // #3754: the tunnel `security` projection derives its consoles + audit display rows the SAME way the
 // desktop Security page does — one source of truth for the pane→console join and the allow/ask/block verdict.
-export { deriveConsoles } from "./lib/consoleModel";
-export { buildAuditRows, type AuditDisplayRow } from "./lib/auditRows";
+export { deriveConsoles } from "@/features/security/lib/consoleModel";
+export { buildAuditRows, type AuditDisplayRow } from "@/features/security/lib/auditRows";
 
 
 // The Agents SCREEN is not here — it is the `securitypage` RECORD, mounted by `SecurityGraphHost`,

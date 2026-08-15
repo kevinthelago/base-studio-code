@@ -5,7 +5,7 @@ import {
   deriveDataModel, migrationActive, dataModelSignals, downstreamImpact, proposeFromPitch,
   scanEntities, scanEdges, aggregatePlatform, isMultiSource, connectorColor,
   type DeclaredSource, type SourceConfig, type PlatformScanView,
-} from "./sourceConfig";
+} from "@/features/planner/lib/sourceConfig";
 import { checkDataModel } from "@/features/planner/data/dataModel";
 
 const src = (over: Partial<DeclaredSource>): DeclaredSource => ({ uid: "u", connectorId: "quickbase", status: "declared", fields: {}, ...over });

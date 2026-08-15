@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { loadDoneAudit } from "./workerAudit";
+import { loadDoneAudit } from "@/shared/lib/fleet/workerAudit";
 
 beforeEach(() => vi.clearAllMocks());
 

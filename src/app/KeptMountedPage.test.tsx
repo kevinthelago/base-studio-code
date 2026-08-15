@@ -4,7 +4,7 @@
 // live PTY survives a tab switch instead of being torn down — the Algorithms Librarian regression (#2827).
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { KeptMountedPage } from "./KeptMountedPage";
+import { KeptMountedPage } from "@/app/KeptMountedPage";
 
 describe("KeptMountedPage", () => {
   it("does not mount its children until first activated", () => {

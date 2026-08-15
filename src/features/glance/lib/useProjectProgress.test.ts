@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { openIssueKeys } from "./useProjectProgress";
+import { openIssueKeys } from "@/features/glance/lib/useProjectProgress";
 
 // #4052 — the OPEN-ISSUES half of the `modifying` health state. The whole point of this state is that
 // it means something, so what must NOT light up matters as much as what must.

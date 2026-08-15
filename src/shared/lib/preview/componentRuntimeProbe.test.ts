@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { looksLikeModuleLoadFailure } from "./componentRuntimeProbe";
+import { looksLikeModuleLoadFailure } from "@/shared/lib/preview/componentRuntimeProbe";
 
 // The iframe grab (createElement + srcdoc + postMessage) isn't exercised under jsdom — it's
 // runtime-verified in the app. What's unit-tested here is the PURE guard that keeps the scan from

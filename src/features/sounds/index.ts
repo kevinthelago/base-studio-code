@@ -4,16 +4,16 @@ export { SoundsWorkspace } from "./SoundsWorkspace";
 // both copies coexist under the record<->file parity guard.
 export { SoundsGraphHost } from "./SoundsGraphHost";
 export { BUILTIN_KITS, STARTER_KIT, mergeKits } from "./lib/soundKits";
-export { loadKits, pushKit, dropKit } from "./lib/soundBridge";
+export { loadKits, pushKit, dropKit } from "@/features/sounds/lib/soundBridge";
 export { playCue, compileCue, voiceDuration, type CompiledCue, type CompiledVoice } from "./lib/synth";
 export {
   validateKit, SOUND_CATEGORIES, CATEGORY_LABEL,
   type Primitive, type Voice, type Cue, type SoundKit, type SoundCategory, type Envelope,
-} from "./lib/soundDescriptor";
+} from "@/features/sounds/lib/soundDescriptor";
 // Cross-graph composition (#3117) — the sound-graph NodeLookup another pillar composes into its resolver,
 // and the self-contained cue-player emit its preview vendors.
-export { soundNodeLookup } from "./lib/crossGraphAdapter";
-export { cuePlayerModule } from "./lib/cuePlayerModule";
+export { soundNodeLookup } from "@/features/sounds/lib/crossGraphAdapter";
+export { cuePlayerModule } from "@/features/sounds/lib/cuePlayerModule";
 // Consumer runtime (#3082, P4a) — opt-in app notification sounds voicing fleet coord events.
-export { useNotificationSounds } from "./useNotificationSounds";
-export { coordEventCue, cuesForLines, type NotifyCue } from "./lib/notifyCues";
+export { useNotificationSounds } from "@/features/sounds/useNotificationSounds";
+export { coordEventCue, cuesForLines, type NotifyCue } from "@/features/sounds/lib/notifyCues";

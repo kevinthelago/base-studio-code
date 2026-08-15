@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { TreeView } from "./TreeView";
-import type { TreeFrame } from "../../lib/trace";
+import type { TreeFrame } from "@/features/algorithms/lib/trace";
 
 const frame = (over: Partial<TreeFrame>): TreeFrame => ({
   structure: "tree",

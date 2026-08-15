@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { compileAnimationsCss, applyAnimationsToRoot, kitAnimations, animClassName, type AnimationDef } from "./animations";
+import { compileAnimationsCss, applyAnimationsToRoot, kitAnimations, animClassName, type AnimationDef } from "@/shared/ui/kit/animations";
 
 const fade: AnimationDef = {
   kit: "react-ui",

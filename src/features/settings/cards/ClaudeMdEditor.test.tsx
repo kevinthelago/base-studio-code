@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ClaudeMdEditor } from "./ClaudeMdEditor";
+import { ClaudeMdEditor } from "@/features/settings/cards/ClaudeMdEditor";
 
 describe("ClaudeMdEditor", () => {
   it("renders the header, target label, and the instructions value", () => {

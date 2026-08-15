@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   MANIFEST_VERSION, wrapExtension, validateManifest, parseManifest,
   encodeShareCode, decodeShareCode,
-} from "./manifest";
+} from "@/features/planner/lib/gist/manifest";
 
 describe("extension manifest envelope (#598)", () => {
   it("wraps a payload with the current envelope version + omits empty meta", () => {

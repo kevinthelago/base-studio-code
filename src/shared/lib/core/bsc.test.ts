@@ -1,7 +1,7 @@
 // The `bsc` bridge helper (#2114) — degrade-gracefully JSON parse + fire-and-forget.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { bsc, bscJson, bscRun, bscWrite } from "./bsc";
+import { bsc, bscJson, bscRun, bscWrite } from "@/shared/lib/core/bsc";
 
 describe("bsc bridge (#2114)", () => {
   beforeEach(() => {

@@ -6,11 +6,11 @@
 // change — `AppStore` still `extends` the per-feature slice interfaces exactly as before.
 export * from "./types/github";
 export * from "./types/perf";
-export * from "./types/log";
+export * from "@/store/types/log";
 export * from "./types/console";
 export * from "./types/shell";
-export * from "./types/llm";
+export * from "@/store/types/llm";
 export * from "./types/projects";
 export * from "./types/plan";
 export * from "./types/session";
-export * from "./types/appStore";
+export * from "@/store/types/appStore";

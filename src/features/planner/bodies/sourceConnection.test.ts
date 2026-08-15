@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { defaultSourceConfig, newDeclaredSource, type SourceConfig } from "../lib/sourceConfig";
-import { useSourceConnection } from "./sourceConnection";
+import { defaultSourceConfig, newDeclaredSource, type SourceConfig } from "@/features/planner/lib/sourceConfig";
+import { useSourceConnection } from "@/features/planner/bodies/sourceConnection";
 
 // The hook is store-backed (planSourceConfig keyed by projectId). patchSource reads the latest
 // config from the store, so persist must actually write it back. Reset the slice between tests.

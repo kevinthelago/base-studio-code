@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { GLANCE_NODE_MOTION_CSS, GLANCE_NODE_ANIM_CLASSES, ensureGlanceNodeMotion } from "./glanceNodeMotion";
+import { GLANCE_NODE_MOTION_CSS, GLANCE_NODE_ANIM_CLASSES, ensureGlanceNodeMotion } from "@/features/glance/glanceNodeMotion";
 import { GLANCE_NODE_ANIMATIONS } from "@/shared/ui/kit/glanceNodeAnimations";
 
 describe("glance-node motion is authored DATA (#4032)", () => {

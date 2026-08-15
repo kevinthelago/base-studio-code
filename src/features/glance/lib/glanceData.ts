@@ -5,7 +5,7 @@
 import sampleGraphEmbedded from "@data/glance/sample-graph.json";
 import type { GRawNode, GRawEdge, GRole, GHealth, GActivity } from "./glanceGraph";
 import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId, architectNodeId, ownedByEdgeId } from "./glanceGraph";
-import { isProjectContract, type ProjectLink } from "./projectLinks";
+import { isProjectContract, type ProjectLink } from "@/features/glance/lib/projectLinks";
 // Cross-feature types only, via the barrel (#1309 boundary): the consumer index (`kitUsage`) whose
 // (projectKey, kitId) edges the kit nodes are built from, plus the kit→library `requires` roll-up
 // (`resolveKitLibraryRefs`, #3133) the caller resolves and hands in as plain data.

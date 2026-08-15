@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isPathConfined, isConfigProtected, isUnderHarvestRoot } from "./fsConfine";
+import { isPathConfined, isConfigProtected, isUnderHarvestRoot } from "@/shared/lib/session/fsConfine";
 
 describe("isPathConfined", () => {
   const root = "/c/dev/repo";

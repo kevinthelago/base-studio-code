@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { teamRoleStreams, SEEDABLE_TEAM_ROLES } from "./teamFleet";
+import { teamRoleStreams, SEEDABLE_TEAM_ROLES } from "@/features/planner/fleet/teamFleet";
 import type { Persona } from "@/features/personas";
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
-import type { BlueprintTeam } from "../stages/blueprintTypes";
+import type { BlueprintTeam } from "@/features/planner/stages/blueprintTypes";
 import type { Position } from "@/features/teams";
 
 const persona = (id: string, role: SessionRole, name = id): Persona => ({

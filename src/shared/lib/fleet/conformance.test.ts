@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkConformance, effectiveDeniedCommands, isAppSanctioned, type StreamAnchor, type SessionActivity } from "./conformance";
+import { checkConformance, effectiveDeniedCommands, isAppSanctioned, type StreamAnchor, type SessionActivity } from "@/shared/lib/fleet/conformance";
 import { roleCapability } from "../session/sessionRoles";
 import { DEFAULT_FLOW, type AgentFlow } from "@/features/planner/fleet/agentFlow";
 

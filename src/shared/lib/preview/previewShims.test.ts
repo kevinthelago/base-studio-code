@@ -10,7 +10,7 @@ import {
   PREVIEW_CSP,
   previewCspMeta,
   PREVIEW_SHIM_NAMESPACE,
-} from "./previewShims";
+} from "@/shared/lib/preview/previewShims";
 
 /** Reconstruct `makeStub` from the helper source the generated ESM stub inlines, so we can exercise the
  *  exact black-hole value a stubbed import binds to. */

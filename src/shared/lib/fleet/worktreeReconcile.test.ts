@@ -1,7 +1,7 @@
 // #3614 — the boot reconciliation that heals the fleet split-brain: a worker whose worktree was
 // reclaimed by the boot-GC is marked ENDED (done) rather than relaunched into a deleted directory.
 import { describe, it, expect, vi } from "vitest";
-import { worktreeChecks, reclaimedWorkerEnd, reconcileMissingWorktrees } from "./worktreeReconcile";
+import { worktreeChecks, reclaimedWorkerEnd, reconcileMissingWorktrees } from "@/shared/lib/fleet/worktreeReconcile";
 
 describe("worktreeChecks — which fleet workers to probe (#3614)", () => {
   const streams = {

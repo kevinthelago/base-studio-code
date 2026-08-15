@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { timeAgo, timeAgoShort, timeAgoMs, loginColor, hueFor, truncate, slugify, fmtClock, dayKey } from "./format";
+import { timeAgo, timeAgoShort, timeAgoMs, loginColor, hueFor, truncate, slugify, fmtClock, dayKey } from "@/shared/lib/core/format";
 
 describe("timeAgo", () => {
   const at = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();

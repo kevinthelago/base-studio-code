@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildSectionConfirmMessage, buildSectionSkipMessage,
   scriptDocRelpath,
-} from "./planningSession";
+} from "@/features/planner/session/planningSession";
 
 describe("buildSectionConfirmMessage", () => {
   it("references the section title and instructs to continue", () => {

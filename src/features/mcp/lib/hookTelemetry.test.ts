@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseHookLog, aggregateHookTelemetry } from "./hookTelemetry";
+import { parseHookLog, aggregateHookTelemetry } from "@/features/mcp/lib/hookTelemetry";
 
 const NOW = new Date("2026-06-15T12:00:00");
 const day = (offset: number, h = 10) => new Date(2026, 5, 15 - offset, h).getTime(); // `offset` days ago

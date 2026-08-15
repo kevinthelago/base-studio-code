@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { KitRenderer } from "./KitRenderer";
-import { validateGeneralNode } from "./generalNode";
-import { demoSpec } from "./demoSpec";
+import { validateGeneralNode } from "@/shared/ui/spec/generalNode";
+import { demoSpec } from "@/shared/ui/spec/demoSpec";
 
 describe("KitRenderer", () => {
   // The reference spec is what an agent copies, so "it renders" is not enough — it must also pass the

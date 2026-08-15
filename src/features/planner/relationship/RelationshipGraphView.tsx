@@ -9,7 +9,7 @@
 import {
   EDGE_KIND_META, ARTIFACT_COLOR, ROLE_COLOR, hardStyle, restOpacity, computeSpotlight,
   type RelationshipGraph, type RelFocus, type RelStream,
-} from "./relationshipGraph";
+} from "@/features/planner/relationship/relationshipGraph";
 
 const PAD = 16, LH = 58, TOP = 30, NH = 30;
 const LABEL_X = 14;   // left inset of the label text

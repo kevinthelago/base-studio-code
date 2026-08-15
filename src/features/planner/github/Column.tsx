@@ -5,7 +5,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Box } from "@/shared/ui/layout/Box";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { IssueCard } from "./IssueCard";
-import type { BoardColumn, BoardIssue } from "./projectBoard.types";
+import type { BoardColumn, BoardIssue } from "@/features/planner/github/projectBoard.types";
 
 export function Column({
   col, issues, onIssueClick,

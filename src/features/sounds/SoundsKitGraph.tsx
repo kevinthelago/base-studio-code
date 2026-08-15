@@ -5,7 +5,7 @@
 import { useMemo } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
-import { NODE_W, NODE_H, type SoundGraph, type SoundLayout } from "./lib/soundGraph";
+import { NODE_W, NODE_H, type SoundGraph, type SoundLayout } from "@/features/sounds/lib/soundGraph";
 
 interface EdgeGeom { id: string; d: string; arrow: string; labelX: number; labelY: number }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scanText, scanArtifacts, type InjectionCategory } from "./injectionScan";
+import { scanText, scanArtifacts, type InjectionCategory } from "@/shared/lib/security/injectionScan";
 
 const cats = (text: string): InjectionCategory[] => [...new Set(scanText(text).map((f) => f.category))].sort();
 

@@ -1,5 +1,5 @@
 import { fnv1a32hex } from "./hash";
-import type { CanonicalFile, PlanManifest } from "./types";
+import type { CanonicalFile, PlanManifest } from "@/features/planner/lib/plannerCore/types";
 
 /** Build a manifest from a list of canonical files (order-independent). */
 export function buildManifest(projectId: string, files: CanonicalFile[]): PlanManifest {

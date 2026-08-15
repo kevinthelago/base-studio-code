@@ -3,7 +3,7 @@ import {
   emptyAssignments,
   scopeKey,
   resolveStartupPrompt,
-} from "./assignments";
+} from "@/shared/lib/session/assignments";
 
 const P1 = "proj-one";
 const WEB = "acme/web";

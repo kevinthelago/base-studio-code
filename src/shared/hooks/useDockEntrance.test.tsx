@@ -2,7 +2,7 @@
 // to completion in one tick, so we can assert the whole size sweep.
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { useDockEntrance } from "./useDockEntrance";
+import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
 
 beforeAll(() => {
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => { cb(0); return 0; });

@@ -4,7 +4,7 @@ import {
   loadShellKind,
   saveShellKind,
   DEFAULT_SHELL,
-} from "./shellConfig";
+} from "@/shared/lib/core/shellConfig";
 
 describe("coerceShellKind", () => {
   it("accepts known shell kinds", () => {

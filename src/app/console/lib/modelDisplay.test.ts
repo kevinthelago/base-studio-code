@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toModelId, prettyModel } from "./modelDisplay";
+import { toModelId, prettyModel } from "@/app/console/lib/modelDisplay";
 
 describe("toModelId", () => {
   it("maps Claude transcript ids to the menu's ModelId", () => {

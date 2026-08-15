@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { gistUpdateAvailable } from "./blueprintCatalog";
+import { gistUpdateAvailable } from "@/features/planner/blueprints/blueprintCatalog";
 
 // (The paste-URL `ImportModal` was removed with the gist-import modals in #3802 — its coverage went
 // with it; the not-yet-downloaded gist flow now lives in CloudBlueprints.test.tsx. The gist-freshness

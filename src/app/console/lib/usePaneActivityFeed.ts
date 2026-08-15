@@ -18,7 +18,7 @@
 import { useEffect, useRef } from "react";
 import { logsPaneActivity } from "@/shared/lib/core/logsBridge";
 import { useLogStream } from "@/shared/hooks/useLogStream";
-import { needsAttention, type PaneActivity } from "./paneActivity";
+import { needsAttention, type PaneActivity } from "@/app/console/lib/paneActivity";
 import { useAppStore } from "@/store";
 import { log } from "@/shared/lib/core/log";
 

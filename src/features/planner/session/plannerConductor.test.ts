@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nextInjection, isStepDelivered, flattenPrompt, activeStagePrompt, type ConductorState, type DeliverySignals } from "./plannerConductor";
+import { nextInjection, isStepDelivered, flattenPrompt, activeStagePrompt, type ConductorState, type DeliverySignals } from "@/features/planner/session/plannerConductor";
 import { mkStage } from "../stages/blueprints";
 
 const sig = (over: Partial<DeliverySignals> = {}): DeliverySignals => ({

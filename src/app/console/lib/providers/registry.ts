@@ -1,8 +1,8 @@
-import type { ConsoleProvider } from "./types";
+import type { ConsoleProvider } from "@/app/console/lib/providers/types";
 import { claudeProvider } from "@/app/console/lib/providers/providers/claude";
 import { geminiProvider } from "@/app/console/lib/providers/providers/gemini";
 import { codexProvider } from "@/app/console/lib/providers/providers/codex";
-import { aiderProvider } from "./providers/aider";
+import { aiderProvider } from "@/app/console/lib/providers/providers/aider";
 import { ollamaProvider } from "@/app/console/lib/providers/providers/ollama";
 import { amazonQProvider } from "@/app/console/lib/providers/providers/amazonq";
 import { bscAgentProvider } from "@/app/console/lib/providers/providers/bscAgent";

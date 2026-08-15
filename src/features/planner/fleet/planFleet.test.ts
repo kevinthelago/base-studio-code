@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseFleetFile, withDerivedStreamIssues } from "./planFleet";
-import { DEFAULT_FLOW } from "./agentFlow";
+import { parseFleetFile, withDerivedStreamIssues } from "@/features/planner/fleet/planFleet";
+import { DEFAULT_FLOW } from "@/features/planner/fleet/agentFlow";
 
 describe("withDerivedStreamIssues (#2615 — a worker launches with its real issues, not a placeholder)", () => {
   const streams = [{ id: "api", issues: [] }, { id: "ui", issues: ["#9"] }, { id: "docs", issues: [] }];

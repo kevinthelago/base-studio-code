@@ -4,8 +4,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { StreamSharedDeps } from "@/features/planner/bodies/SharedDependencies";
-import type { Agent } from "../pane/projectPane.types";
-import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
+import type { Agent } from "@/features/planner/pane/projectPane.types";
+import type { PlanDependency, DependencyRegistry } from "@/features/planner/issues/dependencies";
 
 // Reads only id/name/repo/color off each agent.
 const agent = (id: string, repo: string, color = "#7c93ff"): Agent =>

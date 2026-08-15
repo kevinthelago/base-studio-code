@@ -5,7 +5,7 @@
 // that finished its lane read `idle` (live but quiet) or `off` (session reclaimed) — the same words a
 // node with nothing to do reports, which is how "idle won against completed".
 import { describe, it, expect } from "vitest";
-import { applyFleetLiveStatus } from "./lib/agentStall";
+import { applyFleetLiveStatus } from "@/features/glance/lib/agentStall";
 import type { GRawNode } from "./lib/glanceGraph";
 
 const node = (id: string, progress?: { done: number; total: number }): GRawNode =>

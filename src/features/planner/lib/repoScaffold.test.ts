@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveTopics, buildReadme, communityFiles } from "./repoScaffold";
+import { deriveTopics, buildReadme, communityFiles } from "@/features/planner/lib/repoScaffold";
 
 describe("deriveTopics (#848)", () => {
   it("extracts stack topics from prose, lowercase-hyphenated", () => {

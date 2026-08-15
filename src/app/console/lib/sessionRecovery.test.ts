@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { openPaneIds, reconcileSessions, type DiscoveredSession, type ReconcileTab } from "./sessionRecovery";
+import { openPaneIds, reconcileSessions, type DiscoveredSession, type ReconcileTab } from "@/app/console/lib/sessionRecovery";
 
 const sess = (paneId: string, status: string, extra: Partial<DiscoveredSession> = {}): DiscoveredSession => ({
   paneId, sources: ["ledger"], status, ...extra,

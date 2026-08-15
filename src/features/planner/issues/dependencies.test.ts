@@ -4,7 +4,7 @@ import {
   mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, buildWorkerDependencyBlock,
   groupDependenciesBySource, sharedRepoDependencies, unlockedSharedRepos,
   type PlanDependency, type DependencyRegistry,
-} from "./dependencies";
+} from "@/features/planner/issues/dependencies";
 
 describe("sharedRepoDependencies (#1429 — Streams pane per-stream view)", () => {
   const registries: Record<string, DependencyRegistry> = {

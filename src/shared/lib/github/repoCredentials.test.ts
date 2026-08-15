@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { repoFromGitHubPath, resolveGithubToken, tokenForRepo } from "./repoCredentials";
+import { repoFromGitHubPath, resolveGithubToken, tokenForRepo } from "@/shared/lib/github/repoCredentials";
 
 describe("repoFromGitHubPath", () => {
   it("extracts owner/name from a repo-scoped path", () => {

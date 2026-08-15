@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   STUDIO_IDS, STUDIO_SESSIONS, STUDIO_INIT_CMD,
   STUDIO_RESUME_LOG, isStudioId, studioForPaneId, studioDetached,
-} from "./studioSessions";
-import { studioPageShowing } from "../useStudioPageShowing";
+} from "@/features/studio-sessions/lib/studioSessions";
+import { studioPageShowing } from "@/features/studio-sessions/useStudioPageShowing";
 import { isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
 import { restrictedRoleCommands, isRestrictedRole, roleCapability, roleDeniedTools } from "@/shared/lib/session/sessionRoles";
 import { BUILTIN_PERSONAS } from "@/features/personas";

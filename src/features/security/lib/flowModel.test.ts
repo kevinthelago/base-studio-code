@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { flowSummary, depColor } from "./flowModel";
+import { flowSummary, depColor } from "@/features/security/lib/flowModel";
 import type { BlockedView, Waiter } from "@/shared/lib/fleet/coordination";
 
 const view = (over: Partial<BlockedView>): BlockedView => ({

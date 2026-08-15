@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { StreamsBody } from "./StreamsBody";
-import type { Agent } from "../pane/projectPane.types";
+import type { Agent } from "@/features/planner/pane/projectPane.types";
 import type { ProjectPaneData } from "../pane/projectPaneData";
 
 const flow = { autonomy: "continuous", push: "auto-PR", gate: "soft" };

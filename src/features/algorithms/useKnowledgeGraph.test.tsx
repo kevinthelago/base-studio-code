@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
 const loadGraph = vi.fn();
-vi.mock("./lib/graphBridge", () => ({ loadGraph: () => loadGraph() }));
+vi.mock("@/features/algorithms/lib/graphBridge", () => ({ loadGraph: () => loadGraph() }));
 
-import { useKnowledgeGraph } from "./useKnowledgeGraph";
+import { useKnowledgeGraph } from "@/features/algorithms/useKnowledgeGraph";
 import { KNOWLEDGE } from "./lib/knowledge";
 
 describe("useKnowledgeGraph (#2856)", () => {

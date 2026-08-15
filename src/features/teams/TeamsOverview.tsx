@@ -8,7 +8,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { IconBox } from "@/shared/ui/data/IconBox";
 import { onEnterOrSpace } from "@/shared/ui/a11y";
-import { teamsGrid, teamStats } from "./lib/teamsLayout";
+import { teamsGrid, teamStats } from "@/features/teams/lib/teamsLayout";
 import type { Team } from "./lib/team";
 import type { Persona } from "@/features/personas";
 import "./teams.css";

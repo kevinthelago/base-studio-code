@@ -1,7 +1,7 @@
 // The JSX outline scanner (#4169) — it is a LEXICAL approximation, so what it must get right is pinned
 // here: the shapes real page sources are written in, and the shapes that look like JSX and are not.
 import { describe, it, expect } from "vitest";
-import { outlineJsx, outlinePaths, countNodes } from "./jsxOutline";
+import { outlineJsx, outlinePaths, countNodes } from "@/shared/lib/runtime/shadow/jsxOutline";
 
 describe("outlineJsx", () => {
   it("builds the nesting, not just a tag list", () => {

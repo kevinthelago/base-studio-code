@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "./paneSelect";
+import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "@/app/console/lib/paneSelect";
 
 describe("resolvePaneFromBuffer", () => {
   it("maps a single digit to a 0-based index", () => {

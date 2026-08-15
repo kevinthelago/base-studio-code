@@ -12,28 +12,28 @@
 // from the impl's STORED code in the preview sandbox (`shared/lib/preview/`, #3177), so the librarian
 // authors visualizations as data — no per-algorithm app change.
 
-import type { Frame } from "../../lib/trace";
+import type { Frame } from "@/features/algorithms/lib/trace";
 import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
-import { classifyKind, type Classifiable } from "../../lib/classifyKind";
-import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm, runStackAlgorithm, runTreeAlgorithm, runScene, type GraphInput } from "../../lib/tracer";
+import { classifyKind, type Classifiable } from "@/features/algorithms/lib/classifyKind";
+import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm, runStackAlgorithm, runTreeAlgorithm, runScene, type GraphInput } from "@/features/algorithms/lib/tracer";
 import { runInSandbox } from "./vizSandbox";
 import type { VizRun } from "./vizProgram";
-import type { RendererRegistry } from "../registry";
+import type { RendererRegistry } from "@/features/algorithms/viz/registry";
 import { ArrayView } from "../renderers/ArrayView";
 import { MatrixView } from "../renderers/MatrixView";
 import { GraphView } from "../renderers/GraphView";
 import { StackView } from "../renderers/StackView";
 import { ScalarView } from "../renderers/ScalarView";
 import { TreeView } from "../renderers/TreeView";
-import { parseSortInput } from "./sort";
-import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "./sorts";
-import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./matrixTransforms";
-import { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./graphAlgos";
-import { SEARCH_PROGRAMS, parseSearchInput, searchToText, type SearchInput, type SearchProgram } from "./searches";
-import { SCALAR_PROGRAMS, parseScalarInput, parseScalarSeed, scalarToText, scalarSeedToText, type ScalarProgram } from "./scalarAlgos";
-import { STACK_PROGRAMS, parseStackText, stackToText, type StackProgram } from "./stackAlgos";
-import { TREE_PROGRAMS, parseTreeInput, treeToText, type TreeProgram } from "./treeAlgos";
-import { SCENE_PROGRAMS, type SceneProgram } from "./scenes";
+import { parseSortInput } from "@/features/algorithms/viz/examples/sort";
+import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "@/features/algorithms/viz/examples/sorts";
+import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "@/features/algorithms/viz/examples/matrixTransforms";
+import { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "@/features/algorithms/viz/examples/graphAlgos";
+import { SEARCH_PROGRAMS, parseSearchInput, searchToText, type SearchInput, type SearchProgram } from "@/features/algorithms/viz/examples/searches";
+import { SCALAR_PROGRAMS, parseScalarInput, parseScalarSeed, scalarToText, scalarSeedToText, type ScalarProgram } from "@/features/algorithms/viz/examples/scalarAlgos";
+import { STACK_PROGRAMS, parseStackText, stackToText, type StackProgram } from "@/features/algorithms/viz/examples/stackAlgos";
+import { TREE_PROGRAMS, parseTreeInput, treeToText, type TreeProgram } from "@/features/algorithms/viz/examples/treeAlgos";
+import { SCENE_PROGRAMS, type SceneProgram } from "@/features/algorithms/viz/examples/scenes";
 
 /** A ready-to-play visualization: a stable default factory (the inline preview) + the per-structure
  *  renderers the player dispatches to + an editable INPUT seam (#3199) that powers the "your input" field. */

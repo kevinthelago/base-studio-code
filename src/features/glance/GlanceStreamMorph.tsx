@@ -12,10 +12,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Box } from "@/shared/ui/layout/Box";
-import { clampCell } from "./lib/morphGrid";
+import { clampCell } from "@/features/glance/lib/morphGrid";
 import { GlanceChatDock, type DockPlan } from "./GlanceChatDock";
 import { NW, NH } from "./lib/glanceGraph";
-import type { MorphRect } from "./lib/glancePush";
+import type { MorphRect } from "@/features/glance/lib/glancePush";
 
 /** Grow/shrink duration (ms) — the reduced-motion fallback for onClose. Keep in sync with the
  *  `.glance-card` transition in glance.css. */

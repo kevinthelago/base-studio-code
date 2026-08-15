@@ -2,11 +2,11 @@
 // was ever registered for the `stack` structure, so the renderer was reachable only inside a scene. These
 // cover the two algorithms that open it: the logic is right, and the FRAMES are the algorithm's own calls.
 import { describe, it, expect } from "vitest";
-import { TracedStack, runStackAlgorithm } from "../../lib/tracer";
-import type { StackFrame } from "../../lib/trace";
+import { TracedStack, runStackAlgorithm } from "@/features/algorithms/lib/tracer";
+import type { StackFrame } from "@/features/algorithms/lib/trace";
 import {
   balancedParens, postfixEval, parseParensInput, parsePostfixInput, parseStackText, STACK_PROGRAMS, stackToText,
-} from "./stackAlgos";
+} from "@/features/algorithms/viz/examples/stackAlgos";
 
 /** Run a program over a fresh stack and hand back both the verdict and the recorded frames. */
 function trace<T>(algo: (s: TracedStack) => T): { result: T; frames: StackFrame[] } {

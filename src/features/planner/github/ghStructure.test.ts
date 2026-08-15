@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildGhStructure, type Section } from "./ghStructure";
+import { buildGhStructure, type Section } from "@/features/planner/github/ghStructure";
 
 // Minimal section factory — only `k` and `content` matter to the structure.
 const sec = (k: Section["k"], content = ""): Section => ({

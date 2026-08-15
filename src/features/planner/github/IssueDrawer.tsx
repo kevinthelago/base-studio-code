@@ -10,7 +10,7 @@ import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Text } from "@/shared/ui/typography/Text";
 import { Box } from "@/shared/ui/layout/Box";
 import { Button } from "@/shared/ui/controls/Button";
-import type { BoardIssue } from "./projectBoard.types";
+import type { BoardIssue } from "@/features/planner/github/projectBoard.types";
 import { truncate } from "@/shared/lib/core/format";
 
 // ── Issue drawer ──────────────────────────────────────────────────────────────

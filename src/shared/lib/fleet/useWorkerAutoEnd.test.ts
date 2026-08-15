@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { useWorkerAutoEnd } from "./useWorkerAutoEnd";
+import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 
 // Fleet workers carry STABLE pane ids (#1176): `<projectKey>:<streamId>`, not positional `t{n}p{n}`.

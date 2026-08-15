@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   buildSoundGraph, layoutSoundGraph, playableCueForNode, nodeTier,
   primNodeId, voiceNodeId, cueNodeId,
-} from "./soundGraph";
+} from "@/features/sounds/lib/soundGraph";
 import { STARTER_KIT } from "./soundKits";
-import type { SoundKit } from "./soundDescriptor";
+import type { SoundKit } from "@/features/sounds/lib/soundDescriptor";
 
 describe("buildSoundGraph (#3077)", () => {
   const g = buildSoundGraph(STARTER_KIT);

@@ -6,11 +6,11 @@
 // (`graphViewMotion.ts`). Like the other renderers, it only stamps state — never writes animation CSS.
 import { useEffect } from "react";
 import { Box } from "@/shared/ui/layout/Box";
-import { markStateAttrs, nodeOpStateAttrs, roleStateAttrs } from "../../lib/binding";
-import type { GraphFrame } from "../../lib/trace";
-import type { StructureRenderer } from "../registry";
+import { markStateAttrs, nodeOpStateAttrs, roleStateAttrs } from "@/features/algorithms/lib/binding";
+import type { GraphFrame } from "@/features/algorithms/lib/trace";
+import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import { GRAPH_VIZ_ANIM_CLASSES, ensureGraphViewMotion } from "@/features/algorithms/viz/renderers/graphViewMotion";
-import { layoutFor, GRAPH_VIEW as VIEW } from "./graphLayout";
+import { layoutFor, GRAPH_VIEW as VIEW } from "@/features/algorithms/viz/renderers/graphLayout";
 import "./graphView.css";
 
 const NODE_R = 19;

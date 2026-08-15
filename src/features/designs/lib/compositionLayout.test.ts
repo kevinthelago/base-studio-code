@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   layoutComposition, buildComposesEdges, selectionNeighborhood, nodeTier, byTier, DEFAULT_METRICS, NODE_W, NODE_H,
-} from "./compositionLayout";
+} from "@/features/designs/lib/compositionLayout";
 import type { GraphEdge } from "@/shared/lib/graph/types";
 import type { ComponentRecord, Role } from "./model";
 

@@ -15,7 +15,7 @@ import { CollapsibleCard } from "@/features/planner/bodies/collapsibleCard";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import type { FleetHandlers } from "./focusedHandlers";
+import type { FleetHandlers } from "@/features/planner/bodies/focusedHandlers";
 
 export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
   data?: ProjectPaneData;

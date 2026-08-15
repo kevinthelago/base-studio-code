@@ -17,7 +17,7 @@ import { bscJson } from "@/shared/lib/core/bsc";
 import { bscJsonShared } from "@/shared/lib/core/bscShared";
 import { parseFleetFile, withDerivedStreamIssues, type FleetPlan } from "@/features/planner/fleet/planFleet";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
-import { resolveClosedRefs } from "./fleetIssueState";
+import { resolveClosedRefs } from "@/features/glance/lib/fleetIssueState";
 import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { buildWorkerScope } from "@/features/planner/fleet/workerScope";

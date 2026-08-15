@@ -11,7 +11,7 @@ import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Text } from "@/shared/ui/typography/Text";
 import { Box } from "@/shared/ui/layout/Box";
 import { Button } from "@/shared/ui/controls/Button";
-import type { FlatIssue } from "./issuesModel";
+import type { FlatIssue } from "@/features/planner/github/issues/issuesModel";
 
 export function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void }) {
   const [ask, setAsk] = useState("");

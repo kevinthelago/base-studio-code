@@ -12,13 +12,13 @@ vi.mock("../list/ProjectsHeader", () => ({
 }));
 
 // Drive the data hook directly; keep the real QueryBanner.
-vi.mock("./useActiveProjectGithub", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./useActiveProjectGithub")>();
+vi.mock("@/features/planner/github/useActiveProjectGithub", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/features/planner/github/useActiveProjectGithub")>();
   return { ...actual, useActiveProjectGithub: vi.fn() };
 });
 
 import { Insights } from "./Insights";
-import { useActiveProjectGithub } from "./useActiveProjectGithub";
+import { useActiveProjectGithub } from "@/features/planner/github/useActiveProjectGithub";
 
 const mockHook = vi.mocked(useActiveProjectGithub);
 

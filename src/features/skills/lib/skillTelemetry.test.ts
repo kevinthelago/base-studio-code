@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSkillLog, aggregateSkillTelemetry, skillStatusKpis, type SkillStats } from "./skillTelemetry";
+import { parseSkillLog, aggregateSkillTelemetry, skillStatusKpis, type SkillStats } from "@/features/skills/lib/skillTelemetry";
 
 const _stat = (over: Partial<SkillStats>): SkillStats =>
   ({ invocations: 0, success: 0, successRate: 0, today: 0, trend: [], ...over });

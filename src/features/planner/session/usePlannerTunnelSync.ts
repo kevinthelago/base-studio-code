@@ -21,10 +21,10 @@ import {
 } from "@/features/tunnel";
 import { usePlannerMessages } from "@/features/planner/session/usePlannerMessages";
 import { SKIPPED_KEY, FEATURES_KEY } from "../stages/planTopics";
-import { FLEET_KEY } from "../fleet/planFleet";
-import { DEPENDENCIES_KEY } from "../issues/dependencies";
-import { buildPlanBoardPayload } from "./planBoardProjection";
-import type { Stage } from "../stages/focusedPlan";
+import { FLEET_KEY } from "@/features/planner/fleet/planFleet";
+import { DEPENDENCIES_KEY } from "@/features/planner/issues/dependencies";
+import { buildPlanBoardPayload } from "@/features/planner/session/planBoardProjection";
+import type { Stage } from "@/features/planner/stages/focusedPlan";
 
 export interface PlannerTunnelSyncOpts {
   effectiveProjectId: string;

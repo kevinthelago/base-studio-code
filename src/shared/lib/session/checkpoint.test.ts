@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { composeStartupPrompt, checkpointDocRelpath, CHECKPOINT_HEADING } from "./checkpoint";
+import { composeStartupPrompt, checkpointDocRelpath, CHECKPOINT_HEADING } from "@/shared/lib/session/checkpoint";
 
 describe("composeStartupPrompt", () => {
   it("returns the base unchanged when there's no checkpoint", () => {

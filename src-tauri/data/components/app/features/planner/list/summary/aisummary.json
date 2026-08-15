@@ -1,10 +1,4 @@
 {
-  "id": "aisummary",
-  "name": "AISummary",
-  "kitId": "base-studio-code",
-  "role": "composite",
-  "srcText": "import { Card } from \"@/shared/ui/data/Card\";\nimport { Button } from \"@/shared/ui/controls/Button\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Spacer } from \"@/shared/ui/layout/Spacer\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport function AISummary() {\r\n  return (\r\n    <Card style={{\r\n      padding: \"14px 18px\",\r\n      background: \"linear-gradient(135deg, color-mix(in oklch, var(--accent), transparent 88%), var(--bg-panel) 60%)\",\r\n      border: \"1px solid var(--accent-dim)\",\r\n    }}>\r\n      <Row gap={12} align=\"stretch\">\r\n        <Box className=\"mono\" bg=\"linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))\" radius={7} style={{\r\n          flexShrink: 0, width: 28, height: 28,\r\n          color: \"var(--on-accent)\", fontWeight: 700, fontSize: 13,\r\n          display: \"flex\", alignItems: \"center\", justifyContent: \"center\",\r\n        }}>C</Box>\r\n        <Box style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: \"var(--fg-muted)\" }}>\r\n          <Row gap={8} align=\"baseline\" style={{ marginBottom: 4 }}>\r\n            <Text mono size={11} tone=\"accent\" style={{ textTransform: \"uppercase\", letterSpacing: \".06em\" }}>\r\n              weekly digest · claude\r\n            </Text>\r\n            <Box as=\"span\" className=\"hint\">generated 02:00 today · run #14</Box>\r\n            <Spacer />\r\n            <Button variant=\"ghost\" style={{ height: 22, fontSize: 10 }}>regenerate</Button>\r\n          </Row>\r\n          <p style={{ margin: 0 }}>\r\n            Portfolio is on track — active projects are progressing against open milestones.\r\n            Cross-project activity shows consistent momentum. Check upcoming milestones\r\n            and velocity trends below for details.\r\n          </p>\r\n        </Box>\r\n      </Row>\r\n    </Card>\r\n  );\r\n}",
-  "src": "src/features/planner/list/summary/AISummary.tsx",
   "composes": [
     "Card",
     "Row",
@@ -13,5 +7,12 @@
     "Spacer",
     "Button"
   ],
-  "folder": "features/planner/list/summary"
+  "folder": "features/planner/list/summary",
+  "id": "aisummary",
+  "kitId": "base-studio-code",
+  "name": "AISummary",
+  "provides": "@/features/planner/list/summary/AISummary",
+  "role": "composite",
+  "src": "src/features/planner/list/summary/AISummary.tsx",
+  "srcText": "import { Card } from \"@/shared/ui/data/Card\";\nimport { Button } from \"@/shared/ui/controls/Button\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Spacer } from \"@/shared/ui/layout/Spacer\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport function AISummary() {\r\n  return (\r\n    <Card style={{\r\n      padding: \"14px 18px\",\r\n      background: \"linear-gradient(135deg, color-mix(in oklch, var(--accent), transparent 88%), var(--bg-panel) 60%)\",\r\n      border: \"1px solid var(--accent-dim)\",\r\n    }}>\r\n      <Row gap={12} align=\"stretch\">\r\n        <Box className=\"mono\" bg=\"linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))\" radius={7} style={{\r\n          flexShrink: 0, width: 28, height: 28,\r\n          color: \"var(--on-accent)\", fontWeight: 700, fontSize: 13,\r\n          display: \"flex\", alignItems: \"center\", justifyContent: \"center\",\r\n        }}>C</Box>\r\n        <Box style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: \"var(--fg-muted)\" }}>\r\n          <Row gap={8} align=\"baseline\" style={{ marginBottom: 4 }}>\r\n            <Text mono size={11} tone=\"accent\" style={{ textTransform: \"uppercase\", letterSpacing: \".06em\" }}>\r\n              weekly digest · claude\r\n            </Text>\r\n            <Box as=\"span\" className=\"hint\">generated 02:00 today · run #14</Box>\r\n            <Spacer />\r\n            <Button variant=\"ghost\" style={{ height: 22, fontSize: 10 }}>regenerate</Button>\r\n          </Row>\r\n          <p style={{ margin: 0 }}>\r\n            Portfolio is on track — active projects are progressing against open milestones.\r\n            Cross-project activity shows consistent momentum. Check upcoming milestones\r\n            and velocity trends below for details.\r\n          </p>\r\n        </Box>\r\n      </Row>\r\n    </Card>\r\n  );\r\n}"
 }

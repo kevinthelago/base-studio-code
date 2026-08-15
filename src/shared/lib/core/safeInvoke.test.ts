@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { safeInvoke, fireInvoke } from "./safeInvoke";
+import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
 
 describe("safeInvoke", () => {
   beforeEach(() => vi.mocked(invoke).mockReset());

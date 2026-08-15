@@ -3,8 +3,8 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { MatrixView } from "./MatrixView";
-import { cellOpStateAttrs } from "../../lib/binding";
-import type { MatrixFrame } from "../../lib/trace";
+import { cellOpStateAttrs } from "@/features/algorithms/lib/binding";
+import type { MatrixFrame } from "@/features/algorithms/lib/trace";
 
 const frame: MatrixFrame = {
   structure: "matrix",

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getRenderer } from '../registry';
 import type { RendererHandle } from '../registry';
-import type { RenderableChunk } from '../types';
+import type { RenderableChunk } from '@/features/planner/preview/types';
 
 vi.mock('../previewBundle', () => ({
   DEFAULT_IMPORTMAP: { three: 'https://esm.sh/three@0.169.0' },

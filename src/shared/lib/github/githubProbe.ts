@@ -17,8 +17,8 @@
 // cache-hits too — the steady-state cost past the TTL is one light probe per window, and the
 // heavy POST only when something actually changed.
 
-import { githubGraphql } from "./github";
-import { minimalToGhProject, type GhProjectShape, type MinimalGhProject } from "./githubState";
+import { githubGraphql } from "@/shared/lib/github/github";
+import { minimalToGhProject, type GhProjectShape, type MinimalGhProject } from "@/shared/lib/github/githubState";
 
 /** One board as the probes carry it — identity + version cursor only. */
 export interface ProbeNode {

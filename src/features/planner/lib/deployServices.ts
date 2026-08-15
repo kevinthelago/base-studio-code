@@ -9,7 +9,7 @@
 // `services.length > 0 && services.every(serviceReady)`; the pane shows "N of M repos deploy-ready".
 
 import { repoShortName } from "@/shared/lib/core/projectPaths";
-import type { ReadinessCheck } from "./readiness";
+import type { ReadinessCheck } from "@/features/planner/lib/readiness";
 import { platform, WORKLOAD, type Workload } from "./deployPlatforms";
 import {
   defaultEnvs, defaultPipeline, defaultRelease, defaultHealth,

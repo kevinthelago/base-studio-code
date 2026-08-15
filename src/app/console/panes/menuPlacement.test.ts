@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { placeMenu, type BoxRect } from "./menuPlacement";
+import { placeMenu, type BoxRect } from "@/app/console/panes/menuPlacement";
 
 const VIEWPORT = { width: 1000, height: 800 };
 const MENU = { width: 220, height: 300 };
