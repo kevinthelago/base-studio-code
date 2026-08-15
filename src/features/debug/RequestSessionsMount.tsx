@@ -118,6 +118,18 @@ export function RequestSessionsMount() {
         });
       }
 
+      // A CLOSE means a request just resolved, and a resolved `bsc` request means the session very
+      // likely rebuilt the binary. Re-stage it and retire the warm child so the fix is LIVE for the next
+      // `bsc` call — the last mile of "a designer's request gets processed live", which without this
+      // ends in a manual app restart no matter how fast the fix was.
+      //
+      // Fire-and-forget: a failed reload must not stop the mount reconciling. It is also safe to call
+      // when nothing was rebuilt (staging is an idempotent copy) and in a release bundle (a no-op), so
+      // it does not need to know WHY the session closed.
+      if (plan.close.length) {
+        void safeInvoke<[string, string | null][]>("reload_sidecars", undefined, [], () => {});
+      }
+
       if (plan.start.length) {
         // Seed the launch fields TerminalView reads: the charter naming THIS request (baked as
         // --initial-message) and paneContinue=false (#3497 — never resume; each session is bound to one
