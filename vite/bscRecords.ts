@@ -9,7 +9,7 @@
 // once: a RELATIVE import (`./layout/Spacer`) never reaches a plugin matching `@/…`; `tsc` has no such
 // plugin API at all; and vitest loads a different config so the plugin was never installed. A file on
 // disk is the one thing all three already agree on — see `scripts/emit-records.mjs`.
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Plugin } from "vite";
 import { emitRecords } from "../scripts/emit-records.mjs";
@@ -29,8 +29,14 @@ export function bscRecords(opts: { repoRoot: string }): Plugin {
   const { repoRoot } = opts;
   const records = resolve(repoRoot, ".bsc-records");
 
+  // The EXACT path first, then the extension probes. Without the empty entry a specifier that already
+  // carries its extension — `@/app/lazyWorkspaces.tsx?raw`, once the query is split off — matched nothing,
+  // because every candidate appended a second extension (`lazyWorkspaces.tsx.tsx`). `isFile` rather than
+  // `existsSync` for that first probe: a bare `@/features/planner` names a DIRECTORY that exists, and
+  // returning it would resolve the barrel to a folder.
+  const isFile = (p: string) => { try { return statSync(p).isFile(); } catch { return false; } };
   const hit = (base: string) =>
-    [".tsx", ".ts", "/index.tsx", "/index.ts"].map((e) => base + e).find(existsSync) ?? null;
+    ["", ".tsx", ".ts", "/index.tsx", "/index.ts"].map((e) => base + e).find(isFile) ?? null;
 
   return {
     name: "bsc-records",
@@ -50,7 +56,16 @@ export function bscRecords(opts: { repoRoot: string }): Plugin {
     // Ahead of the `@` alias, so the specifier is still in `@/…` form and matches exactly instead of
     // guessing which extension the alias resolved to.
     enforce: "pre",
-    resolveId(source) {
+    resolveId(rawSource) {
+      // CARRY THE QUERY THROUGH. `@/app/lazyWorkspaces.tsx?raw` is a real import — `shadowPages.test.ts`
+      // reads a module's SOURCE to check every workspace is catalogued — and the suffix defeated the
+      // extension probe: `lazyWorkspaces.tsx?raw` + `.tsx` matches nothing, so the hook declined, the
+      // alias rewrote it to a path under `src/`, and the file was gone. Vite resolves `<path>?raw` fine
+      // once the path is right, so the fix is to split the query off, resolve the bare specifier, and
+      // re-attach it. `?url`, `?worker` and the rest come along for free.
+      const q = rawSource.indexOf("?");
+      const source = q === -1 ? rawSource : rawSource.slice(0, q);
+      const query = q === -1 ? "" : rawSource.slice(q);
       // BOTH forms, and the second is the one that actually fires. `resolve.alias` is itself an
       // `enforce: "pre"` plugin and wins the race, so by the time this hook runs the specifier is no
       // longer `@/shared/ui/layout/Spacer` — it is the aliased path `<repo>/src/shared/ui/layout/Spacer`,
@@ -68,7 +83,8 @@ export function bscRecords(opts: { repoRoot: string }): Plugin {
       if (!rel) return null;
       // The file wins while it exists. Installing this plugin is therefore a no-op until a deletion.
       if (hit(join(repoRoot, "src", ...rel))) return null;
-      return hit(join(records, ...rel));
+      const found = hit(join(records, ...rel));
+      return found && found + query;
     },
   };
 }

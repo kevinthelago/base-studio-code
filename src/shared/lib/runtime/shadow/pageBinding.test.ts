@@ -2,7 +2,7 @@
 // registry work (step 3) is driven from, and the predicate step 2's resolution chain will gate on, so it
 // has to mirror what the loader actually does: vendor graph siblings, require everything else.
 import { describe, it, expect } from "vitest";
-import { parseImports, analyzeBindings, type SiblingResolver } from "./pageBinding";
+import { parseImports, analyzeBindings, type SiblingResolver } from "@/shared/lib/runtime/shadow/pageBinding";
 
 describe("parseImports", () => {
   it("reads every import form, with the names taken from each module", () => {

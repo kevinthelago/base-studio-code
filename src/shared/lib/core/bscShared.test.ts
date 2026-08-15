@@ -5,7 +5,7 @@
 // 57.9s). A cache that returned the right answer while still spawning would pass a data test and fix
 // nothing.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { bscJsonShared, clearBscShared } from "./bscShared";
+import { bscJsonShared, clearBscShared } from "@/shared/lib/core/bscShared";
 import * as bscMod from "@/shared/lib/core/bsc";
 
 /** A `bscJson` that resolves IMMEDIATELY — the spy is the spawn counter. Resolving without a timer keeps

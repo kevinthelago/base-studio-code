@@ -9,7 +9,7 @@
 import type * as Esbuild from "esbuild-wasm";
 import wasmURL from "esbuild-wasm/esbuild.wasm?url";
 import importmapEmbedded from "@data/ui/preview-importmap.json";
-import { collapseSegments } from "./importPath";
+import { collapseSegments } from "@/shared/lib/preview/importPath";
 import { PREVIEW_SHIM_NAMESPACE, shimModuleFor, scanStubImports, previewCspMeta } from "./previewShims";
 import { isPlatformModule } from "./platformModules";
 

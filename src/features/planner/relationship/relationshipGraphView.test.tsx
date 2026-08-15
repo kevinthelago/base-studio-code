@@ -5,7 +5,7 @@ import { RelationshipInspector } from "@/features/planner/relationship/Relations
 import {
   buildRelationshipGraph, computeSpotlight, hardLabel, restOpacity, runtimeNote,
   type RelStream, type RelationshipArtifact, type AgentRelationship,
-} from "./relationshipGraph";
+} from "@/features/planner/relationship/relationshipGraph";
 
 const STREAMS: RelStream[] = [
   { id: "schema", role: "worker", repo: "core", owns: ["packages/schema/**"] },

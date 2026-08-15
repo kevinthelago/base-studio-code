@@ -14,16 +14,16 @@
 // new dependency.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 // — glance's own domain: the hooks + pure derivations the cockpit is thin over —
-import * as AgentStall from "./lib/agentStall";
+import * as AgentStall from "@/features/glance/lib/agentStall";
 import * as ExpandNode from "@/features/glance/lib/expandNode";
 import * as FleetPlanProgress from "@/features/glance/lib/fleetPlanProgress";
 import * as GlanceData from "./lib/glanceData";
 import * as GlanceFleet from "@/features/glance/lib/glanceFleet";
 import * as GlanceGraph from "./lib/glanceGraph";
 import * as GlancePush from "@/features/glance/lib/glancePush";
-import * as MorphGrid from "./lib/morphGrid";
+import * as MorphGrid from "@/features/glance/lib/morphGrid";
 import * as ResumeProject from "./lib/resumeProject";
-import * as StreamProgress from "./lib/streamProgress";
+import * as StreamProgress from "@/features/glance/lib/streamProgress";
 import * as StudioProject from "@/features/glance/lib/studioProject";
 import * as UseFleetHeld from "./lib/useFleetHeld";
 import * as UseFleetIssueState from "@/features/glance/lib/useFleetIssueState";

@@ -3,7 +3,7 @@
 // bindings; this covers the model itself, including the two decisions the two former copies had
 // diverged on: where an item with no folder goes, and whose ordering wins.
 import { describe, it, expect } from "vitest";
-import { buildFolderTree, folderItemCount, UNGROUPED_KEY, UNGROUPED_LABEL } from "./folderTree";
+import { buildFolderTree, folderItemCount, UNGROUPED_KEY, UNGROUPED_LABEL } from "@/shared/lib/core/folderTree";
 
 interface Rec { id: string; folder?: string }
 const r = (id: string, folder?: string): Rec => ({ id, folder });

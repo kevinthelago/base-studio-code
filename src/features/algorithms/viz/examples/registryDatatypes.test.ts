@@ -11,13 +11,13 @@
 // #2760) joins the DATATYPES table below and inherits the same guarantees.
 import { describe, it, expect } from "vitest";
 import { programVizForImpl, resolveVizExample } from "./registry";
-import { STACK_PROGRAMS } from "./stackAlgos";
-import { TREE_PROGRAMS } from "./treeAlgos";
-import { GRAPH_PROGRAMS } from "./graphAlgos";
-import { MATRIX_PROGRAMS } from "./matrixTransforms";
-import { SCALAR_PROGRAMS } from "./scalarAlgos";
-import { SEARCH_PROGRAMS } from "./searches";
-import { TRACE_PROGRAMS } from "./sorts";
+import { STACK_PROGRAMS } from "@/features/algorithms/viz/examples/stackAlgos";
+import { TREE_PROGRAMS } from "@/features/algorithms/viz/examples/treeAlgos";
+import { GRAPH_PROGRAMS } from "@/features/algorithms/viz/examples/graphAlgos";
+import { MATRIX_PROGRAMS } from "@/features/algorithms/viz/examples/matrixTransforms";
+import { SCALAR_PROGRAMS } from "@/features/algorithms/viz/examples/scalarAlgos";
+import { SEARCH_PROGRAMS } from "@/features/algorithms/viz/examples/searches";
+import { TRACE_PROGRAMS } from "@/features/algorithms/viz/examples/sorts";
 
 /** Every structure that has selectable programs, and the renderer key each example must carry. */
 const DATATYPES = [

@@ -6,7 +6,7 @@ import {
   deleteProjectScoped,
   rekeyProjectScoped,
   dropProjectScoped,
-} from "./projectScopedMaps";
+} from "@/store/slices/projectScopedMaps";
 
 // Build a fake store where every registered map has an entry for two projects (A, B), and every
 // repo-scoped map has one entry per project (`<key>::<repo>`). Non-registered fields are irrelevant.

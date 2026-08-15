@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCoverage, parseResolve, buildDesignerQueue } from "./designerQueue";
+import { parseCoverage, parseResolve, buildDesignerQueue } from "@/features/designs/lib/designerQueue";
 
 describe("parseCoverage (#3311)", () => {
   it("parses a real-shaped coverage report and drops malformed rows", () => {

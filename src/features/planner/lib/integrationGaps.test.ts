@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { integrationGaps } from "@/features/planner/lib/integrationGaps";
 import { BUILTIN_MCP_SERVERS, type McpServer } from "@/features/mcp/lib/mcpServers";
-import type { DeclaredSource } from "./sourceConfig";
+import type { DeclaredSource } from "@/features/planner/lib/sourceConfig";
 
 // The always-on built-in MCP servers (Research + Compliance, #1196) are global + enabled by
 // construction, so `resolveMcpServers` returns them for every project and they always classify as

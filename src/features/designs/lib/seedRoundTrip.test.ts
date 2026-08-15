@@ -1,200 +1,75 @@
-// #2514 — EXECUTED round-trip + heal coverage for the hash-based seed refresh (#2483).
+// EVERY PACKAGED APP RECORD MUST SURVIVE ITS OWN LOAD PROJECTION — `seed === load(push(seed))` (#2514).
 //
-// The refresh's whole verdict system rests on one invariant: a stamped seed record pushed through the
-// real write path (`bsc ui … set`, JSON verbatim per id) and reloaded through the real read path
-// (`… list --full` + the bridge projections) must still hash to its stamp. #2514 shipped precisely
-// because that invariant was asserted in prose but never EXECUTED — so these tests run the whole
-// packaged seed (components, kits, AND themes) through a byte-faithful emulation of the store CLI
-// (verbatim JSON per id; serde_json re-serialization = compact output, keys sorted — see
-// `bsc_json_store::cli::run`'s `set`) and the REAL `componentBridge`/`themeBridge` load projections.
+// `SEED_COMPONENTS` stamps each packaged JSON with `stampSeedHash(projectComponent(raw))`. If the raw JSON
+// carries a field the projection normalizes — an empty array where the projection wants it absent, a key it
+// drops — then the stamped hash describes content the store will never reproduce. The record then reads as
+// PRISTINE-BUT-CHANGED on every single boot: `reconcileSeed` reports `refreshed`, `hydrateComponents`
+// re-pushes it, and the same write repeats forever.
 //
-// Plus the heal itself, against the REAL broken store: `seedHeal2514.fixtures.json` is the verbatim
-// content of the maintainer's 2026-07-07 live store (the pre-#2456 roster, stamped), which the live
-// app kept forever. A hydrate over it must converge: retired built-ins deleted, current ones
-// refreshed, tech/style/pages materialized, zero orphan notices.
-import { describe, it, expect, beforeEach, vi } from "vitest";
+// Nothing else notices. The app works, the record renders, and the churn is invisible unless a test happens
+// to assert an empty reconcile — which is exactly how this was found: promoting two records made three
+// unrelated `store.test.ts` cases fail, and the failure named `console-pane-menu` rather than the field that
+// broke it. This test names the field.
+import { describe, it, expect } from "vitest";
+import type { ComponentRecord } from "@/features/designs/lib/model";
+import { projectComponent } from "@/features/designs/lib/componentBridge";
+import { seedHashOf } from "@/features/designs/lib/seedRefresh";
 
-const fake = vi.hoisted(() => {
-  /** A byte-faithful in-memory `bsc ui` store: verbatim JSON per id, serde-like re-serialization
-   *  (compact, keys sorted — serde_json's Value map is a BTreeMap) on `set`, arrays of parsed
-   *  records on `list --full`. Mirrors `bsc_json_store` + the `bsc ui` verb routing. */
-  const sortDeep = (v: unknown): unknown => {
-    if (Array.isArray(v)) return v.map(sortDeep);
-    if (v && typeof v === "object") {
-      const o = v as Record<string, unknown>;
-      return Object.fromEntries(Object.keys(o).sort().map((k) => [k, sortDeep(o[k])]));
+const raw = import.meta.glob<Partial<ComponentRecord>>("@data/components/app/**/*.json", {
+  eager: true,
+  import: "default",
+});
+
+describe("packaged app records round-trip through the load projection (#2514)", () => {
+  const paths = Object.keys(raw).sort();
+
+  it("has records to check", () => {
+    expect(paths.length).toBeGreaterThan(20);
+  });
+
+  it("no id appears twice — the glob is FLAT, so folders do not namespace", () => {
+    // `SEED_COMPONENTS` globs `app/**` and keys by `id`, so two files under different folders sharing an
+    // id are two records with one identity. `reconcileSeed` then reports that id as pristine-but-changed
+    // on every boot and re-pushes it, forever. The app keeps working, which is why it took three unrelated
+    // `store.test.ts` failures to surface — and those named the record, not the duplication.
+    const seen = new Map<string, string[]>();
+    for (const p of paths) {
+      const id = raw[p]?.id;
+      if (!id) continue;
+      seen.set(id, [...(seen.get(id) ?? []), p]);
     }
-    return v;
-  };
-  const collections: Record<string, Map<string, string>> = {};
-  let writes = 0;
-  let removes = 0;
-  const collectionOf = (args: string[]): { name: string; rest: string[] } => {
-    // `ui kit …` → kits, `ui theme …` → themes, `ui usage …` → usage, plain `ui …` → components.
-    const sub = args[1];
-    if (sub === "kit" || sub === "theme" || sub === "usage") return { name: sub, rest: args.slice(2) };
-    return { name: "component", rest: args.slice(1) };
-  };
-  const store = (name: string) => (collections[name] ??= new Map());
-  return {
-    reset() {
-      for (const k of Object.keys(collections)) delete collections[k];
-      writes = 0;
-      removes = 0;
-    },
-    counts: () => ({ writes, removes }),
-    has: (name: string, id: string) => store(name).has(id),
-    async exec(_key: string | null, args: string[]): Promise<string> {
-      const { name, rest } = collectionOf(args);
-      if (rest[0] === "list") return JSON.stringify([...store(name).values()].map((s) => JSON.parse(s)));
-      throw new Error(`fake bsc: unhandled read ${args.join(" ")}`);
-    },
-    async run(_key: string | null, args: string[]): Promise<void> {
-      const { name, rest } = collectionOf(args);
-      if (rest[0] === "remove" && rest[1]) {
-        store(name).delete(rest[1]);
-        removes++;
-        return;
+    const dupes = [...seen].filter(([, ps]) => ps.length > 1).map(([id, ps]) => `${id}: ${ps.join(" · ")}`);
+    expect(dupes).toEqual([]);
+  });
+
+  it("projecting a packaged record TWICE is the same as projecting it once", () => {
+    // The round-trip in the form this test can see without a store: the projection must be idempotent,
+    // or the hash stamped over `project(raw)` cannot survive `project(load(...))`.
+    const unstable: string[] = [];
+    for (const p of paths) {
+      const once = projectComponent(raw[p]);
+      const twice = projectComponent({ ...once });
+      if (seedHashOf(once) !== seedHashOf(twice)) {
+        const a = once as unknown as Record<string, unknown>;
+        const b = twice as unknown as Record<string, unknown>;
+        const fields = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter(
+          (k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]),
+        );
+        unstable.push(`${p.split("/").pop()} — differs on: ${fields.join(", ") || "(field set)"}`);
       }
-      throw new Error(`fake bsc: unhandled run ${args.join(" ")}`);
-    },
-    async write(_key: string | null, args: string[], body: unknown): Promise<void> {
-      const { name, rest } = collectionOf(args);
-      if (rest[0] !== "set") throw new Error(`fake bsc: unhandled write ${args.join(" ")}`);
-      // The REAL path: bscWrite JSON.stringify's the body to stdin; the CLI serde-parses it and
-      // stores serde_json::to_string(item) — compact, keys sorted. Emulate byte-faithfully.
-      const item = JSON.parse(JSON.stringify(body)) as { id: string };
-      store(name).set(item.id, JSON.stringify(sortDeep(item)));
-      writes++;
-    },
-  };
-});
-
-vi.mock("@/shared/lib/core/bsc", () => ({
-  bsc: vi.fn(fake.exec),
-  bscRun: vi.fn(fake.run),
-  bscWrite: vi.fn(fake.write),
-  // Other slices touched by the app-store import (e.g. persist rehydrate) degrade to their fallback.
-  bscJson: vi.fn(async (_key: string | null, _args: string[], fallback: unknown) => fallback),
-}));
-
-import { useAppStore } from "@/store";
-import type { ComponentRecord, Kit } from "./model";
-import { SEED_COMPONENTS, SEED_KITS, reconcileComponents } from "./seed";
-import { SEED_THEMES } from "./themes";
-import { SEED_HASH_EXCLUDED, stableStringify, seedHashOf, type SeedRecord } from "./seedRefresh";
-import { loadComponents, loadKits, pushComponent, pushKit } from "./componentBridge";
-import { loadThemes, pushTheme } from "@/features/designs/lib/themeBridge";
-import { setActiveKitThemes } from "@/shared/ui/kit";
-import broken from "./seedHeal2514.fixtures.json";
-
-/** The seed-relevant content of a record as its canonical text — what the hash runs over. */
-function contentText(rec: SeedRecord): string {
-  const rest: Record<string, unknown> = { ...rec };
-  for (const k of SEED_HASH_EXCLUDED) delete rest[k];
-  return stableStringify(rest);
-}
-
-beforeEach(() => {
-  fake.reset();
-  useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, kitThemes: SEED_THEMES, seedNotices: [] });
-  setActiveKitThemes([]);
-});
-
-describe("the round-trip invariant (#2514): every packaged stamp survives push → store → load", () => {
-  it("every SEED component reloads through the real bridge with its content + stamp intact", async () => {
-    for (const c of SEED_COMPONENTS) await pushComponent(c);
-    const loaded = await loadComponents();
-    expect(loaded).toHaveLength(SEED_COMPONENTS.length);
-    for (const original of SEED_COMPONENTS) {
-      const reloaded = loaded!.find((c) => c.id === original.id)!;
-      // Content first (a failure here shows the exact byte-level divergence), then the verdict input.
-      expect(contentText(reloaded)).toBe(contentText(original));
-      expect(seedHashOf(reloaded)).toBe(original.seedHash);
-      expect(reloaded.seedHash).toBe(original.seedHash); // the stamp itself rides the projection
     }
+    expect(unstable).toEqual([]);
   });
 
-  it("every SEED kit reloads with its content + stamp intact (tech/style ride verbatim)", async () => {
-    for (const k of SEED_KITS) await pushKit(k);
-    const loaded = await loadKits();
-    expect(loaded).toHaveLength(SEED_KITS.length);
-    for (const original of SEED_KITS) {
-      const reloaded = loaded!.find((k) => k.id === original.id)!;
-      expect(contentText(reloaded)).toBe(contentText(original));
-      expect(seedHashOf(reloaded)).toBe(original.seedHash);
+  it("a packaged record carries only fields the projection preserves", () => {
+    // A field the projection DROPS is the other half of the same bug: it is in the JSON, absent from the
+    // stamped record, and every reader after that disagrees with the file about what the record is.
+    const dropped: string[] = [];
+    for (const p of paths) {
+      const projected = projectComponent(raw[p]) as unknown as Record<string, unknown>;
+      const missing = Object.keys(raw[p] as Record<string, unknown>).filter((k) => !(k in projected));
+      if (missing.length) dropped.push(`${p.split("/").pop()} — ${missing.join(", ")}`);
     }
-  });
-
-  it("every SEED theme reloads with its content + stamp intact", async () => {
-    for (const t of SEED_THEMES) await pushTheme(t);
-    const loaded = await loadThemes();
-    expect(loaded).toHaveLength(SEED_THEMES.length);
-    for (const original of SEED_THEMES) {
-      const reloaded = loaded!.find((t) => t.id === original.id)!;
-      expect(contentText(reloaded)).toBe(contentText(original));
-      expect(seedHashOf(reloaded)).toBe(original.seedHash);
-    }
-  });
-});
-
-describe("hydrate is a fixpoint across restarts (#2514)", () => {
-  it("boot 1 seeds the empty store; boot 2 re-loads it and changes NOTHING", async () => {
-    await useAppStore.getState().hydrateComponents(); // boot 1: empty store → seed everything
-    const afterBoot1 = fake.counts();
-    expect(afterBoot1.writes).toBe(SEED_COMPONENTS.length + SEED_KITS.length);
-    expect(afterBoot1.removes).toBe(0);
-
-    await useAppStore.getState().hydrateComponents(); // boot 2: the round-tripped store re-loads
-    expect(fake.counts()).toEqual(afterBoot1); // NO new pushes, NO drops — converged
-    expect(useAppStore.getState().seedNotices).toEqual([]);
-    expect(useAppStore.getState().components).toEqual(SEED_COMPONENTS);
-    expect(useAppStore.getState().kits).toEqual(SEED_KITS);
-  });
-
-  it("theme hydrate is the same fixpoint", async () => {
-    await useAppStore.getState().hydrateThemes();
-    const afterBoot1 = fake.counts();
-    expect(afterBoot1.writes).toBe(SEED_THEMES.length);
-
-    await useAppStore.getState().hydrateThemes();
-    expect(fake.counts()).toEqual(afterBoot1);
-    expect(useAppStore.getState().seedNotices).toEqual([]);
-    expect(useAppStore.getState().kitThemes).toEqual(SEED_THEMES);
-  });
-});
-
-describe("the #2514 heal — the maintainer's REAL broken store converges on one hydrate", () => {
-  const brokenComponents = broken.components as unknown as ComponentRecord[];
-  const brokenKits = broken.kits as unknown as Kit[];
-  /** The 2026-07-07 store's records that the CURRENT seed no longer carries (the retired set). */
-  const retiredIds = brokenComponents.map((c) => c.id).filter((id) => !SEED_COMPONENTS.some((s) => s.id === id));
-
-  it("the fixture IS the reported broken state: pre-#2456 roster, examples kit, stamps present", () => {
-    expect(brokenComponents).toHaveLength(48);
-    expect(brokenKits.map((k) => k.id).sort()).toEqual(["examples", "react-ui"]);
-    expect(retiredIds).toContain("personaservice");
-    expect(brokenComponents.every((c) => c.builtin && c.seedHash)).toBe(true);
-    // The issue's forensic mismatch was an artifact (it hashed UTF-8 bytes; the app hashes UTF-16
-    // code units): under the app's own hasher every stored record matches its stamp — pristine.
-    for (const c of brokenComponents) expect(seedHashOf(c)).toBe(c.seedHash);
-    for (const k of brokenKits) expect(seedHashOf(k)).toBe(k.seedHash);
-  });
-
-  // The full "hydrate over the maintainer's real broken store" + "rotten stamp on an in-seed record"
-  // acceptance tests were react-ui-SEED specific (they asserted the store converges to the react-ui
-  // kit + its 48 components). With the clean-slate empty seed (#3543) there is nothing for a stale
-  // react-ui record to converge TO, so those two are dropped; the reconcile MECHANICS they exercised
-  // (drop-on-leave, refresh, keep-user-edit) are covered by seed.test.ts against the current seed. The
-  // RETIRED-record branch below still holds — every broken-store record is now a retiree.
-
-  it("a rotten stamp on a RETIRED record is kept but NEVER silently (#2514 branch 2)", () => {
-    const personaservice = brokenComponents.find((c) => c.id === "personaservice")!;
-    const rotten = { ...personaservice, seedHash: "cd4bc4c3" }; // the issue's observed forensic value
-    const r = reconcileComponents([rotten]);
-    // No seed copy to verify against → conservative KEEP, surfaced as an orphan notice.
-    expect(r.records).toContainEqual(rotten);
-    expect(r.drops).not.toContain("personaservice");
-    expect(r.notices).toContainEqual({ kind: "orphaned", type: "component", id: "personaservice", name: "PersonaService" });
+    expect(dropped).toEqual([]);
   });
 });

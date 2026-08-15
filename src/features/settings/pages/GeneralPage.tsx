@@ -11,7 +11,7 @@ import { KeyboardCard } from "../cards/KeyboardCard";
 import { AchievementsCard } from "../cards/AchievementsCard";
 import { DiagnosticsCard } from "../cards/DiagnosticsCard";
 import { SandboxDependencyCard } from "../cards/SandboxDependencyCard";
-import { ConfigBundleCard } from "../cards/ConfigBundleCard";
+import { ConfigBundleCard } from "@/features/settings/cards/ConfigBundleCard";
 import { DemoStateCard } from "../cards/DemoStateCard";
 import { StudioCard } from "../cards/StudioCard";
 import { Stack } from "@/shared/ui/layout/Stack";

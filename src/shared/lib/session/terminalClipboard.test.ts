@@ -1,7 +1,7 @@
 // Terminal clipboard (#3157) — copy-on-select + paste wiring.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Terminal } from "@xterm/xterm";
-import { attachTerminalClipboard } from "./terminalClipboard";
+import { attachTerminalClipboard } from "@/shared/lib/session/terminalClipboard";
 
 // A minimal xterm-Terminal stand-in: a real DOM element for the mouse listeners + a captured custom key
 // handler so we can fire keydowns at it and read its verdict.

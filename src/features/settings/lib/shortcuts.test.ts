@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SCREEN_HOTKEYS, SCREEN_KEY_MAP, SHORTCUT_GROUPS } from "./shortcuts";
+import { SCREEN_HOTKEYS, SCREEN_KEY_MAP, SHORTCUT_GROUPS } from "@/features/settings/lib/shortcuts";
 
 describe("shortcuts registry", () => {
   it("derives SCREEN_KEY_MAP from SCREEN_HOTKEYS (the single source)", () => {

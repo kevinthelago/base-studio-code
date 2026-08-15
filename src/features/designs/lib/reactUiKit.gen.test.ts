@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { REACT_UI_KIT, REACT_UI_COMPONENTS, REACT_UI_KIT_STORE_ID, REACT_UI_KIT_VERSION } from "./reactUiKit";
+import { REACT_UI_KIT, REACT_UI_COMPONENTS, REACT_UI_KIT_STORE_ID, REACT_UI_KIT_VERSION } from "@/features/designs/lib/reactUiKit";
 
 // The `react-ui` kit is GENERATED from the shared-UI manifest (slice 1), then COMMITTED as data
 // (#2305 slice 1b) — a self-contained, gist-distributable JSON file under src-tauri/data/components/

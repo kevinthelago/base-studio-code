@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { streamProgress, progressFraction, withStreamProgress, planDbClosedByRef } from "./streamProgress";
+import { streamProgress, progressFraction, withStreamProgress, planDbClosedByRef } from "@/features/glance/lib/streamProgress";
 import { TERMINAL_GOOD } from "@/shared/lib/fleet/workerEnd";
 import type { OwnedIssue } from "@/shared/lib/fleet/workerEnd";
 

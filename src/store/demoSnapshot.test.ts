@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { demoSnapshot, DEMO_GIST_URL } from "./demoSnapshot";
-import { DEMOABLE_KEYS, pickDemoable } from "./appState";
+import { DEMOABLE_KEYS, pickDemoable } from "@/store/appState";
 import { appStateToManifest, appStateFromManifest } from "./appStateGist";
 import { useAppStore } from ".";
 

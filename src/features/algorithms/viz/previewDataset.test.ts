@@ -1,6 +1,6 @@
 // datasetForStructure (#3439) — a sync, real dataset per structure from a canonical trace program.
 import { describe, it, expect } from "vitest";
-import { datasetForStructure } from "./previewDataset";
+import { datasetForStructure } from "@/features/algorithms/viz/previewDataset";
 
 describe("datasetForStructure (#3439)", () => {
   it("produces a real array dataset from a canonical sort program", () => {

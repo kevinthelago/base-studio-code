@@ -29,7 +29,7 @@ import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import type { GRole, GHealth, GActivity } from "./glanceGraph";
 import type { ProjectLite } from "./glanceData";
 import type { GlanceFault } from "./useGlanceFaults";
-import { projectKeyOfSession } from "./agentStall";
+import { projectKeyOfSession } from "@/features/glance/lib/agentStall";
 // #3966: the SAME durable-projects bridge the Projects page reads, so the two surfaces cannot
 // disagree about which local projects exist. Type-only + the reader; the bridge already degrades to
 // `null` when it is unreachable, which we treat as "keep the cache".

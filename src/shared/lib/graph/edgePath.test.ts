@@ -1,6 +1,6 @@
 // graphEdge (#2222, graph design-language #2221) — the shared line-type; anchor + ports routing (#2226).
 import { describe, it, expect } from "vitest";
-import { graphEdge, type EdgeBox } from "./edgePath";
+import { graphEdge, type EdgeBox } from "@/shared/lib/graph/edgePath";
 
 const A: EdgeBox = { x: 0, y: 0, w: 100, h: 40 };   // center (50,20), right border x=100
 const B: EdgeBox = { x: 200, y: 0, w: 100, h: 40 };  // center (250,20), left border x=200

@@ -5,8 +5,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
 const { fitSpy } = vi.hoisted(() => ({ fitSpy: vi.fn() }));
-vi.mock("./useGraphViewport", async (orig) => {
-  const actual = await orig<typeof import("./useGraphViewport")>();
+vi.mock("@/shared/ui/layouts/useGraphViewport", async (orig) => {
+  const actual = await orig<typeof import("@/shared/ui/layouts/useGraphViewport")>();
   return {
     ...actual,
     useGraphViewport: () => ({

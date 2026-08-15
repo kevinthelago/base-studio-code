@@ -4,7 +4,7 @@
 // and, just as importantly, the two things that would make the change worse than not doing it: a
 // specifier that resolves NOWHERE must still fail, and a component must still win a contested one.
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { resolveGraphSource } from "./graphResolver";
+import { resolveGraphSource } from "@/shared/lib/runtime/graphResolver";
 import { useAppStore } from "@/store";
 
 const SPEC = "@/app/chrome/locationCrumb";

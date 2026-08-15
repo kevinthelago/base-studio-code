@@ -8,7 +8,7 @@
 // (an error banner) instead of registering a partial/empty contribution. Silent failure is the enemy.
 import { bsc } from "@/shared/lib/core/bsc";
 import DESCRIPTOR from "@data/ui/style-descriptor.json";
-import { hueOfColor } from "./colorHue";
+import { hueOfColor } from "@/features/designs/lib/colorHue";
 
 interface DomainDescriptor {
   domain?: { group: string; tokens?: { value?: string }[] }[];

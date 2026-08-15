@@ -22,7 +22,7 @@ vi.mock("@/features/designs/lib/uiActivity", () => ({ useUiActivity: uiSpy }));
 vi.mock("./lib/useComponentScan", () => ({ useComponentScan: scanSpy }));
 
 import { DesignsWorkbench } from "./DesignsWorkbench";
-import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "./lib/reactUiKit";
+import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
 import { SEED_THEMES } from "./lib/themes";
 
 beforeEach(() => {

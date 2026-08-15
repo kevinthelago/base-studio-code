@@ -12,7 +12,7 @@ import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { SoundsKitGraph } from "./SoundsKitGraph";
 import { SoundsRail } from "./SoundsRail";
-import { SoundsInspector } from "./SoundsInspector";
+import { SoundsInspector } from "@/features/sounds/SoundsInspector";
 import { buildSoundGraph, layoutSoundGraph, playableCueForNode, NODE_W, NODE_H, type SoundNode } from "@/features/sounds/lib/soundGraph";
 import { playCue } from "./lib/synth";
 import { BUILTIN_KITS } from "./lib/soundKits";

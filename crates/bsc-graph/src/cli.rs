@@ -172,6 +172,21 @@ fn entity_ids() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// A record's `src` reduced to the module it names, so two spellings of one path compare equal.
+///
+/// The store holds both conventions — `src/shared/ui/registry.tsx` and `app/console/lib/focusQueue.ts` —
+/// because records arrived from different eras of the harvest, and Windows contributes backslashes on top.
+/// Comparing the raw strings made the stem-collision guard fire on a record whose `src` is the SAME FILE,
+/// which is the worst possible failure for a guard: it refused the honest case (re-harvesting a module
+/// over its own stale record) while still catching nothing the normalization misses. Six modules were
+/// blocked this way — `focusQueue`, `jumbleProbe`, `hashString`, `sort`, `selectionNeighborhood` — each
+/// reported as "already names a DIFFERENT module" against itself.
+fn same_module_path(src: &str) -> String {
+    let unix = src.replace('\\', "/");
+    let trimmed = unix.trim_start_matches("./");
+    trimmed.strip_prefix("src/").unwrap_or(trimmed).to_string()
+}
+
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     // Before anything reads a flag: an unknown one is an ERROR, never a silent no-op (#4154).
     reject_unknown_flags(&args)?;
@@ -515,15 +530,27 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // rename every module record already migrated and break the specifiers pointing at them.
                 let existing = crate::implementations_of(&g);
                 for c in &picked {
+                    // AN ABSENT `src` IS NOT PROOF OF SAMENESS. This used to require a non-empty `src`
+                    // before it would call anything a clash, so a CURATED library algorithm — which has
+                    // no `src` by design (`--no-src`, #4136) — could never trigger it, and a module
+                    // harvest merged straight over it. `sort.ts` was exactly that: the packaged
+                    // insertion-sort generator, silently replaced by `viz/examples/sort.ts`, with the
+                    // only symptom a duplicate id in the seed two steps later. Unknown provenance is a
+                    // reason to REFUSE and make the author say which record they mean, not to proceed.
                     let clash = existing.iter().find(|im| {
                         im.get("id").and_then(Value::as_str) == Some(c.id.as_str())
-                            && im
-                                .get("src")
-                                .and_then(Value::as_str)
-                                .is_some_and(|s| !s.is_empty() && s != c.src)
+                            && match im.get("src").and_then(Value::as_str) {
+                                Some(s) if !s.is_empty() => {
+                                    same_module_path(s) != same_module_path(&c.src)
+                                }
+                                _ => true, // no provenance: cannot prove it is the same module
+                            }
                     });
                     if let Some(im) = clash {
-                        let other = im.get("src").and_then(Value::as_str).unwrap_or_default();
+                        let other = match im.get("src").and_then(Value::as_str) {
+                            Some(s) if !s.is_empty() => s,
+                            _ => "a record with NO src (a curated algorithm, or provenance never recorded)",
+                        };
                         return Err(format!(
                             "'{}' already names a DIFFERENT module: {other}\n\
                              This harvest would overwrite it, because a module id comes from the file \
@@ -1487,5 +1514,50 @@ mod set_gate_tests {
             };
             assert!(reject_unknown_flags(&args).is_ok(), "{f} should be accepted");
         }
+    }
+}
+
+#[cfg(test)]
+mod same_module_path_tests {
+    use super::same_module_path;
+
+    /// The false positive this function exists to end: one module, two spellings of its path.
+    ///
+    /// The stem-collision guard refuses a harvest whose id already names a DIFFERENT module. Comparing
+    /// raw `src` strings made it fire on a record pointing at the SAME file — the store holds both
+    /// `src/…`-prefixed and bare paths, because records arrived from different eras of the harvest — so
+    /// re-harvesting a module over its own stale record was rejected as a collision.
+    #[test]
+    fn one_module_written_two_ways_compares_equal() {
+        for (a, b) in [
+            ("src/shared/lib/core/hashString.ts", "shared/lib/core/hashString.ts"),
+            ("./app/console/lib/focusQueue.ts", "app/console/lib/focusQueue.ts"),
+            (r"src\shared\lib\graph\selectionNeighborhood.ts", "shared/lib/graph/selectionNeighborhood.ts"),
+            ("./src/features/algorithms/viz/examples/sort.ts", "features/algorithms/viz/examples/sort.ts"),
+        ] {
+            assert_eq!(same_module_path(a), same_module_path(b), "{a} and {b} name one module");
+        }
+    }
+
+    /// ...and it must still tell two modules apart, or the fix has simply disabled the guard. These are
+    /// the REAL stem collisions the guard was written for: one id, genuinely different files.
+    #[test]
+    fn genuinely_different_modules_still_differ() {
+        for (a, b) in [
+            ("src/shared/ui/registry.tsx", "features/algorithms/viz/examples/registry.ts"),
+            ("src/store/types/plan.ts", "src/store/slices/plan.ts"),
+            ("features/planner/preview/registry.ts", "features/designs/lib/previewRegistry.ts"),
+        ] {
+            assert_ne!(same_module_path(a), same_module_path(b), "{a} and {b} are different modules");
+        }
+    }
+
+    /// Only the LEADING `src/` goes. A path with `src` further in keeps it — stripping every occurrence
+    /// would collapse two real modules onto one name, re-introducing the bug in the other direction.
+    #[test]
+    fn only_the_leading_src_segment_is_stripped() {
+        assert_eq!(same_module_path("src/features/src/thing.ts"), "features/src/thing.ts");
+        assert_eq!(same_module_path("features/src/thing.ts"), "features/src/thing.ts");
+        assert_ne!(same_module_path("src/a/src/b.ts"), same_module_path("src/a/b.ts"));
     }
 }

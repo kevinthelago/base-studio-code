@@ -474,6 +474,7 @@
   "@/store/demoSnapshot",
   "@tauri-apps/api/app",
   "@tauri-apps/api/core",
+  "@tauri-apps/api/event",
   "@tauri-apps/plugin-opener",
   "lucide-react",
   "react",

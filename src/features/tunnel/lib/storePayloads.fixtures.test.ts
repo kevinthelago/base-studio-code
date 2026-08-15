@@ -21,7 +21,7 @@ import {
 // #3760: the `plan` domain's builder lives in the planner feature (it's planner-published), reached
 // via the barrel so the harness covers plan like every other domain.
 import { buildPlanBoardPayload } from "@/features/planner";
-import { PROJECTION_INPUTS } from "./storeProjections.fixtures";
+import { PROJECTION_INPUTS } from "@/features/tunnel/lib/storeProjections.fixtures";
 import { STORE_DOMAINS } from "@/features/tunnel/lib/tunnelClient";
 
 // Resolved from cwd (repo/worktree root when vitest runs), matching the primitives.gen idiom.

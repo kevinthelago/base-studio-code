@@ -119,3 +119,25 @@ export function exportedNames(src) {
   }
   return out;
 }
+
+/**
+ * The specifiers a record REQUIRES at runtime — the one definition, shared with the guard that enforces it.
+ *
+ * This has to match `platformBoundary.test.ts` EXACTLY, because that guard is what turns red when a
+ * promoted record's import cannot resolve. A promotion tool that reads imports differently from the guard
+ * is wrong in whichever direction it differs: more permissive and it packages a record that breaks the
+ * suite; STRICTER and it silently refuses records that were always fine, which is what happened —
+ * `promote-records.mjs` had its own loose regex and blocked 170 modules on two false positives:
+ *
+ *   `import type { AppStore } from "@/store/types"` — erases at compile time and emits NO require. A
+ *   mixed `import { type A, B }` still requires, so only the whole-statement form is skipped.
+ *
+ *   the word `from` inside PROSE — `// …from "work shipped"` in a comment was read as an import of a
+ *   module named `work shipped`. Anchoring at `^` (multiline) is what fixes it: a comment continuation
+ *   does not begin a line with `import`/`export`.
+ *
+ * `export … from` IS included: esbuild compiles a re-export to the same require an import produces (#3874).
+ */
+export function runtimeImports(src) {
+  return [...new Set([...src.matchAll(/^\s*(?:import|export)\s+(?!type\s)[^"']*from\s+["']([^"']+)["']/gm)].map((m) => m[1]))];
+}

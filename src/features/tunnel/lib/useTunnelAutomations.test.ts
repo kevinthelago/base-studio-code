@@ -11,7 +11,7 @@ vi.mock("@/features/tunnel/lib/tunnelClient", () => ({
 }));
 
 import { tunnelSetAutomations, tunnelAutomationFailed } from "@/features/tunnel/lib/tunnelClient";
-import { useTunnelAutomations } from "./useTunnelAutomations";
+import { useTunnelAutomations } from "@/features/tunnel/lib/useTunnelAutomations";
 
 const handlers: Record<string, (e: { payload: unknown }) => void> = {};
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { visitNodes, collectActions } from "./specWalk";
-import { validateGeneralNode } from "./generalNode";
-import type { GeneralNode } from "./generalNode";
+import { visitNodes, collectActions } from "@/shared/ui/spec/specWalk";
+import { validateGeneralNode } from "@/shared/ui/spec/generalNode";
+import type { GeneralNode } from "@/shared/ui/spec/generalNode";
 
 const spec: GeneralNode = {
   type: "Card",

@@ -1,7 +1,7 @@
 // networkLayout (#2505) — the pure model behind NetworkPage: the shared graph stack (findBackEdges +
 // layerDag + orderLayers) over arbitrary directed input, plus the centered-row placement.
 import { describe, it, expect } from "vitest";
-import { layoutNetwork, networkEdges, NET_NODE_W, NET_NODE_H, type NetworkNodeData } from "./networkLayout";
+import { layoutNetwork, networkEdges, NET_NODE_W, NET_NODE_H, type NetworkNodeData } from "@/shared/ui/pages/networkLayout";
 
 const NODES: NetworkNodeData[] = [
   { id: "api", label: "api" },

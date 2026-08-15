@@ -21,9 +21,9 @@ import { usePageSelection } from "@/shared/ui/pages/useSelection";
 import {
   layoutNetwork, NET_NODE_W, NET_NODE_H,
   type NetworkNodeData, type NetworkEdgeData,
-} from "./networkLayout";
+} from "@/shared/ui/pages/networkLayout";
 
-export type { NetworkNodeData, NetworkEdgeData } from "./networkLayout";
+export type { NetworkNodeData, NetworkEdgeData } from "@/shared/ui/pages/networkLayout";
 
 export interface NetworkPageProps {
   /** Page title (the toolbar row). */

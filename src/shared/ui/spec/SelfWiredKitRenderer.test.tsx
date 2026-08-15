@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SelfWiredKitRenderer } from "./SelfWiredKitRenderer";
-import { validateGeneralNode } from "./generalNode";
-import type { GeneralNode } from "./generalNode";
+import { validateGeneralNode } from "@/shared/ui/spec/generalNode";
+import type { GeneralNode } from "@/shared/ui/spec/generalNode";
 
 // The <Toggle> knob's marginLeft is "auto" when ON and "2px" when OFF — a cssstyle-safe on/off signal
 // (the track's ON colour is a var() cssstyle may drop). The outer track is the first/enclosing span.

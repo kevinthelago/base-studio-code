@@ -269,6 +269,10 @@ import * as LabelChip from "@/shared/ui/data/LabelChip";       // issuecard, det
 import * as SessionFailure from "@/app/SessionFailure";        // terminalbanners
 import * as SessionReadinessBanner from "@/app/SessionReadinessBanner"; // terminalbanners
 import * as TauriApp from "@tauri-apps/api/app"; // statusbar reads the app version — bare, like @tauri-apps/api/core
+// The event API, sibling of core/app above. THIRTEEN records reach for `listen` — every log/coord/PTY
+// stream in the app is a Tauri event subscription — and each was unpromotable purely because the
+// specifier had no registration, not because anything about the module was unfit.
+import * as TauriEvent from "@tauri-apps/api/event";
 import * as UseGraphViewport from "@/shared/ui/layouts/useGraphViewport"; // GraphCanvas/Tree (#3692)
 import * as RenderProfiler from "@/shared/lib/core/renderProfiler";       // GraphCanvas (#3692)
 import * as TreeLayout from "@/shared/ui/layouts/treeLayout";             // Tree (#3692)
@@ -431,6 +435,7 @@ const PLATFORM: Record<string, unknown> = {
   "@/app/SessionFailure": SessionFailure,
   "@/app/SessionReadinessBanner": SessionReadinessBanner,
   "@tauri-apps/api/app": TauriApp,
+  "@tauri-apps/api/event": TauriEvent,
 // ── The LOGIC SURFACE a record imports (register-the-shell-logic-surface) ─────────────────────────
 // These modules STAY on disk — registration is not migration. A graph record that imports one of them
 // resolves it here instead of failing to load, which is the prerequisite for migrating the modules that

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { KitRenderer } from "./KitRenderer";
-import { validateGeneralNode } from "./generalNode";
+import { validateGeneralNode } from "@/shared/ui/spec/generalNode";
 import { demoSpec } from "@/shared/ui/spec/demoSpec";
 
 describe("KitRenderer", () => {

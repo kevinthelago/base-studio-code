@@ -12,8 +12,8 @@ export {
 } from "@/features/sounds/lib/soundDescriptor";
 // Cross-graph composition (#3117) — the sound-graph NodeLookup another pillar composes into its resolver,
 // and the self-contained cue-player emit its preview vendors.
-export { soundNodeLookup } from "./lib/crossGraphAdapter";
-export { cuePlayerModule } from "./lib/cuePlayerModule";
+export { soundNodeLookup } from "@/features/sounds/lib/crossGraphAdapter";
+export { cuePlayerModule } from "@/features/sounds/lib/cuePlayerModule";
 // Consumer runtime (#3082, P4a) — opt-in app notification sounds voicing fleet coord events.
-export { useNotificationSounds } from "./useNotificationSounds";
+export { useNotificationSounds } from "@/features/sounds/useNotificationSounds";
 export { coordEventCue, cuesForLines, type NotifyCue } from "@/features/sounds/lib/notifyCues";

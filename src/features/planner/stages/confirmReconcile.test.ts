@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reconcileConfirmations, reconcileSkips, stagesToBackfill, type ConfirmRow, type SectionState } from "./confirmReconcile";
+import { reconcileConfirmations, reconcileSkips, stagesToBackfill, type ConfirmRow, type SectionState } from "@/features/planner/stages/confirmReconcile";
 import { hashString } from "@/shared/lib/core/hashString";
 
 const row = (stage: string, content: string): ConfirmRow => ({ stage, fingerprint: hashString(content) });

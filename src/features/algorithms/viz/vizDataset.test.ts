@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { vizRunToDataset } from "./vizDataset";
+import { vizRunToDataset } from "@/features/algorithms/viz/vizDataset";
 import type { VizRun } from "./examples/vizProgram";
 
 describe("vizRunToDataset (#2940)", () => {

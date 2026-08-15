@@ -1,7 +1,7 @@
 // Register this feature's graph-platform modules at module load — so `import("@/features/settings")`
 // (what the shadow catalogue's ensurePlatform does) is what makes a record importing them resolvable.
 // Idempotent; mirrors the *GraphHost pattern for features that have one.
-import { registerSettingsPlatform } from "./graphPlatform";
+import { registerSettingsPlatform } from "@/features/settings/graphPlatform";
 
 registerSettingsPlatform();
 import { useAppStore } from "@/store";
@@ -21,7 +21,7 @@ import { McpPage } from "./pages/McpPage";
 // #1545: public API for the app shell — appearance tokens + the keybinding/hotkey model the shell's
 // boot + hotkey hooks consume (through this barrel, not settings internals).
 export { accentVars } from "@/features/settings/lib/appearance";
-export { SCREEN_HOTKEYS } from "./lib/shortcuts";
+export { SCREEN_HOTKEYS } from "@/features/settings/lib/shortcuts";
 // Re-exported so `app/runtime/appModules.ts` can REGISTER it without reaching a feature's internals
 // (#1545). The packaged `accessibilitypage` record imports it, and an unregistered specifier makes that
 // record unstorable. The registry KEY stays the deep specifier the record actually carries
@@ -30,7 +30,7 @@ export { SettingsPageHeader, SettingsSubHeader } from "@/features/settings/pages
 export {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,
-} from "./lib/keybindings";
+} from "@/features/settings/lib/keybindings";
 
 // The settings sections — the SINGLE source for the nav, the known-section guard, and the rendered
 // Page, so the three can't drift. Grouped by app area (mirrors the rail). Each section's body is a

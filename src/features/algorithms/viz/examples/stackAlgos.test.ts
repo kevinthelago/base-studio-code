@@ -6,7 +6,7 @@ import { TracedStack, runStackAlgorithm } from "@/features/algorithms/lib/tracer
 import type { StackFrame } from "@/features/algorithms/lib/trace";
 import {
   balancedParens, postfixEval, parseParensInput, parsePostfixInput, parseStackText, STACK_PROGRAMS, stackToText,
-} from "./stackAlgos";
+} from "@/features/algorithms/viz/examples/stackAlgos";
 
 /** Run a program over a fresh stack and hand back both the verdict and the recorded frames. */
 function trace<T>(algo: (s: TracedStack) => T): { result: T; frames: StackFrame[] } {

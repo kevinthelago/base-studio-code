@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { plannerLaunchConfig } from "./plannerLaunch";
+import { plannerLaunchConfig } from "@/features/planner/session/plannerLaunch";
 import type { AppStore } from "@/store/types";
 
 // Minimal store snapshot — plannerLaunchConfig reads only the LLM-config + harness + MCP fields.

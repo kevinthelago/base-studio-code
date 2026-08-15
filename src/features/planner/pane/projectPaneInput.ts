@@ -38,7 +38,7 @@ export interface BuildProjectPaneInput {
   features?: PlanFeature[];
   /** Per-project coordination-topology override (#…) — set in the Permissions pane,
    *  wins over the planner's `fleet.json` topology. */
-  topologyOverride?: import("../relationship/relationshipGraph").Topology;
+  topologyOverride?: import("@/features/planner/relationship/relationshipGraph").Topology;
   /** Per-project director-drive override (#…) — set in the Permissions pane, wins over
    *  `fleet.json`'s `director.drive`. */
   directorDriveOverride?: import("../fleet/directorDrive").DirectorDrive;

@@ -6,7 +6,7 @@ import {
   layoutBand,
   type NodeLookup,
   type ResolvedNode,
-} from "./crossGraph";
+} from "@/shared/lib/graph/crossGraph";
 
 // A tiny fake store per graph — the shape a feature would adapt its hydrated data into.
 const ALGOS: Record<string, Record<string, { label: string; kind: string; code?: string }>> = {

@@ -2,7 +2,7 @@
 // the transforms produce different results + traces (not one shared animation).
 import { describe, it, expect } from "vitest";
 import { TracedMatrix } from "@/features/algorithms/lib/tracer";
-import { transpose, rotate90, reflect, MATRIX_PROGRAMS, parseMatrixInput, matrixToText } from "./matrixTransforms";
+import { transpose, rotate90, reflect, MATRIX_PROGRAMS, parseMatrixInput, matrixToText } from "@/features/algorithms/viz/examples/matrixTransforms";
 import type { MatrixFrame } from "@/features/algorithms/lib/trace";
 
 const D = [

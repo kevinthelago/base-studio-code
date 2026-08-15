@@ -28,7 +28,7 @@ import { GraphLegend, type LegendNode } from "@/shared/ui/layouts/GraphLegend";
 import { TeamsOverview } from "./TeamsOverview";
 import { TeamsInspector } from "./TeamsInspector";
 import { TeamsContextMenu } from "./TeamsContextMenu";
-import { ArchitectTerminal } from "./ArchitectTerminal";
+import { ArchitectTerminal } from "@/features/teams/ArchitectTerminal";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
 import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";

@@ -26,7 +26,7 @@ import { KitRenderer } from "./KitRenderer";
 import { primitiveFor, __resetPrimitiveCache } from "./graphPrimitive";
 import { componentFor } from "@/shared/ui/registry";
 import { useAppStore } from "@/store";
-import type { GeneralNode } from "./generalNode";
+import type { GeneralNode } from "@/shared/ui/spec/generalNode";
 
 /** A record that PROVIDES `@/shared/ui/typography/Text` and renders something the real Text never would. */
 const TEXT_RECORD = {

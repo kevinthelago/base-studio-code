@@ -4,7 +4,7 @@
 //     mounts already on the right page, never flashing its last-viewed one).
 //  2. The real store `navigate` action — proves the wiring, so a caller genuinely cannot forget the page.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { applyNavigation, dispatchPage } from "./navigate";
+import { applyNavigation, dispatchPage } from "@/app/navigate";
 import type { AppStore } from "@/store/types";
 import { useAppStore } from "@/store";
 

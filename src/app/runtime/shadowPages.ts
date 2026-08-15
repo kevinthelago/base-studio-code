@@ -120,7 +120,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "consolepage", file: null },
       { recordId: "console-pane-at", file: null },
       { recordId: "console-pane-shell", file: null },
-      { recordId: "console-pane-menu", file: "/src/app/console/panes/PaneMenu.tsx" },
+      { recordId: "console-pane-menu", file: null }, // RETIRED — the record is the only copy,
       { recordId: "console-states", file: null },
     ],
     // The shell is not a feature and has no barrel — the host module IS the registration.
@@ -189,7 +189,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "algorithms-rail", file: "/src/features/algorithms/AlgorithmsRail.tsx" },
       { recordId: "algorithms-inspector", file: "/src/features/algorithms/AlgorithmsInspector.tsx" },
       { recordId: "algorithms-kit-graph", file: "/src/features/algorithms/AlgorithmsKitGraph.tsx" },
-      { recordId: "algorithms-librarian-terminal", file: "/src/features/algorithms/LibrarianTerminal.tsx" },
+      { recordId: "algorithms-librarian-terminal", file: null }, // RETIRED — the record is the only copy,
     ],
     ensurePlatform: () => import("@/features/algorithms/graphPlatform").then((m) => m.registerAlgorithmsPlatform()),
   },
@@ -201,7 +201,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     modules: [
       { recordId: "soundspage", file: "/src/features/sounds/SoundsWorkspace.tsx" },
       { recordId: "sounds-rail", file: "/src/features/sounds/SoundsRail.tsx" },
-      { recordId: "sounds-inspector", file: "/src/features/sounds/SoundsInspector.tsx" },
+      { recordId: "sounds-inspector", file: null }, // RETIRED — the record is the only copy,
       { recordId: "sounds-kit-graph", file: "/src/features/sounds/SoundsKitGraph.tsx" },
     ],
     ensurePlatform: () => import("@/features/sounds/graphPlatform").then((m) => m.registerSoundsPlatform()),
@@ -216,9 +216,9 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "glance-stream-morph", file: "/src/features/glance/GlanceStreamMorph.tsx" },
       { recordId: "glance-preview-morph", file: "/src/features/glance/GlancePreviewMorph.tsx" },
       { recordId: "glance-node", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "glance-plan-screen", file: "/src/features/glance/GlancePlanScreen.tsx" },
+      { recordId: "glance-plan-screen", file: null }, // RETIRED — the record is the only copy,
       { recordId: "glance-chat-dock", file: "/src/features/glance/GlanceChatDock.tsx" },
-      { recordId: "glance-session-log", file: "/src/features/glance/GlanceSessionLog.tsx" },
+      { recordId: "glance-session-log", file: null }, // RETIRED — the record is the only copy,
     ],
     ensurePlatform: () => import("@/features/glance/graphPlatform").then((m) => m.registerGlancePlatform()),
   },
@@ -353,9 +353,9 @@ const FILE_SOURCES = import.meta.glob<string>(
     // sources nothing declares.
     "/src/features/planner/bodies/StreamsBody.tsx",
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
-    "/src/features/algorithms/{AlgorithmsWorkspace,AlgorithmsRail,AlgorithmsInspector,AlgorithmsKitGraph,LibrarianTerminal}.tsx",
+    "/src/features/algorithms/{AlgorithmsWorkspace,AlgorithmsRail,AlgorithmsInspector,AlgorithmsKitGraph}.tsx",
     "/src/app/console/panes/PaneMenu.tsx",
-    "/src/features/glance/{GlanceWorkspace,GlanceCanvas,GlanceStreamMorph,GlancePreviewMorph,GlancePlanScreen,GlanceChatDock,GlanceSessionLog}.tsx",
+    "/src/features/glance/{GlanceWorkspace,GlanceCanvas,GlanceStreamMorph,GlancePreviewMorph,GlanceChatDock}.tsx",
     // Empty/GitHubSummary/Pulse dropped with their entries — the glob and the catalogue are pinned to
     // each other BOTH ways by `shadowPages.test.ts`, so a path released for deletion has to leave both.
     // Schedules.tsx dropped with its entry — automations now contributes no file baseline at all.

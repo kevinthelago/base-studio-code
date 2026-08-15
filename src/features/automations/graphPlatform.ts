@@ -7,8 +7,8 @@
 // `registerFleetPlatform` (features/planner/fleet/graphPlatform.ts).
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as Mcp from "@/features/mcp"; // HooksView + parseHookLog/aggregateHookTelemetry (the Hooks + Hook-Analytics tabs)
-import * as Scheduler from "./lib/scheduler";
-import * as Cron from "./lib/cron";
+import * as Scheduler from "@/features/automations/lib/scheduler";
+import * as Cron from "@/features/automations/lib/cron";
 import * as Format from "@/features/automations/format";
 import * as GraphPlatform from "@/features/automations/graphPlatform";
 

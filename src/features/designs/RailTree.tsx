@@ -18,7 +18,7 @@ import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
 import { RailFolderRow, RailFolderChildren } from "@/shared/ui/layouts/RailFolderRow";
 import { RoleDot } from "@/features/designs/kitChrome";
 import type { ComponentRecord, Kit } from "./lib/model";
-import { type KitTreeNode, type ComponentFolder, groupComponentsByFolder, folderComponentCount } from "./lib/kitGroups";
+import { type KitTreeNode, type ComponentFolder, groupComponentsByFolder, folderComponentCount } from "@/features/designs/lib/kitGroups";
 import { byTier } from "@/features/designs/lib/compositionLayout";
 
 interface RailTreeProps {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { moveInArray } from "./arrayMove";
+import { moveInArray } from "@/shared/lib/core/arrayMove";
 
 describe("moveInArray", () => {
   it("moves an element forward", () => {

@@ -9,7 +9,7 @@ import {
   PRIMITIVE_NAMES,
   VALIDATION_COVERAGE,
   type GeneralNode,
-} from "./generalNode";
+} from "@/shared/ui/spec/generalNode";
 import { UI_KIT } from "@/shared/ui/manifest";
 
 describe("the vocabulary is derived from the manifest (#3485)", () => {

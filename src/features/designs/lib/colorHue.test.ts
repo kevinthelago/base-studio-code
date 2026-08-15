@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hueOfColor } from "./colorHue";
+import { hueOfColor } from "@/features/designs/lib/colorHue";
 
 // Minimal circular distance between two hue angles (deg).
 const circDist = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);

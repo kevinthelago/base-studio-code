@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { fleetPlanProgress, mergeStreamProgress, unionDone, normalizeRef } from "@/features/glance/lib/fleetPlanProgress";
-import type { StreamProgress } from "./streamProgress";
+import type { StreamProgress } from "@/features/glance/lib/streamProgress";
 
 describe("fleetPlanProgress", () => {
   it("THE BUG (#4102): a fleet whose plan.db has no issue rows still reports progress", () => {
