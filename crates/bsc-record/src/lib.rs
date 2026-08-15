@@ -199,6 +199,16 @@ fn prune_prev_src(history: &mut [Value]) {
 /// record with no seed (25 of 47 pages, including `graphprimitive`/`kitrenderer`/`insights`) had no way
 /// back at all. Retained on the most recent [`PREV_SRC_CAP`] entries only; see [`prune_prev_src`].
 pub fn stamp_with_history(record: &mut Value, prior: &Value, writer: &str, now_iso: &str, note: Option<&str>) {
+    stamp_with_history_of(record, prior, writer, now_iso, note, SRC_TEXT);
+}
+
+/// [`stamp_with_history`] over an explicit CONTENT field.
+///
+/// The retained rung is the one thing in this module that is store-specific: the component store's
+/// content is `srcText`, the algorithms graph's is `code`. Everything else — rev, author, timestamp,
+/// `changed`, `dropped`, the caps — is identical, which is exactly why this is one shared module with a
+/// parameter rather than two implementations that agree until they quietly do not.
+pub fn stamp_with_history_of(record: &mut Value, prior: &Value, writer: &str, now_iso: &str, note: Option<&str>, content: &str) {
     let prior_rev = read_rev(prior);
     let mut history: Vec<Value> =
         prior.get(HISTORY).and_then(Value::as_array).cloned().unwrap_or_default();
@@ -222,8 +232,8 @@ pub fn stamp_with_history(record: &mut Value, prior: &Value, writer: &str, now_i
     }
     // The rung back. Only when the source actually MOVED — an unchanged `srcText` would otherwise store a
     // duplicate of itself on every write, and a `null` prior (a create) has nothing to go back to.
-    let prior_src = prior.get(SRC_TEXT).and_then(Value::as_str);
-    let next_src = record.get(SRC_TEXT).and_then(Value::as_str);
+    let prior_src = prior.get(content).and_then(Value::as_str);
+    let next_src = record.get(content).and_then(Value::as_str);
     if let Some(was) = prior_src.filter(|was| Some(*was) != next_src) {
         entry.insert(PREV_SRC.to_string(), Value::from(was));
     }
@@ -240,12 +250,12 @@ pub fn stamp_with_history(record: &mut Value, prior: &Value, writer: &str, now_i
 
 /// Did this history entry's write MOVE the source? True when `srcText` is named in either `changed` or
 /// `dropped` — a deletion moves it as surely as an edit does.
-fn entry_moved_src(entry: &Value) -> bool {
+fn entry_moved_src_of(entry: &Value, content: &str) -> bool {
     ["changed", "dropped"].iter().any(|k| {
         entry
             .get(*k)
             .and_then(Value::as_array)
-            .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(SRC_TEXT)))
+            .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(content)))
     })
 }
 
@@ -265,11 +275,16 @@ fn entry_moved_src(entry: &Value) -> bool {
 /// `rev`. Silently reverting to the wrong version is worse than refusing, so a moving write whose content
 /// is gone terminates the search as unreachable.
 pub fn src_at_rev(record: &Value, rev: i64) -> Option<String> {
+    src_at_rev_of(record, rev, SRC_TEXT)
+}
+
+/// [`src_at_rev`] over an explicit content field — `code` for the algorithms graph.
+pub fn src_at_rev_of(record: &Value, rev: i64, content: &str) -> Option<String> {
     let history = record.get(HISTORY).and_then(Value::as_array)?;
     let rung = history
         .iter()
         .filter(|e| e.get(REV).and_then(Value::as_i64).is_some_and(|r| r > rev))
-        .find(|e| entry_moved_src(e))?;
+        .find(|e| entry_moved_src_of(e, content))?;
     rung.get(PREV_SRC).and_then(Value::as_str).map(str::to_owned)
 }
 
@@ -280,6 +295,9 @@ pub fn src_at_rev(record: &Value, rev: i64) -> Option<String> {
 /// These are the ANCHORS, not the whole reachable set: a rev between two anchors is reachable too (its
 /// source is the anchor's — nothing moved in between), and [`src_at_rev`] accepts it. Listing the anchors
 /// keeps the offer to the revisions at which the source actually differs.
+/// NO `_of` variant, deliberately: this reads the RUNG key (`prevSrc`), which is the same whichever
+/// content field produced it. A parameter here would be decorative, and a decorative parameter reads as
+/// a promise that the function respects it.
 pub fn revertible_revs(record: &Value) -> Vec<i64> {
     let mut revs: Vec<i64> = record
         .get(HISTORY)
