@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { useRef, useState } from "react";
 import { render, fireEvent, act } from "@testing-library/react";
-import { useGraphViewport, viewTransform, PANNING_CLASS } from "./useGraphViewport";
+import { useGraphViewport, viewTransform, PANNING_CLASS } from "@/shared/ui/layouts/useGraphViewport";
 
 /** A minimal graph: the viewport div + the world layer, wired exactly as GraphCanvas wires them. */
 function Harness({ onRender }: { onRender: () => void }) {

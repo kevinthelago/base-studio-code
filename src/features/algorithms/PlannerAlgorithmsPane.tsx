@@ -21,7 +21,7 @@ import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { SearchField } from "@/shared/ui/controls/SearchField";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import { useKnowledgeGraph } from "./useKnowledgeGraph";
+import { useKnowledgeGraph } from "@/features/algorithms/useKnowledgeGraph";
 import {
   TECH_META, kitTechs, kitImpls, matchesImpl, usedByImpl,
   type AlgoImpl, type ImplRole, type Tech,

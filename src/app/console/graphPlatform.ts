@@ -14,21 +14,21 @@
 // why the terminals were moved out of the page in the first place.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 // — the pane system's pure helpers + hooks —
-import * as ConsoleFocus from "./lib/consoleFocus";
-import * as ModelDisplay from "./lib/modelDisplay";
+import * as ConsoleFocus from "@/app/console/lib/consoleFocus";
+import * as ModelDisplay from "@/app/console/lib/modelDisplay";
 import * as Models from "./lib/models";
-import * as PaneIdentity from "./lib/paneIdentity";
-import * as PaneStatus from "./lib/paneStatus";
+import * as PaneIdentity from "@/app/console/lib/paneIdentity";
+import * as PaneStatus from "@/app/console/lib/paneStatus";
 import * as Providers from "./lib/providers";
 import * as UseIdleReaper from "@/app/console/lib/useIdleReaper";
 import * as UsePaneActivityFeed from "./lib/usePaneActivityFeed";
-import * as UsePaneTokenUsage from "./lib/usePaneTokenUsage";
-import * as MenuPlacement from "./panes/menuPlacement";
-import * as ViewDefs from "./panes/viewDefs";
+import * as UsePaneTokenUsage from "@/app/console/lib/usePaneTokenUsage";
+import * as MenuPlacement from "@/app/console/panes/menuPlacement";
+import * as ViewDefs from "@/app/console/panes/viewDefs";
 // — the pane VIEWS: the behaviour a pane cell hosts —
 import * as TerminalSlot from "./terminal/TerminalSlot";
 // — the pumps the page mounts —
-import * as UseCoordinator from "./useCoordinator";
+import * as UseCoordinator from "@/app/console/useCoordinator";
 import * as UseDirectorPump from "@/app/console/useDirectorPump";
 import * as UseFaultTriage from "@/app/console/useFaultTriage";
 import * as UseKitDispatch from "@/app/console/useKitDispatch";

@@ -3,11 +3,11 @@
 // Every layer was verified in isolation and the bars still did not appear, twice. That is the signature
 // of a JOIN that fails silently: each half is correct and the keys do not meet. This asserts the join.
 import { describe, it, expect } from "vitest";
-import { fleetPlanProgress } from "./lib/fleetPlanProgress";
-import { withStreamProgress } from "./lib/streamProgress";
-import { buildRealFleetData } from "./lib/glanceFleet";
+import { fleetPlanProgress } from "@/features/glance/lib/fleetPlanProgress";
+import { withStreamProgress } from "@/features/glance/lib/streamProgress";
+import { buildRealFleetData } from "@/features/glance/lib/glanceFleet";
 import { buildGraph } from "./lib/glanceGraph";
-import { fleetToOrg } from "./lib/glanceFleet";
+import { fleetToOrg } from "@/features/glance/lib/glanceFleet";
 
 // The live shape: streams carrying GitHub refs, exactly as `bsc plan fleet get` returns them.
 const fleet = {

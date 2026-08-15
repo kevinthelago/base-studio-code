@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getRenderer } from '../registry';
 import type { RendererHandle } from '../registry';
-import type { RenderableChunk } from '../types';
+import type { RenderableChunk } from '@/features/planner/preview/types';
 
 // Registered HERE rather than by importing for a side effect: the renderer module is a pure
 // definition now, so a test that wants it in the registry must say so
 // (renderers-register-at-a-named-site-not-on-import).
 import { registerRenderer } from '../registry';
-import { canvasRenderer } from './canvasRenderer';
+import { canvasRenderer } from '@/features/planner/preview/renderers/canvasRenderer';
 registerRenderer(canvasRenderer);
 
 function makeContainer(): HTMLDivElement {

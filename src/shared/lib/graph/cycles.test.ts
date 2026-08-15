@@ -1,8 +1,8 @@
 // cycles (#2217, graph-core epic #2214) — shared cycle detection: DFS back-edges (any-length) + the
 // 2-cycle mutual-pair special case.
 import { describe, it, expect } from "vitest";
-import { findBackEdges, mutualPairs } from "./cycles";
-import type { GraphEdge } from "./types";
+import { findBackEdges, mutualPairs } from "@/shared/lib/graph/cycles";
+import type { GraphEdge } from "@/shared/lib/graph/types";
 
 describe("findBackEdges (#2217)", () => {
   it("finds no back-edge in a DAG", () => {

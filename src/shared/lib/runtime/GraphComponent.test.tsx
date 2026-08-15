@@ -10,7 +10,7 @@ import { resetGraphCompiles } from "./GraphComponent";
 // which version gets mounted when a compile or a render fails — not the compiler.
 const load = vi.hoisted(() => vi.fn());
 vi.mock("./componentLoader", () => ({ loadComponentFromSource: load }));
-vi.mock("./graphResolver", () => ({ resolveGraphSource: () => null }));
+vi.mock("@/shared/lib/runtime/graphResolver", () => ({ resolveGraphSource: () => null }));
 
 const GOOD = "export default () => 'GOOD';";
 const NEXT = "export default () => 'NEXT';";

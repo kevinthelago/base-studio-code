@@ -2,7 +2,7 @@
 // referenced library nodes a kit's components declare via `@bsc/algorithms/…` / `@bsc/sounds/…` imports.
 // Reads the packaged seeds (the flagship `fibonacci.ts` algorithm + the default `signal` sound kit).
 import { describe, it, expect } from "vitest";
-import { resolveComponentLibraryRefs, resolveKitLibraryRefs } from "./libraryComposition";
+import { resolveComponentLibraryRefs, resolveKitLibraryRefs } from "@/features/designs/lib/libraryComposition";
 import { crossGraphEdgeId } from "@/shared/lib/graph/crossGraph";
 import type { ComponentRecord, Role } from "./model";
 

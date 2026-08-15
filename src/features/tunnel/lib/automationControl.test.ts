@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { whenExpr, automationToFrame, planArm } from "./automationControl";
+import { whenExpr, automationToFrame, planArm } from "@/features/tunnel/lib/automationControl";
 import type { Automation } from "@/features/automations/lib/scheduler";
 
 function auto(over: Partial<Automation> = {}): Automation {

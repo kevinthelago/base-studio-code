@@ -5,7 +5,7 @@
 // mode #3465 exists to close, so the first thing the new mechanism does is cover the node that
 // exposed it.
 import { describe, it, expect } from "vitest";
-import { estimateEnergyWh } from "./llmEnergy";
+import { estimateEnergyWh } from "@/shared/lib/algorithms/llmEnergy";
 
 describe("estimateEnergyWh", () => {
   it("scales with tokens, output costing more than input", () => {

@@ -6,11 +6,11 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { countLinkedRepos } from "./projectsSummaryDerive";
-import { useProjectsSummaryData } from "./summary/useProjectsSummaryData";
-import { AISummary } from "./summary/AISummary";
+import { countLinkedRepos } from "@/features/planner/list/projectsSummaryDerive";
+import { useProjectsSummaryData } from "@/features/planner/list/summary/useProjectsSummaryData";
+import { AISummary } from "@/features/planner/list/summary/AISummary";
 import { ProjectAllocation } from "./summary/ProjectAllocation";
-import { RiskRegister } from "./summary/RiskRegister";
+import { RiskRegister } from "@/features/planner/list/summary/RiskRegister";
 import { ProjectsGrid } from "@/features/planner/list/summary/ProjectsGrid";
 
 // ── Main ──────────────────────────────────────────────────────────────────────

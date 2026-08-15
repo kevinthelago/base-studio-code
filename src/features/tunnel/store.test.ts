@@ -2,7 +2,7 @@
 // designer, …) register their mirrored sessions without clobbering each other.
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "@/store";
-import type { PaneDescriptor } from "./lib/tunnel";
+import type { PaneDescriptor } from "@/features/tunnel/lib/tunnel";
 
 const planner: PaneDescriptor = {
   id: "planning_proj", cwd: "/hub/proj", name: "Planner — proj", status: "running", kind: "planner",

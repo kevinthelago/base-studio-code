@@ -2,9 +2,9 @@
 // is faithful to the real recurrence), drives the scalar verbs the ScalarView binds to, and its variables
 // roll forward exactly as the seeded fibonacci.rs / fibonacci.ts impls do.
 import { describe, it, expect } from "vitest";
-import { TracedScalar } from "../../lib/tracer";
-import type { ScalarFrame } from "../../lib/trace";
-import { fibonacci, SCALAR_PROGRAMS, parseScalarInput, parseScalarSeed, scalarToText, scalarSeedToText } from "./scalarAlgos";
+import { TracedScalar } from "@/features/algorithms/lib/tracer";
+import type { ScalarFrame } from "@/features/algorithms/lib/trace";
+import { fibonacci, SCALAR_PROGRAMS, parseScalarInput, parseScalarSeed, scalarToText, scalarSeedToText } from "@/features/algorithms/viz/examples/scalarAlgos";
 import { programVizForImpl } from "./registry";
 
 /** Run fibonacci for `n` and return its recorded trace. */

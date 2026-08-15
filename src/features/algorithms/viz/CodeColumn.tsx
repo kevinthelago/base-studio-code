@@ -13,7 +13,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
-import type { SourceRange } from "../lib/trace";
+import type { SourceRange } from "@/features/algorithms/lib/trace";
 import "./codeColumn.css";
 
 export interface CodeColumnProps {

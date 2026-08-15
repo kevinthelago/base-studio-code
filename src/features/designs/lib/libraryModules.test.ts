@@ -1,7 +1,7 @@
 // Library-module resolution (#3116) — the Design Studio's bridge from a `@bsc/algorithms/…` import to the
 // resolved node + the vendorable preview module. Reads the PACKAGED seed (the flagship fibonacci.ts).
 import { describe, it, expect } from "vitest";
-import { resolveLibrarySpec, libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
+import { resolveLibrarySpec, libraryModuleResolver, libraryReimplTargets } from "@/features/designs/lib/libraryModules";
 
 describe("resolveLibrarySpec (#3116)", () => {
   it("resolves @bsc/algorithms/fibonacci against the TypeScript algorithm kit", () => {

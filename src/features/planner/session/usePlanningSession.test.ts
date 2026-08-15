@@ -8,7 +8,7 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Terminal } from "@xterm/xterm";
 import { useAppStore } from "@/store";
-import { usePlanningSession, type PlanningSessionDeps } from "./usePlanningSession";
+import { usePlanningSession, type PlanningSessionDeps } from "@/features/planner/session/usePlanningSession";
 
 const invokeMock = vi.mocked(invoke);
 

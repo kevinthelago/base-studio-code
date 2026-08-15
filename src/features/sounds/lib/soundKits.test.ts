@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_KITS, STARTER_KIT, mergeKits } from "./soundKits";
-import { validateKit, type SoundKit } from "./soundDescriptor";
+import { validateKit, type SoundKit } from "@/features/sounds/lib/soundDescriptor";
 
 describe("BUILTIN_KITS (#3080 — seeded from src-tauri/data/sounds/)", () => {
   it("loads the Signal starter kit from the embedded seed JSON", () => {

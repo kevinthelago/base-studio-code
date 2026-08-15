@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 // eslint-disable-next-line no-restricted-imports -- barrel-free path avoids the module-init cycle (#3439)
 import { datasetForStructure } from "@/features/algorithms/viz/previewDataset";
 import type { VizDataset } from "@/features/algorithms";
-import { shapePreviewData, SHAPE_TIER, type DatasetForStructure } from "./shapePreview";
+import { shapePreviewData, SHAPE_TIER, type DatasetForStructure } from "@/features/designs/lib/shapePreview";
 import type { ComponentRecord, PropSpec } from "./model";
 
 const prop = (name: string, type: string): PropSpec => ({ name, type, req: false, desc: "" });

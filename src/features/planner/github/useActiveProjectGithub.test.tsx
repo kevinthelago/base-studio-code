@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { DEFAULT_MAX_AGE_SECS } from "@/shared/lib/github/github";
-import { useActiveProject, useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
+import { useActiveProject, useActiveProjectGithub, QueryBanner } from "@/features/planner/github/useActiveProjectGithub";
 
 function Probe() {
   const p = useActiveProject();

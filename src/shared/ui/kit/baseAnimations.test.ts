@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BASE_KIT_ID, BASE_ANIMATIONS } from "./baseAnimations";
+import { BASE_KIT_ID, BASE_ANIMATIONS } from "@/shared/ui/kit/baseAnimations";
 
 describe("base motion library (#3451)", () => {
   it("owns exactly the three base motions, uniquely named", () => {

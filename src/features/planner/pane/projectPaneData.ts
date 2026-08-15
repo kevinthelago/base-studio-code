@@ -11,25 +11,25 @@
 //   composition that calls them and owns the public data contract.
 
 import { resolveDirectorDrive } from "../fleet/directorDrive";
-import { buildMcpServers } from "../lib/mcpPaneData";
+import { buildMcpServers } from "@/features/planner/lib/mcpPaneData";
 
 // The render-shape contract lives in projectPane.types (#356, the shared pane
 // types). This adapter re-exports those shapes so existing import sites that reach
 // for them via "./projectPaneData" keep working.
-import type { ProjectPaneData } from "./projectPane.types";
+import type { ProjectPaneData } from "@/features/planner/pane/projectPane.types";
 import type { BuildProjectPaneInput } from "./projectPaneInput";
 
 import { buildAgents } from "./projectPaneAgents";
-import { buildRepos } from "./projectPaneRepos";
-import { buildStructure } from "./projectPaneStructure";
-import { buildContext } from "./projectPaneContext";
-import { effectiveStreams, deriveRelationships } from "./projectPaneRelationships";
+import { buildRepos } from "@/features/planner/pane/projectPaneRepos";
+import { buildStructure } from "@/features/planner/pane/projectPaneStructure";
+import { buildContext } from "@/features/planner/pane/projectPaneContext";
+import { effectiveStreams, deriveRelationships } from "@/features/planner/pane/projectPaneRelationships";
 
 export type { BuildProjectPaneInput } from "./projectPaneInput";
 export type {
   Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone,
   ContextFile, ProjectPaneData, PaneAutomation, PaneSkill, McpServer,
-} from "./projectPane.types";
+} from "@/features/planner/pane/projectPane.types";
 
 /**
  * Build the ProjectPane render data from the real plan store. Robust to missing

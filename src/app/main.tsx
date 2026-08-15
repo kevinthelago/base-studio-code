@@ -3,7 +3,7 @@
 import "@/app/safety/fatalOverlay";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { ErrorBoundary } from "./safety/ErrorBoundary";
+import { ErrorBoundary } from "@/app/safety/ErrorBoundary";
 import { markBoot } from "@/shared/lib/core/startupTrace";
 import { primeConfigOverrides } from "@/shared/lib/core/configOverrides";
 import "@/styles/tokens.css";

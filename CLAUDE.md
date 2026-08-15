@@ -601,6 +601,31 @@ cargo clippy --workspace --all-targets -- -D warnings   # --all-targets — --li
 cargo test --workspace                                  # or `-p <crate>` to scope a slow build
 ```
 
+**The Rust build is SHARED across worktrees — install `sccache` before your first build.**
+`.cargo/config.toml` sets it as `rustc-wrapper`, so cargo fails loudly with *"could not execute process
+sccache"* if it is missing. Get it with `winget install Mozilla.sccache` or `cargo install sccache
+--locked` (it must land on PATH; `~/.cargo/bin` is the conventional spot and is already on PATH wherever
+cargo is).
+
+Why it exists: every worktree has its own `target/`, so each one used to recompile ~8000 dependency units
+from scratch. Measured in a genuinely cold worktree with the cache warmed by a *different* worktree:
+**181 cache hits against 27 misses — 87%**. A shared `CARGO_TARGET_DIR` was rejected instead: it broke
+tauri builds before, and it puts every concurrent cargo behind one target-dir lock, which is exactly wrong
+with many agents building at once.
+
+**Iterate against the CRATE, not the binary.** Measured after touching one line in `crates/bsc-graph`:
+
+| command | warm | first run of that profile in a fresh worktree |
+|---|---|---|
+| `cargo check -p <crate>` | ~3s | 25s |
+| `cargo test -p <crate> --lib` | **7s** | 168s |
+| `cargo build -p bsc --bin bsc` | **9s** | 343s |
+
+So: `check -p` while writing, `test -p` to verify, and build `bsc` only when you need to *run* it. Every
+subcommand crate exposes `cli::run(args, prog)`, so the crate's own tests reach the whole surface without
+linking the unified binary. (Splitting `bsc` into smaller binaries does **not** help — the cost is
+compiling dependencies, not linking, and each split binary would still pull DuckDB and arrow.)
+
 Record what each gate ACTUALLY did, as it runs — evidence, not a claim:
 ```bash
 bsc plan change gate <ref> typecheck pass

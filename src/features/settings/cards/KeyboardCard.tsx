@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SHORTCUT_GROUPS } from "../lib/shortcuts";
+import { SHORTCUT_GROUPS } from "@/features/settings/lib/shortcuts";
 import { useAppStore } from "@/store";
 import { Card } from "@/shared/ui/data/Card";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
@@ -24,7 +24,7 @@ import {
   findLeaderConflict,
   type RebindableId,
   type LeaderId,
-} from "../lib/keybindings";
+} from "@/features/settings/lib/keybindings";
 
 const REBINDABLE_SET = new Set<string>(REBINDABLE_IDS);
 const LEADER_SET = new Set<string>(LEADER_IDS);

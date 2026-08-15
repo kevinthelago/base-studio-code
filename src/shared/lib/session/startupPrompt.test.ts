@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { repoPromptKey } from "./startupPrompt";
+import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
 
 // Startup-prompt resolution moved to lib/assignments.ts (#324/#326); see
 // assignments.test.ts for the cascade tests. Only the shared key helper remains.

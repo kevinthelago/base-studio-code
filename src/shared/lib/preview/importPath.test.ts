@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { collapseSegments, resolveInternalBase } from "./importPath";
+import { collapseSegments, resolveInternalBase } from "@/shared/lib/preview/importPath";
 
 // The shared module-path resolver (#3246), extracted from the three former copies. resolveMemPath
 // (componentBundle) delegates its collapse loop here; the two former `resolveInternalBase` copies in

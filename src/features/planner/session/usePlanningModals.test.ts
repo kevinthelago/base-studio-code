@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { usePlanningModals, type PlanningModalsDeps } from "./usePlanningModals";
+import { usePlanningModals, type PlanningModalsDeps } from "@/features/planner/session/usePlanningModals";
 
 const base: PlanningModalsDeps = {
   effectiveProjectId: "proj",

@@ -14,8 +14,8 @@ import { useEffect, useState } from "react";
 import { bscJsonShared } from "@/shared/lib/core/bscShared";
 import { usePoll } from "@/shared/hooks/usePoll";
 import type { OwnedIssue } from "@/shared/lib/fleet/workerEnd";
-import { streamProgress, planDbDoneRefs, planDbClosedByRef, projectProgress, type StreamProgress } from "./streamProgress";
-import { knownRefAliases } from "./fleetPlanProgress";
+import { streamProgress, planDbDoneRefs, planDbClosedByRef, projectProgress, type StreamProgress } from "@/features/glance/lib/streamProgress";
+import { knownRefAliases } from "@/features/glance/lib/fleetPlanProgress";
 
 /** Issue counts move at human speed — a worker closing one is a minutes-scale event, so a fast poll
  *  would spend spawns to re-read an unchanged answer. */

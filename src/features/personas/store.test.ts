@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAppStore } from "@/store";
 import { BUILTIN_PERSONAS } from "./lib/persona";
-import * as bridge from "./lib/personaBridge";
+import * as bridge from "@/features/personas/lib/personaBridge";
 
 describe("personas store slice (#2094)", () => {
   beforeEach(() => {

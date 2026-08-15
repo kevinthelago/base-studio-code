@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   registerStageModule, dispatchStageCommand, hasStageModule, isStageCommand,
   _resetStageModules, STAGE_COMMANDS, type StageCommand,
-} from "./stageCommands";
+} from "@/features/planner/preview/stageCommands";
 
 describe("stageCommands — bus", () => {
   beforeEach(() => _resetStageModules());
@@ -71,7 +71,7 @@ describe("stageCommands — render-preview module", () => {
       buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
     }));
     const { RENDER_PREVIEW_ID } = await import("../preview/renderPreview");
-    const { hasStageModule: has } = await import("./stageCommands");
+    const { hasStageModule: has } = await import("@/features/planner/preview/stageCommands");
     expect(has(RENDER_PREVIEW_ID)).toBe(true);
   }, 15_000);
 });

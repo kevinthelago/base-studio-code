@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { KeyboardCard } from "./KeyboardCard";
 import { useAppStore } from "@/store";
-import { SHORTCUT_GROUPS, SHORTCUT_REGISTRY } from "../lib/shortcuts";
+import { SHORTCUT_GROUPS, SHORTCUT_REGISTRY } from "@/features/settings/lib/shortcuts";
 
 beforeEach(() => {
   // Console-scoped rows only render while the (opt-in, #2372) Console page is on — the default suite

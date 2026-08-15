@@ -5,8 +5,8 @@
 // counts); this function owns the section categorization.
 
 import { buildPlanStageState, type PlanStageState } from "./planStages";
-import type { SectionState } from "../github/ghStructure";
-import type { PlanSignals } from "./stageGate";
+import type { SectionState } from "@/features/planner/github/ghStructure";
+import type { PlanSignals } from "@/features/planner/stages/stageGate";
 
 // Single-sourced from the Discovery stage data (`src-tauri/data/stages/discovery.json`, its
 // `requires` array) so the baseline lives in ONE place — the same data file the planner prompt and

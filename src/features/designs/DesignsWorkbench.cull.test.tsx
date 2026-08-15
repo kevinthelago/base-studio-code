@@ -17,7 +17,7 @@ vi.mock("@/shared/lib/preview/componentBundle", () => ({
   COMPONENT_IMPORTMAP: { react: "https://esm.sh/react" },
   COMPONENT_EXTERNALS: ["react"],
 }));
-vi.mock("./lib/uiActivity", () => ({ useUiActivity: vi.fn() }));
+vi.mock("@/features/designs/lib/uiActivity", () => ({ useUiActivity: vi.fn() }));
 vi.mock("./lib/useComponentScan", () => ({ useComponentScan: vi.fn() }));
 
 // The rect the page sees, swappable per test — this is the seam that stands in for real layout.
@@ -25,7 +25,7 @@ const { rectRef } = vi.hoisted(() => ({ rectRef: { current: null as GraphBox | n
 vi.mock("@/shared/ui/layouts/useVisibleRect", () => ({ useVisibleRect: () => rectRef.current }));
 
 import { DesignsWorkbench } from "./DesignsWorkbench";
-import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "./lib/reactUiKit";
+import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
 import { SEED_THEMES } from "./lib/themes";
 
 const nodeCount = (c: HTMLElement) => c.querySelectorAll(".ds-node").length;

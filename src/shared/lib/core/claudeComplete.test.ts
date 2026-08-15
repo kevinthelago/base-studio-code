@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { oneShotVision, providerSupportsVision } from "./claudeComplete";
+import { oneShotVision, providerSupportsVision } from "@/shared/lib/core/claudeComplete";
 import type { LlmConfig } from "./llmConfig";
 
 const cfg = (over: Partial<LlmConfig> = {}): LlmConfig => ({

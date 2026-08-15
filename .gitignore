@@ -45,3 +45,10 @@ Thumbs.db
 
 # Generated record cache — materialized from src-tauri/data seeds by scripts/emit-records.mjs
 .bsc-records/
+
+# Nested worktrees. The convention is `wt-<short>/` at the repo root (CLAUDE.md, "Parallel worktree
+# agents"), which keeps them zero-install — and leaves every OTHER agent's worktree sitting in this one's
+# `git status` as untracked. A `git add -A` in the main tree then stages them as EMBEDDED GIT REPOSITORIES,
+# which is a confusing mess to unpick and easy to commit by accident. Ignoring the convention itself is
+# cheaper than remembering not to.
+wt-*/

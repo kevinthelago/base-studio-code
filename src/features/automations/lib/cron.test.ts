@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCron, nextCronRun, isValidCron } from "./cron";
+import { parseCron, nextCronRun, isValidCron } from "@/features/automations/lib/cron";
 
 describe("parseCron / isValidCron", () => {
   it("accepts valid 5-field expressions", () => {

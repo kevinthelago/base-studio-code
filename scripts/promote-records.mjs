@@ -25,7 +25,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSy
 import { spawnSync } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { norm, codeOnly, splitPreamble, fileAsRecordSource } from "./lib/recordSource.mjs";
+import { norm, codeOnly, splitPreamble, fileAsRecordSource, runtimeImports } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
@@ -48,8 +48,29 @@ function listModules(dir = join(REPO, "src"), rel = "") {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const r = rel ? `${rel}/${e.name}` : e.name;
     if (e.isDirectory()) out.push(...listModules(join(dir, e.name), r));
-    else if (/\.(ts|tsx)$/.test(e.name) && !/\.(test|spec)\.tsx?$/.test(e.name)) out.push(r);
+    // `.d.ts` is AMBIENT TYPE INFORMATION, not a module. tsc reads it because it is INCLUDED, never
+    // because something imports it — so no resolver can substitute a record for it, and no record can
+    // carry its meaning. `src/vite-env.d.ts` matched `\.ts$`, was harvested as a module, promoted, and
+    // retired; the whole typecheck then failed on `*.css` and `*?raw` side-effect imports, because the
+    // file that declared those wildcards was gone. Nothing downstream could have caught it: there is no
+    // importer to break, which is exactly why it has to be excluded HERE.
+    else if (/\.(ts|tsx)$/.test(e.name) && !/\.(test|spec)\.tsx?$/.test(e.name) && !/\.d\.ts$/.test(e.name)) out.push(r);
   }
+  return out;
+}
+
+/** Every `id` the packaged component seed already uses, from ANY folder. `SEED_COMPONENTS` globs the tree
+ *  flat, so an id is unique across the whole seed, not per directory. */
+function seededIds() {
+  const out = new Set();
+  (function walk(dir) {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!e.name.endsWith(".json") || statSync(p).size > 4_000_000) continue;
+      try { const r = JSON.parse(readFileSync(p, "utf8")); if (r?.id) out.add(r.id); } catch { /* not a record */ }
+    }
+  })(join(REPO, "src-tauri", "data", "components", "app"));
   return out;
 }
 
@@ -80,6 +101,7 @@ for (const c of components) if (typeof c.provides === "string" && (c.srcText || 
 for (const i of impls) if (typeof i.provides === "string" && (i.code || "").trim() && !bySpec.has(i.provides.trim())) bySpec.set(i.provides.trim(), { kind: "impl", rec: i, source: i.code });
 
 const seeded = seededSpecifiers();
+const seedIds = seededIds();
 
 /** Every specifier a RECORD may import: a registered platform module, or one some record provides.
  *  Mirrors what `platformBoundary.test.ts` asserts — promoting a record whose imports nothing can answer
@@ -92,6 +114,7 @@ for (const im of algorithms.implementations ?? []) if (typeof im?.provides === "
 const specOf = (f) => "@/" + f.replace(/\.(tsx?|jsx?)$/, "").replace(/\/index$/, "");
 
 const promote = { component: [], impl: [] };
+let skippedAtWrite = 0; // written-guard declines, subtracted from the final count (see the tail of this file)
 const skipped = { bodyDiffers: 0, buildTimeOnly: [], alreadySeeded: 0, noRecord: 0, pageRecord: [], unresolvable: [], uncompilable: [] };
 
 for (const file of listModules()) {
@@ -105,7 +128,8 @@ for (const file of listModules()) {
   // demands every one be catalogued. Promoting a page therefore fails the suite until someone adds it to
   // SHADOW_PAGES with its `ensurePlatform` — a deliberate, per-page act, not a bulk promotion.
   if (hit.kind === "component" && hit.rec.role === "page" && hit.rec.pageKind !== "kit") { skipped.pageRecord.push(file); continue; }
-  const unresolved = [...new Set([...hit.source.matchAll(/(?:from|import|require)\s*\(?\s*['"](@\/[^'"]+)['"]/g)].map((m) => m[1]))]
+  const unresolved = runtimeImports(hit.source)
+    .filter((sp) => sp.startsWith("@/"))
     .filter((sp) => !resolvable.has(sp) && !/\.(css|svg|png)$/.test(sp));
   if (unresolved.length) { skipped.unresolvable.push(`${file} — needs ${unresolved.slice(0, 3).join(", ")}`); continue; }
 
@@ -129,8 +153,7 @@ for (const file of listModules()) {
 // `detachedtabstrip` failed on `@tauri-apps/api/window` after an earlier pass that only looked at `@/`.
 const REGISTERED = new Set(JSON.parse(readFileSync(join(REPO, "src-tauri/data/ui/platform-modules.json"), "utf8")));
 const importsOf = (src) =>
-  [...new Set([...src.matchAll(/(?:from|import|require)\s*\(?\s*['"]([^'"]+)['"]/g)].map((m) => m[1]))]
-    .filter((sp) => !/^\.\.?\//.test(sp) && !/\.(css|svg|png)$/.test(sp));
+  runtimeImports(src).filter((sp) => !/^\.\.?\//.test(sp) && !/\.(css|svg|png)$/.test(sp));
 
 for (let pass = 0; pass < 20; pass++) {
   const willExist = new Set([...REGISTERED, ...seeded]);
@@ -208,7 +231,16 @@ for (const { rec, file } of promote.component) {
   // NEVER overwrite an existing seed. The skip above keys on `provides`, but the write keys on
   // `<folder>/<id>` — a record whose `provides` differs from the seed occupying that path slips through
   // and clobbers it. Seven curated seeds were overwritten before this guard existed.
-  if (existsSync(path)) { console.log(`   SKIPPED (a seed already occupies that path): ${file} → ${rec.id}.json`); continue; }
+  if (existsSync(path)) { console.log(`   SKIPPED (a seed already occupies that path): ${file} → ${rec.id}.json`); skippedAtWrite++; continue; }
+  // AND the ID must be free ANYWHERE in the seed, not just at this path. The check above keys on
+  // `<folder>/<id>.json`, so the same id under a DIFFERENT folder sails past it — which is what happened:
+  // `console-pane-menu` already existed under `app/console/`, this wrote a second under
+  // `app/console/panes/`, and `SEED_COMPONENTS` (a flat glob) then held two records with one id. Every
+  // boot, `reconcileSeed` reported the id as pristine-but-changed and re-pushed it, forever. The app still
+  // worked; three unrelated `store.test.ts` cases were the only thing that noticed, and they named the
+  // RECORD rather than the duplication.
+  if (seedIds.has(rec.id)) { console.log(`   SKIPPED (that id is already in the seed elsewhere): ${file} → ${rec.id}`); skippedAtWrite++; continue; }
+  seedIds.add(rec.id);
   const out = {};
   for (const k of SEED_FIELDS) if (rec[k] !== undefined) out[k] = rec[k];
   mkdirSync(dir, { recursive: true });
@@ -228,4 +260,12 @@ if (promote.impl.length) {
   algorithms.implementations.sort((a, b) => String(a.id).localeCompare(String(b.id)));
   writeFileSync(ALGOS_PATH, JSON.stringify(algorithms, null, 2) + "\n");
 }
-console.log(`\npromoted ${promote.component.length + promote.impl.length} record(s) into the seed`);
+// COUNT WHAT LANDED, NOT WHAT WAS PLANNED. This used to print the size of the promote list — the number
+// taken BEFORE the never-overwrite-a-seed guard runs — so a run that wrote 43 records reported 49, and the
+// six it declined were visible only as loose SKIPPED lines further up. A tool that overstates its own
+// output is worse than one that does nothing, because the next step trusts the number.
+const landed = promote.component.length + promote.impl.length - skippedAtWrite;
+console.log(
+  `\npromoted ${landed} record(s) into the seed` +
+    (skippedAtWrite ? ` (${skippedAtWrite} declined — a seed already occupied the path)` : ""),
+);

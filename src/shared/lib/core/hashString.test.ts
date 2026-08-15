@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hashString } from "./hashString";
+import { hashString } from "@/shared/lib/core/hashString";
 
 describe("hashString (#2256)", () => {
   it("is deterministic for the same input", () => {

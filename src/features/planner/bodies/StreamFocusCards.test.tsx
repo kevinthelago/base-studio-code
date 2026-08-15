@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { StreamFocusCards } from "@/features/planner/bodies/StreamFocusCards";
-import type { Agent } from "../pane/projectPane.types";
+import type { Agent } from "@/features/planner/pane/projectPane.types";
 import type { Persona } from "@/features/personas";
 import { useAppStore } from "@/store";
 

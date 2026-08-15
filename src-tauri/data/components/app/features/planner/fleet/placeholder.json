@@ -1,0 +1,11 @@
+{
+  "id": "placeholder",
+  "name": "Placeholder",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/features/planner/fleet/WorkerDetailPlaceholder",
+  "srcText": "import { CardHead } from \"@/shared/ui/charts\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Card } from \"@/shared/ui/data/Card\";\n\nexport function Placeholder({ title, hint, body }: { title: string; hint: string; body: string }) {\r\n  return (\r\n    <Card>\r\n      <CardHead title={title} hint={hint} />\r\n      <Text as=\"div\" mono size={11} tone=\"dim\" style={{ lineHeight: 1.6 }}>{body}</Text>\r\n    </Card>\r\n  );\r\n}",
+  "composes": [],
+  "src": "src/features/planner/fleet/WorkerDetailPlaceholder.tsx",
+  "folder": "features/planner/fleet"
+}

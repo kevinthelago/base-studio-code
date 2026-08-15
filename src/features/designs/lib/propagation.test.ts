@@ -3,8 +3,8 @@ import {
   classifyChange, makeChange, changeId, planPropagation, dedupeDispatches, dispatchKey,
   planKitDrain, deliveryKey, kitDispatchPrompt,
   type KitConsumer, type Dispatch, type KitChange, type ChangeClass,
-} from "./propagation";
-import { REACT_UI_COMPONENTS } from "./reactUiKit";
+} from "@/features/designs/lib/propagation";
+import { REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
 import type { ComponentRecord } from "./model";
 
 // #3543: the packaged seed is now a single EMPTY kit, so these propagation tests take their Button fixture

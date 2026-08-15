@@ -59,6 +59,16 @@ pub fn load() -> Value {
         Some(p) => load_at(&p),
         None => seed(),
     };
+    // Heal a store written by the first cut BEFORE anything reads it (#the-tombstone-crash), and
+    // PERSIST the heal — an in-memory fix would leave the file untouched, and the file is what the
+    // FRONTEND reads. That asymmetry is the whole bug: Rust readers were fine while the graph page
+    // died on a record Rust had filtered. Best-effort and only when something actually changed, so a
+    // normal load still writes nothing.
+    if migrate_inline_tombstones(&mut g) {
+        if let Some(p) = store_path() {
+            let _ = save_at(&p, &g);
+        }
+    }
     reconcile_seed(&mut g);
     g
 }
@@ -72,6 +82,10 @@ pub fn load() -> Value {
 /// Returns whether it changed `g`. Order-stable: the store's own impls keep their order; missing seed
 /// impls are appended in seed order.
 pub fn reconcile_seed(g: &mut Value) -> bool {
+    let suppressed: std::collections::HashSet<String> = suppressions_of(g)
+        .iter()
+        .filter_map(|t| t.get("id").and_then(Value::as_str).map(str::to_owned))
+        .collect();
     let have: std::collections::HashSet<String> = implementations_of(g)
         .iter()
         .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
@@ -79,7 +93,12 @@ pub fn reconcile_seed(g: &mut Value) -> bool {
     let missing: Vec<Value> = implementations_of(&seed())
         .into_iter()
         .filter(|im| {
-            im.get("id").and_then(Value::as_str).map(|id| !have.contains(id)).unwrap_or(false)
+            // A SUPPRESSED id is not "missing" — it was retired on purpose, and re-adding it is the
+            // exact bug the tombstone exists to prevent (#71).
+            im.get("id")
+                .and_then(Value::as_str)
+                .map(|id| !have.contains(id) && !suppressed.contains(id))
+                .unwrap_or(false)
         })
         .collect();
     if missing.is_empty() {
@@ -381,8 +400,63 @@ pub fn implementations() -> Vec<Value> {
 }
 
 /// The implementation objects of `g`.
+///
+/// Suppression does NOT live here. The first cut parked a `{ id, suppressed: true }` tombstone inside
+/// this array — borrowing the component store's trick, where occupying the id is what makes the seed
+/// reconcile skip the packaged record — and filtered it out in this one function, on the reasoning that
+/// every read funnels through here. That was true of RUST. The frontend reads the same JSON directly
+/// and had never heard of `suppressed`, so the Algorithms graph iterated a tombstone, called `.join` on
+/// its missing `composes`, and died on render.
+///
+/// The lesson is about SHAPE, not about a missing filter: a record parked in an array of
+/// implementations will eventually be read by something that does not know to skip it, and the next
+/// such reader is as likely to be a chart or an export as a page. So the list below is the only place
+/// suppression exists, and this array holds implementations and nothing else.
 pub fn implementations_of(g: &Value) -> Vec<Value> {
     g.get("implementations").and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
+/// The suppression list — retired ids the seed reconcile must not re-add, each with what replaced it.
+pub fn suppressions_of(g: &Value) -> Vec<Value> {
+    g.get("suppressed").and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
+/// Is `id` retired?
+pub fn is_suppressed(g: &Value, id: &str) -> bool {
+    suppressions_of(g).iter().any(|t| t.get("id").and_then(Value::as_str) == Some(id))
+}
+
+/// Sweep any LEGACY in-array tombstone into the suppression list. Runs on load, so a store written by
+/// the first cut heals itself without anyone running a command — two of them are already in a live
+/// store, and one of them is what crashed the graph.
+pub fn migrate_inline_tombstones(g: &mut Value) -> bool {
+    let inline: Vec<Value> = implementations_of(g)
+        .into_iter()
+        .filter(|im| im.get("suppressed").and_then(Value::as_bool) == Some(true))
+        .collect();
+    if inline.is_empty() {
+        return false;
+    }
+    for t in &inline {
+        if let Some(id) = t.get("id").and_then(Value::as_str) {
+            let known = is_suppressed(g, id);
+            if !known {
+                let mut entry = serde_json::Map::new();
+                entry.insert("id".into(), Value::from(id));
+                if let Some(sb) = t.get("supersededBy") {
+                    entry.insert("supersededBy".into(), sb.clone());
+                }
+                ensure_array(g, "suppressed").push(Value::Object(entry));
+            }
+        }
+    }
+    let ids: std::collections::BTreeSet<String> = inline
+        .iter()
+        .filter_map(|t| t.get("id").and_then(Value::as_str).map(str::to_owned))
+        .collect();
+    ensure_array(g, "implementations")
+        .retain(|im| !im.get("id").and_then(Value::as_str).is_some_and(|id| ids.contains(id)));
+    true
 }
 
 /// Whether `im` belongs to `domain` (#3120) — the predicate behind `bsc graph impl list --domain`. An
@@ -426,7 +500,18 @@ pub fn is_registered_platform_module(spec: &str) -> bool {
     .contains(spec)
 }
 
+/// Upsert an implementation with no explicit author — every pre-#72 caller and test. Attributed to
+/// `unknown`, exactly as the component store attributes an unattributed write, rather than inventing a
+/// plausible-looking author.
 pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
+    set_impl_by(g, im, "unknown", None)
+}
+
+/// Upsert an implementation, STAMPING the write with its author, timestamp, rev and history (#72).
+///
+/// `writer` is who to attribute it to (`--by`, else the resolved default) and `note` is the optional
+/// why. Both ride to `bsc-record`, the one stamp shared with the component store.
+pub fn set_impl_by(g: &mut Value, im: Value, writer: &str, note: Option<&str>) -> Result<bool, String> {
     let id = im
         .get("id")
         .and_then(Value::as_str)
@@ -462,8 +547,11 @@ pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
             ));
         }
     }
+    let now = bsc_record::now_iso();
     let arr = ensure_array(g, "implementations");
     if let Some(existing) = arr.iter_mut().find(|x| x.get("id").and_then(Value::as_str) == Some(id.as_str())) {
+        // The pre-write value, cloned BEFORE the merge mutates it — the stamp diffs the two.
+        let prior = existing.clone();
         // MERGE, never replace (#4154). This was `*existing = im`, a whole-record overwrite — so any
         // field the caller did not resupply was SILENTLY DELETED. The designer hit it twice: a
         // domain-only edit wiped `transpose.ts`'s `folder` and `src` (request #49), and `tests` has no
@@ -490,6 +578,15 @@ pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
             // rather than silently keeping a malformed record.
             _ => *existing = im,
         }
+        // #72 — STAMP the write. `bsc graph impl set` recorded nothing: no rev, no author, no timestamp,
+        // no history, so a bad write was both unattributable and unrevertible, and a session hunting
+        // *who* kept recreating a node had nothing to read. Stamped through the SAME `bsc-record` the
+        // component store uses, so `bsc graph impl history` and `bsc ui log` mean the same thing rather
+        // than being two dialects that drift.
+        //
+        // Stamped from the PRIOR value, after the merge: the entry's `changed` set is the diff, so it
+        // must see both sides. `prevCode` (the revert rung) is retained by the same rule `prevSrc` uses.
+        bsc_record::stamp_with_history_of(existing, &prior, writer, &now, note, "code");
         Ok(true)
     } else {
         // A NEW impl still needs the shape the model expects: `composes` is a required array, and the
@@ -498,6 +595,9 @@ pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
         if im.get("composes").is_none() {
             im["composes"] = Value::Array(Vec::new());
         }
+        // A CREATE is stamped too, against a null prior — so rev 1 exists and `history` is never absent.
+        // A record whose log starts at its second write reads as if the first never happened.
+        bsc_record::stamp_with_history_of(&mut im, &Value::Null, writer, &now, note, "code");
         arr.push(im);
         Ok(false)
     }
@@ -596,8 +696,33 @@ pub fn merge_impls(g: &mut Value, from: &str, into: &str) -> Result<Vec<String>,
             }
         }
     }
-    remove_impl(g, from); // remove `from` (its refs are already repointed; scrub is a harmless no-op)
+    // RETIRE `from`. A plain remove is only durable for a USER-MADE impl: the seed reconcile re-adds any
+    // packaged id the store lacks, by design (it is what makes packaged algorithms recoverable), so
+    // removing a seeded impl silently undid itself and `merge` still reported `"removed"` — the defect
+    // behind request #71, which cost a session an afternoon hunting a phantom re-harvester.
+    //
+    // So a seeded `from` becomes a TOMBSTONE instead, carrying WHAT replaced it. The reconcile finds the
+    // id present and leaves it alone, and the fold is finally durable. `supersededBy` is set without the
+    // `suppress` verb's dangling-pointer checks because `into` was validated above — it is an impl in
+    // this very store, and the merge just repointed every consumer at it.
+    if is_seeded(from) {
+        remove_impl(g, from);
+        ensure_array(g, "suppressed").push(serde_json::json!({ "id": from, "supersededBy": into }));
+    } else {
+        remove_impl(g, from); // its refs are already repointed; the scrub is a harmless no-op
+    }
     Ok(repointed)
+}
+
+/// Is `id` in the PACKAGED seed — i.e. would [`reconcile_seed`] re-add it after a plain remove?
+///
+/// The seeded/user-made split is the whole reason retirement needs two mechanisms, and it is not
+/// something a caller can infer from the record it holds: a seeded impl and a harvested one look
+/// identical in the store.
+pub fn is_seeded(id: &str) -> bool {
+    implementations_of(&seed())
+        .iter()
+        .any(|im| im.get("id").and_then(Value::as_str) == Some(id))
 }
 
 // ── the doctor (#3212) — diagnose visualization typing + coverage ──
@@ -814,6 +939,144 @@ mod tests {
     }
 
     use super::*;
+
+    /// Request #71 — the whole point of the tombstone. `merge` folded a SEEDED impl away, reported
+    /// `"removed"`, and the seed reconcile put it straight back on the next read; a session lost an
+    /// afternoon to a phantom "concurrent re-harvester" that did not exist.
+    ///
+    /// The reconcile is NOT the bug and is unchanged: it re-adds any packaged id the store lacks, which
+    /// is what makes packaged algorithms recoverable. The tombstone works WITH that rule by occupying
+    /// the id, so the absent-id check finds it present.
+    #[test]
+    fn a_merged_away_seed_impl_stays_gone_across_a_reconcile() {
+        let mut g = seed();
+        assert!(is_seeded("llm-energy.ts"), "the fixture depends on this being packaged");
+        merge_impls(&mut g, "llm-energy.ts", "algorithms-llm-energy.ts").expect("merge succeeds");
+
+        // Gone from every READ …
+        let live = implementations_of(&g);
+        assert!(!live.iter().any(|im| im["id"] == "llm-energy.ts"), "the fold removes it");
+        // … and STAYS gone when the reconcile runs, which is where it used to come back.
+        reconcile_seed(&mut g);
+        let after = implementations_of(&g);
+        assert!(!after.iter().any(|im| im["id"] == "llm-energy.ts"), "the reconcile must not resurrect it");
+
+        // The tombstone records WHAT replaced it — the audit trail a consolidation needs later.
+        let tomb = suppressions_of(&g)
+            .into_iter()
+            .find(|t| t["id"] == "llm-energy.ts")
+            .expect("the suppression is listed");
+        assert_eq!(tomb.get("supersededBy").and_then(Value::as_str), Some("algorithms-llm-energy.ts"));
+    }
+
+    /// A tombstone must never surface AS an algorithm. It lives in the same array as the impls (that is
+    /// what makes the reconcile skip it), so the single filtered reader is the only thing standing
+    /// between it and every consumer — doctor, domain sweeps, `impl list`.
+    #[test]
+    fn a_retired_impl_leaves_the_array_entirely_and_is_recorded_in_the_list() {
+        let mut g = seed();
+        merge_impls(&mut g, "stream-merge.ts", "windowed-tally.ts").expect("merge succeeds");
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "stream-merge.ts"), "gone from the impls");
+        assert!(is_suppressed(&g, "stream-merge.ts"), "recorded in the suppression list instead");
+        // …and it does not leak into a domain collection either.
+        assert!(!in_domain_ids(&g, "fleet").contains(&"stream-merge.ts".to_string()));
+    }
+
+    /// A USER-MADE impl keeps removing outright: no tombstone where a plain delete is durable, or the
+    /// store fills with markers for records nothing would have re-seeded.
+    #[test]
+    fn a_user_made_impl_is_removed_outright_not_tombstoned() {
+        let mut g = seed();
+        set_impl(&mut g, serde_json::json!({
+            "id": "zz-user.ts", "tech": "typescript", "role": "algorithm", "name": "ZZ", "code": "export const z=1;",
+        })).expect("user impl writes");
+        merge_impls(&mut g, "zz-user.ts", "windowed-tally.ts").expect("merge succeeds");
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "zz-user.ts"), "gone entirely");
+        assert!(!is_suppressed(&g, "zz-user.ts"), "and NOT tombstoned — a plain delete is durable for it");
+    }
+
+    /// Helper: the ids a domain collection reports, through the FILTERED reader.
+    fn in_domain_ids(g: &Value, domain: &str) -> Vec<String> {
+        implementations_of(g)
+            .iter()
+            .filter(|im| impl_in_domain(im, domain))
+            .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
+            .collect()
+    }
+
+    /// #72 — every graph write is now ATTRIBUTED. `impl set` stamped nothing: no rev, author, timestamp
+    /// or history, so a bad write was unattributable and unrevertible, and a session asking "who keeps
+    /// recreating this node" had nothing to read. (Nobody was: that was the seed reconcile, #71.)
+    ///
+    /// Stamped through the SAME `bsc-record` the component store uses, so `bsc ui log` and the graph's
+    /// history mean the same thing instead of being two dialects.
+    #[test]
+    fn a_graph_write_is_stamped_with_its_author_and_history() {
+        let mut g = seed();
+        set_impl_by(&mut g, serde_json::json!({
+            "id": "zz-hist.ts", "tech": "typescript", "role": "algorithm", "name": "ZZ", "code": "export const z = 1;",
+        }), "designer", Some("first cut")).expect("create");
+
+        let rec = |g: &Value| implementations_of(g).into_iter().find(|i| i["id"] == "zz-hist.ts").expect("present");
+        let created = rec(&g);
+        assert_eq!(created.get("rev").and_then(Value::as_i64), Some(1), "a CREATE is rev 1, not unstamped");
+        let h = created.get("history").and_then(Value::as_array).cloned().unwrap_or_default();
+        assert_eq!(h.len(), 1, "the create is in the log — a record whose log starts at its second write lies");
+        assert_eq!(h[0].get("by").and_then(Value::as_str), Some("designer"));
+        assert_eq!(h[0].get("note").and_then(Value::as_str), Some("first cut"));
+
+        // An EDIT diffs against the prior value and retains the rung back.
+        set_impl_by(&mut g, serde_json::json!({
+            "id": "zz-hist.ts", "tech": "typescript", "role": "algorithm", "name": "ZZ", "code": "export const z = 2;",
+        }), "claude", Some("bump")).expect("edit");
+        let edited = rec(&g);
+        assert_eq!(edited.get("rev").and_then(Value::as_i64), Some(2));
+        let h2 = edited.get("history").and_then(Value::as_array).cloned().unwrap_or_default();
+        let last = h2.last().expect("an entry");
+        assert_eq!(last.get("by").and_then(Value::as_str), Some("claude"));
+        assert!(
+            last.get("changed").and_then(Value::as_array).is_some_and(|c| c.iter().any(|v| v == "code")),
+            "the diff names the field that moved: {last}"
+        );
+        // The rung is keyed on the GRAPH's content field (`code`), not the component store's `srcText` —
+        // the one store-specific thing in the shared stamp, and the reason it takes a parameter.
+        assert_eq!(last.get("prevSrc").and_then(Value::as_str), Some("export const z = 1;"),
+                   "the previous code is retained, so a revert has something to reach");
+    }
+
+    /// THE CRASH (#the-tombstone-crash). The first cut parked `{ id, suppressed: true }` INSIDE
+    /// `implementations`, filtered it in the Rust reader, and called that the single funnel. The
+    /// frontend reads the same JSON directly, had never heard of `suppressed`, and died on render:
+    /// `TypeError: Cannot read properties of undefined (reading 'join')` — `graphSig` mapping over a
+    /// record with no `composes`.
+    ///
+    /// So the invariant is about SHAPE: everything in that array is an implementation. A store written
+    /// by the first cut heals on load rather than needing a command, because two of them are already in
+    /// a live store.
+    #[test]
+    fn a_legacy_inline_tombstone_is_swept_out_of_the_impl_array() {
+        let mut g = seed();
+        ensure_array(&mut g, "implementations").push(serde_json::json!({
+            "id": "llm-energy.ts", "suppressed": true, "supersededBy": "algorithms-llm-energy.ts",
+        }));
+
+        assert!(migrate_inline_tombstones(&mut g), "it reports having healed something");
+
+        // Nothing a reader iterates is a tombstone, and every impl has what an impl has — the two
+        // fields `graphSig` reached for.
+        for im in implementations_of(&g) {
+            assert!(im.get("suppressed").is_none(), "no tombstone survives in the array: {im}");
+            assert!(im.get("composes").is_some(), "every impl a reader sees has composes: {im}");
+        }
+        // …and the retirement is still recorded, with what replaced it.
+        assert!(is_suppressed(&g, "llm-energy.ts"));
+        let t = suppressions_of(&g).into_iter().find(|t| t["id"] == "llm-energy.ts").expect("listed");
+        assert_eq!(t.get("supersededBy").and_then(Value::as_str), Some("algorithms-llm-energy.ts"));
+        // Idempotent: a second load neither duplicates nor re-adds.
+        assert!(!migrate_inline_tombstones(&mut g), "nothing left to heal");
+        reconcile_seed(&mut g);
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "llm-energy.ts"), "stays retired");
+    }
 
     #[test]
     fn seed_parses_impl_only_and_is_primitives_rooted() {
@@ -1051,15 +1314,44 @@ mod tests {
         graphics.sort();
         assert_eq!(graphics, ["reflect.ts", "rotate.ts", "transpose.ts"], "the graphics collection");
         assert_eq!(in_domain("signal-processing"), ["fft.rs"]);
-        // The FleetPage dashboard's harvested algorithms (#3462/#3465) form a discoverable "fleet"
-        // collection (#3607) — in the graph but ungrouped until tagged, so `bsc graph` surfaced none.
-        let mut fleet = in_domain("fleet");
-        fleet.sort();
-        assert_eq!(
-            fleet,
-            ["group-totals.ts", "llm-energy.ts", "order-by-rank.ts", "precedence-resolve.ts", "stream-merge.ts", "windowed-tally.ts"],
-            "the fleet collection is the FleetPage dashboard's harvested algorithms"
-        );
+        // `fleet` is an OPEN domain and the three above are CLOSED — which is why this one is asserted
+        // by PROPERTY rather than by membership. Logistics is the graph-traversal/pathfinding set and
+        // graphics is the in-place matrix transforms: finite, classical, and an exact list is right for
+        // them. `fleet` is fed by directory harvest, so pinning its exact membership meant every later
+        // curation of the subsystem turned develop red — it sat at 91 pass / 1 fail once a sweep of
+        // `src/shared/lib/fleet/` took it from 6 members to 21, and the failure said nothing about what
+        // had gone wrong. A red test on develop is worse than no test: it trains the next reader to see
+        // a real failure as noise, and this one was already mistaken for collateral damage once.
+        //
+        // The property still has the teeth the list had. The six FleetPage-dashboard originals
+        // (#3462/#3465) were extracted from the PAGE, so they carry no `src`; everything harvested since
+        // carries a `src` under the fleet subsystem. So a member is one or the other — and an impl from
+        // ANYWHERE ELSE tagged `fleet`, which is the over-tagging the list was guarding against, still
+        // fails.
+        const FLEET_DASHBOARD: [&str; 6] = [
+            "group-totals.ts", "llm-energy.ts", "order-by-rank.ts",
+            "precedence-resolve.ts", "stream-merge.ts", "windowed-tally.ts",
+        ];
+        let fleet = in_domain("fleet");
+        for id in FLEET_DASHBOARD {
+            assert!(fleet.iter().any(|f| f == id), "the dashboard original '{id}' stays in the fleet collection");
+        }
+        for id in &fleet {
+            if FLEET_DASHBOARD.contains(&id.as_str()) {
+                continue;
+            }
+            let im = impls.iter().find(|im| im["id"] == id.as_str()).expect("a listed id resolves");
+            let src = im.get("src").and_then(Value::as_str).unwrap_or_default();
+            // A no-`src` member is the interesting failure, not an edge case: that shape is reserved
+            // for the six dashboard originals, so a SEVENTH is either a new dashboard extraction that
+            // belongs on the list above, or a mis-tag. Say which rather than printing an empty path.
+            let from = if src.is_empty() { "no src — extracted, not lifted".to_string() } else { format!("'{src}'") };
+            assert!(
+                src.contains("shared/lib/fleet/"),
+                "fleet member '{id}' ({from}) is outside the fleet subsystem — mis-tagged rather than \
+                 curated, or a new dashboard extraction that belongs in FLEET_DASHBOARD"
+            );
+        }
 
         // The facet is ADDITIVE: the seed's general-purpose sorts/searches stay UNTAGGED rather than
         // being forced into a domain, so a domain collection never surfaces an unrelated algorithm.

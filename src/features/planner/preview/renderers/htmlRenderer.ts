@@ -14,7 +14,7 @@
 //   { bundleJs: string, importmap?: Record }   — streaming path (future producer)
 
 import type { PreviewRenderer, RendererHandle } from '../registry';
-import type { RenderableChunk, PreviewStatus } from '../types';
+import type { RenderableChunk, PreviewStatus } from '@/features/planner/preview/types';
 import { buildStreamingFrameHtml } from '../streamingRuntime';
 import { DEFAULT_IMPORTMAP } from '../previewBundle';
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isTurnOpen, isTurnOpenDebounced, ACTIVITY_IDLE_GRACE_MS, paneActivityFor, type PaneActivity, needsAttention } from "./paneActivity";
+import { isTurnOpen, isTurnOpenDebounced, ACTIVITY_IDLE_GRACE_MS, paneActivityFor, type PaneActivity, needsAttention } from "@/app/console/lib/paneActivity";
 
 // The status-dot gate (#1184): the silence timer must NOT idle a pane whose turn is still open
 // (a UserPromptSubmit with no following Stop). These tests pin the pure decision the poller feeds

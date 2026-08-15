@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { classifyWorkerEnd, type OwnedIssue } from "./workerEnd";
-import { emptyCoordState, satisfy, parseRef, type CoordState } from "./coordination";
+import { classifyWorkerEnd, type OwnedIssue } from "@/shared/lib/fleet/workerEnd";
+import { emptyCoordState, satisfy, parseRef, type CoordState } from "@/shared/lib/fleet/coordination";
 
 const empty = emptyCoordState();
 const iss = (ref: string, status: string): OwnedIssue => ({ ref, status });

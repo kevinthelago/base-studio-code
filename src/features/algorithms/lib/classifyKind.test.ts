@@ -1,6 +1,6 @@
 // The algorithm-kind classifier (#3210) — infers the manipulation kind from name/id/tags (+ code hint).
 import { describe, it, expect } from "vitest";
-import { classifyKind } from "./classifyKind";
+import { classifyKind } from "@/features/algorithms/lib/classifyKind";
 import { resolveKind } from "../viz/examples/registry";
 
 const im = (name: string, extra: { id?: string; code?: string; tags?: string[] } = {}) => ({

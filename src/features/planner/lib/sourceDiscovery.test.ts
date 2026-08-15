@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   migrationSources, proposedSourceIds, connectFieldsFor, SOURCE_DIRECTION,
   type DeclaredIntegration,
-} from "./sourceDiscovery";
+} from "@/features/planner/lib/sourceDiscovery";
 
 const row = (id: string, direction: string, extra: Partial<DeclaredIntegration> = {}): DeclaredIntegration =>
   ({ id, direction, ...extra });

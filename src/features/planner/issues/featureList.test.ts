@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFeaturesFile, featureDefined, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresToPlanIssues, featureDependencyCycle, type PlanFeature } from "./featureList";
+import { parseFeaturesFile, featureDefined, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresToPlanIssues, featureDependencyCycle, type PlanFeature } from "@/features/planner/issues/featureList";
 
 describe("parseFeaturesFile", () => {
   it("returns [] for empty / bad JSON / non-array", () => {

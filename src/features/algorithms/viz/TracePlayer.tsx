@@ -18,9 +18,9 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Button } from "@/shared/ui/controls/Button";
-import { normalizeFrame, type Frame, type StructureFrame } from "../lib/trace";
-import { makeTraceStream } from "../lib/traceStream";
-import { resolveRenderer, type RendererRegistry } from "./registry";
+import { normalizeFrame, type Frame, type StructureFrame } from "@/features/algorithms/lib/trace";
+import { makeTraceStream } from "@/features/algorithms/lib/traceStream";
+import { resolveRenderer, type RendererRegistry } from "@/features/algorithms/viz/registry";
 import { CodeColumn } from "./CodeColumn";
 import "./tracePlayer.css";
 

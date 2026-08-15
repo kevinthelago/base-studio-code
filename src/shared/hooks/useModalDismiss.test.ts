@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useModalDismiss, overlayDismiss } from "./useModalDismiss";
+import { useModalDismiss, overlayDismiss } from "@/shared/hooks/useModalDismiss";
 
 function pressEscape() {
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));

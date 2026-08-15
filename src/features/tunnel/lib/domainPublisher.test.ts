@@ -1,6 +1,6 @@
 // Domain publisher (#2498) — rev/dedup/debounce discipline for the store_state projector.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createDomainPublisher, type DomainSend } from "./domainPublisher";
+import { createDomainPublisher, type DomainSend } from "@/features/tunnel/lib/domainPublisher";
 
 describe("createDomainPublisher", () => {
   beforeEach(() => vi.useFakeTimers());

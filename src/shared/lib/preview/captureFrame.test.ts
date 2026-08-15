@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { screenCaptureAvailable, stopCapture } from "./captureFrame";
+import { screenCaptureAvailable, stopCapture } from "@/shared/lib/preview/captureFrame";
 
 describe("captureFrame guards (#2623 slice 5b)", () => {
   const md = navigator.mediaDevices;

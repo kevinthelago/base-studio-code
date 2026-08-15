@@ -8,9 +8,9 @@ import {
   excludeCommonsFromStreams,
   gateStreamsOnCommons,
   applyCommonsGate,
-} from "./commonsGate";
+} from "@/features/planner/fleet/commonsGate";
 import { commonsGlobsForStack } from "@/shared/lib/session/commons";
-import type { AgentStream, FleetPlan } from "./planFleet";
+import type { AgentStream, FleetPlan } from "@/features/planner/fleet/planFleet";
 
 const stream = (over: Partial<AgentStream> = {}): AgentStream => ({
   id: "auth-ui",

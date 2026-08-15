@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { FocusedStageBody } from "./FocusedBodies";
 import { STAGE_DEFS } from "../stages/blueprintBuiltins";
-import type { Stage } from "../stages/focusedPlan";
+import type { Stage } from "@/features/planner/stages/focusedPlan";
 
 describe("test_ui stage (#2274)", () => {
   it("STAGE_DEFS carries the test_ui section def (named, optional, component-library prompt)", () => {

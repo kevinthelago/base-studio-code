@@ -3,7 +3,7 @@ import {
   coerceClassifyConfig, appTypeOf, lifecycleOf, appTypeHasUi, classifySignals,
   uiSystemOf, rendersFromStudio, algorithmSystemOf, computesFromStudio, hostRunsProjectArtifacts,
   APP_TYPES, LIFECYCLES, SYSTEM_SOURCES,
-} from "./classifyConfig";
+} from "@/features/planner/lib/classifyConfig";
 
 describe("coerceClassifyConfig", () => {
   it("drops a mistyped or unknown field rather than failing the whole blob", () => {

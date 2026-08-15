@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PALETTE_GROUPS, swatchColor } from "./palette";
+import { PALETTE_GROUPS, swatchColor } from "@/features/designs/lib/palette";
 
 describe("palette (#2834)", () => {
   it("covers exactly the 14 semantic base-palette tokens every packaged theme retints", () => {

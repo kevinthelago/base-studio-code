@@ -3,9 +3,9 @@
 // cover the BST pair that opens it — and the property that makes a BST worth building: the in-order walk
 // comes out SORTED.
 import { describe, it, expect } from "vitest";
-import { runTreeAlgorithm, type TracedTree, type TreeNode } from "../../lib/tracer";
-import type { TreeFrame } from "../../lib/trace";
-import { bstShape, bstInsert, bstInorder, parseTreeInput, treeToText, TREE_PROGRAMS } from "./treeAlgos";
+import { runTreeAlgorithm, type TracedTree, type TreeNode } from "@/features/algorithms/lib/tracer";
+import type { TreeFrame } from "@/features/algorithms/lib/trace";
+import { bstShape, bstInsert, bstInorder, parseTreeInput, treeToText, TREE_PROGRAMS } from "@/features/algorithms/viz/examples/treeAlgos";
 
 const VALUES = [50, 30, 70, 20, 40, 60, 80];
 const last = <T>(xs: T[]): T => xs[xs.length - 1];

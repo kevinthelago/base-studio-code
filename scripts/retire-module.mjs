@@ -14,6 +14,13 @@
 // because it reconciles the whole catalogue against disk in one pass, which is cheaper and safer than
 // each retirement editing the same file.
 //
+// It rewrites `vi.mock("./x")` too, and that is not a nicety. A mock keys on the RESOLVED module, so when
+// the consumer imports `@/a/b` while the test mocks `./b`, retiring the file makes those stop being the
+// same module — and the mock SILENTLY STOPS APPLYING. The test still runs; it just exercises the real
+// module against a fixture built for a fake. Four tests broke that way on the first 110-file tranche
+// (`graphBridge`, `uiActivity`), and failing loudly was luck rather than design: a mock that quietly stops
+// mocking usually just makes a test weaker.
+//
 // Quote-agnostic on purpose: a double-quote-only sweep missed `PreviewPaneShell.tsx`'s
 // `from './StageScreenFrame'` and the typecheck found it instead. Rewriting is still not a substitute for
 // running tsc afterwards — this handles the mechanical bulk, tsc is the oracle.
@@ -70,7 +77,7 @@ for (const f of files) {
   const fromDir = f.replace(/\/[^/]+$/, "");
   // Both quote styles, and both `from '…'` and bare `import '…'` / `require('…')` forms.
   const after = before.replace(
-    /((?:from|import|require)\s*\(?\s*)(['"])(\.\.?\/[^'"]+)\2/g,
+    /((?:from|import|require|vi\.mock|vi\.doMock|vi\.unmock)\s*\(?\s*)(['"])(\.\.?\/[^'"]+)\2/g,
     (whole, head, q, relSpec) => (resolvesToTarget(fromDir, relSpec) ? `${head}${q}${spec}${q}` : whole),
   );
   if (after !== before) {

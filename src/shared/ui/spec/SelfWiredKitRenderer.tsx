@@ -27,8 +27,8 @@
 import { useMemo, useState } from "react";
 import { UI_KIT } from "@/shared/ui/manifest";
 import { KitRenderer } from "./KitRenderer";
-import { visitNodes, collectActions } from "./specWalk";
-import type { GeneralNode } from "./generalNode";
+import { visitNodes, collectActions } from "@/shared/ui/spec/specWalk";
+import type { GeneralNode } from "@/shared/ui/spec/generalNode";
 
 /** Primitive name → its manifest spec, for looking up a bound prop's declared type. */
 const SPEC_BY_NAME = new Map(UI_KIT.map((p) => [p.name as string, p]));

@@ -11,9 +11,9 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 import { Spark } from "@/shared/ui/charts";
 import { KIND, fmtCount } from "@/shared/data/skills";
-import { skillSlug, type SkillDef } from "./lib/skills";
-import { type SkillStats } from "./lib/skillTelemetry";
-import { successColor } from "./skillStyles";
+import { skillSlug, type SkillDef } from "@/features/skills/lib/skills";
+import { type SkillStats } from "@/features/skills/lib/skillTelemetry";
+import { successColor } from "@/features/skills/skillStyles";
 
 export function RunsTab({ merged, stats, statsLoaded, onOpen }: {
   merged: SkillDef[];

@@ -5,7 +5,7 @@ import {
   flattenTree, treeEdges, layoutTree,
   DEFAULT_TREE_METRICS, TREE_NODE_W, TREE_NODE_H,
   type TreeNodeData,
-} from "./treeLayout";
+} from "@/shared/ui/layouts/treeLayout";
 
 const FIXTURE: TreeNodeData[] = [
   {

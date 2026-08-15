@@ -10,6 +10,7 @@ description = "Component-library store (SQLite stores at ~/.base-studio-code/com
 name = "bsc_component"
 
 [dependencies]
+bsc-record = { path = "../bsc-record" }
 # The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the two
 # component/kit CliSpecs + a dispatcher.
 bsc-json-store = { path = "../bsc-json-store" }

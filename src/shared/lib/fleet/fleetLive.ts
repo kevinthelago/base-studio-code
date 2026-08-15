@@ -9,7 +9,7 @@
 
 import { hashString } from "@/shared/lib/core/format";
 import { resolveByPrecedence, type PrecedenceRule } from "@/shared/lib/algorithms/precedenceResolve";
-import type { CoordState } from "./coordination";
+import type { CoordState } from "@/shared/lib/fleet/coordination";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import type { WorkerStatus } from "@/shared/data/fleet";
 

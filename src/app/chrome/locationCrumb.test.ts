@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { locationCrumb, titleCasePageId, type CrumbState } from "./locationCrumb";
+import { locationCrumb, titleCasePageId, type CrumbState } from "@/app/chrome/locationCrumb";
 
 const base: CrumbState = {
   activeWorkspace: "glance",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { clamp } from "./math";
+import { clamp } from "@/shared/lib/core/math";
 
 // Covers the edge behaviors of BOTH former implementations (#2421): useDragResize's
 // `clampSize(value, min, max)` and useGraphViewport's `clamp(v, a, b)` were the same

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateKit, type SoundKit } from "./soundDescriptor";
+import { validateKit, type SoundKit } from "@/features/sounds/lib/soundDescriptor";
 import { STARTER_KIT } from "./soundKits";
 
 describe("validateKit (#3072)", () => {

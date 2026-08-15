@@ -2,17 +2,17 @@ import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { ConfigProfile } from "@/store";
-import { TOOL_PRESETS } from "../lib/toolPresets";
+import { TOOL_PRESETS } from "@/features/settings/lib/toolPresets";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { deriveAllRepos } from "./claudeConfig.helpers";
+import { deriveAllRepos } from "@/features/settings/cards/claudeConfig.helpers";
 import { TargetSelector } from "./TargetSelector";
 import { ProfileBar } from "./ProfileBar";
-import { ClaudeMdEditor } from "./ClaudeMdEditor";
+import { ClaudeMdEditor } from "@/features/settings/cards/ClaudeMdEditor";
 import { ToolPermissionsPanel } from "./ToolPermissionsPanel";
-import { WriteBar } from "./WriteBar";
+import { WriteBar } from "@/features/settings/cards/WriteBar";
 
 export function ClaudeConfigCard() {
   const {

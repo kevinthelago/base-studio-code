@@ -4,7 +4,7 @@ import {
   parseSkillsFile, deriveSkillKpis, refreshPackagedSkills,
   sessionSkillState, effectiveSessionSkills, applySessionSkillChoice,
   expandGroups, groupSkillCount, parseSkillGroupsFile, type SkillDef, type SkillGroup,
-} from "./skills";
+} from "@/features/skills/lib/skills";
 
 function def(p: Partial<SkillDef> = {}): SkillDef {
   return {

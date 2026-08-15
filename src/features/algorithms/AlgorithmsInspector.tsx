@@ -15,7 +15,7 @@ import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Chip } from "@/shared/ui/data/Chip";
 import { TECH_META, implById, usedByImpl, type KnowledgeGraph, type AlgoImpl } from "./lib/knowledge";
 import { VizPreview } from "./viz/VizPanel";
-import { useVizForImpl } from "./viz/useVizForImpl";
+import { useVizForImpl } from "@/features/algorithms/viz/useVizForImpl";
 
 const PANEL = { width: "100%", height: "100%", borderLeft: "1px solid var(--border)", overflowY: "auto", background: "var(--bg-panel)" } as const;
 

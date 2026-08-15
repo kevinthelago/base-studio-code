@@ -753,17 +753,23 @@ export function SeedDriftBanner() {
 }
 
 export function AppBanners() {
+  // #54 — a notice dismissed from the CLI is not RENDERED, rather than each banner learning a second way
+  // to hide itself. Gating here keeps every banner's own dismiss logic untouched (nine components, several
+  // with real internal state) and makes the CLI dismissal total: a banner that never mounts cannot appear
+  // in a capture, and cannot half-hide by forgetting to consult a flag.
+  const dismissed = useAppStore((s) => s.dismissedNotices);
+  const show = (id: string) => !dismissed.includes(id);
   return (
     <Box className="app-banner-stack">
-      <KitChangesBanner />
-      <SeedDriftBanner />
-      <CrashRecoveryBanner />
-      <InterruptedLoopBanner />
-      <SessionRecoveryBanner />
-      <QuarantineBanner />
-      <SandboxSetupBanner />
-      <ProjectCompleteBanner />
-      <PathExposeBanner />
+      {show("kit-changes") && <KitChangesBanner />}
+      {show("seed-drift") && <SeedDriftBanner />}
+      {show("crash-recovery") && <CrashRecoveryBanner />}
+      {show("interrupted-loop") && <InterruptedLoopBanner />}
+      {show("session-recovery") && <SessionRecoveryBanner />}
+      {show("quarantine") && <QuarantineBanner />}
+      {show("sandbox-setup") && <SandboxSetupBanner />}
+      {show("project-complete") && <ProjectCompleteBanner />}
+      {show("path-expose") && <PathExposeBanner />}
     </Box>
   );
 }

@@ -1,8 +1,8 @@
 // neighborSpotlight (#2215, graph-core epic #2214) — the shared focus primitive Glance + the
 // relationship graph both build their node/agent spotlight on.
 import { describe, it, expect } from "vitest";
-import { neighborSpotlight } from "./spotlight";
-import type { GraphEdge } from "./types";
+import { neighborSpotlight } from "@/shared/lib/graph/spotlight";
+import type { GraphEdge } from "@/shared/lib/graph/types";
 
 const edges: GraphEdge[] = [
   { id: "e1", from: "a", to: "b" },

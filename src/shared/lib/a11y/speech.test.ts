@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { isSpeechSupported, listVoices, speak, cancelSpeech } from "./speech";
+import { isSpeechSupported, listVoices, speak, cancelSpeech } from "@/shared/lib/a11y/speech";
 
 // A stand-in for SpeechSynthesisUtterance (jsdom has neither the ctor nor speechSynthesis).
 class FakeUtterance {

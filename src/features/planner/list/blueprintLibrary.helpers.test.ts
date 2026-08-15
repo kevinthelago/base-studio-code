@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildBlueprintItems, blueprintHue, prettyGist } from "./blueprintLibrary.helpers";
+import { buildBlueprintItems, blueprintHue, prettyGist } from "@/features/planner/list/blueprintLibrary.helpers";
 import type { Blueprint } from "../stages/blueprints";
 
 const bp = (over: Partial<Blueprint> & { id: string; name: string }): Blueprint => ({

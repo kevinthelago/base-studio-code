@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { compileVariantsCss } from "@/shared/ui/kit/variants";
-import { flattenTokens, type StyleDescriptor } from "./styleContract";
+import { flattenTokens, type StyleDescriptor } from "@/features/designs/lib/styleContract";
 
 // #3394 — the FIRST SLICE of #2553: Button is the "exhausted" component. Every VISUAL property of
 // `.btn` resolves from a `--btn-*` token the design store owns, so the designer LLM can restyle it —

@@ -15,7 +15,7 @@ import {
   buildComponentsPayload, buildThemesPayload, buildAutomationsPayload, buildMcpPayload,
   buildAlertsPayload, AUTOMATION_RUNS_CAP,
   buildSecurityPayload, SECURITY_AUDIT_CAP,
-} from "./storeProjections";
+} from "@/features/tunnel/lib/storeProjections";
 import type { AgentProfile, ConsoleSession, AuditDisplayRow } from "@/features/security";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────────

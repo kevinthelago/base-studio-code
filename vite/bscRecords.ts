@@ -9,17 +9,34 @@
 // once: a RELATIVE import (`./layout/Spacer`) never reaches a plugin matching `@/…`; `tsc` has no such
 // plugin API at all; and vitest loads a different config so the plugin was never installed. A file on
 // disk is the one thing all three already agree on — see `scripts/emit-records.mjs`.
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Plugin } from "vite";
 import { emitRecords } from "../scripts/emit-records.mjs";
+
+/** ONCE PER PROCESS, across every plugin instance — module-level on purpose.
+ *
+ *  `emitRecords` starts by `rmSync`-ing the whole tree and rebuilding it, which is right for one emitter
+ *  and catastrophic for two. A WORKER is a separate build with its own plugin list, and its `buildStart`
+ *  fires from inside the MAIN build's transform phase — so a second instance deleted the tree while
+ *  rolldown was concurrently loading modules out of it. The failure surfaced as "Could not load
+ *  .bsc-records/…", naming a DIFFERENT module on every run, for files that were plainly on disk by the
+ *  time anyone looked. Nothing about the seeds changes mid-build, so emitting once is not just a fix for
+ *  the race — it is the only emission that was ever meaningful. */
+let emitted = false;
 
 export function bscRecords(opts: { repoRoot: string }): Plugin {
   const { repoRoot } = opts;
   const records = resolve(repoRoot, ".bsc-records");
 
+  // The EXACT path first, then the extension probes. Without the empty entry a specifier that already
+  // carries its extension — `@/app/lazyWorkspaces.tsx?raw`, once the query is split off — matched nothing,
+  // because every candidate appended a second extension (`lazyWorkspaces.tsx.tsx`). `isFile` rather than
+  // `existsSync` for that first probe: a bare `@/features/planner` names a DIRECTORY that exists, and
+  // returning it would resolve the barrel to a folder.
+  const isFile = (p: string) => { try { return statSync(p).isFile(); } catch { return false; } };
   const hit = (base: string) =>
-    [".tsx", ".ts", "/index.tsx", "/index.ts"].map((e) => base + e).find(existsSync) ?? null;
+    ["", ".tsx", ".ts", "/index.tsx", "/index.ts"].map((e) => base + e).find(isFile) ?? null;
 
   return {
     name: "bsc-records",
@@ -32,12 +49,23 @@ export function bscRecords(opts: { repoRoot: string }): Plugin {
     // It also explains why the gate stayed green: every gate command regenerated first, so no gate could
     // observe the broken state — and the one command nobody gates on is the one a person runs all day.
     buildStart() {
+      if (emitted) return; // see `emitted` above — a second emitter deletes the tree mid-build
+      emitted = true;
       emitRecords({ quiet: true });
     },
     // Ahead of the `@` alias, so the specifier is still in `@/…` form and matches exactly instead of
     // guessing which extension the alias resolved to.
     enforce: "pre",
-    resolveId(source) {
+    resolveId(rawSource) {
+      // CARRY THE QUERY THROUGH. `@/app/lazyWorkspaces.tsx?raw` is a real import — `shadowPages.test.ts`
+      // reads a module's SOURCE to check every workspace is catalogued — and the suffix defeated the
+      // extension probe: `lazyWorkspaces.tsx?raw` + `.tsx` matches nothing, so the hook declined, the
+      // alias rewrote it to a path under `src/`, and the file was gone. Vite resolves `<path>?raw` fine
+      // once the path is right, so the fix is to split the query off, resolve the bare specifier, and
+      // re-attach it. `?url`, `?worker` and the rest come along for free.
+      const q = rawSource.indexOf("?");
+      const source = q === -1 ? rawSource : rawSource.slice(0, q);
+      const query = q === -1 ? "" : rawSource.slice(q);
       // BOTH forms, and the second is the one that actually fires. `resolve.alias` is itself an
       // `enforce: "pre"` plugin and wins the race, so by the time this hook runs the specifier is no
       // longer `@/shared/ui/layout/Spacer` — it is the aliased path `<repo>/src/shared/ui/layout/Spacer`,
@@ -55,7 +83,8 @@ export function bscRecords(opts: { repoRoot: string }): Plugin {
       if (!rel) return null;
       // The file wins while it exists. Installing this plugin is therefore a no-op until a deletion.
       if (hit(join(repoRoot, "src", ...rel))) return null;
-      return hit(join(records, ...rel));
+      const found = hit(join(records, ...rel));
+      return found && found + query;
     },
   };
 }

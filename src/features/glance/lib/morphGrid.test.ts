@@ -4,9 +4,9 @@ import {
   CELL_W, CELL_H, GRID_GAP, DEFAULT_CELL,
   CELL_MIN_W, CELL_MIN_H, CELL_MAX_W, CELL_MAX_H,
   type MorphPlacement, type GridCell,
-} from "./morphGrid";
+} from "@/features/glance/lib/morphGrid";
 import { NW, NH } from "./glanceGraph";
-import type { MorphRect } from "./glancePush";
+import type { MorphRect } from "@/features/glance/lib/glancePush";
 
 const ANCHOR = { x: 100, y: 100 };
 /** Do two world boxes overlap at all? The property the whole grid exists to guarantee. */

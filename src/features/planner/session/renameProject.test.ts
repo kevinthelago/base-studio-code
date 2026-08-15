@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { planRename, applyRename, RENAME_PROJECT_MUTATION, type RenameDeps } from "./renameProject";
+import { planRename, applyRename, RENAME_PROJECT_MUTATION, type RenameDeps } from "@/features/planner/session/renameProject";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
 
 describe("planRename — the published-rename guard (#1226)", () => {

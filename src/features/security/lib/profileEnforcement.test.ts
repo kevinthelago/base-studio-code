@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveProfileSettings } from "./profileEnforcement";
+import { resolveProfileSettings } from "@/features/security/lib/profileEnforcement";
 import { findProfile } from "./agentProfiles";
 
 const profile = (id: string) => {

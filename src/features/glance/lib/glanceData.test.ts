@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { SAMPLE_GRAPH, buildGlanceData } from "./glanceData";
 import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId } from "./glanceGraph";
-import type { ProjectLink } from "./projectLinks";
+import type { ProjectLink } from "@/features/glance/lib/projectLinks";
 // Cross-feature via the barrel (#1309): the REAL kit→library roll-up + the component record it reads.
 import { resolveKitLibraryRefs, type ComponentRecord } from "@/features/designs";
 

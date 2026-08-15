@@ -6,10 +6,10 @@
 // (`@/features/mcp` — the barrel with HooksView/telemetry — is registered by the AUTOMATIONS platform; these
 // are the mcp INTERNALS, a disjoint set of specifiers.)
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
-import * as McpInstall from "./lib/mcpInstall";
+import * as McpInstall from "@/features/mcp/lib/mcpInstall";
 import * as McpServers from "./lib/mcpServers";
-import * as Hooks from "./lib/hooks";
-import * as McpTelemetry from "./lib/mcpTelemetry";
+import * as Hooks from "@/features/mcp/lib/hooks";
+import * as McpTelemetry from "@/features/mcp/lib/mcpTelemetry";
 import * as Shared from "@/features/mcp/shared";
 import * as GraphPlatform from "@/features/mcp/graphPlatform";
 import * as SessionConfig from "@/features/mcp/lib/sessionConfig";

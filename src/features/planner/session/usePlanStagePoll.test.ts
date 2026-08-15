@@ -6,8 +6,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { usePlanStagePoll } from "./usePlanStagePoll";
-import { FLEET_KEY } from "../fleet/planFleet";
+import { usePlanStagePoll } from "@/features/planner/session/usePlanStagePoll";
+import { FLEET_KEY } from "@/features/planner/fleet/planFleet";
 
 const PID = "p-fleet-poll";
 

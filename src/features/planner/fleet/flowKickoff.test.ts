@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { flowKickoffText } from "./flowKickoff";
-import { DEFAULT_FLOW, type AgentFlow } from "./agentFlow";
+import { DEFAULT_FLOW, type AgentFlow } from "@/features/planner/fleet/agentFlow";
 
 const flow = (p: Partial<AgentFlow>): AgentFlow => ({ ...DEFAULT_FLOW, ...p });
 

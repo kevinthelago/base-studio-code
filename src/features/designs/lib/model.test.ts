@@ -19,7 +19,7 @@ import {
 } from "./model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
 import { BASE_KIT_ID } from "@/shared/ui/kit/baseAnimations";
-import { REACT_UI_COMPONENTS, REACT_UI_KIT } from "./reactUiKit";
+import { REACT_UI_COMPONENTS, REACT_UI_KIT } from "@/features/designs/lib/reactUiKit";
 
 // #3543: the packaged seed is now a single EMPTY kit, so these generic model-helper tests exercise the
 // react-ui LIBRARY (the manifest-generated assembler — the exact set the seed used to carry) as their fixture.

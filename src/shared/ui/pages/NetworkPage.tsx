@@ -17,13 +17,13 @@ import { KeyValueList, type KeyValueItem } from "@/shared/ui/data/KeyValueList";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
-import { usePageSelection } from "./useSelection";
+import { usePageSelection } from "@/shared/ui/pages/useSelection";
 import {
   layoutNetwork, NET_NODE_W, NET_NODE_H,
   type NetworkNodeData, type NetworkEdgeData,
-} from "./networkLayout";
+} from "@/shared/ui/pages/networkLayout";
 
-export type { NetworkNodeData, NetworkEdgeData } from "./networkLayout";
+export type { NetworkNodeData, NetworkEdgeData } from "@/shared/ui/pages/networkLayout";
 
 export interface NetworkPageProps {
   /** Page title (the toolbar row). */

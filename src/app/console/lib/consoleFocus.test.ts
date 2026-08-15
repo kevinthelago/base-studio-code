@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shouldAdvanceOnReply, nextFullscreen } from "./consoleFocus";
+import { shouldAdvanceOnReply, nextFullscreen } from "@/app/console/lib/consoleFocus";
 
 describe("shouldAdvanceOnReply", () => {
   it("advances when you reply to the focused agent (idle -> run)", () => {

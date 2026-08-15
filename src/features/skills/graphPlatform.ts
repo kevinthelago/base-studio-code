@@ -4,11 +4,11 @@
 // a feature's internals (#1545). The skills host calls this synchronously before the graph page loads.
 // Mirrors the fleet/automations/security/github graph-platforms.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
-import * as Skills from "./lib/skills";
-import * as SkillsFilter from "./lib/skillsFilter";
-import * as SkillTelemetry from "./lib/skillTelemetry";
-import * as Lessons from "./lib/lessons";
-import * as SkillStyles from "./skillStyles";
+import * as Skills from "@/features/skills/lib/skills";
+import * as SkillsFilter from "@/features/skills/lib/skillsFilter";
+import * as SkillTelemetry from "@/features/skills/lib/skillTelemetry";
+import * as Lessons from "@/features/skills/lib/lessons";
+import * as SkillStyles from "@/features/skills/skillStyles";
 import * as GraphPlatform from "@/features/skills/graphPlatform";
 
 let done = false;

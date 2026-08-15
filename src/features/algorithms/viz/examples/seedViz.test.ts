@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { ArrayFrame } from "../../lib/trace";
+import type { ArrayFrame } from "@/features/algorithms/lib/trace";
 import { KNOWLEDGE, implById } from "../../lib/knowledge";
 import { runVizProgram } from "./vizProgram";
 import { resolveVizExample, programVizForImpl } from "./registry";

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { logsTail } from "@/shared/lib/core/logsBridge";
 import { Box } from "@/shared/ui/layout/Box";
 import { useAppStore } from "@/store";
-import { parseSkillLog, aggregateSkillTelemetry, skillStatusKpis, type SkillStats } from "./lib/skillTelemetry";
+import { parseSkillLog, aggregateSkillTelemetry, skillStatusKpis, type SkillStats } from "@/features/skills/lib/skillTelemetry";
 
 /**
  * Live Skills KPIs for the app status bar (Skills page) — replaces the old hardcoded

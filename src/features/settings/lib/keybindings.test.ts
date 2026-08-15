@@ -18,8 +18,8 @@ import {
   findLeaderConflict,
   leaderToCaps,
   type ChordEvent,
-} from "./keybindings";
-import { SCREEN_HOTKEYS } from "./shortcuts";
+} from "@/features/settings/lib/keybindings";
+import { SCREEN_HOTKEYS } from "@/features/settings/lib/shortcuts";
 
 const ev = (over: Partial<ChordEvent>): ChordEvent => ({
   ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, code: "", ...over,

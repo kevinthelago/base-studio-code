@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   mapDevicePoll, SLOW_DOWN_BUMP_SEC, runDeviceFlow,
   type DeviceStartInfo, type DevicePollResult, type DeviceFlowDeps,
-} from "./githubDeviceFlow";
+} from "@/shared/lib/github/githubDeviceFlow";
 
 describe("mapDevicePoll", () => {
   it("an access_token -> success carrying the token", () => {

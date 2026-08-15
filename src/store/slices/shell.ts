@@ -5,11 +5,11 @@
 import type { StateCreator } from "zustand";
 import { type AppStore, DEFAULT_PERF_CONFIG, DEFAULT_LOG_CONFIG } from "../types";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { setMapEntry } from "../updateHelpers";
-import { pickDemoable, mergeSnapshotInto } from "../appState";
+import { setMapEntry } from "@/store/updateHelpers";
+import { pickDemoable, mergeSnapshotInto } from "@/store/appState";
 
 type ShellSlice = Pick<AppStore,
-  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "activePageTab" | "setActivePageTab" | "crumbEntity" | "setCrumbEntity" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "sandboxNudgeDismissCount" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig" | "demoActive" | "demoBackup" | "loadDemoState" | "clearDemoState"
+  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "activePageTab" | "setActivePageTab" | "crumbEntity" | "setCrumbEntity" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "dismissedNotices" | "dismissNotice" | "sandboxNudgeDismissCount" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig" | "demoActive" | "demoBackup" | "loadDemoState" | "clearDemoState"
 >;
 
 export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set) => ({
@@ -47,6 +47,10 @@ export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set
 
       settingsSection: "github",
       setSettingsSection: (section) => set({ settingsSection: section }),
+
+      dismissedNotices: [],
+      dismissNotice: (id) =>
+        set((s) => (s.dismissedNotices.includes(id) ? s : { dismissedNotices: [...s.dismissedNotices, id] })),
 
       sandboxNudgeDismissCount: 0,
       dismissSandboxNudge: () => set((s) => ({ sandboxNudgeDismissCount: s.sandboxNudgeDismissCount + 1 })),

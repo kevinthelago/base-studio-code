@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeNextRun, resolveTargetPane, dispatchPayload, dueAutomations, appendRun, MAX_RUNS, suggestionToAutomation,
   type Automation, type AutomationRun,
-} from "./scheduler";
+} from "@/features/automations/lib/scheduler";
 
 const DAY = 86_400_000;
 

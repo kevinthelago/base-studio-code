@@ -17,6 +17,10 @@
 import type { AppStore } from "@/store/types";
 import type { Workspace } from "@/app/registry";
 import { dispatchPage } from "@/app/navigate";
+import { blanketDismissable, refuseDismissal } from "@/app/chrome/banners";
+
+/** The `--dismiss` value that clears every non-decision notice. */
+const ALL_NOTICES = "all";
 
 /** The preview DATA-STATES `--state` navigates to (#3717) — the navigable subset of the Design Studio's
  *  state axis (`error` is a render OUTCOME, not something you request). Kept in lockstep with the Rust
@@ -34,6 +38,9 @@ export interface NavRequest {
   component?: string;
   theme?: string;
   state?: string;
+  /** #54 — clear an app NOTICE (a banner id, or `all`). Banners dismiss through local React state, so a
+   *  session driving the app from a shell could see one in a capture and had no way to clear it. */
+  dismiss?: string;
 }
 
 /** What we send back to Rust. Mirrors Rust `NavAck`. */
@@ -76,6 +83,9 @@ export interface NavAck {
   mounted?: string;
   /** Why the selected component is not on screen. */
   mountError?: string;
+  /** #54 — the notices this request actually cleared. Reported so `dismiss all` is auditable rather than
+   *  a silent sweep, and so a caller can tell "nothing was showing" from "it worked". */
+  dismissed?: string[];
 
   workspace?: string;
   page?: string;
@@ -134,6 +144,12 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
   if (req.state !== undefined && !(NAV_STATES as readonly string[]).includes(req.state)) {
     return { error: `unknown state '${req.state}' — one of: ${NAV_STATES.join(", ")}` };
   }
+  // #54 — validated with the rest, BEFORE anything mutates: a half-applied navigation that also refused
+  // a dismissal would leave the caller guessing which half happened.
+  if (req.dismiss !== undefined && req.dismiss !== ALL_NOTICES) {
+    const refusal = refuseDismissal(req.dismiss);
+    if (refusal) return { error: refusal };
+  }
   // A component is only meaningful inside a kit: resolve against the requested kit, else the current one.
   // Naming a component without a kit is ambiguous the moment two kits share a component name.
   let comp: { id: string; kitId: string } | undefined;
@@ -153,6 +169,16 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
   }
 
   // ── Commit ────────────────────────────────────────────────────────────────────────────────────
+  // A blanket dismiss clears everything that does not ASK something. `session-recovery` ("restore or
+  // discard?") is excluded by the registry: hiding it does not answer it, it removes the only place the
+  // answer can be given, and those sessions stay unrestored with nothing on screen to say so.
+  const dismissed: string[] = [];
+  if (req.dismiss !== undefined) {
+    for (const id of req.dismiss === ALL_NOTICES ? blanketDismissable() : [req.dismiss]) {
+      s.dismissNotice(id);
+      dismissed.push(id);
+    }
+  }
   if (req.theme !== undefined) s.setKitTheme(req.theme);
   // The preview DATA-STATE the Studio renders (#3717) — drives the same store value the state control
   // sets, so a `--state` navigate captures the intended render. Validated above, so the cast is sound.
@@ -219,14 +245,15 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
     s.setDesignsKit(req.kit);
   }
 
-  return landed(read, declined, awaitMount);
+  return landed(read, declined, awaitMount, dismissed);
 }
 
 /** Read the resulting view back OUT of the store — a FRESH read, never the pre-mutation snapshot. */
-function landed(read: () => AppStore, declined?: string, awaitMount?: string): NavAck {
+function landed(read: () => AppStore, declined?: string, awaitMount?: string, dismissed?: string[]): NavAck {
   const s = read();
   return {
     awaitMount,
+    dismissed: dismissed && dismissed.length > 0 ? dismissed : undefined,
     workspace: s.activeWorkspace,
     page: s.projectsPageMode,
     kit: s.designsKitId || undefined,

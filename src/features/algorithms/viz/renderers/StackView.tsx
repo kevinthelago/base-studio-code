@@ -7,9 +7,9 @@
 import { useEffect } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { opStateAttrs, type OpStateAttrs } from "../../lib/binding";
-import type { StackFrame } from "../../lib/trace";
-import type { StructureRenderer } from "../registry";
+import { opStateAttrs, type OpStateAttrs } from "@/features/algorithms/lib/binding";
+import type { StackFrame } from "@/features/algorithms/lib/trace";
+import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import { STACK_VIZ_ANIM_CLASSES, ensureStackViewMotion } from "@/features/algorithms/viz/renderers/stackViewMotion";
 import "./stackView.css";
 

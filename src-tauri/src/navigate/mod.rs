@@ -71,6 +71,10 @@ pub struct NavAck {
     /// or the frame did not settle within the frontend's budget.
     #[serde(default)]
     pub mount_error: Option<String>,
+    /// #54 — the notices the frontend cleared. DECLARED here, not merely sent: serde drops an undeclared
+    /// field silently, which is exactly how `declined` reached no caller for as long as it existed.
+    #[serde(default)]
+    pub dismissed: Option<Vec<String>>,
 }
 
 /// In-flight navigations, keyed by request id. The watcher parks on the receiver; `navigate_ack`
@@ -122,6 +126,7 @@ pub fn apply(
         declined: ack.declined,
         mounted: ack.mounted,
         mount_error: ack.mount_error,
+        dismissed: ack.dismissed,
     })
 }
 
@@ -231,6 +236,7 @@ mod tests {
             declined: None,
             mounted: None,
             mount_error: None,
+            dismissed: None,
         })
         .unwrap();
 

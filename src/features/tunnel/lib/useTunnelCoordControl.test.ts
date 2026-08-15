@@ -18,7 +18,7 @@ vi.mock("@/shared/lib/fleet/coordinatorActuate", () => ({
 }));
 
 import { actuateWake, injectWake } from "@/shared/lib/fleet/coordinatorActuate";
-import { useTunnelCoordControl } from "./useTunnelCoordControl";
+import { useTunnelCoordControl } from "@/features/tunnel/lib/useTunnelCoordControl";
 
 const handlers: Record<string, (e: { payload: { session: string } }) => void> = {};
 

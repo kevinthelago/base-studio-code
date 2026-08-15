@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { REACT_UI_COMPONENTS, REACT_UI_KIT } from "./reactUiKit";
+import { REACT_UI_COMPONENTS, REACT_UI_KIT } from "@/features/designs/lib/reactUiKit";
 import { SEED_COMPONENTS, SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./seed";
-import { componentRules } from "./rules";
+import { componentRules } from "@/features/designs/lib/rules";
 import { UI_KIT } from "@/shared/ui/manifest";
 
 const byName = (name: string) => REACT_UI_COMPONENTS.find((c) => c.name === name);

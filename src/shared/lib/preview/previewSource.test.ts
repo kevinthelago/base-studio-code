@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { previewRender, isIframeSource, type PreviewSource } from "./previewSource";
+import { previewRender, isIframeSource, type PreviewSource } from "@/shared/lib/preview/previewSource";
 
 describe("previewRender (#2623 — the verify-build → preview-node seam)", () => {
   it("renders a web source as an iframe pointed at its URL", () => {

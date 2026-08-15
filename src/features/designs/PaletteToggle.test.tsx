@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { PaletteToggle } from "./PaletteToggle";
+import { PaletteToggle } from "@/features/designs/PaletteToggle";
 
 describe("PaletteToggle (#3706)", () => {
   it("shows the theme label and reads un-pressed when the palette is collapsed", () => {

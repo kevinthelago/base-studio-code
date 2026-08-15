@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveStreamPersona, personaStreamPrompt } from "./streamPersona";
-import type { AgentStream } from "./planFleet";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 
 const stream = (over: Partial<AgentStream> = {}): AgentStream => ({

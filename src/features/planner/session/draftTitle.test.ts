@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planDraftCommit } from "./draftTitle";
+import { planDraftCommit } from "@/features/planner/session/draftTitle";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
 
 describe("planDraftCommit — the draft-title commit guard (#1222)", () => {

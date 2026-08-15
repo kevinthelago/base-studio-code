@@ -1,6 +1,6 @@
 // Shift+Enter must reach the PTY as something OTHER than a bare Enter (#4134).
 import { describe, it, expect } from "vitest";
-import { terminalKeyOverride, SHIFT_ENTER_BYTES, type TerminalKeyEvent } from "./terminalKeys";
+import { terminalKeyOverride, SHIFT_ENTER_BYTES, type TerminalKeyEvent } from "@/app/console/lib/terminalKeys";
 
 const ev = (o: Partial<TerminalKeyEvent> & Pick<TerminalKeyEvent, "key">): TerminalKeyEvent =>
   ({ type: "keydown", shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...o });

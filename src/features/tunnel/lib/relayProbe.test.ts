@@ -7,7 +7,7 @@ import {
   freshRoomId,
   type MinimalSocket,
   type ProbeLegs,
-} from "./relayProbe";
+} from "@/features/tunnel/lib/relayProbe";
 
 // ── A fake relay: sockets that open on a microtask and forward frames between peers in
 // the same room, so the probe's three legs run against a faithful loopback without a

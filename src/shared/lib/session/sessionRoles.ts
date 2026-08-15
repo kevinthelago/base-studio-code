@@ -39,8 +39,8 @@ export {
   isRestrictedRole, HARVEST_ROOT_APP_REPO, HARVEST_ROOT_PROJECTS,
 } from "./roleModel";
 
-export type { CommandClass, CommandDecision } from "./commandGate";
-export { classifyCommand, checkCommand } from "./commandGate";
+export type { CommandClass, CommandDecision } from "@/shared/lib/session/commandGate";
+export { classifyCommand, checkCommand } from "@/shared/lib/session/commandGate";
 
 export { matchGlob, canWritePath, scopeWriteGlobs } from "./writeScope";
 

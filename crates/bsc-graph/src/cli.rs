@@ -21,7 +21,7 @@ pub const VERBS: [&str; 14] =
     ["impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "emit", "help"];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
-pub const IMPL_SUBVERBS: [&str; 3] = ["set", "remove", "list"];
+pub const IMPL_SUBVERBS: [&str; 7] = ["set", "remove", "list", "suppress", "unsuppress", "history", "revert"];
 
 /// The `edge` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
@@ -32,8 +32,15 @@ pub const BOOL_FLAGS: [&str; 8] =
     ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 30] = [
+pub const FLAGS: [&str; 34] = [
     "--pretty",
+    // #71 — names WHAT replaced a suppressed algorithm, stored on the tombstone.
+    "--superseded-by",
+    // #72 — the revision `impl revert` restores to, and who to attribute the write to.
+    "--to",
+    "--by",
+    // #72 — the WHY, recorded on the history entry alongside the who and the when.
+    "--note",
     "--all",
     "--id",
     "--tech",
@@ -170,6 +177,21 @@ fn entity_ids() -> Vec<String> {
     bsc_data::entity::open(None)
         .map(|s| bsc_data::entity::list(&s).into_iter().map(|e| e.id).collect())
         .unwrap_or_default()
+}
+
+/// A record's `src` reduced to the module it names, so two spellings of one path compare equal.
+///
+/// The store holds both conventions — `src/shared/ui/registry.tsx` and `app/console/lib/focusQueue.ts` —
+/// because records arrived from different eras of the harvest, and Windows contributes backslashes on top.
+/// Comparing the raw strings made the stem-collision guard fire on a record whose `src` is the SAME FILE,
+/// which is the worst possible failure for a guard: it refused the honest case (re-harvesting a module
+/// over its own stale record) while still catching nothing the normalization misses. Six modules were
+/// blocked this way — `focusQueue`, `jumbleProbe`, `hashString`, `sort`, `selectionNeighborhood` — each
+/// reported as "already names a DIFFERENT module" against itself.
+fn same_module_path(src: &str) -> String {
+    let unix = src.replace('\\', "/");
+    let trimmed = unix.trim_start_matches("./");
+    trimmed.strip_prefix("src/").unwrap_or(trimmed).to_string()
 }
 
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
@@ -388,7 +410,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if let Some(k) = flag_value(&args, "--kind") { im["kind"] = Value::String(k); }
                 // The viz-code facet (#3218) — the algorithm's visualization as a JS trace-program. Additive.
                 if let Some(v) = flag_value(&args, "--viz-code") { im["vizCode"] = Value::String(v); }
-                let replaced = crate::set_impl(&mut g, im.clone())?;
+                let replaced = crate::set_impl_by(&mut g, im.clone(), &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()), flag_value(&args, "--note").as_deref())?;
                 crate::save(&g)?;
                 // Report the STORED record, not the write payload (#4154). Echoing `im` showed only the
                 // fields this call restated, so a `--domain`-only edit answered without `src`, `summary`
@@ -403,6 +425,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             }
             Some("remove") => {
                 let id = positional.get(2).ok_or("usage: bsc graph impl remove <id>")?;
+                // A SEEDED id cannot be removed — the seed reconcile re-adds it by design, so reporting
+                // `removed` would be a lie the caller discovers on their next read (request #71). Refuse
+                // and name the verb that does work, rather than succeeding at nothing.
+                if crate::is_seeded(id) {
+                    return Err(format!(
+                        "'{id}' is a PACKAGED algorithm — a plain remove re-seeds on the next load. Use                          `bsc graph impl suppress {id}` to retire it durably (add `--superseded-by <new-id>`                          when something replaces it), or `impl unsuppress` to bring it back."
+                    ));
+                }
                 let mut g = crate::load();
                 if crate::remove_impl(&mut g, id) {
                     crate::save(&g)?;
@@ -410,6 +440,96 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 } else {
                     Err(format!("unknown implementation '{id}'"))
                 }
+            }
+            // #71 — RETIRE a packaged algorithm durably. Mirrors `bsc ui suppress` (#3725): a
+            // `{ id, suppressed: true }` tombstone OCCUPIES the id, so the seed reconcile's absent-id
+            // check finds it present and stops re-adding the packaged impl. `--superseded-by` records
+            // what replaced it, on the tombstone because that is the one record the reconcile never
+            // overwrites — a consolidation is otherwise unauditable a month later.
+            // #72 — READ the write log. `impl set` stamps rev/by/at/changed through the same
+            // `bsc-record` the component store uses, so this reads like `bsc ui log <id>` on purpose:
+            // one vocabulary across both stores rather than two dialects a reader has to translate.
+            Some("history") => {
+                let id = positional.get(2).ok_or("usage: bsc graph impl history <id>")?;
+                let g = crate::load();
+                let rec = crate::implementations_of(&g)
+                    .into_iter()
+                    .find(|im| im.get("id").and_then(Value::as_str) == Some(*id))
+                    .ok_or_else(|| format!("unknown implementation '{id}'"))?;
+                emit(&bsc_record::log_value(id, &rec))
+            }
+            // #72 — restore a previous `code`. REFUSES rather than landing on a nearer revision: the
+            // rung is retained for only the most recent few source-moving writes, so a silent
+            // approximation would hand back code the caller never asked for and call it a revert.
+            Some("revert") => {
+                let id = positional.get(2).ok_or("usage: bsc graph impl revert <id> [--to <rev>]")?;
+                let mut g = crate::load();
+                let rec = crate::implementations_of(&g)
+                    .into_iter()
+                    .find(|im| im.get("id").and_then(Value::as_str) == Some(*id))
+                    .ok_or_else(|| format!("unknown implementation '{id}'"))?;
+                let revertible = bsc_record::revertible_revs(&rec);
+                // Default: the revision immediately before this one — "undo the last write".
+                let want = match flag_value(&args, "--to") {
+                    Some(v) => v.parse::<i64>().map_err(|_| format!("--to: not a revision number: {v}"))?,
+                    None => *revertible.last().ok_or_else(|| format!(
+                        "'{id}' has no retained code to revert to — its history holds no source-moving write"
+                    ))?,
+                };
+                let code = bsc_record::src_at_rev_of(&rec, want, "code").ok_or_else(|| format!(
+                    "'{id}' cannot be reverted to rev {want} — that revision's code is not retained.                      Revertible: {}",
+                    if revertible.is_empty() { "(none)".into() } else {
+                        revertible.iter().map(i64::to_string).collect::<Vec<_>>().join(", ")
+                    }
+                ))?;
+                let mut next = rec.clone();
+                next["code"] = Value::String(code);
+                let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
+                crate::set_impl_by(&mut g, next, &writer, Some(&format!("revert to rev {want}")))?;
+                crate::save(&g)?;
+                emit(&serde_json::json!({ "ok": true, "reverted": id, "to": want }))
+            }
+            Some("suppress") => {
+                let id = positional.get(2).ok_or("usage: bsc graph impl suppress <id> [--superseded-by <new-id>]")?;
+                let mut g = crate::load();
+                let live: Vec<Value> = crate::implementations_of(&g);
+                let known = |x: &str| live.iter().any(|im| im.get("id").and_then(Value::as_str) == Some(x));
+                if !known(id) && !crate::is_seeded(id) {
+                    return Err(format!("unknown implementation '{id}'"));
+                }
+                let mut tomb = serde_json::json!({ "id": id });
+                if let Some(new_id) = flag_value(&args, "--superseded-by") {
+                    // REFUSED, not stored, on a dangling or self pointer — the tombstone is durable, so a
+                    // pointer naming something nobody can open outlives everyone who could correct it.
+                    if new_id == *id {
+                        return Err(format!("'{id}' cannot supersede itself"));
+                    }
+                    if !known(&new_id) {
+                        return Err(format!(
+                            "--superseded-by '{new_id}' is not a live implementation — author it first, or omit the flag"
+                        ));
+                    }
+                    tomb["supersededBy"] = Value::String(new_id);
+                }
+                crate::remove_impl(&mut g, id);
+                crate::ensure_array(&mut g, "suppressed").push(tomb.clone());
+                crate::save(&g)?;
+                emit(&serde_json::json!({ "ok": true, "suppressed": id, "supersededBy": tomb.get("supersededBy") }))
+            }
+            Some("unsuppress") => {
+                let id = positional.get(2).ok_or("usage: bsc graph impl unsuppress <id>")?;
+                let mut g = crate::load();
+                let is_tomb = crate::is_suppressed(&g, id);
+                // REFUSES on a live impl: a real record goes through `remove`, never this. Otherwise
+                // `unsuppress` becomes a second, quieter delete.
+                if !is_tomb {
+                    return Err(format!("'{id}' is not a suppression tombstone — nothing to restore"));
+                }
+                crate::ensure_array(&mut g, "suppressed")
+                    .retain(|t| t.get("id").and_then(Value::as_str) != Some(*id));
+                let reseeded = crate::reconcile_seed(&mut g);
+                crate::save(&g)?;
+                emit(&serde_json::json!({ "ok": true, "unsuppressed": id, "reseeded": reseeded }))
             }
             // #4156 (designer request #47): read ONE impl by id. Without it, verifying a record before a
             // write meant dumping a whole language kit — 52.7KB for Rust — which overflows the shell,
@@ -515,15 +635,27 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // rename every module record already migrated and break the specifiers pointing at them.
                 let existing = crate::implementations_of(&g);
                 for c in &picked {
+                    // AN ABSENT `src` IS NOT PROOF OF SAMENESS. This used to require a non-empty `src`
+                    // before it would call anything a clash, so a CURATED library algorithm — which has
+                    // no `src` by design (`--no-src`, #4136) — could never trigger it, and a module
+                    // harvest merged straight over it. `sort.ts` was exactly that: the packaged
+                    // insertion-sort generator, silently replaced by `viz/examples/sort.ts`, with the
+                    // only symptom a duplicate id in the seed two steps later. Unknown provenance is a
+                    // reason to REFUSE and make the author say which record they mean, not to proceed.
                     let clash = existing.iter().find(|im| {
                         im.get("id").and_then(Value::as_str) == Some(c.id.as_str())
-                            && im
-                                .get("src")
-                                .and_then(Value::as_str)
-                                .is_some_and(|s| !s.is_empty() && s != c.src)
+                            && match im.get("src").and_then(Value::as_str) {
+                                Some(s) if !s.is_empty() => {
+                                    same_module_path(s) != same_module_path(&c.src)
+                                }
+                                _ => true, // no provenance: cannot prove it is the same module
+                            }
                     });
                     if let Some(im) = clash {
-                        let other = im.get("src").and_then(Value::as_str).unwrap_or_default();
+                        let other = match im.get("src").and_then(Value::as_str) {
+                            Some(s) if !s.is_empty() => s,
+                            _ => "a record with NO src (a curated algorithm, or provenance never recorded)",
+                        };
                         return Err(format!(
                             "'{}' already names a DIFFERENT module: {other}\n\
                              This harvest would overwrite it, because a module id comes from the file \
@@ -1117,12 +1249,22 @@ fn help(prog: &str) -> String {
   \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes)\n  \
-         {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes)\n  \
+         {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)
+  \
+         {prog} impl suppress <id> [--superseded-by <new-id>]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored)
+  \
+         {prog} impl unsuppress <id>                    # drop the tombstone so the packaged algorithm re-seeds on the next load (no data loss). REFUSES on a live impl - that goes through `remove`
+         {prog} impl history <id>                       # the write log (#72): rev, who, when, what CHANGED and what was DROPPED per write — the same shape as `bsc ui log`, from the same shared stamp
+  \
+         {prog} impl revert <id> [--to <rev>] [--by <who>]   # restore a previous `code`. Defaults to undoing the last source-moving write; REFUSES rather than landing on a nearer revision when the target has aged past the retained rungs, and names which revisions are still reachable
+  \
+  \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
-         Implementation techs (#2770): typescript · rust — each `composes` other same-tech impls, rooted in the language's primitives.\n\
+         Implementation techs (#2770): ANY language — `--tech` is not validated and never has been. Each impl `composes` other same-tech impls, rooted in that language's primitives, so a new tech simply starts its own kit (`--tech python` works today; the packaged kits are typescript · rust).\n\
+         WHAT IS language-bound is the MINING half: `harvest`/`curate`/`relink` parse real source with tree-sitter and only carry grammars for ts/tsx/rs. Curating code you already have has no such limit — a session that could not harvest a Python project once concluded it could not curate one either, and left 12 real algorithms unstored rather than try (#53).\n\
          The library is the per-language implementation tier; `harvest`/`curate` (#2745) mine a project's real code into candidate implementations.\n",
     )
 }
@@ -1209,6 +1351,23 @@ fn collect_emitted_files(
 
 #[cfg(test)]
 mod tests {
+    /// The help is the thing that misled, so it is the thing under test: it must NOT present the
+    /// packaged kits as the accepted set, and must still say which half is grammar-bound.
+    ///
+    /// The BEHAVIOUR (any `--tech` is accepted) is deliberately NOT tested here. It would need a
+    /// second `BSC_GRAPH_STORE` mutator, and that env var is process-global while Rust tests run in
+    /// parallel — adding one made `the_packaged_seed_carries_domain_collections` fail, an unrelated
+    /// test reading the packaged seed through the store this one had redirected. The existing
+    /// store-backed test gets away with it only by being the sole mutator. Verified instead by
+    /// running the real CLI against a throwaway store (see the change record); pinning it properly
+    /// needs the store to take a path rather than an env var.
+    #[test]
+    fn the_help_does_not_claim_tech_is_limited_to_the_packaged_kits() {
+        let h = help("bsc graph");
+        assert!(h.contains("ANY language"), "curation must be described as open: {h:.0}");
+        assert!(h.contains("harvest"), "the grammar-bound half must still be named");
+    }
+
     /// `impl set` must be able to WRITE the module state, not only a harvest. 27 of the 58 stateful
     /// modules took this path (a colliding id forced them off `--apply`) and landed with no record of
     /// what they hold — the field existed and nothing could set it.
@@ -1469,5 +1628,50 @@ mod set_gate_tests {
             };
             assert!(reject_unknown_flags(&args).is_ok(), "{f} should be accepted");
         }
+    }
+}
+
+#[cfg(test)]
+mod same_module_path_tests {
+    use super::same_module_path;
+
+    /// The false positive this function exists to end: one module, two spellings of its path.
+    ///
+    /// The stem-collision guard refuses a harvest whose id already names a DIFFERENT module. Comparing
+    /// raw `src` strings made it fire on a record pointing at the SAME file — the store holds both
+    /// `src/…`-prefixed and bare paths, because records arrived from different eras of the harvest — so
+    /// re-harvesting a module over its own stale record was rejected as a collision.
+    #[test]
+    fn one_module_written_two_ways_compares_equal() {
+        for (a, b) in [
+            ("src/shared/lib/core/hashString.ts", "shared/lib/core/hashString.ts"),
+            ("./app/console/lib/focusQueue.ts", "app/console/lib/focusQueue.ts"),
+            (r"src\shared\lib\graph\selectionNeighborhood.ts", "shared/lib/graph/selectionNeighborhood.ts"),
+            ("./src/features/algorithms/viz/examples/sort.ts", "features/algorithms/viz/examples/sort.ts"),
+        ] {
+            assert_eq!(same_module_path(a), same_module_path(b), "{a} and {b} name one module");
+        }
+    }
+
+    /// ...and it must still tell two modules apart, or the fix has simply disabled the guard. These are
+    /// the REAL stem collisions the guard was written for: one id, genuinely different files.
+    #[test]
+    fn genuinely_different_modules_still_differ() {
+        for (a, b) in [
+            ("src/shared/ui/registry.tsx", "features/algorithms/viz/examples/registry.ts"),
+            ("src/store/types/plan.ts", "src/store/slices/plan.ts"),
+            ("features/planner/preview/registry.ts", "features/designs/lib/previewRegistry.ts"),
+        ] {
+            assert_ne!(same_module_path(a), same_module_path(b), "{a} and {b} are different modules");
+        }
+    }
+
+    /// Only the LEADING `src/` goes. A path with `src` further in keeps it — stripping every occurrence
+    /// would collapse two real modules onto one name, re-introducing the bug in the other direction.
+    #[test]
+    fn only_the_leading_src_segment_is_stripped() {
+        assert_eq!(same_module_path("src/features/src/thing.ts"), "features/src/thing.ts");
+        assert_eq!(same_module_path("features/src/thing.ts"), "features/src/thing.ts");
+        assert_ne!(same_module_path("src/a/src/b.ts"), same_module_path("src/a/b.ts"));
     }
 }

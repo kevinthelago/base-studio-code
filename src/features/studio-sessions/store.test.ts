@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "@/store";
-import { orderedWantedStudios } from "./store";
+import { orderedWantedStudios } from "@/features/studio-sessions/store";
 
 /** #3357 — the studio-session lifecycle state: which studios are WANTED (⇒ a warm PTY on TerminalHost)
  *  and how many surfaces are currently showing each (the ref count the idle reaper keys off). */

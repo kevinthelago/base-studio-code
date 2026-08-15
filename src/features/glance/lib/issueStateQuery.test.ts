@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { groupRefsByRepo, buildIssueStateQuery, parseIssueStates, closedRefs } from "./issueStateQuery";
+import { groupRefsByRepo, buildIssueStateQuery, parseIssueStates, closedRefs } from "@/features/glance/lib/issueStateQuery";
 
 describe("groupRefsByRepo", () => {
   it("collapses every stream's refs into ONE group per repo", () => {

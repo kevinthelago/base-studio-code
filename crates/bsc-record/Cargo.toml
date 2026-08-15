@@ -1,0 +1,16 @@
+[package]
+name = "bsc-record"
+version = "0.1.0"
+edition = "2021"
+description = "The record STAMP shared by every bsc store (#72) — rev, author, timestamp, per-write history, and the retained rungs `revert` reads. Lifted out of bsc-component so the algorithms graph stamps writes the SAME way rather than growing a second implementation that drifts."
+
+[lib]
+name = "bsc_record"
+path = "src/lib.rs"
+
+# serde_json only. This is deliberately NOT in `bsc-util`: that crate's contract is "std only, no
+# dependencies, so any CLI can pull it in for free", and adding serde_json would quietly break it.
+[dependencies]
+serde_json = "1"
+# The epoch↔ISO clock pair. bsc-util is the dependency-free leaf, so this stays a two-dep crate.
+bsc-util = { path = "../bsc-util" }

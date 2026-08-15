@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const safeInvoke = vi.fn();
 vi.mock("@/shared/lib/core/safeInvoke", () => ({ safeInvoke: (...a: unknown[]) => safeInvoke(...a) }));
 
-import { loadGraph } from "./graphBridge";
+import { loadGraph } from "@/features/algorithms/lib/graphBridge";
 
 describe("graphBridge.loadGraph (#2856)", () => {
   // Block body, NOT the concise `() => bscJson.mockReset()` (#3390): `mockReset()` RETURNS the mock, and

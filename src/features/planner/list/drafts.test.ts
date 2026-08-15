@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildDrafts, mergeDbDrafts, isOrphanScaffold, type LocalProjectLite, type DraftRow } from "./drafts";
+import { buildDrafts, mergeDbDrafts, isOrphanScaffold, type LocalProjectLite, type DraftRow } from "@/features/planner/list/drafts";
 import type { DbProject } from "./projectsDbBridge";
 
 const lp = (over: Partial<LocalProjectLite> & { key: string }): LocalProjectLite => ({

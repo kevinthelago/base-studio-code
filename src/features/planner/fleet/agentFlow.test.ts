@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_FLOW, LOCAL_ONLY_PUSH, normalizeFlow, flowOrUndefined, resolveFlow,
   FLOW_AUTONOMY, FLOW_PUSH, FLOW_TRIGGER, FLOW_GATE,
-} from "./agentFlow";
-import { parseFleetFile } from "./planFleet";
+} from "@/features/planner/fleet/agentFlow";
+import { parseFleetFile } from "@/features/planner/fleet/planFleet";
 
 describe("agentFlow model", () => {
   it("DEFAULT_FLOW is continuous / local / per-issue / hard", () => {

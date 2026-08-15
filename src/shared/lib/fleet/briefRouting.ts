@@ -9,7 +9,7 @@
 // This is the pure decision half, modelled on `studioNetworkDrive`'s `authorInjections` — the pump
 // stays a thin actuator. Free of React/Tauri so the routing table is unit-testable on its own.
 
-import type { ReceivedBrief } from "./coordination.types";
+import type { ReceivedBrief } from "@/shared/lib/fleet/coordination.types";
 
 export interface BriefRouteContext {
   /** Panes launched with a director drive — the `director` audience, and where an undeliverable
@@ -48,16 +48,48 @@ export function briefRouteKey(b: Pick<ReceivedBrief, "from" | "at" | "target">):
  *     `<projectKey>:<stream>` and a session addressing a sibling stream has no reason to know the key;
  *  3. `director` / `issuer` — the two broadcast audiences.
  * Anything else resolves to nothing, which the caller reports rather than drops.
+ *
+ * EVERYTHING EXCEPT THE EXACT PANE ID IS SCOPED TO THE SENDER'S PROJECT (#59). Before, the untargeted
+ * default, both broadcast audiences and the bare-stream suffix all matched across EVERY project — so a
+ * planner's mid-build update reached a director in an unrelated project and instructed it to open issues
+ * and assign work on a board it does not own. It declined; the next one might not.
+ *
+ * The exact pane id stays deliberately cross-project: `bsc-brief <project>:director` from an architect
+ * means THAT director, and a targeted brief must stay targeted.
+ *
+ * `from` is REQUIRED, not optional. This module's own note records that the architect-reaches-directors
+ * rule lost its only enforcement site when the delivery function was deleted — a rule enforced by
+ * nothing is how that recurred. A required parameter means a rebuilt delivery cannot route unscoped by
+ * simply forgetting to opt in.
  */
-export function resolveBriefTarget(target: string, ctx: BriefRouteContext): string[] {
+export function resolveBriefTarget(target: string, ctx: BriefRouteContext, from: string): string[] {
   const t = (target || "").trim();
-  if (!t) return ctx.directorPanes;                                  // untargeted ⇒ the old behaviour
-  if (ctx.knownPanes.includes(t)) return [t];                        // 1 · exact pane id
-  const bySuffix = ctx.knownPanes.filter((p) => p.endsWith(`:${t}`));
-  if (bySuffix.length > 0) return bySuffix;                          // 2 · bare stream id
-  if (t === DIRECTOR) return ctx.directorPanes;                      // 3 · broadcast audiences
-  if (t === ISSUER) return ctx.knownPanes.filter((p) => p.endsWith(`:${ISSUER}`));
+  const mine = inProjectOf(from);
+  if (!t) return ctx.directorPanes.filter(mine);                     // untargeted ⇒ MY directors
+  if (ctx.knownPanes.includes(t)) return [t];                        // 1 · exact pane id (see above)
+  const bySuffix = ctx.knownPanes.filter((p) => p.endsWith(`:${t}`) && mine(p));
+  if (bySuffix.length > 0) return bySuffix;                          // 2 · bare stream id, MY project
+  if (t === DIRECTOR) return ctx.directorPanes.filter(mine);         // 3 · broadcast audiences, scoped
+  if (t === ISSUER) return ctx.knownPanes.filter((p) => p.endsWith(`:${ISSUER}`) && mine(p));
   return [];
+}
+
+/** The project half of a pane id — everything before the FIRST `:`, since a pane id is
+ *  `<projectKey>:<stream>` and a triage pane is `<projectKey>:<repo>:triage`. `""` when there is no
+ *  prefix at all. */
+function projectOf(paneId: string): string {
+  const i = (paneId || "").indexOf(":");
+  return i > 0 ? paneId.slice(0, i) : "";
+}
+
+/** A predicate for "this pane belongs to the sender's project".
+ *
+ *  A sender with NO project prefix matches nothing rather than everything. Broadcasting on an
+ *  unparseable sender is the exact failure this exists to stop, and an audience of nobody is reported
+ *  as undeliverable by the caller — loud and fixable, where a silent cross-project delivery is neither. */
+function inProjectOf(from: string): (paneId: string) => boolean {
+  const proj = projectOf(from);
+  return (paneId) => proj !== "" && projectOf(paneId) === proj;
 }
 
 // THE PROMPT ASSEMBLY IS GONE (#coord-prefix-names-the-sender). `briefInjections` and the three

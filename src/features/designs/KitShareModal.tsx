@@ -13,7 +13,7 @@ import { SearchField } from "@/shared/ui/controls/SearchField";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
 import { Code } from "@/shared/ui/data/Code";
 import type { ComponentRecord, Kit } from "./lib/model";
-import { importKitFromGist, kitFromCode, kitShareCode, publishKitToGist, type PublishedKitPin } from "./lib/kitGist";
+import { importKitFromGist, kitFromCode, kitShareCode, publishKitToGist, type PublishedKitPin } from "@/features/designs/lib/kitGist";
 
 interface Props {
   /** The active kit (offered for Share); null hides the Share tab's target. */

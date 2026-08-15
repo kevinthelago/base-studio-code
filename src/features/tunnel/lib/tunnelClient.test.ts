@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { applyPushedPlanPush } from "./tunnelClient";
+import { applyPushedPlanPush } from "@/features/tunnel/lib/tunnelClient";
 import type { CanonicalFile } from "@/features/planner";
 
 // The mobile→desktop plan-push handler (#3248): apply the pushed files to the hub, then ack the

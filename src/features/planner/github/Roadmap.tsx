@@ -2,12 +2,12 @@ import { useState } from "react";
 import { githubRequest } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { ProjectsHeader } from "../list/ProjectsHeader";
-import { useActiveProject, QueryBanner } from "./useActiveProjectGithub";
+import { useActiveProject, QueryBanner } from "@/features/planner/github/useActiveProjectGithub";
 import {
   buildGantt, tickIntervalWeeks, tickLabel, windowStartFrom,
   WINDOW_PRESETS, DEFAULT_WINDOW_WEEKS,
   type GhMilestone,
-} from "./roadmapGantt";
+} from "@/features/planner/github/roadmapGantt";
 import { StatCard } from "@/shared/ui/charts";
 import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";

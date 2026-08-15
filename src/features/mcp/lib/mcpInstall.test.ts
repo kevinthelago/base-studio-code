@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   repoNameFromLink, catalogLink, mcpDirForServer, resolveMcpInstallDir,
-} from "./mcpInstall";
+} from "@/features/mcp/lib/mcpInstall";
 
 describe("mcpInstall helpers", () => {
   it("repoNameFromLink takes the last path segment, trailing slash tolerant", () => {

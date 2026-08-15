@@ -3,7 +3,7 @@ import {
   registerRenderer, getRenderer, hasRenderer, _resetRegistry,
 } from './registry';
 import type { PreviewRenderer } from './registry';
-import type { RenderableKind, RenderableChunk } from './types';
+import type { RenderableKind, RenderableChunk } from '@/features/planner/preview/types';
 
 function makeRenderer(kinds: RenderableKind | RenderableKind[]): PreviewRenderer {
   return {

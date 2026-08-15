@@ -4,8 +4,8 @@
 // when to push — so the prose matches the permissions the flow also enforces
 // (flowPermissions.ts). Pure; unit-tested.
 
-import type { AgentFlow, FlowTrigger } from "./agentFlow";
-import { resolveFlow } from "./agentFlow";
+import type { AgentFlow, FlowTrigger } from "@/features/planner/fleet/agentFlow";
+import { resolveFlow } from "@/features/planner/fleet/agentFlow";
 import flowKickoffEmbedded from "@data/fleet/flow-kickoff.json";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
 

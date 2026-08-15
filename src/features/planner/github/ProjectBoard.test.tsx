@@ -7,13 +7,13 @@ import type { GithubQuery } from "@/shared/lib/github/useGithubQuery";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 
 vi.mock("../list/ProjectsHeader", () => ({ ProjectsHeader: () => null }));
-vi.mock("./useActiveProjectGithub", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./useActiveProjectGithub")>();
+vi.mock("@/features/planner/github/useActiveProjectGithub", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/features/planner/github/useActiveProjectGithub")>();
   return { ...actual, useActiveProjectGithub: vi.fn() };
 });
 
 import { ProjectBoard } from "./ProjectBoard";
-import { useActiveProjectGithub } from "./useActiveProjectGithub";
+import { useActiveProjectGithub } from "@/features/planner/github/useActiveProjectGithub";
 
 const mockHook = vi.mocked(useActiveProjectGithub);
 const PROJECT: ActiveProjectInfo = { id: "P1", number: 1, name: "App", repo: "o/r", repos: ["o/r"], description: "" };

@@ -1,19 +1,20 @@
 {
-  "id": "palettetoggle",
-  "name": "PaletteToggle",
-  "kitId": "base-studio-code",
-  "role": "composite",
-  "srcText": "import { Button } from \"@/shared/ui/controls/Button\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport function PaletteToggle({ label, open, onToggle }: {\r\n  label: string;\r\n  open: boolean;\r\n  onToggle: () => void;\r\n}) {\r\n  return (\r\n    <Button\r\n      variant=\"ghost\"\r\n      size=\"sm\"\r\n      aria-pressed={open}\r\n      onClick={onToggle}\r\n      title={open ? \"Hide the theme palette\" : \"Show the theme palette — the theme's raw semantic swatches\"}\r\n      style={open ? { background: \"var(--bg-elev2)\" } : undefined}\r\n    >\r\n      <Text as=\"span\" size=\"xxs\" tone=\"dim\" aria-hidden=\"true\">{open ? \"▾\" : \"▸\"}</Text>\r\n      <Text as=\"span\" mono size=\"xxs\" tone={open ? \"accent\" : \"muted\"}>{label}</Text>\r\n    </Button>\r\n  );\r\n}",
-  "src": "src/features/designs/PaletteToggle.tsx",
   "composes": [
     "Button",
     "Text"
   ],
+  "folder": "features/designs",
+  "id": "palettetoggle",
+  "kitId": "base-studio-code",
+  "name": "PaletteToggle",
+  "provides": "@/features/designs/PaletteToggle",
+  "role": "composite",
+  "src": "src/features/designs/PaletteToggle.tsx",
+  "srcText": "import { Button } from \"@/shared/ui/controls/Button\";\nimport { Text } from \"@/shared/ui/typography/Text\";\n\nexport function PaletteToggle({ label, open, onToggle }: {\r\n  label: string;\r\n  open: boolean;\r\n  onToggle: () => void;\r\n}) {\r\n  return (\r\n    <Button\r\n      variant=\"ghost\"\r\n      size=\"sm\"\r\n      aria-pressed={open}\r\n      onClick={onToggle}\r\n      title={open ? \"Hide the theme palette\" : \"Show the theme palette — the theme's raw semantic swatches\"}\r\n      style={open ? { background: \"var(--bg-elev2)\" } : undefined}\r\n    >\r\n      <Text as=\"span\" size=\"xxs\" tone=\"dim\" aria-hidden=\"true\">{open ? \"▾\" : \"▸\"}</Text>\r\n      <Text as=\"span\" mono size=\"xxs\" tone={open ? \"accent\" : \"muted\"}>{label}</Text>\r\n    </Button>\r\n  );\r\n}",
   "tests": [
     {
       "name": "PaletteToggle (#3706)",
       "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { PaletteToggle } from \"./PaletteToggle\";\r\n\r\ndescribe(\"PaletteToggle (#3706)\", () => {\r\n  it(\"shows the theme label and reads un-pressed when the palette is collapsed\", () => {\r\n    render(<PaletteToggle label=\"Nord\" open={false} onToggle={() => {}} />);\r\n    const btn = screen.getByRole(\"button\");\r\n    expect(btn.textContent).toContain(\"Nord\");\r\n    expect(btn.getAttribute(\"aria-pressed\")).toBe(\"false\");\r\n  });\r\n\r\n  it(\"reads pressed when the palette is open\", () => {\r\n    render(<PaletteToggle label=\"Dracula\" open onToggle={() => {}} />);\r\n    expect(screen.getByRole(\"button\").getAttribute(\"aria-pressed\")).toBe(\"true\");\r\n  });\r\n\r\n  it(\"fires onToggle on click\", () => {\r\n    const onToggle = vi.fn();\r\n    render(<PaletteToggle label=\"Nord\" open={false} onToggle={onToggle} />);\r\n    fireEvent.click(screen.getByRole(\"button\"));\r\n    expect(onToggle).toHaveBeenCalledTimes(1);\r\n  });\r\n});\r\n"
     }
-  ],
-  "folder": "features/designs"
+  ]
 }

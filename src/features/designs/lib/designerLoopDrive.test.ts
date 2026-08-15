@@ -7,8 +7,8 @@ import {
   DESIGNER,
   type LoopRow,
   type LoopTurn,
-} from "./designerLoopDrive";
-import type { DesignDirective } from "./designerQueue";
+} from "@/features/designs/lib/designerLoopDrive";
+import type { DesignDirective } from "@/features/designs/lib/designerQueue";
 
 const loop = (over: Partial<LoopRow> = {}): LoopRow => ({ id: 1, a: DRIVER, b: DESIGNER, status: "open", ...over });
 const turns = (...who: string[]): LoopTurn[] => who.map((participant) => ({ participant }));

@@ -9,7 +9,7 @@
 // The scope was always on the wire: pane identity is `<projectKey>:<stream>`. This pins that it is
 // honoured at delivery.
 import { describe, it, expect } from "vitest";
-import { ingestCoordLog, coordProjectOf, sameCoordProject } from "./coordinationLog";
+import { ingestCoordLog, coordProjectOf, sameCoordProject } from "@/shared/lib/fleet/coordinationLog";
 
 const A_WORKER = "alpha:api";
 const A_DIRECTOR = "alpha:director";

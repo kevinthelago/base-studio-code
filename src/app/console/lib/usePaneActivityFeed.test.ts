@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { subscribePaneActivity, publishPaneActivity, currentPaneActivity } from "./usePaneActivityFeed";
-import type { PaneActivity } from "./paneActivity";
+import type { PaneActivity } from "@/app/console/lib/paneActivity";
 
 const rows = (...panes: string[]): PaneActivity[] =>
   panes.map((p, i) => ({ pane: p, state: "run", at: 1000 + i }) as PaneActivity);

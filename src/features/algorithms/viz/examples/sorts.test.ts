@@ -1,9 +1,9 @@
 // The sort family as REAL trace-programs (#3216) — each sorts correctly (so the animation is faithful),
 // and the programs produce genuinely DIFFERENT op profiles (not the one shared animation).
 import { describe, it, expect } from "vitest";
-import { TracedArray } from "../../lib/tracer";
-import { bubbleSort, insertionSort, quickSort, heapSort, mergeSort, TRACE_PROGRAMS, programKey, programForImpl } from "./sorts";
-import type { ArrayFrame } from "../../lib/trace";
+import { TracedArray } from "@/features/algorithms/lib/tracer";
+import { bubbleSort, insertionSort, quickSort, heapSort, mergeSort, TRACE_PROGRAMS, programKey, programForImpl } from "@/features/algorithms/viz/examples/sorts";
+import type { ArrayFrame } from "@/features/algorithms/lib/trace";
 
 const PROGRAMS: Record<string, (a: TracedArray) => void> = { bubbleSort, insertionSort, quickSort, heapSort, mergeSort };
 const asc = (a: number[]) => [...a].sort((x, y) => x - y);

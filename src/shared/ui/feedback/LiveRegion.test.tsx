@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, cleanup, act } from "@testing-library/react";
-import { LiveRegion } from "./LiveRegion";
+import { LiveRegion } from "@/shared/ui/feedback/LiveRegion";
 import { useAnnouncer, announce } from "@/shared/lib/a11y/announcer";
 
 describe("LiveRegion (#3770)", () => {

@@ -3,7 +3,7 @@
 // ordering ("other" last), and missing-field tolerance.
 import { describe, it, expect } from "vitest";
 import type { Kit, ComponentRecord } from "./model";
-import { groupKits, groupComponentsByFolder, folderComponentCount, OTHER_BUCKET, UNGROUPED_LABEL, UNGROUPED_KEY, type KitGroup, type KitTreeNode } from "./kitGroups";
+import { groupKits, groupComponentsByFolder, folderComponentCount, OTHER_BUCKET, UNGROUPED_LABEL, UNGROUPED_KEY, type KitGroup, type KitTreeNode } from "@/features/designs/lib/kitGroups";
 import { SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./seed";
 
 const kit = (id: string, tech?: string, style?: string): Kit =>

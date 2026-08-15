@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hashAbs } from "./hash";
+import { hashAbs } from "@/features/glance/lib/hash";
 
 /** The former private copy in glanceData.ts / glanceFleet.ts, verbatim — the reference
  *  implementation hashAbs must reproduce exactly (#2421). */

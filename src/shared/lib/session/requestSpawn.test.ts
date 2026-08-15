@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { poolPaneId, poolNodeId, poolSlotFromNodeId, poolSlotFromPaneId } from "./requestSpawn";
+import { poolPaneId, poolNodeId, poolSlotFromNodeId, poolSlotFromPaneId } from "@/shared/lib/session/requestSpawn";
 
 // The spawn DECISION moved to poolPlan.ts (#3535, tested in poolPlan.test.ts); this file now only covers
 // pool-slot identity — the pane/node ids and the inverse the Glance graph uses to open a slot.

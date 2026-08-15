@@ -16,7 +16,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { ROLE_COLOR } from "./lib/model";
 import { HEALTH_BADGE, type HealthCategory } from "./lib/graphHealth";
-import { NODE_W } from "./lib/compositionLayout";
+import { NODE_W } from "@/features/designs/lib/compositionLayout";
 import type { ComponentBuildStatus } from "./lib/componentScan";
 import type { ComponentRecord } from "./lib/model";
 

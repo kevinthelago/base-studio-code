@@ -5,7 +5,7 @@ import {
   loadReport,
   saveReport,
   type PrereqStatus,
-} from "./diagnostics";
+} from "@/shared/lib/core/diagnostics";
 
 const prereq = (p: Partial<PrereqStatus> & { name: string }): PrereqStatus => ({
   found: true,
