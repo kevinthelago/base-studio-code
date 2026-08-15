@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
 import {
-  resolveMemPath, lookupMem, stubsBoundaryModule, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureEngineScript, inspectEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
+  resolveMemPath, lookupMem, loaderFor, stubsBoundaryModule, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureEngineScript, inspectEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
 } from "./componentBundle";
 
 // The esbuild-wasm bundle can't run under jsdom; these cover the PURE pieces (path resolution + srcdoc
@@ -84,18 +84,80 @@ describe("componentBundle — lookupMem", () => {
     expect(lookupMem(files, "nope")).toBeNull();
   });
 
-  it("loads an EXTENSIONLESS key (a `src` recorded as a directory) as tsx, not jsx (#3549)", () => {
+  it("never loads an EXTENSIONLESS key as jsx (#3549), and picks ts vs tsx by its source (#79)", () => {
     // WorkspaceShellPage's `src` was `src/shared/ui/layouts` — no extension — and its source is
-    // TypeScript (`import type {…}`). The extensionless key must resolve to the tsx loader, else esbuild
-    // parses the TS with the jsx loader and fails: `Expected "from" but found "{"`.
+    // TypeScript (`import type {…}`). The jsx loader fails on it outright: `Expected "from" but
+    // found "{"`. That guard is unchanged; #79 only sharpens WHICH TypeScript loader it gets, since
+    // tsx is not a superset of ts.
     const dirKeyed = { "src/shared/ui/layouts": "import type { ReactNode } from 'react';" };
-    expect(lookupMem(dirKeyed, "src/shared/ui/layouts")?.loader).toBe("tsx");
+    expect(lookupMem(dirKeyed, "src/shared/ui/layouts")?.loader).not.toBe("jsx");
+    expect(lookupMem(dirKeyed, "src/shared/ui/layouts")?.loader).toBe("ts"); // no JSX in it
+    // …and the same key whose source really is JSX gets tsx.
+    const jsxKeyed = { "src/shared/ui/layouts": "export const S = () => <div className='x' />;" };
+    expect(lookupMem(jsxKeyed, "src/shared/ui/layouts")?.loader).toBe("tsx");
   });
 
   it("keeps an explicit .jsx/.js key on the jsx loader (only tsx is the widened default)", () => {
     const js = { "boot.jsx": "JSX", "util.js": "JS" };
     expect(lookupMem(js, "boot")?.loader).toBe("jsx");
     expect(lookupMem(js, "util")?.loader).toBe("jsx");
+  });
+});
+
+describe("componentBundle — loaderFor (#79, designer request)", () => {
+  // THE CONSTRUCT THE REQUEST WAS FILED FOR: deployEnv.ts line 99. Valid TypeScript in a .ts file;
+  // JSX in a .tsx file. Verified against the real esbuild-wasm this bundler uses:
+  //   ts   OK
+  //   tsx  FAIL  The character ">" is not valid inside a JSX element
+  //   jsx  FAIL  Expected ";" but found "P"
+  // So this is a language-level conflict, not a tuning choice — tsx is NOT a superset of ts, and a
+  // JSX-free module reached through a barrel could not be built at all before this.
+  const GENERIC_ARROW = "type P = { id: string };\nconst clone = <T>(v: T): T => structuredClone(v);\nexport { clone };";
+
+  it("gives a JSX-free TypeScript module the plain ts loader, whatever its key", () => {
+    expect(loaderFor("features/planner/lib/deployEnv", GENERIC_ARROW)).toBe("ts");
+    expect(loaderFor("features/planner/lib/deployEnv.ts", GENERIC_ARROW)).toBe("ts");
+  });
+
+  it("an explicit extension decides, and only an extensionless key consults the source", () => {
+    expect(loaderFor("a.tsx", "export const A = 1;")).toBe("tsx"); // no JSX in it, but .tsx says tsx
+    expect(loaderFor("a.ts", "export const A = 1;")).toBe("ts");
+    expect(loaderFor("a.jsx", "export const A = 1;")).toBe("jsx");
+    expect(loaderFor("a.js", "export const A = 1;")).toBe("jsx");
+  });
+
+  it("reads JSX off the source for an extensionless key — both tag shapes", () => {
+    expect(loaderFor("Card", "export const C = () => <div>hi</div>;")).toBe("tsx"); // closing tag
+    expect(loaderFor("Icon", "export const I = () => <Glyph name='x' />;")).toBe("tsx"); // self-closing
+    expect(loaderFor("pure", "export const n: number = 1 > 0 ? 1 : 0;")).toBe("ts"); // a bare `>` is not JSX
+  });
+
+  it("ignores JSX that lives in a comment or a string — the graphHealth shape", () => {
+    // MEASURED on the real file. graphHealth.ts is a JSX-free analysis module that TALKS ABOUT
+    // components, so it carries `<Name/>` in a doc comment and `(<${c.name}/>)` in a template literal.
+    // Sniffing the raw text called it tsx, and it still failed to build:
+    // `The character ">" is not valid inside a JSX element`. The sniff has to read code, not prose.
+    const commentOnly = "// whose only rendered element is itself, <Name/> — self-referential\nexport const a = 1;";
+    expect(loaderFor("features/designs/lib/graphHealth", commentOnly)).toBe("ts");
+
+    const templateOnly = "export const why = (n: string) => `${n} only renders itself (<${n}/>)`;";
+    expect(loaderFor("features/designs/lib/graphHealth", templateOnly)).toBe("ts");
+
+    const blockComment = "/* renders <div></div> */\nexport const b: number = 2;";
+    expect(loaderFor("mod", blockComment)).toBe("ts");
+
+    const quoted = "export const s = \"</div>\";\nexport const t = '<br/>';";
+    expect(loaderFor("mod", quoted)).toBe("ts");
+
+    // …but an escaped quote must not swallow the rest of the file and hide REAL JSX after it.
+    const escaped = "const q = \"a\\\"b\";\nexport const C = () => <div>hi</div>;";
+    expect(loaderFor("mod", escaped)).toBe("tsx");
+  });
+
+  it("an extensionless key is NEVER jsx — the #3549 guard, restated", () => {
+    for (const src of [GENERIC_ARROW, "import type { X } from 'y';", "export const C = () => <p>a</p>;"]) {
+      expect(loaderFor("some/module", src)).not.toBe("jsx");
+    }
   });
 });
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   resolveMemPath, lookupMem, bootstrapSource, buildPreviewSrcDoc, DEFAULT_IMPORTMAP, PREVIEW_EXTERNALS,
 } from "./previewBundle";
+import { lookupMem as sharedLookupMem } from "@/shared/lib/preview/componentBundle";
 
 describe("previewBundle — resolveMemPath", () => {
   it("resolves a sibling import from the entry", () => {
@@ -20,6 +21,29 @@ describe("previewBundle — lookupMem", () => {
     expect(lookupMem(files, "Login")?.contents).toBe("a");
     expect(lookupMem(files, "parts/Field")?.loader).toBe("tsx");
     expect(lookupMem(files, "ui")?.contents).toBe("c"); // index resolution
+  });
+
+  // #79 — THE TWO BUNDLERS MUST AGREE. They are parallel copies, and their extensionless defaults had
+  // drifted APART: the shared one was corrected to tsx under #3549 while this one still said jsx, so a
+  // TypeScript module reached from the planner preview failed on `import type` where the same module
+  // built fine from the component preview. They now share one `loaderFor`, and this pins that.
+  it("picks the same loader as the shared bundler for the same input", () => {
+    const cases: Record<string, string> = {
+      // The reported construct: a generic arrow in a JSX-free module — the case that failed under BOTH.
+      "features/planner/lib/deployEnv": "const clone = <T>(v: T): T => structuredClone(v);\nexport { clone };",
+      "features/designs/lib/graphHealth": "import type { X } from 'y';\nexport const n: number = 2 > 1 ? 1 : 0;",
+      "Card": "export const C = () => <div>hi</div>;",
+      "boot.jsx": "export const B = 1;",
+      "typed.ts": "export const T: number = 1;",
+      "widget.tsx": "export const W = () => <p>x</p>;",
+    };
+    for (const [key, src] of Object.entries(cases)) {
+      const mine = lookupMem({ [key]: src }, key)?.loader;
+      const theirs = sharedLookupMem({ [key]: src }, key)?.loader;
+      expect(mine, `loader for ${key}`).toBe(theirs);
+    }
+    // And specifically: the reported module is `ts`, which neither bundler could produce before.
+    expect(lookupMem({ deployEnv: "const c = <T>(v: T): T => v;" }, "deployEnv")?.loader).toBe("ts");
   });
   it("returns null for a missing module", () => {
     expect(lookupMem(files, "Nope")).toBeNull();
