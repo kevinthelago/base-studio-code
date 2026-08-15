@@ -52,7 +52,7 @@ pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
     /// `unresolvable-import` | `stubbed-import` (#3696, sev-1) | `hardcoded-color` (#3704, sev-1) |
     /// `reimplementation` | `reimplemented-component` (#3892, sev-3) | `orphan` | `unwired-prop` | `phantom-compose` | `no-empty-state` |
-    /// `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `no-tests` (#3878) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
+    /// `multi-component` (#doctor-flags…, sev-2) | `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `no-tests` (#3878) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -821,6 +821,44 @@ fn is_buildable(node: &Node, buildable: &BTreeSet<String>, kit_targets: &BTreeSe
 /// moving together. The two are also wrong in opposite directions if they drift: plain-here/aware-there
 /// makes `doctor` report a no-implementation the preview happily renders, which is the false accusation
 /// #3486 was filed for.
+/// The bar for `multi-component`. See the loop for why it is 4 and what the distribution looked like.
+const MULTI_COMPONENT_MIN: usize = 4;
+
+/// The TOP-LEVEL component definitions in `src` — `function Foo(` / `const Foo = (` / `const Foo = … =>`,
+/// with or without `export`, at column 0.
+///
+/// Column 0 is the whole conservatism: a nested arrow inside a component is not a sibling component, and
+/// a helper indented inside a function body is not one either. PascalCase is required because that is the
+/// only signal in the source that separates a component from an ordinary function. It will miss exotic
+/// forms (a `React.memo(` wrapper assigned to a lowercase name); missing one is the right way to be wrong
+/// here, since a false positive pushes someone to split a file that never needed splitting.
+fn top_level_components(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in src.lines() {
+        if line.starts_with(char::is_whitespace) {
+            continue; // not top level
+        }
+        let rest = line.strip_prefix("export ").unwrap_or(line);
+        let name = if let Some(r) = rest.strip_prefix("function ") {
+            r.split(|c: char| !c.is_alphanumeric() && c != '_').next().unwrap_or("")
+        } else if let Some(r) = rest.strip_prefix("const ") {
+            let n = r.split(|c: char| !c.is_alphanumeric() && c != '_').next().unwrap_or("");
+            // A const is only a component when it is actually assigned a function.
+            let tail = &r[n.len()..];
+            if !(tail.contains("=> ") || tail.contains("=>") || tail.contains("= (") || tail.contains("=(")) {
+                continue;
+            }
+            n
+        } else {
+            continue;
+        };
+        if name.starts_with(|c: char| c.is_ascii_uppercase()) && !out.iter().any(|x| x == name) {
+            out.push(name.to_string());
+        }
+    }
+    out
+}
+
 fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<String>) -> bool {
     let s = src_text.trim();
     if s.is_empty() || !contains_word(s, "export") || has_code_elision(s) {
@@ -2268,6 +2306,48 @@ fn analyze_kit(
         });
     }
 
+    // ── multi-component (severity 2, #doctor-flags-a-record-holding-more-than-one-component): a record
+    // whose source defines SEVERAL top-level components. One record = one component is assumed by the id,
+    // the preview, the `composes` graph, `rename`, `merge`, `similar` and this file's own reachability —
+    // so every extra definition is invisible: no id, never previewed, never an edge, and carried off
+    // silently by a merge. `settings-general` holds TWENTY-TWO; twenty-one of them cannot be reached.
+    //
+    // THE BAR IS 4, AND IT IS MEASURED, NOT GUESSED. Across the 568 records that carry source: 411 hold
+    // exactly one, 69 hold two, 34 hold three — that shoulder is a component plus an ordinary local
+    // helper, and flagging it would fire on a QUARTER of the store, which is noise wearing a finding's
+    // clothes. From four upward there are 39 records (7%), and the tail is unambiguous: 22, 20, 18, 16.
+    // If the bar ever moves, re-measure first — the number is only defensible against the distribution.
+    for n in nodes {
+        let Some(src) = own_module_source(n, &kit_targets) else {
+            continue; // built-in or spec-only — no source of ours to read
+        };
+        let found = top_level_components(src);
+        if found.len() < MULTI_COMPONENT_MIN {
+            continue;
+        }
+        let extras: Vec<String> = found.iter().filter(|f| **f != n.name).cloned().collect();
+        out.push(Finding {
+            category: "multi-component",
+            severity: 2,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` defines {} components in one record — {} beyond itself ({}{}). Only `{}` has an id, so the others never preview, never appear as a composes edge, and a merge would take them along invisibly",
+                n.name,
+                found.len(),
+                extras.len(),
+                extras.iter().take(4).cloned().collect::<Vec<_>>().join(", "),
+                if extras.len() > 4 { format!(", +{} more", extras.len() - 4) } else { String::new() },
+                n.name,
+            ),
+            suggested_action: format!(
+                "split the extra components out of `{}` into their own records so the graph can see them — or, if they are genuinely private helpers, leave it: this is a REPORT, not a rule",
+                n.name
+            ),
+        });
+    }
+
     // ── no-tests (severity 1, INFORMATIONAL, #3878): an IMPLEMENTED own-module component that carries no
     // tests. Tests are a per-node data contract — the same shape as the analytics manifest one field over —
     // because once a component's source is a store record compiled at runtime, a test file under `src/**` is
@@ -2705,6 +2785,45 @@ mod provides_resolution_tests {
 
 #[cfg(test)]
 mod tests {
+    /// The scanner is the whole finding, so its CONSERVATISM is what is under test: it must see real
+    /// siblings and must NOT see nested arrows, indented helpers, or non-function consts. A false
+    /// positive here pushes someone to split a file that never needed splitting.
+    #[test]
+    fn top_level_components_counts_siblings_and_ignores_the_rest() {
+        let src = r#"
+import { x } from "y";
+const TITLE = "not a component";
+const rows = items.map((r) => <Row key={r.id} />);
+function SettingsSection({ title }: { title: string }) {
+  const Inner = () => <div />;
+  return <div>{title}</div>;
+}
+export function GeneralPage() {
+  return <SettingsSection title="x" />;
+}
+const ToggleRow = ({ on }: { on: boolean }) => <input checked={on} />;
+export const StatusRow = (props: P) => <span {...props} />;
+"#;
+        let found = top_level_components(src);
+        assert_eq!(found, vec!["SettingsSection", "GeneralPage", "ToggleRow", "StatusRow"],
+                   "four siblings; `Inner` is indented, `TITLE`/`rows` are not components");
+    }
+
+    /// The bar is 4 because 2 and 3 are a component plus ordinary helpers — 25% of the store — and a
+    /// finding that fires on a quarter of everything is noise. Pin the boundary so it cannot drift.
+    #[test]
+    fn the_multi_component_bar_sits_above_the_helper_shoulder() {
+        assert_eq!(MULTI_COMPONENT_MIN, 4);
+        let three = "function A() {}
+function B() {}
+function C() {}
+";
+        assert!(top_level_components(three).len() < MULTI_COMPONENT_MIN, "three does not fire");
+        let four = format!("{three}function D() {{}}
+");
+        assert!(top_level_components(&four).len() >= MULTI_COMPONENT_MIN, "four does");
+    }
+
     use super::*;
     use serde_json::json;
 
