@@ -438,6 +438,34 @@ fn exactly_caught(a: &Comp, b: &Comp) -> bool {
         || (!a.src_text.trim().is_empty() && a.src_text == b.src_text)
 }
 
+/// The two sides of a merge proposal, rendered so they name two DISTINGUISHABLE things.
+///
+/// A cross-kit pair routinely shares one display name — `GraphCanvas` exists in both the desktop and
+/// the mobile kit — and the bare sentence then reads "propose merging `GraphCanvas` into `GraphCanvas`",
+/// which cannot be acted on: it does not say which side survives. That is the whole payload of a
+/// propose-only finding, and `--json`'s stated consumer is an LLM, which has no better recourse than a
+/// human reader. The surrounding fields hid it: `kit` carries both sides joined, `why` spells out each
+/// name with its kit, and `nodeIds` are genuinely distinct — only the actionable sentence dropped the
+/// qualifier (while still ending in an id, so it disagreed with itself).
+///
+/// Qualify by KIT when the kits differ, which is both the case that occurs and what the reporter asked
+/// for; fall back to the ID when ONE kit holds both, where naming the kit twice would disambiguate
+/// nothing. Distinct names are returned bare — the common case earns no qualifier noise.
+fn merge_sides(loser: &Comp, keeper: &Comp) -> (String, String) {
+    if loser.name != keeper.name {
+        return (format!("`{}`", loser.name), format!("`{}`", keeper.name));
+    }
+    let (a, b) = if loser.kit != keeper.kit {
+        (&loser.kit, &keeper.kit)
+    } else {
+        (&loser.id, &keeper.id)
+    };
+    (
+        format!("`{}` ({a})", loser.name),
+        format!("`{}` ({b})", keeper.name),
+    )
+}
+
 /// Pick the canonical keeper of a near-duplicate pair: the more-used one, breaking ties toward the one
 /// that actually builds, then the shorter (usually more canonical) name. Returns `(keeper, loser)`.
 fn canonical<'a>(a: &'a Comp, b: &'a Comp) -> (&'a Comp, &'a Comp) {
@@ -558,10 +586,13 @@ pub fn near_duplicate_findings(components: &[Value], threshold: f64) -> Vec<Find
                         "`{}` ({}) and `{}` ({}): name {:.0}% / contract {:.0}% — {kind}",
                         a.name, a.kit, b.name, b.kit, sc.name * 100.0, sc.contract * 100.0
                     ),
-                    suggested_action: format!(
-                        "propose merging `{}` into `{}` ({keeper_why}); inspect with `bsc ui similar {}` — NOT auto-fixed (propose-only)",
-                        loser.name, keeper.name, keeper.id
-                    ),
+                    suggested_action: {
+                        let (from, into) = merge_sides(loser, keeper);
+                        format!(
+                            "propose merging {from} into {into} ({keeper_why}); inspect with `bsc ui similar {}` — NOT auto-fixed (propose-only)",
+                            keeper.id
+                        )
+                    },
                 },
             ));
         }
@@ -654,6 +685,60 @@ mod tests {
         assert!(name_similarity("Donut", "PieChart") < NAME_GATE, "precondition: the names are far apart");
         let f = near_duplicate_findings(&[a, b], DEFAULT_THRESHOLD);
         assert_eq!(f.len(), 1, "the pair is reported: {f:?}");
+    }
+
+    #[test]
+    fn a_same_name_pair_proposes_two_distinguishable_sides() {
+        // REGRESSION, designer request #64. `GraphCanvas` exists in two kits, so the proposal read
+        // "propose merging `GraphCanvas` into `GraphCanvas`" — the one field meant to be ACTED on naming
+        // a single string twice, in a finding whose stated `--json` consumer is an LLM.
+        //
+        // Asserts the two sides DIFFER rather than pinning an exact sentence, so the wording stays free
+        // to change and only the property that matters is held.
+        let a = comp("graphcanvas", "GraphCanvas", "mobile-studio-code", &[], "");
+        let b = comp("ui-graph-canvas", "GraphCanvas", "base-studio-code", &[], "");
+        let f = near_duplicate_findings(&[a, b], DEFAULT_THRESHOLD);
+        assert_eq!(f.len(), 1, "an identical-name pair is reported: {f:?}");
+        let action = &f[0].suggested_action;
+        assert!(
+            action.contains("`GraphCanvas` (mobile-studio-code)")
+                && action.contains("`GraphCanvas` (base-studio-code)"),
+            "each side carries its kit: {action}"
+        );
+        // The bug shape itself — the degenerate clause must not survive anywhere in the field.
+        assert!(
+            !action.contains("`GraphCanvas` into `GraphCanvas`"),
+            "still names one string twice: {action}"
+        );
+    }
+
+    #[test]
+    fn a_name_collision_inside_a_single_kit_falls_back_to_the_id() {
+        // The kit is only a disambiguator when the kits differ. Naming it on both sides of a same-kit
+        // collision would restore the exact defect in a new costume, so the id has to carry it.
+        let a = comp("card-a", "Card", "k", &[], "");
+        let b = comp("card-b", "Card", "k", &[], "");
+        let f = near_duplicate_findings(&[a, b], DEFAULT_THRESHOLD);
+        assert_eq!(f.len(), 1, "the pair is reported: {f:?}");
+        let action = &f[0].suggested_action;
+        assert!(
+            action.contains("`Card` (card-a)") && action.contains("`Card` (card-b)"),
+            "each side carries its id: {action}"
+        );
+    }
+
+    #[test]
+    fn distinct_names_stay_unqualified() {
+        // The common case pays nothing for the fix — a pair that already names two things is left alone.
+        let a = comp("donut", "Donut", "k", &[], "");
+        let b = comp("donutchart", "DonutChart", "k", &[], "");
+        let f = near_duplicate_findings(&[a, b], DEFAULT_THRESHOLD);
+        assert_eq!(f.len(), 1, "the pair is reported: {f:?}");
+        let action = &f[0].suggested_action;
+        assert!(
+            action.contains("`DonutChart` into `Donut`") || action.contains("`Donut` into `DonutChart`"),
+            "no qualifier on a distinct-name pair: {action}"
+        );
     }
 
     #[test]
