@@ -603,7 +603,156 @@ pub fn near_duplicate_findings(components: &[Value], threshold: f64) -> Vec<Find
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.1.node_ids.cmp(&b.1.node_ids))
     });
-    scored.into_iter().map(|(_, f)| f).collect()
+    cluster_findings(scored.into_iter().map(|(_, f)| f).collect(), &comps)
+}
+
+/// The locally-DEFINED function names in a module — the helpers it declares rather than imports.
+///
+/// This is the signal that separates "extract this" from "these two resemble each other": a name
+/// several components each *define* is one implementation vendored N times, whereas a name they each
+/// *import* is already shared. Deliberately a shallow scan (declaration lines, not a parse) — it only
+/// has to be right enough to ATTRIBUTE a cluster the similarity score already found, and a missed
+/// helper costs a less specific sentence, never a wrong grouping.
+///
+/// `own_name` is excluded: every component defines itself, so it would appear in every intersection
+/// and attribute every cluster to nothing.
+fn local_helpers(src: &str, own_name: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for line in src.lines() {
+        let t = line.trim_start().strip_prefix("export ").unwrap_or_else(|| line.trim_start());
+        let ident = |r: &str| {
+            r.split(|c: char| !c.is_alphanumeric() && c != '_' && c != '$')
+                .next()
+                .filter(|n| !n.is_empty())
+                .map(str::to_string)
+        };
+        // `const X = (…) =>` is a helper; `const X = 3` is a constant, and only the arrow makes it a
+        // function — without that check every colour token would read as a shared helper.
+        let name = match (t.strip_prefix("function "), t.strip_prefix("const ")) {
+            (Some(r), _) => ident(r),
+            (_, Some(r)) if t.contains("=>") => ident(r),
+            _ => None,
+        };
+        if let Some(n) = name {
+            if n != own_name {
+                out.insert(n);
+            }
+        }
+    }
+    out
+}
+
+/// Minimum share of a group's possible pairs that must actually be similar for it to report as ONE
+/// cluster. The guard against TRANSITIVE CHAINING: `A~B` and `B~C` with `A` and `C` unrelated is a
+/// chain, not a group, and collapsing it would assert a similarity no member exhibits. A sparse group
+/// keeps its pairs rather than becoming a claim nobody made.
+const CLUSTER_DENSITY: f64 = 0.5;
+
+/// Collapse a mutually-similar GROUP into ONE finding naming every member (#74, designer request).
+///
+/// N mutually-similar components emit N-choose-2 pairs. Eleven `*GraphHost` wrappers each carrying a
+/// byte-identical local `LocalPageFallback` produced **53 of their kit's 61 findings**, every row
+/// restating one fact. The detector had found the thing; the report buried it so completely that
+/// reading the entire kit by hand was the faster path — which is what the reporter did, then authored
+/// the shared component manually. A detector that drowns its own signal has failed in a way
+/// indistinguishable from not detecting at all, which is exactly how it was reported.
+///
+/// Groups are the connected components of the pair graph, kept only when [`CLUSTER_DENSITY`] of their
+/// possible pairs were actually observed. A kept group replaces its pairs; everything else is passed
+/// through untouched, so a genuine two-component duplicate still reports as a pair.
+fn cluster_findings(pairs: Vec<Finding>, comps: &[Comp]) -> Vec<Finding> {
+    let mut adj: std::collections::BTreeMap<&str, BTreeSet<&str>> = std::collections::BTreeMap::new();
+    for f in &pairs {
+        if f.category != "near-duplicate" || f.node_ids.len() != 2 {
+            continue;
+        }
+        adj.entry(&f.node_ids[0]).or_default().insert(&f.node_ids[1]);
+        adj.entry(&f.node_ids[1]).or_default().insert(&f.node_ids[0]);
+    }
+    // Connected components over the pair graph.
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let mut groups: Vec<Vec<String>> = Vec::new();
+    for start in adj.keys().copied() {
+        if seen.contains(start) {
+            continue;
+        }
+        let (mut stack, mut group) = (vec![start], Vec::new());
+        while let Some(n) = stack.pop() {
+            if !seen.insert(n) {
+                continue;
+            }
+            group.push(n.to_string());
+            for m in adj.get(n).into_iter().flatten() {
+                if !seen.contains(m) {
+                    stack.push(m);
+                }
+            }
+        }
+        if group.len() >= 3 {
+            group.sort();
+            groups.push(group);
+        }
+    }
+    let by_id: std::collections::BTreeMap<&str, &Comp> = comps.iter().map(|c| (c.id.as_str(), c)).collect();
+    let mut clustered: Vec<Finding> = Vec::new();
+    let mut absorbed: BTreeSet<String> = BTreeSet::new();
+    for group in groups {
+        let members: BTreeSet<&str> = group.iter().map(String::as_str).collect();
+        let observed = pairs
+            .iter()
+            .filter(|f| f.node_ids.len() == 2 && f.node_ids.iter().all(|i| members.contains(i.as_str())))
+            .count();
+        let n = group.len();
+        let possible = n * (n - 1) / 2;
+        if possible == 0 || (observed as f64) / (possible as f64) < CLUSTER_DENSITY {
+            continue; // a chain, not a group — its pairs stay pairs
+        }
+        let comps_in: Vec<&Comp> = group.iter().filter_map(|id| by_id.get(id.as_str()).copied()).collect();
+        if comps_in.len() != n {
+            continue;
+        }
+        // The helpers EVERY member defines — one implementation vendored n times.
+        let shared = comps_in
+            .iter()
+            .map(|c| local_helpers(&c.src_text, &c.name))
+            .reduce(|a, b| a.intersection(&b).cloned().collect())
+            .unwrap_or_default();
+        let names: Vec<String> = comps_in.iter().map(|c| c.name.clone()).collect();
+        let kits: BTreeSet<&str> = comps_in.iter().map(|c| c.kit.as_str()).collect();
+        let shared_list = shared.iter().map(|h| format!("`{h}`")).collect::<Vec<_>>().join(", ");
+        clustered.push(Finding {
+            category: "near-duplicate-cluster",
+            severity: 3,
+            kit: kits.into_iter().collect::<Vec<_>>().join(" ↔ "),
+            node_ids: group.clone(),
+            node_names: names.clone(),
+            why: if shared.is_empty() {
+                format!("{n} components are mutually near-duplicate: {}", names.join(", "))
+            } else {
+                format!(
+                    "{n} components each define their OWN {shared_list} — one implementation vendored {n} times: {}",
+                    names.join(", ")
+                )
+            },
+            suggested_action: if shared.is_empty() {
+                format!(
+                    "propose consolidating these {n} into one component; inspect with `bsc ui similar {}` — NOT auto-fixed (propose-only)",
+                    group[0]
+                )
+            } else {
+                format!(
+                    "extract {shared_list} into ONE component and compose it from all {n}; inspect with `bsc ui similar {}` — NOT auto-fixed (propose-only)",
+                    group[0]
+                )
+            },
+        });
+        absorbed.extend(group);
+    }
+    // A pair whose BOTH sides were absorbed is the fact the cluster now states once.
+    let kept = pairs.into_iter().filter(|f| {
+        f.node_ids.len() != 2 || !f.node_ids.iter().all(|i| absorbed.contains(i))
+    });
+    clustered.into_iter().chain(kept).collect()
 }
 
 /// One ranked "similar to X" row for `bsc ui similar <id>` — the other component + the sub-scores.
@@ -739,6 +888,144 @@ mod tests {
             action.contains("`DonutChart` into `Donut`") || action.contains("`Donut` into `DonutChart`"),
             "no qualifier on a distinct-name pair: {action}"
         );
+    }
+
+    /// n `*GraphHost`-shaped components, each vendoring its OWN copy of one helper — the #74 shape.
+    ///
+    /// Modelled on the real records rather than invented: the shipped wrappers share a long identical
+    /// body and differ only in one word, which is how they reach contract ≈ 96% while their NAMES only
+    /// match ≈ 40% (`AutomationsGraphHost` vs `GitHubGraphHost` share just `graph`+`host`). A first
+    /// draft used `Host0`/`Host1` with short bodies and scored 0.477 — under the 0.55 bar — so it
+    /// produced no findings at all and would have "passed" a clustering test by testing nothing.
+    fn vendored_helper_family(n: usize) -> Vec<Value> {
+        const WORDS: [&str; 11] = [
+            "Automations", "GitHub", "Mcp", "Skills", "Console", "Fleet", "Glance", "Planning",
+            "Security", "Sounds", "Algorithms",
+        ];
+        (0..n)
+            .map(|i| {
+                let w = WORDS[i % WORDS.len()];
+                let name = format!("{w}GraphHost");
+                let body = format!(
+                    "import {{ GraphCanvas }} from \"@/shared/ui/graph\";\n\
+                     function LocalPageFallback({{ page, icon }}) {{\n\
+                       return <EmptyState page={{page}} icon={{icon}} title=\"No implementation yet\" />;\n\
+                     }}\n\
+                     export function {name}() {{\n\
+                       const rec = useGraphRecord(\"{w}\");\n\
+                       if (!rec) return <LocalPageFallback page=\"{w}\" icon=\"graph\" />;\n\
+                       return <GraphCanvas record={{rec}} />;\n\
+                     }}"
+                );
+                comp_with(
+                    &format!("{}graphhost", w.to_lowercase()),
+                    &name,
+                    "k",
+                    fields! { "srcText": body, "folder": "shared/hosts" },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_mutually_similar_group_reports_once_naming_every_member() {
+        // DESIGNER REQUEST #74. Eleven components sharing one vendored helper produced 53 of a kit's
+        // 61 findings — one fact restated until it was unreadable, which is why it was reported as
+        // "doctor never flagged it". Eleven members ⇒ 55 pairs; this asserts ONE finding instead.
+        let fam = vendored_helper_family(11);
+        let f = near_duplicate_findings(&fam, DEFAULT_THRESHOLD);
+        let clusters: Vec<&Finding> = f.iter().filter(|x| x.category == "near-duplicate-cluster").collect();
+        assert_eq!(clusters.len(), 1, "one cluster, not 55 pairs: {f:#?}");
+        assert_eq!(clusters[0].node_ids.len(), 11, "names every member: {:?}", clusters[0].node_ids);
+        // The pairs it absorbed must be GONE — leaving both would be strictly worse than before.
+        assert!(
+            !f.iter().any(|x| x.category == "near-duplicate"),
+            "the absorbed pairs no longer report: {} left",
+            f.iter().filter(|x| x.category == "near-duplicate").count()
+        );
+        // ATTRIBUTION: naming the shared helper is what makes it actionable — "contract 96%" still
+        // costs eleven file reads to act on.
+        assert!(clusters[0].why.contains("LocalPageFallback"), "names the shared helper: {}", clusters[0].why);
+        assert!(clusters[0].suggested_action.contains("extract"), "says what to do: {}", clusters[0].suggested_action);
+    }
+
+    #[test]
+    fn a_plain_pair_is_still_reported_as_a_pair() {
+        // Clustering ADDS a grouping; it must not swallow the two-component case, which is the
+        // overwhelming majority of real findings.
+        let fam = vendored_helper_family(2);
+        let f = near_duplicate_findings(&fam, DEFAULT_THRESHOLD);
+        assert_eq!(f.len(), 1, "exactly one finding: {f:#?}");
+        assert_eq!(f[0].category, "near-duplicate", "a pair stays a pair, not a 2-member cluster");
+    }
+
+    #[test]
+    fn a_transitive_chain_is_not_collapsed_into_a_cluster() {
+        // A~B and B~C with A and C UNRELATED is a chain. Collapsing it would assert a three-way
+        // similarity no member exhibits — a confident wrong grouping, worse than the noise it fixes.
+        //
+        // Drives `cluster_findings` DIRECTLY rather than trying to coax the scorer into producing a
+        // chain: the first attempt built three records and asserted "no cluster", which passed while
+        // the scorer emitted ZERO findings — proving nothing at all. Feeding the pairs in makes the
+        // density rule the only thing under test, and lets the same fixture carry its own control.
+        let recs = [
+            comp_with("a", "Alpha", "k", fields! {}),
+            comp_with("b", "Beta", "k", fields! {}),
+            comp_with("c", "Gamma", "k", fields! {}),
+        ];
+        let comps: Vec<Comp> = recs.iter().filter_map(parse).collect();
+        assert_eq!(comps.len(), 3, "fixture parses");
+        let pair = |x: &str, y: &str| Finding {
+            category: "near-duplicate",
+            severity: 3,
+            kit: "k".into(),
+            node_ids: vec![x.into(), y.into()],
+            node_names: vec![x.to_uppercase(), y.to_uppercase()],
+            why: String::new(),
+            suggested_action: String::new(),
+        };
+
+        // The chain has to be LONG to be sparse: over 3 nodes a 2-link chain is already 2 of 3
+        // possible pairs (0.67, above the bar) and over 4 it is exactly 0.5. A 5-node chain is 4 of
+        // 10 — genuinely sparse, and the case where collapsing would invent a group.
+        let chain = vec![pair("a", "b"), pair("b", "c")];
+        let five: Vec<Value> = ["a", "b", "c", "d", "e"]
+            .iter()
+            .map(|i| comp_with(i, &i.to_uppercase(), "k", fields! {}))
+            .collect();
+        let five_comps: Vec<Comp> = five.iter().filter_map(parse).collect();
+        let long_chain = vec![pair("a", "b"), pair("b", "c"), pair("c", "d"), pair("d", "e")];
+        let out = cluster_findings(long_chain, &five_comps);
+        assert!(
+            !out.iter().any(|f| f.category == "near-duplicate-cluster"),
+            "4 of 10 possible pairs is a chain, not a group: {out:#?}"
+        );
+        assert_eq!(out.len(), 4, "and every pair survives untouched");
+
+        // CONTROL — the same machinery MUST cluster a dense group, or the assertion above is just
+        // "clustering never happens".
+        let triangle = vec![pair("a", "b"), pair("b", "c"), pair("a", "c")];
+        let out = cluster_findings(triangle, &comps);
+        assert_eq!(out.len(), 1, "a complete triangle is one cluster: {out:#?}");
+        assert_eq!(out[0].category, "near-duplicate-cluster");
+        assert_eq!(out[0].node_ids.len(), 3, "naming all three");
+        // And the 2-pair chain over 3 nodes (2/3 density) DOES cluster — documenting where the line is.
+        let out = cluster_findings(chain, &comps);
+        assert_eq!(out.len(), 1, "2 of 3 pairs clears the 0.5 density bar: {out:#?}");
+    }
+
+    #[test]
+    fn local_helpers_reads_declarations_not_constants_or_imports() {
+        let src = "import { Card } from \"@/shared/ui/data/Card\";\n\
+                   const COLOR = \"red\";\n\
+                   const makeThing = (x) => x + 1;\n\
+                   function helper(a) { return a; }\n\
+                   export function Widget() { return null; }";
+        let h = local_helpers(src, "Widget");
+        assert!(h.contains("helper") && h.contains("makeThing"), "declarations found: {h:?}");
+        assert!(!h.contains("COLOR"), "a constant is not a helper: {h:?}");
+        assert!(!h.contains("Card"), "an IMPORTED name is not locally defined — that is the whole distinction: {h:?}");
+        assert!(!h.contains("Widget"), "the component itself is excluded, or it attributes every cluster: {h:?}");
     }
 
     #[test]
@@ -946,3 +1233,5 @@ mod tests {
         assert!(rank_similar("nope", &comps, 10, 0.0).is_empty());
     }
 }
+
+
