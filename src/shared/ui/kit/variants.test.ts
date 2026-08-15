@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compileVariantsCss, applyVariantsToRoot, type VariantDef } from "./variants";
+import { compileVariantsCss, applyVariantsToRoot, type VariantDef } from "@/shared/ui/kit/variants";
 
 const def = (over: Partial<VariantDef> = {}): VariantDef => ({
   id: "btn:danger-outline",

@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { useStudioReaper, STUDIO_IDLE_MS, STUDIO_BUSY_RECHECK_MS } from "./useStudioReaper";
+import { useStudioReaper, STUDIO_IDLE_MS, STUDIO_BUSY_RECHECK_MS } from "@/features/studio-sessions/useStudioReaper";
 import { DEFAULT_REAPER_CONFIG, type ReaperConfig } from "@/app/console/lib/idleReaper";
-import { STUDIO_SESSIONS } from "./lib/studioSessions";
+import { STUDIO_SESSIONS } from "@/features/studio-sessions/lib/studioSessions";
 
 /**
  * #3357 — the idle reaper. A studio session deliberately OUTLIVES the surface that opened it (so the

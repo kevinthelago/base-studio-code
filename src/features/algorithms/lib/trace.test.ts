@@ -10,7 +10,7 @@ import {
   type GraphFrame,
   type MatrixFrame,
   type ScalarFrame,
-} from "./trace";
+} from "@/features/algorithms/lib/trace";
 
 describe("normalizeFrame (#3176)", () => {
   it("wraps a bare single-structure frame under the `main` panel", () => {

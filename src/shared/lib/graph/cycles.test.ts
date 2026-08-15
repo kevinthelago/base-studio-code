@@ -2,7 +2,7 @@
 // 2-cycle mutual-pair special case.
 import { describe, it, expect } from "vitest";
 import { findBackEdges, mutualPairs } from "./cycles";
-import type { GraphEdge } from "./types";
+import type { GraphEdge } from "@/shared/lib/graph/types";
 
 describe("findBackEdges (#2217)", () => {
   it("finds no back-edge in a DAG", () => {

@@ -9,7 +9,7 @@ import {
   BUILTIN_ORGS, blankOrg, orgSlug, reconcileOrgs, orgStructureKey,
   type Team, type Position, type Relationship,
 } from "./lib/team";
-import { loadOrgs, pushOrg, dropOrg } from "./lib/orgBridge";
+import { loadOrgs, pushOrg, dropOrg } from "@/features/teams/lib/orgBridge";
 
 export interface OrgSlice {
   /** The org library — packaged built-ins (reconciled on load) + user-authored. */

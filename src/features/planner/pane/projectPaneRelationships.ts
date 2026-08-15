@@ -3,9 +3,9 @@
 // blocking edges aggregated from the issue dependency tree. Extracted from
 // projectPaneData (#2151); pure, no logic changes.
 
-import type { AgentStream } from "../fleet/planFleet";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import type { AgentRelationship } from "../relationship/relationshipGraph";
-import type { PlanIssue } from "../issues/planIssues";
+import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import type { BuildProjectPaneInput } from "./projectPaneInput";
 
 /**

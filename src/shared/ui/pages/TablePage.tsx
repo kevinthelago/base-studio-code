@@ -16,7 +16,7 @@ import { KeyValueList } from "@/shared/ui/data/KeyValueList";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { SplitView } from "@/shared/ui/layouts/SplitView";
 import { PageHeader } from "./pageHeader";
-import { usePageSelection } from "./useSelection";
+import { usePageSelection } from "@/shared/ui/pages/useSelection";
 
 /** One table column — `key` addresses each row's `cells`, `label` heads it. */
 export interface TablePageColumn {

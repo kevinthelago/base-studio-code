@@ -14,11 +14,11 @@
 export { StudioSessionHosts } from "./StudioSessionHosts";
 export { StudioSessionMount, seedStudioLaunchState, studioStartPrompt } from "./StudioSessionMount";
 export { useStudioViewer, useStudioViewers } from "@/features/studio-sessions/useStudioViewer";
-export { useStudioPageShowing, studioPageShowing } from "./useStudioPageShowing";
-export { useStudioReaper, STUDIO_IDLE_MS, STUDIO_BUSY_RECHECK_MS } from "./useStudioReaper";
+export { useStudioPageShowing, studioPageShowing } from "@/features/studio-sessions/useStudioPageShowing";
+export { useStudioReaper, STUDIO_IDLE_MS, STUDIO_BUSY_RECHECK_MS } from "@/features/studio-sessions/useStudioReaper";
 export { createStudiosSlice, orderedWantedStudios, type StudiosSlice } from "./store";
 export {
   STUDIO_IDS, STUDIO_SESSIONS, STUDIO_INIT_CMD,
   isStudioId, studioForPaneId, studioRoleForPaneId, studioDetached, studioForTech, studioScopeDirective,
   type StudioId, type StudioSessionDef,
-} from "./lib/studioSessions";
+} from "@/features/studio-sessions/lib/studioSessions";

@@ -7,7 +7,7 @@
 // no snapshot frames. The result is normalized so a component preview can bind a data prop straight to it
 // (e.g. a `graph` dataset → a ForceGraph's `{ nodes, edges }`), with no per-component adapter.
 import type { VizRun } from "./examples/vizProgram";
-import type { GraphInput } from "../lib/tracer";
+import type { GraphInput } from "@/features/algorithms/lib/tracer";
 
 /** A nested tree node (#3790) — a `{ id, label, children? }` forest node, structurally the shared
  *  Tree/TreeExplorerPage `nodes` prop shape (`TreeNodeData`), so it binds directly. */

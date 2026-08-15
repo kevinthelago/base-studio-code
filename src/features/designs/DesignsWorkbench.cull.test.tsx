@@ -17,7 +17,7 @@ vi.mock("@/shared/lib/preview/componentBundle", () => ({
   COMPONENT_IMPORTMAP: { react: "https://esm.sh/react" },
   COMPONENT_EXTERNALS: ["react"],
 }));
-vi.mock("./lib/uiActivity", () => ({ useUiActivity: vi.fn() }));
+vi.mock("@/features/designs/lib/uiActivity", () => ({ useUiActivity: vi.fn() }));
 vi.mock("./lib/useComponentScan", () => ({ useComponentScan: vi.fn() }));
 
 // The rect the page sees, swappable per test — this is the seam that stands in for real layout.

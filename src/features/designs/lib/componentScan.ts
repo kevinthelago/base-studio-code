@@ -29,7 +29,7 @@ import {
   type KitArtifact, type LibraryModuleResolver,
 } from "./componentPreview";
 import type { HealthCategory } from "./graphHealth";
-import { libraryModuleResolver } from "./libraryModules";
+import { libraryModuleResolver } from "@/features/designs/lib/libraryModules";
 // The feature's existing hash — reused rather than adding a second one
 // (#the-scan-signature-is-the-whole-source-not-a-digest).
 import { fnv1a } from "./seedRefresh";

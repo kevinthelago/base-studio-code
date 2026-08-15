@@ -8,7 +8,7 @@ import {
   librarianSessionId,
   TEAMS_STUDIO_SESSION_ID,
   DEBUG_STUDIO_SESSION_ID,
-} from "./systemSessions";
+} from "@/shared/lib/session/systemSessions";
 
 describe("isStudioSessionPaneId (#3137)", () => {
   it("matches each app-owned studio session id", () => {

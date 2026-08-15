@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { space, pad, flexStyle, alignValue, justifyValue } from "./space";
+import { space, pad, flexStyle, alignValue, justifyValue } from "@/shared/ui/layout/space";
 
 describe("space()", () => {
   it("maps named rungs to their pixel values", () => {

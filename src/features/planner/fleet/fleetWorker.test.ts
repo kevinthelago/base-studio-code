@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { permissionRows, flowRows, paneCoords, TOOL_ORDER } from "./fleetWorker";
+import { permissionRows, flowRows, paneCoords, TOOL_ORDER } from "@/features/planner/fleet/fleetWorker";
 import type { AgentProfile } from "@/features/security/lib/agentProfiles";
-import { DEFAULT_FLOW } from "./agentFlow";
+import { DEFAULT_FLOW } from "@/features/planner/fleet/agentFlow";
 
 const profile: AgentProfile = {
   id: "pf_x", name: "Build & test", color: "#fff", category: "generated", origin: "by planner",

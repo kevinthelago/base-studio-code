@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { setMapEntry, deleteMapEntry, deleteMapEntries, updateArrayItem } from "./updateHelpers";
+import { setMapEntry, deleteMapEntry, deleteMapEntries, updateArrayItem } from "@/store/updateHelpers";
 
 describe("setMapEntry", () => {
   it("adds a new key without mutating the input", () => {

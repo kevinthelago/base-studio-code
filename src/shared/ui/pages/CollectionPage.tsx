@@ -16,7 +16,7 @@ import { KeyValueList, type KeyValueItem } from "@/shared/ui/data/KeyValueList";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { MasterDetail } from "@/shared/ui/layouts/MasterDetail";
 import { PageHeader } from "./pageHeader";
-import { usePageSelection } from "./useSelection";
+import { usePageSelection } from "@/shared/ui/pages/useSelection";
 
 /** One collection item — the rail row's slots plus the detail panel's facts. */
 export interface CollectionItem {

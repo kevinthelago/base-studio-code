@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_ORGS, type Team } from "./team";
-import { positionDisplay, positionComms, tierChips, formArrow, formColor } from "./orgView";
+import { positionDisplay, positionComms, tierChips, formArrow, formColor } from "@/features/teams/lib/orgView";
 import { formById } from "./team";
 import type { Persona } from "@/features/personas";
 

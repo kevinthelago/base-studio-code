@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { validateManifest } from "@/features/planner/lib/gist/manifest";
-import { manifestToBlueprint, bundledSkillsFromManifest } from "./blueprintShare";
+import { manifestToBlueprint, bundledSkillsFromManifest } from "@/features/planner/blueprints/blueprintShare";
 // The "base-studio-code Reskin" blueprint (#1212) ships as a GitHub gist, not a packaged built-in.
 // Its canonical source lives at docs/blueprints/bsc-reskin/extension.json and is published verbatim.
 // This guards the acceptance criterion "the blueprint JSON validates / imports cleanly" so the gist

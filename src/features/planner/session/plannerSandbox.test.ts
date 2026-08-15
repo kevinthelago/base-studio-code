@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { wantsSandboxLaunch } from "./plannerSandbox";
+import { wantsSandboxLaunch } from "@/features/planner/session/plannerSandbox";
 
 describe("wantsSandboxLaunch (#1988)", () => {
   it("true only when the toggle is on, the harness is bsc-agent, AND there's a hub to relocate", () => {

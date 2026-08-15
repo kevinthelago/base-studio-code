@@ -7,7 +7,7 @@
 // dropped one of three `<Chip>`s shows up as one differing node rather than as "identical". Edit distance
 // would give a prettier number and needs an alignment pass that has to guess which node matched which —
 // this cannot be wrong about what it reports, only coarse.
-import { outlinePaths, countNodes, type OutlineNode } from "./jsxOutline";
+import { outlinePaths, countNodes, type OutlineNode } from "@/shared/lib/runtime/shadow/jsxOutline";
 
 /** The structural verdict for ONE module (a page record or one of its tab-body siblings). */
 export interface OutlineDiff {

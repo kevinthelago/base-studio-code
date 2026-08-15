@@ -10,7 +10,7 @@
 // The left→right reading survives the move, minus one stop: architect → projects → libraries.
 import { describe, it, expect } from "vitest";
 import { buildGlanceData } from "./lib/glanceData";
-import { buildArchitectFleetData } from "./lib/studioProject";
+import { buildArchitectFleetData } from "@/features/glance/lib/studioProject";
 import { studioNetworkForArchitect, STUDIO_NETWORK_ID, ARCHITECT_NODE, BUILTIN_ORGS } from "@/features/teams";
 import { buildGraph, architectNodeId, kitNodeId } from "./lib/glanceGraph";
 
@@ -120,7 +120,7 @@ describe("the architect node expands into the sessions it commands", () => {
     // `studioPaneIdForNode` maps a Studio Network POSITION id to its fixed app-owned pane id. If the
     // drill-in renamed its nodes, every session in it would stop opening — the graph would draw and do
     // nothing, which is the worst version of this change landing.
-    const { studioPaneIdForNode, studioNodeHome } = await import("./lib/studioProject");
+    const { studioPaneIdForNode, studioNodeHome } = await import("@/features/glance/lib/studioProject");
     const d = buildArchitectFleetData(BUILTIN_ORGS, [])!;
     for (const n of d.rawNodes) {
       expect(studioPaneIdForNode(n.id), `${n.id} resolves to a pane`).toBeTruthy();

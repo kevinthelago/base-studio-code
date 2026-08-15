@@ -6,7 +6,7 @@
 // nothing.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { bscJsonShared, clearBscShared } from "./bscShared";
-import * as bscMod from "./bsc";
+import * as bscMod from "@/shared/lib/core/bsc";
 
 /** A `bscJson` that resolves IMMEDIATELY — the spy is the spawn counter. Resolving without a timer keeps
  *  it usable under fake timers, which the TTL tests need (the TTL reads `Date.now()`). */

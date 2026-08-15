@@ -1,6 +1,6 @@
 import { useAppStore } from "@/store";
 import { KitRenderer } from "@/shared/ui/spec";
-import { SESSIONS_BEHAVIOR_SPEC } from "./sessionsBehaviorSpec";
+import { SESSIONS_BEHAVIOR_SPEC } from "@/features/settings/cards/sessionsBehaviorSpec";
 
 /**
  * Rung-4 proof (#2570): this real settings card is rendered from a node spec (`SESSIONS_BEHAVIOR_SPEC`)

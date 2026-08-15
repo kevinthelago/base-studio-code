@@ -9,7 +9,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { actuateWake, injectWake } from "@/shared/lib/fleet/coordinatorActuate";
-import { planMobileResume, type CoordControlKind } from "./coordControl";
+import { planMobileResume, type CoordControlKind } from "@/features/tunnel/lib/coordControl";
 import { log } from "@/shared/lib/core/log";
 
 export function useTunnelCoordControl(): void {

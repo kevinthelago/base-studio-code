@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { activeSubstep, substepDone } from "./planSubsteps";
+import { activeSubstep, substepDone } from "@/features/planner/stages/planSubsteps";
 import { STAGE_DEFS, mkStage, makeBlueprints, type SubStep } from "./blueprints";
 import { derivePlanStageState, planStateToSignals } from "./planStageDerive";
 

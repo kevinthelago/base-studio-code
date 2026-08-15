@@ -5,7 +5,7 @@
 import type { StateCreator } from "zustand";
 import { type AppStore, DEFAULT_PERF_CONFIG, DEFAULT_LOG_CONFIG } from "../types";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { setMapEntry } from "../updateHelpers";
+import { setMapEntry } from "@/store/updateHelpers";
 import { pickDemoable, mergeSnapshotInto } from "../appState";
 
 type ShellSlice = Pick<AppStore,

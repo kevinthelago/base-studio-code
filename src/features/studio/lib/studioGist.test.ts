@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import {
   studioToManifest, manifestToStudio, exportStudioToGist, importStudioFromGist, STUDIO_KIND, type Studio,
-} from "./studioGist";
+} from "@/features/studio/lib/studioGist";
 import { validateManifest, type ExtensionManifest } from "@/features/planner";
 
 const studio: Studio = {

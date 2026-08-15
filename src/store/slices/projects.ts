@@ -30,7 +30,7 @@ import { resolveStartupPrompt } from "@/shared/lib/session/assignments";
 import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skills";
 import { resolveStrategy, strategySettings } from "@/features/planner/lib/integrationStrategy";
 import { scriptDocRelpath } from "@/features/planner/session/planningSession";
-import { setMapEntry, deleteMapEntry } from "../updateHelpers";
+import { setMapEntry, deleteMapEntry } from "@/store/updateHelpers";
 import { deleteProjectScoped, rekeyProjectScoped } from "./projectScopedMaps";
 import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { bscJson } from "@/shared/lib/core/bsc";

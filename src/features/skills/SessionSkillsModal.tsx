@@ -18,11 +18,11 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Text } from "@/shared/ui/typography/Text";
 import { KIND, SOURCE_TAG } from "@/shared/data/skills";
-import { pill, sourcePill } from "./skillStyles";
+import { pill, sourcePill } from "@/features/skills/skillStyles";
 import {
   sessionSkillState, expandGroups, groupSkillCount,
   type SkillDef, type SessionSkillReason,
-} from "./lib/skills";
+} from "@/features/skills/lib/skills";
 import "./skills.css";
 
 /** Color + copy for each effective-state reason (the row's "why" pill). */

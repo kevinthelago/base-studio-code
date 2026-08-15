@@ -17,8 +17,8 @@ import type {
   AnsweredWake,
   CoordEvent,
   CrossProjectRefusal,
-} from "./coordination.types";
-import { emptyCoordState, parseRef, registerWaiter, satisfy, fail } from "./coordinationState";
+} from "@/shared/lib/fleet/coordination.types";
+import { emptyCoordState, parseRef, registerWaiter, satisfy, fail } from "@/shared/lib/fleet/coordinationState";
 
 /**
  * Parse one TSV `$BSC_COORD_LOG` line into an event, or null if unrecognized.

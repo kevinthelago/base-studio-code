@@ -3,7 +3,7 @@ import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
   hashContent, changedDesignFiles, markRouted, renderDesignDelta,
   INTAKE_DIR, INTAKE_MANIFEST,
-} from "./fileIntake";
+} from "@/features/planner/lib/fileIntake";
 import { STAGE_DEFS } from "../stages/blueprints";
 
 describe("fileIntake — staging directory (#829)", () => {

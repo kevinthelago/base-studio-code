@@ -3,8 +3,8 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { GraphView } from "./GraphView";
-import { circularLayout, coordinateLayout, layoutFor } from "./graphLayout";
-import type { GraphFrame } from "../../lib/trace";
+import { circularLayout, coordinateLayout, layoutFor } from "@/features/algorithms/viz/renderers/graphLayout";
+import type { GraphFrame } from "@/features/algorithms/lib/trace";
 
 const frame: GraphFrame = {
   structure: "graph",

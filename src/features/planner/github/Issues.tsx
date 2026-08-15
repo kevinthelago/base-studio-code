@@ -11,7 +11,7 @@ import type { ProjectV2Node } from "@/shared/lib/github/projectV2";
 import {
   ISSUES_QUERY, parseIssues, deriveLabels, deriveMilestones, applyFilters,
   type FlatIssue, type Filters,
-} from "./issues/issuesModel";
+} from "@/features/planner/github/issues/issuesModel";
 import { DetailPanel } from "./issues/DetailPanel";
 import { FilterBar } from "./issues/FilterBar";
 import { IssueRow } from "./issues/IssueRow";

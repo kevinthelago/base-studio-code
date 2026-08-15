@@ -22,7 +22,7 @@ export {
   eventNameForProp, resolveAnalyticsEmit, usageRecordArgs, makeAnalyticsEmit,
   componentAnalyticsLookup, collectingSink, consoleUsageSink,
   type ActionFire, type UsageRecord, type UsageSink, type AnalyticsLookup,
-} from "./lib/analyticsEmit";
+} from "@/features/designs/lib/analyticsEmit";
 export { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 // Mounted-preview registry (#3437) — what `bsc debug frames` reports on.
 export {
@@ -34,7 +34,7 @@ export {
 export {
   resolveComponentLibraryRefs, resolveKitLibraryRefs,
   type LibraryComposition, type KitLibraryRef,
-} from "./lib/libraryComposition";
+} from "@/features/designs/lib/libraryComposition";
 // Kit lint rules → eslint preset (#2279) — the generator the planner bakes into a generated app.
 export {
   deriveRules, mergeRules, kitRules, componentRules, ruleMessage, toEslintRules, toEslintPreset, ESCAPE_HATCH,
@@ -47,4 +47,4 @@ export {
   planKitDrain, deliveryKey, kitDispatchPrompt, DEFAULT_KIT_DRAIN,
   type KitChange, type ChangeClass, type KitConsumer, type Dispatch, type DispatchKind,
   type KitRail, type KitDelivery, type KitDrainConfig, type KitDrainPlan,
-} from "./lib/propagation";
+} from "@/features/designs/lib/propagation";

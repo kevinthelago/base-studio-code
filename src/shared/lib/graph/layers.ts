@@ -4,7 +4,7 @@
 // back-edges it already computed via `cycles.ts`, or its 2-cycle mutual pairs) so a loop can't diverge
 // the layout. Pure; the callers own the layer→pixel PLACEMENT (Glance's grid, Relationship's swimlanes)
 // — this only assigns the layer number.
-import type { GraphEdge } from "./types";
+import type { GraphEdge } from "@/shared/lib/graph/types";
 
 /**
  * Longest-path topological layering. Assigns each node in `nodeIds` an integer layer so that for every

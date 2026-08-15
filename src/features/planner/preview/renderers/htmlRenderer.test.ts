@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getRenderer } from '../registry';
 import type { RendererHandle } from '../registry';
-import type { RenderableChunk } from '../types';
+import type { RenderableChunk } from '@/features/planner/preview/types';
 
 // Import renderer — side-effect registers it in the module-level registry.
 // Registered HERE rather than by importing for a side effect: the renderer module is a pure

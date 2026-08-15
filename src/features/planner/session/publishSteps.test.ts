@@ -5,7 +5,7 @@ import {
   createIssues, applyStreamLabels, seedPublishStatus, materializeIssues,
 } from "./publishSteps";
 import type { GhStatusMap, GhItemState } from "./GitHubStructureCard";
-import type { AgentStream } from "../fleet/planFleet";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
 
 // ── test doubles ──────────────────────────────────────────────────────────────
 interface Call { method: "gql" | "rest" | "post" | "put" | "patch"; path?: string; query?: string; body?: unknown; variables?: unknown }

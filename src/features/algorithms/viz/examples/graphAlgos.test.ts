@@ -1,9 +1,9 @@
 // Graph trace-programs (#3224) — BFS visits in breadth-first order and reaches every connected node (so
 // the animation is faithful), and the adjacency-list parser round-trips.
 import { describe, it, expect } from "vitest";
-import { TracedGraph, type GraphInput } from "../../lib/tracer";
+import { TracedGraph, type GraphInput } from "@/features/algorithms/lib/tracer";
 import { bfs, dfs, dijkstra, aStar, topologicalSort, GRAPH_PROGRAMS, parseGraphInput, graphToText } from "./graphAlgos";
-import type { GraphFrame } from "../../lib/trace";
+import type { GraphFrame } from "@/features/algorithms/lib/trace";
 
 const G: GraphInput = {
   nodes: ["a", "b", "c", "d", "e", "f"].map((id) => ({ id })),

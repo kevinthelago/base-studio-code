@@ -24,20 +24,20 @@ export type {
   DiscoveredField, DiscoveredObject, SourceBehavior,
   ScanAutomationKind, ScanAutomation, ScanBusinessProcess, ScanDerivedKind, ScanDerivedLogic, PlatformScanView,
   SourceStatus, DeclaredSource, SourceConfig,
-} from "./sourceSpecs";
-export { defaultSourceConfig, newDeclaredSource } from "./sourceSpecs";
+} from "@/features/planner/lib/sourceSpecs";
+export { defaultSourceConfig, newDeclaredSource } from "@/features/planner/lib/sourceSpecs";
 
 // The native pre-built connectors were removed (#1976): there is no static catalog or backend preset
 // catalog, so `connector(id)` resolves any id to a generic fallback shape (a one-click token connector).
 export {
   connector, connectorColor, sampleScan, proposeFromPitch, redactedHandle,
-} from "./sourceCatalog";
-export type { RuntimeConnectorView } from "./sourceCatalog";
+} from "@/features/planner/lib/sourceCatalog";
+export type { RuntimeConnectorView } from "@/features/planner/lib/sourceCatalog";
 
 export {
   isConnected, connectedCount, allSourcesConnected, sourceChecks,
   migrationActive, dataModelSignals, downstreamImpact,
 } from "./sourceGate";
-export { deriveDataModel } from "./dataModelDerivation";
+export { deriveDataModel } from "@/features/planner/lib/dataModelDerivation";
 export type { ScanViewField, ScanViewEntity } from "@/features/planner/lib/sourceScanViews";
 export { scanEntities, scanEdges, aggregatePlatform, isMultiSource } from "@/features/planner/lib/sourceScanViews";

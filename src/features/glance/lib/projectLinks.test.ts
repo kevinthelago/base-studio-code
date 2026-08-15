@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAppStore } from "@/store";
-import { projectLinkId, type ProjectLink } from "./projectLinks";
+import { projectLinkId, type ProjectLink } from "@/features/glance/lib/projectLinks";
 import { buildGlanceData } from "./glanceData";
-import * as bridge from "./projectLinksBridge";
+import * as bridge from "@/features/glance/lib/projectLinksBridge";
 
 describe("projectLinkId", () => {
   it("is deterministic per (from,to,kind) so adding a link twice is idempotent", () => {

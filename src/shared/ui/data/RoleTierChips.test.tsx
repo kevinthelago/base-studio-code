@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { RoleTierChips } from "./RoleTierChips";
+import { RoleTierChips } from "@/shared/ui/data/RoleTierChips";
 
 describe("RoleTierChips (#2420)", () => {
   it("renders all four capability tiers for a role", () => {

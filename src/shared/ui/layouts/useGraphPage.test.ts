@@ -18,7 +18,7 @@ vi.mock("./useGraphViewport", async (orig) => {
   };
 });
 
-import { useGraphPage } from "./useGraphPage";
+import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
 
 const flushRaf = () => act(async () => { await new Promise((r) => requestAnimationFrame(() => r(null))); });
 

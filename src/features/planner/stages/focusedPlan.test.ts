@@ -3,9 +3,9 @@ import {
   stagesFrom, activeIndex, clampIndex, gatePill, footerAction, resolveFooter, currentGateReady, connectorKind,
   isUserGated, USER_GATED_STAGES,
   sectionForStage, shouldAutoCompleteGate, type Stage, type StageStatus,
-} from "./focusedPlan";
+} from "@/features/planner/stages/focusedPlan";
 import { confirmedSignal, skippedSignal, type BlueprintStage } from "./blueprints";
-import type { PlanSignals } from "./stageGate";
+import type { PlanSignals } from "@/features/planner/stages/stageGate";
 
 const sec = (key: string, over: Partial<BlueprintStage> = {}): BlueprintStage => ({
   uid: key, key, name: key.toUpperCase(), glyph: "•", icon: "category", hue: 250, gate: `${key} gate`,

@@ -3,7 +3,7 @@
 // hydrates from these on first run; this replaces the former hardcoded TS seed (soundSeeds.ts), per the
 // golden rule (seeds live in data/, the store is the source at runtime). Same `import.meta.glob` pattern
 // as the personas + component built-ins.
-import type { SoundKit } from "./soundDescriptor";
+import type { SoundKit } from "@/features/sounds/lib/soundDescriptor";
 
 const kitModules = import.meta.glob<{ default: SoundKit }>("@data/sounds/*.json", { eager: true });
 

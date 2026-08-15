@@ -27,7 +27,7 @@
 // WHY OPT-IN, NEVER BLANKET. A general cache over `bsc` would be wrong: writes must never be cached, and
 // some reads must be fresh. The caller passes the TTL, so the staleness each site accepts is visible at
 // that site rather than buried in a helper.
-import { bsc } from "./bsc";
+import { bsc } from "@/shared/lib/core/bsc";
 
 interface Entry {
   /** The in-flight read, if one is running — what a second caller joins. Resolves to RAW stdout. */
@@ -76,7 +76,7 @@ async function sharedRaw(projectKey: string | null, args: string[], ttlMs: numbe
  * Read `bsc … --json` alongside other callers, spawning at most one process per `ttlMs` window.
  *
  * `fallback` is this CALLER's own — returned when the read fails or produces nothing, exactly as
- * {@link import("./bsc").bscJson} does, and never shared with another caller.
+ * {@link import("@/shared/lib/core/bsc").bscJson} does, and never shared with another caller.
  *
  * @param ttlMs How stale an answer this caller will accept. Pass a value it genuinely tolerates: a hook
  *              polling every 20s already accepts 20s-old data, so a 20s TTL costs it nothing and removes

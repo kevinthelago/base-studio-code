@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { StackView } from "./StackView";
-import type { StackFrame } from "../../lib/trace";
+import type { StackFrame } from "@/features/algorithms/lib/trace";
 
 const frame = (over: Partial<StackFrame>): StackFrame => ({ structure: "stack", data: [1, 2, 3], ...over });
 

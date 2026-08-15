@@ -4,8 +4,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { TracePlayer } from "./TracePlayer";
-import type { StructureRenderer } from "./registry";
-import type { Frame } from "../lib/trace";
+import type { StructureRenderer } from "@/features/algorithms/viz/registry";
+import type { Frame } from "@/features/algorithms/lib/trace";
 
 // A trivial array renderer for the tests (test files are exempt from the no-raw-div rule).
 const ArrayView: StructureRenderer<"array"> = ({ frame }) => (

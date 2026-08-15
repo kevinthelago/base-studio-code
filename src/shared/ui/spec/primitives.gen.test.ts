@@ -17,7 +17,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { UI_KIT } from "../manifest";
+import { UI_KIT } from "@/shared/ui/manifest";
 
 const FILE = join(process.cwd(), "src-tauri/data/ui/primitives.json");
 

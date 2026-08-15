@@ -6,7 +6,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
-import { PALETTE_GROUPS, swatchColor } from "./lib/palette";
+import { PALETTE_GROUPS, swatchColor } from "@/features/designs/lib/palette";
 import type { KitThemeRecord } from "./lib/themes";
 
 export function PaletteStrip({ theme }: { theme: KitThemeRecord }) {

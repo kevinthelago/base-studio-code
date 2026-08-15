@@ -1,7 +1,7 @@
 // Register this feature's graph-platform modules at module load — so `import("@/features/planner")`
 // (what the shadow catalogue's ensurePlatform does) is what makes a record importing them resolvable.
 // Idempotent; mirrors the *GraphHost pattern for features that have one.
-import { registerPlannerPlatform } from "./graphPlatform";
+import { registerPlannerPlatform } from "@/features/planner/graphPlatform";
 
 registerPlannerPlatform();
 import { lazy, Suspense } from "react";
@@ -30,7 +30,7 @@ import { PlanningGraphHost } from "./session/PlanningGraphHost";
 import { TeamsPanel } from "@/features/teams";
 import { SoundsGraphHost } from "@/features/sounds";
 import { DataGraphPage } from "@/features/data";
-import { useProjectScan } from "./list/useProjectScan";
+import { useProjectScan } from "@/features/planner/list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
 
@@ -40,19 +40,19 @@ export type { CanonicalFile } from "./lib/plannerCore";
 // #3760: the `plan` store_state builder lives in the planner feature (the plan domain is planner-
 // published, not projected by useStoreProjector); exposed so the tunnel payload-parity harness can
 // cover it like every other domain.
-export { buildPlanBoardPayload, type PlanBoardPayload } from "./session/planBoardProjection";
+export { buildPlanBoardPayload, type PlanBoardPayload } from "@/features/planner/session/planBoardProjection";
 export {
   validateManifest, wrapExtension, encodeShareCode, decodeShareCode,
   type ExtensionManifest, type ValidateResult,
-} from "./lib/gist/manifest";
+} from "@/features/planner/lib/gist/manifest";
 // The Planner's page vocabulary (#3274): `bsc navigate page <id>` validates against it, so the shell
 // needs the real list rather than a hand-copied one that could drift from the tabs actually rendered.
 export { PROJECT_MODES } from "./list/projectModes";
 // The project APPLICATION ARCHITECTURE (#3802 → the Glance endpoint-type discriminator, #3786): a
 // per-project attribute the planner classifies during Discovery. Exposed on the barrel so cross-feature consumers
 // (Glance surfaces it on each project node) reach the type, not the deep `lib/classifyConfig` path.
-export type { AppType } from "./lib/classifyConfig";
-export { installFromGist, publishGist } from "./lib/gist/gist";
+export type { AppType } from "@/features/planner/lib/classifyConfig";
+export { installFromGist, publishGist } from "@/features/planner/lib/gist/gist";
 // #1545: github's screen renders planner's project views (a one-way UI dependency now that planner
 // no longer reaches into github); the app's director pump + console launch reach planner fleet logic
 // (flow-permission rules, director drive). Exposed here so those consumers use the barrel, not deep paths.
@@ -61,7 +61,7 @@ export { ProjectBoard } from "./github/ProjectBoard";
 export { Roadmap } from "./github/Roadmap";
 export { Issues } from "./github/Issues";
 export { Insights } from "./github/Insights";
-export { flowPermissionRules, flowGrantedPushCommands } from "./fleet/flowPermissions";
+export { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
 // #2995: the durable projects-DB bridge — the app shell's boot migration upserts every cached draft
 // into the DB through this (reached via the barrel, not a deep path, per the app import boundary).
 export { addDbProject, setDbTriaged } from "./list/projectsDbBridge";

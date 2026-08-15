@@ -28,7 +28,7 @@ import type { Automation } from "@/features/automations/lib/scheduler";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Hook } from "@/features/mcp/lib/hooks";
 import type { AgentProfile, ConsoleSession, AuditDisplayRow } from "@/features/security";
-import type { AlertEvent } from "./alerts";
+import type { AlertEvent } from "@/features/tunnel/lib/alerts";
 
 // ── glance ─────────────────────────────────────────────────────────────────────────────────────
 const fleet = {

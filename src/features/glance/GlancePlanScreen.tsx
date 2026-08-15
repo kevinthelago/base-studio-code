@@ -12,7 +12,7 @@
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
-import { normalizeRef } from "./lib/fleetPlanProgress";
+import { normalizeRef } from "@/features/glance/lib/fleetPlanProgress";
 import type { StreamProgress } from "./lib/streamProgress";
 
 export interface PlanScreenIssue {

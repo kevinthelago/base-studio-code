@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useAppStore } from "@/store";
-import { useNavHistory } from "./useNavHistory";
+import { useNavHistory } from "@/shared/hooks/useNavHistory";
 
 const press = (button: 3 | 4) => {
   act(() => {

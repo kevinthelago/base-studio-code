@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { flowPermissionRules, PUSH_WRITE_RULES } from "./flowPermissions";
-import { DEFAULT_FLOW, LOCAL_ONLY_PUSH, type AgentFlow } from "./agentFlow";
+import { flowPermissionRules, PUSH_WRITE_RULES } from "@/features/planner/fleet/flowPermissions";
+import { DEFAULT_FLOW, LOCAL_ONLY_PUSH, type AgentFlow } from "@/features/planner/fleet/agentFlow";
 
 const flow = (p: Partial<AgentFlow>): AgentFlow => ({ ...DEFAULT_FLOW, ...p });
 
@@ -70,7 +70,7 @@ describe("flowPermissionRules", () => {
   });
 });
 
-import { flowGrantedPushCommands } from "./flowPermissions";
+import { flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
 
 describe("flowGrantedPushCommands — reconcile with the role gate (#304)", () => {
   it("auto-pr grants git push + gh pr create (lifts the worker role's gh-pr deny)", () => {

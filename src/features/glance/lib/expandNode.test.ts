@@ -1,6 +1,6 @@
 // #expanding-a-node-resumes-its-session — what an expand click means, per node state.
 import { describe, it, expect } from "vitest";
-import { decideExpand, COMPLETE_REASON, type ExpandInput } from "./expandNode";
+import { decideExpand, COMPLETE_REASON, type ExpandInput } from "@/features/glance/lib/expandNode";
 
 const fleet = (over: Partial<ExpandInput> = {}): ExpandInput => ({
   isStudioProject: false,

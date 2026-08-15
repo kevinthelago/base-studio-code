@@ -17,7 +17,7 @@
 // pair is what acts on it. That keeps the whole lifecycle unit-testable as plain state transitions.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
-import { STUDIO_IDS, type StudioId } from "./lib/studioSessions";
+import { STUDIO_IDS, type StudioId } from "@/features/studio-sessions/lib/studioSessions";
 
 export interface StudiosSlice {
   /** Studios whose session should be kept warm on TerminalHost. Transient — nothing launches at boot. */

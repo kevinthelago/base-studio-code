@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useAppStore } from "@/store";
-import { usePreviewReview } from "./usePreviewReview";
+import { usePreviewReview } from "@/features/glance/usePreviewReview";
 import { grabFrame, stopCapture } from "@/shared/lib/preview/captureFrame";
 import { reviewShot } from "@/shared/lib/preview/reviewShot";
 import { injectPrompt } from "@/shared/lib/fleet/paneInject";

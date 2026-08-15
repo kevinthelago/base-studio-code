@@ -11,7 +11,7 @@ vi.mock("@/shared/lib/a11y/speech", () => ({ speak: h.speakMock }));
 vi.mock("@/shared/lib/fleet/useCoordLog", () => ({ useCoordLog: () => ({ state: h.coordState }) }));
 vi.mock("@/features/tunnel", () => ({ coordAlerts: (s: typeof h.coordState) => s.alerts }));
 
-import { useCoordSpeaker } from "./useCoordSpeaker";
+import { useCoordSpeaker } from "@/app/a11y/useCoordSpeaker";
 
 const alerts = (...a: { id: string; kind: string; text: string }[]) => ({ alerts: a });
 

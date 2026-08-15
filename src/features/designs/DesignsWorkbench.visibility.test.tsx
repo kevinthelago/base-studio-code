@@ -18,7 +18,7 @@ vi.mock("@/shared/lib/preview/componentBundle", () => ({
 // Spy the two background loops so we can read the visibility flag each was handed. `vi.hoisted` so the
 // spies exist before `vi.mock` is hoisted above the imports.
 const { uiSpy, scanSpy } = vi.hoisted(() => ({ uiSpy: vi.fn(), scanSpy: vi.fn() }));
-vi.mock("./lib/uiActivity", () => ({ useUiActivity: uiSpy }));
+vi.mock("@/features/designs/lib/uiActivity", () => ({ useUiActivity: uiSpy }));
 vi.mock("./lib/useComponentScan", () => ({ useComponentScan: scanSpy }));
 
 import { DesignsWorkbench } from "./DesignsWorkbench";

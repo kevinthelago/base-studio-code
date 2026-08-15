@@ -30,9 +30,9 @@
 // artifact — only a node in NEITHER the artifact NOR carrying its own module/`source` is flagged.
 import reactUiArtifact from "@data/components/react-ui.json";
 import previewImportmap from "@data/ui/preview-importmap.json";
-import { buildComposesEdges } from "./compositionLayout";
+import { buildComposesEdges } from "@/features/designs/lib/compositionLayout";
 import { componentBuildable, looksBuildableModule, isPreviewBuildable, hasCodeElision, erasedSpecs, type KitArtifact } from "./componentPreview";
-import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
+import { libraryModuleResolver, libraryReimplTargets } from "@/features/designs/lib/libraryModules";
 import type { LibraryModuleResolver } from "./componentPreview";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import { resolveInternalBase } from "@/shared/lib/preview/importPath";

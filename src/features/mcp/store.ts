@@ -3,7 +3,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { McpServer } from "./lib/mcpServers";
-import type { Hook } from "./lib/hooks";
+import type { Hook } from "@/features/mcp/lib/hooks";
 
 export interface McpSlice {
   // MCP servers the user configures, each scoped via `projects` ([] = global). Written into a

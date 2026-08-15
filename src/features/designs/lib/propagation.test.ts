@@ -3,7 +3,7 @@ import {
   classifyChange, makeChange, changeId, planPropagation, dedupeDispatches, dispatchKey,
   planKitDrain, deliveryKey, kitDispatchPrompt,
   type KitConsumer, type Dispatch, type KitChange, type ChangeClass,
-} from "./propagation";
+} from "@/features/designs/lib/propagation";
 import { REACT_UI_COMPONENTS } from "./reactUiKit";
 import type { ComponentRecord } from "./model";
 

@@ -144,26 +144,43 @@ function ptyWriters(): string[] {
   return matching(PTY_WRITE_RE);
 }
 
+/**
+ * One canonical name per MODULE, whichever form it currently takes.
+ *
+ * `/src/a/b.ts` and the record providing `@/a/b` are the same module wearing different clothes, and the
+ * graph migration moves modules between the two continuously. Keying the allow-list on the raw form meant
+ * every retirement silently removed an entry and every promotion added a duplicate — the list churned on
+ * a change that alters nothing about who may write to a pane.
+ *
+ * Canonicalising makes the list say what it means: WHICH MODULES hold this capability. A module that
+ * exists in both forms collapses to one name, so a file and its record cannot both be argued onto the
+ * list as if they were two separate grants.
+ */
+const canonical = (key: string): string =>
+  key.startsWith("@/") ? key : `@/${key.replace(/^\/src\//, "").replace(/\.(tsx?|jsx?)$/, "").replace(/\/index$/, "")}`;
+
 function matching(re: RegExp): string[] {
-  return Object.entries(SOURCES)
-    .filter(([path, src]) => !path.endsWith(".test.ts") && !path.endsWith(".test.tsx") && re.test(src))
-    .map(([path]) => path)
-    .sort();
+  const hits = new Set(
+    Object.entries(SOURCES)
+      .filter(([path, src]) => !path.endsWith(".test.ts") && !path.endsWith(".test.tsx") && re.test(src))
+      .map(([path]) => canonical(path)),
+  );
+  return [...hits].sort();
 }
 
 describe("who may write to a session's stdin (#only-the-user-resumes-a-session)", () => {
   it("is EXACTLY the known set — a new injector must justify itself here first", () => {
     // The failure message is the point: whoever adds an injector reads the reason this list exists
     // before deciding their module belongs on it.
-    expect(callers()).toEqual([...KNOWN_INJECTORS].sort());
+    expect(callers()).toEqual([...new Set(KNOWN_INJECTORS.map(canonical))].sort());
   });
 
   it("names only modules that still EXIST — a stale entry would hide a real regression", () => {
     // An allow-list that outlives its file silently grants room for one more injector: the count still
     // matches while a different module took the dead one's place.
-    const present = new Set(Object.keys(SOURCES));
+    const present = new Set(Object.keys(SOURCES).map(canonical));
     for (const f of KNOWN_INJECTORS) {
-      expect(present.has(f), `${f} is listed as a known injector but no longer exists`).toBe(true);
+      expect(present.has(canonical(f)), `${f} is listed as a known injector but no longer exists in EITHER form`).toBe(true);
     }
   });
 
@@ -171,31 +188,35 @@ describe("who may write to a session's stdin (#only-the-user-resumes-a-session)"
     // The bypass that made this necessary: useWorkerAutoEnd wrote to the director's stdin twice via
     // `invoke("pty_write", …)` while the injectPrompt list above read EMPTY. An allow-list that names
     // one route to a capability certifies nothing about the capability.
-    expect(ptyWriters()).toEqual([...KNOWN_PTY_WRITERS].sort());
+    expect(ptyWriters()).toEqual([...new Set(KNOWN_PTY_WRITERS.map(canonical))].sort());
   });
 
   it("keeps useWorkerAutoEnd off the stdin list — it reaps panes, it does not type at them", () => {
     // Named explicitly because it is the one that got through, and because `pty_kill` (which it does
     // still call, legitimately) reads like `pty_write` at a glance in a diff.
-    expect(ptyWriters()).not.toContain("/src/shared/lib/fleet/useWorkerAutoEnd.ts");
+    expect(ptyWriters()).not.toContain(canonical("/src/shared/lib/fleet/useWorkerAutoEnd.ts"));
   });
 
   it("names only pty_write modules that still EXIST — a stale entry hides a regression", () => {
-    const present = new Set(Object.keys(SOURCES));
+    const present = new Set(Object.keys(SOURCES).map(canonical));
     for (const f of KNOWN_PTY_WRITERS) {
-      expect(present.has(f), `${f} is listed as a known pty_write caller but no longer exists`).toBe(true);
+      expect(present.has(canonical(f)), `${f} is listed as a known pty_write caller but no longer exists in EITHER form`).toBe(true);
     }
   });
 
   it("contains NO session-LAUNCH pump — that half is fixed, and must stay fixed", () => {
     // useFleetGate is the one that survived two previous attempts, because it launches rather than
     // injects and a sweep of injection sites could not see it. It must never reappear as a caller.
-    expect(callers()).not.toContain("/src/shared/lib/fleet/useFleetGate.ts");
+    expect(callers()).not.toContain(canonical("/src/shared/lib/fleet/useFleetGate.ts"));
   });
 
   it("keeps useFleetGate inert — its body evaluates nothing and launches nothing", () => {
-    const src = SOURCES["/src/shared/lib/fleet/useFleetGate.ts"];
-    expect(src, "useFleetGate.ts is still the file the gate lives in").toBeTruthy();
+    // Looked up CANONICALLY: the file was retired to a record, and a lookup keyed on the `/src/…` path
+    // would simply find nothing — turning the strongest assertion in this file (that the launch pump's
+    // BODY is still empty) into an undefined that only the `toBeTruthy` below catches. The gate has to
+    // follow the module wherever it lives, which is the same lesson as the allow-lists above.
+    const src = SOURCES[canonical("/src/shared/lib/fleet/useFleetGate.ts")] ?? SOURCES["/src/shared/lib/fleet/useFleetGate.ts"];
+    expect(src, "useFleetGate still exists, as a file or as a record").toBeTruthy();
     // Guarded on the BODY, not on the export: the hook is still called by a page record, so deleting
     // it is not the fix — staying empty is. It fired within 2s of every startup for 41 recorded
     // launches, and was invisible to a source grep because its mount point is a RECORD, not a .tsx.

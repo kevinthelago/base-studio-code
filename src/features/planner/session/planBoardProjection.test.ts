@@ -1,9 +1,9 @@
 // planBoardProjection (#2498) — the `plan` store_state domain payload from gate-hook fixtures.
 import { describe, it, expect } from "vitest";
-import type { Stage } from "../stages/focusedPlan";
-import type { FleetPlan } from "../fleet/planFleet";
+import type { Stage } from "@/features/planner/stages/focusedPlan";
+import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import { defaultService, type DeployConfig } from "../lib/deployConfig";
-import { buildPlanBoardPayload } from "./planBoardProjection";
+import { buildPlanBoardPayload } from "@/features/planner/session/planBoardProjection";
 
 const stage = (key: string, status: Stage["status"], over: Partial<Stage> = {}): Stage => ({
   key, name: key, glyph: "◇", blurb: `${key} blurb`, gate: `${key} gate`,

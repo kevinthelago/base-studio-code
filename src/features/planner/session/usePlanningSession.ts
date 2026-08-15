@@ -17,9 +17,9 @@ import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import type { Terminal } from "@xterm/xterm";
 import type { Dispatch, SetStateAction } from "react";
 import { useAppStore } from "@/store";
-import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
+import { plannerIntroMode, composePlannerIntro } from "@/features/planner/session/plannerIntro";
 import { plannerLaunchConfig } from "./plannerLaunch";
-import { resolvePlannerSandbox } from "./plannerSandbox";
+import { resolvePlannerSandbox } from "@/features/planner/session/plannerSandbox";
 
 export interface PlanningSessionDeps {
   termRef: MutableRefObject<Terminal | null>;

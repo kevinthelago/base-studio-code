@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { usePoll } from "./usePoll";
+import { usePoll } from "@/shared/hooks/usePoll";
 
 describe("usePoll", () => {
   beforeEach(() => vi.useFakeTimers());

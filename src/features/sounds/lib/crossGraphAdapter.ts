@@ -15,7 +15,7 @@
 // A sound has no JS source, so unlike an algorithm (whose `code` is real, vendored verbatim) the `code`
 // here is SYNTHESIZED at resolve time — the one place a cue becomes a runnable module.
 import type { NodeLookup, ResolvedNode } from "@/shared/lib/graph/crossGraph";
-import type { Cue, SoundKit } from "./soundDescriptor";
+import type { Cue, SoundKit } from "@/features/sounds/lib/soundDescriptor";
 import { BUILTIN_KITS } from "./soundKits";
 import { cuePlayerModule } from "./cuePlayerModule";
 

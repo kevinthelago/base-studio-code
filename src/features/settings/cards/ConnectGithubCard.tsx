@@ -1,7 +1,7 @@
 import { useAppStore } from "@/store";
 import { clearGithubCache } from "@/shared/lib/github/github";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useGithubConnect } from "../lib/useGithubConnect";
+import { useGithubConnect } from "@/features/settings/lib/useGithubConnect";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
 import { Chip } from "@/shared/ui/data/Chip";

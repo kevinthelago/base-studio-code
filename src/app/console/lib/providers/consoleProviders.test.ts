@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { registerProvider, getProvider, listProviders } from "./registry";
-import type { ConsoleProvider } from "./types";
+import type { ConsoleProvider } from "@/app/console/lib/providers/types";
 
 // Import index to trigger built-in provider registration
 import "./index";

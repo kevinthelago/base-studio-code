@@ -14,8 +14,8 @@ import type { SkillPayload } from "@/features/planner/blueprints/blueprintSkills
 import {
   seedSkills, refreshPackagedSkills, skillFromPayload, applySessionSkillChoice, skillSlug, skillContentKey,
   type SkillDef, type SessionSkillOverride, type SkillGroup,
-} from "./lib/skills";
-import { loadLibrary, pushSkill, dropSkill, pushGroup, dropGroup } from "./lib/skillBridge";
+} from "@/features/skills/lib/skills";
+import { loadLibrary, pushSkill, dropSkill, pushGroup, dropGroup } from "@/features/skills/lib/skillBridge";
 import { deleteMapEntry } from "@/store/updateHelpers";
 
 export interface SkillsSlice {

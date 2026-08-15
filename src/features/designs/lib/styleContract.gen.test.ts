@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { emitTokensContractCss, flattenTokens, type StyleDescriptor } from "./styleContract";
+import { emitTokensContractCss, flattenTokens, type StyleDescriptor } from "@/features/designs/lib/styleContract";
 
 // #2567: `tokens-contract.css` is GENERATED from `style-descriptor.json` (the design-system SoT).
 // This is the generator + the drift guard: `UPDATE_KITS=1 npx vitest run styleContract.gen`

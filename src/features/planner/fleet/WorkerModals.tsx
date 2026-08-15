@@ -11,7 +11,7 @@ import type { StatusMeta } from "@/shared/data/fleet";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 import type { AgentProfile } from "@/features/security";
 import { Modal } from "./WorkerDetailModal";
-import type { WorkerModal } from "./workerDetail.helpers";
+import type { WorkerModal } from "@/features/planner/fleet/workerDetail.helpers";
 
 export function WorkerModals({ modal, setModal, worker, st, draft, setDraft, send, stop, agentProfiles, profileId, setPaneProfile, flash }: {
   modal: WorkerModal | null;

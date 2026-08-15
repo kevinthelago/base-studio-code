@@ -8,8 +8,8 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Button } from "@/shared/ui/controls/Button";
-import { CATEGORY_LABEL, type SoundKit } from "./lib/soundDescriptor";
-import { playableCueForNode, type SoundNode } from "./lib/soundGraph";
+import { CATEGORY_LABEL, type SoundKit } from "@/features/sounds/lib/soundDescriptor";
+import { playableCueForNode, type SoundNode } from "@/features/sounds/lib/soundGraph";
 
 function Field({ label, value }: { label: string; value: string }) {
   return (

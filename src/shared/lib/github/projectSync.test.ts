@@ -7,7 +7,7 @@ import {
   publishBlockReason,
   type GithubProjectRef,
   type Gql,
-} from "./projectSync";
+} from "@/shared/lib/github/projectSync";
 
 const board = (id: string, number: number, title: string): GithubProjectRef =>
   ({ id, number, title, url: `https://github.com/users/o/projects/${number}` });

@@ -10,7 +10,7 @@ import {
   SKIPPED_KEY,
   FEATURES_KEY,
 } from "./planTopics";
-import { FLEET_KEY } from "../fleet/planFleet";
+import { FLEET_KEY } from "@/features/planner/fleet/planFleet";
 import discoveryStage from "@data/stages/discovery.json";
 
 describe("parseTopicKey", () => {

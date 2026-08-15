@@ -14,8 +14,8 @@ import {
   type PlanConfirmFrame,
   type PlanChatFrame,
   type PlanMessage,
-} from "./tunnel";
-import { STORE_DOMAINS } from "./tunnelClient";
+} from "@/features/tunnel/lib/tunnel";
+import { STORE_DOMAINS } from "@/features/tunnel/lib/tunnelClient";
 import fixtures from "./tunnelProtocol.fixtures.json";
 
 describe("pairingPayload", () => {

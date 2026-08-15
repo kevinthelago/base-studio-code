@@ -11,7 +11,7 @@
 // SSR/jsdom), reading naturally in an `onClick={() => play()}`. A DEFAULT export mirrors it, so
 // `import play from "@bsc/sounds/<id>"` binds too.
 import { compileCue } from "./synth";
-import type { Cue, SoundKit } from "./soundDescriptor";
+import type { Cue, SoundKit } from "@/features/sounds/lib/soundDescriptor";
 
 /** The static player runtime inlined into every emitted module — a minimal port of synth.ts's
  *  `getCtx`/`whiteNoise`/`scheduleVoice`/`playCue` that reads the pre-compiled `SCHEDULE` the emit prepends.

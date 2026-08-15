@@ -6,7 +6,7 @@
 // Structures with BOTH a `VizDataset` kind and registered programs are offered — `array` (the sorts),
 // `graph` (the traversals), and `tree` (a BST, #3790). Pure + deterministic (a fixed program + seed) so
 // a preview never flickers between renders.
-import { runAlgorithm, runGraphAlgorithm } from "../lib/tracer";
+import { runAlgorithm, runGraphAlgorithm } from "@/features/algorithms/lib/tracer";
 import { TRACE_PROGRAMS } from "./examples/sorts";
 import { GRAPH_PROGRAMS } from "./examples/graphAlgos";
 import { bstShape, TREE_PROGRAMS } from "./examples/treeAlgos";

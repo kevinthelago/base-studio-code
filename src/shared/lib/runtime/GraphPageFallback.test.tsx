@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { GraphPageFallback } from "./GraphPageFallback";
+import { GraphPageFallback } from "@/shared/lib/runtime/GraphPageFallback";
 import { useAppStore } from "@/store";
 
 const realHydrate = useAppStore.getState().hydrateComponents;

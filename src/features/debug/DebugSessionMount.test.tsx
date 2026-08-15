@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, waitFor } from "@testing-library/react";
-import { DEBUG_INIT_CMD, DEBUG_START_PROMPT, DEBUG_PANE_ID, DebugSessionMount } from "./DebugSessionMount";
+import { DEBUG_INIT_CMD, DEBUG_START_PROMPT, DEBUG_PANE_ID, DebugSessionMount } from "@/features/debug/DebugSessionMount";
 import { useAppStore } from "@/store";
 
 // The mount resolves the repo root over IPC and parks a TerminalSlot; neither is what this file is

@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { parseUiActivityLine, latestUiTouch, useUiActivity } from "./uiActivity";
+import { parseUiActivityLine, latestUiTouch, useUiActivity } from "@/features/designs/lib/uiActivity";
 import { useAppStore } from "@/store";
 
 const line = (collection: string, id: string, ts = "2026-07-07T00:00:00Z", pane = "design-studio:designer", kind = "ui-touch") =>

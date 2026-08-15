@@ -17,9 +17,9 @@
 
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { safeInvoke } from "../core/safeInvoke";
-import { bscJson } from "../core/bsc";
-import { logsDonePanes, logsPaneActivity } from "../core/logsBridge";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
+import { logsDonePanes, logsPaneActivity } from "@/shared/lib/core/logsBridge";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useLogStream } from "@/shared/hooks/useLogStream";
 import { useAppStore } from "@/store";

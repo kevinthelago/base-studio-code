@@ -3,7 +3,7 @@
 // carry-through (a cue/voice carries a player module; a primitive is a code-less descriptor).
 import { describe, it, expect } from "vitest";
 import { soundNodeLookup } from "./crossGraphAdapter";
-import type { SoundKit } from "./soundDescriptor";
+import type { SoundKit } from "@/features/sounds/lib/soundDescriptor";
 
 const kit: SoundKit = {
   id: "signal",

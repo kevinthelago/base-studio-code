@@ -4,7 +4,7 @@ import {
   computeProjectStats,
   countLinkedRepos,
   type GhProject,
-} from "./projectsSummaryDerive";
+} from "@/features/planner/list/projectsSummaryDerive";
 
 function project(p: Partial<GhProject> & { id: string; title: string }): GhProject {
   return Object.assign({

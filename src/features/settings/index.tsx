@@ -20,7 +20,7 @@ import { McpPage } from "./pages/McpPage";
 
 // #1545: public API for the app shell — appearance tokens + the keybinding/hotkey model the shell's
 // boot + hotkey hooks consume (through this barrel, not settings internals).
-export { accentVars } from "./lib/appearance";
+export { accentVars } from "@/features/settings/lib/appearance";
 export { SCREEN_HOTKEYS } from "./lib/shortcuts";
 // Re-exported so `app/runtime/appModules.ts` can REGISTER it without reaching a feature's internals
 // (#1545). The packaged `accessibilitypage` record imports it, and an unregistered specifier makes that

@@ -22,12 +22,12 @@ import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { AlgorithmsRail } from "./AlgorithmsRail";
 import { LibrarianTerminal } from "./LibrarianTerminal";
 import { VizStage } from "./viz/VizPanel";
-import { useVizForImpl } from "./viz/useVizForImpl";
+import { useVizForImpl } from "@/features/algorithms/viz/useVizForImpl";
 import {
   TECHS, TECH_META, NODE_W, NODE_H, layoutKitGraph, kitGraph, kitTechs, implById,
   KIT_REL_META, KIT_REL_ORDER, type Tech,
 } from "./lib/knowledge";
-import { useKnowledgeGraph } from "./useKnowledgeGraph";
+import { useKnowledgeGraph } from "@/features/algorithms/useKnowledgeGraph";
 import "./algorithms.css";
 
 export function AlgorithmsWorkspace() {

@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { KitRenderer } from "./KitRenderer";
 import { validateGeneralNode, type GeneralNode } from "./generalNode";
-import { UI_KIT } from "../manifest";
+import { UI_KIT } from "@/shared/ui/manifest";
 
 describe("generic rendering through the registry (#3494)", () => {
   it("renders a primitive resolved by `type`, not by a per-primitive branch", () => {

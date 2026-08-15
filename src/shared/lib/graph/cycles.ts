@@ -6,7 +6,7 @@
 //   • mutualPairs — the 2-cycle special case (a↔b): the cheap "mutual dependency" check the Glance
 //     network surfaces as coordination hazards.
 // Both are pure; the caller pre-filters to whichever edge subset is order-bearing.
-import type { GraphEdge } from "./types";
+import type { GraphEdge } from "@/shared/lib/graph/types";
 
 /**
  * DFS back-edge detection over `edges` restricted to `nodeIds`. Returns the set of edge ids that close

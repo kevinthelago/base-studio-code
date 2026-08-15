@@ -31,7 +31,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { BUILTIN_PERSONAS } from "@/features/personas";
 import type { PaneKind } from "@/features/tunnel";
-import { STUDIO_INIT_CMD, STUDIO_SESSIONS, studioScopeDirective, type StudioId, type StudioSessionDef } from "./lib/studioSessions";
+import { STUDIO_INIT_CMD, STUDIO_SESSIONS, studioScopeDirective, type StudioId, type StudioSessionDef } from "@/features/studio-sessions/lib/studioSessions";
 
 /** The studio persona's start prompt — the store copy (user edits win), else the packaged seed. */
 export function studioStartPrompt(personaId: string): string {

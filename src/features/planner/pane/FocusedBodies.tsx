@@ -5,7 +5,7 @@
 import "./projectPane.css";
 import type { Flow, ContextFile, McpServer, ProjectPaneData } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";
-import type { Stage } from "../stages/focusedPlan";
+import type { Stage } from "@/features/planner/stages/focusedPlan";
 import type { DeployConfig } from "../lib/deployConfig";
 import type { Topology } from "../relationship/relationshipGraph";
 import type { DirectorDrive } from "../fleet/directorDrive";
@@ -24,7 +24,7 @@ import { AutomationsBody } from "@/features/planner/bodies/FocusedAutomationsBod
 import { SkillsBody } from "@/features/planner/bodies/FocusedSkillsBody";
 import { McpsBody } from "@/features/planner/bodies/McpsBody";
 import { StreamsBody } from "../bodies/StreamsBody";
-import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
+import type { FleetHandlers, McpHandlers } from "@/features/planner/bodies/focusedHandlers";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 // The project planner's LIBRARY surface (#4265) — the components lens (#2314) and the algorithms lens
 // together. Folded into the `features` stage, which every packaged blueprint carries; `test_ui` (which
@@ -35,7 +35,7 @@ import { PreviewPaneShell } from "@/features/planner/preview/PreviewPaneShell";
 import { useAppStore } from "@/store";
 
 // Re-export the shared body types so existing `from "./FocusedBodies"` imports keep resolving.
-export type { FleetHandlers, McpHandlers, SyncState } from "../bodies/focusedHandlers";
+export type { FleetHandlers, McpHandlers, SyncState } from "@/features/planner/bodies/focusedHandlers";
 
 /* =================================================================
    FocusedStageBody — maps a Stage to its body (#652 / #674)

@@ -2,7 +2,7 @@
 // (fleet #3452, planner #3455); pinning its contents here means any future edit that drops bsc-tokens
 // or an event breaks the build, not the cost data three weeks later.
 import { describe, it, expect } from "vitest";
-import { TURN_ACCOUNTING_HOOKS } from "./turnHooks";
+import { TURN_ACCOUNTING_HOOKS } from "@/shared/lib/session/turnHooks";
 
 describe("TURN_ACCOUNTING_HOOKS", () => {
   it("records bsc-tokens on BOTH Stop and SubagentStop — the only per-session token source", () => {

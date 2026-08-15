@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { TracedScene, TracedStack, TracedScalar, TracedTree, runScene, type GraphInput } from "../../lib/tracer";
-import { isPanelsFrame, type PanelsFrame, type ArrayFrame, type GraphFrame, type StackFrame, type ScalarFrame, type TreeFrame } from "../../lib/trace";
+import { TracedScene, TracedStack, TracedScalar, TracedTree, runScene, type GraphInput } from "@/features/algorithms/lib/tracer";
+import { isPanelsFrame, type PanelsFrame, type ArrayFrame, type GraphFrame, type StackFrame, type ScalarFrame, type TreeFrame } from "@/features/algorithms/lib/trace";
 import { dijkstraScene, bfsScene, mergeSortScene } from "./scenes";
 import { WEIGHTED_GRAPH, DEFAULT_GRAPH } from "./graphAlgos";
 import { programVizForImpl } from "./registry";

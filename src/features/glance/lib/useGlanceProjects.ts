@@ -20,7 +20,7 @@ import { useAppStore } from "@/store";
 import { githubGraphql } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { toMinimalGhProjects, minimalToGhProject, filterRecordsToLocal } from "@/shared/lib/github/githubState";
-import { useProjectProgressRows } from "./useProjectProgress";
+import { useProjectProgressRows } from "@/features/glance/lib/useProjectProgress";
 import { fetchProjectsWithProbe } from "@/shared/lib/github/githubProbe";
 import { PROJECTS_QUERY, type GhProject } from "@/features/planner/list/published/publishedModel";
 import { projectSlug } from "@/shared/lib/core/projectPaths";

@@ -1,8 +1,8 @@
 // The instrumented-execution tracer (#3216) — TracedArray records the algorithm's real operations as
 // frames, and runAlgorithm exposes them as a replay-safe generator.
 import { describe, it, expect } from "vitest";
-import { TracedArray, runAlgorithm, TracedMatrix, runMatrixAlgorithm, TracedGraph, type GraphInput } from "./tracer";
-import type { ArrayFrame, MatrixFrame, GraphFrame } from "./trace";
+import { TracedArray, runAlgorithm, TracedMatrix, runMatrixAlgorithm, TracedGraph, type GraphInput } from "@/features/algorithms/lib/tracer";
+import type { ArrayFrame, MatrixFrame, GraphFrame } from "@/features/algorithms/lib/trace";
 
 describe("TracedArray (#3216)", () => {
   it("emits an initial rest frame, then a frame per observable op", () => {

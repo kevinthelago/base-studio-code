@@ -5,7 +5,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Text } from "@/shared/ui/typography/Text";
 import { Box } from "@/shared/ui/layout/Box";
-import type { BoardIssue } from "./projectBoard.types";
+import type { BoardIssue } from "@/features/planner/github/projectBoard.types";
 
 export function IssueCard({ issue, focused, onClick }: { issue: BoardIssue; focused?: boolean; onClick?: () => void }) {
   return (

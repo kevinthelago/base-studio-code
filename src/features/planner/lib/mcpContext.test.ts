@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildMcpContext } from "./mcpContext";
+import { buildMcpContext } from "@/features/planner/lib/mcpContext";
 import { type McpServer } from "@/features/mcp/lib/mcpServers";
 import { type CatalogItem } from "@/shared/data/mcpCatalog";
 

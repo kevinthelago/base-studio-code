@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, coerceTeam, coerceUiKit, coerceSoundKit, coerceFleetPolicy, bundledSkillsFromManifest } from "./blueprintShare";
+import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, coerceTeam, coerceUiKit, coerceSoundKit, coerceFleetPolicy, bundledSkillsFromManifest } from "@/features/planner/blueprints/blueprintShare";
 import type { BlueprintTeam, FleetPolicy } from "../stages/blueprints";
-import { DEFAULT_FLOW } from "../fleet/agentFlow";
-import { resolveBlueprintSkillPayloads, type SkillPayload } from "./blueprintSkills";
+import { DEFAULT_FLOW } from "@/features/planner/fleet/agentFlow";
+import { resolveBlueprintSkillPayloads, type SkillPayload } from "@/features/planner/blueprints/blueprintSkills";
 import { skillFromPayload } from "@/features/skills/lib/skills";
 import { encodeShareCode, decodeShareCode, wrapExtension } from "@/features/planner/lib/gist/manifest";
 import { makeBlueprints } from "../stages/blueprints";

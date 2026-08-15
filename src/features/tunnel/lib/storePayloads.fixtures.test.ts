@@ -17,12 +17,12 @@ import {
   buildGlancePayload, buildOrgPayload, buildBlueprintsPayload, buildSkillsPayload,
   buildComponentsPayload, buildThemesPayload, buildAutomationsPayload, buildMcpPayload,
   buildAlertsPayload, buildSecurityPayload,
-} from "./storeProjections";
+} from "@/features/tunnel/lib/storeProjections";
 // #3760: the `plan` domain's builder lives in the planner feature (it's planner-published), reached
 // via the barrel so the harness covers plan like every other domain.
 import { buildPlanBoardPayload } from "@/features/planner";
 import { PROJECTION_INPUTS } from "./storeProjections.fixtures";
-import { STORE_DOMAINS } from "./tunnelClient";
+import { STORE_DOMAINS } from "@/features/tunnel/lib/tunnelClient";
 
 // Resolved from cwd (repo/worktree root when vitest runs), matching the primitives.gen idiom.
 const FILE = join(process.cwd(), "src/features/tunnel/lib/storePayloads.fixtures.json");

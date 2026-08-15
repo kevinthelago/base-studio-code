@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { doneIssueRefs, streamComplete, pruneCompletedStreams, completedWorkerPanes, projectComplete } from "./streamCompletion";
+import { doneIssueRefs, streamComplete, pruneCompletedStreams, completedWorkerPanes, projectComplete } from "@/shared/lib/fleet/streamCompletion";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 

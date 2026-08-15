@@ -4,15 +4,15 @@
 // all share it without a circular import back through projectPaneData.
 
 import type { AgentProfile } from "@/features/security";
-import type { FleetPlan } from "../fleet/planFleet";
-import type { PlanIssue } from "../issues/planIssues";
-import type { Section } from "../github/ghStructure";
-import type { NodeProgress } from "../github/ghProgress";
-import type { PaneAutomation, PaneSkill } from "./projectPane.types";
-import type { PlanFeature } from "../issues/featureList";
+import type { FleetPlan } from "@/features/planner/fleet/planFleet";
+import type { PlanIssue } from "@/features/planner/issues/planIssues";
+import type { Section } from "@/features/planner/github/ghStructure";
+import type { NodeProgress } from "@/features/planner/github/ghProgress";
+import type { PaneAutomation, PaneSkill } from "@/features/planner/pane/projectPane.types";
+import type { PlanFeature } from "@/features/planner/issues/featureList";
 import type { DeployConfig } from "../lib/deployConfig";
-import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
-import type { McpInstallState } from "../lib/mcpPaneData";
+import type { PlanDependency, DependencyRegistry } from "@/features/planner/issues/dependencies";
+import type { McpInstallState } from "@/features/planner/lib/mcpPaneData";
 import type { McpServer as McpServerDef } from "@/features/mcp";
 
 export interface BuildProjectPaneInput {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { emptyCoordState, parseRef, type CoordState, type Waiter, type WaitingSession } from "@/shared/lib/fleet/coordination";
-import { planMobileResume } from "./coordControl";
+import { planMobileResume } from "@/features/tunnel/lib/coordControl";
 
 const dep = parseRef("42")!; // an issue ref
 

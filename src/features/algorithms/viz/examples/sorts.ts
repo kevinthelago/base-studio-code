@@ -6,7 +6,7 @@
 // Keyed by the algorithm's BASE NAME (`merge-sort`, not `merge-sort.rs`), so a Rust reference impl and any
 // TypeScript twin share one visualization (the JS trace-program is the visualizable form; the Rust stays
 // shown in the code panel). `programForImpl` normalizes an impl id to that key.
-import { TracedArray } from "../../lib/tracer";
+import { TracedArray } from "@/features/algorithms/lib/tracer";
 import { SORT_MOCK } from "./sort";
 
 /** A visualizable algorithm — its real logic over a {@link TracedArray} + the default input to seed it. */

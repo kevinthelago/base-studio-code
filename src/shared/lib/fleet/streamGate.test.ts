@@ -7,7 +7,7 @@ import {
   sessionDoneStreams,
   type GateStream,
   type LandedEvidence,
-} from "./streamGate";
+} from "@/shared/lib/fleet/streamGate";
 
 const ev = (p: Partial<LandedEvidence> = {}): LandedEvidence => ({
   doneIssues: new Set(),

@@ -4,7 +4,7 @@ import {
   buildProjectItems, statusCounts, typeCounts, filterProjects, resolveAppType, appTypeFromDeploy,
   STATUS_FACETS, TYPE_FACETS, type ProjectItem,
 } from "./projectsFilter";
-import type { GhProject } from "./published/publishedModel";
+import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { DeployConfig, DeployService } from "@/features/planner/lib/deployServices";
 
 const board = (over: Partial<GhProject> = {}): GhProject => ({

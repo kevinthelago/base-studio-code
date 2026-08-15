@@ -2,7 +2,7 @@
 // Each renderer is keyed by one or more RenderableKinds. The registry is module-level
 // so renderers self-register on import; the shell calls getRenderer(kind) to dispatch.
 
-import type { RenderableKind, RenderableChunk, PreviewStatus } from './types';
+import type { RenderableKind, RenderableChunk, PreviewStatus } from '@/features/planner/preview/types';
 
 /**
  * An imperative handle to a mounted renderer surface. The shell holds this ref and

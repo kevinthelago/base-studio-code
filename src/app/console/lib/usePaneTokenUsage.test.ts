@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { usePaneTokenUsage } from "./usePaneTokenUsage";
+import { usePaneTokenUsage } from "@/app/console/lib/usePaneTokenUsage";
 
 const invoked = vi.mocked(invoke);
 

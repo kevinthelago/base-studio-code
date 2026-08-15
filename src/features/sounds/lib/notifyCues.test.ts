@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { coordEventCue, cuesForLines } from "./notifyCues";
+import { coordEventCue, cuesForLines } from "@/features/sounds/lib/notifyCues";
 import type { CoordEvent } from "@/shared/lib/fleet/coordination";
 
 describe("coordEventCue", () => {

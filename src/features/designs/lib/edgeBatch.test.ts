@@ -1,6 +1,6 @@
 // Edge batching (#4150) — the merge must change the ELEMENT COUNT and nothing else.
 import { describe, it, expect } from "vitest";
-import { batchEdges, type EdgeGeom } from "./edgeBatch";
+import { batchEdges, type EdgeGeom } from "@/features/designs/lib/edgeBatch";
 
 const g = (d: string, arrow: string): EdgeGeom => ({ d, arrow });
 const E = ["a", "b", "c"];

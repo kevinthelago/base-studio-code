@@ -7,7 +7,7 @@ import {
   makeAnalyticsEmit,
   componentAnalyticsLookup,
   collectingSink,
-} from "./analyticsEmit";
+} from "@/features/designs/lib/analyticsEmit";
 
 /** A minimal PropSpec — only `name` matters to the runtime; the rest satisfy the type. */
 const prop = (name: string): PropSpec => ({ name, type: "string", req: false, desc: "" });

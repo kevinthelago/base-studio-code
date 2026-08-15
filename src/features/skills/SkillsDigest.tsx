@@ -16,8 +16,8 @@ import { StatTile } from "@/shared/ui/data/StatTile";
 import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
 import { HBars } from "@/shared/ui/charts";
 import { KIND, fmtCount } from "@/shared/data/skills";
-import { deriveSkillKpis, type SkillDef } from "./lib/skills";
-import { successColor } from "./skillStyles";
+import { deriveSkillKpis, type SkillDef } from "@/features/skills/lib/skills";
+import { successColor } from "@/features/skills/skillStyles";
 
 /** The "Fleet digest" expand toggle — rendered in the Library list header (#2813/#3854). Stats-free: it
  *  exists so {@link SkillsDigestPanel} stays reachable now that the header leads with search. */

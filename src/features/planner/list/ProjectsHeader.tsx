@@ -12,7 +12,7 @@ import { projectRepoCwd } from "@/shared/lib/core/projectPaths";
 import { TabBar, type TabItem } from "@/shared/ui/layouts/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { useReopenProject } from "@/features/planner/list/ReopenProjectModal";
-import type { LocalProjectLite } from "./drafts";
+import type { LocalProjectLite } from "@/features/planner/list/drafts";
 
 export interface ActiveProjectInfo {
   id: string;

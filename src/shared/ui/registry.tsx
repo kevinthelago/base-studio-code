@@ -7,7 +7,7 @@
 // stale row) is a COMPILE error — that's what keeps the manifest and the render-map in lock-step.
 
 import type { ComponentType } from "react";
-import type { PrimitiveName } from "./manifest";
+import type { PrimitiveName } from "@/shared/ui/manifest";
 
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -42,7 +42,7 @@ import { Avatar } from "@/shared/ui/data/Avatar";
 import { IconBox } from "@/shared/ui/data/IconBox";
 import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { DataTableRow } from "@/shared/ui/data/DataTableRow";
-import { RoleTierChips } from "./data/RoleTierChips";
+import { RoleTierChips } from "@/shared/ui/data/RoleTierChips";
 import { StatCard } from "./charts/primitives";
 import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars } from "./charts/Charts";
 import { Banner } from "@/shared/ui/feedback/Banner";

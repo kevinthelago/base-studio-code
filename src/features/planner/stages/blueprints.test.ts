@@ -10,7 +10,7 @@ import {
 import { SKILLS } from "@/shared/data/skills";
 import { PLAN_STAGES, buildPlanStageState } from "./planStages";
 import { planStateToSignals } from "./planStageDerive";
-import { evalGate } from "./stageGate";
+import { evalGate } from "@/features/planner/stages/stageGate";
 
 const sig = (over: Parameters<typeof buildPlanStageState>[0] = {}) =>
   planStateToSignals(buildPlanStageState(over));

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { KitRenderer, type GeneralNode } from "@/shared/ui/spec";
-import { makeAnalyticsEmit, componentAnalyticsLookup, collectingSink } from "./analyticsEmit";
+import { makeAnalyticsEmit, componentAnalyticsLookup, collectingSink } from "@/features/designs/lib/analyticsEmit";
 
 // The end-to-end proof: a spec composed from an INSTRUMENTED component auto-emits its declared event when
 // the action fires — through the SAME renderer studio pages + generated specs use. Nothing in the spec

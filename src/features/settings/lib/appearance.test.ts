@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ACCENT_PRESETS, DEFAULT_ACCENT, accentVars } from "./appearance";
+import { ACCENT_PRESETS, DEFAULT_ACCENT, accentVars } from "@/features/settings/lib/appearance";
 
 describe("accentVars", () => {
   it("maps a known accent id to a matching --accent / --accent-dim oklch pair", () => {

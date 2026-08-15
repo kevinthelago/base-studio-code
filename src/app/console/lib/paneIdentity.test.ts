@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   paneIdFor, manualPaneId, fleetPaneId, directorPaneId, triagePaneId, isManualPaneId, positionalPaneId,
   parsePaneIdentity, paneBelongsToTab, findPaneOwnerTab, paneCwdRecovery, sandboxUserIdentity,
-} from "./paneIdentity";
+} from "@/app/console/lib/paneIdentity";
 
 describe("paneIdentity (#1176)", () => {
   it("mints distinct id schemes", () => {

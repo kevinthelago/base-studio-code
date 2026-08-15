@@ -3,7 +3,7 @@
 // A live map of the GitHub objects this plan produces. Each node mirrors a real GitHub primitive
 // (repository, project board, milestone, issue) and carries a status that the publish flow updates
 // in place so the user can watch each object get created.
-import type { GhNode, GhRepoNode, GhStructure } from "../github/ghStructure";
+import type { GhNode, GhRepoNode, GhStructure } from "@/features/planner/github/ghStructure";
 import { Card } from "@/shared/ui/data/Card";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";

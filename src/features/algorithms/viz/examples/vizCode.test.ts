@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { isPanelsFrame, type ArrayFrame, type PanelsFrame } from "../../lib/trace";
+import { isPanelsFrame, type ArrayFrame, type PanelsFrame } from "@/features/algorithms/lib/trace";
 import { runVizProgram } from "./vizProgram";
 import { resolveVizExample, programVizForImpl } from "./registry";
 

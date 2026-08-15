@@ -17,7 +17,7 @@ vi.mock("@/features/tunnel/lib/tunnelClient", () => ({
   tunnelEmitAlert: vi.fn().mockResolvedValue(undefined),
 }));
 // The transcript poll is its own (separately-tested) hook — keep it inert here.
-vi.mock("./usePlannerMessages", () => ({ usePlannerMessages: () => [] }));
+vi.mock("@/features/planner/session/usePlannerMessages", () => ({ usePlannerMessages: () => [] }));
 
 import { tunnelSetPlanState, tunnelEmitPlanStatus } from "@/features/tunnel/lib/tunnelClient";
 

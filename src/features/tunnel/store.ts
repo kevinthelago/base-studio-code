@@ -2,7 +2,7 @@
 // residual `shell` slice (formerly the `github` grab-bag). Composed by store/index.ts.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
-import type { PaneDescriptor } from "./lib/tunnel";
+import type { PaneDescriptor } from "@/features/tunnel/lib/tunnel";
 
 export interface TunnelSlice {
   // The relay Worker URL is persisted (the user's BYO relay); `tunnelRunning` mirrors the Rust

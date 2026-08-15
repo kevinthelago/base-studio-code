@@ -9,7 +9,7 @@ import type { AppStore } from "@/store/types";
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
 import type { ModelId } from "@/app/console/lib/models";
 import { BUILTIN_PERSONAS, blankPersona, personaSlug, reconcilePersonas, type Persona } from "./lib/persona";
-import { loadPersonas, pushPersona, dropPersona } from "./lib/personaBridge";
+import { loadPersonas, pushPersona, dropPersona } from "@/features/personas/lib/personaBridge";
 
 export interface PersonasSlice {
   /** The persona library — packaged built-ins (reconciled on load) + user-authored. */

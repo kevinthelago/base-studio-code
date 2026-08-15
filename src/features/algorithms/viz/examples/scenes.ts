@@ -3,7 +3,7 @@
 // multi-structure twin of the single-datatype programs (sorts.ts / matrixTransforms.ts / graphAlgos.ts):
 // each program declares NAMED panels (`scene.graph`, `scene.array`) and drives them with the ordinary
 // tracer verbs; the scene folds every op into a `PanelsFrame` and the player lays the panels side by side.
-import { type TracedScene, type TracedTree, type GraphInput } from "../../lib/tracer";
+import { type TracedScene, type TracedTree, type GraphInput } from "@/features/algorithms/lib/tracer";
 import { WEIGHTED_GRAPH, DEFAULT_GRAPH, graphToText, parseGraphInput } from "./graphAlgos";
 import { SORT_MOCK, parseSortInput } from "./sort";
 

@@ -9,7 +9,7 @@ import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as Mcp from "@/features/mcp"; // HooksView + parseHookLog/aggregateHookTelemetry (the Hooks + Hook-Analytics tabs)
 import * as Scheduler from "./lib/scheduler";
 import * as Cron from "./lib/cron";
-import * as Format from "./format";
+import * as Format from "@/features/automations/format";
 import * as GraphPlatform from "@/features/automations/graphPlatform";
 
 let done = false;

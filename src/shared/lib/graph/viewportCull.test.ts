@@ -4,7 +4,7 @@
 // a crash, while culling too LITTLE is merely the performance we already have. So every ambiguous case
 // here is asserted to resolve toward RENDERING.
 import { describe, it, expect } from "vitest";
-import { visibleWorldRect, boxesIntersect, isNodeVisible, CULL_MARGIN_VIEWPORTS } from "./viewportCull";
+import { visibleWorldRect, boxesIntersect, isNodeVisible, CULL_MARGIN_VIEWPORTS } from "@/shared/lib/graph/viewportCull";
 
 const view = (tx: number, ty: number, scale: number) => ({ tx, ty, scale });
 

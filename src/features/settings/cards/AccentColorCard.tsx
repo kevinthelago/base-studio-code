@@ -1,5 +1,5 @@
 import { useAppStore } from "@/store";
-import { ACCENT_PRESETS, accentVars } from "../lib/appearance";
+import { ACCENT_PRESETS, accentVars } from "@/features/settings/lib/appearance";
 import { Card } from "@/shared/ui/data/Card";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";

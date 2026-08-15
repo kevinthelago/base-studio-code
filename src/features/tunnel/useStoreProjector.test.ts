@@ -6,11 +6,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAppStore } from "@/store";
 
-vi.mock("./lib/tunnelDomains", () => ({
+vi.mock("@/features/tunnel/lib/tunnelDomains", () => ({
   publishTunnelDomain: vi.fn(),
   resetTunnelDomains: vi.fn(),
 }));
-vi.mock("./lib/alertHub", () => ({
+vi.mock("@/features/tunnel/lib/alertHub", () => ({
   recordTunnelAlerts: vi.fn(),
   seedTunnelAlerts: vi.fn(),
 }));
@@ -41,8 +41,8 @@ vi.mock("@/shared/lib/core/bsc", async (orig) => ({
   bscJson: vi.fn().mockResolvedValue([]),
 }));
 
-import { useStoreProjector } from "./useStoreProjector";
-import { publishTunnelDomain, resetTunnelDomains } from "./lib/tunnelDomains";
+import { useStoreProjector } from "@/features/tunnel/useStoreProjector";
+import { publishTunnelDomain, resetTunnelDomains } from "@/features/tunnel/lib/tunnelDomains";
 
 const publishedDomains = () =>
   new Set(vi.mocked(publishTunnelDomain).mock.calls.map(([domain]) => domain));

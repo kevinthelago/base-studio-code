@@ -2,7 +2,7 @@
 // from ClaudeConfigCard.tsx. Presets + allow/deny chip lists + the settings.json preview.
 
 import { type Dispatch, type SetStateAction } from "react";
-import { TOOL_PRESETS } from "../lib/toolPresets";
+import { TOOL_PRESETS } from "@/features/settings/lib/toolPresets";
 import { ToolChip, ChipInput } from "../ToolPermissionInputs";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";

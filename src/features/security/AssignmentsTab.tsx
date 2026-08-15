@@ -6,13 +6,13 @@
 
 import { useEffect, useState } from "react";
 import { GUARANTEED, resolveAllowlistFrom, type AgentProfile, type ConsoleSession } from "./lib/agentProfiles";
-import { appSessionTag } from "./lib/appSession";
+import { appSessionTag } from "@/features/security/lib/appSession";
 import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
 import { Button } from "@/shared/ui/controls/Button";
 import { Box } from "@/shared/ui/layout/Box";
-import { modeTone } from "./lib/badgeTone";
+import { modeTone } from "@/features/security/lib/badgeTone";
 
 export interface AssignmentsTabProps {
   roles: AgentProfile[]; consoles: ConsoleSession[]; paneTotal: number;

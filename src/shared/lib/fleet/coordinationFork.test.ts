@@ -2,9 +2,9 @@
 // mobile-crash-reporting worker" to do a worker's job, and nothing in the system could see it: a fork
 // has no pane, no roster row, no worktree and no branch. These cover the event that fixes that.
 import { describe, it, expect } from "vitest";
-import { parseCoordLine, applyCoordEvent } from "./coordinationLog";
-import { emptyCoordState } from "./coordinationState";
-import type { CoordState } from "./coordination.types";
+import { parseCoordLine, applyCoordEvent } from "@/shared/lib/fleet/coordinationLog";
+import { emptyCoordState } from "@/shared/lib/fleet/coordinationState";
+import type { CoordState } from "@/shared/lib/fleet/coordination.types";
 
 const line = (session: string, desc: string, type = "general-purpose") =>
   `2026-07-31T20:15:55Z\t${session}\tfork\t${desc}\t${type}`;

@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { DEFAULT_MAX_AGE_SECS } from "./github";
+import { DEFAULT_MAX_AGE_SECS } from "@/shared/lib/github/github";
 import {
   probeMatchesRecords, fetchProjectsWithProbe, boardFetchOpts, fetchBoardWithProbe,
   resetBoardProbeBaselines, BOARD_PROBE_QUERY, BOARD_UNCHANGED_MAX_AGE_SECS, type ProbeNode,
 } from "./githubProbe";
-import type { GhProjectShape, MinimalGhProject } from "./githubState";
+import type { GhProjectShape, MinimalGhProject } from "@/shared/lib/github/githubState";
 
 /** A persisted minimal record with a version cursor. */
 const rec = (id: string, updatedAt: string): MinimalGhProject => ({

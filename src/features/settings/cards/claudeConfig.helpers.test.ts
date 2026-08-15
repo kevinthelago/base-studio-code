@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveAllRepos } from "./claudeConfig.helpers";
+import { deriveAllRepos } from "@/features/settings/cards/claudeConfig.helpers";
 
 describe("deriveAllRepos", () => {
   it("returns one entry per unique repo full_name, first-seen wins", () => {

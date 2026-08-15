@@ -7,9 +7,9 @@
 import { useEffect } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import type { OpStateAttrs } from "../../lib/binding";
-import type { ScalarFrame } from "../../lib/trace";
-import type { StructureRenderer } from "../registry";
+import type { OpStateAttrs } from "@/features/algorithms/lib/binding";
+import type { ScalarFrame } from "@/features/algorithms/lib/trace";
+import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import { SCALAR_VIZ_ANIM_CLASSES, ensureScalarViewMotion } from "@/features/algorithms/viz/renderers/scalarViewMotion";
 import "./scalarView.css";
 
