@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGlanceProjects, applyModifyingHealth, mergeGlanceProjects, mergeDbIntoDrafts, applyLiveness, applyDormantHealth, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged } from "./useGlanceProjects";
+import { useGlanceProjects, applyModifyingHealth, mergeGlanceProjects, mergeDbIntoDrafts, applyLiveness, applyDormantHealth, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, filterArchived, ARCHIVED_STATE } from "./useGlanceProjects";
 import type { DbProject } from "@/features/planner";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
@@ -75,6 +75,35 @@ describe("filterTriaged — only triaged/working projects render (#2541)", () =>
 
   it("empty triaged set ⇒ empty graph (a plan/draft never shows until worked)", () => {
     expect(filterTriaged(projects, {})).toEqual([]);
+  });
+});
+
+describe("filterArchived — an archived project leaves the network", () => {
+  const projects: ProjectLite[] = [
+    { id: "live-one", name: "Live", health: "off", activity: "idle" },
+    { id: "shelved", name: "Shelved", health: "off", activity: "idle" },
+  ];
+
+  it("drops an archived key and keeps the rest", () => {
+    expect(filterArchived(projects, new Set(["shelved"])).map((p) => p.id)).toEqual(["live-one"]);
+  });
+
+  it("an empty archive set changes nothing — the overwhelmingly common case", () => {
+    expect(filterArchived(projects, new Set())).toEqual(projects);
+  });
+
+  it("archiving is INDEPENDENT of triaged: a triaged project can still be archived away", () => {
+    // The whole point of the marker. `triaged` cannot express "hide this" — it is re-stamped from the
+    // published inventory on every boot — so the two filters must compose rather than overlap.
+    const triaged = filterTriaged(projects, { "live-one": 1, shelved: 1 });
+    expect(triaged.map((p) => p.id)).toEqual(["live-one", "shelved"]);
+    expect(filterArchived(triaged, new Set(["shelved"])).map((p) => p.id)).toEqual(["live-one"]);
+  });
+
+  it("ARCHIVED_STATE is the exact string the durable row carries", () => {
+    // Pinned because the writer is a CLI on the other side of a process boundary
+    // (`bsc project db state <key> archived`) — a typo here fails silently as "nothing is archived".
+    expect(ARCHIVED_STATE).toBe("archived");
   });
 });
 

@@ -377,6 +377,31 @@ export function filterTriaged(projects: ProjectLite[], triaged: Record<string, n
   return projects.filter((p) => triaged[p.id] !== undefined);
 }
 
+/** The durable lifecycle state that hides a project from the network — see {@link filterArchived}. */
+export const ARCHIVED_STATE = "archived";
+
+/**
+ * Drop ARCHIVED projects — the durable "I am done looking at this" marker.
+ *
+ * WHY NOT `triaged`. Clearing the triaged marker is the obvious way to hide a project and it cannot
+ * work: `triagedProjects` is deliberately not persisted (pinned by `store/triagedStore.test.ts`), so
+ * it is empty on every boot, which trips the "REPAIR once" grandfather in `onRehydrateStorage` — it
+ * re-seeds from every locally-PUBLISHED hub, and `useAppBoot` then writes those keys back into the DB.
+ * Measured: 13 `bsc project triaged clear` calls all succeeded and every project returned with one
+ * identical timestamp. A hide built on `triaged` fights that loop on every launch and loses.
+ *
+ * `state` has none of that machinery pointed at it — nothing grandfathers it, and it already ships
+ * writable (`bsc project db state <key> archived`, the column, and the store's own tests). Only the
+ * READ was missing, which is all this adds. `triaged` therefore keeps meaning "has been worked",
+ * which is what it says.
+ *
+ * Archiving is orthogonal to every other state: a `published` project can be archived and a `drafted`
+ * one can too, so this filters on the archived marker ALONE and never infers it from anything else.
+ */
+export function filterArchived(projects: ProjectLite[], archived: ReadonlySet<string>): ProjectLite[] {
+  return archived.size === 0 ? projects : projects.filter((p) => !archived.has(p.id));
+}
+
 export function useGlanceProjects(enabled = true): ProjectLite[] {
   const drafts = useAppStore((s) => s.localDraftProjects);
   const triagedProjects = useAppStore((s) => s.triagedProjects);
@@ -497,6 +522,13 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
     () => Object.fromEntries(dbProjects.filter((r) => r.architect).map((r) => [r.key, r.architect as string])),
     [dbProjects],
   );
+  // The ARCHIVED set, straight off the durable row like the architect above. Written only by
+  // `bsc project db state <key> archived`; see {@link filterArchived} for why this is the marker
+  // rather than `triaged`.
+  const archivedKeys = useMemo(
+    () => new Set(dbProjects.filter((r) => r.state === ARCHIVED_STATE).map((r) => r.key)),
+    [dbProjects],
+  );
   return useMemo(
     // Merge (drafts + local published + GitHub published), FILTER to triaged/working projects (#2541 —
     // a draft/plan never shows), then overlay activity from real signals: liveness → `live` (#2263),
@@ -508,7 +540,7 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
       applyDormantHealth(
         applyRunningActivity(
           applyLiveness(
-            filterTriaged(
+            filterArchived(filterTriaged(
               mergeGlanceProjects(effectiveDrafts, effectivePublished, localPublished).map((p) => ({
                 ...p,
                 appType: planClassification[p.id]?.appType, // #3786/#3802 — the contract endpoint-type discriminator (absent ⇒ plain)
@@ -520,7 +552,7 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
                 architect: architectByKey[p.id],
               })),
               triagedProjects,
-            ),
+            ), archivedKeys),
             liveKeys,
           ),
           buildingKeys,
@@ -531,6 +563,6 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
       activeKeys,
       openIssueKeys,
     ), projectProgress),
-    [effectiveDrafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification, architectByKey, openIssueKeys, projectProgress],
+    [effectiveDrafts, effectivePublished, localPublished, triagedProjects, archivedKeys, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification, architectByKey, openIssueKeys, projectProgress],
   );
 }
