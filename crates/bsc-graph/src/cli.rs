@@ -512,7 +512,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     tomb["supersededBy"] = Value::String(new_id);
                 }
                 crate::remove_impl(&mut g, id);
-                crate::ensure_array(&mut g, "suppressed").push(tomb.clone());
+                // Idempotent (#77) — suppressing an already-suppressed id refreshes its pointer
+                // instead of appending a second tombstone for the same id.
+                crate::add_suppression(&mut g, id, tomb.get("supersededBy").and_then(Value::as_str));
                 crate::save(&g)?;
                 emit(&serde_json::json!({ "ok": true, "suppressed": id, "supersededBy": tomb.get("supersededBy") }))
             }
@@ -626,6 +628,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 .filter(|c| tech.as_deref().is_none_or(|t| c.tech == t))
                 .filter(|c| !worthy_only || c.classification.worthy)
                 .collect();
+            // #77 — ids this run declined to write back because they are RETIRED. Declared out here so
+            // it reaches the emit: a skip nobody is told about is how a caller comes to believe a
+            // record was written when it was not.
+            let mut retired: Vec<String> = Vec::new();
             if apply {
                 let mut g = crate::load();
                 // A module id is derived from the file STEM, so two `registry.tsx` in different
@@ -699,7 +705,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     if let Some(p) = &c.provides {
                         im["provides"] = Value::String(p.clone());
                     }
-                    crate::set_impl(&mut g, im)?;
+                    set_impl_skipping_retired(&mut g, im, &mut retired)?;
                     // ROUTE THE INTEGRATION TEST (edges-fill-themselves-at-retirement). A colocated test
                     // that reaches other modules is not paired onto the node — but it must not be left
                     // behind either, because the file it lives in goes when the module retires. It
@@ -762,7 +768,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     })
                 })
                 .collect();
-            emit(&serde_json::json!({ "applied": apply, "candidates": candidates, "count": candidates.len() }))
+            emit(&serde_json::json!({
+                "applied": apply,
+                "candidates": candidates,
+                "count": candidates.len(),
+                // #77 — named, not just counted: the caller needs to know WHICH module it asked to
+                // store and did not get, so it can look up what superseded it.
+                "skippedRetired": retired,
+            }))
         }
         // `curate <dir> [--tech t] [--apply]` — the curation + optimize gate (#2745 slice 3): harvest +
         // classify a project, keep only the WORTHY candidates, and plan each into the library — an `add`,
@@ -786,6 +799,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     .filter(|c| c.classification.worthy)
                     .collect();
             let plan = crate::extract::curation_plan(&worthy, &crate::implementations());
+            // #77 — same contract as `harvest --apply`: a retired id is skipped and named, not written
+            // back and not fatal to the rest of the curation.
+            let mut retired: Vec<String> = Vec::new();
             if apply {
                 let mut g = crate::load();
                 for item in &plan {
@@ -809,7 +825,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     if let Some(f) = bsc_util::folder_from_src(&c.src) {
                         im["folder"] = Value::String(f);
                     }
-                    crate::set_impl(&mut g, im)?;
+                    set_impl_skipping_retired(&mut g, im, &mut retired)?;
                 }
                 crate::save(&g)?;
             }
@@ -828,7 +844,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     })
                 })
                 .collect();
-            emit(&serde_json::json!({ "applied": apply, "curated": items.len(), "plan": items }))
+            emit(&serde_json::json!({
+                "applied": apply,
+                "curated": items.len(),
+                "plan": items,
+                "skippedRetired": retired,
+            }))
         }
         // `refolder` (#4107) — re-derive every stored impl's `folder` from its `src`, mirroring
         // `bsc ui regroup`. The backfill for a library curated before the folder existed: `src` has
@@ -1217,6 +1238,25 @@ run `bsc graph help` for the flags this CLI reads.",
 
 fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
+}
+
+/// A BATCH write skips a retired id and records it, instead of aborting the whole run (#77).
+///
+/// `set_impl` now refuses a suppressed id, which is right for `impl set` — the caller named that one
+/// id and deserves to be told no. A batch is different: harvest and curate walk a TREE, and a retired
+/// module's FILE is usually still on disk (retirement is a decision about the store, not the source),
+/// so re-encountering it is the expected case rather than an exceptional one. Aborting would mean one
+/// retired module stops an otherwise good harvest of forty.
+///
+/// Skipped ids are RETURNED, never swallowed: a silent skip is how the caller ends up believing a
+/// record was written when it was not — the same class of quiet wrongness as the resurrection itself.
+fn set_impl_skipping_retired(g: &mut Value, im: Value, skipped: &mut Vec<String>) -> Result<(), String> {
+    let id = im.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+    if !id.is_empty() && crate::is_suppressed(g, &id) {
+        skipped.push(id);
+        return Ok(());
+    }
+    crate::set_impl(g, im).map(|_| ())
 }
 
 /// Split a `--flag a,b,c` value into a JSON string array (empty when absent/blank) — for `--composes`
@@ -1673,5 +1713,51 @@ mod same_module_path_tests {
         assert_eq!(same_module_path("src/features/src/thing.ts"), "features/src/thing.ts");
         assert_eq!(same_module_path("features/src/thing.ts"), "features/src/thing.ts");
         assert_ne!(same_module_path("src/a/src/b.ts"), same_module_path("src/a/b.ts"));
+    }
+}
+
+/// The BATCH half of #77 — `harvest --apply` / `curate --apply` skip a retired id and name it.
+#[cfg(test)]
+mod batch_retired_tests {
+    use super::set_impl_skipping_retired;
+
+    fn impl_json(id: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id, "tech": "typescript", "role": "algorithm",
+            "name": id, "code": "export const a = 1;",
+        })
+    }
+
+    /// A retired module's FILE is usually still on disk — retirement is a decision about the store,
+    /// not about the source — so a tree walk re-encountering it is the EXPECTED case. Aborting would
+    /// let one retired module stop an otherwise good harvest of forty.
+    #[test]
+    fn a_batch_skips_a_retired_id_names_it_and_keeps_going() {
+        let mut g = serde_json::json!({
+            "implementations": [],
+            "suppressed": [{ "id": "llm-energy.ts", "supersededBy": "algorithms-llm-energy.ts" }],
+        });
+        let mut skipped = Vec::new();
+
+        set_impl_skipping_retired(&mut g, impl_json("llm-energy.ts"), &mut skipped).expect("not fatal");
+        set_impl_skipping_retired(&mut g, impl_json("fresh.ts"), &mut skipped).expect("the rest still land");
+
+        assert_eq!(skipped, vec!["llm-energy.ts".to_string()], "the skip is NAMED, not swallowed");
+        let live: Vec<String> = crate::implementations_of(&g)
+            .iter()
+            .filter_map(|im| im.get("id").and_then(serde_json::Value::as_str).map(str::to_owned))
+            .collect();
+        assert_eq!(live, vec!["fresh.ts".to_string()], "retired stayed out, the good one went in");
+    }
+
+    /// A real error is still an error — the skip is scoped to retirement, not a blanket catch that
+    /// would turn every rejected write into a silent no-op.
+    #[test]
+    fn a_genuinely_invalid_record_still_fails_the_batch() {
+        let mut g = serde_json::json!({ "implementations": [] });
+        let mut skipped = Vec::new();
+        let bad = serde_json::json!({ "id": "b.ts", "tech": "typescript", "role": "not-a-role", "name": "B" });
+        assert!(set_impl_skipping_retired(&mut g, bad, &mut skipped).is_err(), "a bad role still aborts");
+        assert!(skipped.is_empty());
     }
 }
