@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, waitFor } from "@testing-library/react";
-import { DEBUG_INIT_CMD, DEBUG_START_PROMPT, DEBUG_PANE_ID, DebugSessionMount } from "@/features/debug/DebugSessionMount";
+import { DEBUG_INIT_CMD, DEBUG_START_PROMPT, DEBUG_ROLE_PROMPT, DEBUG_PANE_ID, DebugSessionMount } from "@/features/debug/DebugSessionMount";
 import { useAppStore } from "@/store";
 
 // The mount resolves the repo root over IPC and parks a TerminalSlot; neither is what this file is
@@ -27,9 +27,17 @@ describe("the debug session's launch contract (#3497)", () => {
   it("carries the charter that sends it at the request queue", () => {
     // The charter is the ONLY thing that makes this session the debugger. If it stops naming the queue
     // command, the pane launches and does nothing — the exact silent failure #3497 was.
-    expect(DEBUG_START_PROMPT).toContain("bsc request claim"); // #3535: claim, not list+pick, so it coordinates with the pool
+    expect(DEBUG_START_PROMPT).toContain("bsc request claim"); // claim, not list+pick, so it coordinates
     expect(DEBUG_START_PROMPT).toContain("bsc request resolve");
     expect(DEBUG_START_PROMPT).toMatch(/DEBUG session/);
+    // #one-request-one-debug-session split DEBUG_ROLE_PROMPT out of this so a per-request charter could
+    // reuse the identity/workflow half WITHOUT inheriting "claim the next request". The standing session
+    // is the composition of both, and this pins that the split did not drop either half — the role prose
+    // AND the queue-serving instruction have to survive here.
+    expect(DEBUG_ROLE_PROMPT).toMatch(/DEBUG session/);
+    expect(DEBUG_ROLE_PROMPT).toContain("bsc request resolve"); // the role half still names how work ENDS
+    expect(DEBUG_ROLE_PROMPT).not.toContain("bsc request claim"); // …but never how it STARTS
+    expect(DEBUG_START_PROMPT.startsWith(DEBUG_ROLE_PROMPT)).toBe(true);
   });
 
   it("keeps its stable, app-owned pane id", () => {

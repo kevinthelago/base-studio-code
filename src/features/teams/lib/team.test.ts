@@ -222,7 +222,7 @@ describe("archetypeById", () => {
   });
 });
 
-describe("augmentStudioNetworkForRequests — overflow pool slots (#3535)", () => {
+describe("augmentStudioNetworkForRequests — one node per request (#one-request-one-debug-session)", () => {
   const studio = (): Team => ({
     id: STUDIO_NETWORK_ID,
     name: "Studio Network",
@@ -230,11 +230,11 @@ describe("augmentStudioNetworkForRequests — overflow pool slots (#3535)", () =
     relationships: [],
   } as unknown as Team);
 
-  it("adds one node per live pool slot", () => {
+  it("adds one node per live request", () => {
     const t = augmentStudioNetworkForRequests(studio(), [0, 1]);
-    expect(t.positions.map((p) => p.nodeId)).toEqual(["designer", "debugger-pool-0", "debugger-pool-1"]);
+    expect(t.positions.map((p) => p.nodeId)).toEqual(["designer", "debugger-req-0", "debugger-req-1"]);
     // Fanned along x so N sessions never stack on a single point.
-    const xs = t.positions.filter((p) => p.nodeId.startsWith("debugger-pool-")).map((p) => p.x);
+    const xs = t.positions.filter((p) => p.nodeId.startsWith("debugger-req-")).map((p) => p.x);
     expect(new Set(xs).size).toBe(2);
   });
 
@@ -242,7 +242,7 @@ describe("augmentStudioNetworkForRequests — overflow pool slots (#3535)", () =
     // The `debugger` node only exists while the debugSession flag is on; an edge to it would dangle
     // whenever a request session runs with that flag off.
     const t = augmentStudioNetworkForRequests(studio(), [5]);
-    const rel = t.relationships.find((r) => r.from === "debugger-pool-5");
+    const rel = t.relationships.find((r) => r.from === "debugger-req-5");
     expect(rel?.to).toBe("designer");
     expect(t.relationships.some((r) => r.to === "debugger")).toBe(false);
   });
