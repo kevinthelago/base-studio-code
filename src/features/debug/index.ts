@@ -11,6 +11,7 @@
 // in-graph morph when the node is opened.
 export { DebugSessionMount, DEBUG_PANE_ID } from "@/features/debug/DebugSessionMount";
 // #3535: the standing debug session is the always-on primary; RequestSessionsMount is the paced,
-// capped OVERFLOW pool beside it. Inert unless the Settings auto-spawn toggle is on (off by default).
+// one session per REQUEST beside it (#one-request-one-debug-session). Inert unless the Settings
+// auto-spawn toggle is on (off by default).
 export { RequestSessionsMount } from "./RequestSessionsMount";
-export { poolPaneId, poolCharter } from "@/features/debug/requestSession";
+export { requestPaneId, requestCharter } from "@/features/debug/requestSession";
