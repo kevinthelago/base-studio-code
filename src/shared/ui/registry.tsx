@@ -54,7 +54,7 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 import { MasterDetail } from "@/shared/ui/layouts/MasterDetail";
 import { SplitView } from "@/shared/ui/layouts/SplitView";
-import { GraphCanvas } from "./layouts/GraphCanvas";
+import { GraphCanvas } from "@/shared/ui/layouts/GraphCanvas";
 import { PaneGrid } from "@/shared/ui/layouts/PaneGrid";
 import { Sequence } from "@/shared/ui/layouts/Sequence";
 import { Tree } from "@/shared/ui/layouts/Tree";

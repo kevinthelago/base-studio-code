@@ -35,12 +35,20 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const APPLY = argv.includes("--apply");
 const storeArg = argv[argv.indexOf("--store") + 1];
+const implsArg = argv.includes("--impls") ? argv[argv.indexOf("--impls") + 1] : null;
 const only = argv.includes("--only") ? argv[argv.indexOf("--only") + 1] : null;
 if (!argv.includes("--store") || !storeArg) {
-  console.error("usage: node scripts/refresh-drifted-seeds.mjs --store <bsc ui list --full dump> [--apply] [--only <src-path>]");
+  console.error("usage: node scripts/refresh-drifted-seeds.mjs --store <bsc ui list --full dump> [--impls <bsc graph impl list dump>] [--apply] [--only <src-path>]");
   process.exit(2);
 }
+// The COMPONENT store, keyed by id — the "has a designer edited this record" gate.
 const store = new Map(JSON.parse(readFileSync(storeArg, "utf8")).map((r) => [r.id, r]));
+// ...and the ALGORITHM store, for the same gate applied to impls. Optional so the script still runs
+// without a live algorithms store, in which case impls are simply not considered rather than refreshed
+// blind — an absent store must never read as "nobody edited it".
+const implStore = implsArg
+  ? new Map(JSON.parse(readFileSync(implsArg, "utf8")).map((r) => [r.id, r]))
+  : null;
 
 const srcFiles = new Set();
 (function walk(dir, rel) {
@@ -72,7 +80,7 @@ function buildImportIndex(seedList) {
       index.set(m[2], set);
     }
   };
-  for (const { rec } of seedList) add(rec.srcText, `record:${rec.id}`);
+  for (const { rec, source } of seedList) add(source, `record:${rec.id}`);
   for (const f of srcFiles) if (/\.(ts|tsx)$/.test(f)) add(readFileSync(join(REPO, "src", f), "utf8"), f);
   return index;
 }
@@ -86,9 +94,27 @@ const seeds = [];
     let r;
     try { r = JSON.parse(readFileSync(p, "utf8")); } catch { continue; }
     const spec = typeof r?.provides === "string" ? r.provides.trim() : "";
-    if (spec.startsWith("@/") && typeof r.srcText === "string" && r.srcText.trim() && r.id) seeds.push({ path: p, rec: r, spec });
+    if (spec.startsWith("@/") && typeof r.srcText === "string" && r.srcText.trim() && r.id)
+      seeds.push({ kind: "component", path: p, rec: r, spec, source: r.srcText });
   }
 })(join(REPO, "src-tauri", "data", "components"));
+
+// ALGORITHM IMPLS ARE SEEDS TOO, and leaving them out is what this script was missing. A module packaged
+// as an impl carries its source in `code` rather than `srcText` and lives inside the one `algorithms.json`
+// document rather than a file of its own — differences of STORAGE, not of kind. The three gates below
+// apply to it unchanged, so the only thing its absence bought was that an impl whose FILE moved on could
+// never be refreshed. Three of them arrived at once when a merge carried back `useCoordinator`,
+// `coordinationLog` and `previewShims` — each fixed on develop while a branch retired it.
+const ALGOS_PATH = join(REPO, "src-tauri/data/knowledge/algorithms.json");
+let algorithms = null;
+try {
+  algorithms = JSON.parse(readFileSync(ALGOS_PATH, "utf8"));
+  for (const im of algorithms.implementations ?? []) {
+    const spec = typeof im?.provides === "string" ? im.provides.trim() : "";
+    if (spec.startsWith("@/") && typeof im.code === "string" && im.code.trim() && im.id)
+      seeds.push({ kind: "impl", rec: im, spec, source: im.code });
+  }
+} catch { /* a checkout without the algorithm seed is still valid */ }
 
 const importIndex = buildImportIndex(seeds);
 
@@ -109,7 +135,8 @@ try {
 
 let refreshed = 0, skippedEdited = 0, alreadyOk = 0, skippedBreaking = 0, skippedUnresolvable = 0;
 const edited = [], breaking = [], unresolvableList = [];
-for (const { path, rec, spec } of seeds) {
+let algorithmsDirty = false;
+for (const { kind, path, rec, spec, source } of seeds) {
   const file = fileFor(spec);
   if (!file) continue;                                  // already retired
   if (only && file !== only) continue;
@@ -117,13 +144,17 @@ for (const { path, rec, spec } of seeds) {
   // before every comparison below, so "does the seed already match the file" asks about the form the
   // record would actually hold rather than the form on disk.
   const fileSrc = fileAsRecordSource(join(REPO, "src", file), file);
-  const [preamble, body] = splitPreamble(norm(rec.srcText), fileSrc);
+  const [preamble, body] = splitPreamble(norm(source), fileSrc);
   if (codeOnly(body) === codeOnly(fileSrc)) { alreadyOk++; continue; }
 
   // The gate: has a designer edited this record since it was packaged?
-  const live = store.get(rec.id);
-  const storeSrc = norm(typeof live?.srcText === "string" ? live.srcText : "");
-  if (!live || codeOnly(storeSrc) !== codeOnly(norm(rec.srcText))) {
+  // The SAME gate for both kinds — only WHERE the live copy lives and WHICH field holds its source
+  // differ. An impl with no live store available is refused rather than assumed pristine: an absent
+  // store must never read as "nobody edited it".
+  const live = kind === "impl" ? implStore?.get(rec.id) : store.get(rec.id);
+  const liveSrc = kind === "impl" ? live?.code : live?.srcText;
+  const storeSrc = norm(typeof liveSrc === "string" ? liveSrc : "");
+  if (!live || codeOnly(storeSrc) !== codeOnly(norm(source))) {
     skippedEdited++;
     edited.push(file);
     continue;
@@ -136,7 +167,7 @@ for (const { path, rec, spec } of seeds) {
   // `ui-tree` imports the type FROM the record. Refreshing that seed compiles the record fine and breaks
   // its consumer with "does not provide an export named". Nothing else in the loop would have caught it:
   // the record is pristine, so the store gate above passes it straight through.
-  const seedEx = exportedNames(norm(rec.srcText));
+  const seedEx = exportedNames(norm(source));
   const fileEx = exportedNames(fileSrc);
   if (seedEx && fileEx) {
     const consumers = importIndex.get(spec) ?? new Map();
@@ -159,9 +190,17 @@ for (const { path, rec, spec } of seeds) {
 
   const next = preamble ? `${preamble}\n${fileSrc}\n` : `${fileSrc}\n`;
   refreshed++;
-  console.log(`   ${APPLY ? "refreshed" : "would refresh"}  ${file}  (${norm(rec.srcText).length} → ${next.trimEnd().length} chars, preamble ${preamble ? `${preamble.split("\n").length} lines kept` : "none"})`);
-  if (APPLY) writeFileSync(path, JSON.stringify({ ...rec, srcText: next }, null, 2) + "\n");
+  console.log(`   ${APPLY ? "refreshed" : "would refresh"}  [${kind}] ${file}  (${norm(source).length} → ${next.trimEnd().length} chars, preamble ${preamble ? `${preamble.split("\n").length} lines kept` : "none"})`);
+  if (APPLY) {
+    // An impl is one entry inside the single `algorithms.json`, so it is mutated in memory and the whole
+    // document flushed ONCE after the loop — writing per record would rewrite the file N times and leave
+    // it half-updated if anything threw partway.
+    if (kind === "impl") { rec.code = next; algorithmsDirty = true; }
+    else writeFileSync(path, JSON.stringify({ ...rec, srcText: next }, null, 2) + "\n");
+  }
 }
+
+if (APPLY && algorithmsDirty) writeFileSync(ALGOS_PATH, JSON.stringify(algorithms, null, 2) + "\n");
 
 console.log(`\nseeds already matching the file: ${alreadyOk}`);
 console.log(`${APPLY ? "refreshed" : "would refresh"}:                ${refreshed}`);
