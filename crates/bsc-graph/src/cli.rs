@@ -21,7 +21,7 @@ pub const VERBS: [&str; 14] =
     ["impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "emit", "help"];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
-pub const IMPL_SUBVERBS: [&str; 5] = ["set", "remove", "list", "suppress", "unsuppress"];
+pub const IMPL_SUBVERBS: [&str; 7] = ["set", "remove", "list", "suppress", "unsuppress", "history", "revert"];
 
 /// The `edge` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
@@ -32,10 +32,15 @@ pub const BOOL_FLAGS: [&str; 8] =
     ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 31] = [
+pub const FLAGS: [&str; 34] = [
     "--pretty",
     // #71 — names WHAT replaced a suppressed algorithm, stored on the tombstone.
     "--superseded-by",
+    // #72 — the revision `impl revert` restores to, and who to attribute the write to.
+    "--to",
+    "--by",
+    // #72 — the WHY, recorded on the history entry alongside the who and the when.
+    "--note",
     "--all",
     "--id",
     "--tech",
@@ -405,7 +410,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if let Some(k) = flag_value(&args, "--kind") { im["kind"] = Value::String(k); }
                 // The viz-code facet (#3218) — the algorithm's visualization as a JS trace-program. Additive.
                 if let Some(v) = flag_value(&args, "--viz-code") { im["vizCode"] = Value::String(v); }
-                let replaced = crate::set_impl(&mut g, im.clone())?;
+                let replaced = crate::set_impl_by(&mut g, im.clone(), &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()), flag_value(&args, "--note").as_deref())?;
                 crate::save(&g)?;
                 // Report the STORED record, not the write payload (#4154). Echoing `im` showed only the
                 // fields this call restated, so a `--domain`-only edit answered without `src`, `summary`
@@ -441,6 +446,49 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // check finds it present and stops re-adding the packaged impl. `--superseded-by` records
             // what replaced it, on the tombstone because that is the one record the reconcile never
             // overwrites — a consolidation is otherwise unauditable a month later.
+            // #72 — READ the write log. `impl set` stamps rev/by/at/changed through the same
+            // `bsc-record` the component store uses, so this reads like `bsc ui log <id>` on purpose:
+            // one vocabulary across both stores rather than two dialects a reader has to translate.
+            Some("history") => {
+                let id = positional.get(2).ok_or("usage: bsc graph impl history <id>")?;
+                let g = crate::load();
+                let rec = crate::implementations_of(&g)
+                    .into_iter()
+                    .find(|im| im.get("id").and_then(Value::as_str) == Some(*id))
+                    .ok_or_else(|| format!("unknown implementation '{id}'"))?;
+                emit(&bsc_record::log_value(id, &rec))
+            }
+            // #72 — restore a previous `code`. REFUSES rather than landing on a nearer revision: the
+            // rung is retained for only the most recent few source-moving writes, so a silent
+            // approximation would hand back code the caller never asked for and call it a revert.
+            Some("revert") => {
+                let id = positional.get(2).ok_or("usage: bsc graph impl revert <id> [--to <rev>]")?;
+                let mut g = crate::load();
+                let rec = crate::implementations_of(&g)
+                    .into_iter()
+                    .find(|im| im.get("id").and_then(Value::as_str) == Some(*id))
+                    .ok_or_else(|| format!("unknown implementation '{id}'"))?;
+                let revertible = bsc_record::revertible_revs(&rec);
+                // Default: the revision immediately before this one — "undo the last write".
+                let want = match flag_value(&args, "--to") {
+                    Some(v) => v.parse::<i64>().map_err(|_| format!("--to: not a revision number: {v}"))?,
+                    None => *revertible.last().ok_or_else(|| format!(
+                        "'{id}' has no retained code to revert to — its history holds no source-moving write"
+                    ))?,
+                };
+                let code = bsc_record::src_at_rev_of(&rec, want, "code").ok_or_else(|| format!(
+                    "'{id}' cannot be reverted to rev {want} — that revision's code is not retained.                      Revertible: {}",
+                    if revertible.is_empty() { "(none)".into() } else {
+                        revertible.iter().map(i64::to_string).collect::<Vec<_>>().join(", ")
+                    }
+                ))?;
+                let mut next = rec.clone();
+                next["code"] = Value::String(code);
+                let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
+                crate::set_impl_by(&mut g, next, &writer, Some(&format!("revert to rev {want}")))?;
+                crate::save(&g)?;
+                emit(&serde_json::json!({ "ok": true, "reverted": id, "to": want }))
+            }
             Some("suppress") => {
                 let id = positional.get(2).ok_or("usage: bsc graph impl suppress <id> [--superseded-by <new-id>]")?;
                 let mut g = crate::load();
@@ -1202,12 +1250,16 @@ fn help(prog: &str) -> String {
   \n         {prog} doctor [--fix] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes)\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes)\n  \
          {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)
   \
          {prog} impl suppress <id> [--superseded-by <new-id>]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored)
   \
          {prog} impl unsuppress <id>                    # drop the tombstone so the packaged algorithm re-seeds on the next load (no data loss). REFUSES on a live impl - that goes through `remove`
+         {prog} impl history <id>                       # the write log (#72): rev, who, when, what CHANGED and what was DROPPED per write — the same shape as `bsc ui log`, from the same shared stamp
+  \
+         {prog} impl revert <id> [--to <rev>] [--by <who>]   # restore a previous `code`. Defaults to undoing the last source-moving write; REFUSES rather than landing on a nearer revision when the target has aged past the retained rungs, and names which revisions are still reachable
+  \
   \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
