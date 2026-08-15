@@ -270,6 +270,7 @@ pub fn run() {
             session::sound_designer::setup_sound_designer_workspace,
             session::integrator::setup_integrator_workspace,
             session::debug::debug_repo_root,
+            session::debug::reload_sidecars,
             crate::shot::set_shot_target_rect,
             session::sandbox::wsl_sandbox_status,
             session::sandbox::provision_sandbox,

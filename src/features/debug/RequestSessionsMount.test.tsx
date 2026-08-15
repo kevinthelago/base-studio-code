@@ -3,6 +3,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { RequestSessionsMount } from "./RequestSessionsMount";
 import { requestCharter, requestPaneId } from "@/features/debug/requestSession";
 import { bscRun } from "@/shared/lib/core/bsc";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 
 // `vi.hoisted` because vi.mock is hoisted ABOVE plain consts: referencing a normal `const` from a mock
@@ -44,7 +45,12 @@ vi.mock("@/shared/lib/core/bsc", () => ({
   bscRun: vi.fn(async () => {}),
   bscWrite: vi.fn(async () => {}),
 }));
-vi.mock("@/shared/lib/core/safeInvoke", () => ({ safeInvoke: vi.fn(async () => "C:/repo") }));
+// `safeInvoke` serves TWO calls here — the repo-root probe and the sidecar reload — so the mock
+// dispatches on the command name. A single blanket return would answer the reload with a path and
+// the repo-root probe with whatever the reload wanted, which is how a mock starts lying quietly.
+vi.mock("@/shared/lib/core/safeInvoke", () => ({
+  safeInvoke: vi.fn(async (cmd: string) => (cmd === "reload_sidecars" ? [] : "C:/repo")),
+}));
 vi.mock("@/app/console/terminal/TerminalSlot", () => ({ TerminalSlot: () => null }));
 // Run the poll body once, deterministically, instead of on a timer.
 vi.mock("@/shared/hooks/usePoll", () => ({
@@ -122,6 +128,38 @@ describe("RequestSessionsMount — one session per request", () => {
       expect(p).toContain("do not run `bsc request claim`");
       expect(p).not.toContain("$BSC_AUDIT_PANE"); // the standing session's claim stamp has no place here
     });
+  });
+});
+
+describe("a resolved request goes live without a restart", () => {
+  beforeEach(() => {
+    vi.mocked(safeInvoke).mockClear();
+    resetAll();
+  });
+
+  const reloadCalls = () => vi.mocked(safeInvoke).mock.calls.filter(([cmd]) => cmd === "reload_sidecars");
+
+  it("re-stages the sidecar when a session closes because its request resolved", async () => {
+    // The point of the whole loop: the debug session rebuilt `bsc`, so the new binary has to be staged
+    // and the warm child retired before the NEXT call, or the fix sits on disk unused until a restart.
+    useAppStore.setState({ autoSpawnDebugSessions: true });
+    const { rerender } = render(<RequestSessionsMount />);
+    await waitFor(() => expect(Object.keys(useAppStore.getState().paneStartupPromptText)).toHaveLength(2));
+
+    // The session works its request and resolves it. Next reconcile ⇒ its session closes ⇒ reload.
+    queue.rows = queue.rows.map((r) => (r.id === 1 ? { ...r, status: "resolved" } : r));
+    vi.mocked(safeInvoke).mockClear();
+    rerender(<RequestSessionsMount />);
+    await waitFor(() => expect(reloadCalls().length).toBeGreaterThan(0));
+  });
+
+  it("does NOT reload while nothing has closed — a steady queue must not restage on every poll", async () => {
+    // Staging is a file copy that parks a locked binary as `.old-<stamp>`. Doing it on every 20s tick
+    // would churn the sidecar dir for no reason and, worse, retire a perfectly good warm child each time.
+    useAppStore.setState({ autoSpawnDebugSessions: true });
+    render(<RequestSessionsMount />);
+    await waitFor(() => expect(Object.keys(useAppStore.getState().paneStartupPromptText)).toHaveLength(2));
+    expect(reloadCalls()).toHaveLength(0);
   });
 });
 

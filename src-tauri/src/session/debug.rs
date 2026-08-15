@@ -14,9 +14,58 @@ pub(crate) fn debug_repo_root() -> Option<String> {
     root.exists().then(|| root.to_string_lossy().into_owned())
 }
 
+/// Re-stage the dev sidecars and retire the warm `bsc`, so a freshly built binary goes live WITHOUT an
+/// app restart (#a-resolved-request-goes-live-without-a-restart).
+///
+/// This is the trigger the swap machinery was missing, not new machinery. `stage_dev_sidecars` already
+/// does the whole job and is already idempotent — including the Windows dance a live sidecar forces: a
+/// running `.exe` cannot be overwritten, but it CAN be renamed, so a locked image is parked as
+/// `.old-<stamp>` and the new one copied into its place, rolled back if that copy fails. It was simply
+/// only ever called at startup.
+///
+/// Retiring the warm child is the half that staging does NOT cover. It holds an already-mapped image, so
+/// replacing the file on disk leaves it answering from the old code indefinitely; every OTHER `bsc` call
+/// re-resolves `$BSC_BIN` per exec and picks the new binary up for free.
+///
+/// ORDER MATTERS: stage first, then retire. The reverse would leave a window where the child respawns
+/// from the OLD binary and has to be retired a second time.
+///
+/// A long-lived `bsc mcp …` server keeps the old image until its session restarts — renaming does not
+/// change an already-mapped process. That is a known and accepted gap (the maintainer expects MCP servers
+/// to fall out of use in favour of the integration node/persona/role), not an oversight.
+///
+/// Returns each sidecar and where it now resolves — `None` for one that is not built, so a caller that
+/// reloads and gets `bsc: null` learns the binary is MISSING rather than silently reloading nothing. In a
+/// release bundle this is a no-op: sidecars sit beside the exe, there is no build output to stage, and
+/// `stage_dev_sidecars` returns early.
+#[tauri::command]
+pub(crate) fn reload_sidecars() -> Vec<(String, Option<String>)> {
+    crate::console::pty::stage_dev_sidecars();
+    crate::console::bsc_warm::retire();
+    crate::console::pty::sidecar_status()
+        .into_iter()
+        .map(|(name, path)| (name.to_string(), path.map(|p| p.to_string_lossy().into_owned())))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reload_is_safe_to_call_and_reports_the_sidecars() {
+        // The command must never panic or leave the warm child in a half-retired state — it is called
+        // from a poll loop the moment a request resolves, on machines with and without a build output.
+        // Calling it twice pins idempotence: staging a second time is a plain copy, and retiring an
+        // already-retired child is a no-op rather than an error.
+        let first = reload_sidecars();
+        let second = reload_sidecars();
+        assert_eq!(
+            first.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>(),
+            second.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>(),
+            "the reported sidecar set is stable across reloads",
+        );
+    }
 
     #[test]
     fn repo_root_is_the_parent_of_the_manifest_dir_on_the_build_host() {

@@ -112,6 +112,24 @@ pub(crate) fn try_warm(project_key: Option<&str>, args: &[String]) -> Option<Res
     result
 }
 
+/// Retire the warm child so the NEXT call respawns one (#a-resolved-request-goes-live-without-a-restart).
+///
+/// The child holds an already-mapped image of `bsc`, so replacing the binary on disk does nothing to a
+/// process that is already running — it would keep answering from the OLD code indefinitely, which is
+/// exactly the stale-sidecar failure the swap exists to prevent. Dropping it closes stdin (ending the
+/// serve loop) and kills as a backstop; `try_warm` respawns on the next servable call, from whatever
+/// binary `bsc_bin_path()` now resolves to.
+///
+/// Deliberately infallible and idempotent: no child, or a poisoned lock, both mean "there is nothing
+/// warm to retire", which is the desired end state either way. A poisoned lock is left alone rather than
+/// cleared — `try_warm` already treats it as a reason to fall back to a one-shot spawn, so the binary
+/// still gets picked up; forcing it here would be claiming to know the stream state after a panic.
+pub(crate) fn retire() {
+    if let Ok(mut guard) = WARM.lock() {
+        *guard = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
