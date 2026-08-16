@@ -583,3 +583,93 @@ describe("the buildability predicates use the context-aware scanner (#3486)", ()
     expect(isPreviewBuildable(withElision, "shared/ui/data/Card.tsx", () => true)).toBe(false);
   });
 });
+
+describe("componentPreviewFiles — a specifier an ALGORITHMS record provides (#83)", () => {
+  // THE REPORTED SHAPE. DetachedWindow imports named exports from a module whose FILE was retired when
+  // an algorithms record superseded it (#82), so the preview had no source for it and every named
+  // import failed with `No matching export in mem:src/app/lazyWorkspaces`. The preview built its
+  // `provides` map from COMPONENT records only; the runtime resolver has read the algorithms store
+  // since `resolver-reads-the-algorithms-store`.
+  const artifact: KitArtifact = { components: [], runtime: {} };
+
+  // Built from the file's own `base` record so every required field is real. An `as ComponentRecord`
+  // cast hid a missing `props` here, and the failure surfaced as `Cannot read properties of undefined
+  // (reading 'some')` deep inside `previewChild` — a cast is not a fixture.
+  const consumer: ComponentRecord = {
+    ...base,
+    id: "detached-window",
+    name: "DetachedWindow",
+    src: "app/DetachedWindow.tsx",
+    props: [],
+    srcText:
+      'import { GitHubWorkspace, SkillsWorkspace } from "@/app/lazyWorkspaces";\n' +
+      "export function DetachedWindow() {\n" +
+      "  return <div><GitHubWorkspace /><SkillsWorkspace /></div>;\n" +
+      "}\n",
+  };
+
+  /** The algorithms record that provides the retired module — `code`, keyed by its `provides`. */
+  const graphResolver = (spec: string) =>
+    spec === "@/app/lazyWorkspaces"
+      ? {
+          path: "app/lazyWorkspaces.ts",
+          source:
+            "export const GitHubWorkspace = () => null;\n" +
+            "export const SkillsWorkspace = () => null;\n",
+        }
+      : null;
+
+  it("vendors the module so its named exports resolve", () => {
+    const build = componentPreviewFiles(
+      consumer, artifact, [], undefined, "loaded", {}, undefined, graphResolver,
+    );
+    expect(build, "the component builds at all").not.toBeNull();
+    // The module is present at the mem path the `@/…` branch resolves to…
+    expect(build!.files["app/lazyWorkspaces.ts"]).toContain("GitHubWorkspace");
+    // …and both named exports it imports are in that source, which is what "No matching export" meant.
+    expect(build!.files["app/lazyWorkspaces.ts"]).toContain("SkillsWorkspace");
+  });
+
+  it("without the resolver the module is absent — the bug, pinned", () => {
+    const build = componentPreviewFiles(consumer, artifact, [], undefined, "loaded", {}, undefined, undefined);
+    // It still "builds" a file set — which is exactly why this failed at esbuild rather than earlier.
+    expect(build?.files["app/lazyWorkspaces.ts"]).toBeUndefined();
+  });
+
+  it("vendors TRANSITIVELY — a graph module's own first-party imports resolve too", () => {
+    const chained = (spec: string) =>
+      spec === "@/app/lazyWorkspaces"
+        ? { path: "app/lazyWorkspaces.ts", source: 'export { helper as GitHubWorkspace } from "@/app/deep/helper";\nexport const SkillsWorkspace = () => null;\n' }
+        : spec === "@/app/deep/helper"
+          ? { path: "app/deep/helper.ts", source: "export const helper = () => null;\n" }
+          : null;
+    const build = componentPreviewFiles(consumer, artifact, [], undefined, "loaded", {}, undefined, chained);
+    expect(build!.files["app/deep/helper.ts"], "stopping at depth one trades one build error for another")
+      .toContain("helper");
+  });
+
+  it("a COMPONENT record's provides still wins for the same specifier", () => {
+    const sibling: ComponentRecord = {
+      ...base,
+      id: "lazy-workspaces-component",
+      name: "LazyWorkspaces",
+      src: "app/lazyWorkspaces.tsx",
+      props: [],
+      provides: "@/app/lazyWorkspaces",
+      srcText: "export const GitHubWorkspace = () => null; // FROM THE COMPONENT STORE\nexport const SkillsWorkspace = () => null;\n",
+      source: "export const GitHubWorkspace = () => null; // FROM THE COMPONENT STORE\nexport const SkillsWorkspace = () => null;\n",
+    } as ComponentRecord;
+    const build = componentPreviewFiles(
+      consumer, artifact, [sibling], undefined, "loaded", {}, undefined, graphResolver,
+    );
+    const vendored = Object.entries(build!.files).find(([k]) => k.startsWith("app/lazyWorkspaces"));
+    expect(vendored?.[1], "the component store keeps precedence").toContain("FROM THE COMPONENT STORE");
+  });
+
+  it("componentBuildable agrees with what the files step can vendor", () => {
+    // Without the resolver the only unresolved import makes it unbuildable; with it, buildable. A
+    // disagreement here means a component is never previewed at all rather than previewed broken.
+    expect(componentBuildable(consumer, artifact, [], undefined)).toBe(false);
+    expect(componentBuildable(consumer, artifact, [], graphResolver)).toBe(true);
+  });
+});

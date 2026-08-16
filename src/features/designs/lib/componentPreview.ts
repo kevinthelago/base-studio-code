@@ -35,6 +35,25 @@ import type { ComponentRecord, PropSpec } from "./model";
  */
 export type LibraryModuleResolver = (spec: string) => { path: string; source: string } | null;
 
+/**
+ * Resolve a first-party `@/…` specifier that an ALGORITHMS record provides (#83, designer request) —
+ * the same `provides` match the runtime's `resolveGraphSource` already makes, brought to the preview.
+ *
+ * The preview built its `provides` map from `[comp, ...siblings]` — COMPONENT records — and nothing
+ * else, so a module retired into the algorithms store had no source here at all. `DetachedWindow`
+ * failed with `No matching export in mem:src/app/lazyWorkspaces` once per named import, because
+ * `lazyWorkspaces` is `lazy-workspaces.ts` in the algorithms store and its file was deleted when the
+ * record superseded it (#82).
+ *
+ * That is systemic, not one broken component: the migration keeps turning modules into records, so
+ * every retirement made another specifier invisible to the preview while the RUNTIME resolved it fine.
+ *
+ * Param-injected for the same reason [`LibraryModuleResolver`] is — this module stays pure and never
+ * imports the algorithms store; the default is wired at the call sites. Absent ⇒ byte-identical to
+ * before, so a component reaching no graph-provided module is unaffected.
+ */
+export type GraphProvidesResolver = (spec: string) => { path: string; source: string } | null;
+
 /** The buildable slice of the packaged kit artifact — each component's verbatim `source` and the
  *  `runtime` (non-component @/ closure), both keyed by their `src/`-relative path. This is exactly the
  *  `source` + `runtime` the `react-ui.json` artifact carries (built by reactUiKit.gen, consumed by
@@ -610,6 +629,9 @@ export function componentBuildable(
   comp: ComponentRecord,
   artifact: KitArtifact,
   siblings: readonly ComponentRecord[] = [],
+  // #83 — must agree with what `componentPreviewFiles` can actually vendor, or a component whose only
+  // unresolved import is graph-provided is judged unbuildable and never previewed at all.
+  graphResolver?: GraphProvidesResolver,
 ): boolean {
   const { bySrc, bases } = artifactIndex(artifact);
   // BUILT-IN: present in the artifact with a source ⇒ always a build (the branch below never returns null).
@@ -638,13 +660,18 @@ export function componentBuildable(
 
   const resolvesInternal = (spec: string, fromRel: string): boolean => {
     if (hasProvideSpec(spec)) return true;
+    if (graphResolver?.(spec)) return true; // #83 — provided by an ALGORITHMS record
     if (isPlatformModule(spec)) return true; // the DECLARED BOUNDARY — stubbed by the bundler
     const base = resolveInternalBase(spec, fromRel);
     return base !== null && (bases.has(base) || hasProvideMod(`${base}.tsx`) || hasSibBase(base));
   };
 
   const providesModNonEmpty = ownProvides !== null || sib.provideModOwners.size > 0;
-  const canResolveInternal = providesModNonEmpty || anyOwnedByOther(sib.baseOwners, comp.id) || bases.size > 0;
+  // #83 — a graph resolver IS a basis for resolution. Without this the fallback is
+  // `looksBuildableModule` ("no `@/` at all"), so a component whose only first-party import is
+  // graph-provided was judged unbuildable and never previewed.
+  const canResolveInternal =
+    providesModNonEmpty || anyOwnedByOther(sib.baseOwners, comp.id) || bases.size > 0 || !!graphResolver;
   return canResolveInternal
     ? isPreviewBuildable(userSource, path, resolvesInternal)
     : looksBuildableModule(userSource);
@@ -675,6 +702,9 @@ export function componentPreviewFiles(
   state: PreviewState = "loaded",
   previewData: Record<string, string> = {},
   liveStates?: PreviewState[],
+  // #83 — the ALGORITHMS store's `provides`, which the runtime resolver has always honoured and the
+  // preview never did. Optional and last, so every existing caller is unchanged.
+  graphResolver?: GraphProvidesResolver,
 ): ComponentPreviewBuild | null {
   // #4130: the built-in lookup + the internal-resolution base set come from the cached artifact index,
   // so this and `componentBuildable` read the SAME derivation (and neither re-scans the artifact).
@@ -686,6 +716,7 @@ export function componentPreviewFiles(
     for (const [path, src] of Object.entries(artifact.runtime ?? {})) files[path] = src;
     for (const c of artifact.components) if (c.source) files[c.src] = c.source;
     vendorLibraryModules(files, libResolver); // #3116: any `@bsc/…` a built-in references
+    vendorGraphProvides(files, graphResolver); // #83: any `@/…` an algorithms record provides
     const importSpec = `@/${stripExt(inArtifact.src)}`;
     files[PREVIEW_ENTRY] = bootstrapSource(comp, importSpec, state, previewData, liveStates);
     return { files, entry: PREVIEW_ENTRY };
@@ -734,6 +765,7 @@ export function componentPreviewFiles(
 
   const resolvesInternal = (spec: string, fromRel: string): boolean => {
     if (providesSpecs.has(spec)) return true; // (a) exact `provides` match
+    if (graphResolver?.(spec)) return true; // (a2) #83 — provided by an ALGORITHMS record
     if (isPlatformModule(spec)) return true; // (d) the DECLARED BOUNDARY — stubbed by the bundler
     const base = resolveInternalBase(spec, fromRel);
     return base !== null && (artifactBases.has(base) || providesMod.has(`${base}.tsx`) || sibByBase.has(base)); // (b)/(a)/(c)
@@ -742,7 +774,9 @@ export function componentPreviewFiles(
   // Buildable? An explicit `source` is trusted; a `srcText` must be a module whose internal imports all
   // resolve (provides / artifact / sibling / declared boundary). `looksBuildableModule` (no `@/` at all)
   // is the fallback when there is nothing to resolve against.
-  const canResolveInternal = providesMod.size > 0 || sibByBase.size > 0 || artifactBases.size > 0;
+  // #83 — same rule as `componentBuildable`, or the two disagree about the same component.
+  const canResolveInternal =
+    providesMod.size > 0 || sibByBase.size > 0 || artifactBases.size > 0 || !!graphResolver;
   const buildable = explicitSource !== null
     || (canResolveInternal ? isPreviewBuildable(userSource, path, resolvesInternal) : looksBuildableModule(userSource));
   if (!buildable) return null;
@@ -767,6 +801,7 @@ export function componentPreviewFiles(
     }
   }
   vendorLibraryModules(files, libResolver); // #3116: vendor any `@bsc/…` library imports (recursively)
+  vendorGraphProvides(files, graphResolver); // #83: same, for `@/…` an algorithms record provides
   files[PREVIEW_ENTRY] = bootstrapSource(comp, `@/${stripExt(path)}`, state, previewData, liveStates);
   return { files, entry: PREVIEW_ENTRY };
 }
@@ -779,6 +814,37 @@ export function componentPreviewFiles(
  * yields a byte-identical file set to pre-#3116. A spec that doesn't resolve is simply not added (the build
  * then fails "module not found" — the honest unresolvable-import surface, mirrored in graphHealth).
  */
+/**
+ * Vendor every `@/…` module an ALGORITHMS record provides, transitively (#83).
+ *
+ * Mirrors {@link vendorLibraryModules} deliberately — same walk, same recursion, same
+ * already-present check — because the two answer the same question for different stores, and a second
+ * shape here would be a second thing to keep in step.
+ *
+ * ALREADY-PRESENT WINS, which is what preserves the existing precedence: a component record's
+ * `provides` and the packaged artifact both seed `files` BEFORE this runs, so a specifier they already
+ * supply is skipped and the component store keeps priority over the algorithms store.
+ */
+function vendorGraphProvides(files: Record<string, string>, resolver?: GraphProvidesResolver): void {
+  if (!resolver) return;
+  const seenSpec = new Set<string>();
+  const queue: string[] = Object.values(files);
+  while (queue.length) {
+    const source = queue.shift()!;
+    for (const spec of importSpecs(source)) {
+      // First-party only: `@bsc/…` is the library resolver's job and `./x` is a sibling.
+      if (!spec.startsWith("@/") || seenSpec.has(spec)) continue;
+      seenSpec.add(spec);
+      const mod = resolver(spec);
+      if (!mod || mod.path in files) continue;
+      files[mod.path] = mod.source;
+      // Recurse: a graph-provided module has its own first-party imports, and stopping at depth one
+      // would trade "no matching export" for "module not found" one level down.
+      queue.push(mod.source);
+    }
+  }
+}
+
 function vendorLibraryModules(files: Record<string, string>, libResolver?: LibraryModuleResolver): void {
   if (!libResolver) return;
   const seenSpec = new Set<string>();
