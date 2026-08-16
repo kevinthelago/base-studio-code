@@ -603,7 +603,37 @@ bsc plan change note <ref> "<what you learned>" --from <you>
 A note is worth writing WHILE the reasoning is live; reconstructed afterwards it loses the only part
 that mattered.
 
-**4 · Verify — the gate (every command must pass). Unchanged, and still mandatory:**
+**4 · Verify — the gate. TWO TIERS: scoped while you iterate, FULL before it merges.**
+```bash
+npm run gate              # while iterating — only what this change can affect
+npm run gate -- --full    # what step 7 runs; also `npm run gate:full`
+```
+
+`npm run gate` computes the scope and **prints it before running anything**: Rust goes to the changed
+crates plus their transitive dependents (from `cargo metadata`, never a guess), the frontend uses
+`vitest run --changed` (module-graph *affected* tests, not filename matching) and `eslint` on the
+changed files. `tsc --noEmit` always runs unscoped — it is a whole-program check, so "just the changed
+files" is not something it can do, and at 18.7s it is cheap enough to always pay.
+
+**The scoped tier is for ITERATING, and the full one is not optional.** This repo's recurring failure is
+not a gate that fails wrongly — it is a gate that **passes while covering less than the reader assumes**:
+`tsc`+`lint`+`vitest` all green with a live Worker deleted (only `vite build` saw it); retiring one file
+orphaned ten stylesheets with every gate green; twelve pages rendering records that had silently diverged
+from their files; a vitest config change that dropped 8 test files and reported all-passing. Narrowing
+the per-commit gate is defensible **only** because step 7 still runs the unscoped one before anything
+lands — and because the narrowing is printed rather than silent.
+
+**Do not expect a uniform speedup — the scope is the honest answer, not a discount.** Measured
+transitive dependents: `crates/bsc-ui` reaches 2 crates, `crates/data` 11, `src-tauri` 1, and
+`crates/bsc-util` **36 of 40** — so touching a shared util legitimately runs nearly everything. That is
+the scope being *right*.
+
+Changes to `Cargo.toml` (the workspace one), `.cargo/config.toml`, `vitest.config.ts`,
+`vitest.excludes.ts`, `eslint.config.js`, `tsconfig.json`, `package.json` or `rust-toolchain.toml` force
+the FULL gate — each can change the result for files it does not contain. A crate's *own* `Cargo.toml`
+is scoped normally.
+
+The underlying commands, if you need one directly:
 ```bash
 # Frontend (run when src/ changed)
 npm run typecheck                                   # tsc --noEmit, must be clean
@@ -700,6 +730,7 @@ yourself, for the same reason.
 **7 · Verify + integrate** (the reviewing actor, not the one who implemented): confirm each acceptance
 criterion from `bsc plan get <ref>`, then
 ```bash
+npm run gate -- --full                               # the UNSCOPED gate — the scoped one is not enough to land on
 bsc plan status <ref> verified
 git merge --no-ff <ref>                              # into local develop; NEVER pipe this into a chain
 bsc plan change status <ref> merged --command <merge-sha> --from <reviewer>
