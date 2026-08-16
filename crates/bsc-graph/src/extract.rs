@@ -1246,7 +1246,7 @@ mod tests {
     /// human; under-reporting ships a SECOND copy of live state, so the bias is deliberate.
     #[test]
     fn module_state_names_the_mutable_bindings_and_ignores_frozen_ones() {
-        let root = std::env::temp_dir().join(format!("bsc-graph-modstate-{}", std::process::id()));
+        let root = crate::unique_temp("modstate");
         let dir = root.join("src").join("x");
         std::fs::create_dir_all(&dir).unwrap();
         let cases: [(&str, &str, Vec<&str>); 10] = [
@@ -1313,7 +1313,7 @@ export const lbl = createStoreLabel;
     /// `@/features/data`; keeping `/index` gave 13 barrel records a specifier nothing resolves through.
     #[test]
     fn an_index_module_claims_its_directory() {
-        let root = std::env::temp_dir().join(format!("bsc-graph-idxprov-{}", std::process::id()));
+        let root = crate::unique_temp("idxprov");
         for (rel, want) in [
             ("features/data/index.ts", "@/features/data"),
             ("shared/ui/kit/index.tsx", "@/shared/ui/kit"),
@@ -1337,7 +1337,7 @@ export const lbl = createStoreLabel;
     /// resolved through nothing. The `.ts` path was correct throughout, which is exactly what hid it.
     #[test]
     fn a_tsx_module_drops_its_extension_in_the_specifier_it_provides() {
-        let root = std::env::temp_dir().join(format!("bsc-graph-tsx-provides-{}", std::process::id()));
+        let root = crate::unique_temp("tsx-provides");
         let dir = root.join("src").join("app").join("console");
         std::fs::create_dir_all(&dir).unwrap();
         for (name, want) in
@@ -1854,7 +1854,7 @@ mod edge_member_tests {
     /// A tree with ONE real sibling module, so "resolves" and "does not resolve" are both real answers
     /// rather than both being misses.
     fn tree() -> (std::path::PathBuf, std::path::PathBuf) {
-        let root = std::env::temp_dir().join(format!("bsc-graph-edge-{}", std::process::id()));
+        let root = crate::unique_temp("edge");
         let dir = root.join("src/features/designs/lib");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("model.ts"), "export const m = 1;\n").unwrap();
