@@ -47,6 +47,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("cve", "vulnerability data (OSV.dev): scan a lockfile · check a package · advisory detail (supply-chain #2433)"),
     ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance · cve"),
     ("hook", "internal PreToolUse deny hooks (run by Claude Code, not by hand)"),
+    ("version", "which build this binary IS — its build time + path (#92, tells a stale sidecar from a missing verb)"),
 ];
 
 fn top_help() -> String {
@@ -116,6 +117,13 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "cve" => cve::cli::run(rest, "bsc cve"),
         "mcp" => run_mcp(rest),
         "hook" => hook::run(&rest),
+        // #92: "which build am I?" — the question a session had no way to ask, so an unstaged fix and an
+        // unwritten one read identically. Both spellings, because the one you try first is the one that
+        // has to work.
+        "version" | "--version" | "-V" => {
+            println!("{}", bsc_cli_util::version_line("bsc"));
+            Ok(())
+        }
         "" | "help" | "-h" | "--help" => {
             print!("{}", top_help());
             Ok(())

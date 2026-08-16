@@ -38,9 +38,81 @@ pub fn cli_main(prog: &str, run: impl FnOnce() -> Result<(), String>) -> ExitCod
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{prog}: {e}");
+            if names_something_unknown(&e) {
+                eprintln!("{}", stale_binary_hint());
+            }
             ExitCode::FAILURE
         }
     }
+}
+
+/// Does `err` report a verb or flag this binary does not have? The one error class that reads the same
+/// whether the feature was never written or merely never staged.
+///
+/// Matches the shapes the CLIs actually emit — `unknown command 'x'`, `unknown flag '--x'`, and the
+/// qualified `unknown emit command '--x'` — by requiring the message to OPEN with `unknown` and name one
+/// of the two. Anything else is an ordinary error and gets no hint: a store miss or a bad argument is
+/// not ambiguous about which build you are on.
+fn names_something_unknown(err: &str) -> bool {
+    err.starts_with("unknown ") && (err.contains("command") || err.contains("flag"))
+}
+
+/// When this binary was built, and how to replace it — appended to an unknown-verb error.
+///
+/// Designer request #92 filed a suspected false resolution: two fixes were merged and verified, the
+/// reporter retested, and got `unknown flag '--shape'`. The fixes were real; the binary was not. Agent
+/// sessions exec the STAGED sidecar at `~/.base-studio-code/bin/`, which `stage_dev_sidecars` refreshes
+/// from `target/{debug,release}` only at APP BOOT — so a merge that lands mid-session is invisible until
+/// a restart. Nothing in the session could distinguish that from the feature never existing, so the only
+/// move left was to file a regression report.
+///
+/// The build time comes from the running executable's own mtime rather than a compile-time constant: it
+/// needs no build script, and it is the same signal `stale_sidecars` compares, so the two agree.
+fn stale_binary_hint() -> String {
+    let built = std::env::current_exe()
+        .and_then(|p| std::fs::metadata(&p).map(|m| (p, m)))
+        .ok()
+        .and_then(|(p, m)| m.modified().ok().map(|t| (p, t)))
+        .map(|(p, t)| format!("{} (built {})", p.display(), format_stamp(t)))
+        .unwrap_or_else(|| "an unknown build".to_string());
+    format!(
+        "      note: this binary is {built}.\n      \
+         If you expected a newer verb it may just not be STAGED — the app copies \
+         `target/{{debug,release}}` into ~/.base-studio-code/bin at boot, so: `npm run build:plan`, then restart the app."
+    )
+}
+
+/// A `SystemTime` as `YYYY-MM-DD HH:MM:SS` UTC — enough to compare against "when did that land?" without
+/// pulling a date crate into every CLI.
+fn format_stamp(t: std::time::SystemTime) -> String {
+    let secs = match t.duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => d.as_secs() as i64,
+        Err(_) => return "an unknown time".to_string(),
+    };
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    let (h, mi, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    // Civil-from-days (Howard Hinnant's algorithm) — no crate, no leap-second pretence.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02} {h:02}:{mi:02}:{s:02} UTC")
+}
+
+/// The running binary's identity — `bsc version` (#92). Public so each `bsc-*` entry point can answer
+/// "which build am I?" without reimplementing the stamp.
+pub fn version_line(prog: &str) -> String {
+    let (path, built) = std::env::current_exe()
+        .and_then(|p| std::fs::metadata(&p).map(|m| (p, m)))
+        .ok()
+        .and_then(|(p, m)| m.modified().ok().map(|t| (p.display().to_string(), format_stamp(t))))
+        .unwrap_or_else(|| ("<unknown>".to_string(), "an unknown time".to_string()));
+    format!("{prog} {}\n  built {built}\n  path  {path}", env!("CARGO_PKG_VERSION"))
 }
 
 /// Resolve a store path by the shared `--flag` → `$ENV` → `default` precedence:
@@ -1270,5 +1342,49 @@ mod tests {
                 assert!(sibling.join().unwrap(), "a sibling thread must NOT inherit the allow-list");
             });
         });
+    }
+
+    // ── the build stamp (#92) ────────────────────────────────────────────────────────────────────
+    // A designer filed a regression report because two merged fixes were not in their binary and
+    // nothing could tell them so. `unknown flag '--shape'` reads identically whether the feature was
+    // never written or merely never staged.
+
+    #[test]
+    fn only_an_unknown_verb_earns_the_stale_binary_hint() {
+        // The ambiguous class — every shape the CLIs actually emit.
+        assert!(names_something_unknown("unknown command 'shape'"));
+        assert!(names_something_unknown("unknown flag '--shape'"));
+        assert!(names_something_unknown("unknown emit command '--component'"));
+        // Ordinary errors say nothing about which build you are on, so they get no hint.
+        assert!(!names_something_unknown("no record 'card' in the store"));
+        assert!(!names_something_unknown("--top needs a positive integer"));
+        // Not merely a substring search: a message that MENTIONS an unknown verb is not one.
+        assert!(!names_something_unknown("the seed teaches an unknown command it should not"));
+    }
+
+    #[test]
+    fn the_hint_names_the_binary_and_how_to_replace_it() {
+        let h = stale_binary_hint();
+        assert!(h.contains("built "), "carries a build time: {h}");
+        assert!(h.contains("npm run build:plan"), "and the way out: {h}");
+        assert!(h.contains("STAGED"), "names the actual mechanism, not just 'rebuild': {h}");
+    }
+
+    /// The stamp is compared against 'when did that land?', so a wrong date is worse than none.
+    #[test]
+    fn format_stamp_renders_a_known_instant() {
+        let t = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+        assert_eq!(format_stamp(t), "2023-11-14 22:13:20 UTC");
+        assert_eq!(format_stamp(std::time::UNIX_EPOCH), "1970-01-01 00:00:00 UTC");
+        // A leap day, because the civil-from-days conversion is the part that can be subtly wrong.
+        let leap = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_709_164_800);
+        assert!(format_stamp(leap).starts_with("2024-02-29"), "{}", format_stamp(leap));
+    }
+
+    #[test]
+    fn version_line_identifies_the_running_binary() {
+        let v = version_line("bsc");
+        assert!(v.starts_with("bsc "), "{v}");
+        assert!(v.contains("built ") && v.contains("path "), "both halves of the identity: {v}");
     }
 }
