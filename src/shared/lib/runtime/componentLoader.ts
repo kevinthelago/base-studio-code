@@ -23,7 +23,7 @@
 // (`GraphComponent`), so a bad node can never white-screen the shell.
 import type * as Esbuild from "esbuild-wasm";
 import type { ComponentType } from "react";
-import { ensureEsbuild, PREVIEW_DEFINE, PREVIEW_GLOB_BANNER } from "@/shared/lib/preview/componentBundle";
+import { ensureEsbuild, PREVIEW_DEFINE, PREVIEW_GLOB_BANNER, rawImportSpec } from "@/shared/lib/preview/componentBundle";
 import { resolveAppModule, isAppModule, registeredSpecifiers } from "@/shared/lib/runtime/moduleRegistry";
 import { evaluateEntry, linkGraphModules, pruneUnsatisfiableOverrides } from "./graphModules";
 import { log } from "@/shared/lib/core/log";
@@ -119,6 +119,12 @@ export async function compileToCjs(source: string, resolveGraphSource?: GraphSou
 export function makeRequire(): (specifier: string) => unknown {
   return (specifier: string) => {
     if (isAppModule(specifier)) return resolveAppModule(specifier);
+    // #85 — a Vite `?raw` / `?url` import, the same gap the previews have. A record is transcribed from a
+    // real module, so it can carry `?raw` exactly as `persona.ts` does; the suffix means it can never be a
+    // registered specifier, and without this it dies on the throw below. There is no filesystem here, so
+    // the text is empty — but it is a STRING, which is what the importer's contract promised.
+    const raw = rawImportSpec(specifier);
+    if (raw) return { default: raw.query === "url" ? raw.base : "", __esModule: true };
     throw new Error(
       `runtime loader: import "${specifier}" is not a registered app module. ` +
         `Register it (registerAppModule) or author it as a graph record. Available: ${registeredSpecifiers().join(", ")}`,

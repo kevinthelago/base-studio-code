@@ -15,7 +15,8 @@ import { PREVIEW_SHIM_NAMESPACE, shimModuleFor, scanStubImports, previewCspMeta 
 // #79 — ONE loader rule for both bundlers. This copy had drifted to the opposite extensionless
 // default, so the same module could build differently depending on which preview reached it.
 import {
-  loaderFor, PREVIEW_DEFINE, PREVIEW_GLOB_BANNER, type MemLoader,
+  loaderFor, PREVIEW_DEFINE, PREVIEW_GLOB_BANNER, PREVIEW_RAW_NAMESPACE, rawImportSpec, rawModuleSource,
+  rawModuleText, type MemLoader,
 } from "@/shared/lib/preview/componentBundle";
 
 /** esm.sh import-map for the externals (pinned; `deps` params keep React deduped) — the pins live in
@@ -106,6 +107,10 @@ function inMemoryPlugin(files: Record<string, string>): Esbuild.Plugin {
     setup(build) {
       build.onResolve({ filter: /.*/ }, (args) => {
         if (args.kind === "entry-point") return { path: BOOTSTRAP_ENTRY, namespace: "mem" };
+        // #85 — the same `?raw` / `?url` rule the component bundler uses, IMPORTED not restated (the two
+        // copies of the loader rule drifted to opposite defaults once already, #79). Before the externals
+        // check: the query makes a suffixed specifier match nothing, so it would otherwise be stubbed.
+        if (rawImportSpec(args.path)) return { path: args.path, namespace: PREVIEW_RAW_NAMESPACE };
         if (PREVIEW_EXTERNALS.includes(args.path)) return { path: args.path, external: true };
         if (args.path.startsWith(".")) return { path: resolveMemPath(args.importer, args.path, files), namespace: "mem" };
         // #3696: any OTHER bare import resolves to a bundled-in LOCAL shim/stub (never esm.sh at large), so a
@@ -113,6 +118,7 @@ function inMemoryPlugin(files: Record<string, string>): Esbuild.Plugin {
         return { path: args.path, namespace: PREVIEW_SHIM_NAMESPACE };
       });
       build.onLoad({ filter: /.*/, namespace: PREVIEW_SHIM_NAMESPACE }, (args) => ({ contents: shimModuleFor(args.path, stubExports.get(args.path)), loader: "js" }));
+      build.onLoad({ filter: /.*/, namespace: PREVIEW_RAW_NAMESPACE }, (args) => ({ contents: rawModuleSource(rawModuleText(files, args.path)), loader: "js" }));
       build.onLoad({ filter: /.*/, namespace: "mem" }, (args) => {
         const hit = lookupMem(files, args.path);
         if (!hit) return { errors: [{ text: `preview: module not found: ${args.path}` }] };

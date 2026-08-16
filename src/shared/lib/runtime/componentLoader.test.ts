@@ -68,6 +68,22 @@ describe("makeRequire (#3605)", () => {
     expect(req("react")).toBe(React);
     expect(() => req("@/store")).toThrow(/import "@\/store" is not a registered app module/);
   });
+
+  // #85 — a record is transcribed from a real module, so it can carry a Vite `?raw` import exactly as
+  // `persona.ts` does. The `?raw` suffix means the specifier can NEVER be a registered app module, so
+  // before this it hit the throw above and took the whole record down. There is no filesystem at this
+  // layer, so the text is empty — but it is a STRING, which is the shape the importing code was written
+  // against (`overlayRaw(rel, md).trim()`).
+  it("answers a ?raw / ?url import with a string default instead of throwing", () => {
+    const req = makeRequire();
+    const raw = req("@data/fleet/worker-protocol.md?raw") as { default: string };
+    expect(typeof raw.default).toBe("string");
+    expect(raw.default).toBe("");
+    // `?url` carries its own path as the value — still a string.
+    expect((req("@/assets/logo.svg?url") as { default: string }).default).toBe("@/assets/logo.svg");
+    // The suffix is what makes it ours; the unsuffixed specifier still fails loudly.
+    expect(() => req("@data/fleet/worker-protocol.md")).toThrow(/is not a registered app module/);
+  });
 });
 
 describe("pickComponent (#3605)", () => {
