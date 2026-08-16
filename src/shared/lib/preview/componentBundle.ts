@@ -85,6 +85,55 @@ export const PREVIEW_GLOB_BANNER = `var ${PREVIEW_GLOB_SHIM} = () => ({});`;
 /** The `define` map that routes `import.meta.glob(…)` to the shim. */
 export const PREVIEW_DEFINE: Record<string, string> = { "import.meta.glob": PREVIEW_GLOB_SHIM };
 
+/** The namespace a `?raw` / `?url` import is loaded in — see {@link rawImportSpec}. */
+export const PREVIEW_RAW_NAMESPACE = "bsc-raw";
+
+/**
+ * Split Vite's `?raw` / `?url` resource query off `spec`, or `null` when it carries neither.
+ *
+ * THE SECOND VITE-ONLY IMPORT FEATURE (designer request #85), and the same class of gap as
+ * `import.meta.glob` above: `import md from "@data/fleet/worker-protocol.md?raw"` is valid production
+ * code that Vite expands at build time and esbuild has no equivalent for. The suffixed specifier matched
+ * no branch of the resolver — not `@/`, not `@bsc/`, not relative, not a curated external — so it fell
+ * to the universal stub (#3696) and the module's default export became a Proxy black-hole where the
+ * importer's contract promised a STRING. `persona.ts` imports three protocol files that way and
+ * `runtimeFault.ts` four shim templates, so a preview reaching either got a Proxy that quietly answers
+ * every property access instead of text.
+ *
+ * `?url` is handled in the same pass because it is the same mechanism with a different payload, and
+ * leaving it behind would just re-file this request.
+ */
+export function rawImportSpec(spec: string): { base: string; query: "raw" | "url" } | null {
+  const m = /^(.*)\?(raw|url)$/.exec(spec);
+  return m ? { base: m[1], query: m[2] as "raw" | "url" } : null;
+}
+
+/**
+ * The module a `?raw` / `?url` import resolves to: `text` as the default export, always a STRING.
+ *
+ * `text` is the file's real contents when the bundle's own filesystem has it, and `""` when it does not
+ * — an EMPTY STRING, never a stub. That is the honest degradation and the shape that matters: an
+ * importer doing `md.trim()` or `md.split("\n")` gets an empty result rather than a Proxy that answers
+ * every access with a callable, or an `undefined` that throws. Same reasoning as the glob shim returning
+ * `{}`: a preview cannot know what it did not receive, so it supplies the empty value of the right type.
+ */
+export function rawModuleSource(text: string): string {
+  return `export default ${JSON.stringify(text)};\n`;
+}
+
+/** The text a `?raw` / `?url` specifier resolves to, from an in-memory file set. A `?url` yields its own
+ *  base specifier (a path string — nothing in the iframe can fetch it, but the TYPE is what callers use);
+ *  a `?raw` yields the file's contents, or `""` when `files` does not carry it. */
+export function rawModuleText(files: Record<string, string>, spec: string): string {
+  const raw = rawImportSpec(spec);
+  if (!raw) return "";
+  if (raw.query === "url") return raw.base;
+  // `@/…` is the mem filesystem's own key space; anything else (`@data/…`, a relative path) is tried
+  // verbatim, so a vendored file is found wherever the caller keyed it.
+  const hit = lookupMem(files, raw.base.startsWith("@/") ? raw.base.slice(2) : raw.base) ?? lookupMem(files, raw.base);
+  return hit?.contents ?? "";
+}
+
 /** The esbuild loaders a preview module can be built with. */
 export type MemLoader = "jsx" | "tsx" | "ts";
 
@@ -226,6 +275,10 @@ function componentPlugin(files: Record<string, string>, entry: string): Esbuild.
     setup(build) {
       build.onResolve({ filter: /.*/ }, (args) => {
         if (args.kind === "entry-point") return { path: entry, namespace: "mem" };
+        // A Vite `?raw` / `?url` suffix (#85) BEFORE every other branch — the query makes the specifier
+        // match none of them, so without this it fell through to the universal stub and the importer got
+        // a Proxy where its contract promised a string.
+        if (rawImportSpec(args.path)) return { path: args.path, namespace: PREVIEW_RAW_NAMESPACE };
         // `.css` (+ style assets) → an empty module; the app's real styles are injected into the iframe.
         if (/\.(css|scss|sass|less)$/.test(args.path)) return { path: CSS_NOOP, namespace: "empty" };
         // First-party `@/…` → the source file handed in. A registered PLATFORM MODULE (#3897) the files
@@ -255,6 +308,7 @@ function componentPlugin(files: Record<string, string>, entry: string): Esbuild.
         return { path: args.path, namespace: PREVIEW_SHIM_NAMESPACE };
       });
       build.onLoad({ filter: /.*/, namespace: PREVIEW_SHIM_NAMESPACE }, (args) => ({ contents: shimModuleFor(args.path, stubExports.get(args.path)), loader: "js" }));
+      build.onLoad({ filter: /.*/, namespace: PREVIEW_RAW_NAMESPACE }, (args) => ({ contents: rawModuleSource(rawModuleText(files, args.path)), loader: "js" }));
       build.onLoad({ filter: /.*/, namespace: "empty" }, () => ({ contents: "", loader: "js" }));
       build.onLoad({ filter: /.*/, namespace: "mem" }, (args) => {
         const hit = lookupMem(files, args.path);

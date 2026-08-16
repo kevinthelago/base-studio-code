@@ -3,6 +3,7 @@ import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
 import {
   resolveMemPath, lookupMem, loaderFor, stubsBoundaryModule, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureEngineScript, inspectEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
   PREVIEW_DEFINE, PREVIEW_GLOB_BANNER, PREVIEW_GLOB_SHIM,
+  rawImportSpec, rawModuleSource, rawModuleText,
 } from "./componentBundle";
 
 // The esbuild-wasm bundle can't run under jsdom; these cover the PURE pieces (path resolution + srcdoc
@@ -193,6 +194,53 @@ describe("componentBundle — the import.meta.glob shim (#81, designer request)"
 
   it("names a shim unlikely to collide with anything in a bundled module", () => {
     expect(PREVIEW_GLOB_SHIM.startsWith("__bsc")).toBe(true);
+  });
+});
+
+describe("componentBundle — the ?raw / ?url import rule (#85, designer request)", () => {
+  // The SECOND Vite-only import feature. `import md from "@data/fleet/worker-protocol.md?raw"` is valid
+  // production code Vite expands at build time; the suffixed specifier matched no branch of the resolver,
+  // so it fell to the universal stub and the default export was a Proxy where the importer's contract
+  // promised a STRING. `persona.ts` imports three protocol files that way, `runtimeFault.ts` four templates.
+  //
+  // esbuild-wasm cannot initialise under jsdom, so these cover the RULE; that a real build produces a real
+  // string is asserted in Chromium by `e2e/previewShims.spec.ts`.
+
+  it("recognises the ?raw and ?url suffixes and nothing else", () => {
+    expect(rawImportSpec("@data/fleet/worker-protocol.md?raw")).toEqual({ base: "@data/fleet/worker-protocol.md", query: "raw" });
+    expect(rawImportSpec("@/assets/logo.svg?url")).toEqual({ base: "@/assets/logo.svg", query: "url" });
+    // A plain specifier is untouched — every other resolver branch must still see it.
+    expect(rawImportSpec("@/store")).toBeNull();
+    expect(rawImportSpec("react")).toBeNull();
+    expect(rawImportSpec("./sibling.ts")).toBeNull();
+    // A query that is NOT one of the two is not ours to claim (Vite has many; these are the two we serve).
+    expect(rawImportSpec("./worker.ts?worker")).toBeNull();
+    expect(rawImportSpec("./a.json?raw&inline")).toBeNull();
+  });
+
+  it("emits a module whose DEFAULT export is a string", () => {
+    const mod = rawModuleSource("line one\nline two");
+    expect(mod).toContain("export default");
+    // Round-trip through the actual JS the bundler emits, so an escaping bug cannot pass.
+    const value = new Function(mod.replace("export default", "return")) () as unknown;
+    expect(value).toBe("line one\nline two");
+    // Quotes, backslashes and newlines survive — a markdown protocol file carries all three.
+    const tricky = 'a "quoted" \\ path\n`tick` ${notInterpolated}';
+    expect(new Function(rawModuleSource(tricky).replace("export default", "return"))()).toBe(tricky);
+  });
+
+  it("resolves ?raw to the vendored file's text, and to an EMPTY STRING when it has none", () => {
+    const files = { "data/protocol.md": "the protocol", "shared/x.ts": "export const x = 1;" };
+    expect(rawModuleText(files, "@/data/protocol.md?raw")).toBe("the protocol");
+    expect(rawModuleText(files, "data/protocol.md?raw")).toBe("the protocol");
+    // THE DEGRADATION THAT MATTERS: not a stub, not undefined — the empty value of the RIGHT TYPE, so an
+    // importer's `.trim()` / `.split()` returns an empty result instead of answering from a Proxy.
+    expect(rawModuleText(files, "@data/fleet/worker-protocol.md?raw")).toBe("");
+    expect(typeof rawModuleText(files, "@data/fleet/worker-protocol.md?raw")).toBe("string");
+    // `?url` yields its own base specifier — still a string, which is the part callers depend on.
+    expect(rawModuleText(files, "@/assets/logo.svg?url")).toBe("@/assets/logo.svg");
+    // A non-raw specifier never reaches this function, and returns empty if it somehow does.
+    expect(rawModuleText(files, "@/store")).toBe("");
   });
 });
 

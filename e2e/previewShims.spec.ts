@@ -74,6 +74,55 @@ root.appendChild(el);
 export {};
 `;
 
+// `?raw` is the SECOND Vite-only import feature (#85), the same class as `import.meta.glob`. A suffixed
+// specifier matched no resolver branch, so it fell to the universal stub and the default export was a
+// Proxy — every property access answers with a callable, so `md.trim()` yields another Proxy rather than
+// throwing, which is exactly why this went unnoticed. Only a real esbuild run can observe it: the fixture
+// asserts the imported values are STRINGS (vendored text when the file set has it, `""` when it does not)
+// and that string METHODS work on them, which is what `persona.ts`'s `overlayRaw(rel, md).trim()` needs.
+const RAW_FIXTURE = `
+import vendored from "@/data/protocol.md?raw";
+import missing from "@data/fleet/worker-protocol.md?raw";
+import asUrl from "@/data/logo.svg?url";
+const root = document.getElementById("root");
+let out;
+try {
+  out = [
+    typeof vendored, vendored.trim(), vendored.split("\\n").length,
+    typeof missing, JSON.stringify(missing),
+    typeof asUrl,
+  ].join(",");
+} catch (e) {
+  out = "ERR:" + (e && e.message);
+}
+const el = document.createElement("div");
+el.id = "marker";
+el.textContent = out;
+root.appendChild(el);
+export {};
+`;
+
+test("a ?raw import resolves to the file's TEXT as a string, never a stub (#85)", async ({ page }: { page: Page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
+  page.on("pageerror", (e) => consoleErrors.push(String(e)));
+
+  await page.goto(HARNESS);
+  await page.waitForFunction(() => !!window.__previewHarness);
+  // `data/protocol.md` IS vendored, `@data/fleet/worker-protocol.md` is NOT — so one arm proves real text
+  // comes through and the other proves the honest degradation is an empty STRING, not a Proxy.
+  await page.evaluate((src) => window.__previewHarness!.mountFiles!({
+    "fixture.ts": src,
+    "data/protocol.md": "  the protocol\nsecond line  ",
+  }, "fixture.ts"), RAW_FIXTURE);
+
+  const frame = await (await page.locator("#preview").elementHandle())!.contentFrame();
+  const marker = await frame!.evaluate(() => document.getElementById("marker")?.textContent ?? "");
+  // string + a working .trim() + a working .split() · string + "" for the unvendored one · string for ?url.
+  expect(marker).toBe('string,the protocol\nsecond line,2,string,"",string');
+  expect(consoleErrors.filter((e) => /resolve module|module not found/i.test(e))).toEqual([]);
+});
+
 test("an index module resolves its OWN siblings, not its parent's (the kit barrel, #57)", async ({ page }: { page: Page }) => {
   const consoleErrors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
