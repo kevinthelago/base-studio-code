@@ -10,7 +10,16 @@ bsc-util = { path = "../bsc-util" }
 # The DATA GRAPH (the-data-graph-a-global-third-pillar) — `doctor` holds a node to the entities it
 # declares, so it must be able to READ the entity store. One-way: bsc-data knows nothing of the
 # algorithms graph.
-bsc-data = { path = "../data" }
+#
+# `default-features = false` is LOAD-BEARING, not tidiness. `bsc_data::entity` is the verbatim-JSON
+# store and is NOT behind `duckdb-store`, so the two symbols this crate uses — `entity::open` and
+# `entity::list` — cost nothing. With the default on, `duckdb` + `libduckdb-sys` + 11 arrow crates
+# came with them, and through THIS crate they reached bsc-ui, bsc-files and bsc-component too — so
+# `cargo check -p bsc-ui` compiled the bundled DuckDB C++ amalgamation (280 objects, a ~614 MB
+# libduckdb.a) in a crate that has nothing to do with the data platform. Measured on a cold
+# worktree, `cargo check -p bsc-ui`: 2m28s with the default, 20.8s without. plandb already did
+# this; this crate was the leak.
+bsc-data = { path = "../data", default-features = false }
 
 # The shared FS-confinement gate (#3475) — `require_within_repo_root`, the CLI twin of the
 # `bsc-confine` hook, so a harvest cannot read outside a confined session's root.

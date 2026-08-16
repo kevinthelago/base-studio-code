@@ -635,6 +635,16 @@ subcommand crate exposes `cli::run(args, prog)`, so the crate's own tests reach 
 linking the unified binary. (Splitting `bsc` into smaller binaries does **not** help — the cost is
 compiling dependencies, not linking, and each split binary would still pull DuckDB and arrow.)
 
+**Which crates cost what — DuckDB is the dividing line.** Bundled DuckDB is ~1.8 GB of build output and
+one to two minutes of C++ per worktree, and cargo unifies features per *invocation*, so a scoped
+`-p` command pays it only if that crate's own dependency tree asks for it. `bsc-graph`, `bsc-ui`,
+`bsc-files`, `bsc-component` and `bsc-cad` do **not** — `bsc-graph` takes `bsc-data` with
+`default-features = false`, since the only thing it needs there (`bsc_data::entity`) is a JSON store that
+reaches no database. Keep it that way: re-adding the default feature to any of them quietly puts the whole
+DuckDB amalgamation back into their iteration loop. Measured on a cold worktree, `cargo check -p bsc-ui`:
+**2m28s before that change, 20.8s after.** The crates that genuinely pay are `bsc-data`, `bsc` and
+`base-studio-code`, plus any `--workspace` command — which is why the gate is slower than the loop.
+
 Record what each gate ACTUALLY did, as it runs — evidence, not a claim:
 ```bash
 bsc plan change gate <ref> typecheck pass
