@@ -306,12 +306,18 @@ fn is_error_prop(name: &str, ty: &str) -> bool {
     !is_fn && matches!(name.to_lowercase().as_str(), "error" | "err" | "iserror" | "haserror")
 }
 
-/// The packaged `bsc/react-ui` kit artifact — the SAME embedded `react-ui.json` the kit store + the
-/// vendored-source emit read (`bsc_ui::kit::PACKAGED_KIT_JSON`). Embedded here too because this crate
-/// can't depend on `bsc-ui` (that edge would cycle), so the buildability check can cross-reference a
-/// component's `src` against the artifact roster with no fs/network — exactly like the frontend's raw
+/// The packaged `bsc/react-ui` kit artifact — the SAME `react-ui.json` the kit store + the vendored-
+/// source emit read (`bsc_ui::kit::packaged_kit_json`). Read here too because this crate can't depend
+/// on `bsc-ui` (that edge would cycle), so the buildability check can cross-reference a component's
+/// `src` against the artifact roster — exactly like the frontend's raw
 /// `@data/components/react-ui.json` import that `componentPreviewFiles` resolves a built-in against.
-const PACKAGED_KIT_JSON: &str = include_str!("../../../src-tauri/data/components/react-ui.json");
+///
+/// LOADED AT RUNTIME rather than `include_str!`'d (see [`bsc_util::packaged`]) — this was one of the
+/// two crates a 5.3 MB record edit used to recompile.
+fn packaged_kit_json() -> &'static str {
+    static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    V.get_or_init(|| bsc_util::packaged::read_required("components/react-ui.json")).as_str()
+}
 
 /// The preview import-map (`src-tauri/data/ui/preview-importmap.json`) — the SAME json the frontend
 /// `componentBundle` uses. Its KEYS are the specifiers the preview iframe can resolve; a bare import not
@@ -380,11 +386,17 @@ pub(crate) fn platform_modules() -> &'static BTreeSet<String> {
 }
 
 /// The algorithms knowledge seed (`src-tauri/data/knowledge/algorithms.json`) — the SAME json the frontend
-/// (`@data/knowledge/algorithms.json`) + `bsc graph` embed. Embedded here so the THIRD import-resolution
-/// class (#3116) — a `@bsc/algorithms/<name>` cross-graph reference — is recognized with no fs/network: a
+/// (`@data/knowledge/algorithms.json`) + `bsc graph` read. Read here so the THIRD import-resolution
+/// class (#3116) — a `@bsc/algorithms/<name>` cross-graph reference — is recognized without a network
+/// round-trip: a
 /// reference matching a real TS algorithm resolves (the preview vendors its code) and is NEVER flagged; a
 /// `@bsc/algorithms/<missing>` is. The Rust twin of `libraryModules.ts` / `graphHealth.ts`.
-const ALGORITHMS_JSON: &str = include_str!("../../../src-tauri/data/knowledge/algorithms.json");
+/// LOADED AT RUNTIME rather than `include_str!`'d (see [`bsc_util::packaged`]) — 2.6 MB whose edits
+/// used to recompile this crate and `bsc-graph`.
+fn algorithms_json() -> &'static str {
+    static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    V.get_or_init(|| bsc_util::packaged::read_required("knowledge/algorithms.json")).as_str()
+}
 
 /// The DEFAULT sound kit seed (`src-tauri/data/sounds/signal.json`) — the kit an UNPINNED project resolves
 /// `@bsc/sounds/<id>` against, the twin of the frontend's `SoundKitSelection::default` arm. A project whose
@@ -431,7 +443,7 @@ fn is_library_specifier(spec: &str) -> bool {
 /// "resolves". Mirrors the resolvable set behind `libraryModuleResolver` (libraryModules.ts).
 fn algo_library_names() -> &'static BTreeSet<String> {
     static N: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
-    N.get_or_init(|| algo_library_names_from(ALGORITHMS_JSON))
+    N.get_or_init(|| algo_library_names_from(algorithms_json()))
 }
 
 /// Pure over the seed JSON text (testable without the embed): the bare names + exact ids of every
@@ -714,7 +726,7 @@ fn erased_specifiers(source: &str) -> BTreeSet<String> {
 /// against. Cached: parsed once from the embedded artifact.
 fn buildable_srcs() -> &'static BTreeSet<String> {
     static ROSTER: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
-    ROSTER.get_or_init(|| artifact_buildable_srcs(PACKAGED_KIT_JSON))
+    ROSTER.get_or_init(|| artifact_buildable_srcs(packaged_kit_json()))
 }
 
 /// Collect the `src` of every component in a kit-artifact JSON that carries a non-empty `source` (a
@@ -758,8 +770,8 @@ fn artifact_runtime_paths(artifact_json: &str) -> BTreeSet<String> {
 fn internal_targets() -> &'static BTreeSet<String> {
     static T: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
     T.get_or_init(|| {
-        let mut s = artifact_buildable_srcs(PACKAGED_KIT_JSON);
-        s.extend(artifact_runtime_paths(PACKAGED_KIT_JSON));
+        let mut s = artifact_buildable_srcs(packaged_kit_json());
+        s.extend(artifact_runtime_paths(packaged_kit_json()));
         s
     })
 }

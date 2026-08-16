@@ -35,6 +35,10 @@ pub mod dangerous;
 /// load-bearing and deliberately unchanged.
 pub mod deny;
 
+/// Packaged seed data resolved at RUNTIME rather than `include_str!`'d, so a record edit is no
+/// longer a Rust invalidation. See the module docs for the measurements that motivated it.
+pub mod packaged;
+
 /// The user's home directory, resolved WITHOUT a `dirs`/`home` crate.
 ///
 /// # Precedence (the fix for #1646)

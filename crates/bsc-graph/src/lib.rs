@@ -41,7 +41,14 @@ pub(crate) fn unique_temp(tag: &str) -> PathBuf {
 }
 
 /// The packaged seed — the SAME file the frontend reads via `@data/knowledge/algorithms.json`.
-pub const GRAPH_JSON: &str = include_str!("../../../src-tauri/data/knowledge/algorithms.json");
+///
+/// LOADED AT RUNTIME rather than `include_str!`'d (see [`bsc_util::packaged`]): at 2.6 MB it made
+/// every algorithms-record edit recompile this crate and everything downstream of it. Cached in a
+/// `OnceLock` and handed out as `&'static str`, so callers are unchanged.
+pub fn graph_json() -> &'static str {
+    static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    V.get_or_init(|| bsc_util::packaged::read_required("knowledge/algorithms.json")).as_str()
+}
 
 /// The tiers an implementation may carry (#2863) — validated on `impl set`. A `primitive` is a LANGUAGE
 /// built-in (free-standing); an `algorithm` composes them up.
@@ -50,7 +57,7 @@ pub const ROLES: [&str; 2] = ["primitive", "algorithm"];
 /// Parse the embedded packaged seed. Panics only if the packaged JSON is malformed — a build-time
 /// invariant the tests guard.
 pub fn seed() -> Value {
-    serde_json::from_str(GRAPH_JSON).expect("packaged algorithms.json is valid JSON")
+    serde_json::from_str(graph_json()).expect("packaged algorithms.json is valid JSON")
 }
 
 /// The writable store path — `BSC_GRAPH_STORE` if set, else `~/.base-studio-code/knowledge/algorithms.json`.
