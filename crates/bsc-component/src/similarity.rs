@@ -362,6 +362,37 @@ fn overlaps(a: &BTreeSet<String>, b: &BTreeSet<String>) -> Option<f64> {
     (!a.is_empty() && !a.is_disjoint(b)).then_some(1.0)
 }
 
+/// Handle (lowercased name AND id) → per kit, everything a `composes` entry could resolve to. `composes`
+/// entries arrive lowercased (see `str_array`), so both sides are folded to lowercase.
+fn handles_by_kit(comps: &[Comp]) -> std::collections::BTreeMap<&str, BTreeSet<String>> {
+    let mut out: std::collections::BTreeMap<&str, BTreeSet<String>> = std::collections::BTreeMap::new();
+    for c in comps {
+        let e = out.entry(c.kit.as_str()).or_default();
+        e.insert(c.name.to_lowercase());
+        e.insert(c.id.to_lowercase());
+    }
+    out
+}
+
+/// `c`'s `composes` entries that resolve to NOTHING in its own kit — a FORWARD REFERENCE to a component
+/// nobody has authored (#89). Two records sharing one are not evidence of a shared implementation: they
+/// are evidence of a shared INTENTION to extract one, which is a different finding with a different fix.
+fn dangling_composes(c: &Comp, handles: &std::collections::BTreeMap<&str, BTreeSet<String>>) -> BTreeSet<String> {
+    let known = handles.get(c.kit.as_str());
+    c.composes
+        .iter()
+        .filter(|dep| !dep.trim().is_empty() && !known.is_some_and(|k| k.contains(*dep)))
+        .cloned()
+        .collect()
+}
+
+/// The contract score with ONE term removed — how the pair scores on the evidence that remains. Used to
+/// ask whether a shared forward reference is the only thing holding a near-duplicate pair together (#89).
+fn contract_score_without(a: &Comp, b: &Comp, drop_label: &str) -> f64 {
+    let kept: Vec<Term> = contract_terms(a, b).into_iter().filter(|t| t.label != drop_label).collect();
+    mean(&kept)
+}
+
 /// The weighted mean of `terms` over the ones carrying signal.
 fn mean(terms: &[Term]) -> f64 {
     let den: f64 = terms.iter().filter(|t| t.value.is_some()).map(|t| t.weight).sum();
@@ -535,6 +566,8 @@ pub fn provides_collision_findings(components: &[Value]) -> Vec<Finding> {
 /// most-similar first.
 pub fn near_duplicate_findings(components: &[Value], threshold: f64) -> Vec<Finding> {
     let comps: Vec<Comp> = components.iter().filter_map(parse).collect();
+    let handles = handles_by_kit(&comps);
+    let dangling: Vec<BTreeSet<String>> = comps.iter().map(|c| dangling_composes(c, &handles)).collect();
     let mut scored: Vec<(f64, Finding)> = Vec::new();
     for i in 0..comps.len() {
         for j in (i + 1)..comps.len() {
@@ -543,6 +576,24 @@ pub fn near_duplicate_findings(components: &[Value], threshold: f64) -> Vec<Find
                 continue;
             }
             let Some(sc) = score(a, b) else { continue };
+            // #89 — a shared FORWARD REFERENCE is not shared code. Two records both declaring
+            // `composes: ["GhItemRow"]` against a component that exists nowhere score `composes = 1.0`,
+            // because the term is a raw string-set Jaccard that never asks whether the name resolves. When
+            // that fabricated agreement is the only thing carrying the pair over the bar, the whole finding
+            // is an artifact — and its "merge X into Y" is worse than useless here, because the preview
+            // sandbox forbids the first-party import a literal merge would need. The real fix, every time,
+            // is to AUTHOR the record the reference already names, which `dangling-composes-reference`
+            // (graph_health) now says. So: drop the pair when it cannot stand without the term, and when it
+            // CAN, lead with the extraction rather than the impossible merge.
+            let shared_forward: Vec<&str> =
+                dangling[i].intersection(&dangling[j]).map(String::as_str).collect();
+            if !shared_forward.is_empty() {
+                let without = contract_score_without(a, b, "composes");
+                let overall = 0.5 * sc.name + 0.5 * without;
+                if overall < threshold && sc.name < HIGH_NAME_MATCH && without < HIGH_CONTRACT_MATCH {
+                    continue;
+                }
+            }
             // Flag when the combined signal clears the bar, OR when EITHER half is strong on its own:
             //   • a high NAME with a low contract (`Donut` vs `DonutChart`, built differently) is the
             //     "same concept, different implementation" refactor opportunity;
@@ -586,10 +637,20 @@ pub fn near_duplicate_findings(components: &[Value], threshold: f64) -> Vec<Find
                         "`{}` ({}) and `{}` ({}): name {:.0}% / contract {:.0}% — {kind}",
                         a.name, a.kit, b.name, b.kit, sc.name * 100.0, sc.contract * 100.0
                     ),
-                    suggested_action: {
+                    suggested_action: if shared_forward.is_empty() {
                         let (from, into) = merge_sides(loser, keeper);
                         format!(
                             "propose merging {from} into {into} ({keeper_why}); inspect with `bsc ui similar {}` — NOT auto-fixed (propose-only)",
+                            keeper.id
+                        )
+                    } else {
+                        // The pair stands on real evidence, but it ALSO shares a forward reference — and
+                        // that extraction is the fix that is actually possible in the preview sandbox, so
+                        // it leads. See the #89 note above.
+                        format!(
+                            "author the canonical {} record{} both already name in `composes` — that extraction IS the consolidation here, and a literal merge is not available (the preview sandbox forbids the first-party import it would need). Inspect with `bsc ui similar {}` — NOT auto-fixed (propose-only)",
+                            shared_forward.iter().map(|d| format!("`{d}`")).collect::<Vec<_>>().join(", "),
+                            if shared_forward.len() == 1 { "" } else { "s" },
                             keeper.id
                         )
                     },
@@ -694,6 +755,7 @@ fn cluster_findings(pairs: Vec<Finding>, comps: &[Comp]) -> Vec<Finding> {
         }
     }
     let by_id: std::collections::BTreeMap<&str, &Comp> = comps.iter().map(|c| (c.id.as_str(), c)).collect();
+    let handles = handles_by_kit(comps);
     let mut clustered: Vec<Finding> = Vec::new();
     let mut absorbed: BTreeSet<String> = BTreeSet::new();
     for group in groups {
@@ -720,6 +782,23 @@ fn cluster_findings(pairs: Vec<Finding>, comps: &[Comp]) -> Vec<Finding> {
         let names: Vec<String> = comps_in.iter().map(|c| c.name.clone()).collect();
         let kits: BTreeSet<&str> = comps_in.iter().map(|c| c.kit.as_str()).collect();
         let shared_list = shared.iter().map(|h| format!("`{h}`")).collect::<Vec<_>>().join(", ");
+        // #89 — the DECLARED counterpart of a vendored local helper: every member names the same
+        // not-yet-authored component in `composes`. The group has already agreed what to extract, so the
+        // consolidation advice names it instead of leaving the reader to find it.
+        let forward: BTreeSet<String> = comps_in
+            .iter()
+            .map(|c| dangling_composes(c, &handles))
+            .reduce(|a, b| a.intersection(&b).cloned().collect())
+            .unwrap_or_default();
+        let forward_note = if forward.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " — all {n} already declare `composes: [{}]`, naming a component that does not exist yet, so authoring {} IS the consolidation they were reaching for",
+                forward.iter().cloned().collect::<Vec<_>>().join(", "),
+                if forward.len() == 1 { "it" } else { "them" },
+            )
+        };
         clustered.push(Finding {
             category: "near-duplicate-cluster",
             severity: 3,
@@ -736,12 +815,12 @@ fn cluster_findings(pairs: Vec<Finding>, comps: &[Comp]) -> Vec<Finding> {
             },
             suggested_action: if shared.is_empty() {
                 format!(
-                    "propose consolidating these {n} into one component; inspect with `bsc ui similar {}` — NOT auto-fixed (propose-only)",
+                    "propose consolidating these {n} into one component{forward_note}; inspect with `bsc ui similar {}` — NOT auto-fixed (propose-only)",
                     group[0]
                 )
             } else {
                 format!(
-                    "extract {shared_list} into ONE component and compose it from all {n}; inspect with `bsc ui similar {}` — NOT auto-fixed (propose-only)",
+                    "extract {shared_list} into ONE component and compose it from all {n}{forward_note}; inspect with `bsc ui similar {}` — NOT auto-fixed (propose-only)",
                     group[0]
                 )
             },
@@ -819,6 +898,75 @@ mod tests {
             $(m.insert($k.to_string(), json!($v));)*
             m
         }};
+    }
+
+    // ── shared FORWARD REFERENCE (#89) ───────────────────────────────────────────────────────────────
+    // `composes` is a raw string-set Jaccard that never asks whether a name resolves, so two records both
+    // naming a component nobody authored score 1.0 on it. That agreement is fabricated, and the merge it
+    // helps propose is impossible in the preview sandbox.
+
+    /// A pair the fabricated term CARRIES must not be reported at all — and the very same pair, once the
+    /// reference resolves, must be reported exactly as before. Both halves matter: the first is the fix,
+    /// the second is the proof it did not degrade into "composes never counts".
+    ///
+    /// The fixture sits DELIBERATELY close to the bar (overall 0.561 with the term, 0.501 without), because
+    /// a 0.15-weight term can only ever be decisive there — that is the whole population this guard is
+    /// about. If a re-weighting of `contract_terms` breaks this test, that is the test working: it means
+    /// the term's decisiveness moved, and this behaviour needs re-measuring rather than re-asserting.
+    #[test]
+    fn a_pair_held_together_only_by_a_shared_forward_reference_is_not_reported() {
+        let a = comp_with("alpha", "AlphaGroup", "k", fields!{ "composes": ["GhItemRow"] });
+        let b = comp_with("beta", "BetaGroup", "k", fields!{ "composes": ["GhItemRow"] });
+        let props = |names: &[&str]| {
+            names.iter().map(|p| json!({ "name": p, "type": "any" })).collect::<Vec<_>>()
+        };
+        let (mut a, mut b) = (a, b);
+        a["props"] = json!(props(&["items", "label", "count"]));
+        b["props"] = json!(props(&["items", "label", "title"]));
+
+        let f = near_duplicate_findings(&[a.clone(), b.clone()], DEFAULT_THRESHOLD);
+        assert!(
+            !f.iter().any(|x| x.category == "near-duplicate"),
+            "a shared reference to a component that does not exist is not shared code: {f:?}",
+        );
+        // The moment the reference RESOLVES, the agreement is real and the pair scores on it like any other.
+        let row = comp_with("ghitemrow", "GhItemRow", "k", fields!{ "srcText": "export function GhItemRow(){ return <li/>; }" });
+        let with_row = near_duplicate_findings(&[a, b, row], DEFAULT_THRESHOLD);
+        assert!(
+            with_row.iter().any(|x| x.category == "near-duplicate" && x.node_ids.contains(&"alpha".to_string())),
+            "once the reference resolves the pair is scored on it normally: {with_row:?}",
+        );
+    }
+
+    /// REGRESSION, designer request #89 — the real case. `GhGroup`/`GhReposGroup` were harvested from ONE
+    /// file and vendor the same inline body, so they are a genuine near-duplicate on `src`/`folder`/source
+    /// and the pair SURVIVES. What must change is the advice: a literal merge is not available (the preview
+    /// sandbox forbids the first-party import it needs), and authoring the `GhItemRow` both already name is
+    /// what actually resolved it.
+    #[test]
+    fn a_surviving_pair_that_shares_a_forward_reference_proposes_the_extraction_not_a_merge() {
+        let body = "function GhItemRow(p){ return <li>{p.label}</li>; }\nexport function GhGroup(p){ return <ul>{p.items.map(i => <GhItemRow label={i}/>)}</ul>; }";
+        let other = format!("{body} // repos variant");
+        let a = comp_with("ghgroup", "GhGroup", "harvested", fields!{
+            "composes": ["GhItemRow"], "srcText": body,
+            "src": "session/GitHubStructureCard.tsx", "folder": "session",
+        });
+        let b = comp_with("ghreposgroup", "GhReposGroup", "harvested", fields!{
+            "composes": ["GhItemRow"], "srcText": other,
+            "src": "session/GitHubStructureCard.tsx", "folder": "session",
+        });
+        let f = near_duplicate_findings(&[a, b], DEFAULT_THRESHOLD);
+        let nd = f.iter().find(|x| x.category == "near-duplicate").expect("same file + same body is a real pair");
+        assert!(
+            nd.suggested_action.contains("ghitemrow"),
+            "the action names the record to author: {}",
+            nd.suggested_action,
+        );
+        assert!(
+            !nd.suggested_action.contains("propose merging"),
+            "the impossible merge is not what it proposes: {}",
+            nd.suggested_action,
+        );
     }
 
     #[test]
@@ -1233,5 +1381,3 @@ mod tests {
         assert!(rank_similar("nope", &comps, 10, 0.0).is_empty());
     }
 }
-
-

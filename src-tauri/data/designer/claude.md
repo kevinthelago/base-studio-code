@@ -529,7 +529,10 @@ Each component record carries:
   matches where it lives in the graph.
 - **Composes reachability**: every non-page component should be reachable from a `page` (or
   `layout`) through the `composes` graph — an orphan is either dead weight or mis-roled. Every
-  `composes` entry names a real component in the kit.
+  `composes` entry names a real component **in the same kit** — `composes` never resolves across
+  kits, and an entry that resolves to nothing is dropped rather than drawn, so the graph reads as
+  complete while the reference names nothing. `bsc ui doctor` enforces this as
+  **dangling-composes-reference** (#89).
 - **One component per job**: before adding a component, `bsc ui list` and search for an existing
   one — extend it with a variant (rung 3) rather than duplicating it.
 - **Variants over forks**: a visual tweak is a new `variant` on the existing component, not a new
@@ -590,6 +593,14 @@ real defect to fix, not a note to skim:
   by a live component first.
 - **orphan** — an isolated, never-referenced primitive/composite (nothing composes it, `used = 0`).
   Either compose it into a page/layout (it was mis-roled or left unwired) or prune it.
+- **dangling-composes-reference** — a `composes` entry naming no component in the kit. Read which of
+  the two cases the finding names, because their fixes are opposites. If it exists **nowhere**, the
+  reference is a forward reference to an extraction that was intended and never done: **author the
+  canonical record it already names** (`bsc ui set <id>`) — that IS the fix, and it is the one the
+  sandbox allows. Never "merge the composers into each other" instead: several records vendoring one
+  body is the *symptom*, and the preview sandbox forbids the first-party import a literal merge would
+  need. If it exists **in another kit**, the record is already written and this kit simply cannot
+  reach it — add it to this kit or move the composer; do not author a second copy.
 - **no buildable implementation** — a component you authored as a spec with no real source, so the
   preview has nothing to render. Give it a **real, self-contained module** — imports ONLY libraries,
   exports the component — so it previews, or remove it. A usage-snippet `srcText` (how to CALL the

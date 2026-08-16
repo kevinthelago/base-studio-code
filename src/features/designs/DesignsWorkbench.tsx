@@ -372,10 +372,13 @@ export function DesignsWorkbench() {
     setHealthFindings(NO_FINDINGS);
     return runWhenIdle(() => {
       setHealthFindings(
-        timedSync("designs:health", () => [...analyzeGraphHealth(kitComps, libResolver), ...analyzeMotion(kitComps)], PHASE_MS),
+        // `components` (the WHOLE library, not just this kit) is passed so the dangling-composes finding
+        // can tell "names nothing anywhere" from "lives in another kit" — two dropped edges whose fixes are
+        // opposites (#89). Analysis still runs over `kitComps`; the library is a lookup, not a subject.
+        timedSync("designs:health", () => [...analyzeGraphHealth(kitComps, libResolver, components), ...analyzeMotion(kitComps)], PHASE_MS),
       );
     });
-  }, [kitComps, libResolver]);
+  }, [kitComps, libResolver, components]);
   const nodeHealth = useMemo(() => {
     const m = new Map<string, HealthCategory>();
     const consider = (id: string, cat: HealthCategory) => {

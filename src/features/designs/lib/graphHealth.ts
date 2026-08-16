@@ -3,7 +3,9 @@
 // epic #2677). Same taxonomy, same rules; operates on ONE kit's components (the Design Studio already
 // scopes `kitComps` to the active kit, and `composes` edges only resolve within a kit).
 //
-// Findings, most-severe first: cycle (a `composes` loop) · dangling-branch (an unused root that still
+// Findings, most-severe first: cycle (a `composes` loop) · dangling-composes-reference (a `composes` entry
+// naming no component in the kit — the edge is silently dropped, so the graph reads as complete while the
+// reference names nothing, #89) · dangling-branch (an unused root that still
 // pulls in dependencies) · duplicate (same `wraps` intrinsic, or identical source) · no-implementation
 // (a component the preview can't build — a spec, not code) · self-reference (an own-module component
 // whose only rendered element is itself, <Name/> — a self-referential stub that passes the buildability
@@ -633,6 +635,9 @@ const INTERNAL_TARGETS = new Set<string>([
 
 export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
+  // dangling-composes-reference (#89) — a `composes` entry naming no component in the kit, by name or id.
+  // The edge builder drops it, so the graph reads as complete while the reference names nothing.
+  | "dangling-composes-reference"
   | "stubbed-import" // #3696 — a bare npm import rendered via a local shim/stub (sev 1, not an error)
   | "hardcoded-color" // #3704 — hardcodes color literals + no theme token (not wired to the theme, sev 1)
   | "reimplementation" | "reimplemented-component" | "orphan" | "unwired-prop"
@@ -678,6 +683,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   reimplementation: 3,
   "reimplemented-component": 3,
   orphan: 2,
+  "dangling-composes-reference": 2,
   "unwired-prop": 2,
   "props-metadata-mismatch": 2,
   "phantom-compose": 2,
@@ -718,6 +724,7 @@ export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string
   reimplementation: { glyph: "♻", label: "reimplements a library node — compose it via @bsc/… instead of re-coding it" },
   "reimplemented-component": { glyph: "⧉", label: "re-declares a component that already exists — the preview renders the local stub, not the real node" },
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
+  "dangling-composes-reference": { glyph: "⇠", label: "dangling composes — names a component that is not in this kit; the edge is dropped, so the graph looks complete while the reference resolves to nothing" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
   "props-metadata-mismatch": { glyph: "≠", label: "props metadata disagrees with the signature its own source declares — the preview samples from `props`, so a stale (or empty) list gives it nothing to sample" },
   "phantom-compose": { glyph: "⇢", label: "phantom composes — declares a composition its source never renders (a false graph edge)" },
@@ -802,6 +809,12 @@ export function analyzeGraphHealth(
   // stays pure; the Rust twin takes the same kit via `HealthOptions::sound_kit_json`, so a reference that
   // resolves here resolves there.
   libResolver: LibraryModuleResolver = libraryModuleResolver,
+  // The WHOLE library, when the caller has it (#89). `composes` resolves within a kit, so an entry naming a
+  // component that lives only in ANOTHER kit still draws no edge — but it is a different defect from one
+  // naming nothing at all, and the two have opposite fixes. Omit it and the dangling-composes finding stays
+  // true but unqualified ("no component in this kit"), never guessing which of the two it is. The Rust twin
+  // always has this, because `analyze_with` sees every kit before it buckets them.
+  library?: readonly ComponentRecord[],
 ): HealthFinding[] {
   const nameById = new Map(comps.map((c) => [c.id, c.name]));
   const edges = buildComposesEdges(comps);
@@ -815,6 +828,48 @@ export function analyzeGraphHealth(
   const nameOf = (id: string) => nameById.get(id) ?? id;
 
   const findings: HealthFinding[] = [];
+
+  // dangling-composes-reference (#89) — a `composes` entry naming NO component in the kit, by name OR by id.
+  // `buildComposesEdges` DROPS an unresolved name ("no dangling graph edges"), so the graph draws nothing and
+  // reads as complete while the record claims a composition of something that is not there. It is the
+  // standard the designer doc has always stated ("every `composes` entry names a real component in the kit")
+  // and the one thing nothing checked — so the name is recomputed here rather than read off the edges.
+  //
+  // It gets its OWN category because the finding it used to surface as was actively misleading: two
+  // components sharing a forward reference score as a fuzzy near-DUPLICATE pair (their prop shapes align
+  // around the child they both mean to extract), and that finding's "merge X into Y" is not merely less
+  // useful — it is impossible, since the preview sandbox forbids the first-party import a literal merge
+  // would need. Grouped by the MISSING name, because the fix is one record, not one per composer.
+  // Rust twin: the dangling-composes-reference loop in graph_health.rs.
+  const kitHandles = new Set<string>(comps.flatMap((c) => [c.name, c.id]));
+  const kitId = comps[0]?.kitId ?? "";
+  const dangling = new Map<string, ComponentRecord[]>();
+  for (const c of comps) {
+    for (const dep of c.composes) {
+      if (!dep.trim() || kitHandles.has(dep)) continue;
+      (dangling.get(dep) ?? dangling.set(dep, []).get(dep)!).push(c);
+    }
+  }
+  for (const [missing, composers] of [...dangling].sort(([a], [b]) => a.localeCompare(b))) {
+    const names = composers.map((c) => c.name);
+    const one = composers.length === 1;
+    // Where else does the name live? Only answerable when the caller passed the library.
+    const elsewhere = library
+      ? [...new Set(library.filter((c) => c.name === missing || c.id === missing).map((c) => c.kitId))]
+          .filter((k) => k !== kitId)
+          .sort()
+      : null;
+    const tail = elsewhere === null
+      ? "no component in this kit carries that name or id"
+      : elsewhere.length === 0
+        ? "no component ANYWHERE in the library carries that name or id — the reference names something that does not exist"
+        : `no component in THIS kit carries that name or id — it exists in ${elsewhere.length === 1 ? "another kit" : "other kits"} (${elsewhere.join(", ")}), and \`composes\` only ever resolves within one kit`;
+    findings.push({
+      category: "dangling-composes-reference", severity: 2,
+      nodeIds: composers.map((c) => c.id), nodeNames: names,
+      why: `${composers.length} component${one ? "" : "s"} (${names.join(", ")}) declare${one ? "s" : ""} they compose \`${missing}\`, but ${tail} — the edge resolves to nothing and is silently dropped, so the graph reads as complete`,
+    });
+  }
 
   // cycles
   const onCycle = cycleNodes(comps.map((c) => c.id), out);
