@@ -162,10 +162,44 @@ node scripts/fix-stale-mocks.mjs                # see below
 node scripts/dev-boot-check.mjs                 # boots vite + Chromium; catches what no test does
 ```
 
-**Keep the colocated test.** Its relative import is rewritten to `@/…`, after which it tests the record
-that actually ships — better coverage than it had. Deleting it moves the assertions into the record's
-`tests` data, where nothing in the gate executes them; that cost 31 assertions before anyone noticed.
-`retiredTests.test.ts` enforces it.
+### The colocated test — either copy may run, but one of them must
+
+A retired module's tests have to keep **executing**. There are two ways to satisfy that, and the rule is
+only that you pick one:
+
+| | what runs | when to choose it |
+|---|---|---|
+| **keep the file** | `src/x/y.test.tsx`, its relative import rewritten to `@/…` | the record's carried copy is stale, mispaired, or the test is not about a single module |
+| **delete the file** | the record's `tests[]`, materialized into `.bsc-records/x/y.test.tsx` | the carried copy is the same test — the graph then holds the module *and* its test |
+
+`emit-records.mjs` materializes carried tests beside the module they test, and `vitest.config.ts`
+includes `.bsc-records/**`, so the carried copy runs in the default gate against the record that actually
+ships. **`src/` wins while it exists** — a record's copy is emitted only once the file is gone, so the
+same assertions never run twice, and deleting the file is the entire handover.
+
+> This reverses the earlier rule ("retire the module, keep the test"). That rule was right for as long as
+> nothing could RUN a carried test: deleting a file then traded executed coverage for stored coverage,
+> silently and green, which cost 31 assertions across the first two tranches. It was a consequence of a
+> missing executor, not a statement about where a test belongs.
+
+`retiredTests.test.ts` enforces that a retired record's tests execute **somewhere**, and asks
+`planRecords()` rather than re-deriving the answer so it cannot drift from the emitter.
+
+**Check the carried copy before deleting the file** — the two drift, and the file is usually the newer
+one. Of the first 48 candidates, 46 differed only in the import specifier (safe), and **2 had extra
+assertions the record never got** — `@/shared/ui/layouts/Screen` carried a whole extra test (#4167) that
+deleting the file would have thrown away, on a green gate.
+
+Two things the emitter refuses, loudly rather than silently:
+
+- **A mispaired test.** `bsc ui harvest` attached whatever colocated test it found, so records exist
+  carrying a test for something else entirely (`@/components/typechip` holds the `ScanViews` test; four
+  records share one `bodyStyles` test). Every relative import is checked against what is actually being
+  emitted, and a test that fails is reported with the import that disqualified it.
+- **An unrewritten relative import.** A carried test says `./LabelChip`; emitted into `.bsc-records/`
+  that reaches nothing when `LabelChip` is still a file, because the two trees are not bridged
+  relatively. They are rewritten to `@/…` on emit — the same rewrite `retire-module.mjs` applies to the
+  file copy, so both copies of a test resolve identically.
 
 ### Traps that cost real time
 

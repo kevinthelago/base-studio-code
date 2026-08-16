@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // ^ scopes Node types to THIS config file only (for node:url), so adding @types/node doesn't flip
 //   setInterval/setTimeout return types across src (the DOM lib keeps them `number`). (#1309)
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { bscRecords } from "./vite/bscRecords";
 import { fileURLToPath } from "node:url";
@@ -24,6 +24,15 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
+    // A RETIRED module's tests live on its record and are materialized into `.bsc-records/` beside the
+    // module (`scripts/emit-records.mjs`). They have to be named explicitly: the default glob is
+    // `**/*.{test,spec}.…`, and the glob engine does not descend into a DOT-directory, so `.bsc-records/`
+    // is invisible to it no matter how the pattern is written. Verified by probe — a test placed there is
+    // collected with this entry and silently ignored without it.
+    //
+    // This is what makes deleting a colocated test file safe: the record's copy takes over in the SAME
+    // gate run, so coverage moves rather than disappearing.
+    include: [...configDefaults.include, ".bsc-records/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
     // Test DISCOVERY excludes — keeps a ROOT run out of nested worktrees. See vitest.excludes.ts (#3379).
     exclude: testExclude,
     coverage: {
