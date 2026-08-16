@@ -336,6 +336,19 @@ fn import_specifiers(source: &str) -> Vec<String> {
     out
 }
 
+/// The first-party (`@/…`) specifiers `content` still IMPORTS — the precise form of "this file's closure
+/// is incomplete", and empty when it is complete.
+///
+/// The assertions below used to ask `!content.contains("@/")`, which is a different question: whether the
+/// two BYTES appear anywhere. Records carry a provenance header naming their own specifier
+/// (``// `@/shared/ui/data/Card` after the original module was retired``), so five emitted files tripped a
+/// check on a comment while every real import had been rewritten correctly — the emit was right and the
+/// test was wrong. Asking [`import_specifiers`] instead asks what the assertion always meant.
+#[cfg(test)]
+pub(crate) fn unvendored_aliases(content: &str) -> Vec<String> {
+    import_specifiers(content).into_iter().filter(|s| s.starts_with("@/")).collect()
+}
+
 /// The verbatim module source of a STORE component record for emit — its `source`, else its `srcText`,
 /// whichever is non-empty first. `None` = a source-stripped builtin (#2794) or a spec-only record with
 /// nothing to vendor, so the overlay leaves the packaged source (if any) in place.
@@ -452,11 +465,34 @@ mod tests {
         assert!(card.contains("from \"../feedback/Skeleton\""), "composes edge → sibling: {card}");
         assert!(card.contains("from \"../../lib/core/format\""), "runtime edge → _kit path: {card}");
         assert!(card.contains("from \"react\""), "external import left as-is");
-        assert!(!card.contains("@/"), "no first-party alias survives in the emitted file");
+        assert!(unvendored_aliases(card).is_empty(), "no first-party alias survives in the emitted file");
         // Provenance stamped, with the body hash the sync divergence check keys on.
         assert!(card.starts_with("// vendored from acme/kit@2.1.0 (sha256:"), "provenance header: {card}");
         // The external dep is reported.
         assert_eq!(plan.external_deps, vec!["react".to_string()]);
+    }
+
+    /// The predicate itself. The three closure assertions are only as good as this: it must still FAIL on
+    /// a real unvendored import (or the fix would just be deleting the check), and must not fire on the
+    /// provenance header every migrated record carries — which is the exact text that made them red.
+    #[test]
+    fn unvendored_aliases_reads_imports_not_prose() {
+        assert_eq!(
+            unvendored_aliases("import { X } from \"@/shared/ui/X\";\n"),
+            ["@/shared/ui/X"],
+            "a genuinely unvendored import is still caught",
+        );
+        assert!(
+            unvendored_aliases("import { X } from \"../ui/X\";\nimport React from \"react\";\n").is_empty(),
+            "a rewritten relative import and an external package are not aliases",
+        );
+        // The real header, verbatim from `shared/ui/data/Card.tsx` — a comment naming the module's own
+        // specifier, plus a quoted one inside prose, plus the word `imports` running into a line break.
+        let header = "// The record is the source of truth; this file is a derived cache so tsc/vite/vitest can resolve\n\
+                      // `@/shared/ui/data/Card` after the original module was retired.\n\
+                      // `provides: \"@/shared/ui/data/Card\"` makes the runtime loader vendor THIS source wherever a graph component imports\n\
+                      // that specifier. 1px border + rounded corners + padding, from tokens.css.\n";
+        assert!(unvendored_aliases(header).is_empty(), "a provenance comment is not an import: {header}");
     }
 
     #[test]
@@ -464,7 +500,7 @@ mod tests {
         // The compile guarantee: after rewriting, no `@/…` remains anywhere in an emitted file.
         let plan = fixture().plan_kit();
         for f in &plan.files {
-            assert!(!f.content.contains("@/"), "{} still has a first-party alias", f.path);
+            assert!(unvendored_aliases(&f.content).is_empty(), "{} still has a first-party alias", f.path);
         }
     }
 
@@ -554,7 +590,7 @@ mod tests {
         // The body (after the stamp line) is the packaged source — not empty.
         assert!(!body_of(&card.content).trim().is_empty(), "packaged card source survived the empty overlay");
         for f in &plan.files {
-            assert!(!f.content.contains("@/"), "{} still has a first-party alias — closure incomplete", f.path);
+            assert!(unvendored_aliases(&f.content).is_empty(), "{} still has a first-party alias — closure incomplete", f.path);
         }
     }
 
@@ -565,7 +601,7 @@ mod tests {
         let plan = EmitKit::packaged().plan_component("card").unwrap();
         assert!(!plan.files.is_empty());
         for f in &plan.files {
-            assert!(!f.content.contains("@/"), "{} retains @/", f.path);
+            assert!(unvendored_aliases(&f.content).is_empty(), "{} still IMPORTS {:?}", f.path, unvendored_aliases(&f.content));
             assert!(f.content.starts_with("// vendored from bsc/react-ui@"), "stamped: {}", f.path);
         }
     }
