@@ -25,7 +25,7 @@ import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTe
 // standalone in the preview. What still holds is that the record is what MOUNTS.
 import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
-import { DebugSessionMount, RequestSessionsMount } from "@/features/debug";
+import { RequestSessionsMount } from "@/features/debug";
 import { StudioSessionHosts } from "@/features/studio-sessions";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
@@ -214,7 +214,6 @@ export default function App() {
     </Box>
     {/* Keeps the app-owned DEBUG session's PTY warm on TerminalHost while the Settings flag is on (#3326),
         so the Glance `debugger` node's morph can re-parent it in. Renders off-screen / null. */}
-    <DebugSessionMount />
     {/* #3498: a debug session per open request. Inert while auto-spawn is off (the default). */}
     <RequestSessionsMount />
     {/* Keeps each WANTED app-owned studio session (designer/librarian/architect) warm on TerminalHost
