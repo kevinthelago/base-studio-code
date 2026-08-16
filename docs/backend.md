@@ -283,15 +283,22 @@ best-effort and exits 0 (or `return 2` for a deny) so it never wedges a tool or 
   shared helpers (`temp_home`, `ENV_LOCK`, `write_file`) in `testutil.rs`.
 - **Crates** test independently (`research`/`compliance`/`data` against in-memory or recorded fixtures
   with no live network; much of `data` compiles + tests without DuckDB via `--no-default-features`).
-- **Commands** (mirror CI exactly):
+- **Commands:**
   ```bash
   cargo check --workspace
   cargo clippy --workspace --all-targets -- -D warnings   # the gate — see below
-  cargo test --workspace                                  # or -p <crate> to scope a slow build
+  cargo nextest run --workspace                           # or -p <crate> to scope a slow build
   ```
-- **The clippy gate:** CI runs `clippy --all-targets -D warnings`. `--all-targets` matters —
-  `--lib` alone misses test-target lints (unused imports, `items_after_test_module`), so verify with
-  `--all-targets` before pushing any Rust.
+- **The clippy gate:** `clippy --all-targets -D warnings`. `--all-targets` matters — `--lib` alone
+  misses test-target lints (unused imports, `items_after_test_module`), so verify with `--all-targets`
+  before landing any Rust.
+- **`nextest`, not `cargo test`.** `cargo test` runs the ~41 test binaries serially; nextest runs tests
+  across binaries concurrently. `cargo install cargo-nextest --locked`. The gain is **conditional on
+  spare cores** — measured from identical warm state, same four failures: **1m31.8s → 1m06.9s (−27%) on
+  a quiet machine, but 1m32.9s → 1m30.1s (−3%) with four other agent builds running.** Never slower, so
+  still the right default; just do not plan around the quiet-machine number. It runs each test in its
+  own **process** (see `ENV_LOCK` in `testutil.rs`) and does **not** run doctests —
+  `no_rust_doctests_are_silently_skipped` in `src-tauri/src/tests.rs` guards that.
 
 A new Rust command needs a unit test in its module's `#[cfg(test)]` block; a bug fix needs a
 regression test in the same branch.
