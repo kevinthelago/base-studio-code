@@ -9,7 +9,6 @@ import { cellOpStateAttrs } from "@/features/algorithms/lib/binding";
 import type { MatrixFrame } from "@/features/algorithms/lib/trace";
 import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import { MATRIX_VIZ_ANIM_CLASSES, ensureMatrixViewMotion } from "@/features/algorithms/viz/renderers/matrixViewMotion";
-import "./matrixView.css";
 
 /**
  * Render a `MatrixFrame` as a grid of cells. Each cell carries the `data-op` / `data-mark` state the matrix

@@ -8,7 +8,6 @@
 // Note for anyone pruning `@/features/mcp`: that record's Hooks tab imports the REAL `HooksView`
 // from the mcp barrel and resolves it through the graph platform, so the export is load-bearing at
 // runtime even though no FILE imports it any more. A file-import search will call it dead. It isn't.
-import "./automations.css";
 
 // Re-exported feature surface — this index is the automations feature's public API barrel (#1309).
 export { AutomationsGraphHost } from "./AutomationsGraphHost"; // the graph-hosted workspace (#3642)

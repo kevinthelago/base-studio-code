@@ -11,7 +11,6 @@ import type { OpStateAttrs } from "@/features/algorithms/lib/binding";
 import type { ScalarFrame } from "@/features/algorithms/lib/trace";
 import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import { SCALAR_VIZ_ANIM_CLASSES, ensureScalarViewMotion } from "@/features/algorithms/viz/renderers/scalarViewMotion";
-import "./scalarView.css";
 
 /** The `data-op` for variable `name` — read straight from the frame's per-variable `ops` record (a scalar
  *  op names no position; it's keyed by the variable it touched). Empty when the variable is untouched this

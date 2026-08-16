@@ -11,7 +11,6 @@ import type { GraphFrame } from "@/features/algorithms/lib/trace";
 import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import { GRAPH_VIZ_ANIM_CLASSES, ensureGraphViewMotion } from "@/features/algorithms/viz/renderers/graphViewMotion";
 import { layoutFor, GRAPH_VIEW as VIEW } from "@/features/algorithms/viz/renderers/graphLayout";
-import "./graphView.css";
 
 const NODE_R = 19;
 

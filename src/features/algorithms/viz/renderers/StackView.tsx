@@ -11,7 +11,6 @@ import { opStateAttrs, type OpStateAttrs } from "@/features/algorithms/lib/bindi
 import type { StackFrame } from "@/features/algorithms/lib/trace";
 import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import { STACK_VIZ_ANIM_CLASSES, ensureStackViewMotion } from "@/features/algorithms/viz/renderers/stackViewMotion";
-import "./stackView.css";
 
 /** The `data-op`/`data-mark` for the cell at `index`. `peek` (indexed) resolves via the shared
  *  {@link opStateAttrs}; the position-less `push`/`pop` land on the active-end cell — top for a stack/

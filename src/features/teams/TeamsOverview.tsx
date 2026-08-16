@@ -11,7 +11,6 @@ import { onEnterOrSpace } from "@/shared/ui/a11y";
 import { teamsGrid, teamStats } from "@/features/teams/lib/teamsLayout";
 import type { Team } from "./lib/team";
 import type { Persona } from "@/features/personas";
-import "./teams.css";
 
 interface Props {
   teams: Team[];

@@ -16,7 +16,6 @@ import { opStateAttrs } from "@/features/algorithms/lib/binding";
 import type { ArrayFrame } from "@/features/algorithms/lib/trace";
 import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import { ALGO_VIZ_ANIM_CLASSES, ensureArrayViewMotion } from "@/features/algorithms/viz/renderers/arrayViewMotion";
-import "./arrayView.css";
 
 /** The numeric magnitude of a cell (strings — non-numeric labels — contribute no bar). */
 function magnitude(v: number | string): number {

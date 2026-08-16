@@ -14,7 +14,6 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import type { SourceRange } from "@/features/algorithms/lib/trace";
-import "./codeColumn.css";
 
 export interface CodeColumnProps {
   /** The trace-program source — the exact string {@link loc} indexes into (`VizRun.source`). */

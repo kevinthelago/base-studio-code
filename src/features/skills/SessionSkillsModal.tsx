@@ -23,7 +23,6 @@ import {
   sessionSkillState, expandGroups, groupSkillCount,
   type SkillDef, type SessionSkillReason,
 } from "@/features/skills/lib/skills";
-import "./skills.css";
 
 /** Color + copy for each effective-state reason (the row's "why" pill). */
 const REASON_META: Record<SessionSkillReason, { label: string; hue: string; hint: string }> = {

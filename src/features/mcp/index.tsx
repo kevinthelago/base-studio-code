@@ -16,7 +16,6 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { TextField } from "@/shared/ui/controls/Field";
-import "./mcp.css";
 
 // The graph-hosted workspace (#3656) — App.tsx/DetachedWindow render this via the lazy McpWorkspace.
 export { McpGraphHost } from "./McpGraphHost";

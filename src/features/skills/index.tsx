@@ -44,7 +44,6 @@ import { SkillsDigestToggle, SkillsDigestPanel } from "./SkillsDigest";
 import { RunsTab } from "./RunsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
-import "./skills.css";
 
 type Mode = "library" | "lessons" | "runs";
 

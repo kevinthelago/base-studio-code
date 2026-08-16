@@ -28,7 +28,6 @@ import {
   KIT_REL_META, KIT_REL_ORDER, type Tech,
 } from "./lib/knowledge";
 import { useKnowledgeGraph } from "@/features/algorithms/useKnowledgeGraph";
-import "./algorithms.css";
 
 export function AlgorithmsWorkspace() {
   // Live graph (#2856): the seed for an instant first paint, hydrated + kept fresh from the librarian's

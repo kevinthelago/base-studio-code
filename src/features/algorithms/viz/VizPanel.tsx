@@ -17,7 +17,6 @@ import { InlineError } from "@/shared/ui/feedback/InlineError";
 import type { Frame } from "@/features/algorithms/lib/trace";
 import { TracePlayer } from "./TracePlayer";
 import type { VizExample } from "./examples/registry";
-import "./vizPanel.css";
 
 /** The compact inline preview — a controls-less, auto-playing, looping player wrapped in a clickable
  *  affordance (hover/focus surfaces an expand cue). Activating it lifts to the workbench, which promotes

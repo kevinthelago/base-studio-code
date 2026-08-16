@@ -23,7 +23,6 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { attachTerminalClipboard } from "@/shared/lib/session/terminalClipboard";
-import "@xterm/xterm/css/xterm.css";
 
 export interface ScreenSessionConfig<S = void> {
   /** Stable pane id — the pty_* event channel + write/resize/kill key. */

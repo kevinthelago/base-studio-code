@@ -2,7 +2,6 @@
 // ../bodies/Focused*Body per #1757). Each per-stage body now lives in its own file under
 // `../bodies/`; this module is the `FocusedStageBody` switch that maps a Stage to its body and
 // assembles the shared handler sets once. ProjectPane.tsx is the thin shell that renders it.
-import "./projectPane.css";
 import type { Flow, ContextFile, McpServer, ProjectPaneData } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";
 import type { Stage } from "@/features/planner/stages/focusedPlan";

@@ -32,7 +32,6 @@ import { SoundsGraphHost } from "@/features/sounds";
 import { DataGraphPage } from "@/features/data";
 import { useProjectScan } from "@/features/planner/list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
-import "./projectsScreen.css";
 
 // #1545: public API for cross-feature consumers. tunnel reaches plannerCore for CanonicalFile;
 // components reaches the gist manifest/publish helpers (included for barrel completeness).
