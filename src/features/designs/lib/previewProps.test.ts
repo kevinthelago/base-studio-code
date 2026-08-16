@@ -3,7 +3,9 @@
 // `previewProps.fixtures.json`; the Rust `bsc ui preview-props` verb asserts the SAME fixture in
 // `crates/bsc-component/src/preview_props.rs`, so the two stay byte-for-byte in lockstep.
 import { describe, it, expect } from "vitest";
-import { previewProps, previewPropList, previewChild } from "./componentPreview";
+import {
+  previewProps, previewPropList, previewChild, bootstrapSource, cannotTypeProp, unsampledRequiredProps,
+} from "./componentPreview";
 import type { ComponentRecord } from "./model";
 import fixtures from "./previewProps.fixtures.json";
 
@@ -27,6 +29,60 @@ describe("previewProps parity fixture (#3165)", () => {
       expect(previewProps(comp(c.comp.name, c.comp.props, "source" in c.comp ? c.comp.source : ""))).toEqual(c.expected);
     });
   }
+});
+
+// #84 — a required prop the sampler cannot TYPE was dropped silently, so the component mounted with
+// `undefined` and whatever it did next threw. `PaneMenu` reported `Cannot read properties of null (reading
+// 'find')`; its entire dependency chain was searched for a null `.find()` that was never there, because the
+// value simply never arrived. The sampler still does not guess — it has only the type NAME, so a wrong
+// literal could crash a component that switches on it — but the prop is now NAMED instead of invisible.
+describe("unsampled required props are reported, not silently dropped (#84)", () => {
+  const paneMenu = comp("PaneMenu", [
+    { name: "model", type: "ModelId", req: true },      // named alias over a literal union
+    { name: "active", type: "ViewKey", req: true },     // same
+    { name: "vp", type: "GraphViewport", req: true },   // an object type — most of the real cases
+    { name: "available", type: "ViewKey[]", req: true },// container: omitted BY DESIGN
+    { name: "loading", type: "boolean", req: true },    // loading-family: state-driven BY DESIGN
+    { name: "error", type: "string", req: true },       // error-family: state-driven BY DESIGN
+    { name: "tone", type: '"neutral" | "danger"', req: true }, // an INLINE union IS sampleable
+    { name: "onPick", type: "(v) => void", req: true },
+  ]);
+
+  it("names exactly the required props whose TYPE matches no branch", () => {
+    expect(unsampledRequiredProps(paneMenu).map((p) => p.name)).toEqual(["model", "active", "vp"]);
+    // The two the reporter chased are there, and nothing that is absent by design is.
+    expect(cannotTypeProp({ name: "model", type: "ModelId", req: true, desc: "" })).toBe(true);
+    expect(cannotTypeProp({ name: "tone", type: '"a" | "b"', req: true, desc: "" })).toBe(false);
+  });
+
+  it("carries the report on EVERY state, so `--state` cannot hide it", () => {
+    const states = previewProps(paneMenu);
+    for (const s of ["loaded", "empty", "loading"] as const) {
+      expect(states[s].unsampled).toEqual(["model", "active", "vp"]);
+    }
+    // A component whose required props are all sampleable reports nothing — the overwhelming majority.
+    expect(previewProps(comp("Plain", [{ name: "label", type: "string", req: true }])).loaded.unsampled).toEqual([]);
+  });
+
+  it("warns in the BOOTSTRAP, so the cause is one line above the effect in the console", () => {
+    // This is the whole point: the throw reads as a component bug, and the console now says why first.
+    const src = bootstrapSource(paneMenu, "@/x");
+    expect(src).toContain("console.warn(");
+    expect(src).toContain("model: ModelId");
+    expect(src).toContain("active: ViewKey");
+    // The warn is emitted BEFORE the mount — against the createRoot CALL, not the import of the same
+    // name, which sits at the top of every bootstrap.
+    expect(src.indexOf("console.warn(")).toBeLessThan(src.indexOf("createRoot(document"));
+    // A clean component gets no warning at all — no noise for the majority.
+    expect(bootstrapSource(comp("Plain", [{ name: "label", type: "string", req: true }]), "@/x")).not.toContain("console.warn(");
+  });
+
+  it("does NOT warn about a prop the caller bound via preview data", () => {
+    // A bound prop does arrive (`statePropsLiteral` layers the overrides on top), so warning would cry wolf.
+    const src = bootstrapSource(paneMenu, "@/x", "loaded", { model: '"claude-opus-5"', active: '"chat"' });
+    expect(src).toContain("vp: GraphViewport");   // still missing → still named
+    expect(src).not.toContain("model: ModelId");  // supplied → not named
+  });
 });
 
 describe("previewPropList / previewChild (#3165)", () => {

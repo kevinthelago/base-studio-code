@@ -415,7 +415,12 @@ function assignmentEq(seg: string): number {
   for (let j = 0; j < seg.length; j++) {
     if (seg[j] !== "=") continue;
     if (seg[j + 1] === "=" || seg[j + 1] === ">") { j++; continue; }
-    if ("=!<>".includes(seg[j - 1] ?? "")) continue;
+    // `j > 0` is explicit rather than relying on `seg[-1] ?? ""`: `"=!<>".includes("")` is TRUE, so the
+    // undefined-guard form skipped a leading `=` for the wrong reason and disagreed with the Rust twin,
+    // which short-circuits on `j == 0`. Neither answer is reachable from a real destructuring segment and
+    // both yield no prop downstream (an empty head fails the identifier test), but an untested branch
+    // where the two implementations differ is exactly how the error-family divergence survived.
+    if (j > 0 && "=!<>".includes(seg[j - 1])) continue;
     return j;
   }
   return -1;
@@ -439,6 +444,55 @@ function skipQuoted(src: string, i: number): number {
     if (src[j] === quote) return j;
   }
   return src.length - 1;
+}
+
+/**
+ * Can the sampler produce a value for `p` FROM ITS TYPE at all — or does the type match no branch of
+ * {@link samplePropValue}?
+ *
+ * The distinction this draws is the whole point (designer request #84). A prop can be absent from a
+ * sampled state for two completely different reasons, and only one of them is a problem:
+ *
+ *  - DELIBERATE, state-driven: a loading/error-family prop is set only in its own state, and a data
+ *    container is omitted in loaded/loading so a demo-on-undefined component shows its own default.
+ *    Those are designed omissions and are not reported.
+ *  - UNTYPEABLE: the type STRING matches nothing — not a function, not a container, and it contains no
+ *    `node`/`string`/`number`/`boolean` and no quoted literal. `ModelId` and `ViewKey` are NAMED ALIASES
+ *    over string-literal unions, so the last-resort regex for an inline union's first quoted literal
+ *    finds nothing either. The sampler returns null and null means omit — so a REQUIRED prop is dropped
+ *    and the component mounts with `undefined` where its contract promised a value.
+ *
+ * The second case is what made `PaneMenu` report `Cannot read properties of null (reading 'find')` and
+ * read as a bug in PaneMenu: the reporter searched its entire dependency chain for a null `.find()` and
+ * correctly could not find one, because the value never arrived. This predicate is what lets that be
+ * NAMED instead of hunted.
+ *
+ * Why the sampler still does not guess a value: it has only the type NAME, so it cannot know the legal
+ * values, and emitting a wrong literal could crash a component that switches on it — worse than omitting.
+ * Measured across all 585 records the case is 7 components / 10 props, and only 3 of those are literal
+ * unions; the rest are object types (`GhStructure`, `ProjectItem`, `GraphViewport`) and one bare generic
+ * (`T`), where resolving the alias would yield a name and still no value. So the honest fix is to report.
+ */
+export function cannotTypeProp(p: PropSpec): boolean {
+  if (isLoadingProp(p) || isErrorProp(p)) return false; // set in their own state, by design
+  const t = (p.type || "").toLowerCase();
+  if (t.includes("=>") || t.includes("function") || t.includes("void") || /^on[A-Z]/.test(p.name)) return false;
+  if (isCollectionProp(p) || isRecordType(t) || isSetType(t) || isMapType(t)) return false; // container rule
+  if (t.includes("node") || t.includes("string") || t.includes("number") || t.includes("boolean")) return false;
+  return !/"([^"]+)"/.test(p.type || "");
+}
+
+/**
+ * The REQUIRED props of `comp` the sampler cannot type, in schema order — the preview's own report that a
+ * component is being mounted without part of its contract. Empty for a component whose required props are
+ * all sampleable, which is the overwhelming majority.
+ *
+ * `children` is excluded: it is passed as the element's child, not as a prop, so it is never missing for
+ * this reason. State-independent, because untypeability is a fact about the TYPE, not about the state —
+ * which also keeps it stable against the separate container-omission rule.
+ */
+export function unsampledRequiredProps(comp: ComponentRecord): PropSpec[] {
+  return comp.props.filter((p) => p.req && p.name !== "children" && cannotTypeProp(p));
 }
 
 /** A readable placeholder from a prop/component name (`whenUse` → "When use"). */
@@ -491,6 +545,10 @@ export interface PreviewProp {
 export interface PreviewProps {
   props: PreviewProp[];
   child: string | null;
+  /** REQUIRED props the sampler could not type, so the component mounts without them (#84). Names only,
+   *  in schema order; empty for almost every component. This is the report that makes an unsampleable
+   *  prop a visible fact instead of a mystery render-error — see {@link unsampledRequiredProps}. */
+  unsampled: string[];
 }
 
 /** The props the bootstrap passes `comp` in `state` — each non-`children` prop that samples to a
@@ -525,10 +583,13 @@ export function previewChild(comp: ComponentRecord): string | null {
  *  path but is NOT part of this cross-language wire contract. */
 export function previewProps(comp: ComponentRecord): Record<Exclude<PreviewState, "error">, PreviewProps> {
   const child = previewChild(comp);
+  // State-independent (untypeability is a fact about the TYPE), but carried on every state so a caller
+  // reading ONE state — which `--state` narrows to — still sees it.
+  const unsampled = unsampledRequiredProps(comp).map((p) => p.name);
   return {
-    loaded: { props: previewPropList(comp, "loaded"), child },
-    empty: { props: previewPropList(comp, "empty"), child },
-    loading: { props: previewPropList(comp, "loading"), child },
+    loaded: { props: previewPropList(comp, "loaded"), child, unsampled },
+    empty: { props: previewPropList(comp, "empty"), child, unsampled },
+    loading: { props: previewPropList(comp, "loading"), child, unsampled },
   };
 }
 
@@ -593,12 +654,29 @@ export function bootstrapSource(
   const wrapStyle = pageLike
     ? `{ height: "100%", width: "100%", boxSizing: "border-box", overflow: "hidden" }`
     : `{ padding: 20, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }`;
+  // #84 — say out loud which REQUIRED props the sampler could not type, BEFORE mounting. Whatever the
+  // component then does with the `undefined` it was handed throws further down, and the throw reads as a
+  // bug in the component (`PaneMenu` reported `Cannot read properties of null (reading 'find')`, and its
+  // whole dependency chain was searched for a null `.find()` that was never there). Emitting the cause
+  // one line above the effect is the entire fix: the value never arrived, and now the console says so.
+  // A prop the caller BOUND via preview data (#2940) does arrive, so it is not missing and must not be
+  // warned about — the overrides are layered on top of the sampled props by `statePropsLiteral`.
+  const unsampled = unsampledRequiredProps(comp).filter((p) => previewData[p.name] == null);
+  const warnLine = unsampled.length
+    ? [`console.warn(${JSON.stringify(
+        `preview: ${comp.name} mounts WITHOUT ${unsampled.length} required prop(s) the sampler cannot type — ` +
+          `${unsampled.map((p) => `${p.name}: ${p.type}`).join(", ")}. ` +
+          `A named type carries no value the sampler can read, so the prop arrives undefined; ` +
+          `bind it via preview data if the component needs a real one.`,
+      )});`]
+    : [];
   const head = [
     `import { createRoot } from "react-dom/client";`,
     `import { createElement } from "react";`,
     `import * as __mod from "${importSpec}";`,
     `const __C = __mod[${JSON.stringify(comp.name)}] ?? __mod.default;`,
     `if (!__C) throw new Error("preview: no export ${comp.name} (or default) in ${importSpec}");`,
+    ...warnLine,
   ];
 
   // #3567: LIVE-STATE form — embed EVERY state's props once and switch on a `{ __state }` message with a

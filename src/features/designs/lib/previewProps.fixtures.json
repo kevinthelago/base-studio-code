@@ -20,7 +20,8 @@
             { "name": "height", "value": "window.innerHeight" },
             { "name": "onSelect", "value": "() => {}" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "empty": {
           "props": [
@@ -29,7 +30,8 @@
             { "name": "height", "value": "window.innerHeight" },
             { "name": "onSelect", "value": "() => {}" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "loading": {
           "props": [
@@ -38,7 +40,8 @@
             { "name": "loading", "value": "true" },
             { "name": "onSelect", "value": "() => {}" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         }
       }
     },
@@ -62,7 +65,8 @@
             { "name": "tone", "value": "\"neutral\"" },
             { "name": "count", "value": "3" }
           ],
-          "child": "\"Badge\""
+          "child": "\"Badge\"",
+          "unsampled": []
         },
         "empty": {
           "props": [
@@ -71,7 +75,8 @@
             { "name": "tone", "value": "\"neutral\"" },
             { "name": "count", "value": "3" }
           ],
-          "child": "\"Badge\""
+          "child": "\"Badge\"",
+          "unsampled": []
         },
         "loading": {
           "props": [
@@ -80,7 +85,8 @@
             { "name": "tone", "value": "\"neutral\"" },
             { "name": "count", "value": "3" }
           ],
-          "child": "\"Badge\""
+          "child": "\"Badge\"",
+          "unsampled": []
         }
       }
     },
@@ -104,7 +110,8 @@
             { "name": "size", "value": "Math.min(window.innerWidth, window.innerHeight)" },
             { "name": "strokeWidth", "value": "3" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "empty": {
           "props": [
@@ -113,7 +120,8 @@
             { "name": "strokeWidth", "value": "3" },
             { "name": "items", "value": "[]" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "loading": {
           "props": [
@@ -122,7 +130,8 @@
             { "name": "size", "value": "Math.min(window.innerWidth, window.innerHeight)" },
             { "name": "strokeWidth", "value": "3" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         }
       }
     },
@@ -146,7 +155,8 @@
             { "name": "active", "value": "true" },
             { "name": "render", "value": "() => {}" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "empty": {
           "props": [
@@ -155,7 +165,8 @@
             { "name": "active", "value": "true" },
             { "name": "render", "value": "() => {}" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "loading": {
           "props": [
@@ -164,7 +175,8 @@
             { "name": "active", "value": "true" },
             { "name": "render", "value": "() => {}" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         }
       }
     },
@@ -193,7 +205,8 @@
             { "name": "extent", "value": "Math.min(window.innerWidth, window.innerHeight)" },
             { "name": "opacity", "value": "0.6" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "empty": {
           "props": [
@@ -205,7 +218,8 @@
             { "name": "extent", "value": "Math.min(window.innerWidth, window.innerHeight)" },
             { "name": "opacity", "value": "0.6" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "loading": {
           "props": [
@@ -217,7 +231,8 @@
             { "name": "extent", "value": "Math.min(window.innerWidth, window.innerHeight)" },
             { "name": "opacity", "value": "0.6" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         }
       }
     },
@@ -238,7 +253,8 @@
           "props": [
             { "name": "title", "value": "\"Title\"" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "empty": {
           "props": [
@@ -247,13 +263,15 @@
             { "name": "byId", "value": "new Map()" },
             { "name": "title", "value": "\"Title\"" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "loading": {
           "props": [
             { "name": "title", "value": "\"Title\"" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         }
       }
     },
@@ -276,7 +294,8 @@
             { "name": "chartWidth", "value": "window.innerWidth" },
             { "name": "strokeWidth", "value": "3" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "empty": {
           "props": [
@@ -285,7 +304,8 @@
             { "name": "chartWidth", "value": "window.innerWidth" },
             { "name": "strokeWidth", "value": "3" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "loading": {
           "props": [
@@ -294,7 +314,8 @@
             { "name": "chartWidth", "value": "window.innerWidth" },
             { "name": "strokeWidth", "value": "3" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         }
       }
     },
@@ -302,9 +323,56 @@
       "desc": "no props at all — empty object literal, no child",
       "comp": { "name": "Divider", "props": [] },
       "expected": {
-        "loaded": { "props": [], "child": null },
-        "empty": { "props": [], "child": null },
-        "loading": { "props": [], "child": null }
+        "loaded": { "props": [], "child": null, "unsampled": [] },
+        "empty": { "props": [], "child": null, "unsampled": [] },
+        "loading": { "props": [], "child": null, "unsampled": [] }
+      }
+    },
+    {
+      "desc": "#84 the PaneMenu shape — required props typed by a NAMED ALIAS are reported as unsampled, while a loading-family, error-family or CONTAINER prop is not (each is governed by its own rule: the first two are state-driven, and the required container is supplied because this component declares no default for it)",
+      "comp": {
+        "name": "PaneMenu",
+        "props": [
+          { "name": "model", "type": "ModelId", "req": true },
+          { "name": "active", "type": "ViewKey", "req": true },
+          { "name": "available", "type": "ViewKey[]", "req": true },
+          { "name": "vp", "type": "GraphViewport", "req": true },
+          { "name": "tone", "type": "\"neutral\" | \"danger\"", "req": true },
+          { "name": "loading", "type": "boolean", "req": true },
+          { "name": "error", "type": "string", "req": true },
+          { "name": "onPick", "type": "(v) => void", "req": true },
+          { "name": "hint", "type": "AliasedButOptional", "req": false }
+        ]
+      },
+      "expected": {
+        "loaded": {
+          "props": [
+            { "name": "available", "value": "[]" },
+            { "name": "tone", "value": "\"neutral\"" },
+            { "name": "onPick", "value": "() => {}" }
+          ],
+          "child": null,
+          "unsampled": ["model", "active", "vp"]
+        },
+        "empty": {
+          "props": [
+            { "name": "available", "value": "[]" },
+            { "name": "tone", "value": "\"neutral\"" },
+            { "name": "onPick", "value": "() => {}" }
+          ],
+          "child": null,
+          "unsampled": ["model", "active", "vp"]
+        },
+        "loading": {
+          "props": [
+            { "name": "available", "value": "[]" },
+            { "name": "tone", "value": "\"neutral\"" },
+            { "name": "loading", "value": "true" },
+            { "name": "onPick", "value": "() => {}" }
+          ],
+          "child": null,
+          "unsampled": ["model", "active", "vp"]
+        }
       }
     },
     {
@@ -326,7 +394,8 @@
             { "name": "prs", "value": "[]" },
             { "name": "repoCount", "value": "3" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "empty": {
           "props": [
@@ -334,7 +403,8 @@
             { "name": "prs", "value": "[]" },
             { "name": "repoCount", "value": "3" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "loading": {
           "props": [
@@ -343,7 +413,8 @@
             { "name": "repoCount", "value": "3" },
             { "name": "loading", "value": "true" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         }
       }
     },
@@ -361,7 +432,8 @@
       "expected": {
         "loaded": {
           "props": [{ "name": "title", "value": "\"Title\"" }],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "empty": {
           "props": [
@@ -369,11 +441,56 @@
             { "name": "byId", "value": "new Map()" },
             { "name": "title", "value": "\"Title\"" }
           ],
-          "child": null
+          "child": null,
+          "unsampled": []
         },
         "loading": {
           "props": [{ "name": "title", "value": "\"Title\"" }],
-          "child": null
+          "child": null,
+          "unsampled": []
+        }
+      }
+    },
+    {
+      "desc": "the signature PARSER's hard shapes, pinned across both languages — a renamed binding with a default (`rows: list = DEMO`) is detected under its PROP name, a comma inside a string default does not split the segment, and an arrow default's parens/braces/comma do not break the walk. The two implementations are free to disagree on any shape no case reaches, which is how the error-family divergence survived.",
+      "comp": {
+        "name": "TrickySignature",
+        "source": "export function TrickySignature({ rows: list = DEMO, cols, sep = \"a, b\", cb = (a, b) => ({ a }) }: Props) { return null; }",
+        "props": [
+          { "name": "rows", "type": "Row[]", "req": true },
+          { "name": "cols", "type": "Col[]", "req": true },
+          { "name": "sep", "type": "string", "req": true },
+          { "name": "cb", "type": "(a, b) => void", "req": true }
+        ]
+      },
+      "expected": {
+        "loaded": {
+          "props": [
+            { "name": "cols", "value": "[]" },
+            { "name": "sep", "value": "\"Sep\"" },
+            { "name": "cb", "value": "() => {}" }
+          ],
+          "child": null,
+          "unsampled": []
+        },
+        "empty": {
+          "props": [
+            { "name": "rows", "value": "[]" },
+            { "name": "cols", "value": "[]" },
+            { "name": "sep", "value": "\"Sep\"" },
+            { "name": "cb", "value": "() => {}" }
+          ],
+          "child": null,
+          "unsampled": []
+        },
+        "loading": {
+          "props": [
+            { "name": "cols", "value": "[]" },
+            { "name": "sep", "value": "\"Sep\"" },
+            { "name": "cb", "value": "() => {}" }
+          ],
+          "child": null,
+          "unsampled": []
         }
       }
     }
