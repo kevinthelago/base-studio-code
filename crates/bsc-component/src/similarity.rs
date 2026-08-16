@@ -81,6 +81,9 @@ struct Comp {
     /// The colocated test files this record names (#4126) — two records naming one test file are
     /// usually one component.
     tests: BTreeSet<String>,
+    /// The JSX skeleton (#90) — `tag(attr,…)` per opening tag, prose stripped by construction. The one
+    /// signal that survives a rewrite of every string in the component, and the basis of the shape mode.
+    skeleton: BTreeSet<String>,
     /// The platform specifier this record OVERRIDES (#3660). A collision is a conflict, not a dupe.
     provides: String,
     /// Tokens of the `whenUse`/`whenNot` guidance — the only term that catches a semantic duplicate
@@ -265,6 +268,7 @@ fn parse(v: &Value) -> Option<Comp> {
         .unwrap_or_default();
     Some(Comp {
         src_shingles: source_shingles(if source.is_empty() { &src_text } else { &source }),
+        skeleton: jsx_skeleton(if source.is_empty() { &src_text } else { &source }),
         src_path: s(v, "src").to_lowercase(),
         // Through the SAME reader the rest of the crate uses (#4118): 347 of 349 stored records still
         // carry the legacy `group` key, so reading `folder` alone made this signal dead on the real
@@ -347,6 +351,103 @@ fn contract_terms(a: &Comp, b: &Comp) -> Vec<Term> {
         // The only term that catches a semantic duplicate whose name AND body both differ. Divergent
         // guidance likewise means divergent purpose, so this stays two-sided too.
         t("guidance", 0.08, jaccard(&a.guidance, &b.guidance)),
+    ]
+}
+
+/// The JSX SKELETON of `src` — one entry per opening tag as `tag(attr,attr,…)`, tag and attribute names
+/// lowercased and the attributes sorted. Designer request #90: this is the half of a component that
+/// survives a rewrite of all its copy, and the half no existing term measures.
+///
+/// String literals fall out for free, because only attribute NAMES are kept — `title="Sound alerts"` and
+/// `title="Idle reaper"` both reduce to `title`. That is the point: two cards differing only in prose have
+/// identical skeletons.
+///
+/// A `<` pressed against an identifier is a GENERIC, not a tag (`Map<string, number>`, `Record<K, V>`), and
+/// is skipped — the same adjacency rule the quote scanners use. Without it every component using a typed
+/// collection would share a phantom `string(number)` tag with every other.
+fn jsx_skeleton(src: &str) -> BTreeSet<String> {
+    let b: Vec<char> = src.chars().collect();
+    let n = b.len();
+    let mut out = BTreeSet::new();
+    let mut i = 0;
+    while i < n {
+        if b[i] != '<' {
+            i += 1;
+            continue;
+        }
+        // `Map<…>` is a generic; a JSX `<` never follows an identifier character.
+        if i > 0 && (b[i - 1].is_alphanumeric() || b[i - 1] == '_') {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 1;
+        if j < n && b[j] == '/' {
+            i = j; // a closing tag carries no attributes and repeats its opener
+            continue;
+        }
+        let start = j;
+        while j < n && (b[j].is_alphanumeric() || b[j] == '_' || b[j] == '.' || b[j] == '-') {
+            j += 1;
+        }
+        if j == start {
+            i += 1;
+            continue;
+        }
+        let tag = b[start..j].iter().collect::<String>().to_lowercase();
+        let mut attrs: BTreeSet<String> = BTreeSet::new();
+        while j < n && b[j] != '>' {
+            match b[j] {
+                // An expression value — skip it balanced, so a `{cond ? <A/> : <B/>}` inside an attribute
+                // does not read as this tag's attributes.
+                '{' => {
+                    let mut depth = 0usize;
+                    while j < n {
+                        if b[j] == '{' {
+                            depth += 1;
+                        } else if b[j] == '}' {
+                            depth -= 1;
+                            if depth == 0 {
+                                j += 1;
+                                break;
+                            }
+                        }
+                        j += 1;
+                    }
+                }
+                q @ ('"' | '\'') => {
+                    j += 1;
+                    while j < n && b[j] != q {
+                        j += 1;
+                    }
+                    j = (j + 1).min(n);
+                }
+                c if c.is_alphabetic() || c == '_' => {
+                    let s = j;
+                    while j < n && (b[j].is_alphanumeric() || b[j] == '_' || b[j] == '-') {
+                        j += 1;
+                    }
+                    attrs.insert(b[s..j].iter().collect::<String>().to_lowercase());
+                }
+                _ => j += 1,
+            }
+        }
+        out.insert(format!("{tag}({})", attrs.into_iter().collect::<Vec<_>>().join(",")));
+        i = j.max(i + 1);
+    }
+    out
+}
+
+/// How alike two components are STRUCTURALLY — the composition signature and the JSX skeleton, and nothing
+/// else. Deliberately blind to name and to the prop contract (#90): `overall = 0.5·name + 0.5·contract`
+/// pulls a pair whose names differ under the bar however identically it is built, which is why six cards
+/// composing `[Card, ToggleRow]` around one skeleton never surface each other.
+///
+/// A term with no signal on either side is dropped rather than scored 0, the same rule `contract_terms`
+/// follows: two source-less specs must not read as identically shaped for both having no skeleton.
+fn shape_terms(a: &Comp, b: &Comp) -> Vec<Term> {
+    vec![
+        Term { label: "composes", weight: 0.5, value: jaccard(&a.composes, &b.composes) },
+        Term { label: "skeleton", weight: 0.5, value: jaccard(&a.skeleton, &b.skeleton) },
     ]
 }
 
@@ -835,6 +936,57 @@ fn cluster_findings(pairs: Vec<Finding>, comps: &[Comp]) -> Vec<Finding> {
 }
 
 /// One ranked "similar to X" row for `bsc ui similar <id>` — the other component + the sub-scores.
+/// One ranked "built like X" row for `bsc ui similar <id> --shape` (#90) — ranked on STRUCTURE alone.
+///
+/// A separate entry point rather than a flag on [`rank_similar`], because it answers a different question
+/// and so returns different columns. Blending the two would reproduce the bug: the moment a name term is
+/// in the mean, a same-shape pair with unrelated names falls under the bar again.
+///
+/// It also skips [`worth_scoring`]. That pre-filter admits a pair on a near NAME or a hard co-location
+/// signal — neither of which a shape match has by definition — so applying it here would gate out exactly
+/// the population this mode exists to find. The sweep is O(n²) over the library either way.
+pub fn rank_shape_similar(target_id: &str, components: &[Value], top: usize, floor: f64) -> Vec<Value> {
+    let comps: Vec<Comp> = components.iter().filter_map(parse).collect();
+    let Some(target) = comps.iter().find(|c| c.id == target_id) else {
+        return Vec::new();
+    };
+    let mut rows: Vec<(f64, Value)> = comps
+        .iter()
+        .filter(|c| c.id != target_id)
+        .filter_map(|c| {
+            let terms = shape_terms(target, c);
+            // Nothing to compare — both sides source-less AND composes-less. Not "identical", unknown.
+            if terms.iter().all(|t| t.value.is_none()) {
+                return None;
+            }
+            let overall = mean(&terms);
+            if overall < floor {
+                return None;
+            }
+            let term = |label: &str| {
+                terms.iter().find(|t| t.label == label).and_then(|t| t.value).map(|v| (v * 100.0).round() / 100.0)
+            };
+            Some((
+                overall,
+                serde_json::json!({
+                    "id": c.id,
+                    "name": c.name,
+                    "kit": c.kit,
+                    "score": (overall * 100.0).round() / 100.0,
+                    "composes_similarity": term("composes"),
+                    "skeleton_similarity": term("skeleton"),
+                }),
+            ))
+        })
+        .collect();
+    rows.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1["id"].as_str().cmp(&b.1["id"].as_str()))
+    });
+    rows.into_iter().take(top).map(|(_, v)| v).collect()
+}
+
 pub fn rank_similar(target_id: &str, components: &[Value], top: usize, floor: f64) -> Vec<Value> {
     let comps: Vec<Comp> = components.iter().filter_map(parse).collect();
     let Some(target) = comps.iter().find(|c| c.id == target_id) else {
@@ -967,6 +1119,74 @@ mod tests {
             "the impossible merge is not what it proposes: {}",
             nd.suggested_action,
         );
+    }
+
+    // ── shape similarity (#90) ───────────────────────────────────────────────────────────────────────
+    // `overall = 0.5·name + 0.5·contract` pulls a pair whose NAMES differ under the bar however
+    // identically it is built, which is why six cards composing [Card, ToggleRow] around one skeleton
+    // never surfaced each other. Shape mode scores structure and nothing else.
+
+    /// The reported case: unrelated names, different copy, SAME structure. Measured on the real store
+    /// before this existed, `similar soundnotificationscard` topped out at 34% and none of the five
+    /// sibling cards made the top ten.
+    #[test]
+    fn shape_mode_surfaces_a_same_structure_pair_that_the_blended_score_buries() {
+        let card = |id: &str, name: &str, title: &str| {
+            let src = format!(
+                "export function {name}(p) {{ return <Card><ToggleRow on={{p.on}} onToggle={{p.onToggle}} title=\"{title}\">{{p.children}}</ToggleRow></Card>; }}"
+            );
+            comp_with(id, name, "k", fields!{ "composes": ["Card", "ToggleRow"], "srcText": src })
+        };
+        let a = card("soundnotificationscard", "SoundNotificationsCard", "Sound alerts");
+        let b = card("kitchangeapprovalcard", "KitChangeApprovalCard", "Approve kit changes");
+        let comps = vec![a, b];
+
+        // The blended measure keeps missing it — that is the bug, pinned so the fix cannot be mistaken
+        // for the old score renamed.
+        let blended = rank_similar("soundnotificationscard", &comps, 10, 0.0);
+        let blended_score = blended.first().and_then(|r| r["score"].as_f64()).unwrap_or(0.0);
+        assert!(blended_score < 0.55, "the blended score still buries it: {blended_score}");
+
+        // Shape mode sees them as what they are: one component built twice.
+        let shaped = rank_shape_similar("soundnotificationscard", &comps, 10, 0.0);
+        assert_eq!(shaped.len(), 1);
+        assert_eq!(shaped[0]["id"], "kitchangeapprovalcard");
+        assert_eq!(shaped[0]["score"], 1.0, "same composes + same skeleton: {shaped:?}");
+    }
+
+    /// The other direction, which is what stops this being the old score under a new name: a SHARED NAME
+    /// with unrelated structure must not rank. If it did, the mode would just be measuring names again.
+    #[test]
+    fn shape_mode_ignores_the_name_it_is_supposed_to_ignore() {
+        let a = comp_with("chart-a", "DonutChart", "k", fields!{
+            "composes": ["Svg", "Arc"], "srcText": "export function DonutChart(){ return <Svg><Arc r={1}/></Svg>; }" });
+        let b = comp_with("chart-b", "DonutChart", "other", fields!{
+            "composes": ["Table", "Row"], "srcText": "export function DonutChart(){ return <Table><Row k={1}/></Table>; }" });
+        let shaped = rank_shape_similar("chart-a", &[a, b], 10, 0.0);
+        let score = shaped.first().and_then(|r| r["score"].as_f64()).unwrap_or(0.0);
+        assert!(score < 0.05, "an identical NAME must not carry a shape score: {shaped:?}");
+    }
+
+    /// Prose is what differs between siblings, so the skeleton must be blind to it — attribute NAMES are
+    /// kept and their values are not, which strips every string literal by construction.
+    #[test]
+    fn the_skeleton_keeps_structure_and_drops_prose() {
+        let one = jsx_skeleton("<Card><ToggleRow title=\"Sound alerts\" on={a} onToggle={b}/></Card>");
+        let two = jsx_skeleton("<Card><ToggleRow title=\"Something else entirely\" on={x} onToggle={y}/></Card>");
+        assert_eq!(one, two, "two components differing only in copy have ONE skeleton");
+        assert!(one.contains("togglerow(on,ontoggle,title)"), "attrs sorted + lowercased: {one:?}");
+        assert!(one.contains("card()"));
+
+        // A generic is not a tag. Without the adjacency rule every component holding a typed collection
+        // would share a phantom tag with every other one.
+        assert!(
+            jsx_skeleton("const m: Map<string, number> = new Map();").is_empty(),
+            "a generic is not JSX: {:?}",
+            jsx_skeleton("const m: Map<string, number> = new Map();"),
+        );
+        // An expression attribute is skipped BALANCED, so a nested tag inside it is not read as an attr.
+        let nested = jsx_skeleton("<Panel body={cond ? <A x={1}/> : <B/>} tone=\"warn\"/>");
+        assert!(nested.contains("panel(body,tone)"), "{nested:?}");
     }
 
     #[test]
