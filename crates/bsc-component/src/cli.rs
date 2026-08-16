@@ -566,10 +566,11 @@ Inspect one component's neighborhood with `bsc ui similar <id>`. #3544.",
     },
     CmdDoc {
         name: "similar",
-        summary: "components most similar to <id> across the whole library (name + contract distance) — discover-before-authoring (#3544)",
+        summary: "components most similar to <id> across the whole library (name + contract distance, or --shape for structure alone) — discover-before-authoring (#3544)",
         usage: "\
 USAGE:
   bsc ui similar <id> [--top N] [--threshold 0..1] [--json] [--pretty]
+  bsc ui similar <id> --shape [--top N] [--threshold 0..1]   # rank by STRUCTURE only (#90)
 
 Ranks every OTHER component by its similarity to <id> (the same name + contract distance `bsc ui dupes`
 uses), most-similar first. The discover-before-authoring read: BEFORE a session authors a new component it
@@ -577,7 +578,15 @@ asks whether one like it already exists, so the library converges instead of spr
 Cross-kit. --top caps the rows (default 10); --threshold sets a minimum overall score (default 0 — the
 internal name gate already drops unrelated names). --json emits `[{ id, name, kit, score, name_similarity,
 contract_similarity, usedBy }]` — `usedBy` is the candidate's graph-usage (#3584), so a combine proposal
-carries which side is load-bearing. PROPOSE-ONLY — reads only. #3544.",
+carries which side is load-bearing. PROPOSE-ONLY — reads only. #3544.
+
+--shape (#90) ranks on STRUCTURE ALONE: the composes signature + the JSX skeleton (each opening tag as
+`tag(attr,…)`, so string literals fall out by construction and only attribute NAMES are compared). It is a
+different question, so it returns different columns — `{ composes_similarity, skeleton_similarity }`.
+Reach for it when the thing you suspect is 'these were built the same way and should share a wrapper': the
+blended score cannot see that, because a differing NAME halves it however identical the structure. Measured:
+six settings cards composing [Card, ToggleRow] around one skeleton scored 34% blended and never surfaced
+each other; under --shape they are the top five. The default output is unaffected.",
     },
     CmdDoc {
         name: "used-by",
@@ -3579,6 +3588,8 @@ fn cmd_dupes(args: &[String]) -> Result<(), String> {
 fn cmd_similar(args: &[String]) -> Result<(), String> {
     let (mut dir, mut json, mut pretty) = (None::<String>, false, false);
     let (mut id, mut top, mut floor) = (None::<String>, 10usize, 0.0f64);
+    // #90: rank on STRUCTURE alone — the composes signature + the JSX skeleton — instead of name+contract.
+    let mut shape = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -3589,6 +3600,7 @@ fn cmd_similar(args: &[String]) -> Result<(), String> {
             "--threshold" => {
                 floor = it.next().and_then(|s| s.parse::<f64>().ok()).ok_or("--threshold needs a number in [0,1]")?;
             }
+            "--shape" => shape = true,
             "--json" => json = true,
             "--pretty" => pretty = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -3596,7 +3608,7 @@ fn cmd_similar(args: &[String]) -> Result<(), String> {
             other => return Err(format!("unexpected argument '{other}'")),
         }
     }
-    let id = id.ok_or("usage: bsc ui similar <id> [--top N] [--threshold F]")?;
+    let id = id.ok_or("usage: bsc ui similar <id> [--shape] [--top N] [--threshold F]")?;
     let store = open_component_store(&dir)?;
     let comps: Vec<serde_json::Value> =
         store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
@@ -3606,7 +3618,12 @@ fn cmd_similar(args: &[String]) -> Result<(), String> {
     // #3584: fold each candidate's graph-USAGE (composes-inverse) into the row, so a "these two overlap"
     // proposal arrives with which side is load-bearing — the optimizer folds the LESS-used into the more.
     let idx = used_by_index(&comps);
-    let rows: Vec<serde_json::Value> = crate::similarity::rank_similar(&id, &comps, top, floor)
+    let ranked = if shape {
+        crate::similarity::rank_shape_similar(&id, &comps, top, floor)
+    } else {
+        crate::similarity::rank_similar(&id, &comps, top, floor)
+    };
+    let rows: Vec<serde_json::Value> = ranked
         .into_iter()
         .map(|mut r| {
             let key = (r["kit"].as_str().unwrap_or("").to_string(), r["name"].as_str().unwrap_or("").to_string());
@@ -3621,6 +3638,24 @@ fn cmd_similar(args: &[String]) -> Result<(), String> {
     }
     if rows.is_empty() {
         println!("no components similar to '{id}'.");
+        return Ok(());
+    }
+    // The shape rows carry different columns because they answer a different question — printing them
+    // under `name · contract` headings would report 0.00 for two terms this mode never scored.
+    if shape {
+        println!("components built like '{id}' (structure only), most-alike first:");
+        let fmt = |v: &serde_json::Value| v.as_f64().map_or("—".to_string(), |f| format!("{f:.2}"));
+        for r in &rows {
+            println!(
+                "  {:>3.0}%  {} ({})  [composes {} · skeleton {} · used-by {}]",
+                r["score"].as_f64().unwrap_or(0.0) * 100.0,
+                r["name"].as_str().unwrap_or(""),
+                r["kit"].as_str().unwrap_or(""),
+                fmt(&r["composes_similarity"]),
+                fmt(&r["skeleton_similarity"]),
+                r["usedBy"].as_u64().unwrap_or(0),
+            );
+        }
         return Ok(());
     }
     println!("components similar to '{id}', most-similar first:");
