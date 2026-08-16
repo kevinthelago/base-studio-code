@@ -17,6 +17,10 @@ use bsc_sqlite_util::{print_json, read_stdin_json};
 use serde_json::Value;
 
 /// The per-store knobs that make the otherwise-identical CLI concrete.
+///
+/// `Debug` so a surface loaded from a record can be compared against the compiled one in a test — the
+/// fallback path is the part whose failure would be silent (#spike-load-the-json-store-cli-spec-from-a-record).
+#[derive(Debug)]
 pub struct CliSpec {
     /// Singular record noun, used for the stdin-read + id-validation errors (`"blueprint"` / `"persona"`).
     pub noun: &'static str,
@@ -135,6 +139,11 @@ pub fn run_hooked_validated(
     on_write: Option<WriteHook>,
     validate: Option<SetValidator>,
 ) -> Result<(), String> {
+    // The surface may be overridden by a RECORD (#spike-load-the-json-store-cli-spec-from-a-record).
+    // No record — the normal case for every store today — returns `spec` unchanged, so this is a no-op
+    // until someone writes one. A record that is present but invalid warns and falls back rather than
+    // taking the surface down; see `surface::resolve_spec`.
+    let spec = crate::surface::resolve_spec(spec);
     let args = parse_args(args)?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
