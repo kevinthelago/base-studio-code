@@ -106,7 +106,7 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
 
   it("projects streams (+ director) into positions and coordination into archetype relationships", () => {
     const org = fleetToOrg(fleet);
-    expect(org.positions.map((p) => p.nodeId).sort()).toEqual(["api", "director", "planner", "ui"]);
+    expect(org.positions.map((p) => p.nodeId).sort()).toEqual(["api", "director", "ui"]);
     expect(org.positions.find((p) => p.nodeId === "api")).toMatchObject({ kind: "agent", personaId: "p-worker" });
     // the director MANAGES each stream
     expect(org.relationships).toContainEqual(expect.objectContaining({ from: "director", to: "api", archetype: "manages" }));
@@ -122,32 +122,41 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
   });
 
   // ── the planner position ──────────────────────────────────────────────────
-  it("carries the planner and wires it to the director with `serves`", () => {
+  it("has NO planner node — the drill starts at the director", () => {
+    // REVERSES #glance-planner-node-per-project on the maintainer's call: the planning session authored
+    // the plan but is not part of the RUNTIME picture. Nothing synthesizes it any more.
     const org = fleetToOrg(fleet);
-    expect(org.positions.find((p) => p.nodeId === PLANNER_NODE_ID))
-      .toMatchObject({ kind: "agent", personaId: "planner" });
-    // planner SERVES the director — it hands the plan over and briefs it, but owns no execution.
+    expect(org.positions.some((p) => p.nodeId === PLANNER_NODE_ID)).toBe(false);
+    expect(org.relationships.some((r) => r.from === PLANNER_NODE_ID || r.to === PLANNER_NODE_ID)).toBe(false);
+  });
+
+  it("excludes a REAL `planner` stream too, not just the synthesized node", () => {
+    // Dropping only the synthetic position would leave studio-code's real stream — named "Project
+    // planning session" — sitting in exactly the same place under a different label, which is the node
+    // that was asked to go. `planner` is a reserved id that no longer renders, whatever its origin.
+    const org = fleetToOrg({
+      ...fleet,
+      streams: [
+        { id: "planner", name: "Project planning session", repo: "r", owns: [], issues: [], dependsOn: [] },
+        { id: "api", name: "API", repo: "r", owns: [], issues: [], dependsOn: [] },
+      ],
+    } as unknown as FleetPlan);
+    expect(org.positions.some((p) => p.nodeId === PLANNER_NODE_ID)).toBe(false);
+    expect(org.positions.some((p) => p.label === "Project planning session")).toBe(false);
+    // every OTHER stream is still managed — the exclusion is scoped to the one id
     expect(org.relationships).toContainEqual(
-      expect.objectContaining({ from: PLANNER_NODE_ID, to: "director", archetype: "serves" }),
+      expect.objectContaining({ from: "director", to: "api", archetype: "manages" }),
     );
-    // ...and never MANAGES it — that would invert the authority chain.
-    expect(org.relationships.some((r) => r.from === PLANNER_NODE_ID && r.archetype === "manages")).toBe(false);
   });
 
-  it("keeps the planner node even with no director", () => {
-    // A project can decline a director; it cannot have a plan without a planning session. The node
-    // stays (with no edge to draw), so the graph never silently loses the agent that authored the plan.
-    const org = fleetToOrg({ ...fleet, director: { enabled: false } });
-    expect(org.positions.some((p) => p.nodeId === PLANNER_NODE_ID)).toBe(true);
-    expect(org.relationships.some((r) => r.from === PLANNER_NODE_ID)).toBe(false);
-  });
-
-  it("isolates the planner from the dependency mesh — the cycle that blanked the graph", () => {
-    // Regression. A real `planner` stream WITH dependsOn sat below the director (director manages
-    // console, planner depends on console) and above it (planner serves director), closing
+  it("a planner stream's edges vanish with it — the cycle that blanked the graph", () => {
+    // Regression, and the reason the exclusion is by ID rather than by "was it synthesized". A real
+    // `planner` stream WITH dependsOn sat below the director (director manages console, planner depends
+    // on console) and above it (planner serves director), closing
     //   console -> planner -> director -> console
     // `mutualPairs` only finds 2-cycles, so this never reached layerDag's break set: measured at layer
-    // 141 across 46 nodes, spreading the graph over 142 columns — an empty canvas.
+    // 141 across 46 nodes, spreading the graph over 142 columns — an empty canvas. With the planner no
+    // longer a position, `rel()` drops these on its posIds guard.
     const org = fleetToOrg({
       ...fleet,
       streams: [
@@ -156,16 +165,7 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
       ],
       edges: [{ id: "e9", from: "planner", to: "console", kind: "handoff", hardness: "blocking", via: "direct" }],
     } as unknown as FleetPlan);
-
-    // The planner's ONLY relationship is serves→director.
-    const plannerRels = org.relationships.filter((r) => r.from === PLANNER_NODE_ID || r.to === PLANNER_NODE_ID);
-    expect(plannerRels).toEqual([
-      expect.objectContaining({ from: PLANNER_NODE_ID, to: "director", archetype: "serves" }),
-    ]);
-
-    // No cycle through the planner: nothing points AT it.
-    expect(org.relationships.some((r) => r.to === PLANNER_NODE_ID)).toBe(false);
-
+    expect(org.relationships.some((r) => r.from === PLANNER_NODE_ID || r.to === PLANNER_NODE_ID)).toBe(false);
     // Everyone else's edges are untouched.
     expect(org.relationships).toContainEqual(
       expect.objectContaining({ from: "director", to: "console", archetype: "manages" }),
@@ -186,58 +186,36 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
     );
   });
 
-  it("never makes the planner a director REPORT — that pair is a cycle", () => {
-    // Regression for the observed `dependency cycle: director ⇄ Project planning session`. A fleet can
-    // carry a real stream called `planner`; pairing `manages` with `serves` makes a mutual pair, which
-    // is handed to layerDag as the cycle-break set — so BOTH edges drop and the planner loses every
-    // layering constraint, landing among the workers on the wrong side of the director.
-    const withPlannerStream = fleetToOrg({
-      ...fleet,
-      streams: [
-        { id: "planner", name: "Project planning session", repo: "r", owns: [], issues: [], dependsOn: [] },
-        { id: "api", name: "API", repo: "r", owns: [], issues: [], dependsOn: [] },
-      ],
-    } as unknown as FleetPlan);
-    expect(withPlannerStream.relationships.some(
-      (r) => r.from === "director" && r.to === PLANNER_NODE_ID,
-    )).toBe(false);
-    // the serves edge survives — it is the constraint that puts the planner left
-    expect(withPlannerStream.relationships).toContainEqual(
-      expect.objectContaining({ from: PLANNER_NODE_ID, to: "director", archetype: "serves" }),
-    );
-    // no mutual pair between them in either direction
-    const between = withPlannerStream.relationships.filter(
-      (r) => (r.from === "director" && r.to === PLANNER_NODE_ID) || (r.from === PLANNER_NODE_ID && r.to === "director"),
-    );
-    expect(between).toHaveLength(1);
-    // every OTHER stream is still managed
-    expect(withPlannerStream.relationships).toContainEqual(
-      expect.objectContaining({ from: "director", to: "api", archetype: "manages" }),
-    );
+  it("the system sessions SERVE the director", () => {
+    // The maintainer's directive: the sessions wire straight to the director, with no planning node
+    // between them. `serves` (not `manages`) keeps the authority chain reading one way, and is what
+    // layers them LEFT of the director.
+    const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "librarian"] } as unknown as FleetPlan);
+    for (const s of ["designer", "librarian"]) {
+      expect(org.relationships).toContainEqual(
+        expect.objectContaining({ from: s, to: "director", archetype: "serves" }),
+      );
+    }
+    expect(org.relationships.some((r) => r.to === PLANNER_NODE_ID)).toBe(false);
   });
 
-  it("does not duplicate the node when a STREAM is itself called `planner`", () => {
-    // Two positions sharing a nodeId would not read as a duplicate — `rel()` de-dupes by id, so it
-    // would read as edges going missing. The real stream keeps the name; we add ours only if free.
-    const collide = fleetToOrg({
-      ...fleet,
-      streams: [{ id: "planner", name: "Planner", repo: "r", owns: [], issues: [], dependsOn: [] }],
-    } as unknown as FleetPlan);
-    expect(collide.positions.filter((p) => p.nodeId === PLANNER_NODE_ID)).toHaveLength(1);
-    // The real stream's identity survives — it is not overwritten by the synthetic position.
-    expect(collide.positions.find((p) => p.nodeId === PLANNER_NODE_ID)?.label).toBe("Planner");
-    // And no self-edge was produced.
-    expect(collide.relationships.some((r) => r.from === PLANNER_NODE_ID && r.to === PLANNER_NODE_ID)).toBe(false);
+  it("a director-less fleet still renders, with the sessions simply serving nothing", () => {
+    // The old code kept a planner node so the graph never "lost the agent that authored the plan".
+    // Now there is no such node, so the no-director case must not leave an orphan in its place.
+    const org = fleetToOrg({ ...fleet, director: { enabled: false }, systemSessions: ["designer"] } as unknown as FleetPlan);
+    expect(org.positions.some((p) => p.nodeId === PLANNER_NODE_ID)).toBe(false);
+    expect(org.positions.some((p) => p.nodeId === "designer")).toBe(true);
+    expect(org.relationships.some((r) => r.from === "designer")).toBe(false);
   });
 
   // ── declared system sessions ──────────────────────────────────────────────
-  it("renders ONLY the system sessions the project declares, each serving the planner", () => {
+  it("renders ONLY the system sessions the project declares, each serving the director", () => {
     const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "librarian"] } as unknown as FleetPlan);
     expect(org.positions.map((p) => p.nodeId).sort())
-      .toEqual(["api", "designer", "director", "librarian", "planner", "ui"]);
+      .toEqual(["api", "designer", "director", "librarian", "ui"]);
     for (const s of ["designer", "librarian"]) {
       expect(org.relationships).toContainEqual(
-        expect.objectContaining({ from: s, to: PLANNER_NODE_ID, archetype: "serves" }),
+        expect.objectContaining({ from: s, to: "director", archetype: "serves" }),
       );
     }
     // the ones it did NOT declare are absent — a project with no UI kit shows no designer
@@ -267,7 +245,7 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
     expect(data.rawNodes.find((n) => n.id === "librarian")).toMatchObject({ roleLabel: "librarian", role: "client" });
   });
 
-  it("places system sessions LEFT of the planner, planner left of the director, workers right", () => {
+  it("places system sessions LEFT of the director, workers right", () => {
     // The arrangement is a CONSEQUENCE of `serves`, not a layout rule — so assert the layering the real
     // chain produces. Glance inverts org relationships into `from depends on to`, then reverses again
     // for layerDag, so a `serves` edge puts the server at the lower (further-left) layer.
@@ -283,19 +261,18 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
       }
       if (!changed) break;
     }
-    expect(layer.designer).toBeLessThan(layer.planner);
-    expect(layer.librarian).toBeLessThan(layer.planner);
-    expect(layer.planner).toBeLessThan(layer.director);
+    expect(layer.designer).toBeLessThan(layer.director);
+    expect(layer.librarian).toBeLessThan(layer.director);
     expect(layer.director).toBeLessThan(layer.api);
     expect(layer.director).toBeLessThan(layer.ui);
   });
 
-  it("renders the planner in the ORCHESTRATE bucket, not as a worker", () => {
-    // Without the role fallback knowing the id, an unmatched persona falls through to `worker` and the
-    // planner would draw in the BUILD colour — wrong for an orchestrating agent.
-    const data = buildOrgFleetData(fleetToOrg(fleet), []);
-    const planner = data.rawNodes.find((n) => n.id === PLANNER_NODE_ID);
-    expect(planner).toMatchObject({ role: "infra", roleLabel: "planner" });
+  it("renders orchestrating agents in the ORCHESTRATE bucket, not as workers", () => {
+    // Without the role fallback knowing the id, an unmatched persona falls through to `worker` and an
+    // orchestrating agent would draw in the BUILD colour. The planner node is gone (it is no longer a
+    // position at all), so the surviving orchestrators are the director and the system sessions.
+    const data = buildOrgFleetData(fleetToOrg({ ...fleet, systemSessions: ["designer"] } as unknown as FleetPlan), []);
+    expect(data.rawNodes.find((n) => n.id === "designer")?.roleLabel).toBe("designer"); // NOT the worker fallback
     // the director keeps its own fallback
     expect(data.rawNodes.find((n) => n.id === "director")).toMatchObject({ role: "infra", roleLabel: "director" });
     // a stream with no persona still falls through to worker
