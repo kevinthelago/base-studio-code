@@ -291,9 +291,13 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   // say "it bounces ONCE per stop, so a finished worker is never trapped", and that stopped being true
   // in #4021 without the comment changing, which is most of why it survived review.
   //
-  // The restricted STUDIO sessions never had one (#3580) — their keep-going is the LOOP pump
-  // (useDesignerLoopPump, #3292), which drives a session turn-by-turn ONLY while an open loop exists.
-  // That remains the one sanctioned way a session is kept going, and it is bounded by an explicit loop.
+  // The restricted STUDIO sessions never had one (#3580), and no longer have a successor either. Their
+  // keep-going USED to be the loop pump (useDesignerLoopPump, #3292) — that pump's body was removed by
+  // `#app-stops-pushing-prompts` and its Auto-improve trigger by
+  // `auto-improve-starts-a-loop-nothing-can-drive`, so nothing in the app opens or drives a designer loop
+  // any more. A studio session running out of turn simply stops, which is the intended state: the app
+  // does not push prompts on a schedule. (Stated explicitly because the paragraph above is about a claim
+  // that stopped being true without its comment changing — this is that comment, changed.)
   // A fleet WORKER also gets the superseded gate (bsc-superseded, #4240): two actors can land the same
   // issue — a director closes one directly, two streams overlap — and today the second worker finds out
   // at MERGE time, after writing code and opening a conflicting PR. The completion is already ON the

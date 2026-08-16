@@ -94,7 +94,6 @@
   "@/features/designs/lib/useComponentScan",
   "@/features/designs/lib/usePreviewStateCycle",
   "@/features/designs/useDesignerLoopPump",
-  "@/features/designs/useDesignerLoopState",
   "@/features/designs/usePreviewData",
   "@/features/github/graphPlatform",
   "@/features/github/lib/githubSummary",
