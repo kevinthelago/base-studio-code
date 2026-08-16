@@ -21,7 +21,13 @@ pub const VERBS: [&str; 14] =
     ["impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "emit", "help"];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
-pub const IMPL_SUBVERBS: [&str; 7] = ["set", "remove", "list", "suppress", "unsuppress", "history", "revert"];
+///
+/// `get` was missing until the librarian audit: the arm existed, `help` documented it, and the librarian
+/// seed taught it to nobody — and because the spec drift test derives its expectations from THIS list,
+/// the one verb the records architecture tells every worker to reach for was the one verb no test could
+/// notice going undocumented. The list is only a drift guard if it is complete.
+pub const IMPL_SUBVERBS: [&str; 8] =
+    ["set", "get", "remove", "list", "suppress", "unsuppress", "history", "revert"];
 
 /// The `edge` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
@@ -900,7 +906,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     .collect();
                 emit(&Value::Array(impls))
             }
-            _ => Err("usage: bsc graph impl set … | impl remove <id> | impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]".to_string()),
+            // Every subverb in `IMPL_SUBVERBS`, in its order — the roster a caller who guessed wrong
+            // needs is the WHOLE roster, and half of it used to be missing from this line.
+            _ => Err("usage: bsc graph impl set … | impl get <id> | impl remove <id> \
+                      | impl list [--tech <t>] [--role r] [--domain <d>] \
+                      | impl suppress <id> [--superseded-by <new-id>] | impl unsuppress <id> \
+                      | impl history <id> | impl revert <id> [--to <rev>]"
+                .to_string()),
         },
         // `harvest <dir> [--tech typescript|rust] [--worthy-only]` — the extract-to-harvest feeder
         // (#2745): parse a project's real code and lift each function into a CANDIDATE library
