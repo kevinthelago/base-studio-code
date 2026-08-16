@@ -11,6 +11,7 @@
 //! BOTH sides (the TS `previewProps.test.ts` and the `#[cfg(test)]` block below) so drift is caught.
 
 use serde_json::{json, Value};
+use std::collections::HashSet;
 
 /// One public prop of a component — the sampler's input (name + loose `type` + required). Mirrors the
 /// `PropSpec` fields the TS sampler reads (`desc` is irrelevant here).
@@ -37,25 +38,42 @@ pub fn props_from_record(rec: &Value) -> Vec<Prop> {
         .unwrap_or_default()
 }
 
+/// The component's own implementation source — `source` (the verbatim `.tsx`) preferred over the `srcText`
+/// usage snippet, the same precedence the TS build scan uses. Empty when the record carries neither.
+pub fn source_from_record(rec: &Value) -> String {
+    for field in ["source", "srcText"] {
+        if let Some(s) = rec.get(field).and_then(Value::as_str) {
+            if !s.is_empty() {
+                return s.to_string();
+            }
+        }
+    }
+    String::new()
+}
+
 /// The inspectable props the harness passes `comp_name`'s component in EVERY state — the structured twin
 /// of what `bootstrapSource` mounts. Shape: `{ loaded, empty, loading }`, each `{ props: [{name, value}],
 /// child }`, where `props` is in schema order (children excluded) and `child` is the (state-independent)
 /// child text (`null` when the component has no `children` prop). Mirrors `previewProps` (componentPreview.ts).
-pub fn preview_props_states(comp_name: &str, props: &[Prop]) -> Value {
+///
+/// `src` is the component's own implementation source ([`source_from_record`]); the props it DEFAULTS are
+/// read from it once here, since that is the only thing that makes omitting a required container safe.
+pub fn preview_props_states(comp_name: &str, props: &[Prop], src: &str) -> Value {
     let child = preview_child(comp_name, props);
-    let state = |s: &str| json!({ "props": preview_prop_list(props, s), "child": child });
+    let defaulted = props_with_own_default(src, comp_name);
+    let state = |s: &str| json!({ "props": preview_prop_list(props, s, &defaulted), "child": child });
     json!({ "loaded": state("loaded"), "empty": state("empty"), "loading": state("loading") })
 }
 
 /// The props (name + sampled JS-source value) the bootstrap passes in `state`, in schema order — each
 /// non-`children` prop that samples to a non-`null` value. Mirrors `previewPropList` (componentPreview.ts).
-fn preview_prop_list(props: &[Prop], state: &str) -> Value {
+fn preview_prop_list(props: &[Prop], state: &str, defaulted: &HashSet<String>) -> Value {
     let mut out: Vec<Value> = Vec::new();
     for p in props {
         if p.name == "children" {
             continue;
         }
-        if let Some(v) = sample_prop_value(&p.name, &p.ty, p.req, state) {
+        if let Some(v) = sample_prop_value(&p.name, &p.ty, p.req, state, defaulted.contains(&p.name)) {
             out.push(json!({ "name": p.name, "value": v }));
         }
     }
@@ -76,9 +94,13 @@ fn preview_child(comp_name: &str, props: &[Prop]) -> Value {
 /// `samplePropValue`. `state` drives the data-state: `loading` turns a loading-family boolean on; `empty`
 /// passes the typed EMPTY literal for a data container (`[]` array, `{}` Record, `new Set()`, `new Map()`);
 /// `loaded`/`loading` OMIT a container so the component's own default demo renders (the demo-on-undefined
-/// convention — the same path object props like `gh` already take, #3693). `req` no longer forces a value:
-/// a required container omits in loaded exactly as a required object prop already does.
-fn sample_prop_value(name: &str, ty: &str, _req: bool, state: &str) -> Option<String> {
+/// convention — the same path object props like `gh` already take, #3693).
+///
+/// `has_own_default` says the component's OWN signature defaults this prop, which is what makes that
+/// omission safe; callers derive it with [`props_with_own_default`]. A REQUIRED container whose component
+/// does not default it gets the empty literal in every state instead of being dropped — omitting it mounts
+/// the component with `undefined` where its contract promised a value.
+fn sample_prop_value(name: &str, ty: &str, req: bool, state: &str, has_own_default: bool) -> Option<String> {
     if is_loading_prop(name, ty) {
         return if state == "loading" { Some("true".into()) } else { None };
     }
@@ -93,16 +115,16 @@ fn sample_prop_value(name: &str, ty: &str, _req: bool, state: &str) -> Option<St
     // sampled as a title-cased string — rendering NaN nonsense (`Object.values("Lang Totals")`) or crashing
     // an optional-Set consumer (`"Highlight".has(k)` — a string has no `.has()`; `?.` guards only undefined).
     if is_collection_prop(ty) {
-        return if state == "empty" { Some("[]".into()) } else { None };
+        return container_sample(req, state, "[]", has_own_default);
     }
     if is_record_type(&t) {
-        return if state == "empty" { Some("{}".into()) } else { None };
+        return container_sample(req, state, "{}", has_own_default);
     }
     if is_set_type(&t) {
-        return if state == "empty" { Some("new Set()".into()) } else { None };
+        return container_sample(req, state, "new Set()", has_own_default);
     }
     if is_map_type(&t) {
-        return if state == "empty" { Some("new Map()".into()) } else { None };
+        return container_sample(req, state, "new Map()", has_own_default);
     }
     if t.contains("reactnode") || t.contains("node") {
         return Some(json_string(&pretty_name(name)));
@@ -118,6 +140,184 @@ fn sample_prop_value(name: &str, ty: &str, _req: bool, state: &str) -> Option<St
     }
     // enum-like unions ("a" | "b") → the first literal.
     first_string_literal(ty).map(|lit| json_string(&lit))
+}
+
+/// The typed EMPTY literal a data container samples to, or `None` to omit the prop — the shared tail of
+/// the four container branches. Mirrors `containerSample` (componentPreview.ts).
+///
+/// `empty` always passes the literal. `loaded`/`loading` OMIT it so a demo-on-undefined component renders
+/// its own default demo rather than a state indistinguishable from `empty` (#3693) — but ONLY when the
+/// component HAS such a default. Without one, omitting a REQUIRED container mounts the component with
+/// `undefined` and it throws on its first unguarded read (`Object.values(langTotals)`, `prs.length`). An
+/// OPTIONAL container still omits either way: its contract allows `undefined`.
+fn container_sample(req: bool, state: &str, empty_literal: &str, has_own_default: bool) -> Option<String> {
+    if state == "empty" || (req && !has_own_default) {
+        Some(empty_literal.into())
+    } else {
+        None
+    }
+}
+
+/// The prop names `comp_name`'s own signature supplies a DEFAULT for — `{ workers = DEMO_WORKERS, loading =
+/// false }` → `{workers, loading}`. The demo-on-undefined convention (#3693) is only safe for these. The
+/// props metadata cannot express it (`req` says what the CONTRACT requires, not what the implementation
+/// defaults), so it is read from the source and nowhere else. Mirrors `propsWithOwnDefault`.
+///
+/// Deliberately conservative — an unparsed signature yields an EMPTY set, which makes a required container
+/// sample as its empty literal. That direction is the safe one: a component that wanted its demo shows an
+/// empty state instead, where the reverse (a default wrongly detected) mounts `undefined` and throws.
+pub fn props_with_own_default(src: &str, comp_name: &str) -> HashSet<String> {
+    let mut out = HashSet::new();
+    if src.is_empty() || !is_ident(comp_name) {
+        return out;
+    }
+    let chars: Vec<char> = src.chars().collect();
+    // The declaration of THIS component (not a sibling helper that might default a same-named prop).
+    let Some(decl_end) = find_declaration(&chars, comp_name) else { return out };
+    let Some(open_paren) = (decl_end..chars.len()).find(|&i| chars[i] == '(') else { return out };
+    let mut i = open_paren + 1;
+    while i < chars.len() && chars[i].is_whitespace() {
+        i += 1;
+    }
+    if i >= chars.len() || chars[i] != '{' {
+        return out; // a non-destructured param — nothing to read
+    }
+    for seg in destructured_segments(&chars, i) {
+        let Some(eq) = assignment_eq(&seg) else { continue };
+        // `{ a: b = 1 }` renames — the PROP is `a`, the binding `b`; the sampler keys on the prop.
+        let head: String = seg[..eq].split(':').next().unwrap_or("").trim().to_string();
+        if is_ident(&head) {
+            out.insert(head);
+        }
+    }
+    out
+}
+
+/// The index just past `function|const|let|var <name>` in `chars`, requiring word boundaries on both the
+/// keyword and the name so `functionX`/`MyCardHeader` never match for `Card`.
+fn find_declaration(chars: &[char], name: &str) -> Option<usize> {
+    let name: Vec<char> = name.chars().collect();
+    for kw in ["function", "const", "let", "var"] {
+        let kw: Vec<char> = kw.chars().collect();
+        let mut i = 0;
+        while i + kw.len() < chars.len() {
+            if chars[i..].starts_with(&kw)
+                && (i == 0 || !is_ident_char(chars[i - 1]))
+                && chars.get(i + kw.len()).is_some_and(|c| c.is_whitespace())
+            {
+                let mut j = i + kw.len();
+                while j < chars.len() && chars[j].is_whitespace() {
+                    j += 1;
+                }
+                if chars[j..].starts_with(&name) && !chars.get(j + name.len()).is_some_and(|&c| is_ident_char(c)) {
+                    return Some(j + name.len());
+                }
+            }
+            i += 1;
+        }
+    }
+    None
+}
+
+/// The comma-separated entries of the destructuring block opening at `chars[open]` (`{`), split at the
+/// block's OWN depth so a nested `{}`/`()`/`[]` in a default value (`onOpen = () => {}`) never splits it.
+/// Strings/templates are skipped whole. Mirrors `destructuredSegments`.
+fn destructured_segments(chars: &[char], open: usize) -> Vec<String> {
+    let (mut segs, mut depth, mut paren, mut bracket, mut seg_start) = (Vec::new(), 0i32, 0i32, 0i32, open + 1);
+    let mut j = open;
+    while j < chars.len() {
+        let ch = chars[j];
+        if ch == '"' || ch == '\'' || ch == '`' {
+            j = skip_quoted(chars, j) + 1;
+            continue;
+        }
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    segs.push(chars[seg_start..j].iter().collect());
+                    break;
+                }
+            }
+            _ if depth != 1 => {}
+            '(' => paren += 1,
+            ')' => paren -= 1,
+            '[' => bracket += 1,
+            ']' => bracket -= 1,
+            ',' if paren == 0 && bracket == 0 => {
+                segs.push(chars[seg_start..j].iter().collect());
+                seg_start = j + 1;
+            }
+            _ => {}
+        }
+        j += 1;
+    }
+    segs
+}
+
+/// The byte index of the `=` that makes `seg` a DEFAULT, or `None`. Skips the comparison/arrow forms
+/// (`=>`, `==`, `>=`, `<=`, `!=`). Mirrors `assignmentEq`.
+fn assignment_eq(seg: &str) -> Option<usize> {
+    let chars: Vec<char> = seg.chars().collect();
+    let mut j = 0;
+    while j < chars.len() {
+        if chars[j] == '=' {
+            if matches!(chars.get(j + 1), Some('=') | Some('>')) {
+                j += 2;
+                continue;
+            }
+            if !matches!(chars.get(j.wrapping_sub(1)), Some('=') | Some('!') | Some('<') | Some('>')) || j == 0 {
+                // The char index is the byte index too for the ASCII prefix any identifier head has.
+                return Some(chars[..j].iter().map(|c| c.len_utf8()).sum());
+            }
+        }
+        j += 1;
+    }
+    None
+}
+
+/// The index of the closing quote of the string/template starting at `chars[i]` (escapes honoured; a
+/// template's `${…}` spans are skipped whole). Returns the last index when unterminated. Mirrors `skipQuoted`.
+fn skip_quoted(chars: &[char], i: usize) -> usize {
+    let quote = chars[i];
+    let mut j = i + 1;
+    while j < chars.len() {
+        if chars[j] == '\\' {
+            j += 2;
+            continue;
+        }
+        if quote == '`' && chars[j] == '$' && chars.get(j + 1) == Some(&'{') {
+            let mut depth = 1;
+            j += 2;
+            while j < chars.len() && depth > 0 {
+                match chars[j] {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
+                    _ => {}
+                }
+                j += 1;
+            }
+            continue;
+        }
+        if chars[j] == quote {
+            return j;
+        }
+        j += 1;
+    }
+    chars.len().saturating_sub(1)
+}
+
+/// Is `s` a plain JS identifier (`[A-Za-z_$][\w$]*`)? The guard on both the component name and a parsed
+/// prop head, so a malformed parse never contributes a bogus name.
+fn is_ident(s: &str) -> bool {
+    let mut cs = s.chars();
+    cs.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$') && cs.all(is_ident_char)
+}
+
+/// Is `c` legal INSIDE an identifier (a leading digit is excluded by [`is_ident`]'s first-char check)?
+fn is_ident_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '$'
 }
 
 /// Is `name`/`ty` a LOADING-family boolean (`loading`/`busy`/`pending`/`isLoading`)? Mirrors `isLoadingProp`.
@@ -271,7 +471,7 @@ mod tests {
             let comp = case.get("comp").expect("case.comp");
             let name = comp.get("name").and_then(Value::as_str).expect("comp.name");
             let props = props_from_record(comp);
-            let got = preview_props_states(name, &props);
+            let got = preview_props_states(name, &props, &source_from_record(comp));
             let expected = case.get("expected").expect("case.expected");
             let desc = case.get("desc").and_then(Value::as_str).unwrap_or("");
             assert_eq!(&got, expected, "preview-props parity drift — case: {desc}");
@@ -310,29 +510,92 @@ mod tests {
 
     #[test]
     fn sample_prop_value_data_state_threading() {
-        // optional collection: omitted in loaded/loading, `[]` in empty.
-        assert_eq!(sample_prop_value("data", "Row[]", false, "loaded"), None);
-        assert_eq!(sample_prop_value("data", "Row[]", false, "empty"), Some("[]".into()));
-        assert_eq!(sample_prop_value("data", "Row[]", false, "loading"), None);
-        // #3693: a REQUIRED collection now also omits in loaded/loading (only `empty` passes `[]`), so the
-        // component's own default demo data renders in loaded instead of an empty list identical to `empty`.
-        assert_eq!(sample_prop_value("items", "array", true, "loaded"), None);
-        assert_eq!(sample_prop_value("items", "array", true, "loading"), None);
-        assert_eq!(sample_prop_value("items", "array", true, "empty"), Some("[]".into()));
-        // #3693: Record / Set / Map containers omit in loaded, and pass the TYPED empty literal in `empty`
-        // — never a title-cased string (which rendered NaN nonsense / crashed `x?.has()`).
-        assert_eq!(sample_prop_value("langTotals", "Record<string, number>", true, "loaded"), None);
-        assert_eq!(sample_prop_value("langTotals", "Record<string, number>", true, "empty"), Some("{}".into()));
-        assert_eq!(sample_prop_value("highlight", "Set<string>", false, "loaded"), None);
-        assert_eq!(sample_prop_value("highlight", "Set<string>", false, "empty"), Some("new Set()".into()));
-        assert_eq!(sample_prop_value("byId", "Map<string, Row>", false, "empty"), Some("new Map()".into()));
-        assert_eq!(sample_prop_value("offset", "number", false, "loaded"), Some("3".into())); // not a Set
+        // optional collection: omitted in loaded/loading, `[]` in empty — regardless of a default, since
+        // its contract already allows `undefined`.
+        assert_eq!(sample_prop_value("data", "Row[]", false, "loaded", false), None);
+        assert_eq!(sample_prop_value("data", "Row[]", false, "empty", false), Some("[]".into()));
+        assert_eq!(sample_prop_value("data", "Row[]", false, "loading", false), None);
+        // #3693: a REQUIRED collection the component DEFAULTS omits in loaded/loading, so its own demo data
+        // renders instead of an empty list identical to `empty`.
+        assert_eq!(sample_prop_value("items", "array", true, "loaded", true), None);
+        assert_eq!(sample_prop_value("items", "array", true, "loading", true), None);
+        assert_eq!(sample_prop_value("items", "array", true, "empty", true), Some("[]".into()));
+        // Record / Set / Map containers take the same path, and pass the TYPED empty literal in `empty` —
+        // never a title-cased string (which rendered NaN nonsense / crashed `x?.has()`).
+        assert_eq!(sample_prop_value("langTotals", "Record<string, number>", true, "loaded", true), None);
+        assert_eq!(sample_prop_value("langTotals", "Record<string, number>", true, "empty", true), Some("{}".into()));
+        assert_eq!(sample_prop_value("highlight", "Set<string>", false, "loaded", false), None);
+        assert_eq!(sample_prop_value("highlight", "Set<string>", false, "empty", false), Some("new Set()".into()));
+        assert_eq!(sample_prop_value("byId", "Map<string, Row>", false, "empty", false), Some("new Map()".into()));
+        assert_eq!(sample_prop_value("offset", "number", false, "loaded", false), Some("3".into())); // not a Set
         // loading-family boolean: `true` only in loading.
-        assert_eq!(sample_prop_value("loading", "boolean", false, "loading"), Some("true".into()));
-        assert_eq!(sample_prop_value("loading", "boolean", false, "loaded"), None);
+        assert_eq!(sample_prop_value("loading", "boolean", false, "loading", false), Some("true".into()));
+        assert_eq!(sample_prop_value("loading", "boolean", false, "loaded", false), None);
         // name-based handler + JSON-string samples.
-        assert_eq!(sample_prop_value("onClick", "MouseEventHandler", false, "loaded"), Some("() => {}".into()));
-        assert_eq!(sample_prop_value("color", "string", false, "loaded"), Some("\"var(--accent)\"".into()));
-        assert_eq!(sample_prop_value("login", "string", false, "loaded"), Some("\"octocat\"".into()));
+        assert_eq!(sample_prop_value("onClick", "MouseEventHandler", false, "loaded", false), Some("() => {}".into()));
+        assert_eq!(sample_prop_value("color", "string", false, "loaded", false), Some("\"var(--accent)\"".into()));
+        assert_eq!(sample_prop_value("login", "string", false, "loaded", false), Some("\"octocat\"".into()));
+    }
+
+    /// THE REGRESSION. A REQUIRED container the component does NOT default was dropped from `loaded`, so
+    /// the component mounted with `undefined` and threw on its first unguarded read — `LanguageMix` on
+    /// `Object.values(langTotals)`, `OpenPRsAllRepos` on `prs.length`. It gets the empty literal instead.
+    #[test]
+    fn a_required_container_with_no_own_default_is_supplied_in_every_state() {
+        for state in ["loaded", "loading", "empty"] {
+            assert_eq!(
+                sample_prop_value("langTotals", "Record<string, number>", true, state, false),
+                Some("{}".into()),
+                "langTotals must be supplied in {state}"
+            );
+            assert_eq!(sample_prop_value("prs", "OpenPR[]", true, state, false), Some("[]".into()));
+            assert_eq!(sample_prop_value("highlight", "Set<string>", true, state, false), Some("new Set()".into()));
+            assert_eq!(sample_prop_value("byId", "Map<string, Row>", true, state, false), Some("new Map()".into()));
+        }
+    }
+
+    #[test]
+    fn props_with_own_default_reads_the_components_own_signature() {
+        // The #3693 exemplars — these DO default, so omitting them is right.
+        let worker_board = "export function WorkerBoard({ workers = DEMO_WORKERS, onOpen = () => {}, loading = false }: Props) {";
+        let got = props_with_own_default(worker_board, "WorkerBoard");
+        assert_eq!(got, ["workers", "onOpen", "loading"].map(String::from).into_iter().collect());
+        // The reported components — no defaults anywhere, so nothing may be omitted.
+        let lang_mix = "export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {\n  langTotals: Record<string, number>;\n}) {";
+        assert!(props_with_own_default(lang_mix, "LanguageMix").is_empty());
+        // A RENAMED binding with a default reports the PROP name, not the binding.
+        assert!(props_with_own_default("function C({ contributors: list = [] }) {}", "C").contains("contributors"));
+        // A rename with NO default contributes nothing.
+        assert!(props_with_own_default("function C({ contributors: list }) {}", "C").is_empty());
+        // An arrow component is the same shape.
+        assert!(props_with_own_default("export const Card = ({ rows = [] }) => null;", "Card").contains("rows"));
+    }
+
+    #[test]
+    fn props_with_own_default_is_conservative_when_it_cannot_parse() {
+        // No declaration, a non-destructured param, and an empty source all yield NOTHING — which makes a
+        // required container sample as its empty literal. That is the safe direction: a wrongly DETECTED
+        // default omits the prop and the component throws.
+        assert!(props_with_own_default("function Other({ rows = [] }) {}", "Card").is_empty());
+        assert!(props_with_own_default("function Card(props) { const rows = props.rows ?? []; }", "Card").is_empty());
+        assert!(props_with_own_default("", "Card").is_empty());
+        // A name that only appears as a SUBSTRING of another declaration is not a match.
+        assert!(props_with_own_default("function CardHeader({ rows = [] }) {}", "Card").is_empty());
+        // A comma or brace inside a string default cannot desync the segment walk.
+        let tricky = "function Card({ sep = \"a, b\", tpl = `x${ {y:1} }z`, rows = [1, 2], cb = (a, b) => ({ a }) }) {}";
+        let got = props_with_own_default(tricky, "Card");
+        assert_eq!(got, ["sep", "tpl", "rows", "cb"].map(String::from).into_iter().collect());
+        // An arrow default's `=>` is not read as the assignment, and a comparison is not a default at all.
+        assert!(props_with_own_default("function Card({ a, onPick = (x) => x === 1 }) {}", "Card").contains("onPick"));
+        assert!(!props_with_own_default("function Card({ a, onPick = (x) => x === 1 }) {}", "Card").contains("a"));
+    }
+
+    #[test]
+    fn source_from_record_prefers_the_verbatim_implementation() {
+        let rec = json!({ "source": "the impl", "srcText": "the snippet" });
+        assert_eq!(source_from_record(&rec), "the impl");
+        assert_eq!(source_from_record(&json!({ "srcText": "the snippet" })), "the snippet");
+        assert_eq!(source_from_record(&json!({ "source": "", "srcText": "the snippet" })), "the snippet");
+        assert_eq!(source_from_record(&json!({})), "");
     }
 }

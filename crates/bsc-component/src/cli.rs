@@ -4017,7 +4017,8 @@ fn cmd_preview_props(args: &[String]) -> Result<(), String> {
     let name = rec.get("name").and_then(serde_json::Value::as_str).unwrap_or(&id);
     let role = rec.get("role").and_then(serde_json::Value::as_str).unwrap_or("");
     let props = crate::preview_props::props_from_record(&rec);
-    let mut states = crate::preview_props::preview_props_states(name, &props);
+    let src = crate::preview_props::source_from_record(&rec);
+    let mut states = crate::preview_props::preview_props_states(name, &props, &src);
     // --state narrows the states object to just the one requested (the shape stays `{ <state>: {…} }`).
     if let Some(s) = &state {
         let picked = states.get(s).cloned().unwrap_or(serde_json::Value::Null);
