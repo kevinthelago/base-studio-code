@@ -614,8 +614,37 @@ npx vite build                                      # optional: production bundl
 # Rust (run when src-tauri/ or crates/ changed)
 cargo check --workspace
 cargo clippy --workspace --all-targets -- -D warnings   # --all-targets — --lib misses test-target lints
-cargo test --workspace                                  # or `-p <crate>` to scope a slow build
+cargo nextest run --workspace                           # or `-p <crate>` to scope a slow build
 ```
+
+**`cargo nextest`, not `cargo test` — and it must be installed.** `cargo test` runs the workspace's
+~41 test binaries **one after another**; within a binary its tests thread, but the binaries are serial,
+so cores idle — visible as `cargo test` sitting at 65% CPU while nextest saturates. Install it like
+`sccache`: `cargo install cargo-nextest --locked`.
+
+**Its win is CONDITIONAL on spare cores, and that is worth knowing before you expect a number.** Both
+arms measured from identical warm state, test targets prebuilt, same four pre-existing failures:
+
+| machine | `cargo test --workspace` | `cargo nextest run --workspace` |
+|---|---|---|
+| quiet | 1m31.8s | **1m06.9s** (−27%) |
+| 4 other agent builds running | 1m32.9s | **1m30.1s** (−3%) |
+
+nextest fills idle cores; when several worktree agents are already saturating the box there are none to
+fill, and the gain nearly vanishes. It is never *slower*, so it is still the right default — just do not
+plan around 27% on a busy machine, which is this repo's normal state.
+
+Two differences worth knowing before they surprise you:
+
+- **It runs each test in its own PROCESS**, where `cargo test` threads them inside one binary per crate.
+  Anything sharing process-global state behaves differently — which is what `ENV_LOCK` in
+  `src-tauri/src/testutil.rs` exists for. Per-test processes make env-var tests *more* isolated, not
+  less, and the whole suite was verified under it (2,362 of 2,366 passing, same four reds) — but a test
+  that quietly depended on a sibling having run first will now fail, and that is the test being wrong.
+- **It does not run doctests.** This workspace has none, and `no_rust_doctests_are_silently_skipped` in
+  `src-tauri/src/tests.rs` FAILS if one is ever added, because a doctest that silently never runs is
+  exactly the kind of green-gate-that-sees-less this repo keeps getting caught by. If that test fires,
+  either drop the doctest or add `cargo test --doc --workspace` to this gate — do not delete the guard.
 
 **The Rust build is SHARED across worktrees — install `sccache` before your first build.**
 `.cargo/config.toml` sets it as `rustc-wrapper`, so cargo fails loudly with *"could not execute process
