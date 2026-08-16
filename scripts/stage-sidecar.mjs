@@ -56,6 +56,33 @@ function buildOne(name, triple) {
   return join("target", triple, "release", `${name}${ext}`);
 }
 
+/** Refresh the bundle-resource copies of the runtime-loaded seeds from the live `src-tauri/data`.
+ *
+ *  `bundle.resources` deliberately points at `src-tauri/resources/data/**` rather than at `data/**`:
+ *  `tauri_build` emits a `cargo:rerun-if-changed` for every resource, so aiming them at the source
+ *  tree made every record edit rebuild AND relink the app (measured 23.2s vs 1.2s). `build.rs`
+ *  guarantees those staged files EXIST; refreshing them is this script's job, because it runs from
+ *  `beforeBuildCommand` and therefore fires on every real `tauri build`.
+ *
+ *  Without this the bundler would happily ship whatever copy `build.rs` first created — a seed frozen
+ *  at some past checkout, in a build that otherwise looks correct. The source list is read from
+ *  `bundle.resources` itself, so adding a seed means editing one place. */
+function stageBundledSeeds() {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const repo = join(here, "..");
+  const conf = JSON.parse(readFileSync(join(repo, "src-tauri", "tauri.conf.json"), "utf8"));
+  for (const src of Object.keys(conf.bundle?.resources ?? {})) {
+    if (!src.startsWith("resources/data/")) continue; // not a staged seed — leave it alone
+    const from = join(repo, "src-tauri", src.replace(/^resources\//, ""));
+    const to = join(repo, "src-tauri", src);
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(from, to);
+    console.log(`staged bundled seed -> ${src}`);
+  }
+}
+
+stageBundledSeeds();
+
 const triple = process.env.TAURI_ENV_TARGET_TRIPLE || hostTriple();
 const outDir = join("src-tauri", "binaries");
 mkdirSync(outDir, { recursive: true });
