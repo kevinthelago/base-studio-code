@@ -283,12 +283,19 @@ best-effort and exits 0 (or `return 2` for a deny) so it never wedges a tool or 
   shared helpers (`temp_home`, `ENV_LOCK`, `write_file`) in `testutil.rs`.
 - **Crates** test independently (`research`/`compliance`/`data` against in-memory or recorded fixtures
   with no live network; much of `data` compiles + tests without DuckDB via `--no-default-features`).
-- **Commands:**
+- **Commands** — prefer the two-tier runner; these are what it invokes:
   ```bash
+  npm run gate              # while iterating: changed crates + their transitive dependents
+  npm run gate -- --full    # what step 7 runs before anything merges
+
   cargo check --workspace
   cargo clippy --workspace --all-targets -- -D warnings   # the gate — see below
   cargo nextest run --workspace                           # or -p <crate> to scope a slow build
   ```
+  The scoped tier prints its scope before running. It is for iterating only — the unscoped gate still
+  runs at step 7, because the failure this repo keeps hitting is a gate that *passes* while covering
+  less than assumed. Scope spread is real: `crates/bsc-ui` reaches 2 crates, `crates/data` 11,
+  `crates/bsc-util` **36 of 40**.
 - **The clippy gate:** `clippy --all-targets -D warnings`. `--all-targets` matters — `--lib` alone
   misses test-target lints (unused imports, `items_after_test_module`), so verify with `--all-targets`
   before landing any Rust.
