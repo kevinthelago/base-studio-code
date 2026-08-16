@@ -475,8 +475,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // studio node (debugger + designer/librarian/architect) maps to its TerminalHost-hosted session; a
   // library/resource node or any non-studio drill returns null. Non-null ⇒ this node opens an app-owned
   // session, not a fleet cell.
-  const studioPaneId = (nodeId: string): string | null =>
-    isStudioDrill ? studioPaneIdForNode(nodeId) : null;
+  // NOT gated on `isStudioDrill` any more (#every-system-session-shows-one-node-per-technology): a
+  // PROJECT drill lists the same per-technology sessions, and they must open the same way there — click
+  // an unstarted one and it lazily starts; click a running one and you get THAT session, because the
+  // pane id is stable and the studio mount reuses it rather than spawning a second. `studioPaneIdForNode`
+  // already answers null for anything it does not own (a worker, the director, a library), so dropping
+  // the gate adds resolution for the studio nodes and changes nothing for the rest.
+  const studioPaneId = (nodeId: string): string | null => studioPaneIdForNode(nodeId);
   // A node is MORPHABLE — its terminal openable inline via the in-graph morph — iff its identity pane id
   // (`<project>:<stream>` or `<project>:director`) is a live cell of a launched fleet tab. EVERY fleet
   // node — workers AND the director — gets the morph (#2534/#2542). Drilled only. In the base-studio-code
