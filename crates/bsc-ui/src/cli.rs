@@ -2242,7 +2242,11 @@ mod tests {
         run(vec!["emit".into(), "component".into(), "card".into(), d.clone()], "bsc ui").unwrap();
         // Card landed mirroring the src/ layout, with NO first-party alias surviving, provenance-stamped.
         let card = std::fs::read_to_string(dir.join("shared/ui/data/Card.tsx")).expect("Card.tsx emitted");
-        assert!(!card.contains("@/"), "emitted Card retains a @/ alias: {card}");
+        assert!(
+            crate::emit::unvendored_aliases(&card).is_empty(),
+            "emitted Card still IMPORTS {:?}",
+            crate::emit::unvendored_aliases(&card),
+        );
         // The stamp is `bsc/studio`, NOT the packaged kit's own id: since #3720 `emit` resolves against
         // the whole store, and an emitted cross-kit file did not come from `bsc/react-ui` (see
         // `EmitKit::from_store`, which sets the merged view's id). Do not "correct" this back — the
