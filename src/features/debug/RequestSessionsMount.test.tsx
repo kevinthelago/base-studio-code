@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { RequestSessionsMount } from "./RequestSessionsMount";
-import { requestCharter, requestPaneId } from "@/features/debug/requestSession";
+import { requestCharter, requestPaneId, originLabel } from "@/features/debug/requestSession";
 import { bscRun } from "@/shared/lib/core/bsc";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
@@ -201,7 +201,7 @@ describe("pruning completed requests when auto-spawn turns on (#3522)", () => {
 
 describe("the per-request charter", () => {
   it("names its request, resolves that id, and never leaves one open", () => {
-    const c = requestCharter(78);
+    const c = requestCharter({ id: 78 });
     expect(c).toContain("#78");
     expect(c).toContain("bsc request get 78");
     expect(c).toContain("bsc request resolve 78");
@@ -212,5 +212,41 @@ describe("the per-request charter", () => {
     // And the shared role prose must not smuggle the queue-serving half back in — the whole reason
     // DEBUG_ROLE_PROMPT was split out of DEBUG_START_PROMPT.
     expect(c).not.toMatch(/Start by claiming a request/i);
+  });
+
+  // ── #debug-request-carries-its-origin ─────────────────────────────────────────────────────────
+  //
+  // The session that files a request and the session that fixes it are different sessions, and the fix
+  // is only right if it unblocks the FILER's real workflow. Putting the origin only on the graph edge
+  // would leave the one actor who has to act on it — the debug session — unable to see it.
+
+  it("names the session that filed the request, and how to reply to it", () => {
+    const c = requestCharter({ id: 85, origin: "designer-studio:react", display_title: "ui list needs --kit" });
+    expect(c).toContain('"ui list needs --kit"');
+    expect(c).toContain("the react designer");
+    expect(c).toContain("`designer-studio:react`");
+    // The reply channel matters as much as the attribution: a debug session that finds the request
+    // ambiguous must have somewhere to say so that the filer actually reads back.
+    expect(c).toContain('bsc request note 85');
+  });
+
+  it("says nothing about an origin when the request has none", () => {
+    const c = requestCharter({ id: 90, origin: null, display_title: null });
+    expect(c).toContain("#90");
+    expect(c).not.toMatch(/filed by/i);
+    // No dangling attribution phrasing, and no empty quotes where the title would be.
+    expect(c).not.toContain('""');
+  });
+
+  it("labels a per-technology studio by its technology, and falls back to the raw id", () => {
+    // Two designers exist (react / react-native); the charter has to say WHICH, since the same gap
+    // reported from either is a different reproduction.
+    expect(originLabel("designer-studio:react")).toBe("the react designer");
+    expect(originLabel("designer-studio:react-native")).toBe("the react-native designer");
+    expect(originLabel("librarian-studio:typescript")).toBe("the typescript librarian");
+    expect(originLabel("sound-studio:sound-designer")).toBe("sound-studio:sound-designer");
+    // A director-filed request (the one non-studio filer) has no studio phrasing — better the raw
+    // pane id than an invented role.
+    expect(originLabel("myproject:director")).toBe("myproject:director");
   });
 });
