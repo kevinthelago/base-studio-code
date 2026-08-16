@@ -16,7 +16,6 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { RoleDot, KitChip } from "@/features/designs/kitChrome";
 import { ROLE_COLOR, matchesQuery, NO_COMPONENTS_TITLE, type ComponentRecord, type Role } from "./lib/model";
-import "./plannerComponentsPane.css";
 
 type Mode = "components" | "full";
 /** Role order for assembling a representative screen (structure first, primitives last). */

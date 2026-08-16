@@ -11,7 +11,6 @@ import type { TreeFrame } from "@/features/algorithms/lib/trace";
 import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import { TREE_VIZ_ANIM_CLASSES, ensureTreeViewMotion } from "@/features/algorithms/viz/renderers/treeViewMotion";
 import { treeLayout, TREE_VIEW as VIEW } from "@/features/algorithms/viz/renderers/treeLayout";
-import "./treeView.css";
 
 const NODE_R = 16;
 

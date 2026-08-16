@@ -11,7 +11,6 @@
 import { GraphComponent } from "@/shared/lib/runtime/GraphComponent";
 import { GraphPageFallback } from "@/shared/lib/runtime/GraphPageFallback";
 import { registerSoundsPlatform } from "./graphPlatform";
-import "./sounds.css";
 
 registerSoundsPlatform();
 

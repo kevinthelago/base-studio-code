@@ -12,7 +12,6 @@
 import { GraphComponent } from "@/shared/lib/runtime/GraphComponent";
 import { GraphPageFallback } from "@/shared/lib/runtime/GraphPageFallback";
 import { registerMcpPlatform } from "./graphPlatform";
-import "./mcp.css";
 
 // Register at module load — before the workspace ever renders — so the injected modules are in the registry
 // when the graph page's compiled `require()` runs. Idempotent.

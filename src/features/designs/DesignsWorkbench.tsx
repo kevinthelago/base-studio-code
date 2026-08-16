@@ -76,7 +76,6 @@ import { DEFAULT_THEME } from "@/shared/ui/kit";
 /** The preview surface's light/dark axis, read off the selected theme's `base`. */
 type PreviewTheme = "dark" | "light";
 import type { KitThemeRecord } from "./lib/themes";
-import "./designStudio.css";
 
 type Tab = "overview" | "source" | "tests" | "usage" | "history";
 type Viewport = "sm" | "md" | "auto";

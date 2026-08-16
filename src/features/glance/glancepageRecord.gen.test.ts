@@ -82,9 +82,25 @@ describe("the projection reproduces what the runtime loader needs", () => {
     expect(projected).not.toContain('from "@/features/glance/GlanceCanvas"');
   });
 
-  it("strips the CSS side-effect import the loader cannot resolve", () => {
-    expect(readLf(SRC_FILE)).toContain('import "./glance.css";'); // the file really does have it…
-    expect(projected).not.toContain("glance.css"); // …and the record really must not.
+  it("strips a CSS side-effect import the loader cannot resolve", () => {
+    // Fed a SYNTHETIC source rather than read from the file. This used to assert the file really did
+    // carry `import "./glance.css";` — a good non-vacuity check, until `the-entry-owns-stylesheet-loading`
+    // moved stylesheet loading to the entry and removed that import from all 33 modules that had one. The
+    // file can no longer exercise this path, so pinning it to the file would mean either deleting the
+    // guard or re-adding an import the gate now forbids.
+    //
+    // The projector's behaviour still has to hold: a record carrying a CSS import fails in the runtime
+    // loader, which resolves against the platform registry and the record store, and a stylesheet is in
+    // neither. A future edit to `GlanceWorkspace.tsx` could reintroduce one.
+    const withCss = `import "./glance.css";\nimport { x } from "@/shared/ui/layout/space";\nexport const G = () => x;\n`;
+    const strippedSynthetic = projectGlancePage(withCss);
+    expect(strippedSynthetic, "the projector drops the sheet").not.toContain("glance.css");
+    expect(strippedSynthetic, "and keeps the real import beside it").toContain("@/shared/ui/layout/space");
+    // The shipping projection carries no CSS IMPORT — matched as an import, not as the substring
+    // ".css", which also appears in a source comment (`graphCanvas.css, #2418`) that is perfectly fine
+    // to carry. A bare `not.toContain(".css")` fails on that comment and would push the next reader to
+    // delete a useful note to satisfy the test.
+    expect(projected).not.toMatch(/import\s+["'][^"']+\.css["']/);
   });
 
   it("carries the five fixes the drift had silently dropped", () => {

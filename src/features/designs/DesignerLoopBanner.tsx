@@ -14,7 +14,6 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { bscRun } from "@/shared/lib/core/bsc";
 import { useDesignerLoopState } from "./useDesignerLoopState";
-import "./designerLoopBanner.css";
 
 export function DesignerLoopBanner({ inline = false }: { inline?: boolean } = {}) {
   // PRESENTATION ONLY (#3850): the loop state has one owner now. This component used to run its own

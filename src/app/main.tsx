@@ -27,6 +27,16 @@ import "@/styles/tokens.css";
 // layer is always first in the cascade; re-importing it here is a no-op (module cache).
 import.meta.glob("@/**/*.css", { eager: true });
 
+// PACKAGE stylesheets, explicitly — the glob above is `@/**`, which is `src/` and NOTHING ELSE.
+//
+// `xterm.css` used to reach the bundle because `TerminalView` and `useScreenSession` imported it. That
+// is the same dependency the glob exists to remove, and it is the half the glob cannot cover: a
+// node_modules path is not under `@/`. Dropping those two imports to unblock the modules for record
+// migration would have left the terminal unstyled with every gate green — a missing stylesheet is not a
+// missing module. So the entry owns this one too, and `styleReachability.test.ts` now asserts that no
+// module under `src/` imports a stylesheet at all, package or local.
+import "@xterm/xterm/css/xterm.css";
+
 // #2047: prime the runtime config-dir overrides BEFORE importing App (and its config modules), so
 // their eager `@data` consts (STAGE_DEFS / blueprints / roles / skills / taxonomies) build from the
 // config dir over the embedded default. Fail-safe (a no-op without a Tauri backend), and the dynamic

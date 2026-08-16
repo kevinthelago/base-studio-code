@@ -68,4 +68,49 @@ describe("every stylesheet reaches the bundle", () => {
     expect(tokensAt, "tokens.css is imported").toBeGreaterThan(-1);
     expect(tokensAt, "tokens.css comes before the glob").toBeLessThan(globAt);
   });
+
+  // ── THE ENTRY OWNS STYLESHEET LOADING ────────────────────────────────────────────────────────
+  // The glob above makes a module's own `import "./x.css"` redundant, and that import is the single
+  // thing preventing the module from becoming a record — a record is compiled by the runtime loader,
+  // which resolves against the platform registry and the record store, and a stylesheet is in neither.
+  // 33 modules carried one. Removing them is only safe as a RULE: one re-added import silently
+  // re-blocks that module's migration, and nothing else in the suite would say so.
+
+  /** Every non-test module under `src/`, with its text. */
+  function listModules(dir = SRC, rel = ""): { path: string; text: string }[] {
+    const out: { path: string; text: string }[] = [];
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) out.push(...listModules(join(dir, e.name), r));
+      else if (/\.tsx?$/.test(e.name) && !/\.(test|spec)\.tsx?$/.test(e.name))
+        out.push({ path: r, text: readFileSync(join(dir, e.name), "utf8") });
+    }
+    return out;
+  }
+
+  const CSS_IMPORT = /^[ \t]*import\s+["']([^"']+\.css)["']/gm;
+
+  it("no module under src/ imports a stylesheet — only the entry does", () => {
+    const offenders: string[] = [];
+    for (const m of listModules()) {
+      if (m.path === "app/main.tsx") continue; // the entry is where stylesheet loading lives
+      for (const hit of m.text.matchAll(CSS_IMPORT)) offenders.push(`${m.path} → ${hit[1]}`);
+    }
+    expect(
+      offenders,
+      `a module-level stylesheet import is redundant (the entry globs every src/ sheet) AND blocks that ` +
+        `module from becoming a record. Delete it; if it names a PACKAGE stylesheet, move it into ` +
+        `main.tsx first — the glob is \`@/**\` and cannot reach node_modules:\n  ${offenders.join("\n  ")}`,
+    ).toEqual([]);
+  });
+
+  it("the entry imports the PACKAGE stylesheets the glob cannot reach", () => {
+    // The glob covers `src/` and nothing else, so a node_modules sheet has no other way in. `xterm.css`
+    // reached the bundle only through TerminalView + useScreenSession; dropping those to unblock the
+    // modules would have unstyled the terminal with every gate green. Pinned so it cannot quietly leave.
+    const entry = readFileSync(join(SRC, "app/main.tsx"), "utf8");
+    expect(entry, "xterm's stylesheet is loaded by the entry").toMatch(
+      /import\s+["']@xterm\/xterm\/css\/xterm\.css["']/,
+    );
+  });
 });

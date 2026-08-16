@@ -22,7 +22,6 @@ import { normalizeFrame, type Frame, type StructureFrame } from "@/features/algo
 import { makeTraceStream } from "@/features/algorithms/lib/traceStream";
 import { resolveRenderer, type RendererRegistry } from "@/features/algorithms/viz/registry";
 import { CodeColumn } from "./CodeColumn";
-import "./tracePlayer.css";
 
 /** After the user stops stepping, resume the infinite loop this long later (#3207) — long enough to study
  *  a step, short enough that the animation returns to playing on its own (no play button). */

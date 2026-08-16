@@ -58,7 +58,6 @@ import { useFleetIssueState } from "@/features/glance/lib/useFleetIssueState";
 import type { DockPlan } from "./GlanceChatDock";
 import { fleetPlanProgress, unionDone, mergeStreamProgress } from "@/features/glance/lib/fleetPlanProgress";
 import { useFleetHeld } from "./lib/useFleetHeld";
-import "./glance.css";
 
 // The agent-health watchdog (#2541) polls the coord log on a slow cadence — a stall is a minutes-scale
 // event, so per-second rebuilds aren't worth it.

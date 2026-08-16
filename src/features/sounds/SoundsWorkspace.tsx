@@ -17,7 +17,6 @@ import { buildSoundGraph, layoutSoundGraph, playableCueForNode, NODE_W, NODE_H, 
 import { playCue } from "./lib/synth";
 import { BUILTIN_KITS } from "./lib/soundKits";
 import { useSoundKits } from "@/features/sounds/useSoundKits";
-import "./sounds.css";
 
 export function SoundsWorkspace() {
   // Seed-first, hydrated from the durable bsc-sound store (#3080). The first kit is active (multi-kit

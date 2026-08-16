@@ -21,7 +21,6 @@
 import { GraphComponent } from "@/shared/lib/runtime/GraphComponent";
 import { GraphPageFallback } from "@/shared/lib/runtime/GraphPageFallback";
 import { registerProjectsPlatform } from "./list/graphPlatform";
-import "./projectsScreen.css";
 
 export function ProjectsGraphHost() {
   // Registered at FIRST RENDER, not module load — unlike the other hosts, and deliberately.

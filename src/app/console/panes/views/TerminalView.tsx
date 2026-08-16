@@ -5,7 +5,6 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { attachTerminalClipboard } from "@/shared/lib/session/terminalClipboard";
-import "@xterm/xterm/css/xterm.css";
 import { log } from "@/shared/lib/core/log";
 import { recordPtyData, bumpTerminals } from "@/shared/lib/core/perf";
 import { gateClaudeLaunch } from "@/shared/lib/fleet/launchGate";

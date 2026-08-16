@@ -10,7 +10,6 @@
 // model); shell allowlists resolve additively (guaranteed ∪ profile ∪ project ∪ repo), gh/git are
 // guaranteed, and a profile layers a base policy + per-tool tri-states + path scope. Data model +
 // helpers live in ./lib; the four tab bodies in ./{Profiles,Assignments,Activity,Flow}Tab.
-import "./security.css";
 
 // The graph-hosted workspace (#3646) — App.tsx/DetachedWindow render this via the lazy SecurityWorkspace.
 export { SecurityGraphHost } from "./SecurityGraphHost";
