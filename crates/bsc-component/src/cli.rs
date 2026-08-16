@@ -478,6 +478,15 @@ isolated, never-referenced primitive/composite). \"Unused\" = no composer AND us
 with used > 0 is a legit entry point, never flagged. Ranked most-severe-first; --kit scopes to one
 kit; --json emits the findings array (LLM-consumable).
 
+PROPS-METADATA-MISMATCH (#88) diffs each record's `props` against the prop signature parsed from its own
+source, naming the missing and extra props. The preview's sample-data synthesizer reads `props` and
+NOTHING else, so an EMPTY `props: []` on a component with a real typed signature silently leaves it
+nothing to sample and the component renders with every prop undefined. Run kit-wide, it partitions a
+render-error backlog into the crashes a `props` edit fixes and the ones that need a real change. It
+reports only what it can read off the source — an imported props type or a `memo(…)` wrapper yields
+nothing rather than a guess — and cedes the \"metadata names props the source never uses at all\" case to
+UNWIRED-PROP, which already owns it.
+
 --fix is the mechanical, SAFE OPTIMIZE (#3089): (1) MERGE byte-identical-source duplicates — fold each
 group into the most-`used` canonical and repoint composers to it (lossless; only byte-identical, never a
 same-`wraps` dup), then (2) PRUNE the GUARDED dead roots — the ROOT of each orphan/dangling-branch finding

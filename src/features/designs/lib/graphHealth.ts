@@ -15,7 +15,9 @@
 // importing it; the "compose, don't recreate" guardrail, #3118) ·
 // orphan (isolated, never-
 // referenced primitive/composite) · unwired-prop (declares props its own source never references — a
-// declared interface that does nothing, #2924) · phantom-compose (a user component declares `composes`
+// declared interface that does nothing, #2924) · props-metadata-mismatch (the record's `props` disagrees
+// with the prop signature its own source declares — an EMPTY `props: []` on a component with a real typed
+// signature silently disables the preview's sample-data synthesizer, #88) · phantom-compose (a user component declares `composes`
 // children its own source never renders — a false graph edge that also masks orphan detection, #3111) ·
 // slot-shell (INFORMATIONAL — a composite whose composed children arrive via ReactNode content slots, so
 // a standalone preview renders a demo placeholder, #2921).
@@ -219,6 +221,297 @@ function referencesIdentifier(source: string, name: string): boolean {
   }
 }
 
+/** `src` with every COMMENT and every string/template-literal BODY blanked to spaces — the substrate the
+ *  prop-signature parser below scans. Length- and newline-preserving, so column-0 detection still works and
+ *  every later scan is plain bracket-depth counting: a `,` inside a JSDoc block, a trailing `// note`, or a
+ *  default value like `{ sep = "," }` can no longer split a parameter list.
+ *
+ *  Two guards keep prose from eating real code, because over-blanking is the one way this could invent a
+ *  finding rather than miss one: a `'`/`"` is only a delimiter when it does NOT immediately follow a value
+ *  end (so the apostrophe in a JSX `don't` or `</b>'s` is not a string opener), and a `'`/`"` literal that
+ *  reaches a newline before its closer is prose rather than a string. Rust twin: `blank_code`. */
+function blankCode(src: string): string {
+  const out = [...src];
+  const n = out.length;
+  const blank = (from: number, to: number) => {
+    for (let k = Math.max(from, 0); k < Math.min(to, n); k++) if (out[k] !== "\n") out[k] = " ";
+  };
+  const isValueEnd = (ch: string) => /[A-Za-z0-9_$)\]}]/.test(ch);
+  let i = 0;
+  while (i < n) {
+    const c = src[i];
+    if (c === "/" && src[i + 1] === "/") {
+      const start = i;
+      while (i < n && src[i] !== "\n") i++;
+      blank(start, i);
+    } else if (c === "/" && src[i + 1] === "*") {
+      const start = i;
+      i += 2;
+      while (i + 1 < n && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      i = Math.min(i + 2, n);
+      blank(start, i);
+    } else if (c === '"' || c === "'" || c === "`") {
+      // Adjacency is the whole rule: a quote pressed against a value end is prose, not a literal. A
+      // BACKTICK is exempt — pressed against a name it is a tagged template, which really is a literal.
+      const prose = i > 0 && c !== "`" && (isValueEnd(src[i - 1]) || (src[i - 1] === ">" && src[i - 2] !== "="));
+      if (prose) { i++; continue; }
+      let j = i + 1;
+      let closed = false;
+      while (j < n) {
+        if (src[j] === "\\") { j += 2; continue; }
+        if (src[j] === "\n" && c !== "`") break; // only a template may span lines
+        if (src[j] === c) { closed = true; break; }
+        j++;
+      }
+      if (!closed) { i++; continue; }
+      blank(i + 1, j);
+      i = j + 1;
+    } else i++;
+  }
+  return out.join("");
+}
+
+/** The index of the bracket closing the one at `openAt` (`(`, `[` or `{`), counting only that pair — safe
+ *  on the blanked source, where no literal can contribute a stray bracket. Rust twin: `matching_bracket`. */
+function matchingBracket(b: string, openAt: number): number {
+  const close = { "(": ")", "[": "]", "{": "}" }[b[openAt]];
+  if (!close) return -1;
+  let depth = 0;
+  for (let i = openAt; i < b.length; i++) {
+    if (b[i] === b[openAt]) depth++;
+    else if (b[i] === close && --depth === 0) return i;
+  }
+  return -1;
+}
+
+/** `b`'s first non-whitespace index at or after `from` (or `b.length`). Rust twin: `skip_ws`. */
+function skipWs(b: string, from: number): number {
+  let i = from;
+  while (i < b.length && /\s/.test(b[i])) i++;
+  return i;
+}
+
+/** The JS identifier starting at `from` (empty when there isn't one) and the index just past it. Rust
+ *  twin: `ident_at`. */
+function identAt(b: string, from: number): [string, number] {
+  if (from >= b.length || !/[A-Za-z_$]/.test(b[from])) return ["", from];
+  let i = from;
+  while (i < b.length && /[A-Za-z0-9_$]/.test(b[i])) i++;
+  return [b.slice(from, i), i];
+}
+
+/** Split `b` on `sep` at bracket depth 0 (`(`/`[`/`{` counted). Rust twin: `split_top_level`. */
+function splitTopLevel(b: string, sep: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < b.length; i++) {
+    const c = b[i];
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    else if (c === sep && depth === 0) { out.push(b.slice(start, i)); start = i + 1; }
+  }
+  out.push(b.slice(start));
+  return out;
+}
+
+/** The PARAMETER-LIST text of the top-level declaration of component `name` in the blanked source `b` — the
+ *  chars between its outer parens. `null` when there is no unambiguous column-0 `function name(` /
+ *  `const name = (` / `const name = function (` form (with or without `export`/`export default`/`async` and
+ *  a generic list), which is the conservative outcome: an exotic wrapper like `const X = memo((…) => …)` is
+ *  left alone rather than guessed at. Rust twin: `decl_params`. */
+function declParams(b: string, name: string): string | null {
+  for (let lineStart = 0; lineStart < b.length; ) {
+    const nl = b.indexOf("\n", lineStart);
+    const nextLine = nl < 0 ? b.length : nl + 1;
+    if (/\s/.test(b[lineStart])) { lineStart = nextLine; continue; } // column 0 only
+    let i = lineStart;
+    for (const kw of ["export ", "default ", "async "]) if (b.startsWith(kw, i)) i = skipWs(b, i + kw.length);
+    const isFn = b.startsWith("function ", i);
+    const binding = ["const ", "let ", "var "].find((kw) => b.startsWith(kw, i));
+    if (!isFn && !binding) { lineStart = nextLine; continue; }
+    i = skipWs(b, i + (isFn ? "function".length : binding!.length - 1));
+    if (b[i] === "*") i = skipWs(b, i + 1); // `function* Gen(`
+    const [found, after] = identAt(b, i);
+    if (found !== name) { lineStart = nextLine; continue; }
+    return isFn ? fnParams(b, after) : bindingParams(b, after);
+  }
+  return null;
+}
+
+/** The parameter list of a `function name…` whose name ends at `after` — skipping a generic list. */
+function fnParams(b: string, after: number): string | null {
+  let i = skipWs(b, after);
+  if (b[i] === "<") {
+    let depth = 0;
+    while (i < b.length) {
+      if (b[i] === "<") depth++;
+      else if (b[i] === ">" && --depth === 0) { i++; break; }
+      i++;
+    }
+    i = skipWs(b, i);
+  }
+  if (b[i] !== "(") return null;
+  const close = matchingBracket(b, i);
+  return close < 0 ? null : b.slice(i + 1, close);
+}
+
+/** The parameter list of a `const name … = <fn>` binding whose name ends at `after`. Handles an arrow
+ *  (`= (…) =>`, `= async (…) =>`) and a function expression (`= function (…)`); anything else — a `memo(`
+ *  wrapper, a non-function value — yields `null`. */
+function bindingParams(b: string, after: number): string | null {
+  // The assignment `=` — the first that is not part of a compound operator or the `=>` of an arrow inside
+  // the type annotation (`: Record<string, () => void> =` reaches the initializer past two).
+  let i = after;
+  for (; i < b.length; i++) {
+    if (b[i] === ";") return null; // a declaration with no initializer — not a component
+    if (b[i] === "=" && b[i + 1] !== "=" && b[i + 1] !== ">" && (i === 0 || !/[=!<>+\-*/%&|^]/.test(b[i - 1]))) break;
+  }
+  if (i >= b.length) return null;
+  i = skipWs(b, i + 1);
+  for (const kw of ["async ", "function"]) {
+    if (b.startsWith(kw, i)) {
+      i = skipWs(b, i + kw.length);
+      i = skipWs(b, identAt(b, i)[1]); // `function Name(` — step past an optional expression name
+    }
+  }
+  if (b[i] !== "(") return null;
+  const close = matchingBracket(b, i);
+  return close < 0 ? null : b.slice(i + 1, close);
+}
+
+/** The body of the column-0 `interface <name> { … }` / `type <name> = { … }` declaration in `b`. `null`
+ *  when the type is imported, generic, or an intersection/union rather than a plain object literal: in
+ *  every one of those the member list is NOT knowable from this source alone, and a guess would be a
+ *  fabricated finding. Rust twin: `type_block`. */
+function typeBlock(b: string, name: string): string | null {
+  for (let lineStart = 0; lineStart < b.length; ) {
+    const nl = b.indexOf("\n", lineStart);
+    const nextLine = nl < 0 ? b.length : nl + 1;
+    if (/\s/.test(b[lineStart])) { lineStart = nextLine; continue; }
+    let i = lineStart;
+    if (b.startsWith("export ", i)) i = skipWs(b, i + "export ".length);
+    const isIface = b.startsWith("interface ", i);
+    const isAlias = b.startsWith("type ", i);
+    if (!isIface && !isAlias) { lineStart = nextLine; continue; }
+    i = skipWs(b, i + (isIface ? "interface".length : "type".length));
+    const [found, after] = identAt(b, i);
+    if (found !== name) { lineStart = nextLine; continue; }
+    let j = skipWs(b, after);
+    if (isAlias) {
+      if (b[j] !== "=") return null; // a generic alias (`type P<T> = …`) — not resolvable here
+      j = skipWs(b, j + 1);
+    }
+    if (b[j] !== "{") return null; // `interface P extends Q {` / `type P = A & B` — members aren't all here
+    const close = matchingBracket(b, j);
+    return close < 0 ? null : b.slice(j + 1, close);
+  }
+  return null;
+}
+
+/** The top-level member names of an object-type body (`{ a: string; b?: () => void }` → `a`, `b`). An index
+ *  signature contributes nothing. A segment only counts when its leading identifier is followed by `?`, `:`
+ *  or `(` — the shape of a real member — so the debris left by splitting a one-line `Map<string, number>` on
+ *  its comma is discarded rather than read as a prop. Rust twin: `object_member_names`. */
+function objectMemberNames(b: string): string[] {
+  const out: string[] = [];
+  for (const raw of splitTopLevel(b, ";").flatMap((s) => splitTopLevel(s, ","))) {
+    for (const seg of splitTopLevel(raw, "\n")) {
+      const start = skipWs(seg, 0);
+      if (start >= seg.length || seg[start] === "[") continue;
+      let i = start;
+      if (seg.startsWith("readonly ", i)) i = skipWs(seg, i + "readonly ".length);
+      const [name, after] = identAt(seg, i);
+      if (!name) continue;
+      const next = seg[skipWs(seg, after)];
+      if ((next === "?" || next === ":" || next === "(" || next === "<") && !out.includes(name)) out.push(name);
+    }
+  }
+  return out;
+}
+
+/** The top-level bindings of a destructuring pattern body (`{ a, b: alias, c = 1, ...rest }` → `a`, `b`,
+ *  `c`), plus whether a REST element is present. The key is what the prop is called, so `b: alias` reports
+ *  `b`; a rest element means the component can consume props this list does not name, which is why the
+ *  caller stops reporting EXTRA metadata once it sees one. Rust twin: `destructured_names`. */
+function destructuredNames(b: string): { names: string[]; hasRest: boolean } {
+  const names: string[] = [];
+  let hasRest = false;
+  for (const part of splitTopLevel(b, ",")) {
+    const start = skipWs(part, 0);
+    if (start >= part.length) continue;
+    if (part.startsWith("...", start)) { hasRest = true; continue; }
+    const [name] = identAt(part, start);
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return { names, hasRest };
+}
+
+/**
+ * The prop signature of component `name` as parsed from its own module source — the oracle the
+ * `props-metadata-mismatch` check (#88) diffs the record's `props[]` against.
+ *
+ * Reads the FIRST parameter of the component's top-level declaration, by both routes an author writes: a
+ * destructuring pattern (`({ a, b }: Props)`) and a named parameter with a type (`(props: Props)` /
+ * `(props: { a: string })`). When a destructured parameter ALSO carries a resolvable annotation the two are
+ * UNIONED — a member the interface declares but the body never destructures is part of the declared
+ * contract (its absence from the body is `unwired-prop`'s finding, not this one), so counting it here keeps
+ * the two checks from contradicting each other.
+ *
+ * `null` means "not knowable from this source" — no column-0 declaration of that name, an untyped `props`
+ * parameter, or an annotation naming a type that is imported rather than declared here. Every such case is
+ * SILENT: the whole value of this check is that it fires only on a mechanical mismatch, so anything
+ * requiring a guess yields nothing at all. A non-null result with an empty set is the confident opposite —
+ * the component genuinely takes no props. Rust twin: `signature_props`.
+ */
+export function signatureProps(src: string, name: string): { names: Set<string>; hasRest: boolean } | null {
+  const b = blankCode(src);
+  const params = declParams(b, name);
+  if (params === null) return null;
+  const first = splitTopLevel(params, ",")[0] ?? "";
+  const start = skipWs(first, 0);
+  // `function Foo()` — no parameter at all, so the component takes no props. Confident, not ignorant.
+  if (start >= first.length) return { names: new Set(), hasRest: false };
+
+  const names = new Set<string>();
+  let hasRest = false;
+  let annotationAt: number;
+  if (first[start] === "{") {
+    const close = matchingBracket(first, start);
+    if (close < 0) return null;
+    const d = destructuredNames(first.slice(start + 1, close));
+    for (const n of d.names) names.add(n);
+    hasRest = d.hasRest;
+    annotationAt = skipWs(first, close + 1);
+  } else {
+    // A named parameter (`props`) — everything it declares comes from its annotation.
+    const [ident, after] = identAt(first, start);
+    if (!ident) return null;
+    annotationAt = skipWs(first, after);
+  }
+  if (first[annotationAt] !== ":") {
+    // An untyped `props` parameter tells us nothing; an untyped destructure told us everything.
+    return names.size === 0 && !hasRest ? null : { names, hasRest };
+  }
+  const tyStart = skipWs(first, annotationAt + 1);
+  let members: string[] | null;
+  if (first[tyStart] === "{") {
+    const close = matchingBracket(first, tyStart);
+    members = close < 0 ? null : objectMemberNames(first.slice(tyStart + 1, close));
+  } else {
+    const [tyName, after] = identAt(first, tyStart);
+    // A generic or qualified type (`Props<T>`, `NS.Props`) is not resolvable by name lookup alone.
+    const plain = !!tyName && skipWs(first, after) >= first.length;
+    const blk = plain ? typeBlock(b, tyName) : null;
+    members = blk === null ? null : objectMemberNames(blk);
+  }
+  if (members) for (const m of members) names.add(m);
+  // The annotation named a type this module doesn't declare (an imported contract). A destructure still
+  // stands on its own; a bare `props: Imported` leaves us with nothing to say.
+  else if (names.size === 0 && !hasRest) return null;
+  return { names, hasRest };
+}
+
 /** Every module specifier imported/exported-from in `source` (`import … from "X"`, `export … from "X"`,
  *  `import "X"`, `import("X")`), deduped. A loose regex scan — over-inclusion is harmless (the caller only
  *  flags BARE unresolved ones). The Rust twin (`import_specifiers`) is a hand scanner but the same intent. */
@@ -342,7 +635,12 @@ export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
   | "stubbed-import" // #3696 — a bare npm import rendered via a local shim/stub (sev 1, not an error)
   | "hardcoded-color" // #3704 — hardcodes color literals + no theme token (not wired to the theme, sev 1)
-  | "reimplementation" | "reimplemented-component" | "orphan" | "unwired-prop" | "phantom-compose"
+  | "reimplementation" | "reimplemented-component" | "orphan" | "unwired-prop"
+  // props-metadata-mismatch (#88): the record's `props[]` disagrees with the prop signature its own source
+  // declares. An EMPTY `props: []` on a component with a real typed signature is the load-bearing case —
+  // the preview's sample-data synthesizer reads ONLY the metadata, so it silently has nothing to sample.
+  | "props-metadata-mismatch"
+  | "phantom-compose"
   // MOTION checks (#3163, `bsc ui doctor --motion` / `analyzeMotion`) — mechanical faults an author used to
   // hand-diagnose: a dead animation-selector hook, a stroke-dash draw with no pathLength, a CSS-transform
   // keyframe fighting an SVG transform ATTRIBUTE, and a cross-component keyframe-name collision.
@@ -381,6 +679,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "reimplemented-component": 3,
   orphan: 2,
   "unwired-prop": 2,
+  "props-metadata-mismatch": 2,
   "phantom-compose": 2,
   // Motion (#3163): a dead selector hook + a cross-component name collision are real faults (the motion
   // targets nothing / two components' keyframes clobber) → 2; the two SVG traps are advisory (the motion
@@ -420,6 +719,7 @@ export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string
   "reimplemented-component": { glyph: "⧉", label: "re-declares a component that already exists — the preview renders the local stub, not the real node" },
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
+  "props-metadata-mismatch": { glyph: "≠", label: "props metadata disagrees with the signature its own source declares — the preview samples from `props`, so a stale (or empty) list gives it nothing to sample" },
   "phantom-compose": { glyph: "⇢", label: "phantom composes — declares a composition its source never renders (a false graph edge)" },
   "motion-dead-selector": { glyph: "⌁", label: "motion dead selector — an animation targets a class hook its source never renders" },
   "motion-dash-no-pathlength": { glyph: "┅", label: "stroke-dash motion with no pathLength — a draw-in needs a known path length" },
@@ -735,6 +1035,46 @@ export function analyzeGraphHealth(
     if (unwired.length === 0) continue;
     findings.push({ category: "unwired-prop", severity: 2, nodeIds: [c.id], nodeNames: [c.name],
       why: `${c.name} declares prop${unwired.length === 1 ? "" : "s"} its source never uses: ${unwired.join(", ")} — a declared interface that does nothing` });
+  }
+
+  // props-metadata-mismatch (#88) — the record's `props[]` disagrees with the prop signature its OWN source
+  // declares. The mismatch is purely mechanical, but the preview's sample-data synthesizer reads ONLY the
+  // metadata, so an EMPTY `props: []` on a component with a real typed signature silently gives it nothing
+  // to synthesize and the component crashes on its first unguarded prop read. Four such records were found
+  // ONE AT A TIME chasing individual render errors, because nothing could ask the question in bulk.
+  //
+  // The conservatism IS the check: `signatureProps` returns null for anything not readable off this source
+  // alone (an imported props type, an untyped `props`, a `memo(…)` wrapper) rather than guessing. Built-ins
+  // are skipped — their `srcText` is an illustrative snippet, not the module (#2794). A `...rest` element
+  // means the component can take props the signature does not name, so EXTRA metadata stops being reported
+  // for it; MISSING still is, because a rest element cannot explain that away. Rust twin: graph_health.rs.
+  for (const c of comps) {
+    if (c.builtin) continue;
+    const src = ownModuleSource(c, comps);
+    if (!src) continue; // built-in or spec-only — no module of ours to read the signature off
+    const sig = signatureProps(src, c.name);
+    if (!sig) continue; // not knowable from this source — say nothing
+    // Both lists are SORTED, not source-ordered: the Rust twin walks `BTreeSet`s, so sorting here is what
+    // keeps the two `why` strings byte-identical for the same input.
+    const declared = c.props.map((p) => p.name);
+    const missing = [...sig.names].filter((n) => !declared.includes(n)).sort();
+    const extra = sig.hasRest ? [] : [...new Set(declared)].filter((n) => !sig.names.has(n)).sort();
+    if (!missing.length && !extra.length) continue;
+    // `unwired-prop` (#2924) ALREADY owns the case where the only disagreement is metadata naming props the
+    // source never uses at all — same evidence, same fix ("drop it from `props`"), so saying it a second
+    // time would only double the noise. This check speaks when the signature itself is out of sync:
+    // something is MISSING, or an extra name IS referenced by the source (a parse/metadata disagreement
+    // rather than a dead declaration).
+    if (!missing.length && !extra.some((n) => referencesIdentifier(src, n))) continue;
+    // The load-bearing case gets its own prose: an empty `props` is not "a bit out of date", it is the one
+    // state that disables the sampler outright.
+    const why = declared.length === 0
+      ? `${c.name} carries NO props metadata while its own signature declares ${missing.length}: ${missing.join(", ")} — the preview's sample-data synthesizer reads \`props\`, so it has nothing to synthesize and the component renders with every prop undefined`
+      : `${c.name}'s props metadata disagrees with the signature its own source declares: ${[
+          ...(missing.length ? [`missing ${missing.join(", ")} (in the signature, absent from \`props\`)`] : []),
+          ...(extra.length ? [`extra ${extra.join(", ")} (in \`props\`, absent from the signature)`] : []),
+        ].join("; ")}`;
+    findings.push({ category: "props-metadata-mismatch", severity: 2, nodeIds: [c.id], nodeNames: [c.name], why });
   }
 
   // phantom-compose — a component that DECLARES `composes` children its own source never renders. The

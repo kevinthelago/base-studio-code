@@ -594,6 +594,13 @@ real defect to fix, not a note to skim:
   preview has nothing to render. Give it a **real, self-contained module** — imports ONLY libraries,
   exports the component — so it previews, or remove it. A usage-snippet `srcText` (how to CALL the
   component) is NOT an implementation; the module must define the component itself.
+- **props-metadata-mismatch** — the record's `props` disagrees with the prop signature its own source
+  declares; the finding names the missing and the extra props. Fix the **metadata**, not the source:
+  the preview's sample-data synthesizer reads `props` and nothing else, so an **empty `props: []` on a
+  component with a real typed signature** leaves it nothing to sample and the component renders with
+  every prop `undefined` — a render error whose cause is invisible from the source. Run it over the
+  whole kit before chasing individual render crashes: it partitions the backlog into the ones a `props`
+  edit fixes and the ones that need a real change.
 
 `doctor` reconciles the composition graph; **motion is part of the same coherent kit** — any animation
 you author (rung 5) should reference the motion tokens (`@dur-base` / `@ease-standard`), not magic
