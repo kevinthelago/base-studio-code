@@ -266,7 +266,20 @@ pub(crate) fn stage_dev_sidecars() {
         };
         let dst = dir.join(&exe);
         match stage_one(&src, &dst) {
-            Ok(_) => log::info!("[startup] staged dev sidecar `{stem}` → {}", dst.display()),
+            // #the-sidecar-swap-is-silent-in-both-directions: a successful `fs::copy` is NOT evidence
+            // that the staged binary matches the source. Observed 2026-08-16: this line logged success
+            // while the staged `bsc` stayed a Jul 20 build of 49 MB and the source was 74 MB — and the
+            // only symptom, weeks later, was `bsc: unknown command 'change'` in an agent session, which
+            // looks nothing like a staging problem. So assert the outcome instead of trusting the call.
+            Ok(_) => match verify_staged(&src, &dst) {
+                Ok(()) => log::info!("[startup] staged dev sidecar `{stem}` → {}", dst.display()),
+                Err(why) => log::error!(
+                    "[startup] staged `{stem}` to {} but it does NOT match the source ({why}) — sessions \
+                     will run a DIFFERENT binary than this build. Source: {}",
+                    dst.display(),
+                    src.display()
+                ),
+            },
             // #3959: ERROR, not warn. A failed stage does not degrade gracefully — `$BSC_BIN` keeps
             // pointing at the STALE binary and every hook that names a newer subcommand is rejected by
             // a `bsc` that has never heard of it (`bsc: unknown hook 'bash-supply'`), which surfaces
@@ -317,6 +330,53 @@ fn stage_one(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()
 /// Windows reports a locked file as `PermissionDenied` with OS error 32 (ERROR_SHARING_VIOLATION).
 fn is_in_use(e: &std::io::Error) -> bool {
     e.raw_os_error() == Some(32) || e.kind() == std::io::ErrorKind::PermissionDenied
+}
+
+/// Assert that `dst` is actually a copy of `src`, by size. `Ok(())` or a reason to log.
+///
+/// Size, not a hash: the failure this exists to catch is a whole different BUILD sitting at the staged
+/// path (49 MB against 74 MB, observed), and hashing 74 MB on every boot to catch a byte-level
+/// corruption nobody has ever seen would be paying the boot path for the wrong risk.
+fn verify_staged(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+    let sl = std::fs::metadata(src).map_err(|e| format!("source unreadable: {e}"))?.len();
+    let dl = std::fs::metadata(dst).map_err(|e| format!("staged copy unreadable: {e}"))?.len();
+    if sl == dl {
+        return Ok(());
+    }
+    Err(format!("source is {sl} bytes, staged copy is {dl}"))
+}
+
+/// True when a sidecar built at `sidecar` predates the app built at `app` — meaning the app is running
+/// against a sidecar from an OLDER build of the same workspace.
+///
+/// `bsc` and the app are built from one tree by one workflow, so the sidecar being older than the app
+/// is never intentional. It is, however, easy to arrive at: cargo HARDLINKS `target/<profile>/bsc.exe`
+/// to `target/<profile>/deps/bsc-<hash>.exe`, so which artifact that path resolves to shifts as builds
+/// land, and with several worktrees building concurrently the one sitting there at boot can be weeks
+/// old. Staging then faithfully copies the wrong thing.
+///
+/// Pure (takes the two timestamps) so the comparison is unit-testable without touching a filesystem.
+fn sidecar_predates_app(sidecar: std::time::SystemTime, app: std::time::SystemTime) -> bool {
+    sidecar < app
+}
+
+/// The sidecars that are OLDER than the running app exe, as `(name, how much older)`. Empty is the
+/// healthy case. Called at boot by `app::run` so the mismatch is reported where someone reads it,
+/// rather than surfacing later as an unknown-subcommand error in an agent session.
+pub(crate) fn stale_sidecars() -> Vec<(&'static str, std::time::Duration)> {
+    let Ok(app_exe) = std::env::current_exe() else { return Vec::new() };
+    let Ok(app_at) = std::fs::metadata(&app_exe).and_then(|m| m.modified()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (name, path) in sidecar_status() {
+        let Some(p) = path else { continue }; // missing is already reported, and louder
+        let Ok(at) = std::fs::metadata(&p).and_then(|m| m.modified()) else { continue };
+        if sidecar_predates_app(at, app_at) {
+            out.push((name, app_at.duration_since(at).unwrap_or_default()));
+        }
+    }
+    out
 }
 
 /// Drop `*.old-*` copies parked by an earlier [`stage_one`]. Best-effort: one still held by a live
@@ -759,6 +819,55 @@ pub(super) fn wire_bsc_env(
         }
     }
     rc_bash
+}
+
+#[cfg(test)]
+mod swap_tests {
+    use super::{sidecar_predates_app, verify_staged};
+    use std::time::{Duration, SystemTime};
+
+    /// The regression this whole slice exists for. Observed 2026-08-16: staging logged SUCCESS while
+    /// the staged `bsc` was a Jul 20 build of 49,027,584 bytes and the source was 74,270,208 — and the
+    /// only symptom, weeks later, was `bsc: unknown command 'change'` inside an agent session. A
+    /// successful `fs::copy` is not evidence the staged binary matches; the sizes are.
+    #[test]
+    fn verify_staged_rejects_a_different_build_at_the_staged_path() {
+        let dir = std::env::temp_dir().join(format!("bsc-stage-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("src.bin");
+        let dst = dir.join("dst.bin");
+
+        std::fs::write(&src, vec![0u8; 512]).unwrap();
+        std::fs::write(&dst, vec![0u8; 512]).unwrap();
+        assert!(verify_staged(&src, &dst).is_ok(), "identical sizes are the healthy case");
+
+        // The observed shape: a whole different build sitting at the staged path.
+        std::fs::write(&dst, vec![0u8; 128]).unwrap();
+        let err = verify_staged(&src, &dst).expect_err("a size mismatch must be reported");
+        assert!(err.contains("512") && err.contains("128"), "the reason must name both sizes: {err}");
+
+        // A missing file is a reason, never a silent pass — the failure mode being fixed is silence.
+        std::fs::remove_file(&dst).unwrap();
+        assert!(verify_staged(&src, &dst).is_err(), "an unreadable staged copy is not OK");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// PRESENT is not CURRENT. `bsc` and the app come from one tree by one workflow, so a sidecar older
+    /// than the app is never intentional — but cargo hardlinks `target/<profile>/bsc.exe` to a
+    /// `deps/bsc-<hash>.exe`, so with several worktrees building concurrently the artifact sitting there
+    /// at boot can be weeks old, and staging copies it faithfully.
+    #[test]
+    fn a_sidecar_older_than_the_app_is_stale() {
+        let app = SystemTime::UNIX_EPOCH + Duration::from_secs(1_760_000_000);
+        let older = app - Duration::from_secs(27 * 24 * 3600); // the ~27 days actually observed
+        let newer = app + Duration::from_secs(60);
+
+        assert!(sidecar_predates_app(older, app), "a sidecar built before the app is stale");
+        assert!(!sidecar_predates_app(newer, app), "a sidecar built after the app is fine");
+        // Equal timestamps are the normal case for one build step producing both — never flag it.
+        assert!(!sidecar_predates_app(app, app), "same-build timestamps must not be reported stale");
+    }
 }
 
 #[cfg(test)]
