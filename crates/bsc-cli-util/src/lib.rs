@@ -504,7 +504,7 @@ pub fn require_write_scope(scope: &str) -> Result<(), String> {
 /// to load), and full detail is fetched one command at a time on demand. `Copy` (all fields are
 /// `&'static str`) so a CLI that MOUNTS another CLI's verbs can compose the two catalogs into one
 /// merged help tree (`bsc ui` + the component-library verbs, #2469).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CmdDoc {
     pub name: &'static str,
     pub summary: &'static str,
