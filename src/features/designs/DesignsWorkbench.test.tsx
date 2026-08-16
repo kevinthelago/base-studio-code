@@ -58,9 +58,10 @@ describe("DesignsWorkbench (#2308)", () => {
     // strip is its header. No "Design Studio" heading, no kit-switcher chip row.
     expect(screen.queryByText("Design Studio")).toBeNull();
     // #3852: the graph header no longer repeats the studio's name or its kit — the PageTabs strip titles
-    // the studio and the rail names the kit. Its leading slot is the LOOP banner; `fit` is the header
-    // control that proves the row mounted at all.
-    expect(screen.getByRole("button", { name: "Auto-improve" })).toBeTruthy(); // the header's leading slot
+    // the studio and the rail names the kit. Its leading slot USED to be the loop banner, removed with the
+    // Auto-improve trigger (`auto-improve-starts-a-loop-nothing-can-drive`); `fit` is now the control that
+    // proves the row mounted at all.
+    expect(screen.queryByRole("button", { name: "Auto-improve" })).toBeNull(); // the trigger is gone
     expect(screen.getByRole("button", { name: "fit" })).toBeTruthy();          // …and the graph chrome
     expect(screen.queryByText(/Composition graph/)).toBeNull();                // the eyebrow is gone
     expect(screen.getByLabelText("Search components")).toBeTruthy();       // the rail's search box leads it
@@ -674,9 +675,11 @@ describe("theme try-on preview (#2834)", () => {
     fireEvent.click(graphNode("Chip"));
     fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
     expect(chrome()).toBeNull();                                         // hidden while previewing
-    // …but the loop banner SURVIVES as the overlay (#3852): the header is gone, and its Stop is the only
-    // brake on an unattended run, so it must not become unreachable.
-    expect(container.querySelector(".designer-loop-banner:not(.dlb-inline)")).toBeTruthy();
+    // The loop banner used to survive here as an overlay (#3852), because its Stop was documented as the
+    // only brake on an unattended run. It could never actually render one — the pump was its sole
+    // publisher and had been made inert — so the overlay went with the trigger. Nothing loop-shaped is
+    // left in preview mode.
+    expect(container.querySelector(".designer-loop-banner")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Back to graph/ }));
     expect(chrome()).toBeTruthy();                                       // restored on exit
   });
