@@ -153,6 +153,20 @@ pub fn run() {
                     ),
                 }
             }
+            // PRESENT is not the same as CURRENT (#the-sidecar-swap-is-silent-in-both-directions). A
+            // sidecar older than the app is never intentional — both come from one tree by one workflow
+            // — but cargo hardlinks `target/<profile>/bsc.exe` to a `deps/bsc-<hash>.exe`, so which
+            // artifact that path resolves to shifts as builds land, and staging faithfully copies
+            // whatever is there. Observed: a Jul 20 `bsc` served an Aug 16 app for weeks, and the only
+            // symptom was `unknown command 'change'` inside an agent session.
+            for (name, older_by) in crate::console::pty::stale_sidecars() {
+                log::error!(
+                    "[startup] sidecar `{name}` is STALE — built {}h before this app. It may be missing \
+                     subcommands this build expects, which surfaces as `bsc: unknown command …` mid-session. \
+                     Rebuild + restage: `npm run build:plan`.",
+                    older_by.as_secs() / 3600
+                );
+            }
             // Cap unbounded log files to reclaim disk space — OFF the synchronous boot path
             // (#1047). A full read/rewrite of audit.log (≈520 KB) + the other TSV streams is
             // housekeeping, not first-paint work; doing it inline blocked every startup. Defer

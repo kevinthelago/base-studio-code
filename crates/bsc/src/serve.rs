@@ -65,6 +65,11 @@ struct Request {
 pub fn run() -> Result<(), String> {
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
+    // What this process was launched from. A warm server is the one place a `bsc` swap does NOT take
+    // effect on its own: every other call is a fresh process, so replacing the binary on disk IS the
+    // reload. A long-lived one pins the old code, which means the verbs #4152 made fast are exactly the
+    // ones that would stop picking up a rebuild. Captured once, compared after each reply.
+    let launched_as = self_identity();
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break }; // the pipe closed mid-read — the desktop is gone
         if line.trim().is_empty() {
@@ -79,8 +84,45 @@ pub fn run() -> Result<(), String> {
         if writeln!(out, "{reply}").is_err() || out.flush().is_err() {
             break; // the desktop closed the pipe
         }
+        // AFTER replying, never before: the protocol promises every request an answer, so exiting with
+        // one in flight would hang a caller. Answering one request from superseded code is the smaller
+        // wrong — and the servable set is read-only (`is_servable`), so a stale read, not a stale write.
+        if replaced_since(&launched_as, self_identity()) {
+            break;
+        }
     }
     Ok(())
+}
+
+/// `(len, mtime)` of this process's own executable, or `None` if it cannot be read — which is not an
+/// error worth failing on, it just means the swap check is inert for this run.
+fn self_identity() -> Option<(u64, std::time::SystemTime)> {
+    let exe = std::env::current_exe().ok()?;
+    let md = std::fs::metadata(exe).ok()?;
+    Some((md.len(), md.modified().ok()?))
+}
+
+/// True when `now` is no longer the binary identity we were launched with.
+///
+/// `len` and `mtime` rather than a hash: the question is "did staging put a different build here", and
+/// a re-stage always moves both. Re-reading 74 MB between requests to answer a question a `stat`
+/// already answers would undo the ~10ms-per-call point of serving warm at all.
+///
+/// Takes `now` rather than reading the exe itself, so the COMPARISON is pure and unit-testable — the
+/// same split `is_build_output` and `sidecar_predates_app` use. Reading it inside made the first
+/// version of this untestable: the test's fabricated identity was compared against the real test
+/// binary's, so the steady-state case could never hold.
+fn replaced_since(
+    launched_as: &Option<(u64, std::time::SystemTime)>,
+    now: Option<(u64, std::time::SystemTime)>,
+) -> bool {
+    let Some(before) = launched_as else { return false };
+    match now {
+        Some(now) => now != *before,
+        // The exe is gone from under us — on Windows that is what a rename-then-replace stage looks
+        // like from the inside (#3959 parks the locked file as `.old-<stamp>`). Treat it as replaced.
+        None => true,
+    }
 }
 
 /// Dispatch one request under output capture.
@@ -111,6 +153,39 @@ fn fail(id: u64, err: &str) -> String {
     o.insert("ok".into(), false.into());
     o.insert("err".into(), err.into());
     serde_json::Value::Object(o).to_string()
+}
+
+#[cfg(test)]
+mod swap_tests {
+    use super::replaced_since;
+    use std::time::{Duration, SystemTime};
+
+    /// A warm server is the ONE place a `bsc` swap does not take effect by itself: every other call is
+    /// a fresh process, so replacing the binary on disk IS the reload. #4152 bought ~10ms answers by
+    /// making this process long-lived, which silently pinned the old code for exactly the hot read
+    /// verbs it sped up. This is the half that was missing.
+    #[test]
+    fn a_replaced_binary_ends_the_warm_server() {
+        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_760_000_000);
+        let launched = Some((74_270_208u64, at));
+
+        // Steady state: same binary still on disk — keep serving.
+        assert!(!replaced_since(&launched, launched), "unchanged len+mtime must not spin the server down");
+        // A re-stage moves both, but either alone already means a different build is here now.
+        assert!(
+            replaced_since(&launched, Some((49_027_584, at))),
+            "a different SIZE is a different build — the 49 MB/74 MB case actually observed"
+        );
+        assert!(
+            replaced_since(&launched, Some((74_270_208, at + Duration::from_secs(1)))),
+            "a newer mtime at the same size is still a re-stage"
+        );
+        // Gone from under us: on Windows that is what rename-then-replace (#3959) looks like from the
+        // inside, so it counts as replaced rather than as "carry on".
+        assert!(replaced_since(&launched, None), "a vanished own-exe means replaced");
+        // Unknowable identity AT LAUNCH leaves the check inert — never spin down on every request.
+        assert!(!replaced_since(&None, Some((1, at))), "no launch identity => the check is inert");
+    }
 }
 
 #[cfg(test)]
