@@ -35,6 +35,18 @@ export function overlayGlob<T>(dir: string, embedded: Record<string, { default: 
   for (const [path, mod] of Object.entries(embedded)) out.set(stem(path), mod.default);
   for (const [rel, content] of Object.entries(overrides)) {
     if (dirOf(rel) !== dir) continue;
+    // A BACKUP IS NOT A CONFIG FILE. Entries are keyed by STEM and `stem()` strips only a trailing
+    // `.json`, so `architect.json.bak-20260813T190331Z` keys as its whole filename — a DIFFERENT stem
+    // from `architect`, which means it does not override the persona, it becomes a SECOND one. And a
+    // backup of a JSON file is still valid JSON, so `tryParse` waved it through: the user's config dir
+    // minted a duplicate `Team architect` persona that no store, no packaged data and no app-state
+    // contained. 43 files under that dir are `.bak-<stamp>` / `.stale-bak` / `.orig`, left by editors
+    // and by the app's own overlay writes, so this is the normal state of a lived-in config dir.
+    //
+    // Extension, not a blocklist of suffixes: this function `JSON.parse`s unconditionally, so it is
+    // JSON-only by construction and anything else was never a legitimate entry. A blocklist would have
+    // to grow with every new editor's naming habit; this cannot.
+    if (!rel.endsWith(".json")) continue;
     const parsed = tryParse<T>(content);
     if (parsed !== undefined) out.set(stem(rel), parsed);
   }
