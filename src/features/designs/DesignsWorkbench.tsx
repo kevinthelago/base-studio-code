@@ -99,12 +99,10 @@ export function DesignsWorkbench() {
   const kitThemes = useAppStore((s) => s.kitThemes);
   // The node the designer AI is currently working (#2525) — a `.working` pulse + auto-pan target.
   const aiFocusedId = useAppStore((s) => s.aiFocusedId);
-  // Per-component preview-BUILD status (#2838) — populated by the on-visit `useComponentScan` sweep;
-  // the graph badges the `error` entries (a red build-error glyph, additive to the health badge).
-  const componentBuildStatus = useAppStore((s) => s.componentBuildStatus);
-  // Per-component RUNTIME data-state blanks (#3191) — the on-visit scan's render-confirmed empty/loading
-  // blanks; folded into `nodeHealth` below so they badge like any other HealthCategory finding.
-  const componentStateHealth = useAppStore((s) => s.componentStateHealth);
+  // NOTE (#two-store-keys-drive-more-than-half-the-apps-jank): this component deliberately does NOT
+  // subscribe to `componentBuildStatus` / `componentStateHealth`. Each `ComponentNode` reads its own
+  // entry instead, so a 150ms scan flush wakes the nodes that changed rather than re-rendering the whole
+  // workbench and rebuilding a health Map over every component.
   // The standard component-edit action (#3069) — updates the store + write-throughs `bsc ui set`; the
   // animation-variation default-switch reuses it exactly like any other component edit.
   const setComponent = useAppStore((s) => s.setComponent);
@@ -382,11 +380,11 @@ export function DesignsWorkbench() {
       if (!cur || HEALTH_SEVERITY[cat] > HEALTH_SEVERITY[cur]) m.set(id, cat);
     };
     for (const f of healthFindings) for (const id of f.nodeIds) consider(id, f.category);
-    // Fold in the runtime data-state blanks (#3191) — render-confirmed by the scan, not analyzeGraphHealth —
-    // so `empty-empty-state` / `empty-loading-state` badge alongside the static findings (most-severe wins).
-    for (const [id, cats] of Object.entries(componentStateHealth)) for (const cat of cats) consider(id, cat);
     return m;
-  }, [healthFindings, componentStateHealth]);
+    // STATIC findings only. The scan's runtime data-state blanks (#3191) used to be folded in here, which
+    // tied this memo — and therefore this whole render — to a store key the scan writes every 150ms. Each
+    // node now folds its own via `worstHealth`, so the same badge appears from a far narrower dependency.
+  }, [healthFindings]);
 
   const gvp = useGraphPage(world, [kitId]); // re-fit on mount + whenever the kit switches (band-aware world)
   // VIEWPORT CULLING (#components-graph-culls-offscreen-nodes) — the kit is 459 components and every one
@@ -766,7 +764,6 @@ export function DesignsWorkbench() {
               related={relatedNodes.has(c.id)}
               working={c.id === (aiFocusedId ?? "") && c.id !== selId}
               badge={nodeHealth.get(c.id)}
-              buildStatus={componentBuildStatus[c.id]}
               onSelect={selectComp}
             />
           );

@@ -1,8 +1,9 @@
 // The memoized graph node (#4132). Its whole point is that ONE component's scan result no longer
 // re-renders all 248 nodes, so the test asserts render COUNTS, not just markup.
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ComponentNode } from "./ComponentNode";
+import { useAppStore } from "@/store";
 import type { ComponentRecord } from "./lib/model";
 
 const comp = (o: Partial<ComponentRecord> & Pick<ComponentRecord, "id">): ComponentRecord =>
@@ -16,7 +17,22 @@ const base = {
   onSelect: () => {},
 } as const;
 
+/** Scan results now reach a node through the STORE, not props (#two-store-keys-drive-more-than-half-the-apps-jank). */
+const setScan = (id: string, status?: unknown, health?: unknown) =>
+  act(() => {
+    useAppStore.setState((s) => ({
+      componentBuildStatus: { ...s.componentBuildStatus, ...(status === undefined ? {} : { [id]: status }) },
+      componentStateHealth: { ...s.componentStateHealth, ...(health === undefined ? {} : { [id]: health }) },
+    }) as never);
+  });
+
 describe("ComponentNode", () => {
+  beforeEach(() => {
+    act(() => {
+      useAppStore.setState({ componentBuildStatus: {}, componentStateHealth: {} } as never);
+    });
+  });
+
   it("renders the name, role and use-count, positioned by its props", () => {
     render(<ComponentNode c={comp({ id: "btn", name: "Button", role: "primitive", used: 7 })} {...base} />);
     expect(screen.getByText("Button")).toBeInTheDocument();
@@ -40,22 +56,31 @@ describe("ComponentNode", () => {
   });
 
   it("badges a health finding, a build error and an empty render distinctly", () => {
-    const { container } = render(
-      <ComponentNode
-        c={comp({ id: "b" })} {...base}
-        badge="orphan"
-        buildStatus={{ state: "error", kind: "runtime", message: "d3 threw" }}
-      />,
-    );
+    setScan("b", { state: "error", kind: "runtime", message: "d3 threw" });
+    const { container } = render(<ComponentNode c={comp({ id: "b" })} {...base} badge="orphan" />);
     expect(container.querySelector(".ds-health-orphan")).toBeTruthy();
     expect(container.querySelector(".ds-buildfail")!.getAttribute("title")).toContain("runtime error — d3 threw");
     expect(container.querySelector(".ds-emptyrender")).toBeFalsy();
 
-    const { container: c2 } = render(
-      <ComponentNode c={comp({ id: "b" })} {...base} buildStatus={{ state: "empty", message: "no output" }} />,
-    );
+    setScan("e", { state: "empty", message: "no output" });
+    const { container: c2 } = render(<ComponentNode c={comp({ id: "e" })} {...base} />);
     expect(c2.querySelector(".ds-emptyrender")!.getAttribute("title")).toBe("no output");
     expect(c2.querySelector(".ds-buildfail")).toBeFalsy();
+  });
+
+  it("folds its OWN runtime health into the static badge — most severe wins", () => {
+    // The workbench passes only the static `analyzeGraphHealth` category; the scan's runtime blanks
+    // (#3191) arrive through the store so a flush cannot re-render the parent. `worstHealth` decides.
+    setScan("b", undefined, ["empty-empty-state"]);
+    const { container } = render(<ComponentNode c={comp({ id: "b" })} {...base} badge="slot-shell" />);
+    // slot-shell is informational (severity 1); the runtime blank outranks it.
+    expect(container.querySelector(".ds-health-empty-empty-state")).toBeTruthy();
+    expect(container.querySelector(".ds-health-slot-shell")).toBeFalsy();
+
+    // ...and a real static defect outranks the runtime blank the other way.
+    setScan("c", undefined, ["empty-empty-state"]);
+    const { container: c2 } = render(<ComponentNode c={comp({ id: "c" })} {...base} badge="cycle" />);
+    expect(c2.querySelector(".ds-health-cycle")).toBeTruthy();
   });
 
   it("hands the RECORD back on click, so the parent can pass one stable callback for every node", () => {
@@ -86,13 +111,32 @@ describe("ComponentNode", () => {
     expect(container.querySelector(".ds-node")).toBe(before);
   });
 
-  it("DOES re-render when its own status changes", () => {
-    const c = comp({ id: "b" });
-    const onSelect = () => {};
-    const { rerender, container } = render(<ComponentNode c={c} {...base} onSelect={onSelect} />);
+  it("DOES re-render when its own status lands in the store — with NO parent re-render", () => {
+    // The whole point of the inversion (#two-store-keys-drive-more-than-half-the-apps-jank): a scan
+    // flush must reach the node WITHOUT the parent rendering again. Previously the status arrived as a
+    // prop, which meant the parent had to re-render for the node to update — and the parent subscribed
+    // to the whole record, so one component's result re-rendered the entire graph.
+    let parentRenders = 0;
+    const Parent = () => {
+      parentRenders += 1;
+      return <ComponentNode c={comp({ id: "b" })} {...base} />;
+    };
+    const { container } = render(<Parent />);
     expect(container.querySelector(".ds-buildfail")).toBeFalsy();
-    rerender(<ComponentNode c={c} {...base} onSelect={onSelect} buildStatus={{ state: "error", kind: "build", message: "nope" }} />);
+    const after = parentRenders;
+
+    setScan("b", { state: "error", kind: "build", message: "nope" });
+
     expect(container.querySelector(".ds-buildfail")).toBeTruthy();
+    expect(parentRenders).toBe(after);
+  });
+
+  it("ignores a flush that changes ANOTHER component — the selector is per id", () => {
+    const { container } = render(<ComponentNode c={comp({ id: "mine" })} {...base} />);
+    const before = container.querySelector(".ds-node");
+    setScan("someone-else", { state: "error", kind: "build", message: "not mine" });
+    expect(container.querySelector(".ds-buildfail")).toBeFalsy();
+    expect(container.querySelector(".ds-node")).toBe(before);
   });
 });
 
@@ -137,9 +181,8 @@ describe("the node's DOM cost (#a-graph-node-costs-five-elements-not-eight)", ()
   it("keeps the badges as real elements WITH their tooltips", () => {
     // Badges carry the error message in `title`, which a pseudo-element cannot do — so they stay
     // elements, and the count above is the healthy-node count rather than a ceiling.
-    const { container } = render(
-      <ComponentNode c={card} {...base} badge="orphan" buildStatus={{ state: "error", kind: "build", message: "boom" }} />,
-    );
+    setScan(card.id, { state: "error", kind: "build", message: "boom" });
+    const { container } = render(<ComponentNode c={card} {...base} badge="orphan" />);
     expect(container.querySelector(".ds-health-orphan")).toBeTruthy();
     expect(container.querySelector(".ds-buildfail")!.getAttribute("title")).toContain("boom");
   });

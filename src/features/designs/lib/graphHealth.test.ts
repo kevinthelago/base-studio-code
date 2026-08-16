@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { analyzeGraphHealth, analyzeMotion, nameSuffix, nodeHealth, signatureProps, HEALTH_SEVERITY, HEALTH_BADGE } from "./graphHealth";
+import { analyzeGraphHealth, analyzeMotion, nameSuffix, nodeHealth, signatureProps, worstHealth, HEALTH_SEVERITY, HEALTH_BADGE } from "./graphHealth";
 import type { ComponentRecord, Role } from "./model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
 
@@ -894,5 +894,33 @@ describe("runtime data-state categories (#3191)", () => {
     }
     expect(HEALTH_BADGE["empty-empty-state"].glyph).toBeTruthy();
     expect(HEALTH_BADGE["empty-loading-state"].glyph).toBeTruthy();
+  });
+});
+
+describe("worstHealth — the shared most-severe-wins fold (#two-store-keys-drive-more-than-half-the-apps-jank)", () => {
+  it("lets a runtime blank outrank an INFORMATIONAL static badge", () => {
+    // slot-shell is severity 1 — it explains a placeholder preview, it is not a defect. A
+    // render-confirmed empty state (#3191) is a real finding and must win.
+    expect(worstHealth("slot-shell", ["empty-empty-state"])).toBe("empty-empty-state");
+  });
+
+  it("keeps a real static defect over a runtime blank", () => {
+    expect(worstHealth("cycle", ["empty-empty-state"])).toBe("cycle");
+  });
+
+  it("passes each side through untouched when the other is absent", () => {
+    expect(worstHealth("orphan", [])).toBe("orphan");
+    expect(worstHealth("orphan", undefined)).toBe("orphan");
+    expect(worstHealth(undefined, ["empty-loading-state"])).toBe("empty-loading-state");
+    expect(worstHealth(undefined, undefined)).toBeUndefined();
+    expect(worstHealth(undefined, [])).toBeUndefined();
+  });
+
+  it("takes the worst of SEVERAL runtime categories", () => {
+    expect(worstHealth(undefined, ["empty-loading-state", "empty-empty-state"])).toBe(
+      HEALTH_SEVERITY["empty-loading-state"] >= HEALTH_SEVERITY["empty-empty-state"]
+        ? "empty-loading-state"
+        : "empty-empty-state",
+    );
   });
 });
