@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID, PLANNER_NODE_ID, resolveSystemSessions } from "@/features/glance/lib/glanceFleet";
+import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID, PLANNER_NODE_ID, resolveSystemSessions, systemSessionLabel } from "@/features/glance/lib/glanceFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 import type { Team } from "@/features/teams";
@@ -191,7 +191,7 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
     // it into `systemSessions`, so the node appears with the queue and leaves with it. `resolveSystemSessions`
     // filters to KNOWN ids, so this only works because `debugger` is in the roles map — before that it
     // was silently dropped, which reads as "the feature does nothing".
-    const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "debugger"] } as unknown as FleetPlan);
+    const org = fleetToOrg({ ...fleet, systemSessions: ["architect", "debugger"] } as unknown as FleetPlan);
     expect(org.positions.some((p) => p.nodeId === "debugger")).toBe(true);
     expect(org.relationships).toContainEqual(
       expect.objectContaining({ from: "debugger", to: "director", archetype: "serves" }),
@@ -201,7 +201,7 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
   });
 
   it("drops the debugger again when nothing injects it — the node is not sticky", () => {
-    const org = fleetToOrg({ ...fleet, systemSessions: ["designer"] } as unknown as FleetPlan);
+    const org = fleetToOrg({ ...fleet, systemSessions: ["architect"] } as unknown as FleetPlan);
     expect(org.positions.some((p) => p.nodeId === "debugger")).toBe(false);
   });
 
@@ -209,8 +209,8 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
     // The maintainer's directive: the sessions wire straight to the director, with no planning node
     // between them. `serves` (not `manages`) keeps the authority chain reading one way, and is what
     // layers them LEFT of the director.
-    const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "librarian"] } as unknown as FleetPlan);
-    for (const s of ["designer", "librarian"]) {
+    const org = fleetToOrg({ ...fleet, systemSessions: ["architect", "integrator"] } as unknown as FleetPlan);
+    for (const s of ["architect", "integrator"]) {
       expect(org.relationships).toContainEqual(
         expect.objectContaining({ from: s, to: "director", archetype: "serves" }),
       );
@@ -221,25 +221,25 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
   it("a director-less fleet still renders, with the sessions simply serving nothing", () => {
     // The old code kept a planner node so the graph never "lost the agent that authored the plan".
     // Now there is no such node, so the no-director case must not leave an orphan in its place.
-    const org = fleetToOrg({ ...fleet, director: { enabled: false }, systemSessions: ["designer"] } as unknown as FleetPlan);
+    const org = fleetToOrg({ ...fleet, director: { enabled: false }, systemSessions: ["architect"] } as unknown as FleetPlan);
     expect(org.positions.some((p) => p.nodeId === PLANNER_NODE_ID)).toBe(false);
-    expect(org.positions.some((p) => p.nodeId === "designer")).toBe(true);
-    expect(org.relationships.some((r) => r.from === "designer")).toBe(false);
+    expect(org.positions.some((p) => p.nodeId === "architect")).toBe(true);
+    expect(org.relationships.some((r) => r.from === "architect")).toBe(false);
   });
 
   // ── declared system sessions ──────────────────────────────────────────────
   it("renders ONLY the system sessions the project declares, each serving the director", () => {
-    const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "librarian"] } as unknown as FleetPlan);
+    const org = fleetToOrg({ ...fleet, systemSessions: ["architect", "integrator"] } as unknown as FleetPlan);
     expect(org.positions.map((p) => p.nodeId).sort())
-      .toEqual(["api", "designer", "director", "librarian", "ui"]);
-    for (const s of ["designer", "librarian"]) {
+      .toEqual(["api", "architect", "director", "integrator", "ui"]);
+    for (const s of ["architect", "integrator"]) {
       expect(org.relationships).toContainEqual(
         expect.objectContaining({ from: s, to: "director", archetype: "serves" }),
       );
     }
     // the ones it did NOT declare are absent — a project with no UI kit shows no designer
     expect(org.positions.some((p) => p.nodeId === "sound-designer")).toBe(false);
-    expect(org.positions.some((p) => p.nodeId === "integrator")).toBe(false);
+    expect(org.positions.some((p) => p.nodeId === "designer-react")).toBe(false);
   });
 
   it("declares none ⇒ renders none", () => {
@@ -251,24 +251,51 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
 
   it("ignores an unknown system-session id rather than rendering a phantom agent", () => {
     // A typo should cost that one node, not put an agent on the graph no session can ever back.
-    const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "desiner", ""] } as unknown as FleetPlan);
-    expect(org.positions.some((p) => p.nodeId === "desiner")).toBe(false);
-    expect(org.positions.some((p) => p.nodeId === "designer")).toBe(true);
-    expect(resolveSystemSessions(["designer", "desiner", "designer"])).toEqual(["designer"]); // de-duped too
+    const org = fleetToOrg({ ...fleet, systemSessions: ["architect", "architetc", ""] } as unknown as FleetPlan);
+    expect(org.positions.some((p) => p.nodeId === "architetc")).toBe(false);
+    expect(org.positions.some((p) => p.nodeId === "architect")).toBe(true);
+    // de-duped, and a MULTI-TECH kind expands to its real sessions rather than the bare kind
+    expect(resolveSystemSessions(["architect", "architetc", "architect"])).toEqual(["architect"]);
+    expect(resolveSystemSessions(["designer"])).toEqual(["designer-react", "designer-react-native"]);
   });
 
   it("renders each system session in its own role, not as a worker", () => {
+    // A per-technology node keeps its KIND's role — `librarian-rust` is a librarian, not a worker.
     const data = buildOrgFleetData(
       fleetToOrg({ ...fleet, systemSessions: ["librarian"] } as unknown as FleetPlan), [],
     );
-    expect(data.rawNodes.find((n) => n.id === "librarian")).toMatchObject({ roleLabel: "librarian", role: "client" });
+    expect(data.rawNodes.find((n) => n.id === "librarian-rust")).toMatchObject({ roleLabel: "librarian", role: "client" });
+    expect(data.rawNodes.some((n) => n.id === "librarian")).toBe(false); // the bare kind is never a node
+  });
+
+  it("expands a declared kind into ONE NODE PER TECHNOLOGY, labelled", () => {
+    // A project declares `designer`, but no such SESSION exists — there is design-studio:designer-react
+    // and …-react-native. Rendering the bare kind gives a node that can never open anything, because the
+    // pane-id map is keyed per technology. Each variant is its own openable node instead.
+    const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "librarian"] } as unknown as FleetPlan);
+    const ids = org.positions.map((p) => p.nodeId);
+    expect(ids).toEqual(expect.arrayContaining([
+      "designer-react", "designer-react-native", "librarian-rust", "librarian-typescript", "librarian-python",
+    ]));
+    expect(ids).not.toContain("designer");
+    expect(ids).not.toContain("librarian");
+    // labelled for a human, while the id stays the machine identity
+    expect(org.positions.find((p) => p.nodeId === "designer-react")?.label).toBe("designer · react");
+    expect(systemSessionLabel("librarian-typescript")).toBe("librarian · typescript");
+    expect(systemSessionLabel("architect")).toBe("architect"); // no technologies ⇒ unchanged
+    // every variant serves the director, exactly like a single-session kind
+    for (const id of ["designer-react", "librarian-python"]) {
+      expect(org.relationships).toContainEqual(
+        expect.objectContaining({ from: id, to: "director", archetype: "serves" }),
+      );
+    }
   });
 
   it("places system sessions LEFT of the director, workers right", () => {
     // The arrangement is a CONSEQUENCE of `serves`, not a layout rule — so assert the layering the real
     // chain produces. Glance inverts org relationships into `from depends on to`, then reverses again
     // for layerDag, so a `serves` edge puts the server at the lower (further-left) layer.
-    const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "librarian"] } as unknown as FleetPlan);
+    const org = fleetToOrg({ ...fleet, systemSessions: ["architect", "integrator"] } as unknown as FleetPlan);
     const glance = buildOrgFleetData(org, []).rawEdges;               // already inverted once
     const rev = glance.map((e, i) => ({ id: `e${i}`, from: e.to, to: e.from })); // glanceGraph's reversal
     const ids = org.positions.map((p) => p.nodeId);
@@ -280,8 +307,8 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
       }
       if (!changed) break;
     }
-    expect(layer.designer).toBeLessThan(layer.director);
-    expect(layer.librarian).toBeLessThan(layer.director);
+    expect(layer.architect).toBeLessThan(layer.director);
+    expect(layer.integrator).toBeLessThan(layer.director);
     expect(layer.director).toBeLessThan(layer.api);
     expect(layer.director).toBeLessThan(layer.ui);
   });
@@ -290,8 +317,8 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
     // Without the role fallback knowing the id, an unmatched persona falls through to `worker` and an
     // orchestrating agent would draw in the BUILD colour. The planner node is gone (it is no longer a
     // position at all), so the surviving orchestrators are the director and the system sessions.
-    const data = buildOrgFleetData(fleetToOrg({ ...fleet, systemSessions: ["designer"] } as unknown as FleetPlan), []);
-    expect(data.rawNodes.find((n) => n.id === "designer")?.roleLabel).toBe("designer"); // NOT the worker fallback
+    const data = buildOrgFleetData(fleetToOrg({ ...fleet, systemSessions: ["architect"] } as unknown as FleetPlan), []);
+    expect(data.rawNodes.find((n) => n.id === "architect")?.roleLabel).toBe("architect"); // NOT the worker fallback
     // the director keeps its own fallback
     expect(data.rawNodes.find((n) => n.id === "director")).toMatchObject({ role: "infra", roleLabel: "director" });
     // a stream with no persona still falls through to worker
