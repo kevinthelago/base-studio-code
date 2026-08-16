@@ -15,7 +15,9 @@
 // importing it; the "compose, don't recreate" guardrail, #3118) ·
 // orphan (isolated, never-
 // referenced primitive/composite) · unwired-prop (declares props its own source never references — a
-// declared interface that does nothing, #2924) · phantom-compose (a user component declares `composes`
+// declared interface that does nothing, #2924) · skips-family-shell (a member of a folder/name-suffix
+// family that does NOT compose the shell primitive nearly all its siblings do — a REPORT, not a rule, #87) ·
+// phantom-compose (a user component declares `composes`
 // children its own source never renders — a false graph edge that also masks orphan detection, #3111) ·
 // slot-shell (INFORMATIONAL — a composite whose composed children arrive via ReactNode content slots, so
 // a standalone preview renders a demo placeholder, #2921).
@@ -343,6 +345,9 @@ export type HealthCategory =
   | "stubbed-import" // #3696 — a bare npm import rendered via a local shim/stub (sev 1, not an error)
   | "hardcoded-color" // #3704 — hardcodes color literals + no theme token (not wired to the theme, sev 1)
   | "reimplementation" | "reimplemented-component" | "orphan" | "unwired-prop" | "phantom-compose"
+  // skips-family-shell (#87) — a member of a folder/name-suffix family that does NOT compose the shell
+  // primitive the rest of the family does. A REPORT, not a rule.
+  | "skips-family-shell"
   // MOTION checks (#3163, `bsc ui doctor --motion` / `analyzeMotion`) — mechanical faults an author used to
   // hand-diagnose: a dead animation-selector hook, a stroke-dash draw with no pathLength, a CSS-transform
   // keyframe fighting an SVG transform ATTRIBUTE, and a cross-component keyframe-name collision.
@@ -381,6 +386,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "reimplemented-component": 3,
   orphan: 2,
   "unwired-prop": 2,
+  "skips-family-shell": 2,
   "phantom-compose": 2,
   // Motion (#3163): a dead selector hook + a cross-component name collision are real faults (the motion
   // targets nothing / two components' keyframes clobber) → 2; the two SVG traps are advisory (the motion
@@ -420,6 +426,7 @@ export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string
   "reimplemented-component": { glyph: "⧉", label: "re-declares a component that already exists — the preview renders the local stub, not the real node" },
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
+  "skips-family-shell": { glyph: "⊟", label: "skips the family shell — its folder/name-suffix siblings nearly all compose one primitive and this one does not; likely hand-rolls the same shell" },
   "phantom-compose": { glyph: "⇢", label: "phantom composes — declares a composition its source never renders (a false graph edge)" },
   "motion-dead-selector": { glyph: "⌁", label: "motion dead selector — an animation targets a class hook its source never renders" },
   "motion-dash-no-pathlength": { glyph: "┅", label: "stroke-dash motion with no pathLength — a draw-in needs a known path length" },
@@ -478,11 +485,71 @@ function cycleNodes(ids: string[], out: Map<string, string[]>): Set<string> {
 
 /** The hardcoded COLOR literals in `text` (#3704) — a 6- or 8-digit hex or an `rgb()/rgba()/hsl()/hsla()/
  *  oklch()/oklab()` function; the leak candidates a theme change can't reach. A 3-digit `#219` (an issue
- *  ref) is skipped. Rust twin: `color_literals`. */
+ *  ref) is skipped.
+ *
+ *  CODE POSITION ONLY (#87): a `//` or block comment is skipped, because a hex written there styles
+ *  nothing — the swatch in `// palette: #171717` is documentation, and reporting it sends the reader to
+ *  fix a line that has no effect. A literal inside a STRING is still caught: that is exactly where a real
+ *  one lives (`color: "#171717"`). Rust twin: `color_literals`. */
 function colorLiterals(text: string): string[] {
-  const hex = text.match(/#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6})\b/g) ?? [];
-  const fns = text.match(/\b(?:rgba|rgb|hsla|hsl|oklch|oklab)\(/gi) ?? [];
-  return [...hex, ...fns.map((f) => f.replace("(", ""))];
+  const out: string[] = [];
+  const n = text.length;
+  let i = 0;
+  while (i < n) {
+    const c = text[i];
+    if (c === "/" && text[i + 1] === "/") {
+      while (i < n && text[i] !== "\n") i++;
+    } else if (c === "/" && text[i + 1] === "*") {
+      i += 2;
+      while (i + 1 < n && !(text[i] === "*" && text[i + 1] === "/")) i++;
+      i = Math.min(i + 2, n);
+    } else if (c === "#") {
+      let j = i + 1;
+      while (j < n && /[0-9a-fA-F]/.test(text[j])) j++;
+      if (j - i - 1 === 6 || j - i - 1 === 8) out.push(text.slice(i, j));
+      i = Math.max(j, i + 1);
+    } else if (/[A-Za-z]/.test(c)) {
+      // A colour FUNCTION — matched on a whole-word boundary so `to_rgb(` isn't one.
+      const start = i;
+      while (i < n && /[A-Za-z0-9_]/.test(text[i])) i++;
+      const word = text.slice(start, i).toLowerCase();
+      const boundaryOk = start === 0 || !/[A-Za-z0-9_]/.test(text[start - 1]);
+      if (boundaryOk && text[i] === "(" && ["rgb", "rgba", "hsl", "hsla", "oklch", "oklab"].includes(word)) {
+        out.push(word);
+      }
+    } else i++;
+  }
+  return out;
+}
+
+// ── skips-family-shell (#87) — the four gates that make "which sibling skips the shared shell?" a SIGNAL
+// rather than a list. Set against the real 585-record library: at these values the whole store yields six
+// findings, including the case the request was filed for (20 of the 21 `settings/cards` components compose
+// `Card`; `AchievementsCard` does not). Loosening the share to 0.7 turns the same sweep into ~20 rows of
+// five- and six-member "outlier" sets — the report that made a human read a dozen srcTexts by hand.
+
+/** A family must have this many members before "most of them do X" means anything. A cheap pre-filter:
+ *  {@link FAMILY_SHELL_SHARE} binds first, making SEVEN the smallest family that can fire (6/7 = 0.857). */
+const FAMILY_MIN = 6;
+/** The share of a family that must compose a shell before the rest read as outliers, not a 2nd convention. */
+const FAMILY_SHELL_SHARE = 0.85;
+/** Past this many non-composers it is a split, not an outlier set — a design question, not a finding. */
+const FAMILY_MAX_OUTLIERS = 3;
+/** The shell must be widely composed IN ITS KIT, so two siblings sharing a helper cannot become "the shell". */
+const FAMILY_SHELL_COMPOSERS_MIN = 10;
+
+/** The trailing PascalCase word of `name` (`AchievementsCard` → `Card`) — the second grouping convention,
+ *  alongside the record's folder. `null` for a single-segment name, which also keeps a shell out of the
+ *  family named after it (`Card` itself is not a `*Card`). Rust twin: `name_suffix`. */
+export function nameSuffix(name: string): string | null {
+  const segments: string[] = [];
+  for (const c of name) {
+    if (/[A-Z]/.test(c) || segments.length === 0) segments.push("");
+    segments[segments.length - 1] += c;
+  }
+  if (segments.length < 2) return null;
+  const last = segments[segments.length - 1];
+  return last.length > 1 ? last : null;
 }
 
 /** Does `text` reference a THEME TOKEN (`var(--…)`)? A component that does is wired to the theme. Rust twin:
@@ -735,6 +802,60 @@ export function analyzeGraphHealth(
     if (unwired.length === 0) continue;
     findings.push({ category: "unwired-prop", severity: 2, nodeIds: [c.id], nodeNames: [c.name],
       why: `${c.name} declares prop${unwired.length === 1 ? "" : "s"} its source never uses: ${unwired.join(", ")} — a declared interface that does nothing` });
+  }
+
+  // skips-family-shell (#87, a REPORT not a rule) — the members of a family that do NOT compose the shell
+  // the rest of it does. A family is a folder or a trailing-PascalCase-word group; a shell is any component
+  // the family composes at or above FAMILY_SHELL_SHARE and that its kit composes widely.
+  //
+  // This is the question `dupes`/`similar` structurally CANNOT answer, and the cost of answering it by hand
+  // is measured: a ~480k-token fork reading a dozen srcTexts. Fuzzy name + prop-contract distance never
+  // sees "shares a shell primitive", because the two components' props are unrelated — a toggle card has
+  // `enabled`/`onToggle` and an info card has `value`/`label`, so none of the 51 card-suffixed ids ever
+  // appeared together in a dupes report. What answered it in ONE call was `bsc ui used-by ui-card`. This is
+  // that call, run for every family at once. Rust twin: the skips-family-shell loop in graph_health.rs.
+  // Keyed `"<grouping>::<name>"`, split on the FIRST `::` so a folder path is never truncated.
+  // "folder" sorts before "name suffix", which is what makes the dedupe below keep the specific grouping.
+  const familyOf = new Map<string, ComponentRecord[]>();
+  const addTo = (key: string, c: ComponentRecord) => (familyOf.get(key) ?? familyOf.set(key, []).get(key)!).push(c);
+  for (const c of comps) {
+    const folder = (c.folder ?? "").trim();
+    if (folder) addTo(`folder::${folder}`, c);
+    const suffix = nameSuffix(c.name);
+    if (suffix) addTo(`name suffix::${suffix}`, c);
+  }
+  // How many DISTINCT in-kit components compose each name — the `used-by` count this check is built on.
+  const composersInKit = new Map<string, number>();
+  for (const c of comps) for (const dep of new Set(c.composes)) composersInKit.set(dep, (composersInKit.get(dep) ?? 0) + 1);
+  // A component's folder family and its name-suffix family usually overlap, so both can reach the SAME
+  // (shell, outliers) verdict. That is one fact, reported once — and "folder" sorts first, so the more
+  // specific grouping is the one that keeps it.
+  const saidAlready = new Set<string>();
+  for (const [key, members] of [...familyOf].sort(([a], [b]) => a.localeCompare(b))) {
+    if (members.length < FAMILY_MIN) continue;
+    const sep = key.indexOf("::");
+    const [grouping, famName] = [key.slice(0, sep), key.slice(sep + 2)];
+    const within = new Map<string, number>();
+    for (const m of members) for (const dep of new Set(m.composes)) within.set(dep, (within.get(dep) ?? 0) + 1);
+    for (const [shell, composedBy] of [...within].sort(([a], [b]) => a.localeCompare(b))) {
+      // Not a widely-composed primitive — an accident of two siblings sharing a helper, not a shell.
+      if ((composersInKit.get(shell) ?? 0) < FAMILY_SHELL_COMPOSERS_MIN) continue;
+      // Not the family's shell; a minority convention is not a standard to hold the others to.
+      if (composedBy < FAMILY_SHELL_SHARE * members.length) continue;
+      // The shell is never an outlier in its own family — it cannot compose itself.
+      const outliers = members.filter((m) => m.name !== shell && !m.composes.includes(shell));
+      if (!outliers.length || outliers.length > FAMILY_MAX_OUTLIERS) continue;
+      const dedupe = `${shell}::${outliers.map((o) => o.id).join(",")}`;
+      if (saidAlready.has(dedupe)) continue;
+      saidAlready.add(dedupe);
+      const names = outliers.map((o) => o.name);
+      const one = outliers.length === 1;
+      findings.push({
+        category: "skips-family-shell", severity: 2,
+        nodeIds: outliers.map((o) => o.id), nodeNames: names,
+        why: `${composedBy} of the ${members.length} components in the \`${famName}\` ${grouping} family compose \`${shell}\`; ${names.join(", ")} do${one ? "es" : ""} not — the outlier${one ? "" : "s"} of an otherwise consistent family`,
+      });
+    }
   }
 
   // phantom-compose — a component that DECLARES `composes` children its own source never renders. The

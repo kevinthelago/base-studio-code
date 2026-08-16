@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { analyzeGraphHealth, analyzeMotion, nodeHealth, HEALTH_SEVERITY, HEALTH_BADGE } from "./graphHealth";
+import { analyzeGraphHealth, analyzeMotion, nameSuffix, nodeHealth, HEALTH_SEVERITY, HEALTH_BADGE } from "./graphHealth";
 import type { ComponentRecord, Role } from "./model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
 
@@ -192,6 +192,61 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     });
     const cats = analyzeGraphHealth([wired, spreader, spec]).map((f) => f.category);
     expect(cats).not.toContain("unwired-prop");
+  });
+
+  // ── skips-family-shell (#87) ────────────────────────────────────────────────────────────────────────
+  // `dupes`/`similar` structurally cannot see "shares a shell primitive" — a toggle card's props and an
+  // info card's props are unrelated — so the outlier of a 21-strong family cost a ~480k-token fork of
+  // reading srcTexts by hand. These pin the gates that turn the same sweep into one line.
+
+  /** `n` siblings of one folder family, the first `composing` of which compose `Shell`, plus `extraUsers`
+   *  unrelated in-kit composers so the shell clears the widely-composed bar independently. */
+  const shellFamily = (n: number, composing: number, extraUsers: number) => [
+    comp("Shell", "primitive", 9, [], { folder: "elsewhere" }),
+    ...Array.from({ length: n }, (_, i) =>
+      comp(`Member${i}Row`, "composite", 2, i < composing ? ["Shell"] : [], { folder: "fam" })),
+    ...Array.from({ length: extraUsers }, (_, i) =>
+      comp(`User${i}Panel`, "composite", 2, ["Shell"], { folder: `other${i}` })),
+  ];
+  const familyFindings = (comps: ComponentRecord[]) =>
+    analyzeGraphHealth(comps).filter((f) => f.category === "skips-family-shell");
+
+  // Rust twin: `a_family_member_that_skips_the_shared_shell_is_the_only_one_reported`.
+  it("names the family member that skips the shared shell, and only that one (#87)", () => {
+    const comps = [
+      comp("Card", "primitive", 9, [], { id: "ui-card", folder: "shared/ui/data" }),
+      ...Array.from({ length: 12 }, (_, i) =>
+        comp(`Sibling${i}Card`, "composite", 2, ["Card"], { folder: "settings/cards" })),
+      comp("AchievementsCard", "composite", 2, ["Row"], { id: "achievements", folder: "settings/cards" }),
+    ];
+    const f = familyFindings(comps);
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe(2);
+    expect(f[0].nodeIds).toEqual(["achievements"]); // the 12 healthy siblings are NOT reported
+    expect(f[0].why).toContain("12 of the 13");
+    expect(f[0].why).toContain("settings/cards");
+    expect(f[0].why).toContain("`Card`");
+  });
+
+  // Rust twin: `the_family_gates_keep_a_split_or_a_narrow_convention_silent`.
+  it("keeps a split, a small family or a narrow convention silent (#87)", () => {
+    // The SMALLEST family that can fire is seven — the share gate binds before the size gate does.
+    expect(familyFindings(shellFamily(6, 5, 10))).toHaveLength(0);  // 5 of 6 = 0.833
+    expect(familyFindings(shellFamily(7, 6, 10))).toHaveLength(1);  // 6 of 7 = 0.857
+    // …and it fires ONCE, though the members share a folder AND a name suffix.
+    expect(familyFindings(shellFamily(10, 7, 10))).toHaveLength(0); // a 70/30 split is two conventions
+    expect(familyFindings(shellFamily(20, 18, 10))).toHaveLength(1);
+    expect(familyFindings(shellFamily(40, 36, 10))).toHaveLength(0); // four non-composers is a split again
+    expect(familyFindings(shellFamily(9, 8, 0))).toHaveLength(0);   // shell not widely composed in-kit
+  });
+
+  // Rust twin: `name_suffix_groups_siblings_and_never_the_shell_itself`.
+  it("groups by trailing PascalCase word, and never the shell itself (#87)", () => {
+    expect(nameSuffix("AchievementsCard")).toBe("Card");
+    expect(nameSuffix("GitHubGraphHost")).toBe("Host");
+    expect(nameSuffix("Card")).toBeNull(); // a single-segment name is nobody's sibling
+    expect(nameSuffix("Kv")).toBeNull();
+    expect(nameSuffix("ProjectX")).toBeNull(); // a one-letter suffix is not a family
   });
 
   it("notes a bare npm miss as stubbed-import, not an error (#3696)", () => {
@@ -472,6 +527,21 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(hc.map((f) => f.nodeNames[0])).toEqual(["WorkerCard"]); // only the unwired one
     expect(hc[0].severity).toBe(1);
     expect(hc[0].why).toContain("#e8ecf4"); // names a sample literal
+  });
+
+  // Rust twin: `color_literals_are_read_in_code_position_not_in_comments`.
+  it("reads colour literals in CODE position, not in comments (#87)", () => {
+    // A hex in a comment styles NOTHING, so reporting it sends the reader to fix a line with no effect.
+    const documented = comp("Documented", "composite", 2, [], {
+      source: 'export function Documented(){ /* was #161b26 */ const s = { color: "var(--fg)" }; return s ? null : null; }\n// palette note: #7aa2ff',
+    });
+    // …while a hex in a real style value lives inside a STRING, which is deliberately still read.
+    const leaking = comp("Leaking", "composite", 2, [], {
+      source: 'export function Leaking(){ // theme: none\n  const s = { color: "#161b26" }; return s ? null : null; }',
+    });
+    const hc = analyzeGraphHealth([documented, leaking]).filter((f) => f.category === "hardcoded-color");
+    expect(hc.map((f) => f.nodeNames[0])).toEqual(["Leaking"]);
+    expect(hc[0].why).toContain("#161b26");
   });
 
   it("flags a component that declares `composes` its source never renders as phantom-compose (#3111)", () => {

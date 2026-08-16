@@ -22,7 +22,9 @@
 //! while `@bsc/algorithms/fibonacci` exists — instead of importing it; the "compose, don't recreate"
 //! guardrail, #3118) · **orphan**
 //! (an isolated, never-referenced primitive/composite) · **unwired-prop** (declares props its own source
-//! never references — a declared interface that does nothing, #2924) · **phantom-compose** (a user
+//! never references — a declared interface that does nothing, #2924) · **skips-family-shell** (a member of
+//! a folder/name-suffix family that does NOT compose the shell primitive nearly all its siblings do — a
+//! REPORT, not a rule, #87) · **phantom-compose** (a user
 //! component declares `composes` children its own source never renders — a false graph edge that also
 //! masks orphan detection, #3111) · **slot-shell** (INFORMATIONAL — a
 //! composite whose composed children arrive via ReactNode content slots, so a standalone preview renders
@@ -51,7 +53,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
     /// `unresolvable-import` | `stubbed-import` (#3696, sev-1) | `hardcoded-color` (#3704, sev-1) |
-    /// `reimplementation` | `reimplemented-component` (#3892, sev-3) | `orphan` | `unwired-prop` | `phantom-compose` | `no-empty-state` |
+    /// `reimplementation` | `reimplemented-component` (#3892, sev-3) | `orphan` | `unwired-prop` |
+    /// `skips-family-shell` (#87, sev-2) | `phantom-compose` | `no-empty-state` |
     /// `multi-component` (#doctor-flags…, sev-2) | `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `no-tests` (#3878) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
@@ -180,6 +183,10 @@ struct Node {
     provides: String,
     /// `(name, type)` per prop — for the slot-shell check (a non-`children` ReactNode content slot).
     props: Vec<(String, String)>,
+    /// The record's folder — one of the two groupings the `skips-family-shell` check treats as a FAMILY
+    /// (#87). Read through `record_folder`, which also honours the legacy `group` key that most stored
+    /// records still carry: reading `folder` alone leaves this empty on nearly the whole real library.
+    folder: String,
     /// Whether this is a packaged built-in (its store record is a contract catalog: `source` stripped,
     /// `srcText` an illustrative snippet). The phantom-compose check (#3111) skips built-ins — scanning
     /// their illustrative snippet for composed children would false-positive.
@@ -245,6 +252,7 @@ fn parse_node(v: &Value) -> Option<Node> {
                     .collect()
             })
             .unwrap_or_default(),
+        folder: crate::cli::record_folder(v).unwrap_or_default().to_string(),
         builtin: v.get("builtin").and_then(Value::as_bool).unwrap_or(false),
         analytics_events: v.get("analytics").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
         tests: v.get("tests").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
@@ -824,6 +832,41 @@ fn is_buildable(node: &Node, buildable: &BTreeSet<String>, kit_targets: &BTreeSe
 /// The bar for `multi-component`. See the loop for why it is 4 and what the distribution looked like.
 const MULTI_COMPONENT_MIN: usize = 4;
 
+// ── skips-family-shell (#87) — the four gates that make "which sibling skips the shared shell?" a
+// SIGNAL rather than a list. Every one of them was set against the real library (585 records): at these
+// values the whole store yields FOUR findings, including the case the request was filed for — 20 of the
+// 21 `settings/cards` components compose `Card` and `AchievementsCard` does not. Loosening the share to
+// 0.7 turns the same sweep into ~20 rows of five-and-six-member "outlier" sets, which is the report that
+// made a human read a dozen srcTexts by hand in the first place.
+
+/// A family must have this many members before "most of them do X" means anything. A cheap pre-filter:
+/// [`FAMILY_SHELL_SHARE`] is the binding constraint, and it makes SEVEN the smallest family that can
+/// actually fire (6 of 7 = 0.857 clears; 5 of 6 = 0.833 does not).
+const FAMILY_MIN: usize = 6;
+/// The share of a family that must compose a shell before the rest read as outliers rather than as a
+/// second convention. At 0.85, `settings/cards` (20/21) fires and a 70/30 split does not.
+const FAMILY_SHELL_SHARE: f64 = 0.85;
+/// A finding names the MINORITY. Past this many non-composers it is not an outlier set, it is a split —
+/// and a split is a design question, not a mechanical finding.
+const FAMILY_MAX_OUTLIERS: usize = 3;
+/// The shell must be widely composed IN ITS KIT, so an accident of two siblings sharing a helper cannot
+/// become "the family shell".
+const FAMILY_SHELL_COMPOSERS_MIN: usize = 10;
+
+/// The trailing PascalCase word of `name` — the second grouping convention (`AchievementsCard` → `Card`),
+/// alongside the record's folder. `None` for a single-segment name, which conveniently also keeps a shell
+/// out of the family named after it (`Card` itself is not a `*Card`).
+fn name_suffix(name: &str) -> Option<String> {
+    let mut segments: Vec<String> = Vec::new();
+    for c in name.chars() {
+        if c.is_ascii_uppercase() || segments.is_empty() {
+            segments.push(String::new());
+        }
+        segments.last_mut().expect("just pushed").push(c);
+    }
+    (segments.len() >= 2).then(|| segments.pop()).flatten().filter(|s| s.len() > 1)
+}
+
 /// The TOP-LEVEL component definitions in `src` — `function Foo(` / `const Foo = (` / `const Foo = … =>`,
 /// with or without `export`, at column 0.
 ///
@@ -1285,32 +1328,58 @@ pub struct HealthOptions<'a> {
 /// The hardcoded COLOR literals in `text` (#3704, the theme-adherence check) — the leak candidates a theme
 /// change can NOT reach (a `var(--token)` carries none): a 6- or 8-digit hex (`#rrggbb` / `#rrggbbaa`) or an
 /// `rgb(` / `rgba(` / `hsl(` / `hsla(` / `oklch(` / `oklab(` function. Deliberately conservative — a 3-digit
-/// `#219` (an issue ref) is skipped, named colors + values in comments aren't caught. Mirrors `colorLiterals`
-/// (TS) + `bsc ui`'s `count_color_literals` (reimplemented here — this crate can't depend on `bsc-ui`).
+/// `#219` (an issue ref) is skipped and named colors aren't caught.
+///
+/// CODE POSITION ONLY (#87): a `//` or `/* … */` comment is skipped, because a hex written there styles
+/// nothing — the swatch in `// palette: #171717` is documentation, and reporting it as a theme leak sends
+/// the reader to fix a line that has no effect. A literal inside a STRING is still caught, since that is
+/// exactly where a real one lives (`color: "#171717"`). Mirrors `colorLiterals` (TS) + `bsc ui`'s
+/// `count_color_literals` (reimplemented here — this crate can't depend on `bsc-ui`).
 fn color_literals(text: &str) -> Vec<String> {
-    let b = text.as_bytes();
+    let b: Vec<char> = text.chars().collect();
     let n = b.len();
     let mut out = Vec::new();
     let mut i = 0;
     while i < n {
-        if b[i] == b'#' {
-            let mut j = i + 1;
-            while j < n && b[j].is_ascii_hexdigit() {
-                j += 1;
+        match b[i] {
+            '/' if i + 1 < n && b[i + 1] == '/' => {
+                while i < n && b[i] != '\n' {
+                    i += 1;
+                }
             }
-            let len = j - i - 1;
-            if len == 6 || len == 8 {
-                out.push(text[i..j].to_string());
+            '/' if i + 1 < n && b[i + 1] == '*' => {
+                i += 2;
+                while i + 1 < n && !(b[i] == '*' && b[i + 1] == '/') {
+                    i += 1;
+                }
+                i = (i + 2).min(n);
             }
-            i = j.max(i + 1);
-        } else {
-            i += 1;
-        }
-    }
-    let lower = text.to_ascii_lowercase();
-    for kw in ["rgb(", "rgba(", "hsl(", "hsla(", "oklch(", "oklab("] {
-        for _ in 0..lower.matches(kw).count() {
-            out.push(kw.trim_end_matches('(').to_string());
+            '#' => {
+                let mut j = i + 1;
+                while j < n && b[j].is_ascii_hexdigit() {
+                    j += 1;
+                }
+                if j - i - 1 == 6 || j - i - 1 == 8 {
+                    out.push(b[i..j].iter().collect::<String>());
+                }
+                i = j.max(i + 1);
+            }
+            c if c.is_ascii_alphabetic() => {
+                // A colour FUNCTION — matched on a whole-word boundary so `to_rgb(` isn't one.
+                let start = i;
+                while i < n && (b[i].is_ascii_alphanumeric() || b[i] == '_') {
+                    i += 1;
+                }
+                let word: String = b[start..i].iter().collect::<String>().to_ascii_lowercase();
+                let boundary_ok = start == 0 || !(b[start - 1].is_ascii_alphanumeric() || b[start - 1] == '_');
+                if boundary_ok
+                    && b.get(i) == Some(&'(')
+                    && matches!(word.as_str(), "rgb" | "rgba" | "hsl" | "hsla" | "oklch" | "oklab")
+                {
+                    out.push(word);
+                }
+            }
+            _ => i += 1,
         }
     }
     out
@@ -2154,6 +2223,91 @@ fn analyze_kit(
                 if unwired.len() == 1 { "it" } else { "them" }
             ),
         });
+    }
+
+    // ── skips-family-shell (severity 2, a REPORT not a rule): the members of a family that do NOT compose
+    // the shell the rest of it does (#87). A family is a folder or a trailing-PascalCase-word group; a
+    // shell is any component the family composes at or above [`FAMILY_SHELL_SHARE`] and that its kit
+    // composes widely.
+    //
+    // This is the question `dupes`/`similar` structurally CANNOT answer, and the cost of answering it by
+    // hand is measured: a ~480k-token fork reading a dozen srcTexts. Fuzzy name + prop-contract distance
+    // never sees "shares a shell primitive", because the two components' props are unrelated — a toggle
+    // card has `enabled`/`onToggle` and an info card has `value`/`label`, so none of the 51 card-suffixed
+    // ids ever appeared together in a dupes report. What answered it in ONE call was `bsc ui used-by
+    // ui-card`: the healthy majority separated from the single real outlier. This is that call, run for
+    // every family at once. Mirrors `graphHealth.ts`.
+    let mut families: BTreeMap<(&str, String), Vec<&&Node>> = BTreeMap::new();
+    for n in nodes {
+        if !n.folder.trim().is_empty() {
+            families.entry(("folder", n.folder.trim().to_string())).or_default().push(n);
+        }
+        if let Some(suffix) = name_suffix(&n.name) {
+            families.entry(("name suffix", suffix)).or_default().push(n);
+        }
+    }
+    // How many DISTINCT in-kit components compose each name — the `used-by` count this check is built on.
+    let mut composers_in_kit: BTreeMap<&str, usize> = BTreeMap::new();
+    for n in nodes {
+        for dep in n.composes.iter().collect::<BTreeSet<_>>() {
+            *composers_in_kit.entry(dep.as_str()).or_insert(0) += 1;
+        }
+    }
+    // A component's folder family and its name-suffix family usually overlap, so both groupings can reach
+    // the SAME (shell, outliers) verdict. That is one fact, and it is reported once — keyed here and, since
+    // `families` is ordered and "folder" sorts before "name suffix", attributed to the more specific
+    // grouping. Without this the flagship case reports twice, which is the noise the check exists to end.
+    let mut already: BTreeSet<(String, Vec<String>)> = BTreeSet::new();
+    for ((grouping, key), members) in &families {
+        if members.len() < FAMILY_MIN {
+            continue;
+        }
+        let mut within: BTreeMap<&str, usize> = BTreeMap::new();
+        for m in members {
+            for dep in m.composes.iter().collect::<BTreeSet<_>>() {
+                *within.entry(dep.as_str()).or_insert(0) += 1;
+            }
+        }
+        for (shell, composed_by) in &within {
+            if composers_in_kit.get(shell).copied().unwrap_or(0) < FAMILY_SHELL_COMPOSERS_MIN {
+                continue; // not a widely-composed primitive — an accident of two siblings sharing a helper
+            }
+            if (*composed_by as f64) < FAMILY_SHELL_SHARE * members.len() as f64 {
+                continue; // not the family's shell; a minority convention is not a standard to hold others to
+            }
+            // The shell is never an outlier in its own family — it cannot compose itself.
+            let outliers: Vec<&&Node> =
+                members.iter().filter(|m| m.name != **shell && !m.composes.iter().any(|c| c == shell)).copied().collect();
+            if outliers.is_empty() || outliers.len() > FAMILY_MAX_OUTLIERS {
+                continue;
+            }
+            let ids: Vec<String> = outliers.iter().map(|n| n.id.clone()).collect();
+            if !already.insert(((*shell).to_string(), ids)) {
+                continue; // the other grouping already said this
+            }
+            let names: Vec<String> = outliers.iter().map(|n| n.name.clone()).collect();
+            let one = outliers.len() == 1;
+            out.push(Finding {
+                category: "skips-family-shell",
+                severity: 2,
+                kit: kit.to_string(),
+                node_ids: outliers.iter().map(|n| n.id.clone()).collect(),
+                node_names: names.clone(),
+                why: format!(
+                    "{} of the {} components in the `{key}` {grouping} family compose `{shell}`; {} do{} not — the outlier{} of an otherwise consistent family",
+                    composed_by,
+                    members.len(),
+                    names.join(", "),
+                    if one { "es" } else { "" },
+                    if one { "" } else { "s" },
+                ),
+                suggested_action: format!(
+                    "read {} against a sibling that composes `{shell}` — {} likely hand-rolls the same shell instead of composing it. Either compose `{shell}` (the family's convention) or, if the difference is deliberate, leave it: this is a REPORT, not a rule",
+                    names.join(", "),
+                    if one { "it" } else { "they" },
+                ),
+            });
+        }
     }
 
     // ── phantom-compose (severity 2): a component that DECLARES `composes` children its own source never
@@ -3624,6 +3778,125 @@ export function X(){ return <i>{nope}</i>; }"
         let fs = analyze(&comps);
         let found = cats(&fs);
         assert!(!found.contains(&"unwired-prop"));
+    }
+
+    // ── skips-family-shell (#87) ─────────────────────────────────────────────────────────────────────
+    // `dupes`/`similar` structurally cannot see "shares a shell primitive" — a toggle card's props and an
+    // info card's props are unrelated — so the outlier of a 21-strong family cost a ~480k-token fork of
+    // reading srcTexts by hand. These pin the gates that turn the same sweep into one line.
+
+    /// A family with ONE non-composing outlier: the majority is silent, the outlier is named. This is the
+    /// shape of the real case (20 of 21 `settings/cards` compose `Card`; `AchievementsCard` does not).
+    #[test]
+    fn a_family_member_that_skips_the_shared_shell_is_the_only_one_reported() {
+        let mut comps = vec![
+            // The shell, composed widely enough in-kit to BE a shell.
+            json!({ "id": "ui-card", "name": "Card", "kitId": "k", "role": "primitive", "used": 9,
+                    "composes": [], "srcText": "shell", "source": "export const Card = () => null;",
+                    "folder": "shared/ui/data" }),
+        ];
+        for i in 0..12 {
+            comps.push(json!({
+                "id": format!("card{i}"), "name": format!("Sibling{i}Card"), "kitId": "k",
+                "role": "composite", "used": 2, "composes": ["Card"], "srcText": format!("s{i}"),
+                "source": format!("export const S{i} = () => null;"), "folder": "settings/cards",
+            }));
+        }
+        // The outlier: same family, hand-rolls its own shell instead of composing `Card`.
+        comps.push(json!({
+            "id": "achievements", "name": "AchievementsCard", "kitId": "k", "role": "composite",
+            "used": 2, "composes": ["Row"], "srcText": "a",
+            "source": "export const A = () => null;", "folder": "settings/cards",
+        }));
+        let fs = analyze(&comps);
+        let f: Vec<&Finding> = fs.iter().filter(|f| f.category == "skips-family-shell").collect();
+        assert_eq!(f.len(), 1, "one finding, naming the minority: {fs:?}");
+        assert_eq!(f[0].severity, 2);
+        assert_eq!(f[0].node_ids, ["achievements"], "the 12 healthy siblings are NOT reported");
+        assert!(f[0].why.contains("12 of the 13"), "{}", f[0].why);
+        assert!(f[0].why.contains("settings/cards"), "names the family: {}", f[0].why);
+        assert!(f[0].why.contains("`Card`"), "names the shell: {}", f[0].why);
+        assert!(f[0].suggested_action.contains("REPORT, not a rule"), "{}", f[0].suggested_action);
+    }
+
+    /// The gates, each pinned by the case just under it — because every one of them is what separates a
+    /// finding from a list. A family too small, a shell only a minority composes, a shell barely composed
+    /// in its kit, and a split rather than an outlier all stay SILENT.
+    #[test]
+    fn the_family_gates_keep_a_split_or_a_narrow_convention_silent() {
+        // Builds `n` siblings of one folder family, the first `composing` of which compose `Shell`.
+        let family = |n: usize, composing: usize, extra_users: usize| {
+            let mut v = vec![json!({ "id": "shell", "name": "Shell", "kitId": "k", "role": "primitive",
+                                     "used": 9, "composes": [], "srcText": "sh",
+                                     "source": "export const Sh = () => null;", "folder": "elsewhere" })];
+            for i in 0..n {
+                v.push(json!({
+                    "id": format!("m{i}"), "name": format!("Member{i}Row"), "kitId": "k", "role": "composite",
+                    "used": 2, "composes": if i < composing { vec!["Shell"] } else { vec![] },
+                    "srcText": format!("m{i}"), "source": format!("export const M{i} = () => null;"),
+                    "folder": "fam",
+                }));
+            }
+            // Unrelated in-kit composers, so `Shell` clears the widely-composed bar independently.
+            for i in 0..extra_users {
+                v.push(json!({
+                    "id": format!("u{i}"), "name": format!("User{i}Panel"), "kitId": "k", "role": "composite",
+                    "used": 2, "composes": ["Shell"], "srcText": format!("u{i}"),
+                    "source": format!("export const U{i} = () => null;"), "folder": format!("other{i}"),
+                }));
+            }
+            v
+        };
+        let fired = |v: &[Value]| {
+            analyze(v).iter().filter(|f| f.category == "skips-family-shell").count()
+        };
+
+        // The SMALLEST family that can fire is seven — `FAMILY_SHELL_SHARE` binds before `FAMILY_MIN`
+        // does, so 5 of 6 (0.833) is silent and 6 of 7 (0.857) is not.
+        assert_eq!(fired(&family(6, 5, 10)), 0, "5 of 6 is below the share bar");
+        assert_eq!(fired(&family(7, 6, 10)), 1, "…6 of 7 is the smallest family that fires");
+        // …and it fires ONCE, though the fixture's members share a folder AND a name suffix.
+        // FAMILY_SHELL_SHARE — a 70/30 split is two conventions, not one plus an outlier.
+        assert_eq!(fired(&family(10, 7, 10)), 0, "7 of 10 is a split, not an outlier");
+        assert_eq!(fired(&family(20, 18, 10)), 1, "…18 of 20 is an outlier set");
+        // FAMILY_MAX_OUTLIERS — past three, it is a split again however high the share.
+        assert_eq!(fired(&family(40, 36, 10)), 0, "four non-composers is not an outlier set");
+        // FAMILY_SHELL_COMPOSERS_MIN — a shell only this family composes is a shared helper, not a shell.
+        assert_eq!(fired(&family(9, 8, 0)), 0, "8 in-kit composers is below the widely-composed bar");
+    }
+
+    /// The suffix grouping is the second convention the request names, and its conservatism is the
+    /// single-segment rule — which also keeps a shell out of the family named after it.
+    #[test]
+    fn name_suffix_groups_siblings_and_never_the_shell_itself() {
+        assert_eq!(name_suffix("AchievementsCard").as_deref(), Some("Card"));
+        assert_eq!(name_suffix("GitHubGraphHost").as_deref(), Some("Host"));
+        assert_eq!(name_suffix("Card"), None, "a single-segment name is nobody's sibling");
+        assert_eq!(name_suffix("Kv"), None);
+        assert_eq!(name_suffix("ProjectX"), None, "a one-letter suffix is not a family");
+    }
+
+    // ── hardcoded-color, in CODE POSITION (#87) ──────────────────────────────────────────────────────
+
+    /// The companion colour check already existed (#3704) and already catches the hand-rolled hex theme
+    /// object the request names. What was missing is WHERE it looks: a hex in a comment styles nothing, so
+    /// reporting it sends the reader to fix a line that has no effect. A hex in a real style value — which
+    /// lives inside a STRING — must still be caught, so strings are deliberately NOT skipped.
+    #[test]
+    fn color_literals_are_read_in_code_position_not_in_comments() {
+        assert_eq!(color_literals("const c = \"#171717\";"), ["#171717"], "a real style value");
+        assert!(color_literals("// palette: #171717 and #e5e5e5").is_empty(), "a line comment styles nothing");
+        assert!(color_literals("/* was #171717 */").is_empty(), "a block comment either");
+        assert_eq!(
+            color_literals("// old: #000000\nconst c = \"#4ade80\";"),
+            ["#4ade80"],
+            "the comment is skipped and the code is not",
+        );
+        // The function forms, and the whole-word boundary that keeps a helper name out.
+        assert_eq!(color_literals("background: rgba(0,0,0,.5)"), ["rgba"]);
+        assert!(color_literals("const x = to_rgb(c);").is_empty(), "`to_rgb(` is not a colour function");
+        // Unchanged conservatism: a 3-digit `#219` is an issue ref, not a colour.
+        assert!(color_literals("see #219 for context").is_empty());
     }
 
     #[test]

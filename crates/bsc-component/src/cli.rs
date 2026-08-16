@@ -478,6 +478,14 @@ isolated, never-referenced primitive/composite). \"Unused\" = no composer AND us
 with used > 0 is a legit entry point, never flagged. Ranked most-severe-first; --kit scopes to one
 kit; --json emits the findings array (LLM-consumable).
 
+SKIPS-FAMILY-SHELL (#87) is the question `dupes`/`similar` structurally cannot answer: which members of a
+FAMILY do not compose the shell primitive the rest of it does. A family is a folder or a trailing-
+PascalCase-word group of 6+ in one kit; a shell is any component 85%+ of that family composes AND its kit
+composes widely (10+ composers), and the finding names the minority — at most three, or it is a split
+rather than an outlier. Fuzzy name + prop-contract distance CANNOT see this: a toggle card has
+`enabled`/`onToggle` and an info card has `value`/`label`, so siblings sharing a shell never meet in a
+dupes report. It is a REPORT, not a rule — an outlier may be a deliberate exception.
+
 --fix is the mechanical, SAFE OPTIMIZE (#3089): (1) MERGE byte-identical-source duplicates — fold each
 group into the most-`used` canonical and repoint composers to it (lossless; only byte-identical, never a
 same-`wraps` dup), then (2) PRUNE the GUARDED dead roots — the ROOT of each orphan/dangling-branch finding

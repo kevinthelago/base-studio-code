@@ -594,6 +594,16 @@ real defect to fix, not a note to skim:
   preview has nothing to render. Give it a **real, self-contained module** — imports ONLY libraries,
   exports the component — so it previews, or remove it. A usage-snippet `srcText` (how to CALL the
   component) is NOT an implementation; the module must define the component itself.
+- **skips-family-shell** — nearly every member of a family (a folder, or a shared trailing word like
+  `*Card`) composes one shell primitive, and this member does not. Read it against a sibling that does:
+  the usual cause is that it **hand-rolls the same shell** — its own Surface/Tag wrapper, often with a
+  hardcoded colour theme — instead of composing the one that exists. Compose the shell, or, if the
+  difference is deliberate, leave it: **this is a report, not a rule.** It is the one duplication
+  `bsc ui dupes` cannot find, because two cards that share a shell have unrelated props (a toggle card
+  has `enabled`/`onToggle`, an info card `value`/`label`) and so never score as near-duplicates.
+- **hardcoded-color** — the component's own source hardcodes colour literals and references no
+  `var(--…)` token, so it will not follow the active theme. Replace the literals with semantic tokens.
+  Only literals in **code position** count; a hex in a comment styles nothing and is not reported.
 
 `doctor` reconciles the composition graph; **motion is part of the same coherent kit** — any animation
 you author (rung 5) should reference the motion tokens (`@dur-base` / `@ease-standard`), not magic
