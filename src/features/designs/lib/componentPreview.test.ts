@@ -349,7 +349,10 @@ describe("samplePropValue (#2824)", () => {
     expect(samplePropValue(prop("open", "boolean"))).toBe("true");
     expect(samplePropValue(prop("onClick", "() => void"))).toBe("() => {}");
     expect(samplePropValue(prop("rows", "Row[]"))).toBeNull(); // optional collection → omitted in loaded (#3135)
-    expect(samplePropValue(prop("rows", "Row[]", true))).toBeNull(); // #3693: required collection ALSO omits in loaded (default demo shows)
+    // #3693: a required collection omits in loaded too — but ONLY when the component defaults it, which is
+    // what the third argument carries. Without a default it is supplied, or the component mounts undefined.
+    expect(samplePropValue(prop("rows", "Row[]", true), "loaded", true)).toBeNull();
+    expect(samplePropValue(prop("rows", "Row[]", true), "loaded", false)).toBe("[]");
     expect(samplePropValue(prop("tone", '"neutral" | "danger"'))).toBe('"neutral"');
     expect(samplePropValue(prop("color", "string"))).toBe('"var(--accent)"');
   });
@@ -357,7 +360,7 @@ describe("samplePropValue (#2824)", () => {
   it("treats Record / Set / Map as data containers, not strings (#3693)", () => {
     // A Record<string, number> / Set<string> type STRING contains "string"/"number"; without a container
     // check it fell through to the string branch → a title-cased string (NaN nonsense, or `.has()` crash).
-    expect(samplePropValue(prop("langTotals", "Record<string, number>", true))).toBeNull(); // omitted in loaded
+    expect(samplePropValue(prop("langTotals", "Record<string, number>", true), "loaded", true)).toBeNull(); // defaulted → omitted in loaded
     expect(samplePropValue(prop("langTotals", "Record<string, number>", true), "empty")).toBe("{}");
     expect(samplePropValue(prop("highlight", "Set<string>"))).toBeNull();
     expect(samplePropValue(prop("highlight", "Set<string>"), "empty")).toBe("new Set()");
@@ -411,11 +414,17 @@ describe("samplePropValue (#2824)", () => {
     expect(samplePropValue(data, "loading")).toBeNull();
     // a non-loading boolean is unaffected by state (always true).
     expect(samplePropValue(prop("stacked", "boolean"), "loading")).toBe("true");
-    // #3693: a REQUIRED collection now omits in loaded/loading (default demo shows), `[]` only in empty —
-    // so a 'loaded' preview no longer renders identical to 'empty' for a required-data component.
-    expect(samplePropValue(prop("rows", "Row[]", true), "loaded")).toBeNull();
-    expect(samplePropValue(prop("rows", "Row[]", true), "loading")).toBeNull();
-    expect(samplePropValue(prop("rows", "Row[]", true), "empty")).toBe("[]");
+    // #3693: a REQUIRED collection the component DEFAULTS omits in loaded/loading (that default demo shows),
+    // `[]` only in empty — so 'loaded' no longer renders identical to 'empty' for a required-data component.
+    const rows = prop("rows", "Row[]", true);
+    expect(samplePropValue(rows, "loaded", true)).toBeNull();
+    expect(samplePropValue(rows, "loading", true)).toBeNull();
+    expect(samplePropValue(rows, "empty", true)).toBe("[]");
+    // With NO default it is supplied in every state instead: omitting it mounts the component with
+    // `undefined` where its contract promised a value, and it throws on its first unguarded read.
+    expect(samplePropValue(rows, "loaded")).toBe("[]");
+    expect(samplePropValue(rows, "loading")).toBe("[]");
+    expect(samplePropValue(rows, "empty")).toBe("[]");
   });
 
   it("drives an ERROR-family prop only in the error state (#3555)", () => {

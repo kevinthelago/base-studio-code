@@ -296,6 +296,21 @@ export function isErrorProp(p: PropSpec): boolean {
   return !isFn && /^(error|err|isError|hasError)$/i.test(p.name);
 }
 
+/** The typed EMPTY literal a data container samples to, or `null` to omit the prop — the shared tail of
+ *  the four container branches of {@link samplePropValue}.
+ *
+ *  `empty` always passes the literal. `loaded`/`loading` OMIT it so a demo-on-undefined component renders
+ *  its own default demo rather than a populated state indistinguishable from `empty` (#3693) — but ONLY
+ *  when the component actually HAS such a default. `hasOwnDefault` is that fact, read from the component's
+ *  own signature. Without it, omitting a REQUIRED container mounts the component with `undefined` where its
+ *  contract promised a value, and it throws on its first unguarded read — `Object.values(langTotals)` and
+ *  `prs.length` were exactly this. An OPTIONAL container still omits either way: its contract allows
+ *  `undefined`, so the demo-on-undefined convention is the whole point of it. */
+function containerSample(p: PropSpec, state: PreviewState, emptyLiteral: string, hasOwnDefault: boolean): string | null {
+  if (state === "empty") return emptyLiteral;
+  return p.req && !hasOwnDefault ? emptyLiteral : null;
+}
+
 /**
  * A best-effort sample value (as a JS source literal) for a prop, from its (loosely-typed) schema, or
  * `null` to omit it. Enough to render a component whose required props would otherwise be missing —
@@ -303,9 +318,14 @@ export function isErrorProp(p: PropSpec): boolean {
  * (#3135) drives the data-state: `loading` turns on a loading-family boolean; `empty` passes the typed
  * EMPTY literal for a data container (`[]` array, `{}` Record, `new Set()`, `new Map()`); `loaded`
  * (default) / `loading` OMIT a container so a demo-on-undefined component shows its own default demo — the
- * same path object props (`gh`) already take. A required container omits too (#3693), not `[]`.
+ * same path object props (`gh`) already take.
+ *
+ * `hasOwnDefault` says the component's OWN signature defaults this prop (`{ workers = DEMO_WORKERS }`),
+ * which is what makes that omission safe; callers derive it with {@link propsWithOwnDefault}. A required
+ * container whose component does NOT default it gets the empty literal in every state instead of being
+ * dropped — see {@link containerSample}.
  */
-export function samplePropValue(p: PropSpec, state: PreviewState = "loaded"): string | null {
+export function samplePropValue(p: PropSpec, state: PreviewState = "loaded", hasOwnDefault = false): string | null {
   if (isLoadingProp(p)) return state === "loading" ? "true" : null;
   const t = (p.type || "").toLowerCase();
   const isFn = t.includes("=>") || t.includes("function") || t.includes("void") || /^on[A-Z]/.test(p.name);
@@ -319,12 +339,11 @@ export function samplePropValue(p: PropSpec, state: PreviewState = "loaded"): st
   // Data-container props (#3693): omitted in loaded/loading so the component's own default demo shows; the
   // empty state passes the typed EMPTY literal. BEFORE the string/number branches — a `Record<string, number>`
   // / `Set<string>` type contains "string"/"number" and would otherwise sample as a title-cased string
-  // (rendering `Object.values("Lang Totals")` NaN nonsense, or crashing `"Highlight".has(k)`). Required
-  // containers omit too, exactly as the object-prop fall-through (`MergeQueue.gh`) already does.
-  if (isCollectionProp(p)) return state === "empty" ? "[]" : null;
-  if (isRecordType(t)) return state === "empty" ? "{}" : null;
-  if (isSetType(t)) return state === "empty" ? "new Set()" : null;
-  if (isMapType(t)) return state === "empty" ? "new Map()" : null;
+  // (rendering `Object.values("Lang Totals")` NaN nonsense, or crashing `"Highlight".has(k)`).
+  if (isCollectionProp(p)) return containerSample(p, state, "[]", hasOwnDefault);
+  if (isRecordType(t)) return containerSample(p, state, "{}", hasOwnDefault);
+  if (isSetType(t)) return containerSample(p, state, "new Set()", hasOwnDefault);
+  if (isMapType(t)) return containerSample(p, state, "new Map()", hasOwnDefault);
   if (t.includes("reactnode") || t.includes("node")) return JSON.stringify(prettyName(p.name));
   if (t === "string" || t.includes("string")) return JSON.stringify(sampleString(p.name));
   if (t === "number" || t.includes("number")) return numberSample(p.name);
@@ -333,6 +352,93 @@ export function samplePropValue(p: PropSpec, state: PreviewState = "loaded"): st
   const firstLiteral = p.type.match(/"([^"]+)"/);
   if (firstLiteral) return JSON.stringify(firstLiteral[1]);
   return null;
+}
+
+/**
+ * The prop names `compName`'s own signature supplies a DEFAULT for — `{ workers = DEMO_WORKERS, loading =
+ * false }` → `{workers, loading}`. The demo-on-undefined convention (#3693) is only safe for these: a
+ * container the sampler omits renders the component's own demo when the component defaults it, and mounts
+ * as `undefined` when it does not. The props metadata cannot express this (`req` says what the CONTRACT
+ * requires, not what the implementation defaults), so it is read from the source and nowhere else.
+ *
+ * Deliberately conservative — an unparsed signature yields an EMPTY set, which makes a required container
+ * sample as its empty literal. That direction is the safe one: a component that wanted its demo shows an
+ * empty state instead, where the reverse (a default wrongly detected) mounts `undefined` and throws.
+ *
+ * Rust twin: `props_with_own_default`. Both are asserted against the shared parity fixture.
+ */
+export function propsWithOwnDefault(src: string, compName: string): Set<string> {
+  const out = new Set<string>();
+  if (!src || !/^[A-Za-z_$][\w$]*$/.test(compName)) return out;
+  // The declaration of THIS component (not a sibling helper that might default a same-named prop).
+  const decl = new RegExp(`\\b(?:function|const|let|var)\\s+${compName}\\b`).exec(src);
+  if (!decl) return out;
+  const open = src.indexOf("(", decl.index + decl[0].length);
+  if (open < 0) return out;
+  let i = open + 1;
+  while (i < src.length && /\s/.test(src[i])) i++;
+  if (src[i] !== "{") return out; // a non-destructured param — nothing to read
+  for (const seg of destructuredSegments(src, i)) {
+    const eq = assignmentEq(seg);
+    if (eq < 0) continue;
+    // `{ a: b = 1 }` renames — the PROP is `a`, the binding `b`; the sampler keys on the prop.
+    const head = seg.slice(0, eq).split(":")[0].trim();
+    if (/^[A-Za-z_$][\w$]*$/.test(head)) out.add(head);
+  }
+  return out;
+}
+
+/** The comma-separated entries of the destructuring block opening at `src[open]` (`{`), split at the
+ *  block's OWN depth so a nested `{}`/`()`/`[]` in a default value (`onOpen = () => {}`) never splits it.
+ *  Strings/templates are skipped whole, so a brace or comma inside one cannot desync the walk. */
+function destructuredSegments(src: string, open: number): string[] {
+  const segs: string[] = [];
+  let depth = 0, paren = 0, bracket = 0, segStart = open + 1;
+  for (let j = open; j < src.length; j++) {
+    const ch = src[j];
+    if (ch === '"' || ch === "'" || ch === "`") { j = skipQuoted(src, j); continue; }
+    if (ch === "{") { depth++; continue; }
+    if (ch === "}") { depth--; if (depth === 0) { segs.push(src.slice(segStart, j)); break; } continue; }
+    if (depth !== 1) continue;
+    if (ch === "(") paren++;
+    else if (ch === ")") paren--;
+    else if (ch === "[") bracket++;
+    else if (ch === "]") bracket--;
+    else if (ch === "," && paren === 0 && bracket === 0) { segs.push(src.slice(segStart, j)); segStart = j + 1; }
+  }
+  return segs;
+}
+
+/** The index of the `=` that makes `seg` a DEFAULT, or `-1`. Skips the comparison/arrow forms (`=>`, `==`,
+ *  `>=`, `<=`, `!=`) so `onOpen = () => {}` reports its assignment and `a >= b` reports none. */
+function assignmentEq(seg: string): number {
+  for (let j = 0; j < seg.length; j++) {
+    if (seg[j] !== "=") continue;
+    if (seg[j + 1] === "=" || seg[j + 1] === ">") { j++; continue; }
+    if ("=!<>".includes(seg[j - 1] ?? "")) continue;
+    return j;
+  }
+  return -1;
+}
+
+/** The index of the closing quote of the string/template starting at `src[i]` (escapes honoured; a
+ *  template's `${…}` spans are skipped whole). Returns the last index when unterminated. */
+function skipQuoted(src: string, i: number): number {
+  const quote = src[i];
+  for (let j = i + 1; j < src.length; j++) {
+    if (src[j] === "\\") { j++; continue; }
+    if (quote === "`" && src[j] === "$" && src[j + 1] === "{") {
+      let depth = 1;
+      for (j += 2; j < src.length && depth > 0; j++) {
+        if (src[j] === "{") depth++;
+        else if (src[j] === "}") depth--;
+      }
+      j--;
+      continue;
+    }
+    if (src[j] === quote) return j;
+  }
+  return src.length - 1;
 }
 
 /** A readable placeholder from a prop/component name (`whenUse` → "When use"). */
@@ -389,12 +495,18 @@ export interface PreviewProps {
 
 /** The props the bootstrap passes `comp` in `state` — each non-`children` prop that samples to a
  *  non-`null` value, in `comp.props` (schema) order. The structured twin of the object literal
- *  {@link bootstrapSource} builds; `bsc ui preview-props` mirrors it (a shared parity fixture pins them). */
+ *  {@link bootstrapSource} builds; `bsc ui preview-props` mirrors it (a shared parity fixture pins them).
+ *
+ *  The component's own defaults are read ONCE here (not per prop) and threaded into the sampler, since
+ *  that is the only thing that makes omitting a required container safe — see {@link propsWithOwnDefault}.
+ *  `source` (the verbatim implementation) is preferred over the `srcText` usage snippet, the same
+ *  precedence the build scan uses. */
 export function previewPropList(comp: ComponentRecord, state: PreviewState = "loaded"): PreviewProp[] {
+  const defaulted = propsWithOwnDefault(comp.source || comp.srcText || "", comp.name);
   const out: PreviewProp[] = [];
   for (const p of comp.props) {
     if (p.name === "children") continue;
-    const v = samplePropValue(p, state);
+    const v = samplePropValue(p, state, defaulted.has(p.name));
     if (v != null) out.push({ name: p.name, value: v });
   }
   return out;

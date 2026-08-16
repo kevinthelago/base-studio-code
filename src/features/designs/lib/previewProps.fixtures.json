@@ -1,5 +1,5 @@
 {
-  "_note": "Cross-language parity fixture (#3165) for the preview-harness prop sampler. `previewProps(comp)` in componentPreview.ts (the TS source of truth) and `preview_props::preview_props_states` in crates/bsc-component (the `bsc ui preview-props` verb) MUST both produce each case's `expected` (the golden). Each prop `value` is a JS-SOURCE literal/expression (what samplePropValue returns) — e.g. `() => {}`, `window.innerWidth`, or a JSON.stringify'd string like \"\\\"var(--accent)\\\"\" — NOT a JSON value. Asserted by componentPreview.test.ts (TS) and preview_props.rs (Rust). Edit both sides in lockstep.",
+  "_note": "Cross-language parity fixture (#3165) for the preview-harness prop sampler. `previewProps(comp)` in componentPreview.ts (the TS source of truth) and `preview_props::preview_props_states` in crates/bsc-component (the `bsc ui preview-props` verb) MUST both produce each case's `expected` (the golden). Each prop `value` is a JS-SOURCE literal/expression (what samplePropValue returns) — e.g. `() => {}`, `window.innerWidth`, or a JSON.stringify'd string like \"\\\"var(--accent)\\\"\" — NOT a JSON value. Asserted by componentPreview.test.ts (TS) and preview_props.rs (Rust). Edit both sides in lockstep. A case MAY carry `comp.source` — the component's own implementation, which is where the props it DEFAULTS are read from; a required container is omitted in loaded/loading only when that source defaults it, and supplied otherwise.",
   "cases": [
     {
       "desc": "chart with dimensions, an optional collection, a loading flag, a handler — the black-bars/NaN scenario",
@@ -85,9 +85,10 @@
       }
     },
     {
-      "desc": "loading-family (busy), fraction (progress), canvas size, style-dim (strokeWidth), required array (#3693: omitted in loaded/loading so the default demo shows, [] only in empty)",
+      "desc": "loading-family (busy), fraction (progress), canvas size, style-dim (strokeWidth), required array the component DEFAULTS (#3693: omitted in loaded/loading so that default demo shows, [] only in empty)",
       "comp": {
         "name": "Meter",
+        "source": "export function Meter({ busy, progress, size, strokeWidth, items = DEMO_TICKS }: Props) { return null; }",
         "props": [
           { "name": "busy", "type": "boolean", "req": false },
           { "name": "progress", "type": "number", "req": false },
@@ -221,9 +222,10 @@
       }
     },
     {
-      "desc": "#3693 data containers: Record<K,V>, Set<T>, Map<K,V> omit in loaded/loading (component default shows), typed-empty in empty — NEVER a title-cased string (langTotals as a string → Object.values NaN nonsense; highlight as a string → `.has()` crash)",
+      "desc": "#3693 data containers on a component that DEFAULTS them: Record<K,V>, Set<T>, Map<K,V> omit in loaded/loading (that default shows), typed-empty in empty — NEVER a title-cased string (langTotals as a string → Object.values NaN nonsense; highlight as a string → `.has()` crash)",
       "comp": {
         "name": "Insights",
+        "source": "export function Insights({ langTotals = DEMO_LANGS, tags, byId, title }: Props) { return null; }",
         "props": [
           { "name": "langTotals", "type": "Record<string, number>", "req": true },
           { "name": "tags", "type": "Set<string>", "req": false },
@@ -303,6 +305,76 @@
         "loaded": { "props": [], "child": null },
         "empty": { "props": [], "child": null },
         "loading": { "props": [], "child": null }
+      }
+    },
+    {
+      "desc": "required Record + required array on a component with NO defaults — supplied in EVERY state, not dropped (LanguageMix threw on Object.values(langTotals); OpenPRsAllRepos on prs.length)",
+      "comp": {
+        "name": "LanguageMix",
+        "source": "export function LanguageMix({ langTotals, prs, repoCount, loading }: { langTotals: Record<string, number>; prs: OpenPR[] }) { return null; }",
+        "props": [
+          { "name": "langTotals", "type": "Record<string, number>", "req": true },
+          { "name": "prs", "type": "OpenPR[]", "req": true },
+          { "name": "repoCount", "type": "number", "req": true },
+          { "name": "loading", "type": "boolean", "req": true }
+        ]
+      },
+      "expected": {
+        "loaded": {
+          "props": [
+            { "name": "langTotals", "value": "{}" },
+            { "name": "prs", "value": "[]" },
+            { "name": "repoCount", "value": "3" }
+          ],
+          "child": null
+        },
+        "empty": {
+          "props": [
+            { "name": "langTotals", "value": "{}" },
+            { "name": "prs", "value": "[]" },
+            { "name": "repoCount", "value": "3" }
+          ],
+          "child": null
+        },
+        "loading": {
+          "props": [
+            { "name": "langTotals", "value": "{}" },
+            { "name": "prs", "value": "[]" },
+            { "name": "repoCount", "value": "3" },
+            { "name": "loading", "value": "true" }
+          ],
+          "child": null
+        }
+      }
+    },
+    {
+      "desc": "optional containers on a component with no defaults — STILL omitted in loaded/loading (the demo-on-undefined convention is unchanged for a contract that allows undefined)",
+      "comp": {
+        "name": "Sidebar",
+        "source": "export function Sidebar({ rows, byId, title }: Props) { return null; }",
+        "props": [
+          { "name": "rows", "type": "Row[]", "req": false },
+          { "name": "byId", "type": "Map<string, Row>", "req": false },
+          { "name": "title", "type": "string", "req": false }
+        ]
+      },
+      "expected": {
+        "loaded": {
+          "props": [{ "name": "title", "value": "\"Title\"" }],
+          "child": null
+        },
+        "empty": {
+          "props": [
+            { "name": "rows", "value": "[]" },
+            { "name": "byId", "value": "new Map()" },
+            { "name": "title", "value": "\"Title\"" }
+          ],
+          "child": null
+        },
+        "loading": {
+          "props": [{ "name": "title", "value": "\"Title\"" }],
+          "child": null
+        }
       }
     }
   ]
