@@ -1,3 +1,10 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * This file lives under `lib/`, which vitest's `node` project covers, but it genuinely needs a DOM.
+ * A per-file docblock beats the project's environment, so the requirement is stated where a reader
+ * meets it. See the `projects` split in vitest.config.ts for why the default is `node` here.
+ */
 // Terminal clipboard (#3157) — copy-on-select + paste wiring.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Terminal } from "@xterm/xterm";
