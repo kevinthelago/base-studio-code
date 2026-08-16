@@ -186,6 +186,25 @@ describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
     );
   });
 
+  it("admits an injected `debugger` session and wires it to the director like the rest", () => {
+    // The debugger is app-owned but NEVER project-declared: while a request is open the caller injects
+    // it into `systemSessions`, so the node appears with the queue and leaves with it. `resolveSystemSessions`
+    // filters to KNOWN ids, so this only works because `debugger` is in the roles map — before that it
+    // was silently dropped, which reads as "the feature does nothing".
+    const org = fleetToOrg({ ...fleet, systemSessions: ["designer", "debugger"] } as unknown as FleetPlan);
+    expect(org.positions.some((p) => p.nodeId === "debugger")).toBe(true);
+    expect(org.relationships).toContainEqual(
+      expect.objectContaining({ from: "debugger", to: "director", archetype: "serves" }),
+    );
+    // and it is NOT a worker — the role fallback would colour it as one
+    expect(buildOrgFleetData(org, []).rawNodes.find((n) => n.id === "debugger")?.roleLabel).toBe("debugger");
+  });
+
+  it("drops the debugger again when nothing injects it — the node is not sticky", () => {
+    const org = fleetToOrg({ ...fleet, systemSessions: ["designer"] } as unknown as FleetPlan);
+    expect(org.positions.some((p) => p.nodeId === "debugger")).toBe(false);
+  });
+
   it("the system sessions SERVE the director", () => {
     // The maintainer's directive: the sessions wire straight to the director, with no planning node
     // between them. `serves` (not `manages`) keeps the authority chain reading one way, and is what

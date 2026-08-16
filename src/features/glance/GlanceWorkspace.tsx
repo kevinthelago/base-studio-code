@@ -22,6 +22,7 @@ import { type TabItem } from "@/shared/ui/layouts/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { usePoll } from "@/shared/hooks/usePoll";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { RailRow } from "@/shared/ui/layouts/RailRow";
@@ -76,6 +77,17 @@ const NO_STREAMS: never[] = [];
 export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const planFleet = useAppStore((s) => s.planFleet);
   const personas = useAppStore((s) => s.personas);
+  // OPEN REQUESTS (#the-debugger-appears-while-a-request-is-open). The debugger is the app's answer to a
+  // filed request, so it belongs in the drill exactly while one is unresolved — it appears with the queue
+  // and leaves with it. Polled from the request store rather than read off `activeDebugSlots`: those are
+  // the AUTO-SPAWNED sessions, gated behind a Settings toggle that is off by default, so gating the node
+  // on them would show nothing for the common case of a request filed with auto-spawn off.
+  const [openRequests, setOpenRequests] = useState(0);
+  usePoll(async (isCancelled) => {
+    const rows = await bscJson<{ id: number }[]>(null, ["request", "list", "--open", "--json"], []);
+    if (isCancelled()) return;
+    setOpenRequests(Array.isArray(rows) ? rows.length : 0);
+  }, 5000);
   // The base-studio-code default project (#3319) renders the Studio Network team; the debug toggle gates
   // its debugger node.
   const teams = useAppStore((s) => s.teams);
@@ -392,13 +404,21 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     // composes (`usePlanPublish`). A team position for a seedable role becomes a node even before the
     // fleet plan lists a worker for it.
     const roleStreams = effectiveFleet ? teamRoleStreams(drillTeam, personas, effectiveFleet.streams) : [];
-    const composed = effectiveFleet ? { ...effectiveFleet, streams: [...effectiveFleet.streams, ...roleStreams] } : undefined;
+    // The DEBUGGER rides in on `systemSessions` while a request is open, so it serves the director
+    // exactly like the declared sessions and needs no separate node path. `resolveSystemSessions` keeps
+    // it out when the queue is empty.
+    const liveSessions = openRequests > 0
+      ? [...(effectiveFleet?.systemSessions ?? []), "debugger"]
+      : effectiveFleet?.systemSessions;
+    const composed = effectiveFleet
+      ? { ...effectiveFleet, streams: [...effectiveFleet.streams, ...roleStreams], systemSessions: liveSessions }
+      : undefined;
     const base = composed && composed.streams.length > 0
       ? buildRealFleetData(composed, personas, drillTeam)
       : buildFleetData({ id: drillNode.id, name: drillNode.slug });
     // Add the preview node when the project has finished building (idempotent, no-op while building).
     return withPreviewNode(base, drillComplete);
-  }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete, teams, debugSession, activeDebugSlots]);
+  }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete, teams, debugSession, activeDebugSlots, openRequests]);
   // Overlay the LIVE session state onto the drilled fleet's agent nodes (#3252) — the L1 twin of the L0
   // stall/fault overlays: an agent lifts off its planned idle to building/waiting/warning per its session.
   // Applied to rawNodes BEFORE buildGraph so the rollup + inherited-health recompute over the live values.
