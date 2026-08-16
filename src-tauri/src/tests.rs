@@ -135,12 +135,40 @@
             .and_then(|r| r.as_object())
             .expect("bundle.resources must exist — the runtime-loaded seeds have to ship");
 
+        // The TARGET path is what matters: `bsc_util::packaged` looks for `<exe_dir>/data/<rel>`, so
+        // the resource must land there whatever the source path is. The SOURCE is deliberately
+        // `resources/data/<rel>` — a staged copy — because `tauri_build` emits a rerun-if-changed for
+        // every resource, and pointing them at the live tree rebuilt the app on every record edit
+        // (measured 23.2s vs 1.2s). Asserting the target keeps that indirection free to change.
         for rel in bsc_util::packaged::RUNTIME_SEEDS {
-            let key = format!("data/{rel}");
+            let target = format!("data/{rel}");
+            let entry = resources.iter().find(|(_, v)| v.as_str() == Some(target.as_str()));
+            let Some((source, _)) = entry else {
+                panic!(
+                    "seed `{rel}` is loaded at runtime but no bundle.resources entry targets \
+                     `{target}`, so a shipped build would not contain it"
+                );
+            };
             assert!(
-                resources.contains_key(&key),
-                "seed `{rel}` is loaded at runtime but not in bundle.resources, so a shipped build \
-                 would not contain it. Add \"{key}\": \"{key}\".",
+                source.starts_with("resources/"),
+                "bundle.resources maps `{source}` -> `{target}`, but a seed's SOURCE must be the \
+                 staged copy under resources/. Pointing it at the live data/ tree makes tauri_build \
+                 watch the file and rebuilds the app on every record edit.",
+            );
+        }
+    }
+
+    /// `build.rs` cannot depend on a workspace lib, so it repeats the seed list as `BUNDLED_SEEDS`.
+    /// Pin the copy to the original — a seed added to one and not the other either fails to ship or
+    /// fails to stage, and both only show up in a release build.
+    #[test]
+    fn the_build_scripts_seed_list_matches_the_runtime_one() {
+        let build_rs = include_str!("../build.rs");
+        for rel in bsc_util::packaged::RUNTIME_SEEDS {
+            assert!(
+                build_rs.contains(rel),
+                "build.rs BUNDLED_SEEDS is missing `{rel}`, so it would never be staged into \
+                 resources/ and the bundled copy would be absent or stale",
             );
         }
     }
