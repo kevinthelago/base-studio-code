@@ -448,6 +448,48 @@ fn module_paths_agree(a: &str, b: &str) -> bool {
     a == b || boundary_suffix(a, b) || boundary_suffix(b, a)
 }
 
+/// Would joining these sources to a root named `root_name` double the prefix — `src/` under `src/`?
+///
+/// `bsc graph tests harvest <dir>` takes the REPO root, because every `src` is repo-relative and already
+/// begins `src/`. Handed `src` instead, every join becomes `src/src/…`, nothing resolves, and the command
+/// still exits 0 reporting a plausible `paired: 31 · noColocatedTest: 876`. That number reads as "the
+/// algorithm tier has no tests" and was filed as a defect twice before anyone re-read the invocation —
+/// so the wrong root has to be refused, not absorbed.
+///
+/// A MAJORITY, never a single hit: a repo may genuinely hold `<root>/<root>/…`, and one stray path must
+/// not veto an otherwise correct run.
+fn root_doubles_source_prefix(root_name: &str, srcs: &[&str]) -> bool {
+    if root_name.is_empty() || root_name == "." || srcs.is_empty() {
+        return false;
+    }
+    let prefix = format!("{root_name}/");
+    let doubled = srcs.iter().filter(|s| s.starts_with(&prefix)).count();
+    doubled * 2 > srcs.len()
+}
+
+/// Group the pairings by test FILE, returning `(distinct files, the ones claimed by more than one impl)`.
+///
+/// A module exporting several functions yields one impl each, and they all pair with that module's single
+/// test file. Carrying it onto each is right for the MIRROR — the coverage really is theirs, and per-impl
+/// attribution is not recoverable from the file — and is a trap for any EXECUTOR that materializes one
+/// file per record, because the same assertions would then run once per impl and be counted that many
+/// times. Measured here: 74 files cover 195 impls. Whoever consumes a harvest has to be able to see which
+/// pairings are shared, so it is reported rather than left to be discovered downstream.
+fn shared_test_pairings(paired: &[Value]) -> (usize, Vec<Value>) {
+    let mut by_test: std::collections::BTreeMap<&str, Vec<&str>> = std::collections::BTreeMap::new();
+    for c in paired {
+        let t = c.get("test").and_then(Value::as_str).unwrap_or("");
+        let i = c.get("id").and_then(Value::as_str).unwrap_or("");
+        by_test.entry(t).or_default().push(i);
+    }
+    let shared = by_test
+        .iter()
+        .filter(|(_, ids)| ids.len() > 1)
+        .map(|(t, ids)| serde_json::json!({ "test": t, "impls": ids }))
+        .collect();
+    (by_test.len(), shared)
+}
+
 /// The record that already covers `target`, and WHICH signal matched — `src` provenance or the
 /// `provides` specifier (#75, designer request).
 ///
@@ -1321,20 +1363,56 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             bsc_cli_util::require_harvestable_root(root)?;
 
             let mut g = crate::load();
-            let (mut paired, mut no_src, mut no_test) = (Vec::new(), 0usize, 0usize);
-            for im in crate::implementations_of(&g) {
+            let impls = crate::implementations_of(&g);
+
+            // ⚠️ A WRONG ROOT LOOKS EXACTLY LIKE AN UNTESTED LIBRARY. Every `src` is repo-relative and
+            // already begins `src/`, so the root to pass is the REPO root. Handed `src` instead, every
+            // join becomes `src/src/…`, nothing resolves, and the command still exits 0 reporting a
+            // plausible `paired: 31 · noColocatedTest: 876` — which reads as "the algorithm tier has no
+            // tests" and was filed as exactly that before anyone checked the invocation. The signature is
+            // deterministic (the root's own name is the first segment of the sources), so detect it and
+            // refuse rather than return a number that means nothing.
+            let root_name =
+                root.canonicalize().ok().and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()));
+            let srcs: Vec<&str> = impls
+                .iter()
+                .filter_map(|im| im.get("src").and_then(Value::as_str))
+                .filter(|s| !s.trim().is_empty())
+                .collect();
+            if let Some(name) = root_name.filter(|n| root_doubles_source_prefix(n, &srcs)) {
+                return Err(format!(
+                    "every source path already starts with '{name}/', so joining them to this root gives \
+                     '{name}/{name}/…' and nothing resolves — pass the REPO root, not '{name}'"
+                ));
+            }
+
+            let (mut paired, mut no_src, mut no_test, mut retired_no_test) =
+                (Vec::new(), 0usize, 0usize, 0usize);
+            for im in impls {
                 let Some(src) = im.get("src").and_then(Value::as_str).filter(|s| !s.trim().is_empty())
                 else {
                     // No provenance ⇒ nothing to pair against. `relink` (#4119) is the fix, not a guess.
                     no_src += 1;
                     continue;
                 };
+                // Whether the MODULE still exists separates "a live file nobody tested" from "a retired
+                // module whose test went with it". Both used to land in `noColocatedTest`, where the
+                // second is invisible — and the second is the one the migration can still act on.
+                let module_gone = !root.join(src).is_file();
                 let Some(path) = bsc_util::test_path_for(root, src) else {
-                    no_test += 1;
+                    if module_gone {
+                        retired_no_test += 1;
+                    } else {
+                        no_test += 1;
+                    }
                     continue;
                 };
                 let Ok(contents) = std::fs::read_to_string(&path) else {
-                    no_test += 1;
+                    if module_gone {
+                        retired_no_test += 1;
+                    } else {
+                        no_test += 1;
+                    }
                     continue;
                 };
                 let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
@@ -1350,11 +1428,29 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             if !dry && !paired.is_empty() {
                 crate::save(&g)?;
             }
+
+            // ONE TEST FILE, N IMPLS — reported, never silent. A module exporting several functions
+            // yields one impl each, and they all pair with that module's single test file. Carrying it
+            // onto each is right for the MIRROR (the coverage really is theirs, and per-impl attribution
+            // is not recoverable from the file) and is a trap for any EXECUTOR that materializes one file
+            // per record: the same assertions would run N times and be counted N times. Whoever consumes
+            // this has to know which pairings are shared, so say so instead of leaving it to be discovered.
+            let (distinct_tests, shared) = shared_test_pairings(&paired);
+            let shared_impls: usize = shared
+                .iter()
+                .map(|s| s.get("impls").and_then(Value::as_array).map_or(0, Vec::len))
+                .sum();
+
             emit(&serde_json::json!({
                 "dryRun": dry,
                 "paired": paired.len(),
                 "noSrc": no_src,
                 "noColocatedTest": no_test,
+                "retiredNoTest": retired_no_test,
+                "distinctTests": distinct_tests,
+                "sharedTestFiles": shared.len(),
+                "sharedTestImpls": shared_impls,
+                "shared": shared,
                 "changes": paired,
             }))
         }
@@ -2225,6 +2321,50 @@ mod already_harvested_tests {
         assert!(module_paths_agree("a/b/colorHue.ts", "colorHue.ts"), "a real boundary DOES match");
         assert!(module_paths_agree("x.ts", "x.ts"), "equality still holds");
         assert!(!module_paths_agree("a/b/c.ts", ""), "an empty side never matches");
+    }
+
+    /// The wrong-root footgun. Passing `src` (rather than the repo root) resolved almost nothing and
+    /// still exited 0, which read as "the algorithm tier has no tests" — a diagnosis filed twice off a
+    /// number that only meant the paths had been joined wrong.
+    #[test]
+    fn a_root_that_would_double_the_source_prefix_is_refused() {
+        let srcs = ["src/a/b.ts", "src/c/d.ts", "src/e/f.ts"];
+        assert!(super::root_doubles_source_prefix("src", &srcs), "src/ under a root named src doubles");
+        assert!(
+            !super::root_doubles_source_prefix("base-studio-code", &srcs),
+            "the REPO root is the correct call and must run"
+        );
+        // A MAJORITY, not a single hit — one stray path cannot veto an otherwise correct run.
+        let mostly_fine = ["src/a.ts", "crates/b.rs", "crates/c.rs", "crates/d.rs"];
+        assert!(!super::root_doubles_source_prefix("src", &mostly_fine), "one match is not the signature");
+        // Degenerate roots have no name to compare and must never block.
+        assert!(!super::root_doubles_source_prefix(".", &srcs), "a dot root is not a prefix");
+        assert!(!super::root_doubles_source_prefix("", &srcs), "an empty root is not a prefix");
+        assert!(!super::root_doubles_source_prefix("src", &[]), "nothing to judge, nothing to refuse");
+    }
+
+    /// One module test carried onto every impl extracted from that module. Real coverage for each, and a
+    /// double-count for anything that materializes one file per record — so it has to be visible.
+    #[test]
+    fn a_test_file_claimed_by_several_impls_is_reported_as_shared() {
+        let paired = vec![
+            serde_json::json!({ "id": "bfs.ts", "test": "src/x/graphAlgos.test.ts" }),
+            serde_json::json!({ "id": "dfs.ts", "test": "src/x/graphAlgos.test.ts" }),
+            serde_json::json!({ "id": "dijkstra.ts", "test": "src/x/graphAlgos.test.ts" }),
+            serde_json::json!({ "id": "order-by-rank.ts", "test": "src/y/orderByRank.test.ts" }),
+        ];
+        let (distinct, shared) = super::shared_test_pairings(&paired);
+        assert_eq!(distinct, 2, "two distinct test FILES behind four pairings");
+        assert_eq!(shared.len(), 1, "only the many-to-one file is shared");
+        assert_eq!(shared[0]["test"], "src/x/graphAlgos.test.ts");
+        assert_eq!(
+            shared[0]["impls"].as_array().map(Vec::len),
+            Some(3),
+            "and it names every impl claiming it, so the double-count is countable"
+        );
+        // A clean 1:1 pairing is NOT reported — the signal would be worthless if everything appeared.
+        let (distinct, shared) = super::shared_test_pairings(&paired[3..]);
+        assert_eq!((distinct, shared.len()), (1, 0), "1:1 pairings stay silent");
     }
 
     /// The three cases the message has to tell apart — the reporter's exact path, resolved by `src`
