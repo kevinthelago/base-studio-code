@@ -26,10 +26,11 @@
 import type { RuntimeOutcome } from "@/shared/lib/preview/componentRuntimeProbe";
 import {
   componentPreviewFiles, isCollectionProp, isLoadingProp,
-  type KitArtifact, type LibraryModuleResolver,
+  type KitArtifact, type LibraryModuleResolver, type GraphProvidesResolver,
 } from "./componentPreview";
 import type { HealthCategory } from "./graphHealth";
 import { libraryModuleResolver } from "@/features/designs/lib/libraryModules";
+import { KNOWLEDGE } from "@/features/algorithms";
 // The feature's existing hash — reused rather than adding a second one
 // (#the-scan-signature-is-the-whole-source-not-a-digest).
 import { fnv1a } from "./seedRefresh";
@@ -75,6 +76,29 @@ export interface ComponentScanResult {
  *
  * Pure — the hook calls `recordPreviewError` only when this is non-null.
  */
+
+/**
+ * The default {@link GraphProvidesResolver} (#83) — a `@/…` specifier → the ALGORITHMS record that
+ * provides it, matched exactly the way the runtime's `resolveGraphSource` matches.
+ *
+ * The preview only ever consulted COMPONENT records for `provides`, so a module retired into the
+ * algorithms store had no source in the mem file set and every named import off it failed to resolve
+ * (`No matching export in mem:src/app/lazyWorkspaces`). The runtime has resolved these since
+ * `resolver-reads-the-algorithms-store`; this is the preview catching up.
+ *
+ * Keyed at the mem path the specifier resolves to (`@/a/b` → `a/b.ts`), which is where the bundler's
+ * `@/…` branch looks — the same shape `libraryModuleResolver` returns for `@bsc/…`.
+ */
+export const graphProvidesResolver: GraphProvidesResolver = (spec: string) => {
+  const want = spec.trim();
+  if (!want.startsWith("@/")) return null;
+  for (const impl of KNOWLEDGE.implementations) {
+    if (impl.provides?.trim() !== want || !impl.code) continue;
+    return { path: `${want.slice(2)}.ts`, source: impl.code };
+  }
+  return null;
+};
+
 export function durableLogSync(
   prior: ComponentBuildStatus | undefined,
   next: ComponentBuildStatus,
@@ -170,7 +194,7 @@ export function scannableComponents(
     if (c.lite) continue;
     // Same-kit siblings so a composing user component's imported siblings vendor into its build (#3112).
     const siblings = comps.filter((s) => s.kitId === c.kitId && s.id !== c.id);
-    const build = componentPreviewFiles(c, artifact, siblings, libResolver);
+    const build = componentPreviewFiles(c, artifact, siblings, libResolver, undefined, undefined, undefined, graphProvidesResolver);
     if (!build) continue;
     // Everything in the build that is NOT part of the packaged artifact is record-derived, and a change
     // to any of it must re-queue this component — otherwise a fixed dependency leaves every consumer
@@ -198,11 +222,11 @@ export function scannableComponents(
     // collections / turns on the loading prop) — so each reuses `componentPreviewFiles(..., state)`.
     const states: StateProbe[] = [];
     if (c.props.some(isCollectionProp)) {
-      const s = componentPreviewFiles(c, artifact, siblings, libResolver, "empty");
+      const s = componentPreviewFiles(c, artifact, siblings, libResolver, "empty", undefined, undefined, graphProvidesResolver);
       if (s) states.push({ category: "empty-empty-state", files: s.files, entry: s.entry });
     }
     if (c.props.some(isLoadingProp)) {
-      const s = componentPreviewFiles(c, artifact, siblings, libResolver, "loading");
+      const s = componentPreviewFiles(c, artifact, siblings, libResolver, "loading", undefined, undefined, graphProvidesResolver);
       if (s) states.push({ category: "empty-loading-state", files: s.files, entry: s.entry });
     }
     // Fold the qualifying states into the sig so adding/removing a collection/loading prop re-queues the
