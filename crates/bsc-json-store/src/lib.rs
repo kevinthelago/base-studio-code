@@ -25,6 +25,11 @@
 //! (`list`/`get`/`set`/`remove`) is unchanged by the SQLite migration.
 
 pub mod cli;
+/// The command surface as DATA — load `cli`'s [`cli::CliSpec`] from a record instead of a `static`,
+/// so changing a verb is a record write rather than a rebuild (#spike-load-the-json-store-cli-spec-from-a-record).
+pub mod surface;
+#[cfg(test)]
+mod surface_tests;
 
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
