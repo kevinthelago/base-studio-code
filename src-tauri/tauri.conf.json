@@ -31,6 +31,11 @@
     "active": true,
     "targets": "all",
     "externalBin": ["binaries/bsc", "binaries/bsc-agent"],
+    "resources": {
+      "data/components/react-ui.json": "data/components/react-ui.json",
+      "data/ui/react-ui-kit.meta.json": "data/ui/react-ui-kit.meta.json",
+      "data/knowledge/algorithms.json": "data/knowledge/algorithms.json"
+    },
     "publisher": "base-studio-code",
     "icon": [
       "icons/32x32.png",
