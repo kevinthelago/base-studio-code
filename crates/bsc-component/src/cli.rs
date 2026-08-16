@@ -1335,7 +1335,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
         // `get --field`/`get help` fall through unchanged (the id guard excludes a flag or `help`).
         Some("get") if args.get(1).is_some_and(|a| !a.starts_with('-') && a != "help") => {
-            bsc_util::emit_ui_focus("component", &args[1]);
+            // #91: resolve the handle to a real id BEFORE delegating, so `get <Name>` works and a miss is
+            // an ERROR rather than a bare `null` on stdout. The shared store CLI cannot do this — it backs
+            // every `bsc <store> get` and knows nothing about a `name` field — so the rewrite happens here
+            // and the delegate still prints the stored bytes verbatim (the #3166 `--raw` contract).
+            let dir = args.iter().position(|a| a == "--dir").and_then(|i| args.get(i + 1)).cloned();
+            let id = resolve_component_handle(&open_component_store(&dir)?, &args[1])?;
+            let mut args = args;
+            args[1] = id.clone();
+            bsc_util::emit_ui_focus("component", &id);
             bsc_json_store::cli::run_hooked_validated(
                 args,
                 prog,
@@ -4439,7 +4447,47 @@ fn animations_of(store: &bsc_json_store::Store, id: &str) -> Result<serde_json::
 }
 
 /// Load component `id`'s stored record as a JSON object, or a clear error when it's absent / malformed.
+/// Resolve a component HANDLE to the id the store is keyed by: the id itself when one exists, else the
+/// unique record whose `name` matches case-insensitively.
+///
+/// Designer request #91 filed a broken-`composes` bug that was not one, on the strength of
+/// `bsc ui get deploytoggle` answering `null`. The record was there the whole time — id `toggle`, name
+/// `DeployToggle`, composed by ten components resolving by NAME exactly as the edge builders do. Lowercasing
+/// a name and trying it as an id is the obvious guess, and the store answered a confident-looking falsehood,
+/// so a correct graph got reported as broken. Resolving the guess is cheaper than the report it prevents.
+///
+/// The id WINS when both could match, because the store is keyed by id and that is the identity every other
+/// verb takes. An ambiguous name is refused rather than resolved to whichever record sorts first — picking
+/// one silently is how the next false report gets filed.
+fn resolve_component_handle(store: &bsc_json_store::Store, handle: &str) -> Result<String, String> {
+    if store.get(handle)?.is_some() {
+        return Ok(handle.to_string());
+    }
+    let mut by_name: Vec<String> = store
+        .list()
+        .iter()
+        .filter_map(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .filter(|v| {
+            v.get("name").and_then(serde_json::Value::as_str).is_some_and(|n| n.eq_ignore_ascii_case(handle))
+        })
+        .filter_map(|v| v.get("id").and_then(serde_json::Value::as_str).map(str::to_string))
+        .collect();
+    by_name.sort();
+    by_name.dedup();
+    match by_name.len() {
+        0 => Err(format!(
+            "no record '{handle}' in the store — author it first with `bsc ui set` (or `bsc ui kit set`)"
+        )),
+        1 => Ok(by_name.remove(0)),
+        n => Err(format!(
+            "'{handle}' is the NAME of {n} components, not an id — pass one of: {}",
+            by_name.join(", ")
+        )),
+    }
+}
+
 fn load_component_object(store: &bsc_json_store::Store, id: &str) -> Result<serde_json::Value, String> {
+    let id = &resolve_component_handle(store, id)?;
     let raw = store
         .get(id)?
         .ok_or_else(|| format!("no record '{id}' in the store — author it first with `bsc ui set` (or `bsc ui kit set`)"))?;
@@ -6695,6 +6743,41 @@ export const P = () => <X />;"
         // Without --raw a string keeps its JSON quotes; --pretty indents a container.
         assert_eq!(field_output(&json!("Button"), false, false).unwrap(), "\"Button\"");
         assert!(field_output(&json!({ "a": 1 }), false, true).unwrap().contains('\n'));
+    }
+
+    /// REGRESSION, designer request #91. A broken-`composes` bug was filed that was not one, because
+    /// `bsc ui get deploytoggle` answered a bare `null` for a record present under id `toggle` with name
+    /// `DeployToggle`. The lookup is the bug; the graph was correct.
+    #[test]
+    fn get_resolves_a_name_as_well_as_an_id_and_refuses_to_answer_null() {
+        let dir = tmp_store_dir("get-handle");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("toggle", r#"{"id":"toggle","name":"DeployToggle","kitId":"k"}"#).unwrap();
+        let go = |a: Vec<&str>| run(a.iter().map(|s| s.to_string()).collect(), "bsc ui");
+
+        // The id path is untouched.
+        assert!(go(vec!["get", "toggle", "--dir", &dir]).is_ok());
+        // The reporter's EXACT command now resolves — by name, case-insensitively, through both the plain
+        // path and the `--field` path.
+        assert!(go(vec!["get", "deploytoggle", "--dir", &dir]).is_ok(), "the name resolves");
+        assert!(go(vec!["get", "DeployToggle", "--dir", &dir]).is_ok());
+        assert!(go(vec!["get", "deploytoggle", "--field", "id", "--dir", &dir]).is_ok(), "and with --field");
+
+        // A genuine miss is an ERROR, not `null` on stdout — that silence is what made the graph look broken.
+        let err = go(vec!["get", "nosuchthing", "--dir", &dir]).unwrap_err();
+        assert!(err.contains("nosuchthing"), "{err}");
+
+        // An id BEATS a name of the same spelling: the store is keyed by id, so that is the identity every
+        // other verb takes, and resolving to the other record would be a silent switcheroo.
+        store.set("deploytoggle", r#"{"id":"deploytoggle","name":"Something Else","kitId":"k"}"#).unwrap();
+        let resolved = resolve_component_handle(&store, "deploytoggle").unwrap();
+        assert_eq!(resolved, "deploytoggle", "the id wins over a same-spelled name");
+
+        // An AMBIGUOUS name is refused, naming the candidates — picking one silently is how the next false
+        // report gets filed.
+        store.set("toggle2", r#"{"id":"toggle2","name":"DeployToggle","kitId":"k"}"#).unwrap();
+        let err = resolve_component_handle(&store, "DeployToggle").unwrap_err();
+        assert!(err.contains("toggle") && err.contains("toggle2"), "names both candidates: {err}");
     }
 
     #[test]
