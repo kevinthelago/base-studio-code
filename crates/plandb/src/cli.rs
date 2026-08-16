@@ -714,13 +714,11 @@ fn open_store(db: &Option<String>) -> Result<Store, String> {
 /// shown for an empty non-JSON read. The shared shape behind every plural human/JSON `list` read.
 fn emit_json_or_lines<T: Serialize>(json: bool, items: &[T], empty: &str, line_fn: impl Fn(usize, &T) -> String) {
     if json {
-        println!("{}", serde_json::to_string(items).unwrap_or_else(|_| "[]".into()));
+        bsc_cli_util::print_raw(&serde_json::to_string(items).unwrap_or_else(|_| "[]".into()));
     } else if items.is_empty() {
-        println!("{empty}");
+        bsc_cli_util::print_raw(empty);
     } else {
-        for (i, it) in items.iter().enumerate() {
-            println!("{}", line_fn(i, it));
-        }
+        bsc_cli_util::print_raw_lines(items.iter().enumerate().map(|(i, it)| line_fn(i, it)));
     }
 }
 
@@ -728,15 +726,11 @@ fn emit_json_or_lines<T: Serialize>(json: bool, items: &[T], empty: &str, line_f
 /// `<verb> <name>` line each — an empty `verb` prints the bare name (the ref/slug roster echo).
 fn emit_set_result<T: Serialize + std::fmt::Display>(json: bool, names: &[T], verb: &str) {
     if json {
-        println!("{}", serde_json::to_string(names).unwrap_or_else(|_| "[]".into()));
+        bsc_cli_util::print_raw(&serde_json::to_string(names).unwrap_or_else(|_| "[]".into()));
     } else if verb.is_empty() {
-        for n in names {
-            println!("{n}");
-        }
+        bsc_cli_util::print_raw_lines(names.iter().map(|n| n.to_string()));
     } else {
-        for n in names {
-            println!("{verb} {n}");
-        }
+        bsc_cli_util::print_raw_lines(names.iter().map(|n| format!("{verb} {n}")));
     }
 }
 
@@ -745,7 +739,7 @@ fn emit_set_result<T: Serialize + std::fmt::Display>(json: bool, names: &[T], ve
 fn emit_blob_or_null(json: bool, pretty: bool, blob: Option<serde_json::Value>, none_text: &str) {
     match blob {
         Some(v) => print_json(&v, pretty),
-        None => println!("{}", if json { "null" } else { none_text }),
+        None => bsc_cli_util::print_raw(if json { "null" } else { none_text }),
     }
 }
 
@@ -795,7 +789,7 @@ fn cmd_blob_noun(
             let v: serde_json::Value = read_stdin_json_one(parse_noun)?;
             validated_set(&v, args.force, validate, |v| set_fn(&s, v))?;
             if !args.json {
-                println!("{}", msg_fn(&v));
+                bsc_cli_util::print_raw(&msg_fn(&v));
             }
             Ok(())
         }
@@ -1031,4 +1025,59 @@ mod tests {
         assert_eq!(serde_json::to_string(&v).unwrap(), "{\"a\":1,\"b\":[2,3]}");
         assert!(serde_json::to_string_pretty(&v).unwrap().contains('\n'));
     }
+
+    // ── output must be CAPTURE-SAFE (#project-scoped-reads-spawn-a-process-because-the-db-path-rides-the-environment)
+    //
+    // `bsc serve` answers over a line-delimited JSON stream on stdout and runs each verb under
+    // `bsc_util::capture_output`, so a verb's output lands in its response instead of the stream. That
+    // works only for output flowing through the shared print helpers — a raw `println!` writes past the
+    // capture sink and straight into the protocol, corrupting every later reply on that child.
+    //
+    // `is_servable_warm`'s own doc says it: "adding a verb without reading its crate is the one mistake
+    // that breaks the warm child for every later request on it". This crate had EIGHT raw `println!`
+    // sites, all reachable from `plan list` — the highest-volume spawn in the app at 675 calls / 342.8s
+    // in one measured session. These pin the property so `plan list` CAN be served warm, and so a later
+    // edit cannot quietly put the landmine back.
+
+    #[test]
+    fn the_list_emitter_is_captured_in_every_branch() {
+        let items = vec!["alpha".to_string(), "beta".to_string()];
+
+        let ((), out) = bsc_util::capture_output(|| emit_json_or_lines(true, &items, "(none)", |_, s| s.clone()));
+        assert_eq!(out, "[\"alpha\",\"beta\"]\n", "the JSON branch must be captured verbatim");
+
+        let ((), out) =
+            bsc_util::capture_output(|| emit_json_or_lines(false, &items, "(none)", |i, s| format!("{i}\t{s}")));
+        assert_eq!(out, "0\talpha\n1\tbeta\n", "the line branch must be captured, one LF-terminated line each");
+
+        let empty: Vec<String> = Vec::new();
+        let ((), out) =
+            bsc_util::capture_output(|| emit_json_or_lines(false, &empty, "(none)", |_, s: &String| s.clone()));
+        assert_eq!(out, "(none)\n", "the empty branch must be captured too");
+    }
+
+    #[test]
+    fn the_set_echo_emitter_is_captured() {
+        let names = vec!["one".to_string(), "two".to_string()];
+
+        let ((), out) = bsc_util::capture_output(|| emit_set_result(false, &names, ""));
+        assert_eq!(out, "one\ntwo\n");
+
+        let ((), out) = bsc_util::capture_output(|| emit_set_result(false, &names, "added"));
+        assert_eq!(out, "added one\nadded two\n");
+
+        let ((), out) = bsc_util::capture_output(|| emit_set_result(true, &names, "added"));
+        assert_eq!(out, "[\"one\",\"two\"]\n");
+    }
+
+    /// A raw `println!` leaves the captured string EMPTY while the bytes go to the real handle — the
+    /// failure is invisible unless asserted, which is why this asserts it directly.
+    #[test]
+    fn no_emitter_leaves_the_capture_empty() {
+        let items = vec![1u32, 2, 3];
+        let ((), out) = bsc_util::capture_output(|| emit_json_or_lines(false, &items, "(none)", |_, n| n.to_string()));
+        assert!(!out.is_empty(), "output escaped the capture sink — a raw println! is back");
+        assert!(out.ends_with('\n'), "each emitted line must be LF-terminated: {out:?}");
+    }
 }
+
