@@ -170,7 +170,26 @@ reflects it:
   relative to the scanned root. A TypeScript impl pairs with its sibling `<name>.test.ts`; a RUST impl
   pairs with its OWN file, since its tests are an inline `#[cfg(test)] mod tests` (#4146). An impl with
   no test is left alone — never given an empty `tests`.
+- `bsc graph impl get <id>` — **read ONE implementation's whole record**: its code, kind, summary,
+  `composes`, tests, domain. This is the read you reach for once `list` has told you the id — `list` is
+  the index, `get` is the entry, and `dump` is neither (it is the whole graph, and almost never what you
+  want).
 - `bsc graph impl remove <id>` — **delete an implementation** + scrub it from every `composes`.
+  A SEEDED id cannot be removed this way — the seed reconcile re-adds it, so it is refused. Retire one
+  with `suppress`.
+- `bsc graph impl suppress <id> [--superseded-by <new-id>]` — **retire a PACKAGED algorithm durably**: a
+  `{ id, suppressed: true }` tombstone takes the id so the reconcile stops re-adding it. `--superseded-by`
+  records what replaced it, on the tombstone, because that is the one record the reconcile never
+  overwrites. A self / missing / already-retired target is refused rather than stored — a durable pointer
+  to nothing outlives everyone who could correct it.
+- `bsc graph impl unsuppress <id>` — drop the tombstone so the packaged algorithm re-seeds on the next
+  load. No data loss. Refuses on a LIVE impl; that one goes through `remove`.
+- `bsc graph impl history <id>` — the **write log**: rev, who, when, what changed and what was dropped
+  per write. Same shape as `bsc ui log`, from the same shared stamp — read it before you revert, and
+  after a write you are unsure of.
+- `bsc graph impl revert <id> [--to <rev>]` — restore a previous `code`. Defaults to undoing the last
+  source-moving write. It REFUSES rather than landing on a nearer revision when the target has aged past
+  the retained rungs, and names which revisions are still reachable.
 
 Steward toward one accurate, non-duplicated library: one algorithm per id, honest roles, real
 `composes` edges rooted in the language's primitives.
