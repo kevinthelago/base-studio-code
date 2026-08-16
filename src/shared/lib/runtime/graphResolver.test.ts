@@ -1,3 +1,10 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * This file lives under `lib/`, which vitest's `node` project covers, but it genuinely needs a DOM.
+ * A per-file docblock beats the project's environment, so the requirement is stated where a reader
+ * meets it. See the `projects` split in vitest.config.ts for why the default is `node` here.
+ */
 // Does an import reach the ALGORITHMS graph? (resolver-reads-the-algorithms-store)
 //
 // `provides` on an impl is inert until something resolves it, so these assert the resolution itself —

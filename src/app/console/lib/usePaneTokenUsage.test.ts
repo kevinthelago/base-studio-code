@@ -1,3 +1,10 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * This file lives under `lib/`, which vitest's `node` project covers, but it genuinely needs a DOM.
+ * A per-file docblock beats the project's environment, so the requirement is stated where a reader
+ * meets it. See the `projects` split in vitest.config.ts for why the default is `node` here.
+ */
 // #4074 — the per-pane cost poll must NOT spawn a `bsc` subprocess.
 //
 // It polls every 4s and was the app's single biggest spawner (415 calls in a 27-minute window). Each

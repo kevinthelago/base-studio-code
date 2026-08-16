@@ -71,3 +71,24 @@ if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
     disconnect() {}
   };
 }
+
+// The `node` project (see vitest.config.ts) has no `localStorage`, and ANY test that transitively
+// imports `@/store` gets zustand's `persist` middleware, which writes to it during hydration —
+// off the test's own await chain. Without this the tests still PASS while throwing unhandled
+// rejections in the background, which is the worst of both: green output, broken storage layer.
+// Measured before the shim: 80 unhandled `ReferenceError: localStorage is not defined` across 31
+// files. In-memory is the right shape — `persist` only needs get/set/remove to round-trip, and a
+// per-file fresh module registry means tests do not leak state through it.
+if (!(globalThis as { localStorage?: unknown }).localStorage) {
+  const mem = new Map<string, string>();
+  (globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (k: string) => (mem.has(k) ? mem.get(k)! : null),
+    setItem: (k: string, v: string) => void mem.set(k, String(v)),
+    removeItem: (k: string) => void mem.delete(k),
+    clear: () => mem.clear(),
+    key: (i: number) => [...mem.keys()][i] ?? null,
+    get length() {
+      return mem.size;
+    },
+  };
+}

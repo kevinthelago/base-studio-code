@@ -1,3 +1,10 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * This file lives under `lib/`, which vitest's `node` project covers, but it genuinely needs a DOM.
+ * A per-file docblock beats the project's environment, so the requirement is stated where a reader
+ * meets it. See the `projects` split in vitest.config.ts for why the default is `node` here.
+ */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { usePreviewStateCycle, PREVIEW_CYCLE_MS } from "@/features/designs/lib/usePreviewStateCycle";

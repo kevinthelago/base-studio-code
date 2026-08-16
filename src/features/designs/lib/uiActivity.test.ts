@@ -1,3 +1,10 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * This file lives under `lib/`, which vitest's `node` project covers, but it genuinely needs a DOM.
+ * A per-file docblock beats the project's environment, so the requirement is stated where a reader
+ * meets it. See the `projects` split in vitest.config.ts for why the default is `node` here.
+ */
 // UI-activity live-focus (#2525) — the parser + poll hook that drives the designer AI's `ui-touch`
 // stream into the store (setAiFocused). The bridge (`invoke("bsc", …)`) is the shared mock from
 // src/test/setup.ts; here we drive its return per-test.
