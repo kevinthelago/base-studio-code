@@ -18,6 +18,28 @@ pub mod extract;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
+/// A temp path for ONE test — the fixture helper every test in this crate builds its tree under.
+///
+/// Keying a fixture on the process id ALONE is what made `bsc-graph` intermittently red: three
+/// `edge_member_tests` shared `bsc-graph-edge-<pid>`, the harness ran them on parallel threads, and each
+/// ended by removing the directory — so a sibling finishing first deleted `model.ts` out from under a
+/// test mid-resolution and a real file reported as unresolvable. Measured 1 failure in 3 parallel runs;
+/// 5 for 5 green serialised.
+///
+/// The pid keeps concurrent test BINARIES apart and the counter keeps tests inside one binary apart, so
+/// two calls can never collide. A counter rather than a timestamp on purpose: it cannot tie on a coarse
+/// clock, and it leaves the path reproducible within a run.
+#[cfg(test)]
+pub(crate) fn unique_temp(tag: &str) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    std::env::temp_dir().join(format!(
+        "bsc-graph-{tag}-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ))
+}
+
 /// The packaged seed — the SAME file the frontend reads via `@data/knowledge/algorithms.json`.
 pub const GRAPH_JSON: &str = include_str!("../../../src-tauri/data/knowledge/algorithms.json");
 
@@ -1494,11 +1516,7 @@ mod tests {
         set_impl(&mut g, serde_json::json!({
             "id": "rust.bloomfilter", "tech": "rust", "role": "primitive", "name": "BloomFilter (Rust)", "composes": [], "code": "// bloom"
         })).unwrap();
-        let tmp = std::env::temp_dir().join(format!(
-            "bsc-graph-store-{}-{}.json",
-            std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
-        ));
+        let tmp = crate::unique_temp("store").with_extension("json");
         save_at(&tmp, &g).unwrap();
         let back = load_at(&tmp);
         assert!(
@@ -1825,11 +1843,7 @@ mod tests {
         assert_eq!(stored["domain"], "logistics");
         assert_eq!(stored["tags"], serde_json::json!(["graph"]));
 
-        let tmp = std::env::temp_dir().join(format!(
-            "bsc-graph-domain-{}-{}.json",
-            std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
-        ));
+        let tmp = crate::unique_temp("domain").with_extension("json");
         save_at(&tmp, &g).unwrap();
         let reloaded = implementations_of(&load_at(&tmp)).into_iter().find(|im| im["id"] == "logistics-test.rs").unwrap();
         assert_eq!(reloaded["domain"], "logistics", "the domain survives a save/load round-trip");
@@ -1951,11 +1965,7 @@ mod tests {
     fn load_path_reconciles_a_stale_store_on_disk() {
         // The end-to-end guard: a stale store file on disk, read via `load_at` + reconcile (what `load()`
         // does), yields the packaged TypeScript impls — the exact bug ("I only see rust algorithms").
-        let tmp = std::env::temp_dir().join(format!(
-            "bsc-graph-reconcile-{}-{}.json",
-            std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
-        ));
+        let tmp = crate::unique_temp("reconcile").with_extension("json");
         save_at(&tmp, &stale_rust_only_store()).unwrap();
         let mut on_disk = load_at(&tmp); // store-or-seed (no reconcile) — the stale store
         assert!(!implementations_of(&on_disk).iter().any(|im| im["id"] == "sort.ts"), "raw load is stale");

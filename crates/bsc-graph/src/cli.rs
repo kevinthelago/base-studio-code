@@ -1869,7 +1869,7 @@ mod tests {
     /// what they hold — the field existed and nothing could set it.
     #[test]
     fn impl_set_writes_and_clears_module_state() {
-        let dir = std::env::temp_dir().join(format!("bsc-graph-msflag-{}", std::process::id()));
+        let dir = crate::unique_temp("msflag");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
@@ -2189,7 +2189,7 @@ mod source_flag_tests {
 
     /// A temp file whose NAME is unique per test AND per process, so a parallel run cannot collide.
     fn write_temp(tag: &str, body: &str) -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!("bsc-graph-codefile-{}-{tag}.ts", std::process::id()));
+        let p = crate::unique_temp(&format!("codefile-{tag}")).with_extension("ts");
         std::fs::write(&p, body).unwrap();
         p
     }
