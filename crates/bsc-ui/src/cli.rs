@@ -2443,7 +2443,10 @@ mod tests {
         let dir = tmp_store_dir("comp");
         assert!(run(vec!["list".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
         assert!(run(vec!["list".into(), "--full".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
-        assert!(run(vec!["get".into(), "absent".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        // `get` of a MISS is an error now, not `null` on stdout (#91): a read verb that stays silent when
+        // it finds nothing is what let a present record read as absent and produced a false bug report.
+        // Still proves dispatch — the error comes from the component resolver, which is downstream of it.
+        assert!(run(vec!["get".into(), "absent".into(), "--dir".into(), dir.clone()], "bsc ui").is_err());
         assert!(run(vec!["remove".into(), "absent".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
         // The kit collection routes one level down, and eslint-preset (the custom store read, #2279)
         // works over an empty store.
