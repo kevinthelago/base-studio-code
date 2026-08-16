@@ -240,32 +240,26 @@ export interface RequestNodeSpec {
 }
 
 /**
- * Resolve a filing session's PANE id to the Studio Network position it is (
- * #debug-nodes-hang-off-the-session-that-filed-them).
+ * Resolve a filing session's PANE id to the graph position it should hang off
+ * (#debug-nodes-hang-off-the-session-that-filed-them).
  *
- * The store records the origin as a pane id, because that is the only identity a filing session actually
- * has (`$BSC_AUDIT_PANE`) and it is the per-TECHNOLOGY one — `designer-studio:react` vs
- * `designer-studio:react-native`. The graph's node ids are team-position ids, so the two have to be
- * bridged, and this is the bridge: `<role>-studio:<tech>` → `<role>-<tech>`, falling back to the bare
- * role node.
+ * INJECTED, not implemented here. The mapping is owned by whoever owns the node↔session table
+ * (`studioProject`'s `STUDIO_NODE_SESSION`), and `teams` is feature-agnostic — it cannot import a glance
+ * module. Passing the resolver in keeps the augmentation pure and lets the caller supply the ONE
+ * authoritative mapping rather than a second copy of it.
  *
- * Returns null for anything that is not a studio pane — a project director's `myproject:director` is a
- * legitimate origin with no Studio Network position, and its request belongs in that project's drill
- * instead. Null is what the caller uses to leave it out rather than attach it to the wrong node.
+ * That indirection is not ceremony: the first version of this parsed the pane id as
+ * `<role>-studio:<tech>` and every studio origin resolved to null, because the real ids are
+ * `design-studio:designer-react` and `algorithms-studio:librarian-typescript` — the studio is named for
+ * the SURFACE, not the role, and the role is in the tail. A guessed string shape passes every gate when
+ * the tests are written from the same guess; inverting the real table cannot.
+ *
+ * `present` is the set of node ids actually on this graph, so a resolver can prefer the per-technology
+ * node where one is drawn and fall back to the role node where it is not — the two studio drills render
+ * different id sets. Returning null means "not for this graph", and the caller leaves the request out
+ * rather than attaching it to a default.
  */
-export function studioNodeForOrigin(origin: string | null | undefined, present: ReadonlySet<string>): string | null {
-  const o = (origin ?? "").trim();
-  if (!o.includes(":")) return null;
-  const [studio, tail] = o.split(":");
-  const role = studio.replace(/-studio$/, "");
-  if (role === studio) return null; // not a `<x>-studio:` pane at all
-  // Prefer the per-technology node, since that is the session that actually filed it; fall back to the
-  // role node, which is what the base-studio-code drill renders.
-  for (const candidate of [`${role}-${tail}`, role]) {
-    if (present.has(candidate)) return candidate;
-  }
-  return null;
-}
+export type OriginHostResolver = (origin: string | null | undefined, present: ReadonlySet<string>) => string | null;
 
 /**
  * Add a node per LIVE request session (#3498, re-pointed by
@@ -285,11 +279,15 @@ export function studioNodeForOrigin(origin: string | null | undefined, present: 
  *
  * Idempotent, and a no-op off the Studio Network or with no live sessions.
  */
-export function augmentStudioNetworkForRequests(org: Team, requests: readonly RequestNodeSpec[]): Team {
+export function augmentStudioNetworkForRequests(
+  org: Team,
+  requests: readonly RequestNodeSpec[],
+  hostForOrigin: OriginHostResolver,
+): Team {
   if (!requests.length || org.id !== STUDIO_NETWORK_ID) return org;
   const present = new Set(org.positions.map((p) => p.nodeId));
   const add = requests
-    .map((r) => ({ ...r, host: studioNodeForOrigin(r.origin, present) }))
+    .map((r) => ({ ...r, host: hostForOrigin(r.origin, present) }))
     .filter((r) => r.host !== null && !present.has(requestNodeId(r.id)));
   if (!add.length) return org;
   // Fan each host's requests in a row BENEATH that host, so the layout says the same thing the edges do.

@@ -5,6 +5,7 @@ import { requestCharter, requestPaneId, originLabel } from "@/features/debug/req
 import { bscRun } from "@/shared/lib/core/bsc";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
+import { designerSessionId, librarianSessionId, SOUND_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 
 // `vi.hoisted` because vi.mock is hoisted ABOVE plain consts: referencing a normal `const` from a mock
 // factory throws "Cannot access before initialization" the moment anything calls the mock early (the
@@ -16,8 +17,8 @@ const { queue, resetQueue } = vi.hoisted(() => {
   } = { rows: [] };
   const resetQueue = () => {
     queue.rows = [
-      { id: 1, status: "open", claimed_by: null, origin: "designer-studio:react", display_title: "ui list needs --kit" },
-      { id: 2, status: "open", claimed_by: null, origin: "librarian-studio:typescript", display_title: "impl list needs --domain" },
+      { id: 1, status: "open", claimed_by: null, origin: "design-studio:designer-react", display_title: "ui list needs --kit" },
+      { id: 2, status: "open", claimed_by: null, origin: "algorithms-studio:librarian-typescript", display_title: "impl list needs --domain" },
     ];
   };
   resetQueue();
@@ -103,8 +104,8 @@ describe("RequestSessionsMount — one session per request", () => {
     // Published with PROVENANCE, not as bare ids: the Glance node is labelled `debug - <title>` and
     // edged to the session that filed the request, and neither is derivable from an id.
     expect([...useAppStore.getState().activeDebugRequests].sort((a, b) => a.id - b.id)).toEqual([
-      { id: 1, origin: "designer-studio:react", title: "ui list needs --kit" },
-      { id: 2, origin: "librarian-studio:typescript", title: "impl list needs --domain" },
+      { id: 1, origin: "design-studio:designer-react", title: "ui list needs --kit" },
+      { id: 2, origin: "algorithms-studio:librarian-typescript", title: "impl list needs --domain" },
     ]);
   });
 
@@ -219,10 +220,10 @@ describe("the per-request charter", () => {
   // would leave the one actor who has to act on it — the debug session — unable to see it.
 
   it("names the session that filed the request, and how to reply to it", () => {
-    const c = requestCharter({ id: 85, origin: "designer-studio:react", display_title: "ui list needs --kit" });
+    const c = requestCharter({ id: 85, origin: "design-studio:designer-react", display_title: "ui list needs --kit" });
     expect(c).toContain('"ui list needs --kit"');
     expect(c).toContain("the react designer");
-    expect(c).toContain("`designer-studio:react`");
+    expect(c).toContain("`design-studio:designer-react`");
     // The reply channel matters as much as the attribution: a debug session that finds the request
     // ambiguous must have somewhere to say so that the filer actually reads back.
     expect(c).toContain('bsc request note 85');
@@ -239,10 +240,10 @@ describe("the per-request charter", () => {
   it("labels a per-technology studio by its technology, and falls back to the raw id", () => {
     // Two designers exist (react / react-native); the charter has to say WHICH, since the same gap
     // reported from either is a different reproduction.
-    expect(originLabel("designer-studio:react")).toBe("the react designer");
-    expect(originLabel("designer-studio:react-native")).toBe("the react-native designer");
-    expect(originLabel("librarian-studio:typescript")).toBe("the typescript librarian");
-    expect(originLabel("sound-studio:sound-designer")).toBe("sound-studio:sound-designer");
+    expect(originLabel(designerSessionId("react"))).toBe("the react designer");
+    expect(originLabel(designerSessionId("react-native"))).toBe("the react-native designer");
+    expect(originLabel(librarianSessionId("typescript"))).toBe("the typescript librarian");
+    expect(originLabel(SOUND_STUDIO_SESSION_ID)).toBe("the sound designer");
     // A director-filed request (the one non-studio filer) has no studio phrasing — better the raw
     // pane id than an invented role.
     expect(originLabel("myproject:director")).toBe("myproject:director");

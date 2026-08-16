@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_ORGS, STUDIO_NETWORK_ID } from "@/features/teams";
 import { BUILTIN_PERSONAS } from "@/features/personas";
-import { buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus, withProjectRequestNodes, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "@/features/glance/lib/studioProject";
+import { buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus, withProjectRequestNodes, studioNodeForOrigin, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "@/features/glance/lib/studioProject";
 import type { GlanceData } from "@/features/glance/lib/glanceData";
 import {
   designerSessionId,
@@ -29,7 +29,7 @@ describe("studioProject (#3319)", () => {
     const none = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, []);
     expect(none!.rawNodes.some((n) => n.id === "debugger")).toBe(false);
     const live = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, [
-      { id: 85, origin: "designer-studio:react", title: "ui list needs --kit" },
+      { id: 85, origin: designerSessionId("react"), title: "ui list needs --kit" },
     ]);
     expect(live!.rawNodes.some((n) => n.id === "debugger")).toBe(false);
     // …and the request node carries its label through to the graph, where the canvas reads `slug`.
@@ -55,7 +55,7 @@ describe("studioPaneIdForNode (#3326)", () => {
     // `debugger` node id resolves to nothing — while each request node still opens its own session.
     expect(studioPaneIdForNode("debugger")).toBeNull();
     const live = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, [
-      { id: 85, origin: "designer-studio:react", title: "x" },
+      { id: 85, origin: designerSessionId("react"), title: "x" },
     ])!;
     const nodeId = live.rawNodes.find((n) => n.id === "debugger-req-85")!.id;
     expect(studioPaneIdForNode(nodeId)).toBe("debug-studio:req-85");
@@ -94,6 +94,42 @@ describe("studioPaneIdForNode (#3326)", () => {
   });
 });
 
+describe("studioNodeForOrigin — pane id → the node a request hangs off", () => {
+  // ASSERTED AGAINST THE REAL ID BUILDERS, never against quoted literals. The first version of this
+  // resolver parsed `<role>-studio:<tech>` and returned null for every studio origin — no request node
+  // would have been drawn at all — and it passed tsc, eslint, 6823 vitest and clippy, because the tests
+  // quoted the same invented shape the code assumed. Importing `designerSessionId` is what makes that
+  // impossible: if the id format moves, this fails.
+  const perTech = new Set(["designer-react", "librarian-typescript", "architect"]);
+  const roles = new Set(["designer", "librarian", "architect"]);
+
+  it("resolves each real studio session to its per-technology node", () => {
+    expect(studioNodeForOrigin(designerSessionId("react"), perTech)).toBe("designer-react");
+    expect(studioNodeForOrigin(librarianSessionId("typescript"), perTech)).toBe("librarian-typescript");
+    expect(studioNodeForOrigin(TEAMS_STUDIO_SESSION_ID, perTech)).toBe("architect");
+  });
+
+  it("falls back to the ROLE node, because the two drills draw different id sets", () => {
+    // base-studio-code renders the packaged ROLE team (`designer`); the architect drill renders per-tech
+    // sessions (`designer-react`). The same request must land in either, not only one.
+    expect(studioNodeForOrigin(designerSessionId("react"), roles)).toBe("designer");
+    expect(studioNodeForOrigin(librarianSessionId("rust"), roles)).toBe("librarian");
+  });
+
+  it("is null for a non-studio pane, an unknown session, and empty input", () => {
+    // A director's request belongs in its project drill; attaching it to a default would assert a
+    // relationship that does not exist.
+    expect(studioNodeForOrigin("myproject:director", perTech)).toBeNull();
+    expect(studioNodeForOrigin("design-studio:designer-elm", perTech)).toBeNull();
+    expect(studioNodeForOrigin("", perTech)).toBeNull();
+    expect(studioNodeForOrigin(null, perTech)).toBeNull();
+  });
+
+  it("resolves for a node set that has neither form", () => {
+    expect(studioNodeForOrigin(designerSessionId("react"), new Set(["planner"]))).toBeNull();
+  });
+});
+
 describe("withProjectRequestNodes — a DIRECTOR-filed request (#debug-nodes-hang-off-the-session-that-filed-them)", () => {
   // The director is the one non-studio session allowed to file a global request (workers are denied
   // that queue on purpose). Its origin resolves to no Studio Network position, so the studio graph
@@ -112,7 +148,9 @@ describe("withProjectRequestNodes — a DIRECTOR-filed request (#debug-nodes-han
       { id: 7, origin: "myproject:director", title: "bsc plan needs --since" },
     ]);
     expect(d.rawNodes.find((n) => n.id === "debugger-req-7")?.slug).toBe("debug - bsc plan needs --since");
-    expect(d.rawEdges).toContainEqual({ from: "debugger-req-7", to: "director", kind: "api" });
+    // "from depends on to": the director is blocked on the fix, matching the studio graph, where
+    // buildOrgFleetData reverses every org relationship into the same shape.
+    expect(d.rawEdges).toContainEqual({ from: "director", to: "debugger-req-7", kind: "api" });
   });
 
   it("ignores requests from ANOTHER project's director, and from a studio session", () => {
@@ -120,7 +158,7 @@ describe("withProjectRequestNodes — a DIRECTOR-filed request (#debug-nodes-han
     // unscoped match would draw one director's request into every other project's graph.
     const d = withProjectRequestNodes(drill(), "myproject", [
       { id: 8, origin: "otherproject:director", title: "not mine" },
-      { id: 9, origin: "designer-studio:react", title: "the studio graph owns this one" },
+      { id: 9, origin: designerSessionId("react"), title: "the studio graph owns this one" },
     ]);
     expect(d.rawNodes.some((n) => n.id.startsWith("debugger-req-"))).toBe(false);
   });

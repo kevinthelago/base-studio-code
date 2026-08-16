@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   BUILTIN_ORGS, COMMUNICATION_FORMS, RELATIONSHIP_ARCHETYPES,
   makeBuiltinOrgs, reconcileOrgs, orgStructureKey, blankOrg, orgSlug, orgIssues, deriveCommunication,
-  archetypeById, formById, augmentStudioNetworkForRequests, studioNodeForOrigin, STUDIO_NETWORK_ID, type Team,
+  archetypeById, formById, augmentStudioNetworkForRequests, STUDIO_NETWORK_ID, type Team,
 } from "./team";
 
 describe("org vocabulary (#2193)", () => {
@@ -112,11 +112,24 @@ describe("built-in orgs (#2193)", () => {
 
   const studio = () => makeBuiltinOrgs().find((o) => o.id === STUDIO_NETWORK_ID)!;
 
+  // The REAL pane ids (`design-studio:designer-react`, not `designer-studio:react`) — see the note on
+  // `OriginHostResolver`. The resolver itself is injected and lives in `studioProject`, where it inverts
+  // the authoritative node↔session table; this stand-in models the same contract so the AUGMENT's own
+  // behaviour (labels, clustering, skipping) is tested without reaching into a glance module.
+  const host = (origin: string | null | undefined, present: ReadonlySet<string>): string | null => {
+    const map: Record<string, string> = {
+      "design-studio:designer-react": "designer",
+      "algorithms-studio:librarian-typescript": "librarian",
+    };
+    const node = map[(origin ?? "").trim()];
+    return node && present.has(node) ? node : null;
+  };
+
   it("adds one labelled node per request, edged to the session that FILED it", () => {
     const g = augmentStudioNetworkForRequests(studio(), [
-      { id: 85, origin: "designer-studio:react", title: "ui list needs --kit" },
-      { id: 102, origin: "librarian-studio:typescript", title: "impl list needs --domain" },
-    ]);
+      { id: 85, origin: "design-studio:designer-react", title: "ui list needs --kit" },
+      { id: 102, origin: "algorithms-studio:librarian-typescript", title: "impl list needs --domain" },
+    ], host);
     // The label is what makes a graph of several readable at a glance.
     expect(g.positions.find((p) => p.nodeId === "debugger-req-85")!.label).toBe("debug - ui list needs --kit");
     // …and the edge is the whole point: the librarian's request must NOT draw to the designer.
@@ -127,9 +140,9 @@ describe("built-in orgs (#2193)", () => {
 
   it("clusters several requests from ONE session under that session", () => {
     const g = augmentStudioNetworkForRequests(studio(), [
-      { id: 85, origin: "designer-studio:react", title: "a" },
-      { id: 86, origin: "designer-studio:react", title: "b" },
-    ]);
+      { id: 85, origin: "design-studio:designer-react", title: "a" },
+      { id: 86, origin: "design-studio:designer-react", title: "b" },
+    ], host);
     expect(g.relationships.filter((r) => r.to === "designer" && r.from.startsWith("debugger-req-"))).toHaveLength(2);
     // Fanned apart rather than stacked on one point — two nodes at one coordinate read as one node.
     const xs = ["debugger-req-85", "debugger-req-86"].map((id) => g.positions.find((p) => p.nodeId === id)!.x);
@@ -140,33 +153,23 @@ describe("built-in orgs (#2193)", () => {
     // A director-filed request (the one non-studio filer) belongs in its project's drill. Attaching it
     // to a default node would assert a relationship that does not exist; leaving it unparented reads as
     // a bug. Both are worse than omitting it here.
-    const g = augmentStudioNetworkForRequests(studio(), [{ id: 7, origin: "myproject:director", title: "x" }]);
+    const g = augmentStudioNetworkForRequests(studio(), [{ id: 7, origin: "myproject:director", title: "x" }], host);
     expect(g.positions.some((p) => p.nodeId === "debugger-req-7")).toBe(false);
     // Same for a request with no origin at all.
-    expect(augmentStudioNetworkForRequests(studio(), [{ id: 8, origin: null, title: "y" }])
+    expect(augmentStudioNetworkForRequests(studio(), [{ id: 8, origin: null, title: "y" }], host)
       .positions.some((p) => p.nodeId === "debugger-req-8")).toBe(false);
   });
 
   it("is idempotent, and a no-op with no requests or off the Studio Network", () => {
     const s = studio();
-    expect(augmentStudioNetworkForRequests(s, [])).toBe(s);
+    expect(augmentStudioNetworkForRequests(s, [], host)).toBe(s);
     const fleet = makeBuiltinOrgs().find((o) => o.id === "org-default-fleet")!;
-    expect(augmentStudioNetworkForRequests(fleet, [{ id: 1, origin: "designer-studio:react", title: "z" }])).toBe(fleet);
-    const once = augmentStudioNetworkForRequests(s, [{ id: 9, origin: "designer-studio:react", title: "z" }]);
-    expect(augmentStudioNetworkForRequests(once, [{ id: 9, origin: "designer-studio:react", title: "z" }])
+    const one = [{ id: 1, origin: "design-studio:designer-react", title: "z" }];
+    expect(augmentStudioNetworkForRequests(fleet, one, host)).toBe(fleet);
+    const nine = [{ id: 9, origin: "design-studio:designer-react", title: "z" }];
+    const once = augmentStudioNetworkForRequests(s, nine, host);
+    expect(augmentStudioNetworkForRequests(once, nine, host)
       .positions.filter((p) => p.nodeId === "debugger-req-9")).toHaveLength(1);
-  });
-
-  it("resolves a per-TECHNOLOGY origin to its technology node, falling back to the role", () => {
-    // The store records `designer-studio:react`, and the base-studio drill draws the ROLE node
-    // `designer` while the architect drill draws `designer-react`. Both must resolve, or the same
-    // request lands correctly in one graph and nowhere in the other.
-    const perTech = new Set(["designer-react", "librarian-typescript"]);
-    expect(studioNodeForOrigin("designer-studio:react", perTech)).toBe("designer-react");
-    expect(studioNodeForOrigin("designer-studio:react", new Set(["designer"]))).toBe("designer");
-    expect(studioNodeForOrigin("myproject:director", perTech)).toBeNull();
-    expect(studioNodeForOrigin("", perTech)).toBeNull();
-    expect(studioNodeForOrigin(null, perTech)).toBeNull();
   });
 });
 
