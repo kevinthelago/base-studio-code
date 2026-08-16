@@ -1,0 +1,41 @@
+{
+  "note": "CROSS-LANGUAGE CONTRACT (#runtime-attests-what-actually-ran). The frontend hashes the source it COMPILED; doctor hashes the source now in the store; \"is the record what is running\" is the comparison of those two values. If the two implementations disagree the whole attestation system reports noise, confidently. Both sides assert against this file: crates/bsc-runtime/src/hash.rs and @/shared/lib/runtime/attest. GENERATED, never hand-written — the first three cases are the PUBLISHED FNV-1a vectors, so a self-consistent-but-wrong implementation fails here.",
+  "algorithm": "fnv1a64-utf8-hex16",
+  "cases": [
+    {
+      "why": "empty — the bare offset basis",
+      "input": "",
+      "hash": "cbf29ce484222325"
+    },
+    {
+      "why": "the published single-char vector",
+      "input": "a",
+      "hash": "af63dc4c8601ec8c"
+    },
+    {
+      "why": "the published multi-char vector",
+      "input": "foobar",
+      "hash": "85944171f73967e8"
+    },
+    {
+      "why": "a realistic module line",
+      "input": "export const x = 1;\n",
+      "hash": "8e543092bdc94add"
+    },
+    {
+      "why": "UTF-8 BYTES, not UTF-16 units — a char-wise JS implementation agrees on ASCII and diverges here, which is the normal case in this repo (em dashes and arrows fill the comments)",
+      "input": "— an em dash —",
+      "hash": "72fd992c37f792f8"
+    },
+    {
+      "why": "a one-character edit must not read as the same version",
+      "input": "export const x = 2;\n",
+      "hash": "a959a192cd625b60"
+    },
+    {
+      "why": "a multi-line record body with mixed scripts",
+      "input": "export function ok() {\n  return \"ok — 完\";\n}\n",
+      "hash": "8270f2f4cc70c406"
+    }
+  ]
+}
