@@ -553,10 +553,17 @@ parallel file edits never collide. One item = one ref = one branch = one worktre
 1:1 chain is what makes a worker's state answerable from a single name. Every worktree agent runs the
 same lifecycle — the commands below are the full set it needs end to end.
 
-**1 · Set up the worktree** — the branch is the item's `ref` (1:1), cut from local `develop`:
+**1 · Get a worktree** — the branch is the item's `ref` (1:1), cut from local `develop`. **Reuse a free
+`wt-*` before creating a new one**; a free one already holds a warm `target/`, and that is worth about
+two minutes (see *Recycle, don't recreate* below):
 ```bash
 bsc plan get <ref>                                   # confirm the acceptance criteria FIRST
 bsc plan status <ref> in_progress
+
+# preferred — recycle a worktree whose item already landed
+cd wt-<short> && git checkout -B <ref> develop
+
+# only when none is free
 git worktree add wt-<short> -b <ref> develop
 ```
 Cut from **local `develop`**, not `origin/develop`: nothing is pushed any more, so integrations land
@@ -657,17 +664,45 @@ criterion from `bsc plan get <ref>`, then
 bsc plan status <ref> verified
 git merge --no-ff <ref>                              # into local develop; NEVER pipe this into a chain
 bsc plan change status <ref> merged --command <merge-sha> --from <reviewer>
-git worktree remove --force wt-<short>               # real node_modules → safe; a junction is NOT
+
+cd wt-<short> && git checkout -B <next-ref> develop  # RECYCLE it — see below; keeps the warm target/
 git branch -d <ref>                                  # fails while the branch is checked out in a worktree
 ```
 Verify the merge landed **before** deleting anything — a failed merge followed by a branch delete
-destroys the work, which is why these are separate commands and never `&&`-chained.
+destroys the work, which is why these are separate commands and never `&&`-chained. With no next item
+queued, leave the worktree parked on `develop` (`git checkout -B parked-<short> develop`) rather than
+removing it — a parked worktree is a warm `target/` waiting for the next claim.
+
+**Recycle, don't recreate.** A worktree's `target/` is the expensive part, and
+`git worktree remove` throws it away so the next item rebuilds it from nothing. Point the existing
+worktree at the next ref instead. Measured on a quiet machine, `cargo build -p bsc --bin bsc`:
+
+| | rebuild |
+|---|---|
+| fresh worktree, cold `target/` | **1m59s** |
+| recycled, new ref at the same commit | **0.41s** |
+| recycled, plus a real one-leaf-crate diff | **5.11s** |
+| recycled **across a root `Cargo.toml` profile change** | **2m21s** — *worse than cold* |
+
+Git does not touch mtimes when the resulting tree is identical, so cargo genuinely sees nothing to do;
+the normal cost is the size of the diff, not the size of the tree. The last row is the exception worth
+remembering: a branch that edits `Cargo.toml` profiles or `.cargo/config.toml` invalidates the
+**dependencies** too and leaves the tree holding two opt-level variants, so recycling across one is
+slower than starting cold — and it is the reason to batch config/profile edits rather than land them
+one at a time. When that happens, or when no worktree is free, `git worktree remove --force wt-<short>`
+(real `node_modules` → safe; a junction is **not**) and create a new one.
+
+This is not a substitute for the build cache — it is what remains after the cache is exhausted. sccache
+already serves ~232 of the ~263 cacheable compilations in a cold build; the rest are `crate-type`
+(proc-macros, bins, `cdylib`/`staticlib`), workspace crates whose **source path is part of the cache
+key** so they can never hit across worktrees, and linking. `CARGO_INCREMENTAL=0` and seeding a copied
+`target/` were both measured and are both losses.
 
 Gotchas:
 - **Base drift:** a branch cut from an older `develop` can fail an *unrelated* test that broke since.
   Refresh with `git merge develop` and re-gate rather than chasing a phantom failure.
-- Deleting the branch fails while it is checked out in a worktree — remove the **worktree** first,
-  then the branch (order matters).
+- Deleting the branch fails while it is checked out in a worktree — recycle it onto the next ref (or
+  remove it) **first**, then delete the branch (order matters).
 - A branch whose ref carries a migrated GitHub number (`4260-…`) is still purely local. The number is
   provenance, not a link to act on — do not `gh` anything on it.
 
