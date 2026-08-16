@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_ORGS, STUDIO_NETWORK_ID } from "@/features/teams";
 import { BUILTIN_PERSONAS } from "@/features/personas";
-import { buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "@/features/glance/lib/studioProject";
+import { buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus, withProjectRequestNodes, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "@/features/glance/lib/studioProject";
+import type { GlanceData } from "@/features/glance/lib/glanceData";
 import {
-  DEBUG_STUDIO_SESSION_ID, designerSessionId,
+  designerSessionId,
   librarianSessionId, TEAMS_STUDIO_SESSION_ID,
 } from "@/shared/lib/session/systemSessions";
 
@@ -15,41 +16,49 @@ describe("studioProject (#3319)", () => {
   });
 
   it("renders the Studio Network team's positions as nodes and relationships as edges", () => {
-    const d = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, false);
+    const d = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, []);
     expect(d).not.toBeNull();
     const ids = d!.rawNodes.map((n) => n.id);
     expect(ids).toEqual(expect.arrayContaining(["designer", "librarian", "architect"]));
     expect(d!.rawEdges.length).toBeGreaterThan(0);
   });
 
-  it("includes the debugger node IFF the debug toggle is on (#3317 augmentation)", () => {
-    const off = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, false);
-    const on = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, true);
-    expect(off!.rawNodes.some((n) => n.id === "debugger")).toBe(false);
-    expect(on!.rawNodes.some((n) => n.id === "debugger")).toBe(true);
+  // #debug-nodes-hang-off-the-session-that-filed-them: no standing `debugger` node, and no toggle that
+  // could add one. Debug work appears as the REQUESTS being worked, named for what each one is.
+  it("draws no debugger node without requests, and one per request with them", () => {
+    const none = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, []);
+    expect(none!.rawNodes.some((n) => n.id === "debugger")).toBe(false);
+    const live = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, [
+      { id: 85, origin: "designer-studio:react", title: "ui list needs --kit" },
+    ]);
+    expect(live!.rawNodes.some((n) => n.id === "debugger")).toBe(false);
+    // …and the request node carries its label through to the graph, where the canvas reads `slug`.
+    expect(live!.rawNodes.find((n) => n.id === "debugger-req-85")?.slug).toBe("debug - ui list needs --kit");
   });
 
   it("returns null when the Studio Network team isn't present (caller falls back, never crashes)", () => {
-    expect(buildStudioFleetData([], BUILTIN_PERSONAS, false)).toBeNull();
+    expect(buildStudioFleetData([], BUILTIN_PERSONAS, [])).toBeNull();
     const others = BUILTIN_ORGS.filter((t) => t.id !== STUDIO_NETWORK_ID);
-    expect(buildStudioFleetData(others, BUILTIN_PERSONAS, false)).toBeNull();
+    expect(buildStudioFleetData(others, BUILTIN_PERSONAS, [])).toBeNull();
   });
 
   it("marks library resource positions so the canvas draws them distinctly, not as agents (#3322)", () => {
-    const d = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, false)!;
+    const d = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, [])!;
     expect(d.rawNodes.find((n) => n.id === "library")?.resource).toBe(true);
     expect(d.rawNodes.find((n) => n.id === "designer-react")?.resource).toBeFalsy(); // an agent is not a resource
   });
 });
 
 describe("studioPaneIdForNode (#3326)", () => {
-  it("maps the debugger node to the TerminalHost-hosted debug session pane id", () => {
-    expect(studioPaneIdForNode("debugger")).toBe(DEBUG_STUDIO_SESSION_ID);
-    // The mapped id is the ACTUAL node id `buildStudioFleetData` emits when the toggle is on — so the
-    // morph wiring can't drift from the graph node.
-    const on = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, true)!;
-    const debugNodeId = on.rawNodes.find((n) => n.id === "debugger")!.id;
-    expect(studioPaneIdForNode(debugNodeId)).toBe(DEBUG_STUDIO_SESSION_ID);
+  it("maps a REQUEST node to its own session pane, and knows no standing debugger", () => {
+    // The standing session is gone (#debug-nodes-hang-off-the-session-that-filed-them), so the bare
+    // `debugger` node id resolves to nothing — while each request node still opens its own session.
+    expect(studioPaneIdForNode("debugger")).toBeNull();
+    const live = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, [
+      { id: 85, origin: "designer-studio:react", title: "x" },
+    ])!;
+    const nodeId = live.rawNodes.find((n) => n.id === "debugger-req-85")!.id;
+    expect(studioPaneIdForNode(nodeId)).toBe("debug-studio:req-85");
   });
 
   // #glance-resume: the designer/librarian/architect now map to their OWN app-owned session ids too, so
@@ -63,7 +72,7 @@ describe("studioPaneIdForNode (#3326)", () => {
     // packaged ROLE team (`designer`), the architect renders per-tech SESSIONS (`designer-react`) —
     // and a node that draws but cannot open is the failure mode this pins.
     for (const d of [
-      buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, false)!,
+      buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, [])!,
       buildArchitectFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS)!,
     ]) {
       // RESOURCE positions (the libraries each studio stewards) are not sessions and correctly resolve
@@ -85,17 +94,69 @@ describe("studioPaneIdForNode (#3326)", () => {
   });
 });
 
-describe("studioNodeHome (#glance-resume / #3357)", () => {
-  it("sends the debugger to the in-graph morph (it's hosted on the shared TerminalHost)", () => {
-    expect(studioNodeHome("debugger")).toEqual({ kind: "morph" });
+describe("withProjectRequestNodes — a DIRECTOR-filed request (#debug-nodes-hang-off-the-session-that-filed-them)", () => {
+  // The director is the one non-studio session allowed to file a global request (workers are denied
+  // that queue on purpose). Its origin resolves to no Studio Network position, so the studio graph
+  // correctly skips it — and it has to land somewhere, or an app-started session is invisible.
+  const drill = (): GlanceData => ({
+    rawNodes: [
+      { id: "director", slug: "director", role: "infra", roleLabel: "director", health: "healthy", activity: "building" },
+      { id: "api", slug: "api", role: "service", roleLabel: "worker", health: "healthy", activity: "building" },
+    ],
+    rawEdges: [],
+    sample: false,
   });
 
-  it("sends EVERY studio session to the in-graph morph now that all four live on TerminalHost (#3357)", () => {
+  it("adds the node against THIS project's director, labelled with the request", () => {
+    const d = withProjectRequestNodes(drill(), "myproject", [
+      { id: 7, origin: "myproject:director", title: "bsc plan needs --since" },
+    ]);
+    expect(d.rawNodes.find((n) => n.id === "debugger-req-7")?.slug).toBe("debug - bsc plan needs --since");
+    expect(d.rawEdges).toContainEqual({ from: "debugger-req-7", to: "director", kind: "api" });
+  });
+
+  it("ignores requests from ANOTHER project's director, and from a studio session", () => {
+    // Scoping is the whole risk here: every project drill sees the same global request list, so an
+    // unscoped match would draw one director's request into every other project's graph.
+    const d = withProjectRequestNodes(drill(), "myproject", [
+      { id: 8, origin: "otherproject:director", title: "not mine" },
+      { id: 9, origin: "designer-studio:react", title: "the studio graph owns this one" },
+    ]);
+    expect(d.rawNodes.some((n) => n.id.startsWith("debugger-req-"))).toBe(false);
+  });
+
+  it("is a no-op with no requests, no project key, or no director drawn", () => {
+    const base = drill();
+    expect(withProjectRequestNodes(base, "myproject", [])).toBe(base);
+    expect(withProjectRequestNodes(base, "", [{ id: 7, origin: "myproject:director", title: "x" }])).toBe(base);
+    // A drill with no director node has nothing to hang the request off — skip rather than orphan it.
+    const noDirector: GlanceData = { ...base, rawNodes: base.rawNodes.filter((n) => n.id !== "director") };
+    expect(withProjectRequestNodes(noDirector, "myproject", [{ id: 7, origin: "myproject:director", title: "x" }]))
+      .toBe(noDirector);
+  });
+
+  it("is idempotent — a re-render must not double the node", () => {
+    const reqs = [{ id: 7, origin: "myproject:director", title: "x" }];
+    const once = withProjectRequestNodes(drill(), "myproject", reqs);
+    const twice = withProjectRequestNodes(once, "myproject", reqs);
+    expect(twice.rawNodes.filter((n) => n.id === "debugger-req-7")).toHaveLength(1);
+  });
+});
+
+describe("studioNodeHome (#glance-resume / #3357)", () => {
+  // The bare `debugger` node has NO home any more (#debug-nodes-hang-off-the-session-that-filed-them):
+  // the standing session it opened is gone. Its per-request successors have one — asserted below, where
+  // the request-session cases live.
+  it("has no home for the retired standing debugger node", () => {
+    expect(studioNodeHome("debugger")).toBeNull();
+  });
+
+  it("sends EVERY studio session to the in-graph morph now that they live on TerminalHost (#3357)", () => {
     // Before #3357 the designer/librarian/architect ran their own single-mount xterm (`useScreenSession`),
     // which the host could not re-parent — so opening one had to navigate to its workspace page. They are
     // now TerminalHost-hosted like the debugger, so the graph morphs the node into the live terminal
     // instead of throwing the user onto another page.
-    for (const id of ["designer-react", "librarian-rust", "architect", "debugger"]) {
+    for (const id of ["designer-react", "librarian-rust", "architect"]) {
       expect(studioNodeHome(id)).toEqual({ kind: "morph" });
     }
   });
@@ -108,10 +169,13 @@ describe("studioNodeHome (#glance-resume / #3357)", () => {
 });
 
 describe("studioSessionLive (#glance-resume)", () => {
-  const none = { debugSession: false, paneClaudeActive: {}, paneStatus: {} };
+  const none = { paneClaudeActive: {}, paneStatus: {} };
 
-  it("reads the debugger from the Settings debug toggle", () => {
-    expect(studioSessionLive("debugger", { ...none, debugSession: true })).toBe(true);
+  // The `debugger` special case is GONE with the standing node
+  // (#debug-nodes-hang-off-the-session-that-filed-them). It read liveness off the Settings FLAG, which
+  // answered "is the toggle on", not "is a session running" — every other node has always been judged
+  // by its own pane, and now every node is.
+  it("has no flag-driven special case left — liveness is a pane question for every node", () => {
     expect(studioSessionLive("debugger", none)).toBe(false);
   });
 
@@ -124,7 +188,7 @@ describe("studioSessionLive (#glance-resume)", () => {
   it("is false when the session isn't up, and for a node with no session at all", () => {
     expect(studioSessionLive("designer-react", none)).toBe(false);
     expect(studioSessionLive("designer-react", { ...none, paneStatus: { [designerSessionId("react")]: "idle" } })).toBe(false);
-    expect(studioSessionLive("library", { ...none, debugSession: true })).toBe(false);
+    expect(studioSessionLive("library", { ...none })).toBe(false);
   });
 });
 
@@ -194,7 +258,9 @@ describe("request sessions appear as openable nodes (#one-request-one-debug-sess
     // drill renders roles, and a node that draws but cannot open is worse than no node.
     expect(studioPaneIdForNode("designer")).toBe(designerSessionId("react"));
     expect(studioPaneIdForNode("librarian")).toBe(librarianSessionId("typescript"));
-    expect(studioPaneIdForNode("debugger")).toBe("debug-studio:debugger");
+    // The standing session's node resolves to NOTHING now — it is retired, and a node id that still
+    // mapped to a pane would keep a dead session openable.
+    expect(studioPaneIdForNode("debugger")).toBeNull();
     expect(studioPaneIdForNode("some-library")).toBeNull();
     expect(studioPaneIdForNode("debugger-req-")).toBeNull();
     expect(studioPaneIdForNode("debugger-req-x")).toBeNull();

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   BUILTIN_ORGS, COMMUNICATION_FORMS, RELATIONSHIP_ARCHETYPES,
   makeBuiltinOrgs, reconcileOrgs, orgStructureKey, blankOrg, orgSlug, orgIssues, deriveCommunication,
-  archetypeById, formById, augmentStudioNetworkForDebug, augmentStudioNetworkForRequests, STUDIO_NETWORK_ID, type Team,
+  archetypeById, formById, augmentStudioNetworkForRequests, studioNodeForOrigin, STUDIO_NETWORK_ID, type Team,
 } from "./team";
 
 describe("org vocabulary (#2193)", () => {
@@ -104,19 +104,69 @@ describe("built-in orgs (#2193)", () => {
     expect(stewards("architect", "teams")).toBe(true);
   });
 
-  it("augmentStudioNetworkForDebug adds the debugger (serves designer) IFF the debug session is on (#3317)", () => {
-    const studio = makeBuiltinOrgs().find((o) => o.id === STUDIO_NETWORK_ID)!;
-    // Off → unchanged (same reference).
-    expect(augmentStudioNetworkForDebug(studio, false)).toBe(studio);
-    // On → a debugger node (backed by persona-debugger, #3322) + a serves→designer edge, added (not persisted).
-    const on = augmentStudioNetworkForDebug(studio, true);
-    const dbg = on.positions.find((p) => p.nodeId === "debugger")!;
-    expect(dbg).toMatchObject({ kind: "agent", personaId: "persona-debugger" });
-    expect(on.relationships.some((r) => r.archetype === "serves" && r.from === "debugger" && r.to === "designer")).toBe(true);
-    // Idempotent, and a no-op for a non-studio team.
-    expect(augmentStudioNetworkForDebug(on, true).positions.filter((p) => p.nodeId === "debugger")).toHaveLength(1);
+  // ── #debug-nodes-hang-off-the-session-that-filed-them ──────────────────────────────────────────
+  //
+  // The standing `debugger` node is GONE, and with it the test that asserted a toggle added it. What
+  // replaced it is per-request nodes edged to WHOEVER FILED the request — the thing the old
+  // augmentation could not express, because it hardwired every request's edge to `designer`.
+
+  const studio = () => makeBuiltinOrgs().find((o) => o.id === STUDIO_NETWORK_ID)!;
+
+  it("adds one labelled node per request, edged to the session that FILED it", () => {
+    const g = augmentStudioNetworkForRequests(studio(), [
+      { id: 85, origin: "designer-studio:react", title: "ui list needs --kit" },
+      { id: 102, origin: "librarian-studio:typescript", title: "impl list needs --domain" },
+    ]);
+    // The label is what makes a graph of several readable at a glance.
+    expect(g.positions.find((p) => p.nodeId === "debugger-req-85")!.label).toBe("debug - ui list needs --kit");
+    // …and the edge is the whole point: the librarian's request must NOT draw to the designer.
+    const to = (id: string) => g.relationships.find((r) => r.from === id)!.to;
+    expect(to("debugger-req-85")).toBe("designer");
+    expect(to("debugger-req-102")).toBe("librarian");
+  });
+
+  it("clusters several requests from ONE session under that session", () => {
+    const g = augmentStudioNetworkForRequests(studio(), [
+      { id: 85, origin: "designer-studio:react", title: "a" },
+      { id: 86, origin: "designer-studio:react", title: "b" },
+    ]);
+    expect(g.relationships.filter((r) => r.to === "designer" && r.from.startsWith("debugger-req-"))).toHaveLength(2);
+    // Fanned apart rather than stacked on one point — two nodes at one coordinate read as one node.
+    const xs = ["debugger-req-85", "debugger-req-86"].map((id) => g.positions.find((p) => p.nodeId === id)!.x);
+    expect(new Set(xs).size).toBe(2);
+  });
+
+  it("SKIPS a request whose origin has no position here rather than parenting it wrongly", () => {
+    // A director-filed request (the one non-studio filer) belongs in its project's drill. Attaching it
+    // to a default node would assert a relationship that does not exist; leaving it unparented reads as
+    // a bug. Both are worse than omitting it here.
+    const g = augmentStudioNetworkForRequests(studio(), [{ id: 7, origin: "myproject:director", title: "x" }]);
+    expect(g.positions.some((p) => p.nodeId === "debugger-req-7")).toBe(false);
+    // Same for a request with no origin at all.
+    expect(augmentStudioNetworkForRequests(studio(), [{ id: 8, origin: null, title: "y" }])
+      .positions.some((p) => p.nodeId === "debugger-req-8")).toBe(false);
+  });
+
+  it("is idempotent, and a no-op with no requests or off the Studio Network", () => {
+    const s = studio();
+    expect(augmentStudioNetworkForRequests(s, [])).toBe(s);
     const fleet = makeBuiltinOrgs().find((o) => o.id === "org-default-fleet")!;
-    expect(augmentStudioNetworkForDebug(fleet, true)).toBe(fleet);
+    expect(augmentStudioNetworkForRequests(fleet, [{ id: 1, origin: "designer-studio:react", title: "z" }])).toBe(fleet);
+    const once = augmentStudioNetworkForRequests(s, [{ id: 9, origin: "designer-studio:react", title: "z" }]);
+    expect(augmentStudioNetworkForRequests(once, [{ id: 9, origin: "designer-studio:react", title: "z" }])
+      .positions.filter((p) => p.nodeId === "debugger-req-9")).toHaveLength(1);
+  });
+
+  it("resolves a per-TECHNOLOGY origin to its technology node, falling back to the role", () => {
+    // The store records `designer-studio:react`, and the base-studio drill draws the ROLE node
+    // `designer` while the architect drill draws `designer-react`. Both must resolve, or the same
+    // request lands correctly in one graph and nowhere in the other.
+    const perTech = new Set(["designer-react", "librarian-typescript"]);
+    expect(studioNodeForOrigin("designer-studio:react", perTech)).toBe("designer-react");
+    expect(studioNodeForOrigin("designer-studio:react", new Set(["designer"]))).toBe("designer");
+    expect(studioNodeForOrigin("myproject:director", perTech)).toBeNull();
+    expect(studioNodeForOrigin("", perTech)).toBeNull();
+    expect(studioNodeForOrigin(null, perTech)).toBeNull();
   });
 });
 
@@ -222,40 +272,3 @@ describe("archetypeById", () => {
   });
 });
 
-describe("augmentStudioNetworkForRequests — one node per request (#one-request-one-debug-session)", () => {
-  const studio = (): Team => ({
-    id: STUDIO_NETWORK_ID,
-    name: "Studio Network",
-    positions: [{ nodeId: "designer", kind: "agent", personaId: "persona-designer", x: 0, y: 0 }],
-    relationships: [],
-  } as unknown as Team);
-
-  it("adds one node per live request", () => {
-    const t = augmentStudioNetworkForRequests(studio(), [0, 1]);
-    expect(t.positions.map((p) => p.nodeId)).toEqual(["designer", "debugger-req-0", "debugger-req-1"]);
-    // Fanned along x so N sessions never stack on a single point.
-    const xs = t.positions.filter((p) => p.nodeId.startsWith("debugger-req-")).map((p) => p.x);
-    expect(new Set(xs).size).toBe(2);
-  });
-
-  it("relates each to the DESIGNER, never to the debugger node", () => {
-    // The `debugger` node only exists while the debugSession flag is on; an edge to it would dangle
-    // whenever a request session runs with that flag off.
-    const t = augmentStudioNetworkForRequests(studio(), [5]);
-    const rel = t.relationships.find((r) => r.from === "debugger-req-5");
-    expect(rel?.to).toBe("designer");
-    expect(t.relationships.some((r) => r.to === "debugger")).toBe(false);
-  });
-
-  it("is idempotent and a no-op when there is nothing to add", () => {
-    const once = augmentStudioNetworkForRequests(studio(), [1]);
-    expect(augmentStudioNetworkForRequests(once, [1])).toBe(once);
-    const base = studio();
-    expect(augmentStudioNetworkForRequests(base, [])).toBe(base);
-  });
-
-  it("never touches a team that is not the Studio Network", () => {
-    const other = { ...studio(), id: "some-other-team" } as Team;
-    expect(augmentStudioNetworkForRequests(other, [1, 2])).toBe(other);
-  });
-});

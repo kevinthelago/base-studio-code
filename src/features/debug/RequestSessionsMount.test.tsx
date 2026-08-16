@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { RequestSessionsMount } from "./RequestSessionsMount";
 import { requestCharter, requestPaneId, originLabel } from "@/features/debug/requestSession";
 import { bscRun } from "@/shared/lib/core/bsc";
@@ -11,11 +11,13 @@ import { useAppStore } from "@/store";
 // store does, at init). The tests still passed green while that rejection fired — exactly the kind of
 // green-but-throwing suite worth not shipping.
 const { queue, resetQueue } = vi.hoisted(() => {
-  const queue: { rows: { id: number; status: string; claimed_by: string | null }[] } = { rows: [] };
+  const queue: {
+    rows: { id: number; status: string; claimed_by: string | null; origin: string | null; display_title: string }[];
+  } = { rows: [] };
   const resetQueue = () => {
     queue.rows = [
-      { id: 1, status: "open", claimed_by: null },
-      { id: 2, status: "open", claimed_by: null },
+      { id: 1, status: "open", claimed_by: null, origin: "designer-studio:react", display_title: "ui list needs --kit" },
+      { id: 2, status: "open", claimed_by: null, origin: "librarian-studio:typescript", display_title: "impl list needs --domain" },
     ];
   };
   resetQueue();
@@ -58,25 +60,31 @@ vi.mock("@/shared/hooks/usePoll", () => ({
 }));
 
 // Unmount every rendered component between tests. Without it, a prior test's RequestSessionsMount stays
-// mounted and subscribed to the store, so a later test that toggles `autoSpawnDebugSessions` also drives
-// the stale instances — which was masking a mutation of the prune-on-transition guard in the full run
-// (#3522). The gate runs the full file, so this matters.
+// mounted and subscribed to the store, so a later test also drives the stale instances — which was
+// masking a mutation of the prune guard in the full run (#3522). The gate runs the full file.
 afterEach(cleanup);
 
-// #3836: every describe below must start from the SAME state. `#3522` used to reset only
-// `autoSpawnDebugSessions`, so when the shuffled order put it after the pool block it inherited that
-// block's sessions + seeded prompts and measured something different. One reset, shared by all of them.
+// #3836: every describe below must start from the SAME state — otherwise a shuffled order lets one
+// block inherit another's sessions + seeded prompts and measure something different.
 const resetAll = () => {
   resetQueue();
-  useAppStore.setState({
-    autoSpawnDebugSessions: false, paneContinue: {}, paneStartupPromptText: {}, activeDebugSlots: [],
-  });
+  // RE-INSTALL the default safeInvoke behaviour. One test overrides it to simulate a machine with no
+  // source tree, and `mockImplementation` persists for the whole FILE — so without this reset every
+  // later test silently ran against a null repo root and asserted nothing spawning, which is a green
+  // suite proving the opposite of the feature.
+  vi.mocked(safeInvoke).mockImplementation(async (cmd: string) => (cmd === "reload_sidecars" ? [] : "C:/repo"));
+  useAppStore.setState({ paneContinue: {}, paneStartupPromptText: {}, activeDebugRequests: [] });
 };
 
 describe("RequestSessionsMount — one session per request", () => {
   beforeEach(resetAll);
 
-  it("spawns NOTHING while auto-spawn is off — the default", async () => {
+  // #debug-nodes-hang-off-the-session-that-filed-them: there is NO toggle any more. The test that used
+  // to live here asserted the off-by-default behaviour, which WAS the bug — the whole 1:1 machinery
+  // shipped switched off, so a filed request waited for someone to notice. What replaces it is the one
+  // gate that is not a preference: a machine with no source tree cannot run these at all.
+  it("spawns nothing when there is no source tree — a shipped binary, not a preference", async () => {
+    vi.mocked(safeInvoke).mockImplementation(async (cmd: string) => (cmd === "reload_sidecars" ? [] : null));
     const { container } = render(<RequestSessionsMount />);
     await new Promise((r) => setTimeout(r, 0));
     expect(useAppStore.getState().paneStartupPromptText).toEqual({});
@@ -87,26 +95,27 @@ describe("RequestSessionsMount — one session per request", () => {
     // The pool deliberately started one per cycle to pace growth toward a cap. 1:1 has no cap and so
     // nothing to pace against; staggering would only make the queue drain slower. This is the assertion
     // that would have failed under the old model, so it is the one that pins the change.
-    useAppStore.setState({ autoSpawnDebugSessions: true });
     render(<RequestSessionsMount />);
     await waitFor(() => {
       expect(Object.keys(useAppStore.getState().paneStartupPromptText).sort())
         .toEqual([requestPaneId(1), requestPaneId(2)].sort());
     });
-    // Published as REQUEST IDS now, not anonymous slots — this is what labels the Glance nodes.
-    expect([...useAppStore.getState().activeDebugSlots].sort()).toEqual([1, 2]);
+    // Published with PROVENANCE, not as bare ids: the Glance node is labelled `debug - <title>` and
+    // edged to the session that filed the request, and neither is derivable from an id.
+    expect([...useAppStore.getState().activeDebugRequests].sort((a, b) => a.id - b.id)).toEqual([
+      { id: 1, origin: "designer-studio:react", title: "ui list needs --kit" },
+      { id: 2, origin: "librarian-studio:typescript", title: "impl list needs --domain" },
+    ]);
   });
 
   it("CLAIMS each request before binding a session to it", async () => {
-    // The claim is what turns `open` into a definite id to bind to, and what stops the standing debug
-    // session working the same request. If the mount ever stopped claiming, both would race.
-    useAppStore.setState({ autoSpawnDebugSessions: true });
+    // The claim is what turns `open` into a definite id to bind to. It stays atomic even though the
+    // standing session it used to race is gone: two app instances on one machine share this queue.
     render(<RequestSessionsMount />);
     await waitFor(() => expect(queue.rows.every((r) => r.status === "claimed")).toBe(true));
   });
 
   it("launches each session FRESH — never resumes (#3497)", async () => {
-    useAppStore.setState({ autoSpawnDebugSessions: true });
     render(<RequestSessionsMount />);
     await waitFor(() => {
       expect(useAppStore.getState().paneContinue[requestPaneId(1)]).toBe(false);
@@ -115,7 +124,6 @@ describe("RequestSessionsMount — one session per request", () => {
   });
 
   it("charters each session with ITS OWN request, not a generic claim", async () => {
-    useAppStore.setState({ autoSpawnDebugSessions: true });
     render(<RequestSessionsMount />);
     await waitFor(() => {
       const p = useAppStore.getState().paneStartupPromptText[requestPaneId(2)];
@@ -142,7 +150,6 @@ describe("a resolved request goes live without a restart", () => {
   it("re-stages the sidecar when a session closes because its request resolved", async () => {
     // The point of the whole loop: the debug session rebuilt `bsc`, so the new binary has to be staged
     // and the warm child retired before the NEXT call, or the fix sits on disk unused until a restart.
-    useAppStore.setState({ autoSpawnDebugSessions: true });
     const { rerender } = render(<RequestSessionsMount />);
     await waitFor(() => expect(Object.keys(useAppStore.getState().paneStartupPromptText)).toHaveLength(2));
 
@@ -156,14 +163,13 @@ describe("a resolved request goes live without a restart", () => {
   it("does NOT reload while nothing has closed — a steady queue must not restage on every poll", async () => {
     // Staging is a file copy that parks a locked binary as `.old-<stamp>`. Doing it on every 20s tick
     // would churn the sidecar dir for no reason and, worse, retire a perfectly good warm child each time.
-    useAppStore.setState({ autoSpawnDebugSessions: true });
     render(<RequestSessionsMount />);
     await waitFor(() => expect(Object.keys(useAppStore.getState().paneStartupPromptText)).toHaveLength(2));
     expect(reloadCalls()).toHaveLength(0);
   });
 });
 
-describe("pruning completed requests when auto-spawn turns on (#3522)", () => {
+describe("pruning completed requests (#3522)", () => {
   const pruneCalls = () =>
     vi.mocked(bscRun).mock.calls.filter(([, args]) => args[0] === "request" && args[1] === "prune");
 
@@ -172,30 +178,22 @@ describe("pruning completed requests when auto-spawn turns on (#3522)", () => {
     resetAll();
   });
 
-  // FIRST, from a clean slate: mounting with the setting ALREADY on must not prune (see #3522 — this is
-  // the only case that distinguishes "prune on transition" from "prune whenever enabled").
-  it("does NOT prune on a persisted-on startup — that is not 'turning it on'", async () => {
-    useAppStore.setState({ autoSpawnDebugSessions: true });
+  // The trigger MOVED with the toggle (#debug-nodes-hang-off-the-session-that-filed-them). It used to
+  // fire on the off→on transition — the only moment a user could express "start working the queue".
+  // With no toggle, mount is that moment, and it is still exactly ONCE: a resolved row left in the
+  // store would otherwise linger as a node for a request nobody is working.
+  it("prunes ONCE on mount", async () => {
     render(<RequestSessionsMount />);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(pruneCalls()).toHaveLength(0);
-  });
-
-  it("prunes ONCE on the off→on transition — the user turning the setting on", async () => {
-    render(<RequestSessionsMount />);
-    expect(pruneCalls()).toHaveLength(0);
-    act(() => useAppStore.setState({ autoSpawnDebugSessions: true }));
     await waitFor(() => expect(pruneCalls()).toHaveLength(1));
     expect(pruneCalls()[0]).toEqual([null, ["request", "prune"]]);
   });
 
-  it("does NOT prune when turned OFF, and never re-prunes without a new transition", async () => {
-    useAppStore.setState({ autoSpawnDebugSessions: true });
-    render(<RequestSessionsMount />);
+  it("does not re-prune on a re-render — staging churn is the thing this avoids", async () => {
+    const { rerender } = render(<RequestSessionsMount />);
+    await waitFor(() => expect(pruneCalls()).toHaveLength(1));
+    rerender(<RequestSessionsMount />);
     await new Promise((r) => setTimeout(r, 0));
-    act(() => useAppStore.setState({ autoSpawnDebugSessions: false }));
-    await new Promise((r) => setTimeout(r, 0));
-    expect(pruneCalls()).toHaveLength(0);
+    expect(pruneCalls()).toHaveLength(1);
   });
 });
 

@@ -107,16 +107,6 @@ describe("sandboxConsoles setting (#1988)", () => {
   });
 });
 
-describe("debugSession setting (#3298)", () => {
-  it("is off by default and toggles via the setter", () => {
-    expect(useAppStore.getState().debugSession).toBe(false);
-    useAppStore.getState().setDebugSession(true);
-    expect(useAppStore.getState().debugSession).toBe(true);
-    useAppStore.getState().setDebugSession(false);
-    expect(useAppStore.getState().debugSession).toBe(false);
-  });
-});
-
 describe("activeStudioTargets (studio network #2940)", () => {
   it("is empty by default and the pump can publish the reachable set", () => {
     expect(useAppStore.getState().activeStudioTargets).toEqual([]);
@@ -2327,17 +2317,8 @@ describe("canonicalizePlanStages collapses stale title-named sections (#803)", (
   });
 });
 
-describe("auto-spawn setting (#3498)", () => {
-  it("is OFF by default — auto-spawn is opt-in, never inherited", () => {
-    // The outer gate of the auto-spawn boundary. A default of ON would mean an upgrade silently
-    // grants the app permission to start sessions by itself.
-    expect(useAppStore.getState().autoSpawnDebugSessions).toBe(false);
-  });
-
-  it("toggles", () => {
-    useAppStore.getState().setAutoSpawnDebugSessions(true);
-    expect(useAppStore.getState().autoSpawnDebugSessions).toBe(true);
-    useAppStore.getState().setAutoSpawnDebugSessions(false);
-    expect(useAppStore.getState().autoSpawnDebugSessions).toBe(false);
-  });
-});
+// BOTH DEBUG-TOGGLE BLOCKS ARE GONE (#debug-nodes-hang-off-the-session-that-filed-them). `debugSession`
+// gated a standing debugger node that no longer exists, and `autoSpawnDebugSessions` gated the
+// per-request sessions — off by default, which shipped that whole feature switched off. The behaviour
+// they used to guard is now asserted where it actually lives: RequestSessionsMount.test.tsx pins that
+// the mount runs unconditionally and stops only where a source tree cannot be resolved.
