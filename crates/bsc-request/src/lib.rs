@@ -45,7 +45,28 @@ pub struct Request {
     /// When the request was claimed (epoch ms). Null unless claimed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claimed_at: Option<i64>,
+    /// WHO filed it — the filing session's pane id (#debug-request-carries-its-origin), stamped by
+    /// `bsc request new` from `$BSC_AUDIT_PANE`. `designer-studio:react`, `librarian-studio:typescript`,
+    /// `myproject:director`, … Null when nothing filed it from a session, which is deliberate: a
+    /// fabricated attribution is worse than an absent one, and the graph hangs a request's debug session
+    /// off this node.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    /// The EXPLICIT short name, when one was given (`--title`). Null on a legacy row and on any request
+    /// filed without the flag — read {@link Request::display_title} instead, which is always populated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The title to SHOW — the explicit `title` when there is one, else derived from `text`. ALWAYS
+    /// present, so every consumer (the graph node label above all) has a non-empty label without
+    /// reimplementing the fallback, and a legacy row needs no backfill.
+    ///
+    /// Computed at row-decode ([`row_to_request`]), never stored: freezing the derivation into the row
+    /// would mean improving it later left every existing request on the old one.
+    pub display_title: String,
 }
+
+/// The longest derived title — long enough to carry a real phrase, short enough for a graph node label.
+const TITLE_MAX: usize = 48;
 
 impl Request {
     /// Claimable — not yet taken by a session, not resolved.
@@ -58,6 +79,44 @@ impl Request {
     }
 }
 
+/// Derive a short title from a request's `text` (#debug-request-carries-its-origin).
+///
+/// `text` is the full narration — routinely a sentence or a paragraph — and a graph node needs a phrase.
+/// Take the first sentence when one ends early enough, else the first {@link TITLE_MAX} characters cut at
+/// a WORD boundary so a label never ends mid-word. Whitespace (including the newlines a shell heredoc
+/// leaves) collapses to single spaces first, since a label is one line.
+///
+/// Never returns empty for non-empty input, and returns `"(untitled)"` for input that is empty or all
+/// whitespace — a request with no text is a corrupt row, and a blank label would render as a nameless
+/// node rather than a visibly broken one.
+pub fn derive_title(text: &str) -> String {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.is_empty() {
+        return "(untitled)".to_string();
+    }
+    // A sentence end that lands inside the budget is the best title the text offers.
+    //
+    // `TITLE_MAX + 1` chars are examined, not `TITLE_MAX`: the head is everything BEFORE the mark, so a
+    // mark at index TITLE_MAX yields a head of exactly TITLE_MAX — at budget, not over it. Taking only
+    // TITLE_MAX dropped that case to the eliding branch, which is a whole sentence lost to an ellipsis.
+    if let Some(end) = flat.char_indices().take(TITLE_MAX + 1).find(|(_, c)| matches!(c, '.' | '!' | '?')) {
+        let head = flat[..end.0].trim();
+        if !head.is_empty() {
+            return head.to_string();
+        }
+    }
+    if flat.chars().count() <= TITLE_MAX {
+        return flat;
+    }
+    // Cut at a word boundary within budget; fall back to the hard cut for a single long token.
+    let cut: usize = flat.char_indices().nth(TITLE_MAX).map(|(i, _)| i).unwrap_or(flat.len());
+    let head = &flat[..cut];
+    match head.rfind(' ') {
+        Some(sp) if sp > 0 => format!("{}…", &head[..sp]),
+        _ => format!("{head}…"),
+    }
+}
+
 /// The write shape for a new request (`surface` empty falls back to {@link DEFAULT_SURFACE}).
 #[derive(Debug, Clone, Default)]
 pub struct NewRequest {
@@ -66,6 +125,13 @@ pub struct NewRequest {
     pub cmd: Option<String>,
     pub shot_path: Option<String>,
     pub ts: i64,
+    /// The filing session's pane id (#debug-request-carries-its-origin). The CLI stamps it from
+    /// `$BSC_AUDIT_PANE`; `None` records NULL rather than guessing.
+    pub origin: Option<String>,
+    /// An explicit short title. `None` stores NULL and readers derive one from `text`
+    /// ([`Request::display_title`]) — the derivation is deliberately NOT frozen into the row, so
+    /// improving it improves every existing request.
+    pub title: Option<String>,
 }
 
 /// Filters for [`Store::list`]. All-default lists every request, newest first.
@@ -107,10 +173,14 @@ impl Store {
     /// File a request; returns it with its assigned id. A blank `surface` falls back to the default.
     pub fn create(&self, n: &NewRequest) -> rusqlite::Result<Request> {
         let surface = if n.surface.trim().is_empty() { DEFAULT_SURFACE } else { n.surface.as_str() };
+        // Blank strings normalize to NULL: a `--from ""` or `--title ""` is an ABSENT value, and storing
+        // the empty string instead would make `display_title` and the graph's origin lookup treat "we were
+        // told nothing" as "we were told it is empty".
+        let blank_to_none = |s: &Option<String>| s.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
         self.conn.execute(
-            "INSERT INTO requests (text, surface, cmd, shot_path, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, 'open', ?5)",
-            params![n.text, surface, n.cmd, n.shot_path, n.ts],
+            "INSERT INTO requests (text, surface, cmd, shot_path, status, created_at, origin, title)
+             VALUES (?1, ?2, ?3, ?4, 'open', ?5, ?6, ?7)",
+            params![n.text, surface, n.cmd, n.shot_path, n.ts, blank_to_none(&n.origin), blank_to_none(&n.title)],
         )?;
         let id = self.conn.last_insert_rowid();
         Ok(self.get(id)?.expect("request exists after insert"))
@@ -265,12 +335,14 @@ pub struct RequestNote {
 
 /// The column list `row_to_request` decodes, in one place so the SELECTs can't drift from the mapper.
 const COLS: &str =
-    "id, text, surface, cmd, shot_path, status, note, created_at, resolved_at, claimed_by, claimed_at";
+    "id, text, surface, cmd, shot_path, status, note, created_at, resolved_at, claimed_by, claimed_at, origin, title";
 
 fn row_to_request(r: &rusqlite::Row) -> rusqlite::Result<Request> {
+    // Read once, then move into the struct — `display_title` needs both before either is placed.
+    let text: String = r.get(1)?;
+    let title: Option<String> = r.get(12)?;
     Ok(Request {
         id: r.get(0)?,
-        text: r.get(1)?,
         surface: r.get(2)?,
         cmd: r.get(3)?,
         shot_path: r.get(4)?,
@@ -280,6 +352,15 @@ fn row_to_request(r: &rusqlite::Row) -> rusqlite::Result<Request> {
         resolved_at: r.get(8)?,
         claimed_by: r.get(9)?,
         claimed_at: r.get(10)?,
+        origin: r.get(11)?,
+        title: title.clone(),
+        // Derived HERE so every reader — CLI, app, graph — sees one label and none of them has to know
+        // the fallback rule.
+        display_title: match title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+            Some(t) => t.to_string(),
+            None => derive_title(&text),
+        },
+        text,
     })
 }
 
@@ -308,6 +389,121 @@ mod tests {
         let s = Store::open_in_memory().unwrap();
         let r = s.create(&NewRequest { text: "x".into(), surface: "bsc graph".into(), ts: 1, ..Default::default() }).unwrap();
         assert_eq!(r.surface, "bsc graph");
+    }
+
+    // ── #debug-request-carries-its-origin: WHO filed it, and a name for it ───────────────────────────
+
+    /// The whole point: a request round-trips the session that filed it, so the graph can hang that
+    /// request's debug session off the right node. Per-TECHNOLOGY, which is why the pane id (not a
+    /// hand-typed "designer") is what gets stored.
+    #[test]
+    fn origin_and_title_round_trip() {
+        let s = Store::open_in_memory().unwrap();
+        let r = s
+            .create(&NewRequest {
+                text: "bsc ui list has no way to filter by kit".into(),
+                origin: Some("designer-studio:react".into()),
+                title: Some("ui list needs --kit".into()),
+                ts: 1,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(r.origin.as_deref(), Some("designer-studio:react"));
+        assert_eq!(r.title.as_deref(), Some("ui list needs --kit"));
+        assert_eq!(r.display_title, "ui list needs --kit", "an explicit title wins over the derivation");
+        // And it survives a re-read, not just the create's echo.
+        assert_eq!(s.get(r.id).unwrap().unwrap(), r);
+    }
+
+    /// No origin is recorded as ABSENT. A request filed by a human at a shell has no session, and
+    /// inventing one would put a node on the graph edged to something that never asked for it.
+    #[test]
+    fn an_unattributed_request_stores_no_origin() {
+        let s = Store::open_in_memory().unwrap();
+        let r = s.create(&req("filed by hand", None, 1)).unwrap();
+        assert_eq!(r.origin, None);
+    }
+
+    /// Blank flag values are absent, not empty. `--from ""` must not produce a row that claims to have
+    /// been filed by a session named "" — `display_title` and the graph's origin lookup both key on
+    /// "is there a value", so the empty string would read as one.
+    #[test]
+    fn blank_origin_and_title_normalize_to_absent() {
+        let s = Store::open_in_memory().unwrap();
+        let r = s
+            .create(&NewRequest {
+                text: "a gap".into(),
+                origin: Some("   ".into()),
+                title: Some("".into()),
+                ts: 1,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(r.origin, None);
+        assert_eq!(r.title, None);
+        assert_eq!(r.display_title, "a gap", "still labelled — from the text");
+    }
+
+    /// A request filed without `--title` still labels, because the derivation is applied at READ time.
+    /// This is what removes the need to backfill the column on the live requests.db.
+    #[test]
+    fn a_request_without_a_title_is_labelled_from_its_text() {
+        let s = Store::open_in_memory().unwrap();
+        let r = s.create(&req("bsc ui preview-props takes only one id.", None, 1)).unwrap();
+        assert_eq!(r.title, None, "nothing explicit was stored");
+        assert_eq!(r.display_title, "bsc ui preview-props takes only one id");
+    }
+
+    #[test]
+    fn derive_title_takes_the_first_sentence_when_it_fits() {
+        assert_eq!(derive_title("bsc ui list has no --kit filter. I worked around it."), "bsc ui list has no --kit filter");
+    }
+
+    /// The sentence rule is BUDGETED, not unconditional: a first sentence longer than the budget is
+    /// elided like any other long text rather than blowing past it. Pinned because the boundary is
+    /// exactly where a label stops fitting a node, and an off-by-one here is invisible in prose.
+    #[test]
+    fn a_first_sentence_over_budget_is_elided_not_taken_whole() {
+        let at_budget = format!("{}.", "y".repeat(TITLE_MAX));
+        assert_eq!(derive_title(&at_budget), "y".repeat(TITLE_MAX), "a sentence exactly at budget is taken whole");
+        let over = format!("{}.", "y".repeat(TITLE_MAX + 1));
+        assert!(over.len() > TITLE_MAX, "sanity");
+        let t = derive_title(&over);
+        assert!(t.ends_with('…'), "over budget ⇒ elided: {t}");
+        assert!(t.chars().count() <= TITLE_MAX + 1, "still bounded: {t}");
+    }
+
+    #[test]
+    fn derive_title_cuts_long_text_at_a_word_boundary() {
+        let long = "the component preview refuses to mount when the kit declares a theme token that the contract has not yet published";
+        let t = derive_title(long);
+        assert!(t.ends_with('…'), "elided: {t}");
+        assert!(t.chars().count() <= TITLE_MAX + 1, "within budget (+ the ellipsis): {t}");
+        assert!(!t.trim_end_matches('…').ends_with(' '), "no trailing space before the ellipsis: {t}");
+        assert!(long.starts_with(t.trim_end_matches('…')), "a prefix of the text: {t}");
+    }
+
+    /// A shell heredoc leaves newlines in `text`; a label is one line.
+    #[test]
+    fn derive_title_collapses_whitespace() {
+        assert_eq!(derive_title("bsc graph\n  impl list\thas no filter"), "bsc graph impl list has no filter");
+    }
+
+    /// A single unbroken token longer than the budget has no word boundary to cut at — it must still
+    /// produce a bounded label rather than the whole token or an empty string.
+    #[test]
+    fn derive_title_handles_one_very_long_token() {
+        let t = derive_title(&"x".repeat(200));
+        assert_eq!(t.chars().count(), TITLE_MAX + 1, "hard cut + ellipsis: {t}");
+    }
+
+    /// A corrupt (textless) row gets a visibly-broken label, not a nameless node.
+    #[test]
+    fn derive_title_never_returns_empty() {
+        assert_eq!(derive_title(""), "(untitled)");
+        assert_eq!(derive_title("   \n\t "), "(untitled)");
+        // A leading sentence mark has no head before it — fall through rather than returning "".
+        assert_eq!(derive_title("... and then it failed"), "... and then it failed");
     }
 
     #[test]

@@ -44,6 +44,12 @@ interface RawRequest {
   id: number;
   status: string;
   claimed_by?: string | null;
+  /** WHO filed it (#debug-request-carries-its-origin) — the filing session's pane id. Carried through
+   *  to the charter so the spawned session knows whose workflow it is unblocking, and read by the
+   *  Glance graph to hang this session's node off that session. */
+  origin?: string | null;
+  /** Always populated by the store (explicit `--title`, else derived from the text). */
+  display_title?: string | null;
 }
 
 /**
@@ -131,6 +137,11 @@ export function RequestSessionsMount() {
       }
 
       if (plan.start.length) {
+        // The rows by id, so the charter can name the request and the session that filed it
+        // (#debug-request-carries-its-origin). Read from `raw` — the post-claim list — because that is
+        // the read that already happened; a session started without its origin would be told nothing
+        // about whose workflow it is unblocking, and the relationship would exist only in the graph.
+        const byId = new Map(raw.map((r) => [r.id, r]));
         // Seed the launch fields TerminalView reads: the charter naming THIS request (baked as
         // --initial-message) and paneContinue=false (#3497 — never resume; each session is bound to one
         // request and must not inherit another conversation).
@@ -138,7 +149,12 @@ export function RequestSessionsMount() {
           const prompts = { ...st.paneStartupPromptText };
           const cont = { ...st.paneContinue };
           for (const id of plan.start) {
-            prompts[requestPaneId(id)] = requestCharter(id);
+            const row = byId.get(id);
+            prompts[requestPaneId(id)] = requestCharter({
+              id,
+              origin: row?.origin ?? null,
+              display_title: row?.display_title ?? null,
+            });
             cont[requestPaneId(id)] = false;
           }
           return { paneStartupPromptText: prompts, paneContinue: cont };
