@@ -10,6 +10,10 @@ description = "Component-library store (SQLite stores at ~/.base-studio-code/com
 name = "bsc_component"
 
 [dependencies]
+# Runtime attestations (#doctor-reads-the-runtime) - the --runtime lens reads what the app OBSERVED
+# while running. The ANALYSIS lives there, beside the data, so bsc graph doctor asks the same question
+# of the same rows; only the presentation is here.
+bsc-runtime = { path = "../bsc-runtime" }
 bsc-record = { path = "../bsc-record" }
 # The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the two
 # component/kit CliSpecs + a dispatcher.

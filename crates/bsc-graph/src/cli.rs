@@ -887,6 +887,19 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             Some("get") => {
                 let id = positional.get(2).copied().ok_or("usage: bsc graph impl get <id>")?;
                 match crate::implementations().into_iter().find(|im| im.get("id").and_then(Value::as_str) == Some(id)) {
+                    // `--metrics` (#doctor-reads-the-runtime) JOINS the runtime attestations at read
+                    // time, under a `metrics` key. Deliberately not a field ON the record: writing it
+                    // there would make every boot a record write (filling `bsc ui revert` history with
+                    // timing noise instead of authorship), vendor a second copy of a constantly-changing
+                    // number — the drift #4191 forbids for algorithm bodies — and ship one machine's
+                    // numbers to another inside a seed or a Studio snapshot.
+                    Some(im) if args.iter().any(|a| a == "--metrics") => {
+                        let mut out = im.clone();
+                        if let Some(obj) = out.as_object_mut() {
+                            obj.insert("metrics".into(), runtime_metrics(id));
+                        }
+                        emit(&out)
+                    }
                     Some(im) => emit(&im),
                     // `null` rather than an error: a miss is a normal answer to "does this exist?", and
                     // it keeps the output parseable by the same reader as a hit.
@@ -1508,9 +1521,19 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // an edge says someone CHECKED. Reporting the gap makes coverage a property of the
                 // graph rather than of a file tree — the first question the node tier could never ask.
                 let (missing_edges, dangling_edges, pending_edges) = crate::edge_findings(&g);
+                // #doctor-reads-the-runtime — the RUNTIME lens, behind `--runtime`. For an implementation
+                // the claim is LINKAGE: an impl runs inside someone else's module, so "was it linked into
+                // a closure that served" is what the runtime can honestly say. Execution counts are NOT
+                // asserted here and the report does not imply them.
+                let runtime = if args.iter().any(|a| a == "--runtime") {
+                    runtime_report(&g)
+                } else {
+                    serde_json::Value::Null
+                };
                 emit(&serde_json::json!({
                     "findings": findings,
                     "count": findings.len(),
+                    "runtime": runtime,
                     "missingEdges": missing_edges,
                     "missingEdgeCount": missing_edges.len(),
                     // Separate, and worse: a MISSING edge is honestly empty, a DANGLING one reads as
@@ -1524,6 +1547,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         }
         // `emit` (#4192) — the store→FILE direction, the twin of `bsc ui emit`. The graph is the source
         // of truth and a file is the artifact, so maintenance edits the record then re-emits.
+        "runtime-lens-marker-unused" => unreachable!(),
         "emit" => {
             let sub = positional.get(1).copied();
             match sub {
@@ -1855,6 +1879,28 @@ fn collect_emitted_files(
         }
     }
     Ok(())
+}
+
+/// One record's runtime metrics for `--metrics`, or `Null` when nothing has been measured.
+///
+/// `Null` rather than a zeroed object, and the distinction matters: zeros would read as "this ran
+/// nowhere and cost nothing", which is a claim. `Null` says the store has nothing to say — the same
+/// honesty `bsc runtime summary` leads with.
+fn runtime_metrics(record_id: &str) -> Value {
+    let Some(path) = bsc_runtime::default_db_path() else {
+        return Value::Null;
+    };
+    let Ok(store) = bsc_runtime::Store::open(&path) else {
+        return Value::Null;
+    };
+    let Ok(rows) = store.list(&bsc_runtime::Filter::default()) else {
+        return Value::Null;
+    };
+    let m = bsc_runtime::doctor::metrics_for(&rows, record_id);
+    if m.sessions == 0 {
+        return Value::Null;
+    }
+    serde_json::to_value(m).unwrap_or(Value::Null)
 }
 
 #[cfg(test)]
@@ -2593,4 +2639,42 @@ mod dedup_tests {
     fn a_multibyte_body_tokenizes_without_panicking() {
         assert!(!code_shingles("const s = \"h\u{e9}llo \u{2192} w\u{f6}rld\"; // ok ok ok ok").is_empty());
     }
+}
+
+/// The RUNTIME lens for `bsc graph doctor --runtime` (#doctor-reads-the-runtime).
+///
+/// The ANALYSIS is `bsc_runtime::doctor::analyze`, shared with `bsc ui doctor`, so both ask one question
+/// of one dataset. What differs is the RECORD SET: implementations, keyed by id, hashed from `code`.
+///
+/// LINKAGE, not execution. An implementation runs inside the module that imported it, so the runtime can
+/// honestly say "this was linked into a closure that served" and cannot say how many times it was called.
+/// The report reflects exactly that, because a number the store cannot support would be worse than none.
+///
+/// `Null` on a missing/unreadable runtime.db rather than an error: a fresh checkout has not run the app,
+/// and failing the health report over it would make the flag unusable the first time anyone reaches for
+/// it.
+fn runtime_report(g: &Value) -> Value {
+    let Some(path) = bsc_runtime::default_db_path() else {
+        return Value::Null;
+    };
+    let Ok(store) = bsc_runtime::Store::open(&path) else {
+        return Value::Null;
+    };
+    let Ok(rows) = store.list(&bsc_runtime::Filter::default()) else {
+        return Value::Null;
+    };
+    let records: Vec<bsc_runtime::doctor::RecordRef> = crate::implementations_of(g)
+        .iter()
+        .map(|im| bsc_runtime::doctor::RecordRef {
+            id: im.get("id").and_then(Value::as_str).unwrap_or_default().to_string(),
+            src_hash: im
+                .get("code")
+                .and_then(Value::as_str)
+                .filter(|c| !c.is_empty())
+                .map(bsc_runtime::src_hash)
+                .unwrap_or_default(),
+        })
+        .collect();
+    let report = bsc_runtime::doctor::analyze(&rows, &records);
+    serde_json::to_value(report).unwrap_or(Value::Null)
 }

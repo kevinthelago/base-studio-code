@@ -17,10 +17,21 @@
 //! `(specifier, record_id, src_hash, outcome, session)`.
 
 pub mod cli;
+pub mod doctor;
 mod hash;
 mod schema;
 
 pub use hash::src_hash;
+
+/// Where `runtime.db` lives: `$BSC_RUNTIME_DB` → `~/.base-studio-code/runtime.db`.
+///
+/// ONE resolver, exported, because there are three readers — `bsc runtime`, `bsc ui doctor --runtime`
+/// and `bsc graph doctor --runtime` — and the first honoured the env var while the other two hardcoded
+/// the path. That is invisible until someone points a test or a second install at another store and the
+/// doctors quietly answer from the real one instead.
+pub fn default_db_path() -> Option<std::path::PathBuf> {
+    bsc_sqlite_util::default_store_path("BSC_RUNTIME_DB", &["runtime.db"])
+}
 
 use rusqlite::{params, Connection};
 use serde::Serialize;

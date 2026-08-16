@@ -453,6 +453,7 @@ USAGE:
   bsc ui doctor [--kit K] [--json] [--pretty]     # the health report (read-only)
   bsc ui doctor --sound-kit id@version [--json]   # judge @bsc/sounds/… against a PINNED sound kit (#3412)
   bsc ui doctor --motion [--kit K] [--json]       # ALSO run the four mechanical MOTION checks (#3163)
+  bsc ui doctor --runtime [--kit K] [--json]      # ALSO report what the app OBSERVED while running
   bsc ui doctor --fix [--kit K] [--yes]           # OPTIMIZE: merge byte-identical dups + prune dead roots (dry-run unless --yes)
 
 --sound-kit (#3412) names the project's PINNED sound kit (its blueprint's `soundKit`, as `id@version` in the
@@ -468,6 +469,16 @@ known path length), MOTION-TRANSFORM-ATTR (a CSS `transform` keyframe on a compo
 `transform=` ATTRIBUTE — the two don't compose), and MOTION-NAME-COLLISION (an inline animation NAME
 declared by 2+ components in the same kit — their keyframes clobber). They scan each component's INLINE
 animation defs (a name-ref string points at the kit's shared library and is not checked).
+
+--runtime (#doctor-reads-the-runtime) ADDS the findings this report structurally cannot reach, read from
+runtime.db — what the RUNNING app observed rather than what the graph's shape implies. RUNTIME-DECLINED (the
+loader refused the record and served the bundled platform module instead — the record is inert while the app
+looks fine), RUNTIME-NEVER-RAN (no attestation at all; the honest superset of ORPHAN, which only sees
+`composes` edges), RUNTIME-STALE (the record's current source has never run — an unexercised edit is where a
+broken record hides), RUNTIME-FELL-BACK (an older version rendered instead), RUNTIME-RENDER-THREW (mounted,
+then threw), RUNTIME-RECOMPILE-LOOP and RUNTIME-SLOW-COMPILE. With no attestations recorded it emits ONE
+finding saying so rather than calling every record dead — an empty store means nothing was MEASURED, which
+is not the same as nothing having run.
 
 Traverses each kit's composition graph (nodes = components, edges = `composes`) and reports the
 dead/duplicated design a growing kit accumulates: CYCLE (a composes loop), DANGLING-BRANCH (an unused
@@ -1343,6 +1354,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `ui-focus`, so the preview follows Claude's working focus as it INSPECTS each node, not only
         // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
         // `get --field`/`get help` fall through unchanged (the id guard excludes a flag or `help`).
+        // #doctor-reads-the-runtime: `get <id> --metrics` JOINS the runtime attestations at read time.
+        // Intercepted here for the same reason `--shape` and `--kit` are — the shared store CLI rejects
+        // unknown flags. Deliberately a JOIN and not a field ON the record: writing metrics there would
+        // make every boot a record write (filling `bsc ui revert` history with timing noise instead of
+        // authorship), vendor a second copy of a constantly-changing number — the drift #4191 forbids for
+        // algorithm bodies — and ship one machine's numbers to another inside a seed or a snapshot.
+        Some("get") if args.iter().any(|a| a == "--metrics") => cmd_get_metrics(&args[1..]),
         Some("get") if args.get(1).is_some_and(|a| !a.starts_with('-') && a != "help") => {
             // #91: resolve the handle to a real id BEFORE delegating, so `get <Name>` works and a miss is
             // an ERROR rather than a bare `null` on stdout. The shared store CLI cannot do this — it backs
@@ -1383,6 +1401,42 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 
 /// The record's CURRENT stored `rev` (0 when absent or never stamped — the backward-compat contract),
 /// read straight from the store so a stamp/version-check always compares against what's on disk.
+/// `bsc ui get <id> --metrics` — the record, plus what the RUNNING app observed of it.
+///
+/// `metrics` is `null` when nothing has been measured rather than a zeroed object: zeros would read as
+/// "this ran nowhere and cost nothing", which is a claim the store cannot support. Null says it has
+/// nothing to say, which is the same honesty `bsc runtime summary` leads with.
+fn cmd_get_metrics(args: &[String]) -> Result<(), String> {
+    let handle = args
+        .iter()
+        .find(|a| !a.starts_with('-'))
+        .ok_or("usage: bsc ui get <id> --metrics")?;
+    let dir = args.iter().position(|a| a == "--dir").and_then(|i| args.get(i + 1)).cloned();
+    let pretty = args.iter().any(|a| a == "--pretty");
+    let store = open_component_store(&dir)?;
+    let id = resolve_component_handle(&store, handle)?;
+    let raw = store.get(&id).map_err(|e| e.to_string())?.ok_or_else(|| format!("no component '{id}'"))?;
+    let mut record: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+
+    let metrics = bsc_runtime::default_db_path()
+        .and_then(|path| bsc_runtime::Store::open(&path).ok())
+        .and_then(|s| s.list(&bsc_runtime::Filter::default()).ok())
+        .map(|rows| bsc_runtime::doctor::metrics_for(&rows, &id))
+        .filter(|m| m.sessions > 0)
+        .and_then(|m| serde_json::to_value(m).ok())
+        .unwrap_or(serde_json::Value::Null);
+    if let Some(obj) = record.as_object_mut() {
+        obj.insert("metrics".into(), metrics);
+    }
+    let out = if pretty {
+        serde_json::to_string_pretty(&record)
+    } else {
+        serde_json::to_string(&record)
+    };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
 #[cfg(test)]
 fn current_rev(store: &bsc_json_store::Store, id: &str) -> Result<i64, String> {
     Ok(crate::record::read_rev(&current_record(store, id)?))
@@ -3383,9 +3437,106 @@ A kit describing ANOTHER project names paths this repo does not have — that is
     Ok(())
 }
 
+/// Map the runtime lens (`bsc_runtime::doctor`) onto this doctor's `Finding` shape.
+///
+/// The ANALYSIS lives in `bsc-runtime`, beside the data, so `bsc graph doctor` asks the same question of
+/// the same rows rather than growing a second answer that drifts. Only the presentation is here.
+///
+/// `src_hash` is computed from each record's CURRENT `srcText` with the same function the frontend uses
+/// when it records what it compiled — that equality is the whole basis of the `stale` finding, and it is
+/// pinned across the language boundary by `data/runtime/hash.fixtures.json`.
+///
+/// A missing/unreadable runtime.db is NOT an error: it means the app has not run with attestation on,
+/// which is a normal state on a fresh checkout, and failing the whole health report over it would make
+/// `--runtime` unusable exactly when someone first reaches for it.
+fn runtime_findings(comps: &[serde_json::Value]) -> Result<Vec<crate::graph_health::Finding>, String> {
+    let Some(path) = bsc_runtime::default_db_path() else {
+        return Ok(Vec::new());
+    };
+    let Ok(store) = bsc_runtime::Store::open(&path) else {
+        return Ok(Vec::new());
+    };
+    let rows = store.list(&bsc_runtime::Filter::default()).map_err(|e| e.to_string())?;
+
+    let text = |v: &serde_json::Value, k: &str| {
+        v.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_string()
+    };
+    let records: Vec<bsc_runtime::doctor::RecordRef> = comps
+        .iter()
+        .map(|c| bsc_runtime::doctor::RecordRef {
+            id: text(c, "id"),
+            src_hash: {
+                let src = text(c, "srcText");
+                if src.is_empty() { String::new() } else { bsc_runtime::src_hash(&src) }
+            },
+        })
+        .collect();
+    // Name → id, so a finding reads as the component rather than as a slug.
+    let name_of = |id: &str| -> String {
+        comps
+            .iter()
+            .find(|c| text(c, "id") == id)
+            .map(|c| {
+                let n = text(c, "name");
+                if n.is_empty() { id.to_string() } else { n }
+            })
+            .unwrap_or_else(|| id.to_string())
+    };
+    let kit_of = |id: &str| -> String {
+        comps.iter().find(|c| text(c, "id") == id).map(|c| text(c, "kitId")).unwrap_or_default()
+    };
+
+    let report = bsc_runtime::doctor::analyze(&rows, &records);
+    if report.unmeasured {
+        // ONE finding, not hundreds. "Nothing has served" is true and useless here; what the reader needs
+        // is to know the lens has no data, which is a different statement entirely.
+        return Ok(vec![crate::graph_health::Finding {
+            category: "runtime-unmeasured",
+            severity: 1,
+            kit: String::new(),
+            node_ids: Vec::new(),
+            node_names: Vec::new(),
+            why: "runtime.db holds no attestations — the app has not run with attestation on, so NO \
+                  runtime judgement is available (this is not the same as 'nothing ran')"
+                .into(),
+            suggested_action: "start the app, use the surfaces you care about, then re-run; `bsc runtime summary` shows what has been measured".into(),
+        }]);
+    }
+    Ok(report
+        .findings
+        .into_iter()
+        .map(|f| crate::graph_health::Finding {
+            category: runtime_category(f.category),
+            severity: f.severity,
+            kit: kit_of(&f.record_id),
+            node_names: vec![name_of(&f.record_id)],
+            node_ids: vec![f.record_id],
+            why: f.why,
+            suggested_action: f.suggested_action,
+        })
+        .collect())
+}
+
+/// Map a runtime finding's category onto a `&'static str` this doctor's `Finding` requires. Explicit
+/// rather than leaked: the categories are a closed set, and an unknown one should read as unknown rather
+/// than being silently dropped or leaking a runtime-owned string into a report shape it does not own.
+fn runtime_category(c: &str) -> &'static str {
+    match c {
+        "declined" => "runtime-declined",
+        "fell-back" => "runtime-fell-back",
+        "render-threw" => "runtime-render-threw",
+        "stale" => "runtime-stale",
+        "never-ran" => "runtime-never-ran",
+        "recompile-loop" => "runtime-recompile-loop",
+        "slow-compile" => "runtime-slow-compile",
+        _ => "runtime-unknown",
+    }
+}
+
 fn cmd_doctor(args: &[String]) -> Result<(), String> {
     let (mut dir, mut kit, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
     let (mut fix, mut yes, mut motion) = (false, false, false);
+    let mut runtime = false;
     let mut sound_kit = None::<String>;
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -3402,6 +3553,10 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
             // hook the source never renders · a stroke-dash keyframe with no pathLength · a CSS transform
             // keyframe fighting an SVG transform= attribute · a cross-component keyframe-name collision).
             "--motion" => motion = true,
+            // #doctor-reads-the-runtime: ADD the findings the structural pass structurally cannot see —
+            // what the app OBSERVED while running (declined / never-ran / stale / fell-back /
+            // recompile-loop / slow-compile), read from runtime.db.
+            "--runtime" => runtime = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => return Err(format!("unexpected argument '{other}'")),
         }
@@ -3458,6 +3613,12 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     // PROPOSE-ONLY: emitted here, never fed to `--fix` (only byte-identical merges auto-apply). Cross-kit
     // by nature, so it fires on the full report; a `--kit` scope filters `comps`, leaving within-kit dups.
     findings.extend(crate::similarity::near_duplicate_findings(&comps, crate::similarity::DEFAULT_THRESHOLD));
+    // #doctor-reads-the-runtime: the RUNTIME lens. Behind a flag, unlike the render errors above, because
+    // it answers a different KIND of question and its most useful finding — DECLINED — depends on the app
+    // having run. A store with no attestations says so once rather than calling every record dead.
+    if runtime {
+        findings.extend(runtime_findings(&comps)?);
+    }
     // Re-rank the combined report (most-severe first, stable kit + node-name tiebreak — the SAME ordering
     // `analyze` uses). Render errors (severity 5) sort to the top.
     findings.sort_by(|a, b| {

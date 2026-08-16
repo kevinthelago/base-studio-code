@@ -240,7 +240,7 @@ fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
     if let Some(f) = flag {
         return Ok(PathBuf::from(f));
     }
-    bsc_sqlite_util::default_store_path("BSC_RUNTIME_DB", &["runtime.db"])
+    crate::default_db_path()
         .ok_or_else(|| "cannot locate runtime.db (no home directory); pass --db <path>".to_string())
 }
 
