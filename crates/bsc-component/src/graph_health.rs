@@ -10,6 +10,8 @@
 //! unit-tested directly and the same taxonomy can be mirrored frontend-side for graph badges (#2680).
 //!
 //! Findings (most-severe first): **cycle** (a `composes` loop — also breaks the layered layout) ·
+//! **dangling-composes-reference** (a `composes` entry naming no component in the kit — the edge is
+//! silently dropped, so the graph reads as complete while the reference names nothing, #89) ·
 //! **dangling-branch** (an unused root that still pulls in dependencies) · **duplicate** (two
 //! components wrapping the same intrinsic, or byte-identical source) · **no-implementation** (a
 //! component the Design Studio preview can't build — a spec, not code) · **self-reference** (an
@@ -49,7 +51,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// One health finding — LLM-consumable: what, where, why, and what to do about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
-    /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
+    /// `cycle` | `dangling-composes-reference` (#89, sev-2) | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
     /// `unresolvable-import` | `stubbed-import` (#3696, sev-1) | `hardcoded-color` (#3704, sev-1) |
     /// `reimplementation` | `reimplemented-component` (#3892, sev-3) | `orphan` | `unwired-prop` | `phantom-compose` | `no-empty-state` |
     /// `multi-component` (#doctor-flags…, sev-2) | `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `no-tests` (#3878) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
@@ -1419,10 +1421,20 @@ pub fn analyze_with(components: &[Value], opts: &HealthOptions) -> Vec<Finding> 
     for n in &nodes {
         by_kit.entry(n.kit.as_str()).or_default().push(n);
     }
+    // Handle (name or id) → the kits that carry it, ACROSS the whole library. `composes` resolves within a
+    // kit, so an entry naming a component that exists only in another kit still draws no edge — but it is a
+    // different defect from one naming nothing at all, and telling the author to "write the canonical
+    // record" for a `Box` that already exists would be exactly the impossible advice #89 is about.
+    let mut kits_holding: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for n in &nodes {
+        for handle in [n.name.as_str(), n.id.as_str()] {
+            kits_holding.entry(handle).or_default().insert(n.kit.as_str());
+        }
+    }
     let buildable = buildable_srcs();
     let mut out = Vec::new();
     for (kit, kit_nodes) in by_kit {
-        analyze_kit(kit, &kit_nodes, buildable, &sounds, &mut out);
+        analyze_kit(kit, &kit_nodes, buildable, &sounds, &kits_holding, &mut out);
     }
     out.sort_by(|a, b| {
         b.severity
@@ -1645,6 +1657,9 @@ fn analyze_kit(
     buildable: &BTreeSet<String>,
     // The importable `@bsc/sounds/…` names for THIS run — the pinned kit's, else the packaged default's.
     sounds: &BTreeSet<String>,
+    // Handle (name or id) → the kits carrying it, library-wide. Lets the dangling-composes check say
+    // whether an unresolved name exists NOWHERE or merely in another kit — two defects with opposite fixes.
+    kits_holding: &BTreeMap<&str, BTreeSet<&str>>,
     out: &mut Vec<Finding>,
 ) {
     // Name → id (in-kit). A duplicate NAME would collide; the store keys by id, so we keep the first.
@@ -1658,14 +1673,88 @@ fn analyze_kit(
     for n in nodes {
         in_deg.entry(n.id.as_str()).or_insert(0);
     }
+    // Every id in the kit — so a `composes` entry is judged DANGLING only when it matches neither a name
+    // nor an id (#89). An entry naming an id draws no edge (resolution is by name, as the TS
+    // `buildComposesEdges` twin does) but it is not a fabricated reference, so it is deliberately not
+    // reported here — a real but lesser gap, left visible in this comment rather than silently conflated.
+    let ids_in_kit: BTreeSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+    // `composes` entry that resolves to nothing → the composers that declare it.
+    let mut dangling: BTreeMap<&str, Vec<&&Node>> = BTreeMap::new();
     for n in nodes {
         for dep_name in &n.composes {
             if let Some(&dep_id) = id_by_name.get(dep_name.as_str()) {
                 out_ids.entry(n.id.as_str()).or_default().push(dep_id);
                 *in_deg.entry(dep_id).or_insert(0) += 1;
+            } else if !dep_name.trim().is_empty() && !ids_in_kit.contains(dep_name.as_str()) {
+                dangling.entry(dep_name.as_str()).or_default().push(n);
             }
         }
     }
+
+    // ── dangling-composes-reference (severity 2): a `composes` entry naming NO component in the kit — by
+    // name OR by id (#89). Both edge builders DROP an unresolved name, so the graph draws no edge and looks
+    // complete while the record claims a composition of something that exists nowhere. It is the standard
+    // the designer doc has always stated ("every `composes` entry names a real component in the kit") and
+    // the one thing nothing checked.
+    //
+    // It gets its own category because the finding it used to surface as was actively misleading: two
+    // components sharing a forward reference score as a fuzzy near-DUPLICATE pair (their prop shapes align
+    // around the child they both intend to extract), and that finding's "merge X into Y" is not merely less
+    // useful — it is impossible, because the preview sandbox forbids the first-party import a literal merge
+    // would need. The right fix in every instance of the pattern is the opposite of a merge: AUTHOR the
+    // canonical record the reference already names, which is what the suggested action says. Grouped by the
+    // MISSING name (one finding per absent component, listing every composer) rather than per composer,
+    // because the fix is one record, not one per site. Mirrors `graphHealth.ts`.
+    for (missing, composers) in &dangling {
+        let names: Vec<String> = composers.iter().map(|n| n.name.clone()).collect();
+        let one = composers.len() == 1;
+        // Does the name exist at all, just in another kit? The defect is the same dropped edge either way,
+        // but the fixes are opposites: author the missing record vs. reach the one that already exists.
+        let elsewhere: Vec<&str> = kits_holding
+            .get(missing)
+            .map(|kits| kits.iter().copied().filter(|k| *k != kit).collect())
+            .unwrap_or_default();
+        let (tail, action) = if elsewhere.is_empty() {
+            (
+                "no component ANYWHERE in the library carries that name or id — the reference names something that does not exist".to_string(),
+                format!(
+                    "author the canonical `{missing}` record the reference already names (`bsc ui set {}`), so {} compose{} the real node — or drop `{missing}` from {} `composes`. Do NOT merge the composers into each other: what they share is a forward reference, not an implementation",
+                    missing.to_lowercase(),
+                    if one { "it" } else { "they" },
+                    if one { "s" } else { "" },
+                    if one { "its" } else { "their" },
+                ),
+            )
+        } else {
+            (
+                format!(
+                    "no component in THIS kit carries that name or id — it exists in {} ({}), and `composes` only ever resolves within one kit",
+                    if elsewhere.len() == 1 { "another kit" } else { "other kits" },
+                    elsewhere.join(", "),
+                ),
+                format!(
+                    "add `{missing}` to the `{kit}` kit (or move the composer{} to the kit that already has it) — do NOT author a second copy, and do NOT merge the composers: the record exists, this kit just cannot reach it",
+                    if one { "" } else { "s" },
+                ),
+            )
+        };
+        out.push(Finding {
+            category: "dangling-composes-reference",
+            severity: 2,
+            kit: kit.to_string(),
+            node_ids: composers.iter().map(|n| n.id.clone()).collect(),
+            node_names: names.clone(),
+            why: format!(
+                "{} component{} ({}) declare{} they compose `{missing}`, but {tail} — the edge resolves to nothing and is silently dropped, so the graph reads as complete",
+                composers.len(),
+                if one { "" } else { "s" },
+                names.join(", "),
+                if one { "s" } else { "" },
+            ),
+            suggested_action: action,
+        });
+    }
+
     let node_by_id: BTreeMap<&str, &&Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
     let name_of = |id: &str| node_by_id.get(id).map(|n| n.name.clone()).unwrap_or_default();
 
@@ -3541,15 +3630,21 @@ export function X(){ return <i>{nope}</i>; }"
     fn flags_a_slot_driven_composite_as_slot_shell() {
         // A used page composing children delivered via a `view` ReactNode slot → previews a demo
         // placeholder. used>0 so it isn't ALSO a dead-root dangling-branch — isolate the slot-shell.
-        let comps = [json!({
-            "id": "gx", "name": "GraphExplorerPage", "kitId": "k", "role": "page", "used": 2,
-            "composes": ["ForceGraph", "TreeDiagram"], "srcText": "src", "source": "export const C = () => null;",
-            "props": [
-                { "name": "title", "type": "string" },
-                { "name": "view", "type": "ReactNode" },
-                { "name": "inspector", "type": "ReactNode" }
-            ]
-        })];
+        // The two children are REAL nodes in the kit: a `composes` entry naming nothing is its own
+        // finding (#89), so a fixture that referenced absent components would no longer be about slot-shell.
+        let comps = [
+            json!({
+                "id": "gx", "name": "GraphExplorerPage", "kitId": "k", "role": "page", "used": 2,
+                "composes": ["ForceGraph", "TreeDiagram"], "srcText": "src", "source": "export const C = () => null;",
+                "props": [
+                    { "name": "title", "type": "string" },
+                    { "name": "view", "type": "ReactNode" },
+                    { "name": "inspector", "type": "ReactNode" }
+                ]
+            }),
+            comp("ForceGraph", "composite", 0, &[]),
+            comp("TreeDiagram", "composite", 0, &[]),
+        ];
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["slot-shell"]);
         assert_eq!(fs[0].severity, 1);
@@ -3624,6 +3719,80 @@ export function X(){ return <i>{nope}</i>; }"
         let fs = analyze(&comps);
         let found = cats(&fs);
         assert!(!found.contains(&"unwired-prop"));
+    }
+
+    // ── dangling-composes-reference (#89) ────────────────────────────────────────────────────────────
+    // Both edge builders DROP an unresolved `composes` name, so the graph reads as complete while the
+    // record claims a composition of something that is not there. This is the standard the designer doc
+    // has always stated and the one thing nothing checked.
+
+    /// REGRESSION, designer request #89. `GhGroup` and `GhReposGroup` both declared `composes: [GhItemRow]`
+    /// against a component that existed nowhere. What doctor reported was a fuzzy near-duplicate PAIR whose
+    /// "merge X into Y" is impossible advice; the dangling edge is the specific, actionable signal, and the
+    /// fix the reporter actually applied was to author the record the reference already names.
+    #[test]
+    fn a_composes_entry_that_names_nothing_is_its_own_finding() {
+        let group = |id: &str, name: &str| {
+            json!({ "id": id, "name": name, "kitId": "harvested", "role": "composite", "used": 2,
+                    "composes": ["GhItemRow"], "srcText": format!("src-{id}"),
+                    "source": format!("export const {name} = () => null;") })
+        };
+        let fs = analyze(&[group("ghgroup", "GhGroup"), group("ghreposgroup", "GhReposGroup")]);
+        let dc: Vec<&Finding> = fs.iter().filter(|f| f.category == "dangling-composes-reference").collect();
+        assert_eq!(dc.len(), 1, "ONE finding per missing component, not one per composer: {fs:?}");
+        assert_eq!(dc[0].severity, 2);
+        // Grouped by the absent name, naming every composer — the fix is one record, not one per site.
+        assert_eq!(dc[0].node_ids, ["ghgroup", "ghreposgroup"]);
+        assert!(dc[0].why.contains("GhItemRow"), "{}", dc[0].why);
+        assert!(dc[0].why.contains("ANYWHERE"), "nothing in the library has it: {}", dc[0].why);
+        // The action is the real fix, and explicitly NOT the merge the dupes report used to propose.
+        assert!(dc[0].suggested_action.contains("author the canonical"), "{}", dc[0].suggested_action);
+        assert!(dc[0].suggested_action.contains("ghitemrow"), "{}", dc[0].suggested_action);
+        assert!(dc[0].suggested_action.contains("Do NOT merge"), "{}", dc[0].suggested_action);
+    }
+
+    /// A name that exists, just in ANOTHER kit, is the same dropped edge with the OPPOSITE fix — the record
+    /// is already written, this kit simply cannot reach it. Telling the author to write a second `Box` would
+    /// be the same impossible advice in a new costume, so the two cases are worded apart.
+    #[test]
+    fn a_composes_entry_naming_another_kits_component_says_so() {
+        let comps = [
+            json!({ "id": "panel", "name": "PersonasPanel", "kitId": "harvested", "role": "composite",
+                    "used": 2, "composes": ["Box"], "srcText": "p", "source": "export const P = () => null;" }),
+            json!({ "id": "ui-box", "name": "Box", "kitId": "base-studio-code", "role": "primitive",
+                    "used": 9, "composes": [], "srcText": "b", "source": "export const B = () => null;" }),
+        ];
+        let fs = analyze(&comps);
+        let dc: Vec<&Finding> = fs.iter().filter(|f| f.category == "dangling-composes-reference").collect();
+        assert_eq!(dc.len(), 1, "{fs:?}");
+        assert!(dc[0].why.contains("base-studio-code"), "names the kit that has it: {}", dc[0].why);
+        assert!(!dc[0].why.contains("ANYWHERE"), "it is NOT missing from the library: {}", dc[0].why);
+        assert!(
+            dc[0].suggested_action.contains("do NOT author a second copy"),
+            "{}",
+            dc[0].suggested_action
+        );
+    }
+
+    /// The silence half: a kit whose every `composes` entry resolves gains nothing. Includes the id form —
+    /// resolution is by NAME, so an id-named entry draws no edge, but it is not a fabricated reference and
+    /// the criterion is "matches no name OR id".
+    #[test]
+    fn a_composes_entry_that_resolves_is_not_flagged() {
+        let comps = [
+            json!({ "id": "page", "name": "Page", "kitId": "k", "role": "page", "used": 2,
+                    "composes": ["Card", "widget", ""], "srcText": "p", "source": "export const P = () => null;" }),
+            json!({ "id": "card", "name": "Card", "kitId": "k", "role": "composite", "used": 3,
+                    "composes": [], "srcText": "c", "source": "export const C1 = () => null;" }),
+            json!({ "id": "widget", "name": "Widget", "kitId": "k", "role": "composite", "used": 3,
+                    "composes": [], "srcText": "w", "source": "export const W = () => null;" }),
+        ];
+        let fs = analyze(&comps);
+        let found = cats(&fs);
+        assert!(
+            !found.contains(&"dangling-composes-reference"),
+            "a resolving name, a resolving id and a blank entry are all silent: {found:?}",
+        );
     }
 
     #[test]

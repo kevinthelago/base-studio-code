@@ -478,6 +478,16 @@ isolated, never-referenced primitive/composite). \"Unused\" = no composer AND us
 with used > 0 is a legit entry point, never flagged. Ranked most-severe-first; --kit scopes to one
 kit; --json emits the findings array (LLM-consumable).
 
+DANGLING-COMPOSES-REFERENCE (#89) is the standard the designer doc always stated and nothing checked: a
+`composes` entry naming no component in the kit, by name OR id. Both edge builders DROP an unresolved
+name, so the graph reads as complete while the reference names nothing. One finding per MISSING
+component, listing every composer — the fix is one record, not one per site — and it distinguishes the
+two cases, whose fixes are opposites: the name exists NOWHERE (a forward reference to an extraction
+never done ⇒ author the canonical record it already names) versus the name exists in ANOTHER kit
+(`composes` only resolves within one kit ⇒ reach the record that exists; do not write a second copy).
+Neither fix is a merge: `bsc ui dupes` used to report such a pair as a near-duplicate whose \"merge X
+into Y\" the preview sandbox makes impossible, so that proposal now leads with the extraction instead.
+
 --fix is the mechanical, SAFE OPTIMIZE (#3089): (1) MERGE byte-identical-source duplicates — fold each
 group into the most-`used` canonical and repoint composers to it (lossless; only byte-identical, never a
 same-`wraps` dup), then (2) PRUNE the GUARDED dead roots — the ROOT of each orphan/dangling-branch finding
@@ -519,6 +529,14 @@ A pair is contract-scored when its NAME is near OR it shares a hard co-location 
 
 Also reports `provides-collision`: several records overriding ONE platform specifier. Not a similarity
 score — the loader resolves it to one record, so the rest are dead overrides that still read as live.
+
+A SHARED FORWARD REFERENCE is not shared code (#89). `composes` is a raw string-set match that never asks
+whether a name resolves, so two records both naming a component nobody has authored score 1.0 on that term.
+Where that fabricated agreement is the only thing carrying a pair over the bar, the pair is DROPPED — the
+signal is `bsc ui doctor`'s `dangling-composes-reference`, not a duplicate. Where the pair stands on real
+evidence anyway (same `src`, same folder, overlapping bodies), it is still reported, but the proposal leads
+with AUTHORING the record both already name: that extraction is the consolidation, and a literal merge is
+not available, because the preview sandbox forbids the first-party import it would need.
 
 --explain prints each pair's per-term contributions (`term=value×weight→contribution`) and the terms dropped
 for lack of signal, so the ranking is auditable and the weights are tunable against real output.

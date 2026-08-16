@@ -131,7 +131,9 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
         { name: "inspector", type: "ReactNode", req: false, desc: "" },
       ],
     });
-    const fs = analyzeGraphHealth([page]);
+    // The two children are REAL nodes in the kit: a `composes` entry naming nothing is its own finding
+    // (#89), so a fixture that referenced absent components would no longer be about slot-shell.
+    const fs = analyzeGraphHealth([page, comp("ForceGraph", "composite", 0), comp("TreeDiagram", "composite", 0)]);
     expect(fs.map((f) => f.category)).toEqual(["slot-shell"]);
     expect(fs[0].severity).toBe(1);
     expect(fs[0].why).toContain("ForceGraph, TreeDiagram"); // names the composed children
@@ -192,6 +194,51 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     });
     const cats = analyzeGraphHealth([wired, spreader, spec]).map((f) => f.category);
     expect(cats).not.toContain("unwired-prop");
+  });
+
+  // ── dangling-composes-reference (#89) ───────────────────────────────────────────────────────────────
+  // `buildComposesEdges` DROPS an unresolved name ("no dangling graph edges"), so the graph reads as
+  // complete while the record claims a composition of something that is not there.
+
+  // Rust twin: `a_composes_entry_that_names_nothing_is_its_own_finding`.
+  it("reports a composes entry that names nothing as its own finding, not a duplicate (#89)", () => {
+    const group = (name: string) => comp(name, "composite", 2, ["GhItemRow"], { kitId: "harvested" });
+    const fs = analyzeGraphHealth([group("GhGroup"), group("GhReposGroup")], undefined, []);
+    const dc = fs.filter((f) => f.category === "dangling-composes-reference");
+    expect(dc).toHaveLength(1); // ONE per missing component, not one per composer
+    expect(dc[0].severity).toBe(2);
+    expect(dc[0].nodeIds).toEqual(["GhGroup", "GhReposGroup"]);
+    expect(dc[0].why).toContain("GhItemRow");
+    expect(dc[0].why).toContain("ANYWHERE");
+  });
+
+  // Rust twin: `a_composes_entry_naming_another_kits_component_says_so`.
+  it("says so when the composes entry names a component in ANOTHER kit (#89)", () => {
+    const panel = comp("PersonasPanel", "composite", 2, ["Box"], { kitId: "harvested" });
+    const box = comp("Box", "primitive", 9, [], { kitId: "base-studio-code", id: "ui-box" });
+    const dc = analyzeGraphHealth([panel], undefined, [panel, box])
+      .filter((f) => f.category === "dangling-composes-reference");
+    expect(dc).toHaveLength(1);
+    expect(dc[0].why).toContain("base-studio-code");
+    expect(dc[0].why).not.toContain("ANYWHERE"); // it is NOT missing from the library
+  });
+
+  // Without the library the finding still fires — it just does not claim which of the two cases it is.
+  it("stays unqualified about WHERE when no library is passed (#89)", () => {
+    const panel = comp("PersonasPanel", "composite", 2, ["Box"], { kitId: "harvested" });
+    const dc = analyzeGraphHealth([panel]).filter((f) => f.category === "dangling-composes-reference");
+    expect(dc).toHaveLength(1);
+    expect(dc[0].why).toContain("no component in this kit");
+    expect(dc[0].why).not.toContain("ANYWHERE");
+  });
+
+  // Rust twin: `a_composes_entry_that_resolves_is_not_flagged`.
+  it("is silent when every composes entry resolves — by name, by id, or blank (#89)", () => {
+    const page = comp("Page", "page", 2, ["Card", "widget", ""]);
+    const card = comp("Card", "composite", 3);
+    const widget = comp("Widget", "composite", 3, [], { id: "widget" });
+    const cats = analyzeGraphHealth([page, card, widget], undefined, [page, card, widget]).map((f) => f.category);
+    expect(cats).not.toContain("dangling-composes-reference");
   });
 
   it("notes a bare npm miss as stubbed-import, not an error (#3696)", () => {
