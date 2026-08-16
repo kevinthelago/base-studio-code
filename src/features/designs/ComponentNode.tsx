@@ -14,10 +14,10 @@
 import { memo, type CSSProperties } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { useAppStore } from "@/store";
 import { ROLE_COLOR } from "./lib/model";
-import { HEALTH_BADGE, type HealthCategory } from "./lib/graphHealth";
+import { HEALTH_BADGE, worstHealth, type HealthCategory } from "./lib/graphHealth";
 import { NODE_W } from "@/features/designs/lib/compositionLayout";
-import type { ComponentBuildStatus } from "./lib/componentScan";
 import type { ComponentRecord } from "./lib/model";
 
 export interface ComponentNodeProps {
@@ -30,16 +30,34 @@ export interface ComponentNodeProps {
   related: boolean;
   /** The node the designer AI is touching (#2525) — pulses. Never set for the selected node. */
   working: boolean;
-  /** Graph-health category (#2680), if any — the corner badge. */
+  /**
+   * The STATIC graph-health category (#2680) — from `analyzeGraphHealth`, which changes only when the
+   * library does. The scan's RUNTIME categories are NOT passed: this node reads its own
+   * (#two-store-keys-drive-more-than-half-the-apps-jank), so a scan flush cannot re-render the parent.
+   */
   badge?: HealthCategory;
-  /** The on-visit scan's outcome (#2838/#2908/#2926) — drives the build-error / empty-render glyphs. */
-  buildStatus?: ComponentBuildStatus;
   onSelect: (c: ComponentRecord) => void;
 }
 
 export const ComponentNode = memo(function ComponentNode({
-  c, x, y, selected, related, working, badge, buildStatus, onSelect,
+  c, x, y, selected, related, working, badge: staticBadge, onSelect,
 }: ComponentNodeProps) {
+  // THE NODE READS ITS OWN SCAN SLICES (#two-store-keys-drive-more-than-half-the-apps-jank).
+  //
+  // These used to arrive as props, which meant `DesignsWorkbench` subscribed to the WHOLE
+  // `componentBuildStatus` / `componentStateHealth` records — so every 150ms scan flush re-rendered the
+  // workbench and rebuilt a health Map over every component, even though this node was already memoized
+  // (#4132). Measured before: 3,296 designs commits at a 38.5ms median, 100% over a frame budget, and
+  // 486 of 891 jank windows attributed to those two keys.
+  //
+  // Subscribing per node inverts it: a flush wakes only the nodes whose own entry changed. The batch
+  // flush copies the record but keeps unchanged values by reference, so `Object.is` holds for every node
+  // that did not move and their selectors do not re-render.
+  const buildStatus = useAppStore((s) => s.componentBuildStatus[c.id]);
+  const runtimeHealth = useAppStore((s) => s.componentStateHealth[c.id]);
+  // Most-severe wins, by the same rule the workbench used to apply inline — now shared so the two
+  // cannot drift (`worstHealth`).
+  const badge = worstHealth(staticBadge, runtimeHealth);
   const state = selected ? " on" : related ? " related" : "";
   // Preview-error signal (#2838, #2908) — ADDITIVE to the health badge (different corner, own class).
   // The scan reports a `build` failure (esbuild) OR a `runtime` throw (#2908) — the tooltip names which.
