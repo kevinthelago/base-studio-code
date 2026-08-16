@@ -51,6 +51,7 @@ bsc-debug = { path = "../bsc-debug" }
 bsc-loop = { path = "../bsc-loop" }
 # `bsc request` — the improvement-request store: the designer→debug channel for bsc ui gaps (#3295, epic #3260).
 bsc-request = { path = "../bsc-request" }
+bsc-runtime = { path = "../bsc-runtime" }
 # `bsc graph` — the Algorithms knowledge graph (#2761): concepts + relationships, queryable read-only.
 bsc-graph = { path = "../bsc-graph" }
 # `bsc cad` — the Rust-native mesh/SDF geometry kernel (#3387, kernel #2621): mesh an op-tree spec to STL.

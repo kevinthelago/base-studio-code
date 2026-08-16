@@ -25,8 +25,9 @@ import type * as Esbuild from "esbuild-wasm";
 import type { ComponentType } from "react";
 import { ensureEsbuild, PREVIEW_DEFINE, PREVIEW_GLOB_BANNER, rawImportSpec } from "@/shared/lib/preview/componentBundle";
 import { resolveAppModule, isAppModule, registeredSpecifiers } from "@/shared/lib/runtime/moduleRegistry";
-import { evaluateEntry, linkGraphModules, pruneUnsatisfiableOverrides } from "./graphModules";
+import { evaluateEntry, linkGraphModules, pruneUnsatisfiableOverrides, type CompileFn } from "./graphModules";
 import { log } from "@/shared/lib/core/log";
+import { attest, srcHash } from "@/shared/lib/runtime/attest";
 
 /** Resolve a first-party specifier to another graph component's SOURCE (its `srcText`), so the loader can
  *  vendor siblings into one compile. Returns `null`/`undefined` when the specifier is NOT a graph component
@@ -190,8 +191,15 @@ export async function loadComponentFromSource(
   source: string,
   resolveGraphSource?: GraphSourceResolver,
   exportName?: string,
+  /** The compile step, injected. Defaults to the real esbuild-wasm one; `linkGraphModules` has always
+   *  taken a `CompileFn` for the same reason, and opening the same seam here is what lets the DECLINE
+   *  paths be unit-tested. They are the whole point of the attestation work and esbuild-wasm is
+   *  browser-only ("The wasmURL option only works in the browser"), so without this their only coverage
+   *  is the e2e harness — and an emitter that is never reached is exactly the silent failure this
+   *  feature exists to end. */
+  compile: CompileFn = (src) => compileToCjs(src),
 ): Promise<ComponentType<Record<string, unknown>>> {
-  const { linked: linkedAll, failures } = await linkGraphModules(source, resolveGraphSource, (src) => compileToCjs(src));
+  const { linked: linkedAll, failures } = await linkGraphModules(source, resolveGraphSource, compile);
   for (const f of failures) {
     // A record that will not COMPILE is declined like one whose closure is unsatisfiable — one bad record
     // costs its own surface, not the page. Logged per load and NAMED: the Projects page died on
@@ -202,6 +210,10 @@ export async function loadComponentFromSource(
         `(${f.error}). Falling back to the platform module.`,
       "graph-loader",
     );
+    // ATTEST the refusal (#runtime-attests-what-actually-ran). The warn line above is the only trace
+    // this ever had, which is why a record could be inert in production and look exactly like a working
+    // one. No srcHash: nothing compiled, so there is no version to claim ran.
+    attest({ specifier: f.specifier, outcome: "declined-compile", reason: String(f.error).slice(0, 200) });
   }
   // Decline any override that cannot resolve its own closure, so `require` falls back to the platform
   // module it was shadowing rather than the whole page dying on one unreachable leaf
@@ -216,6 +228,7 @@ export async function loadComponentFromSource(
         `which is neither registered nor a record. Falling back to the platform module.`,
       "graph-loader",
     );
+    attest({ specifier: d.specifier, outcome: "declined-closure", reason: `needs ${d.missing}` });
   }
   const exports = evaluateEntry(linked, makeRequire(), (specifier, error) => {
     // A graph module that COMPILED and LINKED but throws while EVALUATING falls back to the registry.
@@ -228,7 +241,18 @@ export async function loadComponentFromSource(
         `evaluating (${String(error).slice(0, 160)}). Falling back to the platform module.`,
       "graph-loader",
     );
+    attest({ specifier, outcome: "declined-eval", reason: String(error).slice(0, 200) });
   });
+  // ATTEST THE SURVIVING CLOSURE. `linked` is the exact set of modules that made it through compile,
+  // prune and eval — so this is the honest answer to "was this implementation linked into something
+  // that ran", which is what an ALGORITHM record gets. Execution counts are deliberately NOT claimed:
+  // an impl runs inside someone else's module, and counting calls means instrumenting that module.
+  //
+  // Attested BEFORE the pickComponent check: the closure linked whether or not the ENTRY turns out to
+  // export a component, and attributing an entry's failure to every module it pulled in would be wrong.
+  for (const [specifier, mod] of linked) {
+    attest({ specifier, outcome: "linked", srcHash: srcHash(mod.source) });
+  }
   const comp = pickComponent(exports, exportName);
   if (!comp) {
     throw new Error(

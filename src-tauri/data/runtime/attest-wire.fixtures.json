@@ -1,0 +1,41 @@
+{
+  "note": "CROSS-LANGUAGE WIRE CONTRACT (#runtime-attests-what-actually-ran). CAPTURED from a real `flushAttestations()` — the exact rows the frontend hands to the `record_attestations` Tauri command — with `session`/`at` pinned so it is reproducible. Rust asserts it deserializes (observability/attest.rs) and TypeScript asserts it still produces this shape (attest.test.ts). A field renamed on one side becomes a silent no-op on the other without this: serde defaults every missing field, so the app would keep folding rows full of blanks and look healthy. REGENERATE, never hand-edit.",
+  "rows": [
+    {
+      "specifier": "@/features/glance/GlanceWorkspace",
+      "record_id": "glancepage",
+      "src_hash": "8e543092bdc94add",
+      "outcome": "served",
+      "session": "s-fixture",
+      "n": 2,
+      "reason": null,
+      "ms_total": 1600,
+      "ms_max": 900,
+      "at": 1755300000000
+    },
+    {
+      "specifier": "@/broken",
+      "record_id": "broken-rec",
+      "src_hash": "",
+      "outcome": "declined-closure",
+      "session": "s-fixture",
+      "n": 1,
+      "reason": "needs @/definitely/not/registered",
+      "ms_total": 0,
+      "ms_max": 0,
+      "at": 1755300000000
+    },
+    {
+      "specifier": "@/shared/lib/core/format",
+      "record_id": "",
+      "src_hash": "",
+      "outcome": "served",
+      "session": "s-fixture",
+      "n": 1,
+      "reason": null,
+      "ms_total": 0,
+      "ms_max": 0,
+      "at": 1755300000000
+    }
+  ]
+}

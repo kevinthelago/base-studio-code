@@ -2,6 +2,7 @@
 
 use std::sync::{Mutex, MutexGuard};
 
+pub mod attest;
 pub mod collector;
 pub mod graph_log;
 pub mod log_watch;

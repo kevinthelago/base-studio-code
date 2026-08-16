@@ -5,7 +5,7 @@ use crate::{app, extensions, fleet, planner, session};
 use crate::console::{bsc, discovery, ledger, pty};
 use crate::github::{self, git_hooks, oauth};
 use crate::mobile::tunnel;
-use crate::observability::{self, collector, graph_log, logs, perf, tokens};
+use crate::observability::{self, attest, collector, graph_log, logs, perf, tokens};
 use crate::platform::docstore;
 use crate::project;
 use crate::sources::{credentials, data, oauth as source_oauth};
@@ -365,6 +365,7 @@ pub fn run() {
             perf::perf_get_config,
             perf::perf_set_config,
             perf::perf_record_frontend_sample,
+            attest::record_attestations,
             perf::perf_clear_history,
             perf::perf_get_recent_samples,
             discovery::discover_sessions,

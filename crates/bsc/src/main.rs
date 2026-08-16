@@ -41,6 +41,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("debug", "inspect the RUNNING app's live DOM + preview state (read-only)"),
     ("loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)"),
     ("request", "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)"),
+    ("runtime", "runtime attestations: which RECORD actually served each module while the app ran"),
     ("graph", "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)"),
     ("cad", "mesh/SDF geometry kernel (mm): mesh an op-tree spec into a binary STL"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
@@ -109,6 +110,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "debug" => bsc_debug::cli::run(rest, "bsc debug"),
         "loop" => bsc_loop::cli::run(rest, "bsc loop"),
         "request" => bsc_request::cli::run(rest, "bsc request"),
+        "runtime" => bsc_runtime::cli::run(rest, "bsc runtime"),
         "graph" => bsc_graph::cli::run(rest, "bsc graph"),
         "cad" => bsc_cad::cli::run(rest, "bsc cad"),
         #[cfg(feature = "data")]
