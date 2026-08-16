@@ -28,20 +28,34 @@
 [build]
 rustc-wrapper = "sccache"
 
-# THE C++ HALF IS NOT SOLVED HERE, and it is most of what remains. `rustc-wrapper` covers Rust only, while
-# `duckdb` is vendored with `features = ["bundled"]` — so `libduckdb-sys` compiles the DuckDB amalgamation
-# through the `cc` crate, outside anything cargo or sccache sees. Measured on a warm-cache, wiped-target
-# build: 200s total, of which `libduckdb-sys` ALONE was 151s.
+# THE C++ HALF, which is most of the remaining cost. `duckdb` is vendored with `features = ["bundled"]`,
+# so `libduckdb-sys` compiles the DuckDB amalgamation — 280 translation units, a ~614 MB `libduckdb.a` —
+# through the `cc` crate. Measured on a warm-cache, wiped-target build: 200s total, `libduckdb-sys` ALONE
+# 151s. Before the `[env]` block below, twelve copies of that `.a` existed on one machine, four of them
+# byte-identical (same `f6ec0f32a47ea8a4` fingerprint) because every worktree has its own `target/`.
 #
-# The obvious wiring does NOT work, and was tried:
+# `build.rustc-wrapper` above does NOT reach it. Cargo applies that setting to its own rustc invocations,
+# and never exports it as the `RUSTC_WRAPPER` environment variable — so a build script cannot see it.
 #
-#     [env]
-#     CC  = "sccache cl.exe"
-#     CXX = "sccache cl.exe"
+# TWO ROUTES TO sccache WERE TRIED AND BOTH ARE CLOSED ON windows-msvc. Read this before spending a day
+# rediscovering them; the evidence is in `cache-the-duckdb-c-build-across-worktrees`.
 #
-# `cc` passes the value through verbatim, so the build script runs `sccache cl.exe …` — and sccache fails
-# with "cannot find binary path", because bare `cl.exe` is not on PATH. `cc` normally locates MSVC itself
-# and invokes it by ABSOLUTE path; overriding CC skips that discovery. An absolute path here would work on
-# this machine and break on every other one, which is not something to check in.
+# 1. `[env] RUSTC_WRAPPER = "sccache"`. `cc` really does have an automatic hook — `rustc_wrapper_fallback()`
+#    reads that variable and, for a stem of sccache/cachepot/buildcache/kache, wraps the C compiler with it.
+#    It is unreachable here. On MSVC, `cc` resolves the tool as
+#    `self.env_tool(env).or_else(|| … ).or_else(|| cl_exe.clone())`, and `cl_exe` — from
+#    `find_msvc_tools_find_tool` — is always `Some`, so the `None` arm that calls the fallback never runs
+#    (cc-1.4.2 `src/lib.rs`). MEASURED: setting the variable changed nothing, `sccache -s` still reported
+#    0 C/C++ compile requests after a full 2m22s DuckDB build.
 #
-# Tracked as `cache-the-duckdb-c-build-across-worktrees` with the numbers attached.
+# 2. `[env] CXX = "sccache <absolute cl.exe>"`. This one `cc` WOULD honour — `env_tool` splits the value and
+#    recognises the wrapper. But taking that branch builds the tool with `Tool::with_args`, whose `env` is
+#    `Vec::new()`, while the MSVC environment (INCLUDE, LIB, PATH) is attached ONLY by
+#    `Tool::from_find_msvc_tools`. So overriding `CXX` silently drops the header/library search paths, and
+#    the build then depends on the shell already being a Developer Command Prompt. Reproducing that env in
+#    config would pin an MSVC toolchain version into a checked-in file and apply it to every cargo
+#    invocation, not just this one.
+#
+# What is left is (a) linking a prebuilt libduckdb via DUCKDB_LIB_DIR/DUCKDB_INCLUDE_DIR — which changes
+# what the installer ships, so it is a decision rather than a patch — and (b) not paying for `-O2` on a
+# dependency nobody debugs, which is the override in the root `Cargo.toml` and is portable.

@@ -31,3 +31,30 @@ debug = false
 # `cargo test -p bsc-graph` after a one-line edit took 425s against 7s warm. Matching the two makes
 # `cargo test` reuse what `cargo build` already compiled.
 opt-level = 3
+
+# …EXCEPT libduckdb-sys, whose cost is C++, not Rust. `OPT_LEVEL` is handed to every build script, and
+# `cc` maps 3 to `-O2` — so the two overrides above silently put DuckDB's 280-unit amalgamation on the
+# optimizing path. #3622 chose `opt-level = 3` for dependencies to make the RUST backend fast in dev; it
+# never intended to buy `-O2` C++, and nothing in the dev loop debugs or profiles inside DuckDB.
+#
+# This is the only lever left on that build: sccache cannot reach it (see `.cargo/config.toml` for the two
+# closed routes), and it is per-worktree because target dirs are.
+#
+# MEASURED — one fresh libduckdb-sys build, isolated (delete its build+fingerprint dirs, everything else
+# warm), quiet machine, `cargo check -p bsc-data`:
+#
+#     opt-level 3  ->  -O2   2m01s    libduckdb.a 614 MB
+#     opt-level 1  ->  -O1   1m43s    libduckdb.a 493 MB
+#     opt-level 0  ->  -Od   1m01s    libduckdb.a 675 MB
+#
+# So `-O1` buys almost nothing and 0 halves it. THE TRADE IS DEV-ONLY DuckDB QUERY SPEED: `[profile.release]`
+# has no override, so the shipped binary is byte-for-byte what it always was. If a `bsc data` scan ever feels
+# slow while developing, raise these two lines — that is the whole knob.
+#
+# BOTH tables need the line, for the same non-inheritance reason as above — mismatch them and libduckdb-sys
+# compiles twice per worktree, which is the whole problem again.
+[profile.dev.package.libduckdb-sys]
+opt-level = 0
+
+[profile.test.package.libduckdb-sys]
+opt-level = 0
