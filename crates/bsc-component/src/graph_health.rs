@@ -22,7 +22,10 @@
 //! while `@bsc/algorithms/fibonacci` exists — instead of importing it; the "compose, don't recreate"
 //! guardrail, #3118) · **orphan**
 //! (an isolated, never-referenced primitive/composite) · **unwired-prop** (declares props its own source
-//! never references — a declared interface that does nothing, #2924) · **phantom-compose** (a user
+//! never references — a declared interface that does nothing, #2924) · **props-metadata-mismatch** (the
+//! record's `props[]` disagrees with the prop signature its own source declares — an EMPTY `props: []` on
+//! a component with a real typed signature silently disables the preview's sample-data synthesizer, #88) ·
+//! **phantom-compose** (a user
 //! component declares `composes` children its own source never renders — a false graph edge that also
 //! masks orphan detection, #3111) · **slot-shell** (INFORMATIONAL — a
 //! composite whose composed children arrive via ReactNode content slots, so a standalone preview renders
@@ -51,7 +54,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
     /// `unresolvable-import` | `stubbed-import` (#3696, sev-1) | `hardcoded-color` (#3704, sev-1) |
-    /// `reimplementation` | `reimplemented-component` (#3892, sev-3) | `orphan` | `unwired-prop` | `phantom-compose` | `no-empty-state` |
+    /// `reimplementation` | `reimplemented-component` (#3892, sev-3) | `orphan` | `unwired-prop` |
+    /// `props-metadata-mismatch` (#88, sev-2) | `phantom-compose` | `no-empty-state` |
     /// `multi-component` (#doctor-flags…, sev-2) | `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `no-tests` (#3878) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
@@ -857,6 +861,447 @@ fn top_level_components(src: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// `src` as a char vector with every COMMENT and every string/template-literal BODY blanked to spaces —
+/// the substrate the prop-signature parser below scans. Char-count- and newline-preserving, so column-0
+/// detection still works and every later scan is plain bracket-depth counting: a `,` inside a JSDoc block,
+/// a trailing `// note`, or a default value like `{ sep = "," }` can no longer split a parameter list.
+///
+/// Two guards keep prose from eating real code, because over-blanking is the one way this could invent a
+/// finding rather than miss one: a `'`/`"` is only a delimiter when it does NOT immediately follow a value
+/// end (so the apostrophe in a JSX `don't` or `</b>'s` is not a string opener — the same adjacency rule,
+/// and the same reasoning, as the write-time scanner in `syntax.rs`), and a `'`/`"` literal that reaches a
+/// newline before its closer is prose rather than a string (only a template may span lines).
+///
+/// It is a second, smaller scanner than [`crate::syntax::check_module_syntax`] on purpose: that one
+/// answers "is this lexically well-formed?" and returns a verdict, this one needs the BLANKED text back.
+fn blank_code(src: &str) -> Vec<char> {
+    let b: Vec<char> = src.chars().collect();
+    let n = b.len();
+    let mut out = b.clone();
+    let mut i = 0;
+    let blank = |out: &mut Vec<char>, from: usize, to: usize| {
+        for c in out.iter_mut().take(to.min(n)).skip(from) {
+            if *c != '\n' {
+                *c = ' ';
+            }
+        }
+    };
+    while i < n {
+        match b[i] {
+            '/' if i + 1 < n && b[i + 1] == '/' => {
+                let start = i;
+                while i < n && b[i] != '\n' {
+                    i += 1;
+                }
+                blank(&mut out, start, i);
+            }
+            '/' if i + 1 < n && b[i + 1] == '*' => {
+                let start = i;
+                i += 2;
+                while i + 1 < n && !(b[i] == '*' && b[i + 1] == '/') {
+                    i += 1;
+                }
+                i = (i + 2).min(n);
+                blank(&mut out, start, i);
+            }
+            q @ ('"' | '\'' | '`') => {
+                // Adjacency is the whole rule (see `syntax.rs`): a quote pressed against a value end is
+                // prose, not a literal — `don't`, `</b>'s`. A BACKTICK is exempt: pressed against a name it
+                // is a tagged template (`` css`…` ``), which really is a literal. `=>'x'` stays a string.
+                let value_end = |c: char| c.is_alphanumeric() || c == '_' || c == '$' || c == ')' || c == ']' || c == '}';
+                let prose = i > 0
+                    && q != '`'
+                    && (value_end(b[i - 1]) || (b[i - 1] == '>' && !(i > 1 && b[i - 2] == '=')));
+                if prose {
+                    i += 1;
+                    continue;
+                }
+                let mut j = i + 1;
+                let mut closed = false;
+                while j < n {
+                    if b[j] == '\\' {
+                        j += 2;
+                        continue;
+                    }
+                    // A `'`/`"` literal cannot span lines; hitting one means this was prose, not a string.
+                    if b[j] == '\n' && q != '`' {
+                        break;
+                    }
+                    if b[j] == q {
+                        closed = true;
+                        break;
+                    }
+                    j += 1;
+                }
+                if !closed {
+                    i += 1;
+                    continue;
+                }
+                blank(&mut out, i + 1, j);
+                i = j + 1;
+            }
+            _ => i += 1,
+        }
+    }
+    out
+}
+
+/// The index of the bracket closing the one at `open_at` (`(`, `[` or `{`), counting only that pair —
+/// safe on the comment/string-blanked source, where no literal can contribute a stray bracket.
+fn matching_bracket(b: &[char], open_at: usize) -> Option<usize> {
+    let open = b[open_at];
+    let close = match open {
+        '(' => ')',
+        '[' => ']',
+        '{' => '}',
+        _ => return None,
+    };
+    let mut depth = 0usize;
+    for (i, &c) in b.iter().enumerate().skip(open_at) {
+        if c == open {
+            depth += 1;
+        } else if c == close {
+            depth -= 1;
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+    }
+    None
+}
+
+/// `b[from..]`'s first non-whitespace index (or `b.len()`).
+fn skip_ws(b: &[char], from: usize) -> usize {
+    let mut i = from;
+    while i < b.len() && b[i].is_whitespace() {
+        i += 1;
+    }
+    i
+}
+
+/// The JS identifier starting at `from` (empty when there isn't one) and the index just past it.
+fn ident_at(b: &[char], from: usize) -> (String, usize) {
+    let is_start = |c: char| c.is_alphabetic() || c == '_' || c == '$';
+    let is_rest = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    if from >= b.len() || !is_start(b[from]) {
+        return (String::new(), from);
+    }
+    let mut i = from;
+    while i < b.len() && is_rest(b[i]) {
+        i += 1;
+    }
+    (b[from..i].iter().collect(), i)
+}
+
+/// Split `b` on `sep` at bracket depth 0 (`(`/`[`/`{` counted). The input is already blanked, so a
+/// separator inside a literal or comment cannot reach here.
+fn split_top_level(b: &[char], sep: char) -> Vec<Vec<char>> {
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (i, &c) in b.iter().enumerate() {
+        match c {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
+            _ if c == sep && depth == 0 => {
+                out.push(b[start..i].to_vec());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(b[start..].to_vec());
+    out
+}
+
+/// The PARAMETER-LIST text of the top-level declaration of component `name` in the blanked source `b` —
+/// the chars between its outer parens. `None` when there is no unambiguous column-0 `function name(` /
+/// `const name = (` / `const name = function (` form (with or without `export`/`export default`/`async`
+/// and a generic parameter list), which is the conservative outcome: an exotic wrapper like
+/// `const X = memo((…) => …)` is left alone rather than guessed at.
+fn decl_params(b: &[char], name: &str) -> Option<Vec<char>> {
+    let n = b.len();
+    let mut line_start = 0usize;
+    while line_start < n {
+        let next_line = b[line_start..].iter().position(|&c| c == '\n').map_or(n, |k| line_start + k + 1);
+        // Column 0 only: an indented declaration is a nested helper, not the module's component.
+        if b[line_start].is_whitespace() {
+            line_start = next_line;
+            continue;
+        }
+        let mut i = line_start;
+        for kw in ["export ", "default ", "async "] {
+            let k: Vec<char> = kw.chars().collect();
+            if b[i..].starts_with(&k) {
+                i = skip_ws(b, i + k.len());
+            }
+        }
+        let is_fn = b[i..].starts_with(&['f', 'u', 'n', 'c', 't', 'i', 'o', 'n', ' ']);
+        let binding = ["const ", "let ", "var "].iter().find(|kw| {
+            let k: Vec<char> = kw.chars().collect();
+            b[i..].starts_with(&k)
+        });
+        let Some(kw_len) = (if is_fn { Some("function".len()) } else { binding.map(|kw| kw.len() - 1) })
+        else {
+            line_start = next_line;
+            continue;
+        };
+        i = skip_ws(b, i + kw_len);
+        // `function* Gen(` — a generator is still a declaration of that name.
+        if i < n && b[i] == '*' {
+            i = skip_ws(b, i + 1);
+        }
+        let (found, after) = ident_at(b, i);
+        if found != name {
+            line_start = next_line;
+            continue;
+        }
+        return if is_fn { fn_params(b, after) } else { binding_params(b, after) };
+    }
+    None
+}
+
+/// The parameter list of a `function name…` whose name ends at `after` — skipping a generic list.
+fn fn_params(b: &[char], after: usize) -> Option<Vec<char>> {
+    let mut i = skip_ws(b, after);
+    if i < b.len() && b[i] == '<' {
+        let mut depth = 0i32;
+        while i < b.len() {
+            match b[i] {
+                '<' => depth += 1,
+                '>' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        i += 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        i = skip_ws(b, i);
+    }
+    if i >= b.len() || b[i] != '(' {
+        return None;
+    }
+    let close = matching_bracket(b, i)?;
+    Some(b[i + 1..close].to_vec())
+}
+
+/// The parameter list of a `const name … = <fn>` binding whose name ends at `after`. Handles an arrow
+/// (`= (…) =>`, `= async (…) =>`) and a function expression (`= function (…)`); anything else — a
+/// `memo(`/`forwardRef(` wrapper, a non-function value — yields `None`.
+fn binding_params(b: &[char], after: usize) -> Option<Vec<char>> {
+    // The assignment `=` — the first one that is not part of a compound operator or the `=>` of an arrow
+    // inside the type annotation (`: Record<string, () => void> =` reaches the initializer past two).
+    let mut i = after;
+    let compound = |c: char| matches!(c, '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^');
+    while i < b.len() {
+        if b[i] == ';' {
+            return None; // a declaration with no initializer — not a component
+        }
+        if b[i] == '='
+            && b.get(i + 1) != Some(&'=')
+            && b.get(i + 1) != Some(&'>')
+            && (i == 0 || !compound(b[i - 1]))
+        {
+            break;
+        }
+        i += 1;
+    }
+    if i >= b.len() {
+        return None;
+    }
+    i = skip_ws(b, i + 1);
+    for kw in ["async ", "function"] {
+        let k: Vec<char> = kw.chars().collect();
+        if b[i..].starts_with(&k) {
+            i = skip_ws(b, i + k.len());
+            // `function Name(` — step past an optional expression name.
+            let (_, past) = ident_at(b, i);
+            i = skip_ws(b, past);
+        }
+    }
+    if i >= b.len() || b[i] != '(' {
+        return None;
+    }
+    let close = matching_bracket(b, i)?;
+    Some(b[i + 1..close].to_vec())
+}
+
+/// The body of the column-0 `interface <name> { … }` / `type <name> = { … }` declaration in `b` — the
+/// chars inside its braces. `None` when the type is imported, generic, or an intersection/union rather
+/// than a plain object literal: in every one of those cases the member list is NOT knowable from this
+/// source alone, and a guess would be a fabricated finding.
+fn type_block(b: &[char], name: &str) -> Option<Vec<char>> {
+    let n = b.len();
+    let mut line_start = 0usize;
+    while line_start < n {
+        let next_line = b[line_start..].iter().position(|&c| c == '\n').map_or(n, |k| line_start + k + 1);
+        if b[line_start].is_whitespace() {
+            line_start = next_line;
+            continue;
+        }
+        let mut i = line_start;
+        let k: Vec<char> = "export ".chars().collect();
+        if b[i..].starts_with(&k) {
+            i = skip_ws(b, i + k.len());
+        }
+        let is_iface = b[i..].starts_with(&['i', 'n', 't', 'e', 'r', 'f', 'a', 'c', 'e', ' ']);
+        let is_alias = b[i..].starts_with(&['t', 'y', 'p', 'e', ' ']);
+        if !is_iface && !is_alias {
+            line_start = next_line;
+            continue;
+        }
+        i = skip_ws(b, i + if is_iface { "interface".len() } else { "type".len() });
+        let (found, after) = ident_at(b, i);
+        if found != name {
+            line_start = next_line;
+            continue;
+        }
+        let mut j = skip_ws(b, after);
+        if is_alias {
+            if j >= n || b[j] != '=' {
+                return None; // a generic alias (`type P<T> = …`) — not resolvable here
+            }
+            j = skip_ws(b, j + 1);
+        }
+        if j >= n || b[j] != '{' {
+            return None; // `interface P extends Q {` / `type P = A & B` — the members aren't all here
+        }
+        let close = matching_bracket(b, j)?;
+        return Some(b[j + 1..close].to_vec());
+    }
+    None
+}
+
+/// The top-level member names of an object-type body (`{ a: string; b?: () => void }` → `a`, `b`). An
+/// index signature (`[k: string]: V`) contributes nothing. A segment only counts when its leading
+/// identifier is followed by `?`, `:` or `(` — the shape of a real member — so the debris left by
+/// splitting a one-line `Map<string, number>` on its comma is discarded rather than read as a prop.
+fn object_member_names(b: &[char]) -> Vec<String> {
+    let mut out = Vec::new();
+    for raw in split_top_level(b, ';').into_iter().flat_map(|s| split_top_level(&s, ',')) {
+        for seg in split_top_level(&raw, '\n') {
+            let start = skip_ws(&seg, 0);
+            if start >= seg.len() || seg[start] == '[' {
+                continue;
+            }
+            let mut i = start;
+            let readonly: Vec<char> = "readonly ".chars().collect();
+            if seg[i..].starts_with(&readonly) {
+                i = skip_ws(&seg, i + readonly.len());
+            }
+            let (name, after) = ident_at(&seg, i);
+            if name.is_empty() {
+                continue;
+            }
+            let next = skip_ws(&seg, after);
+            if matches!(seg.get(next), Some('?') | Some(':') | Some('(') | Some('<')) && !out.contains(&name) {
+                out.push(name);
+            }
+        }
+    }
+    out
+}
+
+/// The top-level bindings of a destructuring pattern body (`{ a, b: alias, c = 1, ...rest }` → `a`, `b`,
+/// `c`), plus whether a REST element is present. The key is what the prop is called, so `b: alias` reports
+/// `b`; a rest element means the component can consume props this list does not name, which is why the
+/// caller stops reporting EXTRA metadata once it sees one.
+fn destructured_names(b: &[char]) -> (Vec<String>, bool) {
+    let mut out = Vec::new();
+    let mut has_rest = false;
+    for part in split_top_level(b, ',') {
+        let start = skip_ws(&part, 0);
+        if start >= part.len() {
+            continue;
+        }
+        if part[start..].starts_with(&['.', '.', '.']) {
+            has_rest = true;
+            continue;
+        }
+        let (name, _) = ident_at(&part, start);
+        if !name.is_empty() && !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    (out, has_rest)
+}
+
+/// The prop names a component's own source DECLARES, and whether its signature ends in a rest element.
+#[derive(Debug, PartialEq, Eq)]
+struct SignatureProps {
+    names: BTreeSet<String>,
+    has_rest: bool,
+}
+
+/// The prop signature of component `name` as parsed from its own module source — the oracle the
+/// `props-metadata-mismatch` check (#88) diffs the record's `props[]` against.
+///
+/// Reads the FIRST parameter of the component's top-level declaration, by both routes an author writes:
+/// a destructuring pattern (`({ a, b }: Props)`) and a named parameter with a type (`(props: Props)` /
+/// `(props: { a: string })`). When a destructured parameter ALSO carries a resolvable annotation the two
+/// are UNIONED — a member the interface declares but the body never destructures is part of the declared
+/// contract (its absence from the body is `unwired-prop`'s finding, not this one), so counting it here
+/// keeps the two checks from contradicting each other.
+///
+/// `None` means "not knowable from this source" — no column-0 declaration of that name, an untyped
+/// `props` parameter, or an annotation naming a type that is imported rather than declared here. Every
+/// such case is SILENT: the whole value of this check is that it fires only on a mechanical mismatch, so
+/// anything requiring a guess yields nothing at all. `Some` with an empty set is the confident opposite —
+/// the component genuinely takes no props.
+fn signature_props(src: &str, name: &str) -> Option<SignatureProps> {
+    let b = blank_code(src);
+    let params = decl_params(&b, name)?;
+    let first = split_top_level(&params, ',').into_iter().next().unwrap_or_default();
+    let start = skip_ws(&first, 0);
+    if start >= first.len() {
+        // `function Foo()` — no parameter at all, so the component takes no props. Confident, not unknown.
+        return Some(SignatureProps { names: BTreeSet::new(), has_rest: false });
+    }
+    let mut names: BTreeSet<String> = BTreeSet::new();
+    let mut has_rest = false;
+    let annotation_at = if first[start] == '{' {
+        let close = matching_bracket(&first, start)?;
+        let (destructured, rest) = destructured_names(&first[start + 1..close]);
+        names.extend(destructured);
+        has_rest = rest;
+        skip_ws(&first, close + 1)
+    } else {
+        // A named parameter (`props`) — everything it declares comes from its annotation.
+        let (ident, after) = ident_at(&first, start);
+        if ident.is_empty() {
+            return None;
+        }
+        skip_ws(&first, after)
+    };
+    let typed = first.get(annotation_at) == Some(&':');
+    if !typed {
+        // An untyped `props` parameter tells us nothing; an untyped destructure told us everything.
+        return if names.is_empty() && !has_rest { None } else { Some(SignatureProps { names, has_rest }) };
+    }
+    let ty_start = skip_ws(&first, annotation_at + 1);
+    let members = if first.get(ty_start) == Some(&'{') {
+        let close = matching_bracket(&first, ty_start)?;
+        Some(object_member_names(&first[ty_start + 1..close]))
+    } else {
+        let (ty_name, after) = ident_at(&first, ty_start);
+        // A generic or qualified type (`Props<T>`, `NS.Props`) is not resolvable by name lookup alone.
+        let plain = !ty_name.is_empty() && skip_ws(&first, after) >= first.len();
+        plain.then(|| type_block(&b, &ty_name).map(|blk| object_member_names(&blk))).flatten()
+    };
+    match members {
+        Some(m) => names.extend(m),
+        // The annotation named a type this module doesn't declare (an imported contract). A destructure
+        // still stands on its own; a bare `props: Imported` leaves us with nothing to say.
+        None if names.is_empty() && !has_rest => return None,
+        None => {}
+    }
+    Some(SignatureProps { names, has_rest })
 }
 
 fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<String>) -> bool {
@@ -2153,6 +2598,108 @@ fn analyze_kit(
                 n.name,
                 if unwired.len() == 1 { "it" } else { "them" }
             ),
+        });
+    }
+
+    // ── props-metadata-mismatch (severity 2): the record's `props[]` metadata disagrees with the prop
+    // signature its OWN source declares (#88). The mismatch is purely mechanical — the metadata simply
+    // does not reflect what the module destructures or types — but the preview's sample-data synthesizer
+    // reads ONLY the metadata, so an EMPTY `props: []` on a component with a real typed signature silently
+    // gives it nothing to synthesize and the component crashes on its first unguarded prop read. Four such
+    // records were found ONE AT A TIME chasing individual render errors, because nothing could ask the
+    // question in bulk; asked over the whole kit it partitions the render-error backlog into "fixable by
+    // populating metadata" and "needs the infra fix".
+    //
+    // The conservatism is the check: [`signature_props`] returns `None` for anything it cannot read off
+    // this source alone, so an imported props type, an untyped `props` parameter or a `memo(…)` wrapper
+    // produces NOTHING rather than a guess. Built-ins are skipped (their `srcText` is an illustrative
+    // snippet, not the module, #2794) as they are for phantom-compose. A rest element (`...rest`) means the
+    // component can take props the signature does not name, so EXTRA metadata stops being reported for it —
+    // only MISSING, which a rest element cannot explain away. Mirrors `graphHealth.ts`.
+    for n in nodes {
+        if n.builtin {
+            continue;
+        }
+        let Some(src) = own_module_source(n, &kit_targets) else {
+            continue; // built-in or spec-only — no module of ours to read the signature off
+        };
+        let Some(sig) = signature_props(src, &n.name) else {
+            continue; // not knowable from this source — say nothing
+        };
+        let declared: BTreeSet<&str> = n.props.iter().map(|p| p.0.as_str()).collect();
+        let missing: Vec<&str> =
+            sig.names.iter().map(String::as_str).filter(|s| !declared.contains(s)).collect();
+        let extra: Vec<&str> = if sig.has_rest {
+            Vec::new()
+        } else {
+            declared.iter().copied().filter(|d| !sig.names.contains(*d)).collect()
+        };
+        if missing.is_empty() && extra.is_empty() {
+            continue;
+        }
+        // `unwired-prop` (#2924) ALREADY owns the case where the only disagreement is metadata naming props
+        // the source never uses at all — same evidence, same fix ("drop it from `props`"), so saying it a
+        // second time would only double the noise. This check speaks when the signature itself is out of
+        // sync: something is MISSING from the metadata, or an extra name IS referenced by the source (a
+        // parse/metadata disagreement rather than a dead declaration).
+        if missing.is_empty() && !extra.iter().any(|e| contains_word(src, e)) {
+            continue;
+        }
+        // The load-bearing case gets its own prose: an empty `props` is not "a bit out of date", it is the
+        // one state that disables the sampler outright.
+        let (why, suggested_action) = if declared.is_empty() {
+            (
+                format!(
+                    "`{}` carries NO props metadata while its own signature declares {}: {} — the preview's sample-data synthesizer reads `props`, so it has nothing to synthesize and the component renders with every prop undefined",
+                    n.name,
+                    missing.len(),
+                    missing.join(", ")
+                ),
+                format!(
+                    "populate `{}`'s `props` from its signature ({}) so the preview can sample it",
+                    n.id,
+                    missing.join(", ")
+                ),
+            )
+        } else {
+            let mut parts = Vec::new();
+            if !missing.is_empty() {
+                parts.push(format!(
+                    "missing {} (in the signature, absent from `props`)",
+                    missing.join(", ")
+                ));
+            }
+            if !extra.is_empty() {
+                parts.push(format!("extra {} (in `props`, absent from the signature)", extra.join(", ")));
+            }
+            let mut fixes = Vec::new();
+            if !missing.is_empty() {
+                fixes.push(format!("add {}", missing.join(", ")));
+            }
+            if !extra.is_empty() {
+                fixes.push(format!("drop {}", extra.join(", ")));
+            }
+            (
+                format!(
+                    "`{}`'s props metadata disagrees with the signature its own source declares: {}",
+                    n.name,
+                    parts.join("; ")
+                ),
+                format!(
+                    "{} in `{}`'s `props` so the metadata matches its signature — the preview samples from `props`, not from the source",
+                    fixes.join(" and "),
+                    n.id
+                ),
+            )
+        };
+        out.push(Finding {
+            category: "props-metadata-mismatch",
+            severity: 2,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why,
+            suggested_action,
         });
     }
 
@@ -3624,6 +4171,161 @@ export function X(){ return <i>{nope}</i>; }"
         let fs = analyze(&comps);
         let found = cats(&fs);
         assert!(!found.contains(&"unwired-prop"));
+    }
+
+    // ── props-metadata-mismatch (#88) ─────────────────────────────────────────────────────────────────
+    // The check exists because four records were found ONE AT A TIME, by accident, with a fully typed
+    // signature and an EMPTY `props: []` — the state that silently disables the preview's sampler. So the
+    // empty case is pinned first, then each of the two ways an author writes a signature, then the silence.
+
+    /// The load-bearing case: a real typed signature against `props: []`. Nothing else could ask this in
+    /// bulk, which is why the four were only ever found by chasing individual render errors.
+    #[test]
+    fn an_empty_props_list_on_a_real_signature_is_reported() {
+        let comps = [json!({
+            "id": "railtree", "name": "RailTree", "kitId": "k", "role": "composite", "used": 2,
+            "composes": [], "srcText": "s", "props": [],
+            "source": "export function RailTree({ railTree, expanded, kitId }: RailTreeProps) { return <div>{kitId}{railTree}{expanded}</div>; }",
+        })];
+        let fs = analyze(&comps);
+        assert_eq!(cats(&fs), ["props-metadata-mismatch"]);
+        assert_eq!(fs[0].severity, 2);
+        assert!(fs[0].why.contains("NO props metadata"), "{}", fs[0].why);
+        // Names EVERY missing prop — the point is that the fix needs no further investigation.
+        for p in ["railTree", "expanded", "kitId"] {
+            assert!(fs[0].why.contains(p), "{} must be named: {}", p, fs[0].why);
+        }
+        assert!(fs[0].suggested_action.contains("railtree"), "names the id to fix: {}", fs[0].suggested_action);
+    }
+
+    /// Route 1 — a DESTRUCTURED signature, with one prop missing from the metadata and one extra. The extra
+    /// is REFERENCED by the source (`legacyLabel` via `props`-free usage below), so it is this check's
+    /// finding and not `unwired-prop`'s.
+    #[test]
+    fn a_destructured_signature_reports_both_missing_and_extra() {
+        let comps = [json!({
+            "id": "toolbar", "name": "Toolbar", "kitId": "k", "role": "composite", "used": 3, "composes": [],
+            "srcText": "s",
+            "source": "const legacyLabel = \"x\";\nexport const Toolbar = ({ title, onClose }) => <div onClick={onClose}>{title}{legacyLabel}</div>;",
+            "props": [{ "name": "title", "type": "string" }, { "name": "legacyLabel", "type": "string" }],
+            "analytics": [{ "event": "close" }],
+            "tests": [{ "name": "renders", "src": "it('renders', () => {})" }]
+        })];
+        let fs = analyze(&comps);
+        assert_eq!(cats(&fs), ["props-metadata-mismatch"]);
+        assert!(fs[0].why.contains("missing onClose"), "{}", fs[0].why);
+        assert!(fs[0].why.contains("extra legacyLabel"), "{}", fs[0].why);
+        assert!(!fs[0].why.contains("title"), "the agreeing prop is never named: {}", fs[0].why);
+    }
+
+    /// Route 2 — an INTERFACE block behind a named parameter. Same two disagreements, read off the type
+    /// declaration rather than a destructure, because that is the other half of how signatures are written.
+    #[test]
+    fn an_interface_block_signature_reports_both_missing_and_extra() {
+        let comps = [json!({
+            "id": "panel", "name": "Panel", "kitId": "k", "role": "composite", "used": 3, "composes": [],
+            "srcText": "s",
+            "source": "interface PanelProps {\n  /** the heading */\n  heading: string;\n  collapsed?: boolean;\n}\nexport function Panel(props: PanelProps) { return <div>{props.heading}{props.collapsed}{props.legacy}</div>; }",
+            "props": [{ "name": "heading", "type": "string" }, { "name": "legacy", "type": "string" }],
+            "tests": [{ "name": "renders", "src": "it('renders', () => {})" }]
+        })];
+        let fs = analyze(&comps);
+        assert_eq!(cats(&fs), ["props-metadata-mismatch"]);
+        assert!(fs[0].why.contains("missing collapsed"), "{}", fs[0].why);
+        assert!(fs[0].why.contains("extra legacy"), "{}", fs[0].why);
+    }
+
+    /// A destructure that ALSO carries a resolvable annotation is the union of both — a member the interface
+    /// declares but the body never destructures is still part of the declared contract, so counting it here
+    /// keeps this check from contradicting `unwired-prop`, which is the check that owns that gap.
+    #[test]
+    fn an_annotated_destructure_unions_the_type_block() {
+        let comps = [json!({
+            "id": "row", "name": "Row", "kitId": "k", "role": "composite", "used": 3, "composes": [],
+            "srcText": "s",
+            "source": "type RowProps = { label: string; hint?: string };\nexport function Row({ label }: RowProps) { return <div>{label}</div>; }",
+            "props": [{ "name": "label", "type": "string" }, { "name": "hint", "type": "string" }],
+        })];
+        let fs = analyze(&comps);
+        let found = cats(&fs);
+        assert!(!found.contains(&"props-metadata-mismatch"), "hint is in the contract, not a mismatch: {found:?}");
+    }
+
+    /// The silence half — the corpus must gain no noise. A component with no props at all, one whose
+    /// metadata matches, an imported props type, an untyped parameter, and a built-in all say NOTHING,
+    /// because each would need a guess and a guessed finding is worse than a missed one.
+    #[test]
+    fn props_metadata_mismatch_stays_silent_when_it_cannot_be_sure() {
+        let comps = [
+            // takes no props, declares none → nothing to disagree about
+            json!({ "id": "logo", "name": "Logo", "kitId": "k", "role": "primitive", "used": 4, "composes": [],
+                    "srcText": "s", "source": "export function Logo() { return <svg />; }", "props": [] }),
+            // metadata matches the signature exactly
+            json!({ "id": "chip", "name": "Chip", "kitId": "k", "role": "primitive", "used": 4, "composes": [],
+                    "srcText": "s", "source": "export function Chip({ label, tone }) { return <b>{label}{tone}</b>; }",
+                    "props": [{ "name": "label", "type": "string" }, { "name": "tone", "type": "string" }] }),
+            // the props type is IMPORTED — its members are not in this source, so nothing is knowable
+            json!({ "id": "gauge", "name": "Gauge", "kitId": "k", "role": "primitive", "used": 4, "composes": [],
+                    "srcText": "s", "source": "export function Gauge(props: GaugeProps) { return <i>{props.pct}</i>; }",
+                    "props": [{ "name": "pct", "type": "number" }] }),
+            // an untyped `props` parameter tells us nothing about the contract
+            json!({ "id": "pass", "name": "Pass", "kitId": "k", "role": "primitive", "used": 4, "composes": [],
+                    "srcText": "s", "source": "export function Pass(props) { return <div {...props} />; }",
+                    "props": [{ "name": "label", "type": "string" }] }),
+            // a `...rest` element can absorb any extra, so only MISSING would ever be reported for it
+            json!({ "id": "spread", "name": "Spread", "kitId": "k", "role": "primitive", "used": 4, "composes": [],
+                    "srcText": "s", "source": "export function Spread({ id, ...rest }) { return <div id={id} {...rest} />; }",
+                    "props": [{ "name": "id", "type": "string" }, { "name": "title", "type": "string" }] }),
+            // a BUILT-IN's srcText is an illustrative snippet (#2794), never the module
+            json!({ "id": "seed", "name": "Seed", "kitId": "k", "role": "primitive", "used": 4, "composes": [],
+                    "builtin": true, "srcText": "export function Seed({ a }) { return <i>{a}</i>; }", "props": [] }),
+        ];
+        let fs = analyze(&comps);
+        let found = cats(&fs);
+        assert!(!found.contains(&"props-metadata-mismatch"), "no finding may fire here: {found:?}");
+    }
+
+    /// The scanner is the whole finding, so its parts are pinned directly — a regression in the blanking or
+    /// the bracket walk would otherwise surface only as a silently-vanished (or invented) finding.
+    #[test]
+    fn the_signature_parser_reads_both_routes_and_refuses_to_guess() {
+        let names = |src: &str, n: &str| {
+            signature_props(src, n).map(|s| s.names.into_iter().collect::<Vec<_>>())
+        };
+        // A JSDoc comma and an apostrophe in JSX text must not reach the parse.
+        assert_eq!(
+            names("export function A({ /** one, two */ a, b }) { return <p>don't {a}{b}</p>; }", "A"),
+            Some(vec!["a".to_string(), "b".to_string()])
+        );
+        // Aliases, defaults and nested patterns report the KEY, which is what the prop is called.
+        assert_eq!(
+            names("export function A({ a: renamed, b = 1, c: { d } }) { return null; }", "A"),
+            Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
+        );
+        // A generic function head, and a type-annotated arrow whose annotation contains its own `=>`.
+        assert_eq!(names("export function A<T>({ x }: P<T>) { return null; }", "A"), Some(vec!["x".to_string()]));
+        assert_eq!(
+            names("export const A: Record<string, () => void> = ({ y }) => null;", "A"),
+            Some(vec!["y".to_string()])
+        );
+        // An index signature contributes no prop; a member must look like a member.
+        assert_eq!(
+            names("interface P { a: string; [k: string]: unknown }\nexport function A(props: P) { return null; }", "A"),
+            Some(vec!["a".to_string()])
+        );
+        // No parameter at all is CONFIDENT emptiness, not ignorance — that is what lets an over-declared
+        // metadata list be reported rather than silently skipped.
+        assert_eq!(names("export function A() { return null; }", "A"), Some(vec![]));
+        // …and the refusals.
+        assert_eq!(names("export const A = memo(({ a }) => null);", "A"), None, "a wrapper is not guessed at");
+        assert_eq!(names("export function B({ a }) { return null; }", "A"), None, "no declaration of that name");
+        assert_eq!(names("function A(props: Imported) { return null; }", "A"), None, "an imported type");
+        assert_eq!(
+            names("  export function A({ a }) { return null; }", "A"),
+            None,
+            "indented — a nested helper is not the module's component"
+        );
+        assert_eq!(signature_props("export function A({ a, ...rest }) {}", "A").map(|s| s.has_rest), Some(true));
     }
 
     #[test]

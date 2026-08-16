@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { analyzeGraphHealth, analyzeMotion, nodeHealth, HEALTH_SEVERITY, HEALTH_BADGE } from "./graphHealth";
+import { analyzeGraphHealth, analyzeMotion, nodeHealth, signatureProps, HEALTH_SEVERITY, HEALTH_BADGE } from "./graphHealth";
 import type { ComponentRecord, Role } from "./model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
 
@@ -192,6 +192,136 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     });
     const cats = analyzeGraphHealth([wired, spreader, spec]).map((f) => f.category);
     expect(cats).not.toContain("unwired-prop");
+  });
+
+  // ── props-metadata-mismatch (#88) ───────────────────────────────────────────────────────────────────
+  // The check exists because four records were found ONE AT A TIME, by accident, with a fully typed
+  // signature and an EMPTY `props: []` — the state that silently disables the preview's sampler. So the
+  // empty case is pinned first, then each of the two ways an author writes a signature, then the silence.
+
+  // Rust twin: `an_empty_props_list_on_a_real_signature_is_reported`.
+  it("reports an EMPTY props list on a component with a real typed signature (#88)", () => {
+    const railtree = comp("RailTree", "composite", 2, [], {
+      source: "export function RailTree({ railTree, expanded, kitId }: RailTreeProps) { return <div>{kitId}{railTree}{expanded}</div>; }",
+      props: [],
+    });
+    const fs = analyzeGraphHealth([railtree]);
+    expect(fs.map((f) => f.category)).toEqual(["props-metadata-mismatch"]);
+    expect(fs[0].severity).toBe(2);
+    expect(fs[0].why).toContain("NO props metadata");
+    // Names EVERY missing prop — the point is that the fix needs no further investigation.
+    for (const p of ["railTree", "expanded", "kitId"]) expect(fs[0].why).toContain(p);
+  });
+
+  // Rust twin: `a_destructured_signature_reports_both_missing_and_extra`.
+  it("reports missing and extra props against a DESTRUCTURED signature (#88)", () => {
+    const toolbar = comp("Toolbar", "composite", 3, [], {
+      source:
+        'const legacyLabel = "x";\nexport const Toolbar = ({ title, onClose }) => <div onClick={onClose}>{title}{legacyLabel}</div>;',
+      props: [
+        { name: "title", type: "string", req: false, desc: "" },
+        { name: "legacyLabel", type: "string", req: false, desc: "" },
+      ],
+      analytics: [{ event: "close" }],
+      tests: [{ name: "renders", src: "it('renders', () => {})" }],
+    });
+    const fs = analyzeGraphHealth([toolbar]);
+    expect(fs.map((f) => f.category)).toEqual(["props-metadata-mismatch"]);
+    expect(fs[0].why).toContain("missing onClose");
+    expect(fs[0].why).toContain("extra legacyLabel");
+    expect(fs[0].why).not.toContain("title"); // the agreeing prop is never named
+  });
+
+  // Rust twin: `an_interface_block_signature_reports_both_missing_and_extra`.
+  it("reports missing and extra props against an INTERFACE-block signature (#88)", () => {
+    const panel = comp("Panel", "composite", 3, [], {
+      source:
+        "interface PanelProps {\n  /** the heading */\n  heading: string;\n  collapsed?: boolean;\n}\nexport function Panel(props: PanelProps) { return <div>{props.heading}{props.collapsed}{props.legacy}</div>; }",
+      props: [
+        { name: "heading", type: "string", req: false, desc: "" },
+        { name: "legacy", type: "string", req: false, desc: "" },
+      ],
+      tests: [{ name: "renders", src: "it('renders', () => {})" }],
+    });
+    const fs = analyzeGraphHealth([panel]);
+    expect(fs.map((f) => f.category)).toEqual(["props-metadata-mismatch"]);
+    expect(fs[0].why).toContain("missing collapsed");
+    expect(fs[0].why).toContain("extra legacy");
+  });
+
+  // Rust twin: `an_annotated_destructure_unions_the_type_block`.
+  it("unions a destructure with its resolvable annotation, so unwired-prop keeps that case (#88)", () => {
+    const row = comp("Row", "composite", 3, [], {
+      source: "type RowProps = { label: string; hint?: string };\nexport function Row({ label }: RowProps) { return <div>{label}</div>; }",
+      props: [
+        { name: "label", type: "string", req: false, desc: "" },
+        { name: "hint", type: "string", req: false, desc: "" },
+      ],
+    });
+    const cats = analyzeGraphHealth([row]).map((f) => f.category);
+    expect(cats).not.toContain("props-metadata-mismatch");
+  });
+
+  // Rust twin: `props_metadata_mismatch_stays_silent_when_it_cannot_be_sure`.
+  it("stays silent whenever the signature is not knowable from the source (#88)", () => {
+    const cases = [
+      // takes no props, declares none → nothing to disagree about
+      comp("Logo", "primitive", 4, [], { source: "export function Logo() { return <svg />; }", props: [] }),
+      // metadata matches the signature exactly
+      comp("Chip", "primitive", 4, [], {
+        source: "export function Chip({ label, tone }) { return <b>{label}{tone}</b>; }",
+        props: [{ name: "label", type: "string", req: false, desc: "" }, { name: "tone", type: "string", req: false, desc: "" }],
+      }),
+      // the props type is IMPORTED — its members are not in this source, so nothing is knowable
+      comp("Gauge", "primitive", 4, [], {
+        source: "export function Gauge(props: GaugeProps) { return <i>{props.pct}</i>; }",
+        props: [{ name: "pct", type: "number", req: false, desc: "" }],
+      }),
+      // an untyped `props` parameter tells us nothing about the contract
+      comp("Pass", "primitive", 4, [], {
+        source: "export function Pass(props) { return <div {...props} />; }",
+        props: [{ name: "label", type: "string", req: false, desc: "" }],
+      }),
+      // a `...rest` element can absorb any extra, so only MISSING would ever be reported for it
+      comp("Spread", "primitive", 4, [], {
+        source: "export function Spread({ id, ...rest }) { return <div id={id} {...rest} />; }",
+        props: [{ name: "id", type: "string", req: false, desc: "" }, { name: "title", type: "string", req: false, desc: "" }],
+      }),
+      // a BUILT-IN's srcText is an illustrative snippet (#2794), never the module
+      comp("Seed", "primitive", 4, [], {
+        builtin: true, source: undefined, srcText: "export function Seed({ a }) { return <i>{a}</i>; }", props: [],
+      }),
+    ];
+    const cats = analyzeGraphHealth(cases).map((f) => f.category);
+    expect(cats).not.toContain("props-metadata-mismatch");
+  });
+
+  // The scanner is the whole finding, so its parts are pinned directly — a regression in the blanking or
+  // the bracket walk would otherwise surface only as a silently-vanished (or invented) finding.
+  // Rust twin: `the_signature_parser_reads_both_routes_and_refuses_to_guess`.
+  it("parses both signature routes and refuses to guess (#88)", () => {
+    const names = (src: string, n: string) => {
+      const s = signatureProps(src, n);
+      return s ? [...s.names].sort() : null;
+    };
+    // A JSDoc comma and an apostrophe in JSX text must not reach the parse.
+    expect(names("export function A({ /** one, two */ a, b }) { return <p>don't {a}{b}</p>; }", "A")).toEqual(["a", "b"]);
+    // Aliases, defaults and nested patterns report the KEY, which is what the prop is called.
+    expect(names("export function A({ a: renamed, b = 1, c: { d } }) { return null; }", "A")).toEqual(["a", "b", "c"]);
+    // A generic function head, and a type-annotated arrow whose annotation contains its own `=>`.
+    expect(names("export function A<T>({ x }: P<T>) { return null; }", "A")).toEqual(["x"]);
+    expect(names("export const A: Record<string, () => void> = ({ y }) => null;", "A")).toEqual(["y"]);
+    // An index signature contributes no prop; a member must look like a member.
+    expect(names("interface P { a: string; [k: string]: unknown }\nexport function A(props: P) { return null; }", "A")).toEqual(["a"]);
+    // No parameter at all is CONFIDENT emptiness, not ignorance — that is what lets an over-declared
+    // metadata list be reported rather than silently skipped.
+    expect(names("export function A() { return null; }", "A")).toEqual([]);
+    // …and the refusals.
+    expect(names("export const A = memo(({ a }) => null);", "A")).toBeNull();
+    expect(names("export function B({ a }) { return null; }", "A")).toBeNull();
+    expect(names("function A(props: Imported) { return null; }", "A")).toBeNull();
+    expect(names("  export function A({ a }) { return null; }", "A")).toBeNull();
+    expect(signatureProps("export function A({ a, ...rest }) {}", "A")?.hasRest).toBe(true);
   });
 
   it("notes a bare npm miss as stubbed-import, not an error (#3696)", () => {
