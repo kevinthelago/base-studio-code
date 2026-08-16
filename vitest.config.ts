@@ -26,15 +26,11 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    // A RETIRED module's tests live on its record and are materialized into `.bsc-records/` beside the
-    // module (`scripts/emit-records.mjs`). They have to be named explicitly: the default glob is
-    // `**/*.{test,spec}.…`, and the glob engine does not descend into a DOT-directory, so `.bsc-records/`
-    // is invisible to it no matter how the pattern is written. Verified by probe — a test placed there is
-    // collected with this entry and silently ignored without it.
-    //
-    // This is what makes deleting a colocated test file safe: the record's copy takes over in the SAME
-    // gate run, so coverage moves rather than disappearing.
-    include: [...configDefaults.include, ".bsc-records/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
+    // ⛔ NO `include` HERE. A root-level `test.include` is ADDITIVE into every project rather than being
+    // replaced by the project's own, so one added here lands in `node` as well and that project stops
+    // being the `lib/` subset: measured, it collected 732 files instead, ran the whole DOM suite without
+    // a DOM, and every `.bsc-records/` test ran TWICE (1169 files collected for 725 real ones, 244 files
+    // and 1284 tests red). The record glob lives on the `dom` project below, where it belongs anyway.
     // Test DISCOVERY excludes — keeps a ROOT run out of nested worktrees. See vitest.excludes.ts (#3379).
     exclude: testExclude,
 
@@ -74,7 +70,16 @@ export default defineConfig({
           // dropped all 8 silently: 717 files ran instead of 725 and the suite still reported green.
           // One of the casualties was `scripts/vitest-discovery.test.ts`, the guard against exactly
           // this. Widening the project include is not optional.
-          include: configDefaults.include,
+          //
+          // A RETIRED module's tests live on its record and are materialized into `.bsc-records/` beside
+          // the module (`scripts/emit-records.mjs`) — which is what lets a retired module drop its
+          // colocated test file without dropping coverage. They must be named EXPLICITLY: the default
+          // glob is `**/*.{test,spec}.…` and the glob engine does not descend into a DOT-directory, so
+          // `.bsc-records/` is invisible to it however the pattern is written.
+          //
+          // On THIS project, not the root: records are components and want jsdom, and a root-level
+          // include leaks into `node` too (see above).
+          include: [...configDefaults.include, ".bsc-records/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
           // `exclude` REPLACES rather than merges, so the worktree excludes have to be restated here
           // alongside the `lib/` handover — dropping them would let a root run walk nested worktrees
           // again, which is exactly #3379.
