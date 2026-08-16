@@ -19,8 +19,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
 import { DesignerTerminal } from "@/features/designs/DesignerTerminal";
-import { DesignerLoopBanner } from "./DesignerLoopBanner";
-import { useDesignerLoopPump } from "@/features/designs/useDesignerLoopPump";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
@@ -165,7 +163,6 @@ export function DesignsWorkbench() {
   // hidden page forever (the same KeptMountedPage leak #3616 fixed for the scan below). Paused when
   // hidden; `bsc logs tail` catches up on return; the `setAiFocused(null)` cleanup handles unmount.
   useUiActivity(scanVisible);
-  useDesignerLoopPump(); // #3292: drive the open designer loop (bsc loop) from this long-lived workspace
   useEffect(() => () => useAppStore.getState().setAiFocused(null), []);
 
   // The always-on designer terminal's height (#2624) — a row-resize handle above it; `invert` because
@@ -502,10 +499,6 @@ export function DesignsWorkbench() {
   // graph header. Modals + notice cards are siblings of the canvas.
   return (
     <>
-      {/* #3852: the banner lives IN the graph header now (see `toolbar` below). It stays here as the
-          overlay for the one case there is no header — theme-preview mode drops the whole header row, and
-          the loop's Stop must not become unreachable: it is the only brake on an unattended run. */}
-      {previewMode && <DesignerLoopBanner />}
       {shareOpen && (
         <KitShareModal
           kit={kit ?? null}
@@ -537,9 +530,6 @@ export function DesignsWorkbench() {
         // the header row so the preview overlay owns the whole center (the graph beneath it is covered).
         toolbar={previewMode ? null : (
           <>
-            {/* The loop banner owns the header's leading slot (#3852) — it replaced a "Composition graph ·
-                <kit>" eyebrow that repeated what the PageTabs strip and the rail already say. */}
-            <DesignerLoopBanner inline />
             {/* The graph-health count (#2680). A read-only signal on purpose (#3889): `bsc ui doctor` is
                 what ACTS on findings — it reports the same set, plus the render-time ones the scan mirrors
                 to the durable log (#3540) — so an in-app worklist duplicated the consumer without serving one. */}
