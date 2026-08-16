@@ -122,6 +122,13 @@
 .ds-health-dangling-composes-reference { color: var(--warning, var(--state-wait)); border-color: color-mix(in srgb, var(--warning, var(--state-wait)) 45%, var(--border)); }
 .ds-health-orphan { color: var(--fg-dim); }
 .ds-health-unwired-prop { color: var(--warning, var(--state-wait)); border-color: color-mix(in srgb, var(--warning, var(--state-wait)) 45%, var(--border)); }
+/* #88 — the record's `props` disagrees with its own signature. The same "metadata claims something the
+   source does not" family as unwired-prop, so the same warn tone. (Added at integration: there is no
+   default rule beyond `.ds-health`, so a category with no entry here badges with no accent at all.) */
+.ds-health-props-metadata-mismatch { color: var(--warning, var(--state-wait)); border-color: color-mix(in srgb, var(--warning, var(--state-wait)) 45%, var(--border)); }
+/* #87 — skips the shell its family shares. A coherence REPORT, so it reads in the info tone rather than
+   as a fault: the node may be a deliberate exception. */
+.ds-health-skips-family-shell { color: var(--info, var(--accent)); border-color: color-mix(in srgb, var(--info, var(--accent)) 45%, var(--border)); }
 .ds-health-slot-shell { color: var(--info, var(--accent)); border-color: color-mix(in srgb, var(--info, var(--accent)) 45%, var(--border)); }
 /* #3163 motion findings — dead selector + name collision are faults (warning tone); the two SVG traps are advisory (info tone). */
 .ds-health-motion-dead-selector, .ds-health-motion-name-collision { color: var(--warning, var(--state-wait)); border-color: color-mix(in srgb, var(--warning, var(--state-wait)) 45%, var(--border)); }
