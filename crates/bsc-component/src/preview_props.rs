@@ -43,8 +43,51 @@ pub fn props_from_record(rec: &Value) -> Vec<Prop> {
 /// child text (`null` when the component has no `children` prop). Mirrors `previewProps` (componentPreview.ts).
 pub fn preview_props_states(comp_name: &str, props: &[Prop]) -> Value {
     let child = preview_child(comp_name, props);
-    let state = |s: &str| json!({ "props": preview_prop_list(props, s), "child": child });
+    // #84 — state-independent (untypeability is a fact about the TYPE), but carried on every state so a
+    // caller reading ONE state (what `--state` narrows to) still sees it.
+    let unsampled: Vec<Value> = unsampled_required_props(props).into_iter().map(|p| json!(p.name)).collect();
+    let state = |s: &str| json!({
+        "props": preview_prop_list(props, s),
+        "child": child,
+        "unsampled": Value::Array(unsampled.clone()),
+    });
     json!({ "loaded": state("loaded"), "empty": state("empty"), "loading": state("loading") })
+}
+
+/// Can the sampler produce a value for `name`/`ty` FROM ITS TYPE at all, or does the type match no branch
+/// of [`sample_prop_value`]? Mirrors `cannotTypeProp` (componentPreview.ts).
+///
+/// The distinction is the point (#84). A prop is absent from a sampled state for one of two reasons and
+/// only one is a problem: a loading/error-family prop and a data container are omitted BY DESIGN (their own
+/// state supplies them, or the component's own demo does), while an UNTYPEABLE prop is omitted because the
+/// type STRING matched nothing — `ModelId`/`ViewKey` are NAMED ALIASES over string-literal unions, so even
+/// the last-resort inline-union regex finds no quoted literal. A required prop in the second group is
+/// dropped silently and the component mounts with `undefined` where its contract promised a value.
+pub fn cannot_type_prop(name: &str, ty: &str) -> bool {
+    if is_loading_prop(name, ty) || is_error_prop(name, ty) {
+        return false; // set in their own state, by design
+    }
+    let t = ty.to_lowercase();
+    if t.contains("=>") || t.contains("function") || t.contains("void") || starts_on_upper(name) {
+        return false;
+    }
+    if is_collection_prop(ty) || is_record_type(&t) || is_set_type(&t) || is_map_type(&t) {
+        return false; // the container rule
+    }
+    if t.contains("node") || t.contains("string") || t.contains("number") || t.contains("boolean") {
+        return false;
+    }
+    first_string_literal(ty).is_none()
+}
+
+/// The REQUIRED props the sampler cannot type, in schema order — the preview's own report that a component
+/// is mounted without part of its contract. `children` is excluded (it is passed as the element's child,
+/// never as a prop). Mirrors `unsampledRequiredProps` (componentPreview.ts).
+pub fn unsampled_required_props(props: &[Prop]) -> Vec<&Prop> {
+    props
+        .iter()
+        .filter(|p| p.req && p.name != "children" && cannot_type_prop(&p.name, &p.ty))
+        .collect()
 }
 
 /// The props (name + sampled JS-source value) the bootstrap passes in `state`, in schema order — each
@@ -84,6 +127,18 @@ fn sample_prop_value(name: &str, ty: &str, _req: bool, state: &str) -> Option<St
     }
     let t = ty.to_lowercase();
     let is_fn = t.contains("=>") || t.contains("function") || t.contains("void") || starts_on_upper(name);
+    // #3555 — an ERROR-family prop is set ONLY in the `error` state, and omitted in loaded/empty/loading
+    // so the component renders normally. The `error` state itself is TS-only and outside this contract, so
+    // here the prop simply always omits, which is exactly what the TS twin does for the three states this
+    // contract DOES cover.
+    //
+    // This branch was MISSING, and nothing caught it: no fixture case carried an error-family prop, so the
+    // twins silently disagreed — Rust fell through to the string branch and sampled `error` as `"Error"`
+    // while TS omitted it. Found by adding the #84 case below, which needs one to prove an error-family
+    // prop is not reported as unsampled.
+    if is_error_prop(name, ty) {
+        return None;
+    }
     if is_fn {
         return Some("() => {}".into());
     }
@@ -125,6 +180,18 @@ fn is_loading_prop(name: &str, ty: &str) -> bool {
     let t = ty.to_lowercase();
     let is_bool = t == "boolean" || t.contains("boolean");
     is_bool && matches!(name.to_lowercase().as_str(), "loading" | "busy" | "pending" | "isloading")
+}
+
+/// Is `name`/`ty` an ERROR-family prop (`error`/`err`/`isError`/`hasError`)? Mirrors `isErrorProp`.
+///
+/// The `error` STATE (#3555) is TS-only and deliberately outside this cross-language contract, so
+/// `sample_prop_value` has no error branch. The predicate is still needed here: an error-family prop is
+/// absent from loaded/empty/loading BY DESIGN, so [`cannot_type_prop`] must not report it as missing. A
+/// callback like `onError` is not one — the function-name shape excludes it, as it does in the TS twin.
+fn is_error_prop(name: &str, ty: &str) -> bool {
+    let t = ty.to_lowercase();
+    let is_fn = t.contains("=>") || t.contains("function") || t.contains("void") || starts_on_upper(name);
+    !is_fn && matches!(name.to_lowercase().as_str(), "error" | "err" | "iserror" | "haserror")
 }
 
 /// Is `ty` a COLLECTION prop (`Row[]`, `array`)? Case-insensitive substring. Mirrors `isCollectionProp`.
@@ -334,5 +401,57 @@ mod tests {
         assert_eq!(sample_prop_value("onClick", "MouseEventHandler", false, "loaded"), Some("() => {}".into()));
         assert_eq!(sample_prop_value("color", "string", false, "loaded"), Some("\"var(--accent)\"".into()));
         assert_eq!(sample_prop_value("login", "string", false, "loaded"), Some("\"octocat\"".into()));
+    }
+
+    /// #3555 — an ERROR-family prop is omitted in the three states this contract covers. The branch was
+    /// MISSING and no fixture case carried such a prop, so Rust sampled `error` as the string `"Error"`
+    /// while TS omitted it, and the twins disagreed silently.
+    #[test]
+    fn an_error_family_prop_omits_in_every_state_this_contract_covers() {
+        for state in ["loaded", "empty", "loading"] {
+            assert_eq!(sample_prop_value("error", "string", true, state), None, "error in {state}");
+            assert_eq!(sample_prop_value("hasError", "boolean", false, state), None);
+            assert_eq!(sample_prop_value("err", "string", false, state), None);
+        }
+        // A CALLBACK is not an error prop — the function-name shape excludes it, as in the TS twin.
+        assert_eq!(sample_prop_value("onError", "() => void", false, "loaded"), Some("() => {}".into()));
+        // A merely error-ISH name is not one either.
+        assert_eq!(sample_prop_value("errorCount", "number", false, "loaded"), Some("3".into()));
+    }
+
+    /// THE REPORT (#84). A required prop whose type the sampler cannot read is NAMED, so it stops being a
+    /// mystery render-error — `PaneMenu` reported `Cannot read properties of null (reading 'find')` and its
+    /// whole dependency chain was searched for a null `.find()` that was never there.
+    #[test]
+    fn unsampled_reports_only_the_props_the_sampler_cannot_type() {
+        let p = |name: &str, ty: &str, req: bool| Prop { name: name.into(), ty: ty.into(), req };
+
+        // A named alias over a string-literal union carries no quoted literal, so nothing matches.
+        assert!(cannot_type_prop("model", "ModelId"));
+        assert!(cannot_type_prop("active", "ViewKey"));
+        // An object type and a bare generic are the same case — measured, they are most of it.
+        assert!(cannot_type_prop("vp", "GraphViewport"));
+        assert!(cannot_type_prop("value", "T"));
+        // Everything the sampler CAN type, and every DELIBERATE omission, is not reported.
+        for (n, t) in [
+            ("tone", "\"neutral\" | \"danger\""), // an INLINE union — the last-resort regex finds it
+            ("label", "string"), ("count", "number"), ("open", "boolean"), ("body", "ReactNode"),
+            ("onPick", "(v) => void"), ("onChange", "ChangeHandler"), // fn by type, then by name shape
+            ("rows", "Row[]"), ("byId", "Record<string, number>"), ("tags", "Set<string>"), // containers
+            ("loading", "boolean"), ("error", "string"), // state-driven families
+        ] {
+            assert!(!cannot_type_prop(n, t), "{n}: {t} must NOT be reported");
+        }
+
+        // Only REQUIRED props are reported (an optional one is allowed to be absent), and `children` never
+        // is — it is passed as the element's child, not as a prop.
+        let props = vec![
+            p("model", "ModelId", true),
+            p("hint", "AliasedButOptional", false),
+            p("children", "Unknown", true),
+            p("vp", "GraphViewport", true),
+        ];
+        let got: Vec<&str> = unsampled_required_props(&props).iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(got, vec!["model", "vp"]);
     }
 }
