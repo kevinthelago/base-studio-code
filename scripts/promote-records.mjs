@@ -25,13 +25,16 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSy
 import { spawnSync } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { norm, codeOnly, splitPreamble, fileAsRecordSource, runtimeImports } from "./lib/recordSource.mjs";
+import { norm, codeOnly, splitPreamble, fileAsRecordSource, runtimeImports, seedAdoption } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const flag = (name) => { const i = argv.indexOf(name); return i > -1 ? argv[i + 1] : null; };
 const APPLY = argv.includes("--apply");
 const LIMIT = flag("--limit") ? Number(flag("--limit")) : Infinity;
+/** Replace a STALE existing seed with the store record, when the record is the file and the seed is not.
+ *  Opt-in, never the default — see the guard it relaxes, at the component write below. */
+const ADOPT_SEED = argv.includes("--adopt-seed");
 const ONLY = flag("--only");
 const storeArg = flag("--store"), implsArg = flag("--impls");
 if (!storeArg || !implsArg) {
@@ -115,7 +118,15 @@ const specOf = (f) => "@/" + f.replace(/\.(tsx?|jsx?)$/, "").replace(/\/index$/,
 
 const promote = { component: [], impl: [] };
 let skippedAtWrite = 0; // written-guard declines, subtracted from the final count (see the tail of this file)
-const skipped = { bodyDiffers: 0, buildTimeOnly: [], alreadySeeded: 0, noRecord: 0, pageRecord: [], unresolvable: [], uncompilable: [], unclosedComposes: [] };
+let adopted = 0; //        stale seeds replaced by the store record under --adopt-seed
+
+/** The file, read as a record would hold it — memoized, since the adoption check re-reads it per record. */
+const fileSrcCache = new Map();
+const fileSrcOf = (f) => {
+  if (!fileSrcCache.has(f)) fileSrcCache.set(f, fileAsRecordSource(join(REPO, "src", f), f));
+  return fileSrcCache.get(f);
+};
+const skipped ={ bodyDiffers: 0, buildTimeOnly: [], alreadySeeded: 0, noRecord: 0, pageRecord: [], unresolvable: [], uncompilable: [], unclosedComposes: [] };
 
 for (const file of listModules()) {
   if (ONLY && file !== ONLY) continue;
@@ -270,7 +281,35 @@ for (const { rec, file } of promote.component) {
   // NEVER overwrite an existing seed. The skip above keys on `provides`, but the write keys on
   // `<folder>/<id>` — a record whose `provides` differs from the seed occupying that path slips through
   // and clobbers it. Seven curated seeds were overwritten before this guard existed.
-  if (existsSync(path)) { console.log(`   SKIPPED (a seed already occupies that path): ${file} → ${rec.id}.json`); skippedAtWrite++; continue; }
+  //
+  // `--adopt-seed` is the ONE narrow exception, and it inverts the case the guard was written for.
+  // The guard protects a CURATED seed from a worse record. Here the seed is the worse copy: it is
+  // BEHIND the file while the store record IS the file — which the promotion gate above has already
+  // proven, since a record only reaches this loop when its body matches. Four records were in that
+  // state (`statusbar`, `titlebar`, `terminalbanners`, `skills-lessons-tab`), three of them carrying
+  // no `provides` at all, and `titlebar`'s seed was missing the `WindowControls` export its file has —
+  // so retiring the file with that seed in place would have shipped a module short an export.
+  //
+  // The adoption is REFUSED when the existing seed already matches the file (nothing to gain) or when
+  // it would drop an export the seed has and the record does not. Neither is a judgement call: both
+  // are the same three-way `refresh-drifted-seeds.mjs` grades on, read in the other direction.
+  let adopting = false;
+  if (existsSync(path)) {
+    const seedRec = JSON.parse(readFileSync(path, "utf8"));
+    // The DECISION lives in `recordSource.mjs` as a pure function — this script runs on import, so
+    // anything embedded here cannot be unit-tested, and an untested overwrite rule is the last thing
+    // this file should carry.
+    const { verdict, reason } = seedAdoption({
+      seedSrcText: seedRec.srcText ?? "", seedProvides: seedRec.provides ?? null,
+      recordSrcText: rec.srcText ?? "", recordProvides: rec.provides ?? null,
+      fileSrc: fileSrcOf(file),
+    });
+    if (!ADOPT_SEED) { console.log(`   SKIPPED (a seed already occupies that path): ${file} → ${rec.id}.json${verdict === "adopt" ? " — it is STALE; --adopt-seed replaces it" : ""}`); skippedAtWrite++; continue; }
+    if (verdict !== "adopt") { console.log(`   ${verdict === "keep" ? "kept" : "REFUSED"} (${reason}): ${rec.id}`); skippedAtWrite++; continue; }
+    console.log(`   adopted the store record over a stale seed: ${rec.id}  (${reason})`);
+    adopted++;
+    adopting = true;
+  }
   // AND the ID must be free ANYWHERE in the seed, not just at this path. The check above keys on
   // `<folder>/<id>.json`, so the same id under a DIFFERENT folder sails past it — which is what happened:
   // `console-pane-menu` already existed under `app/console/`, this wrote a second under
@@ -278,7 +317,9 @@ for (const { rec, file } of promote.component) {
   // boot, `reconcileSeed` reported the id as pristine-but-changed and re-pushed it, forever. The app still
   // worked; three unrelated `store.test.ts` cases were the only thing that noticed, and they named the
   // RECORD rather than the duplication.
-  if (seedIds.has(rec.id)) { console.log(`   SKIPPED (that id is already in the seed elsewhere): ${file} → ${rec.id}`); skippedAtWrite++; continue; }
+  // (An ADOPTION is the one case where the id being present is the point — it is the seed being
+  //  replaced in place, at this exact path, not a second record under the same id.)
+  if (!adopting && seedIds.has(rec.id)) { console.log(`   SKIPPED (that id is already in the seed elsewhere): ${file} → ${rec.id}`); skippedAtWrite++; continue; }
   seedIds.add(rec.id);
   const out = {};
   for (const k of SEED_FIELDS) if (rec[k] !== undefined) out[k] = rec[k];
@@ -306,5 +347,6 @@ if (promote.impl.length) {
 const landed = promote.component.length + promote.impl.length - skippedAtWrite;
 console.log(
   `\npromoted ${landed} record(s) into the seed` +
+    (adopted ? `, ${adopted} of them ADOPTED over a stale seed` : "") +
     (skippedAtWrite ? ` (${skippedAtWrite} declined — a seed already occupied the path)` : ""),
 );

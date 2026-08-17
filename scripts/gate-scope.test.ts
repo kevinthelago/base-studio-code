@@ -156,4 +156,28 @@ describe("gate scope", () => {
     expect(p.frontendFiles).toEqual(["src/features/x/lib/y.ts"]);
     expect(p.runTsc).toBe(true);
   });
+
+  // A DELETED file is a change, and it is not something eslint can be pointed at: it exits non-zero
+  // with `No files matching the pattern "…" were found`, which fails the whole lint step. Every
+  // retirement tranche deletes files, so before this the scoped gate was guaranteed to fail on the
+  // work this repo does most — a 10-module tranche hit it, and the 15-module one before it would have.
+  it("keeps a DELETED file out of the lint list", () => {
+    const files = ["src/app/chrome/Titlebar.tsx", "src/features/x/lib/y.ts"];
+    const exists = (f: string) => f !== "src/app/chrome/Titlebar.tsx";
+    const p = planGate({ files, graph, dirToCrate, exists });
+    expect(p.frontendFiles).toEqual(["src/features/x/lib/y.ts"]);
+  });
+
+  it("still runs tsc and vitest when the ONLY frontend change is a deletion", () => {
+    // The deletion is exactly what tsc and vitest must see — a retired module's importers are what
+    // break. Only the eslint ARGUMENT list is narrowed, never the checks themselves.
+    const p = planGate({ files: ["src/app/chrome/Titlebar.tsx"], graph, dirToCrate, exists: () => false });
+    expect(p.frontendFiles).toEqual([]);
+    expect(p.runTsc).toBe(true);
+    expect(p.runVitest).toBe(true);
+  });
+
+  it("defaults to assuming every file exists, so a caller with no fs behaves as before", () => {
+    expect(plan(["src/features/x/lib/y.ts"]).frontendFiles).toEqual(["src/features/x/lib/y.ts"]);
+  });
 });

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { githubRequest } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
-import { ProjectsHeader } from "../list/ProjectsHeader";
+import { ProjectsHeader } from "@/features/planner/list/ProjectsHeader";
 import { useActiveProject, QueryBanner } from "@/features/planner/github/useActiveProjectGithub";
 import {
   buildGantt, tickIntervalWeeks, tickLabel, windowStartFrom,

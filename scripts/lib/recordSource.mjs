@@ -141,3 +141,43 @@ export function exportedNames(src) {
 export function runtimeImports(src) {
   return [...new Set([...src.matchAll(/^\s*(?:import|export)\s+(?!type\s)[^"']*from\s+["']([^"']+)["']/gm)].map((m) => m[1]))];
 }
+
+/**
+ * Should a promotion REPLACE the seed already sitting at its path?
+ *
+ * `promote-records.mjs` never overwrites a seed — seven curated ones were clobbered before that guard
+ * existed. This is the one narrow inversion of it, and it is a rule rather than a judgement: the guard
+ * protects a curated seed from a worse record, and here the seed is the WORSE copy. A record only
+ * reaches the write loop once its body has been proven to match the file, so when the seed does not,
+ * the seed is simply behind.
+ *
+ * `"refuse"` outranks `"adopt"`: dropping an export the seed declares is the one way this can ship a
+ * module short a symbol, which is the failure `provides` overrides are already known for.
+ *
+ * STALE IS EITHER HALF — body or `provides`. `skills-lessons-tab`'s seed body already matched the file
+ * and it was still wrong to leave: its `provides` was `@/components/skills-lessons-tab` while the
+ * record — and every importer of the retired file — names `@/features/skills/LessonsTab`, so retiring
+ * with that seed in place leaves the specifier answered by nothing. A body-only check called it "keep".
+ *
+ * Pure over its inputs, so the decision is testable without running the promoter.
+ *
+ * @param {{ seedSrcText?: string, seedProvides?: string | null, recordSrcText?: string,
+ *           recordProvides?: string | null, fileSrc?: string }} input
+ * @returns {{ verdict: "adopt" | "keep" | "refuse", reason: string, lost: string[] }}
+ */
+export function seedAdoption({ seedSrcText = "", seedProvides = null, recordSrcText = "", recordProvides = null, fileSrc = "" }) {
+  // NORMALIZE THE FILE SIDE HERE rather than trusting the caller. `fileAsRecordSource` already returns
+  // a normed string, so the live path was fine — but a raw `readFileSync` differs by a trailing
+  // newline, and that alone reads as "the seed is stale" and adopts. Silently overwriting a correct
+  // seed over one byte is the failure this rule is a hair away from being.
+  const file = norm(fileSrc);
+  const seedBody = splitPreamble(norm(seedSrcText), file)[1];
+  const stale = seedBody !== file || (seedProvides ?? null) !== (recordProvides ?? null);
+  if (!stale) return { verdict: "keep", reason: "the seed already matches the file, provides included", lost: [] };
+  const seedExports = exportedNames(seedSrcText);
+  const recExports = exportedNames(recordSrcText);
+  // `null` means `export * from` — opaque, so it is "do not judge", never "exports nothing".
+  const lost = seedExports && recExports ? [...seedExports].filter((n) => !recExports.has(n)) : [];
+  if (lost.length) return { verdict: "refuse", reason: `adopting would drop export(s) ${lost.join(", ")}`, lost };
+  return { verdict: "adopt", reason: `provides ${seedProvides ?? "(none)"} → ${recordProvides ?? "(none)"}`, lost: [] };
+}

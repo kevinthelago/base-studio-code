@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useAppStore } from "@/store";
-import { ProjectsHeader } from "../list/ProjectsHeader";
+import { ProjectsHeader } from "@/features/planner/list/ProjectsHeader";
 import { useActiveProjectGithub, QueryBanner } from "@/features/planner/github/useActiveProjectGithub";
 import { reposFromItems } from "@/features/planner/list/projectScan";
 import { GH_OPTION_COLORS } from "@/shared/lib/github/colors";

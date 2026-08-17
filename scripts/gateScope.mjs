@@ -154,8 +154,11 @@ export function withDependents(changed, graph) {
  * `runTsc` is true whenever ANY frontend file changed and is never scoped: `tsc --noEmit` is a
  * whole-program check, so "only the changed files" is not a thing it can do, and at 18.7s measured it is
  * cheap enough to always pay.
+ *
+ * @param {{ files: string[], graph: Map<string, string[]>, dirToCrate: Map<string, string>,
+ *           force?: boolean, exists?: (file: string) => boolean }} input
  */
-export function planGate({ files, graph, dirToCrate, force = false }) {
+export function planGate({ files, graph, dirToCrate, force = false, exists = () => true }) {
   if (force) {
     return { full: true, reason: "--full requested", rustCrates: [], frontendFiles: [], runVitest: true, runTsc: true };
   }
@@ -179,14 +182,26 @@ export function planGate({ files, graph, dirToCrate, force = false }) {
     const c = crateForPath(f, dirToCrate);
     if (c) touched.add(c);
   }
-  const frontendFiles = files.filter(isFrontendPath);
+  // A DELETED file is a change, but it is not something eslint can be pointed at: it exits non-zero
+  // with `No files matching the pattern "…" were found` and takes the whole lint step with it. Every
+  // retirement tranche deletes files, so without this the scoped gate is guaranteed to fail on exactly
+  // the work this repo does most (10 deletions in one tranche; 15 in the one before it). `exists` is
+  // injected rather than read here so `planGate` stays pure and unit-testable — the runner supplies
+  // `existsSync`.
+  //
+  // ONLY THE ESLINT ARGUMENT LIST IS NARROWED. `runTsc`/`runVitest` key on the CHANGED frontend files,
+  // deletions included, because a retired module's importers are exactly what those two catch — deriving
+  // them from the filtered list instead made a deletion-only change skip both, which is this repo's
+  // signature failure (a gate that covers less and still reports green). The unit test pins it.
+  const touchedFrontend = files.filter(isFrontendPath);
+  const frontendFiles = touchedFrontend.filter(exists);
 
   return {
     full: false,
     reason: "scoped to what this change can affect",
     rustCrates: touched.size ? withDependents(touched, graph) : [],
     frontendFiles,
-    runVitest: frontendFiles.length > 0,
-    runTsc: frontendFiles.length > 0,
+    runVitest: touchedFrontend.length > 0,
+    runTsc: touchedFrontend.length > 0,
   };
 }

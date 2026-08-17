@@ -3,7 +3,7 @@ import { render, cleanup, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
-import { StudioSessionMount } from "./StudioSessionMount";
+import { StudioSessionMount } from "@/features/studio-sessions/StudioSessionMount";
 import { STUDIO_INIT_CMD, STUDIO_SESSIONS } from "@/features/studio-sessions/lib/studioSessions";
 import { buildSessionSettings } from "@/app/console/lib/sessionLaunch";
 import { restrictedRoleCommands } from "@/shared/lib/session/sessionRoles";

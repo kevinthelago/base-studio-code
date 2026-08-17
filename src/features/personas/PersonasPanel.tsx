@@ -14,7 +14,7 @@ import { Card } from "@/shared/ui/data/Card";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
 import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
-import { PersonaEditor } from "./PersonaEditor";
+import { PersonaEditor } from "@/features/personas/PersonaEditor";
 
 export function PersonasPanel() {
   const personas = useAppStore((s) => s.personas);
