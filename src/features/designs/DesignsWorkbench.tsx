@@ -15,9 +15,8 @@
 // `graphEdge`, #2418; the top-down hierarchy layout lives in `lib/compositionLayout`, #2455); GraphCanvas
 // owns the rail/inspector widths, so `useDragResize` sizes only the designer-terminal dock now. Data
 // comes from the global store via the `bsc ui` bridge.
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";
-import type { AiTouch } from "@/features/designs/store";
 import { KitShareModal } from "./KitShareModal";
 import { DesignerTerminal } from "@/features/designs/DesignerTerminal";
 import { Box } from "@/shared/ui/layout/Box";
@@ -53,7 +52,7 @@ import { RoleDot } from "@/features/designs/kitChrome";
 import { RailTree } from "./RailTree";
 import { ComponentNode } from "./ComponentNode";
 import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, ROLE_COLOR, ROLES, type ComponentRecord, type ChangeEntry } from "./lib/model";
-import { timeAgo, timeAgoMs } from "@/shared/lib/core/format";
+import { timeAgo } from "@/shared/lib/core/format";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "@/features/designs/lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
@@ -421,20 +420,23 @@ export function DesignsWorkbench() {
     lastCull.current = reading;
     log.warn(line, "perf");
   }, [shownIds, kitComps.length, gvp.view.scale]);
-  // Auto-pan the AI-touched node into view (#2525) — center it, keeping zoom (least-disruptive). The
-  // store now FOLLOWS the touched kit when nothing is selected, so the node is in this graph far more
-  // often than it used to be (previously a touch in another kit simply never panned, which was most of
-  // them — measured 3 kits across 200 consecutive touches).
+  // Auto-pan the AI-touched node into view (#2525) — center it, keeping zoom (least-disruptive).
   //
-  // Gated on having no selection, for the same reason the kit-follow is (#3599/#4248): someone
-  // inspecting a node should not have the canvas pulled out from under them every few seconds. Watching
-  // and working are different modes, and only the first one gets steered.
+  // UNGATED on selection (#auto-focus-in-kit-and-drop-the-activity-pills): focusing the component that
+  // was just written is the intended behaviour, briefly is fine, and it is not a steer worth guarding
+  // against. The old gate suppressed it whenever anything was selected, citing #3599/#4248 — but those
+  // govern `bsc navigate` yanking you to a different PAGE, and their own test allows setting focus
+  // while refusing to leave the page. Panning inside the page you are already looking at was never
+  // what they refused.
+  //
+  // Nothing needs a kit check here: the store only writes `aiFocusedId` for a touch in the kit on
+  // screen, so an out-of-kit id never reaches this effect and `graph.pos` would not hold it anyway.
   const gvpCenter = gvp.centerOn;
   useEffect(() => {
-    if (!aiFocusedId || compId) return;
+    if (!aiFocusedId) return;
     const pos = graph.pos.get(aiFocusedId);
     if (pos) gvpCenter(pos.x + NODE_W / 2, pos.y + bandShift + NODE_H / 2);
-  }, [aiFocusedId, compId, graph, gvpCenter, bandShift]);
+  }, [aiFocusedId, graph, gvpCenter, bandShift]);
 
   // ── rail hierarchy (#2487, policy fixed by #2506) — ALWAYS technology → style; a single-kit style
   // header IS the kit (lib/kitGroups), so the packaged library reads React → Studio → components.
@@ -565,10 +567,6 @@ export function DesignsWorkbench() {
                 ⚠ {healthFindings.length}
               </Text>
             )}
-            {/* The activity STRIP — every recent touch, across EVERY kit, newest first. It is
-                unconditional on purpose: the kit-follow only steers while nothing is selected, so with
-                a selection live the strip is the ONLY window onto work happening in another kit. */}
-            <ActivityStrip touches={aiTouches} components={components} onPick={selectComp} />
             <Box style={{ flex: 1 }} />
             <ZoomControls vp={gvp} step={1.15} />
             {/* The shared ghost Button (#2808), matching the Teams/Algorithms/Glance toolbars. */}
@@ -805,56 +803,6 @@ export function DesignsWorkbench() {
   );
 }
 
-/**
- * The recent-activity STRIP (#live-focus-is-kit-filtered) — the designer ring rendered in the graph
- * toolbar, newest first, spanning every kit.
- *
- * It exists because the single `.working` pulse could not answer "what are they doing?" for concurrent
- * sessions: one node pulses at a time, it moves every few seconds, and any touch outside the selected
- * kit was dropped entirely. A fading list is readable at that speed where a moving highlight is not.
- *
- * Local to this file, following `GuideCard` below — it is the Studio toolbar's own chrome, with no
- * second consumer, so promoting it to a shared primitive would buy nothing but indirection.
- */
-function ActivityStrip({ touches, components, onPick }: {
-  touches: AiTouch[];
-  components: ComponentRecord[];
-  onPick: (c: ComponentRecord) => void;
-}) {
-  if (!touches.length) return null;
-  return (
-    // `role="log"` + polite live-region: the strip narrates ongoing background work, which is exactly
-    // what a log region is for. Assertive would interrupt a screen-reader user for something they did
-    // not initiate.
-    <Box className="ds-activity" role="log" aria-live="polite" aria-label="Recent designer activity">
-      {touches.map((t, i) => {
-        const rec = components.find((c) => c.id === t.id);
-        const kit = rec?.kitId ?? t.kitId ?? "—";
-        const verb = t.kind === "touch" ? "wrote" : "read";
-        const title = rec
-          ? `${t.pane} ${verb} ${t.collection} "${t.id}" in ${kit} · ${timeAgoMs(t.at)}`
-          // A touch whose record is gone: `bsc ui merge`/`suppress` retiring it emits activity for the
-          // RETIRED id (crates/bsc-component/src/cli.rs). Real work — it must show — but there is
-          // nothing left to select, so say so instead of offering a dead click.
-          : `${t.pane} ${verb} ${t.collection} "${t.id}" · ${timeAgoMs(t.at)} · no longer in the library (retired or merged away)`;
-        return (
-          <Text
-            key={`${t.at}:${t.kind}:${t.collection}:${t.id}:${i}`}
-            as={rec ? "button" : "span"}
-            {...(rec ? { type: "button", onClick: () => onPick(rec) } : {})}
-            className={`ds-activity-chip${rec ? "" : " gone"}`}
-            size="xxs" mono title={title}
-            // Ring age drives the fade, matching the graph node's pulse decay — the strip and the graph
-            // are two views of ONE ring, so they must dim in step or they read as unrelated signals.
-            style={{ "--ds-work-fade": String(Math.max(0.25, 1 - i * 0.12)) } as CSSProperties}
-          >
-            {rec?.name ?? t.id}
-          </Text>
-        );
-      })}
-    </Box>
-  );
-}
 
 function GuideCard({ tone, title, items, glyph }: { tone: "success" | "danger"; title: string; items: string[]; glyph: string }) {
   const c = tone === "success" ? "var(--success)" : "var(--danger)";
