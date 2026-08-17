@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { SandboxDependencyCard } from "./SandboxDependencyCard";
+import { SandboxDependencyCard } from "@/features/settings/cards/SandboxDependencyCard";
 import { useAppStore } from "@/store";
 
 const NOT_READY = {

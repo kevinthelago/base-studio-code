@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ProfileBar } from "./ProfileBar";
+import { ProfileBar } from "@/features/settings/cards/ProfileBar";
 import type { ConfigProfile } from "@/store";
 
 const profiles: ConfigProfile[] = [

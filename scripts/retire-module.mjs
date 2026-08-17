@@ -22,6 +22,13 @@
 // `.bsc-records/` materializes a retired `.ts` as `.tsx` while the kit manifest still named `.ts`.
 // Nothing upstream of the kit test catches it: tsc, lint and the rest of vitest were all green.
 //
+// AND THE PLATFORM MANIFEST, the fifth — `UPDATE_KITS=1 npx vitest run src/features/designs/lib/platformModules.gen.test.ts`.
+// A retired module becomes a specifier the platform registry SERVES, so `platform-modules.json` gains
+// an entry per retirement. The 23-card tranche went 974 -> 997 and reddened
+// `platformModules.gen.test.ts` on a gate where everything else passed. Small tranches can miss this
+// (the 5-module deploy chain did not trip it), which makes it exactly the kind of step that looks
+// optional until a bigger batch proves it is not.
+//
 // It rewrites `vi.mock("./x")` too, and that is not a nicety. A mock keys on the RESOLVED module, so when
 // the consumer imports `@/a/b` while the test mocks `./b`, retiring the file makes those stop being the
 // same module — and the mock SILENTLY STOPS APPLYING. The test still runs; it just exercises the real

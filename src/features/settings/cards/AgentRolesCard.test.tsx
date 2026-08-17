@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { AgentRolesCard } from "./AgentRolesCard";
+import { AgentRolesCard } from "@/features/settings/cards/AgentRolesCard";
 import { ROLE_DEFAULTS, roleDeniedCommands, type SessionRole } from "@/shared/lib/session/sessionRoles";
 import { roleProfileId } from "@/shared/lib/session/roleProfile";
 
