@@ -768,6 +768,32 @@ already serves ~232 of the ~263 cacheable compilations in a cold build; the rest
 key** so they can never hit across worktrees, and linking. `CARGO_INCREMENTAL=0` and seeding a copied
 `target/` were both measured and are both losses.
 
+**De-duplicate identical dependency artifacts across trees.** 721 of 765 rlibs in one worktree's
+`deps/` share a filename with another's, and they are byte-identical — dependencies carry
+`debug = false` (#795) so no absolute paths are baked in, and a shared filename already implies
+shared inputs because `-C metadata` folds package + features + profile + target.
+
+```bash
+npm run dedupe -- --dry-run     # what would be linked
+npm run dedupe                  # hard-link verified-identical artifacts
+```
+
+EXPLICIT, like the pool cap — never wired into the gate. Measured on the real pool: **13.05 GB
+reclaimed** and it HOLDS (only 0.16 GB became re-eligible after the trees rebuilt).
+
+- **sha256 is verified before every link** — a filename is a hint, never a proof. That guard is not
+  theoretical: the first real run found **1902 files with identical name AND size but different
+  bytes** (`.d` dep-info files embed absolute source paths), every one of which a name+size
+  heuristic would have linked wrongly.
+- **Workspace crates are never linked** — cargo folds the absolute manifest path into their
+  `-C metadata`, so they differ per tree anyway, and they rebuild constantly.
+- **THE COST IS A ONE-TIME PARTIAL REBUILD.** A hard link shares metadata, so a linked artifact
+  adopts the canonical copy's mtime and non-canonical trees read it as stale. Setting the shared
+  inode to the group's NEWEST mtime cuts that sharply (measured 189 → 53 crates) but cannot remove
+  it: one inode cannot satisfy N trees' independent fingerprints. Expect ~40-50 crates to rebuild
+  once per tree, after which the trees are stable (0 recompiles on the next build).
+- `--min-age-mins` (default 60) keeps a live build in another tree from being raced.
+
 **Cap the parked pool — it is the biggest disk lever, and nothing else can reach it.** A parked
 worktree exists only to hold a warm `target/`, worth ~2 minutes (1m59s cold vs 0.41-5.11s recycled).
 Each one costs ~20 GB, and eight of them were holding ~160 GB. Nothing INSIDE a worktree is
