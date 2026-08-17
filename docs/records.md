@@ -108,9 +108,15 @@ had. Every one of these has cost a real failure:
   green — `main.tsx` now globs `@/**/*.css` to compensate, guarded by `styleReachability.test.ts`.
 - **Use `import.meta.glob`.** A Vite build-time transform; esbuild emits it verbatim and it is not a
   function at runtime. 11 modules are held back by this.
-- **Import `@data/*.json`.**
 - **Be a `.d.ts`.** Ambient declarations are read because they are *included*, never imported — no resolver
   substitutes a record. Retiring `src/vite-env.d.ts` broke the entire typecheck on unrelated files.
+
+**`@data/*.json` used to be on that list and no longer is.** The platform registry serves those
+specifiers (`appModules.ts` globs `@data/**/*.json` eagerly), so a record may import packaged data like
+any other module. It was never a real limitation — only an absent registration that the docs had
+written down as a rule, and 35 modules were held back by it. `dataJsonReachability.test.ts` scans real
+source for the specifiers importers actually write and requires the registry to answer each, so the
+census re-runs every suite instead of being asserted once.
 
 And two whole categories of module must stay files:
 
