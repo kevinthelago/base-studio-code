@@ -10,45 +10,113 @@ mod defer;
 mod hook;
 mod superseded;
 
-/// One row per top-level command for the `bsc help` overview. The detailed per-command help comes
-/// from each crate's own `CmdDoc` catalog (via `bsc <command> help`).
-const COMMANDS: &[(&str, &str)] = &[
-    ("plan", "per-project plan store: issues, features, fleet, sections"),
-    ("errors", "per-project runtime-fault store: fingerprinted errors + alerts"),
-    ("usage", "per-project usage-events store: record + query what users do (epic #3809)"),
-    ("project", "cross-project hub: list local projects + the .published marker"),
-    ("skill", "global skills + task-groups store"),
-    ("compliance", "compliance standards corpus"),
-    ("blueprint", "user blueprint store"),
-    ("persona", "user persona store: agent identities (prompt + skills + model over a role)"),
-    ("sound", "user sound-kit store: synthesized cues (primitives + voices + cues)"),
-    ("teams", "user teams store: persona-relationship graph (positions + relationships)"),
-    ("studio", "Studio store: shareable snapshots of the app's library state (save · apply · list · get · remove)"),
-    ("org", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)"),
-    ("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)"),
-    ("ui", "UI design surface: the primitive contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)"),
-    ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
+/// How a catalog row should be PRESENTED. Carried as data so a consumer (the `bsc help` overview, a
+/// Glance node, a future dispatch table) can render or hide a row without keeping its own list of
+/// which commands are deprecated and which are plumbing — a second list being exactly what
+/// `epic-command-surfaces-are-nodes` exists to stop minting.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Status {
+    /// A normal, supported surface.
+    Active,
+    /// A deprecated alias, kept dispatchable because live agent sessions still call it.
+    Deprecated,
+    /// Real and dispatchable, but not something a person invokes by hand — the desktop or Claude Code
+    /// runs it. Listed rather than hidden: `perf` and `serve` were BOTH dispatchable and absent from
+    /// `bsc help`, and a surface an agent cannot discover may as well not exist.
+    Internal,
+}
+
+impl Status {
+    /// The wire word, for `bsc surface list --json`.
+    const fn as_str(self) -> &'static str {
+        match self {
+            Status::Active => "active",
+            Status::Deprecated => "deprecated",
+            Status::Internal => "internal",
+        }
+    }
+}
+
+/// One row of the ONE catalog (`command-surface-catalog-is-one-source`).
+///
+/// It drives the `bsc help` overview AND `bsc surface list`, and
+/// [`tests::the_catalog_and_the_dispatch_match_agree`] pins it against the dispatch `match`, so a
+/// command can no longer exist in one and not the other.
+///
+/// Before this, `COMMANDS` was a `(name, summary)` tuple sitting beside an independent `match` with
+/// nothing reconciling them — which is how `bsc perf` and `bsc serve` both came to dispatch while
+/// appearing nowhere in `bsc help`. The detailed per-command help still comes from each crate's own
+/// `CmdDoc` catalog, via `bsc <command> help`.
+pub(crate) struct Surface {
+    /// The subcommand token, exactly as typed.
+    pub name: &'static str,
+    /// The one-line overview summary.
+    pub summary: &'static str,
+    /// The store this surface reads or writes; `None` when it touches none — a probe of the running
+    /// app, a pure tool, an internal hook.
+    ///
+    /// For most rows this is the FIRST machine-readable statement of the store, not a copy of one
+    /// held elsewhere. The five `bsc-json-store` crates are the exception: they already state theirs
+    /// as `dir_env`/`dir_segment` on their `CliSpec`, so treat those as derivable and keep this text
+    /// descriptive rather than authoritative.
+    pub store: Option<&'static str>,
+    /// How a consumer should present it.
+    pub status: Status,
+}
+
+const fn active(name: &'static str, summary: &'static str, store: Option<&'static str>) -> Surface {
+    Surface { name, summary, store, status: Status::Active }
+}
+const fn deprecated(name: &'static str, summary: &'static str, store: Option<&'static str>) -> Surface {
+    Surface { name, summary, store, status: Status::Deprecated }
+}
+const fn internal(name: &'static str, summary: &'static str, store: Option<&'static str>) -> Surface {
+    Surface { name, summary, store, status: Status::Internal }
+}
+
+const COMMANDS: &[Surface] = &[
+    active("plan", "per-project plan store: issues, features, fleet, sections", Some("plan.db — per-project, $BSC_PLAN_DB")),
+    active("errors", "per-project runtime-fault store: fingerprinted errors + alerts", Some("error.db — per-project hub")),
+    active("usage", "per-project usage-events store: record + query what users do (epic #3809)", Some("usage.db — per-project hub")),
+    active("project", "cross-project hub: list local projects + the .published marker", Some("the project hub list + the .published marker")),
+    active("skill", "global skills + task-groups store", Some("skills.db — global")),
+    active("compliance", "compliance standards corpus", Some("the packaged compliance corpus")),
+    active("blueprint", "user blueprint store", Some("blueprints/ — user")),
+    active("persona", "user persona store: agent identities (prompt + skills + model over a role)", Some("personas/ — user")),
+    active("sound", "user sound-kit store: synthesized cues (primitives + voices + cues)", Some("sounds/ — user")),
+    active("teams", "user teams store: persona-relationship graph (positions + relationships)", Some("orgs/ — user; the on-disk dir keeps its pre-rename name")),
+    active("studio", "Studio store: shareable snapshots of the app's library state (save · apply · list · get · remove)", Some("the Studio snapshot store — user")),
+    deprecated("org", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)", Some("orgs/ — the same store `bsc teams` serves")),
+    deprecated("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)", Some("the component library — the same store `bsc ui` serves")),
+    active("ui", "UI design surface: the primitive contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)", Some("the component library + themes + released kits")),
+    active("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control", Some("the unified log / perf / cost engine")),
     // #82: this line USED to advertise `read/write/edit/list/info` — four of which have never
     // existed. A designer followed it, ran `bsc files list`, got `unknown command 'list'`, and filed
     // a request for the directory listing that `tree` had been providing all along. An overview that
     // names verbs the CLI lacks is worse than no overview: it is a map to a door that is not there.
-    ("files", "read-only file toolkit: tree (folder structure) · stat · read · refs"),
-    ("shot", "capture the RUNNING app's real pixels — a webview snapshot (needs the app running)"),
-    ("navigate", "steer the RUNNING app to a view — so a capture can target something"),
-    ("fleet", "which fleet panes are ACTUALLY alive — real liveness + pid from the running app"),
-    ("session", "the app-owned SYSTEM SESSIONS: start · stop · list (designer, librarian, …)"),
-    ("metrics", "fleet-wide generation scoreboard — $ / tokens / cache-hit / wall-clock per project"),
-    ("debug", "inspect the RUNNING app's live DOM + preview state (read-only)"),
-    ("loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)"),
-    ("request", "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)"),
-    ("runtime", "runtime attestations: which RECORD actually served each module while the app ran"),
-    ("graph", "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)"),
-    ("cad", "mesh/SDF geometry kernel (mm): mesh an op-tree spec into a binary STL"),
-    ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
-    ("cve", "vulnerability data (OSV.dev): scan a lockfile · check a package · advisory detail (supply-chain #2433)"),
-    ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance · cve"),
-    ("hook", "internal PreToolUse deny hooks (run by Claude Code, not by hand)"),
-    ("version", "which build this binary IS — its build time + path (#92, tells a stale sidecar from a missing verb)"),
+    active("files", "read-only file toolkit: tree (folder structure) · stat · read · refs", None),
+    active("shot", "capture the RUNNING app's real pixels — a webview snapshot (needs the app running)", None),
+    active("navigate", "steer the RUNNING app to a view — so a capture can target something", None),
+    active("fleet", "which fleet panes are ACTUALLY alive — real liveness + pid from the running app", None),
+    active("session", "the app-owned SYSTEM SESSIONS: start · stop · list (designer, librarian, …)", None),
+    active("metrics", "fleet-wide generation scoreboard — $ / tokens / cache-hit / wall-clock per project", Some("the unified log / perf / cost engine")),
+    // #command-surface-catalog-is-one-source: `perf` DISPATCHED but was absent from this catalog, so
+    // `bsc help` never mentioned it. Same shape as `bsc plan brief` being undiscoverable.
+    active("perf", "the FRONTEND instrumentation — render commits, named phases, jank windows, bsc spawns (read-only)", Some("the frontend instrumentation store")),
+    active("debug", "inspect the RUNNING app's live DOM + preview state (read-only)", None),
+    active("loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)", Some("the conversation-loop store — user")),
+    active("request", "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)", Some("the improvement-request store — user")),
+    active("runtime", "runtime attestations: which RECORD actually served each module while the app ran", Some("the runtime-attestation store")),
+    active("graph", "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)", Some("knowledge/algorithms.json — packaged seed + writable store, $BSC_GRAPH_STORE")),
+    active("cad", "mesh/SDF geometry kernel (mm): mesh an op-tree spec into a binary STL", None),
+    active("data", "canonical data model (DuckDB): model · scan · tables · connector", Some("the canonical data model — DuckDB")),
+    active("cve", "vulnerability data (OSV.dev): scan a lockfile · check a package · advisory detail (supply-chain #2433)", Some("the OSV.dev advisory cache")),
+    active("surface", "THIS catalog: every bsc command surface as data (list · --json) — one source for help, the node set and drift checks", Some("the command-surface catalog, compiled into this binary")),
+    active("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance · cve", None),
+    internal("hook", "internal PreToolUse deny hooks (run by Claude Code, not by hand)", None),
+    // #command-surface-catalog-is-one-source: `serve` (#4152) dispatched but was likewise absent.
+    internal("serve", "internal WARM server (#4152) — one long-lived process answering many requests; the desktop spawns it", None),
+    active("version", "which build this binary IS — its build time + path (#92, tells a stale sidecar from a missing verb)", None),
 ];
 
 fn top_help() -> String {
@@ -60,11 +128,73 @@ fn top_help() -> String {
          bsc <command> help    # detail for one command\n\n\
          COMMANDS:\n",
     );
-    let w = COMMANDS.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
-    for (name, summary) in COMMANDS {
-        s.push_str(&format!("  {name:<w$}  {summary}\n"));
+    let w = COMMANDS.iter().map(|c| c.name.len()).max().unwrap_or(0);
+    for c in COMMANDS {
+        let name = c.name;
+        s.push_str(&format!("  {name:<w$}  {}\n", c.summary));
     }
     s
+}
+
+/// `bsc surface` — the catalog as DATA (`command-surface-catalog-is-one-source`).
+///
+/// The point is not the table; it is that a CONSUMER can generate from this instead of restating it.
+/// `command-surfaces-are-glance-nodes` builds one Glance node per row from `--json`, and a
+/// hand-maintained node list would have been the fourth copy of the surface set to drift.
+///
+/// Output goes through [`bsc_cli_util::print_raw`] rather than `println!` so it stays capture-safe —
+/// the warm server (`serve.rs`) answers a request by capturing the verb's output, and a verb writing
+/// to stdout by another route would corrupt the protocol stream.
+fn surface_cli(rest: Vec<String>) -> Result<(), String> {
+    let verb = rest.first().map(String::as_str).unwrap_or("list");
+    match verb {
+        "list" => {
+            if rest.iter().any(|a| a == "--json") {
+                let rows: Vec<serde_json::Value> = COMMANDS
+                    .iter()
+                    .map(|c| {
+                        serde_json::json!({
+                            "name": c.name,
+                            "summary": c.summary,
+                            "store": c.store,
+                            "status": c.status.as_str(),
+                        })
+                    })
+                    .collect();
+                let json = serde_json::to_string_pretty(&rows)
+                    .map_err(|e| format!("could not render the surface catalog: {e}"))?;
+                bsc_cli_util::print_raw(&json);
+            } else {
+                let w = COMMANDS.iter().map(|c| c.name.len()).max().unwrap_or(0);
+                let mut s = String::new();
+                for c in COMMANDS {
+                    let name = c.name;
+                    let store = c.store.unwrap_or("—");
+                    s.push_str(&format!("{name:<w$}  {:<10}  {store}\n", c.status.as_str()));
+                }
+                bsc_cli_util::print_raw(s.trim_end());
+            }
+            Ok(())
+        }
+        "help" | "-h" | "--help" => {
+            bsc_cli_util::print_raw(surface_help().trim_end());
+            Ok(())
+        }
+        other => Err(format!("unknown command '{other}'\n\n{}", surface_help())),
+    }
+}
+
+fn surface_help() -> String {
+    String::from(
+        "bsc surface — every bsc command surface, as data\n\n\
+         USAGE:\n  \
+         bsc surface list           # name · status · the store it touches\n  \
+         bsc surface list --json    # the catalog as JSON — GENERATE from this, do not restate it\n\n\
+         One catalog drives `bsc help`, this command, and the drift test that pins both against the\n\
+         dispatch match. `status` is active | deprecated | internal.\n\n\
+         Roles are deliberately NOT here: the real role-to-surface data is `restricted_allow`, which\n\
+         lives in the desktop app crate this binary cannot depend on. Join it at the consumer.\n",
+    )
 }
 
 mod serve;
@@ -117,6 +247,9 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
         "cve" => cve::cli::run(rest, "bsc cve"),
+        // The catalog, as data (`command-surface-catalog-is-one-source`) — so a consumer generates
+        // the surface set instead of keeping its own copy of it.
+        "surface" => surface_cli(rest),
         "mcp" => run_mcp(rest),
         "hook" => hook::run(&rest),
         // #92: "which build am I?" — the question a session had no way to ask, so an unstaged fix and an
@@ -178,6 +311,104 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
 
+    /// The arm names `dispatch` actually handles, scraped from this file's own source.
+    ///
+    /// Scraping is not elegant. It is, however, the only way to ENUMERATE `match` arms from a test —
+    /// and enumeration is the whole point. Every previous guard here was one hand-written
+    /// `assert!(top_help().contains("…"))` per command, which can only ever pin the commands someone
+    /// remembered to pin: `bsc usage` shipped without one and reddened the workspace gate
+    /// (`agent-cli-surface-test-misses-usage`), and `perf` and `serve` went unadvertised for longer.
+    ///
+    /// Only lines whose trimmed form STARTS with a quote are considered, and only the text before
+    /// `=>` is read, so a string inside an arm BODY (`run(rest, "bsc org")`) can never be mistaken
+    /// for an arm name. The region is bounded to `dispatch` so `run_mcp`'s own match — whose arms are
+    /// MCP servers, not top-level commands — cannot leak in.
+    fn dispatched_names() -> Vec<String> {
+        const SRC: &str = include_str!("main.rs");
+        let start = SRC.find("pub(crate) fn dispatch").expect("dispatch is still named `dispatch`");
+        let end = start + SRC[start..].find("fn run_mcp").expect("run_mcp still follows dispatch");
+        let mut names = Vec::new();
+        for line in SRC[start..end].lines() {
+            let t = line.trim_start();
+            if !t.starts_with('"') {
+                continue;
+            }
+            let Some(arrow) = t.find("=>") else { continue };
+            let mut head = &t[..arrow];
+            while let Some(open) = head.find('"') {
+                let after = &head[open + 1..];
+                let Some(close) = after.find('"') else { break };
+                names.push(after[..close].to_string());
+                head = &after[close + 1..];
+            }
+        }
+        // A scan that finds nothing must FAIL, never quietly pass — a silent zero would turn this
+        // guard into a no-op the first time the function is renamed.
+        assert!(names.len() > 10, "the dispatch scan found only {names:?} — the scan is broken, not the code");
+        names
+    }
+
+    /// THE CATALOG AND DISPATCH MAY NOT DISAGREE (`command-surface-catalog-is-one-source`).
+    ///
+    /// Both directions, because both have bitten. A command that dispatches with no catalog row is
+    /// undiscoverable — `bsc perf` and `bsc serve` were exactly that, working commands absent from
+    /// `bsc help`, the same shape as `bsc plan brief` in
+    /// `the-architects-only-outbound-channel-is-undiscoverable`. A catalog row that does not dispatch
+    /// is the #82 failure: an overview naming a door that is not there.
+    ///
+    /// Verified to BITE by deleting the `perf` row and watching this fail — a guard nobody has seen
+    /// fail is a guard nobody knows works.
+    #[test]
+    fn the_catalog_and_the_dispatch_match_agree() {
+        // Spellings that are aliases or the help fallthrough, not surfaces in their own right.
+        // `version` is deliberately NOT here: it is a real command and carries a real row.
+        const NOT_A_SURFACE: &[&str] = &["", "help", "-h", "--help", "--version", "-V"];
+
+        let dispatched: Vec<String> =
+            dispatched_names().into_iter().filter(|n| !NOT_A_SURFACE.contains(&n.as_str())).collect();
+
+        for name in &dispatched {
+            assert!(
+                COMMANDS.iter().any(|c| c.name == name),
+                "`bsc {name}` dispatches but has no catalog row, so `bsc help` never mentions it \
+                 and nothing reading the surface can discover it — add a row rather than deleting \
+                 this assertion"
+            );
+        }
+        for c in COMMANDS {
+            assert!(
+                dispatched.iter().any(|n| n == c.name),
+                "the catalog advertises `bsc {}` but nothing dispatches it — an overview that names \
+                 a verb the CLI lacks is a map to a door that is not there (#82)",
+                c.name
+            );
+        }
+    }
+
+    /// `bsc surface list --json` is the GENERATION source for consumers, so its shape is a contract:
+    /// a Glance node is built per row (`command-surfaces-are-glance-nodes`). Pins the keys and that
+    /// every row round-trips, rather than eyeballing the output.
+    #[test]
+    fn surface_list_json_carries_every_row_with_its_status_and_store() {
+        let (res, out) = bsc_util::capture_output(|| surface_cli(vec!["list".into(), "--json".into()]));
+        res.expect("the catalog renders");
+        let rows: Vec<serde_json::Value> = serde_json::from_str(out.trim()).expect("valid JSON");
+
+        assert_eq!(rows.len(), COMMANDS.len(), "every catalog row is emitted");
+        for (row, c) in rows.iter().zip(COMMANDS) {
+            assert_eq!(row["name"], c.name);
+            assert_eq!(row["status"], c.status.as_str());
+            match c.store {
+                Some(s) => assert_eq!(row["store"], s, "`{}` states its store", c.name),
+                None => assert!(row["store"].is_null(), "`{}` touches no store", c.name),
+            }
+        }
+        // The two statuses a consumer must be able to tell apart WITHOUT its own list of which
+        // commands are which — that is the whole reason status is data.
+        assert!(rows.iter().any(|r| r["status"] == "deprecated"), "deprecated aliases are marked");
+        assert!(rows.iter().any(|r| r["status"] == "internal"), "internal commands are marked");
+    }
+
     #[test]
     fn mcp_help_lists_the_mock_marketing_channel() {
         let h = mcp_help();
@@ -193,7 +424,7 @@ mod tests {
     /// but this row is a verb LIST, so it can be checked against the catalog it claims to summarise.
     #[test]
     fn the_files_overview_names_only_verbs_the_files_cli_actually_has() {
-        let row = COMMANDS.iter().find(|(n, _)| *n == "files").expect("a files row").1;
+        let row = COMMANDS.iter().find(|c| c.name == "files").expect("a files row").summary;
         let real = bsc_files::cli::command_names();
         assert!(!real.is_empty(), "the files catalog is reachable");
         for verb in &real {
