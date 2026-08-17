@@ -39,9 +39,20 @@
 // Quote-agnostic on purpose: a double-quote-only sweep missed `PreviewPaneShell.tsx`'s
 // `from './StageScreenFrame'` and the typecheck found it instead. Rewriting is still not a substitute for
 // running tsc afterwards — this handles the mechanical bulk, tsc is the oracle.
+//
+// AND THE SIXTH OBLIGATION — RECORDS, which this tool did not touch for its first 110 retirements.
+// Every rewrite above walks `src/` only, so the FILE half of the codebase was maintained and the RECORD
+// half silently was not. A record importing `./useDockBack` kept working only for as long as that
+// neighbour was a file a bundler could resolve; retiring it armed the trap, and nothing in the gate
+// looked — tsc, lint, vitest, the kit test and `platformBoundary` were green across every tranche while
+// 35 store specifiers were already dead. The sweep below closes it, and
+// `src/app/runtime/recordImports.test.ts` + `scripts/check-record-imports.mjs` are the standing guards
+// (seed and store respectively) so a new one cannot appear unnoticed.
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { relativeSpecifiers, aliasFor } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const [, , target, ...flags] = process.argv;
@@ -102,11 +113,60 @@ for (const f of files) {
   }
 }
 
+// ── the RECORD half ──────────────────────────────────────────────────────────────────────────────
+// The packaged SEED first: those are files in git, so this always runs, deterministically, and needs
+// no built binary. It is a fence more than a sweep — `recordImports.test.ts` keeps the seed at zero
+// relative specifiers, so this should find nothing and says so if it ever does.
+const seedDir = join(REPO, "src-tauri/data/components/app");
+const seedFiles = [];
+(function walkSeed(dir) {
+  if (!existsSync(dir)) return;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) walkSeed(join(dir, e.name));
+    else if (e.name.endsWith(".json")) seedFiles.push(join(dir, e.name));
+  }
+})(seedDir);
+
+let seedRewrote = 0;
+for (const f of seedFiles) {
+  const rec = JSON.parse(readFileSync(f, "utf8"));
+  if (!rec.srcText || !rec.src) continue;
+  const hits = relativeSpecifiers(rec.srcText).filter(({ spec: s }) => aliasFor(rec.src, s) === spec);
+  if (!hits.length) continue;
+  let text = rec.srcText;
+  for (const { at, spec: s } of hits.reverse()) text = text.slice(0, at) + spec + text.slice(at + s.length);
+  seedRewrote++;
+  console.log(`   ${DRY ? "would rewrite" : "rewrote"}  seed record ${rec.id}`);
+  if (!DRY) writeFileSync(f, `${JSON.stringify({ ...rec, srcText: text }, null, 2)}\n`);
+}
+
+/** The LIVE STORE, best effort. It needs the bundled `bsc`, which a fresh worktree may not have built —
+ *  so a miss is REPORTED with the command to run rather than swallowed or fatal. Silence here is the
+ *  exact failure this whole sweep exists to undo. */
+function sweepStore() {
+  const bin = [process.env.BSC_BIN, join(REPO, "target/release/bsc.exe"), join(REPO, "target/release/bsc")].find(
+    (p) => p && existsSync(p),
+  );
+  if (!bin) return "no built `bsc` — run `node scripts/check-record-imports.mjs --fix` once one exists";
+  try {
+    const out = execFileSync(process.execPath, [join(REPO, "scripts/check-record-imports.mjs"), ...(DRY ? [] : ["--fix"])], {
+      encoding: "utf8",
+      env: { ...process.env, BSC_BIN: bin },
+    });
+    return out.trim().split("\n").slice(-1)[0];
+  } catch (e) {
+    // exit 1 just means "found something"; the report is still on stdout.
+    return (e.stdout?.toString().trim().split("\n").slice(-1)[0] || e.message);
+  }
+}
+
 const colocated = ["test", "spec"]
   .flatMap((k) => [`${rel}.${k}.ts`, `${rel}.${k}.tsx`])
   .filter((p) => files.includes(p));
 
 console.log(`retire ${rel}: ${rewrote} importer(s) rewritten to ${spec}`);
+console.log(`   seed records: ${seedRewrote} rewritten`);
+console.log(`   store: ${sweepStore()}`);
 if (colocated.length) console.log(`   KEEPING its colocated test: ${colocated.join(", ")} — it now tests the record`);
 if (DRY) {
   console.log(`   would delete src/${self}`);

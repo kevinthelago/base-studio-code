@@ -25,6 +25,7 @@
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, statSync, rmSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { relativeSpecifiers, aliasForDir } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(REPO, ".bsc-records");
@@ -98,24 +99,14 @@ function testFileExists(spec) {
   return [".test.tsx", ".test.ts", ".spec.tsx", ".spec.ts"].some((e) => existsSync(base + e));
 }
 
-/** Every relative specifier a carried test imports — `from "./x"`, `import "./x"`, `vi.mock("./x")`.
- *
- *  The trailing segment is OPTIONAL because `from "./"` and `from ".."` are real imports naming a
- *  directory's barrel — `@/components/security-flow` carries a test doing exactly that, and it was the one
- *  mispair that survived a first version of this regex requiring a name after the slash. */
-const RELATIVE_IMPORT = /(?:from|import|vi\.mock|vi\.doMock|require)\s*\(?\s*["'](\.{1,2}(?:\/[^"']*)?)["']/g;
-
 /** Normalize a relative specifier against the directory it is imported FROM, in specifier terms.
- *  `./Button` from `shared/ui/controls` → `shared/ui/controls/Button`; `../lib/x` → `shared/ui/lib/x`. */
-function resolveRel(fromDir, rel) {
-  const parts = fromDir ? fromDir.split("/") : [];
-  for (const seg of rel.split("/")) {
-    if (seg === "" || seg === ".") continue;
-    if (seg === "..") parts.pop();
-    else parts.push(seg);
-  }
-  return parts.join("/");
-}
+ *  `./Button` from `shared/ui/controls` → `shared/ui/controls/Button`; `../lib/x` → `shared/ui/lib/x`.
+ *
+ *  Delegates to the shared `aliasForDir` and strips the `@/` back off, so the emitter's idea of where a
+ *  relative import LANDS cannot drift from the guard's. It had its own copy of this walk and its own
+ *  regex for finding the specifiers, which is the second copy the module header warns about — a guard
+ *  that reads imports differently from the tool that rewrites them is how a mispair gets waved through. */
+const resolveRel = (fromDir, rel) => aliasForDir(fromDir, rel).slice(2);
 
 /** Is this normalized path something `@/…` can reach — a module still in `src/`, or one being emitted? */
 function reachable(relPath, willEmit) {
@@ -136,10 +127,12 @@ function reachable(relPath, willEmit) {
  *  Without this, retiring a test file worked only when every sibling it touched was already a record —
  *  `@/shared/ui/data/Avatar` was exactly that case and would have gone dark on a green gate. */
 function rewriteRelativeImports(src, dir) {
-  return src.replace(
-    /((?:from|import|vi\.mock|vi\.doMock|require)\s*\(?\s*)(["'])(\.{1,2}(?:\/[^"']*)?)\2/g,
-    (_m, head, q, rel) => `${head}${q}@/${resolveRel(dir, rel)}${q}`,
-  );
+  let out = src;
+  // Back to front, so an earlier splice cannot shift a later index.
+  for (const { spec, at } of relativeSpecifiers(src).reverse()) {
+    out = out.slice(0, at) + aliasForDir(dir, spec) + out.slice(at + spec.length);
+  }
+  return out;
 }
 
 /** DECIDE what to emit, writing nothing.
@@ -184,8 +177,8 @@ export function planRecords() {
       const src = typeof t?.src === "string" ? t.src : "";
       if (!src.trim()) return;
       const name = t?.name ?? "(unnamed)";
-      const missing = [...src.matchAll(RELATIVE_IMPORT)]
-        .map((m) => m[1])
+      const missing = relativeSpecifiers(src)
+        .map((s) => s.spec)
         .filter((r, idx, all) => all.indexOf(r) === idx)
         .filter((r) => !reachable(resolveRel(dir, r), willEmit));
       if (missing.length) {
