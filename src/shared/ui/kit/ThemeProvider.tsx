@@ -6,7 +6,7 @@
 // — mirroring how a CSS component inherits the `:root` defaults when no <ThemeScope> is around it.
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { DEFAULT_THEME } from "./theme";
-import { resolveThemeTokens } from "./resolve";
+import { resolveThemeTokens } from "@/shared/ui/kit/resolve";
 
 export interface ResolvedTheme {
   /** The theme id these values were resolved from. */

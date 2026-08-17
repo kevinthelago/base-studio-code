@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveTheme, themeHoles, referencedTokens, CONTRACT_TOKENS, resolveThemeTokens } from "./resolve";
+import { resolveTheme, themeHoles, referencedTokens, CONTRACT_TOKENS, resolveThemeTokens } from "@/shared/ui/kit/resolve";
 
 describe("resolveTheme / themeHoles (#2637)", () => {
   it("referencedTokens extracts var(--x) names incl. fallbacks + color-mix operands", () => {

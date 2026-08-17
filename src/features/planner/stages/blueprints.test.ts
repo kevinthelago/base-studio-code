@@ -8,7 +8,7 @@ import {
   STAGE_DEFS, type BlueprintStage, type Blueprint, type SectionDef,
 } from "./blueprints";
 import { SKILLS } from "@/shared/data/skills";
-import { PLAN_STAGES, buildPlanStageState } from "./planStages";
+import { PLAN_STAGES, buildPlanStageState } from "@/features/planner/stages/planStages";
 import { planStateToSignals } from "./planStageDerive";
 import { evalGate } from "@/features/planner/stages/stageGate";
 

@@ -8,7 +8,7 @@
 // the caller try/catches bad JSON and the planner re-emits.
 
 import { repoShortName } from "@/shared/lib/core/projectPaths";
-import { platform, type Workload } from "./deployPlatforms";
+import { platform, type Workload } from "@/features/planner/lib/deployPlatforms";
 import {
   PIPE_TRIGGERS, PUBLISH_REGISTRIES, PUBLISH_TRIGGERS, PORT_FORWARD_METHODS,
   type DeployEnvironment, type Pipeline, type DeployConfigBlock, type DeployConfigRow, type DeploySecretRow,

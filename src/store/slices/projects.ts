@@ -6,7 +6,7 @@ import type { Tab } from "@/app/chrome/Tabstrip";
 import type { Workspace } from "@/app/chrome/Rail";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations, gridLayout } from "../helpers";
-import { buildTriagePrompt, renderTriageDelta } from "../constants";
+import { buildTriagePrompt, renderTriageDelta } from "@/store/constants";
 import { invoke } from "@tauri-apps/api/core";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "@/shared/lib/session/checkpoint";

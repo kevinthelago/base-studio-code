@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   PLATFORMS, platform, WORKLOAD, HOSTS, hostMeta, ORCHESTRATORS, REPLICA_OPTIONS,
-} from "./deployPlatforms";
+} from "@/features/planner/lib/deployPlatforms";
 
 // The deploy taxonomy is externalized to @data/deploy/taxonomy.json (#2027 P1). These guard that the
 // data loads through the accessors unchanged — a corrupt/renamed file or a shape drift trips here.

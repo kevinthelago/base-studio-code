@@ -7,7 +7,7 @@
 import { useEffect, type ReactNode, type CSSProperties } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { log } from "@/shared/lib/core/log";
-import { resolveTheme } from "./resolve";
+import { resolveTheme } from "@/shared/ui/kit/resolve";
 
 export interface ThemeScopeProps {
   /** The kit theme id (falls back to `default`). */

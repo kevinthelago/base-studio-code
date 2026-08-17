@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderTriageDelta, buildTriagePrompt, PROJECT_INIT_PROMPT } from "./constants";
+import { renderTriageDelta, buildTriagePrompt, PROJECT_INIT_PROMPT } from "@/store/constants";
 
 describe("renderTriageDelta (#1004)", () => {
   it("returns '' for a first triage (no last-run marker) — the full pass", () => {

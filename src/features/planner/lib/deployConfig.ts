@@ -10,7 +10,7 @@
 //   - deployServices.ts  — the DeployService/DeployConfig model + readiness checks + gate + issues
 //   - deployCoerce.ts    — the planner channel (coerceDeployConfig + parseDeployConfigTag)
 
-export * from "./deployPlatforms";
+export * from "@/features/planner/lib/deployPlatforms";
 export * from "./deployEnv";
 export * from "./deployServices";
 export * from "./deployCoerce";

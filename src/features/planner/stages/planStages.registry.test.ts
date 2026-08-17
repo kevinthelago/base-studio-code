@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PLAN_STAGES, STAGE_BY_ID } from "./planStages";
+import { PLAN_STAGES, STAGE_BY_ID } from "@/features/planner/stages/planStages";
 
 // Guard for the externalized stage registry (@data/planner/stage-registry.json, #2027 P1): the
 // canonical ordered stage set + its enable/optional metadata must load through the accessors unchanged.
