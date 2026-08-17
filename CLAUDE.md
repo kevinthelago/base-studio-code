@@ -524,6 +524,12 @@ bsc plan change status <ref> merged --command <merge-sha> --from <reviewer>
 bsc plan change render <ref>                                 # markdown: PR body when synced · CHANGELOG entry at release
 ```
 
+> **CHECK THE EXIT STATUS of every `change` write.** These are the only commands whose failure costs
+> you something you cannot see: a failed `change note` writes nothing and the commit still lands, so
+> the slice looks finished and the record is simply absent. `bsc` exits non-zero correctly — the
+> 2026-08-16 loss happened because the calls were written as `… >/dev/null` in a list, so nothing ever
+> read `$?`. Chain them with `&&`, or check explicitly. Do NOT redirect stderr away.
+
 It deliberately does **not** duplicate git: `head_sha`/`merge_sha` are the join to real history and the
 commit messages stay the narrative. What it holds is what git cannot — gate evidence recorded when the
 gate ran, the reviewer's verdict as an actor distinct from the author, notes written before the
