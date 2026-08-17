@@ -143,9 +143,13 @@ export function makeBuiltinOrgs(): Team[] {
 /** The packaged orgs (currently the Default fleet), so the designer is populated on day one. */
 export const BUILTIN_ORGS: Team[] = makeBuiltinOrgs();
 
-/** The built-in Studio Network team (#2940) — the id the debug overlay below keys off. */
+/** The built-in Studio Network team (#2940) — the id the request-session overlay below keys off. */
 export const STUDIO_NETWORK_ID = "org-planning-studio";
-const DEBUGGER_NODE = "debugger";
+// The standing `debugger` node is GONE (#debug-nodes-hang-off-the-session-that-filed-them). It was an
+// idle stand-in whose job was to show a user that an element existed before it was active; now every
+// request draws its own node, labelled with the work and edged to the session that filed it, so the
+// idle one showed nothing the live ones do not — while quietly being a second claimant on the same
+// queue as the per-request sessions.
 
 /** The Studio Network position that IS the architect — the hub of the drill-in below. */
 export const ARCHITECT_NODE = "architect";
@@ -225,70 +229,108 @@ export function studioNetworkForArchitect(org: Team): Team {
   };
 }
 
-/**
- * A RUNTIME overlay on the Studio Network (#3317): when the debug session is toggled on (Settings,
- * `debugSession`, #3298), the **debugger** joins the graph and SERVES the designer — it drains the
- * `bsc request` queue, fixing the `bsc ui` tooling the designer reports. Backed by the `persona-debugger`
- * identity (the app's full-capability `debugger` role, #3322); the live session launches bypass on the
- * shared TerminalHost via `DebugSessionMount` (#3326). Not persisted — the seed stays the always-on
- * network; dragging the overlay
- * no-ops against the stored team. A no-op when off, for a non-studio team, or if already present.
- */
-export function augmentStudioNetworkForDebug(org: Team, debugOn: boolean): Team {
-  if (!debugOn || org.id !== STUDIO_NETWORK_ID) return org;
-  if (org.positions.some((p) => p.nodeId === DEBUGGER_NODE)) return org;
-  return {
-    ...org,
-    positions: [
-      ...org.positions,
-      { nodeId: DEBUGGER_NODE, kind: "agent", personaId: "persona-debugger", x: 144, y: 48 },
-    ],
-    relationships: [
-      ...org.relationships,
-      { id: "r-serves-debugger", archetype: "serves", from: DEBUGGER_NODE, to: "designer", bow: -30 },
-    ],
-  };
+/** One live request session, as the graph needs it (#debug-nodes-hang-off-the-session-that-filed-them). */
+export interface RequestNodeSpec {
+  id: number;
+  /** The pane id of the session that FILED it (`designer-studio:react`). Absent for a request filed
+   *  outside a session. */
+  origin?: string | null;
+  /** The label form — always populated by the request store. */
+  title?: string | null;
 }
 
 /**
- * Add a node per LIVE auto-spawned request session (#3498), so each one is visible and openable in the
- * Glance graph instead of a hidden background actor. An auto-spawned session the user cannot see is one
- * they cannot supervise or stop, which is the whole reason this exists.
+ * Resolve a filing session's PANE id to the graph position it should hang off
+ * (#debug-nodes-hang-off-the-session-that-filed-them).
  *
- * Each relates `serves → designer`, exactly as the standing debugger node does — a request session
- * serves the designer's report. Deliberately NOT related to the `debugger` node: that node only exists
- * while the `debugSession` flag is on, and an edge to an absent node would dangle. Idempotent, and a
- * no-op off the Studio Network or with no live sessions.
+ * INJECTED, not implemented here. The mapping is owned by whoever owns the node↔session table
+ * (`studioProject`'s `STUDIO_NODE_SESSION`), and `teams` is feature-agnostic — it cannot import a glance
+ * module. Passing the resolver in keeps the augmentation pure and lets the caller supply the ONE
+ * authoritative mapping rather than a second copy of it.
+ *
+ * That indirection is not ceremony: the first version of this parsed the pane id as
+ * `<role>-studio:<tech>` and every studio origin resolved to null, because the real ids are
+ * `design-studio:designer-react` and `algorithms-studio:librarian-typescript` — the studio is named for
+ * the SURFACE, not the role, and the role is in the tail. A guessed string shape passes every gate when
+ * the tests are written from the same guess; inverting the real table cannot.
+ *
+ * `present` is the set of node ids actually on this graph, so a resolver can prefer the per-technology
+ * node where one is drawn and fall back to the role node where it is not — the two studio drills render
+ * different id sets. Returning null means "not for this graph", and the caller leaves the request out
+ * rather than attaching it to a default.
  */
-export function augmentStudioNetworkForRequests(org: Team, requestIds: readonly number[]): Team {
-  if (!requestIds.length || org.id !== STUDIO_NETWORK_ID) return org;
+export type OriginHostResolver = (origin: string | null | undefined, present: ReadonlySet<string>) => string | null;
+
+/**
+ * Add a node per LIVE request session (#3498, re-pointed by
+ * #debug-nodes-hang-off-the-session-that-filed-them), so each one is visible and openable in the Glance
+ * graph instead of a hidden background actor. An auto-spawned session the user cannot see is one they
+ * cannot supervise or stop, which is the whole reason this exists.
+ *
+ * Each node is LABELLED with the request (`debug - <title>`) and edged `serves →` **the session that
+ * filed it**, so the graph reads as "requests 85, 86 from the designer; 102, 519 from the librarian".
+ * Both were wrong before: the label was the bare node id, and the edge was hardwired to `designer` for
+ * every request, so a librarian's request drew to the designer.
+ *
+ * A request whose origin resolves to no position on this graph is SKIPPED rather than attached to a
+ * default. That covers the director-filed request (`myproject:director`), which belongs in its project's
+ * drill; an unparented node reads as a bug, and a wrongly-parented one is worse — it asserts a
+ * relationship that does not exist.
+ *
+ * Idempotent, and a no-op off the Studio Network or with no live sessions.
+ */
+export function augmentStudioNetworkForRequests(
+  org: Team,
+  requests: readonly RequestNodeSpec[],
+  hostForOrigin: OriginHostResolver,
+): Team {
+  if (!requests.length || org.id !== STUDIO_NETWORK_ID) return org;
   const present = new Set(org.positions.map((p) => p.nodeId));
-  const add = requestIds.filter((id) => !present.has(requestNodeId(id)));
+  const add = requests
+    .map((r) => ({ ...r, host: hostForOrigin(r.origin, present) }))
+    .filter((r) => r.host !== null && !present.has(requestNodeId(r.id)));
   if (!add.length) return org;
+  // Fan each host's requests in a row BENEATH that host, so the layout says the same thing the edges do.
+  // Grouped per host (not one global row) — with two designers and a librarian all filing, one row would
+  // interleave them and the clustering the edges express would be invisible.
+  const perHost = new Map<string, number>();
+  const positions: Position[] = add.map((r) => {
+    const host = org.positions.find((p) => p.nodeId === r.host);
+    const n = perHost.get(r.host!) ?? 0;
+    perHost.set(r.host!, n + 1);
+    return {
+      nodeId: requestNodeId(r.id),
+      kind: "agent" as const,
+      personaId: "persona-debugger",
+      label: requestNodeLabel(r.title),
+      x: (host?.x ?? 96) + (n - 0.5) * 96,
+      y: (host?.y ?? 48) + 96,
+    };
+  });
   return {
     ...org,
-    positions: [
-      ...org.positions,
-      // Fanned in a row beneath the debugger's slot so N sessions never stack on one point.
-      ...add.map((id, i) => ({
-        nodeId: requestNodeId(id),
-        kind: "agent" as const,
-        personaId: "persona-debugger",
-        x: 96 + i * 72,
-        y: 132,
-      })),
-    ],
+    positions: [...org.positions, ...positions],
     relationships: [
       ...org.relationships,
-      ...add.map((id) => ({
-        id: `r-serves-${requestNodeId(id)}`,
+      ...add.map((r) => ({
+        id: `r-serves-${requestNodeId(r.id)}`,
         archetype: "serves",
-        from: requestNodeId(id),
-        to: "designer",
+        from: requestNodeId(r.id),
+        to: r.host!,
         bow: -18,
       })),
     ],
   };
+}
+
+/** The label a request session's node carries — `debug - <title>`.
+ *
+ *  The prefix says WHAT the node is (a debug session) and the title says what it is working, which is the
+ *  pair a user needs to read a graph holding several at once. A request store always populates a title,
+ *  but the fallback keeps a node named rather than blank if one ever arrives empty. */
+export function requestNodeLabel(title: string | null | undefined): string {
+  const t = (title ?? "").trim();
+  return t ? `debug - ${t}` : "debug";
 }
 
 // ── Derivation: the communication summary the UI shows (the generate-from-facets payoff) ─────────

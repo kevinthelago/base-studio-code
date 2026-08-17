@@ -36,6 +36,19 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // busy session from an idle one; `claimed_at` is when. Both null until a `claim`.
     add_column_if_missing(conn, "claimed_by", "TEXT")?;
     add_column_if_missing(conn, "claimed_at", "INTEGER")?;
+    // PROVENANCE (#debug-request-carries-its-origin) — WHO filed it and a short name for it.
+    //
+    // `origin` is the filing session's pane id (`designer-studio:react`, `librarian-studio:typescript`,
+    // `myproject:director`), stamped by `bsc request new` from $BSC_AUDIT_PANE rather than typed by the
+    // session. Null for a request filed outside a session (a human at a shell), which is honest: the
+    // alternative is a fabricated attribution, and the graph reads `origin` to decide which node a
+    // request's debug session hangs off.
+    //
+    // `title` is the short form for a node label — `text` is the full narration and is routinely a
+    // paragraph. Null on legacy rows; readers derive one from `text` (see `Request::display_title`), so
+    // no backfill is needed and a row filed before this column still labels correctly.
+    add_column_if_missing(conn, "origin", "TEXT")?;
+    add_column_if_missing(conn, "title", "TEXT")?;
     // The REPLY thread (#bsc-request-gains-a-note-verb) — its own table, not the `note` column above.
     //
     // That column is the RESOLVE stamp: one TEXT, written when a request is closed. Threading replies
@@ -110,5 +123,35 @@ mod tests {
             .unwrap();
         assert_eq!(n, 1, "the legacy row survived the ALTER");
         assert_eq!(cb, None, "its claim fields default to null");
+    }
+
+    /// #debug-request-carries-its-origin: the provenance columns land on a db that already carries the
+    /// claim ones — the live requests.db upgrade path, one migration further along. The legacy row keeps
+    /// its text and gets NULL provenance rather than an invented attribution.
+    #[test]
+    fn migrate_adds_provenance_columns_to_an_already_upgraded_db() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL,
+                surface TEXT NOT NULL DEFAULT 'bsc ui', cmd TEXT, shot_path TEXT,
+                status TEXT NOT NULL DEFAULT 'open', note TEXT,
+                created_at INTEGER NOT NULL DEFAULT 0, resolved_at INTEGER,
+                claimed_by TEXT, claimed_at INTEGER);
+             INSERT INTO requests (text) VALUES ('filed before provenance existed');",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap(); // idempotent over the second ALTER too
+        let has_col = |c: &str| -> bool {
+            conn.prepare("SELECT 1 FROM pragma_table_info('requests') WHERE name = ?1").unwrap().exists([c]).unwrap()
+        };
+        assert!(has_col("origin") && has_col("title"), "provenance columns added");
+        let (text, origin, title): (String, Option<String>, Option<String>) = conn
+            .query_row("SELECT text, origin, title FROM requests", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap();
+        assert_eq!(text, "filed before provenance existed", "the legacy row survived the ALTER");
+        assert_eq!(origin, None, "an unattributed legacy row stays unattributed — never back-filled with a guess");
+        assert_eq!(title, None, "no backfill; readers derive a title from `text`");
     }
 }

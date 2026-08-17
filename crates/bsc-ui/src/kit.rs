@@ -24,8 +24,9 @@
 //! The PACKAGED default `bsc/react-ui@1.0.0` (the generated `data/components/react-ui.json`, hash
 //! sidecar `data/ui/react-ui-kit.meta.json`, both stamped by `reactUiKit.gen.test.ts`) resolves as a
 //! store entry WITHOUT being copied at install time: `get`/`artifact`/`list`/`verify` fall back to
-//! the embedded bytes when the entry isn't materialized on disk — so every install has the default
-//! kit with zero setup, the same store-lookup → packaged-fallback overlay pattern as `@data`.
+//! the packaged bytes (read at runtime by `bsc_util::packaged`) when the entry isn't materialized on
+//! disk — so every install has the default kit with zero setup, the same store-lookup →
+//! packaged-fallback overlay pattern as `@data`.
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -34,10 +35,25 @@ use std::path::{Path, PathBuf};
 /// The packaged default kit's artifact — the generated `react-ui.json` (see the module docs).
 /// CRLF-normalized before hashing/serving: the file is pinned `eol=lf` in .gitattributes, but a
 /// pre-pin checkout may still hold it CRLF, and LF is the canonical (hash-recorded) byte form.
-pub const PACKAGED_KIT_JSON: &str = include_str!("../../../src-tauri/data/components/react-ui.json");
+///
+/// LOADED AT RUNTIME, not `include_str!`'d (see [`bsc_util::packaged`]): at 5.3 MB and ~190 commits
+/// a month this file made every record edit recompile this crate, `bsc-component` and `bsc`.
+/// Cached in a `OnceLock` and handed out as `&'static str`, so callers are unchanged.
+pub fn packaged_kit_json() -> &'static str {
+    static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    V.get_or_init(|| bsc_util::packaged::read_required("components/react-ui.json")).as_str()
+}
+
 /// The packaged kit's hash sidecar `{ id, version, kind, sha256 }` — generated alongside the
 /// artifact so the packaged entry's manifest (incl. its content hash) needs no runtime hashing.
-pub const PACKAGED_KIT_META_JSON: &str = include_str!("../../../src-tauri/data/ui/react-ui-kit.meta.json");
+///
+/// Runtime-loaded for the same reason as [`packaged_kit_json`], even though it is only 156 bytes:
+/// it is regenerated in LOCKSTEP with the artifact (186 commits against 190), so embedding it alone
+/// would have preserved the entire rebuild cost. Churn, not size, is what decides.
+pub fn packaged_kit_meta_json() -> &'static str {
+    static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    V.get_or_init(|| bsc_util::packaged::read_required("ui/react-ui-kit.meta.json")).as_str()
+}
 
 /// The two artifact kinds a store entry can hold (#2465): a component kit (a self-contained kit
 /// JSON) or a design-files bundle (a `.dc.html` design document). Sibling artifacts — own id, same
@@ -51,14 +67,14 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 
 /// The packaged artifact's canonical (LF) bytes.
 fn packaged_artifact() -> String {
-    PACKAGED_KIT_JSON.replace("\r\n", "\n")
+    packaged_kit_json().replace("\r\n", "\n")
 }
 
 /// The packaged entry's manifest, from the embedded sidecar, with `"source": "packaged"` stamped so
 /// a reader can tell it apart from a fetched entry. `None` only on a malformed sidecar (guarded by
 /// tests, so not in practice).
 pub fn packaged_manifest() -> Option<Value> {
-    let mut m: Value = serde_json::from_str(PACKAGED_KIT_META_JSON).ok()?;
+    let mut m: Value = serde_json::from_str(packaged_kit_meta_json()).ok()?;
     m.as_object_mut()?.insert("source".into(), json!("packaged"));
     Some(m)
 }
@@ -468,7 +484,7 @@ mod tests {
         // Drift guard for the generated pair (reactUiKit.gen.test.ts writes both): the sidecar's
         // sha256 is the hash of the artifact's canonical LF bytes, and the identity is the packaged
         // pin every new blueprint gets.
-        let meta: Value = serde_json::from_str(PACKAGED_KIT_META_JSON).unwrap();
+        let meta: Value = serde_json::from_str(packaged_kit_meta_json()).unwrap();
         assert_eq!(meta["id"], "bsc/react-ui");
         assert_eq!(meta["version"], "1.0.0");
         assert_eq!(meta["kind"], "component-kit");

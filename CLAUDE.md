@@ -524,6 +524,12 @@ bsc plan change status <ref> merged --command <merge-sha> --from <reviewer>
 bsc plan change render <ref>                                 # markdown: PR body when synced · CHANGELOG entry at release
 ```
 
+> **CHECK THE EXIT STATUS of every `change` write.** These are the only commands whose failure costs
+> you something you cannot see: a failed `change note` writes nothing and the commit still lands, so
+> the slice looks finished and the record is simply absent. `bsc` exits non-zero correctly — the
+> 2026-08-16 loss happened because the calls were written as `… >/dev/null` in a list, so nothing ever
+> read `$?`. Chain them with `&&`, or check explicitly. Do NOT redirect stderr away.
+
 It deliberately does **not** duplicate git: `head_sha`/`merge_sha` are the join to real history and the
 commit messages stay the narrative. What it holds is what git cannot — gate evidence recorded when the
 gate ran, the reviewer's verdict as an actor distinct from the author, notes written before the
@@ -767,6 +773,128 @@ already serves ~232 of the ~263 cacheable compilations in a cold build; the rest
 (proc-macros, bins, `cdylib`/`staticlib`), workspace crates whose **source path is part of the cache
 key** so they can never hit across worktrees, and linking. `CARGO_INCREMENTAL=0` and seeding a copied
 `target/` were both measured and are both losses.
+
+**SIZING THE FLEET — memory is the binding constraint, not CPU or disk.** MEASURED on 8c/16t / 32 GB
+with ~16 GB actually free, `cargo nextest run --workspace --no-run` after touching `bsc-util` (36 of 40
+crates rebuild):
+
+| cargo jobs | peak RAM | wall |
+|---|---|---|
+| 2 | 5.47 GB | 73s |
+| **4 (now the repo default)** | **8.04 / 8.13 GB** | **55 / 54s** |
+| 6 | 11.64 GB | 46s |
+| 8 | 13.58 GB | 46s |
+| 16 (cargo's default when unset) | 18.01 GB | 54s |
+
+Two things follow, and the second is the one that limits the fleet:
+
+- **`.cargo/config.toml` sets `jobs = 4`.** Cargo's default is one job per LOGICAL processor — 16 here,
+  on 8 physical cores — which is *no faster* than 4 and uses 2.2× the memory. Working alone on a
+  bigger box, `--jobs 8` on the command line overrides it and is ~15% quicker.
+- **A FULL gate is an 8 GB operation** because nextest links ~41 test binaries (9 concurrent `link.exe`
+  at the old default; one app link alone peaks at 2.99 GB). So **two** full gates fit in what this
+  machine has free, not ten. `npm run gate -- --full` therefore takes a cross-worktree slot from
+  `~/.base-studio-code/locks/`; the SCOPED gate is not serialized, since it compiles one crate plus its
+  dependents. Raise the limit with `BSC_GATE_SLOTS` on a bigger machine. A waiting gate says so — a
+  silent wait is indistinguishable from a hang — and a lock whose holder died or wedged is stolen, so
+  one crashed agent cannot block the fleet. This repo already has an OOM history (#795).
+
+Ten sessions EDITING Rust is fine. Ten sessions GATING at once is not, and without the lock it is an
+out-of-memory failure rather than a slow one.
+
+**De-duplicate identical dependency artifacts across trees.** 721 of 765 rlibs in one worktree's
+`deps/` share a filename with another's, and they are byte-identical — dependencies carry
+`debug = false` (#795) so no absolute paths are baked in, and a shared filename already implies
+shared inputs because `-C metadata` folds package + features + profile + target.
+
+```bash
+npm run dedupe -- --dry-run     # what would be linked
+npm run dedupe                  # hard-link verified-identical artifacts
+npm run dedupe -- --undo        # BREAK the links again, one copy per tree
+```
+
+> **THE TRADE REVERSES WITH FLEET SIZE — currently UNDONE, deliberately.** At 3 active trees the shared
+> inodes were a dormant risk. At 10+ sessions a dependency bump has several trees rebuilding the same
+> registry crates at once, several processes writing one inode. It bought 13 GB against ~1,050 GB free,
+> so it is not worth that. `--undo` reduced cross-tree shared inodes from thousands to **5 (0.02 GB)**.
+> Re-run the dedup only when the box is quiet and space actually matters.
+
+EXPLICIT, like the pool cap — never wired into the gate. Measured on the real pool: **13.05 GB
+reclaimed** and it HOLDS (only 0.16 GB became re-eligible after the trees rebuilt).
+
+- **sha256 is verified before every link** — a filename is a hint, never a proof. That guard is not
+  theoretical: the first real run found **1902 files with identical name AND size but different
+  bytes** (`.d` dep-info files embed absolute source paths), every one of which a name+size
+  heuristic would have linked wrongly.
+- **Workspace crates are never linked** — cargo folds the absolute manifest path into their
+  `-C metadata`, so they differ per tree anyway, and they rebuild constantly.
+- **THE COST IS A ONE-TIME PARTIAL REBUILD.** A hard link shares metadata, so a linked artifact
+  adopts the canonical copy's mtime and non-canonical trees read it as stale. Setting the shared
+  inode to the group's NEWEST mtime cuts that sharply (measured 189 → 53 crates) but cannot remove
+  it: one inode cannot satisfy N trees' independent fingerprints. Expect ~40-50 crates to rebuild
+  once per tree, after which the trees are stable (0 recompiles on the next build).
+- `--min-age-mins` (default 60) keeps a live build in another tree from being raced.
+
+**Cap the parked pool — it is the biggest disk lever, and nothing else can reach it.** A parked
+worktree exists only to hold a warm `target/`, worth ~2 minutes (1m59s cold vs 0.41-5.11s recycled).
+Each one costs ~20 GB, and eight of them were holding ~160 GB. Nothing INSIDE a worktree is
+reclaimable — the deps sweep measures 0 orphaned units on every one, because they are too young to
+have any.
+
+```bash
+npm run worktrees:cap -- --dry-run   # what would go
+npm run worktrees:cap                # keep the 2 most recently BUILT parked trees
+npm run worktrees:cap -- --keep 4
+```
+
+DESTRUCTIVE, so unlike the two janitors it is **never** wired into `build:plan` — you invoke it. It
+refuses rather than works around:
+
+- a **junction/symlink `node_modules`**, because `git worktree remove` follows it and wipes the
+  shared root install;
+- a **dirty tree** — `--force` is never passed, and that refusal is the feature. First real run kept
+  `wt-swap`, which turned out to hold 7 staged source modifications on a *parked* branch. `--force`
+  would have destroyed real work.
+
+Measured on the first run: **86 GB reclaimed**, 5 trees removed, 1 correctly refused.
+
+**`target/` is swept automatically — and ~20 GB per tree is NORMAL.** Cargo never reclaims a build
+artifact: every distinct `-C metadata` (feature set × profile × lib-vs-test × rustc version × dep
+version) mints a new one and orphans the old permanently. One entry point, `gc`, runs the sweeps; it
+is called from **the gate** and from `build:plan`, and is fail-safe (it swallows every error and
+exits 0, because a janitor must never redden a gate or block a dev launch):
+
+```bash
+npm run gc                  # force a sweep now — both directories, one report
+npm run clean:incremental   # target/*/incremental — keep newest 1 per crate, >3d
+npm run clean:target        # target/*/deps        — keep newest 3 per crate, >3d
+                            #   add --dry-run, or --root <dir> to sweep ANOTHER worktree
+```
+
+**It hangs off the GATE for a reason.** The sweeps originally ran only from `build:plan`, which only
+`tauri dev` invokes — so the one tree ever collected was the tree where the app gets launched (the
+one that had accumulated two months of orphans), and **no worktree had ever been swept once**. They
+audited clean only because they were young. The gate is the single command every worktree agent runs.
+`gc` day-stamps itself in `target/`, so repeat gate runs during iteration cost ~0ms, not 1.5s.
+
+> Both age defaults live in the RUNNER, not in `planPrune`: the runner always passes an explicit
+> value, so changing only the pure module's default is dead code. An earlier pass did exactly that,
+> and the sweep kept running at 14 days while the docs claimed 3.
+
+Set expectations from the measurements, not from the total:
+
+- **One warm tree is legitimately ~21 GB** (incremental 8.8G · deps 7.4G · build 2.9G · a 1.4G
+  static lib). The 245 GB across all trees is mostly *current* output, not garbage — the multiplier
+  is having eleven trees, and the sweep does **nothing** for a young worktree (measured: 0 units on
+  all ten). It bounds growth in a LONG-LIVED tree; the 2-month-old main tree gave up 5 GB.
+- **`.fingerprint/` is deliberately NOT swept.** It accumulates identically (6939 dirs, some from
+  June) but is **22 MB** against 24 GB in `deps/` — and sweeping 5408 of them made cargo treat those
+  units as never-built and recompile **328 crates in 2m24s**. All cost, no benefit.
+- **The degradation is real and accepted:** an rlib is not touched when merely *linked*, so a stable
+  live dependency keeps an old mtime and can be swept, costing one rebuild. Bounded, never
+  incorrect. Do not "fix" it by dropping the age floor to zero.
+- The incremental default was 14 days and pruned **0 of 697**; at 3 days it pruned 214 and reclaimed
+  5 GB. `--keep` never bound at any window tested — the age floor is the whole policy.
 
 Gotchas:
 - **Base drift:** a branch cut from an older `develop` can fail an *unrelated* test that broke since.

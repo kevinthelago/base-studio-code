@@ -13,9 +13,18 @@ use include_dir::{include_dir, Dir};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// The packaged config tree (`src-tauri/data/`), embedded at build time — the seed written on first
-/// run AND the fallback read when a surface is absent from the config dir.
-static EMBEDDED: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/data");
+/// The packaged config tree, embedded at build time — the seed written on first run AND the fallback
+/// read when a surface is absent from the config dir.
+///
+/// This is the CONFIG-ONLY subset of `src-tauri/data/`, staged into `$OUT_DIR/config-seed` by
+/// `build.rs` (see `NON_CONFIG_DIRS` there). It used to be the raw `data/` tree, which swept in
+/// `components/` (8.3 MB, incl. the 388 `app/**` records) and `knowledge/` (2.6 MB) — ~11 MB of an
+/// ~11.5 MB tree that no config read has ever named. The cost was that editing any record rebuilt AND
+/// relinked the app: 20.5s against a 1.3s no-op.
+///
+/// The paths are unchanged — `get_file("fleet/director-protocol.md")` still resolves — because the
+/// staged tree mirrors `data/` exactly, minus the two non-config dirs.
+static EMBEDDED: Dir<'static> = include_dir!("$OUT_DIR/config-seed");
 
 thread_local! {
     /// Per-thread override of the runtime config root — see [`with_config_root`]. `None` (always, in
@@ -127,31 +136,30 @@ pub(crate) fn embedded_dir_files(dir_rel: &str) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
-/// Packaged top-level dirs that are NOT runtime config and must never be mirrored into the config
-/// dir. `components/` (the packaged component kits, #2305) is owned by the `bsc ui` kit store + its
-/// hash-based seed refresh (#2483); an auto-seeded copy became a de-facto override that pinned every
-/// install's effective seed at its first-run roster — refresh/retire verdicts could never fire
-/// (#2514). The frontend no longer reads a `config/components/` overlay at all (`builtinKits.ts`);
-/// skipping the seed keeps the trap files from materializing on new installs.
-const SEED_SKIP_DIRS: &[&str] = &["components"];
-
 /// First-run seed: mirror the embedded tree into [`config_root`], writing only files that are ABSENT
-/// so a user edit is never clobbered, and skipping the non-config [`SEED_SKIP_DIRS`]. Idempotent —
-/// safe to call on every boot. Best-effort; on an I/O error the embedded fallback stays in force, so
-/// a seed failure is non-fatal.
+/// so a user edit is never clobbered. Idempotent — safe to call on every boot. Best-effort; on an I/O
+/// error the embedded fallback stays in force, so a seed failure is non-fatal.
 pub(crate) fn ensure_seeded() -> std::io::Result<()> {
     seed_root(&EMBEDDED, &config_root())
 }
 
-/// The top level of the seed mirror: like [`seed_dir`] but excluding [`SEED_SKIP_DIRS`].
+/// The top level of the seed mirror.
+///
+/// This used to filter out a `SEED_SKIP_DIRS` list whose only member was `components/` — the packaged
+/// kits (#2305), owned by the `bsc ui` kit store and its hash-based refresh (#2483). An auto-seeded
+/// copy became a de-facto override pinning every install's effective seed at its first-run roster, so
+/// refresh/retire verdicts could never fire (#2514).
+///
+/// That list is now RETIRED rather than kept as a second line of defence: `components/` is no longer
+/// in the embedded tree at all (`build.rs`'s `NON_CONFIG_DIRS`), so the filter had become vacuous —
+/// and a guard that can no longer fire reads to the next author as protection that is still active.
+/// The `config/components must not be seeded` guarantee is unchanged and still tested; it is now
+/// enforced one layer earlier, by never embedding the directory.
 fn seed_root(dir: &Dir, dest: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dest)?;
     seed_files(dir, dest)?;
     for sub in dir.dirs() {
         if let Some(name) = sub.path().file_name() {
-            if SEED_SKIP_DIRS.iter().any(|s| name == std::ffi::OsStr::new(s)) {
-                continue;
-            }
             seed_dir(sub, &dest.join(name))?;
         }
     }
@@ -372,21 +380,109 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    /// The `#2514` guarantee, now enforced one layer earlier.
+    ///
+    /// `config/components/` must never materialize: an auto-seeded copy acted as a stale override
+    /// that pinned the effective component seed at each install's first-run roster, so refresh/retire
+    /// verdicts could never fire. That used to be a `SEED_SKIP_DIRS` filter over an embedded
+    /// `components/`; the directory is no longer embedded at all, so the outcome is unchanged and the
+    /// filter is gone. The assertion is written against the OUTCOME rather than the mechanism, so it
+    /// survives either implementation.
     #[test]
-    fn seed_root_skips_the_component_kits_but_mirrors_real_config() {
-        // The packaged kits ARE embedded (the skip below is meaningful, not vacuous)…
-        assert!(
-            EMBEDDED.get_dir("components").is_some(),
-            "data/components is packaged — if this moved, retire SEED_SKIP_DIRS with it",
-        );
+    fn the_component_kits_are_never_seeded_but_real_config_still_mirrors() {
         let root = scratch_dir("seed-skip");
         seed_root(&EMBEDDED, &root).unwrap();
-        // …but are NEVER mirrored into the config dir: an auto-seeded copy acted as a stale override
-        // pinning the effective component seed at its first-run roster (#2514).
         assert!(!root.join("components").exists(), "config/components must not be seeded");
+        assert!(!root.join("knowledge").exists(), "config/knowledge must not be seeded");
         // Real config surfaces still seed as before.
         assert!(root.join("permissions/base.json").exists(), "config surfaces still mirror");
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// Every top-level dir under `data/` is either an embedded config surface or explicitly classified
+    /// as non-config. Adding one must force a DECISION.
+    ///
+    /// Without this, a new `data/<surface>/` would simply not be embedded — `load_str` would return
+    /// `""` and the feature would read as empty rather than broken, at runtime, with a green build.
+    /// That is the same silent-narrowing failure this repo keeps paying for, and the reason the
+    /// exclusion list lives in `build.rs` where it can be checked rather than inferred.
+    #[test]
+    fn every_data_dir_is_either_embedded_or_classified_non_config() {
+        // Kept in sync with `NON_CONFIG_DIRS` in build.rs by the assertion below.
+        const NON_CONFIG: &[&str] = &["components", "knowledge"];
+
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data");
+        let mut unclassified = Vec::new();
+        for entry in std::fs::read_dir(&data).expect("data/ is readable").flatten() {
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if NON_CONFIG.contains(&name.as_str()) {
+                assert!(
+                    EMBEDDED.get_dir(&name).is_none(),
+                    "`{name}` is classified non-config but IS embedded — build.rs and this test disagree",
+                );
+                continue;
+            }
+            if EMBEDDED.get_dir(&name).is_none() {
+                unclassified.push(name);
+            }
+        }
+        unclassified.sort();
+        assert!(
+            unclassified.is_empty(),
+            "these data/ dirs are neither embedded nor classified non-config, so every read of them \
+             would return \"\" at runtime with a green build: {unclassified:?}. Add them to \
+             NON_CONFIG_DIRS in build.rs if they are not config surfaces.",
+        );
+    }
+
+    /// The staged seed must mirror `data/` FILE FOR FILE for every included surface.
+    ///
+    /// build.rs stages a copy, and a copy can be incomplete. The hazard being pinned is a config
+    /// surface that stops reaching the binary — which surfaces as an empty prompt or an absent
+    /// permission rule, not as a build failure.
+    #[test]
+    fn the_staged_seed_matches_the_source_tree_file_for_file() {
+        const NON_CONFIG: &[&str] = &["components", "knowledge"];
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data");
+
+        let mut missing = Vec::new();
+        for entry in std::fs::read_dir(&data).expect("data/ is readable").flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if NON_CONFIG.contains(&name.as_str()) {
+                continue;
+            }
+            collect_missing(&path, &data, &mut missing);
+        }
+        missing.sort();
+        assert!(
+            missing.is_empty(),
+            "build.rs staged an INCOMPLETE config seed — these files exist under data/ but are not \
+             embedded, so reading them returns \"\" at runtime: {missing:?}",
+        );
+    }
+
+    /// Every file under `dir` whose `data/`-relative path is absent from [`EMBEDDED`].
+    fn collect_missing(dir: &std::path::Path, base: &std::path::Path, out: &mut Vec<String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_missing(&path, base, out);
+                continue;
+            }
+            let Ok(rel) = path.strip_prefix(base) else { continue };
+            let rel = rel.to_string_lossy().replace('\\', "/");
+            if EMBEDDED.get_file(&rel).is_none() {
+                out.push(rel);
+            }
+        }
     }
 
     #[test]

@@ -671,6 +671,34 @@ export type HealthCategory =
   | "empty-empty-state" | "empty-loading-state"
   | "slot-shell";
 
+/**
+ * Fold RUNTIME health categories into a node's static badge — most severe wins.
+ *
+ * Extracted so the workbench and a single node apply the SAME rule
+ * (#two-store-keys-drive-more-than-half-the-apps-jank). It used to live inline in `DesignsWorkbench`'s
+ * `nodeHealth` memo, which meant that memo depended on `componentStateHealth` — so every 150ms scan
+ * flush rebuilt a Map over every component AND re-rendered the whole workbench, even though
+ * `ComponentNode` was already memoized (#4132). Measured: 3,296 designs commits at a 38.5ms median,
+ * 100% of them over a frame budget, and 486 of 891 jank windows attributed to these two store keys.
+ *
+ * With the rule pure, the parent can memo on the STATIC findings alone and each node folds in its own
+ * runtime categories from its own store slice — so a flush re-renders the nodes that changed rather
+ * than the graph.
+ *
+ * `static` may be undefined (no static finding) and `runtime` may be empty; the result is whichever
+ * category ranks worst under {@link HEALTH_SEVERITY}, or undefined when there is nothing to badge.
+ */
+export function worstHealth(
+  staticBadge: HealthCategory | undefined,
+  runtime: readonly HealthCategory[] | undefined,
+): HealthCategory | undefined {
+  let worst = staticBadge;
+  for (const cat of runtime ?? []) {
+    if (!worst || HEALTH_SEVERITY[cat] > HEALTH_SEVERITY[worst]) worst = cat;
+  }
+  return worst;
+}
+
 /** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node.
  *  `unresolvable-import` (3) is a real defect — the component throws at preview time (a bare import the
  *  preview can't resolve). `unwired-prop` (2) is a real but mild signal — a declared interface a

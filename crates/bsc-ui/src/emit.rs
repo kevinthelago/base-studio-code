@@ -3,7 +3,7 @@
 //! agent building an app pulls the components it needs as real files it can import, with every
 //! first-party `@/…` import rewritten to a resolvable relative path so the emitted tree compiles with
 //! **no alias config and no network** — it resolves entirely against the EMBEDDED kit artifact
-//! ([`crate::kit::PACKAGED_KIT_JSON`]), so it works inside the sealed sandbox where the mutable stores
+//! ([`crate::kit::packaged_kit_json()`]), so it works inside the sealed sandbox where the mutable stores
 //! aren't reachable.
 //!
 //! The artifact carries two things this needs (built by `reactUiKit.gen`): each component's verbatim
@@ -55,7 +55,7 @@ impl EmitKit {
     /// The packaged `bsc/react-ui` kit — the embedded artifact, no fs/network. Panics only on a
     /// malformed embedded file (guarded by tests + the frontend drift guard).
     pub fn packaged() -> EmitKit {
-        Self::from_artifact(crate::kit::PACKAGED_KIT_JSON).expect("embedded react-ui.json is a valid kit artifact")
+        Self::from_artifact(crate::kit::packaged_kit_json()).expect("embedded react-ui.json is a valid kit artifact")
     }
 
     /// Build an EmitKit from the live component STORE overlaid on the packaged artifact (#3720) — so

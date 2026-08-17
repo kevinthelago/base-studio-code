@@ -88,6 +88,122 @@
         );
     }
 
+    /// The high-churn packaged seeds are loaded at RUNTIME (`bsc_util::packaged`), and re-embedding one
+    /// with `include_str!` would silently restore the cost the change removed: a **data** edit becoming a
+    /// **Rust** invalidation. Measured before/after on a warm tree — touching `react-ui.json` recompiled
+    /// 3 crates in 7.4s, and now recompiles 0 in 0.77s.
+    ///
+    /// Nothing about a re-embed LOOKS wrong: it compiles, every test passes, and the only symptom is that
+    /// rebuilds get slow again — which reads as "the machine is busy", not as a regression. That is
+    /// precisely the class this repo keeps paying for, so it is pinned here rather than left to notice.
+    #[test]
+    fn the_high_churn_seeds_are_never_embedded_again() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = manifest.parent().expect("src-tauri has a parent");
+        // Match the file NAME, so a re-embed under any relative path is caught.
+        let names: Vec<&str> = bsc_util::packaged::RUNTIME_SEEDS
+            .iter()
+            .map(|rel| rel.rsplit('/').next().expect("a seed path has a file name"))
+            .collect();
+
+        let mut found = Vec::new();
+        for root in [manifest.join("src"), workspace.join("crates")] {
+            collect_seed_embeds(&root, workspace, &names, &mut found);
+        }
+        found.sort();
+        assert!(
+            found.is_empty(),
+            "a high-churn packaged seed is `include_str!`'d again, which makes every record edit \
+             recompile Rust (measured: 3 crates / 7.4s vs 0 crates / 0.77s). Read it through \
+             `bsc_util::packaged::read_required` instead: {found:?}",
+        );
+    }
+
+    /// `bundle.resources` must ship EXACTLY the seeds that are no longer embedded.
+    ///
+    /// This is the one failure the other tests structurally cannot see: dev resolves the seeds from the
+    /// repo checkout, so a missing `resources` entry passes every local gate and breaks only in a
+    /// SHIPPED build, where the file simply is not there. Before this change `bundle.resources` was
+    /// undefined entirely — the app shipped no data files at all — so there is no prior art to inherit.
+    #[test]
+    fn every_runtime_seed_is_shipped_in_the_bundle() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json"))
+            .expect("tauri.conf.json is valid JSON");
+        let resources = conf
+            .get("bundle")
+            .and_then(|b| b.get("resources"))
+            .and_then(|r| r.as_object())
+            .expect("bundle.resources must exist — the runtime-loaded seeds have to ship");
+
+        // The TARGET path is what matters: `bsc_util::packaged` looks for `<exe_dir>/data/<rel>`, so
+        // the resource must land there whatever the source path is. The SOURCE is deliberately
+        // `resources/data/<rel>` — a staged copy — because `tauri_build` emits a rerun-if-changed for
+        // every resource, and pointing them at the live tree rebuilt the app on every record edit
+        // (measured 23.2s vs 1.2s). Asserting the target keeps that indirection free to change.
+        for rel in bsc_util::packaged::RUNTIME_SEEDS {
+            let target = format!("data/{rel}");
+            let entry = resources.iter().find(|(_, v)| v.as_str() == Some(target.as_str()));
+            let Some((source, _)) = entry else {
+                panic!(
+                    "seed `{rel}` is loaded at runtime but no bundle.resources entry targets \
+                     `{target}`, so a shipped build would not contain it"
+                );
+            };
+            assert!(
+                source.starts_with("resources/"),
+                "bundle.resources maps `{source}` -> `{target}`, but a seed's SOURCE must be the \
+                 staged copy under resources/. Pointing it at the live data/ tree makes tauri_build \
+                 watch the file and rebuilds the app on every record edit.",
+            );
+        }
+    }
+
+    /// `build.rs` cannot depend on a workspace lib, so it repeats the seed list as `BUNDLED_SEEDS`.
+    /// Pin the copy to the original — a seed added to one and not the other either fails to ship or
+    /// fails to stage, and both only show up in a release build.
+    #[test]
+    fn the_build_scripts_seed_list_matches_the_runtime_one() {
+        let build_rs = include_str!("../build.rs");
+        for rel in bsc_util::packaged::RUNTIME_SEEDS {
+            assert!(
+                build_rs.contains(rel),
+                "build.rs BUNDLED_SEEDS is missing `{rel}`, so it would never be staged into \
+                 resources/ and the bundled copy would be absent or stale",
+            );
+        }
+    }
+
+    /// Collect `<file>:<line>` for every `include_str!` of one of `names` under `dir`.
+    fn collect_seed_embeds(
+        dir: &std::path::Path,
+        base: &std::path::Path,
+        names: &[&str],
+        out: &mut Vec<String>,
+    ) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|n| n == "target") {
+                    continue;
+                }
+                collect_seed_embeds(&path, base, names, out);
+                continue;
+            }
+            if path.extension().is_none_or(|e| e != "rs") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else { continue };
+            for (i, line) in text.lines().enumerate() {
+                // The guard's own assertion strings name these files; only an actual macro counts.
+                if line.contains("include_str!") && names.iter().any(|n| line.contains(n)) {
+                    let rel = path.strip_prefix(base).unwrap_or(&path);
+                    out.push(format!("{}:{}", rel.display(), i + 1));
+                }
+            }
+        }
+    }
+
     /// Collect `<file>:<line>` for every BARE opening fence inside a doc comment under `dir`.
     ///
     /// Fences pair, and a closer is always bare — so counting bare fences would flag every tagged

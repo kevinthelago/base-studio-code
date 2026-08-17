@@ -3,6 +3,7 @@
 import type { ConsoleAutoFocusMode } from "@/app/console/lib/focusQueue";
 import type { ModelId } from "@/app/console/panes/PaneMenu";
 import type { StudioTarget } from "@/shared/lib/fleet/studioNetworkDrive";
+import type { RequestNodeSpec } from "@/features/teams";
 
 /** Session-behavior slice of {@link AppStore}. */
 export interface SessionState {
@@ -43,28 +44,27 @@ export interface SessionState {
    *  so it's a scratch/verification shell until project files are relocated into the distro. */
   sandboxConsoles: boolean;
   setSandboxConsoles: (v: boolean) => void;
-  /** #3298: whether the DEBUG session's window is open — a full-capability Claude session in the
-   *  base-studio-code SOURCE tree that works the `bsc request` improvement queue (fixing `bsc ui`).
-   *  SESSION-ONLY (not persisted): the OS window is session-only, so this defaults off each start and
-   *  the toggle opens/closes the window. */
-  debugSession: boolean;
-  setDebugSession: (v: boolean) => void;
-  /** #3498: may a session be started AUTOMATICALLY (by the `bsc request` intake), without a human
-   *  asking? OFF by default and the outer gate of the auto-spawn boundary — the inner one being that
-   *  ONLY the `debugger` role is ever auto-spawnable (`shared/lib/session/autoSpawn.ts`, the single
-   *  authoriser). Auto-spawn is the highest-consequence capability in the app — a session that starts
-   *  itself runs a real model against a real repo — so it is opt-in, per-machine, and fails closed:
-   *  anything that is not literally `true` reads as off. */
-  autoSpawnDebugSessions: boolean;
-  setAutoSpawnDebugSessions: (v: boolean) => void;
-  /** #3498: the request ids that currently have a spawned debug session. Lives in the STORE, not in the
-   *  mount's local state, because the Glance graph must render a node per live session — an auto-spawned
-   *  session that appears nowhere is one the user cannot open, supervise or stop. Session-only. */
-  /** Live debugger OVERFLOW pool SLOT indices (#3535) — one per running overflow session, published by
-   *  RequestSessionsMount so the Glance graph can render a node per slot. Not request ids: a slot claims
-   *  a request only after it launches. Session-only. */
-  activeDebugSlots: number[];
-  setActiveDebugSlots: (slots: number[]) => void;
+  // BOTH DEBUG TOGGLES ARE GONE (#debug-nodes-hang-off-the-session-that-filed-them).
+  //
+  // `debugSession` gated the standing `debugger` node, and that node is gone with it — a stand-in
+  // earns its place by showing an element that exists but is not yet active, and every request now
+  // draws its own labelled node instead.
+  //
+  // `autoSpawnDebugSessions` gated the per-request sessions, off by default, which shipped the whole
+  // 1:1 request→session machinery switched off. A filed request is worked now. The remaining gate is
+  // NOT a preference: `debug_repo_root` must resolve, because a shipped binary with no source tree
+  // cannot run these at all.
+  /** #3498: the requests that currently have a spawned debug session. Lives in the STORE, not in the
+   *  mount's local state, because the Glance graph must render a node per live session — a session that
+   *  appears nowhere is one the user cannot open, supervise or stop. Session-only.
+   *
+   *  Carries each request's ORIGIN and TITLE, not just its id
+   *  (#debug-nodes-hang-off-the-session-that-filed-them): the node is labelled `debug - <title>` and
+   *  edged to the session that FILED it, and a bare id can express neither. (The old name said "slots"
+   *  — pool slot indices, #3535 — which it had already stopped holding when assignment replaced the
+   *  pool; a field whose name contradicts its doc comment is one nobody can reason about.) */
+  activeDebugRequests: RequestNodeSpec[];
+  setActiveDebugRequests: (requests: RequestNodeSpec[]) => void;
   /** #3509: the base-studio-code source tree this app was built from, or null on a shipped binary.
    *  Resolved ONCE at boot so a launch can turn a role's symbolic `app-repo` harvest root into a real
    *  path synchronously. Session-only — it is a property of the machine, not of the user's state. */

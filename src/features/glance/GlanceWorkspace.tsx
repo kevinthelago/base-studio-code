@@ -22,7 +22,6 @@ import { type TabItem } from "@/shared/ui/layouts/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { usePoll } from "@/shared/hooks/usePoll";
-import { bscJson } from "@/shared/lib/core/bsc";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { RailRow } from "@/shared/ui/layouts/RailRow";
@@ -41,9 +40,9 @@ import { buildGraph, focusSets, isBandNode, isArchitectNodeId, HEALTH_META, ROLE
 import { timedSync } from "@/shared/lib/core/perf";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "@/features/glance/lib/glanceFleet";
-import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, applyStudioLiveStatus } from "@/features/glance/lib/studioProject";
-import { DEBUG_PANE_ID } from "@/features/debug";
+import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, applyStudioLiveStatus, withProjectRequestNodes } from "@/features/glance/lib/studioProject";
 import { isStudioId, useStudioViewers } from "@/features/studio-sessions";
+import { DEBUG_STUDIO_PANE_PREFIX } from "@/shared/lib/session/systemSessions";
 import { useProjectComplete } from "./lib/useProjectComplete";
 import { usePreviewReview } from "@/features/glance/usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
@@ -76,24 +75,18 @@ const NO_STREAMS: never[] = [];
 export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const planFleet = useAppStore((s) => s.planFleet);
   const personas = useAppStore((s) => s.personas);
-  // OPEN REQUESTS (#the-debugger-appears-while-a-request-is-open). The debugger is the app's answer to a
-  // filed request, so it belongs in the drill exactly while one is unresolved — it appears with the queue
-  // and leaves with it. Polled from the request store rather than read off `activeDebugSlots`: those are
-  // the AUTO-SPAWNED sessions, gated behind a Settings toggle that is off by default, so gating the node
-  // on them would show nothing for the common case of a request filed with auto-spawn off.
-  const [openRequests, setOpenRequests] = useState(0);
-  usePoll(async (isCancelled) => {
-    const rows = await bscJson<{ id: number }[]>(null, ["request", "list", "--open", "--json"], []);
-    if (isCancelled()) return;
-    setOpenRequests(Array.isArray(rows) ? rows.length : 0);
-  }, 5000);
+  // The OPEN-REQUESTS poll is GONE (#debug-nodes-hang-off-the-session-that-filed-them). It existed to
+  // decide whether to fold a generic `debugger` node into a drill while any request was unresolved,
+  // because the real per-request sessions were gated behind a Settings toggle that defaulted off. Both
+  // halves of that are gone: the toggle, and the stand-in node it was compensating for. `RequestSessionsMount`
+  // now holds a session per open request unconditionally and publishes them, so the drill renders the
+  // ACTUAL sessions — labelled with their requests and edged to whoever filed them — instead of a count.
   // The base-studio-code default project (#3319) renders the Studio Network team; the debug toggle gates
   // its debugger node.
   const teams = useAppStore((s) => s.teams);
-  const debugSession = useAppStore((s) => s.debugSession);
-  // #3498: the auto-spawned request sessions, so each is a visible, openable node in this graph.
-  const activeDebugSlots = useAppStore((s) => s.activeDebugSlots);
-  const setDebugSession = useAppStore((s) => s.setDebugSession);
+  // The live request sessions, so each is a visible, openable node in this graph — carrying the origin
+  // and title the node needs to be labelled and edged to the session that filed it.
+  const activeDebugRequests = useAppStore((s) => s.activeDebugRequests);
   // The blueprint LIBRARY + the drilled project's blueprint id (#2572) — so the fleet drill can overlay
   // the project blueprint's authored TEAM relationships (an Org) onto the derived coordination.
   const blueprints = useAppStore((s) => s.blueprints);
@@ -394,7 +387,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     if (!drillNode) return null;
     // The synthetic base-studio-code project (#3319) drills into the app's OWN studio-session graph — the
     // Studio Network team, with the debugger node gated by the Settings toggle (#3317). No plan.db fleet.
-    if (drillNode.id === BASE_STUDIO_PROJECT_ID) return buildStudioFleetData(teams, personas, debugSession, activeDebugSlots);
+    if (drillNode.id === BASE_STUDIO_PROJECT_ID) return buildStudioFleetData(teams, personas, activeDebugRequests);
     // #architect-node-expands-into-system-sessions: the architect's node EXPANDS into the system
     // sessions it commands, rather than standing beside them at L0.
     if (isArchitectNodeId(drillNode.id)) return buildArchitectFleetData(teams, personas);
@@ -403,21 +396,21 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     // composes (`usePlanPublish`). A team position for a seedable role becomes a node even before the
     // fleet plan lists a worker for it.
     const roleStreams = effectiveFleet ? teamRoleStreams(drillTeam, personas, effectiveFleet.streams) : [];
-    // The DEBUGGER rides in on `systemSessions` while a request is open, so it serves the director
-    // exactly like the declared sessions and needs no separate node path. `resolveSystemSessions` keeps
-    // it out when the queue is empty.
-    const liveSessions = openRequests > 0
-      ? [...(effectiveFleet?.systemSessions ?? []), "debugger"]
-      : effectiveFleet?.systemSessions;
+    // No `debugger` fold (#debug-nodes-hang-off-the-session-that-filed-them). A generic debugger node
+    // used to ride in on `systemSessions` whenever ANY request was open — including requests filed by a
+    // studio session, which have nothing to do with this project. A request filed BY this project's
+    // director belongs here and is added below, by origin, as itself.
     const composed = effectiveFleet
-      ? { ...effectiveFleet, streams: [...effectiveFleet.streams, ...roleStreams], systemSessions: liveSessions }
+      ? { ...effectiveFleet, streams: [...effectiveFleet.streams, ...roleStreams], systemSessions: effectiveFleet.systemSessions }
       : undefined;
     const base = composed && composed.streams.length > 0
       ? buildRealFleetData(composed, personas, drillTeam)
       : buildFleetData({ id: drillNode.id, name: drillNode.slug });
-    // Add the preview node when the project has finished building (idempotent, no-op while building).
-    return withPreviewNode(base, drillComplete);
-  }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete, teams, debugSession, activeDebugSlots, openRequests]);
+    // Add the preview node when the project has finished building (idempotent, no-op while building),
+    // and any request session THIS project's director filed — the one non-studio origin, which has no
+    // Studio Network position to hang off (#debug-nodes-hang-off-the-session-that-filed-them).
+    return withProjectRequestNodes(withPreviewNode(base, drillComplete), drill ?? "", activeDebugRequests);
+  }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete, teams, activeDebugRequests, drill]);
   // Overlay the LIVE session state onto the drilled fleet's agent nodes (#3252) — the L1 twin of the L0
   // stall/fault overlays: an agent lifts off its planned idle to building/waiting/warning per its session.
   // Applied to rawNodes BEFORE buildGraph so the rollup + inherited-health recompute over the live values.
@@ -431,14 +424,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             // looked up a pane that never exists, so none was ever found live (#3421).
             rawNodes:
               isStudioDrill
-                ? applyStudioLiveStatus(fleetData.rawNodes, { debugSession, paneClaudeActive, paneStatus })
+                ? applyStudioLiveStatus(fleetData.rawNodes, { paneClaudeActive, paneStatus })
                 : applyFleetLiveStatus(withStreamProgress(fleetData.rawNodes, streamDoneWithDirector), drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes, ended: endedPanes }),
           }
         : fleetData,
     // `quarantinedPanes` + `heldStreams` belong here: without them the memo keeps a stale overlay, so a
     // newly quarantined worker (#3916) or a stream released by the gate (#3931) would not repaint until
     // some unrelated dep changed.
-    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive, quarantinedPanes, heldStreams, attentionPanes, maintainingPanes, endedPanes, streamDoneWithDirector],
+    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, paneClaudeActive, quarantinedPanes, heldStreams, attentionPanes, maintainingPanes, endedPanes, streamDoneWithDirector],
   );
   const fleetModel = useMemo(() => (liveFleetData ? timedSync("buildGraph:glance-fleet", () => buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges)) : null), [liveFleetData]);
   // The ACTIVE graph — the drilled fleet (with live status), else the project network. Everything downstream
@@ -492,8 +485,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const isLiveAgent = (nodeId: string) => {
     if (!drill) return false;
     if (isStudioDrill) {
-      if (studioNodeHome(nodeId)?.kind !== "morph") return false;
-      return nodeId === "debugger" ? debugSession : true;
+      return studioNodeHome(nodeId)?.kind === "morph";
     }
     return nodeHasLiveSession(fleetPaneId(drill, nodeId), livePaneIds);
   };
@@ -704,8 +696,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   });
   // END one morph's session (#3049). Ending an APP-OWNED session drops its declaration rather than
   // killing a fleet cell:
-  //  • DEBUG (#3326) — turn the Settings toggle OFF, which unmounts DebugSessionMount → clean PTY
-  //    teardown → the node disappears.
+  //  • a DEBUG REQUEST session (#debug-nodes-hang-off-the-session-that-filed-them) — kill its PTY, like
+  //    a studio. NOTE it is not permanent: `RequestSessionsMount` holds one session per OPEN request, so
+  //    ending one while its request is still unresolved lets the next reconcile bring it back. That is
+  //    the honest behaviour — the work is still outstanding — and it is what the old Settings toggle
+  //    hid by making the whole feature switchable instead.
   //  • a STUDIO (#3357) — drop it from `wantedStudios`, which unmounts its persistent claim; the
   //    `pty_kill` is still explicit, because a studio PAGE dock may hold another claim (End means end,
   //    not "end unless the Design Studio page happens to be mounted").
@@ -713,7 +708,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const endChat = (nodeId: string) => {
     const open = openChats.find((o) => o.nodeId === nodeId);
     if (!open) return;
-    if (open.paneId === DEBUG_PANE_ID) { setDebugSession(false); closeChat(nodeId); }
+    if (open.paneId.startsWith(DEBUG_STUDIO_PANE_PREFIX)) {
+      void safeInvoke("pty_kill", { paneId: open.paneId }, undefined);
+      setPaneStatus(open.paneId, "idle");
+      closeChat(nodeId);
+    }
     else if (isStudioId(nodeId)) {
       // NOT killPane: that also sets the PERSISTED `disabledPanes` flag, which is a fleet-cell concept
       // (fleetStartProject re-enables it). A studio has no cell to re-enable.

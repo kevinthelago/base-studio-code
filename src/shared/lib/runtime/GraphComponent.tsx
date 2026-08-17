@@ -12,6 +12,7 @@ import { resolveGraphSource } from "@/shared/lib/runtime/graphResolver";
 import { lastGood } from "./renderGate";
 import { recoveryLadder } from "@/shared/lib/runtime/recoveryLadder";
 import { log } from "@/shared/lib/core/log";
+import { attest, srcHash } from "@/shared/lib/runtime/attest";
 import { ThemeProvider } from "@/shared/ui/kit";
 
 // Per-id COMPILE counter (module-level, survives re-renders AND remounts) — the loop probe. A healthy page
@@ -73,7 +74,7 @@ export function resetGraphCompiles(): void {
  *  showed the fallback, and finding the cause meant patching this class by hand. A graph page that renders
  *  its fallback is exactly when someone needs the reason, so it goes to the log with its stack. */
 class GraphErrorBoundary extends Component<
-  { id: string; fallback: ReactNode; children: ReactNode; onRenderThrow?: () => void },
+  { id: string; fallback: ReactNode; children: ReactNode; onRenderThrow?: () => void; srcHash?: string },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -85,6 +86,16 @@ class GraphErrorBoundary extends Component<
     // componentDidCatch rather than render: the swap is a state change, and doing it during render would
     // be a setState-in-render on the parent.
     this.props.onRenderThrow?.();
+    // RENDER THREW — distinct from every decline above: this record compiled, linked, evaluated AND
+    // mounted, so nothing upstream refused it. Only a render caught it, which is the one failure the
+    // loader's own decline paths structurally cannot see.
+    attest({
+      specifier: this.props.id,
+      recordId: this.props.id,
+      srcHash: this.props.srcHash,
+      outcome: "render-threw",
+      reason: String(error).slice(0, 200),
+    });
     // One line per frame: the sink caps a single message, and a stack folded into one line gets truncated
     // to uselessness — which is what the by-hand version of this hit first.
     log.warn(`graph-loader: "${this.props.id}" RENDER THREW - falling back: ${String(error)}`, "graph-loader");
@@ -166,6 +177,10 @@ export function GraphComponent({
     const good = lastGood.get(cacheKey);
     if (!good || good.source === source) return false;
     log.warn(`graph-loader: "${id}" ${why} — rendering the last version that worked (${good.source.length} chars)`, "graph-loader");
+    // Attested against the CURRENT source's hash, not the one that served. The finding is "this version
+    // did not run"; recording the good version's hash would instead assert that an older version ran —
+    // true, but it is the fact that hides the problem rather than the one that reveals it.
+    attest({ specifier: id, recordId: id, srcHash: source ? srcHash(source) : undefined, outcome: "fell-back", reason: why });
     setLoaded(() => good.Comp);
     setActiveSource(good.source);
     setDegraded(true);
@@ -249,7 +264,16 @@ export function GraphComponent({
       // setState((prev) => …) treats a function arg as an UPDATER — a component IS a function, so wrap it.
       .then((c) => {
         if (cancelled) return;
-        log.info(`graph-loader: mounted "${id}" (compile #${n}) in ${Math.round(performance.now() - startedAt)}ms`, "graph-loader");
+        const ms = performance.now() - startedAt;
+        log.info(`graph-loader: mounted "${id}" (compile #${n}) in ${Math.round(ms)}ms`, "graph-loader");
+        // SERVED (#runtime-attests-what-actually-ran) — the strongest claim in the store: this record,
+        // at THIS source version, is what the app rendered. `srcHash` is what makes it a claim about a
+        // VERSION rather than about a name, so a later edit does not inherit this evidence.
+        //
+        // `n` rides along as the compile ordinal. A healthy page compiles once; a climbing count is
+        // either source churn or a remount storm, and this is what lets `doctor` see the second — the
+        // loop that cost Console ~2.1s for work one compile does in ~700ms, invisible to every gate.
+        attest({ specifier: id, recordId: id, srcHash: srcHash(source), outcome: "served", ms });
         mountedRef.current = { key: cacheKey, source };
         setLoaded(() => c);
         setActiveSource(source);
@@ -297,6 +321,9 @@ export function GraphComponent({
       // and renders the empty fallback over a component that works.
       key={`${id}:${activeSource?.length ?? 0}:${degraded ? "good" : "cur"}`}
       id={id}
+      // The hash of what is ACTUALLY mounted — which on a degraded mount is the last-good source, not
+      // the record's current one. A throw is then attributed to the version that threw.
+      srcHash={activeSource ? srcHash(activeSource) : undefined}
       fallback={fallback}
       // GATE, path 2 — it COMPILED but threw while rendering. Same preference: the last version that
       // worked beats an empty surface, then a retained earlier one. Guarded by `degraded` so a throw from

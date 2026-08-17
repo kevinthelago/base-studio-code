@@ -5,6 +5,10 @@ edition = "2021"
 description = "The Algorithms knowledge graph (#2760/#2761) — the curated concept ontology, queryable from `bsc graph`."
 
 [dependencies]
+# Runtime attestations (#doctor-reads-the-runtime) - the --runtime lens. For an IMPLEMENTATION the
+# claim is LINKAGE: it runs inside someone else's module, so "linked into a closure that served" is
+# what the runtime can honestly say. Execution counts are deliberately not asserted.
+bsc-runtime = { path = "../bsc-runtime" }
 bsc-record = { path = "../bsc-record" }
 bsc-util = { path = "../bsc-util" }
 # The DATA GRAPH (the-data-graph-a-global-third-pillar) — `doctor` holds a node to the entities it

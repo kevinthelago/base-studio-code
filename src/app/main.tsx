@@ -50,6 +50,24 @@ await primeConfigOverrides();
 const { registerPlatformModules } = await import("./runtime/appModules");
 registerPlatformModules();
 
+// #runtime-attests-what-actually-ran — turn the attestation sink ON, so every record the loader serves or
+// DECLINES from here is recorded rather than logged and forgotten. Installed beside the registry because
+// that is what the loader resolves against: a decline before this point would be a decline the registry
+// could not have satisfied anyway.
+//
+// NOT gated on DEV, unlike shadow mode above, and that asymmetry is the point. Shadow mode diffs records
+// against FILES, which only a dev server has; this records what actually served, and the install where
+// that matters most is the shipped one. It costs a coalesced row per record per version per outcome per
+// session, flushed in batches — not a message per load.
+const { enableAttestation, flushAttestations } = await import("@/shared/lib/runtime/attest");
+enableAttestation();
+// Flush on the way out, so a session's last batch is not lost with the window. `visibilitychange` rather
+// than `beforeunload`: the latter is unreliable when a webview is killed rather than closed, and hidden
+// fires on the path to both.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") void flushAttestations();
+});
+
 // The App module graph (the ~1.5 MB bundle) evaluates at the dynamic import below — the gap from the
 // document's navigation start to this mark is the pre-App bundle download + parse + eval cost (#perf).
 markBoot("eval");

@@ -22,9 +22,9 @@ export { detectPools, collapseOrg, poolSubgraph, type Pool, type CollapsedOrg } 
 export {
   BUILTIN_ORGS, RELATIONSHIP_ARCHETYPES, COMMUNICATION_FORMS,
   makeBuiltinOrgs, reconcileOrgs, blankOrg, orgSlug, orgIssues, deriveCommunication,
-  augmentStudioNetworkForDebug, augmentStudioNetworkForRequests, STUDIO_NETWORK_ID,
+  augmentStudioNetworkForRequests, requestNodeLabel, STUDIO_NETWORK_ID,
   studioNetworkForArchitect, ARCHITECT_NODE,
   archetypeById, formById,
   type Team, type Position, type Relationship, type RelationshipArchetype,
-  type CommunicationForm, type CommEdge, type PositionKind,
+  type CommunicationForm, type CommEdge, type PositionKind, type RequestNodeSpec, type OriginHostResolver,
 } from "./lib/team";

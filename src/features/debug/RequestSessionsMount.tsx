@@ -16,9 +16,15 @@
 // live ids for the Glance graph).
 //
 // ── WHAT MAKES THIS SAFE TO SHIP ────────────────────────────────────────────────────────────────────
-//  * INERT unless `autoSpawnDebugSessions` is on (off by default); turning it off closes every session.
+//  * UNCONDITIONAL (#debug-nodes-hang-off-the-session-that-filed-them) — the `autoSpawnDebugSessions`
+//    toggle is gone. It defaulted OFF, which shipped this whole 1:1 machinery switched off: a request
+//    was filed and then waited for someone to notice. The one remaining gate is not a preference —
+//    `debug_repo_root` must resolve, because a shipped binary with no source tree cannot run these.
+//  * EVERY session is a VISIBLE NODE in the Glance graph, labelled with its request and edged to the
+//    session that filed it. That is what makes an app-started session supervisable: the user can see
+//    it, open it, and stop it. It is the reason the ids are published below.
 //  * The only role it can start is the plan's — `debugger` — and every pane is under the
-//    `debug-studio:` prefix, so it is full-capability + role-less like the standing session (#3520).
+//    `debug-studio:` prefix, so it is full-capability + role-less (#3520).
 //  * Sessions launch FRESH (`claude`, never `--continue`) with `paneContinue: false` (#3497): each is
 //    bound to one request and must never inherit another conversation.
 //  * NOT bounded by a cap any more — a deliberate trade, recorded in `poolPlan.ts`. Concurrency is the
@@ -32,8 +38,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { planRequestSessions, type RequestSession, type RequestRow } from "@/shared/lib/session/poolPlan";
 import { requestPaneId, requestIdFromPaneId } from "@/shared/lib/session/requestSpawn";
-import { DEBUG_INIT_CMD } from "@/features/debug/DebugSessionMount";
-import { requestCharter } from "@/features/debug/requestSession";
+import { requestCharter, DEBUG_INIT_CMD } from "@/features/debug/requestSession";
 
 /** How often to reconcile against the queue. Slow on purpose: a request is not urgent, and a session
  *  that is already working one is not waiting on this loop. */
@@ -44,48 +49,48 @@ interface RawRequest {
   id: number;
   status: string;
   claimed_by?: string | null;
+  /** WHO filed it (#debug-request-carries-its-origin) — the filing session's pane id. Carried through
+   *  to the charter so the spawned session knows whose workflow it is unblocking, and read by the
+   *  Glance graph to hang this session's node off that session. */
+  origin?: string | null;
+  /** Always populated by the store (explicit `--title`, else derived from the text). */
+  display_title?: string | null;
 }
 
 /**
- * Mounts the overflow debugger pool while auto-spawn is on. Renders nothing visible; each session's
- * terminal is shown by opening its Glance node, exactly like the standing debug session.
+ * Holds one session per open request. Renders nothing visible; each session's terminal is shown by
+ * opening its node in the Glance graph.
  */
 export function RequestSessionsMount() {
-  const enabled = useAppStore((s) => s.autoSpawnDebugSessions);
   // undefined = still resolving; null = no source tree (shipped binary — never launch into a missing
   // cwd); string = the repo root these sessions work in.
   const [repoRoot, setRepoRoot] = useState<string | null | undefined>(undefined);
-  // The request sessions this mount tracks (NOT the standing session). Kept in a ref too so the poll
-  // reconciles against the latest set without re-subscribing the interval (the ref is synced in an
-  // effect, never during render).
+  // The request sessions this mount tracks. Kept in a ref too so the poll reconciles against the latest
+  // set without re-subscribing the interval (the ref is synced in an effect, never during render).
   const [sessions, setSessions] = useState<RequestSession[]>([]);
   const sessionsRef = useRef<RequestSession[]>([]);
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+  // The last queue read, kept so the published node specs carry each request's origin + title.
+  const [rows, setRows] = useState<RawRequest[]>([]);
 
   useEffect(() => {
-    if (!enabled) { setRepoRoot(undefined); return; }
     let alive = true;
     void safeInvoke<string | null>("debug_repo_root", undefined, null, () => {}).then((root) => {
       if (alive) setRepoRoot(root);
     });
     return () => { alive = false; };
-  }, [enabled]);
+  }, []);
 
-  // #3522: when the user TURNS auto-spawn on (off→on), review the queue once and drop completed (resolved)
-  // requests. Keyed to the transition, never a poll; `bscRun` is fire-and-forget (a missing binary is a
-  // no-op).
-  const prevEnabled = useRef(enabled);
-  useEffect(() => {
-    const was = prevEnabled.current;
-    prevEnabled.current = enabled;
-    if (!was && enabled) void bscRun(null, ["request", "prune"]);
-  }, [enabled]);
+  // #3522: review the queue ONCE per app start and drop completed (resolved) requests, so a long-dead
+  // row cannot linger as a node. Keyed to mount rather than to a toggle transition (there is no toggle
+  // any more) and never to the poll; `bscRun` is fire-and-forget (a missing binary is a no-op).
+  useEffect(() => { void bscRun(null, ["request", "prune"]); }, []);
 
   // The reconcile loop, once per poll. `bscJson`/`bscRun` swallow a missing binary or verb and return the
   // fallback, so a machine without a working `bsc` simply never spawns rather than erroring in a loop.
   usePoll(
     async () => {
-      if (!enabled || !repoRoot) return;
+      if (!repoRoot) return;
 
       // 1 — CLAIM every open request, one atomic claim each, so that by the time the plan runs each has
       // a definite id to be bound to. Bounded by the open count read first, so a request the claim loop
@@ -106,7 +111,7 @@ export function RequestSessionsMount() {
       // 2 — PLAN + APPLY against the post-claim queue.
       const raw = await bscJson<RawRequest[]>(null, ["request", "list", "--json"], []);
       const requests: RequestRow[] = raw.map((r) => ({ id: r.id, status: r.status, claimedBy: r.claimed_by ?? null }));
-      const plan = planRequestSessions({ requests, sessions: sessionsRef.current, enabled });
+      const plan = planRequestSessions({ requests, sessions: sessionsRef.current, enabled: true });
 
       // Free the store fields of every closed pane, so a stopped session leaves nothing behind.
       if (plan.close.length) {
@@ -131,6 +136,11 @@ export function RequestSessionsMount() {
       }
 
       if (plan.start.length) {
+        // The rows by id, so the charter can name the request and the session that filed it
+        // (#debug-request-carries-its-origin). Read from `raw` — the post-claim list — because that is
+        // the read that already happened; a session started without its origin would be told nothing
+        // about whose workflow it is unblocking, and the relationship would exist only in the graph.
+        const byId = new Map(raw.map((r) => [r.id, r]));
         // Seed the launch fields TerminalView reads: the charter naming THIS request (baked as
         // --initial-message) and paneContinue=false (#3497 — never resume; each session is bound to one
         // request and must not inherit another conversation).
@@ -138,27 +148,46 @@ export function RequestSessionsMount() {
           const prompts = { ...st.paneStartupPromptText };
           const cont = { ...st.paneContinue };
           for (const id of plan.start) {
-            prompts[requestPaneId(id)] = requestCharter(id);
+            const row = byId.get(id);
+            prompts[requestPaneId(id)] = requestCharter({
+              id,
+              origin: row?.origin ?? null,
+              display_title: row?.display_title ?? null,
+            });
             cont[requestPaneId(id)] = false;
           }
           return { paneStartupPromptText: prompts, paneContinue: cont };
         });
       }
       setSessions([...plan.sessions, ...plan.start.map((id) => ({ paneId: requestPaneId(id) }))]);
+      // Publish the ROWS, not just the ids (#debug-nodes-hang-off-the-session-that-filed-them): the
+      // graph needs each request's origin and title to label its node and edge it to the session that
+      // filed it, and this poll is the only place that already holds them.
+      setRows(raw);
     },
     POLL_MS,
-    [enabled, repoRoot],
+    [repoRoot],
   );
 
-  // Publish the live REQUEST IDS so the Glance graph can render a node per request. Without this the
-  // sessions run with no node — unopenable, unsupervisable, unstoppable. The published value is now the
-  // request id rather than an anonymous slot, which is what lets the node be labelled with the work.
-  const setActiveDebugSlots = useAppStore((s) => s.setActiveDebugSlots);
+  // Publish the live REQUESTS so the Glance graph can render a node per request. Without this the
+  // sessions run with no node — unopenable, unsupervisable, unstoppable.
+  //
+  // The published value carries the ORIGIN and TITLE alongside the id
+  // (#debug-nodes-hang-off-the-session-that-filed-them), because the node is labelled `debug - <title>`
+  // and edged to the session that filed it. A bare id could do neither, which is why every request node
+  // used to be called `debugger-req-<n>` and drawn to the designer regardless of who actually filed it.
+  const setActiveDebugRequests = useAppStore((s) => s.setActiveDebugRequests);
   useEffect(() => {
-    setActiveDebugSlots(sessions.map((s) => requestIdFromPaneId(s.paneId)).filter((n): n is number => n != null));
-  }, [sessions, setActiveDebugSlots]);
+    const live = new Map(rows.map((r) => [r.id, r]));
+    setActiveDebugRequests(
+      sessions
+        .map((s) => requestIdFromPaneId(s.paneId))
+        .filter((n): n is number => n != null)
+        .map((id) => ({ id, origin: live.get(id)?.origin ?? null, title: live.get(id)?.display_title ?? null })),
+    );
+  }, [sessions, rows, setActiveDebugRequests]);
 
-  if (!enabled || !repoRoot || !sessions.length) return null;
+  if (!repoRoot || !sessions.length) return null;
   return (
     <Box
       aria-hidden

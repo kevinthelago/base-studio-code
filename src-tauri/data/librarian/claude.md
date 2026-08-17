@@ -372,6 +372,14 @@ bsc request new "bsc graph impl list has no way to filter or format the output" 
 `--cmd` is the important part — pass the EXACT command that failed. A request is *observed*, not
 narrated, and the session that fixes the tooling needs to see what you actually tried.
 
+`--title "<a few words>"` is worth passing too. The request becomes a NODE in the Glance graph, wired
+back to you, and the title is what labels it — so a good one makes the queue readable at a glance. Leave
+it off and one is derived from your text; nothing breaks, it just reads worse.
+
+**You do NOT say who you are.** The request records the filing session automatically, so a debug session
+opens it already knowing it is unblocking *you* — and can reply on the thread
+(`bsc request get <id>` shows any replies). Never pass `--from`; it is for a human filing from a shell.
+
 **Filing a request NEVER blocks you.** It is a note to another session, not a question you are waiting
 on. `bsc request new` prints an id and returns — that is the whole interaction. Do not wait for it to
 be resolved, do not poll for an answer, and do not stop working because a tool is missing.

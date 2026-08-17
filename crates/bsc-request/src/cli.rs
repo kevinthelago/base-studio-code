@@ -20,11 +20,20 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "file an improvement request; prints its id",
         usage: "\
 USAGE:
-  bsc request new \"<text>\" [--surface S] [--cmd \"<failing command>\"] [--shot PATH]
+  bsc request new \"<text>\" [--title T] [--surface S] [--cmd \"<failing command>\"] [--shot PATH] [--from WHO]
 
 Files a request for something the tool surface can't do. Ground it — pass the EXACT command that failed
 via --cmd (a request is observed, not narrated). --surface defaults to `bsc ui`. --shot attaches a PNG
-(#3261). Prints the new request's id.",
+(#3261). Prints the new request's id.
+
+--title is a SHORT name for the request — it labels the request's node in the Glance graph. Omit it and
+one is derived from <text>, so a label is never empty; pass it when the derivation would read badly.
+
+WHO FILED IT IS STAMPED FOR YOU. The request records the filing session's pane id from $BSC_AUDIT_PANE —
+you do not pass it, cannot forget it, and should not try to set it. That origin is what hangs the debug
+session that works this request off YOUR node in the graph, so a request always traces back to the
+session that hit the gap. --from overrides it for a request filed outside a session (a human at a shell);
+with neither, the origin is recorded as absent rather than guessed.",
     },
     CmdDoc {
         name: "list",
@@ -134,6 +143,9 @@ struct Args {
     /// `bsc plan change note --from` — the same act in the other store. `--by` here stays what it
     /// already was: WHICH SESSION holds a `claim`, which is a different question about a different verb.
     from: Option<String>,
+    /// A short name for a `new` request (#debug-request-carries-its-origin) — what labels its graph node.
+    /// Absent ⇒ derived from the text by `Request::display_title`.
+    title: Option<String>,
     open: bool,
     limit: Option<i64>,
     positional: Vec<String>,
@@ -150,6 +162,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         note: None,
         by: None,
         from: None,
+        title: None,
         open: false,
         limit: None,
         positional: Vec::new(),
@@ -168,6 +181,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--note" => a.note = Some(val("--note")?),
             "--by" => a.by = Some(val("--by")?),
             "--from" => a.from = Some(val("--from")?),
+            "--title" => a.title = Some(val("--title")?),
             "--limit" => a.limit = Some(val("--limit")?.parse().map_err(|_| "--limit needs an integer")?),
             "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -209,10 +223,36 @@ fn cmd_new(args: &Args) -> Result<(), String> {
         cmd: args.cmd.clone(),
         shot_path: args.shot.clone(),
         ts: now_ms(),
+        origin: resolve_origin(args.from.clone(), std::env::var("BSC_AUDIT_PANE").ok()),
+        title: args.title.clone(),
     };
     let r = open_store(&args.db)?.create(&input).map_err(|e| format!("filing request: {e}"))?;
     println!("{}", r.id);
     Ok(())
+}
+
+/// Resolve who filed a request (#debug-request-carries-its-origin): the explicit `--from` first, then the
+/// session's own pane from `$BSC_AUDIT_PANE`.
+///
+/// STAMPED, NOT TYPED. Every filing session already carries `$BSC_AUDIT_PANE` — the coord emitters read it
+/// the same way (`__bsc_coord` uses `${BSC_AUDIT_PANE:-?}`) — so the CLI can take the filer's identity from
+/// the environment instead of adding a flag to four `claude.md` charters and trusting each to fill it in.
+/// That is the same reasoning `--surface` got wrong: it is free text a session types, and it names the TOOL
+/// rather than the filer, so it could never resolve WHICH designer (`designer-studio:react` vs
+/// `react-native`) hit the gap.
+///
+/// `?` is filtered out, not stored: the shell helpers write that literal when a pane is unknown, and a row
+/// claiming to come from a session called "?" is worse than one that admits it has no origin. Pure so the
+/// precedence is testable without touching the process environment.
+///
+/// Each candidate is cleaned BEFORE the fallback, not after: `--from ""` means "I passed nothing", so it
+/// must fall through to the pane rather than short-circuiting the chain with a blank and discarding an
+/// origin the environment was holding all along.
+fn resolve_origin(from: Option<String>, audit_pane: Option<String>) -> Option<String> {
+    let clean = |s: Option<String>| {
+        s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty() && v != "?")
+    };
+    clean(from).or_else(|| clean(audit_pane))
 }
 
 /// `list` — the request queue.
@@ -330,13 +370,18 @@ fn cmd_remove(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
-/// One lean TSV row: id, status, surface, cmd?, text.
+/// One lean TSV row: id, status, surface, origin, cmd?, text.
+///
+/// `origin` rides in the lean form (not only `--json`) because scanning the queue for "what has the
+/// librarian been blocked on" is the question this field exists to answer, and a TSV column is how that
+/// gets asked from a shell.
 fn request_line(r: &Request) -> String {
     format!(
-        "{}\t{}\t{}\t{}\t{}",
+        "{}\t{}\t{}\t{}\t{}\t{}",
         r.id,
         r.status,
         r.surface,
+        r.origin.as_deref().unwrap_or("-"),
         r.cmd.as_deref().unwrap_or("-"),
         r.text,
     )
@@ -344,7 +389,10 @@ fn request_line(r: &Request) -> String {
 
 /// The full one-request block for `get` (human form).
 fn request_block(r: &Request) -> String {
-    let mut s = format!("request {}  [{}]  ({})\n{}", r.id, r.status, r.surface, r.text);
+    let mut s = format!("request {}  [{}]  ({})\n{}\n{}", r.id, r.status, r.surface, r.display_title, r.text);
+    if let Some(origin) = &r.origin {
+        s.push_str(&format!("\nfiled by: {origin}"));
+    }
     if let Some(cmd) = &r.cmd {
         s.push_str(&format!("\nfailing command: {cmd}"));
     }
@@ -403,6 +451,80 @@ mod tests {
         assert_eq!(a.surface.as_deref(), Some("bsc ui"));
     }
 
+    // ── #debug-request-carries-its-origin ───────────────────────────────────────────────────────────
+
+    /// The precedence, and the reason this is a pure function: the real path reads a process-global env
+    /// var, which parallel test threads cannot each own (#3382). Passing it in keeps the rule testable.
+    #[test]
+    fn origin_prefers_an_explicit_from_then_the_session_pane() {
+        let s = |x: &str| Some(x.to_string());
+        assert_eq!(resolve_origin(s("kevin"), s("designer-studio:react")).as_deref(), Some("kevin"), "--from wins");
+        assert_eq!(
+            resolve_origin(None, s("librarian-studio:typescript")).as_deref(),
+            Some("librarian-studio:typescript"),
+            "no flag ⇒ the session's own pane, with no session having to pass one",
+        );
+        assert_eq!(resolve_origin(None, None), None, "neither ⇒ absent, never invented");
+    }
+
+    /// `?` is what the shell helpers write for an unknown pane (`${BSC_AUDIT_PANE:-?}`). Storing it would
+    /// put a request on the graph attributed to a session called "?" — worse than admitting no origin.
+    #[test]
+    fn origin_rejects_the_unknown_pane_sentinel_and_blanks() {
+        assert_eq!(resolve_origin(None, Some("?".into())), None);
+        assert_eq!(resolve_origin(None, Some("   ".into())), None);
+        assert_eq!(resolve_origin(Some("".into()), Some("designer-studio:react".into())).as_deref(), Some("designer-studio:react"),
+            "an empty --from falls through to the pane rather than blanking the origin");
+    }
+
+    /// End to end through the real handler: a request filed by a session carries that session, and shows
+    /// it in the lean list — the form a shell actually reads the queue in.
+    #[test]
+    fn new_stamps_the_origin_and_the_lean_list_shows_it() {
+        let dir = std::env::temp_dir().join(format!("bsc-request-origin-cli-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("requests.db");
+        let _ = std::fs::remove_file(&path);
+        let dbp = path.to_string_lossy().into_owned();
+
+        cmd_new(&args_for(vec!["new", "bsc graph impl list has no --domain filter"], |a| {
+            a.db = Some(dbp.clone());
+            a.from = Some("librarian-studio:typescript".into());
+            a.title = Some("impl list needs --domain".into());
+        }))
+        .unwrap();
+
+        let r = open_store(&Some(dbp.clone())).unwrap().get(1).unwrap().unwrap();
+        assert_eq!(r.origin.as_deref(), Some("librarian-studio:typescript"));
+        assert_eq!(r.display_title, "impl list needs --domain");
+        let line = request_line(&r);
+        assert!(line.contains("librarian-studio:typescript"), "the origin rides the lean TSV: {line}");
+        // …and `get`'s human block names the filer in words, not just as a column.
+        assert!(request_block(&r).contains("filed by: librarian-studio:typescript"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A request filed with neither flag nor pane still lists and still labels — the unattributed path
+    /// must not produce an empty column or an empty title.
+    #[test]
+    fn an_unattributed_request_still_lists_and_labels() {
+        let dir = std::env::temp_dir().join(format!("bsc-request-anon-cli-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("requests.db");
+        let _ = std::fs::remove_file(&path);
+        let dbp = path.to_string_lossy().into_owned();
+
+        cmd_new(&args_for(vec!["new", "the preview cannot mount a kit component."], |a| a.db = Some(dbp.clone()))).unwrap();
+        let r = open_store(&Some(dbp.clone())).unwrap().get(1).unwrap().unwrap();
+        assert_eq!(r.origin, None);
+        assert_eq!(r.display_title, "the preview cannot mount a kit component");
+        assert!(request_line(&r).contains("\t-\t"), "an absent origin renders as the '-' placeholder");
+        assert!(!request_block(&r).contains("filed by:"), "and is not claimed in the human block");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn parse_args_rejects_unknown_flag_and_missing_value() {
         assert!(parse_args(vec!["list".into(), "--nope".into()]).is_err());
@@ -419,6 +541,10 @@ mod tests {
         let new = bsc_cli_util::help_for("bsc request", TAGLINE, COMMANDS, "new");
         assert!(new.contains("bsc request new"));
         assert!(new.contains("--cmd"), "documents the grounding flag");
+        // The origin is stamped, and the help has to SAY so — a session that believes it must supply its
+        // own identity will either invent a flag or hand-type a value that cannot resolve a technology.
+        assert!(new.contains("BSC_AUDIT_PANE"), "names where the origin comes from");
+        assert!(new.contains("--title"), "documents the label flag");
     }
 
     #[test]
