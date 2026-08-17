@@ -35,7 +35,9 @@ function parseArgs(argv) {
     return Number.isFinite(n) && n >= 0 ? n : fallback;
   };
   return {
-    days: num("--days", 14),
+    // 3, not 14 — the RUNNER's default is the one that applies, because it always passes an explicit
+    // value to planPrune. Changing only planPrune's default (as an earlier pass did) is dead code.
+    days: num("--days", 3),
     keep: num("--keep", 1),
     dryRun: argv.includes("--dry-run"),
     quiet: argv.includes("--quiet"),

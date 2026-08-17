@@ -11,6 +11,7 @@
  * narrowing has to be temporary AND visible. This prints the plan every time for that second reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { planGate, parsePorcelain, gateCommands } from "./gateScope.mjs";
 
 const argv = process.argv.slice(2);
@@ -79,6 +80,19 @@ if (!plan.full) {
     process.stdout.write(`  note: that is nearly the whole workspace — a shared crate changed, so this is\n`);
     process.stdout.write(`        barely narrower than --full. Expected, not a bug.\n`);
   }
+}
+
+// Sweep this tree's build garbage before the heavy steps. The gate is the ONE command every worktree
+// agent runs, and until this line existed the sweeps hung off `build:plan` — i.e. off `tauri dev` —
+// so the only tree ever collected was the one where the app gets launched, and no worktree had been
+// swept once (#the-gc-never-runs-where-the-garbage-is). `gc` day-stamps itself, so this is ~0ms on
+// repeat runs during iteration, and it can never fail: it swallows everything and exits 0.
+try {
+  const gcScript = fileURLToPath(new URL("./gc.mjs", import.meta.url));
+  const gc = spawnSync(process.execPath, [gcScript, "--quiet"], { encoding: "utf8" });
+  if (gc.stdout?.trim()) process.stdout.write(`${gc.stdout.trim()}\n`);
+} catch {
+  // a janitor must never redden a gate
 }
 
 // EVERY step runs, even after one fails. A gate that stops at the first failure hands back a partial
