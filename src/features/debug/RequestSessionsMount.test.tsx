@@ -97,16 +97,28 @@ describe("RequestSessionsMount — one session per request", () => {
     // nothing to pace against; staggering would only make the queue drain slower. This is the assertion
     // that would have failed under the old model, so it is the one that pins the change.
     render(<RequestSessionsMount />);
+    // BOTH assertions inside ONE waitFor, because they are published by DIFFERENT effects and settle at
+    // different times (#requestsessionsmount-is-order-dependent). The poll body writes
+    // `paneStartupPromptText`; a separate `useEffect` keyed on `[sessions, setActiveDebugRequests]`
+    // publishes `activeDebugRequests`. Awaiting only the prompts and then asserting the requests BARE
+    // leaves a real window — prompts landed, effect not yet flushed — and under load that window widens
+    // until the assertion sees `[]`.
+    //
+    // It read as an order dependency for a long time: green alone (11/11), green in the dom project
+    // (438 files), green in the full suite (733), and red once in a 103-file `--changed` subset. What
+    // settles it is that the EXACT failing command passes twice on the same tree — same input, two
+    // outputs, which is non-determinism rather than a polluting neighbour. There was never a state leak
+    // to isolate; a `waitFor` that covers everything it should have covered is the whole fix.
     await waitFor(() => {
       expect(Object.keys(useAppStore.getState().paneStartupPromptText).sort())
         .toEqual([requestPaneId(1), requestPaneId(2)].sort());
+      // Published with PROVENANCE, not as bare ids: the Glance node is labelled `debug - <title>` and
+      // edged to the session that filed the request, and neither is derivable from an id.
+      expect([...useAppStore.getState().activeDebugRequests].sort((a, b) => a.id - b.id)).toEqual([
+        { id: 1, origin: "design-studio:designer-react", title: "ui list needs --kit" },
+        { id: 2, origin: "algorithms-studio:librarian-typescript", title: "impl list needs --domain" },
+      ]);
     });
-    // Published with PROVENANCE, not as bare ids: the Glance node is labelled `debug - <title>` and
-    // edged to the session that filed the request, and neither is derivable from an id.
-    expect([...useAppStore.getState().activeDebugRequests].sort((a, b) => a.id - b.id)).toEqual([
-      { id: 1, origin: "design-studio:designer-react", title: "ui list needs --kit" },
-      { id: 2, origin: "algorithms-studio:librarian-typescript", title: "impl list needs --domain" },
-    ]);
   });
 
   it("CLAIMS each request before binding a session to it", async () => {
