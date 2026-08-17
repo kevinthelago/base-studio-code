@@ -155,40 +155,6 @@ describe("DesignsWorkbench (#2308)", () => {
     expect(node.className).not.toMatch(/\bworking\b/);               // no competing pulse on it
   });
 
-  it("the activity STRIP shows every recent touch, including one in a kit that is NOT on screen (#live-focus-is-kit-filtered)", () => {
-    // The strip is the cross-kit window. The graph can only ever draw the selected kit, so without this
-    // a touch elsewhere had nowhere to appear — which is why a page full of live fleet work read blank.
-    const [a, b] = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id);
-    const { container } = render(<DesignsWorkbench />);
-    act(() => {
-      useAppStore.setState({
-        aiTouches: [touch(a.id), { ...touch(b.id), kitId: "some-other-kit" }],
-        aiFocusedId: a.id,
-      });
-    });
-    const chips = [...container.querySelectorAll(".ds-activity-chip")];
-    expect(chips.map((c) => c.textContent)).toEqual([a.name, b.name]);
-  });
-
-  it("clicking a strip row selects that component — an explicit act, so it also stops the follow", () => {
-    const [, other] = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id);
-    const { container } = render(<DesignsWorkbench />);
-    act(() => { useAppStore.setState({ aiTouches: [touch(other.id)], aiFocusedId: other.id }); });
-    fireEvent.click(container.querySelector(".ds-activity-chip")!);
-    expect(useAppStore.getState().designsCompId).toBe(other.id);
-  });
-
-  it("a touch whose record is GONE renders as a non-clickable retired row, never a broken one (#3725)", () => {
-    // `bsc ui merge`/`suppress` emit activity for the RETIRED id — real work with no record behind it.
-    // It must still show (it happened), but there is nothing to select, so it must not offer a click.
-    const { container } = render(<DesignsWorkbench />);
-    act(() => { useAppStore.setState({ aiTouches: [touch("windowcontrols")], aiFocusedId: "windowcontrols" }); });
-    const chip = container.querySelector(".ds-activity-chip")!;
-    expect(chip.className).toMatch(/\bgone\b/);
-    expect(chip.textContent).toBe("windowcontrols");      // falls back to the raw id — no record to name it
-    expect(chip.tagName).not.toBe("BUTTON");              // not a focusable control that does nothing
-  });
-
   it("switching kits via the rail kit head re-scopes the graph and focuses nothing (details stay hidden)", () => {
     // The packaged seed is the one react-ui kit (#2506 retired the examples kit), so switching is
     // exercised against a second, user-authored kit in the store.

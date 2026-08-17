@@ -45,16 +45,33 @@ export interface AiTouch {
  *  short enough that the oldest row is still plausibly "what is happening now". */
 export const AI_RING_MAX = 8;
 
-/** How stale a touch may be and still move the view. The poll's first tick sees the whole 50-line tail,
- *  which on a fresh mount is history — following it would jump the user's kit to whatever was touched
- *  hours ago. Those entries still POPULATE the ring (seeing recent activity on open is the point); they
- *  just do not steer. A live touch is seconds old and comfortably inside this window. */
-export const FOLLOW_MAX_AGE_MS = 60_000;
-
 /** Fold `fresh` (oldest-first) into `ring` (newest-first), newest first and capped at {@link AI_RING_MAX}.
  *  Pure + exported for the unit test. */
 export function foldTouches(ring: AiTouch[], fresh: AiTouch[]): AiTouch[] {
   return [...fresh].reverse().concat(ring).slice(0, AI_RING_MAX);
+}
+
+/** May this touch take the focus? Only a touch on a component in the kit already on screen.
+ *
+ *  The kit is the ONLY condition, deliberately. An age cut-off was considered — the poll's first tick
+ *  replays up to 50 lines of history, so a fresh mount focuses the newest PAST touch — but that was
+ *  already the behaviour before this change, focusing the most recent work when the Studio opens is
+ *  reasonable, and adding a cut-off would change when focus happens beyond what was asked for.
+ *
+ *  The kit is read from the EMITTER's own column first (the activity line's 6th): a record written
+ *  moments ago may not be in `components` yet, so resolving from the store would miss exactly the
+ *  newest work. A legacy 5-column line falls back to the store.
+ *
+ *  A touch whose kit resolves NEITHER way is not focusable — that is a #3725 tombstone from `bsc ui
+ *  merge`/`suppress`, a retired id with no record behind it. It still enters the ring (it happened and
+ *  the trail should show it), but there is nothing on screen to focus, and writing it to `aiFocusedId`
+ *  would blank the Inspector for exactly the same reason a cross-kit id does. */
+export function focusable(t: AiTouch, get: () => AppStore): boolean {
+  const s = get();
+  const kitId = t.kitId || s.components.find((c) => c.id === t.id)?.kitId;
+  // Mirrors the workbench's own fallback (`storedKitId || kits[0]?.id`), so "the kit on screen" means
+  // the same thing here as it does there — an empty `designsKitId` still shows the first kit.
+  return !!kitId && kitId === (s.designsKitId || s.kits[0]?.id || "");
 }
 
 /** How long a burst of writes is allowed to accumulate before ONE re-hydrate runs. Long enough that a
@@ -249,10 +266,10 @@ export interface ComponentsSlice {
   /** Fold freshly-observed touches (OLDEST-first, as the log is read) into the ring (#2525).
    *
    *  Beyond the ring it does two things the old per-touch path could not:
-   *  - **Auto-follows the kit** when the user has nothing selected, so a touch in another kit is
-   *    actually visible instead of being discarded by the Studio's kit filter. Never when a component
-   *    IS selected — a background steer must not take the screen from someone working (#3599/#4248) —
-   *    and never for a stale priming batch (see `FOLLOW_MAX_AGE_MS`).
+   *  - **Focuses an IN-KIT touch**, selected or not, so the node the designer just wrote is the one on
+   *    screen. A touch in another kit is ignored entirely — no kit switch, no pan, no selection change.
+   *    Crucially it is ignored by NOT WRITING `aiFocusedId`, since writing an id this graph does not
+   *    contain is what used to empty the Inspector.
    *  - **Coalesces the re-hydrate**: a burst of N writes costs ONE library reload, not N. Focus still
    *    lands immediately; only the reload waits.
    *
@@ -522,25 +539,27 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     if (!touches.length) return;
     const ring = foldTouches(get().aiTouches, touches);
     const head = ring[0];
-    set({ aiTouches: ring, aiFocusedId: head?.id ?? null });
 
-    // ── Auto-follow the kit (the #live-focus-is-kit-filtered fix) ──────────────────────────────
-    // The Studio filters the `.working` pulse, the auto-pan AND the Inspector subject by the SELECTED
-    // kit, so a touch in any other kit was silently discarded. Measured over 200 consecutive touches
-    // the fleet spanned three kits (105 / 73 / 19), which is why the page mostly sat blank.
+    // ── Focus an IN-KIT touch; ignore a cross-kit one outright ─────────────────────────────────
+    // (#auto-focus-in-kit-and-drop-the-activity-pills.) A touch on a component in the kit already on
+    // screen focuses it, whether or not something is selected — a brief focus is the intended
+    // behaviour, not a disruption to guard against. A touch in ANOTHER kit does nothing at all: no kit
+    // switch, no pan, no selection change.
     //
-    // Following is gated on `designsCompId === null` — "the user is watching", not "the user is
-    // working". With something selected we leave the view completely alone and the touch is visible in
-    // the strip only. That is the same line #3599/#4248 drew for `bsc navigate`.
-    if (head && head.collection === "component" && get().designsCompId === null && Date.now() - head.at < FOLLOW_MAX_AGE_MS) {
-      // Prefer the kit the EMITTER reported (the activity line's 6th column): a record written moments
-      // ago may not be in `components` yet, and resolving from the store would miss exactly the newest
-      // work. Fall back to the store for legacy 5-column lines.
-      const kitId = head.kitId || get().components.find((c) => c.id === head.id)?.kitId;
-      // `setDesignsKit` CLEARS the component selection — harmless here, since following only happens
-      // when there is none, but it is why this must never run with a selection live.
-      if (kitId && kitId !== get().designsKitId) get().setDesignsKit(kitId);
-    }
+    // This replaces an auto-FOLLOW that switched kits while nothing was selected, and a strip of chips
+    // added to recover the signal that gate suppressed. The gate cited #3599/#4248, which govern `bsc
+    // navigate` yanking a user to a different PAGE — their own test draws the line at "sets the focus
+    // but does NOT yank the user off their current page", so setting focus was never what they
+    // refused. Not following also removes a hazard the old gate only half-covered: `setDesignsKit`
+    // CLEARS `designsCompId`, so a cross-kit follow could cost the user their place mid-edit.
+    //
+    // IGNORED MEANS NOT WRITTEN, never written-and-hidden. Setting `aiFocusedId` to an id this graph
+    // does not contain is the original blank-page defect: the Studio filters the pulse, the pan AND the
+    // Inspector subject by kit, so an out-of-kit head made `aiComp` null and EMPTIED the Inspector —
+    // and measured over 200 touches the fleet spanned three kits, so that was the COMMON case. Leaving
+    // the previous value alone keeps the last in-kit subject on screen instead.
+    const keepFocus = !!head && head.collection === "component" && !focusable(head, get);
+    set(keepFocus ? { aiTouches: ring } : { aiTouches: ring, aiFocusedId: head?.id ?? null });
 
     // ── Coalesce the re-hydrate ────────────────────────────────────────────────────────────────
     // Every WRITE used to reload the whole library, reconcile it and re-diff it for propagation —

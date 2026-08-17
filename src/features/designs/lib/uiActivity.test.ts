@@ -133,14 +133,20 @@ describe("useUiActivity (#2525)", () => {
       return ""; // hydrate calls (loadComponents/etc.) degrade to empty → no-op
     });
 
+  // These two pin the hook→store PLUMBING, not the kit rule, so they name the touched kit and put the
+  // Studio in it. Before #auto-focus-in-kit-and-drop-the-activity-pills the focus was written whatever
+  // the kit was, so a 5-column line with no kit happened to pass; now the kit has to actually match,
+  // and stating it is better than depending on which kit the seed happens to list first.
   it("drives the most-recent touch into the store when the session is booted", async () => {
-    mockBridge([line("component", "button"), line("component", "chip")]);
+    useAppStore.setState({ designsKitId: "base-studio-code" });
+    mockBridge([kitLine("component", "button", "base-studio-code"), kitLine("component", "chip", "base-studio-code")]);
     renderHook(() => useUiActivity(true, 10));
     await waitFor(() => expect(useAppStore.getState().aiFocusedId).toBe("chip"));
   });
 
   it("drives a ui-focus (READ, #3545) into the store, so the preview follows Claude's inspection", async () => {
-    mockBridge([line("component", "chip", "2026-07-07T00:00:00Z", "design-studio:designer", "ui-focus")]);
+    useAppStore.setState({ designsKitId: "base-studio-code" });
+    mockBridge([kitLine("component", "chip", "base-studio-code", "2026-07-07T00:00:00Z", "ui-focus")]);
     renderHook(() => useUiActivity(true, 10));
     await waitFor(() => expect(useAppStore.getState().aiFocusedId).toBe("chip"));
   });
@@ -153,12 +159,16 @@ describe("useUiActivity (#2525)", () => {
       kitLine("component", "settings-security", "base-studio-code", "2026-07-07T00:00:02Z"),
       kitLine("component", "ui-btn", "mobile-studio-code", "2026-07-07T00:00:03Z"),
     ]);
+    useAppStore.setState({ designsKitId: "base-studio-code", aiFocusedId: null });
     renderHook(() => useUiActivity(true, 10));
     await waitFor(() => expect(useAppStore.getState().aiTouches).toHaveLength(3));
-    // Newest FIRST — the head is what the pulse and the Inspector follow.
+    // Newest FIRST — every session's work reaches the ring, which is what feeds the decaying pulse.
     expect(useAppStore.getState().aiTouches.map((t) => t.id)).toEqual(["ui-btn", "settings-security", "workercard"]);
-    expect(useAppStore.getState().aiFocusedId).toBe("ui-btn");
-    // The kit rides through to the ring, which is what lets the store follow it.
+    // …but the head is in ANOTHER kit, so it does not take the focus
+    // (#auto-focus-in-kit-and-drop-the-activity-pills). Writing an out-of-kit id here is what used to
+    // empty the Inspector, so "ignored" has to mean the value is never written.
+    expect(useAppStore.getState().aiFocusedId).toBeNull();
+    // The kit rides through to the ring, which is what lets the store make that judgement at all.
     expect(useAppStore.getState().aiTouches[0].kitId).toBe("mobile-studio-code");
   });
 

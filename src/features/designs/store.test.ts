@@ -249,7 +249,7 @@ describe("kit-change origin (#2810 — a CLI edit fires propagation)", () => {
   });
 });
 
-describe("the activity RING + kit-follow (#live-focus-is-kit-filtered)", () => {
+describe("the activity RING + in-kit focus (#auto-focus-in-kit-and-drop-the-activity-pills)", () => {
   const realHydrateComponents = useAppStore.getState().hydrateComponents;
   /** A touch stamped `now`, so it is inside the follow window unless a test says otherwise. */
   const t = (id: string, kitId?: string, over: Partial<AiTouch> = {}): AiTouch =>
@@ -276,40 +276,43 @@ describe("the activity RING + kit-follow (#live-focus-is-kit-filtered)", () => {
     });
   });
 
-  it("FOLLOWS the touched kit when nothing is selected — the whole point of the fix", () => {
-    // Measured on the real log: 200 consecutive touches spanned three kits, and every touch outside the
-    // selected one was discarded by the Studio's kit filter. Following is what makes them visible.
-    useAppStore.setState({ designsKitId: "base-studio-code", designsCompId: null });
-    useAppStore.getState().pushAiTouches([t("workercard", "mobile-studio-code")], { hydrate: false });
-    expect(useAppStore.getState().designsKitId).toBe("mobile-studio-code");
-    expect(useAppStore.getState().aiFocusedId).toBe("workercard");
-  });
-
-  it("does NOT follow while the user has a component selected — a background steer never takes the screen", () => {
-    // The #3599/#4248 line: steering is right unattended and wrong when someone is working. The touch
-    // still lands in the ring, so the strip shows it; only the VIEW is left alone.
+  it("focuses an IN-KIT touch even with a component selected — a brief focus is the point, not a disruption", () => {
+    // The old behaviour suppressed this whenever anything was selected and then added a chip strip to
+    // recover the signal. Focusing the node that was just written is what was wanted all along.
     useAppStore.setState({ designsKitId: "base-studio-code", designsCompId: "settings-security" });
-    useAppStore.getState().pushAiTouches([t("workercard", "mobile-studio-code")], { hydrate: false });
-    expect(useAppStore.getState().designsKitId).toBe("base-studio-code");
-    expect(useAppStore.getState().designsCompId).toBe("settings-security");
-    expect(useAppStore.getState().aiTouches.map((x) => x.id)).toEqual(["workercard"]);
+    useAppStore.getState().pushAiTouches([t("chip", "base-studio-code")], { hydrate: false });
+    expect(useAppStore.getState().aiFocusedId).toBe("chip");
+    expect(useAppStore.getState().designsCompId).toBe("settings-security"); // the SELECTION is still not disturbed
   });
 
-  it("does NOT follow a STALE touch — the poll's priming tick is replaying history", () => {
-    // The first tick sees up to 50 lines of past work. Jumping the user's kit to whatever was touched
-    // hours ago would be a yank with no live work behind it. It still populates the ring.
-    useAppStore.setState({ designsKitId: "base-studio-code" });
-    const old = t("workercard", "mobile-studio-code", { at: Date.now() - 3_600_000 });
+  it("IGNORES a cross-kit touch without blanking the focus — the original blank-page defect", () => {
+    // This is the regression that matters. Writing an out-of-kit id to `aiFocusedId` is what emptied the
+    // page: the Studio filters the pulse, the pan AND the Inspector subject by kit, so `aiComp` went
+    // null. Measured over 200 touches the fleet spanned three kits, so it was the COMMON case, not an
+    // edge one. Ignoring must therefore mean NOT WRITING it — the previous subject stays on screen.
+    useAppStore.setState({ designsKitId: "base-studio-code", designsCompId: null, aiFocusedId: "chip" });
+    useAppStore.getState().pushAiTouches([t("workercard", "mobile-studio-code")], { hydrate: false });
+    expect(useAppStore.getState().designsKitId).toBe("base-studio-code"); // no kit switch
+    expect(useAppStore.getState().aiFocusedId).toBe("chip");              // NOT moved, and NOT nulled
+    expect(useAppStore.getState().aiTouches.map((x) => x.id)).toEqual(["workercard"]); // still in the ring
+  });
+
+  it("focuses an in-kit touch regardless of AGE — the kit is the only condition", () => {
+    // An age cut-off was considered and deliberately not added: the priming tick already focused the
+    // newest historical touch before this change, and focusing the most recent work when the Studio
+    // opens is reasonable. Pinned so the omission reads as a decision rather than an oversight.
+    useAppStore.setState({ designsKitId: "base-studio-code", aiFocusedId: null });
+    const old = t("chip", "base-studio-code", { at: Date.now() - 3_600_000 });
     useAppStore.getState().pushAiTouches([old], { hydrate: false });
-    expect(useAppStore.getState().designsKitId).toBe("base-studio-code");
-    expect(useAppStore.getState().aiTouches).toHaveLength(1);
+    expect(useAppStore.getState().aiFocusedId).toBe("chip");
   });
 
   it("falls back to the STORE for a legacy line that carries no kit", () => {
+    // A 5-column line predates the kitId column, so the kit can only come from the record itself.
     const known = SEED_COMPONENTS[0];
-    useAppStore.setState({ designsKitId: "somewhere-else" });
+    useAppStore.setState({ designsKitId: known.kitId });
     useAppStore.getState().pushAiTouches([t(known.id)], { hydrate: false }); // no kitId on the touch
-    expect(useAppStore.getState().designsKitId).toBe(known.kitId);
+    expect(useAppStore.getState().aiFocusedId).toBe(known.id);
   });
 
   it("coalesces a BURST of writes into exactly ONE hydrate", async () => {
@@ -337,10 +340,19 @@ describe("the activity RING + kit-follow (#live-focus-is-kit-filtered)", () => {
   it("accepts a touch whose record is GONE — a retired id from `bsc ui merge` (#3725 tombstone)", () => {
     // `bsc ui merge`/`suppress` emit activity for the RETIRED id, and 3 of the last 200 real touches
     // were exactly that. It is real work and must show; it simply resolves to no record and no kit.
-    useAppStore.setState({ designsKitId: "base-studio-code" });
-    useAppStore.getState().pushAiTouches([t("windowcontrols")], { hydrate: false });
-    expect(useAppStore.getState().aiTouches.map((x) => x.id)).toEqual(["windowcontrols"]);
-    expect(useAppStore.getState().designsKitId).toBe("base-studio-code"); // nothing to follow to
+    // The id must genuinely resolve to NOTHING or this tests the wrong thing. The previous version used
+    // `windowcontrols`, which is a real record — it passed only because its kit assertion was trivially
+    // true, so the tombstone path was never exercised at all. Assert the premise rather than assume it.
+    const retired = "retired-by-merge-zzz";
+    expect(useAppStore.getState().components.some((c) => c.id === retired)).toBe(false);
+
+    useAppStore.setState({ designsKitId: "base-studio-code", aiFocusedId: "chip" });
+    useAppStore.getState().pushAiTouches([t(retired)], { hydrate: false });
+    expect(useAppStore.getState().aiTouches.map((x) => x.id)).toEqual([retired]);
+    expect(useAppStore.getState().designsKitId).toBe("base-studio-code"); // nothing to switch to
+    // A retired id resolves to no record and therefore no kit, so it must not take the focus either —
+    // focusing an id the graph does not contain empties the Inspector exactly like a cross-kit one.
+    expect(useAppStore.getState().aiFocusedId).toBe("chip");
   });
 
   it("setAiFocused(null) empties the RING too, so a finished session stops reading as live", () => {
