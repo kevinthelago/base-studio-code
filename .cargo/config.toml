@@ -28,6 +28,27 @@
 [build]
 rustc-wrapper = "sccache"
 
+# PARALLELISM IS CAPPED, AND THE DEFAULT WAS STRICTLY WORSE. Unset, cargo takes one job per LOGICAL
+# processor — 16 here, on 8 physical cores. MEASURED, `cargo nextest run --workspace --no-run` after
+# touching `bsc-util` (36 of 40 crates rebuild), on 8c/16t / 32 GB with ~16 GB actually free:
+#
+#     jobs=2    5.47 GB peak    73s
+#     jobs=4    8.04 GB peak    55s      <- and 8.13 GB / 54s on a repeat
+#     jobs=6   11.64 GB peak    46s
+#     jobs=8   13.58 GB peak    46s
+#     jobs=16  18.01 GB peak    54s      <- the DEFAULT: no faster than 4, 2.2x the memory
+#
+# So 16 buys nothing but memory pressure. 6-8 is the fastest for a machine running ONE build, but this
+# repo's normal state is many worktree agents at once, and MEMORY is the binding constraint: the gate
+# links ~41 test binaries and runs 9 `link.exe` concurrently at the default, one app link alone peaking
+# at 2.99 GB. At 4 jobs a gate fits in ~8 GB, so two can coexist in what this box actually has free.
+#
+# THIS IS A FLEET SETTING, not a single-developer one. Working alone on a bigger box, `--jobs 8` on the
+# command line (or CARGO_BUILD_JOBS=8) is the faster choice and overrides this. Raising it here instead
+# would be paying for one agent's 15% with everyone else's headroom — and #795 is what running out of
+# linker memory looks like in this workspace.
+jobs = 4
+
 # THE C++ HALF, which is most of the remaining cost. `duckdb` is vendored with `features = ["bundled"]`,
 # so `libduckdb-sys` compiles the DuckDB amalgamation — 280 translation units, a ~614 MB `libduckdb.a` —
 # through the `cc` crate. Measured on a warm-cache, wiped-target build: 200s total, `libduckdb-sys` ALONE
