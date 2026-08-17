@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   autopilotTick, initRunState, MAX_ITERATIONS,
   type AutopilotDeps, type AutopilotSnapshot, type AutopilotLogEntry,
-} from "./planAutopilotRunner";
+} from "@/features/planner/session/planAutopilotRunner";
 
 const snap = (over: Partial<AutopilotSnapshot> = {}): AutopilotSnapshot => ({
   planReady: false, confirmKeys: [], plannerAwaiting: false, working: false, autoPublish: true,

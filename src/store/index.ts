@@ -33,7 +33,7 @@ import { createTunnelSlice } from "@/features/tunnel/store";
 import { createConsoleSlice } from "./slices/console";
 
 // Re-export the public store API so existing `from "@/store"` imports keep resolving.
-export { PROJECT_INIT_PROMPT, TRIAGE_PROMPT, buildTriagePrompt } from "./constants";
+export { PROJECT_INIT_PROMPT, TRIAGE_PROMPT, buildTriagePrompt } from "@/store/constants";
 export type { GithubUser, PerfConfig, LogConfig, ToolPermissions, ConfigProfile, AutomationSuggestion, GithubRepo } from "./types";
 
 import { newTabId } from "./helpers";

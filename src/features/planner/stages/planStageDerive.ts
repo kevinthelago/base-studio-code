@@ -4,7 +4,7 @@
 // is unit-testable. The call site supplies the simpler primitives (repo/issue/fleet
 // counts); this function owns the section categorization.
 
-import { buildPlanStageState, type PlanStageState } from "./planStages";
+import { buildPlanStageState, type PlanStageState } from "@/features/planner/stages/planStages";
 import type { SectionState } from "@/features/planner/github/ghStructure";
 import type { PlanSignals } from "@/features/planner/stages/stageGate";
 

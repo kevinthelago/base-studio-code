@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // Isolate the modal from the generator + logger.
-vi.mock("./lib/designGenBridge", () => ({ generateCategoryColors: vi.fn() }));
+vi.mock("@/features/designs/lib/designGenBridge", () => ({ generateCategoryColors: vi.fn() }));
 vi.mock("@/shared/lib/core/log", () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
-import { generateCategoryColors } from "./lib/designGenBridge";
+import { generateCategoryColors } from "@/features/designs/lib/designGenBridge";
 import { log } from "@/shared/lib/core/log";
 import { useAppStore } from "@/store";
 import { DesignReconcileModal } from "./DesignReconcileModal";

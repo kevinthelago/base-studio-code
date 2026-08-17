@@ -10,7 +10,7 @@
 
 import { repoShortName } from "@/shared/lib/core/projectPaths";
 import type { ReadinessCheck } from "@/features/planner/lib/readiness";
-import { platform, WORKLOAD, type Workload } from "./deployPlatforms";
+import { platform, WORKLOAD, type Workload } from "@/features/planner/lib/deployPlatforms";
 import {
   defaultEnvs, defaultPipeline, defaultRelease, defaultHealth,
   type DeployEnvironment, type Pipeline, type DeployConfigBlock,

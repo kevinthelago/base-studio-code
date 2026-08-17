@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MODELS, MODEL_IDS, DEFAULT_MODEL_ID, modelTier, tierToModelId } from "./models";
+import { MODELS, MODEL_IDS, DEFAULT_MODEL_ID, modelTier, tierToModelId } from "@/app/console/lib/models";
 
 describe("console model catalog", () => {
   it("offers the three tiers cheapest → deepest", () => {

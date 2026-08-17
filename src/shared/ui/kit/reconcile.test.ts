@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reconcileDesign, KNOWN_GRAPH_CATEGORIES } from "./reconcile";
+import { reconcileDesign, KNOWN_GRAPH_CATEGORIES } from "@/shared/ui/kit/reconcile";
 
 describe("reconcileDesign (#2646)", () => {
   it("KNOWN_GRAPH_CATEGORIES = the contract's graph-category keys", () => {

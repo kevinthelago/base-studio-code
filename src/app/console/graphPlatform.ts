@@ -16,7 +16,7 @@ import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 // — the pane system's pure helpers + hooks —
 import * as ConsoleFocus from "@/app/console/lib/consoleFocus";
 import * as ModelDisplay from "@/app/console/lib/modelDisplay";
-import * as Models from "./lib/models";
+import * as Models from "@/app/console/lib/models";
 import * as PaneIdentity from "@/app/console/lib/paneIdentity";
 import * as PaneStatus from "@/app/console/lib/paneStatus";
 import * as Providers from "./lib/providers";

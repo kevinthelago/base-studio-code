@@ -19,7 +19,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
-import { generateCategoryColors } from "./lib/designGenBridge";
+import { generateCategoryColors } from "@/features/designs/lib/designGenBridge";
 
 export interface DesignReconcileModalProps {
   /** Provenance — the blueprint id whose download triggered this; the contribution's `source` so a later

@@ -15,7 +15,7 @@ import { logsTail } from "@/shared/lib/core/logsBridge";
 import { useLogStream } from "@/shared/hooks/useLogStream";
 import { useAppStore } from "@/store";
 import { roleCapability } from "../session/sessionRoles";
-import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "../core/llmConfig";
+import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "@/shared/lib/core/llmConfig";
 import { oneShotComplete } from "@/shared/lib/core/claudeComplete";
 import type { WorktreeChanges } from "@/shared/lib/fleet/worktreeChanges";
 import { planWarden, parseAuditCommands, zipWorktreeChanges, wardenSweepTargets, livePaneIdsOf, type WardenSession } from "@/shared/lib/fleet/warden";

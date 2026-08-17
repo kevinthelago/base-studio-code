@@ -3,7 +3,7 @@ import {
   PLAN_STAGES, STAGE_BY_ID, defaultStageConfig, discoveryOnlyStageConfig,
   enabledOrderedStages,
   type StageConfig, type StageId,
-} from "./planStages";
+} from "@/features/planner/stages/planStages";
 
 function cfg(over: Partial<StageConfig> = {}): StageConfig {
   const d = defaultStageConfig();

@@ -4,7 +4,7 @@
 // template-change detection. Pure (no React/Tauri). Types live in blueprintTypes.ts; the packaged
 // data + library assembly in blueprintBuiltins.ts.
 
-import { PLAN_STAGES, type StageConfig, type StageId } from "./planStages";
+import { PLAN_STAGES, type StageConfig, type StageId } from "@/features/planner/stages/planStages";
 import { evalGate, gateApplies, type PlanSignals } from "@/features/planner/stages/stageGate";
 import type {
   Blueprint, BlueprintStage, SectionStatus,
