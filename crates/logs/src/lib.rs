@@ -190,13 +190,61 @@ pub fn query(
 pub fn tail_raw(dir: &Path, name: &str, limit: usize, oldest: bool) -> Vec<String> {
     let Some(canon) = canonical_stream(name) else { return vec![] };
     let Some((_, file)) = streams().into_iter().find(|(s, _)| *s == canon) else { return vec![] };
-    let text = std::fs::read_to_string(dir.join(file)).unwrap_or_default();
+    let lines = last_lines(&dir.join(file), limit); // oldest-first, already capped at `limit`
+    if oldest { lines } else { lines.into_iter().rev().collect() }
+}
+
+/// How much is read per step when tailing backwards. Large enough that a normal tail finishes in one
+/// seek, small enough that a pathological single-line file does not pull the whole thing in at once.
+const TAIL_CHUNK: u64 = 64 * 1024;
+
+/// The last `limit` non-blank lines of `path`, in file order (oldest-first), read from the END.
+///
+/// The whole point is that the cost is bounded by `limit`, not by file size. The previous
+/// implementation read the entire file into a `String`, allocated a `String` per line, reversed the
+/// vector and threw nearly all of it away — measured at 354 calls / 203.9s in one session, with a
+/// single call taking 14.5s, because `audit.log` is 2 MB and these logs are append-only and grow all
+/// session (#the-log-readers-re-read-whole-files-on-every-poll).
+///
+/// THE CHUNK BOUNDARY IS THE PART THAT GOES WRONG. Reading backwards lands mid-line, so the first
+/// line of the buffer is usually a fragment. It is dropped whenever there is more file behind it
+/// (`pos > 0`) and kept only when the read reached byte 0 and the "fragment" is genuinely the file's
+/// first line. Dropping the bytes BEFORE decoding also disposes of any UTF-8 sequence split across
+/// the boundary, so the lossy decode never sees a truncated character.
+fn last_lines(path: &Path, limit: usize) -> Vec<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    if limit == 0 {
+        return vec![];
+    }
+    let Ok(mut f) = std::fs::File::open(path) else { return vec![] };
+    let Ok(len) = f.seek(SeekFrom::End(0)) else { return vec![] };
+    let mut buf: Vec<u8> = Vec::new();
+    let mut pos = len;
+    // Read backwards until the buffer holds more line breaks than we need (so `limit` COMPLETE lines
+    // are present even after the leading fragment is dropped), or we run out of file.
+    while pos > 0 && buf.iter().filter(|b| **b == b'\n').count() <= limit {
+        let take = TAIL_CHUNK.min(pos);
+        pos -= take;
+        let mut chunk = vec![0u8; take as usize];
+        if f.seek(SeekFrom::Start(pos)).is_err() || f.read_exact(&mut chunk).is_err() {
+            break;
+        }
+        chunk.extend_from_slice(&buf);
+        buf = chunk;
+    }
+    // Drop the partial first line — but only when there is more file before it.
+    let body = if pos > 0 {
+        match buf.iter().position(|b| *b == b'\n') {
+            Some(i) => &buf[i + 1..],
+            None => &buf[..], // one line longer than everything read; keep what we have
+        }
+    } else {
+        &buf[..]
+    };
+    let text = String::from_utf8_lossy(body);
     let mut lines: Vec<String> =
         text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
-    if !oldest {
-        lines.reverse();
-        lines.truncate(limit);
-    } else if lines.len() > limit {
+    if lines.len() > limit {
         lines = lines.split_off(lines.len() - limit);
     }
     lines
@@ -511,6 +559,48 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    /// The backwards read must cross a chunk boundary without losing or duplicating the line it lands
+    /// in the middle of (#the-log-readers-re-read-whole-files-on-every-poll).
+    ///
+    /// Checked against the WHOLE-FILE answer rather than against hand-written expectations: the
+    /// bounded read is only correct if it is indistinguishable from reading everything, and computing
+    /// the oracle here means the test cannot drift from what the old implementation returned.
+    #[test]
+    fn tailing_a_file_larger_than_one_chunk_matches_the_whole_file_answer() {
+        let d = tmp();
+        // Comfortably more than one TAIL_CHUNK (64 KB), so the read takes several steps and lands
+        // mid-line at least once.
+        let lines: Vec<String> =
+            (0..4000).map(|i| format!("2026-06-26T10:00:00Z\tpane\tRead\tline-{i:05}")).collect();
+        let body = lines.join("\n") + "\n";
+        assert!(body.len() > (super::TAIL_CHUNK as usize) * 2, "the fixture must span several chunks");
+        std::fs::write(d.join("audit.log"), &body).unwrap();
+
+        for limit in [1usize, 2, 50, 500] {
+            let want_oldest: Vec<String> = lines[lines.len() - limit..].to_vec();
+            let got_oldest = tail_raw(&d, "audit", limit, true);
+            assert_eq!(got_oldest, want_oldest, "oldest-first tail of {limit}");
+
+            let want_newest: Vec<String> = want_oldest.iter().rev().cloned().collect();
+            assert_eq!(tail_raw(&d, "audit", limit, false), want_newest, "newest-first tail of {limit}");
+        }
+
+        // A tail longer than the file returns every line, and reaching byte 0 must KEEP the first
+        // line rather than mistaking it for a fragment.
+        let all = tail_raw(&d, "audit", lines.len() + 10, true);
+        assert_eq!(all.len(), lines.len(), "a limit past the start returns the whole file");
+        assert_eq!(all[0], lines[0], "the file's FIRST line survives — it is not a partial line");
+
+        // A final line with no trailing newline is still returned.
+        std::fs::write(d.join("coord.log"), "2026-06-26T10:00:00Z\tk\ta\t\t\n2026-06-26T10:00:01Z\tk\tb\t\t").unwrap();
+        let tail = tail_raw(&d, "coord", 1, true);
+        assert_eq!(tail.len(), 1);
+        assert!(tail[0].contains("\tb\t"), "an unterminated last line is not dropped: {tail:?}");
+
+        assert!(tail_raw(&d, "audit", 0, false).is_empty(), "limit 0 reads nothing");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     #[test]
     fn pane_activity_keeps_newest_run_idle_state_per_pane() {
         let d = tmp();
@@ -582,3 +672,4 @@ mod tests {
         assert!(is_valid_category("build") && is_valid_category("run") && !is_valid_category("nope"));
     }
 }
+
