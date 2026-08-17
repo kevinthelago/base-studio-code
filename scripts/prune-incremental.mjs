@@ -6,7 +6,12 @@
 //
 //   node scripts/prune-incremental.mjs [--days N] [--keep N] [--dry-run] [--quiet]
 //
-//     --days N     only prune directories untouched for N days (default 14)
+//     --days N     only prune directories untouched for N days (default 3)
+//
+// The default was 14 and it MEASURED as useless: on a tree holding 697 dirs it pruned 0, because
+// orphans accumulate daily and the oldest was 5 days old. At 3 days the same tree pruned 214 dirs
+// and reclaimed 5 GB. `--keep` never bound at any window tested, so the newest-per-crate guard is
+// doing no work here — the age floor is the whole policy.
 //     --keep N     always spare the newest N per crate name (default 1)
 //     --dry-run    report what would go, delete nothing
 //     --quiet      print only when something was actually pruned

@@ -63,11 +63,11 @@ export function crateNameOf(dirName) {
  *
  * @param {Array<{name: string, mtimeMs: number}>} entries directory names + mtimes
  * @param {{days?: number, keep?: number, now?: number}} [opts]
- *   `days` age cutoff (default 14) · `keep` newest-per-crate to spare (default 1) · `now` epoch ms
+ *   `days` age cutoff (default 3) · `keep` newest-per-crate to spare (default 1) · `now` epoch ms
  * @returns {{prune: string[], keep: string[]}} names, `prune` oldest-first
  */
 export function planPrune(entries, opts = {}) {
-  const days = opts.days ?? 14;
+  const days = opts.days ?? 3;
   const keep = opts.keep ?? 1;
   const now = opts.now ?? Date.now();
   const cutoff = now - days * 86_400_000;

@@ -768,6 +768,33 @@ already serves ~232 of the ~263 cacheable compilations in a cold build; the rest
 key** so they can never hit across worktrees, and linking. `CARGO_INCREMENTAL=0` and seeding a copied
 `target/` were both measured and are both losses.
 
+**`target/` is swept automatically — and ~20 GB per tree is NORMAL.** Cargo never reclaims a build
+artifact: every distinct `-C metadata` (feature set × profile × lib-vs-test × rustc version × dep
+version) mints a new one and orphans the old permanently. Two janitors run from `build:plan`, ahead
+of every `npm run tauri -- dev`, both fail-safe (they swallow every error and exit 0, because a
+cache janitor must never block a dev launch):
+
+```bash
+npm run clean:incremental   # target/*/incremental — keep newest 1 per crate, >3d
+npm run clean:target        # target/*/deps        — keep newest 3 per crate, >3d
+                            #   add --dry-run, or --root <dir> to sweep ANOTHER worktree
+```
+
+Set expectations from the measurements, not from the total:
+
+- **One warm tree is legitimately ~21 GB** (incremental 8.8G · deps 7.4G · build 2.9G · a 1.4G
+  static lib). The 245 GB across all trees is mostly *current* output, not garbage — the multiplier
+  is having eleven trees, and the sweep does **nothing** for a young worktree (measured: 0 units on
+  all ten). It bounds growth in a LONG-LIVED tree; the 2-month-old main tree gave up 5 GB.
+- **`.fingerprint/` is deliberately NOT swept.** It accumulates identically (6939 dirs, some from
+  June) but is **22 MB** against 24 GB in `deps/` — and sweeping 5408 of them made cargo treat those
+  units as never-built and recompile **328 crates in 2m24s**. All cost, no benefit.
+- **The degradation is real and accepted:** an rlib is not touched when merely *linked*, so a stable
+  live dependency keeps an old mtime and can be swept, costing one rebuild. Bounded, never
+  incorrect. Do not "fix" it by dropping the age floor to zero.
+- The incremental default was 14 days and pruned **0 of 697**; at 3 days it pruned 214 and reclaimed
+  5 GB. `--keep` never bound at any window tested — the age floor is the whole policy.
+
 Gotchas:
 - **Base drift:** a branch cut from an older `develop` can fail an *unrelated* test that broke since.
   Refresh with `git merge develop` and re-gate rather than chasing a phantom failure.
