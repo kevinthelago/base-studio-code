@@ -184,8 +184,69 @@ struct ResolvedCwd {
     empty: bool,
 }
 
+/// Recover an authoritative cwd from the pane's IDENTITY when none was configured (#1819).
+///
+/// `<key>:director` → the project hub; `<key>:<repo>:triage` → that repo's clone. Mirrors the
+/// frontend's `paneCwdRecovery`, and the duplication is deliberate rather than accidental: the
+/// frontend recovery exists and still did not fire, because the director was observed launching
+/// through a path that never reaches `TerminalView`'s launch block. Recovering HERE, at the point of
+/// use, cannot be bypassed by whichever caller is in play — the lesson from #3937/#3986, where two
+/// launch-path fixes in a row were burned by a pane that never remounts.
+///
+/// A WORKER is deliberately NOT recoverable: its cwd is a worktree keyed by the agent id, which
+/// `ensure_worktree` supplies, and nothing about it can be derived from the pane id alone. Manual
+/// (`man:<tab>:p<n>`) and legacy positional (`t<n>p<n>`) ids fall out naturally — neither ends in a
+/// reserved tail, so neither matches.
+fn recover_cwd_from_identity(pane_id: &str) -> Option<String> {
+    let parts: Vec<&str> = pane_id.split(':').collect();
+    if parts.len() >= 3 && *parts.last()? == "triage" && !parts[0].is_empty() {
+        let repo = parts[1..parts.len() - 1].join(":");
+        return Some(crate::project::hub::repo_dir_path(parts[0].to_string(), repo));
+    }
+    if parts.len() == 2 && parts[1] == "director" && !parts[0].is_empty() {
+        return Some(crate::project::hub::project_dir_path(parts[0].to_string()));
+    }
+    None
+}
+
+/// Does this pane's identity mean it MUST be gated — a director, a triage pane, or a fleet worker?
+///
+/// These are the sessions the role gate exists for: a director is `code: none`, a worker is scoped to
+/// its owned globs, a triage pane is `git: none`. Permission-less, none of them are what they claim to
+/// be, so a launch that cannot prove a gate is refused rather than run.
+///
+/// A MANUAL console (`man:<tab>:p<n>`) and a legacy positional id (`t<n>p<n>`) are not: that is the
+/// user's own shell and the user is the principal. The `man:` prefix is excluded explicitly because a
+/// manual id has three colon-parts and would otherwise read as a worker.
+fn must_be_gated(pane_id: &str) -> bool {
+    if pane_id.starts_with("man:") {
+        return false;
+    }
+    let parts: Vec<&str> = pane_id.split(':').collect();
+    parts.len() >= 2 && !parts[0].is_empty() && parts[1..].iter().any(|p| !p.is_empty())
+}
+
 fn resolve_session_cwd(pane_id: &str, cwd: String, sandbox: bool) -> ResolvedCwd {
     let cwd = if sandbox { cwd } else { to_native_path(&cwd) };
+    // #1819 recovery. Only for a HOST session: a sandbox cwd is a distro path, and the hub/repo dirs
+    // resolved here are Windows paths that mean nothing inside the cage.
+    //
+    // The recovery is announced rather than silent. It fixes the SYMPTOM (the shell no longer starts
+    // in the app's own directory) but NOT the cause: `.claude/settings.json` is written by the
+    // frontend BEFORE this call, so a pane that arrived here with no cwd still has no role gate. The
+    // refusal at the launch site is what covers that; this log is how the underlying path stays
+    // visible instead of being papered over.
+    let cwd = if !sandbox && cwd.is_empty() {
+        match recover_cwd_from_identity(pane_id) {
+            Some(dir) if !dir.is_empty() => {
+                log::warn!("pty[{pane_id}] recovered an EMPTY cwd from the pane identity (#1819): {dir} — the caller passed none, so its settings.json was written nowhere");
+                dir
+            }
+            _ => cwd,
+        }
+    } else {
+        cwd
+    };
     let missing = !sandbox && !cwd.is_empty() && !std::path::Path::new(&cwd).is_dir();
     if missing {
         log::error!("pty[{pane_id}] configured cwd does not exist: {cwd} — refusing the silent home fallback");
@@ -457,11 +518,32 @@ fn pty_create_inner(
     // Whether the launch would start `claude` — the only command the degraded
     // non-bash path replays (an arbitrary bash init_cmd would be invalid there).
     let launch_claude = launch.as_deref().map(|s| harness.is_harness_launch(s)).unwrap_or(false);
-    // #1819: the high-severity case — claude is about to launch with NO cwd, so its role gate +
-    // shell allowlist (settings.json, written per-cwd by the frontend) were never written and the
-    // session will prompt for everything. Surface it loudly so the silent failure can't recur.
-    if launch_claude && cwd_empty {
-        log::error!("pty[{pane_id}] launching claude with an EMPTY cwd — permission-less session: the role gate + shell allowlist in settings.json were never written (#1819)");
+    // #1819: the high-severity case — claude is about to auto-launch somewhere its role gate + shell
+    // allowlist were never written, so the session runs PERMISSION-LESS.
+    //
+    // The check is for the gate FILE, not for an empty cwd, because the file is what actually gates:
+    // `.claude/settings.json` is per-DIRECTORY and persists, so a recovered cwd inherits the gate a
+    // previous launch wrote there. That is why the identity recovery above fixes the observed
+    // incident on its own — the director's hub already had one. What it cannot cover is a FIRST
+    // launch at a directory nothing has gated yet, which is this.
+    //
+    // Skipped under sandbox: the gate lives inside the distro, not at a host path.
+    if launch_claude && into_sandbox.is_none() {
+        let gated = !effective_cwd.is_empty()
+            && std::path::Path::new(&effective_cwd).join(".claude").join("settings.json").is_file();
+        if !gated {
+            // A pane with a PROJECT identity is refused outright. Running one of these ungated is the
+            // one outcome worse than not starting: a director is `code: none`, a worker is scoped to
+            // its owned globs, and permission-less it has neither. A manual console is the user's own
+            // shell and they are the principal, so it keeps the loud warning instead.
+            if must_be_gated(&pane_id) {
+                return Err(format!(
+                    "pty[{pane_id}] refusing to auto-launch claude at {} — no .claude/settings.json, so the role gate and shell allowlist were never written and the session would run permission-less (#1819). Relaunch the pane from its project so the settings are written first.",
+                    if effective_cwd.is_empty() { "<no cwd>" } else { &effective_cwd }
+                ));
+            }
+            log::error!("pty[{pane_id}] launching claude with NO settings.json at {} — permission-less session: the role gate + shell allowlist were never written (#1819)", if effective_cwd.is_empty() { "<no cwd>" } else { &effective_cwd });
+        }
     }
     // The default `--model` alias for this session (per-pane override or global
     // default, mapped from the UI model id). None ⇒ the harness's own default.
@@ -782,6 +864,56 @@ mod tests {
         assert!(!r.missing, "empty is not 'missing'");
         assert_eq!(r.cwd, "");
         assert_eq!(r.effective_cwd, "");
+    }
+
+    /// #1819 — the DIRECTOR case that was observed running permission-less in the app's own home.
+    /// The pane arrived with no cwd at all; its identity is enough to name the hub, so recover it.
+    #[test]
+    fn an_empty_director_cwd_is_recovered_from_the_pane_identity() {
+        let r = super::resolve_session_cwd("studio-code:director", String::new(), false);
+        assert!(!r.empty, "a recovered cwd is no longer 'empty': {r:?}", r = r.cwd);
+        assert!(
+            r.cwd.replace('\\', "/").ends_with("/projects/studio-code"),
+            "the director recovers its project HUB, got {}",
+            r.cwd
+        );
+        assert_eq!(r.effective_cwd, r.cwd, "the hub exists or not, effective tracks cwd here");
+    }
+
+    #[test]
+    fn triage_recovers_its_repo_clone_and_a_worker_recovers_nothing() {
+        let t = super::recover_cwd_from_identity("studio-code:kevinthelago/base-studio-code:triage");
+        assert!(
+            t.as_deref().unwrap_or_default().replace('\\', "/").ends_with("/base-studio-code"),
+            "triage recovers its repo dir, got {t:?}"
+        );
+        // A worker's cwd is a worktree keyed by the agent id — nothing about it is derivable from the
+        // pane id, so recovery must decline rather than invent a path.
+        assert_eq!(super::recover_cwd_from_identity("studio-code:design-studio"), None);
+        // Manual + legacy positional consoles are not project panes at all.
+        assert_eq!(super::recover_cwd_from_identity("man:tab_abc:p2"), None);
+        assert_eq!(super::recover_cwd_from_identity("t0p1"), None);
+    }
+
+    /// A non-recoverable cwd must stay empty rather than fall back to something plausible — the
+    /// launch-site refusal depends on this staying honest.
+    #[test]
+    fn a_worker_with_no_cwd_is_left_empty_not_guessed() {
+        let r = super::resolve_session_cwd("studio-code:design-studio", String::new(), false);
+        assert!(r.empty, "an unrecoverable identity leaves the cwd empty");
+    }
+
+    /// Which panes are REFUSED rather than merely warned about when no gate file is present.
+    #[test]
+    fn every_fleet_identity_must_be_gated_and_a_manual_console_is_not() {
+        for id in ["studio-code:director", "studio-code:design-studio", "studio-code:kevinthelago/base-studio-code:triage"] {
+            assert!(super::must_be_gated(id), "{id} is a fleet pane and must be gated");
+        }
+        // The user's own console: they are the principal, so it warns instead of refusing. `man:` is
+        // three colon-parts and would read as a worker without the explicit exclusion.
+        assert!(!super::must_be_gated("man:tab_abc:p2"), "a manual console is not refused");
+        assert!(!super::must_be_gated("t0p1"), "a legacy positional pane is not refused");
+        assert!(!super::must_be_gated("pane"), "a bare id has no project identity");
     }
 
     #[test]
