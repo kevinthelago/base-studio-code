@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import type { Stage } from "@/features/planner/stages/focusedPlan";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
-import { defaultService, type DeployConfig } from "../lib/deployConfig";
+import { defaultService, type DeployConfig } from "@/features/planner/lib/deployConfig";
 import { buildPlanBoardPayload } from "@/features/planner/session/planBoardProjection";
 
 const stage = (key: string, status: Stage["status"], over: Partial<Stage> = {}): Stage => ({

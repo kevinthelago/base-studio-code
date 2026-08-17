@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   PUBLISH_REGISTRIES, PUBLISH_TRIGGERS, PORT_FORWARD_METHODS, PIPE_TRIGGERS, RELEASE_STRATEGIES,
   defaultEnvs, defaultPipeline, defaultRelease, defaultHealth,
-} from "./deployEnv";
+} from "@/features/planner/lib/deployEnv";
 
 // The deploy enums + seed defaults are externalized to @data/deploy/taxonomy.json (#2027 P1). These
 // guard that the data loads unchanged AND that the default builders keep their fresh-copy contract.

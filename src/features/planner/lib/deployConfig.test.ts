@@ -4,7 +4,7 @@ import {
   coerceDeployConfig, parseDeployConfigTag, deployIssues,
   serviceMode, serviceTargetDefined, localTargetDefined, finalStageName,
   type DeployService, type DeployConfig,
-} from "./deployConfig";
+} from "@/features/planner/lib/deployConfig";
 import { makeBlueprints } from "../stages/blueprints";
 
 // Per-repo rework (#1421): every repo carries its OWN envs/pipeline/config/release/health, so the

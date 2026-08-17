@@ -9,7 +9,7 @@ import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ServiceTargetEditor } from "@/features/planner/bodies/deployTargetSection";
 import { ServiceDeploySections } from "@/features/planner/bodies/deployShipSections";
-import { defaultDeployConfig, type DeployService } from "../lib/deployConfig";
+import { defaultDeployConfig, type DeployService } from "@/features/planner/lib/deployConfig";
 
 function svc0() {
   return defaultDeployConfig(["acme/web"]).services[0];

@@ -14,6 +14,14 @@
 // because it reconciles the whole catalogue against disk in one pass, which is cheaper and safer than
 // each retirement editing the same file.
 //
+// AND REGENERATE THE PACKAGED KIT — `UPDATE_KITS=1 npx vitest run src/features/designs/lib/reactUiKit.gen.test.ts`.
+// This is the fourth downstream obligation and the least obvious: `react-ui.json` VENDORS the transitive
+// non-component SOURCES its components import, so retiring one leaves the kit holding a copy of a file
+// that no longer exists. The 16-module tranche failed `reactUiKit.gen.test.ts` four ways for exactly
+// this — including "53 unresolved first-party imports would break an emitted file" — because
+// `.bsc-records/` materializes a retired `.ts` as `.tsx` while the kit manifest still named `.ts`.
+// Nothing upstream of the kit test catches it: tsc, lint and the rest of vitest were all green.
+//
 // It rewrites `vi.mock("./x")` too, and that is not a nicety. A mock keys on the RESOLVED module, so when
 // the consumer imports `@/a/b` while the test mocks `./b`, retiring the file makes those stop being the
 // same module — and the mock SILENTLY STOPS APPLYING. The test still runs; it just exercises the real
