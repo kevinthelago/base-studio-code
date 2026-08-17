@@ -265,6 +265,25 @@ pub(crate) fn stage_dev_sidecars() {
             continue; // not built yet — sidecar_status reports it missing
         };
         let dst = dir.join(&exe);
+
+        // NEVER STAGE BACKWARDS. Detection at boot (`stale_sidecars`) reports the damage after it is
+        // done; this refuses to do it. Skipping leaves the NEWER staged binary in place, which is the
+        // one sessions should be running anyway — and the log names the fix, because the real problem
+        // in that state is that THIS tree's sidecar is stale.
+        let mtime = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+        if let Some(src_at) = mtime(&src) {
+            if staging_would_downgrade(src_at, mtime(&dst)) {
+                log::error!(
+                    "[startup] refusing to stage `{stem}`: {} is OLDER than the staged copy at {}. \
+                     Keeping the newer staged binary. This tree's sidecar is stale — run \
+                     `npm run build:plan` here to rebuild it.",
+                    src.display(),
+                    dst.display()
+                );
+                continue;
+            }
+        }
+
         match stage_one(&src, &dst) {
             // #the-sidecar-swap-is-silent-in-both-directions: a successful `fs::copy` is NOT evidence
             // that the staged binary matches the source. Observed 2026-08-16: this line logged success
@@ -344,6 +363,27 @@ fn verify_staged(src: &std::path::Path, dst: &std::path::Path) -> Result<(), Str
         return Ok(());
     }
     Err(format!("source is {sl} bytes, staged copy is {dl}"))
+}
+
+/// True when staging `src` over `dst` would REPLACE A NEWER BINARY WITH AN OLDER ONE.
+///
+/// This is the guard for the failure the whole item is about. `stage_dev_sidecars` copies whatever
+/// [`sidecar_candidates`] finds first, so booting the app from a tree whose `target/<profile>/bsc.exe`
+/// is weeks old faithfully clobbers a good staged copy with that one. Observed 2026-08-16: the staged
+/// `bsc` became a Jul 20 build of 46.8 MB while the workspace's was Aug 16 and 66.0 MB, and the only
+/// symptom was `bsc: unknown command 'change'` in an agent session — a whole class of local-PR records
+/// silently not written, which looks nothing like a staging problem.
+///
+/// mtime is the right comparison here even though it is a poor liveness signal elsewhere: on Windows
+/// `fs::copy` uses `CopyFileExW`, which PRESERVES the source timestamp, so a staged copy carries the
+/// mtime of the build it came from. Comparing the two is therefore comparing build times, not copy
+/// times — and a genuine rebuild (including checking out an older branch and rebuilding) always
+/// produces a NEWER source, so this never blocks a legitimate downgrade.
+///
+/// `None` for `dst` means nothing is staged yet, which can never be a downgrade.
+/// Pure (takes the timestamps) so the rule is unit-testable without touching a filesystem.
+fn staging_would_downgrade(src: std::time::SystemTime, dst: Option<std::time::SystemTime>) -> bool {
+    dst.is_some_and(|staged| staged > src)
 }
 
 /// True when a sidecar built at `sidecar` predates the app built at `app` — meaning the app is running
@@ -823,8 +863,57 @@ pub(super) fn wire_bsc_env(
 
 #[cfg(test)]
 mod swap_tests {
-    use super::{sidecar_predates_app, verify_staged};
+    use super::{sidecar_predates_app, staging_would_downgrade, verify_staged};
     use std::time::{Duration, SystemTime};
+
+    /// Which errors earn the rename-aside dance in [`super::stage_one`].
+    ///
+    /// This classification is what makes re-staging survive a LIVE session: the staged copy exists
+    /// precisely so long-running `bsc mcp` servers lock IT rather than the build output, and on
+    /// Windows `fs::copy` cannot overwrite a file another process holds open. Getting the
+    /// classification wrong in the permissive direction would rename away a binary over a genuine
+    /// permissions or disk error, leaving no sidecar at all — worse than a stale one.
+    ///
+    /// The locked path itself is not unit-testable without holding a real OS handle from another
+    /// process, so what is pinned here is the DECISION. The end-to-end behaviour was exercised by
+    /// hand on 2026-08-16 with five live `bsc.exe` processes: renaming the staged binary aside and
+    /// copying a fresh one in place succeeded, and the running servers kept their old inode.
+    #[test]
+    fn only_an_in_use_error_earns_the_rename_dance() {
+        use std::io::{Error, ErrorKind};
+        // ERROR_SHARING_VIOLATION — the actual Windows code for "another process has it open".
+        assert!(super::is_in_use(&Error::from_raw_os_error(32)));
+        assert!(super::is_in_use(&Error::from(ErrorKind::PermissionDenied)));
+        // A missing source or a full disk must surface as-is, NOT trigger a rename.
+        assert!(!super::is_in_use(&Error::from(ErrorKind::NotFound)));
+        assert!(!super::is_in_use(&Error::from(ErrorKind::UnexpectedEof)));
+    }
+
+    /// The PREVENTION half of this item. `verify_staged` and `stale_sidecars` both report the damage
+    /// after it is done; only this refuses to do it.
+    ///
+    /// The scenario is the one that actually happened: the app boots from a tree whose
+    /// `target/<profile>/bsc.exe` is weeks old (cargo hardlinks that path to a `deps/bsc-<hash>.exe`
+    /// that shifts as builds land, and with several worktrees building concurrently the one sitting
+    /// there can be from July), and staging faithfully copies it over a good August build.
+    #[test]
+    fn staging_refuses_to_replace_a_newer_binary_with_an_older_one() {
+        let july = SystemTime::UNIX_EPOCH + Duration::from_secs(1_753_000_000);
+        let august = july + Duration::from_secs(27 * 86_400);
+
+        // The incident: a July source over an August staged copy.
+        assert!(staging_would_downgrade(july, Some(august)), "must refuse to stage backwards");
+
+        // The normal case: a fresh build replaces an older staged copy.
+        assert!(!staging_would_downgrade(august, Some(july)), "a newer build must stage");
+
+        // Nothing staged yet can never be a downgrade — a first run must always stage.
+        assert!(!staging_would_downgrade(july, None), "an absent staged copy must stage");
+
+        // Identical timestamps are the same build; staging is a no-op either way, and NOT refusing
+        // keeps `verify_staged` in the loop to catch a same-mtime-different-build case.
+        assert!(!staging_would_downgrade(july, Some(july)), "an equal timestamp is not a downgrade");
+    }
 
     /// The regression this whole slice exists for. Observed 2026-08-16: staging logged SUCCESS while
     /// the staged `bsc` was a Jul 20 build of 49,027,584 bytes and the source was 74,270,208 — and the

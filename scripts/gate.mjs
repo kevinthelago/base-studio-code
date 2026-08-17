@@ -11,6 +11,8 @@
  * narrowing has to be temporary AND visible. This prints the plan every time for that second reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { acquireGateSlot } from "./gateLock.mjs";
 import { planGate, parsePorcelain, gateCommands } from "./gateScope.mjs";
 
 const argv = process.argv.slice(2);
@@ -81,12 +83,36 @@ if (!plan.full) {
   }
 }
 
+// Sweep this tree's build garbage before the heavy steps. The gate is the ONE command every worktree
+// agent runs, and until this line existed the sweeps hung off `build:plan` — i.e. off `tauri dev` —
+// so the only tree ever collected was the one where the app gets launched, and no worktree had been
+// swept once (#the-gc-never-runs-where-the-garbage-is). `gc` day-stamps itself, so this is ~0ms on
+// repeat runs during iteration, and it can never fail: it swallows everything and exits 0.
+try {
+  const gcScript = fileURLToPath(new URL("./gc.mjs", import.meta.url));
+  const gc = spawnSync(process.execPath, [gcScript, "--quiet"], { encoding: "utf8" });
+  if (gc.stdout?.trim()) process.stdout.write(`${gc.stdout.trim()}\n`);
+} catch {
+  // a janitor must never redden a gate
+}
+
+// Serialize FULL gates across the fleet. One peaks at ~8 GB (jobs = 4) because nextest links ~41 test
+// binaries, and this box has ~16 GB free — so two fit and the 10+ sessions this repo is meant to run
+// do not (#ten-parallel-rust-sessions-will-oom-the-box). The SCOPED gate is deliberately not
+// serialized: it compiles one crate plus its dependents, so making agents queue for it would trade a
+// real cost against a risk they do not pose.
+const releaseSlot = plan.full
+  ? await acquireGateSlot((m) => process.stdout.write(`gate: ${m}\n`))
+  : () => {};
+
 // EVERY step runs, even after one fails. A gate that stops at the first failure hands back a partial
 // verdict, and the whole point here is that the reader can trust what was covered.
 const results = [];
 for (const { label, cmd, args } of gateCommands(plan, base)) {
   results.push([label, run(label, cmd, args)]);
 }
+
+releaseSlot(); // before the exit below, and before printing — a held slot blocks the fleet
 
 const failed = results.filter(([, ok]) => !ok).map(([n]) => n);
 process.stdout.write(`\n${failed.length ? `GATE FAILED: ${failed.join(", ")}` : "gate passed"}\n`);
