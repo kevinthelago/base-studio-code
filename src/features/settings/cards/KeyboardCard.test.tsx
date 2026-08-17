@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { KeyboardCard } from "./KeyboardCard";
+import { KeyboardCard } from "@/features/settings/cards/KeyboardCard";
 import { useAppStore } from "@/store";
 import { SHORTCUT_GROUPS, SHORTCUT_REGISTRY } from "@/features/settings/lib/shortcuts";
 

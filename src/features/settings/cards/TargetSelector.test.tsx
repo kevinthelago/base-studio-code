@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { TargetSelector } from "./TargetSelector";
+import { TargetSelector } from "@/features/settings/cards/TargetSelector";
 
 const repos = [
   { full_name: "octo/one", local_path: "/base/one" },
