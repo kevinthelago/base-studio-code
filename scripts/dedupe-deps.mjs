@@ -1,10 +1,18 @@
 // Hard-link byte-identical dependency artifacts across worktrees
 // (#identical-dependency-artifacts-are-duplicated-per-worktree).
 //
-//   node scripts/dedupe-deps.mjs [--dry-run] [--min-age-mins N]
+//   node scripts/dedupe-deps.mjs [--dry-run] [--min-age-mins N] [--undo]
 //
 //     --dry-run          report what would be linked, change nothing
 //     --min-age-mins N   skip files modified within N minutes (default 60)
+//     --undo             BREAK existing links, giving every tree its own copy again
+//
+// `--undo` exists because the trade REVERSES with fleet size. At 3 active trees, sharing an inode was
+// a dormant risk: the linked files are registry artifacts, chosen precisely because they are stable,
+// and our own crates (the ones that rebuild constantly) are excluded by construction. At 10+ sessions
+// a dependency bump has several trees rebuilding the same registry crates at once, several processes
+// writing one shared inode. That is no longer dormant — and it bought 13 GB against 1057 GB free.
+// Undo it before scaling the fleet; re-run the dedup when the box is quiet and space matters.
 //
 // MEASURED: 721 of 765 rlibs in one worktree's `deps/` share a filename with another's, and sampled
 // pairs are byte-identical — 3.6 GB per tree of the same bytes, ~25 GB across the current pool.
@@ -36,6 +44,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   linkSync,
   readFileSync,
   readdirSync,
@@ -46,6 +55,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseUnitFile } from "./target-units.mjs";
 import { planDedupe, reclaimableBytes } from "./dedupe-plan.mjs";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -55,6 +65,7 @@ function parseArgs(argv) {
   const n = i === -1 ? NaN : Number(argv[i + 1]);
   return {
     dryRun: argv.includes("--dry-run"),
+    undo: argv.includes("--undo"),
     minAgeMs: (Number.isFinite(n) && n >= 0 ? n : 60) * 60_000,
   };
 }
@@ -109,6 +120,11 @@ function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+/** First line of an error message — the rest is a stack nobody reads in a janitor's warning. */
+function firstLine(e) {
+  return (e?.message ?? e).toString().split("\n")[0];
+}
+
 /** Replace `target` with a hard link to `source`, via a temp rename so an interrupted run can never
  *  leave the tree WITHOUT the artifact. The original is only unlinked once the link exists. */
 function relink(source, target) {
@@ -141,8 +157,54 @@ function syncMtime(path, mtimeMs) {
   utimesSync(path, seconds, seconds);
 }
 
+/** Give every hard-linked artifact its own inode again: copy aside, then rename over. The copy is made
+ *  first and renamed into place, so an interrupted run can never leave a tree without its artifact. */
+function undo(opts) {
+  let broken = 0;
+  let bytes = 0;
+  for (const tree of trees()) {
+    for (const file of depsFiles(tree)) {
+      // Only touch what THIS tool could have created: a hashed artifact of a non-workspace crate that
+      // actually has another link. Cargo also hardlinks `target/debug/bsc.exe` to its own
+      // `deps/bsc-<hash>.exe` WITHIN a tree; breaking that would be pointless churn.
+      if (parseUnitFile(file.name) === null) continue;
+      let links;
+      try {
+        links = statSync(file.path).nlink;
+      } catch {
+        continue; // vanished mid-scan
+      }
+      if (links < 2) continue; // already its own inode — nothing to break
+      if (opts.dryRun) {
+        broken += 1;
+        bytes += file.size;
+        continue;
+      }
+      const tmp = `${file.path}.unlink-tmp`;
+      try {
+        copyFileSync(file.path, tmp);
+        renameSync(tmp, file.path);
+        broken += 1;
+        bytes += file.size;
+      } catch (e) {
+        try {
+          unlinkSync(tmp);
+        } catch {
+          // nothing staged to clean
+        }
+        console.warn(`[dedupe] could not unlink ${file.path}: ${firstLine(e)}`);
+      }
+    }
+  }
+  const gb = (bytes / 1073741824).toFixed(2);
+  console.log(
+    `[dedupe] ${opts.dryRun ? "would break" : "broke"} ${broken} link(s), ~${gb} GB no longer shared`
+  );
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.undo) return undo(opts);
   const all = trees().flatMap(depsFiles);
   const groups = planDedupe(all, { workspaceCrates: workspaceCrates(), minAgeMs: opts.minAgeMs });
 

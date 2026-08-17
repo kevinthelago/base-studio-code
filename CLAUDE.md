@@ -774,6 +774,34 @@ already serves ~232 of the ~263 cacheable compilations in a cold build; the rest
 key** so they can never hit across worktrees, and linking. `CARGO_INCREMENTAL=0` and seeding a copied
 `target/` were both measured and are both losses.
 
+**SIZING THE FLEET — memory is the binding constraint, not CPU or disk.** MEASURED on 8c/16t / 32 GB
+with ~16 GB actually free, `cargo nextest run --workspace --no-run` after touching `bsc-util` (36 of 40
+crates rebuild):
+
+| cargo jobs | peak RAM | wall |
+|---|---|---|
+| 2 | 5.47 GB | 73s |
+| **4 (now the repo default)** | **8.04 / 8.13 GB** | **55 / 54s** |
+| 6 | 11.64 GB | 46s |
+| 8 | 13.58 GB | 46s |
+| 16 (cargo's default when unset) | 18.01 GB | 54s |
+
+Two things follow, and the second is the one that limits the fleet:
+
+- **`.cargo/config.toml` sets `jobs = 4`.** Cargo's default is one job per LOGICAL processor — 16 here,
+  on 8 physical cores — which is *no faster* than 4 and uses 2.2× the memory. Working alone on a
+  bigger box, `--jobs 8` on the command line overrides it and is ~15% quicker.
+- **A FULL gate is an 8 GB operation** because nextest links ~41 test binaries (9 concurrent `link.exe`
+  at the old default; one app link alone peaks at 2.99 GB). So **two** full gates fit in what this
+  machine has free, not ten. `npm run gate -- --full` therefore takes a cross-worktree slot from
+  `~/.base-studio-code/locks/`; the SCOPED gate is not serialized, since it compiles one crate plus its
+  dependents. Raise the limit with `BSC_GATE_SLOTS` on a bigger machine. A waiting gate says so — a
+  silent wait is indistinguishable from a hang — and a lock whose holder died or wedged is stolen, so
+  one crashed agent cannot block the fleet. This repo already has an OOM history (#795).
+
+Ten sessions EDITING Rust is fine. Ten sessions GATING at once is not, and without the lock it is an
+out-of-memory failure rather than a slow one.
+
 **De-duplicate identical dependency artifacts across trees.** 721 of 765 rlibs in one worktree's
 `deps/` share a filename with another's, and they are byte-identical — dependencies carry
 `debug = false` (#795) so no absolute paths are baked in, and a shared filename already implies
@@ -782,7 +810,14 @@ shared inputs because `-C metadata` folds package + features + profile + target.
 ```bash
 npm run dedupe -- --dry-run     # what would be linked
 npm run dedupe                  # hard-link verified-identical artifacts
+npm run dedupe -- --undo        # BREAK the links again, one copy per tree
 ```
+
+> **THE TRADE REVERSES WITH FLEET SIZE — currently UNDONE, deliberately.** At 3 active trees the shared
+> inodes were a dormant risk. At 10+ sessions a dependency bump has several trees rebuilding the same
+> registry crates at once, several processes writing one inode. It bought 13 GB against ~1,050 GB free,
+> so it is not worth that. `--undo` reduced cross-tree shared inodes from thousands to **5 (0.02 GB)**.
+> Re-run the dedup only when the box is quiet and space actually matters.
 
 EXPLICIT, like the pool cap — never wired into the gate. Measured on the real pool: **13.05 GB
 reclaimed** and it HOLDS (only 0.16 GB became re-eligible after the trees rebuilt).
