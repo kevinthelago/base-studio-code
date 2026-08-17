@@ -465,6 +465,20 @@ This is the same surface a fleet worker already uses, so there is one way to rea
 human or an agent is driving. `bsc plan` is in the always-allowed mandatory tier, so no session needs
 a permission grant to reach it.
 
+#### The standing focus
+
+**`epic-command-surfaces-are-nodes` is the focus for the remainder of this application's development**
+(maintainer, 2026-08-17). When nothing else is explicitly claimed, take the next open slice from that
+epic. `bsc plan get epic-command-surfaces-are-nodes` is the source of truth for what it covers and for
+the decisions already taken — read it there rather than looking for a design doc, because the feature
+is deliberately not written up yet.
+
+It carries **no milestone on purpose**: it outlives `1.0.52` rather than fitting inside it. Do not file
+it under the current version, and do not read that version's completion as this epic's.
+
+The direction attached to it is **get it working, then improve with measurement**. A slice is not
+blocked on an unresolved optimization question — record the question on the item and keep moving.
+
 The issue says what to DO; the **change** (`bsc plan change`, below) says what was DONE. Both live in
 this same store, keyed by the same ref — so one name reaches the issue, the branch, the worktree and
 the change. **Every slice gets both.** An item worked without a change record leaves no gate evidence,
