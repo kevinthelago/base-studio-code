@@ -15,8 +15,9 @@
 // `graphEdge`, #2418; the top-down hierarchy layout lives in `lib/compositionLayout`, #2455); GraphCanvas
 // owns the rail/inspector widths, so `useDragResize` sizes only the designer-terminal dock now. Data
 // comes from the global store via the `bsc ui` bridge.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useAppStore } from "@/store";
+import type { AiTouch } from "@/features/designs/store";
 import { KitShareModal } from "./KitShareModal";
 import { DesignerTerminal } from "@/features/designs/DesignerTerminal";
 import { Box } from "@/shared/ui/layout/Box";
@@ -52,7 +53,7 @@ import { RoleDot } from "@/features/designs/kitChrome";
 import { RailTree } from "./RailTree";
 import { ComponentNode } from "./ComponentNode";
 import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, ROLE_COLOR, ROLES, type ComponentRecord, type ChangeEntry } from "./lib/model";
-import { timeAgo } from "@/shared/lib/core/format";
+import { timeAgo, timeAgoMs } from "@/shared/lib/core/format";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "@/features/designs/lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
@@ -99,6 +100,11 @@ export function DesignsWorkbench() {
   const kitThemes = useAppStore((s) => s.kitThemes);
   // The node the designer AI is currently working (#2525) — a `.working` pulse + auto-pan target.
   const aiFocusedId = useAppStore((s) => s.aiFocusedId);
+  // The recent-activity RING (#live-focus-is-kit-filtered) — every touch the poll observed, newest
+  // first, across EVERY kit. `aiFocusedId` is only its head; the strip below renders the whole thing,
+  // which is the only way concurrent designer sessions are legible: one scalar cannot show N workers,
+  // and a pulse that moves every few seconds cannot be watched.
+  const aiTouches = useAppStore((s) => s.aiTouches);
   // NOTE (#two-store-keys-drive-more-than-half-the-apps-jank): this component deliberately does NOT
   // subscribe to `componentBuildStatus` / `componentStateHealth`. Each `ComponentNode` reads its own
   // entry instead, so a 150ms scan flush wakes the nodes that changed rather than re-rendering the whole
@@ -415,14 +421,20 @@ export function DesignsWorkbench() {
     lastCull.current = reading;
     log.warn(line, "perf");
   }, [shownIds, kitComps.length, gvp.view.scale]);
-  // Auto-pan the AI-touched node into view (#2525) — center it, keeping zoom (least-disruptive). Only
-  // when the node lives in the CURRENT kit's graph; a touch in another kit just doesn't pan.
+  // Auto-pan the AI-touched node into view (#2525) — center it, keeping zoom (least-disruptive). The
+  // store now FOLLOWS the touched kit when nothing is selected, so the node is in this graph far more
+  // often than it used to be (previously a touch in another kit simply never panned, which was most of
+  // them — measured 3 kits across 200 consecutive touches).
+  //
+  // Gated on having no selection, for the same reason the kit-follow is (#3599/#4248): someone
+  // inspecting a node should not have the canvas pulled out from under them every few seconds. Watching
+  // and working are different modes, and only the first one gets steered.
   const gvpCenter = gvp.centerOn;
   useEffect(() => {
-    if (!aiFocusedId) return;
+    if (!aiFocusedId || compId) return;
     const pos = graph.pos.get(aiFocusedId);
     if (pos) gvpCenter(pos.x + NODE_W / 2, pos.y + bandShift + NODE_H / 2);
-  }, [aiFocusedId, graph, gvpCenter, bandShift]);
+  }, [aiFocusedId, compId, graph, gvpCenter, bandShift]);
 
   // ── rail hierarchy (#2487, policy fixed by #2506) — ALWAYS technology → style; a single-kit style
   // header IS the kit (lib/kitGroups), so the packaged library reads React → Studio → components.
@@ -437,6 +449,20 @@ export function DesignsWorkbench() {
   // softer ring; incident edges render LAST so they sit above the dim ones. Hoisted out of the old
   // GraphView wrapper (#2766) now that the graph IS the page's one GraphCanvas.
   const selId = sel?.id ?? "";
+  // The ring's COMPONENT entries, ranked newest-first (0 = the node just touched). Drives the decaying
+  // `.working` pulse, so a burst leaves a visible TRAIL instead of one survivor — the point of the ring.
+  //
+  // Built by hand rather than `new Map(entries)` because an id can appear twice in the ring (a session
+  // writing the same record repeatedly) and `new Map` keeps the LAST value for a duplicate key, i.e.
+  // the OLDEST rank — exactly backwards. First-wins is the newest.
+  const workRank = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of aiTouches) {
+      if (t.collection !== "component" || m.has(t.id)) continue;
+      m.set(t.id, m.size);
+    }
+    return m;
+  }, [aiTouches]);
   // MEMOIZED (#a-graph-node-costs-five-elements-not-eight). It used to run on every render and return
   // FRESH objects, so `edgeBatch` below — which keys on `incidentEdges` — rebuilt every edge path on
   // every commit no matter what changed. The instrumentation priced that at 4-6ms a commit for nothing.
@@ -539,6 +565,10 @@ export function DesignsWorkbench() {
                 ⚠ {healthFindings.length}
               </Text>
             )}
+            {/* The activity STRIP — every recent touch, across EVERY kit, newest first. It is
+                unconditional on purpose: the kit-follow only steers while nothing is selected, so with
+                a selection live the strip is the ONLY window onto work happening in another kit. */}
+            <ActivityStrip touches={aiTouches} components={components} onPick={selectComp} />
             <Box style={{ flex: 1 }} />
             <ZoomControls vp={gvp} step={1.15} />
             {/* The shared ghost Button (#2808), matching the Teams/Algorithms/Glance toolbars. */}
@@ -762,7 +792,8 @@ export function DesignsWorkbench() {
               // it's the SAME node, so an active selection is never overridden.
               selected={c.id === selId}
               related={relatedNodes.has(c.id)}
-              working={c.id === (aiFocusedId ?? "") && c.id !== selId}
+              working={workRank.has(c.id) && c.id !== selId}
+              workingRank={workRank.get(c.id)}
               badge={nodeHealth.get(c.id)}
               onSelect={selectComp}
             />
@@ -771,6 +802,57 @@ export function DesignsWorkbench() {
         </>)}
       </GraphCanvas>
     </>
+  );
+}
+
+/**
+ * The recent-activity STRIP (#live-focus-is-kit-filtered) — the designer ring rendered in the graph
+ * toolbar, newest first, spanning every kit.
+ *
+ * It exists because the single `.working` pulse could not answer "what are they doing?" for concurrent
+ * sessions: one node pulses at a time, it moves every few seconds, and any touch outside the selected
+ * kit was dropped entirely. A fading list is readable at that speed where a moving highlight is not.
+ *
+ * Local to this file, following `GuideCard` below — it is the Studio toolbar's own chrome, with no
+ * second consumer, so promoting it to a shared primitive would buy nothing but indirection.
+ */
+function ActivityStrip({ touches, components, onPick }: {
+  touches: AiTouch[];
+  components: ComponentRecord[];
+  onPick: (c: ComponentRecord) => void;
+}) {
+  if (!touches.length) return null;
+  return (
+    // `role="log"` + polite live-region: the strip narrates ongoing background work, which is exactly
+    // what a log region is for. Assertive would interrupt a screen-reader user for something they did
+    // not initiate.
+    <Box className="ds-activity" role="log" aria-live="polite" aria-label="Recent designer activity">
+      {touches.map((t, i) => {
+        const rec = components.find((c) => c.id === t.id);
+        const kit = rec?.kitId ?? t.kitId ?? "—";
+        const verb = t.kind === "touch" ? "wrote" : "read";
+        const title = rec
+          ? `${t.pane} ${verb} ${t.collection} "${t.id}" in ${kit} · ${timeAgoMs(t.at)}`
+          // A touch whose record is gone: `bsc ui merge`/`suppress` retiring it emits activity for the
+          // RETIRED id (crates/bsc-component/src/cli.rs). Real work — it must show — but there is
+          // nothing left to select, so say so instead of offering a dead click.
+          : `${t.pane} ${verb} ${t.collection} "${t.id}" · ${timeAgoMs(t.at)} · no longer in the library (retired or merged away)`;
+        return (
+          <Text
+            key={`${t.at}:${t.kind}:${t.collection}:${t.id}:${i}`}
+            as={rec ? "button" : "span"}
+            {...(rec ? { type: "button", onClick: () => onPick(rec) } : {})}
+            className={`ds-activity-chip${rec ? "" : " gone"}`}
+            size="xxs" mono title={title}
+            // Ring age drives the fade, matching the graph node's pulse decay — the strip and the graph
+            // are two views of ONE ring, so they must dim in step or they read as unrelated signals.
+            style={{ "--ds-work-fade": String(Math.max(0.25, 1 - i * 0.12)) } as CSSProperties}
+          >
+            {rec?.name ?? t.id}
+          </Text>
+        );
+      })}
+    </Box>
   );
 }
 
