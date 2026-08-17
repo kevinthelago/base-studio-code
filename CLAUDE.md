@@ -793,15 +793,26 @@ Measured on the first run: **86 GB reclaimed**, 5 trees removed, 1 correctly ref
 
 **`target/` is swept automatically — and ~20 GB per tree is NORMAL.** Cargo never reclaims a build
 artifact: every distinct `-C metadata` (feature set × profile × lib-vs-test × rustc version × dep
-version) mints a new one and orphans the old permanently. Two janitors run from `build:plan`, ahead
-of every `npm run tauri -- dev`, both fail-safe (they swallow every error and exit 0, because a
-cache janitor must never block a dev launch):
+version) mints a new one and orphans the old permanently. One entry point, `gc`, runs the sweeps; it
+is called from **the gate** and from `build:plan`, and is fail-safe (it swallows every error and
+exits 0, because a janitor must never redden a gate or block a dev launch):
 
 ```bash
+npm run gc                  # force a sweep now — both directories, one report
 npm run clean:incremental   # target/*/incremental — keep newest 1 per crate, >3d
 npm run clean:target        # target/*/deps        — keep newest 3 per crate, >3d
                             #   add --dry-run, or --root <dir> to sweep ANOTHER worktree
 ```
+
+**It hangs off the GATE for a reason.** The sweeps originally ran only from `build:plan`, which only
+`tauri dev` invokes — so the one tree ever collected was the tree where the app gets launched (the
+one that had accumulated two months of orphans), and **no worktree had ever been swept once**. They
+audited clean only because they were young. The gate is the single command every worktree agent runs.
+`gc` day-stamps itself in `target/`, so repeat gate runs during iteration cost ~0ms, not 1.5s.
+
+> Both age defaults live in the RUNNER, not in `planPrune`: the runner always passes an explicit
+> value, so changing only the pure module's default is dead code. An earlier pass did exactly that,
+> and the sweep kept running at 14 days while the docs claimed 3.
 
 Set expectations from the measurements, not from the total:
 
