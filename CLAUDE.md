@@ -768,6 +768,29 @@ already serves ~232 of the ~263 cacheable compilations in a cold build; the rest
 key** so they can never hit across worktrees, and linking. `CARGO_INCREMENTAL=0` and seeding a copied
 `target/` were both measured and are both losses.
 
+**Cap the parked pool — it is the biggest disk lever, and nothing else can reach it.** A parked
+worktree exists only to hold a warm `target/`, worth ~2 minutes (1m59s cold vs 0.41-5.11s recycled).
+Each one costs ~20 GB, and eight of them were holding ~160 GB. Nothing INSIDE a worktree is
+reclaimable — the deps sweep measures 0 orphaned units on every one, because they are too young to
+have any.
+
+```bash
+npm run worktrees:cap -- --dry-run   # what would go
+npm run worktrees:cap                # keep the 2 most recently BUILT parked trees
+npm run worktrees:cap -- --keep 4
+```
+
+DESTRUCTIVE, so unlike the two janitors it is **never** wired into `build:plan` — you invoke it. It
+refuses rather than works around:
+
+- a **junction/symlink `node_modules`**, because `git worktree remove` follows it and wipes the
+  shared root install;
+- a **dirty tree** — `--force` is never passed, and that refusal is the feature. First real run kept
+  `wt-swap`, which turned out to hold 7 staged source modifications on a *parked* branch. `--force`
+  would have destroyed real work.
+
+Measured on the first run: **86 GB reclaimed**, 5 trees removed, 1 correctly refused.
+
 **`target/` is swept automatically — and ~20 GB per tree is NORMAL.** Cargo never reclaims a build
 artifact: every distinct `-C metadata` (feature set × profile × lib-vs-test × rustc version × dep
 version) mints a new one and orphans the old permanently. Two janitors run from `build:plan`, ahead
