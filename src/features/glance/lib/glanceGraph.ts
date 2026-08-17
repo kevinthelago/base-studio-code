@@ -73,7 +73,7 @@ export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" 
  *  CONTRACT edges (#3786): `uses-mcp` (an MCP server) and `uses-service` (a third-party service). Every
  *  band edge ({@link isBandEdge}) routes vertically into the fenced band; the project contracts flow
  *  left→right. */
-export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "uses-mcp" | "uses-service" | "owned-by" | "served-by";
+export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "uses-mcp" | "uses-service" | "owned-by" | "served-by" | "invokes";
 /** A Glance node's KIND (#2571 → generalized #3119 → external contracts #3786). A PROJECT (the default), a
  *  UI-KIT node (`kit`, the `ui` library graph — kept as-is so existing fixtures + persisted ids are
  *  unaffected), a generalized cross-graph `library` node (an algorithm / sound, carrying
@@ -81,8 +81,14 @@ export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires" | "u
  *  auto-derived + Phase 2 planner-declared), or a `service` contract node (a third-party service a project
  *  contracts with, #3786 Phase 2). ABSENT ⇒ `"project"`. A non-project node's id is namespaced (`kit:` /
  *  `algo:` / `sound:` / `mcp:` / `service:`, see {@link libraryNodeId} / {@link mcpNodeId} /
- *  {@link serviceNodeId}) so it can never collide with a project key (a `[a-z0-9-]` slug — no colon). */
-export type GNodeKind = "project" | "kit" | "library" | "mcp" | "service" | "architect" | "session";
+ *  {@link serviceNodeId}) so it can never collide with a project key (a `[a-z0-9-]` slug — no colon).
+ *
+ *  A `surface` node (`command-surfaces-are-glance-nodes`, epic `epic-command-surfaces-are-nodes`) is one
+ *  `bsc` COMMAND SURFACE — the interface agents actually drive this system through, which every graph was
+ *  blind to until now. It is generated from `bsc surface list --json`, never hand-listed: a hand-kept list
+ *  would be the fourth copy of the surface set to drift, and three separate plan items already exist for
+ *  the first three drifting. */
+export type GNodeKind = "project" | "kit" | "library" | "mcp" | "service" | "architect" | "session" | "surface";
 
 /** The cross-graph LIBRARY dimensions a band node can belong to (#3119) — reuses A's {@link NodeGraph}
  *  (algorithms · UI kits · sounds). A `kit` node is the `ui` case (kept for back-compat); a generalized
@@ -148,6 +154,21 @@ export const MCP_META: BandMeta = {
 export const SERVICE_META: BandMeta = {
   color: SERVICE_COLOR, marker: "☁", kindLabel: "service", bandLabel: "SERVICES", panelTitle: "SERVICE", edgeLabel: "contracts with",
   blurb: "An external service this project contracts with — a third-party endpoint (a payments API, a SaaS backend, another team's service) the planner declared as a dependency, so the relationship is visible and downstream agents know the contract.",
+};
+
+/** COMMAND-SURFACE accent (`command-surfaces-are-glance-nodes`) — lime. The band palette was already
+ *  crowded (cyan kit / violet algo / pink sound / amber mcp / indigo service / bronze architect), and lime
+ *  is the one region none of them occupy. It sits near the healthy-green of the health dots, which is
+ *  fine for the same reason MCP's amber sits near warning-orange: a band node is a dashed card with NO
+ *  health dot, so the two can never be read off the same mark. */
+export const SURFACE_COLOR = "#a3e635";
+/** COMMAND-SURFACE node presentation — one `bsc` subcommand, generated from `bsc surface list --json`.
+ *
+ *  The edge label is "invokes" rather than the contract dimensions' "contracts with": a session does not
+ *  negotiate with a command surface, it RUNS it. */
+export const SURFACE_META: BandMeta = {
+  color: SURFACE_COLOR, marker: "❯", kindLabel: "surface", bandLabel: "COMMAND SURFACES", panelTitle: "COMMAND SURFACE", edgeLabel: "invokes",
+  blurb: "A `bsc` command surface — one subcommand of the CLI every agent drives this system through. Generated from the one catalog that also drives `bsc help`, so what is drawn here cannot disagree with what actually dispatches.",
 };
 
 /** ARCHITECT node presentation (#glance-architect-band) — the funnel's tier 1, the only session that
@@ -257,6 +278,20 @@ export const serviceIdOfNode = (nodeId: string): string =>
  *  with a {@link projectLinkId}, a {@link usesKitEdgeId}, a {@link requiresEdgeId}, or a {@link usesMcpEdgeId}. */
 export const usesServiceEdgeId = (projectKey: string, serviceId: string): string => `usesvc:${projectKey}>${serviceId}`;
 
+/** Namespace prefix for a COMMAND-SURFACE node id — its own namespace so it never collides with a project
+ *  key or another band node id (`kit:`/`algo:`/`sound:`/`mcp:`/`service:`). */
+export const SURFACE_NODE_PREFIX = "surface:";
+/** The stable, collision-proof id of the graph node for a `bsc` command surface. `name` is the subcommand
+ *  token exactly as `bsc surface list` reports it (`plan`, `ui`, `graph`, …). */
+export const surfaceNodeId = (name: string): string => `${SURFACE_NODE_PREFIX}${name}`;
+/** The surface name behind a `surface:<name>` node id (identity for anything already bare). */
+export const surfaceNameOfNode = (nodeId: string): string =>
+  nodeId.startsWith(SURFACE_NODE_PREFIX) ? nodeId.slice(SURFACE_NODE_PREFIX.length) : nodeId;
+/** Stable id for a session→surface `invokes` edge — prefixed so it never collides with any other edge id.
+ *  Keyed on the SESSION node id rather than a project key, because a command surface is invoked by a
+ *  session; that is the one place this dimension departs from the other bands, which hang off projects. */
+export const invokesEdgeId = (sessionNodeId: string, surfaceName: string): string => `invokes:${sessionNodeId}>${surfaceName}`;
+
 /** Is `n` a cross-graph LIBRARY node (#3119) — a lifted band node, not a project? True for a legacy `kit`
  *  node (the `ui` graph) or a generalized `library` node (algo/sound/ui). */
 export const isLibraryNode = (n: { kind?: GNodeKind }): boolean => n.kind === "kit" || n.kind === "library";
@@ -279,11 +314,11 @@ export const isLibraryEdge = (kind: GEdgeKind): boolean => kind === "uses-kit" |
  *  OR an external contract node (`mcp` / `service`). These are lifted OUT of the project DAG into the top
  *  band. */
 export const isBandNode = (n: { kind?: GNodeKind }): boolean =>
-  isLibraryNode(n) || n.kind === "mcp" || n.kind === "service";
+  isLibraryNode(n) || n.kind === "mcp" || n.kind === "service" || n.kind === "surface";
 /** Is `kind` a BAND edge (#3786) — a library edge OR an external-contract edge (`uses-mcp`/`uses-service`).
  *  These route VERTICALLY into the fenced band and are excluded from the project-network layout. */
 export const isBandEdge = (kind: GEdgeKind): boolean =>
-  isLibraryEdge(kind) || kind === "uses-mcp" || kind === "uses-service";
+  isLibraryEdge(kind) || kind === "uses-mcp" || kind === "uses-service" || kind === "invokes";
 /** The band presentation ({@link BandMeta}) for a fenced-band node (#3786) — the MCP row for an `mcp`
  *  contract node, the SERVICE row for a `service` contract node, else the library-graph row for a
  *  kit/algorithm/sound node. */
@@ -292,6 +327,7 @@ export const bandNodeMeta = (n: { kind?: GNodeKind; library?: GLibraryGraph }): 
   : n.kind === "architect" ? ARCHITECT_META
   : n.kind === "mcp" ? MCP_META
   : n.kind === "service" ? SERVICE_META
+  : n.kind === "surface" ? SURFACE_META
   : LIBRARY_META[libraryGraphOf(n) ?? "ui"];
 
 /** One communication form on a fleet node's comms surface (#2563) — a typed interaction + its `bsc-*`
@@ -540,6 +576,10 @@ export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: 
   // dependency; the canvas tints each edge by the TARGET node's graph colour (LIBRARY_META), so this
   // static `color` is only a neutral fallback (e.g. the legend swatch).
   requires: { label: "requires", color: "var(--fg-muted)", dash: "4 4", w: 1.6, surface: "requires a shared library node (algorithm / sound) · cross-graph dependency" },
+  // The COMMAND-SURFACE dimension (`command-surfaces-are-glance-nodes`): a SESSION invokes a `bsc`
+  // subcommand. Dashed lime like the other band edges, and the only one whose source is a session
+  // rather than a project — a command surface is run BY an agent, not depended on by a codebase.
+  invokes: { label: "invokes", color: SURFACE_COLOR, dash: "4 4", w: 1.6, surface: "runs a bsc command surface · the interface an agent drives the system through" },
   // The PROVENANCE dimension (#glance-architect-band): the architect session that created this project.
   // Dashed amber, matching ARCHITECT_META, so the tier that CREATES a project reads apart from the
   // dependencies it consumes.
