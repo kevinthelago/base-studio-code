@@ -449,17 +449,24 @@ accrues under `[Unreleased]`. The full version-by-version breakdown lives in
 
 ### Where the work lives
 
-The project's own plan store — `~/.base-studio-code/plans/base-studio-code.db`, reached with the
+The project's own plan store — `~/.base-studio-code/plans/studio-code.db`, reached with the
 bundled `bsc` binary:
 
 ```bash
-export BSC_PLAN_DB="$HOME/.base-studio-code/plans/base-studio-code.db"
+export BSC_PLAN_DB="$HOME/.base-studio-code/plans/studio-code.db"
 
 bsc plan list                      # the board
 bsc plan list --status open        # what's available
 bsc plan get <ref>                 # one item: body + acceptance criteria
 bsc plan status <ref> <status>     # open → in_progress → complete → verified
 ```
+
+> **It used to be `base-studio-code.db`, and that store is RETIRED.** `base-studio-code` was both a
+> *repo of* the `studio-code` project and a separate project with its own plan store, so which one an
+> item belonged in was a coin flip — and the two drifted. Everything (issues, change records and the
+> lessons, which existed only there) was migrated into `studio-code.db` on 2026-08-17; see
+> `migrate-the-legacy-base-studio-code-plan-store`. **There is one board now.** If you find yourself
+> reaching for the old path, that is the habit this note exists to break.
 
 This is the same surface a fleet worker already uses, so there is one way to read the plan whether a
 human or an agent is driving. `bsc plan` is in the always-allowed mandatory tier, so no session needs
