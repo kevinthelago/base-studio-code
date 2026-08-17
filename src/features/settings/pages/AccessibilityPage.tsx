@@ -1,6 +1,6 @@
 import { Stack } from "@/shared/ui/layout/Stack";
 import { SettingsPageHeader } from "@/features/settings/pages/SettingsPageHeader";
-import { TtsCard } from "../cards/TtsCard";
+import { TtsCard } from "@/features/settings/cards/TtsCard";
 
 /** Settings → Accessibility (a11y epic #2725). Screen-reader / keyboard support is baked into the app;
  *  this page holds the app-owned text-to-speech that speaks the fleet coordination stream (Tier 1). */

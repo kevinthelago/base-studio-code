@@ -1,0 +1,11 @@
+{
+  "id": "settings-issuesecuritycard",
+  "name": "IssueSecurityCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/settings/cards/IssueSecurityCard",
+  "srcText": "import { useAppStore } from \"@/store\";\nimport { ToggleRow } from \"@/features/settings/pages/SettingsControls\";\nimport { Card } from \"@/shared/ui/data/Card\";\n\nexport function IssueSecurityCard() {\n  const { restrictToBscIssues, setRestrictToBscIssues } = useAppStore();\n\n  return (\n    <Card title=\"Issue security\">\n      <ToggleRow\n        on={restrictToBscIssues}\n        onToggle={() => setRestrictToBscIssues(!restrictToBscIssues)}\n        title=\"Only act on base-studio-code-authored issues\"\n      >\n        GitHub issues are an untrusted input channel. When on (recommended), triage and any\n        agent that pulls live issues work <b>only</b> issues base-studio-code created (the{\" \"}\n        <code>bsc-generated</code> label) — a hand-created or injected issue is ignored, so a\n        malicious issue can't drive a worker. Turn off to triage every open issue.\n      </ToggleRow>\n    </Card>\n  );\n}\n",
+  "composes": [],
+  "src": "src/features/settings/cards/IssueSecurityCard.tsx",
+  "folder": "features/settings/cards"
+}

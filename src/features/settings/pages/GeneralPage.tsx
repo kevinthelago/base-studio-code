@@ -1,12 +1,12 @@
-import { WorkspaceCard } from "../cards/WorkspaceCard";
-import { ConsolePageCard } from "../cards/ConsolePageCard";
-import { DefaultModelCard } from "../cards/DefaultModelCard";
+import { WorkspaceCard } from "@/features/settings/cards/WorkspaceCard";
+import { ConsolePageCard } from "@/features/settings/cards/ConsolePageCard";
+import { DefaultModelCard } from "@/features/settings/cards/DefaultModelCard";
 import { SessionsBehaviorCard } from "@/features/settings/cards/SessionsBehaviorCard";
 import { TerminalFontSizeCard } from "@/features/settings/cards/TerminalFontSizeCard";
 import { AccentColorCard } from "@/features/settings/cards/AccentColorCard";
 import { ThemeCard } from "@/features/settings/cards/ThemeCard";
 import { KitThemeCard } from "@/features/settings/cards/KitThemeCard";
-import { SoundNotificationsCard } from "../cards/SoundNotificationsCard";
+import { SoundNotificationsCard } from "@/features/settings/cards/SoundNotificationsCard";
 import { KeyboardCard } from "@/features/settings/cards/KeyboardCard";
 import { AchievementsCard } from "@/features/settings/cards/AchievementsCard";
 import { DiagnosticsCard } from "@/features/settings/cards/DiagnosticsCard";

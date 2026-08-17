@@ -1,7 +1,7 @@
-import { IssueSecurityCard } from "../cards/IssueSecurityCard";
+import { IssueSecurityCard } from "@/features/settings/cards/IssueSecurityCard";
 import { AgentsCard } from "@/features/settings/cards/AgentsCard";
 import { AgentRolesCard } from "@/features/settings/cards/AgentRolesCard";
-import { PermissionPostureCard } from "../cards/PermissionPostureCard";
+import { PermissionPostureCard } from "@/features/settings/cards/PermissionPostureCard";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { SettingsPageHeader } from "@/features/settings/pages/SettingsPageHeader";
 

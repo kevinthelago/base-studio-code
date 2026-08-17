@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ConsolePageCard } from "./ConsolePageCard";
+import { ConsolePageCard } from "@/features/settings/cards/ConsolePageCard";
 import { useAppStore } from "@/store";
 
 describe("ConsolePageCard", () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { PermissionPostureCard } from "./PermissionPostureCard";
+import { PermissionPostureCard } from "@/features/settings/cards/PermissionPostureCard";
 import { useAppStore } from "@/store";
 
 // The Tauri `invoke` mock is pre-wired in src/test/setup.ts; we just script the probe's return.
