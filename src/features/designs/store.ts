@@ -21,6 +21,93 @@ import { loadThemes, pushTheme, dropTheme, loadVariants } from "@/features/desig
 import { loadKitUsage, pushKitUsage, dropKitUsage } from "@/features/designs/lib/kitUsageBridge";
 import { setActiveKitThemes, applyVariantsToRoot, applyContributionsToRoot, applyAnimationsToRoot, kitAnimations, type DesignContributionOverlay } from "@/shared/ui/kit";
 
+/** One observed designer activity event (#2525) — a ring entry in {@link AppStore.aiTouches}.
+ *  Mirrors the `UiTouch` the `ui-activity` parser produces; declared here so the slice does not import
+ *  the hook (which pulls in React) just for a shape. */
+export interface AiTouch {
+  /** `"touch"` = a WRITE (`bsc ui set/remove`) → focus + re-hydrate; `"focus"` = a READ (`bsc ui get`,
+   *  #3545) → focus only, nothing changed to reload. */
+  kind: "touch" | "focus";
+  /** The touched store collection — `component` · `kit` · `theme` · `variant`. */
+  collection: string;
+  /** The record id written/removed/read. */
+  id: string;
+  /** The kit the record belongs to, when the emitter reported it (the activity line's 6th column).
+   *  Absent on a legacy 5-column line, in which case the kit is resolved from the store instead. */
+  kitId?: string;
+  /** The emitting pane (`$BSC_AUDIT_PANE`, or `?`). */
+  pane: string;
+  /** Epoch-ms of the event (0 when the log's timestamp was unparseable). */
+  at: number;
+}
+
+/** How many touches the ring keeps. Sized for the strip: enough that a burst leaves a readable trail,
+ *  short enough that the oldest row is still plausibly "what is happening now". */
+export const AI_RING_MAX = 8;
+
+/** How stale a touch may be and still move the view. The poll's first tick sees the whole 50-line tail,
+ *  which on a fresh mount is history — following it would jump the user's kit to whatever was touched
+ *  hours ago. Those entries still POPULATE the ring (seeing recent activity on open is the point); they
+ *  just do not steer. A live touch is seconds old and comfortably inside this window. */
+export const FOLLOW_MAX_AGE_MS = 60_000;
+
+/** Fold `fresh` (oldest-first) into `ring` (newest-first), newest first and capped at {@link AI_RING_MAX}.
+ *  Pure + exported for the unit test. */
+export function foldTouches(ring: AiTouch[], fresh: AiTouch[]): AiTouch[] {
+  return [...fresh].reverse().concat(ring).slice(0, AI_RING_MAX);
+}
+
+/** How long a burst of writes is allowed to accumulate before ONE re-hydrate runs. Long enough that a
+ *  fleet writing several records a second collapses to a single reload, short enough that a lone edit
+ *  still appears promptly. Exported so a test can drive the window rather than guess it. */
+export const AI_HYDRATE_DEBOUNCE_MS = 600;
+
+/** The pending coalesced re-hydrate. Module-scoped rather than per-store because it guards a real
+ *  side effect (a 590-record reload) that must not run N times for N touches; `setAiFocused(null)` on
+ *  unmount does not cancel it deliberately — a write that already happened still needs loading. */
+let aiHydrateTimer: ReturnType<typeof setTimeout> | null = null;
+const aiHydratePending = new Set<string>();
+
+/** The narrow view of zustand's `get`/`set` these module-level helpers need. */
+type SliceGet = () => AppStore;
+type SliceSet = (partial: Partial<AppStore> | ((s: AppStore) => Partial<AppStore>)) => void;
+
+/** Debounce a re-hydrate over the union of the collections touched in the window. */
+function scheduleAiHydrate(collections: string[], run: (cols: Set<string>) => void): void {
+  for (const c of collections) aiHydratePending.add(c);
+  if (aiHydrateTimer) clearTimeout(aiHydrateTimer);
+  aiHydrateTimer = setTimeout(() => {
+    aiHydrateTimer = null;
+    const cols = new Set(aiHydratePending);
+    aiHydratePending.clear();
+    run(cols);
+  }, AI_HYDRATE_DEBOUNCE_MS);
+}
+
+/**
+ * Re-pull the touched collections so the AI's edit appears without a relaunch (#2483/#2514/#2525).
+ *
+ * A designer session edits via the CLI (`bsc ui set` / `set-token` / `define-variant`), which lands as
+ * a `ui-touch` — the desktop `setComponent` fan-out never runs for it. So DIFF the reloaded library
+ * against the pre-hydration snapshot and fan out each component whose contract changed, so a CLI edit
+ * propagates exactly like a desktop edit (#2810). Deduped by `dispatchKey`.
+ */
+function runAiHydrate(get: SliceGet, set: SliceSet, collections: Set<string>): void {
+  const before = get().components;
+  // `Promise.resolve(...)` so a test that stubs `hydrateComponents` with a plain `vi.fn()` (returns
+  // undefined, not a promise) doesn't throw on `.then` — the diff simply sees no change.
+  void Promise.resolve(get().hydrateComponents()).then(() => {
+    const s = get();
+    const fresh = s.components.flatMap((after) => {
+      const b = before.find((x) => x.id === after.id);
+      return b && contractChanged(b, after) ? planPropagation(makeChange(after, b), s.kitUsage) : [];
+    });
+    if (fresh.length) set((st) => ({ kitDispatches: mergeDispatches(st.kitDispatches, fresh) }));
+  });
+  if (collections.has("theme")) void get().hydrateThemes();
+  if (collections.has("variant")) void get().hydrateVariants();
+}
+
 /** Merge fresh kit-change dispatches into the queue, deduped by `dispatchKey` — shared by the two
  *  change-origins: the desktop `setComponent` edit and the `ui-touch`/CLI-edit diff (#2810). Exported
  *  for the unit test. */
@@ -147,17 +234,36 @@ export interface ComponentsSlice {
   designsPreviewState: PreviewState;
   setDesignsPreviewState: (s: PreviewState) => void;
 
-  /** The library id the designer AI most-recently touched (#2525) — a component/kit/theme id from a
-   *  `bsc ui set/remove` mutation the `useUiActivity` poll observed. The Design Studio live-focuses it
-   *  (pulsing `.working` node + auto-pan). `null` when idle or the designer session ended. */
+  /** The recent designer activity RING (#live-focus-is-kit-filtered) — newest FIRST, bounded to
+   *  {@link AI_RING_MAX}. Each entry is one `ui-touch`/`ui-focus` the `useUiActivity` poll observed.
+   *
+   *  This replaced a single `aiFocusedId` scalar, which structurally could not represent CONCURRENT
+   *  work: N designer sessions collapsed to last-writer-wins, and two touches inside one poll window
+   *  meant one was never displayed at all. A ring is what makes a fast burst legible — the strip reads
+   *  as a list, and the graph pulses every node in it with intensity decaying by age. TRANSIENT. */
+  aiTouches: AiTouch[];
+  /** The ring HEAD's id — the node the designer AI is most recently on (#2525). Kept as its own field
+   *  because everything downstream (the `.working` pulse, the auto-pan, the Inspector's fallback
+   *  subject) already reads it. `null` when the ring is empty or the session ended. */
   aiFocusedId: string | null;
-  /** Record a designer `ui-touch` (#2525): set {@link aiFocusedId} to the touched id AND re-pull the
-   *  touched collection so the AI's edit appears live (hydrate is otherwise one-shot at boot) —
-   *  `hydrateComponents` always, plus `hydrateThemes` for a `theme` touch. A `null` id clears the
-   *  focus (session end) without re-hydrating. */
-  /** Live-focus the node Claude is on (#2525). `opts.hydrate` (default true) re-pulls the collection so a
-   *  WRITE's edit shows; a READ-focus (#3545 `ui-focus`) passes `false` — the preview follows Claude's
-   *  inspection without a library refetch on every `get`. */
+  /** Fold freshly-observed touches (OLDEST-first, as the log is read) into the ring (#2525).
+   *
+   *  Beyond the ring it does two things the old per-touch path could not:
+   *  - **Auto-follows the kit** when the user has nothing selected, so a touch in another kit is
+   *    actually visible instead of being discarded by the Studio's kit filter. Never when a component
+   *    IS selected — a background steer must not take the screen from someone working (#3599/#4248) —
+   *    and never for a stale priming batch (see `FOLLOW_MAX_AGE_MS`).
+   *  - **Coalesces the re-hydrate**: a burst of N writes costs ONE library reload, not N. Focus still
+   *    lands immediately; only the reload waits.
+   *
+   *  `opts.hydrate: false` folds the touches into the ring WITHOUT scheduling a reload — the poll's
+   *  priming tick, which is replaying history the boot hydrate already loaded. */
+  pushAiTouches: (touches: AiTouch[], opts?: { hydrate?: boolean }) => void;
+  /** Live-focus ONE node (#2525) — the single-touch path, kept for the clear-on-unmount call
+   *  (`setAiFocused(null)`, which also empties the ring) and as the narrow entry point tests drive.
+   *  `opts.hydrate` (default true) re-pulls the collection so a WRITE's edit shows; a READ-focus
+   *  (#3545 `ui-focus`) passes `false` — the preview follows Claude's inspection without a library
+   *  refetch on every `get`. */
   setAiFocused: (id: string | null, collection?: string, opts?: { hydrate?: boolean }) => void;
 
   /** Per-component preview-BUILD status (#2838) — component id → ok | error(message), populated lazily
@@ -409,32 +515,50 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
   designsPreviewState: "loaded",
   setDesignsPreviewState: (s) => set({ designsPreviewState: s }),
 
+  aiTouches: [],
   aiFocusedId: null,
 
+  pushAiTouches: (touches, opts) => {
+    if (!touches.length) return;
+    const ring = foldTouches(get().aiTouches, touches);
+    const head = ring[0];
+    set({ aiTouches: ring, aiFocusedId: head?.id ?? null });
+
+    // ── Auto-follow the kit (the #live-focus-is-kit-filtered fix) ──────────────────────────────
+    // The Studio filters the `.working` pulse, the auto-pan AND the Inspector subject by the SELECTED
+    // kit, so a touch in any other kit was silently discarded. Measured over 200 consecutive touches
+    // the fleet spanned three kits (105 / 73 / 19), which is why the page mostly sat blank.
+    //
+    // Following is gated on `designsCompId === null` — "the user is watching", not "the user is
+    // working". With something selected we leave the view completely alone and the touch is visible in
+    // the strip only. That is the same line #3599/#4248 drew for `bsc navigate`.
+    if (head && head.collection === "component" && get().designsCompId === null && Date.now() - head.at < FOLLOW_MAX_AGE_MS) {
+      // Prefer the kit the EMITTER reported (the activity line's 6th column): a record written moments
+      // ago may not be in `components` yet, and resolving from the store would miss exactly the newest
+      // work. Fall back to the store for legacy 5-column lines.
+      const kitId = head.kitId || get().components.find((c) => c.id === head.id)?.kitId;
+      // `setDesignsKit` CLEARS the component selection — harmless here, since following only happens
+      // when there is none, but it is why this must never run with a selection live.
+      if (kitId && kitId !== get().designsKitId) get().setDesignsKit(kitId);
+    }
+
+    // ── Coalesce the re-hydrate ────────────────────────────────────────────────────────────────
+    // Every WRITE used to reload the whole library, reconcile it and re-diff it for propagation —
+    // ~590 records, several times a minute under a live fleet. A burst now costs one reload. READ
+    // focuses (#3545 `ui-focus`) still reload nothing: they changed nothing.
+    const writes = opts?.hydrate === false ? [] : touches.filter((t) => t.kind === "touch");
+    if (writes.length) scheduleAiHydrate(writes.map((t) => t.collection), (cols) => runAiHydrate(get, set, cols));
+  },
+
   setAiFocused: (id, collection, opts) => {
+    // A clear (session end / Studio unmount) empties the RING too — otherwise the strip would keep
+    // showing a finished session's work as though it were live.
+    if (!id) { set({ aiFocusedId: null, aiTouches: [] }); return; }
     set({ aiFocusedId: id });
-    if (!id) return; // a clear (session end) — no re-pull
     // #3545: a READ-focus (`ui-focus`) drives the preview only — nothing changed, and this fires on every
     // `get`, so a re-hydrate here would refetch the whole library every ~1.5s poll. Writes still hydrate.
     if (opts?.hydrate === false) return;
-    // Re-hydrate the touched collection so the AI's edit shows without a relaunch (#2483/#2514/#2525).
-    // A designer session edits via the CLI (`bsc ui set` / `set-token` / `define-variant`), which lands
-    // here as a `ui-touch` — the desktop `setComponent` fan-out never runs for it. So DIFF the reloaded
-    // library against the pre-hydration snapshot and fan out each component whose contract changed, so a
-    // CLI edit propagates exactly like a desktop edit (#2810). Deduped by `dispatchKey`.
-    const before = get().components;
-    // `Promise.resolve(...)` so a test that stubs `hydrateComponents` with a plain `vi.fn()` (returns
-    // undefined, not a promise) doesn't throw on `.then` — the diff simply sees no change.
-    void Promise.resolve(get().hydrateComponents()).then(() => {
-      const s = get();
-      const fresh = s.components.flatMap((after) => {
-        const b = before.find((x) => x.id === after.id);
-        return b && contractChanged(b, after) ? planPropagation(makeChange(after, b), s.kitUsage) : [];
-      });
-      if (fresh.length) set((st) => ({ kitDispatches: mergeDispatches(st.kitDispatches, fresh) }));
-    });
-    if (collection === "theme") void get().hydrateThemes();
-    if (collection === "variant") void get().hydrateVariants();
+    runAiHydrate(get, set, new Set(collection ? [collection] : []));
   },
 
   componentBuildStatus: {},

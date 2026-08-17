@@ -3,7 +3,7 @@ import { useAppStore } from "@/store";
 import type { ComponentRecord, Kit } from "./lib/model";
 import type { Dispatch } from "@/features/designs/lib/propagation";
 import { makeChange } from "@/features/designs/lib/propagation";
-import { contractChanged, mergeDispatches } from "./store";
+import { contractChanged, mergeDispatches, foldTouches, AI_RING_MAX, AI_HYDRATE_DEBOUNCE_MS, type AiTouch } from "./store";
 import { SEED_COMPONENTS, SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./lib/seed";
 import { SEED_THEMES, type KitThemeRecord } from "./lib/themes";
 import { stampSeedHash } from "./lib/seedRefresh";
@@ -246,6 +246,108 @@ describe("kit-change origin (#2810 — a CLI edit fires propagation)", () => {
     useAppStore.getState().setAiFocused("chip", "component");
     await new Promise((r) => setTimeout(r, 25));
     expect(useAppStore.getState().kitDispatches).toEqual([]);
+  });
+});
+
+describe("the activity RING + kit-follow (#live-focus-is-kit-filtered)", () => {
+  const realHydrateComponents = useAppStore.getState().hydrateComponents;
+  /** A touch stamped `now`, so it is inside the follow window unless a test says otherwise. */
+  const t = (id: string, kitId?: string, over: Partial<AiTouch> = {}): AiTouch =>
+    ({ kind: "touch", collection: "component", id, kitId, pane: "design-studio:designer", at: Date.now(), ...over });
+
+  beforeEach(() => {
+    useAppStore.setState({
+      components: SEED_COMPONENTS, kits: SEED_KITS,
+      aiFocusedId: null, aiTouches: [], designsKitId: "", designsCompId: null,
+    });
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    useAppStore.setState({ hydrateComponents: realHydrateComponents });
+  });
+
+  describe("foldTouches", () => {
+    it("prepends newest-first and caps the ring", () => {
+      // `fresh` arrives oldest-first (log order); the ring reads newest-first (display order).
+      expect(foldTouches([t("old")], [t("a"), t("b")]).map((x) => x.id)).toEqual(["b", "a", "old"]);
+      const many = Array.from({ length: AI_RING_MAX + 4 }, (_, i) => t(`c${i}`));
+      expect(foldTouches([], many)).toHaveLength(AI_RING_MAX);
+    });
+  });
+
+  it("FOLLOWS the touched kit when nothing is selected — the whole point of the fix", () => {
+    // Measured on the real log: 200 consecutive touches spanned three kits, and every touch outside the
+    // selected one was discarded by the Studio's kit filter. Following is what makes them visible.
+    useAppStore.setState({ designsKitId: "base-studio-code", designsCompId: null });
+    useAppStore.getState().pushAiTouches([t("workercard", "mobile-studio-code")], { hydrate: false });
+    expect(useAppStore.getState().designsKitId).toBe("mobile-studio-code");
+    expect(useAppStore.getState().aiFocusedId).toBe("workercard");
+  });
+
+  it("does NOT follow while the user has a component selected — a background steer never takes the screen", () => {
+    // The #3599/#4248 line: steering is right unattended and wrong when someone is working. The touch
+    // still lands in the ring, so the strip shows it; only the VIEW is left alone.
+    useAppStore.setState({ designsKitId: "base-studio-code", designsCompId: "settings-security" });
+    useAppStore.getState().pushAiTouches([t("workercard", "mobile-studio-code")], { hydrate: false });
+    expect(useAppStore.getState().designsKitId).toBe("base-studio-code");
+    expect(useAppStore.getState().designsCompId).toBe("settings-security");
+    expect(useAppStore.getState().aiTouches.map((x) => x.id)).toEqual(["workercard"]);
+  });
+
+  it("does NOT follow a STALE touch — the poll's priming tick is replaying history", () => {
+    // The first tick sees up to 50 lines of past work. Jumping the user's kit to whatever was touched
+    // hours ago would be a yank with no live work behind it. It still populates the ring.
+    useAppStore.setState({ designsKitId: "base-studio-code" });
+    const old = t("workercard", "mobile-studio-code", { at: Date.now() - 3_600_000 });
+    useAppStore.getState().pushAiTouches([old], { hydrate: false });
+    expect(useAppStore.getState().designsKitId).toBe("base-studio-code");
+    expect(useAppStore.getState().aiTouches).toHaveLength(1);
+  });
+
+  it("falls back to the STORE for a legacy line that carries no kit", () => {
+    const known = SEED_COMPONENTS[0];
+    useAppStore.setState({ designsKitId: "somewhere-else" });
+    useAppStore.getState().pushAiTouches([t(known.id)], { hydrate: false }); // no kitId on the touch
+    expect(useAppStore.getState().designsKitId).toBe(known.kitId);
+  });
+
+  it("coalesces a BURST of writes into exactly ONE hydrate", async () => {
+    // Every touch used to reload + reconcile + re-diff the whole ~590-record library. Under a live
+    // fleet that ran several times a minute, and it is what made the Studio jank while working.
+    vi.useFakeTimers();
+    const hydrateComponents = vi.fn();
+    useAppStore.setState({ hydrateComponents });
+    const burst = ["a", "b", "c", "d"].map((id) => t(id, "base-studio-code"));
+    useAppStore.getState().pushAiTouches(burst);
+    expect(hydrateComponents).not.toHaveBeenCalled();          // nothing fires inside the window
+    vi.advanceTimersByTime(AI_HYDRATE_DEBOUNCE_MS + 10);
+    expect(hydrateComponents).toHaveBeenCalledTimes(1);        // ONE reload for four writes
+  });
+
+  it("a READ-focus batch schedules no hydrate at all (#3545 — nothing changed to reload)", () => {
+    vi.useFakeTimers();
+    const hydrateComponents = vi.fn();
+    useAppStore.setState({ hydrateComponents });
+    useAppStore.getState().pushAiTouches([t("chip", "base-studio-code", { kind: "focus" })]);
+    vi.advanceTimersByTime(AI_HYDRATE_DEBOUNCE_MS + 10);
+    expect(hydrateComponents).not.toHaveBeenCalled();
+  });
+
+  it("accepts a touch whose record is GONE — a retired id from `bsc ui merge` (#3725 tombstone)", () => {
+    // `bsc ui merge`/`suppress` emit activity for the RETIRED id, and 3 of the last 200 real touches
+    // were exactly that. It is real work and must show; it simply resolves to no record and no kit.
+    useAppStore.setState({ designsKitId: "base-studio-code" });
+    useAppStore.getState().pushAiTouches([t("windowcontrols")], { hydrate: false });
+    expect(useAppStore.getState().aiTouches.map((x) => x.id)).toEqual(["windowcontrols"]);
+    expect(useAppStore.getState().designsKitId).toBe("base-studio-code"); // nothing to follow to
+  });
+
+  it("setAiFocused(null) empties the RING too, so a finished session stops reading as live", () => {
+    useAppStore.getState().pushAiTouches([t("chip", "base-studio-code")], { hydrate: false });
+    useAppStore.getState().setAiFocused(null);
+    expect(useAppStore.getState().aiTouches).toEqual([]);
+    expect(useAppStore.getState().aiFocusedId).toBeNull();
   });
 });
 

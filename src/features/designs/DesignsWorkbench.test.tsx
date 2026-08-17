@@ -13,6 +13,7 @@ vi.mock("@/shared/lib/preview/componentBundle", () => ({
 import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
 import { SEED_THEMES } from "./lib/themes";
 import type { Kit } from "./lib/model";
+import type { AiTouch } from "@/features/designs/store";
 import { useAppStore } from "@/store";
 
 // #3543: the packaged seed is now a single EMPTY kit (`base-studio-code`, filled by the designer). These
@@ -21,6 +22,13 @@ import { useAppStore } from "@/store";
 // (The multi-kit "rail hierarchy" describe below builds its OWN synthetic multi-kit fixture.)
 const SEED_COMPONENTS = REACT_UI_COMPONENTS;
 const SEED_KITS = [REACT_UI_KIT];
+
+/** One activity-ring entry for `id` (#live-focus-is-kit-filtered). The `.working` pulse is driven by the
+ *  RING now, so a test that wants a node pulsing seeds the ring — setting `aiFocusedId` alone describes
+ *  a state the store never produces, since it derives that scalar from the ring's head. Stamped `now` so
+ *  it is inside the follow window rather than reading as stale history. */
+const touch = (id: string, kitId = SEED_KITS[0].id): AiTouch =>
+  ({ kind: "touch", collection: "component", id, kitId, pane: "design-studio:designer", at: Date.now() });
 
 /** Reset the library slice to the seed before each test (the store is a singleton). #3274 lifted the
  *  kit + component SELECTION out of DesignsWorkbench's local state into the store, so it is now part of
@@ -128,7 +136,9 @@ describe("DesignsWorkbench (#2308)", () => {
     const kitComps = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id);
     const selDefault = kitComps[0];                                  // the default selection
     const working = kitComps.find((c) => c.id !== selDefault.id)!;   // a DIFFERENT node the AI touched
-    useAppStore.setState({ aiFocusedId: working.id });
+    // The pulse reads the activity RING now (#live-focus-is-kit-filtered), not the bare head scalar —
+    // `aiFocusedId` alone is a state production never produces, since the store derives it FROM the ring.
+    useAppStore.setState({ aiFocusedId: working.id, aiTouches: [touch(working.id)] });
     render(<DesignsWorkbench />);
     const node = graphNode(working.name);
     expect(node.className).toMatch(/\bworking\b/);                   // the AI-focus pulse ring
@@ -143,6 +153,40 @@ describe("DesignsWorkbench (#2308)", () => {
     const node = graphNode(selDefault.name);
     expect(node.className).toMatch(/\bon\b/);                        // selection wins visually
     expect(node.className).not.toMatch(/\bworking\b/);               // no competing pulse on it
+  });
+
+  it("the activity STRIP shows every recent touch, including one in a kit that is NOT on screen (#live-focus-is-kit-filtered)", () => {
+    // The strip is the cross-kit window. The graph can only ever draw the selected kit, so without this
+    // a touch elsewhere had nowhere to appear — which is why a page full of live fleet work read blank.
+    const [a, b] = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id);
+    const { container } = render(<DesignsWorkbench />);
+    act(() => {
+      useAppStore.setState({
+        aiTouches: [touch(a.id), { ...touch(b.id), kitId: "some-other-kit" }],
+        aiFocusedId: a.id,
+      });
+    });
+    const chips = [...container.querySelectorAll(".ds-activity-chip")];
+    expect(chips.map((c) => c.textContent)).toEqual([a.name, b.name]);
+  });
+
+  it("clicking a strip row selects that component — an explicit act, so it also stops the follow", () => {
+    const [, other] = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id);
+    const { container } = render(<DesignsWorkbench />);
+    act(() => { useAppStore.setState({ aiTouches: [touch(other.id)], aiFocusedId: other.id }); });
+    fireEvent.click(container.querySelector(".ds-activity-chip")!);
+    expect(useAppStore.getState().designsCompId).toBe(other.id);
+  });
+
+  it("a touch whose record is GONE renders as a non-clickable retired row, never a broken one (#3725)", () => {
+    // `bsc ui merge`/`suppress` emit activity for the RETIRED id — real work with no record behind it.
+    // It must still show (it happened), but there is nothing to select, so it must not offer a click.
+    const { container } = render(<DesignsWorkbench />);
+    act(() => { useAppStore.setState({ aiTouches: [touch("windowcontrols")], aiFocusedId: "windowcontrols" }); });
+    const chip = container.querySelector(".ds-activity-chip")!;
+    expect(chip.className).toMatch(/\bgone\b/);
+    expect(chip.textContent).toBe("windowcontrols");      // falls back to the raw id — no record to name it
+    expect(chip.tagName).not.toBe("BUTTON");              // not a focusable control that does nothing
   });
 
   it("switching kits via the rail kit head re-scopes the graph and focuses nothing (details stay hidden)", () => {
@@ -363,7 +407,7 @@ describe("selection-driven inspector visibility (#3090, restoring #2705) — vis
 
   it("a node being worked on by Claude reveals the Inspector even with NO user selection (#3090)", () => {
     const working = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id)[0];
-    useAppStore.setState({ aiFocusedId: working.id });               // Claude is working a node…
+    useAppStore.setState({ aiFocusedId: working.id, aiTouches: [touch(working.id)] }); // Claude is working a node…
     const { container } = render(<DesignsWorkbench />);
     // …so the details pane is visible and shows Claude's node, though nothing was clicked.
     expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();

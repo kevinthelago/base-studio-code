@@ -86,12 +86,34 @@
 /* AI live-focus (#2525) — the designer session is working THIS node: a pulsing accent ring, NO
    background change (#2491). Placed AFTER .on/.related so a node that is also related takes the
    animated ring; the component only applies .working to a node that is NOT the current selection, so
-   the user's .on always wins visually when they're the same node. */
-.ds-node.working { border-color: var(--accent); animation: ds-working-pulse 1.5s ease-in-out infinite; }
-@keyframes ds-working-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent), 0 6px 20px rgba(0,0,0,.3); }
-  50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent), 0 6px 20px rgba(0,0,0,.3); }
+   the user's .on always wins visually when they're the same node.
+   `--ds-work-fade` (set per node, 1 = just touched) decays the ring's older entries, so a burst of
+   concurrent writes reads as a trail with a clear leading edge instead of N identical pulses. */
+.ds-node.working {
+  border-color: color-mix(in srgb, var(--accent) calc(var(--ds-work-fade, 1) * 100%), var(--border));
+  animation: ds-working-pulse 1.5s ease-in-out infinite;
 }
+@keyframes ds-working-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) calc(var(--ds-work-fade, 1) * 60%), transparent), 0 6px 20px rgba(0,0,0,.3); }
+  50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) calc(var(--ds-work-fade, 1) * 22%), transparent), 0 6px 20px rgba(0,0,0,.3); }
+}
+
+/* The activity STRIP (#live-focus-is-kit-filtered) — the ring rendered in the graph toolbar, newest
+   first. This is what makes fast concurrent work legible: a pulse that moves every few seconds cannot
+   be watched, but a list that fades can be read. Rows dim with age via the same `--ds-work-fade`. */
+.ds-activity { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
+.ds-activity-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; border-radius: 999px; white-space: nowrap; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--accent) calc(var(--ds-work-fade, 1) * 45%), var(--border));
+  background: color-mix(in srgb, var(--accent) calc(var(--ds-work-fade, 1) * 12%), transparent);
+  opacity: calc(.45 + var(--ds-work-fade, 1) * .55);
+  transition: opacity .2s, border-color .2s;
+}
+.ds-activity-chip:hover { opacity: 1; border-color: var(--accent); }
+/* A touch whose record is no longer in the library — a `bsc ui merge`/`suppress` retiring it. It is
+   real activity and must still show, but it is not navigable, so it reads muted and takes no pointer. */
+.ds-activity-chip.gone { cursor: default; border-style: dashed; text-decoration: line-through; }
 .ds-edge path { transition: stroke .12s, fill .12s; }
 
 /* Composition swimlanes (#2964) — faint tier bands behind the graph: Pages (top) · Composables

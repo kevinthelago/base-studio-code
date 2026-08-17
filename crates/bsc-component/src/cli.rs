@@ -1367,15 +1367,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // every `bsc <store> get` and knows nothing about a `name` field — so the rewrite happens here
             // and the delegate still prints the stored bytes verbatim (the #3166 `--raw` contract).
             let dir = args.iter().position(|a| a == "--dir").and_then(|i| args.get(i + 1)).cloned();
-            let id = resolve_component_handle(&open_component_store(&dir)?, &args[1])?;
+            let store = open_component_store(&dir)?;
+            let id = resolve_component_handle(&store, &args[1])?;
             let mut args = args;
             args[1] = id.clone();
-            bsc_util::emit_ui_focus("component", &id);
+            emit_component_activity(&store, false, &id);
             bsc_json_store::cli::run_hooked_validated(
                 args,
                 prog,
                 &COMPONENT_SPEC,
-                Some(&|id: &str| bsc_util::emit_ui_activity("component", id)),
+                // The kit is read AFTER the write lands, so a record whose kit this call just set (or
+                // changed) reports its NEW kit — which is the one the Studio should follow.
+                Some(&|id: &str| emit_component_activity(&store, true, id)),
                 Some(&validate_component_batch),
             )
         }
@@ -1440,6 +1443,28 @@ fn cmd_get_metrics(args: &[String]) -> Result<(), String> {
 #[cfg(test)]
 fn current_rev(store: &bsc_json_store::Store, id: &str) -> Result<i64, String> {
     Ok(crate::record::read_rev(&current_record(store, id)?))
+}
+
+/// Emit a component live-focus event carrying the record's KIT (#live-focus-is-kit-filtered).
+///
+/// The Design Studio filters its `.working` pulse, its auto-pan and its Inspector subject by the
+/// SELECTED kit, so a touch it cannot place in a kit is discarded. It can resolve the kit from its own
+/// hydrated copy for anything it already loaded — but that misses exactly the interesting case, a
+/// record written seconds ago, so the kit rides the event instead.
+///
+/// Reads the stored record to find `kitId`. Best-effort in the same spirit as the emit itself: a miss
+/// (absent record, unreadable store, no `kitId`) degrades to the historical 5-column line rather than
+/// failing, because activity signalling must never break a store mutation.
+fn emit_component_activity(store: &bsc_json_store::Store, kind_is_write: bool, id: &str) {
+    let kit = current_record(store, id)
+        .ok()
+        .and_then(|v| v.get("kitId").and_then(serde_json::Value::as_str).map(str::to_string))
+        .unwrap_or_default();
+    if kind_is_write {
+        bsc_util::emit_ui_activity_in("component", id, &kit);
+    } else {
+        bsc_util::emit_ui_focus_in("component", id, &kit);
+    }
 }
 
 /// The record's CURRENT stored JSON (`Value::Null` when absent), so a write can carry its change history

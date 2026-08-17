@@ -30,6 +30,11 @@ export interface ComponentNodeProps {
   related: boolean;
   /** The node the designer AI is touching (#2525) — pulses. Never set for the selected node. */
   working: boolean;
+  /** This node's position in the activity ring — 0 = just touched, higher = further back
+   *  (#live-focus-is-kit-filtered). Fades the pulse so a burst of concurrent writes reads as a TRAIL
+   *  with an obvious leading edge, rather than N nodes pulsing identically. A primitive, like every
+   *  other prop here, so the memo still holds. */
+  workingRank?: number;
   /**
    * The STATIC graph-health category (#2680) — from `analyzeGraphHealth`, which changes only when the
    * library does. The scan's RUNTIME categories are NOT passed: this node reads its own
@@ -40,7 +45,7 @@ export interface ComponentNodeProps {
 }
 
 export const ComponentNode = memo(function ComponentNode({
-  c, x, y, selected, related, working, badge: staticBadge, onSelect,
+  c, x, y, selected, related, working, workingRank, badge: staticBadge, onSelect,
 }: ComponentNodeProps) {
   // THE NODE READS ITS OWN SCAN SLICES (#two-store-keys-drive-more-than-half-the-apps-jank).
   //
@@ -72,8 +77,14 @@ export const ComponentNode = memo(function ComponentNode({
       onClick={() => onSelect(c)}
       className={`ds-node${state}${working ? " working" : ""}${badge ? " unhealthy" : ""}`}
       // `--ds-role` feeds the `::before` dot. A custom property is the only channel a pseudo-element
-      // has, and it is what lets the dot stop being an element of its own.
-      style={{ left: x, top: y, width: NODE_W, "--ds-role": ROLE_COLOR[c.role] } as CSSProperties}
+      // has, and it is what lets the dot stop being an element of its own. `--ds-work-fade` scales the
+      // `.working` pulse by ring age (1 = newest) for the same reason: a keyframe animation has no
+      // other way to take a per-node value, and it keeps the fade out of the animation definition.
+      style={{
+        left: x, top: y, width: NODE_W,
+        "--ds-role": ROLE_COLOR[c.role],
+        ...(working ? { "--ds-work-fade": String(Math.max(0.25, 1 - (workingRank ?? 0) * 0.12)) } : {}),
+      } as CSSProperties}
     >
       {badge && (
         <Text as="span" className={`ds-health ds-health-${badge}`} title={`${badge} — ${HEALTH_BADGE[badge].label}`}>{HEALTH_BADGE[badge].glyph}</Text>
