@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SettingsRow, SettingsSelect, SettingsTextField, SettingsSelectField } from "./SettingsControls";
+import { SettingsRow, SettingsSelect, SettingsTextField, SettingsSelectField } from "@/features/settings/pages/SettingsControls";
 
 describe("SettingsRow", () => {
   it("renders label, optional hint, and children", () => {

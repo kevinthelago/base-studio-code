@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SandboxedConsolesCard } from "./SandboxedConsolesCard";
+import { SandboxedConsolesCard } from "@/features/settings/cards/SandboxedConsolesCard";
 import { useAppStore } from "@/store";
 
 describe("SandboxedConsolesCard", () => {
