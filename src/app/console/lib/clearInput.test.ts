@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CLEAR_INPUT_BYTES } from "./clearInput";
+import { CLEAR_INPUT_BYTES } from "@/app/console/lib/clearInput";
 
 /**
  * #192: the Ctrl+Shift+Backspace shortcut sends these bytes to the PTY to wipe

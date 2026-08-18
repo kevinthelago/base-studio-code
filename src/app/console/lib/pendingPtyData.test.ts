@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PendingPtyData } from "./pendingPtyData";
+import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
 
 /**
  * Pins the contract used by TerminalView's hide-and-buffer path (#52). The

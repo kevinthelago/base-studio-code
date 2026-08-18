@@ -86,9 +86,27 @@ export const codeOnly = (s) =>
  * record exists and what `provides` does. Overwriting `srcText` with the raw file DELETES it — that
  * happened before, and four records shrank when the change only meant to add attributes. Bounded to the
  * head so a coincidental match deep in a long module cannot eat real code.
+ *
+ * THE BODY BEGINS WHERE THE FILE BEGINS, and that is checked before the heuristic runs. The scan below
+ * requires a matched line to be longer than 8 characters, so a coincidental `}` or `);` cannot eat real
+ * code — but a file that OPENS with a JSDoc block starts with `/**`, three characters, which fails that
+ * filter. The split then landed on line 2 and classified the record's own `/**` as preamble, so the body
+ * differed from the file by exactly one line and the record was reported as drift needing adjudication.
+ * Six records were held back that way, `plannerCore/hash` among them — byte-identical to its file, and
+ * itself blocking three more modules.
+ *
+ * Anchoring on the file's FIRST LINE is what fixes it without weakening the filter: a record's preamble
+ * is a comment block, so the file's opening line does not appear inside it, and taking the first
+ * occurrence keeps the strip working for every migrated record. When that line is absent (a transcribed
+ * record whose head was reworded) it falls through to the original heuristic unchanged.
  */
 export function splitPreamble(recordSrc, fileSrc) {
   const lines = recordSrc.split("\n");
+  const fileFirst = fileSrc.split("\n")[0];
+  if (fileFirst) {
+    const at = lines.findIndex((l) => l === fileFirst);
+    if (at >= 0 && at < 60) return [lines.slice(0, at).join("\n"), lines.slice(at).join("\n")];
+  }
   const fileLines = new Set(fileSrc.split("\n").map((l) => l.trim()).filter((l) => l.length > 8));
   for (let i = 0; i < Math.min(lines.length, 60); i++) {
     const t = lines[i].trim();

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { quartileScale } from "./heatScale";
+import { quartileScale } from "@/features/github/heatScale";
 
 describe("quartileScale", () => {
   it("returns all zeros when there is no activity", () => {

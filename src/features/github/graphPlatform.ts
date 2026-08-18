@@ -10,7 +10,7 @@ import * as Planner from "@/features/planner"; // ProjectsSummary/ProjectBoard/R
 // `record-link-debt`: the board leaves those views compose (IssueCard). Reached through the barrel — the
 // registration lives inside the planner, so this stays a barrel-only dependency (#1545).
 import { registerPlannerGithubPlatform } from "@/features/planner";
-import * as GithubSummary from "./lib/githubSummary";
+import * as GithubSummary from "@/features/github/lib/githubSummary";
 import * as GraphPlatform from "@/features/github/graphPlatform";
 // ── Reached only THROUGH a migrated logic module (retire-the-first-19-logic-modules) ─────────────
 // A module that becomes an algorithm record stops being resolved by Vite and starts being resolved by
