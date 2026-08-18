@@ -55,6 +55,23 @@ const rel = target.replace(/\.(tsx?|jsx?)$/, "").replace(/^src\//, "");
 const spec = `@/${rel}`;
 const name = rel.split("/").pop();
 
+// NEVER RETIRABLE: the algorithms SEED modules exist precisely to BE files. A packaged node's `code` is
+// generated FROM the module (`seedAlgorithms.gen.test.ts`, #3465), which is what makes "this node's code
+// stands alone" a checked fact rather than a claim — tsc compiles it, its sibling test executes it, and
+// the JSON is asserted byte-identical. Retiring one turns the generator back into a claim, and
+// `llmEnergy.ts` went in a tranche before the census learned to exclude them.
+//
+// The CENSUS has excluded them since; this tool did not, and it is the one that actually deletes. That
+// gap got sharper once those nodes gained a `provides`, because the module now looks record-backed to
+// every other tool while still being the one thing a record must not replace.
+if (/^shared\/lib\/algorithms\/[^/]+$/.test(rel)) {
+  console.error(
+    `retire: REFUSED — ${rel} is an algorithms SEED module. Its node's code is generated from this file, ` +
+      `so deleting it turns the standalone guarantee back into a claim (seedAlgorithms.gen.test.ts, #3465).`,
+  );
+  process.exit(1);
+}
+
 /** Every `.ts`/`.tsx` under `src/`, as repo-relative paths — a real listing, never `existsSync`, which is
  *  case-insensitive on Windows and would let a case-mismatched path pass the check meant to catch it. */
 const files = [];
