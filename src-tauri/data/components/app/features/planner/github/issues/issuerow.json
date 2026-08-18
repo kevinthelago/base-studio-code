@@ -1,0 +1,28 @@
+{
+  "id": "issuerow",
+  "name": "IssueRow",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/features/planner/github/issues/IssueRow",
+  "srcText": "import { timeAgoShort } from \"@/shared/lib/core/format\";\nimport { Avatar } from \"@/shared/ui/data/Avatar\";\nimport { LabelChip } from \"@/shared/ui/data/LabelChip\";\nimport { StatusDot } from \"@/shared/ui/feedback/StatusDot\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Grid } from \"@/shared/ui/layout/Grid\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Button } from \"@/shared/ui/controls/Button\";\nimport type { FlatIssue } from \"@/features/planner/github/issues/issuesModel\";\n\nexport function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: boolean; onClick: () => void }) {\n  return (\n    <Grid\n      cols=\"44px 1fr 180px 80px 50px 48px\"\n      gap={10}\n      align=\"center\"\n      onClick={onClick}\n      style={{\n        padding: \"9px 16px\",\n        background: selected ? \"color-mix(in oklch, var(--accent), transparent 93%)\" : \"transparent\",\n        borderBottom: \"1px solid var(--border-soft)\",\n        cursor: \"pointer\",\n      }}\n      onMouseEnter={e => { if (!selected) (e.currentTarget as HTMLDivElement).style.background = \"var(--bg-elev)\"; }}\n      onMouseLeave={e => { if (!selected) (e.currentTarget as HTMLDivElement).style.background = \"transparent\"; }}\n    >\n      {/* Number + state */}\n      <Row gap={5}>\n        <StatusDot\n          size={8}\n          color={issue.state === \"OPEN\" ? \"var(--success)\" : \"var(--fg-dim)\"}\n          title={issue.state === \"OPEN\" ? \"open\" : \"closed\"}\n        />\n        <Text mono size={10.5} tone=\"dim\">\n          {issue.number}\n        </Text>\n      </Row>\n\n      {/* Title + labels */}\n      <Box style={{ minWidth: 0 }}>\n        <Text as=\"div\" size={12.5} style={{\n          color: \"var(--fg)\", marginBottom: 4,\n          whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\",\n        }}>{issue.title}</Text>\n        <Row gap={4} wrap align=\"stretch\">\n          {issue.statusName && (\n            <Box as=\"span\" className=\"mono\" pad={[1, 5]} bg=\"var(--bg-elev2)\" border=\"soft\" radius={3} style={{\n              fontSize: 9, color: \"var(--fg-dim)\",\n            }}>{issue.statusName}</Box>\n          )}\n          {issue.labels.map(l => <LabelChip key={l.name} label={l} />)}\n        </Row>\n      </Box>\n\n      {/* Assignees + milestone */}\n      <Stack gap={4} style={{ minWidth: 0 }}>\n        {issue.assignees.length > 0 && (\n          <Row align=\"stretch\">\n            {issue.assignees.map((a, i) => <Avatar key={a.login} login={a.login} size={16} ml={i === 0 ? 0 : -5} palette bordered fontScale={0.56} />)}\n            <Text mono size={10} tone=\"muted\" style={{\n              marginLeft: 6,\n              whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\",\n            }}>\n              {issue.assignees.map(a => a.login).join(\", \")}\n            </Text>\n          </Row>\n        )}\n        {issue.milestone && (\n          <Text mono size={10} tone=\"accent\" style={{ whiteSpace: \"nowrap\" }}>\n            ◈ {issue.milestone}\n          </Text>\n        )}\n      </Stack>\n\n      {/* Comments */}\n      <Text as=\"div\" mono size={10.5} tone=\"dim\" style={{ textAlign: \"center\" }}>\n        {issue.comments > 0 ? `💬 ${issue.comments}` : \"—\"}\n      </Text>\n\n      {/* Updated */}\n      <Text as=\"div\" mono size={10} tone=\"dim\" style={{ textAlign: \"right\" }}>\n        {timeAgoShort(issue.updatedAt)}\n      </Text>\n\n      {/* Open in pane */}\n      <Row justify=\"end\" align=\"stretch\">\n        <Button\n          variant=\"ghost\"\n          style={{ height: 22, padding: \"0 7px\", fontSize: 9.5 }}\n          onClick={e => { e.stopPropagation(); }}\n        >⊕</Button>\n      </Row>\n    </Grid>\n  );\n}\n",
+  "composes": [],
+  "src": "src/features/planner/github/issues/IssueRow.tsx",
+  "props": [
+    {
+      "name": "issue",
+      "required": true,
+      "type": "object"
+    },
+    {
+      "name": "selected",
+      "required": true,
+      "type": "boolean"
+    },
+    {
+      "name": "onClick",
+      "required": true,
+      "type": "function"
+    }
+  ],
+  "folder": "features/planner/github/issues"
+}

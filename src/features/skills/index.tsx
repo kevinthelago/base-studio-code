@@ -22,7 +22,7 @@ import {
 } from "@/features/skills/lib/skillsFilter";
 import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "@/features/skills/lib/skillTelemetry";
 import { tintBg } from "@/features/skills/skillStyles";
-import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
+import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "@/features/skills/SkillsViews";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { Button } from "@/shared/ui/controls/Button";
 import { SearchField } from "@/shared/ui/controls/SearchField";
@@ -37,11 +37,11 @@ import { useRailSections } from "@/shared/hooks/useRailSections";
 import { type TabItem } from "@/shared/ui/layouts/TabBar";
 import { Screen } from "@/shared/ui/layouts/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
-import { LessonsTab } from "./LessonsTab";
-import { NewGroupDialog } from "./NewGroupDialog";
-import { SkillDrawer } from "./SkillDrawer";
-import { SkillsDigestToggle, SkillsDigestPanel } from "./SkillsDigest";
-import { RunsTab } from "./RunsTab";
+import { LessonsTab } from "@/features/skills/LessonsTab";
+import { NewGroupDialog } from "@/features/skills/NewGroupDialog";
+import { SkillDrawer } from "@/features/skills/SkillDrawer";
+import { SkillsDigestToggle, SkillsDigestPanel } from "@/features/skills/SkillsDigest";
+import { RunsTab } from "@/features/skills/RunsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
 
@@ -381,9 +381,9 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 }
 
 // Re-exported feature surface — this index is the skills feature's public API barrel (#1309).
-export { SkillsGraphHost } from "./SkillsGraphHost"; // the graph-hosted workspace (#3654)
+export { SkillsGraphHost } from "@/features/skills/SkillsGraphHost"; // the graph-hosted workspace (#3654)
 export { SkillsStatus } from "./SkillsStatus";
-export { SessionSkillsModal, type SessionSkillsModalProps } from "./SessionSkillsModal";
+export { SessionSkillsModal, type SessionSkillsModalProps } from "@/features/skills/SessionSkillsModal";
 
 // #1545: public API for cross-feature consumers (planner, app/console).
 export {

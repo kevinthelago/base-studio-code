@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import type { ComponentRecord, Kit } from "./model";
 import { SEED_COMPONENTS, SEED_KITS, BASE_STUDIO_CODE_KIT_ID, reconcileComponents, reconcileKits } from "./seed";
-import { seedHashOf, stampSeedHash } from "./seedRefresh";
+import { seedHashOf, stampSeedHash } from "@/features/designs/lib/seedRefresh";
 
 /** A prior packaged kit, stamped pristine — the kind of record the reconcile must now retire (#3543). */
 const priorKit = (id: string): Kit =>

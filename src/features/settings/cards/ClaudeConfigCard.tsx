@@ -11,7 +11,7 @@ import { deriveAllRepos } from "@/features/settings/cards/claudeConfig.helpers";
 import { TargetSelector } from "@/features/settings/cards/TargetSelector";
 import { ProfileBar } from "@/features/settings/cards/ProfileBar";
 import { ClaudeMdEditor } from "@/features/settings/cards/ClaudeMdEditor";
-import { ToolPermissionsPanel } from "./ToolPermissionsPanel";
+import { ToolPermissionsPanel } from "@/features/settings/cards/ToolPermissionsPanel";
 import { WriteBar } from "@/features/settings/cards/WriteBar";
 
 export function ClaudeConfigCard() {

@@ -13,18 +13,18 @@
 // authors visualizations as data — no per-algorithm app change.
 
 import type { Frame } from "@/features/algorithms/lib/trace";
-import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
+import type { AlgoImpl, AlgoKind } from "@/features/algorithms/lib/knowledge";
 import { classifyKind, type Classifiable } from "@/features/algorithms/lib/classifyKind";
 import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm, runStackAlgorithm, runTreeAlgorithm, runScene, type GraphInput } from "@/features/algorithms/lib/tracer";
 import { runInSandbox } from "./vizSandbox";
 import type { VizRun } from "./vizProgram";
 import type { RendererRegistry } from "@/features/algorithms/viz/registry";
-import { ArrayView } from "../renderers/ArrayView";
-import { MatrixView } from "../renderers/MatrixView";
-import { GraphView } from "../renderers/GraphView";
-import { StackView } from "../renderers/StackView";
-import { ScalarView } from "../renderers/ScalarView";
-import { TreeView } from "../renderers/TreeView";
+import { ArrayView } from "@/features/algorithms/viz/renderers/ArrayView";
+import { MatrixView } from "@/features/algorithms/viz/renderers/MatrixView";
+import { GraphView } from "@/features/algorithms/viz/renderers/GraphView";
+import { StackView } from "@/features/algorithms/viz/renderers/StackView";
+import { ScalarView } from "@/features/algorithms/viz/renderers/ScalarView";
+import { TreeView } from "@/features/algorithms/viz/renderers/TreeView";
 import { parseSortInput } from "@/features/algorithms/viz/examples/sort";
 import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "@/features/algorithms/viz/examples/sorts";
 import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "@/features/algorithms/viz/examples/matrixTransforms";

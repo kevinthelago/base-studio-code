@@ -4,15 +4,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { GithubQuery } from "@/shared/lib/github/useGithubQuery";
-import type { ActiveProjectInfo } from "../list/ProjectsHeader";
+import type { ActiveProjectInfo } from "@/features/planner/list/ProjectsHeader";
 
-vi.mock("../list/ProjectsHeader", () => ({ ProjectsHeader: () => null }));
+vi.mock("@/features/planner/list/ProjectsHeader", () => ({ ProjectsHeader: () => null }));
 vi.mock("@/features/planner/github/useActiveProjectGithub", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/features/planner/github/useActiveProjectGithub")>();
   return { ...actual, useActiveProjectGithub: vi.fn() };
 });
 
-import { Issues } from "./Issues";
+import { Issues } from "@/features/planner/github/Issues";
 import { useActiveProjectGithub } from "@/features/planner/github/useActiveProjectGithub";
 
 const mockHook = vi.mocked(useActiveProjectGithub);

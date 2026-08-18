@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ScalarView } from "./ScalarView";
+import { ScalarView } from "@/features/algorithms/viz/renderers/ScalarView";
 import type { ScalarFrame } from "@/features/algorithms/lib/trace";
 import { TracedScalar } from "@/features/algorithms/lib/tracer";
 import { fibonacci } from "@/features/algorithms/viz/examples/scalarAlgos";

@@ -20,7 +20,7 @@ vi.mock("@/shared/lib/preview/componentBundle", () => ({
 vi.mock("@/features/designs/lib/uiActivity", () => ({ useUiActivity: vi.fn() }));
 vi.mock("./lib/useComponentScan", () => ({ useComponentScan: vi.fn() }));
 
-import { DesignsWorkbench } from "./DesignsWorkbench";
+import { DesignsWorkbench } from "@/features/designs/DesignsWorkbench";
 import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
 import { SEED_THEMES } from "./lib/themes";
 

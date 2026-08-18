@@ -11,7 +11,7 @@ import wasmURL from "esbuild-wasm/esbuild.wasm?url";
 import importmapEmbedded from "@data/ui/preview-importmap.json";
 import { collapseSegments } from "@/shared/lib/preview/importPath";
 import { PREVIEW_SHIM_NAMESPACE, shimModuleFor, scanStubImports, previewCspMeta } from "@/shared/lib/preview/previewShims";
-import { isPlatformModule } from "./platformModules";
+import { isPlatformModule } from "@/shared/lib/preview/platformModules";
 
 /** The esm.sh import-map for the externals (React et al.), shared with the skeleton preview (#2419). This is
  *  the ONLY set of specifiers fetched from a CDN; every OTHER bare import resolves to a bundled-in local

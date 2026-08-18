@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ArrayFrame } from "@/features/algorithms/lib/trace";
-import { KNOWLEDGE, implById } from "../../lib/knowledge";
+import { KNOWLEDGE, implById } from "@/features/algorithms/lib/knowledge";
 import { runVizProgram } from "./vizProgram";
 import { resolveVizExample, programVizForImpl } from "./registry";
 

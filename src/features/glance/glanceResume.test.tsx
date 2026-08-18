@@ -22,7 +22,7 @@ vi.mock("@/shared/ui/layouts/useGraphViewport", async (orig) => {
 const { resumeSpy } = vi.hoisted(() => ({
   resumeSpy: vi.fn((_opts: { projectName: string; projectKey: string; fleet?: unknown }) => Promise.resolve({ ok: true })),
 }));
-vi.mock("./lib/resumeProject", () => ({ resumeProjectFleet: resumeSpy }));
+vi.mock("@/features/glance/lib/resumeProject", () => ({ resumeProjectFleet: resumeSpy }));
 
 import { GlanceWorkspace } from "./GlanceWorkspace";
 

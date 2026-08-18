@@ -2,7 +2,7 @@
 // shared cellOpStateAttrs binding (so the designed read/write/region animations fire).
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { MatrixView } from "./MatrixView";
+import { MatrixView } from "@/features/algorithms/viz/renderers/MatrixView";
 import { cellOpStateAttrs } from "@/features/algorithms/lib/binding";
 import type { MatrixFrame } from "@/features/algorithms/lib/trace";
 

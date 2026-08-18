@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { ThemeScope } from "./ThemeScope";
+import { ThemeScope } from "@/shared/ui/kit/ThemeScope";
 
 describe("ThemeScope", () => {
   it("applies the theme's token overrides to a wrapper and renders children", () => {

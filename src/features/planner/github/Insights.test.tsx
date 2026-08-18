@@ -4,10 +4,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { GithubQuery } from "@/shared/lib/github/useGithubQuery";
-import type { ActiveProjectInfo } from "../list/ProjectsHeader";
+import type { ActiveProjectInfo } from "@/features/planner/list/ProjectsHeader";
 
 // Stub the header (it auto-clones repos via invoke on mount) so the test isolates the card bodies.
-vi.mock("../list/ProjectsHeader", () => ({
+vi.mock("@/features/planner/list/ProjectsHeader", () => ({
   ProjectsHeader: () => null,
 }));
 
@@ -17,7 +17,7 @@ vi.mock("@/features/planner/github/useActiveProjectGithub", async (importOrigina
   return { ...actual, useActiveProjectGithub: vi.fn() };
 });
 
-import { Insights } from "./Insights";
+import { Insights } from "@/features/planner/github/Insights";
 import { useActiveProjectGithub } from "@/features/planner/github/useActiveProjectGithub";
 
 const mockHook = vi.mocked(useActiveProjectGithub);

@@ -1,0 +1,30 @@
+{
+  "id": "themescope",
+  "name": "ThemeScope",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/shared/ui/kit/ThemeScope",
+  "srcText": "// ThemeScope (#1852 Phase 3) — apply a kit theme to a SUBTREE. Sets the theme's semantic-token\n// overrides on a wrapper element, so every `.card`/`.btn`/`.input`/`.chip` inside follows while the\n// rest of the app keeps the global theme. This is what lets a themed card coexist with the default UI\n// and what isolates a live preview (the Design Studio renders the same spec under a chosen theme\n// without disturbing the surrounding chrome). The global equivalent is `applyThemeToRoot`.\n\nimport { useEffect, type ReactNode, type CSSProperties } from \"react\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { log } from \"@/shared/lib/core/log\";\nimport { resolveTheme } from \"@/shared/ui/kit/resolve\";\n\nexport interface ThemeScopeProps {\n  /** The kit theme id (falls back to `default`). */\n  theme: string;\n  children: ReactNode;\n  className?: string;\n  /** Extra style — wins over the theme vars. */\n  style?: CSSProperties;\n}\n\n/** Wrap `children` in a subtree scoped to `theme`. Resolver-aware (#2637): the applied vars are\n *  identical to `themeVars` (zero visual change), but a theme referencing an UNCONTRACTED token —\n *  a silent no-op in the cascade — yelps in the log (the fall-loudly principle), once per theme×holes. */\nexport function ThemeScope({ theme, children, className, style }: ThemeScopeProps) {\n  const { vars, holes } = resolveTheme(theme);\n  const holesKey = holes.join(\", \");\n  useEffect(() => {\n    if (holesKey) {\n      log.warn(`theme '${theme || \"default\"}' references uncontracted token(s): ${holesKey}`, \"design\");\n    }\n  }, [theme, holesKey]);\n  return (\n    <Box className={className} style={{ ...vars, ...style }} data-kit-theme={theme}>\n      {children}\n    </Box>\n  );\n}",
+  "composes": [],
+  "src": "src/shared/ui/kit/ThemeScope.tsx",
+  "props": [
+    {
+      "name": "children",
+      "required": true,
+      "type": "node"
+    },
+    {
+      "name": "className",
+      "type": "string"
+    },
+    {
+      "name": "style",
+      "type": "object"
+    },
+    {
+      "name": "theme",
+      "type": "string"
+    }
+  ],
+  "folder": "shared/ui/kit"
+}

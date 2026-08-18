@@ -12,11 +12,11 @@
 // helpers live in ./lib; the four tab bodies in ./{Profiles,Assignments,Activity,Flow}Tab.
 
 // The graph-hosted workspace (#3646) — App.tsx/DetachedWindow render this via the lazy SecurityWorkspace.
-export { SecurityGraphHost } from "./SecurityGraphHost";
+export { SecurityGraphHost } from "@/features/security/SecurityGraphHost";
 
 // Re-exported for tests + back-compat: the pane-profile picker + app-session label
 // helpers used to live here; they moved to ./AssignmentsTab and ./lib/appSession (#1643).
-export { ProfileSelect } from "./AssignmentsTab";
+export { ProfileSelect } from "@/features/security/AssignmentsTab";
 export { appSessionTag, appSessionOpenLabel, appReachNote } from "@/features/security/lib/appSession";
 
 // #1545: public API for cross-feature consumers (planner, app/console, tunnel projector).

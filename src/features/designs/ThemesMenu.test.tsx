@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ThemesMenu } from "./ThemesMenu";
+import { ThemesMenu } from "@/features/designs/ThemesMenu";
 import { SEED_THEMES } from "./lib/themes";
 
 describe("ThemesMenu (#2834)", () => {

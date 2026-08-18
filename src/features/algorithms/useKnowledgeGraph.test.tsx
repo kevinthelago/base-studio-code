@@ -5,7 +5,7 @@ const loadGraph = vi.fn();
 vi.mock("@/features/algorithms/lib/graphBridge", () => ({ loadGraph: () => loadGraph() }));
 
 import { useKnowledgeGraph } from "@/features/algorithms/useKnowledgeGraph";
-import { KNOWLEDGE } from "./lib/knowledge";
+import { KNOWLEDGE } from "@/features/algorithms/lib/knowledge";
 
 describe("useKnowledgeGraph (#2856)", () => {
   // Block body, not the concise arrow — see graphBridge.test.ts (#3390): `mockReset()` returns the mock,

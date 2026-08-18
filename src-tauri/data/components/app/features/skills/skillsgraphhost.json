@@ -1,0 +1,17 @@
+{
+  "id": "skillsgraphhost",
+  "name": "SkillsGraphHost",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/features/skills/SkillsGraphHost",
+  "srcText": "// The Skills page host (#3654, epic #3604) — renders the Skills workspace FROM THE GRAPH. The page + its 6\n// composed views (list/cards/grouped row views, the editor drawer, the KPI digest, the Lessons + Runs tabs,\n// the new-group dialog) are sourced from the components graph (the authored `skillspage` node + siblings,\n// seeded from `data/components/app/**`), not bundled files. It registers the skills feature's injected\n// platform surface (the skills domain logic + style helper), then mounts `skillspage` through the runtime\n// loader. Mirrors the fleet/automations/security/github hosts.\n//\n// `pageOverride` (a torn-off single tab, DetachedWindow) forwards to the graph component as a prop —\n// GraphComponent spreads props onto the loaded component, and the graph `SkillsWorkspace` reads it.\n//\n// The CSS still ships as a normal bundled import here (the loader can't resolve a CSS side-effect import, so\n// it was stripped from the graph source): the host owns the stylesheet the graph page's classes need.\nimport { GraphComponent } from \"@/shared/lib/runtime/GraphComponent\";\nimport { GraphPageFallback } from \"@/shared/lib/runtime/GraphPageFallback\";\nimport { registerSkillsPlatform } from \"@/features/skills/graphPlatform\";\n\n// Register at module load — before the workspace ever renders — so the injected modules are in the registry\n// when the graph page's compiled `require()` runs. Idempotent.\nregisterSkillsPlatform();\n\nexport function SkillsGraphHost({ pageOverride }: { pageOverride?: string } = {}) {\n  // Fallback offers Reload-to-apply / Re-seed (#3648/#3652) when the source isn't in the library yet.\n  return (\n    <GraphComponent\n      id=\"skillspage\"\n      props={pageOverride ? { pageOverride } : undefined}\n      fallback={<GraphPageFallback page=\"Skills\" icon=\"✦\" />}\n    />\n  );\n}",
+  "composes": [],
+  "src": "src/features/skills/SkillsGraphHost.tsx",
+  "props": [
+    {
+      "name": "pageOverride",
+      "type": "string"
+    }
+  ],
+  "folder": "features/skills"
+}

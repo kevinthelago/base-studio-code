@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { TeamsContextMenu } from "./TeamsContextMenu";
+import { TeamsContextMenu } from "@/features/teams/TeamsContextMenu";
 
 describe("TeamsContextMenu (#2385)", () => {
   it("fires delete + close when the item is clicked", () => {

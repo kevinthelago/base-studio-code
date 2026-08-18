@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { clampCell } from "@/features/glance/lib/morphGrid";
-import { GlanceChatDock, type DockPlan } from "./GlanceChatDock";
+import { GlanceChatDock, type DockPlan } from "@/features/glance/GlanceChatDock";
 import { NW, NH } from "@/features/glance/lib/glanceGraph";
 import type { MorphRect } from "@/features/glance/lib/glancePush";
 

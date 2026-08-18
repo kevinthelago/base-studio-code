@@ -17,7 +17,7 @@
 // is kept with an `orphaned` notice — the designer can delete it, or a hard reset can force-clear.)
 import type { ComponentRecord, Kit } from "./model";
 import { projectComponent } from "./componentBridge";
-import { planRestamp, reconcileSeed, stampSeedHash, type RestampPlan, type SeedReconcile } from "./seedRefresh";
+import { planRestamp, reconcileSeed, stampSeedHash, type RestampPlan, type SeedReconcile } from "@/features/designs/lib/seedRefresh";
 
 /** The one packaged kit id — the base-studio-code app's own UI as a single graph (#3543). */
 export const BASE_STUDIO_CODE_KIT_ID = "base-studio-code";

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { hubToCanonical, applyPush, isPlanFile } from "./bridge";
 import type { HubSnapshot } from "./bridge";
-import { buildManifest, fnv1a32hex } from "../plannerCore/index";
+import { buildManifest, fnv1a32hex } from "@/features/planner/lib/plannerCore";
 import fixtures from "../plannerCore/plannerCore.fixtures.json";
 
 // ── isPlanFile ────────────────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ import { Row } from "@/shared/ui/layout/Row";
 // `@/` form, not `./layout/Spacer`: the module is RETIRED and now resolves through the record
 // fallback, which matches on the alias. A relative specifier bypasses that and finds nothing.
 import { Spacer } from "@/shared/ui/layout/Spacer";
-import { Slot } from "./layout/Slot";
+import { Slot } from "@/shared/ui/layout/Slot";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
@@ -29,7 +29,7 @@ import { Checkbox } from "@/shared/ui/controls/Checkbox";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { TextField, TextArea, SelectField } from "@/shared/ui/controls/Field";
-import { Option } from "./controls/Option";
+import { Option } from "@/shared/ui/controls/Option";
 import { BackButton } from "@/shared/ui/controls/BackButton";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
@@ -43,8 +43,8 @@ import { IconBox } from "@/shared/ui/data/IconBox";
 import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { DataTableRow } from "@/shared/ui/data/DataTableRow";
 import { RoleTierChips } from "@/shared/ui/data/RoleTierChips";
-import { StatCard } from "./charts/primitives";
-import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars } from "./charts/Charts";
+import { StatCard } from "@/shared/ui/charts/primitives";
+import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars } from "@/shared/ui/charts/Charts";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
 // #4172 — failure containment, composable from a spec.
@@ -59,21 +59,21 @@ import { PaneGrid } from "@/shared/ui/layouts/PaneGrid";
 import { Sequence } from "@/shared/ui/layouts/Sequence";
 import { Tree } from "@/shared/ui/layouts/Tree";
 // #2421 gap-fill
-import { LabelChip } from "./data/LabelChip";
+import { LabelChip } from "@/shared/ui/data/LabelChip";
 import { ActivityFeed } from "@/shared/ui/data/ActivityFeed";
 import { Pane } from "@/shared/ui/overlay/Pane";
-import { TelemetryPanel, ItemBars, SplitBar } from "./charts/telemetry";
+import { TelemetryPanel, ItemBars, SplitBar } from "@/shared/ui/charts/telemetry";
 // #2475 — the key-value record rendering
-import { KeyValueList } from "./data/KeyValueList";
+import { KeyValueList } from "@/shared/ui/data/KeyValueList";
 // #2505 — the Pages tier (complete data-driven page compositions)
-import { TablePage } from "./pages/TablePage";
-import { TreeExplorerPage } from "./pages/TreeExplorerPage";
-import { PipelinePage } from "./pages/PipelinePage";
+import { TablePage } from "@/shared/ui/pages/TablePage";
+import { TreeExplorerPage } from "@/shared/ui/pages/TreeExplorerPage";
+import { PipelinePage } from "@/shared/ui/pages/PipelinePage";
 import { NetworkPage } from "./pages/NetworkPage";
-import { DashboardPage } from "./pages/DashboardPage";
-import { CollectionPage } from "./pages/CollectionPage";
+import { DashboardPage } from "@/shared/ui/pages/DashboardPage";
+import { CollectionPage } from "@/shared/ui/pages/CollectionPage";
 // #2508 — the key-value shape's page, completing the page-per-shape set
-import { RecordPage } from "./pages/RecordPage";
+import { RecordPage } from "@/shared/ui/pages/RecordPage";
 
 // Heterogeneous prop shapes — a render-map is intentionally prop-agnostic.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

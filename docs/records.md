@@ -1,9 +1,18 @@
 # Records — when a module is not a file
 
-Most of this app's frontend no longer exists as files. **930 modules ship as records** — 388 component
-records under `src-tauri/data/components/app/**` and 542 algorithm implementations in
-`src-tauri/data/knowledge/algorithms.json` — and roughly 440 of the files that used to hold them have been
-deleted. This is epic #3604, "the graph IS the app".
+Most of this app's frontend no longer exists as files. **1,094 modules ship as records** — 469 component
+records under `src-tauri/data/components/app/**` and 625 algorithm implementations in
+`src-tauri/data/knowledge/algorithms.json`, of which **895 carry a `provides`** and so answer a specifier
+an importer writes. **177 non-test modules remain under `src/`**, down from 388. This is epic #3604,
+"the graph IS the app".
+
+> Those numbers move every tranche, and a stale one here is worse than none — this document went eleven
+> slices describing a tree that no longer existed. Re-measure rather than trust the prose:
+>
+> ```bash
+> find src -name "*.ts" -o -name "*.tsx" | grep -vE "\.(test|spec)\." | wc -l   # files left
+> find src-tauri/data/components/app -name "*.json" | wc -l                     # component records
+> ```
 
 If you have opened `src/` looking for a module and it was not there, this document is why, and what to do
 instead.
@@ -103,13 +112,19 @@ Two properties of that plugin are load-bearing and non-obvious:
 A record is compiled and required by the runtime loader, not just bundled. That imposes limits a file never
 had. Every one of these has cost a real failure:
 
-- **Import relatively.** Records carry absolute `@/…` specifiers. `retire-module.mjs` rewrites importers.
+- **Import relatively.** Records carry absolute `@/…` specifiers — see [below](#a-record-may-not-import-relatively-both-copies).
 - **Import a stylesheet.** Retiring 10 modules silently stopped 10 CSS files from shipping, with every gate
   green — `main.tsx` now globs `@/**/*.css` to compensate, guarded by `styleReachability.test.ts`.
 - **Use `import.meta.glob`.** A Vite build-time transform; esbuild emits it verbatim and it is not a
   function at runtime. 11 modules are held back by this.
 - **Be a `.d.ts`.** Ambient declarations are read because they are *included*, never imported — no resolver
   substitutes a record. Retiring `src/vite-env.d.ts` broke the entire typecheck on unrelated files.
+- **Be imported by a BUILD CONFIG.** `vite.config.ts` imports `./src/shared/lib/core/devWatchIgnore`, and
+  Vite bundles its own config *before* any plugin runs — so `vite/bscRecords.ts` is not installed yet,
+  `.bsc-records/` cannot serve it, and there is no `@/` alias out there either (the config sits outside
+  `src/` and imports by relative path). `tsc`, `lint` and all 742 vitest files went green after that
+  module was retired; only `npx vite build` failed. `retire-module.mjs` now refuses one, reading the
+  importer list from the configs rather than a hard-coded name.
 
 **`@data/*.json` used to be on that list and no longer is.** The platform registry serves those
 specifiers (`appModules.ts` globs `@data/**/*.json` eagerly), so a record may import packaged data like
@@ -130,6 +145,46 @@ And two whole categories of module must stay files:
   Retiring one turns that guarantee back into a claim.
 
 ---
+
+## A record may not import relatively (both copies)
+
+```bash
+npm test -- src/app/runtime/recordImports.test.ts   # the SEED — in git, runs on a fresh clone
+node scripts/check-record-imports.mjs               # the STORE — per-machine; exit 1 on any finding
+node scripts/check-record-imports.mjs --fix         # ...and repair it
+```
+
+`makeRequire` routes a specifier to the registry under its **literal key**, so `./useDockBack` needs a
+registration exactly like an absolute one — and `provides`, which matches the exact specifier, can never
+reach it. A relative specifier in a record therefore only ever *appeared* to work, and only while the
+neighbour was still a file a bundler could resolve.
+
+**The store is the copy that breaks the app, and the one a test cannot cover.** A migrated page renders
+from the store, not the seed, so that is where a bad specifier is visible — and a test reading
+`~/.base-studio-code` would be vacuous on a fresh clone. Hence two runners over one scanner
+(`relativeSpecifiers` in `scripts/lib/recordSource.mjs`, shared with `emit-records.mjs` and
+`retire-module.mjs` so the guard and the tools that rewrite cannot disagree).
+
+Measured the first time both ran: the seed was clean, the store held **57 relative specifiers across 24
+records**, and every gate was green. `platformBoundary.test.ts` had rejected the rule since #4232 but
+read one surface — seed *components*, `from "…"` statements only — so algorithm implementations, the
+inline `import("../x").Type` form, and the whole store sat outside it.
+
+> **Repairing the imports alone would have made it worse.** `pruneUnsatisfiableOverrides` declines an
+> override *only while* its closure cannot resolve, so absolutizing the specifiers PROMOTES a record
+> from "declined, falls back to the bundled module" to "active global override". Eleven of the 24
+> disagreed with the file they shadow and seven of those carried `provides` — every one a preview-shaped
+> derivative: `issuerow` and `issuedrawer` inject a `SAMPLE_ISSUE`, `projectssummary` vendors a fake
+> `useProjectsSummaryData` returning four hardcoded projects, `kitrenderer` swaps the real `primitiveFor`
+> for `componentFor`. Activating them puts sample data on live screens. So `--fix` **drops `provides`**
+> from a record whose body differs from its live file, which is just the rule below applied — and it
+> drops it *before* rewriting, because the app is running while the script writes.
+
+**A carried test is the one exemption**, deliberately. It is harvested beside its module saying
+`./LabelChip`, and `emit-records.mjs` both rewrites that on emit *and* uses it to verify the test is
+paired with the right module — so the relative form is load-bearing at rest. What must hold is that
+nothing relative survives into `.bsc-records/`, which `recordImports.test.ts` asserts against
+`planRecords()` rather than re-deriving.
 
 ## `provides` is a GLOBAL override
 
@@ -161,12 +216,38 @@ record wins and you adjudicate by hand:
 
 ```bash
 node scripts/refresh-drifted-seeds.mjs --store <ui-dump> --impls <impl-dump> [--apply]
-node scripts/promote-records.mjs --store <ui-dump> --impls <impl-dump> [--apply]
+node scripts/lift-component-module.mjs <src-relative-path>… [--apply]   # a .tsx → a module-shaped record
+node scripts/promote-records.mjs --store <ui-dump> --impls <impl-dump> [--apply] [--adopt-seed]
 node scripts/retire-module.mjs <src-relative-path>
 node scripts/sync-shadow-catalogue.mjs          # a catalogued page must become `file: null`
 node scripts/fix-stale-mocks.mjs                # see below
+node scripts/check-record-imports.mjs           # the RECORD half — `retire-module.mjs` runs this too
 node scripts/dev-boot-check.mjs                 # boots vite + Chromium; catches what no test does
 ```
+
+**READ THE PROMOTION'S OUTPUT BEFORE RETIRING.** A `SKIPPED (a seed already occupies that path)` line
+means the seed still holds the OLD record, and retiring anyway is unrecoverable in place: this script
+iterates FILES, so once the file is gone the module is no longer a candidate and the stale seed can never
+be adopted. Recovery is restore-from-git → re-promote with `--adopt-seed` → re-retire. `--adopt-seed`
+replaces a stale seed with the store record, and refuses when doing so would drop an export the seed
+declares.
+
+### The SIX downstream obligations, in this order
+
+```bash
+node scripts/sync-shadow-catalogue.mjs                                                   # 3
+UPDATE_KITS=1    npx vitest run src/features/designs/lib/platformModules.gen.test.ts     # 5
+UPDATE_KITS=1    npx vitest run src/features/designs/lib/reactUiKit.gen.test.ts          # 4  ← kit LAST
+UPDATE_RECORDS=1 npx vitest run src/features/glance/glancepageRecord.gen.test.ts         # 6  ← then this
+```
+
+(1 and 2 — rewriting importers and keeping the colocated test — are what `retire-module.mjs` itself does.)
+
+**The ORDER is load-bearing.** `react-ui.json` VENDORS the transitive sources its components import, so
+any later source edit re-fires the kit regeneration — regenerating the kit and *then* fixing an importer
+turns it red again. The glancepage projection is last for the same reason and one more: Glance renders
+the RECORD, so the projection must be re-taken after any revert. Regenerating it while a source was still
+wrongly rewritten only moved the staleness to the other side.
 
 ### The colocated test — either copy may run, but one of them must
 
@@ -221,12 +302,111 @@ Two things the emitter refuses, loudly rather than silently:
 
 ---
 
-## Where this is going
+## Retiring a file — the PRECONDITIONS
 
-The remaining files are not blocked on mechanism. Roughly 96 are `.tsx` whose records are **preview-shaped
-derivatives** — `bsc ui harvest` lifts a *component*, inlining what it cannot reach so the thing mounts
-standalone in the Design Studio, which is right for previewing and wrong for retirement. The unlock is a
-`--module` mode for `bsc ui harvest`, the component-store twin of `bsc graph harvest --module` (#4161).
+A file may be deleted only once the thing that **ships** answers what its importers ask for. Both halves
+of that are checked by `retire-module.mjs`, and each was learned by shipping the bug first:
 
-The rest need human judgement: a record and its file that genuinely disagree, where only a person can say
-which one is the app.
+- **The packaged SEED must provide the specifier**, matched EXACTLY, case included. Five modules were
+  retired while `promote-records` had printed `SKIPPED (a seed already occupies that path)` — deleted,
+  with the old derivative still shipping. And `pageheader`'s seed said `@/shared/ui/pages/PageHeader`
+  against a `pageHeader.tsx` file: Windows resolves that case-insensitively, so tsc, `vite build` and the
+  whole suite stayed green while a case-sensitive filesystem would have resolved to nothing.
+- **…and that answer must be the SAME MODULE.** A seed can answer the specifier while holding different
+  code, and deleting the file then ships the RECORD's behaviour under the file's name — silently,
+  because it still compiles. `Dialog`, `ModalCard`, `ModalScrim` and `a11y` were body-differs records
+  that happened to be seeded; retiring them swapped the app's focus management for the records' older
+  copies and cost ten test failures in one sweep.
+
+Two more refusals, for whole categories rather than for a state:
+
+- **A module a BUILD CONFIG imports can never be a record.** `vite.config.ts` does
+  `import { devWatchIgnored } from "./src/shared/lib/core/devWatchIgnore"`, and Vite bundles its own
+  config *before* any plugin runs — so `vite/bscRecords.ts` is not installed yet, `.bsc-records/` cannot
+  serve it, and there is no `@/` alias out there either. `tsc`, `lint` and all 742 vitest files went
+  green after that module was retired; only `npx vite build` failed.
+- **An algorithms seed module stays a file** — see the list above. The census had excluded them since
+  `llmEnergy.ts` went in an early tranche; the tool that actually *deletes* had not.
+
+### A barrel is addressed THREE ways
+
+`lib/plannerCore/index.ts` answers `@/features/planner/lib/plannerCore` — never `…/plannerCore/index`,
+because `specOf` strips a trailing `/index` and that is what the record `provides`. An importer may write
+any of `@/features/planner/lib/plannerCore`, `./plannerCore/index`, or the bare directory form
+`from "./"`. Each of those three was discovered separately, and each after the file was already gone:
+the first rewrote three importers onto a specifier nothing answered, the third left `charts.test.tsx`
+importing `from "./"` and typecheck reporting `Cannot find module './'`.
+
+## One file, many records
+
+`bsc ui harvest` lifts a *component*, so a file exporting several of them has several records pointing at
+it — `AppBanners.tsx` has NINE, `Charts.tsx` five. Such a file is genuinely both: nine banner components
+AND one module, and the store can hold both.
+
+**Do not promote one of the component records into the module.** Picking is what a `Map` keyed by `src`
+did silently — it kept whichever came last, so `telemetrypanel` became the whole of `telemetry.tsx` while
+`itembars` and `splitbar` went on claiming their own identity, and a consumer asking for
+`@/components/splitbar` would have got a module whose export pick is not that component. Three records
+reached the seed that way before the adopt guard caught the rest.
+
+Author a **new** module record beside them (`scripts/lift-component-module.mjs`, id `<stem>-module`,
+`role: composite`). The components keep answering `@/components/<id>`; the module record answers
+`@/features/x/Y`. Nothing is overwritten, so no component record loses an export it declares.
+
+## Where this is going — and the floor it stops at
+
+The `--module` unlock is **built and spent**. `bsc graph harvest --module` plus
+`scripts/lift-component-module.mjs` turned the preview-shaped derivatives into faithful module records,
+and the sweep that followed took `src/` from 225 modules to 175. What is left is no longer one blocker.
+
+**55 of the 175 are structurally permanent** — not backlog, and counting them as pending overstates the
+work remaining. Measured by `scripts/` against the tree:
+
+| count | class | why a record cannot stand for it |
+|---|---|---|
+| 16 | `graphPlatform.ts` registrars | they are what REGISTERS records; a record cannot register itself |
+| 14 | `import.meta.glob` | a **Vite build-time transform**. esbuild emits it verbatim and it is not a function at runtime, so the record throws the moment a consumer evaluates it |
+| 8 | type-only modules | they emit no JavaScript, so there is nothing for a record to be |
+| 6 | `shared/lib/algorithms/*` | the node's code is GENERATED from the file — retiring it turns the standalone guarantee back into a claim (`seedAlgorithms.gen.test.ts`, #3465) |
+| 6 | `shared/lib/runtime/*` | the loader that resolves records. A record cannot load itself |
+| 3 | root module map / generator | `appModules.ts`, `shadowMode.ts`, and a projection generator — a generator cannot be generated |
+| 2 | `app/main.tsx`, `app/App.tsx` | the entry, plus whatever it imports **statically** (below) |
+
+Two smaller classes behave the same way and are enforced by `scripts/retire-module.mjs` rather than
+counted above: a module **statically imported by `main.tsx`/`App.tsx`** (the dev server's pre-transform
+pass resolves the alias before the records plugin can answer, so the app fails to boot — and only
+`dev-boot-check.mjs` observes it), and a module imported by a **build config** such as `vite.config.ts`
+(bundled before any plugin runs, and only `vite build` observes it).
+
+**The floor is load-bearing for everything above it.** The remaining ~120 do not fail for want of a
+harvest — they bottom out ON that floor, through their dependencies:
+
+```
+store/slices/plan.ts   → composes store-types.ts
+                       → store/types.ts needs @/store/types/{github,perf,…}   ← type-only, permanent
+features/security/…    → composes agent-profiles.ts                            ← import.meta.glob, permanent
+```
+
+So `promote-records.mjs`'s two largest skip buckets — *unresolvable import* and *unclosed composes* —
+are mostly this one fact wearing two names. Closing them is not more sweeping; it is answering **how a
+record depends on a permanently-file module**, which is the question `graphPlatform.ts` already answers
+for the registrars and which nothing yet answers generally.
+
+Two classes genuinely do remain, and both want their own slice:
+
+- **`role: page` records** (8) — and these turn out to belong to the FLOOR, not the queue. A page record
+  imports its siblings **by record id**: `@/components/algorithms-kit-graph`, not
+  `@/features/algorithms/AlgorithmsKitGraph`. That form is resolved by the runtime graph loader against
+  the record store; it is not a path. Retire the file and `.bsc-records/` materializes the record at that
+  path, where the first ordinary import of it dies — *"Cannot find package
+  '@/components/algorithms-kit-graph'"*. So **a page record cannot back a retired file** until its
+  siblings are reachable by specifier.
+
+  That is what `promote-records.mjs` is really refusing when it skips `role: page` wholesale; the ban is
+  not about pages being special. `scripts/retire-module.mjs` now states it directly
+  (`importsSiblingsByRecordId`), because the category ban was circumventable and the reason was not
+  written down: four page files were retired past it on the theory that the record "matched" its file
+  once sibling ids were canonicalized — true in the graph loader, false in the bundle. Every other gate
+  was green; `platformModules.gen.test.ts` was the only check in the repo that caught it.
+- **Records and files that genuinely disagree** (9 body-differs, 6 whose seed does not match the file).
+  Only a person can say which one is the app.

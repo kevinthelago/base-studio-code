@@ -10,8 +10,8 @@
 // the relationship: any future change that widens the architect past the director, or the director past
 // a worker, is the regression — regardless of what the individual rows happen to say.
 import { describe, it, expect } from "vitest";
-import { ROLE_DEFAULTS, roleDeniedCommands, canWritePath } from "./sessionRoles";
-import { restrictedRoleCommands, type RoleCapability } from "./roleModel";
+import { ROLE_DEFAULTS, roleDeniedCommands, canWritePath } from "@/shared/lib/session/sessionRoles";
+import { restrictedRoleCommands, type RoleCapability } from "@/shared/lib/session/roleModel";
 
 /** The funnel, ordered least-capable first. `planner` is deliberately NOT here: it still exists as a
  *  role and its Glance node stands, but its RESPONSIBILITIES moved to the director, so it is not one of

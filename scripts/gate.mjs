@@ -11,9 +11,13 @@
  * narrowing has to be temporary AND visible. This prints the plan every time for that second reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acquireGateSlot } from "./gateLock.mjs";
 import { planGate, parsePorcelain, gateCommands } from "./gateScope.mjs";
+
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const argv = process.argv.slice(2);
 const force = argv.includes("--full");
@@ -68,7 +72,9 @@ const { graph, dirToCrate } = workspace();
 const plan =
   files === null
     ? { full: true, reason: `no merge base against '${base}' — refusing to guess a smaller scope`, runVitest: true, runTsc: true, rustCrates: [], frontendFiles: [] }
-    : planGate({ files, graph, dirToCrate, force });
+    // `exists` filters DELETED files out of the lint list — eslint refuses a pattern that matches
+    // nothing and fails the step. Injected here rather than read inside `planGate`, which stays pure.
+    : planGate({ files, graph, dirToCrate, force, exists: (f) => existsSync(join(REPO, f)) });
 
 // The plan is printed BEFORE anything runs, always. A gate that quietly covers less is the failure mode
 // this whole change has to avoid becoming.

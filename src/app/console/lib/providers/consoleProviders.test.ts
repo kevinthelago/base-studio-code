@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { registerProvider, getProvider, listProviders } from "./registry";
+import { registerProvider, getProvider, listProviders } from "@/app/console/lib/providers/registry";
 import type { ConsoleProvider } from "@/app/console/lib/providers/types";
 
 // Import index to trigger built-in provider registration
-import "./index";
+import "@/app/console/lib/providers";
 
 describe("provider registry", () => {
   it("getProvider returns undefined for an unknown id", () => {

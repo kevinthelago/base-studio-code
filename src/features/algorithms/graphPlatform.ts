@@ -7,14 +7,14 @@
 // driving an animation through `Traced<X>` — which is behaviour by any reading, and the least suitable
 // thing in the feature to express as layout data.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
-import * as Knowledge from "./lib/knowledge";
+import * as Knowledge from "@/features/algorithms/lib/knowledge";
 import * as UseKnowledgeGraph from "@/features/algorithms/useKnowledgeGraph";
-import * as VizPanel from "./viz/VizPanel";
+import * as VizPanel from "@/features/algorithms/viz/VizPanel";
 import * as UseVizForImpl from "@/features/algorithms/viz/useVizForImpl";
 // `record-link-debt` — the transport bar `vizpreview`/`vizstage` compose. It was registered nowhere, so
 // both records threw the loader's named error on mount. It stays code for the same reason VizPanel does:
 // it drives the instrumented executor's playhead, which is behaviour, not layout.
-import * as TracePlayer from "./viz/TracePlayer";
+import * as TracePlayer from "@/features/algorithms/viz/TracePlayer";
 // The librarian terminal is hosted by the studio-session surface — a cross-feature BARREL, which #1545
 // permits and the live file already imports.
 import * as StudioSessions from "@/features/studio-sessions";

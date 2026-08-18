@@ -3,9 +3,16 @@
   "name": "Slot",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "srcText": "interface SlotProps {\n  name?: string;\n}\nexport function Slot({ name = \"toolbar\" }: SlotProps) {\n  return (\n    <span style={{ color: \"var(--danger)\", fontSize: 11 }}>\n      {`[unfilled slot \"${name ?? \"\"}\" - the host supplied no content for this name]`}\n    </span>\n  );\n}",
-  "src": "src/shared/ui/layout/Slot.tsx",
+  "provides": "@/shared/ui/layout/Slot",
+  "srcText": "// Slot (#3504) — a HOLE in a spec tree that the host fills with its own React.\n//\n// A node names a manifest primitive, which is exactly right for structure and exactly wrong for the\n// leaves of a real app page: the Fleet page's layout is `Grid`/`Stack`/`Row`, but the things inside it\n// are feature components (`WorkerBoard`, `MergeQueue`, …) that own hooks, queries and app state. They\n// are app code, not kit — re-expressing them as primitives would be a lie, and giving up on the layout\n// being data would defeat the point.\n//\n// So the spec says WHERE, and the host says WHAT: `{ type: \"Slot\", props: { name: \"workerBoard\" } }`\n// resolves against the `slots` map passed to `KitRenderer`. This is the seam between the data tree and\n// the code around it — the mechanism `SessionsBehaviorCard` anticipated (\"a stateful bit the spec\n// vocabulary can't express would be passed as a host slot\") and did not need; a real page does.\n//\n// An UNFILLED slot renders a visible marker, never nothing. A blank where a panel should be is\n// indistinguishable from \"the layout meant to leave that empty\" — the silent failure a data-driven UI\n// must not have. The renderer substitutes a filled slot before this component is ever reached, so\n// seeing this text means the name in the spec has no entry in the host's map (usually a typo, or a\n// slot the host forgot to pass).\n\nimport { Text } from \"@/shared/ui/typography/Text\";\n\ninterface SlotProps {\n  /** The key the host's `slots` map is expected to carry. */\n  name?: string;\n}\n\nexport function Slot({ name }: SlotProps) {\n  return (\n    <Text tone=\"danger\" size=\"sm\">\n      {`[unfilled slot \"${name ?? \"\"}\" — the host supplied no content for this name]`}\n    </Text>\n  );\n}\n",
   "composes": [],
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `Slot` defaults `name`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `Slot` holds 3 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 3 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
-  "folder": "shared/ui/layout"
+  "src": "src/shared/ui/layout/Slot.tsx",
+  "props": [],
+  "folder": "shared/ui/layout",
+  "variants": [
+    "default"
+  ],
+  "whenUse": [],
+  "whenNot": [],
+  "tags": []
 }

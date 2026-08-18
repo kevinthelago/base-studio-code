@@ -13,7 +13,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { KeyValueList, type KeyValueItem } from "@/shared/ui/data/KeyValueList";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Tree, type TreeNodeData } from "@/shared/ui/layouts/Tree";
-import { PageHeader } from "./pageHeader";
+import { PageHeader } from "@/shared/ui/pages/pageHeader";
 
 export type { TreeNodeData } from "@/shared/ui/layouts/Tree";
 

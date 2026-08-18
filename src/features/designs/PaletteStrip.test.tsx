@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { PaletteStrip } from "./PaletteStrip";
+import { PaletteStrip } from "@/features/designs/PaletteStrip";
 import { SEED_THEMES } from "./lib/themes";
 
 describe("PaletteStrip (#2834)", () => {

@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { LessonsTab } from "./LessonsTab";
+import { LessonsTab } from "@/features/skills/LessonsTab";
 import { useAppStore } from "@/store";
 import type { Lesson } from "@/features/skills/lib/lessons";
 

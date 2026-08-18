@@ -2,7 +2,7 @@
 // re-renders all 248 nodes, so the test asserts render COUNTS, not just markup.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { ComponentNode } from "./ComponentNode";
+import { ComponentNode } from "@/features/designs/ComponentNode";
 import { useAppStore } from "@/store";
 import type { ComponentRecord } from "./lib/model";
 

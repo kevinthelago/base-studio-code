@@ -3,11 +3,18 @@
   "name": "ToolChip",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "srcText": "import { Box } from \"@/shared/ui/layout/Box\";\n\nexport function ToolChip({\n  label = \"git\", onRemove = () => {},\n}: { label?: string; onRemove?: () => void }) {\n  return (\n    <Box as=\"span\" className=\"mono\" style={{\n      display: \"inline-flex\", alignItems: \"center\", gap: 4,\n      padding: \"2px 8px\", background: \"var(--bg-elev)\", border: \"1px solid var(--border-soft)\", borderRadius: 4,\n      fontSize: 10.5, color: \"var(--fg-muted)\",\n    }}>\n      {label}\n      <Box as=\"span\" onClick={onRemove} style={{ cursor: \"pointer\", lineHeight: 1, color: \"var(--fg-dim)\" }}>x</Box>\n    </Box>\n  );\n}",
-  "src": "src/features/settings/ToolPermissionInputs.tsx",
+  "provides": "@/features/settings/ToolPermissionInputs",
+  "srcText": "// Tool-permission inputs for the Claude Config editor (#1709), extracted from ClaudeConfig.tsx.\n//\n// ToolChip is intentionally NOT based on the shared `@/shared/ui/data/Chip` (#1713): that chip is a\n// color-mix translucent pill (radius 99, no remove affordance), whereas this one is a solid\n// `--bg-elev` fill at radius 4 with an inline × remove control. Folding it in would change its\n// rendering (the #1635/#1713 lesson), so it stays local.\n//\n// ChipInput is the editor's own multi-value entry (datalist-backed tool-name suggestions + an\n// \"+ add\" button); it is specific to this surface, so it lives here rather than in shared/ui.\n\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { COMMON_TOOLS } from \"@/features/settings/lib/toolPresets\";\n\n/** A removable tool badge in the allow/deny lists. */\nexport function ToolChip({\n  label, onRemove,\n}: { label: string; onRemove: () => void }) {\n  return (\n    <Box as=\"span\" className=\"mono\" pad={[2, 8]} bg=\"var(--bg-elev)\" border=\"soft\" radius={4} style={{\n      display: \"inline-flex\", alignItems: \"center\", gap: 4,\n      fontSize: 10.5, color: \"var(--fg-muted)\",\n    }}>\n      {label}\n      <Text\n        as=\"span\"\n        tone=\"dim\"\n        onClick={onRemove}\n        style={{ cursor: \"pointer\", lineHeight: 1 }}\n      >×</Text>\n    </Box>\n  );\n}\n\n/** Text input + \"+ add\" button for appending a tool to an allow/deny list. */\nexport function ChipInput({\n  value, onChange, onAdd, placeholder,\n}: { value: string; onChange: (v: string) => void; onAdd: () => void; placeholder: string }) {\n  return (\n    <Row gap={5}>\n      {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline datalist-backed entry (fixed width/height) beside a custom \"+ add\"; a TextField .field wrapper would break the Row */}\n      <input\n        className=\"input mono\"\n        value={value}\n        onChange={(e) => onChange(e.target.value)}\n        onKeyDown={(e) => { if (e.key === \"Enter\") { e.preventDefault(); onAdd(); } }}\n        placeholder={placeholder}\n        list=\"tool-suggestions\"\n        style={{ width: 130, height: 24, padding: \"0 8px\", fontSize: 10.5 }}\n      />\n      <datalist id=\"tool-suggestions\">\n        {COMMON_TOOLS.map((t) => <option key={t} value={t} />)}\n      </datalist>\n      <Box\n        as=\"span\"\n        className=\"mono\"\n        onClick={onAdd}\n        pad={[2, 8]} bg=\"var(--bg-elev)\" border=\"soft\" radius={4} style={{ cursor: \"pointer\",\n          fontSize: 10.5, color: \"var(--fg-muted)\",\n        }}\n      >+ add</Box>\n    </Row>\n  );\n}\n",
   "composes": [
     "Box"
   ],
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `ToolChip` defaults `label`, `onRemove`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `ToolChip` holds 5 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 5 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
-  "folder": "features/settings"
+  "src": "src/features/settings/ToolPermissionInputs.tsx",
+  "props": [],
+  "folder": "features/settings",
+  "variants": [
+    "default"
+  ],
+  "whenUse": [],
+  "whenNot": [],
+  "tags": []
 }

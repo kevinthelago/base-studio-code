@@ -3,7 +3,7 @@
 // rendered from typed inputs; every region is droppable.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { DashboardPage, type DashboardStat } from "./DashboardPage";
+import { DashboardPage, type DashboardStat } from "@/shared/ui/pages/DashboardPage";
 
 const STATS: DashboardStat[] = [
   { k: "landed", v: 12, tone: "success", trend: [3, 5, 4, 8, 12] },

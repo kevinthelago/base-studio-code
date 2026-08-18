@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { useAppStore } from "@/store";
-import { useNavigateBridge } from "./useNavigateBridge";
+import { useNavigateBridge } from "@/app/useNavigateBridge";
 import * as tauriEvent from "@tauri-apps/api/event";
 import * as tauriCore from "@tauri-apps/api/core";
 import { registerPreviewFrame, resetPreviewFrames } from "@/features/designs";

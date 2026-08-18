@@ -1,0 +1,19 @@
+{
+  "id": "settings-security",
+  "name": "SecurityPage",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/settings/pages/SecurityPage",
+  "srcText": "import { IssueSecurityCard } from \"@/features/settings/cards/IssueSecurityCard\";\nimport { AgentsCard } from \"@/features/settings/cards/AgentsCard\";\nimport { AgentRolesCard } from \"@/features/settings/cards/AgentRolesCard\";\nimport { PermissionPostureCard } from \"@/features/settings/cards/PermissionPostureCard\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { SettingsPageHeader } from \"@/features/settings/pages/SettingsPageHeader\";\n\nexport function SecurityPage() {\n  return (\n    <Stack gap={18} style={{ maxWidth: 820 }}>\n      <SettingsPageHeader\n        title=\"Security\"\n        description=\"Configure application security parameters, the default agent permission profile, and untrusted planning issue safeguards.\"\n      />\n\n      {/* Security Cards */}\n      <AgentRolesCard />\n      <AgentsCard />\n      <PermissionPostureCard />\n      <IssueSecurityCard />\n    </Stack>\n  );\n}\n",
+  "composes": [
+    "Box",
+    "Button",
+    "Card",
+    "Row",
+    "SegmentedControl",
+    "Stack",
+    "Text"
+  ],
+  "src": "src/features/settings/pages/SecurityPage.tsx",
+  "folder": "features/settings/pages"
+}

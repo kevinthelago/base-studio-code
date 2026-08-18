@@ -5,10 +5,10 @@
 
 // Public API of the components feature (#2269) — the proven-component library: the planner's
 // project-scoped pane (#2314) and the full-page Design Studio workspace (#2308).
-export { PlannerComponentsPane } from "./PlannerComponentsPane";
-export { DesignsWorkbench } from "./DesignsWorkbench";
+export { PlannerComponentsPane } from "@/features/designs/PlannerComponentsPane";
+export { DesignsWorkbench } from "@/features/designs/DesignsWorkbench";
 // #2658: the blueprint-download reconciliation confirm-list (generate + register missing categories).
-export { DesignReconcileModal, type DesignReconcileModalProps } from "./DesignReconcileModal";
+export { DesignReconcileModal, type DesignReconcileModalProps } from "@/features/designs/DesignReconcileModal";
 export { generateCategoryColors } from "@/features/designs/lib/designGenBridge";
 export { createComponentsSlice, type ComponentsSlice } from "./store";
 export {

@@ -1,0 +1,17 @@
+{
+  "id": "githubgraphhost",
+  "name": "GitHubGraphHost",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/features/github/GitHubGraphHost",
+  "srcText": "// The GitHub page host (#3650, epic #3604) — renders the GitHub workspace FROM THE GRAPH. The page + its\n// composed views (Summary + its 8 cards, Pulse + BranchGraph, Empty) are sourced from the components graph\n// (the authored `githubpage` node + siblings, seeded from `data/components/app/**`), not bundled files. It\n// registers the github feature's injected platform surface (the summary/pulse logic + hooks + the planner\n// board views the page drills into), then mounts `githubpage` through the runtime loader. Mirrors the\n// fleet/automations/security hosts.\n//\n// `pageOverride` (a torn-off single tab, DetachedWindow) forwards to the graph component as a prop —\n// GraphComponent spreads props onto the loaded component, and the graph `GitHubWorkspace` reads it.\nimport { GraphComponent } from \"@/shared/lib/runtime/GraphComponent\";\nimport { GraphPageFallback } from \"@/shared/lib/runtime/GraphPageFallback\";\nimport { registerGithubPlatform } from \"@/features/github/graphPlatform\";\n\n// Register at module load — before the workspace ever renders — so the injected modules are in the registry\n// when the graph page's compiled `require()` runs. Idempotent.\nregisterGithubPlatform();\n\nexport function GitHubGraphHost({ pageOverride }: { pageOverride?: string } = {}) {\n  // Fallback offers a one-click re-seed (#3648) when the source isn't in the library yet.\n  return (\n    <GraphComponent\n      id=\"githubpage\"\n      props={pageOverride ? { pageOverride } : undefined}\n      fallback={<GraphPageFallback page=\"GitHub\" icon=\"⎇\" />}\n    />\n  );\n}",
+  "composes": [],
+  "src": "src/features/github/GitHubGraphHost.tsx",
+  "props": [
+    {
+      "name": "pageOverride",
+      "type": "string"
+    }
+  ],
+  "folder": "features/github"
+}
