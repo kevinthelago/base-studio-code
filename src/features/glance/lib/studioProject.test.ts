@@ -245,9 +245,37 @@ describe("applyStudioLiveStatus (#3421)", () => {
     expect(of([node("designer-react")], sig())).toEqual({ "designer-react": { health: "off", activity: "idle" } });
   });
 
-  it("a MOUNTED but quiet studio reads idle — the session exists, it just is not working", () => {
+  // The bug this test NAME described for its whole life while its assertion said the opposite: both the
+  // unmounted and the mounted-quiet branch returned `off`, so a studio the user was actively talking to
+  // rendered dark unless `paneStatus` happened to read `run` at that instant. `healthy · idle` is what
+  // the fleet twin settled on in #4042 for the identical question — health is the EXISTENCE axis,
+  // activity is the WORK axis, and collapsing them threw away the only signal that separates a running
+  // studio from one that was never launched.
+  it("a MOUNTED but quiet studio reads healthy · idle — the session exists, it just is not working", () => {
     const r = of([node("designer-react")], sig({ paneClaudeActive: { [designerSessionId("react")]: true } }));
-    expect(r).toEqual({ "designer-react": { health: "off", activity: "idle" } });
+    expect(r).toEqual({ "designer-react": { health: "healthy", activity: "idle" } });
+  });
+
+  // The three states, side by side, off ONE signal each — so a future edit cannot quietly merge two of
+  // them again. This is the assertion the old pair was missing: nothing compared quiet against unmounted.
+  it("separates the three states: unmounted vs mounted-quiet vs working", () => {
+    const sid = designerSessionId("react");
+    expect(of([node("designer-react")], sig())["designer-react"])
+      .toEqual({ health: "off", activity: "idle" });
+    expect(of([node("designer-react")], sig({ paneStatus: { [sid]: "on" } }))["designer-react"])
+      .toEqual({ health: "healthy", activity: "idle" });
+    expect(of([node("designer-react")], sig({ paneStatus: { [sid]: "run" } }))["designer-react"])
+      .toEqual({ health: "healthy", activity: "building" });
+  });
+
+  // A request session's node is a normal node here, and it is the one that most needs to stop reading
+  // `off`: these sessions are started BY the app, so a dark node is the difference between a supervised
+  // background session and an invisible one.
+  it("a live request session's node reports live, exactly like a studio's", () => {
+    const r = of([node("debugger-req-96")], sig({ paneClaudeActive: { "debug-studio:req-96": true } }));
+    expect(r["debugger-req-96"]).toEqual({ health: "healthy", activity: "idle" });
+    const working = of([node("debugger-req-96")], sig({ paneStatus: { "debug-studio:req-96": "run" } }));
+    expect(working["debugger-req-96"]).toEqual({ health: "healthy", activity: "building" });
   });
 
   it("a WORKING studio reads healthy · building", () => {
@@ -265,7 +293,9 @@ describe("applyStudioLiveStatus (#3421)", () => {
 
   it("keys each studio by its OWN session id — one running studio never lights up another", () => {
     const r = of([node("designer-react"), node("librarian-rust"), node("architect")], sig({ paneStatus: { [librarianSessionId("rust")]: "run" } }));
-    expect(r["librarian-rust"].health).toBe("healthy");
+    expect(r["librarian-rust"]).toEqual({ health: "healthy", activity: "building" });
+    // Still `off` — not merely un-building. The other two have NO session, which is a different fact
+    // from the quiet-but-live one above, and this is where that separation has to hold.
     expect(r["designer-react"].health).toBe("off");
     expect(r.architect.health).toBe("off");
   });
