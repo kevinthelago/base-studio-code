@@ -250,6 +250,24 @@ export function seedAnswersSpecifier({ spec, seedProvides }) {
  * @param {{ seedSrcText: string, fileSrc: string }} input
  * @returns {{ ok: boolean }}
  */
+/** Does this record import a sibling BY RECORD ID (`@/components/<id>`)?
+ *
+ *  Such a record is GRAPH-LOADER-ONLY and can never back a retired file. `@/components/<id>` is resolved
+ *  by the runtime graph loader against the record store; it is not a path. Materialized into
+ *  `.bsc-records/` and imported through the normal bundle resolution it is simply missing —
+ *  "Cannot find package '@/components/algorithms-kit-graph'".
+ *
+ *  This is the real reason `promote-records.mjs` refuses `role: page` wholesale, and it is worth stating
+ *  as its own predicate: the refusal is not about pages being special, it is about this import form.
+ *
+ *  Learned the hard way — teaching `seedMatchesFile` that `@/components/glance-canvas` and
+ *  `@/features/glance/GlanceCanvas` are "the same module" is true IN THE GRAPH LOADER and false in the
+ *  bundle, and that half-truth authorized four page retirements that broke the build. */
+export function importsSiblingsByRecordId(srcText) {
+  const hits = [...String(srcText ?? "").matchAll(/from\s*["'`](@\/components\/[A-Za-z0-9._-]+)["'`]/g)].map((m) => m[1]);
+  return { any: hits.length > 0, specifiers: [...new Set(hits)] };
+}
+
 export function seedMatchesFile({ seedSrcText, fileSrc }) {
   const file = norm(fileSrc);
   const body = splitPreamble(norm(seedSrcText ?? ""), file)[1];

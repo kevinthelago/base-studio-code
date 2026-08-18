@@ -268,9 +268,19 @@ for the registrars and which nothing yet answers generally.
 
 Two classes genuinely do remain, and both want their own slice:
 
-- **`role: page` records** (8). Promotion refuses them wholesale, and rightly — pages have the worst
-  failure history in this migration (twelve `GraphHost`s rendering records that had silently diverged
-  from their files; `glancepage` lost five shipped fixes with every gate green). They need the
-  page-migration recipe with its live-verify loop (`bsc shot`), not a batch sweep.
+- **`role: page` records** (8) — and these turn out to belong to the FLOOR, not the queue. A page record
+  imports its siblings **by record id**: `@/components/algorithms-kit-graph`, not
+  `@/features/algorithms/AlgorithmsKitGraph`. That form is resolved by the runtime graph loader against
+  the record store; it is not a path. Retire the file and `.bsc-records/` materializes the record at that
+  path, where the first ordinary import of it dies — *"Cannot find package
+  '@/components/algorithms-kit-graph'"*. So **a page record cannot back a retired file** until its
+  siblings are reachable by specifier.
+
+  That is what `promote-records.mjs` is really refusing when it skips `role: page` wholesale; the ban is
+  not about pages being special. `scripts/retire-module.mjs` now states it directly
+  (`importsSiblingsByRecordId`), because the category ban was circumventable and the reason was not
+  written down: four page files were retired past it on the theory that the record "matched" its file
+  once sibling ids were canonicalized — true in the graph loader, false in the bundle. Every other gate
+  was green; `platformModules.gen.test.ts` was the only check in the repo that caught it.
 - **Records and files that genuinely disagree** (9 body-differs, 6 whose seed does not match the file).
   Only a person can say which one is the app.

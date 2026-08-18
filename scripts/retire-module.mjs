@@ -42,7 +42,7 @@
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { seedAnswersSpecifier, seedMatchesFile, fileAsRecordSource } from "./lib/recordSource.mjs";
+import { seedAnswersSpecifier, seedMatchesFile, fileAsRecordSource, importsSiblingsByRecordId } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const [, , target, ...flags] = process.argv;
@@ -228,6 +228,31 @@ const resolvesToTarget = (fromDir, relSpec) => {
   // body-differs records that happened to be seeded, so the specifier check waved them through and
   // retiring them swapped the app's focus management for the records' older copies.
   const seedSrc = seedSourceFor.get(spec);
+
+  // NEVER RETIRABLE: a record that imports its SIBLINGS BY RECORD ID. `@/components/<id>` is resolved by
+  // the runtime GRAPH LOADER against the record store — it is not a path, and nothing in the bundle can
+  // resolve it. Retire the file and `.bsc-records/` materializes the record at that path, where the first
+  // ordinary import of it dies with "Cannot find package '@/components/algorithms-kit-graph'".
+  //
+  // This is what `promote-records.mjs` is really refusing when it skips `role: page` wholesale, and
+  // stating it as its own check makes the reason legible instead of a category ban. Four page files were
+  // retired past that ban on the theory that the record "matched" its file once sibling ids were
+  // canonicalized — true in the graph loader, false in the bundle, and `platformModules.gen.test.ts` was
+  // the only thing that said so.
+  if (seedSrc !== undefined) {
+    const { any, specifiers } = importsSiblingsByRecordId(seedSrc);
+    if (any) {
+      console.error(
+        `retire: REFUSED — the seed record providing ${spec} imports its siblings BY RECORD ID ` +
+          `(${specifiers.slice(0, 3).join(", ")}${specifiers.length > 3 ? `, +${specifiers.length - 3}` : ""}). ` +
+          `That form is resolved only by the runtime graph loader, so the record cannot be materialized ` +
+          `into \`.bsc-records/\` as a bundle module — deleting the file would break the build.\n` +
+          `   This module is graph-hosted: it stays a file until its siblings are reachable by specifier.`,
+      );
+      process.exit(1);
+    }
+  }
+
   if (seedSrc !== undefined) {
     const fileSrc = fileAsRecordSource(join(REPO, "src", self), self);
     if (!seedMatchesFile({ seedSrcText: seedSrc, fileSrc }).ok) {
