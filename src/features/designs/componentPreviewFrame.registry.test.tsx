@@ -14,7 +14,7 @@ import { render, waitFor, cleanup } from "@testing-library/react";
 // mid-initialisation ("algoNodeLookup is not a function") — a known cycle, not a defect in this test.
 import "@/features/designs";
 import { useAppStore } from "@/store";
-import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
+import { ComponentPreviewFrame } from "@/features/designs/ComponentPreviewFrame";
 import { mountedPreviewFrames, resetPreviewFrames } from "./lib/previewRegistry";
 import { recordPreviewError, clearPreviewError } from "./lib/componentBridge";
 import type { ComponentRecord } from "./lib/model";

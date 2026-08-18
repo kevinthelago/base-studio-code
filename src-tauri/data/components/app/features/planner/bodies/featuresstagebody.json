@@ -1,0 +1,21 @@
+{
+  "id": "featuresstagebody",
+  "name": "FeaturesStageBody",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/features/planner/bodies/FeaturesStageBody",
+  "srcText": "import { useState } from \"react\";\nimport type { PlanFeature } from \"@/features/planner/issues/featureList\";\nimport { FeaturesBody } from \"@/features/planner/bodies/FocusedFeaturesBody\";\nimport { PlannerLibraryPane } from \"@/features/planner/bodies/PlannerLibraryPane\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { SegmentedControl } from \"@/shared/ui/controls/SegmentedControl\";\n\ntype View = \"features\" | \"library\";\nconst VIEWS: { value: View; label: string }[] = [\n  { value: \"features\", label: \"Features\" },\n  { value: \"library\", label: \"Library\" },\n];\nexport function FeaturesStageBody(\n  { features, projectId }: { features?: PlanFeature[]; projectId?: string },\n) {\n  // Opens on the plan — the library is the reference you reach for, not the default view.\n  const [view, setView] = useState<View>(\"features\");\n  return (\n    <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>\n      <Box style={{ padding: \"8px 10px 0\" }}>\n        <SegmentedControl\n          options={VIEWS.map((v) => ({ label: v.label, on: view === v.value, onClick: () => setView(v.value) }))}\n        />\n      </Box>\n      <Box style={{ display: \"flex\", flex: 1, minHeight: 0, flexDirection: \"column\", overflow: \"auto\" }}>\n        {view === \"features\"\n          ? <FeaturesBody features={features} />\n          : <PlannerLibraryPane projectKey={projectId} features={features} />}\n      </Box>\n    </Stack>\n  );\n}",
+  "composes": [],
+  "src": "src/features/planner/bodies/FeaturesStageBody.tsx",
+  "props": [
+    {
+      "name": "features",
+      "type": "array"
+    },
+    {
+      "name": "projectId",
+      "type": "string"
+    }
+  ],
+  "folder": "features/planner/bodies"
+}

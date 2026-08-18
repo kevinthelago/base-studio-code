@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fnv1a32, fnv1a32hex, buildManifest, diffManifests, projectId, phaseId, issueId, nodeId } from "./index";
+import { fnv1a32, fnv1a32hex, buildManifest, diffManifests, projectId, phaseId, issueId, nodeId } from "@/features/planner/lib/plannerCore";
 import type { CanonicalFile, PlanManifest } from "@/features/planner/lib/plannerCore/types";
 import fixtures from "./plannerCore.fixtures.json";
 

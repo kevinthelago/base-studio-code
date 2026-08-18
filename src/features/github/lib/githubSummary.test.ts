@@ -13,7 +13,7 @@ import {
   buildHeatmap,
   langColor,
   type RepoData,
-} from "./githubSummary";
+} from "@/features/github/lib/githubSummary";
 
 function event(partial: Partial<GHEvent> & Pick<GHEvent, "type">): GHEvent {
   return {

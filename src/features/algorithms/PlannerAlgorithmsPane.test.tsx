@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { PlannerAlgorithmsPane } from "./PlannerAlgorithmsPane";
-import { KNOWLEDGE, kitTechs, kitImpls } from "./lib/knowledge";
+import { PlannerAlgorithmsPane } from "@/features/algorithms/PlannerAlgorithmsPane";
+import { KNOWLEDGE, kitTechs, kitImpls } from "@/features/algorithms/lib/knowledge";
 import { useAppStore } from "@/store";
 
 // No `bsc` in jsdom, so `loadGraph` yields nothing and the pane keeps the packaged seed — which is

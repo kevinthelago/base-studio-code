@@ -19,7 +19,7 @@ import * as ModelDisplay from "@/app/console/lib/modelDisplay";
 import * as Models from "@/app/console/lib/models";
 import * as PaneIdentity from "@/app/console/lib/paneIdentity";
 import * as PaneStatus from "@/app/console/lib/paneStatus";
-import * as Providers from "./lib/providers";
+import * as Providers from "@/app/console/lib/providers";
 import * as UseIdleReaper from "@/app/console/lib/useIdleReaper";
 import * as UsePaneActivityFeed from "./lib/usePaneActivityFeed";
 import * as UsePaneTokenUsage from "@/app/console/lib/usePaneTokenUsage";

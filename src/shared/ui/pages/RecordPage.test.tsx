@@ -3,7 +3,7 @@
 // column, and the empty state.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { RecordPage, type RecordSection } from "./RecordPage";
+import { RecordPage, type RecordSection } from "@/shared/ui/pages/RecordPage";
 
 const SECTIONS: RecordSection[] = [
   { label: "Session", entries: [{ k: "model", v: "opus" }, { k: "role", v: "worker" }] },

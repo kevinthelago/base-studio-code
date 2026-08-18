@@ -4,7 +4,7 @@ import {
   allSessionRoles,
   autoSpawnDecision,
   mayAutoSpawn,
-} from "./autoSpawn";
+} from "@/shared/lib/session/autoSpawn";
 
 describe("the auto-spawn gate (#3498)", () => {
   it("refuses EVERY role except the debugger, enumerating the real role union", () => {

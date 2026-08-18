@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { WorkerModals } from "./WorkerModals";
+import { WorkerModals } from "@/features/planner/fleet/WorkerModals";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 import type { StatusMeta } from "@/shared/data/fleet";
 

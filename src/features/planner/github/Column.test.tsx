@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Column } from "./Column";
+import { Column } from "@/features/planner/github/Column";
 import type { BoardColumn, BoardIssue } from "@/features/planner/github/projectBoard.types";
 
 const col: BoardColumn = { id: "todo", name: "To do", color: "var(--fg-dim)" };

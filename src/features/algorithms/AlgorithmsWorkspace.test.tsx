@@ -4,7 +4,7 @@
 // getAllByText for anything that isn't inspector-unique (impl code, the role chip).
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
+import { AlgorithmsWorkspace } from "@/features/algorithms/AlgorithmsWorkspace";
 
 // The page docks the librarian session (#2787), which mounts an xterm terminal — stub xterm (it can't
 // initialize in jsdom) + the layout globals useScreenSession needs, so rendering the page doesn't crash.

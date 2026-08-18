@@ -11,7 +11,7 @@ import { buildStreamPrompt } from "@/store/helpers";
 import { resolveStreamPersona, personaStreamPrompt } from "../fleet/streamPersona";
 import type { AgentProfile } from "@/features/security";
 import type { Posture, Perm, Agent } from "@/features/planner/pane/projectPane.types";
-import type { BuildProjectPaneInput } from "./projectPaneInput";
+import type { BuildProjectPaneInput } from "@/features/planner/pane/projectPaneInput";
 
 const AGENT_HUES = [230, 70, 50, 145, 195, 300, 350, 110, 20, 260];
 function agentColor(index: number): string {

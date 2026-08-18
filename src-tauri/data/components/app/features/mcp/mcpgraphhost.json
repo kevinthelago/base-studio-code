@@ -1,0 +1,17 @@
+{
+  "id": "mcpgraphhost",
+  "name": "McpGraphHost",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/features/mcp/McpGraphHost",
+  "srcText": "// The MCP page host (#3656, epic #3604) — renders the MCP (servers) workspace FROM THE GRAPH. The page + its\n// Analytics tab are sourced from the components graph (the authored `mcppage` node + the `mcp-analytics`\n// sibling, seeded from `data/components/app/**`), not bundled files. It registers the mcp feature's injected\n// platform surface (the install/catalog/telemetry logic + the ./shared helpers), then mounts `mcppage`\n// through the runtime loader. Mirrors the fleet/automations/security/github/skills hosts.\n//\n// `pageOverride` (a torn-off single tab, DetachedWindow) forwards to the graph component as a prop —\n// GraphComponent spreads props onto the loaded component, and the graph `McpWorkspace` reads it.\n//\n// The CSS still ships as a normal bundled import here (the loader can't resolve a CSS side-effect import, so\n// it was stripped from the graph source): the host owns the stylesheet the graph page's classes need.\nimport { GraphComponent } from \"@/shared/lib/runtime/GraphComponent\";\nimport { GraphPageFallback } from \"@/shared/lib/runtime/GraphPageFallback\";\nimport { registerMcpPlatform } from \"@/features/mcp/graphPlatform\";\n\n// Register at module load — before the workspace ever renders — so the injected modules are in the registry\n// when the graph page's compiled `require()` runs. Idempotent.\nregisterMcpPlatform();\n\nexport function McpGraphHost({ pageOverride }: { pageOverride?: string } = {}) {\n  // Fallback offers Reload-to-apply / Re-seed (#3648/#3652) when the source isn't in the library yet.\n  return (\n    <GraphComponent\n      id=\"mcppage\"\n      props={pageOverride ? { pageOverride } : undefined}\n      fallback={<GraphPageFallback page=\"MCP\" icon=\"⧉\" />}\n    />\n  );\n}",
+  "composes": [],
+  "src": "src/features/mcp/McpGraphHost.tsx",
+  "props": [
+    {
+      "name": "pageOverride",
+      "type": "string"
+    }
+  ],
+  "folder": "features/mcp"
+}

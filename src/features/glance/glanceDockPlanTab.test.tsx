@@ -2,7 +2,7 @@
 // cannot see: the tab exists, switching reaches the plan screen, and the terminal SURVIVES the switch.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { GlanceChatDock } from "./GlanceChatDock";
+import { GlanceChatDock } from "@/features/glance/GlanceChatDock";
 
 // xterm cannot init in jsdom, and the Logs tab polls `bsc` — same stubs the sibling dock/morph tests use.
 vi.mock("@/app/console/terminal/TerminalSlot", () => ({

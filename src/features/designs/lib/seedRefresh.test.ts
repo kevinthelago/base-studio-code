@@ -3,7 +3,7 @@
 // stability + exclusions, and the kit-shaped variants of the same verdicts.
 import { describe, it, expect } from "vitest";
 import type { ComponentRecord, Kit } from "./model";
-import { fnv1a, stableStringify, seedHashOf, stampSeedHash, reconcileSeed, planRestamp, applyStamps } from "./seedRefresh";
+import { fnv1a, stableStringify, seedHashOf, stampSeedHash, reconcileSeed, planRestamp, applyStamps } from "@/features/designs/lib/seedRefresh";
 
 /** A minimal component-shaped record. */
 const comp = (over: Partial<ComponentRecord> = {}): ComponentRecord => ({

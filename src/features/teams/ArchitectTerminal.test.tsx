@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { ArchitectTerminal } from "@/features/teams/ArchitectTerminal";
-import { TeamsPanel } from "./TeamsPanel";
+import { TeamsPanel } from "@/features/teams/TeamsPanel";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { useAppStore } from "@/store";

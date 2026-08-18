@@ -5,9 +5,9 @@
 // (`folder: <path>`) and the trailing "ungrouped" bucket.
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { AlgorithmsRail } from "./AlgorithmsRail";
+import { AlgorithmsRail } from "@/features/algorithms/AlgorithmsRail";
 import { UNGROUPED_LABEL } from "@/shared/lib/core/folderTree";
-import { buildKnowledge, type AlgoImpl } from "./lib/knowledge";
+import { buildKnowledge, type AlgoImpl } from "@/features/algorithms/lib/knowledge";
 
 const im = (o: Partial<AlgoImpl> & Pick<AlgoImpl, "id" | "tech" | "name">): AlgoImpl =>
   ({ role: "algorithm", composes: [], ...o });

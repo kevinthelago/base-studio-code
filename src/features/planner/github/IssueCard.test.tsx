@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { IssueCard } from "./IssueCard";
+import { IssueCard } from "@/features/planner/github/IssueCard";
 import type { BoardIssue } from "@/features/planner/github/projectBoard.types";
 
 const baseIssue: BoardIssue = {

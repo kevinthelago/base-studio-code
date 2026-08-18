@@ -24,7 +24,7 @@ vi.mock("./lib/useComponentScan", () => ({ useComponentScan: vi.fn() }));
 const { rectRef } = vi.hoisted(() => ({ rectRef: { current: null as GraphBox | null } }));
 vi.mock("@/shared/ui/layouts/useVisibleRect", () => ({ useVisibleRect: () => rectRef.current }));
 
-import { DesignsWorkbench } from "./DesignsWorkbench";
+import { DesignsWorkbench } from "@/features/designs/DesignsWorkbench";
 import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
 import { SEED_THEMES } from "./lib/themes";
 

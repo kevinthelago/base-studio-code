@@ -25,13 +25,29 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSy
 import { spawnSync } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { norm, codeOnly, splitPreamble, fileAsRecordSource, runtimeImports } from "./lib/recordSource.mjs";
+import { norm, codeOnly, splitPreamble, fileAsRecordSource, runtimeImports, seedAdoption } from "./lib/recordSource.mjs";
+import { libraryCarryClosure } from "./lib/graphClosure.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const flag = (name) => { const i = argv.indexOf(name); return i > -1 ? argv[i + 1] : null; };
 const APPLY = argv.includes("--apply");
 const LIMIT = flag("--limit") ? Number(flag("--limit")) : Infinity;
+/** Replace a STALE existing seed with the store record, when the record is the file and the seed is not.
+ *  Opt-in, never the default — see the guard it relaxes, at the component write below. */
+const ADOPT_SEED = argv.includes("--adopt-seed");
+/** Adopt DESPITE the export-loss refusal, for the records named here — never as a blanket flag.
+ *
+ *  The refusal ("adopting would drop export(s) X") is right by default: a seed that declares more than
+ *  the record is usually the seed being ahead. But a seed can also be a PREVIEW-SHAPED derivative that
+ *  declares names the FILE never had, and then X is surface nothing has ever been able to import. The
+ *  distinguishing measurement is not "does the name appear" — `Team` and `Persona` appear everywhere —
+ *  it is whether anything imports X **from that record's own specifier**. Ten of eleven refusals
+ *  measured zero such importers across `src/`, the component seed and `algorithms.json`; the eleventh
+ *  (`treeexplorerpage`, `TreeNodeData`) measured one and is NOT listed here.
+ *
+ *  Per-id and explicit, so the drop is reviewable in the command that caused it. */
+const ALLOW_DROP = new Set((flag("--allow-drop") ?? "").split(",").map((s) => s.trim()).filter(Boolean));
 const ONLY = flag("--only");
 const storeArg = flag("--store"), implsArg = flag("--impls");
 if (!storeArg || !implsArg) {
@@ -74,6 +90,23 @@ function seededIds() {
   return out;
 }
 
+/** id → the path its seed JSON actually occupies. `SEED_COMPONENTS` globs the tree FLAT and keys by id,
+ *  so a record's identity is its id and NOT where the file sits — which is why an adoption has to find
+ *  the existing seed by id rather than at a path derived from the store record's `folder`, a field that
+ *  can and does disagree with reality. */
+function seedPathsById() {
+  const out = new Map();
+  (function walk(dir) {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!e.name.endsWith(".json") || statSync(p).size > 4_000_000) continue;
+      try { const r = JSON.parse(readFileSync(p, "utf8")); if (r?.id && !out.has(r.id)) out.set(r.id, p); } catch { /* not a record */ }
+    }
+  })(join(REPO, "src-tauri", "data", "components", "app"));
+  return out;
+}
+
 /** Specifiers a packaged seed already provides — promoting one of these again would be a duplicate. */
 function seededSpecifiers() {
   const out = new Set();
@@ -102,6 +135,7 @@ for (const i of impls) if (typeof i.provides === "string" && (i.code || "").trim
 
 const seeded = seededSpecifiers();
 const seedIds = seededIds();
+const seedPathById = seedPathsById();
 
 /** Every specifier a RECORD may import: a registered platform module, or one some record provides.
  *  Mirrors what `platformBoundary.test.ts` asserts — promoting a record whose imports nothing can answer
@@ -115,7 +149,15 @@ const specOf = (f) => "@/" + f.replace(/\.(tsx?|jsx?)$/, "").replace(/\/index$/,
 
 const promote = { component: [], impl: [] };
 let skippedAtWrite = 0; // written-guard declines, subtracted from the final count (see the tail of this file)
-const skipped = { bodyDiffers: 0, buildTimeOnly: [], alreadySeeded: 0, noRecord: 0, pageRecord: [], unresolvable: [], uncompilable: [], unclosedComposes: [] };
+let adopted = 0; //        stale seeds replaced by the store record under --adopt-seed
+
+/** The file, read as a record would hold it — memoized, since the adoption check re-reads it per record. */
+const fileSrcCache = new Map();
+const fileSrcOf = (f) => {
+  if (!fileSrcCache.has(f)) fileSrcCache.set(f, fileAsRecordSource(join(REPO, "src", f), f));
+  return fileSrcCache.get(f);
+};
+const skipped ={ bodyDiffers: 0, buildTimeOnly: [], alreadySeeded: 0, noRecord: 0, pageRecord: [], unresolvable: [], uncompilable: [], unclosedComposes: [] };
 
 for (const file of listModules()) {
   if (ONLY && file !== ONLY) continue;
@@ -216,9 +258,32 @@ for (let pass = 0; pass < 20; pass++) {
 //
 // A FIXPOINT, not one pass: dropping an impl can dangle another that composed it, so this repeats until
 // nothing more falls out — the same shape as the compile check above.
+// CARRY the LIBRARY records a promotion composes, instead of refusing the promotion (#close-the-composes-closure).
+//
+// Most refusals above are ordering that settles itself. The rest were not: 10 impls were blocked on
+// function records harvested out of the SAME FILE as their consumer (`fnv1a32.ts` from `hash.ts`,
+// `merge-role-defaults.ts` from `roleModel.ts`), and those compose the TypeScript language PRIMITIVES —
+// of which the seed held exactly one, `typescript.number`, while the store held six. So the biggest wall
+// on the board was mostly a seed gap in the language kit's base.
+//
+// A record with NO `provides` answers no specifier, so shipping it cannot change what the app renders;
+// it only makes the graph's own references resolve. One WITH `provides` is a global override and is
+// never carried — it earns its place through the gate above. `libraryCarryClosure` holds that rule, and
+// its unit tests hold the refusals.
+const carried = [];
+{
+  const seeded = new Set((algorithms.implementations ?? []).map((i) => i.id));
+  for (const p of promote.impl) seeded.add(p.rec.id);
+  const byId = new Map(impls.map((i) => [i.id, i]));
+  const roots = promote.impl.flatMap((p) => p.rec.composes ?? []).filter((c) => !seeded.has(c));
+  const { carry } = libraryCarryClosure({ roots, byId, seeded });
+  for (const id of carry) carried.push(byId.get(id));
+}
+
 {
   const implIds = new Set((algorithms.implementations ?? []).map((i) => i.id));
   for (const p of promote.impl) implIds.add(p.rec.id);
+  for (const c of carried) implIds.add(c.id);
   for (let settled = false; !settled; ) {
     settled = true;
     const keep = [];
@@ -236,7 +301,21 @@ for (let pass = 0; pass < 20; pass++) {
   }
 }
 
-console.log(`promotable: ${promote.component.length} component(s) + ${promote.impl.length} impl(s)`);
+// Recompute the carry from what SURVIVED. The fixed point above can drop an impl for an unrelated
+// reason, and a library record carried only for that impl would then be seeded with nothing referencing
+// it — valid, but noise in a file whose whole job is to be reviewable.
+const carriedKept = [];
+{
+  const seeded = new Set((algorithms.implementations ?? []).map((i) => i.id));
+  for (const p of promote.impl) seeded.add(p.rec.id);
+  const byId = new Map(impls.map((i) => [i.id, i]));
+  const roots = promote.impl.flatMap((p) => p.rec.composes ?? []).filter((c) => !seeded.has(c));
+  for (const id of libraryCarryClosure({ roots, byId, seeded }).carry) carriedKept.push(byId.get(id));
+}
+
+console.log(`promotable: ${promote.component.length} component(s) + ${promote.impl.length} impl(s)` +
+  (carriedKept.length ? ` (+ ${carriedKept.length} library record(s) carried to close their composes)` : ""));
+for (const c of carriedKept) console.log(`   carry: ${c.id}${c.role === "primitive" ? "  [language primitive]" : ""}`);
 console.log(`skipped — already seeded ${skipped.alreadySeeded}, no record ${skipped.noRecord}, body differs ${skipped.bodyDiffers}, build-time-only ${skipped.buildTimeOnly.length}, role:page ${skipped.pageRecord.length}, unresolvable ${skipped.unresolvable.length}, uncompilable ${skipped.uncompilable.length}, unclosed-composes ${skipped.unclosedComposes.length}`);
 for (const f of skipped.buildTimeOnly) console.log(`   import.meta.glob: ${f}`);
 for (const f of skipped.pageRecord) console.log(`   role:page (catalogue it in shadowPages first): ${f}`);
@@ -264,13 +343,59 @@ if (!APPLY) {
 // what an existing seed actually holds.
 const SEED_FIELDS = ["id", "name", "kitId", "role", "provides", "srcText", "composes", "src", "props", "folder", "tests", "variants", "animations", "themeSystem", "pageKind", "shapes", "guidance", "whenUse", "whenNot", "tags", "analytics"];
 for (const { rec, file } of promote.component) {
+  // AN EXISTING SEED IS FOUND BY ID, ANYWHERE — not at the folder-derived path. `SEED_COMPONENTS` globs
+  // the tree FLAT and keys by id, so where a record's JSON sits is not part of its identity, and a
+  // store record's `folder` can disagree with where its seed actually lives: `plannerlibrarypane` is
+  // `folder: "planner"` in the store while its seed is at `features/planner/bodies/`. Deriving the path
+  // from `folder` made `existsSync` false, so the write was not treated as an adoption, and the
+  // duplicate-id guard then refused it — correctly, since writing would have put a SECOND record with
+  // that id under a second folder (the `console-pane-menu` failure). Right refusal, wrong question.
+  //
+  // It matters beyond tidiness: the resolvability fixed point runs BEFORE these write-time declines, so
+  // a record promoted on the assumption that its dependency would land can dangle when that dependency
+  // is refused here. `featuresstagebody` shipped importing `@/features/planner/bodies/PlannerLibraryPane`
+  // with nothing providing it, and `platformBoundary.test.ts` caught it.
   const folder = typeof rec.folder === "string" && rec.folder ? rec.folder : "misc";
-  const dir = join(REPO, "src-tauri/data/components/app", folder);
-  const path = join(dir, `${rec.id}.json`);
+  const existingPath = seedPathById.get(rec.id);
+  const dir = existingPath ? dirname(existingPath) : join(REPO, "src-tauri/data/components/app", folder);
+  const path = existingPath ?? join(dir, `${rec.id}.json`);
   // NEVER overwrite an existing seed. The skip above keys on `provides`, but the write keys on
   // `<folder>/<id>` — a record whose `provides` differs from the seed occupying that path slips through
   // and clobbers it. Seven curated seeds were overwritten before this guard existed.
-  if (existsSync(path)) { console.log(`   SKIPPED (a seed already occupies that path): ${file} → ${rec.id}.json`); skippedAtWrite++; continue; }
+  //
+  // `--adopt-seed` is the ONE narrow exception, and it inverts the case the guard was written for.
+  // The guard protects a CURATED seed from a worse record. Here the seed is the worse copy: it is
+  // BEHIND the file while the store record IS the file — which the promotion gate above has already
+  // proven, since a record only reaches this loop when its body matches. Four records were in that
+  // state (`statusbar`, `titlebar`, `terminalbanners`, `skills-lessons-tab`), three of them carrying
+  // no `provides` at all, and `titlebar`'s seed was missing the `WindowControls` export its file has —
+  // so retiring the file with that seed in place would have shipped a module short an export.
+  //
+  // The adoption is REFUSED when the existing seed already matches the file (nothing to gain) or when
+  // it would drop an export the seed has and the record does not. Neither is a judgement call: both
+  // are the same three-way `refresh-drifted-seeds.mjs` grades on, read in the other direction.
+  let adopting = false;
+  if (existsSync(path)) {
+    const seedRec = JSON.parse(readFileSync(path, "utf8"));
+    // The DECISION lives in `recordSource.mjs` as a pure function — this script runs on import, so
+    // anything embedded here cannot be unit-tested, and an untested overwrite rule is the last thing
+    // this file should carry.
+    const { verdict, reason, lost } = seedAdoption({
+      seedSrcText: seedRec.srcText ?? "", seedProvides: seedRec.provides ?? null,
+      recordSrcText: rec.srcText ?? "", recordProvides: rec.provides ?? null,
+      fileSrc: fileSrcOf(file),
+    });
+    if (!ADOPT_SEED) { console.log(`   SKIPPED (a seed already occupies that path): ${file} → ${rec.id}.json${verdict === "adopt" ? " — it is STALE; --adopt-seed replaces it" : ""}`); skippedAtWrite++; continue; }
+    // The export-loss refusal is the ONE that `--allow-drop` can override, and only for a record named
+    // on the command line. `lost` being non-empty is what identifies that refusal — a refusal for any
+    // other reason is not overridable here, so the flag cannot become a blanket "write anyway".
+    const overriding = verdict === "refuse" && lost?.length && ALLOW_DROP.has(rec.id);
+    if (verdict !== "adopt" && !overriding) { console.log(`   ${verdict === "keep" ? "kept" : "REFUSED"} (${reason}): ${rec.id}`); skippedAtWrite++; continue; }
+    if (overriding) console.log(`   ADOPTED DESPITE dropping ${lost.join(", ")} (--allow-drop, measured: no importer of it from ${rec.provides}): ${rec.id}`);
+    console.log(`   adopted the store record over a stale seed: ${rec.id}  (${reason})`);
+    adopted++;
+    adopting = true;
+  }
   // AND the ID must be free ANYWHERE in the seed, not just at this path. The check above keys on
   // `<folder>/<id>.json`, so the same id under a DIFFERENT folder sails past it — which is what happened:
   // `console-pane-menu` already existed under `app/console/`, this wrote a second under
@@ -278,7 +403,9 @@ for (const { rec, file } of promote.component) {
   // boot, `reconcileSeed` reported the id as pristine-but-changed and re-pushed it, forever. The app still
   // worked; three unrelated `store.test.ts` cases were the only thing that noticed, and they named the
   // RECORD rather than the duplication.
-  if (seedIds.has(rec.id)) { console.log(`   SKIPPED (that id is already in the seed elsewhere): ${file} → ${rec.id}`); skippedAtWrite++; continue; }
+  // (An ADOPTION is the one case where the id being present is the point — it is the seed being
+  //  replaced in place, at this exact path, not a second record under the same id.)
+  if (!adopting && seedIds.has(rec.id)) { console.log(`   SKIPPED (that id is already in the seed elsewhere): ${file} → ${rec.id}`); skippedAtWrite++; continue; }
   seedIds.add(rec.id);
   const out = {};
   for (const k of SEED_FIELDS) if (rec[k] !== undefined) out[k] = rec[k];
@@ -288,12 +415,30 @@ for (const { rec, file } of promote.component) {
 
 // IMPLS — appended to the one algorithms document, sorted by id so the file stays reviewable and a
 // re-run produces the same bytes.
-if (promote.impl.length) {
-  const KEEP = ["code", "composes", "domain", "folder", "id", "name", "provides", "role", "src", "tech"];
-  for (const { rec } of promote.impl) {
+if (promote.impl.length || carriedKept.length) {
+  const KEEP = ["code", "composes", "domain", "folder", "id", "name", "provides", "ref", "role", "src", "tech"];
+  // NEVER APPEND A DUPLICATE ID. The component write has refused this since seven curated seeds were
+  // clobbered; the impl write did not, and an id comes from the FILE STEM — so promoting
+  // `features/algorithms/viz/examples/sort.ts` appended a SECOND `sort.ts` beside a curated one, and
+  // `knowledge.test.ts` failed with "expected 603 to be 604". Nothing upstream caught it: `bsc graph
+  // harvest` refuses a stem collision only when it can compare `src`, and the curated entry had none.
+  //
+  // Under `--adopt-seed` the newer record REPLACES the existing entry, which is the right move when the
+  // existing one is a partial projection of the same module — the `sort.ts` case exactly: 28 lines with
+  // no `provides` and no `src`, against the full 90-line module that answers the specifier.
+  const byId = new Map(algorithms.implementations.map((e, i) => [e.id, i]));
+  for (const rec of [...carriedKept, ...promote.impl.map((p) => p.rec)]) {
     const entry = {};
     for (const k of KEEP) if (rec[k] !== undefined) entry[k] = rec[k];
     if (!Array.isArray(entry.composes)) entry.composes = [];
+    const at = byId.get(entry.id);
+    if (at !== undefined) {
+      if (!ADOPT_SEED) { console.log(`   SKIPPED (that impl id is already in the seed): ${entry.id}`); skippedAtWrite++; continue; }
+      console.log(`   replaced the seeded impl with the promoted module: ${entry.id}`);
+      algorithms.implementations[at] = entry;
+      continue;
+    }
+    byId.set(entry.id, algorithms.implementations.length);
     algorithms.implementations.push(entry);
   }
   algorithms.implementations.sort((a, b) => String(a.id).localeCompare(String(b.id)));
@@ -306,5 +451,6 @@ if (promote.impl.length) {
 const landed = promote.component.length + promote.impl.length - skippedAtWrite;
 console.log(
   `\npromoted ${landed} record(s) into the seed` +
+    (adopted ? `, ${adopted} of them ADOPTED over a stale seed` : "") +
     (skippedAtWrite ? ` (${skippedAtWrite} declined — a seed already occupied the path)` : ""),
 );

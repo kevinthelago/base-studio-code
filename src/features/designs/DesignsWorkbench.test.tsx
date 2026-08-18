@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { DesignsWorkbench } from "./DesignsWorkbench";
+import { DesignsWorkbench } from "@/features/designs/DesignsWorkbench";
 
 // The live preview builds with esbuild-wasm (can't run under jsdom); mock the bundler so the workbench
 // tests exercise the chrome without loading the wasm runtime (#2824).

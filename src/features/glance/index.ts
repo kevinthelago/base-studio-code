@@ -3,7 +3,7 @@
 export { GlanceWorkspace } from "./GlanceWorkspace";
 // #4185: the graph-hosted workspace — what the rail actually mounts. The file component above stays
 // exported and is not going away — both copies coexist under the parity guard.
-export { GlanceGraphHost } from "./GlanceGraphHost";
+export { GlanceGraphHost } from "@/features/glance/GlanceGraphHost";
 export { registerGlancePlatform } from "./graphPlatform";
 export {
   buildGraph, focusSets, edgeGeom, rollUpHealth,
@@ -24,7 +24,7 @@ export { applyStallHealth, projectKeyOfSession, STALL_WARN_MS, type WaitLite } f
 export { useProjectFleet } from "@/features/glance/lib/useProjectFleet";
 export { type ProjectLink } from "@/features/glance/lib/projectLinks";
 // #3931: the fleet resume is the launch pump's actuator (mounted in the app shell), so it is public API.
-export { resumeProjectFleet, nothingToResume, type ResumeResult, type BlockedStream } from "./lib/resumeProject";
+export { resumeProjectFleet, nothingToResume, type ResumeResult, type BlockedStream } from "@/features/glance/lib/resumeProject";
 // #4103: the non-hook issue-state resolver — the fleet gates in OTHER features (the publish-time
 // prune) need it outside a render, and a feature is reached only through its barrel.
 export { resolveClosedRefs, type RefBearingStream } from "@/features/glance/lib/fleetIssueState";

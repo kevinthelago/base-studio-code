@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   mapThroughput, mapMergeQueue, deriveThroughputKpis,
   type GhPull, type GhIssueItem, type GhStatusState,
-} from "./fleetGithub";
+} from "@/shared/lib/github/fleetGithub";
 
 const NOW = new Date("2026-06-10T12:00:00Z"); // window 05-28..06-10
 

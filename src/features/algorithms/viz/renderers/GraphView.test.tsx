@@ -2,7 +2,7 @@
 // visit/frontier verbs, and flashes the relaxed edge.
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { GraphView } from "./GraphView";
+import { GraphView } from "@/features/algorithms/viz/renderers/GraphView";
 import { circularLayout, coordinateLayout, layoutFor } from "@/features/algorithms/viz/renderers/graphLayout";
 import type { GraphFrame } from "@/features/algorithms/lib/trace";
 

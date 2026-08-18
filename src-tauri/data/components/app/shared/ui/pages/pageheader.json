@@ -3,12 +3,18 @@
   "name": "PageHeader",
   "kitId": "base-studio-code",
   "role": "composite",
-  "srcText": "import type { ReactNode } from \"react\";\nimport { SectionHeader } from \"@/shared/ui/layout/SectionHeader\";\n\nexport interface PageHeaderProps {\n  title?: ReactNode;\n  hint?: ReactNode;\n  toolbar?: ReactNode;\n  meta?: ReactNode;\n}\nexport function PageHeader({ title = \"Page title\", hint, toolbar, meta }: PageHeaderProps) {\n  return (\n    <div style={{ padding: \"10px 16px\", background: \"var(--bg-elev)\", flex: \"none\", borderBottom: \"1px solid var(--border-soft)\" }}>\n      <SectionHeader title={title} hint={hint} right={toolbar} meta={meta} />\n    </div>\n  );\n}",
-  "src": "src/shared/ui/pages/pageHeader.tsx",
+  "provides": "@/shared/ui/pages/pageHeader",
+  "srcText": "// PageHeader — the Pages-tier internal header bar (#2505). Every page composition opens with the\n// same full-width titled bar (title · hint · right-aligned controls), so it lives ONCE here and each\n// page hands it to its layout template's `toolbar` slot. Deliberately UNREGISTERED (like\n// DataTableHeader / ZoomControls): it's page plumbing, not a standalone kit primitive — the pages\n// compose it out of the registered Box + SectionHeader.\nimport type { ReactNode } from \"react\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { SectionHeader } from \"@/shared/ui/layout/SectionHeader\";\n\nexport interface PageHeaderProps {\n  title: ReactNode;\n  /** Dimmed inline sub-text after the title. */\n  hint?: ReactNode;\n  /** Right-aligned controls (search, filters, actions) — the page's `toolbar` slot content. */\n  toolbar?: ReactNode;\n  /** Right-aligned dim mono meta (e.g. a count) when there are no `toolbar` controls. */\n  meta?: ReactNode;\n}\n\n/** The one page header bar: a bordered Box wrapping the canonical SectionHeader row. */\nexport function PageHeader({ title, hint, toolbar, meta }: PageHeaderProps) {\n  return (\n    <Box pad={[10, 16]} bg=\"var(--bg-elev)\" style={{ flex: \"none\", borderBottom: \"1px solid var(--border-soft)\" }}>\n      <SectionHeader title={title} hint={hint} right={toolbar} meta={meta} />\n    </Box>\n  );\n}\n",
   "composes": [
     "SectionHeader"
   ],
-  "provides": "@/shared/ui/pages/PageHeader",
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `PageHeader` defaults `title`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `PageHeader` holds 2 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 2 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
-  "folder": "shared/ui/pages"
+  "src": "src/shared/ui/pages/pageHeader.tsx",
+  "props": [],
+  "folder": "shared/ui/pages",
+  "variants": [
+    "default"
+  ],
+  "whenUse": [],
+  "whenNot": [],
+  "tags": []
 }

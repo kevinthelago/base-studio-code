@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PROJECT_MODES } from "./projectModes";
+import { PROJECT_MODES } from "@/features/planner/list/projectModes";
 
 describe("PROJECT_MODES (#2850)", () => {
   it("has no standalone Themes tab — theme viewing folded into the Components preview (#2834)", () => {

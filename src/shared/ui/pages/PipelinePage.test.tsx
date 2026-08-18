@@ -2,7 +2,7 @@
 // header bar, the focused-step detail (status Chip + description + facts), and both orientations.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { PipelinePage, type PipelineStep } from "./PipelinePage";
+import { PipelinePage, type PipelineStep } from "@/shared/ui/pages/PipelinePage";
 
 const STEPS: PipelineStep[] = [
   { id: "build", label: "Build", status: "complete", facts: [{ k: "took", v: "41s" }] },

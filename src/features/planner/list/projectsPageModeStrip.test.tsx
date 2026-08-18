@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PROJECT_MODES } from "./projectModes";
+import { PROJECT_MODES } from "@/features/planner/list/projectModes";
 
 // #548 / #1876: the Projects page modes — formerly the `ProjectsPageModeStrip`, now the data behind
 // the shared <Screen> tab bar (`PROJECT_MODES`, rendered in features/planner/index.tsx).

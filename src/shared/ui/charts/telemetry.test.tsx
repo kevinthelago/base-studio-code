@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { TelemetryPanel, ItemBars, SplitBar } from "./telemetry";
+import { TelemetryPanel, ItemBars, SplitBar } from "@/shared/ui/charts/telemetry";
 
 describe("telemetry primitives (#1826)", () => {
   it("TelemetryPanel renders the title, hint, right slot, and body", () => {

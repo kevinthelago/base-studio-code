@@ -17,7 +17,7 @@ import { buildMcpServers } from "@/features/planner/lib/mcpPaneData";
 // types). This adapter re-exports those shapes so existing import sites that reach
 // for them via "./projectPaneData" keep working.
 import type { ProjectPaneData } from "@/features/planner/pane/projectPane.types";
-import type { BuildProjectPaneInput } from "./projectPaneInput";
+import type { BuildProjectPaneInput } from "@/features/planner/pane/projectPaneInput";
 
 import { buildAgents } from "./projectPaneAgents";
 import { buildRepos } from "@/features/planner/pane/projectPaneRepos";
@@ -25,7 +25,7 @@ import { buildStructure } from "@/features/planner/pane/projectPaneStructure";
 import { buildContext } from "@/features/planner/pane/projectPaneContext";
 import { effectiveStreams, deriveRelationships } from "@/features/planner/pane/projectPaneRelationships";
 
-export type { BuildProjectPaneInput } from "./projectPaneInput";
+export type { BuildProjectPaneInput } from "@/features/planner/pane/projectPaneInput";
 export type {
   Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone,
   ContextFile, ProjectPaneData, PaneAutomation, PaneSkill, McpServer,

@@ -3,7 +3,7 @@
 // advances the frame.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { TracePlayer } from "./TracePlayer";
+import { TracePlayer } from "@/features/algorithms/viz/TracePlayer";
 import type { StructureRenderer } from "@/features/algorithms/viz/registry";
 import type { Frame } from "@/features/algorithms/lib/trace";
 

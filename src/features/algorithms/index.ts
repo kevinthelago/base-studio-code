@@ -1,13 +1,13 @@
 // Public API barrel for the Algorithms knowledge-graph feature (#2761). The Workspace is the rail
 // destination; the pure model (`knowledge`) is re-exported for consumers.
-export { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
+export { AlgorithmsWorkspace } from "@/features/algorithms/AlgorithmsWorkspace";
 // #4219: the graph-hosted workspace — what the planner mounts. The file component above stays exported;
 // both copies coexist under the record<->file parity guard.
-export { AlgorithmsGraphHost } from "./AlgorithmsGraphHost";
+export { AlgorithmsGraphHost } from "@/features/algorithms/AlgorithmsGraphHost";
 // #4265: the project-planner lens on the algorithms library — the twin of the Design Studio's
 // PlannerComponentsPane, so the planner presents BOTH halves of the artifact surface.
-export { PlannerAlgorithmsPane } from "./PlannerAlgorithmsPane";
-export * from "./lib/knowledge";
+export { PlannerAlgorithmsPane } from "@/features/algorithms/PlannerAlgorithmsPane";
+export * from "@/features/algorithms/lib/knowledge";
 // The cross-graph adapter (#3116) — the algo-graph NodeLookup another pillar composes into its resolver.
 export { algoNodeLookup } from "@/features/algorithms/lib/crossGraphAdapter";
 
@@ -18,13 +18,13 @@ export * from "@/features/algorithms/lib/trace";
 export * from "@/features/algorithms/lib/binding";
 export { makeTraceStream, DEFAULT_BUFFER_SIZE } from "@/features/algorithms/lib/traceStream";
 export type { TraceStream, TraceStreamOptions } from "@/features/algorithms/lib/traceStream";
-export { TracePlayer } from "./viz/TracePlayer";
-export type { TracePlayerProps } from "./viz/TracePlayer";
+export { TracePlayer } from "@/features/algorithms/viz/TracePlayer";
+export type { TracePlayerProps } from "@/features/algorithms/viz/TracePlayer";
 export { fallbackRenderer, resolveRenderer } from "@/features/algorithms/viz/registry";
 export type { StructureRenderer, RendererRegistry } from "@/features/algorithms/viz/registry";
 
 // The `array` renderer (#3178) + the seeded sort proof (#3177) — the array proof-of-loop.
-export { ArrayView } from "./viz/renderers/ArrayView";
+export { ArrayView } from "@/features/algorithms/viz/renderers/ArrayView";
 // The array viz kit's MOTION as KitAnimation data (#2942) — compiled by the engine; exported so a
 // future Designs kit-store integration can register + edit it in the AnimationsMenu (see the module's
 // RESIDUAL note).
@@ -38,14 +38,14 @@ export { TRACE_PROGRAMS, programKey, programForImpl, type AlgoProgram } from "@/
 export { SEARCH_PROGRAMS, linearSearch, binarySearch, parseSearchInput, searchToText } from "@/features/algorithms/viz/examples/searches";
 export type { SearchInput, SearchProgram } from "@/features/algorithms/viz/examples/searches";
 // The `scalar` datatype (#3220) — renderer + the accumulate programs (fibonacci).
-export { ScalarView } from "./viz/renderers/ScalarView";
+export { ScalarView } from "@/features/algorithms/viz/renderers/ScalarView";
 export { TracedScalar, runScalarAlgorithm } from "@/features/algorithms/lib/tracer";
 export { SCALAR_PROGRAMS, fibonacci, parseScalarInput, scalarToText, type ScalarProgram } from "@/features/algorithms/viz/examples/scalarAlgos";
 // The `matrix` datatype (#3221, epic #3220) — renderer + transform programs.
-export { MatrixView } from "./viz/renderers/MatrixView";
+export { MatrixView } from "@/features/algorithms/viz/renderers/MatrixView";
 export { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "@/features/algorithms/viz/examples/matrixTransforms";
 // The `graph` datatype (#3224, epic #3220) — renderer + traversal/shortest-path programs.
-export { GraphView } from "./viz/renderers/GraphView";
+export { GraphView } from "@/features/algorithms/viz/renderers/GraphView";
 export { circularLayout, coordinateLayout, layoutFor } from "@/features/algorithms/viz/renderers/graphLayout";
 export { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "@/features/algorithms/viz/examples/graphAlgos";
 export { programVizForImpl, resolveVizExample, resolveKind } from "./viz/examples/registry";

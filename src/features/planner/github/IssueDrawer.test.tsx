@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { IssueDrawer } from "./IssueDrawer";
+import { IssueDrawer } from "@/features/planner/github/IssueDrawer";
 import type { BoardIssue } from "@/features/planner/github/projectBoard.types";
 
 const issue: BoardIssue = {

@@ -17,16 +17,16 @@ import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
 import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
-import { AlgorithmsKitGraph } from "./AlgorithmsKitGraph";
-import { AlgorithmsInspector } from "./AlgorithmsInspector";
-import { AlgorithmsRail } from "./AlgorithmsRail";
+import { AlgorithmsKitGraph } from "@/features/algorithms/AlgorithmsKitGraph";
+import { AlgorithmsInspector } from "@/features/algorithms/AlgorithmsInspector";
+import { AlgorithmsRail } from "@/features/algorithms/AlgorithmsRail";
 import { LibrarianTerminal } from "@/features/algorithms/LibrarianTerminal";
-import { VizStage } from "./viz/VizPanel";
+import { VizStage } from "@/features/algorithms/viz/VizPanel";
 import { useVizForImpl } from "@/features/algorithms/viz/useVizForImpl";
 import {
   TECHS, TECH_META, NODE_W, NODE_H, layoutKitGraph, kitGraph, kitTechs, implById,
   KIT_REL_META, KIT_REL_ORDER, type Tech,
-} from "./lib/knowledge";
+} from "@/features/algorithms/lib/knowledge";
 import { useKnowledgeGraph } from "@/features/algorithms/useKnowledgeGraph";
 
 export function AlgorithmsWorkspace() {

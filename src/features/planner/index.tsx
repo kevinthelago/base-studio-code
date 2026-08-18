@@ -11,9 +11,9 @@ import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
-import { ProjectsGraphHost } from "./ProjectsGraphHost";
+import { ProjectsGraphHost } from "@/features/planner/ProjectsGraphHost";
 // #3874: the graph-hosted Projects page — built and gated, not yet mounted (see the FLIP POINTs below).
-export { ProjectsGraphHost } from "./ProjectsGraphHost";
+export { ProjectsGraphHost } from "@/features/planner/ProjectsGraphHost";
 // #4169: the page's platform registration, on the barrel because callers OUTSIDE a render need it. Every
 // other feature registers when its host MODULE evaluates, so importing the barrel is enough; this one
 // registers at first RENDER (the import cycle documented in ProjectsGraphHost), so shadow mode — which
@@ -26,16 +26,16 @@ export { registerPlanningPlatform } from "./session/graphPlatform";
 // which is the only planner path #1545 lets it reach — the registration itself stays inside the planner.
 export { registerPlannerGithubPlatform } from "./github/graphPlatform";
 // #4224: the planning session renders FROM THE GRAPH; the file component stays for its tests.
-import { PlanningGraphHost } from "./session/PlanningGraphHost";
+import { PlanningGraphHost } from "@/features/planner/session/PlanningGraphHost";
 import { TeamsPanel } from "@/features/teams";
 import { SoundsGraphHost } from "@/features/sounds";
 import { DataGraphPage } from "@/features/data";
 import { useProjectScan } from "@/features/planner/list/useProjectScan";
-import { PROJECT_MODES } from "./list/projectModes";
+import { PROJECT_MODES } from "@/features/planner/list/projectModes";
 
 // #1545: public API for cross-feature consumers. tunnel reaches plannerCore for CanonicalFile;
 // components reaches the gist manifest/publish helpers (included for barrel completeness).
-export type { CanonicalFile } from "./lib/plannerCore";
+export type { CanonicalFile } from "@/features/planner/lib/plannerCore";
 // #3760: the `plan` store_state builder lives in the planner feature (the plan domain is planner-
 // published, not projected by useStoreProjector); exposed so the tunnel payload-parity harness can
 // cover it like every other domain.
@@ -46,7 +46,7 @@ export {
 } from "@/features/planner/lib/gist/manifest";
 // The Planner's page vocabulary (#3274): `bsc navigate page <id>` validates against it, so the shell
 // needs the real list rather than a hand-copied one that could drift from the tabs actually rendered.
-export { PROJECT_MODES } from "./list/projectModes";
+export { PROJECT_MODES } from "@/features/planner/list/projectModes";
 // The project APPLICATION ARCHITECTURE (#3802 → the Glance endpoint-type discriminator, #3786): a
 // per-project attribute the planner classifies during Discovery. Exposed on the barrel so cross-feature consumers
 // (Glance surfaces it on each project node) reach the type, not the deep `lib/classifyConfig` path.
@@ -55,18 +55,18 @@ export { installFromGist, publishGist } from "@/features/planner/lib/gist/gist";
 // #1545: github's screen renders planner's project views (a one-way UI dependency now that planner
 // no longer reaches into github); the app's director pump + console launch reach planner fleet logic
 // (flow-permission rules, director drive). Exposed here so those consumers use the barrel, not deep paths.
-export { ProjectsSummary } from "./list/ProjectsSummary";
-export { ProjectBoard } from "./github/ProjectBoard";
-export { Roadmap } from "./github/Roadmap";
-export { Issues } from "./github/Issues";
-export { Insights } from "./github/Insights";
+export { ProjectsSummary } from "@/features/planner/list/ProjectsSummary";
+export { ProjectBoard } from "@/features/planner/github/ProjectBoard";
+export { Roadmap } from "@/features/planner/github/Roadmap";
+export { Issues } from "@/features/planner/github/Issues";
+export { Insights } from "@/features/planner/github/Insights";
 export { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
 // #2995: the durable projects-DB bridge — the app shell's boot migration upserts every cached draft
 // into the DB through this (reached via the barrel, not a deep path, per the app import boundary).
-export { addDbProject, setDbTriaged } from "./list/projectsDbBridge";
+export { addDbProject, setDbTriaged } from "@/features/planner/list/projectsDbBridge";
 // #3966: Glance needs the durable project list too — it was reading the persisted `localDraftProjects`
 // cache, which misses any project the cache never got, so a real project could have no graph node.
-export { listDbProjects, type DbProject } from "./list/projectsDbBridge";
+export { listDbProjects, type DbProject } from "@/features/planner/list/projectsDbBridge";
 // `decideDirectorAction`, `pendingAskPrompt`, `pendingRequestPrompt` and `idleReminderPrompt` were
 // re-exported here and are DELETED (#coord-prefix-names-the-sender) — this barrel was their last
 // reference, which is what made them look reachable to a grep.

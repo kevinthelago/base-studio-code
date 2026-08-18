@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { DesignerTerminal } from "@/features/designs/DesignerTerminal";
-import { DesignsWorkbench } from "./DesignsWorkbench";
+import { DesignsWorkbench } from "@/features/designs/DesignsWorkbench";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";

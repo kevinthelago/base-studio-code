@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { checkConformance, effectiveDeniedCommands, isAppSanctioned, type StreamAnchor, type SessionActivity } from "@/shared/lib/fleet/conformance";
-import { roleCapability } from "../session/sessionRoles";
+import { roleCapability } from "@/shared/lib/session/sessionRoles";
 import { DEFAULT_FLOW, type AgentFlow } from "@/features/planner/fleet/agentFlow";
 
 /** A worker that genuinely pushes — the fixture for every push/PR case below. */

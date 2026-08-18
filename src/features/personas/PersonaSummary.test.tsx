@@ -2,7 +2,7 @@
 // start prompt) so it isn't invisible behind the picker's dropdown label.
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { PersonaSummary } from "./PersonaSummary";
+import { PersonaSummary } from "@/features/personas/PersonaSummary";
 import type { Persona } from "@/features/personas/lib/persona";
 import { useAppStore } from "@/store";
 

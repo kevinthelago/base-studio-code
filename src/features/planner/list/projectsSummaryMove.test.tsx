@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PROJECT_MODES } from "./projectModes";
+import { PROJECT_MODES } from "@/features/planner/list/projectModes";
 
 // #421: the Projects portfolio summary moved into the GitHub screen, between
 // Summary and Repositories. The Projects tab drops its Summary mode.

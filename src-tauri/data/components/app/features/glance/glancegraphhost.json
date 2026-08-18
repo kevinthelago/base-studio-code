@@ -1,0 +1,11 @@
+{
+  "id": "glancegraphhost",
+  "name": "GlanceGraphHost",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/features/glance/GlanceGraphHost",
+  "srcText": "// The Glance page host (#4185, epic #3604) — renders the cockpit FROM THE GRAPH. The workspace and the 8\n// components it composes are sourced from the components graph (the authored `glancepage` node + siblings,\n// seeded from `data/components/app/**`), not bundled files. It registers the glance feature's injected\n// platform surface (the ~17 hooks and pure derivations the cockpit is thin over, plus the other features'\n// surfaces it composes), then mounts `glancepage` through the runtime loader.\n//\n// The CSS still ships as a normal bundled import here: the loader cannot resolve a CSS side-effect import,\n// so it was stripped from the graph source and the host owns the stylesheet the page's classes need.\n//\n// A GRAPH PAGE INSIDE A GRAPH PAGE. Glance mounts `FleetGraphHost`, which mounts `fleetpage` — so a\n// graph-loaded page now hosts another. That is not a new mechanism (the loader already vendors siblings\n// recursively) but it is the first time one arrives through a HOST rather than an import, and each keeps\n// its own error boundary: a broken fleetpage degrades inside a working Glance.\nimport { GraphComponent } from \"@/shared/lib/runtime/GraphComponent\";\nimport { GraphPageFallback } from \"@/shared/lib/runtime/GraphPageFallback\";\nimport { registerGlancePlatform } from \"@/features/glance/graphPlatform\";\n\n// Register at module load — before the workspace ever renders — so the injected modules are in the registry\n// when the graph page's compiled `require()` runs. Idempotent.\nregisterGlancePlatform();\n\nexport function GlanceGraphHost() {\n  // Fallback offers Reload-to-apply / Re-seed (#3648/#3652) when the source isn't in the library yet.\n  return <GraphComponent id=\"glancepage\" fallback={<GraphPageFallback page=\"Glance\" icon=\"◎\" />} />;\n}",
+  "composes": [],
+  "src": "src/features/glance/GlanceGraphHost.tsx",
+  "folder": "features/glance"
+}

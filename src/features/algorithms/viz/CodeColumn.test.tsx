@@ -1,7 +1,7 @@
 // The per-op source-highlight column (#3250) — the pure split model plus a render smoke test.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { CodeColumn, splitAtLoc } from "./CodeColumn";
+import { CodeColumn, splitAtLoc } from "@/features/algorithms/viz/CodeColumn";
 
 const SRC = `({ run(a) { a.compare(0, 1); a.swap(0, 1); } })`;
 /** The range of `a.swap(0, 1)` in SRC. */

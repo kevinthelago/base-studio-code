@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildJudgePrompt, parseJudgeVerdict, selectForJudging } from "./wardenJudge";
+import { buildJudgePrompt, parseJudgeVerdict, selectForJudging } from "@/shared/lib/fleet/wardenJudge";
 
 describe("buildJudgePrompt", () => {
   it("includes the assignment + observed activity, and asks for JSON only", () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildDrafts, mergeDbDrafts, isOrphanScaffold, type LocalProjectLite, type DraftRow } from "@/features/planner/list/drafts";
-import type { DbProject } from "./projectsDbBridge";
+import type { DbProject } from "@/features/planner/list/projectsDbBridge";
 
 const lp = (over: Partial<LocalProjectLite> & { key: string }): LocalProjectLite => ({
   title: over.key, hasPlan: true, updatedAt: 0, published: false, ...over,

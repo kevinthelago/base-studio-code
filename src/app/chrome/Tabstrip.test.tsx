@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Tabstrip } from "./Tabstrip";
-import type { Tab } from "./Tabstrip";
+import { Tabstrip } from "@/app/chrome/Tabstrip";
+import type { Tab } from "@/app/chrome/Tabstrip";
 
 const TABS: Tab[] = [
   { name: "orchestrator", layout: "3×3", state: "run" },

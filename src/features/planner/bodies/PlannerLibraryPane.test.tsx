@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { PlannerLibraryPane } from "./PlannerLibraryPane";
-import { FeaturesStageBody } from "./FeaturesStageBody";
+import { PlannerLibraryPane } from "@/features/planner/bodies/PlannerLibraryPane";
+import { FeaturesStageBody } from "@/features/planner/bodies/FeaturesStageBody";
 import { useAppStore } from "@/store";
 import blueprintDefault from "@data/blueprints/default.json";
 

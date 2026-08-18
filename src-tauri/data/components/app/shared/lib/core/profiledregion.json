@@ -1,0 +1,27 @@
+{
+  "id": "profiledregion",
+  "name": "ProfiledRegion",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/shared/lib/core/renderProfiler",
+  "srcText": "// renderProfiler (#3618) — a thresholded React <Profiler> for pinpointing WHICH region is slow.\n//\n// The frontend perf monitor (perf.ts) counts renders globally but can't say which subtree cost them. Wrap\n// a region (a graph, the console, …) in <ProfiledRegion id=\"…\"> and it logs `[render] <id> <phase> Nms`\n// to the app log ONLY when a commit of that subtree exceeds `thresholdMs` — so a laggy graph surfaces in\n// base-studio-code.log alongside the [perf] lines, tagged, without spamming when it's fast. The <Profiler>\n// always wraps (so toggling metrics never remounts the graph + drops its viewport state); the LOG is gated\n// on the metrics toggle (perfConfig), read fresh in the callback so ProfiledRegion never re-renders for it.\nimport { Profiler, type ReactNode } from \"react\";\nimport { useAppStore } from \"@/store\";\nimport { log } from \"@/shared/lib/core/log\";\n\nexport function ProfiledRegion({\n  id,\n  thresholdMs = 16,\n  children,\n}: {\n  id: string;\n  /** Log only commits at/over this many ms (default one frame). */\n  thresholdMs?: number;\n  children: ReactNode;\n}) {\n  return (\n    <Profiler\n      id={id}\n      onRender={(pid, phase, actualDuration) => {\n        if (actualDuration < thresholdMs) return;\n        const cfg = useAppStore.getState().perfConfig;\n        if (!cfg.enabled || !cfg.trackFrontend) return; // honor the metrics toggle\n        log.warn(`[render] ${pid} ${phase} ${actualDuration.toFixed(1)}ms`, \"perf\");\n      }}\n    >\n      {children}\n    </Profiler>\n  );\n}\n",
+  "composes": [],
+  "src": "src/shared/lib/core/renderProfiler.tsx",
+  "props": [
+    {
+      "name": "children",
+      "required": true,
+      "type": "node"
+    },
+    {
+      "name": "id",
+      "required": true,
+      "type": "string"
+    },
+    {
+      "name": "thresholdMs",
+      "type": "number"
+    }
+  ],
+  "folder": "shared/lib/core"
+}

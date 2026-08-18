@@ -15,6 +15,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { dataSpecifierFor } from "./appModules";
+import algorithmsSeed from "@data/knowledge/algorithms.json";
 
 const SRC = join(process.cwd(), "src");
 
@@ -30,6 +31,25 @@ function listModules(dir = SRC, rel = ""): { path: string; text: string }[] {
   return out;
 }
 
+/** Every packaged RECORD source — the other half of "real source", and the half that matters most here.
+ *  A record is compiled by the runtime loader, so an unregistered `@data/*.json` inside one fails at
+ *  load; a file at least has the bundler. The sweep read `src/` only, which was fine while the importers
+ *  WERE files — but every retirement moves one into a record, so the guard covered steadily less of what
+ *  it exists to check while its own non-vacuity floor still read as healthy. */
+const seedRecordSources = (): { path: string; text: string }[] => {
+  const out: { path: string; text: string }[] = [];
+  for (const [p, m] of Object.entries(
+    import.meta.glob<{ default: { id?: string; srcText?: string } }>("@data/components/app/**/*.json", { eager: true }),
+  )) {
+    const t = m.default?.srcText;
+    if (t) out.push({ path: `record ${m.default.id ?? p}`, text: t });
+  }
+  for (const im of (algorithmsSeed as { implementations?: { id: string; code?: string }[] }).implementations ?? []) {
+    if (im.code) out.push({ path: `impl ${im.id}`, text: im.code });
+  }
+  return out;
+};
+
 const DATA_JSON_IMPORT = /from\s+["'](@data\/[^"']+\.json)["']/g;
 
 /** What the registration actually globs — the same glob `appModules.ts` uses, so the two cannot disagree. */
@@ -40,7 +60,7 @@ const GLOBBED = new Set(
 );
 
 describe("every @data JSON a module imports is reachable through the registry", () => {
-  const modules = listModules();
+  const modules = [...listModules(), ...seedRecordSources()];
 
   it("finds modules to check at all", () => {
     // Non-vacuity: a listing that stopped walking would make an empty sweep read as a clean one.
@@ -54,8 +74,10 @@ describe("every @data JSON a module imports is reachable through the registry", 
         if (!imported.has(hit[1])) imported.set(hit[1], m.path);
       }
     }
-    // Non-vacuity again: the whole point is that 44 of these exist today.
-    expect(imported.size, "modules do import packaged @data JSON").toBeGreaterThan(20);
+    // Non-vacuity. The count is deliberately NOT pinned near today value: every retirement tranche moves
+    // importers out of `src/` and into records, so a tight floor fires on healthy progress rather than on
+    // a broken sweep. Scanning records TOO is what keeps this meaningful — the specifiers move, not vanish.
+    expect(imported.size, "modules do import packaged @data JSON").toBeGreaterThan(10);
 
     const missing = [...imported].filter(([spec]) => !GLOBBED.has(spec));
     expect(

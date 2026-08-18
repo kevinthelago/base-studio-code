@@ -10,6 +10,88 @@ import { readFileSync } from "node:fs";
 /** LF, no trailing whitespace — the byte form every comparison here works in. */
 export const norm = (s) => s.replace(/\r\n/g, "\n").trimEnd();
 
+// ── relative specifiers ───────────────────────────────────────────────────────────────────────────
+// ONE definition of "a relative specifier a record carries", shared by the guard that rejects them
+// (`platformBoundary.test.ts`), the sweep that repairs them (`check-record-imports.mjs`), the
+// retirement that must not create new ones (`retire-module.mjs`) and the refresh that absolutizes a
+// file into record form (`absolutizeImports`, below). Four readers, one regex — for the same reason
+// this module exists at all: a guard that reads imports differently from the fix is worse than either
+// being wrong alone.
+
+/** A STATEMENT import/export. Line-ANCHORED, which is what makes it prose-immune with no lexer: a `//`
+ *  line and a `*` doc-comment continuation both fail `^[ \t]*(?:import|export)`. The clause is
+ *  `[^"';]*?` so it may span lines (a multi-line named-import list) but may cross neither a quote nor a
+ *  statement end. */
+const STATEMENT_SPEC = /^[ \t]*(?:import|export)\s+(?:type\s+)?[^"';]*?\s*from\s*["']([^"']+)["']/gm;
+/** A bare side-effect import — `import "./x.css"`. No clause, still a `require` at runtime. */
+const BARE_SPEC = /^[ \t]*import\s*["']([^"']+)["']/gm;
+/** The INLINE forms, which cannot be line-anchored: `import("./x").Type` (the type-position form that a
+ *  `from "…"` sweep leaves behind — it was the single remaining typecheck error the last time one ran),
+ *  a dynamic `import("./x")`, a `require("./x")`, and `vi.mock("./x")` in a carried test. */
+const INLINE_SPEC = /\b(?:import|require|vi\.(?:mock|doMock|unmock))\s*\(\s*["']([^"']+)["']/g;
+
+/** The line `index` falls on — how the inline scan tells code from prose. */
+const lineAt = (src, index) => {
+  const end = src.indexOf("\n", index);
+  return src.slice(src.lastIndexOf("\n", index) + 1, end === -1 ? undefined : end);
+};
+
+/** A line whose specifier is PROSE, not code: a `//` comment or a `*` / `/*` block-comment line.
+ *
+ *  Measured over all 2,405 record sources, this is exactly where every inline false positive lives —
+ *  `classifyConfig`'s `{@link import("../stages/stageGate").PlanSignals}` and `pageBinding`'s
+ *  ``` `require("./y")` ``` are both doc comments explaining the loader, and rewriting them would make
+ *  the prose describe something that no longer happens. It deliberately does NOT try to be a lexer: a
+ *  TRAILING `// import("./x")` on a code line is still scanned, and a comment-only miss is harmless
+ *  because a comment cannot fail at runtime. Hand-rolled comment STRIPPING was tried first and is what
+ *  this replaces — it desynchronized on a regex literal containing quotes
+ *  (`/^[ \t]*(import|export)…["']([^"']+)["']/`), after which the real doc comment below it was read as
+ *  code. Anchoring needs no such state. */
+const isProseLine = (line) => /^[ \t]*(?:\*|\/\/|\/\*)/.test(line);
+
+/**
+ * Every RELATIVE specifier in `src`, as `{ spec, at }` — `at` being the index of the specifier text
+ * itself, so a rewriter can splice without re-finding it.
+ *
+ * A record may not import relatively AT ALL, whichever form it takes. The runtime loader routes a
+ * specifier to the registry under its literal key, so `./x` needs a registration exactly like an
+ * absolute one and `provides` (which matches the exact specifier) can never reach it. That is the rule
+ * `platformBoundary.test.ts` states; this is what finds the violations.
+ */
+export function relativeSpecifiers(src) {
+  const out = [];
+  for (const [re, prose] of [[STATEMENT_SPEC, false], [BARE_SPEC, false], [INLINE_SPEC, true]]) {
+    re.lastIndex = 0;
+    for (const m of src.matchAll(re)) {
+      if (!m[1].startsWith(".")) continue;
+      if (prose && isProseLine(lineAt(src, m.index))) continue;
+      out.push({ spec: m[1], at: m.index + m[0].lastIndexOf(m[1]) });
+    }
+  }
+  // De-duplicate by position: the bare and statement patterns can both claim `import "./x"`.
+  const seen = new Set();
+  return out.filter((s) => !seen.has(s.at) && seen.add(s.at)).sort((a, b) => a.at - b.at);
+}
+
+/** `./x` resolved against the DIRECTORY it is imported from, as an `@/…` specifier.
+ *
+ *  The trailing segment is allowed to be absent: `from "./"` and `from ".."` are real imports naming a
+ *  directory's barrel — `@/components/security-flow` carries a test doing exactly that, and it was the
+ *  one mispair that survived a first version of the emitter's regex requiring a name after the slash. */
+export function aliasForDir(fromDir, spec) {
+  const out = [];
+  for (const seg of `${fromDir}/${spec}`.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
+  }
+  return `@/${out.join("/").replace(/^src\//, "")}`;
+}
+
+/** `./x` resolved against `fromRel` — a FILE path, relative to the repo root or to `src/`. */
+export const aliasFor = (fromRel, spec) =>
+  aliasForDir(fromRel.includes("/") ? fromRel.slice(0, fromRel.lastIndexOf("/")) : "", spec);
+
 /**
  * Rewrite every RELATIVE import to its absolute `@/…` form, resolved against `fromRel` (the file's path
  * relative to `src/`).
@@ -25,19 +107,12 @@ export const norm = (s) => s.replace(/\r\n/g, "\n").trimEnd();
  * identical. Comparing the raw file called 21 records "body differs" that were the same module.
  */
 export function absolutizeImports(src, fromRel) {
-  const fromDir = fromRel.includes("/") ? fromRel.slice(0, fromRel.lastIndexOf("/")) : "";
-  return src.replace(
-    /((?:from|import|require)\s*\(?\s*)(['"])(\.\.?\/[^'"]+)\2/g,
-    (whole, head, q, relSpec) => {
-      const out = [];
-      for (const seg of `${fromDir}/${relSpec}`.split("/")) {
-        if (seg === "" || seg === ".") continue;
-        if (seg === "..") out.pop();
-        else out.push(seg);
-      }
-      return `${head}${q}@/${out.join("/")}${q}`;
-    },
-  );
+  let out = src;
+  // Back to front, so an earlier splice cannot shift a later index.
+  for (const { spec, at } of relativeSpecifiers(src).reverse()) {
+    out = out.slice(0, at) + aliasFor(fromRel, spec) + out.slice(at + spec.length);
+  }
+  return out;
 }
 
 /**
@@ -53,7 +128,7 @@ export function absolutizeImports(src, fromRel) {
  * and re-adding them broke 10 records. The default gate stayed GREEN — it was the e2e mount sweep that
  * failed, because this is a property of the module the loader builds, not of the source it is built from.
  */
-const dropAssetImports = (src) =>
+export const dropAssetImports = (src) =>
   src.replace(/^[ \t]*import\s+['"][^'"]+\.(?:css|scss|sass|less|svg|png|jpg|jpeg|gif|webp)['"];?[ \t]*\n?/gm, "");
 
 /** A file read as a record would hold it: LF-normalized, asset imports dropped, imports absolutized. */
@@ -86,9 +161,27 @@ export const codeOnly = (s) =>
  * record exists and what `provides` does. Overwriting `srcText` with the raw file DELETES it — that
  * happened before, and four records shrank when the change only meant to add attributes. Bounded to the
  * head so a coincidental match deep in a long module cannot eat real code.
+ *
+ * THE BODY BEGINS WHERE THE FILE BEGINS, and that is checked before the heuristic runs. The scan below
+ * requires a matched line to be longer than 8 characters, so a coincidental `}` or `);` cannot eat real
+ * code — but a file that OPENS with a JSDoc block starts with `/**`, three characters, which fails that
+ * filter. The split then landed on line 2 and classified the record's own `/**` as preamble, so the body
+ * differed from the file by exactly one line and the record was reported as drift needing adjudication.
+ * Six records were held back that way, `plannerCore/hash` among them — byte-identical to its file, and
+ * itself blocking three more modules.
+ *
+ * Anchoring on the file's FIRST LINE is what fixes it without weakening the filter: a record's preamble
+ * is a comment block, so the file's opening line does not appear inside it, and taking the first
+ * occurrence keeps the strip working for every migrated record. When that line is absent (a transcribed
+ * record whose head was reworded) it falls through to the original heuristic unchanged.
  */
 export function splitPreamble(recordSrc, fileSrc) {
   const lines = recordSrc.split("\n");
+  const fileFirst = fileSrc.split("\n")[0];
+  if (fileFirst) {
+    const at = lines.findIndex((l) => l === fileFirst);
+    if (at >= 0 && at < 60) return [lines.slice(0, at).join("\n"), lines.slice(at).join("\n")];
+  }
   const fileLines = new Set(fileSrc.split("\n").map((l) => l.trim()).filter((l) => l.length > 8));
   for (let i = 0; i < Math.min(lines.length, 60); i++) {
     const t = lines[i].trim();
@@ -140,4 +233,118 @@ export function exportedNames(src) {
  */
 export function runtimeImports(src) {
   return [...new Set([...src.matchAll(/^\s*(?:import|export)\s+(?!type\s)[^"']*from\s+["']([^"']+)["']/gm)].map((m) => m[1]))];
+}
+
+/**
+ * Should a promotion REPLACE the seed already sitting at its path?
+ *
+ * `promote-records.mjs` never overwrites a seed — seven curated ones were clobbered before that guard
+ * existed. This is the one narrow inversion of it, and it is a rule rather than a judgement: the guard
+ * protects a curated seed from a worse record, and here the seed is the WORSE copy. A record only
+ * reaches the write loop once its body has been proven to match the file, so when the seed does not,
+ * the seed is simply behind.
+ *
+ * `"refuse"` outranks `"adopt"`: dropping an export the seed declares is the one way this can ship a
+ * module short a symbol, which is the failure `provides` overrides are already known for.
+ *
+ * STALE IS EITHER HALF — body or `provides`. `skills-lessons-tab`'s seed body already matched the file
+ * and it was still wrong to leave: its `provides` was `@/components/skills-lessons-tab` while the
+ * record — and every importer of the retired file — names `@/features/skills/LessonsTab`, so retiring
+ * with that seed in place leaves the specifier answered by nothing. A body-only check called it "keep".
+ *
+ * Pure over its inputs, so the decision is testable without running the promoter.
+ *
+ * @param {{ seedSrcText?: string, seedProvides?: string | null, recordSrcText?: string,
+ *           recordProvides?: string | null, fileSrc?: string }} input
+ * @returns {{ verdict: "adopt" | "keep" | "refuse", reason: string, lost: string[] }}
+ */
+export function seedAdoption({ seedSrcText = "", seedProvides = null, recordSrcText = "", recordProvides = null, fileSrc = "" }) {
+  // NORMALIZE THE FILE SIDE HERE rather than trusting the caller. `fileAsRecordSource` already returns
+  // a normed string, so the live path was fine — but a raw `readFileSync` differs by a trailing
+  // newline, and that alone reads as "the seed is stale" and adopts. Silently overwriting a correct
+  // seed over one byte is the failure this rule is a hair away from being.
+  const file = norm(fileSrc);
+  const [seedPre, seedBody] = splitPreamble(norm(seedSrcText), file);
+  // A MATCHING BODY IS NOT ENOUGH — the seed can carry CODE before it. `splitPreamble` cuts at the first
+  // line the file also contains, so a preview stub's imports and its whole `LocalPageFallback` function
+  // land in the "preamble", and a body-only comparison calls that seed identical to the file while it
+  // ships a duplicate import block and an unused component. Eleven seeds were in exactly that state and
+  // the adoption declined every one of them as "already matches", leaving 21 typecheck errors that only
+  // showed up in the EMITTED `.bsc-records/` tree.
+  const preIsProse = seedPre.split("\n").every((l) => !l.trim() || /^\s*(\/\/|\*|\/\*)/.test(l));
+  const stale = seedBody !== file || !preIsProse || (seedProvides ?? null) !== (recordProvides ?? null);
+  if (!stale) return { verdict: "keep", reason: "the seed already matches the file, provides included", lost: [] };
+  const seedExports = exportedNames(seedSrcText);
+  const recExports = exportedNames(recordSrcText);
+  // `null` means `export * from` — opaque, so it is "do not judge", never "exports nothing".
+  const lost = seedExports && recExports ? [...seedExports].filter((n) => !recExports.has(n)) : [];
+  if (lost.length) return { verdict: "refuse", reason: `adopting would drop export(s) ${lost.join(", ")}`, lost };
+  return { verdict: "adopt", reason: `provides ${seedProvides ?? "(none)"} → ${recordProvides ?? "(none)"}`, lost: [] };
+}
+
+/**
+ * Can this module be retired — does the packaged SEED already answer its specifier?
+ *
+ * The precondition for deleting anything. Importers keep writing `@/x/y`; once the file is gone the
+ * only thing that can answer them is a shipped record. Two real failures came from nobody checking:
+ * five modules retired while `promote-records` had SKIPPED their seed write (deleted, with the old
+ * derivative still shipping), and `pageheader` whose seed said `@/shared/ui/pages/PageHeader` against a
+ * `pageHeader.tsx` file.
+ *
+ * THE MATCH IS EXACT, deliberately. The runtime loader compares specifiers by string and
+ * `.bsc-records/` emission is keyed off `provides`, so a case-insensitive check would wave through the
+ * one bug that works on Windows and breaks on a case-sensitive filesystem — which is exactly how that
+ * one survived tsc, `vite build` and the whole suite. A near-miss is reported so the message can say
+ * "case mismatch" rather than "missing", because those need different fixes.
+ *
+ * @param {{ spec: string, seedProvides: Iterable<string> }} input
+ * @returns {{ ok: boolean, nearMiss: string[] }}
+ */
+export function seedAnswersSpecifier({ spec, seedProvides }) {
+  const all = [...seedProvides].map((s) => String(s).trim());
+  if (all.includes(spec)) return { ok: true, nearMiss: [] };
+  return { ok: false, nearMiss: all.filter((s) => s.toLowerCase() === spec.toLowerCase()) };
+}
+
+/**
+ * ...and is that answer the SAME MODULE as the file about to be deleted?
+ *
+ * `seedAnswersSpecifier` asks whether anything will respond to `@/x/y`. That is necessary and NOT
+ * sufficient: a seed record can answer the specifier while holding different code, and retiring the
+ * file then ships the RECORD's behaviour under the file's name — silently, because it still compiles.
+ * That is the BODY-DIFFERS hazard `promote-records` refuses to promote through, and the retire step had
+ * no equivalent, so a divergent record that happened to be seeded sailed past.
+ *
+ * It cost ten test failures in one sweep: `Dialog`, `ModalCard`, `ModalScrim` and `a11y` are all
+ * body-differs records, and retiring them replaced the app's focus management with the records' older
+ * copies — eight `modalFocus` assertions, plus a banner registry and the retired-tests guard.
+ *
+ * Compared exactly as the promotion gate compares, through `splitPreamble` + `codeOnly`, so the two
+ * cannot disagree about which files are safe.
+ *
+ * @param {{ seedSrcText: string, fileSrc: string }} input
+ * @returns {{ ok: boolean }}
+ */
+/** Does this record import a sibling BY RECORD ID (`@/components/<id>`)?
+ *
+ *  Such a record is GRAPH-LOADER-ONLY and can never back a retired file. `@/components/<id>` is resolved
+ *  by the runtime graph loader against the record store; it is not a path. Materialized into
+ *  `.bsc-records/` and imported through the normal bundle resolution it is simply missing —
+ *  "Cannot find package '@/components/algorithms-kit-graph'".
+ *
+ *  This is the real reason `promote-records.mjs` refuses `role: page` wholesale, and it is worth stating
+ *  as its own predicate: the refusal is not about pages being special, it is about this import form.
+ *
+ *  Learned the hard way — teaching `seedMatchesFile` that `@/components/glance-canvas` and
+ *  `@/features/glance/GlanceCanvas` are "the same module" is true IN THE GRAPH LOADER and false in the
+ *  bundle, and that half-truth authorized four page retirements that broke the build. */
+export function importsSiblingsByRecordId(srcText) {
+  const hits = [...String(srcText ?? "").matchAll(/from\s*["'`](@\/components\/[A-Za-z0-9._-]+)["'`]/g)].map((m) => m[1]);
+  return { any: hits.length > 0, specifiers: [...new Set(hits)] };
+}
+
+export function seedMatchesFile({ seedSrcText, fileSrc }) {
+  const file = norm(fileSrc);
+  const body = splitPreamble(norm(seedSrcText ?? ""), file)[1];
+  return { ok: body === file || codeOnly(body) === codeOnly(file) };
 }

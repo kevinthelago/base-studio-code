@@ -32,7 +32,10 @@ const OWNED: Record<string, string> = {
   "groupTotals.ts": "group-totals.ts",
 };
 
-interface Impl { id: string; code?: string }
+interface Impl { id: string; code?: string; provides?: string; src?: string }
+
+/** The `@/…` specifier a seed module answers, from its filename. */
+const specifierFor = (file: string) => `@/shared/lib/algorithms/${file.replace(/\.ts$/, "")}`;
 const readGraph = (): { implementations: Impl[] } =>
   JSON.parse(readFileSync(GRAPH_FILE, "utf8")) as { implementations: Impl[] };
 
@@ -76,5 +79,35 @@ describe("algorithms seed ↔ @data/knowledge/algorithms.json (#3465)", () => {
       }
     }
     if (changed) writeFileSync(GRAPH_FILE, `${JSON.stringify(graph, null, 2)}\n`, "utf8");
+  });
+
+  // The node must also ANSWER the specifier its module answers, or no record can import it. Five
+  // modules were blocked on exactly that and nothing else: `fleetCost` on `groupTotals`, `fleetLive`
+  // on `precedenceResolve`, `fleetGithub` on `orderByRank` + `windowedTally`, `repoPulseLive` on
+  // `windowedTally`, `fleetHealth` on `streamMerge`.
+  //
+  // THIS IS THE SAFEST `provides` IN THE LIBRARY, and the reason is the test above it. A `provides` is a
+  // GLOBAL override — the runtime serves the record instead of the bundled module — and the standing
+  // risk is that the two disagree. Here they cannot: `code` is generated from the file and asserted
+  // byte-identical, and the module is asserted import-free, so there is no closure to fail either.
+  //
+  // GUARDED RATHER THAN TRUSTED. The regenerator only ever mutates `impl.code`, so these fields survive
+  // it today — by accident, not by rule. Nothing else asserts they are present, so a hand-edit or a
+  // future whole-node writer would drop them and silently re-block five modules on a green gate.
+  it("every seed node ANSWERS its module's specifier — `provides` and `src`", () => {
+    const graph = readGraph();
+    for (const [file, id] of Object.entries(OWNED)) {
+      const impl = graph.implementations.find((i) => i.id === id);
+      expect(impl, `${id} is missing from the graph`).toBeDefined();
+      expect(impl!.provides, `${id} must provide ${specifierFor(file)} — without it nothing can import the module`).toBe(specifierFor(file));
+      expect(impl!.src, `${id} must record the module it is generated from`).toBe(`src/shared/lib/algorithms/${file}`);
+    }
+  });
+
+  it("no two seed nodes claim the same specifier", () => {
+    // `provides` is matched on the exact string, so a duplicate makes which record answers it a
+    // coin flip — the collision class `doctor-cannot-see-a-provides-collision` was filed for.
+    const specs = Object.keys(OWNED).map(specifierFor);
+    expect(new Set(specs).size).toBe(specs.length);
   });
 });

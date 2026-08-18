@@ -33,7 +33,7 @@ import { teamRoleStreams } from "@/features/planner/fleet/teamFleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { cellRect, placeByDirection, releaseCell, occupants, clampCell, DEFAULT_CELL, type CellSize, type MorphPlacement } from "@/features/glance/lib/morphGrid";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
-import { resumeProjectFleet, nothingToResume, completedPanes } from "./lib/resumeProject";
+import { resumeProjectFleet, nothingToResume, completedPanes } from "@/features/glance/lib/resumeProject";
 import { decideExpand } from "@/features/glance/lib/expandNode";
 import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
 import { buildGraph, focusSets, isBandNode, isArchitectNodeId, HEALTH_META, ROLE_COLOR } from "@/features/glance/lib/glanceGraph";
@@ -43,7 +43,7 @@ import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForPro
 import { isAppProject, withStudioSessions, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, applyStudioLiveStatus, withProjectRequestNodes } from "@/features/glance/lib/studioProject";
 import { isStudioId, useStudioViewers } from "@/features/studio-sessions";
 import { DEBUG_STUDIO_PANE_PREFIX } from "@/shared/lib/session/systemSessions";
-import { useProjectComplete } from "./lib/useProjectComplete";
+import { useProjectComplete } from "@/features/glance/lib/useProjectComplete";
 import { usePreviewReview } from "@/features/glance/usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import { useGlanceProjects, applyFaultHealth, applyOffHealth } from "./lib/useGlanceProjects";
@@ -51,12 +51,12 @@ import { useGlanceFaults } from "@/features/glance/lib/useGlanceFaults";
 import { applyStallHealth, applyFleetLiveStatus, liveWaits } from "@/features/glance/lib/agentStall";
 import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "@/features/glance/lib/useProjectFleet";
-import { useStreamProgress } from "./lib/useStreamProgress";
+import { useStreamProgress } from "@/features/glance/lib/useStreamProgress";
 import { withStreamProgress } from "@/features/glance/lib/streamProgress";
 import { useFleetIssueState } from "@/features/glance/lib/useFleetIssueState";
 import type { DockPlan } from "./GlanceChatDock";
 import { fleetPlanProgress, unionDone, mergeStreamProgress } from "@/features/glance/lib/fleetPlanProgress";
-import { useFleetHeld } from "./lib/useFleetHeld";
+import { useFleetHeld } from "@/features/glance/lib/useFleetHeld";
 
 // The agent-health watchdog (#2541) polls the coord log on a slow cadence — a stall is a minutes-scale
 // event, so per-second rebuilds aren't worth it.

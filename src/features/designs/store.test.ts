@@ -6,7 +6,7 @@ import { makeChange } from "@/features/designs/lib/propagation";
 import { contractChanged, mergeDispatches, foldTouches, AI_RING_MAX, AI_HYDRATE_DEBOUNCE_MS, type AiTouch } from "./store";
 import { SEED_COMPONENTS, SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./lib/seed";
 import { SEED_THEMES, type KitThemeRecord } from "./lib/themes";
-import { stampSeedHash } from "./lib/seedRefresh";
+import { stampSeedHash } from "@/features/designs/lib/seedRefresh";
 import * as bridge from "./lib/componentBridge";
 import * as themeBridge from "@/features/designs/lib/themeBridge";
 import * as usageBridge from "@/features/designs/lib/kitUsageBridge";
@@ -399,14 +399,27 @@ describe("hash-based built-in seed refresh (#2483)", () => {
       src: `examples/${name}.tsx`, srcText: `<${name} />`, builtin: true,
     });
 
+  // THE FIXTURE IDS MUST NOT EXIST IN THE REAL SEED. Both tests below build their stale store as
+  // `[...SEED_COMPONENTS, ...staleComps]`, and the reconcile keys by id — so a fixture reusing a
+  // REAL component id collapses into it, and the retirement the test means to exercise silently
+  // never happens. That is not hypothetical: these fixtures were named `personaspanel` /
+  // `agentsboard` / `personastore`, and the records migration promoted `PersonasPanel.tsx` into the
+  // base kit under exactly that id, at which point the drop assertion started reporting the NEXT
+  // component instead. The ids are `examples-`-prefixed now, and this guard is what keeps them free.
+  it("the retired-kit fixture ids are absent from the real seed (#2506)", () => {
+    const seeded = new Set(SEED_COMPONENTS.map((c) => c.id));
+    for (const id of ["examples-personaspanel", "examples-agentsboard", "examples-personastore"])
+      expect(seeded.has(id)).toBe(false);
+  });
+
   it("boot hydrate DELETES the retired examples kit + its components from a stale store (#2506)", async () => {
     // The mechanism that cleans every existing install: #2506 removed `examples` from the packaged
     // seed, so the #2483 reconcile must reach the DELETE verdict for the pristine stored copies and
     // converge the global store through the bridge drops — no manual cleanup.
     const staleComps = [
-      exampleComp("personaspanel", "PersonasPanel", "page", ["PersonaStore"]),
-      exampleComp("agentsboard", "AgentsBoard", "page"),
-      exampleComp("personastore", "PersonaStore", "service"),
+      exampleComp("examples-personaspanel", "PersonasPanel", "page", ["PersonaStore"]),
+      exampleComp("examples-agentsboard", "AgentsBoard", "page"),
+      exampleComp("examples-personastore", "PersonaStore", "service"),
     ];
     vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([...SEED_COMPONENTS, ...staleComps]);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce([...SEED_KITS, examplesKit]);
@@ -431,16 +444,16 @@ describe("hash-based built-in seed refresh (#2483)", () => {
   it("keeps a USER-EDITED copy of a retired examples component, marked orphaned (#2506)", async () => {
     // The safety valve on the same retirement: content moved off its recorded baseline → never
     // deleted, surfaced as an `orphaned` notice instead.
-    const edited = { ...exampleComp("personaspanel", "PersonasPanel", "page"), srcText: "// my tweaks" };
+    const edited = { ...exampleComp("examples-personaspanel", "PersonasPanel", "page"), srcText: "// my tweaks" };
     vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([...SEED_COMPONENTS, edited]);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
     vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
     const dropC = vi.spyOn(bridge, "dropComponent").mockResolvedValue(undefined);
     await useAppStore.getState().hydrateComponents();
-    expect(useAppStore.getState().components.find((c) => c.id === "personaspanel")).toEqual(edited);
+    expect(useAppStore.getState().components.find((c) => c.id === "examples-personaspanel")).toEqual(edited);
     expect(dropC).not.toHaveBeenCalled();
     expect(useAppStore.getState().seedNotices).toEqual([
-      { kind: "orphaned", type: "component", id: "personaspanel", name: "PersonasPanel" },
+      { kind: "orphaned", type: "component", id: "examples-personaspanel", name: "PersonasPanel" },
     ]);
   });
 

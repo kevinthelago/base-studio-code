@@ -33,7 +33,7 @@ import { libraryModuleResolver } from "@/features/designs/lib/libraryModules";
 import { KNOWLEDGE } from "@/features/algorithms";
 // The feature's existing hash — reused rather than adding a second one
 // (#the-scan-signature-is-the-whole-source-not-a-digest).
-import { fnv1a } from "./seedRefresh";
+import { fnv1a } from "@/features/designs/lib/seedRefresh";
 import type { ComponentRecord } from "./model";
 
 /** The two RUNTIME data-state health categories the scan render-confirms (#3191) — a subset of

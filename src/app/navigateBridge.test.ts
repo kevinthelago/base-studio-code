@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyNavigate, type NavVocab } from "./navigateBridge";
+import { applyNavigate, type NavVocab } from "@/app/navigateBridge";
 import type { AppStore } from "@/store/types";
 
 // A minimal fake store: only the fields + actions applyNavigate touches. Mutating actions write into
