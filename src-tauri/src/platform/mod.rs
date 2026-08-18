@@ -16,3 +16,4 @@ pub mod docstore;
 pub mod pkgcache;
 pub mod config;
 pub mod path_expose;
+pub mod offmain;
