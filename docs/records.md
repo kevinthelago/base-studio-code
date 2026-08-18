@@ -1,9 +1,9 @@
 # Records — when a module is not a file
 
-Most of this app's frontend no longer exists as files. **1,052 modules ship as records** — 447 component
-records under `src-tauri/data/components/app/**` and 605 algorithm implementations in
-`src-tauri/data/knowledge/algorithms.json`, of which **847 carry a `provides`** and so answer a specifier
-an importer writes. **225 non-test modules remain under `src/`**, down from 388. This is epic #3604,
+Most of this app's frontend no longer exists as files. **1,094 modules ship as records** — 469 component
+records under `src-tauri/data/components/app/**` and 625 algorithm implementations in
+`src-tauri/data/knowledge/algorithms.json`, of which **895 carry a `provides`** and so answer a specifier
+an importer writes. **177 non-test modules remain under `src/`**, down from 388. This is epic #3604,
 "the graph IS the app".
 
 > Those numbers move every tranche, and a stale one here is worse than none — this document went eleven
