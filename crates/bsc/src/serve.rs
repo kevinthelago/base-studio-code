@@ -228,6 +228,11 @@ mod tests {
             // #the-scan-cache-read-is-the-last-boot-spawn — the one row `bsc perf spawns` still
             // showed once the rest of the burst went warm.
             vec!["ui", "scan-cache", "get"],
+            // #request-list-cannot-be-warm-served-until-it-stops-using-println — 312 spawns / 94.4s
+            // in one session. Global store, and its emit path moved onto the shared helpers in the
+            // same change, per the rule above.
+            vec!["request", "list", "--json"],
+            vec!["request", "list", "--open"],
         ] {
             assert!(is_servable(&a(&verb)), "{verb:?} should be answered warm");
         }
@@ -292,6 +297,20 @@ mod tests {
         assert!(!is_servable(&a(&["project", "list"])));
         assert!(!is_servable(&a(&["project", "progress"])));
         assert!(!is_servable(&a(&["skill", "get", "x"])));
+        // `request list` is served (#request-list-cannot-be-warm-served-until-it-stops-using-println),
+        // and every WRITE beside it must not be — a warm child cannot answer a write, and these sit
+        // directly next to the read, which is the whole reason entries name complete verb paths.
+        for write in [
+            vec!["request", "resolve", "r1"],
+            vec!["request", "note", "r1"],
+            vec!["request", "claim"],
+            vec!["request", "unclaim", "r1"],
+            vec!["request", "prune"],
+            vec!["request", "remove", "r1"],
+            vec!["request", "new"],
+        ] {
+            assert!(!is_servable(&a(&write)), "a write must never be served: {write:?}");
+        }
     }
 
     #[test]

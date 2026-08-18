@@ -156,13 +156,27 @@ pub fn resolve_store_path(
 ///
 /// A serialization failure prints `null` rather than erroring (an embedded read never aborts on it).
 pub fn emit<T: Serialize>(pretty: bool, json: bool, value: &T, lean: impl FnOnce() -> String) {
-    if pretty {
-        println!("{}", serde_json::to_string_pretty(value).unwrap_or_else(|_| "null".into()));
+    // Through `bsc_util::emit_line`, the shared helpers' `println!` — NOT `println!` itself
+    // (#request-list-cannot-be-warm-served-until-it-stops-using-println).
+    //
+    // The warm server (#4152) answers a request by running the verb under `bsc_util::capture_output`,
+    // a THREAD-LOCAL sink that only the shared helpers consult. A `println!` here writes straight to
+    // stdout, which for a warm request IS the protocol stream — so every verb emitting this way was
+    // structurally unservable, and `is_servable_warm` had to leave it off. `serve.rs`'s own audit test
+    // records exactly that reasoning for the `get` verbs.
+    //
+    // `emit_line` is defined to be identical to `println!` when nothing is capturing, so one-shot CLI
+    // output is unchanged byte for byte; it only differs inside a capture, which is the case that was
+    // broken. 15 crates emit through here, so this makes all of them servable-ELIGIBLE at once —
+    // eligible, not served: each verb still has to be audited onto the allow-list by hand.
+    let out = if pretty {
+        serde_json::to_string_pretty(value).unwrap_or_else(|_| "null".into())
     } else if json {
-        println!("{}", serde_json::to_string(value).unwrap_or_else(|_| "null".into()));
+        serde_json::to_string(value).unwrap_or_else(|_| "null".into())
     } else {
-        println!("{}", lean());
-    }
+        lean()
+    };
+    bsc_util::emit_line(&out);
 }
 
 /// Collapse every carriage return into a line feed so raw output is **LF-only**: `\r\n` → `\n` and a
@@ -1386,5 +1400,34 @@ mod tests {
         let v = version_line("bsc");
         assert!(v.starts_with("bsc "), "{v}");
         assert!(v.contains("built ") && v.contains("path "), "both halves of the identity: {v}");
+    }
+
+    /// `emit` must reach the CAPTURE SINK, not stdout
+    /// (#request-list-cannot-be-warm-served-until-it-stops-using-println).
+    ///
+    /// This is the property that decides whether a verb can ever be warm-served. `emit` used a plain
+    /// `println!`, so anything emitting through it wrote into the warm server's protocol stream
+    /// instead of its response — which is why `is_servable_warm` had to leave those verbs off, and
+    /// why three separate crates have now had this same fix applied one at a time. Pinned here, in
+    /// the shared helper, so a revert to `println!` fails loudly rather than silently making 15
+    /// crates unservable again.
+    #[test]
+    fn emit_writes_to_the_capture_sink_so_a_warm_serve_can_answer_with_it() {
+        // `serde_json::Value` rather than a derived struct: this crate takes `serde` without the
+        // `derive` feature, and enabling it for one test would be a heavier change than the fix.
+        let rows = serde_json::json!([{ "id": "r1" }]);
+
+        let (_, json) = bsc_util::capture_output(|| emit(false, true, &rows, || "lean".into()));
+        assert_eq!(json.trim(), r#"[{"id":"r1"}]"#, "the JSON branch is captured");
+
+        let (_, lean) = bsc_util::capture_output(|| emit(false, false, &rows, || "one\ntwo".into()));
+        assert_eq!(lean.trim(), "one\ntwo", "the lean branch is captured too, multi-line intact");
+
+        let (_, pretty) = bsc_util::capture_output(|| emit(true, false, &rows, || "lean".into()));
+        assert!(pretty.contains("\"id\": \"r1\""), "the pretty branch is captured: {pretty:?}");
+
+        // Nothing captured ⇒ nothing left in the sink for the NEXT request to pick up.
+        let (_, empty) = bsc_util::capture_output(|| {});
+        assert_eq!(empty, "");
     }
 }
