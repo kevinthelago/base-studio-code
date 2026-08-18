@@ -369,12 +369,28 @@ for (const { rec, file } of promote.component) {
 // re-run produces the same bytes.
 if (promote.impl.length || carriedKept.length) {
   const KEEP = ["code", "composes", "domain", "folder", "id", "name", "provides", "ref", "role", "src", "tech"];
-  // The CARRIED library records first — they are what the promoted impls' `composes` point at, and
-  // `knowledge.test.ts` demands every one of those ids be a real impl in the seed.
+  // NEVER APPEND A DUPLICATE ID. The component write has refused this since seven curated seeds were
+  // clobbered; the impl write did not, and an id comes from the FILE STEM — so promoting
+  // `features/algorithms/viz/examples/sort.ts` appended a SECOND `sort.ts` beside a curated one, and
+  // `knowledge.test.ts` failed with "expected 603 to be 604". Nothing upstream caught it: `bsc graph
+  // harvest` refuses a stem collision only when it can compare `src`, and the curated entry had none.
+  //
+  // Under `--adopt-seed` the newer record REPLACES the existing entry, which is the right move when the
+  // existing one is a partial projection of the same module — the `sort.ts` case exactly: 28 lines with
+  // no `provides` and no `src`, against the full 90-line module that answers the specifier.
+  const byId = new Map(algorithms.implementations.map((e, i) => [e.id, i]));
   for (const rec of [...carriedKept, ...promote.impl.map((p) => p.rec)]) {
     const entry = {};
     for (const k of KEEP) if (rec[k] !== undefined) entry[k] = rec[k];
     if (!Array.isArray(entry.composes)) entry.composes = [];
+    const at = byId.get(entry.id);
+    if (at !== undefined) {
+      if (!ADOPT_SEED) { console.log(`   SKIPPED (that impl id is already in the seed): ${entry.id}`); skippedAtWrite++; continue; }
+      console.log(`   replaced the seeded impl with the promoted module: ${entry.id}`);
+      algorithms.implementations[at] = entry;
+      continue;
+    }
+    byId.set(entry.id, algorithms.implementations.length);
     algorithms.implementations.push(entry);
   }
   algorithms.implementations.sort((a, b) => String(a.id).localeCompare(String(b.id)));

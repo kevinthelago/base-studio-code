@@ -60,6 +60,30 @@ const relSpecifier = rel.replace(/\/index$/, "");
 const spec = `@/${relSpecifier}`;
 const name = rel.split("/").pop();
 
+// NEVER RETIRABLE: a module the BUILD CONFIG imports. `vite.config.ts` does
+// `import { devWatchIgnored } from "./src/shared/lib/core/devWatchIgnore"`, and Vite bundles its own
+// config BEFORE any plugin runs — so `vite/bscRecords.ts` is not installed yet and `.bsc-records/` can
+// never serve it. There is also no `@/` alias out there: the config sits outside `src/` and imports by
+// relative path.
+//
+// It is the deletion-gate-is-the-bundle class again, one level further out: `tsc`, `lint` and the whole
+// vitest suite went GREEN after this module was retired, and only `npx vite build` failed —
+// "Could not resolve './src/shared/lib/core/devWatchIgnore' in vite.config.ts". Read from the configs
+// rather than hard-coded, so a new build-time importer is covered the day it is written.
+{
+  const CONFIGS = ["vite.config.ts", "vitest.config.ts", "e2e/vite.config.ts", "playwright.config.ts", "eslint.config.js"];
+  const importers = CONFIGS.filter((c) => existsSync(join(REPO, c))).filter((c) =>
+    new RegExp(`from\\s+["']\\.{1,2}/(?:\\.\\./)*src/${rel}(?:\\.[jt]sx?)?["']`).test(readFileSync(join(REPO, c), "utf8")),
+  );
+  if (importers.length) {
+    console.error(
+      `retire: REFUSED — ${rel} is imported by ${importers.join(", ")}. A build config is bundled before ` +
+        `any plugin runs, so \`.bsc-records/\` can never serve it and only \`npx vite build\` would catch it.`,
+    );
+    process.exit(1);
+  }
+}
+
 // NEVER RETIRABLE: the algorithms SEED modules exist precisely to BE files. A packaged node's `code` is
 // generated FROM the module (`seedAlgorithms.gen.test.ts`, #3465), which is what makes "this node's code
 // stands alone" a checked fact rather than a claim — tsc compiles it, its sibling test executes it, and

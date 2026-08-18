@@ -110,6 +110,12 @@ had. Every one of these has cost a real failure:
   function at runtime. 11 modules are held back by this.
 - **Be a `.d.ts`.** Ambient declarations are read because they are *included*, never imported — no resolver
   substitutes a record. Retiring `src/vite-env.d.ts` broke the entire typecheck on unrelated files.
+- **Be imported by a BUILD CONFIG.** `vite.config.ts` imports `./src/shared/lib/core/devWatchIgnore`, and
+  Vite bundles its own config *before* any plugin runs — so `vite/bscRecords.ts` is not installed yet,
+  `.bsc-records/` cannot serve it, and there is no `@/` alias out there either (the config sits outside
+  `src/` and imports by relative path). `tsc`, `lint` and all 742 vitest files went green after that
+  module was retired; only `npx vite build` failed. `retire-module.mjs` now refuses one, reading the
+  importer list from the configs rather than a hard-coded name.
 
 **`@data/*.json` used to be on that list and no longer is.** The platform registry serves those
 specifiers (`appModules.ts` globs `@data/**/*.json` eagerly), so a record may import packaged data like

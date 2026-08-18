@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { NOTICES, isNotice, blanketDismissable, refuseDismissal } from "./banners";
+import { NOTICES, isNotice, blanketDismissable, refuseDismissal } from "@/app/chrome/banners";
 
 describe("the notice registry", () => {
   it("names every banner the stack renders, and nothing it does not", () => {
