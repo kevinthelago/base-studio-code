@@ -40,7 +40,7 @@ import { buildGraph, focusSets, isBandNode, isArchitectNodeId, HEALTH_META, ROLE
 import { timedSync } from "@/shared/lib/core/perf";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "@/features/glance/lib/glanceFleet";
-import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, applyStudioLiveStatus, withProjectRequestNodes } from "@/features/glance/lib/studioProject";
+import { isAppProject, withStudioSessions, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, applyStudioLiveStatus, withProjectRequestNodes } from "@/features/glance/lib/studioProject";
 import { isStudioId, useStudioViewers } from "@/features/studio-sessions";
 import { DEBUG_STUDIO_PANE_PREFIX } from "@/shared/lib/session/systemSessions";
 import { useProjectComplete } from "@/features/glance/lib/useProjectComplete";
@@ -197,10 +197,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // pinned its project orange forever, since nothing ever clears it and `now - w.at` only grows.
   const liveWaiting = useMemo(() => liveWaits(coord.state.waiting, livePaneIds), [coord.state.waiting, livePaneIds]);
   const projects = useMemo(
-    // The base-studio-code default project (#3319) is always present alongside the user's real projects —
-    // the app's own studio sessions live under it; drilling it renders the Studio Network team. It's
-    // appended AFTER the health overlays (incl. the manual OFF, #3239) so it stays always-on.
-    () => [...applyOffHealth(applyFaultHealth(applyStallHealth(projectsBase, liveWaiting, now), faults), glanceOff), BASE_STUDIO_PROJECT],
+    // Just the user's real projects. The synthetic base-studio-code node (#3319) that used to be appended
+    // here is GONE (#the-app-drills-into-a-project-that-was-deleted): it named a project with no hub, and
+    // once that hub was migrated into `studio-code` and deleted it was a SECOND node for the same app —
+    // the one the studio sessions and every live debug session hung off. They fold into the real
+    // project's drill now (`withStudioSessions`), so there is one node for the app rather than two.
+    () => applyOffHealth(applyFaultHealth(applyStallHealth(projectsBase, liveWaiting, now), faults), glanceOff),
     [projectsBase, liveWaiting, faults, now, glanceOff],
   );
   // L0 — the project-network graph (nodes = real projects + UI-kit nodes #2571 + the algorithm/sound
@@ -268,10 +270,18 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // pinning them against the reaper, live status, opening a node, the morph, no fleet-resume — is
   // identical, because both graphs use the same Studio Network position ids. One predicate, so a new
   // studio drill cannot pick up four of the six behaviours and silently miss the rest.
-  const isStudioDrill = !!drill && (drill === BASE_STUDIO_PROJECT_ID || isArchitectNodeId(drill));
+  // Only the ARCHITECT drill is studio-ONLY now. The app's own project used to be the other one; it is a
+  // real plan.db project that happens to ALSO draw the studio sessions, so it is not this — it takes the
+  // fleet overlay, the fleet resume and the fleet's own node semantics, and the studio nodes riding on it
+  // are handled per NODE (`studioPaneIdForNode`) rather than by re-classifying the whole drill.
+  const isStudioDrill = !!drill && isArchitectNodeId(drill);
+  // NOT gated on the drill any more (#the-app-drills-into-a-project-that-was-deleted): a studio morph can
+  // now be open on the app's own PROJECT drill, and a studio the user is watching there must pin the idle
+  // reaper off exactly as it did on the old studio-only drill. `isStudioId` already answers false for
+  // every fleet cell, so the gate only ever narrowed which studios got protected.
   const openStudioIds = useMemo(
-    () => (isStudioDrill ? occupants(placements).filter(isStudioId) : []),
-    [isStudioDrill, placements],
+    () => occupants(placements).filter(isStudioId),
+    [placements],
   );
   useStudioViewers(openStudioIds);
   const closeStudio = useAppStore((s) => s.closeStudio);
@@ -387,7 +397,6 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     if (!drillNode) return null;
     // The synthetic base-studio-code project (#3319) drills into the app's OWN studio-session graph — the
     // Studio Network team, with the debugger node gated by the Settings toggle (#3317). No plan.db fleet.
-    if (drillNode.id === BASE_STUDIO_PROJECT_ID) return buildStudioFleetData(teams, personas, activeDebugRequests);
     // #architect-node-expands-into-system-sessions: the architect's node EXPANDS into the system
     // sessions it commands, rather than standing beside them at L0.
     if (isArchitectNodeId(drillNode.id)) return buildArchitectFleetData(teams, personas);
@@ -407,9 +416,18 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       ? buildRealFleetData(composed, personas, drillTeam)
       : buildFleetData({ id: drillNode.id, name: drillNode.slug });
     // Add the preview node when the project has finished building (idempotent, no-op while building),
-    // and any request session THIS project's director filed — the one non-studio origin, which has no
-    // Studio Network position to hang off (#debug-nodes-hang-off-the-session-that-filed-them).
-    return withProjectRequestNodes(withPreviewNode(base, drillComplete), drill ?? "", activeDebugRequests);
+    // then — for the app's OWN project — the app-owned studio sessions and the request sessions they
+    // filed (#the-app-drills-into-a-project-that-was-deleted), and finally any request session THIS
+    // project's director filed, which has no Studio Network position to hang off
+    // (#debug-nodes-hang-off-the-session-that-filed-them).
+    //
+    // ORDER MATTERS: the studio fold runs FIRST, so a request it already drew is `present` by the time
+    // `withProjectRequestNodes` looks. That is what stops the two from drawing one session twice.
+    const withPreview = withPreviewNode(base, drillComplete);
+    const withStudio = isAppProject(drill)
+      ? withStudioSessions(withPreview, teams, personas, activeDebugRequests)
+      : withPreview;
+    return withProjectRequestNodes(withStudio, drill ?? "", activeDebugRequests);
   }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete, teams, activeDebugRequests, drill]);
   // Overlay the LIVE session state onto the drilled fleet's agent nodes (#3252) — the L1 twin of the L0
   // stall/fault overlays: an agent lifts off its planned idle to building/waiting/warning per its session.
@@ -422,10 +440,22 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             // The base-studio project's nodes are STUDIO sessions, keyed by their stable app-owned pane id
             // (`studioPaneIdForNode`) — not `fleetPaneId(project, node)`. Running the fleet overlay over them
             // looked up a pane that never exists, so none was ever found live (#3421).
+            // The two overlays COMPOSE now, they no longer compete (#the-app-drills-into-a-project-that-was-deleted).
+            // One drill can hold both kinds, so choosing a single overlay for the whole graph would have to be
+            // wrong for one of them — and it already was, for the studio nodes a project TEAM draws:
+            // #every-system-session-shows-one-node-per-technology made those openable on a project drill
+            // without making them reportable, so such a node opened a live session while rendering `off`.
+            //
+            // Fleet first, studio second. `applyStudioLiveStatus` leaves a node with no app-owned pane
+            // untouched, so it corrects exactly the nodes the fleet pass had no key for and nothing else;
+            // running it second is what lets it override that pass's `off` fall-through for them.
             rawNodes:
               isStudioDrill
                 ? applyStudioLiveStatus(fleetData.rawNodes, { paneClaudeActive, paneStatus })
-                : applyFleetLiveStatus(withStreamProgress(fleetData.rawNodes, streamDoneWithDirector), drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes, ended: endedPanes }),
+                : applyStudioLiveStatus(
+                    applyFleetLiveStatus(withStreamProgress(fleetData.rawNodes, streamDoneWithDirector), drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now, quarantined: quarantinedPanes, held: heldStreams, attention: attentionPanes, maintaining: maintainingPanes, ended: endedPanes }),
+                    { paneClaudeActive, paneStatus },
+                  ),
           }
         : fleetData,
     // `quarantinedPanes` + `heldStreams` belong here: without them the memo keeps a stale overlay, so a
@@ -484,9 +514,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // the same conversation, never a second session).
   const isLiveAgent = (nodeId: string) => {
     if (!drill) return false;
-    if (isStudioDrill) {
-      return studioNodeHome(nodeId)?.kind === "morph";
-    }
+    // Per NODE, not per drill (#the-app-drills-into-a-project-that-was-deleted). An app-owned session is
+    // openable wherever it is drawn — its pane id is stable and its host reuses it — and it is now drawn
+    // on the app's own project drill beside real fleet cells. Asking `studioPaneId` FIRST mirrors what
+    // `openChats` already does (`studioPaneId(node) ?? fleetPaneId(...)`), so what opens and what reports
+    // itself openable cannot disagree.
+    if (studioPaneId(nodeId)) return studioNodeHome(nodeId)?.kind === "morph";
+    if (isStudioDrill) return false;   // a studio-only drill has no fleet cells to fall through to
     return nodeHasLiveSession(fleetPaneId(drill, nodeId), livePaneIds);
   };
   // On the L0 network: a click drills into that project's fleet. Inside a fleet a click checks in on a
@@ -529,10 +563,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
    */
   const expandNode = (id: string) => {
     if (!drill) return;
-    const isStudio = isStudioDrill;
+    // Per NODE, for the same reason `isLiveAgent` is: the app's project drill holds both kinds at once.
+    const isStudio = !!studioPaneId(id);
     const paneId = isStudio ? "" : fleetPaneId(drill, id);
     const action = decideExpand({
-      isStudioProject: isStudio,
+      isAppOwnedSession: isStudio,
       studioMorphs: isStudio ? studioNodeHome(id)?.kind === "morph" : undefined,
       paneIsLive: !isStudio && isLiveAgent(id),
       paneIsComplete: !isStudio && completedPanes(useAppStore.getState()).has(paneId),

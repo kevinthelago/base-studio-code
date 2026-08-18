@@ -7,6 +7,7 @@
 //! and never raw-viewed. `plan.db` is project STATE and is deliberately NOT managed here.
 
 use crate::StrErr;
+use crate::platform::offmain::blocking_or;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -232,12 +233,14 @@ pub(crate) fn tail_lines(path: &Path, limit: usize, newest_first: bool) -> Vec<S
 /// The newest `limit` raw lines of a text stream, in chronological order (oldest of the tail
 /// first). Empty for `perf.db` (binary) or an unknown/missing stream.
 #[tauri::command]
-pub fn read_log_tail(stream: String, limit: usize, app: tauri::AppHandle) -> Vec<String> {
+pub async fn read_log_tail(stream: String, limit: usize, app: tauri::AppHandle) -> Vec<String> {
+    // `stream_path` needs the AppHandle but is cheap; resolve it here and move only the PathBuf, so
+    // the blocking closure owns nothing tied to the caller.
     if !is_text(&stream) {
         return Vec::new();
     }
     let Some(path) = stream_path(&app, &stream) else { return Vec::new() };
-    tail_lines(&path, limit, false)
+    blocking_or("read_log_tail", Vec::new(), move || tail_lines(&path, limit, false)).await
 }
 
 // The per-stream TSV log readers (`read_audit_log`/`read_skill_log`/`read_hook_log`/`read_mcp_log`/
@@ -262,8 +265,11 @@ pub fn read_log_tail(stream: String, limit: usize, app: tauri::AppHandle) -> Vec
 /// `perm`), read in-process (#3630) — the drop-in for `bsc logs tail <stream> --json`. `oldest` keeps
 /// chronological order (the coord log); otherwise newest-first. Unknown/missing stream ⇒ empty.
 #[tauri::command]
-pub fn logs_tail(stream: String, limit: usize, oldest: bool) -> Vec<String> {
-    ::logs::tail_raw(&::logs::log_dir(), &stream, limit, oldest)
+pub async fn logs_tail(stream: String, limit: usize, oldest: bool) -> Vec<String> {
+    blocking_or("logs_tail", Vec::new(), move || {
+        ::logs::tail_raw(&::logs::log_dir(), &stream, limit, oldest)
+    })
+    .await
 }
 
 /// Per-pane token + cost rollup, newest pane first — the in-process drop-in for
@@ -276,8 +282,8 @@ pub fn logs_tail(stream: String, limit: usize, oldest: bool) -> Vec<String> {
 /// spawn blocked Tauri's main thread, so the invoke queue backed up to 25s and every other command,
 /// including trivial ones like `perf_record_frontend_sample`, waited behind it.
 #[tauri::command]
-pub fn logs_usage(limit: usize) -> Vec<::logs::Usage> {
-    ::logs::usage(&::logs::log_dir(), limit)
+pub async fn logs_usage(limit: usize) -> Vec<::logs::Usage> {
+    blocking_or("logs_usage", Vec::new(), move || ::logs::usage(&::logs::log_dir(), limit)).await
 }
 
 /// The algorithms knowledge graph, read IN-PROCESS — the drop-in for `bsc graph dump` (#4078).
@@ -292,22 +298,24 @@ pub fn logs_usage(limit: usize) -> Vec<::logs::Usage> {
 /// A missing/unreadable store yields the packaged seed, exactly as the CLI does — so the page keeps
 /// rendering rather than blanking.
 #[tauri::command]
-pub fn graph_dump() -> serde_json::Value {
-    bsc_graph::load()
+pub async fn graph_dump() -> serde_json::Value {
+    // The fallback is `null`, which the frontend loader already treats as "no graph yet" — the same
+    // degradation an unreadable store produces.
+    blocking_or("graph_dump", serde_json::Value::Null, bsc_graph::load).await
 }
 
 /// The latest turn-boundary state per pane (`run`/`idle`), newest pane first — the in-process drop-in
 /// for `bsc logs pane-activity --json` (#3630).
 #[tauri::command]
-pub fn logs_pane_activity() -> Vec<::logs::PaneActivity> {
-    ::logs::pane_activity(&::logs::log_dir())
+pub async fn logs_pane_activity() -> Vec<::logs::PaneActivity> {
+    blocking_or("logs_pane_activity", Vec::new(), || ::logs::pane_activity(&::logs::log_dir())).await
 }
 
 /// The deduped set of panes that self-reported `done` (#1379), newest first — the in-process drop-in
 /// for `bsc logs done-panes --json` (#3630).
 #[tauri::command]
-pub fn logs_done_panes() -> Vec<String> {
-    ::logs::done_panes(&::logs::log_dir())
+pub async fn logs_done_panes() -> Vec<String> {
+    blocking_or("logs_done_panes", Vec::new(), || ::logs::done_panes(&::logs::log_dir())).await
 }
 
 /// Append a `woke` event to the coordination log (#199): records that a parked
@@ -417,7 +425,7 @@ mod tests {
         let prev = std::env::var("BSC_GRAPH_STORE").ok();
 
         std::env::set_var("BSC_GRAPH_STORE", &missing);
-        let g = graph_dump();
+        let g = tauri::async_runtime::block_on(graph_dump());
         assert!(g.get("implementations").is_some_and(|v| v.is_array()), "must fall back to the seed: {g}");
 
         match prev {

@@ -725,6 +725,13 @@ pub fn is_capturing() -> bool {
 /// - `ui scan-cache get` — the last spawn left at boot once the burst went warm
 ///   (#the-scan-cache-read-is-the-last-boot-spawn). Same story: raw `println!`, moved onto
 ///   `print_json` in the change that listed it. Its `put`/`clear` siblings are writes and stay off.
+/// - `request list` — `bsc-request`'s store is GLOBAL (`requests.db` via `$BSC_REQUEST_DB`), so there
+///   is no per-project env for a warm child to switch. Its `list` emitted through
+///   `bsc_cli_util::emit`, which was a raw `println!`; that helper moved onto `bsc_util::emit_line` in
+///   the same change that listed this verb — the third time this exact fix has been needed, which is
+///   why it was fixed in the SHARED helper rather than in one more crate. Measured at 312 spawns /
+///   94.4s in one session (#request-list-cannot-be-warm-served-until-it-stops-using-println). Its
+///   `resolve`/`note`/`claim`/`prune`/`remove` siblings are writes and stay off.
 ///
 /// Adding a verb without reading its crate is the one mistake that breaks the warm child for every
 /// later request on it, so the list is deliberately tedious to extend.
@@ -741,6 +748,7 @@ pub fn is_servable_warm(args: &[String]) -> bool {
         &["skill", "group", "list"],
         &["project", "link", "list"],
         &["project", "db", "list"],
+        &["request", "list"],
         // A `ui` verb one level deeper than `UI_SUBS` can express
         // (#the-scan-cache-read-is-the-last-boot-spawn). The COMPLETE three tokens, never
         // `["ui","scan-cache"]`: the bare form defaults to `get`, but a two-token entry would also

@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { decideExpand, COMPLETE_REASON, type ExpandInput } from "@/features/glance/lib/expandNode";
 
 const fleet = (over: Partial<ExpandInput> = {}): ExpandInput => ({
-  isStudioProject: false,
+  isAppOwnedSession: false,
   paneIsLive: false,
   paneIsComplete: false,
   canResumeInPlace: true,
@@ -41,15 +41,15 @@ describe("decideExpand", () => {
   });
 
   it("a studio node with a morph opens it — its own lazy start does the rest", () => {
-    expect(decideExpand({ ...fleet(), isStudioProject: true, studioMorphs: true }).kind).toBe("studio-morph");
+    expect(decideExpand({ ...fleet(), isAppOwnedSession: true, studioMorphs: true }).kind).toBe("studio-morph");
   });
 
   it("a studio node with NO morph (a library/resource node) just selects — there is no session", () => {
-    expect(decideExpand({ ...fleet(), isStudioProject: true, studioMorphs: false }).kind).toBe("select");
+    expect(decideExpand({ ...fleet(), isAppOwnedSession: true, studioMorphs: false }).kind).toBe("select");
   });
 
   it("the studio branch ignores fleet state entirely — a studio has no fleet pane to be complete", () => {
-    const a = decideExpand({ ...fleet({ paneIsComplete: true, paneIsLive: true }), isStudioProject: true, studioMorphs: true });
+    const a = decideExpand({ ...fleet({ paneIsComplete: true, paneIsLive: true }), isAppOwnedSession: true, studioMorphs: true });
     expect(a.kind).toBe("studio-morph");
   });
 });
