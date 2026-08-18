@@ -199,3 +199,27 @@ export function seedAdoption({ seedSrcText = "", seedProvides = null, recordSrcT
   if (lost.length) return { verdict: "refuse", reason: `adopting would drop export(s) ${lost.join(", ")}`, lost };
   return { verdict: "adopt", reason: `provides ${seedProvides ?? "(none)"} → ${recordProvides ?? "(none)"}`, lost: [] };
 }
+
+/**
+ * Can this module be retired — does the packaged SEED already answer its specifier?
+ *
+ * The precondition for deleting anything. Importers keep writing `@/x/y`; once the file is gone the
+ * only thing that can answer them is a shipped record. Two real failures came from nobody checking:
+ * five modules retired while `promote-records` had SKIPPED their seed write (deleted, with the old
+ * derivative still shipping), and `pageheader` whose seed said `@/shared/ui/pages/PageHeader` against a
+ * `pageHeader.tsx` file.
+ *
+ * THE MATCH IS EXACT, deliberately. The runtime loader compares specifiers by string and
+ * `.bsc-records/` emission is keyed off `provides`, so a case-insensitive check would wave through the
+ * one bug that works on Windows and breaks on a case-sensitive filesystem — which is exactly how that
+ * one survived tsc, `vite build` and the whole suite. A near-miss is reported so the message can say
+ * "case mismatch" rather than "missing", because those need different fixes.
+ *
+ * @param {{ spec: string, seedProvides: Iterable<string> }} input
+ * @returns {{ ok: boolean, nearMiss: string[] }}
+ */
+export function seedAnswersSpecifier({ spec, seedProvides }) {
+  const all = [...seedProvides].map((s) => String(s).trim());
+  if (all.includes(spec)) return { ok: true, nearMiss: [] };
+  return { ok: false, nearMiss: all.filter((s) => s.toLowerCase() === spec.toLowerCase()) };
+}

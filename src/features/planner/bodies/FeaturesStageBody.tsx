@@ -12,7 +12,7 @@
 import { useState } from "react";
 import type { PlanFeature } from "@/features/planner/issues/featureList";
 import { FeaturesBody } from "@/features/planner/bodies/FocusedFeaturesBody";
-import { PlannerLibraryPane } from "./PlannerLibraryPane";
+import { PlannerLibraryPane } from "@/features/planner/bodies/PlannerLibraryPane";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";

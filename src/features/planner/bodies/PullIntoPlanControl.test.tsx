@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { PullIntoPlanControl } from "./PullIntoPlanControl";
+import { PullIntoPlanControl } from "@/features/planner/bodies/PullIntoPlanControl";
 import type { PlanFeature } from "@/features/planner/issues/featureList";
 
 const mockInvoke = vi.mocked(invoke);

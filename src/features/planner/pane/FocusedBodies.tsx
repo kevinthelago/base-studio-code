@@ -28,7 +28,7 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 // The project planner's LIBRARY surface (#4265) — the components lens (#2314) and the algorithms lens
 // together. Folded into the `features` stage, which every packaged blueprint carries; `test_ui` (which
 // none do, since #4249) keeps rendering it so a user blueprint carrying that stage still resolves.
-import { PlannerLibraryPane } from "../bodies/PlannerLibraryPane";
+import { PlannerLibraryPane } from "@/features/planner/bodies/PlannerLibraryPane";
 import { FeaturesStageBody } from "../bodies/FeaturesStageBody";
 import { PreviewPaneShell } from "@/features/planner/preview/PreviewPaneShell";
 import { useAppStore } from "@/store";

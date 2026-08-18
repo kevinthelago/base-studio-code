@@ -39,9 +39,9 @@ import { Screen } from "@/shared/ui/layouts/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { LessonsTab } from "@/features/skills/LessonsTab";
 import { NewGroupDialog } from "@/features/skills/NewGroupDialog";
-import { SkillDrawer } from "./SkillDrawer";
+import { SkillDrawer } from "@/features/skills/SkillDrawer";
 import { SkillsDigestToggle, SkillsDigestPanel } from "./SkillsDigest";
-import { RunsTab } from "./RunsTab";
+import { RunsTab } from "@/features/skills/RunsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
 

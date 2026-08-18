@@ -8,7 +8,7 @@
 export { TeamsPanel } from "./TeamsPanel";
 export { TeamsCanvas, OrgLegend, type Selection } from "./TeamsCanvas";
 export { TeamsInspector } from "./TeamsInspector";
-export { FormChip, FormLane } from "./components";
+export { FormChip, FormLane } from "@/features/teams/components";
 export { createOrgSlice, type OrgSlice } from "@/features/teams/store";
 export {
   positionDisplay, positionComms, tierChips, formColor, formArrow, hueColor, ROLE_META,

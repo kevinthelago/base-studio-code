@@ -38,11 +38,11 @@ export { TRACE_PROGRAMS, programKey, programForImpl, type AlgoProgram } from "@/
 export { SEARCH_PROGRAMS, linearSearch, binarySearch, parseSearchInput, searchToText } from "@/features/algorithms/viz/examples/searches";
 export type { SearchInput, SearchProgram } from "@/features/algorithms/viz/examples/searches";
 // The `scalar` datatype (#3220) — renderer + the accumulate programs (fibonacci).
-export { ScalarView } from "./viz/renderers/ScalarView";
+export { ScalarView } from "@/features/algorithms/viz/renderers/ScalarView";
 export { TracedScalar, runScalarAlgorithm } from "@/features/algorithms/lib/tracer";
 export { SCALAR_PROGRAMS, fibonacci, parseScalarInput, scalarToText, type ScalarProgram } from "@/features/algorithms/viz/examples/scalarAlgos";
 // The `matrix` datatype (#3221, epic #3220) — renderer + transform programs.
-export { MatrixView } from "./viz/renderers/MatrixView";
+export { MatrixView } from "@/features/algorithms/viz/renderers/MatrixView";
 export { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "@/features/algorithms/viz/examples/matrixTransforms";
 // The `graph` datatype (#3224, epic #3220) — renderer + traversal/shortest-path programs.
 export { GraphView } from "./viz/renderers/GraphView";

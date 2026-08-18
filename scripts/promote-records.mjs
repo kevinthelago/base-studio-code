@@ -78,6 +78,23 @@ function seededIds() {
   return out;
 }
 
+/** id → the path its seed JSON actually occupies. `SEED_COMPONENTS` globs the tree FLAT and keys by id,
+ *  so a record's identity is its id and NOT where the file sits — which is why an adoption has to find
+ *  the existing seed by id rather than at a path derived from the store record's `folder`, a field that
+ *  can and does disagree with reality. */
+function seedPathsById() {
+  const out = new Map();
+  (function walk(dir) {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!e.name.endsWith(".json") || statSync(p).size > 4_000_000) continue;
+      try { const r = JSON.parse(readFileSync(p, "utf8")); if (r?.id && !out.has(r.id)) out.set(r.id, p); } catch { /* not a record */ }
+    }
+  })(join(REPO, "src-tauri", "data", "components", "app"));
+  return out;
+}
+
 /** Specifiers a packaged seed already provides — promoting one of these again would be a duplicate. */
 function seededSpecifiers() {
   const out = new Set();
@@ -106,6 +123,7 @@ for (const i of impls) if (typeof i.provides === "string" && (i.code || "").trim
 
 const seeded = seededSpecifiers();
 const seedIds = seededIds();
+const seedPathById = seedPathsById();
 
 /** Every specifier a RECORD may import: a registered platform module, or one some record provides.
  *  Mirrors what `platformBoundary.test.ts` asserts — promoting a record whose imports nothing can answer
@@ -313,9 +331,22 @@ if (!APPLY) {
 // what an existing seed actually holds.
 const SEED_FIELDS = ["id", "name", "kitId", "role", "provides", "srcText", "composes", "src", "props", "folder", "tests", "variants", "animations", "themeSystem", "pageKind", "shapes", "guidance", "whenUse", "whenNot", "tags", "analytics"];
 for (const { rec, file } of promote.component) {
+  // AN EXISTING SEED IS FOUND BY ID, ANYWHERE — not at the folder-derived path. `SEED_COMPONENTS` globs
+  // the tree FLAT and keys by id, so where a record's JSON sits is not part of its identity, and a
+  // store record's `folder` can disagree with where its seed actually lives: `plannerlibrarypane` is
+  // `folder: "planner"` in the store while its seed is at `features/planner/bodies/`. Deriving the path
+  // from `folder` made `existsSync` false, so the write was not treated as an adoption, and the
+  // duplicate-id guard then refused it — correctly, since writing would have put a SECOND record with
+  // that id under a second folder (the `console-pane-menu` failure). Right refusal, wrong question.
+  //
+  // It matters beyond tidiness: the resolvability fixed point runs BEFORE these write-time declines, so
+  // a record promoted on the assumption that its dependency would land can dangle when that dependency
+  // is refused here. `featuresstagebody` shipped importing `@/features/planner/bodies/PlannerLibraryPane`
+  // with nothing providing it, and `platformBoundary.test.ts` caught it.
   const folder = typeof rec.folder === "string" && rec.folder ? rec.folder : "misc";
-  const dir = join(REPO, "src-tauri/data/components/app", folder);
-  const path = join(dir, `${rec.id}.json`);
+  const existingPath = seedPathById.get(rec.id);
+  const dir = existingPath ? dirname(existingPath) : join(REPO, "src-tauri/data/components/app", folder);
+  const path = existingPath ?? join(dir, `${rec.id}.json`);
   // NEVER overwrite an existing seed. The skip above keys on `provides`, but the write keys on
   // `<folder>/<id>` — a record whose `provides` differs from the seed occupying that path slips through
   // and clobbers it. Seven curated seeds were overwritten before this guard existed.

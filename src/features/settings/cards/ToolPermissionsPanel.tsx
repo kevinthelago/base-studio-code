@@ -3,7 +3,7 @@
 
 import { type Dispatch, type SetStateAction } from "react";
 import { TOOL_PRESETS } from "@/features/settings/lib/toolPresets";
-import { ToolChip, ChipInput } from "../ToolPermissionInputs";
+import { ToolChip, ChipInput } from "@/features/settings/ToolPermissionInputs";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";

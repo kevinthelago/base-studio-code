@@ -9,12 +9,12 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { MasterDetail } from "@/shared/ui/layouts/MasterDetail";
-import { GeneralPage } from "./pages/GeneralPage";
+import { GeneralPage } from "@/features/settings/pages/GeneralPage";
 import { AccessibilityPage } from "./pages/AccessibilityPage";
 import { GithubPage } from "@/features/settings/pages/GithubPage";
 import { SecurityPage } from "@/features/settings/pages/SecurityPage";
 import { PlannerPage } from "./pages/PlannerPage";
-import { SkillsPage as SkillsSettingsPage } from "./pages/SkillsPage";
+import { SkillsPage as SkillsSettingsPage } from "@/features/settings/pages/SkillsPage";
 import { AutomationsPage } from "@/features/settings/pages/AutomationsPage";
 import { McpPage } from "./pages/McpPage";
 

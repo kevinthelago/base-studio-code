@@ -3,8 +3,8 @@
   "name": "FormLane",
   "kitId": "base-studio-code",
   "role": "composite",
-  "srcText": "// FormLane — one direction of a relationship's communication forms: a from/to header over a stack of\n// FormChips, or an empty note. Promoted from harvested into base-studio-code, refactored to use the\n// real Box/Row/Stack/Text primitives and the promoted teams-form-chip component instead of local\n// raw-div redeclarations.\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { FormChip, type CommunicationForm } from \"@/components/teams-form-chip\";\n\nconst DEMO_FORMS: CommunicationForm[] = [\n  { id: \"status\", label: \"status update\", color: \"var(--accent)\", arrow: \"→\", blurb: \"A brief on progress, blockers, and next steps; posted on a cadence.\" },\n  { id: \"escalation\", label: \"escalation\", color: \"var(--danger)\", arrow: \"⇈\", blurb: \"Raised when a blocker needs attention now; interrupts the cadence.\" },\n];\n\nexport function FormLane({ from = \"builder-1\", to = \"reviewer-2\", forms = DEMO_FORMS, hue = 250 }: { from?: string; to?: string; forms?: CommunicationForm[]; hue?: number }) {\n  return (\n    <Box style={{ border: \"1px solid var(--border-soft)\", borderRadius: 11, overflow: \"hidden\", background: \"var(--bg-soft)\" }}>\n      <Row gap={7} align=\"center\" style={{ padding: \"9px 12px\", background: \"var(--bg-elev)\", borderBottom: \"1px solid var(--border-soft)\" }}>\n        <Text as=\"span\" weight={600} size={11.5}>{from}</Text>\n        <Text as=\"span\" weight={700} style={{ color: `oklch(0.72 0.13 ${hue})` }}>→</Text>\n        <Text as=\"span\" weight={600} size={11.5}>{to}</Text>\n      </Row>\n      <Box style={{ padding: \"11px 12px\" }}>\n        {forms.length === 0\n          ? <Text as=\"span\" size={11} tone=\"dim\" style={{ fontStyle: \"italic\" }}>no forms this direction</Text>\n          : <Stack gap={7}>{forms.map((f) => <FormChip key={f.id} form={f} note />)}</Stack>}\n      </Box>\n    </Box>\n  );\n}\n",
-  "src": "src/features/teams/components.tsx",
+  "provides": "@/features/teams/components",
+  "srcText": "// Team designer — the small reusable pieces extracted from the Claude Design prototype (#2193), built on\n// the shared UI kit (Chip/Box/Row/Text) so they read as one system with the rest of the app. Used by\n// both the canvas node cards and the right-hand inspector.\nimport { Chip } from \"@/shared/ui/data/Chip\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { formColor, formArrow } from \"@/features/teams/lib/orgView\";\nimport type { CommunicationForm } from \"@/features/teams/lib/team\";\n\n// The role-capability tier row lives in the shared kit since #2420 — `RoleTierChips`\n// (@/shared/ui/data/RoleTierChips); the local `TierChips` duplicate (zero call sites) was deleted.\n\n/** A single communication-form chip — its direction glyph + name, colored by the form's semantics.\n *  Optionally trailed by its runtime note (delivery · authority / parks caller / …). */\nexport function FormChip({ form, note = false }: { form: CommunicationForm; note?: boolean }) {\n  return (\n    <Row gap={7} align=\"center\">\n      <Chip color={formColor(form)} style={{ fontWeight: 600, minWidth: 92 }}>\n        {formArrow(form)} {form.label}\n      </Chip>\n      {note && <Text as=\"span\" mono size={10} tone=\"dim\">{form.blurb.split(\";\")[0]}</Text>}\n    </Row>\n  );\n}\n\n// The labelled section header moved onto the shared `SectionLabel` (`right` slot added in #2420) —\n// the inspector imports it from @/shared/ui/layout/SectionLabel directly.\n\n/** A form-flow lane (A → B header + the forms that direction), the inspector's relationship view unit. */\nexport function FormLane({ from, to, forms, hue }: { from: string; to: string; forms: CommunicationForm[]; hue: number }) {\n  return (\n    <Box style={{ border: \"1px solid var(--border-soft)\", borderRadius: 11, overflow: \"hidden\", background: \"var(--bg-soft)\" }}>\n      <Row gap={7} align=\"center\" style={{ padding: \"9px 12px\", background: \"var(--bg-elev)\", borderBottom: \"1px solid var(--border-soft)\" }}>\n        <Text as=\"span\" weight={600} size={11.5}>{from}</Text>\n        <Text as=\"span\" weight={700} style={{ color: `oklch(0.72 0.13 ${hue})` }}>→</Text>\n        <Text as=\"span\" weight={600} size={11.5}>{to}</Text>\n      </Row>\n      <Box style={{ padding: \"11px 12px\" }}>\n        {forms.length === 0\n          ? <Text as=\"div\" size={11} tone=\"dim\" style={{ fontStyle: \"italic\" }}>no forms this direction</Text>\n          : <Stack gap={7}>{forms.map((f) => <FormChip key={f.id} form={f} note />)}</Stack>}\n      </Box>\n    </Box>\n  );\n}\n",
   "composes": [
     "Box",
     "FormChip",
@@ -12,9 +12,12 @@
     "Stack",
     "Text"
   ],
-  "provides": "@/components/teams-form-lane",
-  "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `FormLane` defaults `from`, `to`, `forms`, `hue`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `FormLane` holds 2 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 2 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
+  "src": "src/features/teams/components.tsx",
   "folder": "features/teams",
+  "variants": [
+    "default",
+    "empty"
+  ],
   "whenUse": [
     "One direction of a relationship's communication forms - a from/to header over a stack of FormChips, or an empty note."
   ],
@@ -23,9 +26,5 @@
   ],
   "tags": [
     "org-chart"
-  ],
-  "variants": [
-    "default",
-    "empty"
   ]
 }

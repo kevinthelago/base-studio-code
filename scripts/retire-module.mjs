@@ -42,6 +42,7 @@
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { seedAnswersSpecifier } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const [, , target, ...flags] = process.argv;
@@ -149,6 +150,59 @@ for (const f of files) {
     rewrote++;
     console.log(`   ${DRY ? "would rewrite" : "rewrote"}  ${f}`);
     if (!DRY) writeFileSync(abs, after);
+  }
+}
+
+// THE PRECONDITION FOR DELETING ANYTHING: the packaged SEED must already answer this module's
+// specifier. That is what a retirement asserts — importers keep writing `@/x/y`, and once the file is
+// gone the only thing that can answer them is a shipped record.
+//
+// TWO REAL FAILURES, one slice, both this same missing check:
+//
+//   * `promote-records` printed `SKIPPED (a seed already occupies that path) — it is STALE` for five
+//     modules and they were retired anyway, leaving them deleted with the old preview-shaped derivative
+//     still shipping. The recovery is worse than the bug: `promote-records` iterates FILES, so once the
+//     file is gone the module is no longer a candidate and the stale seed can never be adopted.
+//   * `pageheader`'s seed provided `@/shared/ui/pages/PageHeader` while the file is `pageHeader.tsx`.
+//
+// NOTHING ELSE CATCHES EITHER. tsc resolves case-insensitively on Windows, `vite build` passed, the
+// whole vitest suite passed. The comparison here is therefore EXACT — a case-insensitive match would
+// wave through precisely the bug that only breaks on someone else's filesystem.
+//
+// It reads the SEED, never the live store: the store is per-machine, and a store-only record is exactly
+// the case that must be refused (making it shippable is what `promote-records` is for).
+{
+  const seedProvides = new Set();
+  const walkSeed = (dir) => {
+    if (!existsSync(dir)) return;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { walkSeed(p); continue; }
+      if (!e.name.endsWith(".json")) continue;
+      try {
+        const r = JSON.parse(readFileSync(p, "utf8"));
+        if (typeof r?.provides === "string") seedProvides.add(r.provides.trim());
+      } catch { /* not a record */ }
+    }
+  };
+  walkSeed(join(REPO, "src-tauri/data/components/app"));
+  try {
+    const algos = JSON.parse(readFileSync(join(REPO, "src-tauri/data/knowledge/algorithms.json"), "utf8"));
+    for (const im of algos.implementations ?? []) if (typeof im?.provides === "string") seedProvides.add(im.provides.trim());
+  } catch { /* no algorithms seed */ }
+
+  const { ok, nearMiss: near } = seedAnswersSpecifier({ spec, seedProvides });
+  if (!ok) {
+    console.error(
+      `retire: REFUSED — no packaged seed record provides ${spec}, so deleting the file would leave its ` +
+        `importers with nothing to resolve to.` +
+        (near.length
+          ? `\n   A seed provides ${near.join(", ")} — a CASE MISMATCH. The loader matches exactly, so this ` +
+            `would keep working on Windows and break on a case-sensitive filesystem.`
+          : `\n   Promote it first (\`node scripts/promote-records.mjs --store … --impls … --apply\`) and ` +
+            `CHECK THAT RUN'S OUTPUT — a write it skipped is a seed that still holds the old record.`),
+    );
+    process.exit(1);
   }
 }
 

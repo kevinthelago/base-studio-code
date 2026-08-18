@@ -55,7 +55,7 @@ export { installFromGist, publishGist } from "@/features/planner/lib/gist/gist";
 // #1545: github's screen renders planner's project views (a one-way UI dependency now that planner
 // no longer reaches into github); the app's director pump + console launch reach planner fleet logic
 // (flow-permission rules, director drive). Exposed here so those consumers use the barrel, not deep paths.
-export { ProjectsSummary } from "./list/ProjectsSummary";
+export { ProjectsSummary } from "@/features/planner/list/ProjectsSummary";
 export { ProjectBoard } from "./github/ProjectBoard";
 export { Roadmap } from "./github/Roadmap";
 export { Issues } from "./github/Issues";

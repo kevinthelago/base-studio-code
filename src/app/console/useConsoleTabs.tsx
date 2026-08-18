@@ -6,7 +6,7 @@ import { openDetachedTab } from "@/app/console/lib/detachWindow";
 import type { Tab } from "@/app/chrome/Tabstrip";
 import { Dialog } from "@/shared/ui/overlay/Dialog";
 import { Button } from "@/shared/ui/controls/Button";
-import { NewTabDialog } from "./NewTabDialog";
+import { NewTabDialog } from "@/app/console/NewTabDialog";
 
 /** The next free `tab-N` name (the highest existing N + 1). */
 function nextTabName(tabs: Tab[]): string {

@@ -64,7 +64,7 @@ import { ActivityFeed } from "@/shared/ui/data/ActivityFeed";
 import { Pane } from "@/shared/ui/overlay/Pane";
 import { TelemetryPanel, ItemBars, SplitBar } from "./charts/telemetry";
 // #2475 — the key-value record rendering
-import { KeyValueList } from "./data/KeyValueList";
+import { KeyValueList } from "@/shared/ui/data/KeyValueList";
 // #2505 — the Pages tier (complete data-driven page compositions)
 import { TablePage } from "./pages/TablePage";
 import { TreeExplorerPage } from "./pages/TreeExplorerPage";
