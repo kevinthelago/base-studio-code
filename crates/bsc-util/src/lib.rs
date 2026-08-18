@@ -749,6 +749,11 @@ pub fn is_servable_warm(args: &[String]) -> bool {
         &["project", "link", "list"],
         &["project", "db", "list"],
         &["request", "list"],
+        // The command-surface catalog (`epic-command-surfaces-are-nodes`). The strongest warm candidate
+        // in the table: it reads no store at all — the catalog is a `const` compiled into this binary —
+        // so it is project-less by construction and cannot go stale within a process's life. Glance asks
+        // for it on every graph build, which is exactly the shape #4152 exists for.
+        &["surface", "list"],
         // A `ui` verb one level deeper than `UI_SUBS` can express
         // (#the-scan-cache-read-is-the-last-boot-spawn). The COMPLETE three tokens, never
         // `["ui","scan-cache"]`: the bare form defaults to `get`, but a two-token entry would also

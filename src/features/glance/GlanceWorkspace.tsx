@@ -38,7 +38,9 @@ import { decideExpand } from "@/features/glance/lib/expandNode";
 import { ensureClaudeRunning } from "@/shared/lib/session/ensureClaudeRunning";
 import { buildGraph, focusSets, isBandNode, isArchitectNodeId, HEALTH_META, ROLE_COLOR } from "@/features/glance/lib/glanceGraph";
 import { timedSync } from "@/shared/lib/core/perf";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { buildGlanceData } from "./lib/glanceData";
+import type { SurfaceLite } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "@/features/glance/lib/glanceFleet";
 import { isAppProject, withStudioSessions, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, applyStudioLiveStatus, withProjectRequestNodes } from "@/features/glance/lib/studioProject";
 import { isStudioId, useStudioViewers } from "@/features/studio-sessions";
@@ -81,6 +83,25 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // halves of that are gone: the toggle, and the stand-in node it was compensating for. `RequestSessionsMount`
   // now holds a session per open request unconditionally and publishes them, so the drill renders the
   // ACTUAL sessions — labelled with their requests and edged to whoever filed them — instead of a count.
+  // COMMAND SURFACES (`command-surfaces-are-glance-nodes`) — the `bsc` subcommands this system is
+  // actually driven through, drawn as band nodes beside the library and contract dimensions.
+  //
+  // Read from the ONE catalog rather than listed here: `bsc surface list` is the same source that drives
+  // `bsc help` and dispatch validation, so the node set cannot disagree with what really runs. Three
+  // separate plan items already exist for hand-kept copies of this set drifting; a fourth copy in this
+  // component would be the next one.
+  //
+  // POLLED, at a deliberately long interval. The catalog is a `const` compiled into the binary, so it
+  // changes only when the binary is REPLACED — which does happen mid-session, since a rebuild re-stages
+  // the sidecar (`replaced_since` in `bsc serve` exists for exactly that). 60s is far above how often it
+  // changes and far below how long a stale node set would matter. The read is on the warm-serve
+  // allow-list, so it costs ~10ms and needs no project key.
+  const [surfaces, setSurfaces] = useState<SurfaceLite[]>([]);
+  usePoll(async (isCancelled) => {
+    const rows = await bscJson<SurfaceLite[]>(null, ["surface", "list", "--json"], []);
+    if (isCancelled()) return;
+    setSurfaces(Array.isArray(rows) ? rows : []);
+  }, 60000);
   // The base-studio-code default project (#3319) renders the Studio Network team; the debug toggle gates
   // its debugger node.
   const teams = useAppStore((s) => s.teams);
@@ -217,8 +238,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     [personas],
   );
   const projectData = useMemo(
-    () => buildGlanceData(projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers, architects),
-    [projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers, architects],
+    () => buildGlanceData(projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers, architects, surfaces),
+    [projects, projectLinks, kitUsage, kits, libraryRefs, mcpServers, architects, surfaces],
   );
   const projectModel = useMemo(() => timedSync("buildGraph:glance-project", () => buildGraph(projectData.rawNodes, projectData.rawEdges)), [projectData]);
 

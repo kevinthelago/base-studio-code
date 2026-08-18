@@ -213,6 +213,19 @@ mod tests {
     }
 
     #[test]
+    fn the_command_surface_catalog_is_servable() {
+        // `epic-command-surfaces-are-nodes` — Glance asks for the catalog on every graph build, and the
+        // catalog is a `const` compiled into this binary, so the read touches no store and needs no
+        // project key. Named by its COMPLETE path like every other entry: a bare `["surface"]` prefix
+        // would also match a future write verb under the same command.
+        assert!(is_servable(&a(&["surface", "list"])));
+        assert!(is_servable(&a(&["surface", "list", "--json"])));
+        // The bare command is not the read — `bsc surface` prints the human overview, and matching it
+        // here would be the prefix mistake the table's own note warns about.
+        assert!(!is_servable(&a(&["surface"])));
+    }
+
+    #[test]
     fn the_boot_reads_are_servable() {
         // #the-warm-bsc-answers-the-boot-reads-too — the exact set `bsc perf spawns` caught the app
         // launching a process for, eighteen in one second, on every page load. Each was confirmed to

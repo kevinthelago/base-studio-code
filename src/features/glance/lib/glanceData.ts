@@ -4,7 +4,7 @@
 // wiring real edges later is a drop-in — the page + graph core never change.
 import sampleGraphEmbedded from "@data/glance/sample-graph.json";
 import type { GRawNode, GRawEdge, GRole, GHealth, GActivity } from "@/features/glance/lib/glanceGraph";
-import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId, architectNodeId, ownedByEdgeId } from "@/features/glance/lib/glanceGraph";
+import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId, mcpNodeId, usesMcpEdgeId, serviceNodeId, usesServiceEdgeId, architectNodeId, ownedByEdgeId, surfaceNodeId } from "@/features/glance/lib/glanceGraph";
 import { isProjectContract, type ProjectLink } from "@/features/glance/lib/projectLinks";
 // Cross-feature types only, via the barrel (#1309 boundary): the consumer index (`kitUsage`) whose
 // (projectKey, kitId) edges the kit nodes are built from, plus the kit→library `requires` roll-up
@@ -34,6 +34,15 @@ export interface McpLite { id: string; name: string; projects: string[]; transpo
 /** An ARCHITECT persona, pared to what the L0 band needs (#glance-architect-band) — the funnel tier-1
  *  personas from the persona store, filtered to `role: "architect"` by the caller. */
 export interface ArchitectLite { id: string; name: string }
+
+/** One `bsc` COMMAND SURFACE, exactly as `bsc surface list --json` reports it
+ *  (`epic-command-surfaces-are-nodes`).
+ *
+ *  This mirrors the catalog's own JSON rather than restating a surface list, which is the whole point of
+ *  the slice: three separate plan items already exist for hand-kept copies of this set drifting from
+ *  what actually dispatches, and a fourth copy in the frontend would be the next one. `store` and
+ *  `summary` are optional because the catalog leaves them out for a surface that reads no store. */
+export interface SurfaceLite { name: string; status?: string; store?: string; summary?: string }
 
 /**
  * Which architect a project belongs to on the network (#architects-own-projects), or `null` for none.
@@ -102,6 +111,7 @@ export function buildGlanceData(
   libraryRefs: KitLibraryRef[] = [],
   mcpServers: McpLite[] = [],
   architects: ArchitectLite[] = [],
+  surfaces: SurfaceLite[] = [],
 ): GlanceData {
   const rawNodes: GRawNode[] = projects.map((p) => ({
     id: p.id,
@@ -315,6 +325,32 @@ export function buildGlanceData(
       seenEdgeId.add(edgeId);
       rawEdges.push({ id: edgeId, from: l.from, to: nodeId, kind: t.type === "mcp" ? "uses-mcp" : "uses-service" });
     }
+  }
+
+  // COMMAND SURFACES (`command-surfaces-are-glance-nodes`, epic `epic-command-surfaces-are-nodes`) —
+  // one fenced-band node per `bsc` subcommand, GENERATED from `bsc surface list --json`. The interface
+  // every agent drives this system through was the one dimension no graph could see.
+  //
+  // DEPRECATED SURFACES ARE SKIPPED. `bsc org` is a deprecated alias serving the same store as
+  // `bsc teams`; drawing both would put two nodes on one store and overstate the surface area. The
+  // catalog already carries the distinction, so this reads it rather than keeping a skip-list.
+  //
+  // NO `invokes` EDGE IS EMITTED HERE, and that is not an omission. The edge is meant to run
+  // session→surface, but system-session nodes are no longer at L0: they MOVED into the architect node's
+  // drill-in (`buildArchitectFleetData`, #architect-node-expands-into-system-sessions), so at this level
+  // there is no session node for such an edge to leave. Emitting one anyway would either dangle or
+  // invent a project→surface relationship the epic explicitly rejected. The edge belongs in the
+  // drill-in, where the sessions actually are.
+  for (const s of surfaces) {
+    if (s.status && s.status !== "active") continue;
+    rawNodes.push({
+      id: surfaceNodeId(s.name),
+      slug: s.name,
+      kind: "surface",
+      role: "infra",  // lifted + foundational, like a kit or an mcp node — the canvas draws it from `kind`
+      health: "off",  // a command surface is a capability, never a running thing; `off` = nothing live behind it
+      activity: "idle",
+    });
   }
 
   return { rawNodes, rawEdges, sample: false };
