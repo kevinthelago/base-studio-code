@@ -15,7 +15,7 @@ import { Button } from "@/shared/ui/controls/Button";
 import { TextField } from "@/shared/ui/controls/Field";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
 import type { Frame } from "@/features/algorithms/lib/trace";
-import { TracePlayer } from "./TracePlayer";
+import { TracePlayer } from "@/features/algorithms/viz/TracePlayer";
 import type { VizExample } from "./examples/registry";
 
 /** The compact inline preview — a controls-less, auto-playing, looping player wrapped in a clickable

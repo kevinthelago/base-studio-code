@@ -18,8 +18,8 @@ export * from "@/features/algorithms/lib/trace";
 export * from "@/features/algorithms/lib/binding";
 export { makeTraceStream, DEFAULT_BUFFER_SIZE } from "@/features/algorithms/lib/traceStream";
 export type { TraceStream, TraceStreamOptions } from "@/features/algorithms/lib/traceStream";
-export { TracePlayer } from "./viz/TracePlayer";
-export type { TracePlayerProps } from "./viz/TracePlayer";
+export { TracePlayer } from "@/features/algorithms/viz/TracePlayer";
+export type { TracePlayerProps } from "@/features/algorithms/viz/TracePlayer";
 export { fallbackRenderer, resolveRenderer } from "@/features/algorithms/viz/registry";
 export type { StructureRenderer, RendererRegistry } from "@/features/algorithms/viz/registry";
 

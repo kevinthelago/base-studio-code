@@ -63,7 +63,7 @@ import { groupKits } from "@/features/designs/lib/kitGroups";
 import { supportedStates, previewCycleStates } from "./lib/componentPreview";
 import { usePreviewStateCycle } from "@/features/designs/lib/usePreviewStateCycle";
 import { expandedPreviewFit } from "@/features/designs/lib/expandedPreviewFit";
-import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
+import { ComponentPreviewFrame } from "@/features/designs/ComponentPreviewFrame";
 import type { PreviewState } from "./lib/componentPreview";
 import { ThemesMenu } from "@/features/designs/ThemesMenu";
 import { AnimationsMenu } from "@/features/designs/AnimationsMenu";

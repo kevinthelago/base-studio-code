@@ -311,7 +311,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     rendersFrom: "graph",
     modules: [
       { recordId: "skillspage", file: "/src/features/skills/index.tsx" },
-      { recordId: "skills-views", file: "/src/features/skills/SkillsViews.tsx" },
+      { recordId: "skills-views", file: null }, // RETIRED — the record is the only copy,
       { recordId: "skills-new-group-dialog", file: null }, // RETIRED — the record is the only copy,
       { recordId: "skills-drawer", file: null }, // RETIRED — the record is the only copy,
       { recordId: "skills-digest", file: null }, // RETIRED — the record is the only copy,
@@ -361,7 +361,7 @@ const FILE_SOURCES = import.meta.glob<string>(
     // each other BOTH ways by `shadowPages.test.ts`, so a path released for deletion has to leave both.
     // Schedules.tsx dropped with its entry — automations now contributes no file baseline at all.
     // McpAnalytics dropped with its entry.
-    "/src/features/skills/{index,SkillsViews}.tsx",
+    "/src/features/skills/index.tsx",
     // ProfilesTab/ActivityTab/FlowTab dropped with their entries — AssignmentsTab is the last security file.
     "/src/features/security/AssignmentsTab.tsx",
     // The one file-rendered page (see its entry) — Settings renders this .tsx while the record shadows it.
