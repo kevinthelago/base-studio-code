@@ -25,7 +25,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { projectGlancePage, GRAPH_SOURCE_HEADER } from "./lib/glancepageProjection";
+import { projectGlancePage, GRAPH_SOURCE_HEADER } from "@/features/glance/lib/glancepageProjection";
 
 const SRC_FILE = join(process.cwd(), "src/features/glance/GlanceWorkspace.tsx");
 const SEED_FILE = join(process.cwd(), "src-tauri/data/components/app/features/glance/glancepage.json");

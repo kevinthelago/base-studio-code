@@ -9,8 +9,8 @@ export {
   // store collection in; every themeById/themeVars/ThemeScope consumer then resolves against it.
   setActiveKitThemes, activeKitThemes, kitTokens,
 } from "./theme";
-export { ThemeScope } from "./ThemeScope";
-export type { ThemeScopeProps } from "./ThemeScope";
+export { ThemeScope } from "@/shared/ui/kit/ThemeScope";
+export type { ThemeScopeProps } from "@/shared/ui/kit/ThemeScope";
 // #3711/#3715: the JS projection of the active theme — concrete token VALUES for a component that renders to
 // a NON-CSS surface (canvas / WebGL / non-web runtime) and can't see the cascade. `<ThemeProvider>` is the
 // JS counterpart to `<ThemeScope>`; `useResolvedTheme()` reads it; `resolveThemeTokens` is the pure resolver.

@@ -159,7 +159,7 @@ try {
         // rightly refuses a page that cannot render standalone. The per-component records keep their
         // own roles; this one only has to answer the specifier.
         bsc(["ui", "set", "--by", "claude", "--note", "module record: this file is also a module, beside its component records"],
-          JSON.stringify({ id: moduleId, name: moduleId, kitId: recs[0].kitId ?? "base-studio-code", role: "composite",
+          JSON.stringify({ id: moduleId, name: moduleId, kitId: "base-studio-code", role: "composite",
             provides: cand.provides, src: srcRel, folder: recs[0].folder, srcText: "export {};\n" }));
         bsc(["ui", "set-src", moduleId], readFileSync(f, "utf8"));
       } else {

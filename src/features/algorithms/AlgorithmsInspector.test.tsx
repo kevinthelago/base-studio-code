@@ -6,7 +6,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AlgorithmsInspector } from "@/features/algorithms/AlgorithmsInspector";
-import type { AlgoImpl, KnowledgeGraph } from "./lib/knowledge";
+import type { AlgoImpl, KnowledgeGraph } from "@/features/algorithms/lib/knowledge";
 
 // The seeded sort impl — the id `sort.ts` is what `vizForImpl` keys the visualization on.
 const SORT: AlgoImpl = {

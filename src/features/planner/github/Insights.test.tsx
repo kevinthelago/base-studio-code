@@ -17,7 +17,7 @@ vi.mock("@/features/planner/github/useActiveProjectGithub", async (importOrigina
   return { ...actual, useActiveProjectGithub: vi.fn() };
 });
 
-import { Insights } from "./Insights";
+import { Insights } from "@/features/planner/github/Insights";
 import { useActiveProjectGithub } from "@/features/planner/github/useActiveProjectGithub";
 
 const mockHook = vi.mocked(useActiveProjectGithub);

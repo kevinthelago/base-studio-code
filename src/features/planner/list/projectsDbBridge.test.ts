@@ -11,7 +11,7 @@ vi.mock("@/shared/lib/core/bsc", () => ({
   bscRun: (...a: unknown[]) => bscRun(...a),
 }));
 
-import { listDbProjects, addDbProject, removeDbProject, setDbProjectState } from "./projectsDbBridge";
+import { listDbProjects, addDbProject, removeDbProject, setDbProjectState } from "@/features/planner/list/projectsDbBridge";
 
 describe("projectsDbBridge.listDbProjects (#2995)", () => {
   beforeEach(() => { bscJson.mockReset(); bscWrite.mockReset(); bscRun.mockReset(); });

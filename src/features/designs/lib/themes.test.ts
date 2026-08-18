@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import { KIT_THEMES } from "@/shared/ui/kit";
 import { SEED_THEMES, reconcileThemes, orderThemes, groupThemes, OTHER_GROUP, type KitThemeRecord } from "./themes";
-import { seedHashOf, stampSeedHash } from "./seedRefresh";
+import { seedHashOf, stampSeedHash } from "@/features/designs/lib/seedRefresh";
 
 describe("SEED_THEMES (#2488)", () => {
   it("stamps every packaged theme with builtin + a self-consistent seedHash, in registry order", () => {

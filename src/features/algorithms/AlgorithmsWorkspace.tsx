@@ -26,7 +26,7 @@ import { useVizForImpl } from "@/features/algorithms/viz/useVizForImpl";
 import {
   TECHS, TECH_META, NODE_W, NODE_H, layoutKitGraph, kitGraph, kitTechs, implById,
   KIT_REL_META, KIT_REL_ORDER, type Tech,
-} from "./lib/knowledge";
+} from "@/features/algorithms/lib/knowledge";
 import { useKnowledgeGraph } from "@/features/algorithms/useKnowledgeGraph";
 
 export function AlgorithmsWorkspace() {

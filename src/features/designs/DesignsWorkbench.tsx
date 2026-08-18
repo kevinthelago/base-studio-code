@@ -49,7 +49,7 @@ import { layoutComposition, NODE_W, NODE_H } from "@/features/designs/lib/compos
 import { analyzeGraphHealth, analyzeMotion, isActionProp, HEALTH_SEVERITY, type HealthCategory, type HealthFinding } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "@/features/designs/kitChrome";
-import { RailTree } from "./RailTree";
+import { RailTree } from "@/features/designs/RailTree";
 import { ComponentNode } from "@/features/designs/ComponentNode";
 import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, ROLE_COLOR, ROLES, type ComponentRecord, type ChangeEntry } from "./lib/model";
 import { timeAgo } from "@/shared/lib/core/format";

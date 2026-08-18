@@ -2,7 +2,7 @@
 export { SoundsWorkspace } from "@/features/sounds/SoundsWorkspace";
 // #4215: the graph-hosted workspace — what the planner mounts. The file component above stays exported;
 // both copies coexist under the record<->file parity guard.
-export { SoundsGraphHost } from "./SoundsGraphHost";
+export { SoundsGraphHost } from "@/features/sounds/SoundsGraphHost";
 export { BUILTIN_KITS, STARTER_KIT, mergeKits } from "./lib/soundKits";
 export { loadKits, pushKit, dropKit } from "@/features/sounds/lib/soundBridge";
 export { playCue, compileCue, voiceDuration, type CompiledCue, type CompiledVoice } from "./lib/synth";

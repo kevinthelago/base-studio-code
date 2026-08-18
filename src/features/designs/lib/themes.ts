@@ -6,7 +6,7 @@
 // themeBridge.ts) → unit-testable.
 
 import { KIT_THEMES, type KitTheme } from "@/shared/ui/kit";
-import { reconcileSeed, stampSeedHash, type SeedReconcile } from "./seedRefresh";
+import { reconcileSeed, stampSeedHash, type SeedReconcile } from "@/features/designs/lib/seedRefresh";
 
 /** A theme as the STORE holds it: the packaged shape plus the seed-tracking provenance (#2483). */
 export interface KitThemeRecord extends KitTheme {

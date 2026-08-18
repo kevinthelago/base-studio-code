@@ -6,7 +6,7 @@ import {
   KNOWLEDGE, TECHS, implById, usedByImpl,
   kitTechs, kitImpls, kitImplsByRole, kitGraph, groupImplsByLanguage, layoutKitGraph,
   matchesImpl, type AlgoImpl,
-} from "./knowledge";
+} from "@/features/algorithms/lib/knowledge";
 
 describe("KNOWLEDGE seed (impl-only, #2958)", () => {
   it("carries the Rust kit — unique ids, known roles, real same-tech composes", () => {

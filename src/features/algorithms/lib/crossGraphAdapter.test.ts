@@ -2,7 +2,7 @@
 // cross-graph resolver. Verifies bare-name + exact-id resolution, the miss, and the code/kind carry-through.
 import { describe, it, expect } from "vitest";
 import { algoNodeLookup } from "@/features/algorithms/lib/crossGraphAdapter";
-import { buildKnowledge } from "./knowledge";
+import { buildKnowledge } from "@/features/algorithms/lib/knowledge";
 
 const graph = buildKnowledge({
   implementations: [

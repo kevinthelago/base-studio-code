@@ -1,7 +1,7 @@
 // planResumeLaunch (#glance-resume) — the progress-gated stream partition a Glance project-resume runs.
 // Pure, so it's exhaustively unit-testable without any Tauri/store IO.
 import { describe, it, expect } from "vitest";
-import { planResumeLaunch, partitionResumable, nothingToResume, completedPanes } from "./resumeProject";
+import { planResumeLaunch, partitionResumable, nothingToResume, completedPanes } from "@/features/glance/lib/resumeProject";
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
 
 function stream(over: Partial<AgentStream> = {}): AgentStream {

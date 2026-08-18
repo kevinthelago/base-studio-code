@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { HooksView } from "./";
+import { HooksView } from "@/features/mcp";
 import { useAppStore } from "@/store";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Hook } from "@/features/mcp/lib/hooks";

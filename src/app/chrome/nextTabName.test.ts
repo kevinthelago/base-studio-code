@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Tab } from "./Tabstrip";
+import type { Tab } from "@/app/chrome/Tabstrip";
 
 // Mirror of the helper in App.tsx — tested in isolation
 function nextTabName(tabs: Tab[]): string {

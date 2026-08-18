@@ -7,7 +7,7 @@
 // driving an animation through `Traced<X>` — which is behaviour by any reading, and the least suitable
 // thing in the feature to express as layout data.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
-import * as Knowledge from "./lib/knowledge";
+import * as Knowledge from "@/features/algorithms/lib/knowledge";
 import * as UseKnowledgeGraph from "@/features/algorithms/useKnowledgeGraph";
 import * as VizPanel from "@/features/algorithms/viz/VizPanel";
 import * as UseVizForImpl from "@/features/algorithms/viz/useVizForImpl";

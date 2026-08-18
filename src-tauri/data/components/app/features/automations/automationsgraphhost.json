@@ -1,0 +1,17 @@
+{
+  "id": "automationsgraphhost",
+  "name": "AutomationsGraphHost",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/features/automations/AutomationsGraphHost",
+  "srcText": "// The Automations page host (#3642, epic #3604) — renders the Automations workspace FROM THE GRAPH. The\n// page + its 3 tab bodies (Schedules, History, Hook Analytics) are sourced from the components graph (the\n// authored `automationspage` node + siblings, seeded from `data/components/app/**`), not bundled files. It\n// registers the automations feature's injected platform surface (mcp + the scheduler/cron/format logic the\n// graph page imports), then mounts `automationspage` through the runtime loader. Mirrors `FleetGraphHost`.\n//\n// `pageOverride` (a torn-off single tab, DetachedWindow) forwards to the graph component as a prop —\n// GraphComponent spreads props onto the loaded component, and the graph `AutomationsWorkspace` reads it.\n//\n// The CSS still ships as a normal bundled import here (the loader can't resolve a CSS side-effect import,\n// so it was stripped from the graph source): the host owns the stylesheet the graph page's classes need.\nimport { GraphComponent } from \"@/shared/lib/runtime/GraphComponent\";\nimport { GraphPageFallback } from \"@/shared/lib/runtime/GraphPageFallback\";\nimport { registerAutomationsPlatform } from \"@/features/automations/graphPlatform\";\n\n// Register at module load — before the workspace ever renders — so the injected modules are in the registry\n// when the graph page's compiled `require()` runs. Idempotent.\nregisterAutomationsPlatform();\n\nexport function AutomationsGraphHost({ pageOverride }: { pageOverride?: string } = {}) {\n  // Fallback offers a one-click re-seed (#3648) when the source isn't in the library yet.\n  return (\n    <GraphComponent\n      id=\"automationspage\"\n      props={pageOverride ? { pageOverride } : undefined}\n      fallback={<GraphPageFallback page=\"Automations\" icon=\"⏱\" />}\n    />\n  );\n}",
+  "composes": [],
+  "src": "src/features/automations/AutomationsGraphHost.tsx",
+  "props": [
+    {
+      "name": "pageOverride",
+      "type": "string"
+    }
+  ],
+  "folder": "features/automations"
+}

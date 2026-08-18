@@ -120,6 +120,31 @@ if (!self) {
   process.exit(1);
 }
 
+// NEVER RETIRABLE: a module the ENTRY imports STATICALLY. `App.tsx` does
+// `import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost"` at the top level, and the dev
+// server's PRE-TRANSFORM pass resolves that alias to `/src/…` before the `bscRecords` plugin can answer —
+// "Failed to load url /src/app/console/ConsoleGraphHost.tsx". Same shape as the build-config rule above:
+// something needs the module before the plugin is in a position to serve it.
+//
+// IT IS THE EAGERNESS, NOT THE KIND. Eleven other `*GraphHost.tsx` retired in the same sweep without
+// trouble, because they are reached through `lazyWorkspaces` / dynamic import. Only the one in the entry's
+// synchronous graph broke — and ONLY `node scripts/dev-boot-check.mjs` saw it: typecheck, lint, the whole
+// vitest suite and `npx vite build` were every one of them green while the app could not boot.
+{
+  const ENTRIES = ["app/main.tsx", "app/App.tsx"];
+  const importers = ENTRIES.filter((e) => files.includes(e)).filter((e) =>
+    new RegExp(`^\\s*import\\s+[^;]*from\\s+["']@/${relSpecifier}["']`, "m").test(readFileSync(join(REPO, "src", e), "utf8")),
+  );
+  if (importers.length) {
+    console.error(
+      `retire: REFUSED — ${rel} is imported STATICALLY by ${importers.join(", ")}. The dev server's ` +
+        `pre-transform pass resolves that alias to \`/src/…\` before the records plugin can answer, so the ` +
+        `app fails to boot — and only \`node scripts/dev-boot-check.mjs\` observes it.`,
+    );
+    process.exit(1);
+  }
+}
+
 /** Does this relative specifier, resolved from `fromDir`, name the module being retired? */
 const resolvesToTarget = (fromDir, relSpec) => {
   const out = [];

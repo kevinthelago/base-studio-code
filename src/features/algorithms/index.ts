@@ -3,11 +3,11 @@
 export { AlgorithmsWorkspace } from "@/features/algorithms/AlgorithmsWorkspace";
 // #4219: the graph-hosted workspace — what the planner mounts. The file component above stays exported;
 // both copies coexist under the record<->file parity guard.
-export { AlgorithmsGraphHost } from "./AlgorithmsGraphHost";
+export { AlgorithmsGraphHost } from "@/features/algorithms/AlgorithmsGraphHost";
 // #4265: the project-planner lens on the algorithms library — the twin of the Design Studio's
 // PlannerComponentsPane, so the planner presents BOTH halves of the artifact surface.
 export { PlannerAlgorithmsPane } from "@/features/algorithms/PlannerAlgorithmsPane";
-export * from "./lib/knowledge";
+export * from "@/features/algorithms/lib/knowledge";
 // The cross-graph adapter (#3116) — the algo-graph NodeLookup another pillar composes into its resolver.
 export { algoNodeLookup } from "@/features/algorithms/lib/crossGraphAdapter";
 

@@ -2,7 +2,7 @@
 // renders, down to the trailing "ungrouped" bucket and the caller-preserved ordering.
 import { describe, it, expect } from "vitest";
 import { UNGROUPED_KEY, UNGROUPED_LABEL } from "@/shared/lib/core/folderTree";
-import { folderTree, folderImplCount, type AlgoImpl } from "./knowledge";
+import { folderTree, folderImplCount, type AlgoImpl } from "@/features/algorithms/lib/knowledge";
 
 const im = (id: string, folder?: string, role: "primitive" | "algorithm" = "algorithm"): AlgoImpl =>
   ({ id, name: id.replace(/\..*$/, ""), tech: "rust", role, composes: [], folder }) as AlgoImpl;

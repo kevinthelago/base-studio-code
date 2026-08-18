@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
-import { Rail } from "./Rail";
+import { Rail } from "@/app/chrome/Rail";
 import { useAppStore } from "@/store";
 
 // The rail's top→bottom order is product-defined (#872); lock it so a stray reorder is caught.

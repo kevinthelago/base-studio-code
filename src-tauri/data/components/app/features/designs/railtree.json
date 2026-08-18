@@ -1,0 +1,73 @@
+{
+  "id": "railtree",
+  "name": "RailTree",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/features/designs/RailTree",
+  "srcText": "// The Design Studio rail tree (#2717) — extracted from DesignStudio.tsx, mirroring how `GraphView` and\n// `Inspector` are their own components. Renders the kits→components tree: technology → style group\n// headers (default OPEN) down to the collapsible kit heads and their search-filtered component rows.\n// Pure presentational — all selection/expand state lives in the parent (`DesignStudio`) and is threaded\n// through props. The rows/headers now render through the shared RailRow / RailGroupHeader nav primitives\n// (#2789); the `ds-grouphead`/`ds-kithead`/`ds-comprow` classes remain only as selector/test hooks (the\n// styling is the canonical shared look, no longer their own CSS).\n//\n// #4128 lifted the folder LEVEL out of here into `shared/`: the folder glyph + header row are now\n// `RailFolderRow`, and the tree they render is built by the shared `buildFolderTree`. Both are used\n// verbatim by the Algorithms rail, so the two library rails are the same rail rather than lookalikes.\nimport { type ReactNode } from \"react\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { ColorSwatch } from \"@/shared/ui/controls/ColorSwatch\";\nimport { RailRow } from \"@/shared/ui/layouts/RailRow\";\nimport { RailGroupHeader } from \"@/shared/ui/layouts/RailGroupHeader\";\nimport { RailFolderRow, RailFolderChildren } from \"@/shared/ui/layouts/RailFolderRow\";\nimport { RoleDot } from \"@/features/designs/kitChrome\";\nimport type { ComponentRecord, Kit } from \"@/features/designs/lib/model\";\nimport { type KitTreeNode, type ComponentFolder, groupComponentsByFolder, folderComponentCount } from \"@/features/designs/lib/kitGroups\";\nimport { byTier } from \"@/features/designs/lib/compositionLayout\";\n\ninterface RailTreeProps {\n  /** The technology → style rail hierarchy (from `groupKits`). */\n  railTree: KitTreeNode[];\n  /** Per-key expand state (kit id or group key → open) + its setter. */\n  expanded: Record<string, boolean>;\n  setExpanded: (updater: (e: Record<string, boolean>) => Record<string, boolean>) => void;\n  /** The active kit (its head shows `.active`). */\n  kitId: string;\n  setKitId: (id: string) => void;\n  /** The focused component id (its row shows `.on` when in the active kit). */\n  compId: string | null;\n  /** The full component library (rows are filtered per-kit by `match`). */\n  components: ComponentRecord[];\n  /** The search-filter predicate (`matchesQuery(c, query)`). */\n  match: (c: ComponentRecord) => boolean;\n  /** Focus a component row. */\n  selectComp: (c: ComponentRecord) => void;\n  /** The current search query — drives the \"no matches\" placeholder. */\n  query: string;\n}\n\nexport function RailTree({ railTree, expanded, setExpanded, kitId, setKitId, compId, components, match, selectComp, query }: RailTreeProps) {\n  // One rail kit entry: the collapsible kit head + its (search-filtered) component rows. Under the\n  // #2506 single-kit style merge this IS the style header — `label` shows the style name instead of\n  // the kit name (the kit identity stays in the tooltip), and no separate kit row renders.\n  const renderRailKit = (k: Kit, label?: string) => {\n    const open = !!expanded[k.id];\n    const inKit = components.filter((c) => c.kitId === k.id);\n    const rows = inKit.filter(match).sort(byTier); // Pages on top, like the graph (#2976)\n    // One component row — shared by the flat list and the per-group nesting (#3048).\n    const renderCompRow = (c: ComponentRecord) => (\n      <RailRow\n        key={c.id}\n        className=\"ds-comprow\"\n        indent={1}\n        active={c.id === compId && k.id === kitId}\n        onClick={() => selectComp(c)}\n        leading={<RoleDot role={c.role} size={7} glow={3} />}\n        trailing={<Text mono size=\"xxs\" tone=\"dim\" style={{ padding: \"1px 5px\", background: \"var(--bg-soft)\", borderRadius: 4 }}>×{c.used}</Text>}\n      >\n        {c.name}\n      </RailRow>\n    );\n    // One folder of the kit's tree (#3582): a collapsible header (default OPEN), its subfolders\n    // (recursion), then its direct component rows. Expand state is namespaced by kit so two kits'\n    // identically-named folders (`shared/ui`) don't share a toggle. Mirrors a file explorer:\n    // subfolders list before a folder's own files. Rendered as a readable RailRow (#3632) — a folder\n    // glyph + caret + `weight:500`, the same fg-muted→fg row look as the leaves — NOT the dim uppercase\n    // micro-label it used to wear (which was hard to read for what is the browsable tree here).\n    const renderFolder = (f: ComponentFolder): ReactNode => {\n      const fkey = `${k.id}::${f.key}`;\n      const open = expanded[fkey] ?? true;\n      return (\n        <Box key={f.key} className=\"ds-compfolder\" style={{ marginBottom: 2 }}>\n          <RailFolderRow\n            className=\"ds-compfolderhead\"\n            label={f.label}\n            count={folderComponentCount(f)}\n            open={open}\n            onToggle={() => setExpanded((e) => ({ ...e, [fkey]: !(e[fkey] ?? true) }))}\n            ungrouped={f.ungrouped}\n            path={f.key}\n          />\n          {open && (\n            <RailFolderChildren>\n              {f.folders.map(renderFolder)}\n              {f.items.map(renderCompRow)}\n            </RailFolderChildren>\n          )}\n        </Box>\n      );\n    };\n    // When this kit's components carry `group` folder paths, render them as a nested folder tree\n    // (#3582); otherwise `folders` is null and the flat list renders EXACTLY as before (zero regression).\n    const folders = groupComponentsByFolder(rows);\n    return (\n      <Box key={k.id} style={{ marginBottom: 4 }}>\n        <RailRow\n          className=\"ds-kithead\"\n          caret={open}\n          active={k.id === kitId}\n          weight={500}\n          title={label ? `${label} · ${k.name} — ${k.stack}` : k.stack}\n          onClick={() => { setKitId(k.id); setExpanded((e) => ({ ...e, [k.id]: !e[k.id] })); }}\n          leading={<ColorSwatch color={k.dot} size={7} />}\n          trailing={<Text mono size=\"xxs\" tone=\"dim\">{inKit.length}</Text>}\n        >\n          {label ?? k.name}\n        </RailRow>\n        {open && (\n          <Box style={{ margin: \"2px 0 6px\", paddingLeft: 6 }}>\n            {folders ? folders.map(renderFolder) : rows.map(renderCompRow)}\n            {rows.length === 0 && query && (\n              <Text size={11} tone=\"dim\" as=\"div\" style={{ padding: \"6px 10px\", fontStyle: \"italic\" }}>no matches</Text>\n            )}\n          </Box>\n        )}\n      </Box>\n    );\n  };\n  // A rail tree node: a kit entry, or a collapsible tech/style group header (default OPEN — its\n  // expand state shares the `expanded` record under the group's stable key). A single-kit style\n  // group (#2506) renders as the kit entry labelled with the style — the style header IS the kit.\n  const renderRailNode = (n: KitTreeNode): ReactNode => {\n    if (n.kind === \"kit\") return renderRailKit(n.kit);\n    if (n.kit) return renderRailKit(n.kit, n.label);\n    const open = expanded[n.key] ?? true;\n    return (\n      <Box key={n.key} style={{ marginBottom: 4 }}>\n        <RailGroupHeader\n          className=\"ds-grouphead\"\n          collapsible\n          open={open}\n          onToggle={() => setExpanded((e) => ({ ...e, [n.key]: !(e[n.key] ?? true) }))}\n          count={n.count}\n          title={`${n.level === \"tech\" ? \"technology\" : \"visual language\"}: ${n.label}`}\n        >\n          {n.label}\n        </RailGroupHeader>\n        {open && <Box className=\"ds-groupkids\">{n.children.map(renderRailNode)}</Box>}\n      </Box>\n    );\n  };\n\n  return <>{railTree.map(renderRailNode)}</>;\n}",
+  "composes": [],
+  "src": "src/features/designs/RailTree.tsx",
+  "props": [
+    {
+      "desc": "The technology → style rail hierarchy (from groupKits).",
+      "name": "railTree",
+      "req": true,
+      "type": "KitTreeNode[]"
+    },
+    {
+      "desc": "Per-key expand state (kit id or group key → open).",
+      "name": "expanded",
+      "req": true,
+      "type": "Record<string, boolean>"
+    },
+    {
+      "desc": "",
+      "name": "setExpanded",
+      "req": true,
+      "type": "(updater: (e: Record<string, boolean>) => Record<string, boolean>) => void"
+    },
+    {
+      "desc": "The active kit (its head shows .active).",
+      "name": "kitId",
+      "req": true,
+      "type": "string"
+    },
+    {
+      "desc": "",
+      "name": "setKitId",
+      "req": true,
+      "type": "(id: string) => void"
+    },
+    {
+      "desc": "The focused component id.",
+      "name": "compId",
+      "req": true,
+      "type": "string | null"
+    },
+    {
+      "desc": "The full component library.",
+      "name": "components",
+      "req": true,
+      "type": "ComponentRecord[]"
+    },
+    {
+      "desc": "The search-filter predicate.",
+      "name": "match",
+      "req": true,
+      "type": "(c: ComponentRecord) => boolean"
+    },
+    {
+      "desc": "Focus a component row.",
+      "name": "selectComp",
+      "req": true,
+      "type": "(c: ComponentRecord) => void"
+    },
+    {
+      "desc": "The current search query.",
+      "name": "query",
+      "req": true,
+      "type": "string"
+    }
+  ],
+  "folder": "features/designs"
+}

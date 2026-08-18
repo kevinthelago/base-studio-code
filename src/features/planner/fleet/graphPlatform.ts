@@ -19,7 +19,7 @@ import * as FleetHealthLib from "./lib/fleetHealth";
 import * as FleetWorker from "@/features/planner/fleet/fleetWorker";
 import * as WorkerDetailHelpers from "@/features/planner/fleet/workerDetail.helpers";
 import * as WorkerDetailPlaceholder from "@/features/planner/fleet/WorkerDetailPlaceholder";
-import * as WorkerModals from "./WorkerModals";
+import * as WorkerModals from "@/features/planner/fleet/WorkerModals";
 import * as Security from "@/features/security";
 
 let done = false;

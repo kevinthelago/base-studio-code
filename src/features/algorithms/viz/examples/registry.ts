@@ -13,7 +13,7 @@
 // authors visualizations as data — no per-algorithm app change.
 
 import type { Frame } from "@/features/algorithms/lib/trace";
-import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
+import type { AlgoImpl, AlgoKind } from "@/features/algorithms/lib/knowledge";
 import { classifyKind, type Classifiable } from "@/features/algorithms/lib/classifyKind";
 import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm, runStackAlgorithm, runTreeAlgorithm, runScene, type GraphInput } from "@/features/algorithms/lib/tracer";
 import { runInSandbox } from "./vizSandbox";

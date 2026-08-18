@@ -189,8 +189,15 @@ export function seedAdoption({ seedSrcText = "", seedProvides = null, recordSrcT
   // newline, and that alone reads as "the seed is stale" and adopts. Silently overwriting a correct
   // seed over one byte is the failure this rule is a hair away from being.
   const file = norm(fileSrc);
-  const seedBody = splitPreamble(norm(seedSrcText), file)[1];
-  const stale = seedBody !== file || (seedProvides ?? null) !== (recordProvides ?? null);
+  const [seedPre, seedBody] = splitPreamble(norm(seedSrcText), file);
+  // A MATCHING BODY IS NOT ENOUGH — the seed can carry CODE before it. `splitPreamble` cuts at the first
+  // line the file also contains, so a preview stub's imports and its whole `LocalPageFallback` function
+  // land in the "preamble", and a body-only comparison calls that seed identical to the file while it
+  // ships a duplicate import block and an unused component. Eleven seeds were in exactly that state and
+  // the adoption declined every one of them as "already matches", leaving 21 typecheck errors that only
+  // showed up in the EMITTED `.bsc-records/` tree.
+  const preIsProse = seedPre.split("\n").every((l) => !l.trim() || /^\s*(\/\/|\*|\/\*)/.test(l));
+  const stale = seedBody !== file || !preIsProse || (seedProvides ?? null) !== (recordProvides ?? null);
   if (!stale) return { verdict: "keep", reason: "the seed already matches the file, provides included", lost: [] };
   const seedExports = exportedNames(seedSrcText);
   const recExports = exportedNames(recordSrcText);
