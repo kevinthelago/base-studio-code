@@ -53,3 +53,58 @@ describe("usePaneTokenUsage — reads in-process, never through the bsc bridge (
     expect(result.current.size).toBe(0);
   });
 });
+
+// ONE POLLER FOR THE WHOLE APP (#one-poller-per-datum-not-one-per-consumer).
+//
+// The value is a map of EVERY pane built from ONE call, so the data is global and polling it per
+// consumer is pure duplication. It was instantiated in `consolepage` AND in `telemetryview` — a PANE
+// view, rendered once per pane showing it — so each extra Telemetry pane added another 4s poll of the
+// single most expensive read in the app (655 calls / 324.8s measured in one session).
+describe("usePaneTokenUsage — one shared poller, however many consumers", () => {
+  const usageCalls = () => invoked.mock.calls.filter(([cmd]) => cmd === "logs_usage").length;
+
+  it("issues ONE invoke for three consumers, not three", async () => {
+    invoked.mockResolvedValue([]);
+    renderHook(() => usePaneTokenUsage(64));
+    renderHook(() => usePaneTokenUsage(64));
+    renderHook(() => usePaneTokenUsage(64));
+    await waitFor(() => expect(usageCalls()).toBeGreaterThan(0));
+    // The whole point: consumer count must not multiply the read.
+    expect(usageCalls()).toBe(1);
+  });
+
+  it("gives a late consumer the current value immediately instead of a blank 4s", async () => {
+    const row = {
+      pane: "studio-code:director", session_id: "s", model: "claude", input_tokens: 1,
+      output_tokens: 2, cache_creation_tokens: 0, cache_read_tokens: 0, cost_usd: 0.5,
+    };
+    invoked.mockResolvedValue([row]);
+    const first = renderHook(() => usePaneTokenUsage(64));
+    await waitFor(() => expect(first.result.current.size).toBe(1));
+
+    // A pane opened later must render populated on its FIRST frame — it shares the poller, so it
+    // would otherwise wait a whole interval for a value that is already in hand.
+    const late = renderHook(() => usePaneTokenUsage(64));
+    expect(late.result.current.get("studio-code:director")?.cost_usd).toBe(0.5);
+    expect(usageCalls()).toBe(1); // and joining must not trigger a fetch of its own
+  });
+
+  it("polls the LARGEST limit any live consumer asked for, so a small one cannot truncate a big one", async () => {
+    invoked.mockResolvedValue([]);
+    renderHook(() => usePaneTokenUsage(8));
+    renderHook(() => usePaneTokenUsage(256));
+    await waitFor(() => expect(usageCalls()).toBeGreaterThan(0));
+    const limits = invoked.mock.calls.filter(([cmd]) => cmd === "logs_usage").map(([, a]) => a);
+    expect(limits.some((a) => (a as { limit: number }).limit === 256)).toBe(true);
+  });
+
+  it("stops polling when the last consumer unmounts — nothing polls with nobody listening", async () => {
+    invoked.mockResolvedValue([]);
+    const { unmount } = renderHook(() => usePaneTokenUsage(64));
+    await waitFor(() => expect(usageCalls()).toBeGreaterThan(0));
+    unmount();
+    const after = usageCalls();
+    await new Promise((r) => setTimeout(r, 60));
+    expect(usageCalls()).toBe(after); // no further reads once nothing is mounted
+  });
+});
