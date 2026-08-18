@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SoundsWorkspace } from "./SoundsWorkspace";
+import { SoundsWorkspace } from "@/features/sounds/SoundsWorkspace";
 
 // jsdom has no Web Audio, so playCue is a no-op there anyway — mock it to assert the click WIRING
 // (which cue got played) without needing a real AudioContext.

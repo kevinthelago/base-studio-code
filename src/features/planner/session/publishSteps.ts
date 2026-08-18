@@ -9,7 +9,7 @@
 // are preserved exactly so a transient read failure never risks duplicate creation.
 
 import { resolveRepoPublic } from "@/store/slices/plan";
-import type { GhStatusMap, GhItemState } from "./GitHubStructureCard";
+import type { GhStatusMap, GhItemState } from "@/features/planner/session/GitHubStructureCard";
 import { parseFeaturesFile, featuresToPlanIssues } from "@/features/planner/issues/featureList";
 import { depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, type parseDependencyManifest } from "@/features/planner/issues/dependencies";
 import { resolveIssueAssignee } from "@/features/planner/fleet/fleetAssignee";

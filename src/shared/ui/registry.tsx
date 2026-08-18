@@ -43,7 +43,7 @@ import { IconBox } from "@/shared/ui/data/IconBox";
 import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { DataTableRow } from "@/shared/ui/data/DataTableRow";
 import { RoleTierChips } from "@/shared/ui/data/RoleTierChips";
-import { StatCard } from "./charts/primitives";
+import { StatCard } from "@/shared/ui/charts/primitives";
 import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars } from "./charts/Charts";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
@@ -62,18 +62,18 @@ import { Tree } from "@/shared/ui/layouts/Tree";
 import { LabelChip } from "@/shared/ui/data/LabelChip";
 import { ActivityFeed } from "@/shared/ui/data/ActivityFeed";
 import { Pane } from "@/shared/ui/overlay/Pane";
-import { TelemetryPanel, ItemBars, SplitBar } from "./charts/telemetry";
+import { TelemetryPanel, ItemBars, SplitBar } from "@/shared/ui/charts/telemetry";
 // #2475 — the key-value record rendering
 import { KeyValueList } from "@/shared/ui/data/KeyValueList";
 // #2505 — the Pages tier (complete data-driven page compositions)
-import { TablePage } from "./pages/TablePage";
-import { TreeExplorerPage } from "./pages/TreeExplorerPage";
-import { PipelinePage } from "./pages/PipelinePage";
+import { TablePage } from "@/shared/ui/pages/TablePage";
+import { TreeExplorerPage } from "@/shared/ui/pages/TreeExplorerPage";
+import { PipelinePage } from "@/shared/ui/pages/PipelinePage";
 import { NetworkPage } from "./pages/NetworkPage";
-import { DashboardPage } from "./pages/DashboardPage";
-import { CollectionPage } from "./pages/CollectionPage";
+import { DashboardPage } from "@/shared/ui/pages/DashboardPage";
+import { CollectionPage } from "@/shared/ui/pages/CollectionPage";
 // #2508 — the key-value shape's page, completing the page-per-shape set
-import { RecordPage } from "./pages/RecordPage";
+import { RecordPage } from "@/shared/ui/pages/RecordPage";
 
 // Heterogeneous prop shapes — a render-map is intentionally prop-agnostic.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

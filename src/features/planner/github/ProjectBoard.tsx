@@ -14,7 +14,7 @@ import type { GhLabel } from "@/shared/lib/github/types";
 import { BOARD_QUERY } from "@/features/planner/github/projectBoard.query";
 import type { GhUser, BoardIssue, BoardColumn } from "@/features/planner/github/projectBoard.types";
 import { Column } from "@/features/planner/github/Column";
-import { IssueDrawer } from "./IssueDrawer";
+import { IssueDrawer } from "@/features/planner/github/IssueDrawer";
 
 // ── Board ─────────────────────────────────────────────────────────────────────
 

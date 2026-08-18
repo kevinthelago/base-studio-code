@@ -17,7 +17,7 @@
 // comes from the global store via the `bsc ui` bridge.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";
-import { KitShareModal } from "./KitShareModal";
+import { KitShareModal } from "@/features/designs/KitShareModal";
 import { DesignerTerminal } from "@/features/designs/DesignerTerminal";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -50,7 +50,7 @@ import { analyzeGraphHealth, analyzeMotion, isActionProp, HEALTH_SEVERITY, type 
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "@/features/designs/kitChrome";
 import { RailTree } from "./RailTree";
-import { ComponentNode } from "./ComponentNode";
+import { ComponentNode } from "@/features/designs/ComponentNode";
 import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, ROLE_COLOR, ROLES, type ComponentRecord, type ChangeEntry } from "./lib/model";
 import { timeAgo } from "@/shared/lib/core/format";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
@@ -65,8 +65,8 @@ import { usePreviewStateCycle } from "@/features/designs/lib/usePreviewStateCycl
 import { expandedPreviewFit } from "@/features/designs/lib/expandedPreviewFit";
 import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
 import type { PreviewState } from "./lib/componentPreview";
-import { ThemesMenu } from "./ThemesMenu";
-import { AnimationsMenu } from "./AnimationsMenu";
+import { ThemesMenu } from "@/features/designs/ThemesMenu";
+import { AnimationsMenu } from "@/features/designs/AnimationsMenu";
 import { PaletteStrip } from "@/features/designs/PaletteStrip";
 import { PaletteToggle } from "@/features/designs/PaletteToggle";
 import { DEFAULT_THEME } from "@/shared/ui/kit";

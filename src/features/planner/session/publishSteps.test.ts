@@ -4,7 +4,7 @@ import {
   publishRepositories, scaffoldRepositories, ensureProjectBoard,
   createIssues, applyStreamLabels, seedPublishStatus, materializeIssues,
 } from "./publishSteps";
-import type { GhStatusMap, GhItemState } from "./GitHubStructureCard";
+import type { GhStatusMap, GhItemState } from "@/features/planner/session/GitHubStructureCard";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 
 // ── test doubles ──────────────────────────────────────────────────────────────

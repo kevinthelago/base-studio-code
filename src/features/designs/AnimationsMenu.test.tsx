@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { AnimationsMenu } from "./AnimationsMenu";
+import { AnimationsMenu } from "@/features/designs/AnimationsMenu";
 import type { KitAnimation } from "@/shared/ui/kit";
 
 // The component's motion presented as PRESETS (#3083) — composed alternatives sharing the `motion`

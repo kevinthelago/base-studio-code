@@ -7,7 +7,7 @@ vi.mock("@/shared/lib/core/log", () => ({ log: { info: vi.fn(), warn: vi.fn(), e
 import { generateCategoryColors } from "@/features/designs/lib/designGenBridge";
 import { log } from "@/shared/lib/core/log";
 import { useAppStore } from "@/store";
-import { DesignReconcileModal } from "./DesignReconcileModal";
+import { DesignReconcileModal } from "@/features/designs/DesignReconcileModal";
 
 describe("DesignReconcileModal (#2658)", () => {
   beforeEach(() => {

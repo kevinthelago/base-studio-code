@@ -9,7 +9,7 @@ export {
 } from "./Charts";
 export {
   fmt, StatCard, CardHead, RangeToggle, Avatar, useTip, type StatTone,
-} from "./primitives";
+} from "@/shared/ui/charts/primitives";
 export {
   TelemetryPanel, ItemBars, SplitBar, type ItemBarRow,
-} from "./telemetry";
+} from "@/shared/ui/charts/telemetry";

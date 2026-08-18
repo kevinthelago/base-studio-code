@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ToolPermissionsPanel } from "./ToolPermissionsPanel";
+import { ToolPermissionsPanel } from "@/features/settings/cards/ToolPermissionsPanel";
 import { TOOL_PRESETS } from "@/features/settings/lib/toolPresets";
 
 function baseProps() {

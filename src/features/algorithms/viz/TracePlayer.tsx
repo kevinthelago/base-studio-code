@@ -21,7 +21,7 @@ import { Button } from "@/shared/ui/controls/Button";
 import { normalizeFrame, type Frame, type StructureFrame } from "@/features/algorithms/lib/trace";
 import { makeTraceStream } from "@/features/algorithms/lib/traceStream";
 import { resolveRenderer, type RendererRegistry } from "@/features/algorithms/viz/registry";
-import { CodeColumn } from "./CodeColumn";
+import { CodeColumn } from "@/features/algorithms/viz/CodeColumn";
 
 /** After the user stops stepping, resume the infinite loop this long later (#3207) — long enough to study
  *  a step, short enough that the animation returns to playing on its own (no play button). */

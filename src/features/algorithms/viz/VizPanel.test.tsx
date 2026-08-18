@@ -3,7 +3,7 @@
 // track the input length, which is invariant across sort frames, so they're timing-independent.)
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
-import { VizStage } from "./VizPanel";
+import { VizStage } from "@/features/algorithms/viz/VizPanel";
 import { programVizForImpl } from "./examples/registry";
 
 const viz = programVizForImpl({ id: "sort.ts", name: "sort" })!; // the array-sort visualization (insertion program)

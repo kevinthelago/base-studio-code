@@ -2,7 +2,7 @@
 // rail under the header bar, selection driving the item-facts detail, badges, and empty states.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { CollectionPage, type CollectionItem } from "./CollectionPage";
+import { CollectionPage, type CollectionItem } from "@/shared/ui/pages/CollectionPage";
 
 const ITEMS: CollectionItem[] = [
   { id: "sr", title: "Senior Reviewer", subtitle: "Reviews diffs", badge: "planner", facts: [{ k: "model", v: "opus" }] },

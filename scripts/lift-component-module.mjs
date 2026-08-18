@@ -65,10 +65,22 @@ const BSC = (() => {
 
 const bsc = (args, input) => execFileSync(BSC, args, { input, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
 
-/** Every component record, by the `src` it was lifted from. */
+/** Every component record, grouped by the `src` it was lifted from — a LIST per file, not one record.
+ *
+ *  A file with several exported components has several records pointing at it (`telemetry.tsx` has
+ *  three: `itembars`, `splitbar`, `telemetrypanel`), and a `Map` keyed by `src` silently keeps whichever
+ *  came last. That made the choice of which record becomes THE MODULE arbitrary — `telemetrypanel`
+ *  carried it, but `splitbar` would have done just as well, and the sibling records keep claiming their
+ *  own component identity while one of them is quietly the whole file. The adopt guard caught seven of
+ *  these ("adopting would drop export(s) PresetRow"); three slipped past it and had to be reverted. */
 const components = JSON.parse(bsc(["ui", "list", "--full"]));
 const bySrc = new Map();
-for (const c of components) if (c.src) bySrc.set(String(c.src).split("\\").join("/"), c);
+for (const c of components) {
+  if (!c.src) continue;
+  const k = String(c.src).split("\\").join("/");
+  if (!bySrc.has(k)) bySrc.set(k, []);
+  bySrc.get(k).push(c);
+}
 
 const tmp = mkdtempSync(join(tmpdir(), "bsc-lift-"));
 let lifted = 0;
@@ -78,8 +90,18 @@ try {
     const srcRel = rel.startsWith("src/") ? rel : `src/${rel}`;
     if (!existsSync(join(REPO, srcRel))) { skipped.push(`${rel} — no such file`); continue; }
 
-    const rec = bySrc.get(srcRel);
-    if (!rec) { skipped.push(`${rel} — no component record points at it (\`src\`); author one first`); continue; }
+    const recs = bySrc.get(srcRel) ?? [];
+    if (!recs.length) { skipped.push(`${rel} — no component record points at it (\`src\`); author one first`); continue; }
+    if (recs.length > 1) {
+      // REFUSED rather than picked. Which of several per-component records becomes the module is not a
+      // choice a tool should make silently: the others go on claiming their own identity while one of
+      // them quietly holds the whole file, and a consumer asking for `@/components/<sibling>` gets a
+      // module whose export pick may not be that component at all. Such a file wants ONE new
+      // module-shaped record authored beside its component records — a deliberate act.
+      skipped.push(`${rel} — ${recs.length} component records point at this file (${recs.map((r) => r.id).join(", ")}); which one is THE MODULE is not mine to guess`);
+      continue;
+    }
+    const rec = recs[0];
 
     let out;
     try {
@@ -102,12 +124,22 @@ try {
 
     // `set-src` for the source (the whole-record stdin path has a ~10KB ceiling), then a tiny merge for
     // `provides`. Two small writes rather than one large one, and each is independently revertible.
+    //
+    // A REFUSED WRITE IS A FINDING, NOT A CRASH. The store runs its own gates — most sharply, it will
+    // not store a `role: page` record that cannot render ("a page record IS the page; there is no source
+    // file behind it, so this would ship a blank screen"). Letting that throw killed a 40-item batch on
+    // its first refusal and lost the other 39, so each write is caught and reported per record.
     const f = join(tmp, `${rec.id.replace(/[^\w.-]/g, "_")}.tsx`);
     writeFileSync(f, cand.code);
-    bsc(["ui", "set-src", rec.id], readFileSync(f, "utf8"));
-    bsc(["ui", "set", "--by", "claude", "--note", "module lift: the faithful module, not the preview derivative"],
-      JSON.stringify({ id: rec.id, provides: cand.provides, src: srcRel }));
-    lifted++;
+    try {
+      bsc(["ui", "set-src", rec.id], readFileSync(f, "utf8"));
+      bsc(["ui", "set", "--by", "claude", "--note", "module lift: the faithful module, not the preview derivative"],
+        JSON.stringify({ id: rec.id, provides: cand.provides, src: srcRel }));
+      lifted++;
+    } catch (e) {
+      const why = (e.stderr?.toString() || e.message).trim().split("\n")[0].replace(/^bsc:\s*/, "");
+      skipped.push(`${rel} — the store REFUSED the write: ${why}`);
+    }
   }
 } finally {
   rmSync(tmp, { recursive: true, force: true });

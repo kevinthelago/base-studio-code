@@ -3,7 +3,7 @@
 // data-defined kit motion (#2942) — its root carries the applying classes + it injects the compiled CSS.
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { ArrayView } from "./ArrayView";
+import { ArrayView } from "@/features/algorithms/viz/renderers/ArrayView";
 import { ALGO_VIZ_ANIM_CLASSES, ALGO_VIZ_MOTION_CSS } from "@/features/algorithms/viz/renderers/arrayViewMotion";
 import type { ArrayFrame } from "@/features/algorithms/lib/trace";
 import { TracedArray } from "@/features/algorithms/lib/tracer";

@@ -1,6 +1,6 @@
 // Public API barrel for the Algorithms knowledge-graph feature (#2761). The Workspace is the rail
 // destination; the pure model (`knowledge`) is re-exported for consumers.
-export { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
+export { AlgorithmsWorkspace } from "@/features/algorithms/AlgorithmsWorkspace";
 // #4219: the graph-hosted workspace — what the planner mounts. The file component above stays exported;
 // both copies coexist under the record<->file parity guard.
 export { AlgorithmsGraphHost } from "./AlgorithmsGraphHost";
@@ -24,7 +24,7 @@ export { fallbackRenderer, resolveRenderer } from "@/features/algorithms/viz/reg
 export type { StructureRenderer, RendererRegistry } from "@/features/algorithms/viz/registry";
 
 // The `array` renderer (#3178) + the seeded sort proof (#3177) — the array proof-of-loop.
-export { ArrayView } from "./viz/renderers/ArrayView";
+export { ArrayView } from "@/features/algorithms/viz/renderers/ArrayView";
 // The array viz kit's MOTION as KitAnimation data (#2942) — compiled by the engine; exported so a
 // future Designs kit-store integration can register + edit it in the AnimationsMenu (see the module's
 // RESIDUAL note).
@@ -45,7 +45,7 @@ export { SCALAR_PROGRAMS, fibonacci, parseScalarInput, scalarToText, type Scalar
 export { MatrixView } from "@/features/algorithms/viz/renderers/MatrixView";
 export { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "@/features/algorithms/viz/examples/matrixTransforms";
 // The `graph` datatype (#3224, epic #3220) — renderer + traversal/shortest-path programs.
-export { GraphView } from "./viz/renderers/GraphView";
+export { GraphView } from "@/features/algorithms/viz/renderers/GraphView";
 export { circularLayout, coordinateLayout, layoutFor } from "@/features/algorithms/viz/renderers/graphLayout";
 export { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "@/features/algorithms/viz/examples/graphAlgos";
 export { programVizForImpl, resolveVizExample, resolveKind } from "./viz/examples/registry";

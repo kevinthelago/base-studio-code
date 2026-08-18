@@ -138,7 +138,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "planning-dialogs", file: null },
       { recordId: "planning-publish-progress", file: null },
       { recordId: "planning-injection-gate", file: null },
-      { recordId: "planning-github-structure", file: "/src/features/planner/session/GitHubStructureCard.tsx" },
+      { recordId: "planning-github-structure", file: null }, // RETIRED — the record is the only copy,
       // The focused project pane (#4227) — the plan half of this page. These are `provides` records, not
       // `@/components/<id>` siblings, so the page composes them without naming a single one: it imports
       // `@/features/planner/pane/ProjectPane` exactly as it did when that was a code module, and the
@@ -186,9 +186,9 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     rendersFrom: "graph",
     modules: [
       { recordId: "algorithmspage", file: "/src/features/algorithms/AlgorithmsWorkspace.tsx" },
-      { recordId: "algorithms-rail", file: "/src/features/algorithms/AlgorithmsRail.tsx" },
-      { recordId: "algorithms-inspector", file: "/src/features/algorithms/AlgorithmsInspector.tsx" },
-      { recordId: "algorithms-kit-graph", file: "/src/features/algorithms/AlgorithmsKitGraph.tsx" },
+      { recordId: "algorithms-rail", file: null }, // RETIRED — the record is the only copy,
+      { recordId: "algorithms-inspector", file: null }, // RETIRED — the record is the only copy,
+      { recordId: "algorithms-kit-graph", file: null }, // RETIRED — the record is the only copy,
       { recordId: "algorithms-librarian-terminal", file: null }, // RETIRED — the record is the only copy,
     ],
     ensurePlatform: () => import("@/features/algorithms/graphPlatform").then((m) => m.registerAlgorithmsPlatform()),
@@ -200,9 +200,9 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     rendersFrom: "graph",
     modules: [
       { recordId: "soundspage", file: "/src/features/sounds/SoundsWorkspace.tsx" },
-      { recordId: "sounds-rail", file: "/src/features/sounds/SoundsRail.tsx" },
+      { recordId: "sounds-rail", file: null }, // RETIRED — the record is the only copy,
       { recordId: "sounds-inspector", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "sounds-kit-graph", file: "/src/features/sounds/SoundsKitGraph.tsx" },
+      { recordId: "sounds-kit-graph", file: null }, // RETIRED — the record is the only copy,
     ],
     ensurePlatform: () => import("@/features/sounds/graphPlatform").then((m) => m.registerSoundsPlatform()),
   },
@@ -314,7 +314,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "skills-views", file: "/src/features/skills/SkillsViews.tsx" },
       { recordId: "skills-new-group-dialog", file: null }, // RETIRED — the record is the only copy,
       { recordId: "skills-drawer", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "skills-digest", file: "/src/features/skills/SkillsDigest.tsx" },
+      { recordId: "skills-digest", file: null }, // RETIRED — the record is the only copy,
       { recordId: "skills-lessons-tab", file: null }, // RETIRED — the record is the only copy,
       { recordId: "skills-runs-tab", file: null }, // RETIRED — the record is the only copy,
     ],
@@ -330,9 +330,10 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "securitypage", file: null },
       // Profiles/Activity/Flow were the last three files HELD by graph-srctext-three-way-merges — their
       // .tsx was a party to the merge. The merge landed and the files are deleted, so their records are
-      // the only copy. AssignmentsTab.tsx is the one tab body that still has a file.
+      // the only copy. AssignmentsTab.tsx was the last tab body with a file and is now retired too, so
+      // this page is wholly record-only.
       { recordId: "security-profiles", file: null },
-      { recordId: "security-assignments", file: "/src/features/security/AssignmentsTab.tsx" },
+      { recordId: "security-assignments", file: null }, // RETIRED — the record is the only copy,
       { recordId: "security-activity", file: null },
       { recordId: "security-flow", file: null },
     ],
@@ -353,14 +354,14 @@ const FILE_SOURCES = import.meta.glob<string>(
     // sources nothing declares.
     "/src/features/planner/bodies/StreamsBody.tsx",
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
-    "/src/features/algorithms/{AlgorithmsWorkspace,AlgorithmsRail,AlgorithmsInspector,AlgorithmsKitGraph}.tsx",
+    "/src/features/algorithms/AlgorithmsWorkspace.tsx",
     "/src/app/console/panes/PaneMenu.tsx",
     "/src/features/glance/{GlanceWorkspace,GlanceCanvas,GlanceStreamMorph,GlancePreviewMorph,GlanceChatDock}.tsx",
     // Empty/GitHubSummary/Pulse dropped with their entries — the glob and the catalogue are pinned to
     // each other BOTH ways by `shadowPages.test.ts`, so a path released for deletion has to leave both.
     // Schedules.tsx dropped with its entry — automations now contributes no file baseline at all.
     // McpAnalytics dropped with its entry.
-    "/src/features/skills/{index,SkillsViews,SkillsDigest}.tsx",
+    "/src/features/skills/{index,SkillsViews}.tsx",
     // ProfilesTab/ActivityTab/FlowTab dropped with their entries — AssignmentsTab is the last security file.
     "/src/features/security/AssignmentsTab.tsx",
     // The one file-rendered page (see its entry) — Settings renders this .tsx while the record shadows it.

@@ -12,7 +12,7 @@ vi.mock("@/features/planner/github/useActiveProjectGithub", async (importOrigina
   return { ...actual, useActiveProjectGithub: vi.fn() };
 });
 
-import { ProjectBoard } from "./ProjectBoard";
+import { ProjectBoard } from "@/features/planner/github/ProjectBoard";
 import { useActiveProjectGithub } from "@/features/planner/github/useActiveProjectGithub";
 
 const mockHook = vi.mocked(useActiveProjectGithub);

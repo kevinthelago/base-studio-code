@@ -4,7 +4,7 @@
 // and search narrows by folder path the way the components rail does.
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { AlgorithmsRail } from "./AlgorithmsRail";
+import { AlgorithmsRail } from "@/features/algorithms/AlgorithmsRail";
 import { buildKnowledge, type AlgoImpl } from "./lib/knowledge";
 
 // A synthetic impl — name distinct from id so a row's name and its trailing id don't collide in queries.

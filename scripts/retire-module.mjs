@@ -135,24 +135,6 @@ const resolvesToTarget = (fromDir, relSpec) => {
   return hit === rel || hit === relSpecifier;
 };
 
-let rewrote = 0;
-for (const f of files) {
-  if (f === self) continue;
-  const abs = join(REPO, "src", f);
-  const before = readFileSync(abs, "utf8");
-  const fromDir = f.replace(/\/[^/]+$/, "");
-  // Both quote styles, and both `from '…'` and bare `import '…'` / `require('…')` forms.
-  const after = before.replace(
-    /((?:from|import|require|vi\.mock|vi\.doMock|vi\.unmock)\s*\(?\s*)(['"])(\.\.?\/[^'"]+)\2/g,
-    (whole, head, q, relSpec) => (resolvesToTarget(fromDir, relSpec) ? `${head}${q}${spec}${q}` : whole),
-  );
-  if (after !== before) {
-    rewrote++;
-    console.log(`   ${DRY ? "would rewrite" : "rewrote"}  ${f}`);
-    if (!DRY) writeFileSync(abs, after);
-  }
-}
-
 // THE PRECONDITION FOR DELETING ANYTHING: the packaged SEED must already answer this module's
 // specifier. That is what a retirement asserts — importers keep writing `@/x/y`, and once the file is
 // gone the only thing that can answer them is a shipped record.
@@ -205,6 +187,25 @@ for (const f of files) {
     process.exit(1);
   }
 }
+
+let rewrote = 0;
+for (const f of files) {
+  if (f === self) continue;
+  const abs = join(REPO, "src", f);
+  const before = readFileSync(abs, "utf8");
+  const fromDir = f.replace(/\/[^/]+$/, "");
+  // Both quote styles, and both `from '…'` and bare `import '…'` / `require('…')` forms.
+  const after = before.replace(
+    /((?:from|import|require|vi\.mock|vi\.doMock|vi\.unmock)\s*\(?\s*)(['"])(\.\.?\/[^'"]+)\2/g,
+    (whole, head, q, relSpec) => (resolvesToTarget(fromDir, relSpec) ? `${head}${q}${spec}${q}` : whole),
+  );
+  if (after !== before) {
+    rewrote++;
+    console.log(`   ${DRY ? "would rewrite" : "rewrote"}  ${f}`);
+    if (!DRY) writeFileSync(abs, after);
+  }
+}
+
 
 const colocated = ["test", "spec"]
   .flatMap((k) => [`${rel}.${k}.ts`, `${rel}.${k}.tsx`])

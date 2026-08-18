@@ -2,7 +2,7 @@
 // selection driving the KeyValueList record detail, empty states, and both selection modes.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { TablePage, type TablePageColumn, type TablePageRow } from "./TablePage";
+import { TablePage, type TablePageColumn, type TablePageRow } from "@/shared/ui/pages/TablePage";
 
 const COLUMNS: TablePageColumn[] = [
   { key: "name", label: "Session" },

@@ -12,9 +12,9 @@ import {
   ISSUES_QUERY, parseIssues, deriveLabels, deriveMilestones, applyFilters,
   type FlatIssue, type Filters,
 } from "@/features/planner/github/issues/issuesModel";
-import { DetailPanel } from "./issues/DetailPanel";
-import { FilterBar } from "./issues/FilterBar";
-import { IssueRow } from "./issues/IssueRow";
+import { DetailPanel } from "@/features/planner/github/issues/DetailPanel";
+import { FilterBar } from "@/features/planner/github/issues/FilterBar";
+import { IssueRow } from "@/features/planner/github/issues/IssueRow";
 
 // ── Issues screen ─────────────────────────────────────────────────────────────
 

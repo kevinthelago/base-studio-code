@@ -8,7 +8,7 @@
 export { PlannerComponentsPane } from "./PlannerComponentsPane";
 export { DesignsWorkbench } from "./DesignsWorkbench";
 // #2658: the blueprint-download reconciliation confirm-list (generate + register missing categories).
-export { DesignReconcileModal, type DesignReconcileModalProps } from "./DesignReconcileModal";
+export { DesignReconcileModal, type DesignReconcileModalProps } from "@/features/designs/DesignReconcileModal";
 export { generateCategoryColors } from "@/features/designs/lib/designGenBridge";
 export { createComponentsSlice, type ComponentsSlice } from "./store";
 export {

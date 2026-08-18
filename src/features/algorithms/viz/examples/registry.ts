@@ -19,10 +19,10 @@ import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm
 import { runInSandbox } from "./vizSandbox";
 import type { VizRun } from "./vizProgram";
 import type { RendererRegistry } from "@/features/algorithms/viz/registry";
-import { ArrayView } from "../renderers/ArrayView";
+import { ArrayView } from "@/features/algorithms/viz/renderers/ArrayView";
 import { MatrixView } from "@/features/algorithms/viz/renderers/MatrixView";
-import { GraphView } from "../renderers/GraphView";
-import { StackView } from "../renderers/StackView";
+import { GraphView } from "@/features/algorithms/viz/renderers/GraphView";
+import { StackView } from "@/features/algorithms/viz/renderers/StackView";
 import { ScalarView } from "@/features/algorithms/viz/renderers/ScalarView";
 import { TreeView } from "@/features/algorithms/viz/renderers/TreeView";
 import { parseSortInput } from "@/features/algorithms/viz/examples/sort";

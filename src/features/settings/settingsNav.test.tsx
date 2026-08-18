@@ -2,7 +2,7 @@
 // text ONLY; the old 2px accent borderLeft (and its compensating padding shift) is gone.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { SettingsWorkspace } from "./index";
+import { SettingsWorkspace } from "@/features/settings";
 import { useAppStore } from "@/store";
 
 describe("settings nav selection style (#2493)", () => {

@@ -12,7 +12,7 @@ import type { PreviewReview } from "@/features/glance/usePreviewReview";
 import { ROLE_COLOR, LIFECYCLE_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, MCP_META, SERVICE_META, isBandNode, bandNodeMeta, nodeStateWord, showsBuildingPulse, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GLibraryGraph } from "@/features/glance/lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "@/features/glance/lib/glancePush";
 import { unionRects } from "@/features/glance/lib/morphGrid";
-import type { DockPlan } from "./GlanceChatDock";
+import type { DockPlan } from "@/features/glance/GlanceChatDock";
 import { archetypeById, hueColor } from "@/features/teams";
 import { GlanceNode } from "@/features/glance/GlanceNode";
 

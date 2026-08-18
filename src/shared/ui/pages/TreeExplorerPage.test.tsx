@@ -2,7 +2,7 @@
 // header bar, selection driving the node-facts KeyValueList detail, and the detail/facts overrides.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { TreeExplorerPage, type TreeNodeData } from "./TreeExplorerPage";
+import { TreeExplorerPage, type TreeNodeData } from "@/shared/ui/pages/TreeExplorerPage";
 
 const NODES: TreeNodeData[] = [
   {

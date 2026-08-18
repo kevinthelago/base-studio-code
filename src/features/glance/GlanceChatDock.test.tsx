@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { GlanceChatDock } from "./GlanceChatDock";
+import { GlanceChatDock } from "@/features/glance/GlanceChatDock";
 
 // Since #2378 the dock renders a <TerminalSlot> (the app-level TerminalHost owns the real terminal) — stub
 // it to test the dock SHELL (header · tab switching · close · terminal mount/visibility). Its visibility
