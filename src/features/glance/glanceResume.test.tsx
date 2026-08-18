@@ -24,7 +24,7 @@ const { resumeSpy } = vi.hoisted(() => ({
 }));
 vi.mock("@/features/glance/lib/resumeProject", () => ({ resumeProjectFleet: resumeSpy }));
 
-import { GlanceWorkspace } from "./GlanceWorkspace";
+import { GlanceWorkspace } from "@/features/glance/GlanceWorkspace";
 
 describe("Glance project Resume header action (#glance-resume)", () => {
   beforeEach(() => {

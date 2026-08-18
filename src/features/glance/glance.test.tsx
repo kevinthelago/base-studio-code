@@ -1,7 +1,7 @@
 // GlanceWorkspace (#2223) — the tabbed mission-control Screen: Network (project graph) + Fleet.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { GlanceWorkspace } from "./GlanceWorkspace";
+import { GlanceWorkspace } from "@/features/glance/GlanceWorkspace";
 
 describe("GlanceWorkspace (tabbed, #2223)", () => {
   it("renders the Network and Fleet page tabs", () => {

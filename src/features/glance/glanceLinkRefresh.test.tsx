@@ -26,7 +26,7 @@ vi.mock("@/shared/ui/layouts/useGraphViewport", async (orig) => {
   };
 });
 
-import { GlanceWorkspace } from "./GlanceWorkspace";
+import { GlanceWorkspace } from "@/features/glance/GlanceWorkspace";
 
 /** A contract the ARCHITECT wrote from its session — present in the store, absent from the cache. */
 const authored: ProjectLink[] = [{ id: "app>billing:api", from: "app", to: "billing", kind: "api" }];
