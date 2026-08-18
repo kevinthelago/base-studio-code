@@ -108,3 +108,89 @@ describe("usePaneTokenUsage — one shared poller, however many consumers", () =
     expect(usageCalls()).toBe(after); // no further reads once nothing is mounted
   });
 });
+
+// BACK OFF WHILE THE ANSWER IS UNCHANGED (#pollers-back-off-when-a-pane-is-idle).
+//
+// `logs_usage` is the app's most expensive read — it re-parses every referenced Claude transcript on
+// each call — and it was 655 calls / 324.8s in one session, much of it asking a quiet app the same
+// question. These use fake timers so the schedule is asserted rather than waited on.
+describe("usePaneTokenUsage — asks less often while nothing changes", () => {
+  const usageCalls = () => invoked.mock.calls.filter(([cmd]) => cmd === "logs_usage").length;
+
+  beforeEach(() => {
+    invoked.mockReset();
+    invoked.mockResolvedValue([]);
+  });
+
+  it("doubles the gap while the rollup is identical, and never past the cap", async () => {
+    vi.useFakeTimers();
+    try {
+      const { unmount } = renderHook(() => usePaneTokenUsage(64));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(usageCalls()).toBe(1); // the immediate lead read
+
+      // Same answer every time ⇒ 4s, then 8s, then 16s. At the 4s mark only ONE more read has run.
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(usageCalls()).toBe(2);
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(usageCalls()).toBe(2); // backed off to 8s — the old code would have read here
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(usageCalls()).toBe(3);
+
+      // Far past the cap: bounded, so a change can never go unnoticed for longer than IDLE_INTERVAL_MS.
+      const before = usageCalls();
+      await vi.advanceTimersByTimeAsync(32000 * 3);
+      const after = usageCalls() - before;
+      expect(after).toBeGreaterThanOrEqual(3);
+      expect(after).toBeLessThanOrEqual(4);
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("snaps back to the working rate the moment the answer changes", async () => {
+    vi.useFakeTimers();
+    try {
+      const { unmount } = renderHook(() => usePaneTokenUsage(64));
+      await vi.advanceTimersByTimeAsync(0);
+      // Sit quiet long enough to be well backed off.
+      await vi.advanceTimersByTimeAsync(60000);
+      const quiet = usageCalls();
+
+      // A session starts working: the rollup changes, so the next tick must be at the FAST rate again.
+      invoked.mockResolvedValue([{
+        pane: "p1", session_id: "s", model: "claude", input_tokens: 1, output_tokens: 1,
+        cache_creation_tokens: 0, cache_read_tokens: 0, cost_usd: 0.1,
+      }]);
+      await vi.advanceTimersByTimeAsync(32000); // the pending backed-off tick observes the change
+      expect(usageCalls()).toBeGreaterThan(quiet);
+
+      const afterChange = usageCalls();
+      await vi.advanceTimersByTimeAsync(4000); // back at 4s
+      expect(usageCalls()).toBe(afterChange + 1);
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a fresh subscription starts at the working rate, never mid-back-off", async () => {
+    vi.useFakeTimers();
+    try {
+      const first = renderHook(() => usePaneTokenUsage(64));
+      await vi.advanceTimersByTimeAsync(60000); // back off hard
+      first.unmount();
+
+      invoked.mockClear();
+      const second = renderHook(() => usePaneTokenUsage(64));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(usageCalls()).toBe(1);
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(usageCalls()).toBe(2); // 4s, not the 32s the previous subscription had crept to
+      second.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
