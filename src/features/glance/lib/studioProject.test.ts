@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_ORGS, STUDIO_NETWORK_ID } from "@/features/teams";
 import { BUILTIN_PERSONAS } from "@/features/personas";
-import { buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus, withProjectRequestNodes, studioNodeForOrigin, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "@/features/glance/lib/studioProject";
+import { buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus, withProjectRequestNodes, withStudioSessions, studioNodeForOrigin, isAppProject, APP_PROJECT_KEY } from "@/features/glance/lib/studioProject";
 import type { GlanceData } from "@/features/glance/lib/glanceData";
 import {
   designerSessionId,
@@ -9,10 +9,23 @@ import {
 } from "@/shared/lib/session/systemSessions";
 
 describe("studioProject (#3319)", () => {
-  it("the base-studio-code project id is namespaced so it can't collide with a real project slug", () => {
-    expect(BASE_STUDIO_PROJECT.id).toBe(BASE_STUDIO_PROJECT_ID);
-    expect(BASE_STUDIO_PROJECT_ID).toContain(":"); // a colon → never a projectSlug ([a-z0-9-])
-    expect(BASE_STUDIO_PROJECT.name).toBe("base-studio-code");
+  // #the-app-drills-into-a-project-that-was-deleted: the synthetic `app:base-studio-code` project is gone.
+  // Its id was deliberately colon-namespaced so it could never BE a real project — which is exactly what
+  // made it a second node for an app that now has a real one.
+  it("the app's own project key is a REAL plan key, not a namespaced fiction", () => {
+    // A plan key is `projectSlug(name)` — lowercase [a-z0-9-]. Anything else cannot name a hub on disk,
+    // and naming a hub that does not exist is the whole defect this replaced.
+    expect(APP_PROJECT_KEY).toMatch(/^[a-z0-9-]+$/);
+    expect(isAppProject(APP_PROJECT_KEY)).toBe(true);
+  });
+
+  it("no other project is treated as the app's own", () => {
+    expect(isAppProject("some-other-project")).toBe(false);
+    expect(isAppProject(null)).toBe(false);
+    expect(isAppProject("")).toBe(false);
+    // The retired synthetic id must never match again — a leftover drill state carrying it should read
+    // as "not the app's project" rather than quietly re-enabling the fold under the old key.
+    expect(isAppProject("app:base-studio-code")).toBe(false);
   });
 
   it("renders the Studio Network team's positions as nodes and relationships as edges", () => {
@@ -338,5 +351,81 @@ describe("request sessions appear as openable nodes (#one-request-one-debug-sess
     expect(studioNodeHome("debugger-req-3")).toEqual({ kind: "morph" });
     expect(studioNodeHome("designer-react")).toEqual({ kind: "morph" });
     expect(studioNodeHome("not-a-session")).toBeNull();
+  });
+});
+
+// ── withStudioSessions (#the-app-drills-into-a-project-that-was-deleted) ─────────────────────────────
+describe("withStudioSessions — the app's sessions fold into its project's drill", () => {
+  const fleetNode = (id: string) => ({ id, slug: id, role: "service" as const, roleLabel: "worker", health: "off" as const, activity: "idle" as const });
+  const fleet = (ids: string[]): GlanceData => ({
+    rawNodes: ids.map(fleetNode),
+    rawEdges: [],
+    sample: false,
+  });
+
+  it("adds the app-owned SESSIONS beside the project's own workers", () => {
+    const out = withStudioSessions(fleet(["cli-platform", "console"]), BUILTIN_ORGS, BUILTIN_PERSONAS, []);
+    const ids = out.rawNodes.map((n) => n.id);
+    expect(ids).toEqual(expect.arrayContaining(["cli-platform", "console", "designer", "librarian", "architect"]));
+    // Every folded node opens something. A node that draws and does nothing is the failure mode this
+    // codebase keeps rediscovering, so the fold is defined as "resolves to an app-owned pane".
+    const folded = ids.filter((id) => !["cli-platform", "console"].includes(id));
+    for (const id of folded) expect(studioPaneIdForNode(id)).not.toBeNull();
+  });
+
+  it("folds NO library/resource node — they collide with real stream ids and have their own L0 band", () => {
+    const out = withStudioSessions(fleet([]), BUILTIN_ORGS, BUILTIN_PERSONAS, []);
+    const ids = out.rawNodes.map((n) => n.id);
+    // The studio team names its libraries for domains the app's own fleet also has streams for.
+    expect(ids).not.toContain("algorithms");
+    expect(ids).not.toContain("sounds");
+    expect(ids).not.toContain("integrations");
+    // …and the `planner` position has no fixed session, so it would draw a node that does nothing.
+    expect(ids).not.toContain("planner");
+  });
+
+  it("a fleet stream that SHARES a studio node's id keeps its own node — the fleet owns its drill", () => {
+    // Same name, different thing. Merging over it would hand a worker a studio's identity; skipping is
+    // the honest degradation, and the edge rule below stops the skip from leaving a dangling claim.
+    const out = withStudioSessions(fleet(["designer"]), BUILTIN_ORGS, BUILTIN_PERSONAS, []);
+    expect(out.rawNodes.filter((n) => n.id === "designer")).toHaveLength(1);
+    expect(out.rawNodes.find((n) => n.id === "designer")!.roleLabel).toBe("worker");
+  });
+
+  it("keeps an edge only when BOTH ends were folded", () => {
+    // With `designer` skipped as a collision, the designer↔librarian edge must NOT be drawn — it would
+    // assert a studio relationship about a fleet worker that happens to share the name.
+    const out = withStudioSessions(fleet(["designer"]), BUILTIN_ORGS, BUILTIN_PERSONAS, []);
+    expect(out.rawEdges.some((e) => e.from === "designer" || e.to === "designer")).toBe(false);
+  });
+
+  it("carries the live request sessions in, edged to the session that filed them", () => {
+    const out = withStudioSessions(fleet(["cli-platform"]), BUILTIN_ORGS, BUILTIN_PERSONAS, [
+      { id: 96, origin: designerSessionId("react"), title: "ui remove does not stick" },
+      { id: 93, origin: null, title: "navigate times out" },
+    ]);
+    const ids = out.rawNodes.map((n) => n.id);
+    expect(ids).toContain("debugger-req-96");
+    // The origin-less one too — nothing else can host it, so dropping it here hides a running session.
+    expect(ids).toContain("debugger-req-93");
+    expect(out.rawEdges).toContainEqual(expect.objectContaining({ from: "designer", to: "debugger-req-96" }));
+    expect(out.rawEdges.some((e) => e.from === "debugger-req-93" || e.to === "debugger-req-93")).toBe(false);
+  });
+
+  it("is idempotent — folding twice never doubles a node", () => {
+    const once = withStudioSessions(fleet(["console"]), BUILTIN_ORGS, BUILTIN_PERSONAS, []);
+    const twice = withStudioSessions(once, BUILTIN_ORGS, BUILTIN_PERSONAS, []);
+    expect(twice.rawNodes).toHaveLength(once.rawNodes.length);
+    expect(twice.rawEdges).toHaveLength(once.rawEdges.length);
+  });
+
+  it("returns the graph UNTOUCHED when the Studio Network team is absent", () => {
+    const base = fleet(["console"]);
+    expect(withStudioSessions(base, [], BUILTIN_PERSONAS, [])).toBe(base);
+  });
+
+  it("preserves the fleet graph's own fields", () => {
+    const base = { ...fleet(["console"]), sample: true };
+    expect(withStudioSessions(base, BUILTIN_ORGS, BUILTIN_PERSONAS, []).sample).toBe(true);
   });
 });
