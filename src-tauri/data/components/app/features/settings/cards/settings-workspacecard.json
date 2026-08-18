@@ -1,0 +1,11 @@
+{
+  "id": "settings-workspacecard",
+  "name": "WorkspaceCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/settings/cards/WorkspaceCard",
+  "srcText": "import { invoke } from \"@tauri-apps/api/core\";\nimport { useAppStore } from \"@/store\";\nimport { SettingsTextField } from \"@/features/settings/pages/SettingsControls\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { Button } from \"@/shared/ui/controls/Button\";\n\nexport function WorkspaceCard() {\n  const { bscBaseDir, setBscBaseDir } = useAppStore();\n\n  async function chooseBaseDir() {\n    const dir = await invoke<string | null>(\"pick_directory\");\n    if (dir) setBscBaseDir(dir);\n  }\n\n  return (\n    <Card title=\"Workspace\">\n      <SettingsTextField\n        label=\"Base directory\"\n        value={bscBaseDir}\n        onChange={setBscBaseDir}\n        placeholder=\"~/.base-studio-code\"\n        trailing={<Button onClick={chooseBaseDir}>Choose…</Button>}\n        hint={<>\n          Where projects, clones, and agent worktrees live\n          (<code>&lt;base&gt;/projects/&lt;project&gt;/…</code>). Leave blank for the default\n          (<code>~/.base-studio-code</code>).\n        </>}\n      />\n    </Card>\n  );\n}\n",
+  "composes": [],
+  "src": "src/features/settings/cards/WorkspaceCard.tsx",
+  "folder": "features/settings/cards"
+}

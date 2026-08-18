@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { LlmProviderCard } from "./LlmProviderCard";
+import { LlmProviderCard } from "@/features/settings/cards/LlmProviderCard";
 
 // #1830: the local-model preflight — the "test" button probes /api/tags via the ollama_models
 // command, surfacing a reachable endpoint + installed models (offered as model-field suggestions),

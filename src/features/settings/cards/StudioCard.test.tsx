@@ -23,7 +23,7 @@ vi.mock("@/store", () => {
   return { useAppStore };
 });
 
-import { StudioCard } from "./StudioCard";
+import { StudioCard } from "@/features/settings/cards/StudioCard";
 
 describe("StudioCard (#2892)", () => {
   beforeEach(() => {

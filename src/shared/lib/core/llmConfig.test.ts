@@ -4,7 +4,7 @@ import {
   resolveModel, modelOnProviderSwitch, DEFAULT_LOCAL_MODEL, DEFAULT_ANTHROPIC_MODEL, DEFAULT_LOCAL_BASE_URL,
   LLM_PROVIDERS,
   type LlmConfigSource,
-} from "./llmConfig";
+} from "@/shared/lib/core/llmConfig";
 
 // #2416: the model-ID defaults + provider list moved to `@data/console/model-defaults.json` — the
 // ONE source for every model default. Pin that they resolve to the previous TS-authored values.

@@ -135,8 +135,21 @@ pub fn iso8601_to_epoch_ms(ts: &str) -> Option<i64> {
 /// `ui-touch` (a WRITE — drives focus + re-hydrate) or `ui-focus` (a READ — drives focus only). The same
 /// `ts·pane·kind·…` shape the coord emitters write, so `bsc logs tail ui` reads it uniformly. Trailing
 /// newline included.
-pub fn ui_activity_line(ts: &str, pane: &str, kind: &str, collection: &str, id: &str) -> String {
-    format!("{ts}\t{pane}\t{kind}\t{collection}\t{id}\n")
+/// `kit` is the OPTIONAL 6th column (#live-focus-is-kit-filtered): the kit the touched record belongs
+/// to. Empty ⇒ the column is omitted entirely rather than written blank, so a line for a collection
+/// that has no kit (theme / variant / the kits themselves) keeps its historical 5-column shape and the
+/// file stays uniform. The reader's length check is `>= 5`, so both widths parse and an existing
+/// `ui-activity.log` is not orphaned by this column appearing.
+///
+/// It rides the LINE rather than being resolved by the reader because the reader's lookup misses
+/// exactly the newest work: a record written moments ago is not in the app's hydrated copy yet, and
+/// that is precisely the touch worth following.
+pub fn ui_activity_line(ts: &str, pane: &str, kind: &str, collection: &str, id: &str, kit: &str) -> String {
+    if kit.is_empty() {
+        format!("{ts}\t{pane}\t{kind}\t{collection}\t{id}\n")
+    } else {
+        format!("{ts}\t{pane}\t{kind}\t{collection}\t{id}\t{kit}\n")
+    }
 }
 
 /// Append a `ui-touch` activity line for `(collection, id)` to `$BSC_UI_ACTIVITY_LOG` (#2525) — the
@@ -147,7 +160,14 @@ pub fn ui_activity_line(ts: &str, pane: &str, kind: &str, collection: &str, id: 
 /// matching the `bsc-*` helpers' `date -u +%Y-%m-%dT%H:%M:%SZ`. Best-effort: a write failure is
 /// swallowed (activity signalling must never break a store mutation).
 pub fn emit_ui_activity(collection: &str, id: &str) {
-    emit_ui_line("ui-touch", collection, id);
+    emit_ui_line("ui-touch", collection, id, "");
+}
+
+/// [`emit_ui_activity`] carrying the record's KIT — the activity line's 6th column. Use this wherever
+/// the kit is known at the write site; the Design Studio follows it to show work in a kit other than
+/// the one on screen, including for a record it has not hydrated yet.
+pub fn emit_ui_activity_in(collection: &str, id: &str, kit: &str) {
+    emit_ui_line("ui-touch", collection, id, kit);
 }
 
 /// Append a `ui-focus` activity line for `(collection, id)` to `$BSC_UI_ACTIVITY_LOG` (#3545) — the
@@ -156,18 +176,23 @@ pub fn emit_ui_activity(collection: &str, id: &str) {
 /// (`ui-touch`), the frontend drives this into focus WITHOUT re-hydrating the library — a read changed
 /// nothing to reload. Same no-op-when-unwired + best-effort contract as [`emit_ui_activity`].
 pub fn emit_ui_focus(collection: &str, id: &str) {
-    emit_ui_line("ui-focus", collection, id);
+    emit_ui_line("ui-focus", collection, id, "");
+}
+
+/// [`emit_ui_focus`] carrying the record's KIT — see [`emit_ui_activity_in`].
+pub fn emit_ui_focus_in(collection: &str, id: &str, kit: &str) {
+    emit_ui_line("ui-focus", collection, id, kit);
 }
 
 /// Shared body of [`emit_ui_activity`] / [`emit_ui_focus`] — resolve the log path + pane and append one
 /// line of the given `kind`. No-op when `$BSC_UI_ACTIVITY_LOG` is absent/empty (non-designer sessions).
-fn emit_ui_line(kind: &str, collection: &str, id: &str) {
+fn emit_ui_line(kind: &str, collection: &str, id: &str, kit: &str) {
     let path = match std::env::var_os("BSC_UI_ACTIVITY_LOG") {
         Some(p) if !p.is_empty() => PathBuf::from(p),
         _ => return, // no activity stream wired — hand shell / non-designer session
     };
     let pane = std::env::var("BSC_AUDIT_PANE").ok().filter(|p| !p.is_empty()).unwrap_or_else(|| "?".to_string());
-    let line = ui_activity_line(&epoch_ms_to_iso8601(now_ms()), &pane, kind, collection, id);
+    let line = ui_activity_line(&epoch_ms_to_iso8601(now_ms()), &pane, kind, collection, id, kit);
     append_line(&path, &line);
 }
 
@@ -301,13 +326,31 @@ mod tests {
     #[test]
     fn ui_activity_line_is_the_tsv_kind_shape() {
         assert_eq!(
-            ui_activity_line("2026-07-07T00:00:00Z", "design-studio:designer", "ui-touch", "component", "button"),
+            ui_activity_line("2026-07-07T00:00:00Z", "design-studio:designer", "ui-touch", "component", "button", ""),
             "2026-07-07T00:00:00Z\tdesign-studio:designer\tui-touch\tcomponent\tbutton\n",
         );
         // #3545: a read emits `ui-focus` (focus only, no re-hydrate).
         assert_eq!(
-            ui_activity_line("2026-07-07T00:00:00Z", "design-studio:designer", "ui-focus", "component", "chip"),
+            ui_activity_line("2026-07-07T00:00:00Z", "design-studio:designer", "ui-focus", "component", "chip", ""),
             "2026-07-07T00:00:00Z\tdesign-studio:designer\tui-focus\tcomponent\tchip\n",
+        );
+    }
+
+    #[test]
+    fn ui_activity_line_appends_the_kit_column_only_when_there_is_one() {
+        // #live-focus-is-kit-filtered: a known kit rides as the 6th column, so the Design Studio can
+        // follow work into a kit it is not currently showing — including for a record it has not
+        // hydrated yet, which is the case a reader-side lookup cannot cover.
+        assert_eq!(
+            ui_activity_line("2026-07-07T00:00:00Z", "p", "ui-touch", "component", "button", "mobile-studio-code"),
+            "2026-07-07T00:00:00Z\tp\tui-touch\tcomponent\tbutton\tmobile-studio-code\n",
+        );
+        // An empty kit OMITS the column rather than writing it blank: collections that have no kit
+        // (theme / variant / the kits themselves) keep the historical 5-column shape, so the file stays
+        // uniform and every line already on disk still parses against the reader's `>= 5` check.
+        assert_eq!(
+            ui_activity_line("2026-07-07T00:00:00Z", "p", "ui-touch", "theme", "neon", ""),
+            "2026-07-07T00:00:00Z\tp\tui-touch\ttheme\tneon\n",
         );
     }
 
@@ -682,6 +725,13 @@ pub fn is_capturing() -> bool {
 /// - `ui scan-cache get` — the last spawn left at boot once the burst went warm
 ///   (#the-scan-cache-read-is-the-last-boot-spawn). Same story: raw `println!`, moved onto
 ///   `print_json` in the change that listed it. Its `put`/`clear` siblings are writes and stay off.
+/// - `request list` — `bsc-request`'s store is GLOBAL (`requests.db` via `$BSC_REQUEST_DB`), so there
+///   is no per-project env for a warm child to switch. Its `list` emitted through
+///   `bsc_cli_util::emit`, which was a raw `println!`; that helper moved onto `bsc_util::emit_line` in
+///   the same change that listed this verb — the third time this exact fix has been needed, which is
+///   why it was fixed in the SHARED helper rather than in one more crate. Measured at 312 spawns /
+///   94.4s in one session (#request-list-cannot-be-warm-served-until-it-stops-using-println). Its
+///   `resolve`/`note`/`claim`/`prune`/`remove` siblings are writes and stay off.
 ///
 /// Adding a verb without reading its crate is the one mistake that breaks the warm child for every
 /// later request on it, so the list is deliberately tedious to extend.
@@ -698,6 +748,7 @@ pub fn is_servable_warm(args: &[String]) -> bool {
         &["skill", "group", "list"],
         &["project", "link", "list"],
         &["project", "db", "list"],
+        &["request", "list"],
         // A `ui` verb one level deeper than `UI_SUBS` can express
         // (#the-scan-cache-read-is-the-last-boot-spawn). The COMPLETE three tokens, never
         // `["ui","scan-cache"]`: the bare form defaults to `get`, but a two-token entry would also

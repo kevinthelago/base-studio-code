@@ -10,7 +10,7 @@ import type { Section } from "@/features/planner/github/ghStructure";
 import type { NodeProgress } from "@/features/planner/github/ghProgress";
 import type { PaneAutomation, PaneSkill } from "@/features/planner/pane/projectPane.types";
 import type { PlanFeature } from "@/features/planner/issues/featureList";
-import type { DeployConfig } from "../lib/deployConfig";
+import type { DeployConfig } from "@/features/planner/lib/deployConfig";
 import type { PlanDependency, DependencyRegistry } from "@/features/planner/issues/dependencies";
 import type { McpInstallState } from "@/features/planner/lib/mcpPaneData";
 import type { McpServer as McpServerDef } from "@/features/mcp";

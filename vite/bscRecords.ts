@@ -9,7 +9,7 @@
 // once: a RELATIVE import (`./layout/Spacer`) never reaches a plugin matching `@/…`; `tsc` has no such
 // plugin API at all; and vitest loads a different config so the plugin was never installed. A file on
 // disk is the one thing all three already agree on — see `scripts/emit-records.mjs`.
-import { statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Plugin } from "vite";
 import { emitRecords } from "../scripts/emit-records.mjs";
@@ -24,6 +24,54 @@ import { emitRecords } from "../scripts/emit-records.mjs";
  *  time anyone looked. Nothing about the seeds changes mid-build, so emitting once is not just a fix for
  *  the race — it is the only emission that was ever meaningful. */
 let emitted = false;
+
+/** The newest seed mtime the emitted tree was built from — the staleness key for the re-emit below.
+ *  `0` until the first emit, so the first miss after a cold start always re-checks. */
+let emittedInputStamp = 0;
+
+/** Newest mtime across everything `emitRecords` reads: every `src-tauri/data/components/**` record and
+ *  `data/knowledge/algorithms.json`. Walks rather than trusting directory mtimes, because editing an
+ *  existing record in place does not change the mtime of the directory holding it. */
+function newestInputMtime(repoRoot: string): number {
+  let newest = 0;
+  const bump = (p: string) => {
+    try {
+      const s = statSync(p);
+      if (s.mtimeMs > newest) newest = s.mtimeMs;
+    } catch { /* unreadable ⇒ not a signal */ }
+  };
+  const walk = (dir: string) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p); else bump(p);
+    }
+  };
+  walk(join(repoRoot, "src-tauri", "data", "components"));
+  bump(join(repoRoot, "src-tauri", "data", "knowledge", "algorithms.json"));
+  return newest;
+}
+
+/** Re-emit IF the seeds have moved since the tree was built. Returns whether it emitted.
+ *
+ *  This is the mid-session half of #the-dev-server-never-regenerates-the-records-cache. That one made
+ *  startup regenerate; the dev server then runs for HOURS while a fleet lands more retirements, and the
+ *  once-per-process `emitted` flag meant the tree was never rebuilt again — so a card retired at 19:05
+ *  was unresolvable until someone restarted vite. Twice now that surfaced as
+ *  "Failed to resolve import @/features/settings/cards/…".
+ *
+ *  GATED ON THE SEEDS, not on the miss alone, for two reasons. The emitter costs ~2.7s warm, and the
+ *  test suite deliberately imports ~55 specifiers that resolve to nothing (`@/components/a`,
+ *  `@/gone/types`) — charging each of those an emit would be far worse than the bug. Advancing the stamp
+ *  even when the retry fails is what keeps one seed state to one emit. */
+function reEmitIfSeedsMoved(repoRoot: string): boolean {
+  const now = newestInputMtime(repoRoot);
+  if (now === 0 || now <= emittedInputStamp) return false;
+  emitRecords({ quiet: true });
+  emittedInputStamp = now;
+  return true;
+}
 
 export function bscRecords(opts: { repoRoot: string }): Plugin {
   const { repoRoot } = opts;
@@ -52,6 +100,7 @@ export function bscRecords(opts: { repoRoot: string }): Plugin {
       if (emitted) return; // see `emitted` above — a second emitter deletes the tree mid-build
       emitted = true;
       emitRecords({ quiet: true });
+      emittedInputStamp = newestInputMtime(repoRoot);
     },
     // Ahead of the `@` alias, so the specifier is still in `@/…` form and matches exactly instead of
     // guessing which extension the alias resolved to.
@@ -84,7 +133,14 @@ export function bscRecords(opts: { repoRoot: string }): Plugin {
       // The file wins while it exists. Installing this plugin is therefore a no-op until a deletion.
       if (hit(join(repoRoot, "src", ...rel))) return null;
       const found = hit(join(records, ...rel));
-      return found && found + query;
+      if (found) return found + query;
+      // MISSED BOTH — the tree may simply predate a retirement that landed while this process ran.
+      // Re-emit only if the seeds actually moved, then try once more. See `reEmitIfSeedsMoved`.
+      if (reEmitIfSeedsMoved(repoRoot)) {
+        const healed = hit(join(records, ...rel));
+        if (healed) return healed + query;
+      }
+      return null;
     },
   };
 }

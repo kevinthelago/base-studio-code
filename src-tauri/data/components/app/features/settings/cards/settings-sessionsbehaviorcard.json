@@ -1,0 +1,11 @@
+{
+  "id": "settings-sessionsbehaviorcard",
+  "name": "SessionsBehaviorCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/settings/cards/SessionsBehaviorCard",
+  "srcText": "import { useAppStore } from \"@/store\";\nimport { KitRenderer } from \"@/shared/ui/spec\";\nimport { SESSIONS_BEHAVIOR_SPEC } from \"@/features/settings/cards/sessionsBehaviorSpec\";\n\n/**\n * Rung-4 proof (#2570): this real settings card is rendered from a node spec (`SESSIONS_BEHAVIOR_SPEC`)\n * through `KitRenderer`, wired to REAL store state — the spec's `binds` keys read the actual\n * `autoResumeClaude` / `autoAdvanceOnReply` fields out of `values`, and its `actions` names resolve to\n * the setters below. There is no hand-written control JSX; switching the underlying kit/theme never\n * touches the spec. (A stateful bit the spec vocabulary can't express would be passed as a host slot —\n * this card needs none.)\n *\n * Migrated to the general vocabulary in #3500. The write side moved from `onBind` (which inferred the\n * new value by negating the old one, only ever correct for booleans) to NAMED actions — the host states\n * what flipping the switch means, so nothing has to guess the pairing.\n */\nexport function SessionsBehaviorCard() {\n  const {\n    autoResumeClaude, setAutoResumeClaude,\n    autoAdvanceOnReply, setAutoAdvanceOnReply,\n  } = useAppStore();\n\n  const values = { autoResumeClaude, autoAdvanceOnReply };\n  const on = {\n    toggleAutoResumeClaude: () => setAutoResumeClaude(!autoResumeClaude),\n    toggleAutoAdvanceOnReply: () => setAutoAdvanceOnReply(!autoAdvanceOnReply),\n  };\n\n  return <KitRenderer node={SESSIONS_BEHAVIOR_SPEC} values={values} on={on} />;\n}\n",
+  "composes": [],
+  "src": "src/features/settings/cards/SessionsBehaviorCard.tsx",
+  "folder": "features/settings/cards"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "settings-targetselector",
+  "name": "TargetSelector",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/settings/cards/TargetSelector",
+  "srcText": "// The scope/target selector row for the Claude Config editor (#2128), extracted verbatim from\n// ClaudeConfigCard.tsx. Presentational: renders the \"global\" + per-repo target chips.\n\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { Row } from \"@/shared/ui/layout/Row\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport type { RepoTarget } from \"@/features/settings/cards/claudeConfig.helpers\";\n\nexport function TargetSelector({\n  allRepos, target, setTarget,\n}: {\n  allRepos: RepoTarget[];\n  target: string;\n  setTarget: (t: string) => void;\n}) {\n  return (\n    <Stack gap={6}>\n      <Box className=\"mono-label\">\n        target\n      </Box>\n      <Row gap={6} align=\"stretch\" wrap>\n        {([\"global\", ...allRepos.map((r) => r.local_path)] as string[]).map((t) => {\n          const isGlobal = t === \"global\";\n          const label = isGlobal ? \"global (~/.claude/)\" : (allRepos.find((r) => r.local_path === t)?.full_name ?? t);\n          const on = target === t;\n          return (\n            <Box\n              key={t}\n              className=\"mono\"\n              onClick={() => setTarget(t)}\n              pad={[5, 12]} bg={on ? \"var(--accent)\" : \"var(--bg-elev)\"} radius={6} style={{ cursor: \"pointer\",\n                fontSize: 11,\n                color: on ? \"var(--on-accent)\" : \"var(--fg-muted)\",\n                border: \"1px solid \" + (on ? \"transparent\" : \"var(--border-soft)\"),\n                fontWeight: on ? 600 : 400,\n              }}\n            >{label}</Box>\n          );\n        })}\n      </Row>\n      {allRepos.length === 0 && (\n        <Box className=\"mono-caption\">\n          Resolve repositories on the Projects board to unlock per-repo targets.\n        </Box>\n      )}\n    </Stack>\n  );\n}\n",
+  "composes": [],
+  "src": "src/features/settings/cards/TargetSelector.tsx",
+  "folder": "features/settings/cards"
+}

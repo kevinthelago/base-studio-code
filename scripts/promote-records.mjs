@@ -115,7 +115,7 @@ const specOf = (f) => "@/" + f.replace(/\.(tsx?|jsx?)$/, "").replace(/\/index$/,
 
 const promote = { component: [], impl: [] };
 let skippedAtWrite = 0; // written-guard declines, subtracted from the final count (see the tail of this file)
-const skipped = { bodyDiffers: 0, buildTimeOnly: [], alreadySeeded: 0, noRecord: 0, pageRecord: [], unresolvable: [], uncompilable: [] };
+const skipped = { bodyDiffers: 0, buildTimeOnly: [], alreadySeeded: 0, noRecord: 0, pageRecord: [], unresolvable: [], uncompilable: [], unclosedComposes: [] };
 
 for (const file of listModules()) {
   if (ONLY && file !== ONLY) continue;
@@ -204,12 +204,51 @@ for (let pass = 0; pass < 20; pass++) {
   rmSync(tmp, { recursive: true, force: true });
 }
 
+// DOES ITS `composes` CLOSE? An impl names the impls it builds on, and `knowledge.test.ts` asserts that
+// every one of those ids is a REAL impl in the seed. Promoting an impl whose `composes` points at
+// something still store-only therefore breaks the seed the moment it lands — measured: the first
+// unfiltered run promoted 35 impls and left 33 dangling references, reddening the gate.
+//
+// Some of those targets can NEVER be satisfied. `console.ts` composes `achievements.ts` and
+// `agent-profiles.ts`, both of which use `import.meta.glob` and so can never be records at all. Waiting
+// for them is not a matter of ordering; that impl is simply not promotable until its dependency stops
+// being build-time-only.
+//
+// A FIXPOINT, not one pass: dropping an impl can dangle another that composed it, so this repeats until
+// nothing more falls out — the same shape as the compile check above.
+{
+  const implIds = new Set((algorithms.implementations ?? []).map((i) => i.id));
+  for (const p of promote.impl) implIds.add(p.rec.id);
+  for (let settled = false; !settled; ) {
+    settled = true;
+    const keep = [];
+    for (const p of promote.impl) {
+      const missing = (p.rec.composes ?? []).filter((c) => !implIds.has(c));
+      if (missing.length === 0) {
+        keep.push(p);
+        continue;
+      }
+      skipped.unclosedComposes.push(`${p.file} — composes ${missing.slice(0, 3).join(", ")}`);
+      implIds.delete(p.rec.id);
+      settled = false;
+    }
+    promote.impl = keep;
+  }
+}
+
 console.log(`promotable: ${promote.component.length} component(s) + ${promote.impl.length} impl(s)`);
-console.log(`skipped — already seeded ${skipped.alreadySeeded}, no record ${skipped.noRecord}, body differs ${skipped.bodyDiffers}, build-time-only ${skipped.buildTimeOnly.length}, role:page ${skipped.pageRecord.length}, unresolvable ${skipped.unresolvable.length}, uncompilable ${skipped.uncompilable.length}`);
+console.log(`skipped — already seeded ${skipped.alreadySeeded}, no record ${skipped.noRecord}, body differs ${skipped.bodyDiffers}, build-time-only ${skipped.buildTimeOnly.length}, role:page ${skipped.pageRecord.length}, unresolvable ${skipped.unresolvable.length}, uncompilable ${skipped.uncompilable.length}, unclosed-composes ${skipped.unclosedComposes.length}`);
 for (const f of skipped.buildTimeOnly) console.log(`   import.meta.glob: ${f}`);
 for (const f of skipped.pageRecord) console.log(`   role:page (catalogue it in shadowPages first): ${f}`);
 for (const f of skipped.unresolvable) console.log(`   unresolvable import: ${f}`);
 for (const f of skipped.uncompilable) console.log(`   ${f}`);
+for (const f of skipped.unclosedComposes) console.log(`   unclosed composes: ${f}`);
+
+// NAME what will be promoted, not just how many. Every SKIPPED bucket above is named; the promotable
+// set was the one that reported a bare count — which forced the operator to `--apply` in order to find
+// out what `--apply` would do, the single thing a dry run exists to avoid.
+for (const r of promote.component) console.log(`   + component ${r.file}`);
+for (const r of promote.impl) console.log(`   + impl      ${r.file}`);
 
 if (!APPLY) {
   console.log("\n(dry run — pass --apply to write)");

@@ -3,7 +3,7 @@ import {
   MARKET_DIMENSIONS, MARKET_RUBRIC, marketWeights, marketDimensionMeta,
   marketDefined, weightedMarketScore, marketContribution, coerceMarketConfig,
   type MarketConfig, type MarketDimensionScore,
-} from "./marketConfig";
+} from "@/features/planner/lib/marketConfig";
 
 const dim = (over: Partial<MarketDimensionScore> = {}): MarketDimensionScore => ({
   score: 4, rationale: "cited desk research", sources: ["https://example.com/report"], ...over,

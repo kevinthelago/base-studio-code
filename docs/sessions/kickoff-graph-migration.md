@@ -36,7 +36,7 @@ with a branch delete.
 ## The surface
 
 ```bash
-export BSC_PLAN_DB="$HOME/.base-studio-code/plans/base-studio-code.db"   # THIS repo's own board
+export BSC_PLAN_DB="$HOME/.base-studio-code/plans/studio-code.db"   # THIS repo's own board (base-studio-code.db is RETIRED, migrated 2026-08-17)
 BSC=./target/debug/bsc.exe        # rebuild: cargo build -p bsc --bin bsc  (unset CARGO_TARGET_DIR in a worktree)
 
 $BSC plan list --status open      # 93 open

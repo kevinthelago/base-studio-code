@@ -528,6 +528,35 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/data/mock": Mock,
 };
 
+/** Every packaged `@data/**` JSON, keyed by the specifier a module imports it as.
+ *
+ *  A record is compiled by the runtime loader, which resolves each import against the platform registry
+ *  and the record store — and until now EVERY registry entry was a MODULE, so a JSON specifier resolved
+ *  to nothing. `docs/records.md` listed "import `@data/*.json`" among the things a record may not do; it
+ *  was never a limitation, just an absent registration. 35 modules import one, and for each of them that
+ *  import is the only thing standing between the file and a record.
+ *
+ *  GLOBBED, NOT LISTED. A hand-written list of the 44 specifiers in use would be a second
+ *  hand-maintained map beside `PLATFORM`, and the next person to add a data file would get a runtime
+ *  failure with no gate to catch it. The glob cannot drift.
+ *
+ *  ⚠️ NO `import: "default"`. The registry stores module NAMESPACES — every entry above comes from
+ *  `import * as X` — and the loader reads `.default` off one to satisfy `import x from "…"`. Unwrapping
+ *  here would register the parsed value itself, so a default import would resolve to `undefined.default`.
+ *
+ *  Bundle cost is ~nil rather than ~11 MB, which is why a blanket glob is affordable: the 388 seed
+ *  records (2.8 MB) are ALREADY eagerly globbed by `features/designs/lib/seed.ts`, and the two large
+ *  files — `react-ui.json` (5.2 MB) and `algorithms.json` (2.6 MB) — are already imported by the modules
+ *  registered above. This adds edges to modules the bundle already contains, not new payload. */
+const DATA_JSON = import.meta.glob<unknown>("@data/**/*.json", { eager: true });
+
+/** `/src-tauri/data/ui/themes.json` → `@data/ui/themes.json` — the form an importer actually writes. */
+const DATA_PREFIX = "/src-tauri/data/";
+export function dataSpecifierFor(globKey: string): string | null {
+  const at = globKey.indexOf(DATA_PREFIX);
+  return at === -1 ? null : `@data/${globKey.slice(at + DATA_PREFIX.length)}`;
+}
+
 let done = false;
 
 /** Register every platform module by its import specifier. Idempotent — safe to call at each boot / HMR. */
@@ -535,4 +564,8 @@ export function registerPlatformModules(): void {
   if (done) return;
   done = true;
   for (const [specifier, mod] of Object.entries(PLATFORM)) registerAppModule(specifier, mod);
+  for (const [key, mod] of Object.entries(DATA_JSON)) {
+    const specifier = dataSpecifierFor(key);
+    if (specifier) registerAppModule(specifier, mod);
+  }
 }

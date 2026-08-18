@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { DeploymentBody } from "@/features/planner/bodies/ReposDeployView";
-import { defaultDeployConfig, type DeployConfig } from "../lib/deployConfig";
+import { defaultDeployConfig, type DeployConfig } from "@/features/planner/lib/deployConfig";
 import type { Repo } from "@/features/planner/pane/projectPane.types";
 
 const repo = (id: string, over: Partial<Repo> = {}): Repo => ({

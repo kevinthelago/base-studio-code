@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock the `bsc` bridge so the generator calls resolve to canned `bsc ui generate next` output.
 vi.mock("@/shared/lib/core/bsc", () => ({ bsc: vi.fn(async () => "{}") }));
 import { bsc } from "@/shared/lib/core/bsc";
-import { generateCategoryColors } from "./designGenBridge";
+import { generateCategoryColors } from "@/features/designs/lib/designGenBridge";
 
 describe("generateCategoryColors (#2658)", () => {
   beforeEach(() => vi.mocked(bsc).mockReset());

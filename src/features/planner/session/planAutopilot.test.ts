@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   decideAutopilotAction, buildUserSimPrompt, staticReply, autopilotProgress,
   type AutopilotContext,
-} from "./planAutopilot";
+} from "@/features/planner/session/planAutopilot";
 import type { Stage } from "@/features/planner/stages/focusedPlan";
 
 const ctx = (over: Partial<AutopilotContext> = {}): AutopilotContext => ({

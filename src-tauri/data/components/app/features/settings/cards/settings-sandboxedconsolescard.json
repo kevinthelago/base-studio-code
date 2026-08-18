@@ -1,0 +1,11 @@
+{
+  "id": "settings-sandboxedconsolescard",
+  "name": "SandboxedConsolesCard",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/settings/cards/SandboxedConsolesCard",
+  "srcText": "import { Card } from \"@/shared/ui/data/Card\";\nimport { useAppStore } from \"@/store\";\nimport { ToggleRow } from \"@/features/settings/pages/SettingsControls\";\n\n/**\n * Toggle: run new console sessions inside the sealed WSL2 agent sandbox (#1988). Lives next to the\n * Storage card because both concern the same WSL2 sandbox — this turns it on; Storage shows and\n * reclaims its disk footprint.\n */\nexport function SandboxedConsolesCard() {\n  const { sandboxConsoles, setSandboxConsoles } = useAppStore();\n  return (\n    <Card title=\"Sandboxed consoles\">\n      <ToggleRow\n        on={sandboxConsoles}\n        onToggle={() => setSandboxConsoles(!sandboxConsoles)}\n        title=\"Run new console sessions inside the WSL2 sandbox\"\n      >\n        New console panes launch a clean shell <b>inside the sealed <code>bsc-agent-sandbox</code>{\" \"}\n        distro</b> (no <code>/mnt/c</code>, no Windows interop) instead of on the host — so whatever\n        runs is confined to the cage, regardless of which LLM drives it. Requires the sandbox installed\n        (Settings → General → Required dependencies). Your Windows repos aren't mounted in yet, so this\n        is a scratch/verification shell for now. Takes effect on the next console you open.\n      </ToggleRow>\n    </Card>\n  );\n}\n",
+  "composes": [],
+  "src": "src/features/settings/cards/SandboxedConsolesCard.tsx",
+  "folder": "features/settings/cards"
+}

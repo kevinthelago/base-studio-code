@@ -16,7 +16,7 @@ export type { ThemeScopeProps } from "./ThemeScope";
 // JS counterpart to `<ThemeScope>`; `useResolvedTheme()` reads it; `resolveThemeTokens` is the pure resolver.
 export { ThemeProvider, useResolvedTheme } from "./ThemeProvider";
 export type { ResolvedTheme } from "./ThemeProvider";
-export { resolveThemeTokens } from "./resolve";
+export { resolveThemeTokens } from "@/shared/ui/kit/resolve";
 // #2569: data-defined component variants — compile the designer-authored variant store into a managed
 // `<style>` of `.<component>.<variant>` rules (the render path for `bsc ui component … define-variant`).
 export type { VariantDef } from "@/shared/ui/kit/variants";
@@ -33,5 +33,5 @@ export {
 } from "@/shared/ui/kit/contributions";
 // #2646: the PURE reconcile diff — a downloaded blueprint's design contribution vs the local contract.
 // The confirm-list (#2658) generates + registers a contribution for whatever the contract can't cover.
-export type { DesignContribution, DesignReconcile } from "./reconcile";
-export { reconcileDesign, KNOWN_GRAPH_CATEGORIES } from "./reconcile";
+export type { DesignContribution, DesignReconcile } from "@/shared/ui/kit/reconcile";
+export { reconcileDesign, KNOWN_GRAPH_CATEGORIES } from "@/shared/ui/kit/reconcile";

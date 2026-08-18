@@ -449,11 +449,11 @@ accrues under `[Unreleased]`. The full version-by-version breakdown lives in
 
 ### Where the work lives
 
-The project's own plan store — `~/.base-studio-code/plans/base-studio-code.db`, reached with the
+The project's own plan store — `~/.base-studio-code/plans/studio-code.db`, reached with the
 bundled `bsc` binary:
 
 ```bash
-export BSC_PLAN_DB="$HOME/.base-studio-code/plans/base-studio-code.db"
+export BSC_PLAN_DB="$HOME/.base-studio-code/plans/studio-code.db"
 
 bsc plan list                      # the board
 bsc plan list --status open        # what's available
@@ -461,9 +461,30 @@ bsc plan get <ref>                 # one item: body + acceptance criteria
 bsc plan status <ref> <status>     # open → in_progress → complete → verified
 ```
 
+> **It used to be `base-studio-code.db`, and that store is RETIRED.** `base-studio-code` was both a
+> *repo of* the `studio-code` project and a separate project with its own plan store, so which one an
+> item belonged in was a coin flip — and the two drifted. Everything (issues, change records and the
+> lessons, which existed only there) was migrated into `studio-code.db` on 2026-08-17; see
+> `migrate-the-legacy-base-studio-code-plan-store`. **There is one board now.** If you find yourself
+> reaching for the old path, that is the habit this note exists to break.
+
 This is the same surface a fleet worker already uses, so there is one way to read the plan whether a
 human or an agent is driving. `bsc plan` is in the always-allowed mandatory tier, so no session needs
 a permission grant to reach it.
+
+#### The standing focus
+
+**`epic-command-surfaces-are-nodes` is the focus for the remainder of this application's development**
+(maintainer, 2026-08-17). When nothing else is explicitly claimed, take the next open slice from that
+epic. `bsc plan get epic-command-surfaces-are-nodes` is the source of truth for what it covers and for
+the decisions already taken — read it there rather than looking for a design doc, because the feature
+is deliberately not written up yet.
+
+It carries **no milestone on purpose**: it outlives `1.0.52` rather than fitting inside it. Do not file
+it under the current version, and do not read that version's completion as this epic's.
+
+The direction attached to it is **get it working, then improve with measurement**. A slice is not
+blocked on an unresolved optimization question — record the question on the item and keep moving.
 
 The issue says what to DO; the **change** (`bsc plan change`, below) says what was DONE. Both live in
 this same store, keyed by the same ref — so one name reaches the issue, the branch, the worktree and

@@ -3,7 +3,7 @@ import { useAppStore } from "@/store";
 import type { ComponentRecord, Kit } from "./lib/model";
 import type { Dispatch } from "@/features/designs/lib/propagation";
 import { makeChange } from "@/features/designs/lib/propagation";
-import { contractChanged, mergeDispatches } from "./store";
+import { contractChanged, mergeDispatches, foldTouches, AI_RING_MAX, AI_HYDRATE_DEBOUNCE_MS, type AiTouch } from "./store";
 import { SEED_COMPONENTS, SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./lib/seed";
 import { SEED_THEMES, type KitThemeRecord } from "./lib/themes";
 import { stampSeedHash } from "./lib/seedRefresh";
@@ -246,6 +246,120 @@ describe("kit-change origin (#2810 — a CLI edit fires propagation)", () => {
     useAppStore.getState().setAiFocused("chip", "component");
     await new Promise((r) => setTimeout(r, 25));
     expect(useAppStore.getState().kitDispatches).toEqual([]);
+  });
+});
+
+describe("the activity RING + in-kit focus (#auto-focus-in-kit-and-drop-the-activity-pills)", () => {
+  const realHydrateComponents = useAppStore.getState().hydrateComponents;
+  /** A touch stamped `now`, so it is inside the follow window unless a test says otherwise. */
+  const t = (id: string, kitId?: string, over: Partial<AiTouch> = {}): AiTouch =>
+    ({ kind: "touch", collection: "component", id, kitId, pane: "design-studio:designer", at: Date.now(), ...over });
+
+  beforeEach(() => {
+    useAppStore.setState({
+      components: SEED_COMPONENTS, kits: SEED_KITS,
+      aiFocusedId: null, aiTouches: [], designsKitId: "", designsCompId: null,
+    });
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    useAppStore.setState({ hydrateComponents: realHydrateComponents });
+  });
+
+  describe("foldTouches", () => {
+    it("prepends newest-first and caps the ring", () => {
+      // `fresh` arrives oldest-first (log order); the ring reads newest-first (display order).
+      expect(foldTouches([t("old")], [t("a"), t("b")]).map((x) => x.id)).toEqual(["b", "a", "old"]);
+      const many = Array.from({ length: AI_RING_MAX + 4 }, (_, i) => t(`c${i}`));
+      expect(foldTouches([], many)).toHaveLength(AI_RING_MAX);
+    });
+  });
+
+  it("focuses an IN-KIT touch even with a component selected — a brief focus is the point, not a disruption", () => {
+    // The old behaviour suppressed this whenever anything was selected and then added a chip strip to
+    // recover the signal. Focusing the node that was just written is what was wanted all along.
+    useAppStore.setState({ designsKitId: "base-studio-code", designsCompId: "settings-security" });
+    useAppStore.getState().pushAiTouches([t("chip", "base-studio-code")], { hydrate: false });
+    expect(useAppStore.getState().aiFocusedId).toBe("chip");
+    expect(useAppStore.getState().designsCompId).toBe("settings-security"); // the SELECTION is still not disturbed
+  });
+
+  it("IGNORES a cross-kit touch without blanking the focus — the original blank-page defect", () => {
+    // This is the regression that matters. Writing an out-of-kit id to `aiFocusedId` is what emptied the
+    // page: the Studio filters the pulse, the pan AND the Inspector subject by kit, so `aiComp` went
+    // null. Measured over 200 touches the fleet spanned three kits, so it was the COMMON case, not an
+    // edge one. Ignoring must therefore mean NOT WRITING it — the previous subject stays on screen.
+    useAppStore.setState({ designsKitId: "base-studio-code", designsCompId: null, aiFocusedId: "chip" });
+    useAppStore.getState().pushAiTouches([t("workercard", "mobile-studio-code")], { hydrate: false });
+    expect(useAppStore.getState().designsKitId).toBe("base-studio-code"); // no kit switch
+    expect(useAppStore.getState().aiFocusedId).toBe("chip");              // NOT moved, and NOT nulled
+    expect(useAppStore.getState().aiTouches.map((x) => x.id)).toEqual(["workercard"]); // still in the ring
+  });
+
+  it("focuses an in-kit touch regardless of AGE — the kit is the only condition", () => {
+    // An age cut-off was considered and deliberately not added: the priming tick already focused the
+    // newest historical touch before this change, and focusing the most recent work when the Studio
+    // opens is reasonable. Pinned so the omission reads as a decision rather than an oversight.
+    useAppStore.setState({ designsKitId: "base-studio-code", aiFocusedId: null });
+    const old = t("chip", "base-studio-code", { at: Date.now() - 3_600_000 });
+    useAppStore.getState().pushAiTouches([old], { hydrate: false });
+    expect(useAppStore.getState().aiFocusedId).toBe("chip");
+  });
+
+  it("falls back to the STORE for a legacy line that carries no kit", () => {
+    // A 5-column line predates the kitId column, so the kit can only come from the record itself.
+    const known = SEED_COMPONENTS[0];
+    useAppStore.setState({ designsKitId: known.kitId });
+    useAppStore.getState().pushAiTouches([t(known.id)], { hydrate: false }); // no kitId on the touch
+    expect(useAppStore.getState().aiFocusedId).toBe(known.id);
+  });
+
+  it("coalesces a BURST of writes into exactly ONE hydrate", async () => {
+    // Every touch used to reload + reconcile + re-diff the whole ~590-record library. Under a live
+    // fleet that ran several times a minute, and it is what made the Studio jank while working.
+    vi.useFakeTimers();
+    const hydrateComponents = vi.fn();
+    useAppStore.setState({ hydrateComponents });
+    const burst = ["a", "b", "c", "d"].map((id) => t(id, "base-studio-code"));
+    useAppStore.getState().pushAiTouches(burst);
+    expect(hydrateComponents).not.toHaveBeenCalled();          // nothing fires inside the window
+    vi.advanceTimersByTime(AI_HYDRATE_DEBOUNCE_MS + 10);
+    expect(hydrateComponents).toHaveBeenCalledTimes(1);        // ONE reload for four writes
+  });
+
+  it("a READ-focus batch schedules no hydrate at all (#3545 — nothing changed to reload)", () => {
+    vi.useFakeTimers();
+    const hydrateComponents = vi.fn();
+    useAppStore.setState({ hydrateComponents });
+    useAppStore.getState().pushAiTouches([t("chip", "base-studio-code", { kind: "focus" })]);
+    vi.advanceTimersByTime(AI_HYDRATE_DEBOUNCE_MS + 10);
+    expect(hydrateComponents).not.toHaveBeenCalled();
+  });
+
+  it("accepts a touch whose record is GONE — a retired id from `bsc ui merge` (#3725 tombstone)", () => {
+    // `bsc ui merge`/`suppress` emit activity for the RETIRED id, and 3 of the last 200 real touches
+    // were exactly that. It is real work and must show; it simply resolves to no record and no kit.
+    // The id must genuinely resolve to NOTHING or this tests the wrong thing. The previous version used
+    // `windowcontrols`, which is a real record — it passed only because its kit assertion was trivially
+    // true, so the tombstone path was never exercised at all. Assert the premise rather than assume it.
+    const retired = "retired-by-merge-zzz";
+    expect(useAppStore.getState().components.some((c) => c.id === retired)).toBe(false);
+
+    useAppStore.setState({ designsKitId: "base-studio-code", aiFocusedId: "chip" });
+    useAppStore.getState().pushAiTouches([t(retired)], { hydrate: false });
+    expect(useAppStore.getState().aiTouches.map((x) => x.id)).toEqual([retired]);
+    expect(useAppStore.getState().designsKitId).toBe("base-studio-code"); // nothing to switch to
+    // A retired id resolves to no record and therefore no kit, so it must not take the focus either —
+    // focusing an id the graph does not contain empties the Inspector exactly like a cross-kit one.
+    expect(useAppStore.getState().aiFocusedId).toBe("chip");
+  });
+
+  it("setAiFocused(null) empties the RING too, so a finished session stops reading as live", () => {
+    useAppStore.getState().pushAiTouches([t("chip", "base-studio-code")], { hydrate: false });
+    useAppStore.getState().setAiFocused(null);
+    expect(useAppStore.getState().aiTouches).toEqual([]);
+    expect(useAppStore.getState().aiFocusedId).toBeNull();
   });
 });
 

@@ -1,5 +1,5 @@
-import { ConnectGithubCard } from "../cards/ConnectGithubCard";
-import { RepoCredentialsCard } from "../cards/RepoCredentialsCard";
+import { ConnectGithubCard } from "@/features/settings/cards/ConnectGithubCard";
+import { RepoCredentialsCard } from "@/features/settings/cards/RepoCredentialsCard";
 import { useAppStore } from "@/store";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { SettingsPageHeader } from "@/features/settings/pages/SettingsPageHeader";

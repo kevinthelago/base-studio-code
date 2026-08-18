@@ -99,6 +99,11 @@ export function DesignsWorkbench() {
   const kitThemes = useAppStore((s) => s.kitThemes);
   // The node the designer AI is currently working (#2525) — a `.working` pulse + auto-pan target.
   const aiFocusedId = useAppStore((s) => s.aiFocusedId);
+  // The recent-activity RING (#live-focus-is-kit-filtered) — every touch the poll observed, newest
+  // first, across EVERY kit. `aiFocusedId` is only its head; the strip below renders the whole thing,
+  // which is the only way concurrent designer sessions are legible: one scalar cannot show N workers,
+  // and a pulse that moves every few seconds cannot be watched.
+  const aiTouches = useAppStore((s) => s.aiTouches);
   // NOTE (#two-store-keys-drive-more-than-half-the-apps-jank): this component deliberately does NOT
   // subscribe to `componentBuildStatus` / `componentStateHealth`. Each `ComponentNode` reads its own
   // entry instead, so a 150ms scan flush wakes the nodes that changed rather than re-rendering the whole
@@ -415,8 +420,17 @@ export function DesignsWorkbench() {
     lastCull.current = reading;
     log.warn(line, "perf");
   }, [shownIds, kitComps.length, gvp.view.scale]);
-  // Auto-pan the AI-touched node into view (#2525) — center it, keeping zoom (least-disruptive). Only
-  // when the node lives in the CURRENT kit's graph; a touch in another kit just doesn't pan.
+  // Auto-pan the AI-touched node into view (#2525) — center it, keeping zoom (least-disruptive).
+  //
+  // UNGATED on selection (#auto-focus-in-kit-and-drop-the-activity-pills): focusing the component that
+  // was just written is the intended behaviour, briefly is fine, and it is not a steer worth guarding
+  // against. The old gate suppressed it whenever anything was selected, citing #3599/#4248 — but those
+  // govern `bsc navigate` yanking you to a different PAGE, and their own test allows setting focus
+  // while refusing to leave the page. Panning inside the page you are already looking at was never
+  // what they refused.
+  //
+  // Nothing needs a kit check here: the store only writes `aiFocusedId` for a touch in the kit on
+  // screen, so an out-of-kit id never reaches this effect and `graph.pos` would not hold it anyway.
   const gvpCenter = gvp.centerOn;
   useEffect(() => {
     if (!aiFocusedId) return;
@@ -437,6 +451,20 @@ export function DesignsWorkbench() {
   // softer ring; incident edges render LAST so they sit above the dim ones. Hoisted out of the old
   // GraphView wrapper (#2766) now that the graph IS the page's one GraphCanvas.
   const selId = sel?.id ?? "";
+  // The ring's COMPONENT entries, ranked newest-first (0 = the node just touched). Drives the decaying
+  // `.working` pulse, so a burst leaves a visible TRAIL instead of one survivor — the point of the ring.
+  //
+  // Built by hand rather than `new Map(entries)` because an id can appear twice in the ring (a session
+  // writing the same record repeatedly) and `new Map` keeps the LAST value for a duplicate key, i.e.
+  // the OLDEST rank — exactly backwards. First-wins is the newest.
+  const workRank = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of aiTouches) {
+      if (t.collection !== "component" || m.has(t.id)) continue;
+      m.set(t.id, m.size);
+    }
+    return m;
+  }, [aiTouches]);
   // MEMOIZED (#a-graph-node-costs-five-elements-not-eight). It used to run on every render and return
   // FRESH objects, so `edgeBatch` below — which keys on `incidentEdges` — rebuilt every edge path on
   // every commit no matter what changed. The instrumentation priced that at 4-6ms a commit for nothing.
@@ -762,7 +790,8 @@ export function DesignsWorkbench() {
               // it's the SAME node, so an active selection is never overridden.
               selected={c.id === selId}
               related={relatedNodes.has(c.id)}
-              working={c.id === (aiFocusedId ?? "") && c.id !== selId}
+              working={workRank.has(c.id) && c.id !== selId}
+              workingRank={workRank.get(c.id)}
               badge={nodeHealth.get(c.id)}
               onSelect={selectComp}
             />
@@ -773,6 +802,7 @@ export function DesignsWorkbench() {
     </>
   );
 }
+
 
 function GuideCard({ tone, title, items, glyph }: { tone: "success" | "danger"; title: string; items: string[]; glyph: string }) {
   const c = tone === "success" ? "var(--success)" : "var(--danger)";
