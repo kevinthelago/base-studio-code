@@ -16,9 +16,12 @@
 //   1. The AS GRAPH SOURCE preamble, which tells a reader of the record where its behaviour comes from.
 //   2. First-party RELATIVE specifiers rewritten ABSOLUTE. The runtime loader resolves a record's
 //      imports against the app's module registry, not against a directory, so `./lib/glanceData` has
-//      no meaning to it. Sibling COMPONENTS resolve differently again — as `@/components/<record-id>`
-//      graph records, not as feature paths — which is why they need their own map rather than the
-//      same prefix rule.
+//      no meaning to it. Sibling COMPONENTS take the SAME prefix rule as everything else
+//      (`page-records-import-siblings-by-specifier`): they used to be rewritten to
+//      `@/components/<record-id>`, which resolves in the loader and nowhere else, and that is what made
+//      this record impossible to materialize into `.bsc-records/` — i.e. what kept `GlanceWorkspace.tsx`
+//      alive. They are registered in `graphPlatform.ts` instead, so ONE specifier satisfies both
+//      resolvers.
 //   3. `import "./glance.css"` STRIPPED. The loader cannot resolve a CSS side-effect import;
 //      `GlanceGraphHost` owns the stylesheet instead (see its header).
 //
@@ -30,16 +33,26 @@ export const GRAPH_SOURCE_HEADER = [
   "// Glance → the cockpit workspace (#2206), AS GRAPH SOURCE (#4185, epic #3604). Transcribed from the live feature file: the runtime",
   "// loader compiles this and mounts it, resolving every import to the app's real modules (the shared/ui",
   "// design system + the store via appModules, the glance lib/hook surface via the glance graph-platform,",
-  "// and the sibling components as @/components/* graph records). Behaviour runs here.",
+  "// and the sibling components via the glance graph-platform too). Behaviour runs here.",
 ];
 
-/** Sibling COMPONENTS resolve as graph records (`@/components/<id>`), not as feature paths. A sibling
- *  added to `GlanceWorkspace.tsx` without an entry here would be rewritten to a feature path that the
- *  loader cannot resolve, so {@link projectGlancePage} throws rather than emitting a broken record. */
-export const SIBLING_RECORDS: Record<string, string> = {
-  "./GlanceCanvas": "@/components/glance-canvas",
-  "./GlanceChatDock": "@/components/glance-chat-dock",
-};
+/** Sibling COMPONENTS no longer get a special specifier, and that is the point of
+ *  `page-records-import-siblings-by-specifier`.
+ *
+ *  They used to be rewritten to `@/components/<id>` — the graph record form. That resolves in the runtime
+ *  loader and NOWHERE ELSE: `@/components/<id>` is not a path, so a record carrying it cannot be
+ *  materialized into `.bsc-records/` and imported by the bundle. It is exactly what made `glancepage`
+ *  un-retirable, and what `retire-module.mjs`'s `importsSiblingsByRecordId` now refuses on.
+ *
+ *  So a sibling is projected like every other relative import — `./GlanceCanvas` →
+ *  `@/features/glance/GlanceCanvas` — and `graphPlatform.ts` REGISTERS it, the same as the rest of the
+ *  glance surface. The loader resolves it through the registry; the bundle resolves it through the file
+ *  today and through `.bsc-records/` once the file is retired. One specifier, both resolvers.
+ *
+ *  Kept as an empty export rather than deleted: `glancepageRecord.gen.test.ts` asserts the projection
+ *  emits no `@/components/` specifier, and a named, documented empty is what tells the next reader this
+ *  was decided rather than forgotten. */
+export const SIBLING_RECORDS: Record<string, string> = {};
 
 /** Relative specifiers that are NOT sibling components resolve as feature paths under the glance slice. */
 const FEATURE_PREFIX = "@/features/glance/";

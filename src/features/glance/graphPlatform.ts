@@ -17,6 +17,8 @@ import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as AgentStall from "@/features/glance/lib/agentStall";
 import * as ExpandNode from "@/features/glance/lib/expandNode";
 import * as FleetPlanProgress from "@/features/glance/lib/fleetPlanProgress";
+import * as GlanceCanvas from "@/features/glance/GlanceCanvas";
+import * as GlanceChatDock from "@/features/glance/GlanceChatDock";
 import * as GlanceData from "./lib/glanceData";
 import * as GlanceFleet from "@/features/glance/lib/glanceFleet";
 import * as GlanceGraph from "@/features/glance/lib/glanceGraph";
@@ -56,6 +58,12 @@ export function registerGlancePlatform(): void {
   // The expand-click decision (#expanding-a-node-resumes-its-session) — a page record IS the page, so
   // an import it cannot resolve ships a blank screen; `bsc ui set` refuses the write without this.
   registerAppModule("@/features/glance/lib/expandNode", ExpandNode);
+  // The two sibling COMPONENTS the page composes. They used to be special-cased in the projection —
+  // rewritten to `@/components/<id>`, a form only the graph loader resolves — which is precisely what
+  // made `glancepage` un-retirable (`graph-only-record-cannot-back-a-file`). Registered like every other
+  // glance module, the page imports them by specifier and the record becomes bundle-resolvable.
+  registerAppModule("@/features/glance/GlanceCanvas", GlanceCanvas);
+  registerAppModule("@/features/glance/GlanceChatDock", GlanceChatDock);
   registerAppModule("@/features/glance/lib/glanceData", GlanceData);
   registerAppModule("@/features/glance/lib/glanceFleet", GlanceFleet);
   registerAppModule("@/features/glance/lib/glanceGraph", GlanceGraph);

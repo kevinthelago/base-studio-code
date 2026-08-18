@@ -74,12 +74,27 @@ describe("the projection reproduces what the runtime loader needs", () => {
     expect(relative, `unresolved relative imports:\n${relative.join("\n")}`).toEqual([]);
   });
 
-  it("routes sibling COMPONENTS to their graph records, not to feature paths", () => {
-    // The two resolve differently, and getting this wrong yields a path that type-checks nowhere and
-    // fails only at runtime, inside the loader.
-    expect(projected).toContain('from "@/components/glance-canvas"');
-    expect(projected).toContain('from "@/components/glance-chat-dock"');
-    expect(projected).not.toContain('from "@/features/glance/GlanceCanvas"');
+  it("routes sibling COMPONENTS by SPECIFIER, never as `@/components/<id>` graph records", () => {
+    // INVERTED by `page-records-import-siblings-by-specifier`, and the inversion is the whole point.
+    //
+    // This used to assert the opposite — that a sibling became `@/components/glance-canvas`. That form
+    // resolves in the runtime graph loader and NOWHERE ELSE: it is not a path, so a record carrying it
+    // cannot be materialized into `.bsc-records/` and imported by the bundle. It is why this page's
+    // `.tsx` could not be retired, and why four page files retired past that constraint broke the build
+    // with "Cannot find package '@/components/…'" while every other gate stayed green.
+    //
+    // `graphPlatform.ts` registers both siblings, so the one specifier satisfies the loader (via the
+    // registry) and the bundle (via the file today, `.bsc-records/` once it is retired).
+    expect(projected).toContain('from "@/features/glance/GlanceCanvas"');
+    expect(projected).toContain('from "@/features/glance/GlanceChatDock"');
+    expect(projected).not.toContain('@/components/');
+  });
+
+  it("emits NOTHING the bundle cannot resolve — no `@/components/<id>` anywhere in the record", () => {
+    // The guard above names the two siblings that exist today. This one is the general statement, so a
+    // NEW sibling added to the workspace cannot reintroduce the loader-only form unnoticed.
+    const offending = projected.split("\n").filter((l) => l.includes("@/components/"));
+    expect(offending, `loader-only specifiers would make this record un-retirable:\n${offending.join("\n")}`).toEqual([]);
   });
 
   it("strips a CSS side-effect import the loader cannot resolve", () => {
