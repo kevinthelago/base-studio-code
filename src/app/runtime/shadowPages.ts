@@ -92,7 +92,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     // say: a `differs` verdict here is a not-yet, not a live problem.
     rendersFrom: "file",
     modules: [
-      { recordId: "accessibilitypage", file: "/src/features/settings/pages/AccessibilityPage.tsx" },
+      { recordId: "accessibilitypage", file: null }, // RETIRED — the record is the only copy,
     ],
     ensurePlatform: () => import("@/features/settings/graphPlatform").then((m) => m.registerSettingsPlatform()),
   },
@@ -185,7 +185,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     // Planner-mounted, like Sounds — not a rail Workspace (#4219).
     rendersFrom: "graph",
     modules: [
-      { recordId: "algorithmspage", file: "/src/features/algorithms/AlgorithmsWorkspace.tsx" },
+      { recordId: "algorithmspage", file: null }, // RETIRED — the record is the only copy,
       { recordId: "algorithms-rail", file: null }, // RETIRED — the record is the only copy,
       { recordId: "algorithms-inspector", file: null }, // RETIRED — the record is the only copy,
       { recordId: "algorithms-kit-graph", file: null }, // RETIRED — the record is the only copy,
@@ -199,7 +199,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     // Not a rail Workspace — the planner Screen mounts this one as a tab (#4215).
     rendersFrom: "graph",
     modules: [
-      { recordId: "soundspage", file: "/src/features/sounds/SoundsWorkspace.tsx" },
+      { recordId: "soundspage", file: null }, // RETIRED — the record is the only copy,
       { recordId: "sounds-rail", file: null }, // RETIRED — the record is the only copy,
       { recordId: "sounds-inspector", file: null }, // RETIRED — the record is the only copy,
       { recordId: "sounds-kit-graph", file: null }, // RETIRED — the record is the only copy,
