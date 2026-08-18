@@ -98,6 +98,8 @@
   "@/features/github/graphPlatform",
   "@/features/github/lib/githubSummary",
   "@/features/glance",
+  "@/features/glance/GlanceCanvas",
+  "@/features/glance/GlanceChatDock",
   "@/features/glance/glanceNodeMotion",
   "@/features/glance/graphPlatform",
   "@/features/glance/lib/agentStall",
