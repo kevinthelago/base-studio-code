@@ -152,12 +152,49 @@ describe("built-in orgs (#2193)", () => {
   it("SKIPS a request whose origin has no position here rather than parenting it wrongly", () => {
     // A director-filed request (the one non-studio filer) belongs in its project's drill. Attaching it
     // to a default node would assert a relationship that does not exist; leaving it unparented reads as
-    // a bug. Both are worse than omitting it here.
+    // a bug. Both are worse than omitting it here — and it IS drawn, in that project's own drill.
     const g = augmentStudioNetworkForRequests(studio(), [{ id: 7, origin: "myproject:director", title: "x" }], host);
     expect(g.positions.some((p) => p.nodeId === "debugger-req-7")).toBe(false);
-    // Same for a request with no origin at all.
-    expect(augmentStudioNetworkForRequests(studio(), [{ id: 8, origin: null, title: "y" }], host)
-      .positions.some((p) => p.nodeId === "debugger-req-8")).toBe(false);
+  });
+
+  // The counterpart, and the reason the two cases had to be split: this one is NOT claimed by any other
+  // graph, so skipping it left a running session with no node ANYWHERE — unwatchable and unstoppable,
+  // which is the single thing every request node exists to prevent. Requests filed before
+  // `bsc request new` began stamping `$BSC_AUDIT_PANE` are exactly this shape.
+  it("DRAWS a request with no origin at all — unparented, because nothing else can host it", () => {
+    const g = augmentStudioNetworkForRequests(studio(), [{ id: 8, origin: null, title: "y" }], host);
+    const node = g.positions.find((p) => p.nodeId === "debugger-req-8");
+    expect(node).toBeDefined();
+    expect(node!.label).toBe("debug - y");
+    // No edge: there is genuinely nobody to point at, and inventing one is the failure the resolver exists
+    // to end. An unparented node is honest; a wrongly-parented one is a lie the user cannot see through.
+    expect(g.relationships.some((r) => r.from === "debugger-req-8" || r.to === "debugger-req-8")).toBe(false);
+    // Below every drawn position, so it reads as "extra" instead of landing on top of somebody.
+    const lowest = Math.max(...studio().positions.map((p) => p.y ?? 0));
+    expect(node!.y!).toBeGreaterThan(lowest);
+  });
+
+  it("fans SEVERAL unparented requests apart instead of stacking them on one point", () => {
+    const g = augmentStudioNetworkForRequests(studio(), [
+      { id: 8, origin: null, title: "a" },
+      { id: 9, origin: "   ", title: "b" }, // blank is "nobody said", same as absent
+    ], host);
+    const xs = ["debugger-req-8", "debugger-req-9"].map((id) => g.positions.find((p) => p.nodeId === id)!.x);
+    expect(new Set(xs).size).toBe(2);
+  });
+
+  it("keeps hosted and unparented requests in SEPARATE layout rows", () => {
+    // One shared counter would have pushed the unparented node sideways by however many hosted ones came
+    // first, which is a layout that says a relationship the graph does not draw.
+    const g = augmentStudioNetworkForRequests(studio(), [
+      { id: 85, origin: "design-studio:designer-react", title: "a" },
+      { id: 8, origin: null, title: "b" },
+    ], host);
+    const designer = studio().positions.find((p) => p.nodeId === "designer")!;
+    const hosted = g.positions.find((p) => p.nodeId === "debugger-req-85")!;
+    const orphan = g.positions.find((p) => p.nodeId === "debugger-req-8")!;
+    expect(hosted.x).toBe((designer.x ?? 0) - 48); // first in ITS row, not the second in a shared one
+    expect(orphan.x).toBe(96 - 48);
   });
 
   it("is idempotent, and a no-op with no requests or off the Studio Network", () => {

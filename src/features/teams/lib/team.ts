@@ -272,10 +272,18 @@ export type OriginHostResolver = (origin: string | null | undefined, present: Re
  * Both were wrong before: the label was the bare node id, and the edge was hardwired to `designer` for
  * every request, so a librarian's request drew to the designer.
  *
- * A request whose origin resolves to no position on this graph is SKIPPED rather than attached to a
+ * A request whose origin RESOLVES TO NO POSITION on this graph is SKIPPED rather than attached to a
  * default. That covers the director-filed request (`myproject:director`), which belongs in its project's
  * drill; an unparented node reads as a bug, and a wrongly-parented one is worse — it asserts a
  * relationship that does not exist.
+ *
+ * A request with NO ORIGIN AT ALL is the opposite case and is DRAWN, unparented. It belongs to no graph
+ * by construction — nothing claims it, so no other drill can pick it up — and skipping it left a live
+ * session with a node in no graph anywhere: unwatchable, unopenable and unstoppable, which is the one
+ * state every request node exists to prevent. (Requests filed before `bsc request new` started stamping
+ * `$BSC_AUDIT_PANE` are exactly this shape, and one of them was running `claude` invisibly when this was
+ * found.) It gets no edge, because there is genuinely no relationship to assert — the honest rendering
+ * of "something is running and nobody said who asked for it".
  *
  * Idempotent, and a no-op off the Studio Network or with no live sessions.
  */
@@ -288,23 +296,32 @@ export function augmentStudioNetworkForRequests(
   const present = new Set(org.positions.map((p) => p.nodeId));
   const add = requests
     .map((r) => ({ ...r, host: hostForOrigin(r.origin, present) }))
-    .filter((r) => r.host !== null && !present.has(requestNodeId(r.id)));
+    // `host === null` splits two unlike cases, and only one of them is a skip: an origin that named a
+    // session this graph does not draw belongs to another drill, while an ABSENT origin belongs to none.
+    // Keeping the second is what stops a live session from having no node anywhere.
+    .filter((r) => (r.host !== null || !hasOrigin(r)) && !present.has(requestNodeId(r.id)));
   if (!add.length) return org;
   // Fan each host's requests in a row BENEATH that host, so the layout says the same thing the edges do.
   // Grouped per host (not one global row) — with two designers and a librarian all filing, one row would
-  // interleave them and the clustering the edges express would be invisible.
+  // interleave them and the clustering the edges express would be invisible. The unparented ones share
+  // one pseudo-host row of their own, laid out below the graph rather than beside anybody.
   const perHost = new Map<string, number>();
   const positions: Position[] = add.map((r) => {
-    const host = org.positions.find((p) => p.nodeId === r.host);
-    const n = perHost.get(r.host!) ?? 0;
-    perHost.set(r.host!, n + 1);
+    const key = r.host ?? UNPARENTED_ROW;
+    const host = r.host === null ? undefined : org.positions.find((p) => p.nodeId === r.host);
+    const n = perHost.get(key) ?? 0;
+    perHost.set(key, n + 1);
+    // An unparented node sits under the LOWEST drawn position, so it reads as "extra, below everything"
+    // rather than colliding with whichever position happens to sit at the default coordinates.
+    const baseX = host?.x ?? 96;
+    const baseY = host?.y ?? maxY(org) + 48;
     return {
       nodeId: requestNodeId(r.id),
       kind: "agent" as const,
       personaId: "persona-debugger",
       label: requestNodeLabel(r.title),
-      x: (host?.x ?? 96) + (n - 0.5) * 96,
-      y: (host?.y ?? 48) + 96,
+      x: baseX + (n - 0.5) * 96,
+      y: baseY + 96,
     };
   });
   return {
@@ -312,7 +329,9 @@ export function augmentStudioNetworkForRequests(
     positions: [...org.positions, ...positions],
     relationships: [
       ...org.relationships,
-      ...add.map((r) => ({
+      // ONLY the hosted ones get an edge. An unparented request has nobody to point at, and inventing a
+      // target here is the exact failure the resolver was written to end.
+      ...add.filter((r) => r.host !== null).map((r) => ({
         id: `r-serves-${requestNodeId(r.id)}`,
         archetype: "serves",
         from: requestNodeId(r.id),
@@ -321,6 +340,22 @@ export function augmentStudioNetworkForRequests(
       })),
     ],
   };
+}
+
+/** The layout bucket the origin-less request nodes share. Parenthesised so it can never collide with a
+ *  real host key in the per-host fan-out counter — a position's nodeId is a slug. */
+const UNPARENTED_ROW = "(unparented)";
+
+/** Whether a request names a filing session at all. Blank-or-missing is "nobody said", which is the case
+ *  {@link augmentStudioNetworkForRequests} draws unparented; anything else is a claim this graph either
+ *  can host or must leave to another one. */
+function hasOrigin(r: RequestNodeSpec): boolean {
+  return !!(r.origin ?? "").trim();
+}
+
+/** The bottom of the drawn graph, so an unparented node lands below it rather than on top of a position. */
+function maxY(org: Team): number {
+  return org.positions.reduce((m, p) => Math.max(m, p.y ?? 0), 0);
 }
 
 /** The label a request session's node carries — `debug - <title>`.

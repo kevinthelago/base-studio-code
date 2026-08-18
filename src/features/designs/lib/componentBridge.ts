@@ -7,7 +7,7 @@
 // (the complete objects the pane needs). `loadX` returns `null` when the bridge is unreachable (tests /
 // web shell / an old bundled `bsc`) so the store keeps its seed rather than blanking it — NOT `bscJson`,
 // whose degrade-to-`[]` would blank the seed.
-import { bsc, bscRun, bscWrite } from "@/shared/lib/core/bsc";
+import { bsc, bscJson, bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import { log } from "@/shared/lib/core/log";
 import type { ComponentRecord, Kit, Role } from "./model";
 import type { ComponentBuildStatus, RuntimeStateCategory } from "./componentScan";
@@ -261,11 +261,58 @@ export async function saveScanCache(entries: Record<string, CachedScan>): Promis
   try { await bsc(null, ["ui", "scan-cache", "put"], JSON.stringify(entries)); } catch { /* re-scan next visit */ }
 }
 
+/** What this process believes is CURRENTLY recorded in the durable preview-error log: id → the last
+ *  message written for it. Module-level so every preview frame shares one view.
+ *
+ *  It exists to answer "does this id hold an error?" without paying a process to ask. Reporting spawned
+ *  per failure and clearing spawned per SUCCESSFUL render, so a healthy Studio paid ~39ms of process
+ *  start for every component that rendered fine — measured at 590 spawns / 251.9s in one session, the
+ *  fourth-largest cost in the app and pure overhead (#a-broken-preview-costs-a-process-spawn-to-report).
+ *
+ *  Worse, it AMPLIFIED a breakage: a record sweep breaks previews, broken previews report, reports spawn,
+ *  spawns saturate the invoke queue, and the Studio rendering those previews gets slower. Cost that
+ *  scales with how broken things are is exactly backwards. */
+const recordedErrors = new Map<string, string>();
+
+/** Seeded ONCE from the durable log, because the map starts empty and the log does not.
+ *
+ *  Without this, a fresh boot believes nothing is recorded, so `clearPreviewError` skips every id and a
+ *  component fixed between sessions keeps a stale finding forever — the precise failure #45/#60 added
+ *  clearing to fix. One read replaces the N clear-spawns it makes unnecessary, so it is cheaper than the
+ *  behaviour it preserves. A failed read leaves the map empty and simply restores the old spawn-always
+ *  behaviour rather than losing a clear. */
+let seedPromise: Promise<void> | null = null;
+/** False once the seed read failed: the map is then not a trustworthy answer to "does this id hold an
+ *  error?", so `clearPreviewError` stops taking the shortcut and spawns as it always did. Skipping
+ *  instead would silently drop clears — and the failure modes are not symmetric. A missing clear leaves
+ *  `bsc ui doctor` reporting a fault that a live preview disproves (#45/#60); a redundant clear just
+ *  costs a process that `bsc` no-ops. Pay the process. */
+let bookkeepingReliable = true;
+function seedRecordedErrors(): Promise<void> {
+  // The promise is cached, not a boolean: several frames mount at once and would otherwise each start
+  // their own seed read while the first was still in flight.
+  seedPromise ??= (async () => {
+    const rows = await bscJson<{ id: string; message: string }[]>(
+      null,
+      ["ui", "preview-errors", "-n", "500"],
+      [],
+    );
+    for (const r of rows ?? []) if (r?.id) recordedErrors.set(r.id, r.message ?? "");
+  })().catch(() => { bookkeepingReliable = false; });
+  return seedPromise;
+}
+
 /** Record a captured preview RUNTIME error to the durable log `bsc ui preview-errors` tails (#3165). The
  *  message (a stack trace) rides on the child's stdin. Fire-and-forget: never throws — an old bundled
  *  `bsc` without the verb just no-ops the observability (the in-pane error banner still shows). Makes a
  *  preview throw — otherwise only ephemeral React state — readable from a session's shell. */
 export async function recordPreviewError(id: string, message: string): Promise<void> {
+  await seedRecordedErrors();
+  // The SAME failure, re-reported, is the common case rather than the exception: a broken preview
+  // re-renders, and 149 of 200 errors in one measured hour were byte-identical. Writing it again buys
+  // nothing — the log already says so — and costs a process.
+  if (recordedErrors.get(id) === message) return;
+  recordedErrors.set(id, message);
   try { await bsc(null, ["ui", "preview-error", id], message); } catch { /* bridge/binary absent — banner-only */ }
 }
 
@@ -282,5 +329,12 @@ export async function recordPreviewError(id: string, message: string): Promise<v
  * and already a no-op in `bsc` when the id holds no error, so a healthy component writes nothing.
  */
 export async function clearPreviewError(id: string): Promise<void> {
+  await seedRecordedErrors();
+  // A HEALTHY component must not cost a process. `bsc` already no-ops a clear for an id holding no
+  // error — but only after paying ~39ms of process start to find that out, and the overwhelmingly
+  // common case in a working Studio is exactly that: every successful render asked. Knowing what is
+  // recorded makes the question answerable here, for free.
+  if (bookkeepingReliable && !recordedErrors.has(id)) return;
+  recordedErrors.delete(id);
   try { await bsc(null, ["ui", "preview-error", "clear", id]); } catch { /* bridge/binary absent — no-op */ }
 }
