@@ -227,12 +227,50 @@ Two things the emitter refuses, loudly rather than silently:
 
 ---
 
-## Where this is going
+## Where this is going — and the floor it stops at
 
-The remaining files are not blocked on mechanism. Roughly 96 are `.tsx` whose records are **preview-shaped
-derivatives** — `bsc ui harvest` lifts a *component*, inlining what it cannot reach so the thing mounts
-standalone in the Design Studio, which is right for previewing and wrong for retirement. The unlock is a
-`--module` mode for `bsc ui harvest`, the component-store twin of `bsc graph harvest --module` (#4161).
+The `--module` unlock is **built and spent**. `bsc graph harvest --module` plus
+`scripts/lift-component-module.mjs` turned the preview-shaped derivatives into faithful module records,
+and the sweep that followed took `src/` from 225 modules to 175. What is left is no longer one blocker.
 
-The rest need human judgement: a record and its file that genuinely disagree, where only a person can say
-which one is the app.
+**55 of the 175 are structurally permanent** — not backlog, and counting them as pending overstates the
+work remaining. Measured by `scripts/` against the tree:
+
+| count | class | why a record cannot stand for it |
+|---|---|---|
+| 16 | `graphPlatform.ts` registrars | they are what REGISTERS records; a record cannot register itself |
+| 14 | `import.meta.glob` | a **Vite build-time transform**. esbuild emits it verbatim and it is not a function at runtime, so the record throws the moment a consumer evaluates it |
+| 8 | type-only modules | they emit no JavaScript, so there is nothing for a record to be |
+| 6 | `shared/lib/algorithms/*` | the node's code is GENERATED from the file — retiring it turns the standalone guarantee back into a claim (`seedAlgorithms.gen.test.ts`, #3465) |
+| 6 | `shared/lib/runtime/*` | the loader that resolves records. A record cannot load itself |
+| 3 | root module map / generator | `appModules.ts`, `shadowMode.ts`, and a projection generator — a generator cannot be generated |
+| 2 | `app/main.tsx`, `app/App.tsx` | the entry, plus whatever it imports **statically** (below) |
+
+Two smaller classes behave the same way and are enforced by `scripts/retire-module.mjs` rather than
+counted above: a module **statically imported by `main.tsx`/`App.tsx`** (the dev server's pre-transform
+pass resolves the alias before the records plugin can answer, so the app fails to boot — and only
+`dev-boot-check.mjs` observes it), and a module imported by a **build config** such as `vite.config.ts`
+(bundled before any plugin runs, and only `vite build` observes it).
+
+**The floor is load-bearing for everything above it.** The remaining ~120 do not fail for want of a
+harvest — they bottom out ON that floor, through their dependencies:
+
+```
+store/slices/plan.ts   → composes store-types.ts
+                       → store/types.ts needs @/store/types/{github,perf,…}   ← type-only, permanent
+features/security/…    → composes agent-profiles.ts                            ← import.meta.glob, permanent
+```
+
+So `promote-records.mjs`'s two largest skip buckets — *unresolvable import* and *unclosed composes* —
+are mostly this one fact wearing two names. Closing them is not more sweeping; it is answering **how a
+record depends on a permanently-file module**, which is the question `graphPlatform.ts` already answers
+for the registrars and which nothing yet answers generally.
+
+Two classes genuinely do remain, and both want their own slice:
+
+- **`role: page` records** (8). Promotion refuses them wholesale, and rightly — pages have the worst
+  failure history in this migration (twelve `GraphHost`s rendering records that had silently diverged
+  from their files; `glancepage` lost five shipped fixes with every gate green). They need the
+  page-migration recipe with its live-verify loop (`bsc shot`), not a batch sweep.
+- **Records and files that genuinely disagree** (9 body-differs, 6 whose seed does not match the file).
+  Only a person can say which one is the app.
