@@ -146,13 +146,22 @@ base-studio-code/
 
 ### Frontend conventions (feature-first, #1309)
 
-> **MOST OF THE FRONTEND IS NOT FILES.** ~930 modules ship as RECORDS — 388 component records under
-> `src-tauri/data/components/app/**` plus 542 implementations in `data/knowledge/algorithms.json` — and
-> the files that held them are deleted (epic #3604, "the graph IS the app"). The paths below still
-> describe where a module *belongs*; they no longer promise it is on disk. If you cannot find a module,
-> it is a record: `bsc ui get <id>` / `bsc graph impl get <id>`, matched by its `provides` specifier.
+> **MOST OF THE FRONTEND IS NOT FILES.** ~1,050 modules ship as RECORDS — 447 component records under
+> `src-tauri/data/components/app/**` plus 605 implementations in `data/knowledge/algorithms.json` — and
+> the files that held them are deleted (epic #3604, "the graph IS the app"). **225 non-test modules
+> remain under `src/`**, of which **42 stay files permanently**: 17 use `import.meta.glob`, 16 are
+> `graphPlatform.ts` (circular — they register the platform record resolution goes *through*), 6 are
+> algorithms seed modules whose node `code` is generated *from* the file, 2 are `.d.ts`, 1 is the entry.
+> The paths below still describe where a module *belongs*; they no longer promise it is on disk. If you
+> cannot find a module, it is a record: `bsc ui get <id>` / `bsc graph impl get <id>`, matched by its
+> `provides` specifier.
 > **Read [`docs/records.md`](docs/records.md) before retiring a file, authoring new UI, or wondering why
-> a module you can see imported does not exist.** New UI is authored into the store, never as a new `.tsx`.
+> a module you can see imported does not exist** — it carries the preconditions for deleting anything,
+> and every one of them was learned by shipping the bug first. New UI is authored into the store, never
+> as a new `.tsx`.
+>
+> Counts drift every tranche and a stale one is worse than none. Re-measure:
+> `find src -name "*.ts" -o -name "*.tsx" | grep -vE "\.(test|spec)\." | wc -l`
 
 The frontend is **feature-first vertical slices** — `app/` (shell) · `features/` (one folder per
 feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`components/`, `lib/`,
