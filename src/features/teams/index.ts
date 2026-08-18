@@ -5,9 +5,9 @@
 
 // Team feature (#2193) — the persona-relationship graph: positions wired by relationship archetypes
 // that expand into communication forms. Public API barrel.
-export { TeamsPanel } from "./TeamsPanel";
+export { TeamsPanel } from "@/features/teams/TeamsPanel";
 export { TeamsCanvas, OrgLegend, type Selection } from "@/features/teams/TeamsCanvas";
-export { TeamsInspector } from "./TeamsInspector";
+export { TeamsInspector } from "@/features/teams/TeamsInspector";
 export { FormChip, FormLane } from "@/features/teams/components";
 export { createOrgSlice, type OrgSlice } from "@/features/teams/store";
 export {

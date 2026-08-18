@@ -57,7 +57,7 @@ export { installFromGist, publishGist } from "@/features/planner/lib/gist/gist";
 // (flow-permission rules, director drive). Exposed here so those consumers use the barrel, not deep paths.
 export { ProjectsSummary } from "@/features/planner/list/ProjectsSummary";
 export { ProjectBoard } from "@/features/planner/github/ProjectBoard";
-export { Roadmap } from "./github/Roadmap";
+export { Roadmap } from "@/features/planner/github/Roadmap";
 export { Issues } from "@/features/planner/github/Issues";
 export { Insights } from "@/features/planner/github/Insights";
 export { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";

@@ -3,7 +3,7 @@
 // the per-team behavior (#2333 no auto-focus, pools, auto-organize).
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { TeamsPanel } from "./TeamsPanel";
+import { TeamsPanel } from "@/features/teams/TeamsPanel";
 import { useAppStore } from "@/store";
 import { nodeBox } from "./lib/orgLayout";
 import { positionDisplay } from "@/features/teams/lib/orgView";

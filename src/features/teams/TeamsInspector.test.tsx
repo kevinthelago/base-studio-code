@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { TeamsInspector } from "./TeamsInspector";
+import { TeamsInspector } from "@/features/teams/TeamsInspector";
 import { RELATIONSHIP_ARCHETYPES, type Team } from "./lib/team";
 
 const org: Team = {

@@ -36,6 +36,18 @@ const LIMIT = flag("--limit") ? Number(flag("--limit")) : Infinity;
 /** Replace a STALE existing seed with the store record, when the record is the file and the seed is not.
  *  Opt-in, never the default — see the guard it relaxes, at the component write below. */
 const ADOPT_SEED = argv.includes("--adopt-seed");
+/** Adopt DESPITE the export-loss refusal, for the records named here — never as a blanket flag.
+ *
+ *  The refusal ("adopting would drop export(s) X") is right by default: a seed that declares more than
+ *  the record is usually the seed being ahead. But a seed can also be a PREVIEW-SHAPED derivative that
+ *  declares names the FILE never had, and then X is surface nothing has ever been able to import. The
+ *  distinguishing measurement is not "does the name appear" — `Team` and `Persona` appear everywhere —
+ *  it is whether anything imports X **from that record's own specifier**. Ten of eleven refusals
+ *  measured zero such importers across `src/`, the component seed and `algorithms.json`; the eleventh
+ *  (`treeexplorerpage`, `TreeNodeData`) measured one and is NOT listed here.
+ *
+ *  Per-id and explicit, so the drop is reviewable in the command that caused it. */
+const ALLOW_DROP = new Set((flag("--allow-drop") ?? "").split(",").map((s) => s.trim()).filter(Boolean));
 const ONLY = flag("--only");
 const storeArg = flag("--store"), implsArg = flag("--impls");
 if (!storeArg || !implsArg) {
@@ -368,13 +380,18 @@ for (const { rec, file } of promote.component) {
     // The DECISION lives in `recordSource.mjs` as a pure function — this script runs on import, so
     // anything embedded here cannot be unit-tested, and an untested overwrite rule is the last thing
     // this file should carry.
-    const { verdict, reason } = seedAdoption({
+    const { verdict, reason, lost } = seedAdoption({
       seedSrcText: seedRec.srcText ?? "", seedProvides: seedRec.provides ?? null,
       recordSrcText: rec.srcText ?? "", recordProvides: rec.provides ?? null,
       fileSrc: fileSrcOf(file),
     });
     if (!ADOPT_SEED) { console.log(`   SKIPPED (a seed already occupies that path): ${file} → ${rec.id}.json${verdict === "adopt" ? " — it is STALE; --adopt-seed replaces it" : ""}`); skippedAtWrite++; continue; }
-    if (verdict !== "adopt") { console.log(`   ${verdict === "keep" ? "kept" : "REFUSED"} (${reason}): ${rec.id}`); skippedAtWrite++; continue; }
+    // The export-loss refusal is the ONE that `--allow-drop` can override, and only for a record named
+    // on the command line. `lost` being non-empty is what identifies that refusal — a refusal for any
+    // other reason is not overridable here, so the flag cannot become a blanket "write anyway".
+    const overriding = verdict === "refuse" && lost?.length && ALLOW_DROP.has(rec.id);
+    if (verdict !== "adopt" && !overriding) { console.log(`   ${verdict === "keep" ? "kept" : "REFUSED"} (${reason}): ${rec.id}`); skippedAtWrite++; continue; }
+    if (overriding) console.log(`   ADOPTED DESPITE dropping ${lost.join(", ")} (--allow-drop, measured: no importer of it from ${rec.provides}): ${rec.id}`);
     console.log(`   adopted the store record over a stale seed: ${rec.id}  (${reason})`);
     adopted++;
     adopting = true;
