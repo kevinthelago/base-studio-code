@@ -3,8 +3,16 @@
   "name": "Option",
   "kitId": "base-studio-code",
   "role": "primitive",
-  "srcText": "import type { ReactNode } from \"react\";\n\ninterface OptionProps {\n  value?: string;\n  disabled?: boolean;\n  children?: ReactNode;\n}\nexport function Option({ value, disabled, children = \"Option\" }: OptionProps) {\n  return (\n    <option value={value} disabled={disabled}>\n      {children}\n    </option>\n  );\n}",
-  "src": "src/shared/ui/controls/Option.tsx",
+  "provides": "@/shared/ui/controls/Option",
+  "srcText": "// Option (#3500) — a `<select>` choice, as a primitive.\n//\n// `SelectField` deliberately takes its options as CHILDREN so callers keep full control over each\n// label. In hand-written JSX that is a plain `<option>`; in a spec-authored (data-driven) UI there was\n// no way to say it at all, because the node vocabulary can only name manifest primitives. The legacy\n// `field` kind hid the gap behind its own `options: string[]`, which meant a select's options were the\n// one part of the kit an agent could only author through a shape the renderer special-cased.\n//\n// This is the compositional answer: `SelectField` holds `Option` children, exactly as the component\n// already works, and nothing has to special-case a select.\n\nimport type { ReactNode } from \"react\";\n\ninterface OptionProps {\n  /** The submitted value. Defaults to the visible text when omitted — the common case where they match. */\n  value?: string;\n  /** Unselectable in the list (typically a \"Choose…\" placeholder). */\n  disabled?: boolean;\n  /** The visible label. */\n  children?: ReactNode;\n}\n\nexport function Option({ value, disabled, children }: OptionProps) {\n  return (\n    <option value={value} disabled={disabled}>\n      {children}\n    </option>\n  );\n}\n",
   "composes": [],
-  "folder": "shared/ui/controls"
+  "src": "src/shared/ui/controls/Option.tsx",
+  "props": [],
+  "folder": "shared/ui/controls",
+  "variants": [
+    "default"
+  ],
+  "whenUse": [],
+  "whenNot": [],
+  "tags": []
 }

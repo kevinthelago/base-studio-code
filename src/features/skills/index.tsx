@@ -38,7 +38,7 @@ import { type TabItem } from "@/shared/ui/layouts/TabBar";
 import { Screen } from "@/shared/ui/layouts/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { LessonsTab } from "@/features/skills/LessonsTab";
-import { NewGroupDialog } from "./NewGroupDialog";
+import { NewGroupDialog } from "@/features/skills/NewGroupDialog";
 import { SkillDrawer } from "./SkillDrawer";
 import { SkillsDigestToggle, SkillsDigestPanel } from "./SkillsDigest";
 import { RunsTab } from "./RunsTab";

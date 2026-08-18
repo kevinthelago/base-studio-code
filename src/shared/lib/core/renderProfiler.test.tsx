@@ -11,7 +11,7 @@
 // shares with the graph layout is covered by the `timedSync` tests. This guards the render contract.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ProfiledRegion } from "./renderProfiler";
+import { ProfiledRegion } from "@/shared/lib/core/renderProfiler";
 
 describe("ProfiledRegion (#3618)", () => {
   it("renders its children unchanged (a transparent profiling wrapper)", () => {

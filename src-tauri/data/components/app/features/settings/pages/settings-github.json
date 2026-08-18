@@ -1,0 +1,16 @@
+{
+  "id": "settings-github",
+  "name": "GithubPage",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/settings/pages/GithubPage",
+  "srcText": "import { ConnectGithubCard } from \"@/features/settings/cards/ConnectGithubCard\";\nimport { RepoCredentialsCard } from \"@/features/settings/cards/RepoCredentialsCard\";\nimport { useAppStore } from \"@/store\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\nimport { SettingsPageHeader } from \"@/features/settings/pages/SettingsPageHeader\";\n\nexport function GithubPage() {\n  const { githubConnected, githubUser } = useAppStore();\n\n  return (\n    <Stack gap={18} style={{ maxWidth: 820 }}>\n      <SettingsPageHeader\n        title=\"GitHub\"\n        description=\"Manage GitHub device authentication, OAuth profiles, and scoped repository credentials.\"\n      />\n\n      {/* GitHub Cards */}\n      <ConnectGithubCard />\n      {githubConnected && githubUser && (\n        <RepoCredentialsCard />\n      )}\n    </Stack>\n  );\n}\n",
+  "composes": [
+    "Stack",
+    "ConnectGithubCard",
+    "RepoCredentialsCard",
+    "SettingsPageHeader"
+  ],
+  "src": "src/features/settings/pages/GithubPage.tsx",
+  "folder": "features/settings/pages"
+}

@@ -15,7 +15,7 @@ import { Row } from "@/shared/ui/layout/Row";
 // `@/` form, not `./layout/Spacer`: the module is RETIRED and now resolves through the record
 // fallback, which matches on the alias. A relative specifier bypasses that and finds nothing.
 import { Spacer } from "@/shared/ui/layout/Spacer";
-import { Slot } from "./layout/Slot";
+import { Slot } from "@/shared/ui/layout/Slot";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
@@ -29,7 +29,7 @@ import { Checkbox } from "@/shared/ui/controls/Checkbox";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { TextField, TextArea, SelectField } from "@/shared/ui/controls/Field";
-import { Option } from "./controls/Option";
+import { Option } from "@/shared/ui/controls/Option";
 import { BackButton } from "@/shared/ui/controls/BackButton";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
@@ -59,7 +59,7 @@ import { PaneGrid } from "@/shared/ui/layouts/PaneGrid";
 import { Sequence } from "@/shared/ui/layouts/Sequence";
 import { Tree } from "@/shared/ui/layouts/Tree";
 // #2421 gap-fill
-import { LabelChip } from "./data/LabelChip";
+import { LabelChip } from "@/shared/ui/data/LabelChip";
 import { ActivityFeed } from "@/shared/ui/data/ActivityFeed";
 import { Pane } from "@/shared/ui/overlay/Pane";
 import { TelemetryPanel, ItemBars, SplitBar } from "./charts/telemetry";

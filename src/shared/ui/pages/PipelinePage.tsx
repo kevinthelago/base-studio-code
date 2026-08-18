@@ -14,7 +14,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { KeyValueList, type KeyValueItem } from "@/shared/ui/data/KeyValueList";
 import { Sequence, type SequenceStep, type SequenceStatus } from "@/shared/ui/layouts/Sequence";
-import { PageHeader } from "./pageHeader";
+import { PageHeader } from "@/shared/ui/pages/pageHeader";
 
 /** One pipeline step — a SequenceStep plus the detail panel's content. */
 export interface PipelineStep extends SequenceStep {

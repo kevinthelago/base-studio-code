@@ -67,7 +67,7 @@ import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
 import type { PreviewState } from "./lib/componentPreview";
 import { ThemesMenu } from "./ThemesMenu";
 import { AnimationsMenu } from "./AnimationsMenu";
-import { PaletteStrip } from "./PaletteStrip";
+import { PaletteStrip } from "@/features/designs/PaletteStrip";
 import { PaletteToggle } from "@/features/designs/PaletteToggle";
 import { DEFAULT_THEME } from "@/shared/ui/kit";
 

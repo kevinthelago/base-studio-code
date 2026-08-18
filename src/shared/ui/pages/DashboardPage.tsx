@@ -16,7 +16,7 @@ import { Card } from "@/shared/ui/data/Card";
 import { StatCard, type StatTone } from "@/shared/ui/charts/primitives";
 import { LineArea, Donut, Legend, Spark, type LineSeries, type DonutSlice } from "@/shared/ui/charts/Charts";
 import { ActivityFeed, type ActivityItem } from "@/shared/ui/data/ActivityFeed";
-import { PageHeader } from "./pageHeader";
+import { PageHeader } from "@/shared/ui/pages/pageHeader";
 
 /** One KPI tile — StatCard's inputs plus an optional inline trend sparkline. */
 export interface DashboardStat {

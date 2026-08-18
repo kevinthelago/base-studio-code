@@ -15,7 +15,7 @@ import { DataTableHeader, DataTableRow } from "@/shared/ui/data/DataTableRow";
 import { KeyValueList } from "@/shared/ui/data/KeyValueList";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { SplitView } from "@/shared/ui/layouts/SplitView";
-import { PageHeader } from "./pageHeader";
+import { PageHeader } from "@/shared/ui/pages/pageHeader";
 import { usePageSelection } from "@/shared/ui/pages/useSelection";
 
 /** One table column — `key` addresses each row's `cells`, `label` heads it. */

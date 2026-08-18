@@ -13,7 +13,7 @@ import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Chip, type ChipTone } from "@/shared/ui/data/Chip";
 import { KeyValueList, type KeyValueItem } from "@/shared/ui/data/KeyValueList";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import { PageHeader } from "./pageHeader";
+import { PageHeader } from "@/shared/ui/pages/pageHeader";
 
 /** One labelled group of the record's fields — a SectionLabel over a KeyValueList. */
 export interface RecordSection {
