@@ -42,7 +42,7 @@
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { seedAnswersSpecifier } from "./lib/recordSource.mjs";
+import { seedAnswersSpecifier, seedMatchesFile, fileAsRecordSource } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const [, , target, ...flags] = process.argv;
@@ -155,6 +155,7 @@ const resolvesToTarget = (fromDir, relSpec) => {
 // the case that must be refused (making it shippable is what `promote-records` is for).
 {
   const seedProvides = new Set();
+  const seedSourceFor = new Map(); // provides → the record's source, for the body check below
   const walkSeed = (dir) => {
     if (!existsSync(dir)) return;
     for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -163,14 +164,20 @@ const resolvesToTarget = (fromDir, relSpec) => {
       if (!e.name.endsWith(".json")) continue;
       try {
         const r = JSON.parse(readFileSync(p, "utf8"));
-        if (typeof r?.provides === "string") seedProvides.add(r.provides.trim());
+        if (typeof r?.provides === "string") {
+          seedProvides.add(r.provides.trim());
+          if (r.srcText) seedSourceFor.set(r.provides.trim(), r.srcText);
+        }
       } catch { /* not a record */ }
     }
   };
   walkSeed(join(REPO, "src-tauri/data/components/app"));
   try {
     const algos = JSON.parse(readFileSync(join(REPO, "src-tauri/data/knowledge/algorithms.json"), "utf8"));
-    for (const im of algos.implementations ?? []) if (typeof im?.provides === "string") seedProvides.add(im.provides.trim());
+    for (const im of algos.implementations ?? []) if (typeof im?.provides === "string") {
+      seedProvides.add(im.provides.trim());
+      if (im.code) seedSourceFor.set(im.provides.trim(), im.code);
+    }
   } catch { /* no algorithms seed */ }
 
   const { ok, nearMiss: near } = seedAnswersSpecifier({ spec, seedProvides });
@@ -186,6 +193,28 @@ const resolvesToTarget = (fromDir, relSpec) => {
     );
     process.exit(1);
   }
+
+  // ...AND IS THAT ANSWER THE SAME MODULE? Answering the specifier is necessary and not sufficient: a
+  // seed record can respond to `@/x/y` while holding DIFFERENT code, and deleting the file then ships
+  // the record's behaviour under the file's name — silently, because it still compiles. That is the
+  // BODY-DIFFERS hazard `promote-records` refuses to promote through, and this step had no equivalent.
+  //
+  // It cost ten test failures in one sweep: `Dialog`, `ModalCard`, `ModalScrim` and `a11y` are all
+  // body-differs records that happened to be seeded, so the specifier check waved them through and
+  // retiring them swapped the app's focus management for the records' older copies.
+  const seedSrc = seedSourceFor.get(spec);
+  if (seedSrc !== undefined) {
+    const fileSrc = fileAsRecordSource(join(REPO, "src", self), self);
+    if (!seedMatchesFile({ seedSrcText: seedSrc, fileSrc }).ok) {
+      console.error(
+        `retire: REFUSED — the seed record providing ${spec} does NOT match this file. Deleting it would ` +
+          `ship the RECORD's behaviour under the file's name, and it would still compile.\n` +
+          `   Adjudicate first: refresh the record from the file, or decide the record is the app and ` +
+          `bring the file to it.`,
+      );
+      process.exit(1);
+    }
+  }
 }
 
 let rewrote = 0;
@@ -195,8 +224,14 @@ for (const f of files) {
   const before = readFileSync(abs, "utf8");
   const fromDir = f.replace(/\/[^/]+$/, "");
   // Both quote styles, and both `from '…'` and bare `import '…'` / `require('…')` forms.
+  //
+  // THE TRAILING SEGMENT IS OPTIONAL. `from "./"` and `from ".."` are real imports naming a DIRECTORY's
+  // barrel, and requiring a name after the slash meant they were never rewritten — so retiring
+  // `shared/ui/charts/index.ts` left `charts.test.tsx` importing `from "./"`, which typecheck then
+  // reported as `Cannot find module './'` once the file was already gone. `emit-records.mjs` learned
+  // this same lesson on carried tests and says so in its own regex; this one had not.
   const after = before.replace(
-    /((?:from|import|require|vi\.mock|vi\.doMock|vi\.unmock)\s*\(?\s*)(['"])(\.\.?\/[^'"]+)\2/g,
+    /((?:from|import|require|vi\.mock|vi\.doMock|vi\.unmock)\s*\(?\s*)(['"])(\.{1,2}(?:\/[^'"]*)?)\2/g,
     (whole, head, q, relSpec) => (resolvesToTarget(fromDir, relSpec) ? `${head}${q}${spec}${q}` : whole),
   );
   if (after !== before) {

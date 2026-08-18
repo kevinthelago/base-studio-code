@@ -29,7 +29,7 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 // together. Folded into the `features` stage, which every packaged blueprint carries; `test_ui` (which
 // none do, since #4249) keeps rendering it so a user blueprint carrying that stage still resolves.
 import { PlannerLibraryPane } from "@/features/planner/bodies/PlannerLibraryPane";
-import { FeaturesStageBody } from "../bodies/FeaturesStageBody";
+import { FeaturesStageBody } from "@/features/planner/bodies/FeaturesStageBody";
 import { PreviewPaneShell } from "@/features/planner/preview/PreviewPaneShell";
 import { useAppStore } from "@/store";
 

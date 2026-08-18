@@ -1,7 +1,7 @@
 // The keyboard-activation bundle (#3775) and its modifier guard (#4134).
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { clickable, onEnterOrSpace } from "./a11y";
+import { clickable, onEnterOrSpace } from "@/shared/ui/a11y";
 
 describe("onEnterOrSpace", () => {
   it("activates on an unmodified Enter or Space, and preventDefaults", () => {

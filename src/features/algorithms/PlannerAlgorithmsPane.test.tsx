@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { PlannerAlgorithmsPane } from "./PlannerAlgorithmsPane";
+import { PlannerAlgorithmsPane } from "@/features/algorithms/PlannerAlgorithmsPane";
 import { KNOWLEDGE, kitTechs, kitImpls } from "./lib/knowledge";
 import { useAppStore } from "@/store";
 

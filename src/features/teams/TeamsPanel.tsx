@@ -23,7 +23,7 @@ import { RailSection } from "@/shared/ui/layouts/RailSection";
 import { SearchField } from "@/shared/ui/controls/SearchField";
 import { useRailSections } from "@/shared/hooks/useRailSections";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
-import { TeamsCanvas, type Selection } from "./TeamsCanvas";
+import { TeamsCanvas, type Selection } from "@/features/teams/TeamsCanvas";
 import { GraphLegend, type LegendNode } from "@/shared/ui/layouts/GraphLegend";
 import { TeamsOverview } from "@/features/teams/TeamsOverview";
 import { TeamsInspector } from "./TeamsInspector";

@@ -6,7 +6,7 @@ export {
   LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars,
   type ChartTip, type LineSeries, type BarGroup, type DonutSlice,
   type HBarRow, type SwimLane, type SwimEvent, type SwimMark, type LegendItem, type StackedDay,
-} from "./Charts";
+} from "@/shared/ui/charts/Charts";
 export {
   fmt, StatCard, CardHead, RangeToggle, Avatar, useTip, type StatTone,
 } from "@/shared/ui/charts/primitives";

@@ -31,6 +31,17 @@ import { fileURLToPath } from "node:url";
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const APPLY = argv.includes("--apply");
+/** Author a NEW module record even when exactly one component record points at the file — for the case
+ *  where that record is not the module either (it would drop an export the module does not have). */
+const NEW_RECORD = argv.includes("--new-record");
+
+/** The id for a module record authored beside per-component ones. Derived from the FILE, because that is
+ *  what it stands for, and suffixed so it can never collide with a component record of the same name. */
+const moduleIdFor = (rel, recs) => {
+  const stem = rel.replace(/\.tsx?$/, "").split("/").pop().replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
+  const base = `${stem}-module`;
+  return recs.some((r) => r.id === base) ? `${stem}-module-src` : base;
+};
 const targets = argv.filter((a) => !a.startsWith("--"));
 if (!targets.length) {
   console.error("usage: node scripts/lift-component-module.mjs <src-relative-path>… [--apply]");
@@ -92,16 +103,25 @@ try {
 
     const recs = bySrc.get(srcRel) ?? [];
     if (!recs.length) { skipped.push(`${rel} — no component record points at it (\`src\`); author one first`); continue; }
-    if (recs.length > 1) {
-      // REFUSED rather than picked. Which of several per-component records becomes the module is not a
-      // choice a tool should make silently: the others go on claiming their own identity while one of
-      // them quietly holds the whole file, and a consumer asking for `@/components/<sibling>` gets a
-      // module whose export pick may not be that component at all. Such a file wants ONE new
-      // module-shaped record authored beside its component records — a deliberate act.
-      skipped.push(`${rel} — ${recs.length} component records point at this file (${recs.map((r) => r.id).join(", ")}); which one is THE MODULE is not mine to guess`);
+
+    // A FILE WITH SEVERAL COMPONENT RECORDS GETS A NEW ONE, it does not have one of them promoted into
+    // the module. Picking silently is what a `Map` keyed by `src` used to do — it kept whichever came
+    // last, so `telemetrypanel` became the whole of `telemetry.tsx` while `itembars` and `splitbar` went
+    // on claiming their own identity, and a consumer asking for `@/components/splitbar` would have got a
+    // module whose export pick is not that component.
+    //
+    // The two things are genuinely different and the store can hold both: `AppBanners.tsx` is NINE
+    // banner components AND one module. The components keep answering `@/components/<id>`; a separate
+    // module record answers `@/app/AppBanners`. Nothing is overwritten, so no component record loses an
+    // export it declares — which is also what unblocks the adopt-refusals, where the existing record was
+    // never the module either.
+    const wantsNewRecord = recs.length > 1 || NEW_RECORD;
+    const rec = wantsNewRecord ? null : recs[0];
+    const moduleId = wantsNewRecord ? moduleIdFor(rel, recs) : recs[0].id;
+    if (wantsNewRecord && components.some((c) => c.id === moduleId && c.src !== srcRel)) {
+      skipped.push(`${rel} — the module id \`${moduleId}\` is already taken by a different module`);
       continue;
     }
-    const rec = recs[0];
 
     let out;
     try {
@@ -119,22 +139,34 @@ try {
     }
     if (!cand.provides) { skipped.push(`${rel} — the harvest derived no \`provides\``); continue; }
 
-    console.log(`  ${APPLY ? "lift" : "would lift"} ${rec.id.padEnd(28)} ${cand.provides}`);
+    const how = wantsNewRecord ? `NEW record ${moduleId}` : moduleId;
+    console.log(`  ${APPLY ? "lift" : "would lift"} ${how.padEnd(34)} ${cand.provides}`);
     if (!APPLY) { lifted++; continue; }
 
     // `set-src` for the source (the whole-record stdin path has a ~10KB ceiling), then a tiny merge for
     // `provides`. Two small writes rather than one large one, and each is independently revertible.
+    // A NEW record needs the identity fields first, so `set` comes before `set-src` in that case.
     //
     // A REFUSED WRITE IS A FINDING, NOT A CRASH. The store runs its own gates — most sharply, it will
     // not store a `role: page` record that cannot render ("a page record IS the page; there is no source
     // file behind it, so this would ship a blank screen"). Letting that throw killed a 40-item batch on
     // its first refusal and lost the other 39, so each write is caught and reported per record.
-    const f = join(tmp, `${rec.id.replace(/[^\w.-]/g, "_")}.tsx`);
+    const f = join(tmp, `${moduleId.replace(/[^\w.-]/g, "_")}.tsx`);
     writeFileSync(f, cand.code);
     try {
-      bsc(["ui", "set-src", rec.id], readFileSync(f, "utf8"));
-      bsc(["ui", "set", "--by", "claude", "--note", "module lift: the faithful module, not the preview derivative"],
-        JSON.stringify({ id: rec.id, provides: cand.provides, src: srcRel }));
+      if (wantsNewRecord) {
+        // `role: composite`, never `page` — a module record is the FILE, and the store's page gate
+        // rightly refuses a page that cannot render standalone. The per-component records keep their
+        // own roles; this one only has to answer the specifier.
+        bsc(["ui", "set", "--by", "claude", "--note", "module record: this file is also a module, beside its component records"],
+          JSON.stringify({ id: moduleId, name: moduleId, kitId: recs[0].kitId ?? "base-studio-code", role: "composite",
+            provides: cand.provides, src: srcRel, folder: recs[0].folder, srcText: "export {};\n" }));
+        bsc(["ui", "set-src", moduleId], readFileSync(f, "utf8"));
+      } else {
+        bsc(["ui", "set-src", rec.id], readFileSync(f, "utf8"));
+        bsc(["ui", "set", "--by", "claude", "--note", "module lift: the faithful module, not the preview derivative"],
+          JSON.stringify({ id: rec.id, provides: cand.provides, src: srcRel }));
+      }
       lifted++;
     } catch (e) {
       const why = (e.stderr?.toString() || e.message).trim().split("\n")[0].replace(/^bsc:\s*/, "");

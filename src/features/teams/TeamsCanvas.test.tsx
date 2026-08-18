@@ -8,7 +8,7 @@
 // (and in the inspector's PersonaEditor) — the truncation is purely visual, by design.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { TeamsCanvas } from "./TeamsCanvas";
+import { TeamsCanvas } from "@/features/teams/TeamsCanvas";
 import { NODE_SIZE } from "./lib/orgLayout";
 import type { Team } from "./lib/team";
 import type { Persona } from "@/features/personas";

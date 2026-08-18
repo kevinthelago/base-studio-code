@@ -44,7 +44,7 @@ import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { DataTableRow } from "@/shared/ui/data/DataTableRow";
 import { RoleTierChips } from "@/shared/ui/data/RoleTierChips";
 import { StatCard } from "@/shared/ui/charts/primitives";
-import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars } from "./charts/Charts";
+import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars } from "@/shared/ui/charts/Charts";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
 // #4172 — failure containment, composable from a spec.

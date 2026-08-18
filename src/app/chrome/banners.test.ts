@@ -1,16 +1,27 @@
 // The notice registry (#54) — the list `AppBanners` renders from and `bsc navigate dismiss` validates
 // against. Its whole value is that those two cannot drift, so the drift is what these tests pin.
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { NOTICES, isNotice, blanketDismissable, refuseDismissal } from "@/app/chrome/banners";
+
+/** `AppBanners` as it SHIPS. It used to be read off `../AppBanners.tsx` with `readFileSync`; the module
+ *  is a record now, so the file is gone and the packaged record is the thing that actually mounts. The
+ *  assertion is unchanged — only where the truth is read from. */
+const appBannersSource = (): string => {
+  const seeds = import.meta.glob<{ default: { provides?: string; srcText?: string } }>(
+    "@data/components/app/**/*.json",
+    { eager: true },
+  );
+  const rec = Object.values(seeds).map((m) => m.default).find((r) => r?.provides === "@/app/AppBanners");
+  return rec?.srcText ?? "";
+};
 
 describe("the notice registry", () => {
   it("names every banner the stack renders, and nothing it does not", () => {
     // The registry is only trustworthy if it tracks the component that actually mounts them — a banner
     // added to `AppBanners` without an id here is silently un-dismissable, which is the exact gap this
-    // work closed. Read the real file rather than restating the list.
-    const src = readFileSync(resolve(__dirname, "../AppBanners.tsx"), "utf8");
+    // work closed. Read the real SOURCE rather than restating the list.
+    const src = appBannersSource();
+    expect(src, "the packaged AppBanners record was not found").not.toBe("");
     const gated = Array.from(src.matchAll(/show\("([a-z-]+)"\)\s*&&/g), (m) => m[1]).sort();
     expect(gated).toEqual(NOTICES.map((n) => n.id).sort());
   });

@@ -223,3 +223,28 @@ export function seedAnswersSpecifier({ spec, seedProvides }) {
   if (all.includes(spec)) return { ok: true, nearMiss: [] };
   return { ok: false, nearMiss: all.filter((s) => s.toLowerCase() === spec.toLowerCase()) };
 }
+
+/**
+ * ...and is that answer the SAME MODULE as the file about to be deleted?
+ *
+ * `seedAnswersSpecifier` asks whether anything will respond to `@/x/y`. That is necessary and NOT
+ * sufficient: a seed record can answer the specifier while holding different code, and retiring the
+ * file then ships the RECORD's behaviour under the file's name — silently, because it still compiles.
+ * That is the BODY-DIFFERS hazard `promote-records` refuses to promote through, and the retire step had
+ * no equivalent, so a divergent record that happened to be seeded sailed past.
+ *
+ * It cost ten test failures in one sweep: `Dialog`, `ModalCard`, `ModalScrim` and `a11y` are all
+ * body-differs records, and retiring them replaced the app's focus management with the records' older
+ * copies — eight `modalFocus` assertions, plus a banner registry and the retired-tests guard.
+ *
+ * Compared exactly as the promotion gate compares, through `splitPreamble` + `codeOnly`, so the two
+ * cannot disagree about which files are safe.
+ *
+ * @param {{ seedSrcText: string, fileSrc: string }} input
+ * @returns {{ ok: boolean }}
+ */
+export function seedMatchesFile({ seedSrcText, fileSrc }) {
+  const file = norm(fileSrc);
+  const body = splitPreamble(norm(seedSrcText ?? ""), file)[1];
+  return { ok: body === file || codeOnly(body) === codeOnly(file) };
+}

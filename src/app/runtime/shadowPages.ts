@@ -214,7 +214,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "glancepage", file: "/src/features/glance/GlanceWorkspace.tsx" },
       { recordId: "glance-canvas", file: "/src/features/glance/GlanceCanvas.tsx" },
       { recordId: "glance-stream-morph", file: "/src/features/glance/GlanceStreamMorph.tsx" },
-      { recordId: "glance-preview-morph", file: "/src/features/glance/GlancePreviewMorph.tsx" },
+      { recordId: "glance-preview-morph", file: null }, // RETIRED — the record is the only copy,
       { recordId: "glance-node", file: null }, // RETIRED — the record is the only copy,
       { recordId: "glance-plan-screen", file: null }, // RETIRED — the record is the only copy,
       { recordId: "glance-chat-dock", file: "/src/features/glance/GlanceChatDock.tsx" },
@@ -356,7 +356,7 @@ const FILE_SOURCES = import.meta.glob<string>(
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
     "/src/features/algorithms/AlgorithmsWorkspace.tsx",
     "/src/app/console/panes/PaneMenu.tsx",
-    "/src/features/glance/{GlanceWorkspace,GlanceCanvas,GlanceStreamMorph,GlancePreviewMorph,GlanceChatDock}.tsx",
+    "/src/features/glance/{GlanceWorkspace,GlanceCanvas,GlanceStreamMorph,GlanceChatDock}.tsx",
     // Empty/GitHubSummary/Pulse dropped with their entries — the glob and the catalogue are pinned to
     // each other BOTH ways by `shadowPages.test.ts`, so a path released for deletion has to leave both.
     // Schedules.tsx dropped with its entry — automations now contributes no file baseline at all.

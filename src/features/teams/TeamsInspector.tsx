@@ -17,7 +17,7 @@ import type { Persona } from "@/features/personas";
 import { RELATIONSHIP_ARCHETYPES, archetypeById, formById, type Team } from "./lib/team";
 import { positionDisplay, positionComms, hueColor } from "@/features/teams/lib/orgView";
 import { FormChip, FormLane } from "@/features/teams/components";
-import type { Selection } from "./TeamsCanvas";
+import type { Selection } from "@/features/teams/TeamsCanvas";
 
 /** The inspector's block header — the shared SectionLabel (`right` slot, #2420) at the org
  *  designer's `.ulabel` size, with the block's standard 9px bottom gap baked in. */
