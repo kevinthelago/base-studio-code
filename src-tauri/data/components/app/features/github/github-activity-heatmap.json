@@ -11,6 +11,6 @@
     "Text"
   ],
   "folder": "features/github",
-  "provides": "@/components/github-activity-heatmap",
+  "provides": "@/features/github/GitHubActivityHeatmap",
   "srcRetired": "src/features/github/summary/ActivityHeatmap.tsx"
 }

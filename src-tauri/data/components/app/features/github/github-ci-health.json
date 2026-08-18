@@ -13,6 +13,6 @@
     "Text"
   ],
   "folder": "features/github",
-  "provides": "@/components/github-ci-health",
+  "provides": "@/features/github/GitHubCIHealth",
   "srcRetired": "src/features/github/summary/CIHealthCard.tsx"
 }

@@ -15,6 +15,6 @@
     "Text"
   ],
   "folder": "features/github",
-  "provides": "@/components/github-repos-grid",
+  "provides": "@/features/github/GitHubReposGrid",
   "srcRetired": "src/features/github/summary/ReposGrid.tsx"
 }
