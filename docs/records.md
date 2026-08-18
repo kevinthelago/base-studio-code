@@ -112,7 +112,7 @@ Two properties of that plugin are load-bearing and non-obvious:
 A record is compiled and required by the runtime loader, not just bundled. That imposes limits a file never
 had. Every one of these has cost a real failure:
 
-- **Import relatively.** Records carry absolute `@/…` specifiers. `retire-module.mjs` rewrites importers.
+- **Import relatively.** Records carry absolute `@/…` specifiers — see [below](#a-record-may-not-import-relatively-both-copies).
 - **Import a stylesheet.** Retiring 10 modules silently stopped 10 CSS files from shipping, with every gate
   green — `main.tsx` now globs `@/**/*.css` to compensate, guarded by `styleReachability.test.ts`.
 - **Use `import.meta.glob`.** A Vite build-time transform; esbuild emits it verbatim and it is not a
@@ -145,6 +145,46 @@ And two whole categories of module must stay files:
   Retiring one turns that guarantee back into a claim.
 
 ---
+
+## A record may not import relatively (both copies)
+
+```bash
+npm test -- src/app/runtime/recordImports.test.ts   # the SEED — in git, runs on a fresh clone
+node scripts/check-record-imports.mjs               # the STORE — per-machine; exit 1 on any finding
+node scripts/check-record-imports.mjs --fix         # ...and repair it
+```
+
+`makeRequire` routes a specifier to the registry under its **literal key**, so `./useDockBack` needs a
+registration exactly like an absolute one — and `provides`, which matches the exact specifier, can never
+reach it. A relative specifier in a record therefore only ever *appeared* to work, and only while the
+neighbour was still a file a bundler could resolve.
+
+**The store is the copy that breaks the app, and the one a test cannot cover.** A migrated page renders
+from the store, not the seed, so that is where a bad specifier is visible — and a test reading
+`~/.base-studio-code` would be vacuous on a fresh clone. Hence two runners over one scanner
+(`relativeSpecifiers` in `scripts/lib/recordSource.mjs`, shared with `emit-records.mjs` and
+`retire-module.mjs` so the guard and the tools that rewrite cannot disagree).
+
+Measured the first time both ran: the seed was clean, the store held **57 relative specifiers across 24
+records**, and every gate was green. `platformBoundary.test.ts` had rejected the rule since #4232 but
+read one surface — seed *components*, `from "…"` statements only — so algorithm implementations, the
+inline `import("../x").Type` form, and the whole store sat outside it.
+
+> **Repairing the imports alone would have made it worse.** `pruneUnsatisfiableOverrides` declines an
+> override *only while* its closure cannot resolve, so absolutizing the specifiers PROMOTES a record
+> from "declined, falls back to the bundled module" to "active global override". Eleven of the 24
+> disagreed with the file they shadow and seven of those carried `provides` — every one a preview-shaped
+> derivative: `issuerow` and `issuedrawer` inject a `SAMPLE_ISSUE`, `projectssummary` vendors a fake
+> `useProjectsSummaryData` returning four hardcoded projects, `kitrenderer` swaps the real `primitiveFor`
+> for `componentFor`. Activating them puts sample data on live screens. So `--fix` **drops `provides`**
+> from a record whose body differs from its live file, which is just the rule below applied — and it
+> drops it *before* rewriting, because the app is running while the script writes.
+
+**A carried test is the one exemption**, deliberately. It is harvested beside its module saying
+`./LabelChip`, and `emit-records.mjs` both rewrites that on emit *and* uses it to verify the test is
+paired with the right module — so the relative form is load-bearing at rest. What must hold is that
+nothing relative survives into `.bsc-records/`, which `recordImports.test.ts` asserts against
+`planRecords()` rather than re-deriving.
 
 ## `provides` is a GLOBAL override
 
@@ -181,7 +221,7 @@ node scripts/promote-records.mjs --store <ui-dump> --impls <impl-dump> [--apply]
 node scripts/retire-module.mjs <src-relative-path>
 node scripts/sync-shadow-catalogue.mjs          # a catalogued page must become `file: null`
 node scripts/fix-stale-mocks.mjs                # see below
-node scripts/check-record-imports.mjs           # the STORE's half of the no-relative-imports rule
+node scripts/check-record-imports.mjs           # the RECORD half — `retire-module.mjs` runs this too
 node scripts/dev-boot-check.mjs                 # boots vite + Chromium; catches what no test does
 ```
 

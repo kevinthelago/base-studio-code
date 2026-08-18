@@ -10,6 +10,88 @@ import { readFileSync } from "node:fs";
 /** LF, no trailing whitespace — the byte form every comparison here works in. */
 export const norm = (s) => s.replace(/\r\n/g, "\n").trimEnd();
 
+// ── relative specifiers ───────────────────────────────────────────────────────────────────────────
+// ONE definition of "a relative specifier a record carries", shared by the guard that rejects them
+// (`platformBoundary.test.ts`), the sweep that repairs them (`check-record-imports.mjs`), the
+// retirement that must not create new ones (`retire-module.mjs`) and the refresh that absolutizes a
+// file into record form (`absolutizeImports`, below). Four readers, one regex — for the same reason
+// this module exists at all: a guard that reads imports differently from the fix is worse than either
+// being wrong alone.
+
+/** A STATEMENT import/export. Line-ANCHORED, which is what makes it prose-immune with no lexer: a `//`
+ *  line and a `*` doc-comment continuation both fail `^[ \t]*(?:import|export)`. The clause is
+ *  `[^"';]*?` so it may span lines (a multi-line named-import list) but may cross neither a quote nor a
+ *  statement end. */
+const STATEMENT_SPEC = /^[ \t]*(?:import|export)\s+(?:type\s+)?[^"';]*?\s*from\s*["']([^"']+)["']/gm;
+/** A bare side-effect import — `import "./x.css"`. No clause, still a `require` at runtime. */
+const BARE_SPEC = /^[ \t]*import\s*["']([^"']+)["']/gm;
+/** The INLINE forms, which cannot be line-anchored: `import("./x").Type` (the type-position form that a
+ *  `from "…"` sweep leaves behind — it was the single remaining typecheck error the last time one ran),
+ *  a dynamic `import("./x")`, a `require("./x")`, and `vi.mock("./x")` in a carried test. */
+const INLINE_SPEC = /\b(?:import|require|vi\.(?:mock|doMock|unmock))\s*\(\s*["']([^"']+)["']/g;
+
+/** The line `index` falls on — how the inline scan tells code from prose. */
+const lineAt = (src, index) => {
+  const end = src.indexOf("\n", index);
+  return src.slice(src.lastIndexOf("\n", index) + 1, end === -1 ? undefined : end);
+};
+
+/** A line whose specifier is PROSE, not code: a `//` comment or a `*` / `/*` block-comment line.
+ *
+ *  Measured over all 2,405 record sources, this is exactly where every inline false positive lives —
+ *  `classifyConfig`'s `{@link import("../stages/stageGate").PlanSignals}` and `pageBinding`'s
+ *  ``` `require("./y")` ``` are both doc comments explaining the loader, and rewriting them would make
+ *  the prose describe something that no longer happens. It deliberately does NOT try to be a lexer: a
+ *  TRAILING `// import("./x")` on a code line is still scanned, and a comment-only miss is harmless
+ *  because a comment cannot fail at runtime. Hand-rolled comment STRIPPING was tried first and is what
+ *  this replaces — it desynchronized on a regex literal containing quotes
+ *  (`/^[ \t]*(import|export)…["']([^"']+)["']/`), after which the real doc comment below it was read as
+ *  code. Anchoring needs no such state. */
+const isProseLine = (line) => /^[ \t]*(?:\*|\/\/|\/\*)/.test(line);
+
+/**
+ * Every RELATIVE specifier in `src`, as `{ spec, at }` — `at` being the index of the specifier text
+ * itself, so a rewriter can splice without re-finding it.
+ *
+ * A record may not import relatively AT ALL, whichever form it takes. The runtime loader routes a
+ * specifier to the registry under its literal key, so `./x` needs a registration exactly like an
+ * absolute one and `provides` (which matches the exact specifier) can never reach it. That is the rule
+ * `platformBoundary.test.ts` states; this is what finds the violations.
+ */
+export function relativeSpecifiers(src) {
+  const out = [];
+  for (const [re, prose] of [[STATEMENT_SPEC, false], [BARE_SPEC, false], [INLINE_SPEC, true]]) {
+    re.lastIndex = 0;
+    for (const m of src.matchAll(re)) {
+      if (!m[1].startsWith(".")) continue;
+      if (prose && isProseLine(lineAt(src, m.index))) continue;
+      out.push({ spec: m[1], at: m.index + m[0].lastIndexOf(m[1]) });
+    }
+  }
+  // De-duplicate by position: the bare and statement patterns can both claim `import "./x"`.
+  const seen = new Set();
+  return out.filter((s) => !seen.has(s.at) && seen.add(s.at)).sort((a, b) => a.at - b.at);
+}
+
+/** `./x` resolved against the DIRECTORY it is imported from, as an `@/…` specifier.
+ *
+ *  The trailing segment is allowed to be absent: `from "./"` and `from ".."` are real imports naming a
+ *  directory's barrel — `@/components/security-flow` carries a test doing exactly that, and it was the
+ *  one mispair that survived a first version of the emitter's regex requiring a name after the slash. */
+export function aliasForDir(fromDir, spec) {
+  const out = [];
+  for (const seg of `${fromDir}/${spec}`.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
+  }
+  return `@/${out.join("/").replace(/^src\//, "")}`;
+}
+
+/** `./x` resolved against `fromRel` — a FILE path, relative to the repo root or to `src/`. */
+export const aliasFor = (fromRel, spec) =>
+  aliasForDir(fromRel.includes("/") ? fromRel.slice(0, fromRel.lastIndexOf("/")) : "", spec);
+
 /**
  * Rewrite every RELATIVE import to its absolute `@/…` form, resolved against `fromRel` (the file's path
  * relative to `src/`).
@@ -25,19 +107,12 @@ export const norm = (s) => s.replace(/\r\n/g, "\n").trimEnd();
  * identical. Comparing the raw file called 21 records "body differs" that were the same module.
  */
 export function absolutizeImports(src, fromRel) {
-  const fromDir = fromRel.includes("/") ? fromRel.slice(0, fromRel.lastIndexOf("/")) : "";
-  return src.replace(
-    /((?:from|import|require)\s*\(?\s*)(['"])(\.\.?\/[^'"]+)\2/g,
-    (whole, head, q, relSpec) => {
-      const out = [];
-      for (const seg of `${fromDir}/${relSpec}`.split("/")) {
-        if (seg === "" || seg === ".") continue;
-        if (seg === "..") out.pop();
-        else out.push(seg);
-      }
-      return `${head}${q}@/${out.join("/")}${q}`;
-    },
-  );
+  let out = src;
+  // Back to front, so an earlier splice cannot shift a later index.
+  for (const { spec, at } of relativeSpecifiers(src).reverse()) {
+    out = out.slice(0, at) + aliasFor(fromRel, spec) + out.slice(at + spec.length);
+  }
+  return out;
 }
 
 /**
@@ -53,7 +128,7 @@ export function absolutizeImports(src, fromRel) {
  * and re-adding them broke 10 records. The default gate stayed GREEN — it was the e2e mount sweep that
  * failed, because this is a property of the module the loader builds, not of the source it is built from.
  */
-const dropAssetImports = (src) =>
+export const dropAssetImports = (src) =>
   src.replace(/^[ \t]*import\s+['"][^'"]+\.(?:css|scss|sass|less|svg|png|jpg|jpeg|gif|webp)['"];?[ \t]*\n?/gm, "");
 
 /** A file read as a record would hold it: LF-normalized, asset imports dropped, imports absolutized. */
