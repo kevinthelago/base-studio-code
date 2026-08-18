@@ -22,7 +22,7 @@ import {
   hasScopedWriteCarveOut,
   restrictedRoleCommands,
   isRestrictedRole,
-} from "./sessionRoles";
+} from "@/shared/lib/session/sessionRoles";
 
 describe("scopeWriteGlobs (#1297)", () => {
   it("falls back to the role default when the pane has no owned globs (planner ⇒ plan files)", () => {

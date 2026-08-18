@@ -6,7 +6,7 @@
 // so the calling code can update the store.
 
 import type { CanonicalFile, PlanMeta, CanonicalSectionState } from "@/features/planner/lib/plannerCore/types";
-import { projectId as mintProjectId } from "../plannerCore/ids";
+import { projectId as mintProjectId } from "@/features/planner/lib/plannerCore/ids";
 import { parseSkipped } from "@/features/planner/stages/planTopics";
 
 /** In-memory representation of the plan hub's current state (from the Zustand store). */

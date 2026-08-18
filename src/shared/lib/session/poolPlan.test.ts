@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planRequestSessions, type RequestSession, type RequestRow } from "./poolPlan";
+import { planRequestSessions, type RequestSession, type RequestRow } from "@/shared/lib/session/poolPlan";
 import { requestPaneId } from "@/shared/lib/session/requestSpawn";
 
 // #one-request-one-debug-session — the 1:1 plan. Every CLAIMED request holds exactly one session, named

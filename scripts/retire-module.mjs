@@ -52,7 +52,12 @@ if (!target) {
 }
 
 const rel = target.replace(/\.(tsx?|jsx?)$/, "").replace(/^src\//, "");
-const spec = `@/${rel}`;
+// A BARREL IS ADDRESSED BY ITS DIRECTORY. `lib/plannerCore/index.ts` answers `@/features/planner/lib/plannerCore`,
+// never `…/plannerCore/index` — that is what `specOf` in `promote-records.mjs` derives, so it is what the
+// record actually `provides`. Emitting the `/index` form rewrote three importers onto a specifier nothing
+// answers, and typecheck caught it as TS2307 only after the file was already deleted.
+const relSpecifier = rel.replace(/\/index$/, "");
+const spec = `@/${relSpecifier}`;
 const name = rel.split("/").pop();
 
 // NEVER RETIRABLE: the algorithms SEED modules exist precisely to BE files. A packaged node's `code` is
@@ -98,7 +103,11 @@ const resolvesToTarget = (fromDir, relSpec) => {
     if (p === "..") out.pop();
     else out.push(p);
   }
-  return out.join("/") === rel;
+  // BOTH SPELLINGS reach a barrel: `./lib/plannerCore` (the directory) and `./lib/plannerCore/index`
+  // (the file). Matching only the second left every directory-form importer untouched — which is the
+  // half that actually breaks, since the directory form is what consumers normally write.
+  const hit = out.join("/");
+  return hit === rel || hit === relSpecifier;
 };
 
 let rewrote = 0;

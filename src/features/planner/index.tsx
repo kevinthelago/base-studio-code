@@ -35,7 +35,7 @@ import { PROJECT_MODES } from "./list/projectModes";
 
 // #1545: public API for cross-feature consumers. tunnel reaches plannerCore for CanonicalFile;
 // components reaches the gist manifest/publish helpers (included for barrel completeness).
-export type { CanonicalFile } from "./lib/plannerCore";
+export type { CanonicalFile } from "@/features/planner/lib/plannerCore";
 // #3760: the `plan` store_state builder lives in the planner feature (the plan domain is planner-
 // published, not projected by useStoreProjector); exposed so the tunnel payload-parity harness can
 // cover it like every other domain.

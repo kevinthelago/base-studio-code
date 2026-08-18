@@ -26,6 +26,7 @@ import { spawnSync } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { norm, codeOnly, splitPreamble, fileAsRecordSource, runtimeImports, seedAdoption } from "./lib/recordSource.mjs";
+import { libraryCarryClosure } from "./lib/graphClosure.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
@@ -227,9 +228,32 @@ for (let pass = 0; pass < 20; pass++) {
 //
 // A FIXPOINT, not one pass: dropping an impl can dangle another that composed it, so this repeats until
 // nothing more falls out — the same shape as the compile check above.
+// CARRY the LIBRARY records a promotion composes, instead of refusing the promotion (#close-the-composes-closure).
+//
+// Most refusals above are ordering that settles itself. The rest were not: 10 impls were blocked on
+// function records harvested out of the SAME FILE as their consumer (`fnv1a32.ts` from `hash.ts`,
+// `merge-role-defaults.ts` from `roleModel.ts`), and those compose the TypeScript language PRIMITIVES —
+// of which the seed held exactly one, `typescript.number`, while the store held six. So the biggest wall
+// on the board was mostly a seed gap in the language kit's base.
+//
+// A record with NO `provides` answers no specifier, so shipping it cannot change what the app renders;
+// it only makes the graph's own references resolve. One WITH `provides` is a global override and is
+// never carried — it earns its place through the gate above. `libraryCarryClosure` holds that rule, and
+// its unit tests hold the refusals.
+const carried = [];
+{
+  const seeded = new Set((algorithms.implementations ?? []).map((i) => i.id));
+  for (const p of promote.impl) seeded.add(p.rec.id);
+  const byId = new Map(impls.map((i) => [i.id, i]));
+  const roots = promote.impl.flatMap((p) => p.rec.composes ?? []).filter((c) => !seeded.has(c));
+  const { carry } = libraryCarryClosure({ roots, byId, seeded });
+  for (const id of carry) carried.push(byId.get(id));
+}
+
 {
   const implIds = new Set((algorithms.implementations ?? []).map((i) => i.id));
   for (const p of promote.impl) implIds.add(p.rec.id);
+  for (const c of carried) implIds.add(c.id);
   for (let settled = false; !settled; ) {
     settled = true;
     const keep = [];
@@ -247,7 +271,21 @@ for (let pass = 0; pass < 20; pass++) {
   }
 }
 
-console.log(`promotable: ${promote.component.length} component(s) + ${promote.impl.length} impl(s)`);
+// Recompute the carry from what SURVIVED. The fixed point above can drop an impl for an unrelated
+// reason, and a library record carried only for that impl would then be seeded with nothing referencing
+// it — valid, but noise in a file whose whole job is to be reviewable.
+const carriedKept = [];
+{
+  const seeded = new Set((algorithms.implementations ?? []).map((i) => i.id));
+  for (const p of promote.impl) seeded.add(p.rec.id);
+  const byId = new Map(impls.map((i) => [i.id, i]));
+  const roots = promote.impl.flatMap((p) => p.rec.composes ?? []).filter((c) => !seeded.has(c));
+  for (const id of libraryCarryClosure({ roots, byId, seeded }).carry) carriedKept.push(byId.get(id));
+}
+
+console.log(`promotable: ${promote.component.length} component(s) + ${promote.impl.length} impl(s)` +
+  (carriedKept.length ? ` (+ ${carriedKept.length} library record(s) carried to close their composes)` : ""));
+for (const c of carriedKept) console.log(`   carry: ${c.id}${c.role === "primitive" ? "  [language primitive]" : ""}`);
 console.log(`skipped — already seeded ${skipped.alreadySeeded}, no record ${skipped.noRecord}, body differs ${skipped.bodyDiffers}, build-time-only ${skipped.buildTimeOnly.length}, role:page ${skipped.pageRecord.length}, unresolvable ${skipped.unresolvable.length}, uncompilable ${skipped.uncompilable.length}, unclosed-composes ${skipped.unclosedComposes.length}`);
 for (const f of skipped.buildTimeOnly) console.log(`   import.meta.glob: ${f}`);
 for (const f of skipped.pageRecord) console.log(`   role:page (catalogue it in shadowPages first): ${f}`);
@@ -329,9 +367,11 @@ for (const { rec, file } of promote.component) {
 
 // IMPLS — appended to the one algorithms document, sorted by id so the file stays reviewable and a
 // re-run produces the same bytes.
-if (promote.impl.length) {
-  const KEEP = ["code", "composes", "domain", "folder", "id", "name", "provides", "role", "src", "tech"];
-  for (const { rec } of promote.impl) {
+if (promote.impl.length || carriedKept.length) {
+  const KEEP = ["code", "composes", "domain", "folder", "id", "name", "provides", "ref", "role", "src", "tech"];
+  // The CARRIED library records first — they are what the promoted impls' `composes` point at, and
+  // `knowledge.test.ts` demands every one of those ids be a real impl in the seed.
+  for (const rec of [...carriedKept, ...promote.impl.map((p) => p.rec)]) {
     const entry = {};
     for (const k of KEEP) if (rec[k] !== undefined) entry[k] = rec[k];
     if (!Array.isArray(entry.composes)) entry.composes = [];

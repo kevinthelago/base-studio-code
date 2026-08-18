@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { ROLE_DEFAULTS, PLAN_WRITE_GLOBS, DOC_GLOBS, DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, roleDeniedCommands, sessionScopes, canWritePath } from "./sessionRoles";
-import { mergeRoleDefaults, roleCapability, restrictedRoleCommands, type RoleCapability } from "./roleModel";
+import { ROLE_DEFAULTS, PLAN_WRITE_GLOBS, DOC_GLOBS, DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, roleDeniedCommands, sessionScopes, canWritePath } from "@/shared/lib/session/sessionRoles";
+import { mergeRoleDefaults, roleCapability, restrictedRoleCommands, type RoleCapability } from "@/shared/lib/session/roleModel";
 
 // Security guard for the externalized role→capability table (@data/permissions/role-capabilities.json,
 // #2027 P1). The role gate is least-privilege; a JSON edit that WIDENS a role's access (e.g. gives a

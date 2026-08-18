@@ -5,7 +5,7 @@ import {
   excludeCommonsFromOwns,
   UNION_MERGE_COMMONS,
 } from "@/shared/lib/session/commons";
-import { matchGlob } from "./sessionRoles";
+import { matchGlob } from "@/shared/lib/session/sessionRoles";
 
 describe("commonsGlobsForStack (#851 — stack-derived commons set)", () => {
   it("always includes the universal base commons (ignore, gitattributes, CI, env, formatter)", () => {
