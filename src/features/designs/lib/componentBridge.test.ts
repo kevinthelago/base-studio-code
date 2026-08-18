@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/shared/lib/core/bsc", () => ({
   bsc: vi.fn(async () => "[]"),
+  bscJson: vi.fn(async (_k: unknown, _a: unknown, fallback: unknown) => fallback),
   bscRun: vi.fn(async () => undefined),
   bscWrite: vi.fn(async () => undefined),
 }));
