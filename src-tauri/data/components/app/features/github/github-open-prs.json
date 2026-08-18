@@ -13,6 +13,6 @@
     "Text"
   ],
   "folder": "features/github",
-  "provides": "@/components/github-open-prs",
+  "provides": "@/features/github/GitHubOpenPRs",
   "srcRetired": "src/features/github/summary/OpenPRsCard.tsx"
 }

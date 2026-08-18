@@ -11,6 +11,6 @@
     "Text"
   ],
   "folder": "features/github",
-  "provides": "@/components/github-branch-graph",
+  "provides": "@/features/github/GitHubBranchGraph",
   "srcRetired": "src/features/github/BranchGraph.tsx"
 }

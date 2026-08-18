@@ -10,6 +10,6 @@
   ],
   "folder": "features/github",
   "props": [],
-  "provides": "@/components/github-cross-repo-activity",
+  "provides": "@/features/github/GitHubCrossRepoActivity",
   "srcRetired": "src/features/github/summary/CrossRepoActivity.tsx"
 }

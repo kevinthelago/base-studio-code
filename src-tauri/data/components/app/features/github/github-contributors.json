@@ -13,6 +13,6 @@
     "Text"
   ],
   "folder": "features/github",
-  "provides": "@/components/github-contributors",
+  "provides": "@/features/github/GitHubContributors",
   "srcRetired": "src/features/github/summary/ContributorsCard.tsx"
 }
