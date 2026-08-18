@@ -26,6 +26,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
+use crate::platform::offmain::blocking_or;
 use crate::{error_db_path, ingest_port_file, ingest_token_path};
 use errordb::{FaultInput, Store};
 
@@ -586,7 +587,20 @@ pub fn project_liveness(state: tauri::State<CollectorState>) -> Vec<ProjectLiven
 /// second implementation of the ranking to drift. A project with no error.db (never ran, or no fault
 /// yet) is simply ABSENT from the map, exactly as the per-project read degraded to `[]` before.
 #[tauri::command]
-pub fn fault_rows_batch(project_keys: Vec<String>) -> std::collections::HashMap<String, Vec<errordb::Fault>> {
+pub async fn fault_rows_batch(
+    project_keys: Vec<String>,
+) -> std::collections::HashMap<String, Vec<errordb::Fault>> {
+    blocking_or("fault_rows_batch", std::collections::HashMap::new(), move || {
+        fault_rows_batch_blocking(project_keys)
+    })
+    .await
+}
+
+/// The blocking body of [`fault_rows_batch`], split out so it stays directly unit-testable — the same
+/// shape [`crate::console::bsc`] uses for its own off-main-thread body.
+fn fault_rows_batch_blocking(
+    project_keys: Vec<String>,
+) -> std::collections::HashMap<String, Vec<errordb::Fault>> {
     let filter = errordb::Filter { unresolved: true, ..Default::default() };
     project_keys
         .into_iter()
@@ -608,13 +622,19 @@ mod tests {
         // ran, or no fault yet). Those must be ABSENT from the map — the same "no badge" outcome the
         // old per-project subprocess produced by degrading to []. A missing db must never fail the
         // batch and blank every OTHER project's badge with it.
-        let out = super::fault_rows_batch(vec![
+        // `block_on` rather than calling the body: since the fairness slice the command is async
+        // (its I/O must not run on Tauri's main thread), and this exercises the real command path
+        // including the spawn_blocking round-trip.
+        let out = tauri::async_runtime::block_on(super::fault_rows_batch(vec![
             "definitely--not--a--project--3912".into(),
             String::new(),
             "   ".into(),
-        ]);
+        ]));
         assert!(out.is_empty(), "unknown/blank keys contribute nothing, and do not error");
-        assert!(super::fault_rows_batch(vec![]).is_empty(), "an empty project set is a no-op");
+        assert!(
+            tauri::async_runtime::block_on(super::fault_rows_batch(vec![])).is_empty(),
+            "an empty project set is a no-op",
+        );
     }
 
     use super::*;

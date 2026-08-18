@@ -247,3 +247,92 @@
             }
         }
     }
+
+    /// **A plain sync `#[tauri::command]` runs on Tauri's MAIN THREAD**, which is also the window
+    /// event loop — so a command that does file/SQLite/process I/O stalls the UI itself, not merely
+    /// the next invoke. This repo has now fixed that same bug four times (#3630 log pollers, #4074
+    /// the cost read + the `bsc` bridge, #4078 `graph_dump`, and the invoke-fairness slice), and each
+    /// time the regression would have been a one-word edit: dropping `async` from the signature.
+    ///
+    /// Measured before the fairness slice, from one live app log's `[invoke]` lines: `logs_usage`
+    /// alone held the main thread for **1477.8s across 3169 calls** — 86% of all main-thread command
+    /// time — and trivial commands queued behind it (`dir_exists` at 1594ms, a cluster of unrelated
+    /// commands all topping out together near 17s).
+    ///
+    /// This is a NAMED list rather than a count of sync commands: a bare count fires on every
+    /// unrelated feature and gets bumped mechanically, which is theatre. These are the commands whose
+    /// cost is already measured, so a regression here is a real one.
+    #[test]
+    fn hot_path_commands_do_not_run_on_the_main_thread() {
+        // command -> why it must never go back to the main thread
+        const MUST_BE_ASYNC: &[(&str, &str)] = &[
+            ("logs_usage", "re-parses every Claude transcript; 1477.8s/3169 calls measured"),
+            ("logs_tail", "reads a log file; 134.8s/219 calls measured"),
+            ("logs_pane_activity", "scans the activity log; 62.4s/130 calls measured"),
+            ("logs_done_panes", "scans the coord log on the same poll cadence"),
+            ("graph_dump", "reads + reconciles the whole algorithms store (#4078)"),
+            ("read_log_tail", "reads an arbitrary log stream from disk"),
+            ("fault_rows_batch", "opens one error.db per project; 19.3s/4 calls measured"),
+            ("bsc", "spawns the sidecar — the app's hottest process spawner (#4074)"),
+        ];
+
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut decls: std::collections::HashMap<String, (bool, String)> = Default::default();
+        collect_command_decls(&src, &src, &mut decls);
+
+        let mut sinned = Vec::new();
+        for (cmd, why) in MUST_BE_ASYNC {
+            match decls.get(*cmd) {
+                // The command was renamed or deleted. Fail rather than skip: a guard that silently
+                // stops guarding is worse than no guard, and this list is small enough to update.
+                None => sinned.push(format!("`{cmd}` is no longer a #[tauri::command] — {why}")),
+                Some((is_async, at)) if !is_async => {
+                    sinned.push(format!("`{cmd}` is SYNC at {at} — {why}"))
+                }
+                Some(_) => {}
+            }
+        }
+        assert!(
+            sinned.is_empty(),
+            "these commands must not run on Tauri's main thread (it is the window event loop, so \
+             they freeze the UI rather than just delaying it). Make the fn `async` and run the body \
+             on the blocking pool via `platform::offmain::blocking_or`:\n  {}",
+            sinned.join("\n  "),
+        );
+    }
+
+    /// Map every `#[tauri::command]` in the tree to `(is_async, "file:line")`. Attribute and
+    /// signature can be separated by doc comments and other attributes, so scan forward to the first
+    /// `fn` rather than assuming the next line.
+    #[cfg(test)]
+    fn collect_command_decls(
+        dir: &std::path::Path,
+        root: &std::path::Path,
+        out: &mut std::collections::HashMap<String, (bool, String)>,
+    ) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_command_decls(&path, root, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let Ok(text) = std::fs::read_to_string(&path) else { continue };
+                let lines: Vec<&str> = text.lines().collect();
+                for (i, line) in lines.iter().enumerate() {
+                    if !line.trim_start().starts_with("#[tauri::command") {
+                        continue;
+                    }
+                    for probe in lines.iter().skip(i + 1).take(8) {
+                        if let Some(rest) = probe.split(" fn ").nth(1) {
+                            let name: String =
+                                rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+                            let rel = path.strip_prefix(root).unwrap_or(&path).display();
+                            let at = format!("{}:{}", rel.to_string().replace(std::path::MAIN_SEPARATOR, "/"), i + 1);
+                            out.insert(name, (probe.contains("async fn"), at));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
