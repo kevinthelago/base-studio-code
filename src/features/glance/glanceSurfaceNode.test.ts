@@ -13,6 +13,7 @@ import {
   KIT_COLOR, ALGO_COLOR, SOUND_COLOR, MCP_COLOR, SERVICE_COLOR, ARCHITECT_COLOR,
   mcpNodeId, serviceNodeId, usesMcpEdgeId,
 } from "./lib/glanceGraph";
+import { buildGlanceData } from "./lib/glanceData";
 
 describe("the command-surface node kind", () => {
   it("namespaces its id so it can never collide with a project key or another band node", () => {
@@ -60,5 +61,57 @@ describe("the command-surface node kind", () => {
     const taken = [KIT_COLOR, ALGO_COLOR, SOUND_COLOR, MCP_COLOR, SERVICE_COLOR, ARCHITECT_COLOR];
     expect(taken).not.toContain(SURFACE_COLOR);
     expect(new Set([...taken, SURFACE_COLOR]).size).toBe(taken.length + 1);
+  });
+});
+
+// ── EMISSION ──────────────────────────────────────────────────────────────────────────────────────
+// The vocabulary above is inert until something builds nodes with it. These pin the builder's actual
+// behaviour, including the two decisions that are easy to mistake for bugs later: deprecated aliases
+// are skipped, and no `invokes` edge is emitted at L0.
+describe("buildGlanceData — command-surface nodes", () => {
+  const p = [{ id: "app-a", name: "App A" }];
+
+  it("emits one fenced-band node per active surface, generated from the catalog", () => {
+    const d = buildGlanceData(p, [], [], [], [], [], [], [
+      { name: "plan", status: "active", store: "plan.db" },
+      { name: "ui", status: "active" },
+    ]);
+    const surfaces = d.rawNodes.filter((n) => n.kind === "surface");
+    expect(surfaces.map((n) => n.id)).toEqual([surfaceNodeId("plan"), surfaceNodeId("ui")]);
+    // A band node lifts out of the project DAG, which is what puts it in the fence rather than the graph.
+    expect(surfaces.every((n) => isBandNode(n))).toBe(true);
+    // The display name is the subcommand token an operator actually types.
+    expect(surfaces.map((n) => n.slug)).toEqual(["plan", "ui"]);
+  });
+
+  it("SKIPS a deprecated alias, so one store is never drawn as two surfaces", () => {
+    // `bsc org` is a deprecated alias for `bsc teams` over the same store. Drawing both would put two
+    // nodes on one store and overstate the surface area — and the catalog already carries the status,
+    // so this reads it instead of keeping a skip-list that would need its own maintenance.
+    const d = buildGlanceData(p, [], [], [], [], [], [], [
+      { name: "teams", status: "active" },
+      { name: "org", status: "deprecated" },
+    ]);
+    expect(d.rawNodes.filter((n) => n.kind === "surface").map((n) => n.slug)).toEqual(["teams"]);
+  });
+
+  it("emits NO invokes edge at L0 — the session nodes it would leave from are not here", () => {
+    // Not an omission: system-session nodes MOVED into the architect node's drill-in
+    // (#architect-node-expands-into-system-sessions), so at L0 there is no session for a session→surface
+    // edge to start from. Emitting one anyway would dangle, or invent a project→surface relationship the
+    // epic explicitly rejected. This test is what stops someone "fixing" that later.
+    const d = buildGlanceData(p, [], [], [], [], [], [], [{ name: "plan", status: "active" }]);
+    expect(d.rawEdges.filter((e) => e.kind === "invokes")).toEqual([]);
+  });
+
+  it("is additive — no catalog means a byte-identical graph", () => {
+    const without = buildGlanceData(p, [], [], [], [], [], []);
+    const withEmpty = buildGlanceData(p, [], [], [], [], [], [], []);
+    expect(withEmpty).toEqual(without);
+  });
+
+  it("treats a surface with no status as active, since the catalog omits it for the common case", () => {
+    const d = buildGlanceData(p, [], [], [], [], [], [], [{ name: "cad" }]);
+    expect(d.rawNodes.filter((n) => n.kind === "surface").map((n) => n.slug)).toEqual(["cad"]);
   });
 });
