@@ -92,7 +92,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     // say: a `differs` verdict here is a not-yet, not a live problem.
     rendersFrom: "file",
     modules: [
-      { recordId: "accessibilitypage", file: "/src/features/settings/pages/AccessibilityPage.tsx" },
+      { recordId: "accessibilitypage", file: null }, // RETIRED — the record is the only copy,
     ],
     ensurePlatform: () => import("@/features/settings/graphPlatform").then((m) => m.registerSettingsPlatform()),
   },
@@ -185,7 +185,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     // Planner-mounted, like Sounds — not a rail Workspace (#4219).
     rendersFrom: "graph",
     modules: [
-      { recordId: "algorithmspage", file: "/src/features/algorithms/AlgorithmsWorkspace.tsx" },
+      { recordId: "algorithmspage", file: null }, // RETIRED — the record is the only copy,
       { recordId: "algorithms-rail", file: null }, // RETIRED — the record is the only copy,
       { recordId: "algorithms-inspector", file: null }, // RETIRED — the record is the only copy,
       { recordId: "algorithms-kit-graph", file: null }, // RETIRED — the record is the only copy,
@@ -199,7 +199,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     // Not a rail Workspace — the planner Screen mounts this one as a tab (#4215).
     rendersFrom: "graph",
     modules: [
-      { recordId: "soundspage", file: "/src/features/sounds/SoundsWorkspace.tsx" },
+      { recordId: "soundspage", file: null }, // RETIRED — the record is the only copy,
       { recordId: "sounds-rail", file: null }, // RETIRED — the record is the only copy,
       { recordId: "sounds-inspector", file: null }, // RETIRED — the record is the only copy,
       { recordId: "sounds-kit-graph", file: null }, // RETIRED — the record is the only copy,
@@ -211,7 +211,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     label: "Glance",
     rendersFrom: "graph",
     modules: [
-      { recordId: "glancepage", file: "/src/features/glance/GlanceWorkspace.tsx" },
+      { recordId: "glancepage", file: null }, // RETIRED — the record is the only copy,
       { recordId: "glance-canvas", file: "/src/features/glance/GlanceCanvas.tsx" },
       { recordId: "glance-stream-morph", file: "/src/features/glance/GlanceStreamMorph.tsx" },
       { recordId: "glance-preview-morph", file: null }, // RETIRED — the record is the only copy,
@@ -356,7 +356,7 @@ const FILE_SOURCES = import.meta.glob<string>(
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
     "/src/features/algorithms/AlgorithmsWorkspace.tsx",
     "/src/app/console/panes/PaneMenu.tsx",
-    "/src/features/glance/{GlanceWorkspace,GlanceCanvas,GlanceStreamMorph,GlanceChatDock}.tsx",
+    "/src/features/glance/{GlanceCanvas,GlanceStreamMorph,GlanceChatDock}.tsx",
     // Empty/GitHubSummary/Pulse dropped with their entries — the glob and the catalogue are pinned to
     // each other BOTH ways by `shadowPages.test.ts`, so a path released for deletion has to leave both.
     // Schedules.tsx dropped with its entry — automations now contributes no file baseline at all.

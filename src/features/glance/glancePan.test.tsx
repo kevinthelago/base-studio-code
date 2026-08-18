@@ -20,7 +20,7 @@ vi.mock("@/shared/ui/layouts/useGraphViewport", async (orig) => {
   };
 });
 
-import { GlanceWorkspace } from "./GlanceWorkspace";
+import { GlanceWorkspace } from "@/features/glance/GlanceWorkspace";
 
 /** Flush one requestAnimationFrame tick (the fit is deferred via rAF). */
 const flushRaf = () => act(async () => { await new Promise((r) => requestAnimationFrame(() => r(null))); });

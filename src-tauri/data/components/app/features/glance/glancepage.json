@@ -23,5 +23,6 @@
     "Text",
     "promptDialog"
   ],
-  "props": []
+  "props": [],
+  "provides": "@/features/glance/GlanceWorkspace"
 }

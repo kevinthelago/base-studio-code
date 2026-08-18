@@ -18,5 +18,6 @@
     "LibrarianTerminal",
     "Text"
   ],
-  "props": []
+  "props": [],
+  "provides": "@/features/algorithms/AlgorithmsWorkspace"
 }

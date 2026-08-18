@@ -16,5 +16,6 @@
     "SoundsRail",
     "Text"
   ],
-  "props": []
+  "props": [],
+  "provides": "@/features/sounds/SoundsWorkspace"
 }
