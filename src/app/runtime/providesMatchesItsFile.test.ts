@@ -29,26 +29,20 @@ const SEED = import.meta.glob("@data/components/app/**/*.json", { eager: true })
 const REPO = process.cwd();
 
 /**
- * Records that ALREADY claim their file's specifier while differing from it — a live global override of
- * a module by different code, found when this guard was written.
+ * Records allowed to claim their file's specifier while differing from it. **EMPTY, and that is the
+ * finished state** — the six this guard found have all been adjudicated.
  *
- * Named rather than fixed, because each needs the same three-way adjudication the migration's
- * body-differs backlog needs (which copy is the app: the record, the file, or neither) and guessing is
- * how the copy that ships stops being the copy that was reviewed. None was introduced by the pass that
- * added this guard — that pass set ZERO, because this rule stopped all five of its candidates.
+ * Every one turned out the same way: a STALE SEED, with the store already equal to the file. The three
+ * overlay records (`ui-dialog`, `ui-modal-card`, `ui-modal-scrim`) were the pre-a11y copies — the files
+ * carry #2725's `role="dialog"`, `aria-modal`, the `useId` title association and the focus trap.
+ * `plan-body-streams` still inlined a `CollapsibleCard` the file had extracted; `plan-pane-bodies`
+ * predated #4265's library pane; `treeexplorerpage` was an older, longer version. None had an export its
+ * file lacked, so refreshing each from its file deleted nothing.
  *
- * `ui-dialog` / `ui-modal-card` / `ui-modal-scrim` are the focus-management records that cost ten test
- * failures when they were retired against divergent seeds and had to be reverted; they have been in this
- * state since. Shrinking this list is real work; growing it needs a reason.
+ * Adding an entry means shipping a module whose code differs from the module it claims to be, for every
+ * consumer, with no other gate observing it. It needs a reason at least as specific as the ones above.
  */
-const KNOWN_DIVERGED = new Set([
-  "plan-body-streams",
-  "plan-pane-bodies",
-  "treeexplorerpage",
-  "ui-dialog",
-  "ui-modal-card",
-  "ui-modal-scrim",
-]);
+const KNOWN_DIVERGED = new Set<string>([]);
 
 const specOf = (src: string) =>
   "@/" + src.split("\\").join("/").replace(/^src\//, "").replace(/\.tsx?$/, "").replace(/\/index$/, "");

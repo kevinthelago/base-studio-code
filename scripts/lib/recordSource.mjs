@@ -204,7 +204,12 @@ export function exportedNames(src) {
   if (/^\s*export\s+\*\s+from/m.test(src)) return null;
   const out = new Set();
   for (const m of src.matchAll(/^\s*export\s+(?:default\s+)?(?:async\s+)?(?:function|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/gm)) out.add(m[1]);
-  for (const m of src.matchAll(/^\s*export\s*\{([\s\S]*?)\}/gm)) {
+  // `export type { X } from "…"` is a re-export and it counts. The `type` keyword between `export` and
+  // the brace used to defeat this pattern, so a module re-exporting a type read as not exporting it —
+  // which made the retirement guard refuse `treeexplorerpage` for "dropping" `TreeNodeData` that its file
+  // exports on the very next line. Harmless in that direction (over-refusal); the dangerous direction is
+  // the same miss on the RECORD's side, where an export it really has would not be counted as lost.
+  for (const m of src.matchAll(/^\s*export\s*(?:type\s+)?\{([\s\S]*?)\}/gm)) {
     for (const part of m[1].split(",")) {
       const n = part.trim().replace(/^type\s+/, "").split(/\s+as\s+/).pop()?.trim();
       if (n) out.add(n);
