@@ -16,7 +16,7 @@ import { SecurityPage } from "@/features/settings/pages/SecurityPage";
 import { PlannerPage } from "@/features/settings/pages/PlannerPage";
 import { SkillsPage as SkillsSettingsPage } from "@/features/settings/pages/SkillsPage";
 import { AutomationsPage } from "@/features/settings/pages/AutomationsPage";
-import { McpPage } from "./pages/McpPage";
+import { McpPage } from "@/features/settings/pages/McpPage";
 
 // #1545: public API for the app shell — appearance tokens + the keybinding/hotkey model the shell's
 // boot + hotkey hooks consume (through this barrel, not settings internals).

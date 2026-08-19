@@ -8,7 +8,7 @@ import {
   DEFAULT_FAULT_TRIAGE,
   type FaultLite,
   type FaultTriageConfig,
-} from "./faultTriage";
+} from "@/shared/lib/fleet/faultTriage";
 
 const cfg = (over: Partial<FaultTriageConfig> = {}): FaultTriageConfig => ({
   enabled: true,

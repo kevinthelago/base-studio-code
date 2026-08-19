@@ -11,5 +11,5 @@
 // gone: it was an idle stand-in for work that now shows itself, and a second claimant on the same
 // queue. Each live session is a node in the Glance graph, labelled with its request and edged to the
 // session that filed it — so an auto-started session is always visible, openable and stoppable.
-export { RequestSessionsMount } from "./RequestSessionsMount";
+export { RequestSessionsMount } from "@/features/debug/RequestSessionsMount";
 export { requestPaneId, requestCharter, originLabel, DEBUG_INIT_CMD, DEBUG_ROLE_PROMPT } from "@/features/debug/requestSession";

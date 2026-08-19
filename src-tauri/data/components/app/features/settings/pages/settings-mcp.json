@@ -1,0 +1,14 @@
+{
+  "id": "settings-mcp",
+  "name": "McpPage",
+  "kitId": "base-studio-code",
+  "role": "composite",
+  "provides": "@/features/settings/pages/McpPage",
+  "srcText": "import { ClaudeConfigCard } from \"@/features/settings/cards/ClaudeConfigCard\";\nimport { Stack } from \"@/shared/ui/layout/Stack\";\n\nexport function McpPage() {\n  return (\n    <Stack gap={18} style={{ maxWidth: 820 }}>\n      <ClaudeConfigCard />\n    </Stack>\n  );\n}\n",
+  "composes": [
+    "Card",
+    "Stack"
+  ],
+  "src": "src/features/settings/pages/McpPage.tsx",
+  "folder": "features/settings/pages"
+}

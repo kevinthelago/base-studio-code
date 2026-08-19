@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nodeBox, edgeGeometry, styleDash, autoLayout, layerNodes, contentBounds, NODE_SIZE, CANVAS_W, CANVAS_H, AUTO_ROW } from "./orgLayout";
+import { nodeBox, edgeGeometry, styleDash, autoLayout, layerNodes, contentBounds, NODE_SIZE, CANVAS_W, CANVAS_H, AUTO_ROW } from "@/features/teams/lib/orgLayout";
 import { anchor } from "@/shared/lib/graph/edgePath";
 import { BUILTIN_ORGS, type Team, type Position } from "./team";
 

@@ -235,9 +235,59 @@ export function exportedNames(src) {
  *   does not begin a line with `import`/`export`.
  *
  * `export … from` IS included: esbuild compiles a re-export to the same require an import produces (#3874).
+ *
+ * COMMENTS ARE STRIPPED FIRST, and the `^` anchor is not enough without it. The gap between the keyword
+ * and `from` is `[^"']*`, which crosses NEWLINES — it has to, because a real clause wraps
+ * (`import {\n  a,\n  b,\n} from "x"`). So a match can START at a genuine top-level `export` and run
+ * several lines into a doc comment to reach a `from "…"` written there as an EXAMPLE. `nodeUrn.ts` is
+ * exactly that: `export function isNodeUrn(…)` matched forward five lines into
+ * ``(`import { fibonacci } from "@bsc/algorithms/fibonacci"`)`` and reported a package the module never
+ * imports, which blocked its retirement with an error naming a specifier that appears nowhere in its
+ * code. Anchoring cannot see this — only removing the prose can.
  */
 export function runtimeImports(src) {
-  return [...new Set([...src.matchAll(/^\s*(?:import|export)\s+(?!type\s)[^"']*from\s+["']([^"']+)["']/gm)].map((m) => m[1]))];
+  return [...new Set([...stripComments(src).matchAll(/^\s*(?:import|export)\s+(?!type\s)[^"']*from\s+["']([^"']+)["']/gm)].map((m) => m[1]))];
+}
+
+/**
+ * Blank out `//` and block comments, PRESERVING newlines so `^`-anchored matching still lines up.
+ *
+ * Deliberately not a parser: it tracks the three states that can hide a `//` — a string, a template
+ * literal, and a regex-looking `/`… — well enough that no comment survives and no code is lost. Getting
+ * it wrong in the LOSSY direction (dropping real code) would silently under-report a record's imports
+ * and package something unloadable, so anything ambiguous is kept.
+ */
+export function stripComments(src) {
+  let out = "";
+  let i = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    // A string or template literal: copy it whole, so a `//` or `/*` inside one is never a comment.
+    if (c === '"' || c === "'" || c === "`") {
+      const q = c;
+      out += c; i += 1;
+      while (i < n) {
+        if (src[i] === "\\") { out += src.slice(i, i + 2); i += 2; continue; }
+        out += src[i];
+        if (src[i] === q) { i += 1; break; }
+        i += 1;
+      }
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "/") {
+      while (i < n && src[i] !== "\n") i += 1;               // to end of line; the \n is copied next pass
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "*") {
+      i += 2;
+      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) { if (src[i] === "\n") out += "\n"; i += 1; }
+      i += 2;
+      continue;
+    }
+    out += c; i += 1;
+  }
+  return out;
 }
 
 /**

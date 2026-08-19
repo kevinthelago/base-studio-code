@@ -6,7 +6,7 @@
 // mapping, which taught nothing a reader could not already read off the card.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { GlanceOverlays } from "./GlanceCanvas";
+import { GlanceOverlays } from "@/features/glance/GlanceCanvas";
 
 describe("GlanceOverlays legend (#2561)", () => {
   it("L0 (no drill): HEALTH + LIFECYCLE + EDGE — keys the node's two COLOURED channels", () => {

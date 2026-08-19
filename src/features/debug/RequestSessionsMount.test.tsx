@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
-import { RequestSessionsMount } from "./RequestSessionsMount";
+import { RequestSessionsMount } from "@/features/debug/RequestSessionsMount";
 import { requestCharter, requestPaneId, originLabel } from "@/features/debug/requestSession";
 import { bscRun } from "@/shared/lib/core/bsc";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";

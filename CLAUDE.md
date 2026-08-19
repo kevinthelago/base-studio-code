@@ -146,12 +146,17 @@ base-studio-code/
 
 ### Frontend conventions (feature-first, #1309)
 
-> **MOST OF THE FRONTEND IS NOT FILES.** ~1,050 modules ship as RECORDS — 447 component records under
-> `src-tauri/data/components/app/**` plus 605 implementations in `data/knowledge/algorithms.json` — and
-> the files that held them are deleted (epic #3604, "the graph IS the app"). **225 non-test modules
-> remain under `src/`**, of which **42 stay files permanently**: 17 use `import.meta.glob`, 16 are
-> `graphPlatform.ts` (circular — they register the platform record resolution goes *through*), 6 are
-> algorithms seed modules whose node `code` is generated *from* the file, 2 are `.d.ts`, 1 is the entry.
+> **MOST OF THE FRONTEND IS NOT FILES.** ~1,165 modules ship as RECORDS — 480 component records under
+> `src-tauri/data/components/app/**` plus 685 implementations in `data/knowledge/algorithms.json` — and
+> the files that held them are deleted (epic #3604, "the graph IS the app"). **100 non-test modules
+> remain under `src/`**, and MOST of that is now permanent floor rather than backlog: ~31 carry MODULE
+> STATE (a record is a second instantiation, so it vendors a second copy of that state to every
+> consumer — the failure that silenced the a11y announcer), 18 use `import.meta.glob`, 16 are
+> `graphPlatform.ts` (circular — they register the platform record resolution goes *through*), 12 are
+> feature barrels (two run `register*Platform()` at import; the rest `App.tsx` imports statically),
+> 7 are type-only, 6 are algorithms seed modules whose node `code` is generated *from* the file, 3 are
+> the record loader itself, 1 is the entry. Measure module state with `bsc graph harvest <f> --module`
+> and read `moduleState` — it is not visible from a module's name.
 > The paths below still describe where a module *belongs*; they no longer promise it is on disk. If you
 > cannot find a module, it is a record: `bsc ui get <id>` / `bsc graph impl get <id>`, matched by its
 > `provides` specifier.

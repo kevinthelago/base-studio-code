@@ -212,12 +212,12 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     rendersFrom: "graph",
     modules: [
       { recordId: "glancepage", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "glance-canvas", file: "/src/features/glance/GlanceCanvas.tsx" },
-      { recordId: "glance-stream-morph", file: "/src/features/glance/GlanceStreamMorph.tsx" },
+      { recordId: "glance-canvas", file: null }, // RETIRED — the record is the only copy,
+      { recordId: "glance-stream-morph", file: null }, // RETIRED — the record is the only copy,
       { recordId: "glance-preview-morph", file: null }, // RETIRED — the record is the only copy,
       { recordId: "glance-node", file: null }, // RETIRED — the record is the only copy,
       { recordId: "glance-plan-screen", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "glance-chat-dock", file: "/src/features/glance/GlanceChatDock.tsx" },
+      { recordId: "glance-chat-dock", file: null }, // RETIRED — the record is the only copy,
       { recordId: "glance-session-log", file: null }, // RETIRED — the record is the only copy,
     ],
     ensurePlatform: () => import("@/features/glance/graphPlatform").then((m) => m.registerGlancePlatform()),
@@ -356,7 +356,6 @@ const FILE_SOURCES = import.meta.glob<string>(
     "/src/features/sounds/Sounds{Workspace,Rail,Inspector,KitGraph}.tsx",
     "/src/features/algorithms/AlgorithmsWorkspace.tsx",
     "/src/app/console/panes/PaneMenu.tsx",
-    "/src/features/glance/{GlanceCanvas,GlanceStreamMorph,GlanceChatDock}.tsx",
     // Empty/GitHubSummary/Pulse dropped with their entries — the glob and the catalogue are pinned to
     // each other BOTH ways by `shadowPages.test.ts`, so a path released for deletion has to leave both.
     // Schedules.tsx dropped with its entry — automations now contributes no file baseline at all.

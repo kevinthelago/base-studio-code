@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { GlanceStreamMorph } from "./GlanceStreamMorph";
+import { GlanceStreamMorph } from "@/features/glance/GlanceStreamMorph";
 import { useAppStore } from "@/store";
 
 // Same stubs as the dock test: xterm can't init in jsdom, and the Logs tab polls `bsc`. We test the

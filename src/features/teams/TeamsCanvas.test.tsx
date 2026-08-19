@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { TeamsCanvas } from "@/features/teams/TeamsCanvas";
-import { NODE_SIZE } from "./lib/orgLayout";
+import { NODE_SIZE } from "@/features/teams/lib/orgLayout";
 import type { Team } from "./lib/team";
 import type { Persona } from "@/features/personas";
 
