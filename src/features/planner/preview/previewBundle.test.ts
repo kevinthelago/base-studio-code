@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveMemPath, lookupMem, bootstrapSource, buildPreviewSrcDoc, DEFAULT_IMPORTMAP, PREVIEW_EXTERNALS,
-} from "./previewBundle";
+} from "@/features/planner/preview/previewBundle";
 import { lookupMem as sharedLookupMem } from "@/shared/lib/preview/componentBundle";
 
 describe("previewBundle — resolveMemPath", () => {

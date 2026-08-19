@@ -16,7 +16,7 @@ import { resetGraphCompiles } from "./GraphComponent";
 // The loader is mocked: compiling real source needs esbuild, and what this file is about is the GATE —
 // which version gets mounted when a compile or a render fails — not the compiler.
 const load = vi.hoisted(() => vi.fn());
-vi.mock("./componentLoader", () => ({ loadComponentFromSource: load }));
+vi.mock("@/shared/lib/runtime/componentLoader", () => ({ loadComponentFromSource: load }));
 vi.mock("@/shared/lib/runtime/graphResolver", () => ({ resolveGraphSource: () => null }));
 
 const GOOD = "export default () => 'GOOD';";

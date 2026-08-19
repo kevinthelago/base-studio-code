@@ -8,7 +8,7 @@
 // So: decline only when the closure genuinely cannot resolve AND the platform has something to answer
 // with. Everything else is left exactly as the linker produced it.
 import { describe, it, expect } from "vitest";
-import { pruneUnsatisfiableOverrides, ENTRY_SPECIFIER, type LinkedModule } from "./graphModules";
+import { pruneUnsatisfiableOverrides, ENTRY_SPECIFIER, type LinkedModule } from "@/shared/lib/runtime/graphModules";
 
 /** A linked module whose compiled CJS requires `deps` — the shape `scanRequires` reads. */
 const mod = (specifier: string, deps: string[] = []): LinkedModule => ({

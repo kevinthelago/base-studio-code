@@ -7,7 +7,6 @@
 // a difference, which is how "21 candidates" were once written off as drift.
 //
 //   node scripts/show-body-diff.mjs <src-relative-path> [--full]
-import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

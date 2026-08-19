@@ -146,17 +146,21 @@ base-studio-code/
 
 ### Frontend conventions (feature-first, #1309)
 
-> **MOST OF THE FRONTEND IS NOT FILES.** ~1,165 modules ship as RECORDS — 480 component records under
-> `src-tauri/data/components/app/**` plus 685 implementations in `data/knowledge/algorithms.json` — and
-> the files that held them are deleted (epic #3604, "the graph IS the app"). **100 non-test modules
-> remain under `src/`**, and MOST of that is now permanent floor rather than backlog: ~31 carry MODULE
-> STATE (a record is a second instantiation, so it vendors a second copy of that state to every
-> consumer — the failure that silenced the a11y announcer), 18 use `import.meta.glob`, 16 are
-> `graphPlatform.ts` (circular — they register the platform record resolution goes *through*), 12 are
-> feature barrels (two run `register*Platform()` at import; the rest `App.tsx` imports statically),
-> 7 are type-only, 6 are algorithms seed modules whose node `code` is generated *from* the file, 3 are
-> the record loader itself, 1 is the entry. Measure module state with `bsc graph harvest <f> --module`
-> and read `moduleState` — it is not visible from a module's name.
+> **MOST OF THE FRONTEND IS NOT FILES.** ~1,204 modules ship as RECORDS — 482 component records under
+> `src-tauri/data/components/app/**` plus 722 implementations in `data/knowledge/algorithms.json` — and
+> the files that held them are deleted (epic #3604, "the graph IS the app"). **69 non-test modules
+> remain under `src/`**, and the harvest is FINISHED: `retire-module --dry` was run against every one of
+> them and none is retirable. The floor: 26 hold MODULE STATE on a specifier that is also REGISTERED
+> (two live copies — `bsc graph impl set` refuses the write), 14 use `import.meta.glob`, 10 are imported
+> STATICALLY by `main.tsx`/`App.tsx`, 7 are type-only, 6 are algorithms seed modules whose node `code` is
+> generated *from* the file, and one each for the entry, test setup, a `vite.config.ts` import, a record
+> that won't compile as TSX, and one seed/file disagreement awaiting adjudication.
+>
+> **The module-state rule is narrower than it sounds**: state disqualifies only when something ELSE
+> registers the same specifier. When the record is the only copy, state is fine — which is why the
+> `graphPlatform.ts` registrars, long listed here as permanent floor, are all records now (and so is
+> `componentLoader.ts`, the loader itself). Measure with `bsc graph harvest <f> --module` and read
+> `moduleState`; it is never visible from a module's name.
 > The paths below still describe where a module *belongs*; they no longer promise it is on disk. If you
 > cannot find a module, it is a record: `bsc ui get <id>` / `bsc graph impl get <id>`, matched by its
 > `provides` specifier.

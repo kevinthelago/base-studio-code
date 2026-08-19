@@ -3,7 +3,7 @@
 Most of this app's frontend no longer exists as files. **1,094 modules ship as records** — 469 component
 records under `src-tauri/data/components/app/**` and 625 algorithm implementations in
 `src-tauri/data/knowledge/algorithms.json`, of which **895 carry a `provides`** and so answer a specifier
-an importer writes. **100 non-test modules remain under `src/`**, down from 388. This is epic #3604,
+an importer writes. **69 non-test modules remain under `src/`**, down from 388. This is epic #3604,
 "the graph IS the app".
 
 > Those numbers move every tranche, and a stale one here is worse than none — this document went eleven
@@ -353,120 +353,84 @@ Author a **new** module record beside them (`scripts/lift-component-module.mjs`,
 `role: composite`). The components keep answering `@/components/<id>`; the module record answers
 `@/features/x/Y`. Nothing is overwritten, so no component record loses an export it declares.
 
-## Where this is going — and the floor it stops at
+## Where this stops — and why the floor is where it is
 
-The `--module` unlock is **built and spent**. `bsc graph harvest --module` plus
-`scripts/lift-component-module.mjs` turned the preview-shaped derivatives into faithful module records,
-and the sweeps that followed took `src/` from 225 modules to **100**. What is left is not one blocker,
-and most of it is not backlog.
+`src/` is at **69 non-test modules**, from 225. The harvest is finished: `retire-module --dry` was run
+against **every remaining module** and **none** is retirable. Each of the 69 refuses for a named
+mechanical reason, listed below.
 
-> Counts drift every tranche and a stale one is worse than none. Re-measure:
+> Counts drift and a stale one is worse than none. Re-measure:
 > `git ls-files src | grep -E '\.tsx?$' | grep -vcE '\.(test|spec)\.|\.d\.ts$'`
-
-### The floor, measured
+> And re-derive the floor rather than trusting this table — ask the tool that deletes:
+> `for f in …; do node scripts/retire-module.mjs "$f" --dry; done`
 
 | count | class | why a record cannot stand for it |
 |---|---|---|
-| ~31 | **modules with MODULE STATE** | a record is a SECOND instantiation, so it vendors a second copy of that state to every consumer. `provides` beats the platform registry, so the copy WINS — this is the failure that made the a11y announcer go silent. `bsc graph harvest <f> --module` reports it as `moduleState`, and `lift-component-module.mjs` refuses on it |
-| 18 | `import.meta.glob` | a **Vite build-time transform**. esbuild emits it verbatim and it is not a function at runtime, so the record throws the moment a consumer evaluates it |
-| 16 | `graphPlatform.ts` registrars | they are what REGISTERS records; a record cannot register itself. (Not absolute — `tunnel`/`teams`/`designs` registrars ARE records already. The ones that remain are the ones a record would have to load through) |
-| 12 | feature `index.ts` barrels | two sub-cases. `features/planner/index.tsx` and `features/settings/index.tsx` exist to run `register*Platform()` **at import**, which is the registry a record is loaded *through*; the rest are statically imported by `App.tsx` (below) |
+| 26 | **module state whose specifier is REGISTERED** | a record wins over the registry, so it would be a SECOND live copy of that state. `bsc graph impl set` refuses this itself — see the rule below |
+| 14 | `import.meta.glob` | a **Vite build-time transform**. esbuild emits it verbatim and it is not a function at runtime, so the record throws the moment a consumer evaluates it |
+| 10 | statically imported by `main.tsx` / `App.tsx` | the dev server's pre-transform pass resolves the `@/` alias before the records plugin is installed, so the app fails to boot. Only `dev-boot-check.mjs` observes it |
 | 7 | type-only (`store/types/*`) | they emit no JavaScript, so there is nothing for a record to be |
-| 6 | `shared/lib/algorithms/*` | the node's code is GENERATED from the file — retiring it turns the standalone guarantee back into a claim (`seedAlgorithms.gen.test.ts`, #3465) |
-| 3 | `shared/lib/runtime/*` | the loader that resolves records. A record cannot load itself |
-| 1 | `app/App.tsx` | the entry, plus whatever it imports **statically** (below) |
+| 6 | `shared/lib/algorithms/*` | the node's `code` is GENERATED from the file; retiring it turns the standalone guarantee back into a claim (`seedAlgorithms.gen.test.ts`, #3465) |
+| 1 | `app/App.tsx` | the entry |
+| 1 | `test/setup.ts` | test infrastructure — it needs `vitest` |
+| 1 | imported by `vite.config.ts` | a build config is bundled before any plugin runs, so `.bsc-records/` can never serve it |
+| 1 | won't compile as TSX | the loader compiles every record with esbuild's **tsx** loader, and TSX is not a superset of TS |
+| 1 | its seed record does not match the file | an adjudication, not a sweep — only a person can say which copy is the app |
 
-Two smaller classes behave the same way and are enforced by `scripts/retire-module.mjs` rather than
-counted above: a module **statically imported by `main.tsx`/`App.tsx`** (the dev server's pre-transform
-pass resolves the alias before the records plugin can answer, so the app fails to boot — and only
-`dev-boot-check.mjs` observes it), and a module imported by a **build config** such as `vite.config.ts`
-(bundled before any plugin runs, and only `vite build` observes it).
+### THE MODULE-STATE RULE, correctly stated
 
-**Measure module state; do not eyeball it.** The 31 above were found by running
-`bsc graph harvest <file> --module` over every remaining candidate and reading the `moduleState` field —
-`log.ts` holds `scopeThreshold,scopesFetchedAt,queue,flushTimer`, `theme.ts` holds `activeThemes`,
-`launchGate.ts` holds `chain,launched`. None of that is visible from the module's name or its role, and
-several read as obviously-pure utilities.
+The rule is **not** "a module with state can never be a record". It is:
 
-**The floor is load-bearing for everything above it.** What remains does not fail for want of a harvest —
-it bottoms out ON that floor, through its dependencies:
+> A record may not `provides` a specifier that is **also a registered platform module** while the record
+> holds module state — because then there are TWO live copies of that state, and `resolveGraphSource`
+> runs before the registry, so the record's copy wins for every graph consumer while the registered one
+> keeps serving everybody else.
 
-```
-app/runtime/shadowMode.ts        → needs @/app/runtime/shadowPages      ← import.meta.glob, permanent
-features/planner/stages/blueprints.ts → needs …/blueprintBuiltins       ← import.meta.glob, permanent
-store/slices/plan.ts             → store/types.ts needs @/store/types/… ← type-only, permanent
-```
+`bsc graph impl set` enforces exactly this and refuses the write. When **nothing registers the
+specifier**, the record is the only copy and its state is fine.
 
-So `promote-records.mjs`'s *unresolvable import* bucket is largely this one fact wearing another name.
-Closing it is not more sweeping; it is answering **how a record depends on a permanently-file module**,
-which is the question `graphPlatform.ts` already answers for the registrars and which nothing yet
-answers generally.
+That distinction is what the "16 `graphPlatform.ts` registrars are permanent floor" claim got wrong. It
+was justified as *they are what REGISTERS records; a record cannot register itself* — and eight
+registrars had been records for some time, with the app shipping that way, so the tree already
+contradicted it. There is no circularity: a retired registrar resolves at BUILD time through the `@/`
+alias into `.bsc-records/`, exactly like any other module; the runtime graph loader is never involved.
+The real blocker was the rule above — all sixteen had their own specifier registered (their GraphHost
+records import it), and each carried `let done = false`.
 
-### Traps this campaign paid for
+The fix was the one the guard's own message names: move the state out. It cost nothing, because
+`registerAppModule` is `registry.set(...)` — a plain Map set, idempotent by construction — so `done` was
+saving repeated Map writes and never guarding correctness. All sixteen are now records, and so is
+`componentLoader.ts`, the record loader itself.
 
-Each of these cost a wrong turn, and none of them is visible from the tool's output alone.
+**So before accepting "it has state, therefore it is floor", ask whether anything registers the
+specifier.** Two of the last twenty-eight do not; both are floor for other, independent reasons.
 
-- **A bigger seed is not a staler seed.** Three Glance components had a seed record LARGER than the file
-  — the shape that had already nearly deleted two shipped features. It was not stale: it was the
-  **graph-source** copy, the same body with sibling imports spelled `@/components/<id>`, which only the
-  runtime loader resolves. `provides` was null, so the record served the loader and the file served the
-  bundle, both live and deliberately. **Diff before adopting**, and take a full-store baseline
-  (`bsc ui list --full`) before any lift — it is the only thing that can answer *did I change something
-  I did not mean to*.
-- **The `-module` convention.** When a file has a graph-source record, the retirement is not an
-  overwrite: author a SECOND record `<id>-module` carrying `provides` and file-specifier imports, with
-  `lift-component-module.mjs --new-record`. `glance-preview-morph` already shipped exactly that way.
-- **`worthy: false` does not disqualify a record.** That rubric is about LIBRARY membership — *is this a
-  reusable algorithm?* — not about whether a record can back a retired file. The graph already carries
-  app glue (`tunnel-graph-platform.ts` is an impl record with `provides`), and *the graph IS the app*
-  means app-specific modules belong there. What actually gates a retirement is: does it compile, and
-  does every specifier resolve. Five of six "unworthy" modules retired in one pass.
-- **The `no record` bucket is not a dead end.** `lift-component-module.mjs` refuses to invent a record
-  (correctly — a duplicate id in the flat `SEED_COMPONENTS` glob), but `bsc graph harvest --module
-  --apply` **authors** one. That is the path for a module with no record at all.
-- **An unregistered third-party package blocks a retirement**, and the error does not say so: *"needs
-  `qrcode.react`"* reads like a missing dependency, and it was in `package.json` all along. `makeRequire`
-  demands EVERY specifier be registered, bare or first-party (#4224). Register it in the OWNING feature's
-  graph-platform, never `appModules` — registration is eager, and the shell's set would put a QR renderer
-  in the boot bundle for every user who never pairs a phone.
-- **A record whose file already retired is invisible to `promote-records.mjs`.** It only promotes records
-  whose FILE still exists; anything else counts as *already seeded* and is never reconsidered. So an edit
-  via `bsc graph impl set` lands in the store and **stops** — `.bsc-records/` is emitted from the SEED, so
-  the app keeps shipping the old body with no error anywhere. `scripts/sync-impl-seed.mjs` closes that,
-  BY ID and never as a sweep (seed and store have diverged both ways across ~340 records). The sequence
-  that works: `impl set --code-file` → `sync-impl-seed --apply` → `emit-records` → `UPDATE_KITS=1
-  platformModules.gen` → `promote` → `retire`.
-- **`--code-file`, never `--code`.** The CLI's own help says it: source on the command line is corrupted
-  SILENTLY — a backtick or a `${…}` is substituted away, a literal `\n` never becomes a newline — and
-  large modules exceed the argv limit. Note also that `bsc graph impl set` takes FLAGS while `bsc ui set`
-  takes stdin JSON.
-- **A promote error can name a specifier the module never imports.** `runtimeImports` gaps the keyword to
-  `from` with `[^"']*`, which crosses newlines — it must, so a wrapped clause still matches — so a match
-  can start on a real statement and run several lines into a doc comment. `nodeUrn.ts` was blocked by
-  ``(`import { fibonacci } from "@bsc/algorithms/fibonacci"`)`` written as an EXAMPLE. Fixed by stripping
-  comments first; `platformBoundary.test.ts` imports the same function, so guard and promoter move
-  together by construction.
-- **Promoting a record obliges you to promote its closure.** Packaging `settings-mcp` while
-  `@/features/settings/cards/ClaudeConfigCard` was still a file left a record the runtime loader cannot
-  load — the bundle resolves that path through vite's tsconfig `paths`, so `tsc`, `lint` and `vite build`
-  were all green. Only `platformBoundary` saw it, because the loader has no src-file route.
+### PROSE ABOUT A RULE TRIPS THE RULE — four times in one day
 
-### What genuinely remains
+Every scanner here reads source with a regex, and a comment is source. Each of these shipped a wrong
+answer that looked authoritative:
 
-- **`role: page` records** (2 — `DataGraphPage`, `NetworkPage`). A page record imports its siblings **by
-  record id**: `@/components/algorithms-kit-graph`, not `@/features/algorithms/AlgorithmsKitGraph`. That
-  form is resolved by the runtime graph loader against the record store; it is not a path. Retire the file
-  and `.bsc-records/` materializes the record at that path, where the first ordinary import of it dies.
-  Cataloguing one in `SHADOW_PAGES` is therefore not a formality — it declares the app renders that page
-  FROM the graph, which `shadowPages.test.ts` reads back from `lazyWorkspaces.tsx`. That is a
-  page-to-graph migration per page, a different kind of work from a harvest.
+- `runtimeImports` matched a `from "…"` inside a JSDoc example and reported `nodeUrn.ts` as needing a
+  package it never imports — the keyword→`from` gap crosses newlines, so the match started on real code
+  and ran into the comment.
+- `exportedNames` swallowed a comment sitting between two names in an `export { … }` block and glued it
+  to the next name, reporting `shared/ui/kit/index.ts` as dropping an export its record has.
+- `STATEMENT_SPEC` could not cross the apostrophe in `store's` inside an export block, so
+  `shared/ui/kit/index.ts` never had its `./theme` absolutized — the record shipped a relative specifier
+  and the emitted module died, after the file was already retired.
+- `BUILD_TIME_ONLY` matched a comment **explaining** that `blueprintBuiltins` is an `import.meta.glob`
+  module, so `features/planner/list/graphPlatform.ts` counted as build-time-only. Writing down why
+  something is floor made the writer floor too. Fixing it moved that bucket 17 → 13.
 
-  (This is what `promote-records.mjs` is really refusing when it skips `role: page` wholesale; the ban is
-  not about pages being special. `retire-module.mjs` states it directly via `importsSiblingsByRecordId`,
-  because the category ban was circumventable and the reason was not written down: four page files were
-  retired past it on the theory that the record "matched" its file once sibling ids were canonicalized —
-  true in the graph loader, false in the bundle. Every other gate was green; `platformModules.gen.test.ts`
-  was the only check in the repo that caught it.)
-- **Records and files that genuinely disagree** (8 body-differs). Only a person can say which one is
-  the app.
-- **One record that cannot compile as TSX** (`vizSandbox.ts`) — see the TSX-is-not-a-superset note above.
+All four now scan a comment-blanked copy. `blankComments` preserves LENGTH and newlines, because the
+specifier scan returns `{ spec, at }` offsets that a rewriter splices into the original — a strip that
+shortened the text would corrupt every offset after the first comment.
+
+### The two guards that stand outside the gate
+
+- **`scripts/audit-store-provides.mjs`** — `providesMatchesItsFile.test.ts` asks the right question and
+  structurally cannot answer it where it matters: it globs the packaged SEED, because a vitest run has no
+  store. But `provides` is resolved at RUNTIME against the STORE, so seed-clean + store-divergent is green
+  everywhere and still breaks the running app. Run this before trusting that overrides are sane.
+- **`npm run test:e2e -- graphPages`** — the static gate cannot prove a page RENDERS. It is deliberately
+  outside the default gate (CLAUDE.md), so a page can sit un-mountable while everything is green.
