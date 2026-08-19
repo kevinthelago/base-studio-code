@@ -142,6 +142,16 @@ const seedPathById = seedPathsById();
  *  turns a green gate red the moment it is packaged (`detachedtabstrip` needs `@/app/chrome/Titlebar`
  *  and `@tauri-apps/api/window`, neither of which is registered). */
 const resolvable = new Set(JSON.parse(readFileSync(join(REPO, "src-tauri/data/ui/platform-modules.json"), "utf8")));
+// THE PACKAGED SEED COUNTS, and leaving it out is what made this over-refuse. `emit-records.mjs`
+// materializes the SEED — never the store — into `.bsc-records/`, so a specifier the seed provides is
+// precisely what the bundle will resolve. Building `resolvable` from the registry and the STORE alone
+// meant every module whose file had been retired in favour of a seed record read as unresolvable:
+// `@/features/glance/GlanceWorkspace` is provided by `glancepage.json` and was still reported as
+// needing an answer, because the store copy of that record carries no `provides`. Measured: the
+// unresolvable bucket fell 29 → 23 and the distinct unanswered specifiers 34 → 23. The modules it
+// released mostly moved on to the NEXT check (`unclosed-composes` 24 → 28, `body differs` 11 → 13),
+// which is the honest shape of it — passing one gate exposes the following one rather than promoting.
+for (const s of seeded) resolvable.add(s);
 for (const spec of bySpec.keys()) resolvable.add(spec);
 for (const c of components) resolvable.add(`@/components/${c.id}`);
 for (const im of algorithms.implementations ?? []) if (typeof im?.provides === "string") resolvable.add(im.provides.trim());

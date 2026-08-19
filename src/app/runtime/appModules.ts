@@ -397,6 +397,11 @@ const PLATFORM: Record<string, unknown> = {
   // match them. It is the same wrong-case path that made `graph-delete-retired-shared-page-files` a
   // phantom item, where `git ls-files` shows no `PageHeader.tsx` was ever tracked.
   "@/shared/ui/pages/pageHeader": PagesPageHeader,
+  // The barrel under its OWN key as well. It is the same module object, already imported eagerly one
+  // screen up, so this costs nothing — but without it `@/features/settings` is unregistered, and
+  // `useAppBoot` and `useHotkeys` (which import the barrel) read as unresolvable. Registering a module
+  // under one of its re-export paths does not answer the path importers actually write.
+  "@/features/settings": SettingsPageHeader,
   "@/features/settings/pages/SettingsPageHeader": SettingsPageHeader,
   "@/shared/hooks/useRailSections": UseRailSections,
   "@/shared/hooks/useDragResize": UseDragResize,

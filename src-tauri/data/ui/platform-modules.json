@@ -274,6 +274,7 @@
   "@/features/security/lib/badgeTone",
   "@/features/security/lib/consoleModel",
   "@/features/security/lib/flowModel",
+  "@/features/settings",
   "@/features/settings/cards/claudeConfig.helpers",
   "@/features/settings/cards/sessionsBehaviorSpec",
   "@/features/settings/lib/appearance",
