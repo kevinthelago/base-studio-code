@@ -1,0 +1,20 @@
+{
+  "_comment": "File-write LOCKS that are not per-role (lifted out of role-capabilities.json when the role capability table moved onto the personas, epic `the-persona-is-the-whole-agent`). `dbOwnedPlanFiles` are plan artifacts the DB owns and no session may hand-edit; `depManifestFiles` are the shared dependency contract only a designated role may touch. Both are consumed by `roleDeniedCommands` in shared/lib/session/launchRules.",
+  "dbOwnedPlanFiles": [
+    "deploy.md",
+    "deploy.json",
+    "phases.json",
+    "issues.json",
+    "fleet.json",
+    "repos.json",
+    "features.json"
+  ],
+  "depManifestFiles": [
+    "package.json",
+    "package-lock.json",
+    "Cargo.toml",
+    "Cargo.lock",
+    "pnpm-lock.yaml",
+    "yarn.lock"
+  ]
+}
