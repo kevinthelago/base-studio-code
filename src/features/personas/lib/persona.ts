@@ -7,12 +7,45 @@
 // This is view/CRUD-first (#2094 Part B, relocated to the Planner workspace): the persona is the
 // user-facing agent template. Wiring personas into fleet-stream launch + console launch (so picking a
 // persona resolves role + prompt + skills + model in one step) is the follow-up phase.
-import type { SessionRole } from "@/shared/lib/session/sessionRoles";
+import type { AccessTier, SessionRole } from "@/shared/lib/session/sessionRoles";
 import { overlayGlob, overlayRaw } from "@/shared/lib/core/configOverrides";
 import { slugify } from "@/shared/lib/core/format";
 import workerProtocolMd from "@data/fleet/worker-protocol.md?raw";
 import directorProtocolMd from "@data/fleet/director-protocol.md?raw";
 import architectProtocolMd from "@data/fleet/architect-protocol.md?raw";
+
+/**
+ * A persona's PERMISSION FLOOR — the capability it launches under (epic `the-persona-is-the-whole-agent`).
+ *
+ * This is the role capability row, folded onto the record that actually gets written. It used to live
+ * in two other places: the five access tiers plus the write scope in
+ * `@data/permissions/role-capabilities.json`, and the confined command surface as a TS const
+ * (`RESTRICTED_ROLE_COMMANDS`). Neither was reachable from the persona store, so `bsc persona set` —
+ * a generic verbatim JSON passthrough, on the always-allowed `bsc` tier — could rewrite a persona's
+ * capability with nothing to stop it.
+ *
+ * The clamp lives in the STORE (`crates/bsc-persona/src/floor.rs`), not here: a floor write may only
+ * ever NARROW the floor it derives from. This type is the shape both ends agree on.
+ */
+export interface PersonaFloor {
+  github: AccessTier;
+  git: AccessTier;
+  code: AccessTier;
+  net: AccessTier;
+  ui: AccessTier;
+  /** Path globs this persona may write. Absent ⇒ no write scope at all. */
+  writeGlobs?: string[];
+  /** SYMBOLIC read-only roots it may harvest from (`app-repo`, `projects`). Absent ⇒ its own root. */
+  harvestRoots?: string[];
+  /**
+   * The confined store-CLI surface — the ONLY commands that auto-run, suppressing the baseline tiers.
+   *
+   * Its PRESENCE is what makes a persona confined at all, so absent and `[]` are NOT the same thing:
+   * absent means unconfined (the broad baseline allow-list), which is the WIDEST value this field
+   * takes. That inversion is why the store's clamp treats dropping this list as a widening.
+   */
+  allow?: string[];
+}
 
 export interface Persona {
   /** Stable, opaque id (slug for built-ins, minted for user personas). */
@@ -22,8 +55,17 @@ export interface Persona {
   /** One-line description of the job this persona does. */
   blurb: string;
   /** The permission floor this persona runs under — the ONLY link to the role gate (#219). Many
-   *  personas may reference the same role; the role bounds capabilities, the persona shapes behavior. */
+   *  personas may reference the same role; the role bounds capabilities, the persona shapes behavior.
+   *
+   *  BEING RETIRED: `floor` below now carries the capability directly. This field stays until
+   *  `personas-are-the-launch-primitive` rewires every launch site off `SessionRole`. */
   role: SessionRole;
+  /** This persona's own permission floor. Packaged personas ship one generated from their role row
+   *  (`scripts/gen-persona-floors.mjs`), kept honest by `personaFloorParity.test.ts`. */
+  floor?: PersonaFloor;
+  /** The persona this one's floor NARROWS from. Read by the store's clamp: a persona with no
+   *  ancestor may only be created with an all-`none` floor, so a new persona fails closed. */
+  derivesFrom?: string;
   /** The start prompt / protocol injected at launch (prose). Empty is allowed (falls back to the
    *  role's own kickoff assembly downstream). */
   startPrompt: string;

@@ -12,6 +12,8 @@
 //! reconciled by the frontend, exactly like the user blueprint library.
 
 pub mod cli;
+/// The permission FLOOR a persona carries, and the narrow-only clamp every write passes.
+pub mod floor;
 
 #[cfg(test)]
 mod tests {
