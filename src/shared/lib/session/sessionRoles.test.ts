@@ -610,8 +610,15 @@ describe("designer role (#2471)", () => {
     // The `none` tiers deny the bare tool — the granular write-prefix lists are the read-tier form.
     expect(denies).not.toContain("git push");
     expect(denies).not.toContain("gh pr create");
-    // ui:"write" — no bsc denies; the restricted allow-list (not the role gate) narrows the surface.
-    expect(denies.some((d) => d.startsWith("bsc"))).toBe(false);
+    // ui:"write" — nothing on the KIT store is denied; the restricted allow-list (not the role gate)
+    // is what narrows a confined role's surface.
+    expect(denies.some((d) => d.startsWith("bsc ui") || d.startsWith("bsc component"))).toBe(false);
+    // It is NOT true that the gate adds no `bsc` denies to a restricted role at all — this test used
+    // to say so, and it only held for the designer by accident: `curator` has no `bsc request` on its
+    // surface, so it already picks up the tooling-request deny (#4000). Persona writes are the second
+    // such case (architect-only, epic `the-persona-is-the-whole-agent`), and they apply here too —
+    // the confined allow-list is ignored under the bypass posture, where the hook is the only gate.
+    expect(denies).toContain("bsc persona set");
   });
 
   it("roleDeniedTools denies the web tools (net:none) — no live injection surface", () => {

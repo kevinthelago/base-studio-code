@@ -88,25 +88,41 @@ describe("the three-tier funnel is monotonic — architect < director < worker",
 });
 
 describe("the director's team-design surface (#funnel-planner-takes-team-and-context)", () => {
-  it("can reach bsc teams + bsc persona, because it is NOT a restricted-allow role", () => {
+  it("can reach bsc teams, because it is NOT a restricted-allow role", () => {
     // There is no per-role allow-list to add to here: `bsc` sits in the always-allowed mandatory tier
     // (permissions/base.json), and a role only gets a narrowed surface if it appears in the restricted
-    // table. The director does not — so team and persona authoring is reachable by construction. This
-    // pins that fact, because "add it to the allow-list" would be a no-op that reads like a change.
+    // table. The director does not — so team authoring is reachable by construction. This pins that
+    // fact, because "add it to the allow-list" would be a no-op that reads like a change.
     expect(restrictedRoleCommands("director")).toEqual([]);
   });
 
-  it("is not denied the team/persona commands by its role gate", () => {
+  it("designs the TEAM but no longer authors the PERSONAS in it", () => {
+    // NARROWED by the maintainer (2026-08-19, epic `the-persona-is-the-whole-agent`): "we should
+    // restrict role creation and modification to the architect. this will be the role responsible of
+    // configuring them before the director is requested to design their team and the capability."
+    //
+    // So the two halves split. The ARCHITECT configures the personas and their capability; the
+    // DIRECTOR then composes a team out of the personas that already exist. That is coherent because a
+    // team PLACES personas into positions — it does not need to mint them — and it is why the director
+    // keeps `bsc teams` untouched while losing the three persona write verbs.
     const denies = roleDeniedCommands(cap("director"));
     for (const c of denies) {
       expect(c.startsWith("bsc teams"), `role gate must not deny ${c}`).toBe(false);
-      expect(c.startsWith("bsc persona"), `role gate must not deny ${c}`).toBe(false);
     }
+    expect(denies).toContain("bsc persona set");
+    expect(denies).toContain("bsc persona remove");
+    expect(denies).toContain("bsc persona rename");
+    // READS stay open — a director must still be able to see what its team is made of.
+    expect(denies).not.toContain("bsc persona");
+    expect(denies.some((c) => c.startsWith("bsc persona get") || c.startsWith("bsc persona list"))).toBe(false);
   });
 
-  it("keeps the ARCHITECT's team surface narrow — it is transitional, not a second designer", () => {
-    // The architect still holds teams/persona while the Teams Studio runs on it, but its surface is a
-    // fixed restricted list, so it cannot grow into the director's job by accident.
+  it("keeps the ARCHITECT's team surface narrow — the persona half is now PERMANENT, not transitional", () => {
+    // `bsc persona` on this surface used to be labelled transitional, "until team design moves to the
+    // director". Team design DID move; persona authoring deliberately did not, and is now the
+    // architect's standing job (see the director case above). `bsc teams` remains so the architect can
+    // READ the team its personas are composed into. The surface is still a fixed restricted list, so
+    // it cannot grow into the director's job by accident.
     const surface = restrictedRoleCommands("architect");
     expect(surface).toContain("bsc teams");
     expect(surface).toContain("bsc persona");

@@ -181,3 +181,52 @@ describe("gate scope", () => {
     expect(plan(["src/features/x/lib/y.ts"]).frontendFiles).toEqual(["src/features/x/lib/y.ts"]);
   });
 });
+
+// ── record stores are FRONTEND source, not backend data ──────────────────────────────────────────
+//
+// ~1,050 modules ship as records under `src-tauri/data/` (#3604). The scope split is by path, and
+// `src-tauri/**` means Rust — so the single file carrying the most frontend source in the repo was
+// classified as backend. MEASURED on a change that rewrote `personaBridge` (which lives inside
+// `data/knowledge/algorithms.json`): the gate printed `frontend files: 0`, ran neither typecheck nor
+// lint nor vitest, and reported PASS. It happened three times in one epic before it was diagnosed.
+describe("record stores under src-tauri/data are frontend (gate scoping)", () => {
+  // Reuse the file's shared fixtures rather than inventing a second pair — the first draft built its
+  // own and got the `graph` value type wrong (Set vs string[]), which typecheck caught and the tests
+  // did not, since planGate never reads it on these paths.
+  const plan = (files: string[]) => planGate({ files, graph, dirToCrate, exists: () => true });
+
+  it("the algorithms seed runs the frontend arms", () => {
+    const p = plan(["src-tauri/data/knowledge/algorithms.json"]);
+    expect(p.runTsc, "typecheck must run — the seed holds ~676 frontend modules").toBe(true);
+    expect(p.runVitest).toBe(true);
+  });
+
+  it("the component seeds run them too", () => {
+    const p = plan(["src-tauri/data/components/app/features/teams/teams-inspector.json"]);
+    expect(p.runTsc).toBe(true);
+    expect(p.runVitest).toBe(true);
+  });
+
+  it("a record-store change runs vitest UNSCOPED", () => {
+    // `--changed` walks the module graph and there is no edge from a JSON blob to what
+    // `emit:records` materializes out of it, so scoping would select tests that cannot see the change.
+    expect(plan(["src-tauri/data/knowledge/algorithms.json"]).vitestUnscoped).toBe(true);
+    expect(plan(["src/store/index.ts"]).vitestUnscoped).toBeFalsy();
+  });
+
+  it("a record store is NOT handed to eslint, which would lint the JSON rather than the TS in it", () => {
+    expect(plan(["src-tauri/data/knowledge/algorithms.json"]).frontendFiles).toEqual([]);
+  });
+
+  it("a record store stays RUST as well — both sides really do depend on it", () => {
+    // `algorithms.json` is a bundle resource and `src-tauri/src/tests.rs` asserts things about the
+    // seeds, so claiming it for the frontend must not release it from the Rust arms.
+    expect(plan(["src-tauri/data/knowledge/algorithms.json"]).rustCrates).toContain("base-studio-code");
+  });
+
+  it("ordinary backend data is still backend only", () => {
+    const p = plan(["src-tauri/data/permissions/write-locks.json"]);
+    expect(p.runTsc).toBe(false);
+    expect(p.runVitest).toBe(false);
+  });
+});

@@ -3,6 +3,21 @@
   "order": 1,
   "name": "Planner",
   "role": "planner",
+  "floor": {
+    "github": "read",
+    "git": "read",
+    "code": "write",
+    "net": "read",
+    "ui": "read",
+    "writeGlobs": [
+      "*.md",
+      "*.json",
+      "prompts/*.md",
+      "prompts/*",
+      "discovery/*.md",
+      "discovery/*"
+    ]
+  },
   "blurb": "Shapes a pitch or repo set into a complete, executable plan.",
   "startPrompt": "You are the planning session. Turn the pitch into goal/scope/stack/architecture, a feature breakdown, granular agent-ready issues, and the fleet. Plan only — never write project code.",
   "skills": [],

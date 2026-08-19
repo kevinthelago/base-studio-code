@@ -15,7 +15,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acquireGateSlot } from "./gateLock.mjs";
-import { planGate, parsePorcelain, gateCommands } from "./gateScope.mjs";
+import { planGate, parsePorcelain, gateCommands, isRecordStorePath } from "./gateScope.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -82,7 +82,19 @@ process.stdout.write(`\ngate: ${plan.full ? "FULL" : "SCOPED"} — ${plan.reason
 if (!plan.full) {
   process.stdout.write(`  changed files : ${files.length}\n`);
   process.stdout.write(`  rust crates   : ${plan.rustCrates.length ? plan.rustCrates.join(" ") : "(none)"}\n`);
-  process.stdout.write(`  frontend files: ${plan.frontendFiles.length}\n`);
+  // Say WHY the lint list is empty when it is. `frontend files: 0` on a change that really IS
+  // frontend is what hid the record-store misclassification for three merges: it reads as "there
+  // is no frontend change" when it meant "none that eslint can be pointed at". A record store is
+  // JSON holding TypeScript, so it counts for tsc/vitest and never for lint.
+  const recordStores = files.filter(isRecordStorePath);
+  const lintNote = recordStores.length
+    ? ` (+${recordStores.length} record store${recordStores.length === 1 ? "" : "s"} — frontend source, excluded from lint)`
+    : "";
+  process.stdout.write(`  frontend files: ${plan.frontendFiles.length}${lintNote}\n`);
+  if (plan.vitestUnscoped) {
+    process.stdout.write(`  note: a record store changed, so vitest runs UNSCOPED — --changed cannot see\n`);
+    process.stdout.write(`        from a JSON blob to the modules emit:records materializes from it.\n`);
+  }
   if (plan.rustCrates.length >= graph.size - 2) {
     process.stdout.write(`  note: that is nearly the whole workspace — a shared crate changed, so this is\n`);
     process.stdout.write(`        barely narrower than --full. Expected, not a bug.\n`);

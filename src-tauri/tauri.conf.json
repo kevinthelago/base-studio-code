@@ -30,11 +30,32 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": ["binaries/bsc", "binaries/bsc-agent"],
+    "externalBin": [
+      "binaries/bsc",
+      "binaries/bsc-agent"
+    ],
     "resources": {
       "resources/data/components/react-ui.json": "data/components/react-ui.json",
-      "resources/data/ui/react-ui-kit.meta.json": "data/ui/react-ui-kit.meta.json",
-      "resources/data/knowledge/algorithms.json": "data/knowledge/algorithms.json"
+      "resources/data/knowledge/algorithms.json": "data/knowledge/algorithms.json",
+      "resources/data/personas/architect.json": "data/personas/architect.json",
+      "resources/data/personas/auditor.json": "data/personas/auditor.json",
+      "resources/data/personas/curator.json": "data/personas/curator.json",
+      "resources/data/personas/debugger.json": "data/personas/debugger.json",
+      "resources/data/personas/designer.json": "data/personas/designer.json",
+      "resources/data/personas/director.json": "data/personas/director.json",
+      "resources/data/personas/documentor.json": "data/personas/documentor.json",
+      "resources/data/personas/integrator.json": "data/personas/integrator.json",
+      "resources/data/personas/issuer.json": "data/personas/issuer.json",
+      "resources/data/personas/juror.json": "data/personas/juror.json",
+      "resources/data/personas/librarian.json": "data/personas/librarian.json",
+      "resources/data/personas/marketer.json": "data/personas/marketer.json",
+      "resources/data/personas/planner.json": "data/personas/planner.json",
+      "resources/data/personas/reviewer.json": "data/personas/reviewer.json",
+      "resources/data/personas/sound-designer.json": "data/personas/sound-designer.json",
+      "resources/data/personas/tester.json": "data/personas/tester.json",
+      "resources/data/personas/triage.json": "data/personas/triage.json",
+      "resources/data/personas/worker.json": "data/personas/worker.json",
+      "resources/data/ui/react-ui-kit.meta.json": "data/ui/react-ui-kit.meta.json"
     },
     "publisher": "base-studio-code",
     "icon": [

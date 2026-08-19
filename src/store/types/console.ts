@@ -262,6 +262,18 @@ export interface ConsoleState {
   // command allowlist is narrowed at launch (a planner can't run git/gh writes).
   // Absent ⇒ unrestricted (current behavior). Set by the planning/fleet assignment.
   paneRoles: Record<string, SessionRole>;
+  /**
+   * The PERSONA each pane launches as (epic `the-persona-is-the-whole-agent`).
+   *
+   * Read BEFORE `paneRoles` when the launch resolves a capability, because a persona carries its own
+   * `floor` and that floor may be NARROWER than its role's. Storing only the role discarded exactly
+   * that narrowing at the one moment it mattered: a user persona derived from `worker` with a tighter
+   * floor still launched with the full worker capability.
+   *
+   * Transient, like `paneRoles` — neither is in the persist allowlist, so both are rewritten by
+   * whatever re-seeds the pane after a restart, and there is no migration to carry.
+   */
+  panePersonas: Record<string, string>;
   /** Drive mode for each launched director pane (#366) — read by useDirectorPump. */
   paneDirectorDrive: Record<string, DirectorDrive>;
   /** Integration mode (watchdog/integrator) for each launched director pane (#378) — read by useCiWatcher. */
@@ -269,6 +281,8 @@ export interface ConsoleState {
   /** Each worker pane's repo + branch (#373) — lets useCiWatcher map a PR back to it. */
   paneStream: Record<string, { repo: string; branch: string }>;
   setPaneRole: (paneId: string, role: SessionRole) => void;
+  /** Point a pane at the persona it launches as. */
+  setPanePersona: (paneId: string, personaId: string) => void;
   // Agents (#255) — editable permission profiles + their per-pane assignment, both
   // persisted. A pane's assigned profile is applied to its session at launch (the
   // same gate as paneRoles). Absent ⇒ no profile (unrestricted beyond the role gate).
