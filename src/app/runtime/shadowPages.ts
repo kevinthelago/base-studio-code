@@ -145,7 +145,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // resolver reaches the graph first. Listed here so they fall under the parity guard like the rest.
       { recordId: "plan-pane", file: null },
       { recordId: "plan-pane-shell", file: null },
-      { recordId: "plan-pane-bodies", file: "/src/features/planner/pane/FocusedBodies.tsx" },
+      { recordId: "plan-pane-bodies", file: null }, // RETIRED — the record is the only copy,
       { recordId: "plan-pane-stage-bar", file: null },
       { recordId: "plan-pane-rail", file: null },
       { recordId: "plan-pane-mcp-modal", file: null }, // RETIRED — the record is the only copy,
@@ -169,7 +169,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "plan-body-source", file: null }, // RETIRED — the record is the only copy,
       { recordId: "plan-body-scan-views", file: null }, // RETIRED — the record is the only copy,
       { recordId: "plan-body-connector-form", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-streams", file: "/src/features/planner/bodies/StreamsBody.tsx" },
+      { recordId: "plan-body-streams", file: null }, // RETIRED — the record is the only copy,
       { recordId: "plan-body-permissions", file: null }, // RETIRED — the record is the only copy,
       { recordId: "plan-body-plan", file: null }, // RETIRED — the record is the only copy
       { recordId: "plan-body-stream-cards", file: null }, // RETIRED — the record is the only copy,

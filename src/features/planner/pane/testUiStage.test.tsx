@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { FocusedStageBody } from "./FocusedBodies";
+import { FocusedStageBody } from "@/features/planner/pane/FocusedBodies";
 import { STAGE_DEFS } from "@/features/planner/stages/blueprintBuiltins";
 import type { Stage } from "@/features/planner/stages/focusedPlan";
 
