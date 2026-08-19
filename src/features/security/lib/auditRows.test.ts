@@ -45,6 +45,26 @@ describe("buildAuditRows (#1643)", () => {
   });
 });
 
+describe("buildAuditRows tolerates an absent log (retire-agentprofile-and-strip-security-to-activity)", () => {
+  const ctx = {
+    consoles: [{ id: "t0", name: "build" }],
+    profiles: [],
+    paneProfiles: {},
+    paneRoles: {},
+  };
+
+  // `logsTail` degrades to `[]` on a REJECTION, so the app never gets here with nothing. An invoke that
+  // RESOLVES undefined does — a stub, the e2e harness, a backend not yet up — and `.join` threw, killing
+  // the poll tick. It only became reachable when Activity turned into the Security page's ONLY tab and
+  // so began polling on open instead of on click; before that the early-return on `tab !== "activity"`
+  // hid it. A shared derivation the tunnel projector also polls should not depend on which tab is up.
+  it("returns no rows instead of throwing when the log read yields nothing", () => {
+    expect(buildAuditRows(undefined, ctx)).toEqual([]);
+    expect(buildAuditRows(null, ctx)).toEqual([]);
+    expect(buildAuditRows([], ctx)).toEqual([]);
+  });
+});
+
 describe("filterAuditRows + auditDecisionCounts (#1643)", () => {
   const rows: AuditDisplayRow[] = [
     { ts: TS, console: "a", pane: "t0p0", profileId: "p", kind: "cmd", target: "x", decision: "allow" },

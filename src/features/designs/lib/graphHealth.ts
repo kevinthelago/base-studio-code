@@ -56,7 +56,7 @@ const RESOLVABLE_SPECIFIERS = new Set(Object.keys(previewImportmap));
  *
  *  Without this the buildability check resolved `@/…` against the packaged artifact and sibling node `src`
  *  paths ONLY, so a record honestly importing a registered platform module
- *  (`@/features/security/lib/badgeTone`) matched neither and read as `no-implementation` — while the app
+ *  (`@/features/security/lib/consoleModel`) matched neither and read as `no-implementation` — while the app
  *  mounted it fine. Worse, the finding pressured the next author to STUB the import to silence it, which is
  *  the corruption `reimplemented-component` exists to catch (#3892/#3895). Matched LITERALLY, exactly as
  *  the loader's `isAppModule` does. Rust twin embeds the same json. */

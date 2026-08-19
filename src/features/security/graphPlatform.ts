@@ -1,6 +1,8 @@
 // The security feature's graph-platform surface (#3646, epic #3604) — the feature-internal modules a
-// graph-loaded Security page imports but does NOT redraw: the pure permission-profile / console / audit /
-// flow domain logic. Registered HERE, inside the feature, because the shell must not reach a feature's
+// graph-loaded Security page imports but does NOT redraw: the pure permission-profile / console / audit
+// domain logic. `badgeTone`, `appSession` and `flowModel` went with the Profiles/Assignments/Flow tabs
+// (retire-agentprofile-and-strip-security-to-activity) — nothing imported them once those records died.
+// Registered HERE, inside the feature, because the shell must not reach a feature's
 // internals (#1545) and eager-importing them from `app/` would de-lazy the feature at boot. The security
 // host calls this synchronously before the graph page loads, so the modules are present when the compiled
 // page's `require()` runs. Mirrors registerFleetPlatform / registerAutomationsPlatform.
@@ -8,9 +10,6 @@ import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as AgentProfiles from "./lib/agentProfiles";
 import * as ConsoleModel from "@/features/security/lib/consoleModel";
 import * as AuditRows from "@/features/security/lib/auditRows";
-import * as BadgeTone from "@/features/security/lib/badgeTone";
-import * as AppSession from "@/features/security/lib/appSession";
-import * as FlowModel from "@/features/security/lib/flowModel";
 import * as GraphPlatform from "@/features/security/graphPlatform";
 
 let done = false;
@@ -22,8 +21,5 @@ export function registerSecurityPlatform(): void {
   registerAppModule("@/features/security/lib/agentProfiles", AgentProfiles);
   registerAppModule("@/features/security/lib/consoleModel", ConsoleModel);
   registerAppModule("@/features/security/lib/auditRows", AuditRows);
-  registerAppModule("@/features/security/lib/badgeTone", BadgeTone);
-  registerAppModule("@/features/security/lib/appSession", AppSession);
-  registerAppModule("@/features/security/lib/flowModel", FlowModel);
   registerAppModule("@/features/security/graphPlatform", GraphPlatform);
 }
