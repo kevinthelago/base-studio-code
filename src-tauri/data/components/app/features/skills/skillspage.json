@@ -24,6 +24,5 @@
   ],
   "src": "src/features/skills/index.tsx",
   "folder": "features/skills",
-  "props": [],
-  "provides": "@/features/skills"
+  "props": []
 }
