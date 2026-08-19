@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SelfWiredKitRenderer } from "./SelfWiredKitRenderer";
+import { SelfWiredKitRenderer } from "@/shared/ui/spec/SelfWiredKitRenderer";
 import { validateGeneralNode } from "@/shared/ui/spec/generalNode";
 import type { GeneralNode } from "@/shared/ui/spec/generalNode";
 

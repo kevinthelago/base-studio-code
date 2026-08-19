@@ -8,7 +8,7 @@ vi.mock("../preview/previewBundle", () => ({
 }));
 
 import { stageScreen, hasStageScreen, registerStageScreen } from "./stageScreens";
-import { RENDER_PREVIEW_ID } from "../preview/renderPreview";
+import { RENDER_PREVIEW_ID } from "@/features/planner/preview/renderPreview";
 
 describe("stageScreens registry", () => {
   it("render-preview declares a second screen", () => {

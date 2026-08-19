@@ -15,7 +15,7 @@ vi.mock('./previewBundle', () => ({
 // The shell looks a renderer up by kind; registering it here is what puts it there. It used to
 // arrive as an import side effect (renderers-register-at-a-named-site-not-on-import).
 import { registerRenderer } from './registry';
-import { htmlRenderer } from './renderers/htmlRenderer';
+import { htmlRenderer } from '@/features/planner/preview/renderers/htmlRenderer';
 registerRenderer(htmlRenderer);
 import { PreviewPaneShell } from '@/features/planner/preview/PreviewPaneShell';
 

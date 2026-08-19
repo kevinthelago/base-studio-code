@@ -14,7 +14,9 @@
 // module-init side effects (three renderer imports, then `registerStageScreen` calls at load). It stays a
 // single code module so those registrations happen exactly once.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
-import * as RenderPreview from "./renderPreview";
+import * as PreviewBundle from "@/features/planner/preview/previewBundle";
+import * as StreamingRuntime from "@/features/planner/preview/streamingRuntime";
+import * as RenderPreview from "@/features/planner/preview/renderPreview";
 import * as ClaudeDesignBrief from "@/features/planner/preview/claudeDesignBrief";
 import * as Registry from "./registry";
 
@@ -24,6 +26,11 @@ let done = false;
 export function registerPreviewPlatform(): void {
   if (done) return;
   done = true;
+  // The two preview leaves records reach that nothing answered. Feature-scoped rather than shell:
+  // registration is eager, and previewBundle pulls the esbuild-wasm chain — in appModules that would
+  // land in the boot bundle for every user, where here it is loaded by the surface already paying for it.
+  registerAppModule("@/features/planner/preview/previewBundle", PreviewBundle);
+  registerAppModule("@/features/planner/preview/streamingRuntime", StreamingRuntime);
   registerAppModule("@/features/planner/preview/renderPreview", RenderPreview);
   registerAppModule("@/features/planner/preview/claudeDesignBrief", ClaudeDesignBrief);
   registerAppModule("@/features/planner/preview/registry", Registry);

@@ -5,7 +5,7 @@ vi.mock("./previewBundle", () => ({
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
 }));
 
-import { resolveEntry, renderPreviewHandler, dispatchRenderPreview, RENDER_PREVIEW_ID } from "./renderPreview";
+import { resolveEntry, renderPreviewHandler, dispatchRenderPreview, RENDER_PREVIEW_ID } from "@/features/planner/preview/renderPreview";
 import { useAppStore } from "@/store";
 
 const ctx = (over: Record<string, unknown> = {}) => ({

@@ -28,7 +28,7 @@ import { createAutomationsSlice } from "@/features/automations/store";
 import { createCoreSlice } from "@/store/slices/core";
 import { createLlmSettingsSlice } from "@/store/slices/llmSettings";
 import { createGithubSlice } from "@/features/github/store";
-import { createShellSlice } from "./slices/shell";
+import { createShellSlice } from "@/store/slices/shell";
 import { createTunnelSlice } from "@/features/tunnel/store";
 import { createConsoleSlice } from "@/store/slices/console";
 

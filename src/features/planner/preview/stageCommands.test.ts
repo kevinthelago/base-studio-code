@@ -70,7 +70,7 @@ describe("stageCommands — render-preview module", () => {
       bundleSkeleton: vi.fn().mockResolvedValue("BUNDLE_JS"),
       buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
     }));
-    const { RENDER_PREVIEW_ID } = await import("../preview/renderPreview");
+    const { RENDER_PREVIEW_ID } = await import("@/features/planner/preview/renderPreview");
     const { hasStageModule: has } = await import("@/features/planner/preview/stageCommands");
     expect(has(RENDER_PREVIEW_ID)).toBe(true);
   }, 15_000);
