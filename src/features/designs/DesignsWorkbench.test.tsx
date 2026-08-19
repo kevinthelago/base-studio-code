@@ -11,8 +11,8 @@ vi.mock("@/shared/lib/preview/componentBundle", () => ({
   COMPONENT_EXTERNALS: ["react"],
 }));
 import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
-import { SEED_THEMES } from "./lib/themes";
-import type { Kit } from "./lib/model";
+import { SEED_THEMES } from "@/features/designs/lib/themes";
+import type { Kit } from "@/features/designs/lib/model";
 import type { AiTouch } from "@/features/designs/store";
 import { useAppStore } from "@/store";
 

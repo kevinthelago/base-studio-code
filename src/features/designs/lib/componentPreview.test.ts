@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { componentPreviewFiles, componentBuildable, bootstrapSource, samplePropValue, isErrorProp, supportedStates, previewCycleStates, looksBuildableModule, isPreviewBuildable, hasCodeElision, erasedSpecs, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
-import type { ComponentRecord, PropSpec } from "./model";
+import type { ComponentRecord, PropSpec } from "@/features/designs/lib/model";
 
 const prop = (name: string, type: string, req = false): PropSpec => ({ name, type, req, desc: "" });
 

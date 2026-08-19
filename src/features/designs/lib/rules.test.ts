@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { deriveRules, mergeRules, kitRules, toEslintRules, toEslintPreset, ruleMessage, ESCAPE_HATCH } from "@/features/designs/lib/rules";
 import { REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
-import type { ComponentRecord, KitRule } from "./model";
+import type { ComponentRecord, KitRule } from "@/features/designs/lib/model";
 
 // #3543: the packaged seed is now a single EMPTY kit; the lint-rule derivation is exercised against the
 // react-ui LIBRARY (the manifest-generated assembler — Button `wraps:"button"`, TextField `wraps:"input"`, …).

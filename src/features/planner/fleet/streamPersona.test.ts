@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveStreamPersona, personaStreamPrompt } from "./streamPersona";
+import { resolveStreamPersona, personaStreamPrompt } from "@/features/planner/fleet/streamPersona";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 

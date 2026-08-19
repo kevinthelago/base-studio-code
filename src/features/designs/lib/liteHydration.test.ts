@@ -5,10 +5,10 @@
 // A LITE record's empty `srcText` is a DEFAULT, not a value, and these lock the places that
 // distinction is load-bearing — each of which silently does the wrong thing without it.
 import { describe, it, expect } from "vitest";
-import { scannableComponents } from "./componentScan";
+import { scannableComponents } from "@/features/designs/lib/componentScan";
 import { projectComponent } from "./componentBridge";
 import type { KitArtifact } from "./componentPreview";
-import type { ComponentRecord } from "./model";
+import type { ComponentRecord } from "@/features/designs/lib/model";
 
 // Same fixture shape as componentScan.test.ts: the artifact supplies the built-in's source by `src`.
 const base: ComponentRecord = {

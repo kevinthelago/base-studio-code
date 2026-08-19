@@ -16,7 +16,7 @@ import {
   type ComponentRecord,
   type Kit,
   type DataShape,
-} from "./model";
+} from "@/features/designs/lib/model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
 import { BASE_KIT_ID } from "@/shared/ui/kit/baseAnimations";
 import { REACT_UI_COMPONENTS, REACT_UI_KIT } from "@/features/designs/lib/reactUiKit";

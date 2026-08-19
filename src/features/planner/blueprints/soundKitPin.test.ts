@@ -15,7 +15,7 @@ import packagedKitMeta from "@data/sound/signal-kit.meta.json";
 import {
   packagedSoundKitPin, soundKitRef, resolveSoundKitPin, importSoundKitByGistUrl,
   deriveSoundKitIdentity, listStoreSoundKits, canonicalSoundArtifact,
-} from "./soundKitPin";
+} from "@/features/planner/blueprints/soundKitPin";
 import type { BlueprintSoundKit } from "../stages/blueprints";
 import { makeBlueprints } from "../stages/blueprints";
 import { useAppStore } from "@/store";

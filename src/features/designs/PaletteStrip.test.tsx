@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { PaletteStrip } from "@/features/designs/PaletteStrip";
-import { SEED_THEMES } from "./lib/themes";
+import { SEED_THEMES } from "@/features/designs/lib/themes";
 
 describe("PaletteStrip (#2834)", () => {
   it("renders one swatch per semantic token, grouped by category", () => {

@@ -3,7 +3,7 @@ import {
   transformationsConfirmed, tierGroups, nextPendingTier, tierLabel,
   coerceTransformationRows, specNodeCount, TRANSFORMATION_TAXONOMY, verbMeta,
   type TransformationRow,
-} from "./transformations";
+} from "@/features/planner/lib/transformations";
 import { validateGeneralNode, demoSpec } from "@/shared/ui/spec";
 import TRANSFORMATIONS_STAGE from "@data/stages/transformations.json";
 

@@ -11,7 +11,7 @@ vi.mock("@/shared/lib/core/bsc", () => ({
 }));
 
 import { bsc, bscRun, bscWrite } from "@/shared/lib/core/bsc";
-import type { ComponentRecord, Kit } from "./model";
+import type { ComponentRecord, Kit } from "@/features/designs/lib/model";
 import { dropComponent, dropKit, loadComponents, loadKits, projectComponent, pushComponent, pushKit, recordPreviewError } from "./componentBridge";
 import { dropKitUsage, loadKitUsage, pushKitUsage } from "@/features/designs/lib/kitUsageBridge";
 

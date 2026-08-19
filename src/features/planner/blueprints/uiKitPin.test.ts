@@ -9,7 +9,7 @@ import { createHash, webcrypto } from "node:crypto";
 import packagedKitMeta from "@data/ui/react-ui-kit.meta.json";
 import {
   packagedUiKitPin, kitRef, resolveUiKitPin, importKitByGistUrl, deriveKitIdentity, listStoreKits,
-} from "./uiKitPin";
+} from "@/features/planner/blueprints/uiKitPin";
 import type { BlueprintUiKit } from "../stages/blueprints";
 import { makeBlueprints } from "../stages/blueprints";
 import { useAppStore } from "@/store";

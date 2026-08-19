@@ -17,7 +17,7 @@ import { useAppStore } from "@/store";
 import { ComponentPreviewFrame } from "@/features/designs/ComponentPreviewFrame";
 import { mountedPreviewFrames, resetPreviewFrames } from "./lib/previewRegistry";
 import { recordPreviewError, clearPreviewError } from "./lib/componentBridge";
-import type { ComponentRecord } from "./lib/model";
+import type { ComponentRecord } from "@/features/designs/lib/model";
 
 // The bridge shells out to `bsc`; only WHETHER the two error verbs were called matters here. PARTIAL
 // mock — the module is the Studio's whole `bsc` surface and the frame's siblings import the rest of it,

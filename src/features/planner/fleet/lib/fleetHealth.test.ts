@@ -1,6 +1,6 @@
 // fleetHealth (#2240) — the unified error feed.
 import { describe, it, expect } from "vitest";
-import { buildFleetHealth } from "./fleetHealth";
+import { buildFleetHealth } from "@/features/planner/fleet/lib/fleetHealth";
 
 describe("buildFleetHealth (#2240)", () => {
   const nameByPane = new Map([["p1", "alpha"], ["p2", "beta"]]);

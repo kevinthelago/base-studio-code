@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildProjectPaneData } from "./projectPaneData";
-import type { BuildProjectPaneInput } from "./projectPaneData";
+import { buildProjectPaneData } from "@/features/planner/pane/projectPaneData";
+import type { BuildProjectPaneInput } from "@/features/planner/pane/projectPaneData";
 import { emptyFleet } from "@/features/planner/fleet/planFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";

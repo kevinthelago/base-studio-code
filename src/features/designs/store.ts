@@ -7,15 +7,15 @@
 // seed when the bridge is unreachable (tests, the web shell, an old bundled `bsc`).
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
-import type { ComponentRecord, Kit } from "./lib/model";
-import type { ComponentBuildStatus, RuntimeStateCategory, ComponentScanResult } from "./lib/componentScan";
+import type { ComponentRecord, Kit } from "@/features/designs/lib/model";
+import type { ComponentBuildStatus, RuntimeStateCategory, ComponentScanResult } from "@/features/designs/lib/componentScan";
 import type { PreviewState } from "./lib/componentPreview";
 import type { KitConsumer, KitChange, Dispatch } from "@/features/designs/lib/propagation";
 import type { SeedNotice } from "@/features/designs/lib/seedRefresh";
 import { kitUsageId, makeChange, planPropagation, dispatchKey } from "@/features/designs/lib/propagation";
 import { SEED_COMPONENTS, SEED_KITS, planComponentRestamp, reconcileComponents, reconcileKits } from "./lib/seed";
 import { applyStamps } from "@/features/designs/lib/seedRefresh";
-import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "./lib/themes";
+import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "@/features/designs/lib/themes";
 import { loadComponents, loadComponentsGraph, loadKits, pushComponent, stampComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
 import { loadThemes, pushTheme, dropTheme, loadVariants } from "@/features/designs/lib/themeBridge";
 import { loadKitUsage, pushKitUsage, dropKitUsage } from "@/features/designs/lib/kitUsageBridge";

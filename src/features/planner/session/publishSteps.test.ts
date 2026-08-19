@@ -3,7 +3,7 @@ import {
   type GhApi, type Upd,
   publishRepositories, scaffoldRepositories, ensureProjectBoard,
   createIssues, applyStreamLabels, seedPublishStatus, materializeIssues,
-} from "./publishSteps";
+} from "@/features/planner/session/publishSteps";
 import type { GhStatusMap, GhItemState } from "@/features/planner/session/GitHubStructureCard";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 

@@ -16,7 +16,7 @@
 // key any packaged record actually carries must survive the projection.
 import { describe, it, expect } from "vitest";
 import { projectComponent } from "./componentBridge";
-import type { ComponentRecord } from "./model";
+import type { ComponentRecord } from "@/features/designs/lib/model";
 
 // The RAW records — deliberately NOT `SEED_COMPONENTS`, which is already projected and so cannot show
 // what the projection discarded.

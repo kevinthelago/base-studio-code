@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ComponentNode } from "@/features/designs/ComponentNode";
 import { useAppStore } from "@/store";
-import type { ComponentRecord } from "./lib/model";
+import type { ComponentRecord } from "@/features/designs/lib/model";
 
 const comp = (o: Partial<ComponentRecord> & Pick<ComponentRecord, "id">): ComponentRecord =>
   ({

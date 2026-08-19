@@ -12,7 +12,7 @@
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import * as Skills from "@/features/skills"; // FleetLessons reads loadPendingLessons/lessonTitle from the skills barrel
 import * as FleetCost from "@/features/planner/fleet/lib/fleetCost";
-import * as FleetHealthLib from "./lib/fleetHealth";
+import * as FleetHealthLib from "@/features/planner/fleet/lib/fleetHealth";
 // #4238 — `WorkerDetail` is now a `provides` RECORD, so the loader vendors its source rather than
 // handing back this module (which stays as the fallback). Vendoring makes the loader responsible for
 // what the detail panel reaches, and these five are what it reaches.

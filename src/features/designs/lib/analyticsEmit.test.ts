@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { AnalyticsEvent, PropSpec } from "./model";
+import type { AnalyticsEvent, PropSpec } from "@/features/designs/lib/model";
 import {
   eventNameForProp,
   resolveAnalyticsEmit,

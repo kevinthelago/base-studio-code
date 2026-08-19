@@ -5,7 +5,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { StreamsBody } from "@/features/planner/bodies/StreamsBody";
 import type { Agent } from "@/features/planner/pane/projectPane.types";
-import type { ProjectPaneData } from "../pane/projectPaneData";
+import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 
 const flow = { autonomy: "continuous", push: "auto-PR", gate: "soft" };
 const agent = (id: string, repo = "acme/web"): Agent =>

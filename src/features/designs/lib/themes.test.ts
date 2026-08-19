@@ -2,7 +2,7 @@
 // reconcileSeed over theme records (label-named notices), and the picker ordering.
 import { describe, it, expect } from "vitest";
 import { KIT_THEMES } from "@/shared/ui/kit";
-import { SEED_THEMES, reconcileThemes, orderThemes, groupThemes, OTHER_GROUP, type KitThemeRecord } from "./themes";
+import { SEED_THEMES, reconcileThemes, orderThemes, groupThemes, OTHER_GROUP, type KitThemeRecord } from "@/features/designs/lib/themes";
 import { seedHashOf, stampSeedHash } from "@/features/designs/lib/seedRefresh";
 
 describe("SEED_THEMES (#2488)", () => {

@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import {
   previewProps, previewPropList, previewChild, bootstrapSource, cannotTypeProp, unsampledRequiredProps,
 } from "./componentPreview";
-import type { ComponentRecord } from "./model";
+import type { ComponentRecord } from "@/features/designs/lib/model";
 import fixtures from "./previewProps.fixtures.json";
 
 /** Build a minimal ComponentRecord from a fixture case's `comp` — name + props drive the sampler, and

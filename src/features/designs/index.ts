@@ -15,7 +15,7 @@ export {
   ROLE_COLOR, ROLES, matchesQuery, resolveComposes, resolveUsedBy,
   type ComponentRecord, type Kit, type PropSpec, type Role, type KitRule, type KitRuleKind,
   type AnalyticsEvent,
-} from "./lib/model";
+} from "@/features/designs/lib/model";
 // The shipped analytics EMIT runtime (#3816, epic #3809 slice 3) — manifests (#3810) drive `bsc usage
 // record` (#3812) by construction at the KitRenderer action seam. Host-agnostic: inject the sink.
 export {

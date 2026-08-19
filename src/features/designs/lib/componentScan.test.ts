@@ -3,9 +3,9 @@ import {
   buildSignature, scannableComponents, pendingScans, runPooled, toBuildStatus, buildAndProbe, scanComponents, durableLogSync,
   probeStateBlanks,
   type ScannableComponent, type ComponentBuildStatus, type RunFn, type StateProbe, type RuntimeStateCategory,
-} from "./componentScan";
+} from "@/features/designs/lib/componentScan";
 import type { KitArtifact } from "./componentPreview";
-import type { ComponentRecord } from "./model";
+import type { ComponentRecord } from "@/features/designs/lib/model";
 
 // The esbuild-wasm bundle + the DOM runtime probe can't run under jsdom, so these cover the PURE spine of
 // the on-visit scan (#2838, #2908): which components to scan, the throttle/queue pool, and the

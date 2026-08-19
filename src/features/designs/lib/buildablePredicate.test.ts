@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import reactUiArtifact from "@data/components/react-ui.json";
 import { componentPreviewFiles, componentBuildable, type KitArtifact } from "./componentPreview";
-import type { ComponentRecord } from "./model";
+import type { ComponentRecord } from "@/features/designs/lib/model";
 
 const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
 const BUILTIN = ARTIFACT.components.find((c) => c.source)!;
