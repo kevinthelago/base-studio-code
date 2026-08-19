@@ -55,6 +55,17 @@ if (!storeArg || !implsArg) {
   process.exit(2);
 }
 
+/** The page ids `src/app/runtime/shadowPages.ts` already carries.
+ *
+ *  Read from the SOURCE rather than imported: this script is plain node with no `@/` alias and no TS
+ *  loader, and the catalogue's entries are literals, so a `pageId:` scan is exact. If that file ever
+ *  stops listing them literally this returns an empty set — which fails CLOSED (every app screen stays
+ *  skipped), the safe direction. */
+const CATALOGUED_PAGES = new Set(
+  [...readFileSync(join(REPO, "src/app/runtime/shadowPages.ts"), "utf8").matchAll(/pageId:\s*"([^"]+)"/g)]
+    .map((m) => m[1]),
+);
+
 /** A VITE build-time transform — see the header. */
 const BUILD_TIME_ONLY = /\bimport\s*\.\s*meta\s*\.\s*glob\b/;
 
@@ -181,9 +192,18 @@ for (const file of listModules()) {
   if (!hit) { skipped.noRecord++; continue; }
   if (BUILD_TIME_ONLY.test(hit.source)) { skipped.buildTimeOnly.push(file); continue; }
   // A `role: page` record is an APP SCREEN as far as `shadowPages.test.ts` is concerned, and that guard
-  // demands every one be catalogued. Promoting a page therefore fails the suite until someone adds it to
-  // SHADOW_PAGES with its `ensurePlatform` — a deliberate, per-page act, not a bulk promotion.
-  if (hit.kind === "component" && hit.rec.role === "page" && hit.rec.pageKind !== "kit") { skipped.pageRecord.push(file); continue; }
+  // demands every one be catalogued. Promoting an uncatalogued page therefore fails the suite — a
+  // deliberate, per-page act, not a bulk promotion.
+  //
+  // THE CHECK IS AGAINST THE CATALOGUE, not against the role alone. It used to skip every app-screen
+  // record unconditionally while printing "catalogue it in shadowPages first" — advice the tool then
+  // ignored, so doing exactly what it asked changed nothing and the next reader had to discover that the
+  // message described a condition nothing tested. A `pageKind: "kit"` record is exempt for the same
+  // reason the guard exempts it: a kit template has no workspace to catalogue.
+  if (hit.kind === "component" && hit.rec.role === "page" && hit.rec.pageKind !== "kit" && !CATALOGUED_PAGES.has(hit.rec.id)) {
+    skipped.pageRecord.push(`${file} — catalogue \`${hit.rec.id}\` in SHADOW_PAGES first`);
+    continue;
+  }
   const unresolved = runtimeImports(hit.source)
     .filter((sp) => sp.startsWith("@/"))
     // `?raw` / `?url` are answered by the LOADER, not by registration: `makeRequire` calls

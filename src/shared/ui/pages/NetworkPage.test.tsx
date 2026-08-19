@@ -2,7 +2,7 @@
 // { nodes, edges }, shared-grammar edges, and selection driving the node-facts inspector.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { NetworkPage, type NetworkNodeData, type NetworkEdgeData } from "./NetworkPage";
+import { NetworkPage, type NetworkNodeData, type NetworkEdgeData } from "@/shared/ui/pages/NetworkPage";
 import { layoutNetwork } from "@/shared/ui/pages/networkLayout";
 
 const NODES: NetworkNodeData[] = [
