@@ -43,7 +43,12 @@ export function gateCommands(plan, base) {
     c.push({ label: "lint (changed files)", cmd: "npx", args: ["eslint", ...plan.frontendFiles] });
   }
   if (plan.runVitest) {
-    c.push({ label: "vitest (--changed: module-graph affected)", cmd: "npx", args: ["vitest", "run", "--changed", base] });
+    // A record-store change runs the suite UNSCOPED: `--changed` walks the module graph, and there is no
+    // edge from a JSON blob to the modules `emit:records` materializes out of it. Scoping there would
+    // report a green gate over tests it never selected.
+    c.push(plan.vitestUnscoped
+      ? { label: "vitest (unscoped — a record store changed)", cmd: "npx", args: ["vitest", "run"] }
+      : { label: "vitest (--changed: module-graph affected)", cmd: "npx", args: ["vitest", "run", "--changed", base] });
   }
   if (plan.rustCrates.length) {
     const p = plan.rustCrates.flatMap((x) => ["-p", x]);
@@ -103,7 +108,31 @@ export function parsePorcelain(output) {
 
 /** Is `file` a frontend source the gate's TS/lint/vitest half cares about? */
 export function isFrontendPath(file) {
-  return file.startsWith("src/") || file.startsWith("scripts/") || file.startsWith("vite/");
+  return file.startsWith("src/") || file.startsWith("scripts/") || file.startsWith("vite/")
+    || isRecordStorePath(file);
+}
+
+/**
+ * The RECORD STORES — frontend source that lives under `src-tauri/data/` (#3604, "the graph IS the app").
+ *
+ * ~1,050 modules ship as records rather than files: ~447 components under `data/components/app/**` and
+ * ~676 implementations inside `data/knowledge/algorithms.json`. `npm run emit:records` materializes them
+ * into `.bsc-records/` for tsc, vite and vitest, so editing one edits frontend source — it just does not
+ * look like it from the path.
+ *
+ * WITHOUT THIS the scope split (by path: `src-tauri/**` is Rust) classified the single file carrying the
+ * most frontend source in the repo as backend. MEASURED on a change that rewrote `personaBridge`: the
+ * gate printed `frontend files: 0` and ran neither typecheck, lint nor vitest, then reported PASS. That
+ * is this repo's signature failure — a gate that covers less than the reader assumes — and the summary
+ * line made it worse, because `0` reads as "no frontend change" rather than "I could not see it".
+ *
+ * These paths stay RUST too (`crateForPath` still claims `src-tauri/**`), which is correct rather than a
+ * compromise: `algorithms.json` is a bundle resource and `src-tauri/src/tests.rs` asserts things about
+ * the seeds, so both sides genuinely depend on it.
+ */
+export function isRecordStorePath(file) {
+  return file.startsWith("src-tauri/data/components/")
+    || file.startsWith("src-tauri/data/knowledge/");
 }
 
 /**
@@ -194,7 +223,15 @@ export function planGate({ files, graph, dirToCrate, force = false, exists = () 
   // them from the filtered list instead made a deletion-only change skip both, which is this repo's
   // signature failure (a gate that covers less and still reports green). The unit test pins it.
   const touchedFrontend = files.filter(isFrontendPath);
-  const frontendFiles = touchedFrontend.filter(exists);
+  // eslint takes FILES, and a record store is a JSON blob holding many modules — pointing eslint at it
+  // lints the JSON, not the TypeScript inside. Excluded from the lint argument list for the same reason
+  // deletions are, while still counting for tsc/vitest below.
+  const frontendFiles = touchedFrontend.filter((f) => exists(f) && !isRecordStorePath(f));
+  // `vitest --changed` walks the MODULE GRAPH, which cannot see from a JSON record store to the modules
+  // `emit:records` materializes out of it — the same blind spot that lets a `*.gen.test.ts` reading from
+  // disk go unnoticed. So a record-store change runs the suite UNSCOPED rather than pretending the diff
+  // told us which tests are affected.
+  const touchedRecordStore = files.some(isRecordStorePath);
 
   return {
     full: false,
@@ -203,5 +240,6 @@ export function planGate({ files, graph, dirToCrate, force = false, exists = () 
     frontendFiles,
     runVitest: touchedFrontend.length > 0,
     runTsc: touchedFrontend.length > 0,
+    vitestUnscoped: touchedRecordStore,
   };
 }
