@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { norm, codeOnly, splitPreamble, fileAsRecordSource } from "./lib/recordSource.mjs";
+import { norm, codeOnly, splitPreamble, fileAsRecordSource, exportedNames } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BSC = process.env.BSC_BIN ?? "C:/Users/Kevin/Projects/rust/base-studio-code/target/release/bsc.exe";
@@ -55,11 +55,19 @@ if (onlyFile.length > cap) console.log(`  … ${onlyFile.length - cap} more (--f
 
 // The decisive question for a retirement: does either copy declare an export the other does not? A
 // dropped export is the one difference that breaks importers rather than merely changing behaviour.
-const exportsOf = (lines) => new Set(
-  lines.flatMap((l) => [...l.matchAll(/\bexport\s+(?:async\s+)?(?:function|const|let|class|interface|type|enum)\s+([A-Za-z0-9_$]+)/g)].map((m) => m[1]))
-    .concat(lines.flatMap((l) => [...l.matchAll(/\bexport\s*\{([^}]*)\}/g)].flatMap((m) => m[1].split(",").map((s) => s.replace(/\bas\b[\s\S]*/, "").replace(/\btype\b/, "").trim()).filter(Boolean)))),
-);
-const eR = exportsOf(R), eF = exportsOf(F);
+//
+// USE THE SHARED `exportedNames`, never a local regex. This file HAD its own, and it disagreed with the
+// shared one on `export type { A, B } from "…"` — reporting `NetworkPage`'s record as declaring four
+// exports its file "lacked" when the file re-exports two of them on one line. A second implementation of
+// a definition this repo has already been bitten by twice is not a shortcut; it is a third answer.
+const eR = exportedNames(codeOnly(body));
+const eF = exportedNames(codeOnly(fileSrc));
+if (!eR || !eF) {
+  // `null` means `export * from` — unknowable by regex, and reporting it as "drops nothing" is the one
+  // answer that is worse than saying so.
+  console.log("\nEXPORTS: one side uses `export * from`, so the comparison is UNKNOWN, not clean.");
+  process.exit(0);
+}
 const lostByRecord = [...eF].filter((n) => !eR.has(n));
 const addedByRecord = [...eR].filter((n) => !eF.has(n));
 console.log(`\nEXPORTS the record would DROP: ${lostByRecord.length ? lostByRecord.join(", ") : "(none)"}`);
