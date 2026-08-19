@@ -6,8 +6,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { useState } from "react";
-import { ModalScrim } from "./ModalScrim";
-import { Dialog } from "./Dialog";
+import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
+import { Dialog } from "@/shared/ui/overlay/Dialog";
 
 function Modal({ onDismiss }: { onDismiss?: () => void }) {
   return (

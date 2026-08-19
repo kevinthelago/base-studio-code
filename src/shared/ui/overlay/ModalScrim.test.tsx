@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ModalScrim } from "./ModalScrim";
+import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 
 const scrim = (c: HTMLElement) => c.querySelector(".modal-scrim") as HTMLElement;
 

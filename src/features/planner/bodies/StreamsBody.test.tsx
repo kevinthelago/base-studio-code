@@ -3,7 +3,7 @@
 // fleet-wide Coordination + Shared-dependencies controls render below as secondary collapsible cards.
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { StreamsBody } from "./StreamsBody";
+import { StreamsBody } from "@/features/planner/bodies/StreamsBody";
 import type { Agent } from "@/features/planner/pane/projectPane.types";
 import type { ProjectPaneData } from "../pane/projectPaneData";
 
