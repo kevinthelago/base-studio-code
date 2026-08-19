@@ -9,7 +9,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
+import { GlanceCanvas, GlanceOverlays } from "@/features/glance/GlanceCanvas";
 import { buildGraph, LIFECYCLE_META } from "@/features/glance/lib/glanceGraph";
 import { LIFECYCLES } from "@/features/planner/lib/classifyConfig";
 

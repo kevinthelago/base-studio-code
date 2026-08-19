@@ -4,7 +4,7 @@
 // describes the new edge/node dimensions, and the inspector opens a library-scoped panel.
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
+import { GlanceCanvas, GlanceOverlays } from "@/features/glance/GlanceCanvas";
 import { buildGraph, libraryNodeId, requiresEdgeId, type GRawNode, type GRawEdge } from "@/features/glance/lib/glanceGraph";
 // #3133 — the REAL data path: the designs roll-up + the Glance adapter, joined end to end below.
 import { buildGlanceData } from "./lib/glanceData";

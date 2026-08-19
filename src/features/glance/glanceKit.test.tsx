@@ -2,7 +2,7 @@
 // (its inspector half went with the right pane — retire-the-glance-right-pane.)
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
+import { GlanceCanvas, GlanceOverlays } from "@/features/glance/GlanceCanvas";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildGraph } from "@/features/glance/lib/glanceGraph";
 
