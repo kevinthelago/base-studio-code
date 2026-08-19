@@ -3,7 +3,7 @@ import { buildMcpLibrary, collectBlueprintMcp, applyBlueprintMcp } from "@/featu
 import { addMcpServer, removeMcpServer } from "@/features/planner/blueprints/blueprintEdit";
 import { type McpStoreLike } from "@/features/planner/lib/planExtensions";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
-import type { Blueprint, BlueprintStage } from "../stages/blueprints";
+import type { Blueprint, BlueprintStage } from "@/features/planner/stages/blueprints";
 
 const sec = (over: Partial<BlueprintStage>): BlueprintStage => ({
   uid: over.uid ?? "u", key: over.key ?? "discovery", name: "S", glyph: "◆", icon: "flag", hue: 70, gate: "", deps: [],

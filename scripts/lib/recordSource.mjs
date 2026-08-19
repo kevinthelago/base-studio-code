@@ -50,6 +50,56 @@ const lineAt = (src, index) => {
 const isProseLine = (line) => /^[ \t]*(?:\*|\/\/|\/\*)/.test(line);
 
 /**
+ * `src` with every comment byte replaced by a space — SAME LENGTH, same newlines, same indices.
+ *
+ * That length-preservation is the whole point: the specifier scan returns `{ spec, at }` positions that a
+ * rewriter splices into the ORIGINAL string, so a strip that shortened the text would corrupt every
+ * offset after the first comment. Blanking keeps them exact.
+ *
+ * It is deliberately not a lexer, and it errs toward KEEPING text. It tracks the three constructs that
+ * can legally contain `//` — a string, a template literal, an escaped char — and treats everything else
+ * as code. A regex literal containing quotes (the case that defeated the earlier hand-rolled stripper)
+ * can still confuse the string tracking, but the failure mode is now benign: a comment survives
+ * un-blanked, which at worst leaves a false positive that `isProseLine` already filters, rather than
+ * blanking real code.
+ */
+export function blankComments(src) {
+  const out = src.split("");
+  let i = 0;
+  const n = src.length;
+  const blank = (from, to) => { for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " "; };
+  while (i < n) {
+    const c = src[i];
+    if (c === '"' || c === "'" || c === "`") {
+      const q = c;
+      i += 1;
+      while (i < n) {
+        if (src[i] === "\\") { i += 2; continue; }
+        if (src[i] === q) { i += 1; break; }
+        i += 1;
+      }
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "/") {
+      const start = i;
+      while (i < n && src[i] !== "\n") i += 1;
+      blank(start, i);
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "*") {
+      const start = i;
+      i += 2;
+      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i += 1;
+      i = Math.min(i + 2, n);
+      blank(start, i);
+      continue;
+    }
+    i += 1;
+  }
+  return out.join("");
+}
+
+/**
  * Every RELATIVE specifier in `src`, as `{ spec, at }` — `at` being the index of the specifier text
  * itself, so a rewriter can splice without re-finding it.
  *
@@ -60,9 +110,19 @@ const isProseLine = (line) => /^[ \t]*(?:\*|\/\/|\/\*)/.test(line);
  */
 export function relativeSpecifiers(src) {
   const out = [];
+  // SCAN A COMMENT-BLANKED COPY, splice into the original. `blankComments` replaces comment bytes with
+  // spaces, so every index is still the index in `src` and a rewriter can splice without re-finding.
+  //
+  // WHY: `STATEMENT_SPEC`'s clause is `[^"';]*?`, which may not cross a quote — and an APOSTROPHE in a
+  // prose comment inside an `export { … }` block is a quote. `shared/ui/kit/index.ts` had
+  // `// … the designer-writable theme store's sync hooks …` between two exported names, so the whole
+  // statement failed to match and `from "./theme"` was never absolutized. The record then shipped a
+  // relative specifier, which resolves from `src/shared/ui/kit/` and NOT from `.bsc-records/shared/ui/`,
+  // so the emitted module died with "Cannot find module './theme'" — after the file was already retired.
+  const scan = blankComments(src);
   for (const [re, prose] of [[STATEMENT_SPEC, false], [BARE_SPEC, false], [INLINE_SPEC, true]]) {
     re.lastIndex = 0;
-    for (const m of src.matchAll(re)) {
+    for (const m of scan.matchAll(re)) {
       if (!m[1].startsWith(".")) continue;
       if (prose && isProseLine(lineAt(src, m.index))) continue;
       out.push({ spec: m[1], at: m.index + m[0].lastIndexOf(m[1]) });

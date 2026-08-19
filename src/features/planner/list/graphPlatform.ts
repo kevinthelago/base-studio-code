@@ -27,6 +27,11 @@ import * as ProjectsFilter from "@/features/planner/list/projectsFilter";
 import * as PublishedModel from "@/features/planner/list/published/publishedModel";
 import * as ReopenProject from "@/features/planner/list/reopenProject";
 import * as Blueprints from "@/features/planner/stages/blueprints";
+// `blueprintBuiltins` is an `import.meta.glob` module and therefore permanently a FILE — the glob is a
+// VITE build-time transform, not a function at runtime. Registering it costs NOTHING new here:
+// `blueprints` above already imports it, so it is in this surface's bundle either way. Registration
+// is not migration; it is what lets the RECORDS that import it load.
+import * as BlueprintBuiltins from "@/features/planner/stages/blueprintBuiltins";
 import * as PlanTopics from "@/features/planner/stages/planTopics";
 
 let done = false;
@@ -48,5 +53,6 @@ export function registerProjectsPlatform(): void {
   registerAppModule("@/features/planner/list/published/publishedModel", PublishedModel);
   registerAppModule("@/features/planner/list/reopenProject", ReopenProject);
   registerAppModule("@/features/planner/stages/blueprints", Blueprints);
+  registerAppModule("@/features/planner/stages/blueprintBuiltins", BlueprintBuiltins);
   registerAppModule("@/features/planner/stages/planTopics", PlanTopics);
 }

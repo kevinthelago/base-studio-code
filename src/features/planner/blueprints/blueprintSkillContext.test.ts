@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { resolveSkillContent, buildSkillContext, collectBlueprintSkillIds } from "@/features/planner/blueprints/blueprintSkills";
 import { mkStageSection } from "@/features/planner/blueprints/blueprintEdit";
 import type { SkillDef } from "@/features/skills/lib/skills";
-import type { Blueprint } from "../stages/blueprints";
+import type { Blueprint } from "@/features/planner/stages/blueprints";
 
 const skill = (id: string, name: string, prompt: string): SkillDef => ({
   id, name, kind: "procedure", source: "local", desc: "", prompt, tools: [], profiles: [],

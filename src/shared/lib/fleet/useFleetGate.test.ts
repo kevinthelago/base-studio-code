@@ -5,7 +5,7 @@
  * A per-file docblock beats the project's environment, so the requirement is stated where a reader
  * meets it. See the `projects` split in vitest.config.ts for why the default is `node` here.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll } from "vitest";
 import { gatedProjects, newlyLaunchable } from "@/shared/lib/fleet/useFleetGate";
 import type { GateStream } from "@/shared/lib/fleet/streamGate";
 
@@ -71,15 +71,39 @@ describe("useFleetGate performs no launch", () => {
   // that survived two removal attempts (a source grep cannot see its record-based mount point). A
   // guard that goes green-on-retry is a guard that can go red for the RIGHT reason and be waved
   // through as "just the flake".
+  // THE IMPORTS MOVED OUT OF THE TIMED BODY, which is the fix the note above asked for rather than a
+  // third timeout bump. They drag the store + testing-library through vitest's transform, so leaving
+  // them inside `it` meant its budget was measuring MODULE TRANSFORM under whatever else the machine
+  // was doing — and it duly failed again on a full-suite run at 15s while passing at 11s alone. Nothing
+  // is weakened: the same modules load in the same process, the real hook still runs against the real
+  // store, and the assertion is unchanged. Only the clock now measures the behaviour it names.
+  let mods: {
+    renderHook: typeof import("@testing-library/react")["renderHook"];
+    useAppStore: typeof import("@/store")["useAppStore"];
+    invoke: typeof import("@tauri-apps/api/core")["invoke"];
+    useFleetGate: typeof import("@/shared/lib/fleet/useFleetGate")["useFleetGate"];
+  };
+  beforeAll(async () => {
+    const [rtl, store, core, gate] = await Promise.all([
+      import("@testing-library/react"),
+      import("@/store"),
+      import("@tauri-apps/api/core"),
+      import("@/shared/lib/fleet/useFleetGate"),
+    ]);
+    mods = {
+      renderHook: rtl.renderHook,
+      useAppStore: store.useAppStore,
+      invoke: core.invoke,
+      useFleetGate: gate.useFleetGate,
+    };
+  }, 60_000);
+
   it("never calls its launcher — with the store ARMED exactly as it is at a real boot", async () => {
     // The state matters: an empty store makes the old pump bail at `gatedProjects` before it could
     // launch, so a naive version of this test passes against the unfixed code and proves nothing.
     // (It did. This is the armed version.) Here `demo` has a pane, a fleet with a dependsOn edge, and
     // landed evidence that releases it — the shape that fired at boot on the real machine.
-    const { renderHook } = await import("@testing-library/react");
-    const { useAppStore } = await import("@/store");
-    const { invoke } = await import("@tauri-apps/api/core");
-    const { useFleetGate } = await import("@/shared/lib/fleet/useFleetGate");
+    const { renderHook, useAppStore, invoke, useFleetGate } = mods;
 
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "fleet_landed_streams") return Promise.resolve(["core"]);  // core has landed…

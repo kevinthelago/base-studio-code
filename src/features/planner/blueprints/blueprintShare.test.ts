@@ -1,14 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, coerceTeam, coerceUiKit, coerceSoundKit, coerceFleetPolicy, bundledSkillsFromManifest } from "@/features/planner/blueprints/blueprintShare";
-import type { BlueprintTeam, FleetPolicy } from "../stages/blueprints";
+import type { BlueprintTeam, FleetPolicy } from "@/features/planner/stages/blueprints";
 import { DEFAULT_FLOW } from "@/features/planner/fleet/agentFlow";
 import { resolveBlueprintSkillPayloads, type SkillPayload } from "@/features/planner/blueprints/blueprintSkills";
 import { skillFromPayload } from "@/features/skills/lib/skills";
 import { encodeShareCode, decodeShareCode, wrapExtension } from "@/features/planner/lib/gist/manifest";
-import { makeBlueprints } from "../stages/blueprints";
+import { makeBlueprints } from "@/features/planner/stages/blueprints";
 import { useAppStore } from "@/store";
-import type { Blueprint } from "../stages/blueprints";
+import type { Blueprint } from "@/features/planner/stages/blueprints";
 import type { SkillDef } from "@/features/skills/lib/skills";
 
 const sample = () => makeBlueprints().find((b) => b.id === "default")!;

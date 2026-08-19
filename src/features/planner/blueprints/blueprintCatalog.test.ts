@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { STAGE_KINDS, STAGE_KIND_KEYS, stageKind } from "@/features/planner/blueprints/blueprintCatalog";
 import { ICONS } from "@/shared/ui/icons";
-import { STAGE_DEFS } from "../stages/blueprints";
+import { STAGE_DEFS } from "@/features/planner/stages/blueprints";
 
 describe("STAGE_KINDS ↔ project-pane stage coverage", () => {
   // Every planning stage that has a SECTION_DEF (= one project pane) must map to a real icon, so a
