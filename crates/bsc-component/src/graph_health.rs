@@ -330,7 +330,7 @@ const PREVIEW_IMPORTMAP_JSON: &str = include_str!("../../../src-tauri/data/ui/pr
 ///
 /// Without it the buildability check resolved `@/…` against the packaged artifact and sibling node `src`
 /// paths only, so a record honestly importing a registered platform module
-/// (`@/features/security/lib/badgeTone`) matched neither and read as `no-implementation` — while the app
+/// (`@/features/security/lib/consoleModel`) matched neither and read as `no-implementation` — while the app
 /// mounted it fine. The finding then pressured the next author to STUB the import to silence it, which is
 /// the corruption `reimplemented-component` exists to catch (#3892/#3895).
 const PLATFORM_MODULES_JSON: &str = include_str!("../../../src-tauri/data/ui/platform-modules.json");
@@ -4245,14 +4245,20 @@ export function C(){ return <i>{z}</i>; }"
 
     #[test]
     fn a_registered_platform_module_import_is_buildable_not_no_implementation() {
-        // #3897: `@/features/security/lib/badgeTone` is a REGISTERED platform module — resolved at runtime
-        // by the feature's graphPlatform, and neither an artifact path nor a sibling `src`. Before the
-        // manifest, a record honestly importing one read as `no-implementation` while the app mounted it.
+        // #3897: `@/features/security/lib/consoleModel` is a REGISTERED platform module — resolved at
+        // runtime by the feature's graphPlatform, and neither an artifact path nor a sibling `src`. Before
+        // the manifest, a record honestly importing one read as `no-implementation` while the app mounted it.
+        //
+        // Written against `badgeTone`/ProfilesTab originally; both were deleted with the Profiles tab
+        // (retire-agentprofile-and-strip-security-to-activity). The fixture MUST name a module the
+        // manifest actually carries — otherwise it stops exercising the registered-module path and
+        // quietly becomes a test of an unknown specifier, which passes for the wrong reason. The TS twin
+        // of this test (graphHealth.test.ts) moved for the same reason; keep them naming the same module.
         let comps = [json!({
-            "id":"profiles", "name":"ProfilesTab", "kitId":"react-ui", "role":"composite", "used":2,
-            "src":"src/features/security/ProfilesTab.tsx",
-            "srcText":"import { badgeTone } from \"@/features/security/lib/badgeTone\";
-export function ProfilesTab(){ return <i>{badgeTone(1)}</i>; }"
+            "id":"activity", "name":"ActivityTab", "kitId":"react-ui", "role":"composite", "used":2,
+            "src":"src/features/security/ActivityTab.tsx",
+            "srcText":"import { deriveConsoles } from \"@/features/security/lib/consoleModel\";
+export function ActivityTab(){ return <i>{String(deriveConsoles)}</i>; }"
         })];
         let fs = analyze(&comps);
         assert!(!fs.iter().any(|f| f.category == "no-implementation"), "buildable: {fs:?}");

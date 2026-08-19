@@ -345,14 +345,10 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       // Same as mcppage: the dead SecurityWorkspace copy is gone and what survives is the feature's
       // re-export barrel — now index.ts, so this path would not even resolve.
       { recordId: "securitypage", file: null },
-      // Profiles/Activity/Flow were the last three files HELD by graph-srctext-three-way-merges — their
-      // .tsx was a party to the merge. The merge landed and the files are deleted, so their records are
-      // the only copy. AssignmentsTab.tsx was the last tab body with a file and is now retired too, so
-      // this page is wholly record-only.
-      { recordId: "security-profiles", file: null },
-      { recordId: "security-assignments", file: null }, // RETIRED — the record is the only copy,
+      // Activity is the ONLY tab left: security-profiles, security-assignments and security-flow were
+      // deleted outright (retire-agentprofile-and-strip-security-to-activity), so there is no record and
+      // no file to diff for them. This page is wholly record-only.
       { recordId: "security-activity", file: null },
-      { recordId: "security-flow", file: null },
     ],
     ensurePlatform: () => import("@/features/security/graphPlatform").then((m) => m.registerSecurityPlatform()),
   },
@@ -378,8 +374,8 @@ const FILE_SOURCES = import.meta.glob<string>(
     // Schedules.tsx dropped with its entry — automations now contributes no file baseline at all.
     // McpAnalytics dropped with its entry.
     // skills/index.tsx dropped with its entry — the barrel is index.ts now and holds no component.
-    // ProfilesTab/ActivityTab/FlowTab dropped with their entries — AssignmentsTab is the last security file.
-    "/src/features/security/AssignmentsTab.tsx",
+    // security/* dropped entirely — Profiles/Assignments/Flow are deleted and Activity is record-only,
+    // so the feature contributes no file baseline at all.
     // The one file-rendered page (see its entry) — Settings renders this .tsx while the record shadows it.
     "/src/features/settings/pages/AccessibilityPage.tsx",
   ],

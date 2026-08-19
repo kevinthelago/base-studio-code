@@ -9,7 +9,7 @@
 //
 // WHY IT EXISTS. The doctor's buildability check resolves `@/…` against the packaged artifact and sibling
 // node `src` paths only. A record that honestly imports a REGISTERED platform module
-// (`@/features/security/lib/badgeTone`) matched neither, so it read as `no-implementation` — which is how
+// (`@/features/security/lib/consoleModel`) matched neither, so it read as `no-implementation` — which is how
 // #3895's faithful `security-profiles` moved `securitypage` into that finding while the runtime mounted it
 // fine. Worse, it pressures the next author to STUB the import to make the finding go away, which is
 // exactly the corruption #3892 exists to catch.
@@ -100,9 +100,13 @@ describe("platform-modules.json (#3897)", () => {
   it("is non-vacuous and covers the modules the doctor was blind to", () => {
     // The guard against a manifest that regenerates to `[]` and silently makes every check pass.
     expect(manifest.length).toBeGreaterThan(60);
-    // The two that put `securitypage` into no-implementation (#3895) — the reason this file exists.
-    expect(manifest).toContain("@/features/security/lib/badgeTone");
-    expect(manifest).toContain("@/features/security/lib/appSession");
+    // The class that put `securitypage` into no-implementation (#3895) — the reason this file exists.
+    // It was `badgeTone`/`appSession` originally; both went with the Profiles/Assignments tabs
+    // (retire-agentprofile-and-strip-security-to-activity), so the anchor moved to the two feature-lib
+    // modules the surviving Activity tab still imports. What it pins is the SHAPE — a record honestly
+    // importing a registered `@/features/<f>/lib/*` must appear here — not those two names.
+    expect(manifest).toContain("@/features/security/lib/auditRows");
+    expect(manifest).toContain("@/features/security/lib/consoleModel");
     // …and the platform basics a graph page always needs.
     expect(manifest).toContain("react");
     expect(manifest).toContain("@/store");

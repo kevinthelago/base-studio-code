@@ -25,19 +25,17 @@ const siblingIds = (src: string): string[] =>
   [...new Set([...src.matchAll(/from\s*["'`]@\/components\/([A-Za-z0-9._-]+)["'`]/g)].map((m) => m[1]))];
 
 /**
- * The ONE page still on the old form, named so it is a visible exception rather than a silent one.
+ * EMPTY, and that is the point: every page record now imports its siblings by SPECIFIER.
  *
- * `securitypage` imports `@/components/security-flow`. Giving that record a real specifier makes
- * `emit-records` materialize its CARRIED TESTS, which then execute for the first time and fail: they
- * render a barrel export the records cleanup removed, and their assertions were written against the
- * whole-workspace render rather than the tab. Rewriting assertions to match observed output is how a
- * test stops being a test, so it is tracked as `security-flow-carried-tests-are-stale` instead.
+ * The last exception was `securitypage` → `@/components/security-flow`. It is not fixed so much as
+ * GONE — the Flow tab rendered "which sessions are parked on a dependency (#199)", a mechanism removed
+ * in #1039, so the record was deleted rather than given a specifier
+ * (retire-agentprofile-and-strip-security-to-activity). The carried-test problem that blocked it
+ * (`security-flow-carried-tests-are-stale`) went with it.
  *
- * Shrinking this list is the work. Growing it needs a reason as specific as this one.
+ * Growing this list needs a reason as specific as that one was.
  */
-const KNOWN_LOADER_ONLY: Record<string, string[]> = {
-  securitypage: ["security-flow"],
-};
+const KNOWN_LOADER_ONLY: Record<string, string[]> = {};
 
 describe("a page record imports siblings by SPECIFIER, not by record id", () => {
   const pages = Object.values(SEED)
