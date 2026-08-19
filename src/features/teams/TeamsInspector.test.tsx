@@ -149,3 +149,81 @@ describe("TeamsInspector — the identity block never echoes the header", () => 
     expect(screen.getByText("Worker")).toBeTruthy();      // the shared identity behind it
   });
 });
+
+// ── the Capability block reads the PERSONA's floor, not its role's row ────────────────────────────
+//
+// It used to look the capability up by role. That was right while the role table was the source, and
+// became wrong the moment a persona could carry a floor narrower than its role's: the panel would have
+// said a session may write code while the session it describes cannot.
+describe("TeamsInspector — the Capability block renders the persona's own floor", () => {
+  /** A persona whose floor is deliberately NARROWER than the `worker` role row it names. */
+  const narrowed: Persona = {
+    id: "p-narrow", name: "Narrow worker", blurb: "Tightened worker.",
+    role: "worker", startPrompt: "", skills: [],
+    derivesFrom: "p-base",
+    floor: { github: "none", git: "none", code: "none", net: "none", ui: "none" },
+  };
+  /** The ancestor it narrowed FROM — the packaged worker capability. */
+  const base: Persona = {
+    id: "p-base", name: "Worker", blurb: "", role: "worker", startPrompt: "", skills: [],
+    floor: { github: "read", git: "write", code: "write", net: "read", ui: "read" },
+  };
+
+  const team: Team = {
+    id: "o2", name: "Floors", relationships: [],
+    positions: [{ nodeId: "n1", kind: "agent", personaId: "p-narrow" },
+                { nodeId: "n2", kind: "agent", personaId: "p-base" }],
+  };
+  const props = { org: team, orgs: [team], personas: [narrowed, base], onSelectNode: () => {} };
+
+  it("shows the FLOOR's tiers, not the tiers its role would imply", () => {
+    render(<TeamsInspector {...props} sel={{ type: "node", id: "n1" }} />);
+    // `worker` is git:write / code:write. This persona's floor says none, and the floor is what launches.
+    expect(screen.getByText("git · none")).toBeTruthy();
+    expect(screen.getByText("code · none")).toBeTruthy();
+    expect(screen.queryByText("git · write")).toBeNull();
+  });
+
+  it("names what it narrowed FROM, and on which axes", () => {
+    // The single most interesting fact about a derived persona is that someone tightened it. Resulting
+    // tiers alone make it indistinguishable from one simply authored narrow.
+    render(<TeamsInspector {...props} sel={{ type: "node", id: "n1" }} />);
+    expect(screen.getByText("derives from · Worker")).toBeTruthy();
+    expect(screen.getByText("narrowed")).toBeTruthy();
+    expect(screen.getByText("git · write → none")).toBeTruthy();
+    expect(screen.getByText("code · write → none")).toBeTruthy();
+    // `github` went read→none, so it is narrowed too; `net`/`ui` likewise. All five moved here.
+    expect(screen.getByText("github · read → none")).toBeTruthy();
+  });
+
+  it("shows no narrowing for a persona that derives from nothing", () => {
+    render(<TeamsInspector {...props} sel={{ type: "node", id: "n2" }} />);
+    expect(screen.queryByText("narrowed")).toBeNull();
+    expect(screen.getByText("role · worker")).toBeTruthy();   // falls back to naming the role
+  });
+
+  it("falls back to the role's row when a persona carries no floor", () => {
+    // `floor` is optional, and the panel must show what would ACTUALLY launch — which is the same
+    // fallback `paneCapability` performs.
+    const noFloor: Persona = { ...base, id: "p-nofloor", floor: undefined };
+    const t: Team = { ...team, positions: [{ nodeId: "n1", kind: "agent", personaId: "p-nofloor" }] };
+    render(<TeamsInspector {...props} org={t} orgs={[t]} personas={[noFloor]} sel={{ type: "node", id: "n1" }} />);
+    expect(screen.getByText("git · write")).toBeTruthy();     // the worker role row
+  });
+
+  it("renders the confined command surface when the floor declares one", () => {
+    const confined: Persona = {
+      ...base, id: "p-confined",
+      floor: { github: "none", git: "none", code: "none", net: "none", ui: "write", allow: ["bsc ui"] },
+    };
+    const t: Team = { ...team, positions: [{ nodeId: "n1", kind: "agent", personaId: "p-confined" }] };
+    render(<TeamsInspector {...props} org={t} orgs={[t]} personas={[confined]} sel={{ type: "node", id: "n1" }} />);
+    expect(screen.getByText("confined to 1 command")).toBeTruthy();
+    expect(screen.getByText("bsc ui")).toBeTruthy();
+  });
+
+  it("gains no editing control — the read-only contract survives the rewrite", () => {
+    const { container } = render(<TeamsInspector {...props} sel={{ type: "node", id: "n1" }} />);
+    expect(editingControls(container)).toHaveLength(0);
+  });
+});

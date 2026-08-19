@@ -714,6 +714,22 @@ describe("launch resolves capability from the pane's PERSONA, not its role name"
     expect(bashDenies(stale)).toEqual(bashDenies(roleOnly()));
   });
 
+  it("a floor that OMITS writeGlobs does not produce an undefined where the type promises an array", () => {
+    // REGRESSION. `writeGlobs` is required on RoleCapability and optional on a floor, and the packaged
+    // floors omit it whenever it is empty — so `persona-worker` genuinely has no such key. The
+    // `as Omit<RoleCapability, "role">` cast asserted the required shape without supplying it, handing
+    // `roleWriteRules` / `hasScopedWriteCarveOut` / `scopeWriteGlobs` an `undefined` the type says
+    // cannot occur. Found by the Teams panel, which throws on `cap.writeGlobs.length` — the launch path
+    // merely misbehaved quietly, which is worse.
+    const noGlobs = {
+      id: "p-noglobs", name: "No globs", blurb: "", role: "worker", startPrompt: "", skills: [],
+      floor: { github: "read", git: "write", code: "write", net: "read", ui: "read" },  // no writeGlobs
+    };
+    const s = mkStore({ personas: [noGlobs], panePersonas: { p: "p-noglobs" }, paneRoles: { p: "worker" } });
+    expect(() => buildSessionSettings(s, "p")).not.toThrow();
+    expect(() => buildAgentEnv(s, "p", "bsc-agent", "")).not.toThrow();
+  });
+
   it("a persona with NO floor falls back to its role — floor is optional on the type", () => {
     const noFloor = mkStore({
       personas: [{ ...narrowed, floor: undefined }],
