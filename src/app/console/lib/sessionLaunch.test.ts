@@ -650,3 +650,75 @@ describe("studio confinement survives an unseeded store (#3423)", () => {
     expect(r.restrictedAllow).toBeFalsy();
   });
 });
+
+// ── the pane's PERSONA decides its capability (epic `the-persona-is-the-whole-agent`) ─────────────
+//
+// The gap this closes: `applyPersonaToPane` stored `persona.role`, so a user persona derived from
+// `worker` with a NARROWED floor was assigned to a pane and then launched with the FULL worker
+// capability. The narrowing lived on the persona and only the role name travelled — the one moment it
+// had to survive was the one place it did not.
+//
+// These drive the real builders against a store snapshot, so they assert what a session actually gets.
+// Each narrowing case is paired with the SAME store minus the persona binding, because the claim is a
+// DIFFERENCE ("the persona is what changed this"), and a one-sided assertion would still pass if the
+// role happened to produce the same denies.
+describe("launch resolves capability from the pane's PERSONA, not its role name", () => {
+  /** A persona on the `worker` role whose floor is deliberately tighter than the worker row. */
+  const narrowed = {
+    id: "p-narrow", name: "Narrow worker", blurb: "", role: "worker", startPrompt: "", skills: [],
+    derivesFrom: "persona-worker",
+    floor: { github: "none", git: "none", code: "none", net: "none", ui: "none" },
+  };
+
+  const bound = (extra: Record<string, unknown> = {}) => mkStore({
+    personas: [narrowed],
+    panePersonas: { p: "p-narrow" },
+    paneRoles: { p: "worker" },   // the role is STILL set, exactly as applyPersonaToPane leaves it
+    ...extra,
+  });
+  const roleOnly = () => mkStore({ paneRoles: { p: "worker" } });
+  const bashDenies = (s: AppStore) => buildAgentEnv(s, "p", "claude", "")?.BSC_DENY_BASH?.split("\n") ?? [];
+
+  it("denies the persona what its ROLE would have allowed", () => {
+    // `worker` is git:write; the persona says git:none, and a `none` tier denies the whole program.
+    expect(bashDenies(bound())).toContain("git");
+    expect(bashDenies(roleOnly())).not.toContain("git");   // the difference is the persona
+  });
+
+  it("carries the narrowing into the write-tool rules, not just the shell denies", () => {
+    // code:none ⇒ the whole-tool write deny. Two different enforcement surfaces read the same
+    // capability, and a fix reaching only one of them would be half a fix.
+    expect(buildSessionSettings(bound(), "p").denyToolRules).toContain("Write");
+    expect(buildSessionSettings(roleOnly(), "p").denyToolRules).not.toContain("Write");
+  });
+
+  it("carries it into the bsc-agent permission doc too", () => {
+    // BSC_AGENT_PERMS is emitted ONLY for the `bsc-agent` provider — the model-agnostic runtime reads
+    // its own permission doc where Claude reads settings.json. Both must see the narrowing, since the
+    // whole point of the role gate is that it does not depend on which harness drives the session.
+    const perms = JSON.parse(buildAgentEnv(bound(), "p", "bsc-agent", "")?.BSC_AGENT_PERMS ?? "{}");
+    expect(perms.deny_bash).toContain("git");
+    const wide = JSON.parse(buildAgentEnv(roleOnly(), "p", "bsc-agent", "")?.BSC_AGENT_PERMS ?? "{}");
+    expect(wide.deny_bash).not.toContain("git");
+  });
+
+  it("a pane with NO persona and NO role still launches exactly as before", () => {
+    expect(buildSessionSettings(mkStore(), "p")).toBeTruthy();  // no capability ⇒ no role gate
+  });
+
+  it("a STALE persona id falls back to the role rather than failing open or closed", () => {
+    // Persona deleted, pane not yet re-seeded. Must degrade to the role — the behaviour from before
+    // personas were bound at all — rather than silently dropping the gate.
+    const stale = mkStore({ personas: [], panePersonas: { p: "p-gone" }, paneRoles: { p: "worker" } });
+    expect(bashDenies(stale)).not.toContain("git");
+    expect(bashDenies(stale)).toEqual(bashDenies(roleOnly()));
+  });
+
+  it("a persona with NO floor falls back to its role — floor is optional on the type", () => {
+    const noFloor = mkStore({
+      personas: [{ ...narrowed, floor: undefined }],
+      panePersonas: { p: "p-narrow" }, paneRoles: { p: "worker" },
+    });
+    expect(bashDenies(noFloor)).toEqual(bashDenies(roleOnly()));
+  });
+});
