@@ -17,7 +17,7 @@ import type { AlgoImpl, AlgoKind } from "@/features/algorithms/lib/knowledge";
 import { classifyKind, type Classifiable } from "@/features/algorithms/lib/classifyKind";
 import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm, runStackAlgorithm, runTreeAlgorithm, runScene, type GraphInput } from "@/features/algorithms/lib/tracer";
 import { runInSandbox } from "./vizSandbox";
-import type { VizRun } from "./vizProgram";
+import type { VizRun } from "@/features/algorithms/viz/examples/vizProgram";
 import type { RendererRegistry } from "@/features/algorithms/viz/registry";
 import { ArrayView } from "@/features/algorithms/viz/renderers/ArrayView";
 import { MatrixView } from "@/features/algorithms/viz/renderers/MatrixView";

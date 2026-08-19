@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { TerminalHost } from "./TerminalHost";
-import { TerminalSlot } from "./TerminalSlot";
+import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 
 // #2378 guardrail: there is exactly ONE <TerminalView> per paneId (one xterm, one PTY listener), owned by
 // the host and RE-PARENTED between slots — never a second mount, never a remount on hand-off. xterm can't

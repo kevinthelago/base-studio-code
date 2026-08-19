@@ -4,9 +4,9 @@
 // #2889) off the main thread, and makes a runaway program (e.g. `while(true)`) wedge only the worker,
 // which we TERMINATE on timeout so the app never freezes.
 
-import type { VizRun } from "./vizProgram";
+import type { VizRun } from "@/features/algorithms/viz/examples/vizProgram";
 import type { Frame } from "@/features/algorithms/lib/trace";
-import type { VizDatatype } from "./vizProgram";
+import type { VizDatatype } from "@/features/algorithms/viz/examples/vizProgram";
 
 /** Main → worker: run this program (optionally on an overriding input). `id` correlates the reply. */
 export interface VizWorkerRequest {
@@ -85,7 +85,7 @@ export function runInSandbox(code: string, input?: unknown): Promise<VizRun> {
       /* worker construction failed — fall through to inline */
     }
   }
-  return import("./vizProgram").then(({ runVizProgram }) => runVizProgram(code, input));
+  return import("@/features/algorithms/viz/examples/vizProgram").then(({ runVizProgram }) => runVizProgram(code, input));
 }
 
 /** Post one run to the (lazily spawned) worker and await its reply, with a wedged-worker timeout. Throws

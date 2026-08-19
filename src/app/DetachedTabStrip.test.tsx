@@ -18,7 +18,7 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ close, outerPosition, outerSize }),
 }));
 
-import { DetachedTabStrip, releasedOutside } from "./DetachedTabStrip";
+import { DetachedTabStrip, releasedOutside } from "@/app/DetachedTabStrip";
 
 beforeEach(() => { emitDockBack.mockClear(); close.mockClear(); });
 

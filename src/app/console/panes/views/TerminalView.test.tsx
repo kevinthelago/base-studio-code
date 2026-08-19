@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { render, cleanup, waitFor } from "@testing-library/react";
-import { TerminalView } from "./TerminalView";
+import { TerminalView } from "@/app/console/panes/views/TerminalView";
 import { useAppStore } from "@/store";
 import { invoke } from "@tauri-apps/api/core";
 

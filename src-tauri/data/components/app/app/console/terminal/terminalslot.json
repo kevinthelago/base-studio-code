@@ -1,0 +1,18 @@
+{
+  "id": "terminalslot",
+  "name": "TerminalSlot",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/app/console/terminal/TerminalSlot",
+  "srcText": "import { useEffect, useId, useRef } from \"react\";\nimport { useTerminalHost, type SlotTerminalProps } from \"@/app/console/terminal/TerminalHost\";\n\nexport type TerminalSlotProps = { paneId: string } & SlotTerminalProps;\nexport function TerminalSlot({ paneId, ...props }: TerminalSlotProps) {\r\n  const host = useTerminalHost();\r\n  const elRef = useRef<HTMLDivElement>(null);\r\n  const slotId = useId();\r\n  // Latest props, read live by the host at portal-render time. Callback identity may churn each render, but\r\n  // only mount-time cwd/initCmd and the reactive visible/focus (handled below) actually matter downstream.\r\n  const propsRef = useRef<SlotTerminalProps>(props);\r\n  propsRef.current = props;\r\n\r\n  // Claim this paneId's terminal for as long as the slot is mounted. Re-registers if the paneId changes.\r\n  useEffect(() => {\r\n    const el = elRef.current;\r\n    if (!host || !el) return;\r\n    host.register(paneId, slotId, el, propsRef);\r\n    return () => host.deregister(paneId, slotId);\r\n  }, [host, paneId, slotId]);\r\n\r\n  // The host reads props live, but must re-render to propagate a visibility/focus change to the shared\r\n  // <TerminalView> (and to re-run the re-parent pass). Nudge it exactly on those two.\r\n  useEffect(() => {\r\n    host?.touch();\r\n  }, [host, props.visible, props.focused]);\r\n\r\n  return (\r\n    // eslint-disable-next-line no-restricted-syntax -- imperative re-parent target: the host appendChilds the terminal container here\r\n    <div ref={elRef} style={{ flex: 1, minHeight: 0, display: \"flex\", flexDirection: \"column\" }} />\r\n  );\r\n}",
+  "composes": [],
+  "src": "src/app/console/terminal/TerminalSlot.tsx",
+  "props": [
+    {
+      "name": "paneId",
+      "required": true,
+      "type": "string"
+    }
+  ],
+  "folder": "app/console/terminal"
+}

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { vizRunToDataset } from "@/features/algorithms/viz/vizDataset";
-import type { VizRun } from "./examples/vizProgram";
+import type { VizRun } from "@/features/algorithms/viz/examples/vizProgram";
 
 describe("vizRunToDataset (#2940)", () => {
   it("array: takes the LAST snapshot frame (the sorted output), not the input", () => {

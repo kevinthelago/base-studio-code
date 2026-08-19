@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { orderTabs, usePageTabs } from "./usePageTabs";
+import { orderTabs, usePageTabs } from "@/shared/hooks/usePageTabs";
 import { useAppStore } from "@/store";
 import type { TabItem } from "@/shared/ui/layouts/TabBar";
 

@@ -3,7 +3,7 @@
 // The load-bearing assertion throughout is `source.slice(loc.start, loc.end) === "<the call>"`: it proves
 // the recorded range really addresses the call it claims, rather than merely being a plausible number.
 import { describe, it, expect } from "vitest";
-import { instrumentVizCode, LOC_HOOK } from "./vizInstrument";
+import { instrumentVizCode, LOC_HOOK } from "@/features/algorithms/viz/examples/vizInstrument";
 
 /** The substring a recorded range addresses — what the code column would highlight. */
 const spanOf = (source: string, i: number): string => {

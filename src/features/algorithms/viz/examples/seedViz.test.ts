@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ArrayFrame } from "@/features/algorithms/lib/trace";
 import { KNOWLEDGE, implById } from "@/features/algorithms/lib/knowledge";
-import { runVizProgram } from "./vizProgram";
+import { runVizProgram } from "@/features/algorithms/viz/examples/vizProgram";
 import { resolveVizExample, programVizForImpl } from "./registry";
 
 // Guards the SHIPPED demonstrator (#3213): the seeded `sort.ts` carries a real `vizCode` that OVERRIDES its

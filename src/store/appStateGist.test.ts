@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { appStateToManifest, appStateFromManifest, APP_STATE_KIND } from "./appStateGist";
+import { appStateToManifest, appStateFromManifest, APP_STATE_KIND } from "@/store/appStateGist";
 import { wrapExtension } from "@/features/planner/lib/gist/manifest";
 import { useAppStore } from ".";
 

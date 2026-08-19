@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { render, cleanup, waitFor } from "@testing-library/react";
-import { useScreenSession } from "./useScreenSession";
+import { useScreenSession } from "@/shared/lib/session/useScreenSession";
 
 // #2832 — the mount RAF must NOT fit a zero-size host: fitting sets the terminal to 0 rows, and the
 // first pty_data write to a 0-row terminal crashes xterm ("Cannot set properties of undefined (setting
