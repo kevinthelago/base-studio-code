@@ -287,6 +287,18 @@ import * as TurnHooks from "@/shared/lib/session/turnHooks";
 import * as FleetRoster from "@/shared/lib/fleet/fleetRoster";
 import * as UseScreenSession from "@/shared/lib/session/useScreenSession";
 import * as Mock from "@/shared/data/mock";
+// The six shared/store leaves a record can import but nothing answered
+// (`the-records-floor-is-a-chore-list-not-a-wall`). Registering is what lets a RECORD depend on a module
+// that stays a FILE, and these are the safe ones to add: every one is already in the shell's eager graph
+// (the store is registered whole two lines below; `attest` is the records runtime itself), so none of
+// them de-lazies a feature the way `TerminalHost` (xterm) or `DetachedWindow` (a second window root)
+// would. Those belong in the console feature's own graph-platform, not here.
+import * as Attest from "@/shared/lib/runtime/attest";
+import * as UiRegistry from "@/shared/ui/registry";
+import * as StoreHelpers from "@/store/helpers";
+import * as StorePlanSlice from "@/store/slices/plan";
+import * as DetachSection from "@/shared/lib/core/detachSection";
+import * as FaultTriage from "@/shared/lib/fleet/faultTriage";
 
 // The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
 // here — the shell must not reach a feature's internals (#1545), and eager-importing them would de-lazy the
@@ -526,6 +538,12 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/fleet/fleetRoster": FleetRoster,
   "@/shared/lib/session/useScreenSession": UseScreenSession,
   "@/shared/data/mock": Mock,
+  "@/shared/lib/runtime/attest": Attest,
+  "@/shared/ui/registry": UiRegistry,
+  "@/store/helpers": StoreHelpers,
+  "@/store/slices/plan": StorePlanSlice,
+  "@/shared/lib/core/detachSection": DetachSection,
+  "@/shared/lib/fleet/faultTriage": FaultTriage,
 };
 
 /** Every packaged `@data/**` JSON, keyed by the specifier a module imports it as.
