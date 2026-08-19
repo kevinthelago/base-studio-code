@@ -8,7 +8,7 @@ import type { RenderableChunk } from '@/features/planner/preview/types';
 // definition now, so a test that wants it in the registry must say so
 // (renderers-register-at-a-named-site-not-on-import).
 import { registerRenderer } from '../registry';
-import { htmlRenderer } from './htmlRenderer';
+import { htmlRenderer } from '@/features/planner/preview/renderers/htmlRenderer';
 registerRenderer(htmlRenderer);
 
 // previewBundle is used by streamingRuntime; mock it so no esm.sh or wasm loads.

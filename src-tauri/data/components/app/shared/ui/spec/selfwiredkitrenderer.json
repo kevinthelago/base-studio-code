@@ -1,0 +1,26 @@
+{
+  "id": "selfwiredkitrenderer",
+  "name": "SelfWiredKitRenderer",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/shared/ui/spec/SelfWiredKitRenderer",
+  "srcText": "import { useMemo, useState } from \"react\";\nimport { UI_KIT } from \"@/shared/ui/manifest\";\nimport { KitRenderer } from \"@/shared/ui/spec/KitRenderer\";\nimport { visitNodes, collectActions } from \"@/shared/ui/spec/specWalk\";\nimport type { GeneralNode } from \"@/shared/ui/spec/generalNode\";\n\nconst SPEC_BY_NAME = new Map(UI_KIT.map((p) => [p.name as string, p]));\ninterface PreviewWrite {\r\n  /** The bind key it writes. */\r\n  key: string;\r\n  /** Flip the boolean (a switch) vs set it from the handler's first argument (a field). */\r\n  flip: boolean;\r\n}\nfunction previewWrites(root: GeneralNode): Map<string, PreviewWrite> {\r\n  const writes = new Map<string, PreviewWrite>();\r\n  visitNodes(root, (n) => {\r\n    const binds = Object.entries(n.binds ?? {});\r\n    const actions = Object.values(n.actions ?? {});\r\n    if (!binds.length || !actions.length) return;\r\n    const spec = SPEC_BY_NAME.get(n.type);\r\n    const typeOf = (prop: string) => spec?.props.find((p) => p.name === prop)?.type;\r\n    // Prefer a boolean-typed bind (the switch case); otherwise take the first bind as the value.\r\n    const boolBind = binds.find(([prop]) => typeOf(prop) === \"boolean\");\r\n    const [prop, key] = boolBind ?? binds[0];\r\n    if (typeof key !== \"string\" || !key) return;\r\n    for (const action of actions) {\r\n      if (typeof action !== \"string\" || !action || writes.has(action)) continue;\r\n      writes.set(action, { key, flip: typeOf(prop) === \"boolean\" });\r\n    }\r\n  });\r\n  return writes;\r\n}\nexport interface SelfWiredKitRendererProps {\r\n  /** The spec tree to render (typically validated via `validateGeneralNode`). */\r\n  node: GeneralNode;\r\n  /** Seed values for the local bind-keyed state (e.g. a toggle that should start on). Defaults empty\r\n   *  — toggles start off, fields start blank. Read once at mount (a preview seed, not a controlled prop). */\r\n  initial?: Record<string, unknown>;\r\n  /** Observe a fired action — the preview host can flash/log it. Defaults to a no-op, so a nested\r\n   *  control is clickable without an app behind it. */\r\n  onAction?: (action: string) => void;\r\n}\nexport function SelfWiredKitRenderer({ node, initial, onAction }: SelfWiredKitRendererProps) {\r\n  const [values, setValues] = useState<Record<string, unknown>>(() => ({ ...initial }));\r\n  // Resolve EVERY action in the spec so no control is dead: the ones paired with a bind also write\r\n  // the local state, the rest are observed. Rebuilt only when the spec or observer changes.\r\n  const on = useMemo(() => {\r\n    const writes = previewWrites(node);\r\n    const map: Record<string, (...args: unknown[]) => void> = {};\r\n    for (const action of collectActions(node)) {\r\n      const write = writes.get(action);\r\n      map[action] = (...args: unknown[]) => {\r\n        if (write) {\r\n          setValues((v) => ({\r\n            ...v,\r\n            [write.key]: write.flip ? !v[write.key] : args[0],\r\n          }));\r\n        }\r\n        onAction?.(action);\r\n      };\r\n    }\r\n    return map;\r\n  }, [node, onAction]);\r\n  return <KitRenderer node={node} values={values} on={on} />;\r\n}",
+  "composes": [],
+  "src": "src/shared/ui/spec/SelfWiredKitRenderer.tsx",
+  "props": [
+    {
+      "name": "node",
+      "required": true,
+      "type": "object"
+    },
+    {
+      "name": "initial",
+      "type": "object"
+    },
+    {
+      "name": "onAction",
+      "type": "function"
+    }
+  ],
+  "folder": "shared/ui/spec"
+}

@@ -22,7 +22,7 @@ vi.mock("@/shared/lib/runtime/componentLoader", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   loadComponentFromSource: load,
 }));
-import { KitRenderer } from "./KitRenderer";
+import { KitRenderer } from "@/shared/ui/spec/KitRenderer";
 import { primitiveFor, __resetPrimitiveCache } from "./graphPrimitive";
 import { componentFor } from "@/shared/ui/registry";
 import { useAppStore } from "@/store";

@@ -17,11 +17,11 @@ import type { ComponentType } from "react";
 // survives only as long as nobody tidies it away; and a module that must RUN to be correct cannot be
 // a record (renderers-register-at-a-named-site-not-on-import).
 import { registerRenderer } from "./registry";
-import { htmlRenderer } from "./renderers/htmlRenderer";
-import { gltfRenderer } from "./renderers/gltfRenderer";
+import { htmlRenderer } from "@/features/planner/preview/renderers/htmlRenderer";
+import { gltfRenderer } from "@/features/planner/preview/renderers/gltfRenderer";
 import { canvasRenderer } from "@/features/planner/preview/renderers/canvasRenderer";
 import { PreviewPaneShell } from "@/features/planner/preview/PreviewPaneShell";
-import { RENDER_PREVIEW_ID } from "./renderPreview";
+import { RENDER_PREVIEW_ID } from "@/features/planner/preview/renderPreview";
 import { FileIntakePane } from "@/features/planner/bodies/FileIntakePane";
 import { FILE_INTAKE_ID } from "@/features/planner/lib/fileIntake";
 

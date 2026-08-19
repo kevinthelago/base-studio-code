@@ -292,6 +292,18 @@ import * as TurnHooks from "@/shared/lib/session/turnHooks";
 import * as FleetRoster from "@/shared/lib/fleet/fleetRoster";
 import * as UseScreenSession from "@/shared/lib/session/useScreenSession";
 import * as Mock from "@/shared/data/mock";
+// The remaining leaves records import that nothing answered (`register-the-remaining-unresolvable`).
+// The four `store/types` modules are TYPE-ONLY and compile to empty JS — but `store/types.ts` re-exports
+// them with `export *`, which is a VALUE re-export and does emit a require, so the runtime genuinely
+// needs them present. Registering an empty module costs nothing. The other three are already in the
+// shell's eager graph.
+import * as StoreTypes from "@/store/types";
+import * as StoreTypesConsole from "@/store/types/console";
+import * as StoreTypesGithub from "@/store/types/github";
+import * as StoreTypesPerf from "@/store/types/perf";
+import * as KitRenderer from "@/shared/ui/spec/KitRenderer";
+import * as GraphPrimitive from "@/shared/ui/spec/graphPrimitive";
+import * as GraphModules from "@/shared/lib/runtime/graphModules";
 // The six shared/store leaves a record can import but nothing answered
 // (`the-records-floor-is-a-chore-list-not-a-wall`). Registering is what lets a RECORD depend on a module
 // that stays a FILE, and these are the safe ones to add: every one is already in the shell's eager graph
@@ -550,6 +562,13 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/fleet/fleetRoster": FleetRoster,
   "@/shared/lib/session/useScreenSession": UseScreenSession,
   "@/shared/data/mock": Mock,
+  "@/store/types": StoreTypes,
+  "@/store/types/console": StoreTypesConsole,
+  "@/store/types/github": StoreTypesGithub,
+  "@/store/types/perf": StoreTypesPerf,
+  "@/shared/ui/spec/KitRenderer": KitRenderer,
+  "@/shared/ui/spec/graphPrimitive": GraphPrimitive,
+  "@/shared/lib/runtime/graphModules": GraphModules,
   "@/shared/lib/runtime/attest": Attest,
   "@/shared/ui/registry": UiRegistry,
   "@/store/helpers": StoreHelpers,

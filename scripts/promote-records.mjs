@@ -182,7 +182,11 @@ for (const file of listModules()) {
   if (hit.kind === "component" && hit.rec.role === "page" && hit.rec.pageKind !== "kit") { skipped.pageRecord.push(file); continue; }
   const unresolved = runtimeImports(hit.source)
     .filter((sp) => sp.startsWith("@/"))
-    .filter((sp) => !resolvable.has(sp) && !/\.(css|svg|png)$/.test(sp));
+    // `?raw` / `?url` are answered by the LOADER, not by registration: `makeRequire` calls
+    // `rawImportSpec` and returns the string the importer's contract promised. Counting them as
+    // unresolvable demands a registration that cannot exist — a specifier carrying a query is not a
+    // registry key.
+    .filter((sp) => !resolvable.has(sp) && !/\.(css|svg|png)$/.test(sp) && !/\?(raw|url)$/.test(sp));
   if (unresolved.length) { skipped.unresolvable.push(`${file} — needs ${unresolved.slice(0, 3).join(", ")}`); continue; }
 
   // The gate: is the record the SAME module as the file? Compared as a record would HOLD it — imports
@@ -294,11 +298,41 @@ const carried = [];
   const implIds = new Set((algorithms.implementations ?? []).map((i) => i.id));
   for (const p of promote.impl) implIds.add(p.rec.id);
   for (const c of carried) implIds.add(c.id);
+  // A COMPOSED id whose module is already RESOLVABLE closes the closure just as well as a seeded impl.
+  //
+  // The check below exists so a promoted record's dependencies can be resolved. It was asking a narrower
+  // question — "is this composed id a seeded impl?" — which no permanently-file module can ever satisfy:
+  // 7 of the 34 blocking ids are `import.meta.glob` modules (`achievements`, `agentProfiles`,
+  // `componentBundle`, …) that CANNOT be records at all, so every record composing one was held forever
+  // on a condition it could not meet. Those resolve through the platform registry, which is exactly what
+  // registration is for.
+  //
+  // So: an id also counts as closed when the record it names provides — or its `src` implies — a
+  // specifier that `resolvable` already answers. Same standard the import check uses, applied to the
+  // metadata rather than to the import list.
+  // id → record, over BOTH stores. `byId` in the block above is scoped to it, and a composed id can name
+  // a component as easily as an impl, so this index has to span both.
+  const recById = new Map();
+  for (const i of impls) recById.set(i.id, i);
+  for (const c of components) if (!recById.has(c.id)) recById.set(c.id, c);
+  const specForComposedId = (id) => {
+    const rec = recById.get(id);
+    if (!rec) return null;
+    if (typeof rec.provides === "string" && rec.provides.startsWith("@/")) return rec.provides.trim();
+    return typeof rec.src === "string"
+      ? "@/" + rec.src.split("\\").join("/").replace(/^src\//, "").replace(/\.tsx?$/, "").replace(/\/index$/, "")
+      : null;
+  };
+  const closedByResolution = (id) => {
+    if (seeded.has(id)) return true;                 // a seeded COMPONENT record, not just an impl
+    const spec = specForComposedId(id);
+    return Boolean(spec && resolvable.has(spec));
+  };
   for (let settled = false; !settled; ) {
     settled = true;
     const keep = [];
     for (const p of promote.impl) {
-      const missing = (p.rec.composes ?? []).filter((c) => !implIds.has(c));
+      const missing = (p.rec.composes ?? []).filter((c) => !implIds.has(c) && !closedByResolution(c));
       if (missing.length === 0) {
         keep.push(p);
         continue;
@@ -437,10 +471,29 @@ if (promote.impl.length || carriedKept.length) {
   // existing one is a partial projection of the same module — the `sort.ts` case exactly: 28 lines with
   // no `provides` and no `src`, against the full 90-line module that answers the specifier.
   const byId = new Map(algorithms.implementations.map((e, i) => [e.id, i]));
+  // Every id that WILL be an impl once this run finishes — the seeded ones plus everything being written.
+  // `composes` is filtered against it below.
+  const willBeImpl = new Set(algorithms.implementations.map((e) => e.id));
+  for (const rec of [...carriedKept, ...promote.impl.map((p) => p.rec)]) willBeImpl.add(rec.id);
   for (const rec of [...carriedKept, ...promote.impl.map((p) => p.rec)]) {
     const entry = {};
     for (const k of KEEP) if (rec[k] !== undefined) entry[k] = rec[k];
     if (!Array.isArray(entry.composes)) entry.composes = [];
+    // DROP a composes target that is not an impl. `composes` models an edge in the ALGORITHM graph, so a
+    // target that is a registered platform module or a component record is not an edge it can express —
+    // and writing one produces a DANGLING reference the seed's own integrity guard rejects
+    // ("every composes target is a real impl of the SAME tech — the referential integrity a promotion
+    // must not break"). It caught exactly this: `console.ts → store-types.ts`, `→ achievements.ts`,
+    // `→ agent-profiles.ts`, none of which are impls or ever can be (the last two are
+    // `import.meta.glob` modules).
+    //
+    // Dropping is not losing the dependency: the record still IMPORTS the module and still resolves it
+    // through the registry. Only the graph EDGE goes, and that edge never existed.
+    const dropped = entry.composes.filter((c) => !willBeImpl.has(c));
+    if (dropped.length) {
+      entry.composes = entry.composes.filter((c) => willBeImpl.has(c));
+      console.log(`   ${entry.id}: dropped ${dropped.length} non-impl composes target(s) — ${dropped.slice(0, 3).join(", ")}`);
+    }
     const at = byId.get(entry.id);
     if (at !== undefined) {
       if (!ADOPT_SEED) { console.log(`   SKIPPED (that impl id is already in the seed): ${entry.id}`); skippedAtWrite++; continue; }

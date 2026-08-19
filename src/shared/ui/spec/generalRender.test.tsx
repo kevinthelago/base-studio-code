@@ -5,7 +5,7 @@
 // surfaces (SessionsBehaviorCard, TransformationsBody). These tests cover only the new path.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { KitRenderer } from "./KitRenderer";
+import { KitRenderer } from "@/shared/ui/spec/KitRenderer";
 import { validateGeneralNode, type GeneralNode } from "@/shared/ui/spec/generalNode";
 import { UI_KIT } from "@/shared/ui/manifest";
 

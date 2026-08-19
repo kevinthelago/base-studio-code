@@ -16,7 +16,7 @@ vi.mock('../previewBundle', () => ({
 // definition now, so a test that wants it in the registry must say so
 // (renderers-register-at-a-named-site-not-on-import).
 import { registerRenderer } from '../registry';
-import { gltfRenderer } from './gltfRenderer';
+import { gltfRenderer } from '@/features/planner/preview/renderers/gltfRenderer';
 registerRenderer(gltfRenderer);
 
 function makeContainer(): HTMLDivElement {
