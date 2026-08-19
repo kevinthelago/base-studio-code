@@ -11,7 +11,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, ProjectsWorkspace,
-  SkillsWorkspace, SecurityWorkspace, WorkspaceFallback,
+  SecurityWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
 // Render a detached page's section. A switch over literal cases (not a dynamic
@@ -19,7 +19,6 @@ import {
 function renderDetachedSection(page: string, section: string): React.ReactNode {
   switch (page) {
     case "automations": return <AutomationsWorkspace pageOverride={section} />;
-    case "skills":      return <SkillsWorkspace pageOverride={section} />;
     case "mcp":         return <McpWorkspace pageOverride={section} />;
     case "security":      return <SecurityWorkspace pageOverride={section} />;
     case "github":      return <GitHubWorkspace pageOverride={section} />;

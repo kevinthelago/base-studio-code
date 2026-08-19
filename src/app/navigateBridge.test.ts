@@ -34,7 +34,7 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
   return {
     s,
     read: () => s as unknown as AppStore,
-    workspaces: ["console", "glance", "projects", "skills", "automation", "mcp", "github", "security", "settings"],
+    workspaces: ["console", "glance", "projects", "automation", "mcp", "github", "security", "settings"],
     pages: ["projects", "teams", "designs", "algorithms", "sounds"],
   };
 }

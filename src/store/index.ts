@@ -21,6 +21,7 @@ import { createSkillsSlice } from "@/features/skills/store";
 
 import { type AppStore } from "@/store/types";
 import { persistedState, migrateAutoResumeOff } from "@/store/persist";
+import { migrateRetiredWorkspace } from "@/store/retiredWorkspaces";
 import { createSessionSlice } from "@/store/slices/session";
 import { createPlanSlice } from "@/store/slices/plan";
 import { createProjectsSlice } from "@/store/slices/projects";
@@ -122,13 +123,11 @@ export const useAppStore = create<AppStore>()(
         if (state && (state.projectsPageMode as string) === "org") state.projectsPageMode = "teams";
         // The Fleet page-mode was folded into Glance (#2223/#2228) — a last-mode of "fleet" opens Projects.
         if (state && (state.projectsPageMode as string) === "fleet") state.projectsPageMode = "projects";
-        // Design Studio moved from its own rail Workspace to a Planner tab (#move-to-planner). A user whose
-        // last workspace was "design" would otherwise land on a removed screen — redirect to Planner on its
-        // Designs page.
-        if (state && (state.activeWorkspace as string) === "design") {
-          state.activeWorkspace = "projects";
-          state.projectsPageMode = "designs";
-        }
+        // Every RETIRED rail Workspace's redirect, in one place (`store/retiredWorkspaces.ts`).
+        // `activeWorkspace` is persisted, so removing a Workspace strands whoever was last on it —
+        // they reopen pointed at a key the shell cannot render. Inline, these could not be tested,
+        // and design/algorithms/agents had shipped with no assertion between them.
+        migrateRetiredWorkspace(state);
         // The Designs page-mode key was renamed "design" → "designs" (#2701, feature-folder rename to
         // match the on-screen "Designs" tab). A user whose last page-mode was "design" now opens "designs".
         if (state && (state.projectsPageMode as string) === "design") state.projectsPageMode = "designs";
@@ -136,16 +135,6 @@ export const useAppStore = create<AppStore>()(
         // tab's theme try-on preview (right-pane themes menu + palette + big preview). A last-mode of
         // "themes" now opens Components (Designs).
         if (state && (state.projectsPageMode as string) === "themes") state.projectsPageMode = "designs";
-        // Algorithms moved from its own rail Workspace to a Planner tab (#2785). A user whose last
-        // workspace was "algorithms" would otherwise land on a removed screen — redirect to Planner on
-        // its Algorithms page.
-        if (state && (state.activeWorkspace as string) === "algorithms") {
-          state.activeWorkspace = "projects";
-          state.projectsPageMode = "algorithms";
-        }
-        // The Security workspace's key was renamed "agents" → "security" (#2702, naming realignment).
-        // A user whose last workspace was "agents" would otherwise land on a removed key.
-        if (state && (state.activeWorkspace as string) === "agents") state.activeWorkspace = "security";
         // Refresh BUILT-IN blueprints from code on every load (#677). They're code-owned
         // templates, but `blueprints` is persisted — so improvements to a built-in (the
         // `optional` UI stage, enabled repos, updated prompts, …) would never reach a user
