@@ -30,7 +30,6 @@ import { StudioSessionHosts } from "@/features/studio-sessions";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
 import { AutomationsStatus } from "@/features/automations";
-import { SkillsStatus } from "@/features/skills";
 import { Achievements } from "@/app/Achievement";
 import { AppBanners } from "@/app/AppBanners";
 import { LiveRegion } from "@/shared/ui/feedback/LiveRegion";
@@ -45,7 +44,7 @@ import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import { effectiveWorkspace } from "@/app/registry";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, SettingsWorkspace,
-  ProjectsWorkspace, SkillsWorkspace, SecurityWorkspace, GlanceWorkspace, WorkspaceFallback,
+  ProjectsWorkspace, SecurityWorkspace, GlanceWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -193,7 +192,6 @@ export default function App() {
             {activeWorkspace === "github"     && <GitHubWorkspace />}
             {activeWorkspace === "automation" && <AutomationsWorkspace />}
             {activeWorkspace === "mcp" && <McpWorkspace />}
-            {activeWorkspace === "skills"     && <SkillsWorkspace />}
             {activeWorkspace === "security"     && <SecurityWorkspace />}
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
           </Suspense>
@@ -202,8 +200,6 @@ export default function App() {
           <StatusBar extra={
             activeWorkspace === "automation"
               ? <AutomationsStatus />
-            : activeWorkspace === "skills"
-              ? <SkillsStatus />
               : undefined
           } />
         </Box>

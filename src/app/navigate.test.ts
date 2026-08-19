@@ -22,8 +22,9 @@ function fakeStore() {
 }
 
 describe("applyNavigation — per-workspace page dispatch (#3602)", () => {
-  it("routes tabbed workspaces (glance/skills/mcp/security) through setActivePageTab keyed by workspace", () => {
-    for (const ws of ["glance", "skills", "mcp", "security"] as const) {
+  it("routes tabbed workspaces (glance/mcp/security) through setActivePageTab keyed by workspace", () => {
+    // `skills` was one of these until it moved onto the Teams page and stopped being a Workspace.
+    for (const ws of ["glance", "mcp", "security"] as const) {
       const s = fakeStore();
       applyNavigation(s as unknown as AppStore, { workspace: ws, page: "x" });
       expect(s.setActivePageTab).toHaveBeenCalledWith(ws, "x");

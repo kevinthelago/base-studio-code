@@ -12,6 +12,7 @@ import { render, screen, within } from "@testing-library/react";
 import { TeamsInspector } from "@/features/teams/TeamsInspector";
 import { RELATIONSHIP_ARCHETYPES, type Team } from "./lib/team";
 import type { Persona } from "@/features/personas";
+import type { SkillDef } from "@/features/skills";
 
 const worker: Persona = {
   id: "p-worker",
@@ -42,11 +43,21 @@ const org: Team = {
   relationships: [{ id: "r1", archetype: RELATIONSHIP_ARCHETYPES[0].id, from: "n1", to: "n2" }],
 };
 
-const baseProps = { org, orgs: [org], personas: [worker, designer], onSelectNode: () => {} };
+const baseProps = { org, orgs: [org], personas: [worker, designer], skills: [],
+                    onSelectNode: () => {}, onSelectSkill: () => {}, onSelectPersona: () => {} };
 
-/** Every interactive control a user could type into or press, across every role the panel might use. */
+/**
+ * Every control a user could EDIT something with.
+ *
+ * This deliberately does NOT count every `<button>` any more. It used to, and that conflated "the
+ * panel cannot edit" with "the panel cannot navigate" — the moment a skill chip became a real,
+ * keyboard-reachable link to its persona, a blanket button ban would have argued for hiding it from
+ * assistive tech to keep a test green. Navigation buttons opt out via `data-nav-chip`; anything else
+ * that can press or type still counts, and the accompanying test asserts the panel takes no mutating
+ * prop at all, which is the structural half of the same guarantee.
+ */
 const editingControls = (root: HTMLElement) => [
-  ...within(root).queryAllByRole("button"),
+  ...within(root).queryAllByRole("button").filter((b) => !b.hasAttribute("data-nav-chip")),
   ...within(root).queryAllByRole("textbox"),
   ...within(root).queryAllByRole("combobox"),
   ...within(root).queryAllByRole("checkbox"),
@@ -174,7 +185,8 @@ describe("TeamsInspector — the Capability block renders the persona's own floo
     positions: [{ nodeId: "n1", kind: "agent", personaId: "p-narrow" },
                 { nodeId: "n2", kind: "agent", personaId: "p-base" }],
   };
-  const props = { org: team, orgs: [team], personas: [narrowed, base], onSelectNode: () => {} };
+  const props = { org: team, orgs: [team], personas: [narrowed, base], skills: [],
+                onSelectNode: () => {}, onSelectSkill: () => {}, onSelectPersona: () => {} };
 
   it("shows the FLOOR's tiers, not the tiers its role would imply", () => {
     render(<TeamsInspector {...props} sel={{ type: "node", id: "n1" }} />);
@@ -225,5 +237,98 @@ describe("TeamsInspector — the Capability block renders the persona's own floo
   it("gains no editing control — the read-only contract survives the rewrite", () => {
     const { container } = render(<TeamsInspector {...props} sel={{ type: "node", id: "n1" }} />);
     expect(editingControls(container)).toHaveLength(0);
+  });
+});
+
+// ── skills live beside the agents that carry them ────────────────────────────────────────────────
+//
+// A skill is injectable agent CONTEXT. Its library card could always say what it IS; it could never
+// say which agents it REACHES — and that blast radius is the reason it belongs here rather than on a
+// rail destination of its own.
+describe("TeamsInspector — the skill view (skills move to Teams)", () => {
+  const review: SkillDef = {
+    id: "sk-review", name: "Code review checklist", kind: "procedure", source: "user",
+    desc: "What to look for before approving.", prompt: "1. Read the diff twice.",
+    tools: ["Read", "Grep"], profiles: [], projects: [], enabled: true, pinned: true,
+  } as unknown as SkillDef;
+  const orphan: SkillDef = { ...review, id: "sk-orphan", name: "Orphan skill", pinned: false } as SkillDef;
+
+  const carrier: Persona = {
+    id: "p-carrier", name: "Reviewer", blurb: "", role: "reviewer", startPrompt: "",
+    skills: ["sk-review", "sk-vanished"],
+  };
+  const team: Team = {
+    id: "o3", name: "Skills", relationships: [],
+    positions: [{ nodeId: "n1", kind: "agent", personaId: "p-carrier" }],
+  };
+  const props = {
+    org: team, orgs: [team], personas: [carrier], skills: [review, orphan],
+    onSelectNode: () => {}, onSelectSkill: () => {}, onSelectPersona: () => {},
+  };
+
+  it("shows the skill read-only, with its description and bundled tools", () => {
+    render(<TeamsInspector {...props} sel={{ type: "skill", id: "sk-review" }} />);
+    expect(screen.getByText("Code review checklist")).toBeTruthy();
+    expect(screen.getByText("What to look for before approving.")).toBeTruthy();
+    expect(screen.getByText("Read")).toBeTruthy();
+    expect(screen.getByText("Grep")).toBeTruthy();
+  });
+
+  it("names every persona that carries it — the reverse index the Skills page never had", () => {
+    render(<TeamsInspector {...props} sel={{ type: "skill", id: "sk-review" }} />);
+    expect(screen.getByText("carried by 1")).toBeTruthy();
+    expect(screen.getByText("Reviewer")).toBeTruthy();
+  });
+
+  it("says plainly when a skill reaches NO agent, rather than showing an empty row", () => {
+    // A skill in the library that no persona carries is inert. That is worth stating: it looks
+    // identical to a working one on a page that only lists skills.
+    render(<TeamsInspector {...props} sel={{ type: "skill", id: "sk-orphan" }} />);
+    expect(screen.getByText(/reaches no agent/)).toBeTruthy();
+  });
+
+  it("names `bsc skill` as the write path", () => {
+    render(<TeamsInspector {...props} sel={{ type: "skill", id: "sk-review" }} />);
+    expect(screen.getByText("bsc skill")).toBeTruthy();
+  });
+
+  it("a selected skill that is not in the library renders empty rather than throwing", () => {
+    const { container } = render(<TeamsInspector {...props} sel={{ type: "skill", id: "sk-gone" }} />);
+    expect(container.textContent).toBe("");
+  });
+
+  it("ships no editing control", () => {
+    const { container } = render(<TeamsInspector {...props} sel={{ type: "skill", id: "sk-review" }} />);
+    expect(editingControls(container)).toHaveLength(0);
+  });
+});
+
+describe("TeamsInspector — a persona's skills resolve to names", () => {
+  const review = { id: "sk-review", name: "Code review checklist", kind: "procedure", source: "user",
+    desc: "", prompt: "", tools: [], profiles: [], projects: [], enabled: true, pinned: false } as unknown as SkillDef;
+  const carrier: Persona = {
+    id: "p-carrier", name: "Reviewer", blurb: "", role: "reviewer", startPrompt: "",
+    skills: ["sk-review", "sk-vanished"],
+  };
+  const team: Team = {
+    id: "o4", name: "Names", relationships: [],
+    positions: [{ nodeId: "n1", kind: "agent", personaId: "p-carrier" }],
+  };
+  const props = {
+    org: team, orgs: [team], personas: [carrier], skills: [review],
+    onSelectNode: () => {}, onSelectSkill: () => {}, onSelectPersona: () => {},
+  };
+
+  it("renders the skill's NAME, not its id", () => {
+    render(<TeamsInspector {...props} sel={{ type: "node", id: "n1" }} />);
+    expect(screen.getByText("Code review checklist")).toBeTruthy();
+    expect(screen.queryByText("sk-review")).toBeNull();
+  });
+
+  it("keeps an UNRESOLVABLE id visible instead of silently dropping it", () => {
+    // The launch will still try to write `sk-vanished` into `.claude/skills/`. If the panel is the one
+    // place that pretends it is not there, the persona reads as having fewer skills than it does.
+    render(<TeamsInspector {...props} sel={{ type: "node", id: "n1" }} />);
+    expect(screen.getByText("sk-vanished")).toBeTruthy();
   });
 });

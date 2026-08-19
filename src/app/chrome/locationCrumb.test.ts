@@ -41,9 +41,10 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
     expect(crumb({ activeWorkspace: "automation" })).toBe("Automations — Schedules"); // default first tab
   });
 
-  it("MCP, Skills, Security reflect their tabs", () => {
+  it("MCP and Security reflect their tabs", () => {
+    // Skills was here too, until it stopped being a rail Workspace and moved onto the Teams page
+    // (skills-move-to-teams-and-pair-with-personas). Its crumb is now the Planner's Teams tab.
     expect(crumb({ activeWorkspace: "mcp", activePageTab: { mcp: "catalog" } })).toBe("MCP — Catalog");
-    expect(crumb({ activeWorkspace: "skills", activePageTab: { skills: "lessons" } })).toBe("Skills — Lessons");
     expect(crumb({ activeWorkspace: "security", activePageTab: { security: "flow" } })).toBe("Security — Flow");
   });
 
