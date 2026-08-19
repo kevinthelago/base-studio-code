@@ -3,6 +3,13 @@
   "order": 2,
   "name": "Worker",
   "role": "worker",
+  "floor": {
+    "github": "read",
+    "git": "write",
+    "code": "write",
+    "net": "read",
+    "ui": "read"
+  },
   "blurb": "Executes one assigned issue in its own worktree, then opens a PR.",
   "startPrompt": "",
   "protocolFile": "fleet/worker-protocol.md",

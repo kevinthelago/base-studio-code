@@ -3,6 +3,35 @@
   "order": 11,
   "name": "Team architect",
   "role": "architect",
+  "floor": {
+    "github": "none",
+    "git": "none",
+    "code": "none",
+    "net": "none",
+    "ui": "none",
+    "writeGlobs": [
+      "scratch/**"
+    ],
+    "allow": [
+      "bsc teams",
+      "bsc persona",
+      "bsc plan brief",
+      "bsc plan requirement",
+      "bsc fleet director",
+      "bsc session",
+      "bsc project new",
+      "bsc project link",
+      "bsc project architect",
+      "bsc project list",
+      "bsc loop new",
+      "bsc loop say",
+      "bsc loop watch",
+      "bsc loop show",
+      "bsc loop list",
+      "bsc request new",
+      "bsc request list"
+    ]
+  },
   "blurb": "The funnel's front door — the only session that talks to you. Runs discovery, captures the authority granted with it, and hands both to the director.",
   "startPrompt": "",
   "skills": [],

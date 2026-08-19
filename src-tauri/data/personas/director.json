@@ -3,6 +3,21 @@
   "order": 3,
   "name": "Director",
   "role": "director",
+  "floor": {
+    "github": "read",
+    "git": "read",
+    "code": "write",
+    "net": "read",
+    "ui": "read",
+    "writeGlobs": [
+      "*.md",
+      "*.json",
+      "prompts/*.md",
+      "prompts/*",
+      "discovery/*.md",
+      "discovery/*"
+    ]
+  },
   "blurb": "Coordinates the fleet: reviews/merges PRs, resolves decisions, keeps the board current.",
   "startPrompt": "",
   "protocolFile": "fleet/director-protocol.md",
