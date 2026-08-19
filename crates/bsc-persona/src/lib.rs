@@ -14,6 +14,8 @@
 pub mod cli;
 /// The permission FLOOR a persona carries, and the narrow-only clamp every write passes.
 pub mod floor;
+/// The PACKAGED persona floors — the ceiling a built-in is clamped against.
+pub mod packaged;
 
 #[cfg(test)]
 mod tests {

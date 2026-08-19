@@ -41,7 +41,25 @@ const BUNDLED_SEEDS: &[&str] =
 fn ensure_bundled_seeds() {
     let manifest = env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
     let root = Path::new(&manifest);
-    for rel in BUNDLED_SEEDS {
+    // The fixed three, plus EVERY packaged persona. The personas are staged by scan rather than by a
+    // hardcoded list because the list would be a second place to remember: adding a persona already
+    // means adding a `bundle.resources` entry (which `every_packaged_persona_is_shipped_in_the_bundle`
+    // enforces), and forgetting to stage it as well would fail the build with a missing resource
+    // rather than anything that names the cause.
+    let mut seeds: Vec<String> = BUNDLED_SEEDS.iter().map(|s| s.to_string()).collect();
+    if let Ok(entries) = fs::read_dir(root.join("data").join("personas")) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                seeds.push(format!("personas/{name}"));
+            }
+        }
+    }
+
+    for rel in &seeds {
         let dst = root.join("resources").join("data").join(rel);
         if dst.exists() {
             continue;
