@@ -1,0 +1,17 @@
+{
+  "id": "logsgraphhost",
+  "name": "LogsGraphHost",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/features/logs/LogsGraphHost",
+  "srcText": "// The Logs page host (#3646, epic #3604) — renders the Logs workspace FROM THE GRAPH. The page and its\n// tab bodies are sourced from the components graph (the authored `logspage` node + siblings, seeded from\n// `data/components/app/**`), not bundled files. It registers the feature's injected platform surface (the\n// agentProfiles / consoleModel / auditRows logic the graph page imports), then mounts `logspage` through\n// the runtime loader. Mirrors FleetGraphHost / AutomationsGraphHost.\n//\n// This host WAS SecurityGraphHost. The Security workspace dissolved into Logs: Profiles, Assignments and\n// Flow were deleted outright, and Activity — the one surface with a real audit feed behind it — is the\n// first tab of the unified Logs screen. Sessions, Waiting, Skills, Hooks, Cost and Streams follow as\n// their own slices, all reading the `bsc logs` engine (#1607) rather than growing a second log reader.\n//\n// `pageOverride` (a torn-off single tab, DetachedWindow) forwards to the graph component as a prop —\n// GraphComponent spreads props onto the loaded component, and the graph `LogsWorkspace` reads it.\n//\n// The stylesheet is loaded by the ENTRY's `@/**/*.css` glob (the-entry-owns-stylesheet-loading), not by a\n// module import here: the runtime loader cannot resolve a CSS side-effect import, so a graph-hosted page\n// must never depend on one.\nimport { GraphComponent } from \"@/shared/lib/runtime/GraphComponent\";\nimport { GraphPageFallback } from \"@/shared/lib/runtime/GraphPageFallback\";\nimport { registerLogsPlatform } from \"@/features/logs/graphPlatform\";\n\n// Register at module load — before the workspace ever renders — so the injected modules are in the registry\n// when the graph page's compiled `require()` runs. Idempotent.\nregisterLogsPlatform();\n\nexport function LogsGraphHost({ pageOverride }: { pageOverride?: string } = {}) {\n  // Fallback offers a one-click re-seed (#3648) when the source isn't in the library yet.\n  return (\n    <GraphComponent\n      id=\"logspage\"\n      props={pageOverride ? { pageOverride } : undefined}\n      fallback={<GraphPageFallback page=\"Logs\" icon=\"▤\" />}\n    />\n  );\n}\n",
+  "composes": [],
+  "src": "src/features/logs/LogsGraphHost.tsx",
+  "props": [
+    {
+      "name": "pageOverride",
+      "type": "string"
+    }
+  ],
+  "folder": "features/logs"
+}

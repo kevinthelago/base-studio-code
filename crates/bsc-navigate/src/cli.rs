@@ -58,8 +58,8 @@ ERRORS
 USAGE:
   bsc navigate workspace <id> [--timeout <ms>] [--json]
 
-Rail destinations (registry.ts): console · glance · projects · skills · automation · mcp · github ·
-security · settings.",
+Rail destinations (registry.ts): console · glance · projects · automation · mcp · github ·
+logs · settings.",
     },
     CmdDoc {
         name: "page",

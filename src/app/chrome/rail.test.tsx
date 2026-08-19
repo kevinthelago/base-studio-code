@@ -9,7 +9,7 @@ const FULL = [
   // "Skills" was here until it moved onto the Teams page and stopped being a rail destination
   // (skills-move-to-teams-and-pair-with-personas).
   "Console", "Glance", "Planner", "Automations", "MCP",
-  "GitHub", "Security", "Settings",
+  "GitHub", "Logs", "Settings",
 ];
 const NO_CONSOLE = FULL.filter((l) => l !== "Console");
 
@@ -30,13 +30,17 @@ describe("Rail", () => {
     expect(titlesOf(container)).toEqual(FULL);
   });
 
-  it("labels the Agents screen 'Security' and navigates by its key", () => {
+  it("labels the Logs screen and navigates by its key", () => {
+    // Was the Agents/Security destination; the Security workspace dissolved into Logs
+    // (the-logs-workspace-scaffold-and-activity). The rail reads WORKSPACES, so the label and the
+    // key it dispatches come from ONE registry entry -- this pins that they are the new pair.
     const onNavigate = vi.fn();
     const { container } = render(<Rail active="glance" onNavigate={onNavigate} />);
-    const security = container.querySelector('.rail button[title="Security"]') as HTMLElement;
-    expect(security).toBeTruthy();
-    fireEvent.click(security);
-    expect(onNavigate).toHaveBeenCalledWith("security");
+    const logs = container.querySelector('.rail button[title="Logs"]') as HTMLElement;
+    expect(logs).toBeTruthy();
+    expect(container.querySelector('.rail button[title="Security"]')).toBeNull();
+    fireEvent.click(logs);
+    expect(onNavigate).toHaveBeenCalledWith("logs");
   });
 
   it("no longer exposes Design Studio as a rail destination (#move-to-planner — it's a Planner tab now)", () => {

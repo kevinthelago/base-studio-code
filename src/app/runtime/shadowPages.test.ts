@@ -75,7 +75,7 @@ describe("the shadow page catalogue", () => {
   // deletion item does not own this file and so cannot flip it itself.
   const RETIRED_PAGE_COPIES: Record<string, number> = {
     mcppage: 0,        // mcp-analytics RELEASED — this page is now wholly record-only
-    securitypage: 0,   // Profiles/Assignments/Flow DELETED; Activity is record-only — wholly record-only
+    logspage: 0,       // Profiles/Assignments/Flow DELETED; Activity is record-only — wholly record-only
     automationspage: 0,   // Schedules DELETED once its three-way merge landed — wholly record-only now
     githubpage: 0,        // BranchGraph + the eight summary/ cards went in the code-fallback cut too
   };
@@ -103,7 +103,7 @@ describe("the shadow page catalogue", () => {
       automationspage: "AutomationsWorkspace",
       mcppage: "McpWorkspace",
       skillspage: "SkillsWorkspace",
-      securitypage: "SecurityWorkspace",
+      logspage: "LogsWorkspace",
     };
     // Projects resolves to the planner's own workspace (which mounts the graph host inside it) and Fleet
     // is mounted by Glance, so neither is decidable from this file — they are excluded, not guessed.

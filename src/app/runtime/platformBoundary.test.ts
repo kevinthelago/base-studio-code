@@ -21,7 +21,7 @@ import { registerPlatformModules } from "@/app/runtime/appModules";
 import { registerAutomationsPlatform } from "@/features/automations/graphPlatform";
 import { registerGithubPlatform } from "@/features/github/graphPlatform";
 import { registerMcpPlatform } from "@/features/mcp/graphPlatform";
-import { registerSecurityPlatform } from "@/features/security/graphPlatform";
+import { registerLogsPlatform } from "@/features/logs/graphPlatform";
 import { registerSkillsPlatform } from "@/features/skills/graphPlatform";
 import { registerGlancePlatform } from "@/features/glance/graphPlatform";
 import { registerSoundsPlatform } from "@/features/sounds/graphPlatform";
@@ -86,7 +86,7 @@ beforeAll(() => {
   registerAutomationsPlatform();
   registerGithubPlatform();
   registerMcpPlatform();
-  registerSecurityPlatform();
+  registerLogsPlatform();
   registerSkillsPlatform();
   registerGlancePlatform();
   registerSoundsPlatform();

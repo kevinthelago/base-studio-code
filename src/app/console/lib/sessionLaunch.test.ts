@@ -5,8 +5,8 @@ import { DEBUG_STUDIO_SESSION_ID, designerSessionId,
 import { aiderProvider } from "@/app/console/lib/providers/providers/aider";
 import { roleCapability, roleDeniedCommands, roleDeniedTools, scopeWriteGlobs, bscAgentPerms, sessionScopes, restrictedRoleCommands } from "@/shared/lib/session/sessionRoles";
 import { flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
-import { resolveProfileSettings } from "@/features/security/lib/profileEnforcement";
-import { PROFILES } from "@/features/security/lib/agentProfiles";
+import { resolveProfileSettings } from "@/shared/lib/security/profileEnforcement";
+import { PROFILES } from "@/shared/lib/security/agentProfiles";
 import type { AppStore } from "@/store/types";
 import type { ConsoleProvider } from "@/app/console/lib/providers";
 import type { AgentFlow } from "@/features/planner/fleet/agentFlow";

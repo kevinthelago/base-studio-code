@@ -554,15 +554,15 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
   });
 
   it("treats a REGISTERED platform module import as resolvable (#3897)", () => {
-    // `@/features/security/lib/consoleModel` is resolved at runtime by the feature's graphPlatform, and is
+    // `@/shared/lib/security/consoleModel` is resolved at runtime by the feature's graphPlatform, and is
     // neither an artifact path nor a sibling `src`. Before the manifest it read as no-implementation while
     // the app mounted the page fine — and the finding pressured authors to STUB the import to silence it.
     // (Written against `badgeTone`/ProfilesTab originally; both were deleted with the Profiles tab in
     // retire-agentprofile-and-strip-security-to-activity. The fixture has to name a module the manifest
     // ACTUALLY carries, or it stops testing the resolution path and just tests an unknown specifier.)
     const tab = comp("ActivityTab", "composite", 2, [], {
-      src: "src/features/security/ActivityTab.tsx",
-      source: 'import { deriveConsoles } from "@/features/security/lib/consoleModel";\nexport function ActivityTab(){ return <i>{String(deriveConsoles)}</i>; }',
+      src: "src/features/logs/ActivityTab.tsx",
+      source: 'import { deriveConsoles } from "@/shared/lib/security/consoleModel";\nexport function ActivityTab(){ return <i>{String(deriveConsoles)}</i>; }',
     });
     const cats = analyzeGraphHealth([tab]).map((f) => f.category);
     expect(cats).not.toContain("no-implementation");

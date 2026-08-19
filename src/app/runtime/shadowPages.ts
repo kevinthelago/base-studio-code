@@ -265,7 +265,7 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     label: "GitHub",
     rendersFrom: "graph",
     modules: [
-      // Graph-only for the same reason as automationspage/mcppage/securitypage: the file copy was
+      // Graph-only for the same reason as automationspage/mcppage/logspage: the file copy was
       // dead and was removed, and the barrel is index.ts now. The six part modules keep their files.
       { recordId: "githubpage", file: null },
       // Empty/GitHubSummary/Pulse are RELEASED FOR DELETION (graph-retire-shadow-and-generators): their
@@ -338,19 +338,20 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ensurePlatform: () => import("@/features/skills/graphPlatform").then((m) => m.registerSkillsPlatform()),
   },
   {
-    pageId: "securitypage",
-    label: "Security",
+    pageId: "logspage",
+    label: "Logs",
     rendersFrom: "graph",
     modules: [
-      // Same as mcppage: the dead SecurityWorkspace copy is gone and what survives is the feature's
-      // re-export barrel — now index.ts, so this path would not even resolve.
-      { recordId: "securitypage", file: null },
+      // Same as mcppage: the dead workspace copy is gone and what survives is the feature's
+      // re-export barrel — now index.ts, so this path would not even resolve. The feature is `logs`
+      // rather than `security` since the-logs-workspace-scaffold-and-activity dissolved the latter.
+      { recordId: "logspage", file: null },
       // Activity is the ONLY tab left: security-profiles, security-assignments and security-flow were
       // deleted outright (retire-agentprofile-and-strip-security-to-activity), so there is no record and
       // no file to diff for them. This page is wholly record-only.
-      { recordId: "security-activity", file: null },
+      { recordId: "logs-activity", file: null },
     ],
-    ensurePlatform: () => import("@/features/security/graphPlatform").then((m) => m.registerSecurityPlatform()),
+    ensurePlatform: () => import("@/features/logs/graphPlatform").then((m) => m.registerLogsPlatform()),
   },
 ];
 
