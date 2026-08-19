@@ -16,8 +16,8 @@ import {
   packagedSoundKitPin, soundKitRef, resolveSoundKitPin, importSoundKitByGistUrl,
   deriveSoundKitIdentity, listStoreSoundKits, canonicalSoundArtifact,
 } from "@/features/planner/blueprints/soundKitPin";
-import type { BlueprintSoundKit } from "../stages/blueprints";
-import { makeBlueprints } from "../stages/blueprints";
+import type { BlueprintSoundKit } from "@/features/planner/stages/blueprints";
+import { makeBlueprints } from "@/features/planner/stages/blueprints";
 import { useAppStore } from "@/store";
 
 // sha256Hex rides WebCrypto; the jsdom test env may not expose `crypto.subtle` — back it with Node's

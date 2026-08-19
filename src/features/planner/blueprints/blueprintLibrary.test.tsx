@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   filterBlueprints, makeBlueprints, resolveProjectSeed, refreshBuiltIns, RETIRED_BLUEPRINT_IDS,
   type Blueprint,
-} from "../stages/blueprints";
+} from "@/features/planner/stages/blueprints";
 import { blueprintIcon, blueprintHue } from "@/features/planner/list/blueprintLibrary.helpers";
 
 const bp = (id: string, name: string, over: Partial<Blueprint> = {}): Blueprint =>

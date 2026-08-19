@@ -6,7 +6,7 @@ import {
   signatureTemplateVersion, blueprintTemplateChanged, shouldAutoOpenBlueprintModal,
   dedupeSections, resolveStagePrompt, stageSeed,
   STAGE_DEFS, type BlueprintStage, type Blueprint, type SectionDef,
-} from "./blueprints";
+} from "@/features/planner/stages/blueprints";
 import { SKILLS } from "@/shared/data/skills";
 import { PLAN_STAGES, buildPlanStageState } from "@/features/planner/stages/planStages";
 import { planStateToSignals } from "./planStageDerive";

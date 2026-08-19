@@ -10,8 +10,8 @@ import packagedKitMeta from "@data/ui/react-ui-kit.meta.json";
 import {
   packagedUiKitPin, kitRef, resolveUiKitPin, importKitByGistUrl, deriveKitIdentity, listStoreKits,
 } from "@/features/planner/blueprints/uiKitPin";
-import type { BlueprintUiKit } from "../stages/blueprints";
-import { makeBlueprints } from "../stages/blueprints";
+import type { BlueprintUiKit } from "@/features/planner/stages/blueprints";
+import { makeBlueprints } from "@/features/planner/stages/blueprints";
 import { useAppStore } from "@/store";
 
 // sha256Hex rides WebCrypto; the jsdom test env may not expose `crypto.subtle` — back it with

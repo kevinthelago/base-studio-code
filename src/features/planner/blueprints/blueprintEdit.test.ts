@@ -4,7 +4,7 @@ import {
   toggleDep, setOutput, setStageField, depCandidates,
 } from "@/features/planner/blueprints/blueprintEdit";
 import { STAGE_KINDS, DISPOSITIONS, defaultDisposition } from "@/features/planner/blueprints/blueprintCatalog";
-import { STAGE_DEFS } from "../stages/blueprints";
+import { STAGE_DEFS } from "@/features/planner/stages/blueprints";
 
 describe("blueprintCatalog (#609)", () => {
   it("uses our `ui` key (not the design's `ux`)", () => {

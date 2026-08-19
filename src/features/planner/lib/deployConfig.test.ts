@@ -5,7 +5,7 @@ import {
   serviceMode, serviceTargetDefined, localTargetDefined, finalStageName,
   type DeployService, type DeployConfig,
 } from "@/features/planner/lib/deployConfig";
-import { makeBlueprints } from "../stages/blueprints";
+import { makeBlueprints } from "@/features/planner/stages/blueprints";
 
 // Per-repo rework (#1421): every repo carries its OWN envs/pipeline/config/release/health, so the
 // checks + issues are per-service and the gate is `services.every(serviceReady)`.

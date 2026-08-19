@@ -252,6 +252,10 @@ import * as GraphComponentHost from "@/shared/lib/runtime/GraphComponent";
 import * as Announcer from "@/shared/lib/a11y/announcer";
 import * as Theme from "@/shared/ui/kit/theme";
 import * as Resolve from "@/shared/ui/kit/resolve";
+// Registered beside `kit/theme`, which it reads: `shared/ui/kit/index.ts` re-exports `ThemeProvider`
+// and `useResolvedTheme`, so the barrel's record cannot load without this specifier answered. The
+// module itself stays a FILE — registration is not migration (#the-graphPlatform-answer).
+import * as ThemeProviderMod from "@/shared/ui/kit/ThemeProvider";
 import * as UseSelection from "@/shared/ui/pages/useSelection";
 import * as NetworkLayout from "@/shared/ui/pages/networkLayout";
 import * as Manifest from "@/shared/ui/manifest";
@@ -556,6 +560,7 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/a11y/announcer": Announcer,
   "@/shared/ui/kit/theme": Theme,
   "@/shared/ui/kit/resolve": Resolve,
+  "@/shared/ui/kit/ThemeProvider": ThemeProviderMod,
   "@/shared/ui/pages/useSelection": UseSelection,
   "@/shared/ui/pages/networkLayout": NetworkLayout,
   "@/shared/ui/manifest": Manifest,

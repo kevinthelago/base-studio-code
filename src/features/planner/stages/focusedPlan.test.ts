@@ -4,7 +4,7 @@ import {
   isUserGated, USER_GATED_STAGES,
   sectionForStage, shouldAutoCompleteGate, type Stage, type StageStatus,
 } from "@/features/planner/stages/focusedPlan";
-import { confirmedSignal, skippedSignal, type BlueprintStage } from "./blueprints";
+import { confirmedSignal, skippedSignal, type BlueprintStage } from "@/features/planner/stages/blueprints";
 import type { PlanSignals } from "@/features/planner/stages/stageGate";
 
 const sec = (key: string, over: Partial<BlueprintStage> = {}): BlueprintStage => ({

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { activeSubstep, substepDone } from "@/features/planner/stages/planSubsteps";
-import { STAGE_DEFS, mkStage, makeBlueprints, type SubStep } from "./blueprints";
+import { STAGE_DEFS, mkStage, makeBlueprints, type SubStep } from "@/features/planner/stages/blueprints";
 import { derivePlanStageState, planStateToSignals } from "./planStageDerive";
 
 const STATIC: SubStep[] = [

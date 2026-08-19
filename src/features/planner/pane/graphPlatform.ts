@@ -36,6 +36,7 @@ import * as PreviewPaneShell from "@/features/planner/preview/PreviewPaneShell";
 import * as RelationshipGraph from "@/features/planner/relationship/relationshipGraph";
 import * as PlannerConductor from "@/features/planner/session/plannerConductor";
 import * as Blueprints from "@/features/planner/stages/blueprints";
+import * as BlueprintBuiltins from "@/features/planner/stages/blueprintBuiltins";
 import * as FocusedPlan from "@/features/planner/stages/focusedPlan";
 import * as StageGate from "@/features/planner/stages/stageGate";
 
@@ -68,6 +69,7 @@ export function registerPanePlatform(): void {
   registerAppModule("@/features/planner/relationship/relationshipGraph", RelationshipGraph);
   registerAppModule("@/features/planner/session/plannerConductor", PlannerConductor);
   registerAppModule("@/features/planner/stages/blueprints", Blueprints);
+  registerAppModule("@/features/planner/stages/blueprintBuiltins", BlueprintBuiltins);
   registerAppModule("@/features/planner/stages/focusedPlan", FocusedPlan);
   registerAppModule("@/features/planner/stages/stageGate", StageGate);
 }

@@ -4,7 +4,7 @@ import {
   hashContent, changedDesignFiles, markRouted, renderDesignDelta,
   INTAKE_DIR, INTAKE_MANIFEST,
 } from "@/features/planner/lib/fileIntake";
-import { STAGE_DEFS } from "../stages/blueprints";
+import { STAGE_DEFS } from "@/features/planner/stages/blueprints";
 
 describe("fileIntake — staging directory (#829)", () => {
   it("stages dropped files into a visible project-folder design/ directory", () => {
