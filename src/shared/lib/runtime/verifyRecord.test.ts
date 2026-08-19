@@ -3,7 +3,7 @@
 // codegen; the browser check is what proves it against the real packaged records.
 import { describe, it, expect, beforeEach } from "vitest";
 import { verifyGraphRecord, describeVerdict } from "@/shared/lib/runtime/verifyRecord";
-import { __resetCompileCache, type CompileFn } from "./graphModules";
+import { __resetCompileCache, type CompileFn } from "@/shared/lib/runtime/graphModules";
 
 /** The fake compiler treats the source AS the CJS — it already contains `require()` calls. */
 const compile: CompileFn = async (source) => {

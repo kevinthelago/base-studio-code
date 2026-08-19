@@ -25,7 +25,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSy
 import { spawnSync } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { norm, codeOnly, splitPreamble, fileAsRecordSource, runtimeImports, seedAdoption } from "./lib/recordSource.mjs";
+import { norm, codeOnly, splitPreamble, fileAsRecordSource, runtimeImports, seedAdoption, blankComments } from "./lib/recordSource.mjs";
 import { libraryCarryClosure } from "./lib/graphClosure.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -190,7 +190,11 @@ for (const file of listModules()) {
   if (seeded.has(spec)) { skipped.alreadySeeded++; continue; }
   const hit = bySpec.get(spec);
   if (!hit) { skipped.noRecord++; continue; }
-  if (BUILD_TIME_ONLY.test(hit.source)) { skipped.buildTimeOnly.push(file); continue; }
+  // Test the COMMENT-BLANKED source. `features/planner/list/graphPlatform.ts` was classified
+  // build-time-only because a comment in it EXPLAINS that `blueprintBuiltins` is an `import.meta.glob`
+  // module — prose about the rule tripped the rule. Writing down why something is floor should not make
+  // the writer floor too.
+  if (BUILD_TIME_ONLY.test(blankComments(hit.source))) { skipped.buildTimeOnly.push(file); continue; }
   // A `role: page` record is an APP SCREEN as far as `shadowPages.test.ts` is concerned, and that guard
   // demands every one be catalogued. Promoting an uncatalogued page therefore fails the suite — a
   // deliberate, per-page act, not a bulk promotion.

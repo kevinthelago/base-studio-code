@@ -14,7 +14,7 @@ import {
   __resetCompileCache,
   ENTRY_SPECIFIER,
   type CompileFn,
-} from "./graphModules";
+} from "@/shared/lib/runtime/graphModules";
 
 /** A fake compiler: emits CJS that records its own requires, and counts how many times it ran. */
 function fakeCompiler() {

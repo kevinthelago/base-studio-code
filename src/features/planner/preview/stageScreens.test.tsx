@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 // stageScreens imports PlanPreviewPane → renderPreview → previewBundle, whose
 // esbuild-wasm module load fails under jsdom. Mock it so the registry imports clean.
-vi.mock("../preview/previewBundle", () => ({
+vi.mock("@/features/planner/preview/previewBundle", () => ({
   bundleSkeleton: vi.fn().mockResolvedValue("BUNDLE_JS"),
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
 }));

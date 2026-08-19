@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import * as React from "react";
 import { registerAppModule, __resetRegistry } from "@/shared/lib/runtime/moduleRegistry";
-import { classifyImport, makeRequire, pickComponent, evalCjsModule, routeImport } from "./componentLoader";
+import { classifyImport, makeRequire, pickComponent, evalCjsModule, routeImport } from "@/shared/lib/runtime/componentLoader";
 
 // The compile step (esbuild-wasm, browser-only) is exercised end-to-end by the e2e harness; here we verify
 // the runtime half — that the CommonJS esbuild WOULD emit runs against the registry, resolving `react` to

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("./previewBundle", () => ({
+vi.mock("@/features/planner/preview/previewBundle", () => ({
   bundleSkeleton: vi.fn().mockResolvedValue("BUNDLE_JS"),
   buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
 }));

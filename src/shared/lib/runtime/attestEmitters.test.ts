@@ -9,7 +9,7 @@
 // INJECTED (esbuild-wasm is browser-only), and the fixtures are hand-written CommonJS — the same shape
 // esbuild emits and the same approach `componentLoader.test.ts` already takes.
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { loadComponentFromSource } from "./componentLoader";
+import { loadComponentFromSource } from "@/shared/lib/runtime/componentLoader";
 import { registerAppModule, __resetRegistry } from "@/shared/lib/runtime/moduleRegistry";
 import {
   enableAttestation, __resetAttestationsForTest, __pendingAttestationsForTest, srcHash,

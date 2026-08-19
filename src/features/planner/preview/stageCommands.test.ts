@@ -66,7 +66,7 @@ describe("stageCommands — render-preview module", () => {
   it("render-preview registers a command module on import", async () => {
     // Mock the bundler so importing renderPreview's transitive deps is jsdom-safe.
     vi.resetModules();
-    vi.doMock("../preview/previewBundle", () => ({
+    vi.doMock("@/features/planner/preview/previewBundle", () => ({
       bundleSkeleton: vi.fn().mockResolvedValue("BUNDLE_JS"),
       buildPreviewSrcDoc: (js: string) => `<html><body>${js}</body></html>`,
     }));

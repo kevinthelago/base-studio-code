@@ -19,12 +19,12 @@ export { ProjectsGraphHost } from "@/features/planner/ProjectsGraphHost";
 // registers at first RENDER (the import cycle documented in ProjectsGraphHost), so shadow mode — which
 // mounts nothing — would read the whole planner-list surface as unbound without a way to call it. A
 // re-export binds, it does not call, so the cycle that forced render-time registration is untouched.
-export { registerProjectsPlatform } from "./list/graphPlatform";
+export { registerProjectsPlatform } from "@/features/planner/list/graphPlatform";
 // #4224: same reason — the shadow catalogue reaches the planning surface through the barrel.
-export { registerPlanningPlatform } from "./session/graphPlatform";
+export { registerPlanningPlatform } from "@/features/planner/session/graphPlatform";
 // `record-link-debt`: the board leaves the GITHUB feature drills into. It calls this through the barrel,
 // which is the only planner path #1545 lets it reach — the registration itself stays inside the planner.
-export { registerPlannerGithubPlatform } from "./github/graphPlatform";
+export { registerPlannerGithubPlatform } from "@/features/planner/github/graphPlatform";
 // #4224: the planning session renders FROM THE GRAPH; the file component stays for its tests.
 import { PlanningGraphHost } from "@/features/planner/session/PlanningGraphHost";
 import { TeamsPanel } from "@/features/teams";
