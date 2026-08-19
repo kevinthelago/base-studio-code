@@ -199,8 +199,15 @@ export function splitPreamble(recordSrc, fileSrc) {
  * confuse it. Stripping imports first is the tempting version and is subtly wrong — a bare
  * `import "./x.css";` has no `from`, so a non-greedy strip runs on and swallows the `export { … } from`
  * block below it, which reported the whole charts barrel as losing nine exports.
+ *
+ * COMMENTS ARE STRIPPED FIRST. A `{ … }` export block may contain a comment between its names, and
+ * `[\s\S]*?` happily swallows it — so a name arrives glued to two lines of prose and matches nothing on
+ * the other side. `shared/ui/kit/index.ts` was reported as dropping `setActiveKitThemes` for exactly
+ * that reason, and the record exports it on the same line as the rest. A FALSE "drops an export" is the
+ * expensive direction here: it argues for replacing a record that was fine.
  */
-export function exportedNames(src) {
+export function exportedNames(rawSrc) {
+  const src = stripComments(rawSrc ?? "");
   if (/^\s*export\s+\*\s+from/m.test(src)) return null;
   const out = new Set();
   for (const m of src.matchAll(/^\s*export\s+(?:default\s+)?(?:async\s+)?(?:function|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/gm)) out.add(m[1]);

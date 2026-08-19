@@ -167,7 +167,11 @@ const fileSrcOf = (f) => {
   if (!fileSrcCache.has(f)) fileSrcCache.set(f, fileAsRecordSource(join(REPO, "src", f), f));
   return fileSrcCache.get(f);
 };
-const skipped ={ bodyDiffers: 0, buildTimeOnly: [], alreadySeeded: 0, noRecord: 0, pageRecord: [], unresolvable: [], uncompilable: [], unclosedComposes: [] };
+// `bodyDiffers` is a LIST, not a counter. It used to be a bare number, and that is why an earlier slice
+// opened to "adjudicate the thirteen body-differs" and could not name one: the only way to find them was
+// to re-derive the comparison by hand. Every other bucket here enumerates; this one is the bucket whose
+// members most need a human, so it is the last one that should have been anonymous.
+const skipped ={ bodyDiffers: [], buildTimeOnly: [], alreadySeeded: 0, noRecord: 0, pageRecord: [], unresolvable: [], uncompilable: [], unclosedComposes: [] };
 
 for (const file of listModules()) {
   if (ONLY && file !== ONLY) continue;
@@ -194,7 +198,13 @@ for (const file of listModules()) {
   // substance (that mistake cost 21 candidates the first time round).
   const fileSrc = fileAsRecordSource(join(REPO, "src", file), file);
   const body = splitPreamble(norm(hit.source), fileSrc)[1];
-  if (body !== fileSrc && codeOnly(body) !== codeOnly(fileSrc)) { skipped.bodyDiffers++; continue; }
+  if (body !== fileSrc && codeOnly(body) !== codeOnly(fileSrc)) {
+    // Report the SIGNED size delta, because the direction is the first thing an adjudicator needs and
+    // the one thing a name cannot carry: a record LARGER than its file usually holds something the file
+    // lost, and a record smaller than its file usually dropped an export. Both are "differs".
+    skipped.bodyDiffers.push(`${file} — record ${codeOnly(body).length} vs file ${codeOnly(fileSrc).length} chars (${codeOnly(body).length - codeOnly(fileSrc).length >= 0 ? "+" : ""}${codeOnly(body).length - codeOnly(fileSrc).length})`);
+    continue;
+  }
 
   if (promote.component.length + promote.impl.length >= LIMIT) break;
   promote[hit.kind].push({ file, spec, rec: hit.rec });
@@ -368,7 +378,8 @@ const carriedKept = [];
 console.log(`promotable: ${promote.component.length} component(s) + ${promote.impl.length} impl(s)` +
   (carriedKept.length ? ` (+ ${carriedKept.length} library record(s) carried to close their composes)` : ""));
 for (const c of carriedKept) console.log(`   carry: ${c.id}${c.role === "primitive" ? "  [language primitive]" : ""}`);
-console.log(`skipped — already seeded ${skipped.alreadySeeded}, no record ${skipped.noRecord}, body differs ${skipped.bodyDiffers}, build-time-only ${skipped.buildTimeOnly.length}, role:page ${skipped.pageRecord.length}, unresolvable ${skipped.unresolvable.length}, uncompilable ${skipped.uncompilable.length}, unclosed-composes ${skipped.unclosedComposes.length}`);
+console.log(`skipped — already seeded ${skipped.alreadySeeded}, no record ${skipped.noRecord}, body differs ${skipped.bodyDiffers.length}, build-time-only ${skipped.buildTimeOnly.length}, role:page ${skipped.pageRecord.length}, unresolvable ${skipped.unresolvable.length}, uncompilable ${skipped.uncompilable.length}, unclosed-composes ${skipped.unclosedComposes.length}`);
+for (const f of skipped.bodyDiffers) console.log(`   body differs: ${f}`);
 for (const f of skipped.buildTimeOnly) console.log(`   import.meta.glob: ${f}`);
 for (const f of skipped.pageRecord) console.log(`   role:page (catalogue it in shadowPages first): ${f}`);
 for (const f of skipped.unresolvable) console.log(`   unresolvable import: ${f}`);

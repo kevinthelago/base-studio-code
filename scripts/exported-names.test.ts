@@ -32,3 +32,31 @@ describe("exportedNames sees every export form", () => {
     expect(exportedNames(`export * from "@/x";`)).toBeNull();
   });
 });
+
+describe("exportedNames — comments inside an export block", () => {
+  it("does not glue a comment onto the name that follows it", () => {
+    // `shared/ui/kit/index.ts` was reported as DROPPING `setActiveKitThemes` because `[\s\S]*?` swallowed
+    // the two comment lines sitting inside its `export { … }` block, so the name arrived as prose+name and
+    // matched nothing on the record's side. A false "drops an export" argues for replacing a record that
+    // was fine, which is the expensive direction to be wrong in.
+    const src = [
+      `export {`,
+      `  themeById,`,
+      `  // #2488: the designer-writable theme store's sync hooks — the components slice hydrate pushes`,
+      `  // the store collection in.`,
+      `  setActiveKitThemes,`,
+      `} from "@/shared/ui/kit/theme";`,
+    ].join("\n");
+    const names = exportedNames(src);
+    expect(names).not.toBeNull();
+    expect([...names!].sort()).toEqual(["setActiveKitThemes", "themeById"]);
+  });
+
+  it("still returns null for `export * from`", () => {
+    expect(exportedNames(`export * from "@/x";`)).toBeNull();
+  });
+
+  it("ignores an `export` written inside a comment", () => {
+    expect([...exportedNames(`// export function ghost() {}\nexport const real = 1;`)!]).toEqual(["real"]);
+  });
+});
