@@ -20,6 +20,13 @@ import * as Models from "@/app/console/lib/models";
 import * as PaneIdentity from "@/app/console/lib/paneIdentity";
 import * as PaneStatus from "@/app/console/lib/paneStatus";
 import * as Providers from "@/app/console/lib/providers";
+// xterm, registered HERE and deliberately not in `appModules`. `TerminalView` and `useScreenSession`
+// import it, so a record standing for either cannot resolve without it — but registration is EAGER, and
+// xterm in the shell's set would put the whole terminal stack in the boot bundle for every user who
+// never opens a console. The console graph-platform is loaded by the console host, which is exactly the
+// point at which xterm is already being paid for.
+import * as Xterm from "@xterm/xterm";
+import * as XtermAddonFit from "@xterm/addon-fit";
 import * as UseIdleReaper from "@/app/console/lib/useIdleReaper";
 import * as UsePaneActivityFeed from "./lib/usePaneActivityFeed";
 import * as UsePaneTokenUsage from "@/app/console/lib/usePaneTokenUsage";
@@ -48,6 +55,8 @@ let done = false;
 export function registerConsolePlatform(): void {
   if (done) return;
   done = true;
+  registerAppModule("@xterm/xterm", Xterm);
+  registerAppModule("@xterm/addon-fit", XtermAddonFit);
   registerAppModule("@/app/console/lib/consoleFocus", ConsoleFocus);
   registerAppModule("@/app/console/lib/modelDisplay", ModelDisplay);
   registerAppModule("@/app/console/lib/models", Models);

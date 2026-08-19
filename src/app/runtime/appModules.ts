@@ -273,6 +273,11 @@ import * as TauriApp from "@tauri-apps/api/app"; // statusbar reads the app vers
 // stream in the app is a Tauri event subscription — and each was unpromotable purely because the
 // specifier had no registration, not because anything about the module was unfit.
 import * as TauriEvent from "@tauri-apps/api/event";
+// The two window APIs a record reaches for (`register-the-third-party-packages`): `DetachedTabStrip`
+// needs `window`, `detachSection` needs `webviewWindow`. Cheap to register eagerly — they are thin
+// wrappers over the same IPC `core` already registered above, not a new dependency for the bundle.
+import * as TauriWindow from "@tauri-apps/api/window";
+import * as TauriWebviewWindow from "@tauri-apps/api/webviewWindow";
 import * as UseGraphViewport from "@/shared/ui/layouts/useGraphViewport"; // GraphCanvas/Tree (#3692)
 import * as RenderProfiler from "@/shared/lib/core/renderProfiler";       // GraphCanvas (#3692)
 import * as TreeLayout from "@/shared/ui/layouts/treeLayout";             // Tree (#3692)
@@ -448,6 +453,8 @@ const PLATFORM: Record<string, unknown> = {
   "@/app/SessionReadinessBanner": SessionReadinessBanner,
   "@tauri-apps/api/app": TauriApp,
   "@tauri-apps/api/event": TauriEvent,
+  "@tauri-apps/api/window": TauriWindow,
+  "@tauri-apps/api/webviewWindow": TauriWebviewWindow,
 // ── The LOGIC SURFACE a record imports (register-the-shell-logic-surface) ─────────────────────────
 // These modules STAY on disk — registration is not migration. A graph record that imports one of them
 // resolves it here instead of failing to load, which is the prerequisite for migrating the modules that
