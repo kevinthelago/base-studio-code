@@ -1000,7 +1000,7 @@
   "@data/mcp/hooks.json",
   "@data/permissions/base.json",
   "@data/permissions/build-allowlist.json",
-  "@data/permissions/role-capabilities.json",
+  "@data/permissions/write-locks.json",
   "@data/personas/architect.json",
   "@data/personas/auditor.json",
   "@data/personas/curator.json",
