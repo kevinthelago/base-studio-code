@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cloudflareDashUrl, relayHealthUrl } from "./Tunnel";
+import { cloudflareDashUrl, relayHealthUrl } from "@/features/tunnel/Tunnel";
 
 describe("cloudflareDashUrl — deep-link to the relay's Cloudflare dashboard", () => {
   const DASH = "https://dash.cloudflare.com/?to=/:account";

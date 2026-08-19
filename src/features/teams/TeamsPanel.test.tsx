@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { TeamsPanel } from "@/features/teams/TeamsPanel";
 import { useAppStore } from "@/store";
-import { nodeBox } from "./lib/orgLayout";
+import { nodeBox } from "@/features/teams/lib/orgLayout";
 import { positionDisplay } from "@/features/teams/lib/orgView";
 
 /** Select an existing position by clicking its LEFT-RAIL row (not the canvas [data-node] card) — the

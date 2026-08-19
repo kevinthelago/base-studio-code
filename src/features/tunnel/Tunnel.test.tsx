@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { relayHealthUrl, TunnelSettings } from "./Tunnel";
+import { relayHealthUrl, TunnelSettings } from "@/features/tunnel/Tunnel";
 
 // The card calls tunnelStatus() on mount; mock the client so it resolves a stable,
 // not-running status (no QR, no polling) and the probe is the only network we drive.
