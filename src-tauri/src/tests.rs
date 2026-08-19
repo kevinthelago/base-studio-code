@@ -119,6 +119,45 @@
         );
     }
 
+    /// Every packaged PERSONA must ship as a bundle resource.
+    ///
+    /// The clamp reads a built-in's packaged floor as its ceiling (`bsc_persona::packaged`), through
+    /// `bsc_util::packaged`, which in a SHIPPED build resolves only what `bundle.resources` staged.
+    /// A persona added later and not listed there would resolve to "no packaged floor" — and the
+    /// clamp would then fall through to the CLOSED floor and refuse every write to it, in shipped
+    /// builds only. That is the failure class `every_runtime_seed_is_shipped_in_the_bundle` exists
+    /// for, arriving through a different door.
+    #[test]
+    fn every_packaged_persona_is_shipped_in_the_bundle() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json parses");
+        let shipped: std::collections::BTreeSet<String> = conf["bundle"]["resources"]
+            .as_object()
+            .expect("bundle.resources is an object")
+            .values()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
+
+        let mut missing = Vec::new();
+        for entry in std::fs::read_dir(manifest.join("data").join("personas")).expect("personas dir") {
+            let path = entry.expect("dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let name = path.file_name().and_then(|n| n.to_str()).expect("file name").to_string();
+            let rel = format!("data/personas/{name}");
+            if !shipped.contains(&rel) {
+                missing.push(rel);
+            }
+        }
+        missing.sort();
+        assert!(
+            missing.is_empty(),
+            "a packaged persona is not in `bundle.resources`, so a SHIPPED build cannot read its              floor and the clamp would refuse every write to it: {missing:?}",
+        );
+    }
+
     /// `bundle.resources` must ship EXACTLY the seeds that are no longer embedded.
     ///
     /// This is the one failure the other tests structurally cannot see: dev resolves the seeds from the
