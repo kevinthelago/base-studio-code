@@ -7,6 +7,10 @@
 // driving an animation through `Traced<X>` — which is behaviour by any reading, and the least suitable
 // thing in the feature to express as layout data.
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
+// acorn — the parser `viz/examples/vizInstrument` uses to instrument an algorithm's real code. Feature
+// -scoped for the same reason as xterm: registration is eager, and a parser in the shell's set would be
+// carried by every boot to serve one lens inside this feature.
+import * as Acorn from "acorn";
 import * as Knowledge from "@/features/algorithms/lib/knowledge";
 import * as UseKnowledgeGraph from "@/features/algorithms/useKnowledgeGraph";
 import * as VizPanel from "@/features/algorithms/viz/VizPanel";
@@ -38,6 +42,7 @@ let done = false;
 export function registerAlgorithmsPlatform(): void {
   if (done) return;
   done = true;
+  registerAppModule("acorn", Acorn);
   registerAppModule("@/features/algorithms/lib/knowledge", Knowledge);
   registerAppModule("@/features/algorithms/useKnowledgeGraph", UseKnowledgeGraph);
   registerAppModule("@/features/algorithms/viz/VizPanel", VizPanel);
