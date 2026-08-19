@@ -611,6 +611,17 @@ const PLATFORM: Record<string, unknown> = {
  *  `import * as X` — and the loader reads `.default` off one to satisfy `import x from "…"`. Unwrapping
  *  here would register the parsed value itself, so a default import would resolve to `undefined.default`.
  *
+ *  ⚠️ …BUT A RAW NAMESPACE IS NOT ENOUGH, and that gap broke two live pages. esbuild compiles
+ *  a default import to `__toESM(require(spec)).default`, and `__toESM` passes a module through
+ *  ONLY if it carries `__esModule`; otherwise it wraps — `{...mod, default: mod}` — so `.default`
+ *  resolves to the NAMESPACE rather than the parsed JSON. Vite's eager-glob namespaces have no
+ *  `__esModule` (measured: `hasEsModule: false, hasDefault: true`), so every default import of a
+ *  packaged data JSON in a record produced an object where the code expected its contents:
+ *  `MODELS.map is not a function`, `PLAN_STAGES.map`, `MCP_CATALOG.filter`,
+ *  `BUILTIN_MCP_SERVERS.filter`. Most degraded — the loader declined the override and fell back to the
+ *  bundled module — but `mcppage` had no fallback for `mcpCatalogView` and failed outright, and
+ *  `planningpage` threw before any decline could help. {@link asEsModule} closes it.
+ *
  *  Bundle cost is ~nil rather than ~11 MB, which is why a blanket glob is affordable: the 388 seed
  *  records (2.8 MB) are ALREADY eagerly globbed by `features/designs/lib/seed.ts`, and the two large
  *  files — `react-ui.json` (5.2 MB) and `algorithms.json` (2.6 MB) — are already imported by the modules
@@ -624,6 +635,26 @@ export function dataSpecifierFor(globKey: string): string | null {
   return at === -1 ? null : `@data/${globKey.slice(at + DATA_PREFIX.length)}`;
 }
 
+/**
+ * Mark a module namespace as ES so esbuild's interop hands a default import its `default`.
+ *
+ * `__toESM(mod)` returns `mod` untouched when `mod.__esModule` is set, and otherwise wraps it as
+ * `{...mod, default: mod}` — which silently turns a default import of a packaged data JSON into the namespace
+ * instead of the JSON. Vite's eager-glob namespaces carry no `__esModule`, so every such import was
+ * wrong; see the note on {@link DATA_JSON} for the four it broke.
+ *
+ * A SHALLOW COPY rather than a prototype view (`Object.create`): the copy keeps own enumerable props,
+ * which is what a spread-based interop needs, and a namespace over parsed JSON has no live bindings or
+ * getters to lose. Deliberately scoped to the data JSON — the `import * as X` platform entries are
+ * consumed by NAME, which works either way, and copying a real module could drop a live binding.
+ *
+ * Left alone if it already declares `__esModule`, so a genuinely CJS-interop module is never rewrapped.
+ */
+function asEsModule(mod: unknown): unknown {
+  if (!mod || typeof mod !== "object" || "__esModule" in mod) return mod;
+  return { ...(mod as Record<string, unknown>), __esModule: true };
+}
+
 let done = false;
 
 /** Register every platform module by its import specifier. Idempotent — safe to call at each boot / HMR. */
@@ -633,6 +664,6 @@ export function registerPlatformModules(): void {
   for (const [specifier, mod] of Object.entries(PLATFORM)) registerAppModule(specifier, mod);
   for (const [key, mod] of Object.entries(DATA_JSON)) {
     const specifier = dataSpecifierFor(key);
-    if (specifier) registerAppModule(specifier, mod);
+    if (specifier) registerAppModule(specifier, asEsModule(mod));
   }
 }
