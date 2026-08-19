@@ -301,6 +301,14 @@ import * as StoreTypes from "@/store/types";
 import * as StoreTypesConsole from "@/store/types/console";
 import * as StoreTypesGithub from "@/store/types/github";
 import * as StoreTypesPerf from "@/store/types/perf";
+// The other three `store/types` leaves, for the same reason: `store/types.ts` re-exports each with
+// `export *`, a VALUE re-export that emits a require even though the modules compile to empty JS.
+import * as StoreTypesShell from "@/store/types/shell";
+import * as StoreTypesProjects from "@/store/types/projects";
+import * as StoreTypesPlan from "@/store/types/plan";
+import * as StoreTypesSession from "@/store/types/session";
+// The kit page `shared/ui/registry` composes. Small and already in the shared surface.
+import * as NetworkPage from "@/shared/ui/pages/NetworkPage";
 import * as KitRenderer from "@/shared/ui/spec/KitRenderer";
 import * as GraphPrimitive from "@/shared/ui/spec/graphPrimitive";
 import * as GraphModules from "@/shared/lib/runtime/graphModules";
@@ -566,6 +574,11 @@ const PLATFORM: Record<string, unknown> = {
   "@/store/types/console": StoreTypesConsole,
   "@/store/types/github": StoreTypesGithub,
   "@/store/types/perf": StoreTypesPerf,
+  "@/store/types/shell": StoreTypesShell,
+  "@/store/types/projects": StoreTypesProjects,
+  "@/store/types/plan": StoreTypesPlan,
+  "@/store/types/session": StoreTypesSession,
+  "@/shared/ui/pages/NetworkPage": NetworkPage,
   "@/shared/ui/spec/KitRenderer": KitRenderer,
   "@/shared/ui/spec/graphPrimitive": GraphPrimitive,
   "@/shared/lib/runtime/graphModules": GraphModules,

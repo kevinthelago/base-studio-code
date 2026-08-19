@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { AppStore } from "../types";
+import type { AppStore } from "@/store/types";
 import {
   PROJECT_SCOPED_MAPS,
   REPO_SCOPED_MAPS,

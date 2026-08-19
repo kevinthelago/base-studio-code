@@ -1,7 +1,7 @@
 // resumePaneSession (#glance-resume) — resume ONE dormant fleet/agent pane in place, non-disruptively.
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./";
-import type { EndedInfo } from "./types";
+import type { EndedInfo } from "@/store/types";
 
 const ended = (streamId = "api"): EndedInfo => ({ state: "done", streamId, summary: "2/2 complete", at: 1 });
 

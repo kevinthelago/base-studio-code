@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { useAppStore } from "./";
-import type { EndedInfo } from "./types";
+import type { EndedInfo } from "@/store/types";
 
 const done = (streamId = "api"): EndedInfo => ({ state: "done", streamId, summary: "2/2 complete", at: 1 });
 
