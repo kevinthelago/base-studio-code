@@ -19,7 +19,7 @@ import * as ExpandNode from "@/features/glance/lib/expandNode";
 import * as FleetPlanProgress from "@/features/glance/lib/fleetPlanProgress";
 import * as GlanceCanvas from "@/features/glance/GlanceCanvas";
 import * as GlanceChatDock from "@/features/glance/GlanceChatDock";
-import * as GlanceData from "./lib/glanceData";
+import * as GlanceData from "@/features/glance/lib/glanceData";
 import * as GlanceFleet from "@/features/glance/lib/glanceFleet";
 import * as GlanceGraph from "@/features/glance/lib/glanceGraph";
 import * as GlancePush from "@/features/glance/lib/glancePush";

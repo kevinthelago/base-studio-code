@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GlanceCanvas, GlanceOverlays } from "@/features/glance/GlanceCanvas";
-import { buildGlanceData } from "./lib/glanceData";
+import { buildGlanceData } from "@/features/glance/lib/glanceData";
 import { buildGraph } from "@/features/glance/lib/glanceGraph";
 
 const projects = [{ id: "app-a", name: "App A" }, { id: "app-b", name: "App B" }];

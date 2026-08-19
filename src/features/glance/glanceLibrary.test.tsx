@@ -7,7 +7,7 @@ import { render, screen } from "@testing-library/react";
 import { GlanceCanvas, GlanceOverlays } from "@/features/glance/GlanceCanvas";
 import { buildGraph, libraryNodeId, requiresEdgeId, type GRawNode, type GRawEdge } from "@/features/glance/lib/glanceGraph";
 // #3133 — the REAL data path: the designs roll-up + the Glance adapter, joined end to end below.
-import { buildGlanceData } from "./lib/glanceData";
+import { buildGlanceData } from "@/features/glance/lib/glanceData";
 import { resolveKitLibraryRefs, type ComponentRecord } from "@/features/designs";
 
 const ALGO = libraryNodeId("algo", "dijkstra");

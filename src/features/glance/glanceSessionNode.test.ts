@@ -9,7 +9,7 @@
 //
 // The left→right reading survives the move, minus one stop: architect → projects → libraries.
 import { describe, it, expect } from "vitest";
-import { buildGlanceData } from "./lib/glanceData";
+import { buildGlanceData } from "@/features/glance/lib/glanceData";
 import { buildArchitectFleetData } from "@/features/glance/lib/studioProject";
 import { studioNetworkForArchitect, STUDIO_NETWORK_ID, ARCHITECT_NODE, BUILTIN_ORGS } from "@/features/teams";
 import { buildGraph, architectNodeId, kitNodeId } from "@/features/glance/lib/glanceGraph";

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { briefRouteKey, resolveBriefTarget, type BriefRouteContext } from "./briefRouting";
+import { briefRouteKey, resolveBriefTarget, type BriefRouteContext } from "@/shared/lib/fleet/briefRouting";
 
 const ctx = (over: Partial<BriefRouteContext> = {}): BriefRouteContext => ({
   directorPanes: ["studio-code:director"],

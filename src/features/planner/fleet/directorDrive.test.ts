@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeDirectorDrive, resolveDirectorDrive, DEFAULT_DIRECTOR_DRIVE,
   askKey, requestKey, shouldRemind,
-} from "./directorDrive";
+} from "@/features/planner/fleet/directorDrive";
 
 describe("normalizeDirectorDrive", () => {
   it("accepts the four canonical modes", () => {

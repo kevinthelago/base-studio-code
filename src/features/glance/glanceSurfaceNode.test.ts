@@ -12,8 +12,8 @@ import {
   isBandNode, isBandEdge, bandNodeMeta,
   KIT_COLOR, ALGO_COLOR, SOUND_COLOR, MCP_COLOR, SERVICE_COLOR, ARCHITECT_COLOR,
   mcpNodeId, serviceNodeId, usesMcpEdgeId,
-} from "./lib/glanceGraph";
-import { buildGlanceData } from "./lib/glanceData";
+} from "@/features/glance/lib/glanceGraph";
+import { buildGlanceData } from "@/features/glance/lib/glanceData";
 
 describe("the command-surface node kind", () => {
   it("namespaces its id so it can never collide with a project key or another band node", () => {

@@ -12,7 +12,7 @@ import { useGlanceProjects, applyModifyingHealth, mergeGlanceProjects, mergeDbIn
 import type { DbProject } from "@/features/planner";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
-import type { ProjectLite } from "./glanceData";
+import type { ProjectLite } from "@/features/glance/lib/glanceData";
 import type { GlanceFault } from "@/features/glance/lib/useGlanceFaults";
 import { useAppStore } from "@/store";
 

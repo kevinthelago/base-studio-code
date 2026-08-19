@@ -14,7 +14,7 @@
 // edge points AT it), so it cannot close a cycle. Cycle regressions here have blanked the whole graph
 // before (glance-planner-edge-isolation), so it is asserted rather than assumed.
 import { describe, it, expect } from "vitest";
-import { buildGlanceData, type ArchitectLite, type ProjectLite } from "./lib/glanceData";
+import { buildGlanceData, type ArchitectLite, type ProjectLite } from "@/features/glance/lib/glanceData";
 import {
   buildGraph, isBandNode, isBandEdge, bandNodeMeta, architectNodeId, architectIdOfNode, ownedByEdgeId,
 } from "@/features/glance/lib/glanceGraph";

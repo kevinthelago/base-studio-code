@@ -5,7 +5,7 @@ import {
   HEALTH_META, HEALTH_RANK, ACTIVITY_META, nodeStateWord,
   type GHealth, type GActivity,
   type GRawNode, type GRawEdge, showsBuildingPulse } from "@/features/glance/lib/glanceGraph";
-import { buildGlanceData } from "./glanceData";
+import { buildGlanceData } from "@/features/glance/lib/glanceData";
 
 const NODES: GRawNode[] = [
   { id: "core", role: "infra", health: "healthy", activity: "live" },
