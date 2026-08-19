@@ -3,7 +3,7 @@
 // This is where untrusted stored `vizCode` executes, so `new Function` (in compileVizProgram) and the
 // algorithm's `run` never touch the main thread. Spawned lazily by `vizSandbox.runInSandbox`.
 
-import { runVizProgram } from "./vizProgram";
+import { runVizProgram } from "@/features/algorithms/viz/examples/vizProgram";
 import type { VizWorkerRequest, VizWorkerResponse } from "./vizSandbox";
 
 // `self` is the worker global. Typed loosely (a minimal shape) to avoid pulling in the TS "webworker" lib,

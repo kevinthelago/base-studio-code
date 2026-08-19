@@ -9,7 +9,7 @@ import { useAppStore } from "@/store";
 import { useAppRepoRoot } from "@/shared/hooks/useAppRepoRoot";
 import { Box } from "@/shared/ui/layout/Box";
 import { KeptMountedPage } from "@/app/KeptMountedPage";
-import { useHotkeys } from "./useHotkeys";
+import { useHotkeys } from "@/app/useHotkeys";
 import { useNavigateBridge } from "@/app/useNavigateBridge";
 import { useFleetWakeBridge } from "@/app/useFleetWakeBridge";
 import { useSystemSessionBridge } from "@/app/useSystemSessionBridge";

@@ -33,7 +33,7 @@ import * as UsePaneTokenUsage from "@/app/console/lib/usePaneTokenUsage";
 import * as MenuPlacement from "@/app/console/panes/menuPlacement";
 import * as ViewDefs from "@/app/console/panes/viewDefs";
 // — the pane VIEWS: the behaviour a pane cell hosts —
-import * as TerminalSlot from "./terminal/TerminalSlot";
+import * as TerminalSlot from "@/app/console/terminal/TerminalSlot";
 // — the pumps the page mounts —
 import * as UseCoordinator from "@/app/console/useCoordinator";
 import * as UseDirectorPump from "@/app/console/useDirectorPump";

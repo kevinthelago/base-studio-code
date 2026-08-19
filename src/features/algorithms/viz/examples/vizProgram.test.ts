@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compileVizProgram, runVizProgram } from "./vizProgram";
+import { compileVizProgram, runVizProgram } from "@/features/algorithms/viz/examples/vizProgram";
 
 describe("compileVizProgram", () => {
   it("compiles a valid array descriptor", () => {

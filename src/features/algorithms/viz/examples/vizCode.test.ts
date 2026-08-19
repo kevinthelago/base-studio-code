@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { isPanelsFrame, type ArrayFrame, type PanelsFrame } from "@/features/algorithms/lib/trace";
-import { runVizProgram } from "./vizProgram";
+import { runVizProgram } from "@/features/algorithms/viz/examples/vizProgram";
 import { resolveVizExample, programVizForImpl } from "./registry";
 
 // A real bubble sort as a STORED vizCode descriptor (#3232) — the persisted-data form of a trace-program.

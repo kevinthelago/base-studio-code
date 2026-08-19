@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { demoSnapshot, DEMO_GIST_URL } from "@/store/demoSnapshot";
 import { DEMOABLE_KEYS, pickDemoable } from "@/store/appState";
-import { appStateToManifest, appStateFromManifest } from "./appStateGist";
+import { appStateToManifest, appStateFromManifest } from "@/store/appStateGist";
 import { useAppStore } from ".";
 
 describe("curated demo snapshot (#2282)", () => {

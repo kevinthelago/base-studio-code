@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, cleanup, act } from "@testing-library/react";
-import { useHotkeys, stepIndex } from "./useHotkeys";
+import { useHotkeys, stepIndex } from "@/app/useHotkeys";
 import { useAppStore } from "@/store";
 import { setPageNav } from "@/shared/ui/layouts/pageNav";
 

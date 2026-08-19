@@ -1,7 +1,7 @@
 import { useState, Suspense } from "react";
 import { useAppStore } from "@/store";
 import { Titlebar } from "@/app/chrome/Titlebar";
-import { DetachedTabStrip } from "./DetachedTabStrip";
+import { DetachedTabStrip } from "@/app/DetachedTabStrip";
 import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
