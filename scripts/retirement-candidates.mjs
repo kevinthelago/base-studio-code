@@ -22,10 +22,10 @@
 //
 //   node scripts/retirement-candidates.mjs            # the summary + the retirable list
 //   node scripts/retirement-candidates.mjs --all      # ...including the drifted ones, with byte deltas
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { norm, codeOnly, splitPreamble, exportedNames, fileAsRecordSource } from "./lib/recordSource.mjs";
+import { norm, codeOnly, splitPreamble, exportedNames, fileAsRecordSource, entriesImportingStatically } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SHOW_ALL = process.argv.includes("--all");
@@ -144,6 +144,18 @@ for (const [spec, seed] of seeds) {
   // record carries its meaning. `src/vite-env.d.ts` went once — the whole typecheck then failed on
   // `*.css` and `*?raw` side-effect imports, since the file declaring those wildcards was gone.
   if (/\.d\.ts$/.test(file)) continue;
+  // NEVER RETIRABLE: a module an app ENTRY imports STATICALLY. The dev server's pre-transform pass
+  // resolves the `@/…` alias to `/src/…` before the records plugin is installed, so the module has to
+  // exist as a file however good its record is — retiring one makes the app fail to boot while tsc,
+  // lint, vitest and `vite build` all stay green.
+  //
+  // This census had no such rule and the tool that DELETES did, so the two disagreed: four candidates
+  // were offered here — `useAppBoot`, `ConsoleGraphHost`, `TerminalHost`, `features/sounds/index` — and
+  // `retire-module` refused every one of them. Shared definition now, for the reason this file's own
+  // header gives: a census that grades differently from the tool that acts is worse than either being
+  // wrong alone.
+  if (entriesImportingStatically(REPO, file.replace(/\.(tsx?|jsx?)$/, "").replace(/\/index$/, ""),
+    (p) => readFileSync(p, "utf8"), (p) => existsSync(p)).length) continue;
   // As a RECORD would hold it: LF-normalized with relative imports absolutized. Comparing the raw file
   // graded 21 candidates "body differs" purely on import FORM — the migration absolutized by hand.
   const fileSrc = fileAsRecordSource(join(REPO, "src", file), file);

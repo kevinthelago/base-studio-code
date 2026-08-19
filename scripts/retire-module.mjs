@@ -54,7 +54,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   seedAnswersSpecifier, seedMatchesFile, fileAsRecordSource, importsSiblingsByRecordId,
-  relativeSpecifiers, aliasFor,
+  relativeSpecifiers, aliasFor, entriesImportingStatically,
 } from "./lib/recordSource.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -144,9 +144,13 @@ if (!self) {
 // synchronous graph broke — and ONLY `node scripts/dev-boot-check.mjs` saw it: typecheck, lint, the whole
 // vitest suite and `npx vite build` were every one of them green while the app could not boot.
 {
-  const ENTRIES = ["app/main.tsx", "app/App.tsx"];
-  const importers = ENTRIES.filter((e) => files.includes(e)).filter((e) =>
-    new RegExp(`^\\s*import\\s+[^;]*from\\s+["']@/${relSpecifier}["']`, "m").test(readFileSync(join(REPO, "src", e), "utf8")),
+  // ONE definition, shared with the census (`retirement-candidates.mjs`). They disagreed while this was
+  // inline here: the census offered four candidates the tool refused, every one for this rule.
+  const importers = entriesImportingStatically(
+    REPO,
+    relSpecifier,
+    (p) => readFileSync(p, "utf8"),
+    (p) => existsSync(p),
   );
   if (importers.length) {
     console.error(

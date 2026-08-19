@@ -353,3 +353,33 @@ export function seedMatchesFile({ seedSrcText, fileSrc }) {
   const body = splitPreamble(norm(seedSrcText ?? ""), file)[1];
   return { ok: body === file || codeOnly(body) === codeOnly(file) };
 }
+
+/**
+ * Is `relSpecifier` imported STATICALLY by an app entry — and by which one?
+ *
+ * THE RULE, and why it is its own class. The dev server's pre-transform pass resolves an `@/…` alias to
+ * `/src/…` before the records plugin is installed, so a module the entry imports statically must exist as
+ * a FILE however good its record is. Retire one and the app fails to boot — with `tsc`, `lint`, `vitest`
+ * and `vite build` all green, because only a real boot observes it. `ConsoleGraphHost` was retired and
+ * restored for exactly this, and `dev-boot-check.mjs` was the only thing that noticed.
+ *
+ * ONE definition, shared by the tool that DELETES (`retire-module.mjs`) and the census that GRADES
+ * (`retirement-candidates.mjs`). They disagreed before this existed: the census offered four candidates
+ * — `useAppBoot`, `ConsoleGraphHost`, `TerminalHost`, `features/sounds/index` — that the tool refused,
+ * every one for this rule. A census that grades differently from the tool that acts is worse than either
+ * being wrong alone, which is the reason this module exists at all.
+ *
+ * @param {string} repo absolute repo root
+ * @param {string} relSpecifier the module's `src/`-relative path, extension and any trailing `/index` off
+ * @param {(p: string) => string} read reads a file as UTF-8 — injectable so this is unit-testable
+ * @param {(p: string) => boolean} exists file-existence probe, likewise
+ * @returns {string[]} the entries that import it statically; empty when none do
+ */
+export function entriesImportingStatically(repo, relSpecifier, read, exists) {
+  const ENTRIES = ["app/main.tsx", "app/App.tsx"];
+  // Escapes are doubled because this is a template literal: `\\s` here is the `\s` the RegExp needs.
+  // Written with a single backslash it silently becomes the literal letter `s`, which matches nothing —
+  // the pattern still compiles, so the helper just answers "no entry imports it" for everything.
+  const re = new RegExp(`^\\s*import\\s+[^;]*from\\s+["']@/${relSpecifier}["']`, "m");
+  return ENTRIES.filter((e) => exists(`${repo}/src/${e}`)).filter((e) => re.test(read(`${repo}/src/${e}`)));
+}
