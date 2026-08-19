@@ -31,10 +31,25 @@ describe("retired workspaces redirect to something that exists", () => {
     expect(migrateRetiredWorkspace({ activeWorkspace: "algorithms" } as RetiredWorkspaceState)!.projectsPageMode).toBe("algorithms");
   });
 
-  it("agents is a RENAME, so it carries no page — the screen did not move", () => {
+  it("agents carries no page, and points at the FINAL destination rather than chaining", () => {
+    // `agents` was renamed to `security` (#2702) and `security` has since become `logs`. The
+    // migration runs ONCE, so an entry pointing at another retired key would land the user on a
+    // workspace the shell can no longer render -- the exact blank screen this table prevents.
     const state = migrateRetiredWorkspace({ activeWorkspace: "agents", projectsPageMode: "projects" })!;
-    expect(state.activeWorkspace).toBe("security");
+    expect(state.activeWorkspace).toBe("logs");
     expect(state.projectsPageMode).toBe("projects");   // untouched
+  });
+
+  it("every redirect lands on a LIVE workspace, not on another retired one", () => {
+    // The general form of the bug above: a redirect table can point at itself. Checked against the
+    // registry rather than a hand-written list, so a workspace retired later cannot quietly become
+    // some other entry's destination.
+    const liveKeys = new Set(WORKSPACES.map((w) => w.key as string));
+    for (const key of RETIRED_WORKSPACE_KEYS) {
+      const to = migrateRetiredWorkspace({ activeWorkspace: key })!.activeWorkspace!;
+      expect(liveKeys.has(to), `${key} redirects to ${to}, which is not a live workspace`).toBe(true);
+      expect(RETIRED_WORKSPACE_KEYS, `${key} redirects to another RETIRED key`).not.toContain(to);
+    }
   });
 
   it("leaves a LIVE workspace completely alone", () => {

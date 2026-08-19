@@ -35,8 +35,14 @@ const RETIRED: Record<string, { workspace: string; page?: string }> = {
   // Skills → the TEAMS page (skills-move-to-teams-and-pair-with-personas). A skill is injectable agent
   // CONTEXT, so its home is the agent library beside the personas that carry it.
   skills: { workspace: "projects", page: "teams" },
-  // A pure rename, not a move (#2702): "agents" became "security".
-  agents: { workspace: "security" },
+  // Security -> LOGS (the-logs-workspace-scaffold-and-activity). Three of its four tabs were deleted
+  // and the survivor, Activity, is an audit FEED -- history, which is what the Logs workspace is for.
+  security: { workspace: "logs" },
+  // "agents" was a pure rename to "security" (#2702), and security has since become logs. It points at
+  // the FINAL destination rather than chaining: `migrateRetiredWorkspace` runs ONCE, so a redirect to
+  // another retired key would land the user on a workspace the shell can no longer render -- the exact
+  // blank screen this table exists to prevent.
+  agents: { workspace: "logs" },
 };
 
 /**

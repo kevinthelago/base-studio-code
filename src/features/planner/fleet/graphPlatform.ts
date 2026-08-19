@@ -20,7 +20,9 @@ import * as FleetWorker from "@/features/planner/fleet/fleetWorker";
 import * as WorkerDetailHelpers from "@/features/planner/fleet/workerDetail.helpers";
 import * as WorkerDetailPlaceholder from "@/features/planner/fleet/WorkerDetailPlaceholder";
 import * as WorkerModals from "@/features/planner/fleet/WorkerModals";
-import * as Security from "@/features/security";
+// FleetLessons/WorkerDetail read parseAuditLog from the logs barrel (it was the security barrel
+// until the Security workspace dissolved into Logs — same symbols, new owner).
+import * as Logs from "@/features/logs";
 
 let done = false;
 
@@ -35,5 +37,5 @@ export function registerFleetPlatform(): void {
   registerAppModule("@/features/planner/fleet/workerDetail.helpers", WorkerDetailHelpers);
   registerAppModule("@/features/planner/fleet/WorkerDetailPlaceholder", WorkerDetailPlaceholder);
   registerAppModule("@/features/planner/fleet/WorkerModals", WorkerModals);
-  registerAppModule("@/features/security", Security);
+  registerAppModule("@/features/logs", Logs);
 }

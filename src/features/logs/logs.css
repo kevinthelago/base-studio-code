@@ -1,0 +1,135 @@
+/* The LOGS workspace (was the Agents / Security page, #236 - ported from design/Agents.html), scoped
+   under .logs-page so it never collides with the rest of the app. Global .card/.btn/.tag/.input/
+   .field/.hint come from tokens.css.
+
+   Loaded by the ENTRY glob (`@/**/*.css` in main.tsx), not by a module import: the page is a graph
+   RECORD and the runtime loader cannot resolve a CSS side-effect import. Most of what follows styled
+   the Profiles / Assignments / Flow tabs, which are deleted; it is left in place rather than pruned by
+   eye, because a CSS rule nothing matches is invisible either way and guessing wrong unstyles a live
+   table. Prune it when the remaining Logs tabs land and the real selector set is known. */
+
+.logs-page { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+
+.logs-page .body { flex: 1; overflow: hidden; padding: 14px 22px; min-width: 0; display: flex; flex-direction: column; }
+
+/* (.sec-head moved to the shared <SectionHeader>, #1874) */
+
+/* Profiles: list + detail */
+.logs-page .prof-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; flex: 1; min-height: 0; }
+.logs-page .prof-list { display: flex; flex-direction: column; min-height: 0; padding: 0; }
+.logs-page .prof-list .head { padding: 12px 14px 10px; border-bottom: 1px solid var(--border-soft); }
+.logs-page .prof-list .head-row { display: flex; align-items: baseline; gap: 8px; }
+.logs-page .prof-list .head-row h3 { margin: 0; font-family: var(--mono); font-size: 12px; font-weight: 600; }
+.logs-page .prof-list .scroll { flex: 1; overflow: auto; }
+.logs-page .list-label { padding: 11px 14px 5px; font-family: var(--mono); font-size: 9px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .1em; }
+/* (.prof-row styling retired — ProfRow now composes the shared <CardListRow> grouped + accent, #1865) */
+
+/* (.mode-badge + .origin-badge moved to the shared <Chip tone>, #1874) */
+/* (.sys-banner moved to the shared <Banner tone="info">, #card-unify) */
+.logs-page .owns-card { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: var(--r-md); background: var(--bg-canvas); border: 1px solid var(--border-soft); }
+.logs-page .owns-card .surf { width: 30px; height: 30px; border-radius: 7px; flex: 0 0 30px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--fg-muted); background: var(--bg-elev); border: 1px solid var(--border-soft); }
+
+.logs-page .prof-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow: auto; padding-right: 2px; }
+.logs-page .pd-head { background: var(--bg-panel); border: 1px solid var(--border-soft); border-radius: var(--r-lg); }
+.logs-page .pd-head .top { padding: 14px 18px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border-soft); }
+.logs-page .pd-head .pswatch { width: 30px; height: 30px; border-radius: 8px; flex: 0 0 30px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--on-accent); }
+.logs-page .pd-head .pt { flex: 1; min-width: 0; }
+.logs-page .pd-head .pt .nm { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--fg); }
+.logs-page .pd-head .pt .ds { font-size: 11.5px; color: var(--fg-muted); margin-top: 2px; }
+.logs-page .pd-stat { padding: 10px 18px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: var(--bg-elev); }
+/* (.pd-stat .k/.v moved to the shared <StatTile>, #2161 — the 4 cells are now <StatTile> cards) */
+.logs-page .pd-sec { background: var(--bg-panel); border: 1px solid var(--border-soft); border-radius: var(--r-lg); padding: 14px 18px; }
+.logs-page .pd-sec .h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.logs-page .pd-sec .h h4 { margin: 0; font-family: var(--mono); font-size: 11px; color: var(--fg); text-transform: uppercase; letter-spacing: .08em; }
+.logs-page .pd-sec .h .spacer { flex: 1; }
+
+/* (.seg moved to the shared <SegmentedControl size="md">, #1874) */
+
+.logs-page .cmd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.logs-page .cmd-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 9px; border-radius: 5px; background: var(--bg-canvas); border: 1px solid var(--border-soft); font-family: var(--mono); font-size: 11px; color: var(--fg); }
+.logs-page .cmd-chip.locked { color: var(--fg-muted); border-style: dashed; }
+.logs-page .cmd-chip .x { color: var(--fg-dim); cursor: pointer; }
+.logs-page .cmd-chip .x:hover { color: var(--danger); }
+.logs-page .cmd-add { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 5px; border: 1px dashed var(--border); background: transparent; color: var(--fg-muted); font-family: var(--mono); font-size: 10.5px; cursor: pointer; }
+/* (.inherit-note moved to the shared <Banner tone="neutral">, #card-unify) */
+
+.logs-page .tool-table { border: 1px solid var(--border-soft); border-radius: var(--r-md); overflow: hidden; }
+.logs-page .tool-row { display: grid; grid-template-columns: 150px 1fr 220px; gap: 12px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--border-soft); }
+.logs-page .tool-row:first-child { border-top: 0; }
+.logs-page .tool-row:nth-child(even) { background: var(--bg-elev); }
+.logs-page .tool-row .tn { font-family: var(--mono); font-size: 11.5px; color: var(--fg); }
+.logs-page .tool-row .td { font-size: 10.5px; color: var(--fg-muted); }
+/* (.tri moved to the shared <SegmentedControl variant="joined">, #1874) */
+
+.logs-page .scope-list { display: flex; flex-direction: column; gap: 6px; }
+.logs-page .scope-line { display: flex; gap: 6px; align-items: center; }
+.logs-page .scope-line .gly { width: 18px; text-align: center; font-family: var(--mono); font-size: 11px; }
+.logs-page .scope-line .gly.allow { color: var(--success); }
+.logs-page .scope-line .gly.deny { color: var(--danger); }
+.logs-page .scope-line .x { width: 24px; height: 24px; border: 1px solid var(--border-soft); border-radius: 4px; background: transparent; color: var(--fg-dim); cursor: pointer; font-size: 12px; flex: 0 0 24px; }
+
+.logs-page .assign-mini { display: flex; flex-direction: column; gap: 6px; }
+.logs-page .assign-mini .row { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; padding: 8px 10px; border-radius: 5px; background: var(--bg-canvas); border: 1px solid var(--border-soft); align-items: center; cursor: pointer; }
+.logs-page .assign-mini .row.on { background: var(--bg-elev); }
+.logs-page .assign-mini .check { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--on-accent); font-size: 10px; font-weight: 700; }
+.logs-page .assign-mini .row.on .check { background: var(--accent); border-color: var(--accent); }
+.logs-page .assign-mini .cn { font-family: var(--mono); font-size: 11px; color: var(--fg); }
+.logs-page .assign-mini .pn { font-family: var(--mono); font-size: 10px; color: var(--fg-dim); }
+
+.logs-page .asn-grid { display: flex; flex-direction: column; gap: 12px; }
+.logs-page .console-card { background: var(--bg-panel); border: 1px solid var(--border-soft); border-radius: var(--r-lg); overflow: hidden; }
+.logs-page .console-card .ch { padding: 11px 16px; display: flex; align-items: center; gap: 10px; background: var(--bg-elev); border-bottom: 1px solid var(--border-soft); }
+.logs-page .console-card .ch .cdot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+.logs-page .console-card .ch .cn { font-family: var(--mono); font-size: 13px; color: var(--fg); font-weight: 600; }
+.logs-page .console-card .ch .repo { font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim); }
+.logs-page .console-card .ch .spacer { flex: 1; }
+/* status dot for the assignment rows — rescoped off the retired `.pane-row` so it works inside the
+   shared <CardListRow> slots (#1865 Phase 4). */
+.logs-page .pdot { width: 7px; height: 7px; border-radius: 50%; }
+.logs-page .pdot.running { background: var(--success); }
+.logs-page .pdot.awaiting { background: var(--accent); }
+.logs-page .pdot.idle { background: var(--fg-dim); }
+.logs-page .prof-select { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 6px; background: var(--bg-canvas); border: 1px solid var(--border-soft); cursor: pointer; font-family: var(--mono); font-size: 11px; }
+.logs-page .prof-select .sw { width: 9px; height: 9px; border-radius: 3px; }
+.logs-page .prof-select .nm { color: var(--fg); }
+.logs-page .prof-select .cv { color: var(--fg-dim); margin-left: 2px; }
+/* prof-select dropdown menu (#681) */
+.logs-page .prof-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; min-width: 100%;
+  display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 8px;
+  background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.logs-page .prof-opt { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border: none; border-radius: 5px;
+  background: none; cursor: pointer; font-family: var(--mono); font-size: 11px; color: var(--fg-muted); text-align: left; white-space: nowrap; }
+.logs-page .prof-opt:hover { background: var(--bg-elev2); color: var(--fg); }
+.logs-page .prof-opt.on { color: var(--fg); }
+.logs-page .prof-opt.on::after { content: "✓"; margin-left: auto; color: var(--accent); }
+.logs-page .prof-opt .sw { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 9px; }
+.logs-page .resolved { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--mono); font-size: 10px; color: var(--fg-dim); }
+.logs-page .resolved .lbl { text-transform: uppercase; letter-spacing: .06em; }
+.logs-page .rchip { padding: 1px 7px; border-radius: 99px; background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted); font-size: 10px; }
+.logs-page .rchip.guar { color: var(--info); border-color: color-mix(in oklch, var(--info), transparent 75%); background: color-mix(in oklch, var(--info), transparent 90%); }
+
+.logs-page .act-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 10px 12px; background: var(--bg-panel); border: 1px solid var(--border-soft); border-radius: var(--r-md); }
+.logs-page .act-toolbar .lbl { font-family: var(--mono); font-size: 10px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .08em; margin-right: 2px; }
+.logs-page .act-toolbar .spacer { flex: 1; }
+.logs-page .dchip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted); font-family: var(--mono); font-size: 10.5px; cursor: pointer; }
+.logs-page .dchip:hover { background: var(--bg-elev2); color: var(--fg); }
+.logs-page .dchip.on { background: var(--bg-canvas); border-color: var(--accent-dim); color: var(--accent); }
+.logs-page .dchip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-dim); }
+.logs-page .dchip[data-d="allow"] .dot { background: var(--success); }
+.logs-page .dchip[data-d="ask"] .dot { background: var(--accent); }
+.logs-page .dchip[data-d="block"] .dot { background: var(--danger); }
+.logs-page .act-table { border-radius: var(--r-md); border: 1px solid var(--border-soft); background: var(--bg-panel); overflow: auto; flex: 1; min-height: 0; }
+.logs-page .act-row { display: grid; grid-template-columns: 90px 150px 150px 1fr 110px; gap: 12px; padding: 10px 14px; align-items: baseline; font-family: var(--mono); font-size: 11px; border-bottom: 1px solid var(--border-soft); }
+.logs-page .act-row:nth-child(even) { background: var(--bg-elev); }
+.logs-page .act-row.head { position: sticky; top: 0; background: var(--bg-elev2) !important; color: var(--fg-dim); font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; padding: 8px 14px; }
+.logs-page .act-row .when { color: var(--fg-muted); }
+.logs-page .act-row .cmd { color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.logs-page .act-row .dec { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; }
+.logs-page .act-row .dec.allow { color: var(--success); }
+.logs-page .act-row .dec.ask { color: var(--accent); }
+.logs-page .act-row .dec.block { color: var(--danger); }
+.logs-page .act-row .prof { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-muted); }
+.logs-page .act-row .prof .sw { width: 8px; height: 8px; border-radius: 2px; }
+
+.logs-page .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+/* (.summary stat-tile styling moved to the shared <StatTile>, #card-unify) */

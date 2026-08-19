@@ -45,7 +45,7 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
     // Skills was here too, until it stopped being a rail Workspace and moved onto the Teams page
     // (skills-move-to-teams-and-pair-with-personas). Its crumb is now the Planner's Teams tab.
     expect(crumb({ activeWorkspace: "mcp", activePageTab: { mcp: "catalog" } })).toBe("MCP — Catalog");
-    expect(crumb({ activeWorkspace: "security", activePageTab: { security: "flow" } })).toBe("Security — Flow");
+    expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "activity" } })).toBe("Logs — Activity");
   });
 
   it("GitHub reflects the tab, the board drill, and the active repo", () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveConsoles } from "@/features/security/lib/consoleModel";
+import { deriveConsoles } from "@/shared/lib/security/consoleModel";
 
 describe("deriveConsoles (#1643)", () => {
   it("builds one console per tab with a pane per grid cell", () => {

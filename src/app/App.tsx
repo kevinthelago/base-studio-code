@@ -44,7 +44,7 @@ import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import { effectiveWorkspace } from "@/app/registry";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, SettingsWorkspace,
-  ProjectsWorkspace, SecurityWorkspace, GlanceWorkspace, WorkspaceFallback,
+  ProjectsWorkspace, LogsWorkspace, GlanceWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -192,7 +192,7 @@ export default function App() {
             {activeWorkspace === "github"     && <GitHubWorkspace />}
             {activeWorkspace === "automation" && <AutomationsWorkspace />}
             {activeWorkspace === "mcp" && <McpWorkspace />}
-            {activeWorkspace === "security"     && <SecurityWorkspace />}
+            {activeWorkspace === "logs"       && <LogsWorkspace />}
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
           </Suspense>
           </ErrorBoundary>

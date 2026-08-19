@@ -9,8 +9,8 @@
 //
 // WHY IT EXISTS. The doctor's buildability check resolves `@/…` against the packaged artifact and sibling
 // node `src` paths only. A record that honestly imports a REGISTERED platform module
-// (`@/features/security/lib/consoleModel`) matched neither, so it read as `no-implementation` — which is how
-// #3895's faithful `security-profiles` moved `securitypage` into that finding while the runtime mounted it
+// (`@/shared/lib/security/consoleModel`) matched neither, so it read as `no-implementation` — which is how
+// #3895's faithful `security-profiles` moved the page into that finding while the runtime mounted it
 // fine. Worse, it pressures the next author to STUB the import to make the finding go away, which is
 // exactly the corruption #3892 exists to catch.
 //
@@ -24,7 +24,7 @@ import { registerPlatformModules } from "@/app/runtime/appModules";
 import { registerAutomationsPlatform } from "@/features/automations/graphPlatform";
 import { registerGithubPlatform } from "@/features/github/graphPlatform";
 import { registerMcpPlatform } from "@/features/mcp/graphPlatform";
-import { registerSecurityPlatform } from "@/features/security/graphPlatform";
+import { registerLogsPlatform } from "@/features/logs/graphPlatform";
 import { registerSkillsPlatform } from "@/features/skills/graphPlatform";
 import { registerGlancePlatform } from "@/features/glance/graphPlatform";
 import { registerSoundsPlatform } from "@/features/sounds/graphPlatform";
@@ -62,7 +62,7 @@ function currentSpecifiers(): string[] {
   registerAutomationsPlatform();
   registerGithubPlatform();
   registerMcpPlatform();
-  registerSecurityPlatform();
+  registerLogsPlatform();
   registerSkillsPlatform();
   registerGlancePlatform();
   registerSoundsPlatform();
@@ -100,13 +100,16 @@ describe("platform-modules.json (#3897)", () => {
   it("is non-vacuous and covers the modules the doctor was blind to", () => {
     // The guard against a manifest that regenerates to `[]` and silently makes every check pass.
     expect(manifest.length).toBeGreaterThan(60);
-    // The class that put `securitypage` into no-implementation (#3895) — the reason this file exists.
-    // It was `badgeTone`/`appSession` originally; both went with the Profiles/Assignments tabs
-    // (retire-agentprofile-and-strip-security-to-activity), so the anchor moved to the two feature-lib
-    // modules the surviving Activity tab still imports. What it pins is the SHAPE — a record honestly
-    // importing a registered `@/features/<f>/lib/*` must appear here — not those two names.
-    expect(manifest).toContain("@/features/security/lib/auditRows");
-    expect(manifest).toContain("@/features/security/lib/consoleModel");
+    // The class that put the Security page (now `logspage`) into no-implementation (#3895) is the
+    // reason this file exists. The anchor has MOVED twice and each move was forced, not cosmetic:
+    // it was `badgeTone`/`appSession` until those went with the Profiles/Assignments tabs, then
+    // `@/features/security/lib/*` until the Security feature dissolved into `logs` + `shared`.
+    // What it pins is the SHAPE — a record honestly importing a REGISTERED module must appear here
+    // — not any particular name. An anchor left on a deleted module does not fail loudly; it stops
+    // testing the resolution path and starts testing an unknown specifier, which passes for the
+    // wrong reason. One from a feature, one from shared, since both are registered the same way.
+    expect(manifest).toContain("@/features/logs/lib/auditRows");
+    expect(manifest).toContain("@/shared/lib/security/consoleModel");
     // …and the platform basics a graph page always needs.
     expect(manifest).toContain("react");
     expect(manifest).toContain("@/store");

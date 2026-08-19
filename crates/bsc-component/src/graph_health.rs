@@ -330,7 +330,7 @@ const PREVIEW_IMPORTMAP_JSON: &str = include_str!("../../../src-tauri/data/ui/pr
 ///
 /// Without it the buildability check resolved `@/…` against the packaged artifact and sibling node `src`
 /// paths only, so a record honestly importing a registered platform module
-/// (`@/features/security/lib/consoleModel`) matched neither and read as `no-implementation` — while the app
+/// (`@/shared/lib/security/consoleModel`) matched neither and read as `no-implementation` — while the app
 /// mounted it fine. The finding then pressured the next author to STUB the import to silence it, which is
 /// the corruption `reimplemented-component` exists to catch (#3892/#3895).
 const PLATFORM_MODULES_JSON: &str = include_str!("../../../src-tauri/data/ui/platform-modules.json");
@@ -2298,7 +2298,8 @@ fn analyze_kit(
             }
             // #3897: `@/components/<node-id>` is the loader's SIBLING-BY-ID form — how a migrated page
             // pulls in its panels (`@/components/security-profiles`). It is neither a `src` path nor a
-            // registered module, so `securitypage` read as no-implementation while the app mounted it.
+            // registered module, so the Security page (now `logspage`) read as no-implementation while
+            // the app mounted it.
             // Injected as a synthetic target so the ordinary resolver finds it.
             t.insert(format!("components/{}.tsx", n.id));
         }
@@ -4245,7 +4246,7 @@ export function C(){ return <i>{z}</i>; }"
 
     #[test]
     fn a_registered_platform_module_import_is_buildable_not_no_implementation() {
-        // #3897: `@/features/security/lib/consoleModel` is a REGISTERED platform module — resolved at
+        // #3897: `@/shared/lib/security/consoleModel` is a REGISTERED platform module — resolved at
         // runtime by the feature's graphPlatform, and neither an artifact path nor a sibling `src`. Before
         // the manifest, a record honestly importing one read as `no-implementation` while the app mounted it.
         //
@@ -4256,8 +4257,8 @@ export function C(){ return <i>{z}</i>; }"
         // of this test (graphHealth.test.ts) moved for the same reason; keep them naming the same module.
         let comps = [json!({
             "id":"activity", "name":"ActivityTab", "kitId":"react-ui", "role":"composite", "used":2,
-            "src":"src/features/security/ActivityTab.tsx",
-            "srcText":"import { deriveConsoles } from \"@/features/security/lib/consoleModel\";
+            "src":"src/features/logs/ActivityTab.tsx",
+            "srcText":"import { deriveConsoles } from \"@/shared/lib/security/consoleModel\";
 export function ActivityTab(){ return <i>{String(deriveConsoles)}</i>; }"
         })];
         let fs = analyze(&comps);

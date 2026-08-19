@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { applyNavigate, type NavVocab } from "@/app/navigateBridge";
 import type { AppStore } from "@/store/types";
+import { WORKSPACES } from "@/app/registry";
 
 // A minimal fake store: only the fields + actions applyNavigate touches. Mutating actions write into
 // `s` and `read()` returns it fresh — which is the point. Zustand hands out a NEW object per update, so a
@@ -34,7 +35,7 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
   return {
     s,
     read: () => s as unknown as AppStore,
-    workspaces: ["console", "glance", "projects", "automation", "mcp", "github", "security", "settings"],
+    workspaces: ["console", "glance", "projects", "automation", "mcp", "github", "logs", "settings"],
     pages: ["projects", "teams", "designs", "algorithms", "sounds"],
   };
 }
@@ -230,6 +231,26 @@ describe("navigateBridge — unknown ids are errors, not silent no-ops", () => {
     expect(v.s.activeWorkspace).toBe("console");
     expect(v.s.kitTheme).toBe("default");
     expect(v.s.designsCompId).toBeNull();
+  });
+});
+
+describe("the vocabulary the bridge is handed", () => {
+  // `makeVocab` writes the workspace list by hand, and the REAL bridge builds it from WORKSPACES
+  // (useNavigateBridge). Nothing connected the two, so every test here could stay green against a
+  // list the app no longer has — and `bsc navigate workspace <id>` is answered by the app, not by
+  // this file. That is a live CLI verb failing while its unit tests pass, which is the shape this
+  // repo keeps getting caught by. Pin the fixture to the registry instead.
+  it("matches the real rail registry, so a renamed Workspace cannot pass here and fail in the app", () => {
+    expect(makeVocab().workspaces).toEqual(WORKSPACES.map((w) => w.key));
+  });
+
+  it("accepts `logs` — the rail destination the Security workspace became", () => {
+    const v = makeVocab();
+    const ack = applyNavigate({ workspace: "logs" }, v);
+    expect(ack.error).toBeUndefined();
+    expect(ack.workspace).toBe("logs");
+    // …and the key it replaced is genuinely gone, not merely aliased.
+    expect(applyNavigate({ workspace: "security" }, v).error).toContain("unknown workspace");
   });
 });
 

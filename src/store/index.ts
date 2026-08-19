@@ -6,7 +6,7 @@ import { grandfatherTriaged, grandfatherLocalPublished } from "@/store/triagedMi
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
 import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blueprints";
-import { reconcileBuiltInProfiles } from "@/features/security/lib/agentProfiles";
+import { reconcileBuiltInProfiles } from "@/shared/lib/security/agentProfiles";
 import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 import { createMcpSlice } from "@/features/mcp/store";
 import { createPersonasSlice } from "@/features/personas/store";

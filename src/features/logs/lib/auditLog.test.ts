@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { parseAuditLog, toRow, decideAudit, type AuditRecord } from "@/features/security/lib/auditLog";
-import { resolveProfileSettings } from "@/features/security/lib/profileEnforcement";
-import { findProfile } from "./agentProfiles";
+import { parseAuditLog, toRow, decideAudit, type AuditRecord } from "@/features/logs/lib/auditLog";
+import { resolveProfileSettings } from "@/shared/lib/security/profileEnforcement";
+import { findProfile } from "@/shared/lib/security/agentProfiles";
 import { roleCapability } from "@/shared/lib/session/sessionRoles";
 
 const rec = (toolName: string, target: string): AuditRecord => ({

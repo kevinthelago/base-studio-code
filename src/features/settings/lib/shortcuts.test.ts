@@ -12,7 +12,7 @@ describe("shortcuts registry", () => {
     expect(SCREEN_KEY_MAP.F1).toBe("glance");
     expect(SCREEN_KEY_MAP.F2).toBe("projects");
     expect(SCREEN_KEY_MAP.F6).toBe("github");
-    expect(SCREEN_KEY_MAP.F7).toBe("security");
+    expect(SCREEN_KEY_MAP.F7).toBe("logs");
     expect(SCREEN_KEY_MAP.F8).toBe("settings");
   });
 
