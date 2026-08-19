@@ -319,8 +319,11 @@ Repoints, across the survivor's kit:
   • every component's `composes[]` entry == <from>'s name → <into>'s name (deduped; a self-reference the
     fold would create — e.g. <into> composed <from> — is dropped, never a component composing itself);
   • every `rules[].use` == <from>'s name → <into>'s name.
-Then DELETES the `<from>` record. Every repointed record gets a change-history entry (#3568); `--note`
-overrides the default \"merged <from> → <into>\" summary. Prints { from, into, kit, repointed: [ids], removed }.
+Then retires `<from>`: a packaged BUILTIN gets a suppression tombstone (`supersededBy` = <into-id>), same
+as `bsc ui suppress`, so the fold survives the next hydrate — a bare delete would have the seed-reconcile
+bring `<from>` right back (#96). A non-builtin is deleted outright, same as before. Every repointed record
+gets a change-history entry (#3568); `--note` overrides the default \"merged <from> → <into>\" summary.
+Prints { from, into, kit, repointed: [ids], removed }.
 
 Pair with `bsc ui used-by`: merge the LESS-used component into the more-used one. REFUSES when either id is
 absent, they are the same, or they live in different kits. A ui-scope MUTATION.",
@@ -518,10 +521,12 @@ dupes report. It is a REPORT, not a rule — an outlier may be a deliberate exce
 
 --fix is the mechanical, SAFE OPTIMIZE (#3089): (1) MERGE byte-identical-source duplicates — fold each
 group into the most-`used` canonical and repoint composers to it (lossless; only byte-identical, never a
-same-`wraps` dup), then (2) PRUNE the GUARDED dead roots — the ROOT of each orphan/dangling-branch finding
-(never a used > 0 node). DRY RUN by default (prints what WOULD change); pass --yes to apply. Cycles and
-same-`wraps` (differing-source) duplicates are NOT auto-resolved — they need a semantic call. Branch
-descendants are left for the next pass (one might be shared) — re-run to clean them.
+same-`wraps` dup; a merged-away `builtin: true` dup gets a suppression tombstone instead of a bare delete,
+same as `bsc ui merge`, so it survives the next hydrate — #96), then (2) PRUNE the GUARDED dead roots — the
+ROOT of each orphan/dangling-branch finding (never a used > 0 node). DRY RUN by default (prints what WOULD
+change); pass --yes to apply. Cycles and same-`wraps` (differing-source) duplicates are NOT auto-resolved —
+they need a semantic call. Branch descendants are left for the next pass (one might be shared) — re-run to
+clean them.
 
 The PRUNE GUARDS (#3087) — the dead-root heuristic is a good REPORT and a dangerous auto-DELETE, so three
 classes of candidate are named, then held back: a `page` (a page is a root BY DEFINITION — nothing composes
@@ -1020,6 +1025,36 @@ fn cmd_unsuppress(
     }
     store.remove(id)?;
     println!("unsuppressed {noun} '{id}' — it re-seeds on the next hydrate");
+    Ok(())
+}
+
+/// Retire a component `id` whose references have already been repointed away — the shared tail of
+/// `merge` and `doctor --fix`'s byte-identical dup fold. A packaged BUILTIN gets a suppression
+/// TOMBSTONE (the same `{ id, suppressed: true, supersededBy }` shape `bsc ui suppress` writes) instead
+/// of a bare delete: the frontend seed-reconcile only skips re-adding a builtin when it finds one of
+/// these occupying the id (#3725), and a plain `store.remove` leaves the id looking merely ABSENT —
+/// which is "missing" to the reconcile, so it comes back on the very next hydrate. That is exactly
+/// designer request #96: `bsc ui merge`/`doctor --fix` folding a builtin duplicate away never stuck,
+/// because neither wrote the tombstone `suppress` does. A non-builtin has no packaged seed to come back
+/// from, so a plain remove is enough and never leaves a stray tombstone behind.
+fn retire_component(
+    store: &bsc_json_store::Store,
+    id: &str,
+    builtin: bool,
+    superseded_by: Option<&str>,
+) -> Result<(), String> {
+    if !builtin {
+        store.remove(id)?;
+        return Ok(());
+    }
+    let mut tombstone = serde_json::json!({ "id": id, "suppressed": true });
+    if let Some(b) = superseded_by {
+        tombstone["supersededBy"] = serde_json::Value::String(b.to_string());
+    }
+    stamped_set(store, id, tombstone, &crate::record::resolve_writer(None))?;
+    // A suppressed component carries no live preview — clear any stale render-error keyed to it (#3707),
+    // same as `cmd_suppress`.
+    let _ = crate::preview_errors::clear(id);
     Ok(())
 }
 
@@ -2167,8 +2202,11 @@ fn cmd_merge(args: &[String]) -> Result<(), String> {
         }
     }
 
-    // Remove the merged-away component LAST, once every reference is repointed.
-    store.remove(from_id)?;
+    // Retire the merged-away component LAST, once every reference is repointed. A packaged BUILTIN gets
+    // a suppression tombstone rather than a bare delete, so the fold survives the next hydrate (#96) —
+    // see `retire_component`.
+    let from_builtin = from.get("builtin").and_then(serde_json::Value::as_bool) == Some(true);
+    retire_component(&store, from_id, from_builtin, Some(into_id))?;
     bsc_util::emit_ui_activity("component", from_id);
 
     let out = serde_json::json!({
@@ -3976,7 +4014,9 @@ fn cmd_used_by(args: &[String]) -> Result<(), String> {
 /// optimization as a COMMAND (epic #3087: 'keep the graph minimal' is a tool, not hand-organization).
 /// Two lossless steps, dry-run unless `apply`:
 ///   1. MERGE byte-identical duplicates (`graph_health::merge_plan`) — fold each group into the
-///      most-`used` canonical, repointing composers; only byte-identical, never a same-`wraps` dup.
+///      most-`used` canonical, repointing composers; only byte-identical, never a same-`wraps` dup. A
+///      removed dup that is itself `builtin: true` is retired via [`retire_component`] — a suppression
+///      tombstone, not a bare delete — so it does not reappear on the next hydrate (#96).
 ///   2. PRUNE the GUARDED dead roots (`graph_health::prune_plan`) — orphan/dead-root only, never a
 ///      `used > 0`, and never a `page` / packaged built-in / anything at all while the usage index is
 ///      unpopulated (#3087). A guarded candidate is still reported, just never auto-removed.
@@ -4053,10 +4093,21 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
     for (id, rec) in &plan.repoints {
         stamped_set(store, id, rec.clone(), &writer)?;
     }
+    // A removed dup can itself be a packaged BUILTIN (two builtins can ship byte-identical `srcText`) —
+    // `retire_component` needs to know which, to tombstone rather than bare-delete it (#96).
+    let builtin_by_id: std::collections::BTreeMap<&str, bool> = comps
+        .iter()
+        .filter_map(|c| {
+            c.get("id").and_then(serde_json::Value::as_str).map(|id| {
+                (id, c.get("builtin").and_then(serde_json::Value::as_bool) == Some(true))
+            })
+        })
+        .collect();
     let mut merged = 0usize;
     for g in &plan.groups {
         for (id, name) in &g.removed {
-            store.remove(id)?;
+            let builtin = builtin_by_id.get(id.as_str()).copied().unwrap_or(false);
+            retire_component(store, id, builtin, Some(&g.canonical_id))?;
             println!("merged {name} ({id}) → {}", g.canonical_name);
             merged += 1;
         }
@@ -6680,6 +6731,27 @@ export const P = () => <X />;"
         assert_eq!(page["composes"], serde_json::json!(["Button"]), "the composer repointed Btn2 → Button");
     }
 
+    /// Designer request #96: `doctor --fix`'s byte-identical dup fold can pick a `builtin: true` record
+    /// as the REMOVED (non-canonical) side of a group — two packaged builtins can ship identical
+    /// `srcText`. That removal must tombstone, not bare-delete, or the seed-reconcile brings it straight
+    /// back on the next hydrate.
+    #[test]
+    fn doctor_fix_merge_of_a_builtin_dup_writes_a_suppression_tombstone_not_a_bare_delete() {
+        let dir = tmp_store_dir("doctor-merge-builtin");
+        let store = bsc_json_store::Store::new(dir, "component");
+        let src = "export function Button(){ return <button/>; }";
+        store.set("btn", &serde_json::json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "srcText": src, "source": src }).to_string()).unwrap();
+        store.set("btnbuiltin", &serde_json::json!({ "id": "btnbuiltin", "name": "BtnBuiltin", "kitId": "k", "role": "primitive", "used": 1, "builtin": true, "composes": [], "srcText": src, "source": src }).to_string()).unwrap();
+
+        let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+        doctor_fix(&store, &comps, true).unwrap();
+
+        let tomb = stored(&store, "btnbuiltin");
+        assert_eq!(tomb["suppressed"], serde_json::Value::Bool(true), "the merged-away builtin is tombstoned: {tomb}");
+        assert_eq!(tomb["supersededBy"], "btn", "names the canonical it folded into: {tomb}");
+        assert!(store.get("btn").unwrap().is_some(), "the canonical survives");
+    }
+
     /// #3087 end-to-end: `--fix --yes` APPLIED against a store shaped like the live one must leave the
     /// pages tier and the packaged viz seeds standing, while still pruning a genuine user orphan.
     #[test]
@@ -7845,6 +7917,49 @@ export const P = () => <X />;"
             assert!(err.contains("read-only"), "merge refuses read-scoped: {err}");
             assert!(run(vec!["merge".into(), "help".into()], "bsc ui").is_ok(), "merge help reachable read-scoped");
         });
+    }
+
+    /// Designer request #96: `bsc ui merge` folding a `builtin: true` duplicate away must STICK — a
+    /// bare `store.remove` leaves the id looking merely absent, and the frontend seed-reconcile treats
+    /// "absent" as "never seeded", bringing the packaged builtin right back on the next hydrate. Merging
+    /// a builtin `from` must instead write the same suppression tombstone `bsc ui suppress` does.
+    #[test]
+    fn merge_of_a_builtin_from_writes_a_suppression_tombstone_not_a_bare_delete() {
+        let store = tmp_component_store("merge-builtin");
+        let dir = store.dir().to_string_lossy().into_owned();
+        store.set(
+            "settings-accentcolorcard",
+            &serde_json::json!({
+                "id": "settings-accentcolorcard", "name": "AccentColorCard", "kitId": "k",
+                "role": "composite", "builtin": true, "composes": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+        store.set(
+            "settings-appearancecard",
+            &serde_json::json!({ "id": "settings-appearancecard", "name": "AppearanceCard", "kitId": "k", "role": "composite" })
+                .to_string(),
+        )
+        .unwrap();
+
+        run(
+            vec!["merge".into(), "settings-accentcolorcard".into(), "settings-appearancecard".into(), "--dir".into(), dir.clone()],
+            "bsc ui",
+        )
+        .expect("merge lands");
+
+        // NOT gone — a tombstone occupies the id, which is what stops the seed-reconcile re-adding it.
+        let tomb = stored(&store, "settings-accentcolorcard");
+        assert_eq!(tomb["suppressed"], serde_json::Value::Bool(true), "merging a builtin away tombstones it: {tomb}");
+        assert_eq!(tomb["supersededBy"], "settings-appearancecard", "the tombstone names what replaced it: {tomb}");
+        // The survivor is untouched by the retirement.
+        assert!(store.get("settings-appearancecard").unwrap().is_some());
+
+        // Merging away a NON-builtin (the existing behavior) still deletes outright — no stray tombstone.
+        store.set("dup", &serde_json::json!({ "id": "dup", "name": "Dup", "kitId": "k", "role": "composite" }).to_string()).unwrap();
+        run(vec!["merge".into(), "dup".into(), "settings-appearancecard".into(), "--dir".into(), dir], "bsc ui").expect("merge lands");
+        assert!(store.get("dup").unwrap().is_none(), "a non-builtin merge is still a bare delete");
     }
 
     // ── #4107 slice B: the `group` -> `folder` rename ──
