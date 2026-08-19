@@ -29,7 +29,7 @@ export { registerPlannerGithubPlatform } from "./github/graphPlatform";
 import { PlanningGraphHost } from "@/features/planner/session/PlanningGraphHost";
 import { TeamsPanel } from "@/features/teams";
 import { SoundsGraphHost } from "@/features/sounds";
-import { DataGraphPage } from "@/features/data";
+import { DataGraphHost } from "@/features/data";
 import { useProjectScan } from "@/features/planner/list/useProjectScan";
 import { PROJECT_MODES } from "@/features/planner/list/projectModes";
 
@@ -167,7 +167,7 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
           directly with no keep-mounted / tear-off handoff. */}
       {mode === "data" && (
         <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
-          <DataGraphPage />
+          <DataGraphHost />
         </Box>
       )}
 

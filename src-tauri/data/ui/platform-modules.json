@@ -563,6 +563,8 @@
   "@data/components/app/features/automations/automationsgraphhost.json",
   "@data/components/app/features/automations/automationspage.json",
   "@data/components/app/features/automations/automationsstatus.json",
+  "@data/components/app/features/data/datagraphhost.json",
+  "@data/components/app/features/data/datagraphpage.json",
   "@data/components/app/features/designs/animations-menu-module.json",
   "@data/components/app/features/designs/animrow.json",
   "@data/components/app/features/designs/componentnode.json",

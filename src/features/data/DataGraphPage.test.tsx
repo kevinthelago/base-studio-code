@@ -1,7 +1,7 @@
 // The DATA GRAPH page (the-data-graph-a-global-third-pillar).
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { DataGraphPage } from "./DataGraphPage";
+import { DataGraphPage } from "@/features/data/DataGraphPage";
 
 const bscJson = vi.hoisted(() => vi.fn());
 vi.mock("@/shared/lib/core/bsc", () => ({ bscJson }));

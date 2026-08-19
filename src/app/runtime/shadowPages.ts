@@ -207,6 +207,21 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ensurePlatform: () => import("@/features/sounds/graphPlatform").then((m) => m.registerSoundsPlatform()),
   },
   {
+    pageId: "datagraphpage",
+    label: "Data",
+    // Not a rail Workspace — the planner Screen mounts this one as a tab, exactly like Sounds.
+    rendersFrom: "graph",
+    modules: [
+      { recordId: "datagraphpage", file: null }, // RETIRED — the record is the only copy,
+    ],
+    // The barrel, not a `graphPlatform` — this feature has none, and deliberately: `DataGraphPage`
+    // composes only shared/ui primitives and `@/shared/lib/core/bsc`, all already in appModules, so
+    // there is no injected surface to register. Importing the barrel is still the right shape here:
+    // it is what a consumer does, and it is what would start registering if this feature ever grew a
+    // platform.
+    ensurePlatform: () => import("@/features/data"),
+  },
+  {
     pageId: "glancepage",
     label: "Glance",
     rendersFrom: "graph",
