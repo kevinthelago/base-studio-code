@@ -190,9 +190,10 @@ describe("gate scope", () => {
 // `data/knowledge/algorithms.json`): the gate printed `frontend files: 0`, ran neither typecheck nor
 // lint nor vitest, and reported PASS. It happened three times in one epic before it was diagnosed.
 describe("record stores under src-tauri/data are frontend (gate scoping)", () => {
-  const plan = (files: string[]) =>
-    planGate({ files, base: "develop", graph: new Map([["base-studio-code", new Set()]]),
-               dirToCrate: new Map([["src-tauri", "base-studio-code"]]), exists: () => true });
+  // Reuse the file's shared fixtures rather than inventing a second pair — the first draft built its
+  // own and got the `graph` value type wrong (Set vs string[]), which typecheck caught and the tests
+  // did not, since planGate never reads it on these paths.
+  const plan = (files: string[]) => planGate({ files, graph, dirToCrate, exists: () => true });
 
   it("the algorithms seed runs the frontend arms", () => {
     const p = plan(["src-tauri/data/knowledge/algorithms.json"]);
