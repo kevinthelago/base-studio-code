@@ -19,7 +19,7 @@ import { reconcileOrgs } from "@/features/teams/lib/team";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
-import { type AppStore } from "./types";
+import { type AppStore } from "@/store/types";
 import { persistedState, migrateAutoResumeOff } from "@/store/persist";
 import { createSessionSlice } from "@/store/slices/session";
 import { createPlanSlice } from "@/store/slices/plan";
@@ -34,7 +34,7 @@ import { createConsoleSlice } from "@/store/slices/console";
 
 // Re-export the public store API so existing `from "@/store"` imports keep resolving.
 export { PROJECT_INIT_PROMPT, TRIAGE_PROMPT, buildTriagePrompt } from "@/store/constants";
-export type { GithubUser, PerfConfig, LogConfig, ToolPermissions, ConfigProfile, AutomationSuggestion, GithubRepo } from "./types";
+export type { GithubUser, PerfConfig, LogConfig, ToolPermissions, ConfigProfile, AutomationSuggestion, GithubRepo } from "@/store/types";
 
 import { newTabId } from "@/store/helpers";
 

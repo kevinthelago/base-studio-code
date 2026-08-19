@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { UI_KIT, findPrimitive, primitivesByGroup, manifestJson, type PropType } from "@/shared/ui/manifest";
 import { BASE_ANIMATIONS } from "@/shared/ui/kit/baseAnimations";
-import { UI_COMPONENTS, componentFor } from "./registry";
+import { UI_COMPONENTS, componentFor } from "@/shared/ui/registry";
 
 const PROP_TYPES: PropType[] = [
   "string", "number", "boolean", "enum", "node", "function", "style", "array", "object", "space", "fontSize", "tracks", "color",

@@ -208,8 +208,16 @@ for (const file of listModules()) {
 // It also covers BARE specifiers, not just `@/…`: `platformBoundary` checks those too (#4224), and
 // `detachedtabstrip` failed on `@tauri-apps/api/window` after an earlier pass that only looked at `@/`.
 const REGISTERED = new Set(JSON.parse(readFileSync(join(REPO, "src-tauri/data/ui/platform-modules.json"), "utf8")));
+// `?raw` / `?url` are excluded for the same reason as `.css` beside them: the LOADER answers those
+// (`makeRequire` → `rawImportSpec`), so demanding a registration asks for a registry key that cannot
+// exist. This pass and the `@/`-only scan above are two filters over the same question, and this
+// exclusion had to be added to BOTH — the first fix covered only the earlier one, so `?raw` kept
+// blocking `runtimeFault.ts` from the second. Worth collapsing into one definition next time either
+// changes.
 const importsOf = (src) =>
-  runtimeImports(src).filter((sp) => !/^\.\.?\//.test(sp) && !/\.(css|svg|png)$/.test(sp));
+  runtimeImports(src).filter(
+    (sp) => !/^\.\.?\//.test(sp) && !/\.(css|svg|png)$/.test(sp) && !/\?(raw|url)$/.test(sp),
+  );
 
 for (let pass = 0; pass < 20; pass++) {
   const willExist = new Set([...REGISTERED, ...seeded]);

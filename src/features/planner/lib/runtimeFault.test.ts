@@ -6,7 +6,7 @@ import {
   shimLanguages,
   renderShim,
   runtimeFaultRegistry,
-} from "./runtimeFault";
+} from "@/features/planner/lib/runtimeFault";
 
 // #2262: the per-environment runtime-fault adapter registry loads, adapter selection reflects
 // implemented-vs-planned, and the local shim renders with the per-project values substituted (no
