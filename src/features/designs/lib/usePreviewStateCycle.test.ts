@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { usePreviewStateCycle, PREVIEW_CYCLE_MS } from "@/features/designs/lib/usePreviewStateCycle";
-import type { ComponentRecord, PropSpec } from "./model";
+import type { ComponentRecord, PropSpec } from "@/features/designs/lib/model";
 
 const prop = (name: string, type: string): PropSpec => ({ name, type, req: false, desc: "" });
 const base: ComponentRecord = {

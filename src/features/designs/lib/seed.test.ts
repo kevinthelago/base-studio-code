@@ -2,7 +2,7 @@
 // `base-studio-code` kit. These cover the reconcile MECHANICS the built-in-rot incidents needed (stamp
 // self-consistency, retire-on-leave, legacy no-hash refresh, keep-user-edit) plus the wipe itself.
 import { describe, it, expect } from "vitest";
-import type { ComponentRecord, Kit } from "./model";
+import type { ComponentRecord, Kit } from "@/features/designs/lib/model";
 import { SEED_COMPONENTS, SEED_KITS, BASE_STUDIO_CODE_KIT_ID, reconcileComponents, reconcileKits } from "./seed";
 import { seedHashOf, stampSeedHash } from "@/features/designs/lib/seedRefresh";
 

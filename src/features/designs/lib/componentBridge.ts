@@ -9,9 +9,9 @@
 // whose degrade-to-`[]` would blank the seed.
 import { bsc, bscJson, bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import { log } from "@/shared/lib/core/log";
-import type { ComponentRecord, Kit, Role } from "./model";
-import type { ComponentBuildStatus, RuntimeStateCategory } from "./componentScan";
-import { ROLES } from "./model";
+import type { ComponentRecord, Kit, Role } from "@/features/designs/lib/model";
+import type { ComponentBuildStatus, RuntimeStateCategory } from "@/features/designs/lib/componentScan";
+import { ROLES } from "@/features/designs/lib/model";
 
 /**
  * Project one raw `bsc ui list --full` row into a full {@link ComponentRecord}, defaulting absent

@@ -3,7 +3,7 @@ import {
   layoutComposition, buildComposesEdges, selectionNeighborhood, nodeTier, byTier, DEFAULT_METRICS, NODE_W, NODE_H,
 } from "@/features/designs/lib/compositionLayout";
 import type { GraphEdge } from "@/shared/lib/graph/types";
-import type { ComponentRecord, Role } from "./model";
+import type { ComponentRecord, Role } from "@/features/designs/lib/model";
 
 const mk = (name: string, role: Role, used = 0, composes: string[] = []): ComponentRecord => ({
   id: name.toLowerCase(), name, kitId: "k", role, version: "1.0.0", used, tags: [],

@@ -43,7 +43,7 @@ import type { LibraryModuleResolver } from "./componentPreview";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import { resolveInternalBase } from "@/shared/lib/preview/importPath";
 import { PLATFORM_MODULES as PLATFORM_MODULE_SPECS } from "@/shared/lib/preview/platformModules";
-import type { ComponentRecord, PropSpec } from "./model";
+import type { ComponentRecord, PropSpec } from "@/features/designs/lib/model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
 
 /** The specifiers the preview iframe can resolve — the exact keys of the preview import-map (react/three/

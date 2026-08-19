@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { resolveComponentLibraryRefs, resolveKitLibraryRefs } from "@/features/designs/lib/libraryComposition";
 import { crossGraphEdgeId } from "@/shared/lib/graph/crossGraph";
-import type { ComponentRecord, Role } from "./model";
+import type { ComponentRecord, Role } from "@/features/designs/lib/model";
 
 function comp(name: string, role: Role, extra: Partial<ComponentRecord> = {}): ComponentRecord {
   return {

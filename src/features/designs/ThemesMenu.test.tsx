@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ThemesMenu } from "@/features/designs/ThemesMenu";
-import { SEED_THEMES } from "./lib/themes";
+import { SEED_THEMES } from "@/features/designs/lib/themes";
 
 describe("ThemesMenu (#2834)", () => {
   it("groups themes by design group (#2749) and washes the active row", () => {

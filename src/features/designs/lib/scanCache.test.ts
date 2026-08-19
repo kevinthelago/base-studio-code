@@ -6,7 +6,7 @@
 // this exists to remove. So every degraded input below is asserted to resolve toward SCANNING.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { loadScanCache, saveScanCache, type CachedScan } from "./componentBridge";
-import { pendingScans, type ScannableComponent } from "./componentScan";
+import { pendingScans, type ScannableComponent } from "@/features/designs/lib/componentScan";
 import * as bscMod from "@/shared/lib/core/bsc";
 
 const scannable = (id: string, sig: string): ScannableComponent =>

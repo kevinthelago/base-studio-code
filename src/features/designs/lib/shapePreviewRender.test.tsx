@@ -20,7 +20,7 @@ import { CollectionPage } from "@/shared/ui/pages/CollectionPage";
 import { NetworkPage } from "@/shared/ui/pages/NetworkPage";
 import { Tree, type TreeNodeData } from "@/shared/ui/layouts/Tree";
 import { shapePreviewData } from "@/features/designs/lib/shapePreview";
-import type { ComponentRecord, DataShape, PropSpec } from "./model";
+import type { ComponentRecord, DataShape, PropSpec } from "@/features/designs/lib/model";
 
 const prop = (name: string, type: string): PropSpec => ({ name, type, req: false, desc: "" });
 const comp = (shapes: DataShape[], props: PropSpec[]): ComponentRecord => ({

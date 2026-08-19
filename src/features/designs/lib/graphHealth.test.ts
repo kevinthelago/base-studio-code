@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { analyzeGraphHealth, analyzeMotion, nameSuffix, nodeHealth, signatureProps, worstHealth, HEALTH_SEVERITY, HEALTH_BADGE } from "./graphHealth";
-import type { ComponentRecord, Role } from "./model";
+import type { ComponentRecord, Role } from "@/features/designs/lib/model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
 
 /** Minimal component fixture — only the fields the analyzer reads matter. Carries a real `source` so

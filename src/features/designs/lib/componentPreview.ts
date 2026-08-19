@@ -24,7 +24,7 @@
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import { resolveInternalBase } from "@/shared/lib/preview/importPath";
 import { isPlatformModule } from "@/shared/lib/preview/platformModules";
-import type { ComponentRecord, PropSpec } from "./model";
+import type { ComponentRecord, PropSpec } from "@/features/designs/lib/model";
 
 /**
  * Resolve a `@bsc/<segment>/<name>` LIBRARY import (#3116) to the preview module it vendors — a `path` the

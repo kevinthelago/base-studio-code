@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { createHash, webcrypto } from "node:crypto";
 import { kitToManifest, kitFromManifest, kitShareCode, kitFromCode, publishKitToGist, KIT_KIND, type KitPayload } from "@/features/designs/lib/kitGist";
 import { validateManifest, type ExtensionManifest } from "@/features/planner/lib/gist/manifest";
-import type { ComponentRecord, Kit } from "./model";
+import type { ComponentRecord, Kit } from "@/features/designs/lib/model";
 
 // sha256Hex rides WebCrypto; back the jsdom env with Node's webcrypto when absent.
 if (!globalThis.crypto?.subtle) vi.stubGlobal("crypto", webcrypto);

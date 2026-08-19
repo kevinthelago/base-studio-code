@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./";
-import { resolveRepoPublic, repoVisibilityKey } from "./slices/plan";
+import { resolveRepoPublic, repoVisibilityKey } from "@/store/slices/plan";
 
 describe("per-repo GitHub visibility (#1227)", () => {
   beforeEach(() => useAppStore.setState({ reposPublic: {}, repoPublic: {} }));

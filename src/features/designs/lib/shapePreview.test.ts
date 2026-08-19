@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import { datasetForStructure } from "@/features/algorithms/viz/previewDataset";
 import type { VizDataset } from "@/features/algorithms";
 import { shapePreviewData, SHAPE_TIER, type DatasetForStructure } from "@/features/designs/lib/shapePreview";
-import type { ComponentRecord, PropSpec } from "./model";
+import type { ComponentRecord, PropSpec } from "@/features/designs/lib/model";
 
 const prop = (name: string, type: string): PropSpec => ({ name, type, req: false, desc: "" });
 const comp = (over: Partial<ComponentRecord>): ComponentRecord => ({

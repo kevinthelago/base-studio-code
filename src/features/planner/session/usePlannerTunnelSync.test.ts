@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useAppStore } from "@/store";
-import { usePlannerTunnelSync, type PlannerTunnelSyncOpts } from "./usePlannerTunnelSync";
+import { usePlannerTunnelSync, type PlannerTunnelSyncOpts } from "@/features/planner/session/usePlannerTunnelSync";
 
 vi.mock("@/features/tunnel/lib/tunnelClient", () => ({
   tunnelSetPlanState: vi.fn().mockResolvedValue(undefined),

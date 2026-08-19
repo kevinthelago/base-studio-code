@@ -7,7 +7,7 @@
 // commit — so the assertion that matters is the COMMIT COUNT, not just the resulting state.
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "@/store";
-import type { ComponentScanResult } from "./componentScan";
+import type { ComponentScanResult } from "@/features/designs/lib/componentScan";
 
 const results = (n: number): ComponentScanResult[] =>
   Array.from({ length: n }, (_, i) => ({

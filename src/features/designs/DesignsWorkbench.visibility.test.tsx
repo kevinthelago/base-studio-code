@@ -19,11 +19,11 @@ vi.mock("@/shared/lib/preview/componentBundle", () => ({
 // spies exist before `vi.mock` is hoisted above the imports.
 const { uiSpy, scanSpy } = vi.hoisted(() => ({ uiSpy: vi.fn(), scanSpy: vi.fn() }));
 vi.mock("@/features/designs/lib/uiActivity", () => ({ useUiActivity: uiSpy }));
-vi.mock("./lib/useComponentScan", () => ({ useComponentScan: scanSpy }));
+vi.mock("@/features/designs/lib/useComponentScan", () => ({ useComponentScan: scanSpy }));
 
 import { DesignsWorkbench } from "@/features/designs/DesignsWorkbench";
 import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
-import { SEED_THEMES } from "./lib/themes";
+import { SEED_THEMES } from "@/features/designs/lib/themes";
 
 beforeEach(() => {
   uiSpy.mockClear();

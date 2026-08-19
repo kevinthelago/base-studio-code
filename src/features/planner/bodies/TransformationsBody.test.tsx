@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { verbMeta, type TransformationRow } from "../lib/transformations";
+import { verbMeta, type TransformationRow } from "@/features/planner/lib/transformations";
 import { TransformationsBody } from "@/features/planner/bodies/TransformationsBody";
 
 const PID = "p-transforms";

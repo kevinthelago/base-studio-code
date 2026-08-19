@@ -15,7 +15,7 @@
 // PRISTINE packaged kit LEFT the seed, so the #2483 refresh DROPS it (from `app-state.json` and the
 // on-disk `bsc` store); the empty `base-studio-code` kit is seeded in its place. (A hand-edited builtin
 // is kept with an `orphaned` notice — the designer can delete it, or a hard reset can force-clear.)
-import type { ComponentRecord, Kit } from "./model";
+import type { ComponentRecord, Kit } from "@/features/designs/lib/model";
 import { projectComponent } from "./componentBridge";
 import { planRestamp, reconcileSeed, stampSeedHash, type RestampPlan, type SeedReconcile } from "@/features/designs/lib/seedRefresh";
 
