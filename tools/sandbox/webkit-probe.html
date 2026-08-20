@@ -1,0 +1,81 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>webkit2gtk capability probe</title>
+<body style="background:#111;color:#eee;font:14px monospace">
+<pre id="out">probing...</pre>
+<script>
+// Loaded by webkit-probe.c, which prints whatever we post back as JSON on stdout.
+// See tools/sandbox/README.md.
+function probe() {
+  const out = {};
+  const c = document.createElement("canvas");
+  c.width = 64; c.height = 64;
+
+  let gl2 = null, gl1 = null, err2 = null;
+  try { gl2 = c.getContext("webgl2"); } catch (e) { err2 = String(e); }
+  if (!gl2) { try { gl1 = c.getContext("webgl"); } catch (e) {} }
+
+  out.webgl2 = !!gl2;
+  out.webgl1 = !!(gl2 || gl1);
+  if (err2) out.webgl2_error = err2;
+
+  const gl = gl2 || gl1;
+  if (gl) {
+    const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+    out.gl_version  = gl.getParameter(gl.VERSION);
+    out.glsl        = gl.getParameter(gl.SHADING_LANGUAGE_VERSION);
+    // NOTE: WebKit SPOOFS these two (reports Apple Inc. / Apple GPU on Linux) as
+    // fingerprinting resistance. Do NOT derive hardware acceleration from them - check
+    // /dev/dri and whether WSLg prefixes the window title with [WARN:COPY MODE].
+    out.vendor_reported   = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL)   : gl.getParameter(gl.VENDOR);
+    out.renderer_reported = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    out.max_texture  = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    out.max_vattribs = gl.getParameter(gl.MAX_VERTEX_ATTRIBS);
+  }
+
+  if (gl2) {
+    out.instanced_draw_core = typeof gl2.drawArraysInstanced === "function";
+    out.vertex_array_core   = typeof gl2.createVertexArray === "function";
+    out.max_uniform_block   = gl2.getParameter(gl2.MAX_UNIFORM_BLOCK_SIZE);
+    out.max_array_texture   = gl2.getParameter(gl2.MAX_ARRAY_TEXTURE_LAYERS);
+
+    // An API-existence check is not evidence. Compile, link, upload and actually draw.
+    try {
+      const vs = gl2.createShader(gl2.VERTEX_SHADER);
+      gl2.shaderSource(vs, "#version 300 es\nin vec2 p;void main(){gl_Position=vec4(p,0.,1.);}");
+      gl2.compileShader(vs);
+      const fs = gl2.createShader(gl2.FRAGMENT_SHADER);
+      gl2.shaderSource(fs, "#version 300 es\nprecision mediump float;out vec4 o;void main(){o=vec4(1.);}");
+      gl2.compileShader(fs);
+      const pr = gl2.createProgram();
+      gl2.attachShader(pr, vs); gl2.attachShader(pr, fs); gl2.linkProgram(pr);
+      out.shader_link_ok = !!gl2.getProgramParameter(pr, gl2.LINK_STATUS);
+      gl2.useProgram(pr);
+      const buf = gl2.createBuffer();
+      gl2.bindBuffer(gl2.ARRAY_BUFFER, buf);
+      gl2.bufferData(gl2.ARRAY_BUFFER, new Float32Array([0,0, 1,0, 0,1]), gl2.STATIC_DRAW);
+      const loc = gl2.getAttribLocation(pr, "p");
+      gl2.enableVertexAttribArray(loc);
+      gl2.vertexAttribPointer(loc, 2, gl2.FLOAT, false, 0, 0);
+      gl2.drawArraysInstanced(gl2.TRIANGLES, 0, 3, 1000);
+      out.instanced_draw_ran = gl2.getError() === gl2.NO_ERROR;
+    } catch (e) {
+      out.instanced_draw_ran = false;
+      out.instanced_error = String(e);
+    }
+  }
+
+  // If this is ever true, wgpu can target WebGPU through the webview and compute shaders
+  // become available. As of webkit2gtk-4.1 it is false, which pins wgpu to its WebGL2
+  // backend (no compute) whenever the renderer runs inside the webview.
+  out.webgpu_present = typeof navigator.gpu !== "undefined";
+  out.ua = navigator.userAgent;
+  return out;
+}
+
+let res;
+try { res = probe(); } catch (e) { res = { fatal: String(e) }; }
+document.getElementById("out").textContent = JSON.stringify(res, null, 2);
+try { window.webkit.messageHandlers.probe.postMessage(JSON.stringify(res)); } catch (e) {}
+</script>
+</body>
