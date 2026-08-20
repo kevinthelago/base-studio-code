@@ -44,7 +44,7 @@ fn main() {
     let mut src: std::collections::HashMap<&str, String> = Default::default();
     let mut i = 2;
     while i + 1 < head.len() {
-        for k in ["plan", "graph", "ui", "coord"] {
+        for k in ["plan", "graph", "ui", "coord", "outbox"] {
             if head[i] == format!("--{k}") {
                 src.insert(k, head[i + 1].clone());
             }
@@ -81,6 +81,20 @@ fn main() {
         fs::materialize(&root.join("coord"), &t).unwrap();
         eprintln!("coord : {} event(s), {} malformed -> {} file(s)", events.len(), bad.len(), t.len());
         mounts.push(Mount::ReadOnly { host: root.join("coord"), guest: PathBuf::from("/coord") });
+    }
+
+    // The outbox is bound AFTER /coord, over a subpath of it — one writable hole in an otherwise
+    // read-only snapshot.
+    //
+    // The MOUNTPOINT MUST ALREADY EXIST in the projection. bwrap cannot mkdir it: the ro-bind
+    // makes that whole subtree read-only, and the attempt fails with
+    //   bwrap: Can't mkdir /coord/out: Read-only file system
+    // So `<root>/coord/out` is created on the host first, and bwrap binds over the existing dir.
+    if let Some(p) = src.get("outbox") {
+        std::fs::create_dir_all(p).ok();
+        std::fs::create_dir_all(root.join("coord").join("out")).ok();
+        mounts.push(Mount::ReadWrite { host: PathBuf::from(p), guest: PathBuf::from("/coord/out") });
+        eprintln!("outbox: writable at /coord/out");
     }
 
     let spec = SandboxSpec {
