@@ -19,6 +19,10 @@ pub mod instrument;
 pub mod cli;
 pub mod scope;
 pub mod waiting;
+// Re-exported so a consumer says `logs::waiting(..) -> logs::WaitingSession` without naming the
+// module twice — matching `usage`/`Usage` and `PerfSample` below. The Tauri command's return type
+// is part of the frontend contract, so it is worth being a short, stable path.
+pub use waiting::{waiting, waiting_by_pane, waiting_in, WaitingSession};
 
 use std::path::{Path, PathBuf};
 
