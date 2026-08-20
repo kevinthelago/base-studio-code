@@ -309,6 +309,7 @@
             ("logs_tail", "reads a log file; 134.8s/219 calls measured"),
             ("logs_pane_activity", "scans the activity log; 62.4s/130 calls measured"),
             ("logs_done_panes", "scans the coord log on the same poll cadence"),
+            ("logs_waiting", "re-derives the queue from coord.log AND activity.log, on a 3s poll"),
             ("graph_dump", "reads + reconciles the whole algorithms store (#4078)"),
             ("read_log_tail", "reads an arbitrary log stream from disk"),
             ("fault_rows_batch", "opens one error.db per project; 19.3s/4 calls measured"),
@@ -337,6 +338,69 @@
              they freeze the UI rather than just delaying it). Make the fn `async` and run the body \
              on the blocking pool via `platform::offmain::blocking_or`:\n  {}",
             sinned.join("\n  "),
+        );
+    }
+
+    /// **A DECLARED COMMAND THAT IS NEVER REGISTERED FAILS SILENTLY.** `#[tauri::command]` only makes
+    /// a function invokable; `generate_handler!` is what the frontend can actually reach. Miss the
+    /// second step and every `invoke("...")` rejects — and the frontend bridge wraps them in
+    /// `safeInvoke`, which swallows a rejection and returns the fallback. So the failure mode is not
+    /// an error anywhere: it is a feature rendering its EMPTY STATE forever, on a screen, while every
+    /// gate stays green.
+    ///
+    /// Measured when this was written: 174 declared, 174 registered. The list has never actually
+    /// drifted — which is why the guard is cheap now and expensive to add after the first time it does.
+    #[test]
+    fn every_tauri_command_is_registered_in_the_invoke_handler() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut decls: std::collections::HashMap<String, (bool, String)> = Default::default();
+        collect_command_decls(&src, &src, &mut decls);
+
+        // Non-vacuity: a parser that stopped matching would make this pass while checking nothing.
+        assert!(decls.len() > 100, "expected the whole command surface, found {}", decls.len());
+
+        let run = std::fs::read_to_string(src.join("app/run.rs")).expect("app/run.rs");
+        let start = run.find("generate_handler!").expect("generate_handler! in app/run.rs");
+        // Bracket-match the macro body rather than scanning a fixed window: the list grows, and a
+        // truncated window would silently stop covering the commands added at the end of it.
+        let body = &run[start..];
+        let open = body.find('[').expect("generate_handler! opens a list");
+        let mut depth = 0usize;
+        let mut end = None;
+        for (i, ch) in body[open..].char_indices() {
+            match ch {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(open + i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let list = &body[open..end.expect("generate_handler! list is closed")];
+        // Each entry is a path (`logs::logs_tail`, `crate::fleet::x::y`); the command name is its last
+        // segment. Compare on that, so moving a command between modules is not a false failure.
+        let registered: std::collections::HashSet<&str> = list
+            .split(',')
+            .filter_map(|e| e.rsplit("::").next())
+            .map(|e| e.trim())
+            .filter(|e| !e.is_empty())
+            .collect();
+
+        let mut missing: Vec<String> = decls
+            .iter()
+            .filter(|(name, _)| !registered.contains(name.as_str()))
+            .map(|(name, (_, at))| format!("`{name}` at {at}"))
+            .collect();
+        missing.sort();
+        assert!(
+            missing.is_empty(),
+            "these are #[tauri::command] but are NOT in generate_handler! in app/run.rs, so every \
+             invoke of them rejects — and `safeInvoke` turns that into a silent empty result:\n  {}",
+            missing.join("\n  "),
         );
     }
 

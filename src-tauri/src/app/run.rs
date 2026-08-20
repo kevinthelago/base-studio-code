@@ -380,6 +380,7 @@ pub fn run() {
             crate::fleet::director_new::fleet_director_ack,
             logs::logs_pane_activity,
             logs::logs_done_panes,
+            logs::logs_waiting,
             logs::clear_log,
             logs::export_log,
             logs::log_get_config,

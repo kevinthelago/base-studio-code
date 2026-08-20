@@ -318,6 +318,24 @@ pub async fn logs_done_panes() -> Vec<String> {
     blocking_or("logs_done_panes", Vec::new(), || ::logs::done_panes(&::logs::log_dir())).await
 }
 
+/// Every session blocked on a HUMAN, oldest first — the in-process drop-in for `bsc logs waiting
+/// --json` (#4015). Four kinds across two logs: `wait`/`ask`/`request` from coord.log, `permission`
+/// from activity.log.
+///
+/// UNSCOPED on purpose. `waiting_in` takes a caller pane id so a DIRECTOR sees only its own project —
+/// the queue's contract is "these are yours to clear", and it has no authority over another project.
+/// The app is not a director: a human at the Logs screen wants the whole fleet, which is the same
+/// thing a human at a plain shell gets from `bsc logs waiting`.
+///
+/// This exists so the UI renders the SAME query the director runs. The frontend has its own reducer
+/// over coord.log (`coordinationLog.ts`) and `waiting.rs` says the two MUST agree; rendering the
+/// reducer here would put a human in front of a different queue than the director works, and the
+/// divergence would be invisible exactly where someone might have caught it.
+#[tauri::command]
+pub async fn logs_waiting() -> Vec<::logs::WaitingSession> {
+    blocking_or("logs_waiting", Vec::new(), || ::logs::waiting(&::logs::log_dir())).await
+}
+
 /// Append a `woke` event to the coordination log (#199): records that a parked
 /// session was relaunched, so the coordinator won't re-wake it (idempotent across
 /// polls + restarts). Same TSV shape + ISO-8601 UTC timestamp as the shell emitters.
