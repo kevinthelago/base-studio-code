@@ -47,6 +47,22 @@ export interface PersonaFloor {
   allow?: string[];
 }
 
+/** One hook a persona carries. The wire shape `toSessionPayloads` already emits, minus the store
+ *  bookkeeping (`id`/`enabled`/`projects`) that only existed to scope a SHARED hook to a project.
+ *  Carried means enabled; not carried means absent. */
+export interface PersonaHook {
+  /** Display name. It is not decoration: `toHookPayload` wraps the command as
+   *  `bsc-hook <name> <command>`, and that wrapper is what records the hook's outcome to the hook
+   *  log. A nameless hook still runs; it is just harder to read in the telemetry. */
+  name?: string;
+  /** `PreToolUse` · `PostToolUse` · `Stop` · … */
+  event: string;
+  /** Optional tool matcher (regex). Empty/absent = every tool. */
+  matcher?: string;
+  /** The shell command to run. */
+  command: string;
+}
+
 export interface Persona {
   /** Stable, opaque id (slug for built-ins, minted for user personas). */
   id: string;
@@ -85,6 +101,20 @@ export interface Persona {
    *  The BUNDLED servers are not listed here — they ship with the app and reach every session
    *  ambiently, the same way packaged personas are seeded rather than authored. */
   mcp?: string[];
+  /** The agent's own PreToolUse/PostToolUse hooks, INLINE.
+   *
+   *  Inline rather than ids into a store — which is deliberately unlike `mcp` above. An MCP server
+   *  is a shared external thing many agents point at, so ids and a store earn their keep. A hook is
+   *  one agent's own behaviour: a small command, cheap to repeat, and not worth an id indirection,
+   *  a second store and a second CLI. Inline also means the command surface ALREADY EXISTS —
+   *  `bsc persona set` writes the whole persona, so authoring a hook is authoring a persona.
+   *
+   *  These are the USER hooks only. The app's own security floor (bsc-deny / bsc-confine /
+   *  bsc-scope / bsc-audit …) is separate machinery, always applied, and untouched by this.
+   *
+   *  Replaced `Hook.projects[]` scoping and the per-pane `paneHooks` map — the same three-into-one
+   *  collapse the MCP move made. */
+  hooks?: PersonaHook[];
   /** The position's charter — what it is accountable for (#2193). One facet of the org abstraction,
    *  orthogonal to skills (capability) and role (permission); optional, so pre-#2193 personas are
    *  unaffected. Feeds the generated start prompt + the Org designer's position inspector. */
