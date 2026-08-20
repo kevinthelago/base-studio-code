@@ -52,11 +52,43 @@ pub struct Limits {
     pub cpu_weight: Option<u32>,
 }
 
+/// How much of `/usr` the agent gets — the base image's ambient authority, made a choice.
+///
+/// The principle behind the split: **a library is data, an executable is capability.** Binding
+/// `/usr/lib` wholesale hands over shared objects, which do nothing on their own. Binding
+/// `/usr/bin` wholesale hands over every tool installed on the host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Usr {
+    /// Bind all of `/usr`. Convenient, and **ambient authority**: measured on the dev host, that
+    /// is **1558 binaries**, including `bsc` and `bsc-agent` themselves. Use knowingly.
+    All,
+    /// Libraries wholesale; only the named binaries from `/usr/bin`.
+    ///
+    /// Measured with [`MINIMAL_BINS`]: `/usr/bin` goes from 1558 entries to 27, `bsc`,
+    /// `bsc-agent`, `apt`, `curl` and `ssh` all become unreachable, and shell pipelines
+    /// (`cat`/`grep`/`sed`/`wc`), plus `bash`, still work.
+    Curated(Vec<String>),
+}
+
+/// Enough for shell pipelines and nothing else. Extend it per toolchain — a Rust worker wants
+/// `cargo`/`rustc`, a Node one wants `node`/`npm` — rather than reaching for [`Usr::All`].
+///
+/// `dash` earns its place because `/usr/bin/sh` is a symlink to it; binding `sh` alone yields a
+/// dangling link.
+pub const MINIMAL_BINS: &[&str] = &[
+    "basename", "bash", "cat", "cp", "cut", "dash", "date", "dirname", "env", "false", "find",
+    "grep", "head", "ls", "mkdir", "mv", "printf", "rm", "sed", "sort", "tail", "tr", "true",
+    "uniq", "wc", "xargs",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxSpec {
     /// systemd scope name. Must be unit-safe: `[A-Za-z0-9_-]+`.
     pub unit: String,
     pub limits: Limits,
+    /// The base image. Defaults to [`Usr::Curated`] with [`MINIMAL_BINS`] — deny by default, with
+    /// [`Usr::All`] as a visible escape rather than the silent status quo.
+    pub usr: Usr,
     pub mounts: Vec<Mount>,
     /// Working directory *inside* the namespace, so it must be a guest path.
     pub cwd: PathBuf,
@@ -74,6 +106,8 @@ pub enum SpecError {
     GuestPathNotAbsolute(PathBuf),
     HostPathNotAbsolute(PathBuf),
     EnvKeyNotSafe(String),
+    /// A curated bin is a BASENAME in /usr/bin, never a path.
+    BinNotABasename(String),
 }
 
 impl std::fmt::Display for SpecError {
@@ -91,6 +125,10 @@ impl std::fmt::Display for SpecError {
             SpecError::EnvKeyNotSafe(k) => {
                 write!(f, "env key {k:?} is not a valid identifier")
             }
+            SpecError::BinNotABasename(b) => write!(
+                f,
+                "curated binary {b:?} must be a basename in /usr/bin, not a path"
+            ),
         }
     }
 }
@@ -137,6 +175,8 @@ impl SandboxSpec {
         SandboxSpec {
             unit: unit.into(),
             limits: Limits::default(),
+            // Deny by default. A caller that needs a toolchain widens this deliberately.
+            usr: Usr::Curated(MINIMAL_BINS.iter().map(|s| s.to_string()).collect()),
             mounts: vec![
                 Mount::ReadWrite { host: worktree.into(), guest: PathBuf::from("/repo") },
                 Mount::ReadOnly { host: store.into(), guest: PathBuf::from("/plan") },
@@ -151,6 +191,20 @@ impl SandboxSpec {
     pub fn with_limits(mut self, limits: Limits) -> Self {
         self.limits = limits;
         self
+    }
+
+    /// Widen or narrow the base image. Use this to add a toolchain rather than reaching for
+    /// [`Usr::All`], which is ambient authority.
+    pub fn with_usr(mut self, usr: Usr) -> Self {
+        self.usr = usr;
+        self
+    }
+
+    /// [`MINIMAL_BINS`] plus the named extras — the usual way to add a toolchain.
+    pub fn curated_with(extra: &[&str]) -> Usr {
+        let mut v: Vec<String> = MINIMAL_BINS.iter().map(|s| s.to_string()).collect();
+        v.extend(extra.iter().map(|s| s.to_string()));
+        Usr::Curated(v)
     }
 
     fn validate(&self) -> Result<(), SpecError> {
@@ -176,6 +230,15 @@ impl SandboxSpec {
             if let Some(h) = host {
                 if !posix_absolute(h) {
                     return Err(SpecError::HostPathNotAbsolute(h.clone()));
+                }
+            }
+        }
+        if let Usr::Curated(bins) = &self.usr {
+            for b in bins {
+                // 92 is the backslash byte. Compared numerically because a literal one is
+                // mangled by every layer between here and the file.
+                if b.is_empty() || b.starts_with('.') || b.bytes().any(|c| c == b'/' || c == 92) {
+                    return Err(SpecError::BinNotABasename(b.clone()));
                 }
             }
         }
@@ -223,13 +286,46 @@ impl SandboxSpec {
         }
         a.push("--die-with-parent".into());
 
-        // The base image. /usr read-only plus the usrmerge symlinks is the minimum that lets a
-        // normal toolchain run; everything else the agent sees is what the spec names.
-        a.extend(["--ro-bind", "/usr", "/usr"].map(String::from));
+        // The base image.
+        match &self.usr {
+            Usr::All => {
+                a.extend(["--ro-bind", "/usr", "/usr"].map(String::from));
+                a.extend(["--symlink", "usr/sbin", "/sbin"].map(String::from));
+            }
+            Usr::Curated(bins) => {
+                // Libraries wholesale — they are data. /usr/lib64 holds the DYNAMIC LINKER, and
+                // without it every exec fails as `execvp: No such file or directory`, which reads
+                // like a missing binary and is not. `-try` because a host may not have it.
+                a.extend(["--ro-bind", "/usr/lib", "/usr/lib"].map(String::from));
+                a.extend(["--ro-bind-try", "/usr/lib64", "/usr/lib64"].map(String::from));
+                // terminfo, ca-certificates, locale — data a normal tool expects.
+                a.extend(["--ro-bind-try", "/usr/share", "/usr/share"].map(String::from));
+
+                // Executables individually. Sorted and de-duplicated so the render is
+                // deterministic regardless of the order a caller assembled the list in.
+                let mut sorted: Vec<&String> = bins.iter().collect();
+                sorted.sort();
+                sorted.dedup();
+                for b in sorted.iter() {
+                    // `-try` so a list that is a superset across hosts does not abort the launch;
+                    // a genuinely missing tool then fails at the point of use, where it is legible.
+                    a.push("--ro-bind-try".into());
+                    a.push(format!("/usr/bin/{b}"));
+                    a.push(format!("/usr/bin/{b}"));
+                }
+                // /usr/bin/sh is a symlink to dash on Debian; binding `sh` would bind the link and
+                // leave it dangling, so recreate it only when its target is actually in the set.
+                if sorted.iter().any(|b| b.as_str() == "dash") {
+                    a.extend(["--symlink", "dash", "/usr/bin/sh"].map(String::from));
+                }
+                // No /usr/sbin is bound, so point /sbin at the curated bin dir rather than at a
+                // path that does not exist.
+                a.extend(["--symlink", "usr/bin", "/sbin"].map(String::from));
+            }
+        }
         a.extend(["--symlink", "usr/lib", "/lib"].map(String::from));
         a.extend(["--symlink", "usr/lib64", "/lib64"].map(String::from));
         a.extend(["--symlink", "usr/bin", "/bin"].map(String::from));
-        a.extend(["--symlink", "usr/sbin", "/sbin"].map(String::from));
         a.extend(["--proc", "/proc"].map(String::from));
         a.extend(["--dev", "/dev"].map(String::from));
         a.extend(["--tmpfs", "/tmp"].map(String::from));
@@ -419,18 +515,106 @@ mod tests {
 
     #[test]
     fn nothing_outside_the_spec_is_bound() {
-        // The guarantee is that a path not named is ABSENT. Only /usr comes from the base image;
-        // every other host bind must have been asked for.
+        // The guarantee is that a path not named is ABSENT. Under the curated default the only
+        // host paths bound are the library dirs and the worktree/store the spec asked for —
+        // every executable is named individually and lives under /usr/bin.
         let a = spec().render().unwrap();
         let bound: Vec<&String> = a
             .iter()
             .enumerate()
-            .filter(|(i, x)| (*x == "--bind" || *x == "--ro-bind") && i + 2 < a.len())
+            .filter(|(i, x)| {
+                (*x == "--bind" || *x == "--ro-bind" || *x == "--ro-bind-try") && i + 2 < a.len()
+            })
             .map(|(i, _)| &a[i + 1])
+            .filter(|p| !p.starts_with("/usr/bin/"))
             .collect();
         assert_eq!(
             bound,
-            vec!["/usr", "/home/k/wt/repo--stream", "/home/k/.base-studio-code/plans"]
+            vec![
+                "/usr/lib",
+                "/usr/lib64",
+                "/usr/share",
+                "/home/k/wt/repo--stream",
+                "/home/k/.base-studio-code/plans"
+            ]
         );
+    }
+
+    #[test]
+    fn worker_denies_by_default_and_all_of_usr_is_never_implicit() {
+        // Measured: binding /usr wholesale exposes 1558 binaries including bsc itself. The
+        // default must be the curated set, with Usr::All reachable only by asking for it.
+        let a = spec().render().unwrap();
+        assert!(
+            !a.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == "/usr" && w[2] == "/usr"),
+            "the default must NOT bind all of /usr"
+        );
+        assert!(matches!(spec().usr, Usr::Curated(_)));
+
+        let all = spec().with_usr(Usr::All).render().unwrap();
+        assert!(all.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == "/usr" && w[2] == "/usr"));
+    }
+
+    #[test]
+    fn curated_binds_each_executable_individually() {
+        let a = spec().render().unwrap();
+        for b in ["cat", "grep", "sed", "bash", "dash"] {
+            assert!(
+                a.windows(3).any(|w| w[0] == "--ro-bind-try"
+                    && w[1] == format!("/usr/bin/{b}")
+                    && w[2] == format!("/usr/bin/{b}")),
+                "missing {b}"
+            );
+        }
+        // Nothing the set did not name.
+        for b in ["bsc", "bsc-agent", "apt", "curl", "ssh"] {
+            assert!(
+                !a.iter().any(|x| x == &format!("/usr/bin/{b}")),
+                "{b} must not be reachable"
+            );
+        }
+    }
+
+    #[test]
+    fn lib64_is_bound_because_it_holds_the_dynamic_linker() {
+        // Omitting it makes every exec fail as `execvp: No such file or directory`, which reads
+        // like a missing binary and is not. Found the hard way.
+        let a = spec().render().unwrap();
+        assert!(a.windows(3).any(|w| w[0] == "--ro-bind-try" && w[1] == "/usr/lib64"));
+        assert!(a.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == "/usr/lib"));
+    }
+
+    #[test]
+    fn sh_symlink_is_emitted_only_when_its_target_is_in_the_set() {
+        // /usr/bin/sh is a symlink to dash; recreating it without dash leaves a dangling link.
+        let a = spec().render().unwrap();
+        assert!(a.windows(3).any(|w| w[0] == "--symlink" && w[1] == "dash" && w[2] == "/usr/bin/sh"));
+
+        let no_dash = spec().with_usr(Usr::Curated(vec!["cat".into()])).render().unwrap();
+        assert!(!no_dash.iter().any(|x| x == "/usr/bin/sh"));
+    }
+
+    #[test]
+    fn curated_render_is_deterministic_regardless_of_caller_order() {
+        let a = spec().with_usr(Usr::Curated(vec!["sed".into(), "cat".into(), "cat".into()]));
+        let b = spec().with_usr(Usr::Curated(vec!["cat".into(), "sed".into()]));
+        assert_eq!(a.render().unwrap(), b.render().unwrap());
+    }
+
+    #[test]
+    fn curated_with_extends_the_minimal_set() {
+        let usr = SandboxSpec::curated_with(&["cargo", "rustc"]);
+        let a = spec().with_usr(usr).render().unwrap();
+        for b in ["cargo", "rustc", "cat"] {
+            assert!(a.iter().any(|x| x == &format!("/usr/bin/{b}")), "missing {b}");
+        }
+    }
+
+    #[test]
+    fn a_curated_bin_must_be_a_basename() {
+        for bad in ["/usr/bin/cat", "../cat", ".hidden", ""] {
+            let sp = spec().with_usr(Usr::Curated(vec![bad.into()]));
+            assert_eq!(sp.render().unwrap_err(), SpecError::BinNotABasename(bad.into()));
+        }
     }
 }

@@ -9,7 +9,7 @@
 //! under one shared root, because that is the namespace an agent should actually meet. Any store
 //! whose input is not supplied is simply not mounted; a missing store is absent, not empty, which
 //! is the same principle the isolation itself runs on.
-use bsc_sandbox::{Limits, Mount, SandboxSpec};
+use bsc_sandbox::{Limits, Mount, SandboxSpec, Usr};
 use bsc_storefs as fs;
 use std::path::PathBuf;
 
@@ -100,6 +100,9 @@ fn main() {
     let spec = SandboxSpec {
         unit: unit_from(&worktree),
         limits: Limits { memory_max: Some("2G".into()), tasks_max: Some(512), cpu_weight: None },
+        // Curated, not Usr::All. Binding /usr wholesale would hand this agent every binary on the
+        // host — measured at 1558, including bsc itself.
+        usr: Usr::Curated(bsc_sandbox::MINIMAL_BINS.iter().map(|s| s.to_string()).collect()),
         mounts,
         cwd: PathBuf::from("/repo"),
         env: vec![("HOME".into(), "/repo".into())],

@@ -50,6 +50,17 @@ gcc -o /tmp/webkit-probe tools/sandbox/webkit-probe.c \
 Both shell scripts confine themselves to `$HOME/.cache/bsc-sandbox-probe` and remove only that
 directory. The guard test asserts this, because they do use `rm -rf`.
 
+## These scripts bind `/usr` wholesale; the crate no longer does
+
+`namespace-escape.sh` and `cgroup-caps.sh` use `--ro-bind /usr /usr`, which is what makes their
+`python3` fixtures runnable. **That is not the shape `bsc-sandbox` ships.** Its default is
+`Usr::Curated(MINIMAL_BINS)` — libraries wholesale, executables named one by one — because binding
+`/usr` hands the agent every tool on the host: measured here, **1558 binaries including `bsc` and
+`bsc-agent` themselves**, versus 27 curated.
+
+Read these scripts as a demonstration of the namespace *mechanism*, not as the production base
+image. `crates/bsc-sandbox/src/lib.rs` is the authority on that.
+
 ## Results recorded on Debian 13 trixie, kernel 6.6.87 (WSL2)
 
 All thirteen checks passed. Full numbers live on the plan item
