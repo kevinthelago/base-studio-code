@@ -336,6 +336,18 @@ pub async fn logs_waiting() -> Vec<::logs::WaitingSession> {
     blocking_or("logs_waiting", Vec::new(), || ::logs::waiting(&::logs::log_dir())).await
 }
 
+/// The per-session rollup across every pane-tagged stream plus cost — the in-process drop-in for
+/// `bsc logs sessions --json` (#1607).
+///
+/// The heaviest of the log reads: it walks the tool, skill, mcp, coord AND activity streams and then
+/// the cost rollup, which itself re-reads every transcript named in `tokens.log`. Async and off the
+/// main thread for the same reason `logs_usage` is (measured at 1477.8s of main-thread time across
+/// 3169 calls before that was fixed), and the UI polls it only while its tab is open.
+#[tauri::command]
+pub async fn logs_sessions() -> Vec<::logs::SessionRow> {
+    blocking_or("logs_sessions", Vec::new(), || ::logs::sessions(&::logs::log_dir())).await
+}
+
 /// Append a `woke` event to the coordination log (#199): records that a parked
 /// session was relaunched, so the coordinator won't re-wake it (idempotent across
 /// polls + restarts). Same TSV shape + ISO-8601 UTC timestamp as the shell emitters.

@@ -381,6 +381,7 @@ pub fn run() {
             logs::logs_pane_activity,
             logs::logs_done_panes,
             logs::logs_waiting,
+            logs::logs_sessions,
             logs::clear_log,
             logs::export_log,
             logs::log_get_config,
