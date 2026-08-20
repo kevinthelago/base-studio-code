@@ -36,6 +36,7 @@ export function gateCommands(plan, base) {
     c.push({ label: "vitest", cmd: "npx", args: ["vitest", "run"] });
     c.push({ label: "clippy", cmd: "cargo", args: ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"] });
     c.push({ label: "nextest", cmd: "cargo", args: ["nextest", "run", "--workspace", "--no-fail-fast"] });
+    c.push(...graphCommands());
     return c;
   }
   if (plan.runTsc) c.push({ label: "typecheck (whole-program — never scoped)", cmd: "npm", args: ["run", "typecheck"] });
@@ -55,7 +56,36 @@ export function gateCommands(plan, base) {
     c.push({ label: "clippy (scoped)", cmd: "cargo", args: ["clippy", ...p, "--all-targets", "--", "-D", "warnings"] });
     c.push({ label: "nextest (scoped)", cmd: "cargo", args: ["nextest", "run", ...p, "--no-fail-fast"] });
   }
+  if (plan.runGraph) c.push(...graphCommands());
   return c;
+}
+
+/**
+ * The GRAPH step — the check the gate has never had.
+ *
+ * Two commands, and the split is deliberate:
+ *
+ *  * the SWEEP compiles every Tier-R Rust node from its own `composes` closure. A node that stops
+ *    compiling is a red gate, which is the whole point: `unquote.rs` shipped a unicode escape inside a
+ *    byte literal precisely because nothing ever compiled these.
+ *  * `promote --check` catches a record edited in the runtime store but never promoted into the
+ *    committed one the build reads. It is a NO-OP on any machine that did not author the record, which
+ *    is what lets it run in CI and in every worktree rather than only on one desk.
+ *
+ * The sweep is hash-cached on (materialized source × rustc version), so an unchanged run costs ~0.7s
+ * against ~2.7s. It stamps only a GREEN result — caching a failure would hide it on the next run.
+ *
+ * NOT included: Tier-A byte-attestation (a record's `code` against the file at its `src`). It is filed
+ * and deliberately deferred — 28 of the 43 Rust records carrying a `src` have already drifted from
+ * their file, so wiring it now would redden the gate on day one for records that are INVENTORY rather
+ * than build inputs. Attestation becomes meaningful when a record actually backs a compiled file, which
+ * is `crates-materialize-their-source-at-build-time`.
+ */
+export function graphCommands() {
+  return [
+    { label: "graph (rust nodes compile)", cmd: "node", args: ["scripts/graph-rust-compile.mjs"] },
+    { label: "graph (repo store is current)", cmd: "node", args: ["scripts/graph-promote-check.mjs"] },
+  ];
 }
 
 /**
@@ -133,6 +163,22 @@ export function isFrontendPath(file) {
 export function isRecordStorePath(file) {
   return file.startsWith("src-tauri/data/components/")
     || file.startsWith("src-tauri/data/knowledge/");
+}
+
+/**
+ * Files that can change what the GRAPH step would decide — the two committed stores it sweeps, plus the
+ * sweep and the convention it shares with `crates/bsc-graph`.
+ *
+ * Kept SEPARATE from `isRecordStorePath` even though the knowledge seed appears in both: they answer
+ * different questions. That one asks "can vitest still scope itself?", this one asks "could a Rust node
+ * have stopped compiling?" — and a change to `graph/algorithms.json`, which is not a frontend record
+ * store at all, has to reach the second without touching the first.
+ */
+export function isGraphSourcePath(file) {
+  return file.startsWith("graph/")
+    || file.startsWith("src-tauri/data/knowledge/")
+    || file.startsWith("crates/bsc-graph/")
+    || file === "scripts/graph-rust-compile.mjs";
 }
 
 /**
@@ -241,5 +287,6 @@ export function planGate({ files, graph, dirToCrate, force = false, exists = () 
     runVitest: touchedFrontend.length > 0,
     runTsc: touchedFrontend.length > 0,
     vitestUnscoped: touchedRecordStore,
+    runGraph: files.some(isGraphSourcePath),
   };
 }
