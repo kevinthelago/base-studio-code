@@ -101,7 +101,10 @@ describe("the shadow page catalogue", () => {
     const railWorkspace: Record<string, string> = {
       githubpage: "GitHubWorkspace",
       automationspage: "AutomationsWorkspace",
-      mcppage: "McpWorkspace",
+      // `mcppage` is NOT here any more: mcp-moves-to-teams removed the rail destination, so the
+      // record has no lazy workspace to be wired to. It still EXISTS — its Catalog is the only
+      // install path for an MCP server and there is no `bsc` verb for that yet
+      // (mcp-install-has-no-command-surface) — it is simply unmounted, like `skillspage`.
       skillspage: "SkillsWorkspace",
       logspage: "LogsWorkspace",
     };

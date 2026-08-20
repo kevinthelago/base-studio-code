@@ -44,7 +44,7 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
   it("MCP and Security reflect their tabs", () => {
     // Skills was here too, until it stopped being a rail Workspace and moved onto the Teams page
     // (skills-move-to-teams-and-pair-with-personas). Its crumb is now the Planner's Teams tab.
-    expect(crumb({ activeWorkspace: "mcp", activePageTab: { mcp: "catalog" } })).toBe("MCP — Catalog");
+    // MCP followed it there for the same reason (mcp-moves-to-teams) — a server is agent capability.
     expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "activity" } })).toBe("Logs — Activity");
     expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "waiting" } })).toBe("Logs — Waiting");
     expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "skills" } })).toBe("Logs — Skills");
@@ -94,6 +94,6 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
 
   it("an unmapped page id Title-Cases gracefully (a newly-added tab is never blank)", () => {
     expect(titleCasePageId("hook-analytics")).toBe("Hook Analytics");
-    expect(crumb({ activeWorkspace: "mcp", activePageTab: { mcp: "brand-new-tab" } })).toBe("MCP — Brand New Tab");
+    expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "brand-new-tab" } })).toBe("Logs — Brand New Tab");
   });
 });

@@ -8,7 +8,9 @@ import { useAppStore } from "@/store";
 const FULL = [
   // "Skills" was here until it moved onto the Teams page and stopped being a rail destination
   // (skills-move-to-teams-and-pair-with-personas).
-  "Console", "Glance", "Planner", "Automations", "MCP",
+  // "MCP" was here until mcp-moves-to-teams — an MCP server is agent capability, so it is READ on
+  // the Teams page beside the agents that get it rather than owning a rail destination.
+  "Console", "Glance", "Planner", "Automations",
   "GitHub", "Logs", "Settings",
 ];
 const NO_CONSOLE = FULL.filter((l) => l !== "Console");
