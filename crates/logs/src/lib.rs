@@ -675,5 +675,32 @@ mod tests {
         assert_eq!(category_of("bare"), "run"); // unknown → not build
         assert!(is_valid_category("build") && is_valid_category("run") && !is_valid_category("nope"));
     }
+
+    /// **THE WIRE KEYS OF `SessionRow` ARE A CONTRACT, IN TWO DIRECTIONS AT ONCE.**
+    ///
+    /// It has no `serde(rename_all)` — unlike `WaitingSession` in `waiting.rs`, which camelCases — so it
+    /// serializes `cost_usd`, and the desktop reads that key while `bsc logs sessions --json` prints it
+    /// for anything scripting the CLI. Adding `rename_all = "camelCase"` here to make the TypeScript
+    /// prettier would silently break BOTH: the UI field would read `undefined` and every row would show
+    /// $0.00 — a fleet that appears to have cost nothing — while a script reading `cost_usd` finds
+    /// nothing at all. Neither failure throws.
+    ///
+    /// Pinned as the exact key SET, so a rename, an addition or a removal all land here first.
+    #[test]
+    fn session_row_wire_keys_are_stable() {
+        let row = SessionRow {
+            session: "p:w".into(), role: "worker", tools: 1, skills: 2, mcp: 3, coord: 4,
+            cost_usd: 1.5, activity: "run".into(),
+        };
+        let v = serde_json::to_value(&row).expect("SessionRow serializes");
+        let mut keys: Vec<&str> = v.as_object().expect("an object").keys().map(|k| k.as_str()).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            ["activity", "coord", "cost_usd", "mcp", "role", "session", "skills", "tools"],
+            "SessionRow wire keys changed — the desktop bridge and `bsc logs sessions --json` both read these"
+        );
+    }
+
 }
 
