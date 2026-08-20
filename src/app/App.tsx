@@ -29,7 +29,6 @@ import { RequestSessionsMount } from "@/features/debug";
 import { StudioSessionHosts } from "@/features/studio-sessions";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
-import { AutomationsStatus } from "@/features/automations";
 import { Achievements } from "@/app/Achievement";
 import { AppBanners } from "@/app/AppBanners";
 import { LiveRegion } from "@/shared/ui/feedback/LiveRegion";
@@ -43,7 +42,7 @@ import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import { effectiveWorkspace } from "@/app/registry";
 import {
-  GitHubWorkspace, AutomationsWorkspace, SettingsWorkspace,
+  GitHubWorkspace, SettingsWorkspace,
   ProjectsWorkspace, LogsWorkspace, GlanceWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
@@ -190,17 +189,12 @@ export default function App() {
           <Suspense fallback={<WorkspaceFallback />}>
             {activeWorkspace === "glance"     && <GlanceWorkspace />}
             {activeWorkspace === "github"     && <GitHubWorkspace />}
-            {activeWorkspace === "automation" && <AutomationsWorkspace />}
             {activeWorkspace === "logs"       && <LogsWorkspace />}
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
           </Suspense>
           </ErrorBoundary>
           </Box>
-          <StatusBar extra={
-            activeWorkspace === "automation"
-              ? <AutomationsStatus />
-              : undefined
-          } />
+          <StatusBar />
         </Box>
       </Box>
 

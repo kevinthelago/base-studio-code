@@ -1,21 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
-  computeNextRun, resolveTargetPane, dispatchPayload, dueAutomations, appendRun, MAX_RUNS, suggestionToAutomation,
-  type Automation, type AutomationRun,
+  computeNextRun, resolvePersonaPane, duePersonaSchedules, scheduleKey, suggestionToAutomation,
+  type CarriedSchedule,
 } from "@/features/automations/lib/scheduler";
 
 const DAY = 86_400_000;
-
-function mkAuto(over: Partial<Automation> = {}): Automation {
-  return {
-    id: "a1", name: "n", armed: true,
-    when: { kind: "simple", every: "day", at: "09:00" },
-    targetTab: "T", targetPaneIdx: 0,
-    action: "command", command: "echo hi",
-    lastRunAt: null, nextRunAt: null, runs: [],
-    ...over,
-  };
-}
 
 describe("computeNextRun", () => {
   it("minute → next whole-minute boundary, within 60s", () => {
@@ -75,56 +64,63 @@ describe("computeNextRun", () => {
   });
 });
 
-describe("resolveTargetPane", () => {
-  const tabs = [{ name: "orchestrator", layout: "2×2" }, { name: "feat/tunnel", layout: "1×1" }];
+describe("resolvePersonaPane", () => {
+  it("finds the pane running the carrier", () => {
+    expect(resolvePersonaPane("p1", { t0p3: "p1", t1p0: "p2" }, {})).toBe("t0p3");
+  });
 
-  it("resolves a live (tab name, pane index) to t{tab}p{pane}", () => {
-    expect(resolveTargetPane("orchestrator", 3, tabs, {})).toBe("t0p3");
-    expect(resolveTargetPane("feat/tunnel", 0, tabs, {})).toBe("t1p0");
+  it("returns null when the carrier is not running anywhere", () => {
+    expect(resolvePersonaPane("p1", { t0p0: "other" }, {})).toBeNull();
+    expect(resolvePersonaPane("p1", {}, {})).toBeNull();
   });
-  it("returns null when the tab is missing", () => {
-    expect(resolveTargetPane("nope", 0, tabs, {})).toBeNull();
+
+  it("treats a disabled pane as not running", () => {
+    expect(resolvePersonaPane("p1", { t0p3: "p1" }, { t0p3: true })).toBeNull();
   });
-  it("returns null when the pane index is outside the tab's layout", () => {
-    expect(resolveTargetPane("orchestrator", 4, tabs, {})).toBeNull(); // 2×2 → 0..3
-    expect(resolveTargetPane("feat/tunnel", 1, tabs, {})).toBeNull();  // 1×1 → only 0
-  });
-  it("returns null when the resolved pane is disabled", () => {
-    expect(resolveTargetPane("orchestrator", 1, tabs, { t0p1: true })).toBeNull();
+
+  it("resolves by IDENTITY, so a pane at a different position still matches", () => {
+    // The point of moving off (tab name, pane index): the index did not survive a reorder.
+    expect(resolvePersonaPane("p1", { t9p7: "p1" }, {})).toBe("t9p7");
   });
 });
 
-describe("dispatchPayload", () => {
-  it("returns the trimmed command for a command action", () => {
-    expect(dispatchPayload(mkAuto({ action: "command", command: "  ls -la  " }))).toBe("ls -la");
+describe("duePersonaSchedules", () => {
+  const NOW = Date.parse("2026-08-20T12:00:00Z");
+  const carried = (over: Partial<CarriedSchedule> = {}): CarriedSchedule => ({
+    personaId: "p1", name: "gc", when: { kind: "simple", every: "minute", at: "" }, command: "x", ...over,
   });
-  it("returns null for an empty command", () => {
-    expect(dispatchPayload(mkAuto({ action: "command", command: "   " }))).toBeNull();
+
+  it("is due when the next run after its LAST fire has passed", () => {
+    const last = { [scheduleKey("p1", "gc")]: NOW - 120_000 };   // 2 minutes ago, every minute
+    expect(duePersonaSchedules([carried()], last, NOW)).toHaveLength(1);
+  });
+
+  it("is NOT due when the next run is still ahead", () => {
+    // A DAILY job, run an hour ago: the next 09:00 is tomorrow. Deliberately not an every-minute
+    // job — one that ran a second ago is genuinely due again at the next minute boundary, so it
+    // would prove nothing here.
+    const daily = carried({ when: { kind: "simple", every: "day", at: "09:00" } });
+    const last = { [scheduleKey("p1", "gc")]: NOW - 3_600_000 };
+    expect(duePersonaSchedules([daily], last, NOW)).toHaveLength(0);
+  });
+
+  it("a schedule that has NEVER fired is not due — it is anchored forward, not decades overdue", () => {
+    // Anchoring an unseen job at the epoch would make every newly-authored schedule fire the
+    // instant it was saved. A daily 02:00 job written at 10:00 should first run at 02:00 tomorrow.
+    expect(duePersonaSchedules([carried()], {}, NOW)).toEqual([]);
+  });
+
+  it("keys each schedule by persona AND name, so two agents carrying the same job are independent", () => {
+    const both = [carried({ personaId: "p1" }), carried({ personaId: "p2" })];
+    const onlyP1 = { [scheduleKey("p1", "gc")]: NOW - 120_000 };
+    expect(duePersonaSchedules(both, onlyP1, NOW).map((c) => c.personaId)).toEqual(["p1"]);
+  });
+
+  it("drops a schedule whose spec cannot produce a next run", () => {
+    const bad = carried({ when: { kind: "simple", every: "fortnight" } as never });
+    expect(duePersonaSchedules([bad], { [scheduleKey("p1", "gc")]: 0 }, NOW)).toEqual([]);
   });
 });
-
-describe("dueAutomations", () => {
-  it("returns only armed automations whose nextRunAt has passed", () => {
-    const now = 1_000_000;
-    const list = [
-      mkAuto({ id: "due", armed: true, nextRunAt: now - 1 }),
-      mkAuto({ id: "future", armed: true, nextRunAt: now + 1000 }),
-      mkAuto({ id: "disarmed", armed: false, nextRunAt: now - 1 }),
-      mkAuto({ id: "unscheduled", armed: true, nextRunAt: null }),
-    ];
-    expect(dueAutomations(list, now).map(a => a.id)).toEqual(["due"]);
-  });
-});
-
-describe("appendRun", () => {
-  it("prepends newest and caps at MAX_RUNS", () => {
-    let runs: AutomationRun[] = [];
-    for (let i = 0; i < MAX_RUNS + 5; i++) runs = appendRun(runs, { at: i, status: "ok", note: String(i) });
-    expect(runs.length).toBe(MAX_RUNS);
-    expect(runs[0].note).toBe(String(MAX_RUNS + 4)); // newest first
-  });
-});
-
 describe("suggestionToAutomation (#174)", () => {
   it("a scheduled suggestion becomes an armed cron automation targeting the tab", () => {
     const a = suggestionToAutomation(

@@ -144,7 +144,7 @@ describe("registry wiring", () => {
     expect(eventToChord(ev({ code: "F2" }))).toBe("F2");
     expect(matchesBinding(ev({ code: "F2" }), {}, "screen-projects")).toBe(true);
     // Conflict detection spans the whole rebindable set, screen + console actions included.
-    expect(findConflict({}, "screen-automation", "F2")).toBe("screen-projects");
+    expect(findConflict({}, "screen-logs", "F2")).toBe("screen-projects");
   });
 
   it("chordToCaps labels the zoom symbol codes", () => {

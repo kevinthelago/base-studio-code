@@ -87,13 +87,32 @@ describe("useTunnelAutomations (#937)", () => {
     expect(useAppStore.getState().automations[0].armed).toBe(false);
   });
 
-  it("runs an automation now, dispatching into its target pane", async () => {
+  it("runs a PERSONA-CARRIED schedule now, into the pane running its carrier", async () => {
+    // The mobile id is `<persona>:<schedule>` — the same key the automation log uses, so a
+    // phone-triggered run and a scheduled fire are indistinguishable in the history.
+    useAppStore.setState({
+      personas: [{ id: "p1", name: "P", blurb: "", role: "worker", startPrompt: "", skills: [],
+                   schedules: [{ name: "gc", when: { kind: "cron", expr: "0 2 * * *" }, command: "echo hi" }] }] as never,
+      panePersonas: { t0p0: "p1" },
+      disabledPanes: {},
+    });
     renderHook(() => useTunnelAutomations());
     await waitFor(() => expect(handlers["tunnel://automation-run-now"]).toBeTypeOf("function"));
 
-    handlers["tunnel://automation-run-now"]({ payload: { id: "a1" } });
+    handlers["tunnel://automation-run-now"]({ payload: { id: "p1:gc" } });
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("pty_write", { paneId: "t0p0", data: "echo hi\r" }));
-    expect(useAppStore.getState().automations[0].runs[0]?.status).toBe("ok");
+    // The run is recorded to the LOG now, not onto a record.
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("append_automation_run",
+      expect.objectContaining({ schedule: "p1:gc", status: "ok" })));
+  });
+
+  it("warns rather than throwing when the phone names a schedule nobody carries", async () => {
+    useAppStore.setState({ personas: [] as never });
+    renderHook(() => useTunnelAutomations());
+    await waitFor(() => expect(handlers["tunnel://automation-run-now"]).toBeTypeOf("function"));
+    handlers["tunnel://automation-run-now"]({ payload: { id: "gone:missing" } });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(invoke).not.toHaveBeenCalledWith("pty_write", expect.anything());
   });
 });

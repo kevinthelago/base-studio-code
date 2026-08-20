@@ -47,6 +47,43 @@ export interface PersonaFloor {
   allow?: string[];
 }
 
+/** One hook a persona carries. The wire shape `toSessionPayloads` already emits, minus the store
+ *  bookkeeping (`id`/`enabled`/`projects`) that only existed to scope a SHARED hook to a project.
+ *  Carried means enabled; not carried means absent. */
+export interface PersonaHook {
+  /** Display name. It is not decoration: `toHookPayload` wraps the command as
+   *  `bsc-hook <name> <command>`, and that wrapper is what records the hook's outcome to the hook
+   *  log. A nameless hook still runs; it is just harder to read in the telemetry. */
+  name?: string;
+  /** `PreToolUse` · `PostToolUse` · `Stop` · … */
+  event: string;
+  /** Optional tool matcher (regex). Empty/absent = every tool. */
+  matcher?: string;
+  /** The shell command to run. */
+  command: string;
+}
+
+/** One scheduled job a persona carries, inline — the config only.
+ *
+ *  NO TARGET FIELD, and that is the change. An automation used to name a tab by NAME and a pane by
+ *  INDEX, and the old model conceded in its own comment that the index does not survive reordering.
+ *  The carrier IS the target now: the job fires into the pane running this persona, so moving a pane
+ *  cannot silently point a schedule at someone else's terminal.
+ *
+ *  NO `runs` FIELD either. Run history moved to the `automation` log stream, because a persona is
+ *  configuration and writing a run record into it on every fire would rewrite the agent's identity
+ *  file on a timer. */
+export interface PersonaSchedule {
+  /** Display name — what the run log records, so a fire is traceable to the job that caused it. */
+  name: string;
+  /** When it fires. `{ kind: "simple", every, at }` or `{ kind: "cron", expr }`. */
+  when: unknown;
+  /** The command written into the carrier's pane. */
+  command: string;
+  /** Disarmed jobs are kept but never fire — the pause a user wants without deleting the job. */
+  armed?: boolean;
+}
+
 export interface Persona {
   /** Stable, opaque id (slug for built-ins, minted for user personas). */
   id: string;
@@ -85,6 +122,23 @@ export interface Persona {
    *  The BUNDLED servers are not listed here — they ship with the app and reach every session
    *  ambiently, the same way packaged personas are seeded rather than authored. */
   mcp?: string[];
+  /** The agent's own PreToolUse/PostToolUse hooks, INLINE.
+   *
+   *  Inline rather than ids into a store — which is deliberately unlike `mcp` above. An MCP server
+   *  is a shared external thing many agents point at, so ids and a store earn their keep. A hook is
+   *  one agent's own behaviour: a small command, cheap to repeat, and not worth an id indirection,
+   *  a second store and a second CLI. Inline also means the command surface ALREADY EXISTS —
+   *  `bsc persona set` writes the whole persona, so authoring a hook is authoring a persona.
+   *
+   *  These are the USER hooks only. The app's own security floor (bsc-deny / bsc-confine /
+   *  bsc-scope / bsc-audit …) is separate machinery, always applied, and untouched by this.
+   *
+   *  Replaced `Hook.projects[]` scoping and the per-pane `paneHooks` map — the same three-into-one
+   *  collapse the MCP move made. */
+  hooks?: PersonaHook[];
+  /** The agent's own scheduled jobs, INLINE — same reasoning as `hooks` above: a schedule is one
+   *  agent's own job, and `bsc persona set` is already the surface that authors it. */
+  schedules?: PersonaSchedule[];
   /** The position's charter — what it is accountable for (#2193). One facet of the org abstraction,
    *  orthogonal to skills (capability) and role (permission); optional, so pre-#2193 personas are
    *  unaffected. Feeds the generated start prompt + the Org designer's position inspector. */

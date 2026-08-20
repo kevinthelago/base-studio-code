@@ -15,7 +15,6 @@ function fakeStore() {
     setActivePageTab: vi.fn(),
     setProjectsPageMode: vi.fn(),
     setGithubTab: vi.fn(),
-    setAutomationsTab: vi.fn(),
     setSettingsSection: vi.fn(),
     setGlanceDrill: vi.fn(),
   };
@@ -39,14 +38,11 @@ describe("applyNavigation — per-workspace page dispatch (#3602)", () => {
     expect(s.setActivePageTab).not.toHaveBeenCalled();
   });
 
-  it("routes github → setGithubTab, automation → setAutomationsTab, settings → setSettingsSection", () => {
+  it("routes github → setGithubTab, settings → setSettingsSection", () => {
     const gh = fakeStore();
     applyNavigation(gh as unknown as AppStore, { workspace: "github", page: "issues" });
     expect(gh.setGithubTab).toHaveBeenCalledWith("issues");
 
-    const au = fakeStore();
-    applyNavigation(au as unknown as AppStore, { workspace: "automation", page: "history" });
-    expect(au.setAutomationsTab).toHaveBeenCalledWith("history");
 
     const se = fakeStore();
     applyNavigation(se as unknown as AppStore, { workspace: "settings", page: "github" });

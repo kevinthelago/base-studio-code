@@ -45,6 +45,13 @@ pub const LOG_STREAMS: &[LogStream] = &[
     // Worker self-close (#1379): a finished worker's `bsc-done` appends one `ts·pane` line; the
     // frontend reaps the pane.
     LogStream { key: "done", env_var: "BSC_DONE_LOG", filename: "done.log", reader_stream: true },
+    // Schedule fires (hooks-and-schedules-belong-to-the-persona): one
+    // `ts·pane·schedule·status·note` line per dispatch. Unlike every stream above it this one is
+    // written by the APP, not by a shell helper — a schedule fires from the desktop scheduler, which
+    // has no session shell to run an emitter in. The run history used to live on the automation
+    // RECORD; it moved here so the config a persona carries stays config and does not churn on
+    // every fire.
+    LogStream { key: "automation", env_var: "BSC_AUTOMATION_LOG", filename: "automations.log", reader_stream: true },
     // Coordination (#199): the coord emitters (`bsc-landed`/`bsc-ask`/`bsc-answer`/…) append
     // structured `ts·pane·kind·…` events the Coordination inbox reads.
     LogStream { key: "coord", env_var: "BSC_COORD_LOG", filename: "coord.log", reader_stream: true },
@@ -102,6 +109,7 @@ mod tests {
                 ("hook", "hooks.log"),
                 ("activity", "activity.log"),
                 ("done", "done.log"),
+                ("automation", "automations.log"),
                 ("coord", "coord.log"),
                 ("perm", "perm.log"),
                 ("ui", "ui-activity.log"),

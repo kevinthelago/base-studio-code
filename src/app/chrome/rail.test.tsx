@@ -10,7 +10,9 @@ const FULL = [
   // (skills-move-to-teams-and-pair-with-personas).
   // "MCP" was here until mcp-moves-to-teams — an MCP server is agent capability, so it is READ on
   // the Teams page beside the agents that get it rather than owning a rail destination.
-  "Console", "Glance", "Planner", "Automations",
+  // "Automations" went the same way (hooks-and-schedules-belong-to-the-persona): its config is
+  // carried by the persona and read on Teams, its history is a Logs tab.
+  "Console", "Glance", "Planner",
   "GitHub", "Logs", "Settings",
 ];
 const NO_CONSOLE = FULL.filter((l) => l !== "Console");

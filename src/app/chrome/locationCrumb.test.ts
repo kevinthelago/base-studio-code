@@ -33,13 +33,10 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
       .toBe("Planner — Projects — Planning");
   });
 
-  it("Automations reads the LIVE page (activePageTab), not the stale automationsTab field", () => {
-    expect(crumb({ activeWorkspace: "automation", activePageTab: { automations: "analytics" } }))
-      .toBe("Automations — Hook Analytics");
-    expect(crumb({ activeWorkspace: "automation", activePageTab: { automations: "hooks" } }))
-      .toBe("Automations — Hooks");
-    expect(crumb({ activeWorkspace: "automation" })).toBe("Automations — Schedules"); // default first tab
-  });
+  // The Automations case was here. That workspace is retired
+  // (hooks-and-schedules-belong-to-the-persona): its config is carried by the persona and read on
+  // Teams, and its history is the Logs -> Automations tab. A persisted `activeWorkspace:
+  // "automation"` redirects, which `retiredWorkspaces.test.ts` covers.
 
   it("MCP and Security reflect their tabs", () => {
     // Skills was here too, until it stopped being a rail Workspace and moved onto the Teams page

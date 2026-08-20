@@ -14,7 +14,7 @@ describe("screen registry (#nav-pass)", () => {
     // and WORKSPACES must match it at runtime — so the rail nav + titlebar always have a name.
     const all: Record<Workspace, true> = {
       console: true, glance: true, projects: true, github: true, logs: true,
-      automation: true, settings: true,
+      settings: true,
     };
     expect(new Set(WORKSPACES.map((s) => s.key))).toEqual(new Set(Object.keys(all)));
   });
@@ -22,7 +22,6 @@ describe("screen registry (#nav-pass)", () => {
   it("workspaceLabel returns the canonical name, falling back to the raw key when unknown", () => {
     expect(workspaceLabel("console")).toBe("Console");
     expect(workspaceLabel("logs")).toBe("Logs");              // the Security/Agents screen became Logs
-    expect(workspaceLabel("automation")).toBe("Automations");
     expect(workspaceLabel("nonexistent" as Workspace)).toBe("nonexistent");
   });
 });

@@ -1,22 +1,34 @@
 import { describe, it, expect } from "vitest";
-import { resolveHooks, toHookPayload, hookFromCatalog, blankHook, SYSTEM_HOOKS, type Hook } from "@/features/mcp/lib/hooks";
+import { resolvePersonaHooks, toHookPayload, hookFromCatalog, blankHook, SYSTEM_HOOKS, type Hook, type PersonaHook } from "@/features/mcp/lib/hooks";
 
 const mk = (over: Partial<Hook>): Hook => ({
   id: "h", name: over.id ?? "h", enabled: true, projects: [], event: "PostToolUse", command: "fmt", ...over,
 });
 
-describe("resolveHooks", () => {
-  it("includes enabled globals + this-project matches; drops disabled and other projects", () => {
-    const all = [
-      mk({ id: "g", projects: [] }),
-      mk({ id: "p", projects: ["P1"] }),
-      mk({ id: "off", projects: [], enabled: false }),
-    ];
-    expect(resolveHooks(all, "P1").map(e => e.id)).toEqual(["g", "p"]);
-    expect(resolveHooks(all, "").map(e => e.id)).toEqual(["g"]);
-  });
+/** A hook as a PERSONA carries it — no id, no enabled flag, no projects: carrying IS enabling. */
+const ph = (over: Partial<PersonaHook> = {}): PersonaHook => ({
+  name: "h", event: "PostToolUse", command: "fmt", ...over,
 });
 
+describe("resolvePersonaHooks", () => {
+  it("returns what the persona carries, verbatim", () => {
+    // No filtering by project or by an enabled flag — both are gone. A carried hook runs.
+    const carried = [ph({ name: "a" }), ph({ name: "b", event: "PreToolUse" })];
+    expect(resolvePersonaHooks(carried).map((h) => h.name)).toEqual(["a", "b"]);
+  });
+
+  it("treats a persona carrying nothing — or the field being absent — as no hooks", () => {
+    // `hooks` is optional on the persona; one authored before the field existed must not throw.
+    expect(resolvePersonaHooks([])).toEqual([]);
+    expect(resolvePersonaHooks()).toEqual([]);
+  });
+
+  it("drops a hook that could never run rather than emitting a broken settings entry", () => {
+    // `toHookPayload` would return null for these anyway, but dropping them here keeps the count
+    // the UI shows honest: a hook with no command is not a hook this session has.
+    expect(resolvePersonaHooks([ph({ event: "" }), ph({ command: "" }), ph()])).toHaveLength(1);
+  });
+});
 describe("toHookPayload", () => {
   it("wraps the command with bsc-hook and carries event + matcher", () => {
     expect(toHookPayload(mk({ name: "fmt-hook", event: "PostToolUse", matcher: "Write", command: "fmt" })))

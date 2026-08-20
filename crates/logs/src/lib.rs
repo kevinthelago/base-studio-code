@@ -86,6 +86,9 @@ pub fn canonical_stream(name: &str) -> Option<&'static str> {
         "hook" | "hooks" => Some("hook"),
         "activity" => Some("activity"),
         "done" => Some("done"),
+        // Schedule fires (hooks-and-schedules-belong-to-the-persona): written by the DESKTOP
+        // scheduler rather than a session shell, since a schedule has no shell to emit from.
+        "automation" | "automations" | "schedule" | "schedules" => Some("automation"),
         "coord" => Some("coord"),
         "perm" | "perms" | "deny" | "denials" => Some("perm"),
         // UI-design activity (#2525): `bsc logs tail ui` — the designer session's `ui-touch` stream.
