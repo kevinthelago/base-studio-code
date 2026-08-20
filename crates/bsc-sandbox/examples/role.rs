@@ -48,7 +48,11 @@ fn main() {
     }
 
     let extra: Vec<&str> = bins.iter().map(|s| s.as_str()).collect();
-    match for_role(role, format!("bsc-{}", head[0]), &paths, &extra, Limits::default(), command) {
+    // The scope name MUST be unique per launch: systemd refuses a --unit that is still loaded
+    // with "Unit <name>.scope was already loaded or has a fragment file", and back-to-back runs
+    // of the same role collide. The pid is enough here; a real caller should use its pane id.
+    let unit = format!("bsc-{}-{}", head[0], std::process::id());
+    match for_role(role, unit, &paths, &extra, Limits::default(), command) {
         Ok(p) => {
             if let Some(c) = &p.caveat {
                 eprintln!("CAVEAT: {c}");

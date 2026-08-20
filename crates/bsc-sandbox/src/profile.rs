@@ -296,6 +296,56 @@ mod tests {
         assert!(!a.iter().any(|x| x == "/usr/bin/node"), "nothing unasked-for");
     }
 
+
+    /// The binaries the dangerous floor (`bsc-util/src/dangerous.rs`) exists to police.
+    /// Splitting them here is the whole finding of the slice-3 measurement.
+    const STRUCTURALLY_ABSENT: &[&str] =
+        &["sudo", "dd", "mkfs.ext4", "mkfs", "shutdown", "reboot", "curl", "wget"];
+
+    #[test]
+    fn the_dangerous_floor_binaries_stay_out_of_every_profile() {
+        // MEASURED, not assumed: of the 24 entries in the dangerous floor, 8 become structurally
+        // impossible because their binary is simply not bound. This test is what stops a future
+        // widening of MINIMAL_BINS from quietly re-admitting one.
+        for r in [Role::Planner, Role::Worker, Role::Director, Role::Triage, Role::Designer] {
+            let a = build(r).spec.render().unwrap();
+            for b in STRUCTURALLY_ABSENT {
+                assert!(
+                    !a.iter().any(|x| x == &format!("/usr/bin/{b}")),
+                    "{r:?} must not reach {b}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_hook_is_still_needed_for_exactly_what_we_grant_on_purpose() {
+        // The other 12 entries are git-push-force and the gh auth/secret/workflow verbs. Those
+        // binaries are capability we hand over deliberately, and the danger is a FLAG — which a
+        // mount namespace cannot see. So this asserts the boundary rather than pretending the
+        // namespace closed it.
+        let w = build(Role::Worker).spec.render().unwrap();
+        assert!(w.iter().any(|x| x == "/usr/bin/git"), "a worker genuinely needs git");
+        let d = build(Role::Director).spec.render().unwrap();
+        assert!(d.iter().any(|x| x == "/usr/bin/gh"), "a director genuinely needs gh");
+        // Which is precisely why bsc-deny must NOT be demoted to telemetry for these roles.
+    }
+
+    #[test]
+    fn only_the_worktree_and_the_outbox_are_writable() {
+        // The rm blast radius. Measured in a real namespace: rm on a read-only store fails with
+        // "Read-only file system", the host projection survives, and `rm -rf /` exits 1 — so the
+        // damage an `rm -rf /` can do is bounded to the agent's own (recoverable) worktree.
+        let a = build(Role::Worker).spec.render().unwrap();
+        let writable: Vec<&String> = a
+            .iter()
+            .enumerate()
+            .filter(|(i, x)| *x == "--bind" && i + 2 < a.len())
+            .map(|(i, _)| &a[i + 2])
+            .collect();
+        assert_eq!(writable, vec!["/repo", "/coord/out"]);
+    }
+
     #[test]
     fn a_bad_spec_is_refused_at_the_join_not_at_launch() {
         // Rendering here means a caller learns about a broken profile when it builds one.

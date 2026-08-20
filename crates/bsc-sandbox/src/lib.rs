@@ -86,6 +86,11 @@ pub const MINIMAL_BINS: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxSpec {
     /// systemd scope name. Must be unit-safe: `[A-Za-z0-9_-]+`.
+    ///
+    /// **It must also be UNIQUE PER LAUNCH.** `systemd-run --unit=X` refuses a name that is still
+    /// loaded — `Unit X.scope was already loaded or has a fragment file` — so back-to-back runs
+    /// under one fixed name collide and the second simply does not start. A caller should key it
+    /// on something already unique, such as the pane id.
     pub unit: String,
     pub limits: Limits,
     /// The base image. Defaults to [`Usr::Curated`] with [`MINIMAL_BINS`] — deny by default, with
