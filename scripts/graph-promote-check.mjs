@@ -22,56 +22,42 @@
  * the compiler, and the underlying verb names the ids.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
 
 const ROOT = join(new URL(".", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"), "..");
-const EXE = process.platform === "win32" ? "bsc.exe" : "bsc";
-
-/** Where a built or staged `bsc` may live, most-local first. */
-export function candidatePaths(root, home) {
-  return [
-    join(root, "target", "debug", EXE),
-    join(root, "target", "release", EXE),
-    join(home, ".base-studio-code", "bin", EXE),
-  ];
-}
-
-/**
- * The first candidate that exists AND is non-empty.
- *
- * The size check is not defensive padding: a 0-byte `bsc.exe` was found in a worktree during this very
- * slice — a broken/interrupted link leaves the file in place — and every command run against it exited
- * 0 with no output, which reads exactly like "the check passed". A gate must not be satisfied by that.
- */
-export function resolveBsc(paths, statSize) {
-  for (const p of paths) {
-    const size = statSize(p);
-    if (size > 0) return p;
-  }
-  return null;
-}
 
 if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
-  const { statSync } = await import("node:fs");
-  const size = (p) => {
+  // Resolution is SHARED with `bsc-doctor` (scripts/lib/bscBinary.mjs) rather than duplicated: a second
+  // copy of "is this binary usable" is exactly how one of them ends up not knowing about the zero-byte
+  // case. `pickUsable` demands a real handshake, not mere existence.
+  const statSize = (p) => {
     try {
-      return existsSync(p) ? statSync(p).size : 0;
+      return statSync(p).size;
     } catch {
-      return 0;
+      return null;
     }
   };
-  const bsc = resolveBsc(candidatePaths(ROOT, homedir()), size);
-  if (!bsc) {
+  const run = (p) => {
+    try {
+      return { status: 0, stdout: execFileSync(p, ["version"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] }) };
+    } catch (err) {
+      return { status: err.status ?? 1, stdout: String(err.stdout ?? "") };
+    }
+  };
+
+  const usable = pickUsable(candidatePaths(ROOT, homedir(), join), { statSize, run });
+  if (!usable) {
     process.stdout.write(
-      "graph: no usable `bsc` binary (target/{debug,release} or ~/.base-studio-code/bin) — " +
-        "repo-store drift NOT checked. Build one with `cargo build -p bsc --bin bsc`.\n",
+      "graph: no usable `bsc` binary — repo-store drift NOT checked. " +
+        "Run `npm run bsc:doctor` to see why, then `cargo build -p bsc --bin bsc`.\n",
     );
     process.exit(0);
   }
   try {
-    const out = execFileSync(bsc, ["graph", "promote", "--check", "--root", ROOT], { encoding: "utf8" });
+    const out = execFileSync(usable.path, ["graph", "promote", "--check", "--root", ROOT], { encoding: "utf8" });
     process.stdout.write(out.trim() ? `${out.trim()}\n` : "graph: repo store is current\n");
     process.exit(0);
   } catch (err) {
