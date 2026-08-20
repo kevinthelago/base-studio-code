@@ -615,6 +615,7 @@
   "@data/components/app/features/glance/glancegraphhost.json",
   "@data/components/app/features/glance/glancepage.json",
   "@data/components/app/features/logs/logs-activity.json",
+  "@data/components/app/features/logs/logs-skills.json",
   "@data/components/app/features/logs/logs-waiting.json",
   "@data/components/app/features/logs/logsgraphhost.json",
   "@data/components/app/features/logs/logspage.json",
