@@ -22,6 +22,8 @@
 //! The render is pure and platform-independent **on purpose**: it means these tests run on the
 //! Windows host today, before the Linux migration lands, rather than being untestable until then.
 
+pub mod profile;
+
 use std::path::{Path, PathBuf};
 
 /// One entry in the agent's filesystem view.
