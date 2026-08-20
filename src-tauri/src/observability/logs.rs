@@ -64,6 +64,7 @@ fn label_for(key: &str) -> &'static str {
         "hook" => "Hook fires",
         "activity" => "Turn activity",
         "done" => "Worker self-close",
+        "automation" => "Schedule fires",
         "coord" => "Coordination events",
         "perm" => "Permission denials",
         "tokens" => "Token & cost accounting",
@@ -375,6 +376,45 @@ pub(crate) fn append_coord_woke(session: String) -> Result<(), String> {
     let ts = time::OffsetDateTime::now_utc().format(&fmt).unwrap_or_default();
     // TSV shape: ts \t session \t event \t ref \t detail \n — `woke` has no ref/detail.
     let line = format!("{ts}\t{session}\twoke\t\t\n");
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .str_err()?;
+    f.write_all(line.as_bytes()).str_err()
+}
+
+/// Append one schedule-fire line to the automation log.
+///
+/// A schedule fires from the DESKTOP scheduler, which has no session shell — so unlike every other
+/// stream this one cannot be written by a `bsc-*` shell helper and needs a command. Same TSV shape
+/// and ISO-8601 UTC stamp the shell emitters use, so `bsc logs` reads it with no special case.
+///
+/// The run history used to live on the automation RECORD. It moved here so the schedule a persona
+/// carries stays configuration and does not rewrite the persona on every fire.
+#[tauri::command]
+pub(crate) fn append_automation_run(
+    pane: String,
+    schedule: String,
+    status: String,
+    note: String,
+) -> Result<(), String> {
+    use std::io::Write;
+    let path = bsc_base_dir().join("automations.log");
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let fmt = time::macros::format_description!(
+        "[year]-[month]-[day]T[hour]:[minute]:[second]Z"
+    );
+    let ts = time::OffsetDateTime::now_utc().format(&fmt).unwrap_or_default();
+    // A TAB in any field would forge a column, so they are stripped rather than escaped — the note
+    // is prose for a human and a mangled note is better than a mis-parsed row.
+    let clean = |v: String| v.replace(['\t', '\n', '\r'], " ");
+    let line = format!(
+        "{ts}\t{}\t{}\t{}\t{}\n",
+        clean(pane), clean(schedule), clean(status), clean(note)
+    );
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

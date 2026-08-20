@@ -383,6 +383,7 @@ pub fn run() {
             logs::logs_waiting,
             logs::logs_sessions,
             logs::logs_costs,
+            logs::append_automation_run,
             logs::clear_log,
             logs::export_log,
             logs::log_get_config,
