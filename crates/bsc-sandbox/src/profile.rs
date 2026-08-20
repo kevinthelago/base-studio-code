@@ -27,10 +27,11 @@
 //! to remove. So a sandboxed session reads stores as the **read-only projections** instead
 //! (`/plan`, `/graph`, `/ui`, `/coord` — see `bsc-storefs`), and does not get `bsc`.
 //!
-//! [`Role::Designer`] is the exception, and it is a **known, deliberate hole**: its entire surface
-//! is `bsc ui`, which WRITES. A read-only projection cannot express that, so the designer profile
-//! binds `bsc` and carries ambient authority until a write surface exists for the UI store the way
-//! `/coord/out` does for coordination. It is marked, not hidden — see [`Profile::caveat`].
+//! `Role::Designer` used to be the exception — its whole surface is `bsc ui`, which WRITES, and a
+//! read-only projection could not express a write, so it bound `bsc` and carried ambient
+//! authority. **That hole is closed.** The UI store now has a write surface at `/ui/out`
+//! (`bsc_storefs::ui`), exactly as `/coord/out` is one for coordination. No role binds `bsc`, and
+//! [`Profile::caveat`] is `None` for every role.
 
 use crate::{Limits, Mount, SandboxSpec, SpecError, Usr, MINIMAL_BINS};
 use std::path::PathBuf;
@@ -94,11 +95,13 @@ pub struct SessionPaths {
     /// `(guest name, host path)` — each mounted read-only at `/<name>`. Typically the
     /// `bsc-storefs` projections: `plan`, `graph`, `ui`, `coord`.
     pub stores: Vec<(String, PathBuf)>,
-    /// Writable at `/coord/out`, when the session may emit coordination events.
+    /// `(guest path, host path)` — each mounted READ-WRITE, AFTER the read-only stores, so it
+    /// lands as a writable hole in an otherwise read-only projection. Typically `/coord/out`
+    /// (emit coordination) and `/ui/out` (author components).
     ///
-    /// The mountpoint must already exist inside the `coord` projection — bwrap cannot `mkdir`
-    /// inside a read-only bind, and fails with `Can't mkdir /coord/out: Read-only file system`.
-    pub outbox: Option<PathBuf>,
+    /// Each mountpoint must ALREADY EXIST inside its projection: bwrap cannot `mkdir` inside a
+    /// read-only bind and fails with `Can't mkdir /coord/out: Read-only file system`.
+    pub outboxes: Vec<(String, PathBuf)>,
 }
 
 #[derive(Debug, Clone)]
@@ -118,10 +121,10 @@ fn bins_for(role: Role) -> Vec<&'static str> {
     if role.uses_github() {
         v.push("gh");
     }
-    if role == Role::Designer {
-        // The known hole. See the module docs.
-        v.push("bsc");
-    }
+    // `designer` used to get `bsc` here, and that was the one remaining hole: its whole surface is
+    // `bsc ui`, which WRITES, and a read-only projection could not express a write. It now authors
+    // through the `/ui/out` outbox (see `bsc_storefs::ui`), so it needs no binary and no database
+    // — and NO role carries ambient authority any more.
     v
 }
 
@@ -148,12 +151,9 @@ pub fn for_role(
             guest: PathBuf::from(format!("/{name}")),
         });
     }
-    // AFTER the store mounts, so the writable hole lands on top of the read-only coord bind.
-    if let Some(out) = &paths.outbox {
-        mounts.push(Mount::ReadWrite {
-            host: out.clone(),
-            guest: PathBuf::from("/coord/out"),
-        });
+    // AFTER the store mounts, so each writable hole lands on top of its read-only projection.
+    for (guest, host) in &paths.outboxes {
+        mounts.push(Mount::ReadWrite { host: host.clone(), guest: PathBuf::from(guest) });
     }
 
     let mut bins: Vec<String> = MINIMAL_BINS.iter().map(|s| s.to_string()).collect();
@@ -173,12 +173,10 @@ pub fn for_role(
     // Render once so a bad spec is refused HERE, at the join, rather than at launch.
     spec.render()?;
 
-    let caveat = (role == Role::Designer).then(|| {
-        "designer binds `bsc` and therefore carries ambient authority: its whole surface is \
-         `bsc ui`, which WRITES, and a read-only projection cannot express a write. Remove this \
-         once the UI store has a write surface the way /coord/out is one for coordination."
-            .to_string()
-    });
+    // No role carries a caveat today — the designer one closed when `/ui/out` gave the UI store a
+    // write surface. The mechanism stays because the NEXT hole should announce itself the same
+    // way rather than living only in a doc comment.
+    let caveat = None;
 
     Ok(Profile { spec, caveat })
 }
@@ -194,7 +192,10 @@ mod tests {
                 ("plan".into(), PathBuf::from("/home/k/proj/plan")),
                 ("coord".into(), PathBuf::from("/home/k/proj/coord")),
             ],
-            outbox: Some(PathBuf::from("/home/k/proj/outbox")),
+            outboxes: vec![
+                ("/coord/out".into(), PathBuf::from("/home/k/proj/coord-out")),
+                ("/ui/out".into(), PathBuf::from("/home/k/proj/ui-out")),
+            ],
         }
     }
 
@@ -224,25 +225,35 @@ mod tests {
     }
 
     #[test]
-    fn no_role_but_designer_gets_bsc() {
+    fn no_role_gets_bsc_including_designer() {
         // A sandboxed session reads stores as projections; binding bsc would mean binding a
         // writable database too.
-        for r in [Role::Planner, Role::Worker, Role::Director, Role::Triage, Role::Documentor] {
+        // INVERTED when the designer hole closed: it authors through /ui/out now.
+        for r in [Role::Planner, Role::Worker, Role::Director, Role::Triage, Role::Documentor, Role::Designer] {
             let a = build(r).spec.render().unwrap();
             assert!(!a.iter().any(|x| x == "/usr/bin/bsc"), "{r:?} must not get bsc");
         }
-        let d = build(Role::Designer).spec.render().unwrap();
-        assert!(d.iter().any(|x| x == "/usr/bin/bsc"));
     }
 
     #[test]
-    fn the_designer_hole_is_declared_and_no_other_role_carries_one() {
-        // An undocumented exception is the thing that rots. This one announces itself.
-        let c = build(Role::Designer).caveat.expect("designer must declare its caveat");
-        assert!(c.contains("ambient authority"));
-        assert!(c.contains("write"));
-        for r in [Role::Planner, Role::Worker, Role::Director] {
-            assert!(build(r).caveat.is_none(), "{r:?} should carry no caveat");
+    fn the_designer_authors_through_an_outbox_instead() {
+        // What replaced the bsc grant: a WRITABLE hole at /ui/out, bound after the read-only /ui.
+        let a = build(Role::Designer).spec.render().unwrap();
+        assert!(a.windows(3).any(|w| w[0] == "--bind" && w[2] == "/ui/out"), "/ui/out must be writable");
+        let hole = a.iter().position(|x| x == "/ui/out").unwrap();
+        let last_ro = a.iter().enumerate().filter(|(_, x)| *x == "--ro-bind").map(|(i, _)| i).max().unwrap();
+        assert!(hole > last_ro, "a writable hole bound before its projection is overmounted");
+    }
+
+    #[test]
+    fn no_role_carries_ambient_authority_any_more() {
+        // The designer caveat closed with /ui/out. The MECHANISM stays so the NEXT hole announces
+        // itself the same way rather than living only in a doc comment — but today there is none.
+        for r in [
+            Role::Planner, Role::Worker, Role::Director, Role::Triage, Role::Tester,
+            Role::Reviewer, Role::Issuer, Role::Juror, Role::Documentor, Role::Designer,
+        ] {
+            assert!(build(r).caveat.is_none(), "{r:?} must carry no caveat");
         }
     }
 
@@ -272,7 +283,7 @@ mod tests {
         assert!(ro.contains(&&"/plan".to_string()));
         assert!(ro.contains(&&"/coord".to_string()));
 
-        // The writable hole must come AFTER the read-only coord bind, or it is overmounted.
+        // A writable hole must come AFTER its read-only projection, or it is overmounted.
         let coord = a.iter().position(|x| x == "/coord").unwrap();
         let out = a.iter().position(|x| x == "/coord/out").unwrap();
         assert!(out > coord, "the outbox must be bound after the coord projection");
@@ -332,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn only_the_worktree_and_the_outbox_are_writable() {
+    fn only_the_worktree_and_its_outboxes_are_writable() {
         // The rm blast radius. Measured in a real namespace: rm on a read-only store fails with
         // "Read-only file system", the host projection survives, and `rm -rf /` exits 1 — so the
         // damage an `rm -rf /` can do is bounded to the agent's own (recoverable) worktree.
@@ -343,7 +354,9 @@ mod tests {
             .filter(|(i, x)| *x == "--bind" && i + 2 < a.len())
             .map(|(i, _)| &a[i + 2])
             .collect();
-        assert_eq!(writable, vec!["/repo", "/coord/out"]);
+        // The worktree plus exactly the outboxes the caller asked for — nothing else. Adding a
+        // writable path anywhere in the stack has to change this line, which is the point.
+        assert_eq!(writable, vec!["/repo", "/coord/out", "/ui/out"]);
     }
 
     #[test]
