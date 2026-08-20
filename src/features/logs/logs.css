@@ -2,11 +2,20 @@
    under .logs-page so it never collides with the rest of the app. Global .card/.btn/.tag/.input/
    .field/.hint come from tokens.css.
 
-   Loaded by the ENTRY glob (`@/**/*.css` in main.tsx), not by a module import: the page is a graph
-   RECORD and the runtime loader cannot resolve a CSS side-effect import. Most of what follows styled
-   the Profiles / Assignments / Flow tabs, which are deleted; it is left in place rather than pruned by
-   eye, because a CSS rule nothing matches is invisible either way and guessing wrong unstyles a live
-   table. Prune it when the remaining Logs tabs land and the real selector set is known. */
+   Loaded by the recursive CSS ENTRY GLOB in main.tsx (the import.meta.glob there), not by a module
+   import: the page is a graph RECORD and the runtime loader cannot resolve a CSS side-effect
+   import. Most of what follows styled the Profiles / Assignments / Flow tabs, which are deleted; it
+   is left in place rather than pruned by eye, because a CSS rule nothing matches is invisible
+   either way and guessing wrong unstyles a live table. Prune it when the remaining Logs tabs land
+   and the real selector set is known.
+
+   DO NOT write that glob out literally in a comment. A recursive glob contains a star followed by
+   a slash, which is exactly the sequence that ENDS a CSS comment - so the comment terminates
+   mid-sentence and every following line is handed to the parser as CSS. Not hypothetical: this
+   file broke `npm run build` on EVERY platform, and it stayed invisible because `vite build` is
+   not in the default gate. src/app/runtime/cssParses.test.ts now catches the whole class.
+
+   (The first attempt at writing this very warning made the same mistake inside the warning.) */
 
 .logs-page { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 
