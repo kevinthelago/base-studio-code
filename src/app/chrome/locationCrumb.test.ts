@@ -50,6 +50,7 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
     expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "skills" } })).toBe("Logs — Skills");
     expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "sessions" } })).toBe("Logs — Sessions");
     expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "cost" } })).toBe("Logs — Cost");
+    expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "streams" } })).toBe("Logs — Streams");
     // Every tab a Logs page ships needs an entry here. An unmapped id Title-Cases gracefully, so the
     // crumb is never BLANK -- but the fallback is a safety net, not the label, and it silently starts
     // deciding the name the moment a curated one is forgotten.
