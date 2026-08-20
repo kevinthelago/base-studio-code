@@ -63,7 +63,7 @@ export function gateCommands(plan, base) {
 /**
  * The GRAPH step — the check the gate has never had.
  *
- * Two commands, and the split is deliberate:
+ * Three commands, and each answers a question the others cannot:
  *
  *  * the SWEEP compiles every Tier-R Rust node from its own `composes` closure. A node that stops
  *    compiling is a red gate, which is the whole point: `unquote.rs` shipped a unicode escape inside a
@@ -71,6 +71,11 @@ export function gateCommands(plan, base) {
  *  * `promote --check` catches a record edited in the runtime store but never promoted into the
  *    committed one the build reads. It is a NO-OP on any machine that did not author the record, which
  *    is what lets it run in CI and in every worktree rather than only on one desk.
+ *  * the CROSS-KIT check runs both language kits against one shared vector. Compiling proves a node is
+ *    valid Rust; it says nothing about whether `quick-sort.rs` and `quick-sort.ts` compute the same
+ *    thing. They are joined only by a NAME, which is the weakest link this library has — and measured,
+ *    the two quicksorts really are different algorithms (functional vs in-place Lomuto), so only an
+ *    output-level contract can hold them together.
  *
  * The sweep is hash-cached on (materialized source × rustc version), so an unchanged run costs ~0.7s
  * against ~2.7s. It stamps only a GREEN result — caching a failure would hide it on the next run.
@@ -85,6 +90,7 @@ export function graphCommands() {
   return [
     { label: "graph (rust nodes compile)", cmd: "node", args: ["scripts/graph-rust-compile.mjs"] },
     { label: "graph (repo store is current)", cmd: "node", args: ["scripts/graph-promote-check.mjs"] },
+    { label: "graph (the kits agree)", cmd: "node", args: ["scripts/graph-cross-kit.mjs"] },
   ];
 }
 
@@ -178,7 +184,10 @@ export function isGraphSourcePath(file) {
   return file.startsWith("graph/")
     || file.startsWith("src-tauri/data/knowledge/")
     || file.startsWith("crates/bsc-graph/")
-    || file === "scripts/graph-rust-compile.mjs";
+    || file === "scripts/graph-rust-compile.mjs"
+    || file === "scripts/graph-cross-kit.mjs"
+    // The cross-kit CONTRACT: adding a case must re-run the agreement check that reads it.
+    || file === "src/features/algorithms/lib/crossKit.fixtures.json";
 }
 
 /**
