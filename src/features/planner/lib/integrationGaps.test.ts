@@ -9,7 +9,14 @@ import type { DeclaredSource } from "@/features/planner/lib/sourceConfig";
 // The GLOBAL built-ins — the ones every session gets. Count only the ENABLED ones: a disabled
 // built-in (the per-stream mock channel, #3146/#3777) is catalog-present but reaches a session
 // only by explicit stream assignment, so `resolveMcpServers` never auto-assigns it here.
-const BUILTINS = BUILTIN_MCP_SERVERS.filter((s) => s.enabled).length;
+// Every runnable BUNDLED server, enabled or not.
+//
+// It counted only the ENABLED ones while the planner read a project-scoped set. It now reads the
+// CATALOGUE (`resolveAllInstalledMcp`), because the question it asks is "what exists that could
+// close this gap" — and a disabled bundled server is assignable, which is the whole point of
+// channel-mock. So the count widened by one, and that is the planner seeing more, not a number
+// nudged to match output.
+const BUILTINS = BUILTIN_MCP_SERVERS.length;
 
 const mcp = (name: string, over: Partial<McpServer> = {}): McpServer => ({
   id: name, name, enabled: true, projects: [], transport: "stdio", command: "x", args: "", ...over,
@@ -85,7 +92,7 @@ describe("integrationGaps — summary", () => {
       projectId: "p1",
     });
     expect(g.items.filter((i) => i.ref === "Postgres")).toHaveLength(1); // deduped
-    expect(g.assigned).toBe(1 + BUILTINS); // Stripe + the always-on built-ins
+    expect(g.assigned).toBe(1 + BUILTINS); // Stripe + every bundled server
     expect(g.available).toBe(1); // Postgres
     expect(g.ready).toBe(false); // Postgres is available (unassigned)
     expect(g.total).toBe(g.assigned + g.available + g.missing);
@@ -93,7 +100,7 @@ describe("integrationGaps — summary", () => {
 
   it("an empty plan implies only the always-on built-ins and is ready", () => {
     const g = integrationGaps({ ...base, text: "" });
-    expect(g.total).toBe(BUILTINS); // just Research + Compliance, both assigned
+    expect(g.total).toBe(BUILTINS); // the bundled set, all treated as assigned
     expect(g.assigned).toBe(BUILTINS);
     expect(g.ready).toBe(true); // nothing available/missing
   });

@@ -1,11 +1,17 @@
 import { describe, it, expect } from "vitest";
 import catalogTemplates from "@data/mcp/catalog-templates.json";
-import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp, toMcpPayload, toBscAgentMcp, mcpFromCatalog, blankMcpServer, type McpServer, type McpServerPayload } from "@/features/mcp/lib/mcpServers";
+import { resolvePersonaMcp, resolveAllInstalledMcp, toMcpPayload, toBscAgentMcp, mcpFromCatalog, blankMcpServer, type McpServer, type McpServerPayload } from "@/features/mcp/lib/mcpServers";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 
 // Helper: a minimal enabled stdio server; `name` defaults to the id for readable asserts.
+//
+// `command` is part of the DEFAULT because a stdio server without one has no runnable config, and
+// `resolvePersonaMcp` skips those — a broken entry must never reach a session's .mcp.json. The old
+// `resolveMcpServers` did NOT check, so a fixture with no command still resolved; that was the
+// resolver being wrong, not the fixture being clever. Tests that WANT the incomplete case pass
+// `command: ""` explicitly.
 const mk = (over: Partial<McpServer>): McpServer => ({
-  id: "e", name: over.id ?? "e", enabled: true, projects: [], transport: "stdio", ...over,
+  id: "e", name: over.id ?? "e", enabled: true, projects: [], transport: "stdio", command: "x", ...over,
 });
 
 // Drop the bundled built-in servers (#1196 Research, #1005 Compliance, #3146 Channel-mock) so the
@@ -14,42 +20,80 @@ const BUILTIN_IDS = new Set(["builtin-research", "builtin-compliance", "builtin-
 const noBuiltins = (servers: McpServer[]) =>
   servers.map(e => e.id).filter(id => !BUILTIN_IDS.has(id));
 
-describe("resolveMcpServers", () => {
-  it("includes enabled globals + this-project matches; drops disabled and other projects", () => {
-    const all = [
-      mk({ id: "g", projects: [] }),
-      mk({ id: "p", projects: ["P1"] }),
-      mk({ id: "q", projects: ["P2"] }),
-      mk({ id: "off", projects: [], enabled: false }),
-    ];
-    expect(noBuiltins(resolveMcpServers(all, "P1"))).toEqual(["g", "p"]);
-    expect(noBuiltins(resolveMcpServers(all, "P2"))).toEqual(["g", "q"]);
-    // No project (ad-hoc console) → globals only.
-    expect(noBuiltins(resolveMcpServers(all, ""))).toEqual(["g"]);
+describe("resolvePersonaMcp — the ONE resolver", () => {
+  // It replaced resolveMcpServers (project scoping), resolveStreamMcp (per-stream) and a per-pane
+  // override. Everything below is a property of the ONE rule: ambient built-ins, plus what the
+  // persona carries.
+
+  it("gives a persona carrying nothing the ENABLED built-ins, and only those", () => {
+    // A new persona is useful immediately rather than starting with no tools at all.
+    const ids = resolvePersonaMcp([mk({ id: "a" })], []).map((e) => e.id);
+    expect(ids).toContain("builtin-research");
+    expect(ids).toContain("builtin-compliance");
+    // …and NOT the disabled built-in, which is exactly the channel-mock case.
+    expect(ids).not.toContain("builtin-channel-mock");
+    // …and not a stored server nobody carries.
+    expect(ids).not.toContain("a");
   });
 
-  it("always includes the built-in Research + Compliance servers (#1196 / #1005)", () => {
-    const names = resolveMcpServers([], "").map(e => e.name);
-    expect(names).toContain("Research");
-    expect(names).toContain("Compliance");
+  it("includes a stored server the persona carries", () => {
+    const all = [mk({ id: "a" }), mk({ id: "b" })];
+    expect(noBuiltins(resolvePersonaMcp(all, ["a"]))).toEqual(["a"]);
   });
 
-  it("tolerates a nameless entry from malformed persisted state (#2515): it shadows no built-in", () => {
-    const nameless = { id: "m1", enabled: true, projects: [], transport: "stdio" } as unknown as McpServer;
-    const resolved = resolveMcpServers([nameless], "");
-    // Only the ENABLED built-ins are global; the disabled channel-mock is absent from the base.
-    expect(resolved.map(e => e.id)).toEqual(["builtin-research", "builtin-compliance", "m1"]);
-    // The stream resolver's name matching must not throw on it either.
-    expect(() => resolveStreamMcp([nameless], ["Research"], "")).not.toThrow();
+  it("includes a CARRIED server even when it is disabled — carrying is intent", () => {
+    // The old model needed a special case for this (a disabled built-in assignable per-stream).
+    // Here it falls out of the rule: if a persona carries it, it gets it.
+    const all = [mk({ id: "off", enabled: false })];
+    expect(noBuiltins(resolvePersonaMcp(all, ["off"]))).toEqual(["off"]);
   });
 
-  it("does NOT make a disabled built-in CHANNEL global — every session would otherwise get send_email (#3146)", () => {
-    const names = resolveMcpServers([], "P1").map(e => e.name);
-    expect(names).toContain("Research"); // enabled built-in → global
-    expect(names).not.toContain("Channel (mock)"); // disabled built-in → NOT global (per-stream only)
+  it("lets a persona carry a DISABLED BUILT-IN — what replaced the channel-mock carve-out", () => {
+    // channel-mock must reach the marketer and nobody else. It is not in the server store at all,
+    // so the resolver has to look at the bundled set too.
+    const ids = resolvePersonaMcp([], ["builtin-channel-mock"]).map((e) => e.id);
+    expect(ids).toContain("builtin-channel-mock");
+    // …while a persona that does not carry it still does not get it.
+    expect(resolvePersonaMcp([], []).map((e) => e.id)).not.toContain("builtin-channel-mock");
+  });
+
+  it("ignores an id that resolves to nothing, rather than emitting a hole", () => {
+    // A dangling assignment survives `bsc mcp server remove`; it must not become a null entry in
+    // the generated .mcp.json.
+    expect(noBuiltins(resolvePersonaMcp([mk({ id: "a" })], ["gone", "a"]))).toEqual(["a"]);
+  });
+
+  it("skips a half-configured server even when carried", () => {
+    // stdio with no command has no runnable config; a broken line must never reach a session.
+    const all = [mk({ id: "broken", command: "" })];
+    expect(noBuiltins(resolvePersonaMcp(all, ["broken"]))).toEqual([]);
+  });
+
+  it("never emits the same server twice", () => {
+    // An enabled built-in that the persona ALSO carries is one server, not two — a duplicate would
+    // become a duplicate key in .mcp.json.
+    const ids = resolvePersonaMcp([], ["builtin-research"]).map((e) => e.id);
+    expect(ids.filter((i) => i === "builtin-research")).toHaveLength(1);
+  });
+
+  it("puts the ambient built-ins first, so the generated file stays diffable", () => {
+    const ids = resolvePersonaMcp([mk({ id: "z" })], ["z"]).map((e) => e.id);
+    expect(ids.indexOf("builtin-research")).toBeLessThan(ids.indexOf("z"));
+  });
+
+  it("treats an ABSENT carry list as carrying nothing", () => {
+    // `persona.mcp` is optional — a persona authored before this field exists must not throw.
+    expect(() => resolvePersonaMcp([mk({ id: "a" })])).not.toThrow();
+    expect(noBuiltins(resolvePersonaMcp([mk({ id: "a" })]))).toEqual([]);
+  });
+
+  it("ignores `projects` entirely — project scoping is GONE", () => {
+    // The field survives on the type until it is dropped; it must no longer influence anything.
+    const all = [mk({ id: "scoped", projects: ["some-project"] })];
+    expect(noBuiltins(resolvePersonaMcp(all, []))).toEqual([]);        // not global any more
+    expect(noBuiltins(resolvePersonaMcp(all, ["scoped"]))).toEqual(["scoped"]); // carried wins
   });
 });
-
 describe("resolveAllInstalledMcp", () => {
   it("returns every runnable server regardless of enabled / project scope (#1054)", () => {
     const all = [
@@ -57,7 +101,7 @@ describe("resolveAllInstalledMcp", () => {
       mk({ id: "off", command: "x", enabled: false }),               // disabled — still exposed to the planner
       mk({ id: "scoped", command: "x", projects: ["other"] }),       // scoped to a different project
       mk({ id: "http", transport: "http", url: "https://h/sse" }),   // complete http
-      mk({ id: "broken" }),                                          // stdio without a command → dropped
+      mk({ id: "broken", command: "" }),                             // stdio without a command → dropped
     ];
     expect(noBuiltins(resolveAllInstalledMcp(all))).toEqual(["g", "off", "scoped", "http"]);
   });
@@ -71,40 +115,6 @@ describe("resolveAllInstalledMcp", () => {
   it("exposes the disabled bundled channel to the planner/director so it can be assigned (#3146)", () => {
     const names = resolveAllInstalledMcp([]).map(e => e.name);
     expect(names).toContain("Channel (mock)"); // disabled, but installed + runnable → assignable
-  });
-});
-
-describe("resolveStreamMcp", () => {
-  const all = [
-    mk({ id: "g", name: "g", command: "x", projects: [] }),                                   // global enabled → baseline
-    mk({ id: "p", name: "p", command: "x", projects: ["P1"] }),                                // this-project → baseline
-    mk({ id: "off", name: "off", command: "x", enabled: false }),                             // disabled global → not baseline
-    mk({ id: "ex", name: "Extra", command: "x", enabled: false, projects: ["zzz"] }),         // assignable extra
-  ];
-  it("is the #876 baseline (enabled global + this-project) plus stream-assigned extras", () => {
-    // No assignment → just the baseline.
-    expect(noBuiltins(resolveStreamMcp(all, [], "P1"))).toEqual(["g", "p"]);
-    // Assign Extra by name (disabled + other-project) → included as an extra, baseline first.
-    expect(noBuiltins(resolveStreamMcp(all, ["extra"], "P1"))).toEqual(["g", "p", "ex"]);
-    // Assigning a server already in the baseline doesn't duplicate it.
-    expect(noBuiltins(resolveStreamMcp(all, ["g"], "P1"))).toEqual(["g", "p"]);
-  });
-
-  it("rides the worker baseline with the built-in Research + Compliance servers (#1196 / #1005)", () => {
-    const names = resolveStreamMcp(all, [], "P1").map(e => e.name);
-    expect(names).toContain("Research");
-    expect(names).toContain("Compliance");
-  });
-
-  it("assigns the bundled mock CHANNEL to only the stream that names it — the marketer, not the fleet (#3146)", () => {
-    // Unassigned: the channel is NOT on a stream (it's a disabled built-in, never global).
-    expect(resolveStreamMcp(all, [], "P1").map(e => e.name)).not.toContain("Channel (mock)");
-    // Assigned by name (the marketer stream's `streamMcp`): the channel's tools resolve onto it.
-    const marketer = resolveStreamMcp(all, ["Channel (mock)"], "P1");
-    expect(marketer.map(e => e.name)).toContain("Channel (mock)");
-    // And it carries a runnable stdio config (its send_email/post/schedule/get_metrics tools reach the session).
-    const chan = marketer.find(e => e.name === "Channel (mock)")!;
-    expect(toMcpPayload(chan)?.command).toBe("bsc-channel-mock-mcp");
   });
 });
 
