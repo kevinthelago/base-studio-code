@@ -95,6 +95,21 @@ fn single_record_test(id: &str, out: &str, run: bool, g: &Value) -> Result<Value
                 .into_iter()
                 .find(|x| x.get("id").and_then(Value::as_str) == Some(*id))
                 .ok_or_else(|| format!("no implementation '{id}'"))?;
+            // The runner is chosen by the record's OWN `tech`, never guessed from the id. Everything
+            // below this point is the TypeScript materializer, and handing it a Rust node wrote Rust
+            // source into a `.ts` file — which is why no Rust record had ever been compiled.
+            match im.get("tech").and_then(Value::as_str) {
+                Some("rust") => return rust_record_test(id, &out, run, &im, g),
+                // An unsupported tech is REFUSED by name. Falling through to vitest is how a Rust node
+                // came to be "tested" by a TypeScript runner in the first place.
+                Some(t) if t != "typescript" => {
+                    return Err(format!(
+                        "`bsc graph test` has no runner for tech `{t}` — supported: typescript, rust"
+                    ))
+                }
+                _ => {}
+            }
+
             let tests = im.get("tests").and_then(Value::as_array).cloned().unwrap_or_default();
             if tests.is_empty() {
                 // A vacuous pass is worse than a refusal: it would report "green" for a record nothing
@@ -179,6 +194,85 @@ fn single_record_test(id: &str, out: &str, run: bool, g: &Value) -> Result<Value
             }
             Ok(result)
         }
+
+/// Materialize ONE Rust record into `out` as a standalone crate and, when `run`, compile it there.
+///
+/// The convention lives in [`crate::rust_test`] — flat closure, primitive-derived imports — and is
+/// documented there rather than here, because getting it wrong reports the RECORDS as broken.
+///
+/// Two deliberate differences from the TypeScript path:
+///
+/// * A record with no paired test is NOT refused. For Rust a compile is itself a verdict — it is what
+///   catches a unicode escape in a byte literal — so a testless node is compiled and reported as
+///   compiled. Only 18 of this store's 96 Rust nodes carry a test at all.
+/// * A paired test is the whole harvested FILE (Rust tests live inline), so its `#[cfg(test)]` modules
+///   are extracted and the surrounding module is left behind. Every skip is reported: a skip nobody is
+///   told about is how a caller comes to believe a record was checked when it was not.
+fn rust_record_test(id: &str, out: &str, run: bool, im: &Value, g: &Value) -> Result<Value, String> {
+    let impls = crate::implementations_of(g);
+    let refs: Vec<&Value> = impls.iter().collect();
+    let closure = crate::rust_test::closure_of(&refs, id);
+
+    let raw_tests = im.get("tests").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut test_modules = Vec::new();
+    let mut skipped_tests = Vec::new();
+    for t in &raw_tests {
+        let src = t.get("src").and_then(Value::as_str).unwrap_or_default();
+        let found = crate::rust_test::extract_test_modules(src);
+        if found.is_empty() {
+            skipped_tests.push(serde_json::json!({
+                "name": t.get("name").and_then(Value::as_str).unwrap_or("<unnamed>"),
+                "reason": "no `#[cfg(test)]` module in the paired source — nothing to extract",
+            }));
+        } else {
+            test_modules.extend(found);
+        }
+    }
+
+    let name = crate::rust_test::crate_name(id);
+    let dir = std::path::Path::new(out);
+    let src_dir = dir.join("src");
+    std::fs::create_dir_all(&src_dir).map_err(|e| format!("cannot create {out}: {e}"))?;
+
+    let manifest = dir.join("Cargo.toml");
+    std::fs::write(&manifest, crate::rust_test::cargo_toml(&name))
+        .map_err(|e| format!("cannot write the manifest: {e}"))?;
+    let lib = src_dir.join("lib.rs");
+    std::fs::write(&lib, crate::rust_test::materialize(&closure, &test_modules))
+        .map_err(|e| format!("cannot write the module: {e}"))?;
+
+    let written = vec![
+        manifest.to_string_lossy().into_owned(),
+        lib.to_string_lossy().into_owned(),
+    ];
+    let mut result = serde_json::json!({
+        "id": id, "dir": out, "written": written, "tech": "rust",
+        "closure": closure.algorithms.iter().filter_map(|r| r.get("id").and_then(Value::as_str)).collect::<Vec<_>>(),
+        "tests": test_modules.len(), "skippedTests": skipped_tests, "ran": false,
+    });
+    if run {
+        // `cargo test` compiles AND runs; with no test module it still compiles, which is the verdict
+        // that matters here. The crate has its own manifest and its own target dir, so it never joins
+        // the workspace — a record that reached for a workspace crate fails here, as it should.
+        let verb = if test_modules.is_empty() { "build" } else { "test" };
+        let output = std::process::Command::new("cargo")
+            .args([verb, "--quiet"])
+            .current_dir(dir)
+            .env("CARGO_TARGET_DIR", dir.join("target"))
+            // The repo sets sccache as `rustc-wrapper`; a materialized crate must not depend on the
+            // developer having it installed, or an isolated run fails for a reason unrelated to the record.
+            .env_remove("RUSTC_WRAPPER")
+            .output()
+            .map_err(|e| format!("cannot run cargo: {e}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        result["ran"] = Value::Bool(true);
+        result["verb"] = Value::String(verb.to_string());
+        result["passed"] = Value::Bool(output.status.success());
+        result["output"] = Value::String(if stdout.trim().is_empty() { stderr } else { stdout });
+    }
+    Ok(result)
+}
 
 /// Every entity id in the GLOBAL data graph, for the surface-restriction check
 /// (the-data-graph-a-global-third-pillar). Best-effort: an unreadable or absent store yields an EMPTY

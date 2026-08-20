@@ -2,10 +2,23 @@
 /**
  * `node scripts/graph-rust-compile.mjs` — compile every Rust node in the algorithms graph, alone.
  *
- * A node claims to be a self-contained implementation. Nothing has ever checked that claim for Rust:
- * `bsc graph test` is hardcoded TypeScript (it writes `{stem}.ts` and runs vitest), so a Rust node has
- * never been executed or even parsed. This sweep is the missing oracle — and a compile is the one
- * check that cannot be fooled by a regex being more permissive than the real thing.
+ * A node claims to be a self-contained implementation. A compile is the one check of that claim which
+ * cannot be fooled by a regex being more permissive than the real thing.
+ *
+ * # THIS IS THE FAST SWEEP, NOT THE AUTHORITY
+ *
+ * The convention below is implemented TWICE on purpose, and the other copy is the authority:
+ * `crates/bsc-graph/src/rust_test.rs`, reached as `bsc graph test <id> --run`. That one materializes a
+ * real crate and runs `cargo`, so it can execute a node's paired tests; this one drives `rustc` per
+ * file and can only answer "does it compile".
+ *
+ * The split is a MEASURED speed trade, not an accident: rustc-per-file sweeps all 83 nodes in ~9.4s,
+ * while a materialized crate costs 5.51s cold / 1.66s warm EACH — about 2m20s for the same set. A gate
+ * wants the 9.4s answer.
+ *
+ * **So the two must move together.** If you change the closure convention here, change it there, and
+ * vice versa — the Rust side carries the unit tests that pin it. Folding these into one implementation
+ * (a fast `--all --tech rust` mode on the verb, and deleting this file) belongs to `the-graph-gets-a-gate`.
  *
  * # The materialization convention, and why it is FLAT
  *
