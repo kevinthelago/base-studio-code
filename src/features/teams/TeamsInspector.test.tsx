@@ -332,3 +332,77 @@ describe("TeamsInspector — a persona's skills resolve to names", () => {
     expect(screen.getByText("sk-vanished")).toBeTruthy();
   });
 });
+
+describe("what the agent does automatically — hooks and schedules", () => {
+  // These moved off the retired Automations page onto the persona that carries them. The panel is
+  // the ONLY place either is now visible, so a section that renders nothing is indistinguishable
+  // from a feature that does not exist — which is exactly how the first version shipped.
+  const bare: Persona = {
+    id: "p-bare", name: "Bare", blurb: "", role: "worker", startPrompt: "", skills: [],
+  };
+  const carrier: Persona = {
+    id: "p-carrier", name: "Carrier", blurb: "", role: "worker", startPrompt: "", skills: [],
+    hooks: [
+      { event: "PreToolUse", matcher: "Bash", command: "bsc-audit" },
+      { event: "PostToolUse", command: "bsc-note landed" },
+    ],
+    schedules: [
+      { name: "nightly-gc", when: { kind: "cron", expr: "0 2 * * *" }, command: "npm run gc" },
+      { name: "paused", when: { kind: "cron", expr: "0 9 * * *" }, command: "echo hi", armed: false },
+    ],
+  };
+  const team = (p: Persona): Team => ({
+    id: "o5", name: "Carriers", relationships: [],
+    positions: [{ nodeId: "n1", kind: "agent", personaId: p.id }],
+  });
+  const props = (p: Persona) => ({
+    org: team(p), orgs: [team(p)], personas: [p], skills: [],
+    onSelectNode: () => {}, onSelectSkill: () => {}, onSelectPersona: () => {},
+    sel: { type: "node", id: "n1" } as const,
+  });
+
+  it("shows BOTH sections for a persona carrying neither, and names how to author one", () => {
+    // The regression that shipped: the whole block was wrapped in a truthiness check, so on the
+    // normal install — where nobody has authored one yet — the panel showed nothing at all and the
+    // feature looked missing rather than unused.
+    render(<TeamsInspector {...props(bare)} />);
+    // The HEADING is the signal: the old code rendered no element at all, so asserting on the
+    // zero-count heading is what distinguishes "carries none" from "section does not exist".
+    expect(screen.getByText(/^hooks . 0$/)).toBeTruthy();
+    expect(screen.getByText(/^schedules . 0$/)).toBeTruthy();
+    // Read-only panel, so each empty state has to say where the authoring happens. Scoped to the
+    // sections deliberately: `bsc persona set` ALSO appears in this panel's denied-commands list
+    // for a role that may not run it, so a whole-document count is not the assertion it looks like.
+    expect(screen.getAllByText(/^none . add one with/).length).toBe(2);
+  });
+
+  it("counts what the persona carries in each heading", () => {
+    render(<TeamsInspector {...props(carrier)} />);
+    expect(screen.getByText(/hooks.*2/)).toBeTruthy();
+    expect(screen.getByText(/schedules.*2/)).toBeTruthy();
+  });
+
+  it("spells out an ABSENT matcher as every tool", () => {
+    // An empty matcher means the hook fires on every tool — a far bigger statement than a narrow
+    // one. Rendering it as blank reads as "nothing configured" and hides the broadest case there is.
+    render(<TeamsInspector {...props(carrier)} />);
+    expect(screen.getByText("every tool")).toBeTruthy();
+    expect(screen.getByText("Bash")).toBeTruthy();
+  });
+
+  it("marks a disarmed schedule and leaves an armed one unmarked", () => {
+    // `armed` defaults to TRUE, matching the scheduler's own default — if the panel defaulted the
+    // other way it would show a live job as paused.
+    render(<TeamsInspector {...props(carrier)} />);
+    expect(screen.getByText("nightly-gc")).toBeTruthy();
+    expect(screen.getByText("paused")).toBeTruthy();
+    expect(screen.getAllByText("disarmed").length).toBe(1);
+  });
+
+  it("renders each hook's command and each schedule's trigger", () => {
+    render(<TeamsInspector {...props(carrier)} />);
+    expect(screen.getByText("bsc-audit")).toBeTruthy();
+    expect(screen.getByText("npm run gc")).toBeTruthy();
+    expect(screen.getByText("0 2 * * *")).toBeTruthy();
+  });
+});
