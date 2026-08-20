@@ -117,10 +117,18 @@ pub fn verdict_for(runtime: &[Value], repo: &[Value], id: &str) -> Verdict {
 }
 
 /// A record stripped of write bookkeeping, so a promote compares CONTENT and not revision noise.
+///
+/// `build` is stripped for a sharper reason than the rest. It is a DERIVED, MACHINE-SPECIFIC cache —
+/// a verdict, a toolchain string, a timestamp and an artifact hash produced by whoever ran
+/// `bsc graph build`. Promoting it would put one developer's build result into the committed source of
+/// truth, and would churn the file on every machine that ever compiled a node. The gate caught this
+/// immediately: stamping facets made all four tracked records read as drifted when nothing about their
+/// SOURCE had changed. The facet belongs on the runtime node, where "does this compile here?" is a
+/// meaningful question; the committed store carries what the compiler reads.
 pub fn content_of(rec: &Value) -> Value {
     let mut c = rec.clone();
     if let Some(o) = c.as_object_mut() {
-        for k in ["history", "rev", "updatedAt", "updatedBy"] {
+        for k in ["history", "rev", "updatedAt", "updatedBy", "build"] {
             o.remove(k);
         }
     }
@@ -176,6 +184,23 @@ mod tests {
         std::fs::write(&bad, "{ not json").unwrap();
         assert!(read_at(&bad).unwrap_err().contains("not valid JSON"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A build facet is a DERIVED, machine-specific cache. Promoting it would commit one developer's
+    /// verdict and churn the file on every machine that compiled a node — and it made all four tracked
+    /// records read as drifted the moment `bsc graph build` stamped them.
+    #[test]
+    fn a_build_facet_is_never_content_and_is_never_promoted() {
+        let bare = json!({ "id": "x.rs", "code": "fn x() {}" });
+        let stamped = json!({
+            "id": "x.rs", "code": "fn x() {}",
+            "build": { "hash": "abc", "verdict": "pass", "toolchain": "rustc 1.95.0", "at": "now" }
+        });
+        assert_eq!(content_of(&bare), content_of(&stamped), "stamping a facet is not a source change");
+        assert_eq!(verdict_for(std::slice::from_ref(&stamped), &[bare], "x.rs"), Verdict::UpToDate);
+
+        let (out, _) = promote_into(&empty(), &[stamped], &["x.rs".to_string()]);
+        assert!(impls_of(&out)[0].get("build").is_none(), "the facet must not reach the committed store");
     }
 
     #[test]

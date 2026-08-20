@@ -17,9 +17,9 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 15] = [
+pub const VERBS: [&str; 16] = [
     "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
-    "used-by", "merge", "emit", "promote", "help",
+    "used-by", "merge", "emit", "promote", "build", "help",
 ];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
@@ -36,16 +36,22 @@ pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
 
 /// The flags that take NO value. Needed by `reject_unknown_flags` to walk the argv correctly: a
 /// value-taking flag consumes the next token, so `--summary "--x"` must not read as the flag `--x`.
-pub const BOOL_FLAGS: [&str; 9] =
-    ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run", "--check"];
+pub const BOOL_FLAGS: [&str; 11] = [
+    "--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run",
+    "--check", "--wasm", "--force",
+];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 39] = [
+pub const FLAGS: [&str; 41] = [
     "--pretty",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
     // `--root` names the repo when the cwd is not it.
     "--check",
     "--root",
+    // `build` — compile a node and stamp the verdict; --wasm adds the wasm32 target, --force ignores
+    // a current hash.
+    "--wasm",
+    "--force",
     // #71 — names WHAT replaced a suppressed algorithm, stored on the tombstone.
     "--superseded-by",
     // #72 — the revision `impl revert` restores to, and who to attribute the write to.
@@ -278,6 +284,155 @@ fn rust_record_test(id: &str, out: &str, run: bool, im: &Value, g: &Value) -> Re
         result["output"] = Value::String(if stdout.trim().is_empty() { stderr } else { stdout });
     }
     Ok(result)
+}
+
+/// Crate directories whose source is materialized from the graph, read from each crate's OWN manifest.
+///
+/// Derived, never a literal list, so it cannot drift from reality. Resolved relative to the CURRENT
+/// DIRECTORY: `bsc graph build` is a repo-root command. Outside a repo the set is empty, which means a
+/// Tier-A record would be built and would fail loudly — visible, rather than silently mis-skipped.
+fn materialized_crates() -> Vec<String> {
+    let Ok(cwd) = std::env::current_dir() else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(cwd.join("crates")) else { return Vec::new() };
+    entries
+        .filter_map(Result::ok)
+        .filter(|e| e.path().is_dir())
+        .filter(|e| {
+            std::fs::read_to_string(e.path().join("Cargo.toml"))
+                .is_ok_and(|t| t.contains(crate::build_facet::MATERIALIZE_MARKER))
+        })
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect()
+}
+
+/// The compiler's own identity — part of the build hash, because the same source compiles or does not
+/// depending on it. Unknown rather than a panic: a machine without rustc can still READ the store.
+fn rustc_version() -> String {
+    std::process::Command::new("rustc")
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "unknown-rustc".into())
+}
+
+/// Where compiled artifacts live — a content-addressed sidecar, never inline in the 8.74 MB store.
+fn artifacts_dir() -> Option<std::path::PathBuf> {
+    bsc_util::bsc_base_dir().map(|b| b.join("knowledge").join("artifacts"))
+}
+
+/// Does every artifact this node's facet names still exist?
+///
+/// The sidecar is a cache — it can be swept, or absent in a fresh clone. A hash match with a missing
+/// artifact must REBUILD, not report cached, or the node claims an output nothing can load.
+fn artifacts_present(node: &Value) -> bool {
+    let Some(dir) = artifacts_dir() else { return false };
+    let Some(targets) = node.get("build").and_then(|b| b.get("targets")).and_then(Value::as_object) else {
+        return true; // nothing claimed, nothing missing
+    };
+    targets.values().all(|t| match t.get("artifact").and_then(Value::as_str) {
+        Some(sha) => dir.join(crate::build_facet::artifact_name(sha, "wasm")).is_file(),
+        None => true,
+    })
+}
+
+/// Compile one materialized node, natively and (optionally) to wasm.
+fn build_one(
+    id: &str,
+    source: &str,
+    want_wasm: bool,
+    hash: &str,
+) -> Result<Vec<crate::build_facet::TargetOutcome>, String> {
+    use crate::build_facet::TargetOutcome;
+    let work = std::env::temp_dir().join(format!("bsc-graph-build-{}", crate::rust_test::crate_name(id)));
+    std::fs::create_dir_all(&work).map_err(|e| format!("cannot create {}: {e}", work.display()))?;
+    let src = work.join(format!("{}.rs", crate::rust_test::crate_name(id)));
+    std::fs::write(&src, source).map_err(|e| format!("cannot write the module: {e}"))?;
+
+    let mut out = Vec::new();
+
+    let native = std::process::Command::new("rustc")
+        .args(["--edition", "2021", "--crate-type", "lib", "--out-dir"])
+        .arg(&work)
+        .arg(&src)
+        .output()
+        .map_err(|e| format!("cannot run rustc: {e}"))?;
+    out.push(if native.status.success() {
+        TargetOutcome::pass("native")
+    } else {
+        TargetOutcome::fail("native", first_error(&String::from_utf8_lossy(&native.stderr)))
+    });
+
+    if want_wasm {
+        // A cdylib with no `#[no_mangle] extern "C"` export produces a module that LOADS but exposes
+        // nothing. That is honest for this slice: it proves the node reaches wasm and gives a real byte
+        // size. The export contract — what the animation actually calls — belongs to
+        // `one-implementation-drives-the-animation`, and is not invented here.
+        let wasm_out = work.join("wasm");
+        std::fs::create_dir_all(&wasm_out).map_err(|e| format!("cannot create {}: {e}", wasm_out.display()))?;
+        let mut cmd = std::process::Command::new("rustc");
+        cmd.args(["--edition", "2021", "--target", "wasm32-unknown-unknown", "--crate-type", "cdylib"])
+            .args(crate::build_facet::WASM_FLAGS)
+            .arg("--out-dir")
+            .arg(&wasm_out)
+            .arg(&src);
+        let w = cmd.output().map_err(|e| format!("cannot run rustc for wasm32: {e}"))?;
+        if !w.status.success() {
+            out.push(TargetOutcome::fail("wasm32", first_error(&String::from_utf8_lossy(&w.stderr))));
+        } else {
+            let produced = std::fs::read_dir(&wasm_out)
+                .map_err(|e| format!("cannot read {}: {e}", wasm_out.display()))?
+                .filter_map(Result::ok)
+                .map(|e| e.path())
+                .find(|p| p.extension().and_then(|s| s.to_str()) == Some("wasm"));
+            match produced {
+                None => out.push(TargetOutcome::fail("wasm32", "rustc reported success but emitted no .wasm")),
+                Some(p) => {
+                    let bytes = std::fs::read(&p).map_err(|e| format!("cannot read {}: {e}", p.display()))?;
+                    // Content-addressed by the ARTIFACT, not by the build hash: two nodes that compile
+                    // to identical bytes share one file, which is the point of a content-addressed store.
+                    let sha = bsc_cli_util::vendored::sha256_hex(&bytes);
+                    if let Some(dir) = artifacts_dir() {
+                        std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+                        std::fs::write(dir.join(crate::build_facet::artifact_name(&sha, "wasm")), &bytes)
+                            .map_err(|e| format!("cannot write the artifact: {e}"))?;
+                    }
+                    let exports = crate::build_facet::wasm_export_count(&bytes).unwrap_or(0);
+                    out.push(
+                        TargetOutcome::pass("wasm32")
+                            .with_artifact(sha, bytes.len() as u64)
+                            .with_exports(exports),
+                    );
+                }
+            }
+        }
+    }
+    let _ = hash;
+    Ok(out)
+}
+
+/// The first real error line from a rustc run — enough to act on, without pasting a screen of context.
+fn first_error(stderr: &str) -> String {
+    stderr
+        .lines()
+        .find(|l| l.starts_with("error"))
+        .unwrap_or("rustc failed with no error line")
+        .to_string()
+}
+
+/// Write the facet onto the node IN PLACE, leaving every other field untouched.
+fn stamp_build(g: &mut Value, id: &str, facet: Value) {
+    if let Some(arr) = g.get_mut("implementations").and_then(Value::as_array_mut) {
+        for i in arr.iter_mut() {
+            if i.get("id").and_then(Value::as_str) == Some(id) {
+                if let Some(o) = i.as_object_mut() {
+                    o.insert("build".into(), facet);
+                }
+                return;
+            }
+        }
+    }
 }
 
 /// Every entity id in the GLOBAL data graph, for the surface-restriction check
@@ -1685,6 +1840,88 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 "tracked": crate::repo_store::tracked_ids(&next).len(),
             }))
         }
+        // `build [<id>|--all] [--wasm] [--force]` — compile a Tier-R node and STAMP the verdict onto it,
+        // so `impl get` answers "does this compile?" without running anything. See `crate::build_facet`.
+        "build" => {
+            let all = args.iter().any(|a| a == "--all");
+            let want_wasm = args.iter().any(|a| a == "--wasm");
+            let force = args.iter().any(|a| a == "--force");
+            let mut g = crate::load();
+            let impls = crate::implementations_of(&g);
+
+            let materialized = materialized_crates();
+            let mut tier_a = Vec::new();
+            let ids: Vec<String> = if all {
+                impls
+                    .iter()
+                    .filter(|i| {
+                        i.get("tech").and_then(Value::as_str) == Some("rust")
+                            && i.get("role").and_then(Value::as_str) == Some("algorithm")
+                            && i.get("code").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty())
+                    })
+                    // Tier A compiles inside its crate, never standalone. Excluded rather than failed —
+                    // and COUNTED, because a skip nobody is told about reads as a record that was checked.
+                    .filter(|i| {
+                        let is_a = crate::build_facet::is_tier_a(i.get("src").and_then(Value::as_str), &materialized);
+                        if is_a {
+                            if let Some(id) = i.get("id").and_then(Value::as_str) {
+                                tier_a.push(id.to_string());
+                            }
+                        }
+                        !is_a
+                    })
+                    .filter_map(|i| i.get("id").and_then(Value::as_str).map(str::to_string))
+                    .collect()
+            } else {
+                vec![positional.get(1).ok_or("usage: bsc graph build <id> | build --all [--wasm]")?.to_string()]
+            };
+
+            let toolchain = rustc_version();
+            let refs: Vec<&Value> = impls.iter().collect();
+            let mut results = Vec::new();
+            let mut built = 0usize;
+            let mut cached = 0usize;
+            let mut failed = 0usize;
+
+            for id in &ids {
+                let Some(node) = impls.iter().find(|i| i.get("id").and_then(Value::as_str) == Some(id.as_str()))
+                else {
+                    return Err(format!("no implementation '{id}'"));
+                };
+                let closure = crate::rust_test::closure_of(&refs, id);
+                let source = crate::rust_test::materialize(&closure, &[]);
+                let hash = crate::build_facet::facet_hash(&source, &toolchain, crate::build_facet::WASM_FLAGS);
+
+                // A matching hash is not enough on its own: the artifact is a CACHE and may have been
+                // swept. Re-derive rather than trust a verdict whose output is gone.
+                if !force && crate::build_facet::is_current(node, &hash) && artifacts_present(node) {
+                    cached += 1;
+                    results.push(serde_json::json!({ "id": id, "state": "cached", "hash": hash }));
+                    continue;
+                }
+
+                let outcome = build_one(id, &source, want_wasm, &hash)?;
+                let ok = outcome.iter().all(|t| t.passed);
+                if ok { built += 1 } else { failed += 1 }
+                let at = bsc_util::epoch_ms_to_iso8601(bsc_util::now_secs() * 1000);
+                let facet = crate::build_facet::facet(&hash, &toolchain, &at, &outcome);
+                stamp_build(&mut g, id, facet.clone());
+                results.push(serde_json::json!({ "id": id, "state": if ok { "built" } else { "failed" }, "build": facet }));
+            }
+
+            if let Some(p) = crate::store_path() {
+                crate::save_at(&p, &g)?;
+            }
+            emit(&serde_json::json!({
+                "built": built, "cached": cached, "failed": failed,
+                "tierA": tier_a, "results": results,
+            }))?;
+            // A runner nothing can fail is not a gate.
+            if failed > 0 {
+                return Err(format!("{failed} node(s) failed to build"));
+            }
+            Ok(())
+        }
         // `dump` — the whole graph document (the `implementations` tier), store-or-seed.
         "dump" => emit(&crate::load()),
         // `doctor [--fix]` (#3212) — diagnose the library's visualization typing + coverage: untyped /
@@ -2001,6 +2238,7 @@ fn help(prog: &str) -> String {
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
          {prog} promote [--id a,b] [--check] [--root <dir>]   # move records from the per-user RUNTIME store into the COMMITTED, build-readable repo store at graph/algorithms.json — the store a fresh clone, CI and every worktree agent compile from. Bare `promote` refreshes only what the store already TRACKS; `--id` adopts new records, because what the build compiles is an explicit decision. `--check` writes nothing and EXITS NON-ZERO naming the drifted ids — that is the gate. The repo store is read directly, never through the seed reconcile, or 676 packaged impls would be appended into the build's source of truth\n\n\
+         {prog} build <id> | build --all [--wasm] [--force]   # compile a Tier-R node from its own composes closure and STAMP the verdict onto it, so `impl get` answers 'does this compile?' without running anything. The hash covers the MATERIALIZED source + the toolchain + the flags, because all three change the answer; an unchanged hash is reported `cached` and recompiles nothing, unless the artifact it names is gone — a cache that vanished must re-derive, never be trusted. `--wasm` adds the wasm32 target and writes the artifact to a CONTENT-ADDRESSED sidecar (~/.base-studio-code/knowledge/artifacts/<sha>.wasm), never inline: the store is 8.74 MB and every reader parses it\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
          Implementation techs (#2770): ANY language — `--tech` is not validated and never has been. Each impl `composes` other same-tech impls, rooted in that language's primitives, so a new tech simply starts its own kit (`--tech python` works today; the packaged kits are typescript · rust).\n\
          WHAT IS language-bound is the MINING half: `harvest`/`curate`/`relink` parse real source with tree-sitter and only carry grammars for ts/tsx/rs. Curating code you already have has no such limit — a session that could not harvest a Python project once concluded it could not curate one either, and left 12 real algorithms unstored rather than try (#53).\n\
