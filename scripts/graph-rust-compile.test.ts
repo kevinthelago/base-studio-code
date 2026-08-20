@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { closureOf, importedNames, importsFor, materialize } from "./graph-rust-compile.mjs";
+import { closureOf, importedNames, importsFor, materialize, mergeById } from "./graph-rust-compile.mjs";
 
 /**
  * The materialization convention is the load-bearing part of the Rust sweep, and getting it wrong does
@@ -119,5 +119,28 @@ describe("materialize", () => {
       { id: "rust.hashmap", role: "primitive", ref: "std::collections::HashMap" },
     );
     expect(materialize("word-frequencies.rs", lookup)).toContain("use std::collections::HashMap;");
+  });
+});
+
+// What the GATE sweeps. A guard that reads `~/.base-studio-code` cannot run in a fresh clone or in CI,
+// and would report a machine's private state as a repo failure — so the gate reads the two COMMITTED
+// stores instead. The repo store wins, because it is the one the build is meant to compile.
+describe("gate sources", () => {
+  it("merges by id with the later source winning", () => {
+    const seed = [{ id: "a.rs", code: "seed" }, { id: "b.rs", code: "seed" }];
+    const repo = [{ id: "a.rs", code: "repo" }];
+    const { impls, byId } = mergeById(seed, repo);
+    expect(impls).toHaveLength(2);
+    expect(byId.get("a.rs")?.code, "the committed repo store is what the build compiles").toBe("repo");
+    expect(byId.get("b.rs")?.code).toBe("seed");
+  });
+
+  it("tolerates an absent source, since a repo may have migrated nothing yet", () => {
+    expect(mergeById(undefined, [{ id: "a.rs" }]).impls).toHaveLength(1);
+    expect(mergeById().impls).toHaveLength(0);
+  });
+
+  it("ignores an entry with no id rather than keying on undefined", () => {
+    expect(mergeById([{ code: "orphan" }, { id: "a.rs" }]).impls).toHaveLength(1);
   });
 });

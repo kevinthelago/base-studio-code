@@ -7,7 +7,7 @@
 // stylesheets orphaned with every gate green, and a vitest config change that dropped 8 test files while
 // reporting all-passing.
 import { describe, it, expect } from "vitest";
-import { planGate, withDependents, crateForPath, isFrontendPath, parsePorcelain, gateCommands, FORCE_FULL } from "./gateScope.mjs";
+import { planGate, withDependents, crateForPath, isFrontendPath, parsePorcelain, gateCommands, graphCommands, isGraphSourcePath, FORCE_FULL } from "./gateScope.mjs";
 
 // A miniature of the real workspace shape: one shared util everything sits on, one mid-tier crate, two
 // leaves. The real graph measures bsc-util at 35 of 40 dependents and bsc-ui at 1.
@@ -228,5 +228,55 @@ describe("record stores under src-tauri/data are frontend (gate scoping)", () =>
     const p = plan(["src-tauri/data/permissions/write-locks.json"]);
     expect(p.runTsc).toBe(false);
     expect(p.runVitest).toBe(false);
+  });
+});
+
+// The GRAPH step — the check the gate has never had (the-graph-gets-a-gate).
+//
+// Its failure mode is the one this whole module exists to prevent: a Rust node stops compiling, or a
+// record is edited and never promoted into the committed store the build reads, and nothing says so.
+describe("graph step", () => {
+  const plan = (files: string[], force = false) => planGate({ files, graph, dirToCrate, force });
+
+  it("runs when either COMMITTED store moves", () => {
+    expect(plan(["graph/algorithms.json"]).runGraph).toBe(true);
+    expect(plan(["src-tauri/data/knowledge/algorithms.json"]).runGraph).toBe(true);
+  });
+
+  it("runs when the convention itself moves — the sweep or the crate that owns its twin", () => {
+    expect(plan(["scripts/graph-rust-compile.mjs"]).runGraph).toBe(true);
+    expect(plan(["crates/bsc-graph/src/rust_test.rs"]).runGraph).toBe(true);
+  });
+
+  it("does NOT run for a change that cannot affect a node", () => {
+    expect(plan(["src/features/planner/lib/x.ts"]).runGraph).toBe(false);
+    expect(plan(["crates/plandb/src/lib.rs"]).runGraph).toBe(false);
+  });
+
+  it("is always part of the FULL gate, however the change got there", () => {
+    const labels = gateCommands(plan([], true), "develop").map((c) => c.label);
+    expect(labels.some((l) => l.startsWith("graph ("))).toBe(true);
+  });
+
+  it("appears in a scoped gate exactly when the plan asked for it", () => {
+    const withGraph = gateCommands(plan(["graph/algorithms.json"]), "develop").map((c) => c.label);
+    expect(withGraph.some((l) => l.startsWith("graph ("))).toBe(true);
+    const without = gateCommands(plan(["crates/plandb/src/lib.rs"]), "develop").map((c) => c.label);
+    expect(without.some((l) => l.startsWith("graph ("))).toBe(false);
+  });
+
+  it("carries BOTH halves — compiling nodes and a current repo store", () => {
+    const cmds = graphCommands();
+    expect(cmds).toHaveLength(2);
+    expect(cmds[0].args).toContain("scripts/graph-rust-compile.mjs");
+    expect(cmds[1].args).toContain("scripts/graph-promote-check.mjs");
+  });
+
+  // `graph/` is not a frontend record store, and the knowledge seed is BOTH. The two predicates answer
+  // different questions and must not be collapsed.
+  it("is a separate question from the record-store predicate", () => {
+    expect(isGraphSourcePath("graph/algorithms.json")).toBe(true);
+    expect(isFrontendPath("graph/algorithms.json")).toBe(false);
+    expect(isGraphSourcePath("src-tauri/data/components/app/x.json")).toBe(false);
   });
 });

@@ -38,7 +38,8 @@
  * so a node missing one is a real defect and not a stylistic gap.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { homedir } from "node:os";
@@ -56,6 +57,40 @@ export function loadStore(path) {
   const graph = JSON.parse(readFileSync(store, "utf8"));
   const impls = graph.implementations ?? graph;
   return { impls, byId: new Map(impls.map((i) => [i.id, i])) };
+}
+
+/** Merge implementation lists, later sources winning by id. */
+export function mergeById(...lists) {
+  const by = new Map();
+  for (const list of lists) for (const impl of list ?? []) if (impl?.id) by.set(impl.id, impl);
+  return { impls: [...by.values()], byId: by };
+}
+
+/**
+ * What the GATE sweeps — the two COMMITTED, in-repo sources, never the per-user runtime store.
+ *
+ * This is the repo's established rule for a guard (the-store-is-the-copy-that-breaks-the-app): a check
+ * that reads `~/.base-studio-code` cannot run in a fresh clone, in CI, or in any worktree whose agent
+ * never authored a record, and it would report a machine's private state as a repo failure. So the gate
+ * reads the packaged seed plus the committed repo store; the repo store wins on a shared id, since it
+ * is the one the build is meant to compile.
+ *
+ * `BSC_GRAPH_STORE` still overrides, which is how a developer sweeps their full runtime library locally.
+ */
+export function loadGateSources(root) {
+  if (process.env.BSC_GRAPH_STORE) return loadStore(process.env.BSC_GRAPH_STORE);
+  const read = (p) => {
+    try {
+      const g = JSON.parse(readFileSync(p, "utf8"));
+      return g.implementations ?? g;
+    } catch {
+      return []; // absent is legitimate: a repo may have migrated nothing yet
+    }
+  };
+  return mergeById(
+    read(join(root, "src-tauri", "data", "knowledge", "algorithms.json")),
+    read(join(root, "graph", "algorithms.json")),
+  );
 }
 
 /** Transitive closure of a node, split into the code to materialize and the primitives to import. */
@@ -133,12 +168,40 @@ export function materialize(rootId, lookup) {
 
 // Run only as a CLI, never on import — the tests import the pure helpers above.
 if (process.argv[1]?.endsWith("graph-rust-compile.mjs")) {
-  const { impls, byId } = loadStore();
+  // The repo root: this file lives in <root>/scripts/.
+  const root = join(new URL(".", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"), "..");
+  const { impls, byId } = loadGateSources(root);
   const work = join(tmpdir(), "bsc-graph-rust-sweep");
   rmSync(work, { recursive: true, force: true });
   mkdirSync(join(work, "out"), { recursive: true });
 
   const nodes = impls.filter((i) => i.tech === "rust" && i.role === "algorithm" && (i.code ?? "").trim());
+
+  // HASH-CACHE. The gate runs on every commit while iterating, and re-compiling an unchanged library
+  // to reach the same verdict is pure waste. The key covers what can change the answer: every swept
+  // node's materialized source, and the compiler that judges it. `--no-cache` forces a real run.
+  //
+  // Infrastructure failures are SWALLOWED (a missing rustc version, an unwritable target dir) because a
+  // cache is an optimization; a RED NODE is never swallowed, which is the asymmetry `gc` also follows.
+  const rustcVersion = (() => {
+    try {
+      return execFileSync("rustc", ["--version"], { encoding: "utf8" }).trim();
+    } catch {
+      return "unknown-rustc";
+    }
+  })();
+  const key = createHash("sha256")
+    .update(rustcVersion)
+    .update(nodes.map((n) => `${n.id} ${materialize(n.id, byId)}`).sort().join(""))
+    .digest("hex")
+    .slice(0, 16);
+  const stamp = join(root, "target", `.graph-rust-sweep-${key}`);
+  const useCache = !process.argv.includes("--no-cache");
+  if (useCache && existsSync(stamp)) {
+    process.stdout.write(`\nrust nodes swept: ${nodes.length}   compiled: ${nodes.length} (cached, unchanged)\n`);
+    process.exit(0);
+  }
+
   const failures = [];
   const started = Date.now();
 
@@ -167,5 +230,15 @@ if (process.argv[1]?.endsWith("graph-rust-compile.mjs")) {
     for (const l of first) process.stdout.write(`      ${l}\n`);
   }
   if (process.env.BSC_SWEEP_KEEP) process.stdout.write(`\nmaterialized sources kept in ${work}\n`);
+  // Stamp only a GREEN sweep: caching a failure would hide it on the next run, which is the precise
+  // shape of gate-passes-while-covering-less this repo keeps paying for.
+  if (!failures.length && useCache) {
+    try {
+      mkdirSync(join(root, "target"), { recursive: true });
+      writeFileSync(stamp, `${new Date().toISOString()} ${rustcVersion}\n`, "utf8");
+    } catch {
+      /* a cache that cannot be written is not a failure — the sweep already gave its verdict */
+    }
+  }
   process.exit(failures.length ? 1 : 0);
 }

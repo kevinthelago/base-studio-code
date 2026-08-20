@@ -1599,35 +1599,63 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 None => crate::repo_store::tracked_ids(&repo),
             };
 
-            let repo_impls = crate::repo_store::impls_of(&repo);
-            let mut differs = Vec::new();
-            let mut missing = Vec::new();
-            for id in &ids {
-                match crate::repo_store::verdict_for(&runtime, &repo_impls, id) {
-                    crate::repo_store::Verdict::Differs => differs.push(id.clone()),
-                    crate::repo_store::Verdict::MissingUpstream => missing.push(id.clone()),
-                    crate::repo_store::Verdict::UpToDate => {}
-                }
-            }
-
             if check {
+                // THE CHECK READS THE RUNTIME STORE DIRECTLY, and this is what makes it usable as a
+                // gate. `load()` reconciles the packaged seed and falls back to it entirely when no
+                // store file exists — so on a fresh clone, in CI, or in any worktree that is not the
+                // AUTHORING machine, the comparison silently becomes "repo store vs the seed" and
+                // reports drift for records that are perfectly current. Measured before this fix: a
+                // machine with no runtime store reported 2 drifted + 1 missing and exited 1.
+                //
+                // The write path below deliberately keeps `load()`: ADOPTING a record may legitimately
+                // pull one that exists only in the packaged seed. Only the check is narrowed, because
+                // only the check has to hold on every machine.
+                let Some(direct) = crate::store_path().map(|p| crate::repo_store::read_at(&p)).transpose()?.flatten()
+                else {
+                    return emit(&serde_json::json!({
+                        "checked": 0, "drifted": [], "ok": true, "store": path.to_string_lossy(),
+                        "note": "no runtime store on this machine — nothing was authored here to compare against",
+                    }));
+                };
+                let upstream = crate::repo_store::impls_of(&direct);
+                let repo_impls = crate::repo_store::impls_of(&repo);
+                let mut differs = Vec::new();
+                let mut absent = Vec::new();
+                for id in &ids {
+                    match crate::repo_store::verdict_for(&upstream, &repo_impls, id) {
+                        crate::repo_store::Verdict::Differs => differs.push(id.clone()),
+                        // NOT a failure. A machine whose runtime store lacks the record has no opinion
+                        // about whether the committed one is stale, and failing here would redden the
+                        // gate for every agent who simply never authored it.
+                        crate::repo_store::Verdict::MissingUpstream => absent.push(id.clone()),
+                        crate::repo_store::Verdict::UpToDate => {}
+                    }
+                }
                 emit(&serde_json::json!({
-                    "checked": ids.len(), "drifted": differs, "missingUpstream": missing,
-                    "store": path.to_string_lossy(), "ok": differs.is_empty() && missing.is_empty(),
+                    "checked": ids.len(), "drifted": differs, "notAuthoredHere": absent,
+                    "store": path.to_string_lossy(), "ok": differs.is_empty(),
                 }))?;
                 // A gate that cannot fail is not a gate. Naming the ids is the whole point: the
                 // failure mode this guards is an edit that never reached what the compiler reads.
-                if !differs.is_empty() || !missing.is_empty() {
+                if !differs.is_empty() {
                     return Err(format!(
-                        "the repo store is out of date — {} drifted ({}), {} missing upstream ({}). \
+                        "the repo store is out of date — {} drifted ({}). \
                          Run `bsc graph promote` to bring it forward.",
                         differs.len(),
                         differs.join(", "),
-                        missing.len(),
-                        missing.join(", "),
                     ));
                 }
                 return Ok(());
+            }
+
+            let repo_impls = crate::repo_store::impls_of(&repo);
+            let mut missing = Vec::new();
+            for id in &ids {
+                if crate::repo_store::verdict_for(&runtime, &repo_impls, id)
+                    == crate::repo_store::Verdict::MissingUpstream
+                {
+                    missing.push(id.clone());
+                }
             }
 
             // NOTHING TO PROMOTE MUST TOUCH NOTHING. A bare `promote` in a repo that tracks no records
