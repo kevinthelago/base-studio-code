@@ -311,6 +311,7 @@
             ("logs_done_panes", "scans the coord log on the same poll cadence"),
             ("logs_waiting", "re-derives the queue from coord.log AND activity.log, on a 3s poll"),
             ("logs_sessions", "walks five streams AND the cost rollup, which re-reads every transcript"),
+            ("logs_costs", "re-reads every transcript named in tokens.log"),
             ("graph_dump", "reads + reconciles the whole algorithms store (#4078)"),
             ("read_log_tail", "reads an arbitrary log stream from disk"),
             ("fault_rows_batch", "opens one error.db per project; 19.3s/4 calls measured"),

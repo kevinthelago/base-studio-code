@@ -365,4 +365,25 @@ mod tests {
         assert!(usage(&dir, 0).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// The wire keys of [`Cost`], pinned for the same reason `SessionRow`'s are: it has no
+    /// `serde(rename_all)`, the desktop bridge reads these names, and `bsc logs cost --json` prints
+    /// the same struct. CamelCasing it to please TypeScript would break both at once, and neither
+    /// failure throws — the UI would render zeros and a script would find nothing.
+    #[test]
+    fn cost_wire_keys_are_stable() {
+        let c = Cost {
+            session: "p:w".into(), model: "claude-sonnet-5".into(),
+            input: 1, output: 2, cache_creation: 3, cache_read: 4, cost_usd: 5.0,
+        };
+        let v = serde_json::to_value(&c).expect("Cost serializes");
+        let mut keys: Vec<&str> = v.as_object().expect("an object").keys().map(|k| k.as_str()).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            ["cache_creation", "cache_read", "cost_usd", "input", "model", "output", "session"],
+            "Cost wire keys changed — the desktop bridge and `bsc logs cost --json` both read these"
+        );
+    }
+
 }
