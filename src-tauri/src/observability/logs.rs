@@ -348,6 +348,17 @@ pub async fn logs_sessions() -> Vec<::logs::SessionRow> {
     blocking_or("logs_sessions", Vec::new(), || ::logs::sessions(&::logs::log_dir())).await
 }
 
+/// The per-session token + cost rollup — the in-process drop-in for `bsc logs cost --json` (#1607).
+///
+/// Distinct from `logs_usage`, which the console reads for a live per-pane figure: this is the whole
+/// fleet at once, keyed by session, with the token counters the price is derived FROM. Both re-read
+/// every transcript named in `tokens.log`, which is why both are async and off the main thread —
+/// `logs_usage` alone held it for 1477.8s across 3169 calls before that was fixed.
+#[tauri::command]
+pub async fn logs_costs() -> Vec<::logs::Cost> {
+    blocking_or("logs_costs", Vec::new(), || ::logs::cost::all_costs(&::logs::log_dir())).await
+}
+
 /// Append a `woke` event to the coordination log (#199): records that a parked
 /// session was relaunched, so the coordinator won't re-wake it (idempotent across
 /// polls + restarts). Same TSV shape + ISO-8601 UTC timestamp as the shell emitters.
