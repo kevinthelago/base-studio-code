@@ -265,11 +265,18 @@ describe("graph step", () => {
     expect(without.some((l) => l.startsWith("graph ("))).toBe(false);
   });
 
-  it("carries BOTH halves — compiling nodes and a current repo store", () => {
+  it("carries all three halves — nodes compile, the repo store is current, the kits agree", () => {
     const cmds = graphCommands();
-    expect(cmds).toHaveLength(2);
+    expect(cmds).toHaveLength(3);
     expect(cmds[0].args).toContain("scripts/graph-rust-compile.mjs");
     expect(cmds[1].args).toContain("scripts/graph-promote-check.mjs");
+    expect(cmds[2].args).toContain("scripts/graph-cross-kit.mjs");
+  });
+
+  // Adding a case to the contract must re-run the check that reads it, or the vector grows while
+  // nothing verifies the new case.
+  it("runs when the cross-kit CONTRACT changes", () => {
+    expect(plan(["src/features/algorithms/lib/crossKit.fixtures.json"]).runGraph).toBe(true);
   });
 
   // `graph/` is not a frontend record store, and the knowledge seed is BOTH. The two predicates answer
