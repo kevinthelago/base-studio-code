@@ -44,7 +44,7 @@ fn main() {
     let mut src: std::collections::HashMap<&str, String> = Default::default();
     let mut i = 2;
     while i + 1 < head.len() {
-        for k in ["plan", "graph", "ui", "coord", "outbox"] {
+        for k in ["plan", "graph", "ui", "coord", "outbox", "ui-outbox"] {
             if head[i] == format!("--{k}") {
                 src.insert(k, head[i + 1].clone());
             }
@@ -90,11 +90,16 @@ fn main() {
     // makes that whole subtree read-only, and the attempt fails with
     //   bwrap: Can't mkdir /coord/out: Read-only file system
     // So `<root>/coord/out` is created on the host first, and bwrap binds over the existing dir.
-    if let Some(p) = src.get("outbox") {
-        std::fs::create_dir_all(p).ok();
-        std::fs::create_dir_all(root.join("coord").join("out")).ok();
-        mounts.push(Mount::ReadWrite { host: PathBuf::from(p), guest: PathBuf::from("/coord/out") });
-        eprintln!("outbox: writable at /coord/out");
+    for (flag, proj, guest) in [
+        ("outbox", "coord", "/coord/out"),
+        ("ui-outbox", "ui", "/ui/out"),
+    ] {
+        if let Some(p) = src.get(flag) {
+            std::fs::create_dir_all(p).ok();
+            std::fs::create_dir_all(root.join(proj).join("out")).ok();
+            mounts.push(Mount::ReadWrite { host: PathBuf::from(p), guest: PathBuf::from(guest) });
+            eprintln!("outbox: writable at {guest}");
+        }
     }
 
     let spec = SandboxSpec {

@@ -1,7 +1,7 @@
 //! Render the argv for a ROLE's namespace, so a profile can be executed rather than only asserted.
 //!
 //! ```sh
-//! role <role> <worktree> [--store name=path]... [--outbox path] [--bin b]... -- <command>...
+//! role <role> <worktree> [--store name=path]... [--outbox guest=path]... [--bin b]... -- <cmd>...
 //! ```
 //!
 //! Prints any caveat to stderr. A profile that knowingly grants more than the isolation model
@@ -17,7 +17,7 @@ fn main() {
     let command: Vec<String> = tail.iter().skip(1).cloned().collect();
 
     if head.len() < 2 || command.is_empty() {
-        eprintln!("usage: role <role> <worktree> [--store name=path] [--outbox p] [--bin b] -- <cmd>...");
+            eprintln!("usage: role <role> <worktree> [--store name=path] [--outbox guest=path] [--bin b] -- <cmd>...");
         std::process::exit(2);
     }
 
@@ -40,7 +40,12 @@ fn main() {
                     paths.stores.push((n.to_string(), PathBuf::from(p)));
                 }
             }
-            "--outbox" => paths.outbox = Some(PathBuf::from(&head[i + 1])),
+            // guest=host, e.g. --outbox /ui/out=/tmp/ui-out
+            "--outbox" => {
+                if let Some((g, h)) = head[i + 1].split_once('=') {
+                    paths.outboxes.push((g.to_string(), PathBuf::from(h)));
+                }
+            }
             "--bin" => bins.push(head[i + 1].clone()),
             _ => {}
         }
