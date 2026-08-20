@@ -46,6 +46,10 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
     // (skills-move-to-teams-and-pair-with-personas). Its crumb is now the Planner's Teams tab.
     expect(crumb({ activeWorkspace: "mcp", activePageTab: { mcp: "catalog" } })).toBe("MCP — Catalog");
     expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "activity" } })).toBe("Logs — Activity");
+    expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "waiting" } })).toBe("Logs — Waiting");
+    // Every tab a Logs page ships needs an entry here. An unmapped id Title-Cases gracefully, so the
+    // crumb is never BLANK -- but the fallback is a safety net, not the label, and it silently starts
+    // deciding the name the moment a curated one is forgotten.
   });
 
   it("GitHub reflects the tab, the board drill, and the active repo", () => {
