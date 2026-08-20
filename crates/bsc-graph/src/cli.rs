@@ -17,8 +17,10 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 14] =
-    ["impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests", "used-by", "merge", "emit", "help"];
+pub const VERBS: [&str; 15] = [
+    "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
+    "used-by", "merge", "emit", "promote", "help",
+];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 ///
@@ -34,12 +36,16 @@ pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
 
 /// The flags that take NO value. Needed by `reject_unknown_flags` to walk the argv correctly: a
 /// value-taking flag consumes the next token, so `--summary "--x"` must not read as the flag `--x`.
-pub const BOOL_FLAGS: [&str; 8] =
-    ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run"];
+pub const BOOL_FLAGS: [&str; 9] =
+    ["--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run", "--check"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 37] = [
+pub const FLAGS: [&str; 39] = [
     "--pretty",
+    // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
+    // `--root` names the repo when the cwd is not it.
+    "--check",
+    "--root",
     // #71 — names WHAT replaced a suppressed algorithm, stored on the tombstone.
     "--superseded-by",
     // #72 — the revision `impl revert` restores to, and who to attribute the write to.
@@ -1573,6 +1579,84 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 "changes": paired,
             }))
         }
+        // `promote [--id a,b] [--check] [--root <dir>]` — move records from the per-user RUNTIME store
+        // into the committed, build-readable repo store, or (with `--check`) report the drift for the
+        // gate. See `crate::repo_store` for why the two stores exist and why the repo one is read
+        // directly rather than through `load()`.
+        "promote" => {
+            let check = args.iter().any(|a| a == "--check");
+            let root = flag_value(&args, "--root")
+                .map(std::path::PathBuf::from)
+                .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+            let path = crate::repo_store::path_under(&root);
+            let repo = crate::repo_store::read_at(&path)?.unwrap_or_else(crate::repo_store::empty);
+            let runtime = crate::implementations_of(&crate::load());
+
+            // No `--id` means "refresh what this store already tracks". A bare promote must never
+            // ADOPT new records by itself — what the build compiles is an explicit decision.
+            let ids: Vec<String> = match flag_value(&args, "--id") {
+                Some(s) => s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect(),
+                None => crate::repo_store::tracked_ids(&repo),
+            };
+
+            let repo_impls = crate::repo_store::impls_of(&repo);
+            let mut differs = Vec::new();
+            let mut missing = Vec::new();
+            for id in &ids {
+                match crate::repo_store::verdict_for(&runtime, &repo_impls, id) {
+                    crate::repo_store::Verdict::Differs => differs.push(id.clone()),
+                    crate::repo_store::Verdict::MissingUpstream => missing.push(id.clone()),
+                    crate::repo_store::Verdict::UpToDate => {}
+                }
+            }
+
+            if check {
+                emit(&serde_json::json!({
+                    "checked": ids.len(), "drifted": differs, "missingUpstream": missing,
+                    "store": path.to_string_lossy(), "ok": differs.is_empty() && missing.is_empty(),
+                }))?;
+                // A gate that cannot fail is not a gate. Naming the ids is the whole point: the
+                // failure mode this guards is an edit that never reached what the compiler reads.
+                if !differs.is_empty() || !missing.is_empty() {
+                    return Err(format!(
+                        "the repo store is out of date — {} drifted ({}), {} missing upstream ({}). \
+                         Run `bsc graph promote` to bring it forward.",
+                        differs.len(),
+                        differs.join(", "),
+                        missing.len(),
+                        missing.join(", "),
+                    ));
+                }
+                return Ok(());
+            }
+
+            // NOTHING TO PROMOTE MUST TOUCH NOTHING. A bare `promote` in a repo that tracks no records
+            // used to create an empty store wherever the cwd happened to be — which is exactly what it
+            // did inside `crates/bsc-graph/` when `verbs_match_the_dispatcher` invoked every verb. A
+            // read-shaped no-op that writes a file into the source tree is a side effect nobody asked
+            // for, so it now reports and returns.
+            if ids.is_empty() {
+                return emit(&serde_json::json!({
+                    "ok": true, "store": path.to_string_lossy(), "promoted": 0, "tracked": 0,
+                    "note": "this repo store tracks no records yet — adopt one with `--id <id>`",
+                }));
+            }
+
+            let (next, missing) = crate::repo_store::promote_into(&repo, &runtime, &ids);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+            }
+            let body = serde_json::to_string_pretty(&next)
+                .map_err(|e| format!("cannot render the repo store: {e}"))?;
+            std::fs::write(&path, format!("{body}\n"))
+                .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+            emit(&serde_json::json!({
+                "ok": true, "store": path.to_string_lossy(),
+                "promoted": ids.len() - missing.len(), "missingUpstream": missing,
+                "tracked": crate::repo_store::tracked_ids(&next).len(),
+            }))
+        }
         // `dump` — the whole graph document (the `implementations` tier), store-or-seed.
         "dump" => emit(&crate::load()),
         // `doctor [--fix]` (#3212) — diagnose the library's visualization typing + coverage: untyped /
@@ -1887,7 +1971,8 @@ fn help(prog: &str) -> String {
   \
   \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
-           {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
+           {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
+         {prog} promote [--id a,b] [--check] [--root <dir>]   # move records from the per-user RUNTIME store into the COMMITTED, build-readable repo store at graph/algorithms.json — the store a fresh clone, CI and every worktree agent compile from. Bare `promote` refreshes only what the store already TRACKS; `--id` adopts new records, because what the build compiles is an explicit decision. `--check` writes nothing and EXITS NON-ZERO naming the drifted ids — that is the gate. The repo store is read directly, never through the seed reconcile, or 676 packaged impls would be appended into the build's source of truth\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
          Implementation techs (#2770): ANY language — `--tech` is not validated and never has been. Each impl `composes` other same-tech impls, rooted in that language's primitives, so a new tech simply starts its own kit (`--tech python` works today; the packaged kits are typescript · rust).\n\
          WHAT IS language-bound is the MINING half: `harvest`/`curate`/`relink` parse real source with tree-sitter and only carry grammars for ts/tsx/rs. Curating code you already have has no such limit — a session that could not harvest a Python project once concluded it could not curate one either, and left 12 real algorithms unstored rather than try (#53).\n\
@@ -2080,6 +2165,26 @@ mod tests {
             "a verb outside VERBS must be rejected — `neighbors` is one of the concept-ontology \
              verbs #2961 deleted; got: {err}",
         );
+    }
+
+    /// REGRESSION: a bare `promote` used to CREATE an empty store wherever the cwd was, so the test
+    /// above — which invokes every verb — quietly wrote `crates/bsc-graph/graph/algorithms.json` into
+    /// the source tree. A verb that has nothing to do must touch nothing.
+    #[test]
+    fn a_bare_promote_with_nothing_tracked_writes_no_file() {
+        let dir = std::env::temp_dir()
+            .join(format!("bsc-promote-noop-{}-{:?}", std::process::id(), std::thread::current().id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let args = vec!["promote".to_string(), "--root".to_string(), dir.to_string_lossy().into_owned()];
+        run(args, "bsc graph").expect("a no-op promote succeeds rather than erroring");
+
+        assert!(
+            !crate::repo_store::path_under(&dir).exists(),
+            "a promote with nothing to promote must not create a store file",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The help text is the CLI's own account of its surface, so every exported const must appear in

@@ -14,6 +14,7 @@ pub mod cli;
 /// that makes an algorithm emit deliberately unlike a component one.
 pub mod emit;
 pub mod extract;
+pub mod repo_store;
 pub mod rust_test;
 
 use serde_json::Value;
