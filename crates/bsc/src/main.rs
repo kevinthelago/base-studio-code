@@ -112,7 +112,7 @@ const COMMANDS: &[Surface] = &[
     active("data", "canonical data model (DuckDB): model · scan · tables · connector", Some("the canonical data model — DuckDB")),
     active("cve", "vulnerability data (OSV.dev): scan a lockfile · check a package · advisory detail (supply-chain #2433)", Some("the OSV.dev advisory cache")),
     active("surface", "THIS catalog: every bsc command surface as data (list · --json) — one source for help, the node set and drift checks", Some("the command-surface catalog, compiled into this binary")),
-    active("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance · cve", None),
+    active("mcp", "MCP: the server store (`server`) + the bundled stdio servers (research/compliance/cve)", None),
     internal("hook", "internal PreToolUse deny hooks (run by Claude Code, not by hand)", None),
     // #command-surface-catalog-is-one-source: `serve` (#4152) dispatched but was likewise absent.
     internal("serve", "internal WARM server (#4152) — one long-lived process answering many requests; the desktop spawns it", None),
@@ -273,6 +273,12 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
 /// `.mcp.json` spawns `bsc mcp research` / `bsc mcp compliance` instead of a separate binary.
 fn run_mcp(rest: Vec<String>) -> Result<(), String> {
     let server = rest.first().map(String::as_str).unwrap_or("");
+    // `server` is the STORE surface (CRUD + persona assignment), nested rather than flattened:
+    // every `.mcp.json` the app has generated spawns `bsc mcp <name>`, so a flat `bsc mcp list`
+    // would both break those files and collide with a server actually named `list`.
+    if server == "server" {
+        return bsc_mcp::cli::run(rest[1..].to_vec(), "bsc mcp server");
+    }
     match server {
         "research" => mcp_rpc::run_stdio_server(&research::mcp::Server::from_env()?),
         "compliance" => mcp_rpc::run_stdio_server(&compliance::mcp::Server::from_env()?),
@@ -290,7 +296,10 @@ fn mcp_help() -> String {
     String::from(
         "bsc mcp — bundled native MCP servers (stdio JSON-RPC 2.0)\n\n\
          USAGE:\n  \
-         bsc mcp <server>\n\n\
+         bsc mcp <server>            # spawn a bundled server (what .mcp.json does)\n  \
+         bsc mcp server <command>    # the server STORE: list / get / set / remove / assign\n\n\
+         COMMANDS:\n  \
+         server        the MCP server store: list / get / set / remove + assign to a persona\n\n\
          SERVERS:\n  \
          research      literature grounding (arXiv · Semantic Scholar · PubMed · Crossref)\n  \
          compliance    compliance standards corpus (WCAG · GDPR · CCPA · SOC 2)\n  \
