@@ -34,7 +34,7 @@ beforeEach(() => {
     cmd === "setup_designer_workspace" ? ({ design_dir: DESIGN_DIR } as never) : (null as never));
   useAppStore.setState({
     paneRoles: {}, paneProfiles: {}, paneStartupPromptText: {}, paneContinue: {},
-    paneMcpServers: {}, paneHooks: {}, paneSkills: {}, tunnelExtraPanes: {},
+    paneHooks: {}, paneSkills: {}, tunnelExtraPanes: {},
   });
 });
 afterEach(() => cleanup());
@@ -73,7 +73,8 @@ describe("StudioSessionMount (#3357)", () => {
     expect(s.paneContinue[pid]).toBe(true);
     // MCP/hooks pinned EMPTY: without these the generic path falls back to the GLOBAL sets, attaching
     // every configured MCP server (extra tools) to a session confined to one store CLI.
-    expect(s.paneMcpServers[pid]).toEqual([]);
+    // The pane no longer carries a precomputed server list at all: its set is resolved at LAUNCH
+    // from its persona (mcp-servers-belong-to-the-persona), so there is nothing to seed here.
     expect(s.paneHooks[pid]).toEqual([]);
     // Skills are the studio's CURATED default set (#3766) — the designer authors with a11y + compliance
     // in mind by construction, NOT the global firehose.

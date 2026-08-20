@@ -64,16 +64,19 @@ describe("applyBlueprintMcp (#897 Phase 2)", () => {
     return store;
   };
 
-  it("scopes every attached server to the project (enabled) and returns the downloadable ones", () => {
+  it("installs every attached server (enabled) and returns the downloadable ones", () => {
     const bp = {
       mcp: ["Compliance"], // built-in native server (#1005) — scoped but not cloned
       sections: [sec({ uid: "a", mcp: ["Dependency Graph"] })], // downloadable first-party
     } as unknown as Blueprint;
     const store = makeStore();
     const downloadable = applyBlueprintMcp(store, bp, "proj", "/base");
-    // Both servers added, enabled, scoped to the project.
+    // Both servers added and enabled. They are no longer SCOPED to the project: scoping is gone
+    // (mcp-servers-belong-to-the-persona), so a blueprint-declared server is installed and then
+    // reaches a session only once a persona carries it. Installing it is still this function's job.
     expect(store.mcpServers.map((e) => e.name).sort()).toEqual(["Compliance", "Dependency Graph"]);
-    expect(store.mcpServers.every((e) => e.enabled && e.projects.includes("proj"))).toBe(true);
+    expect(store.mcpServers.every((e) => e.enabled)).toBe(true);
+    expect(store.mcpServers.every((e) => e.projects.length === 0)).toBe(true);
     // Only catalog-linked (downloadable) servers are returned for the caller to clone — the
     // built-in Compliance is not.
     expect(downloadable.sort()).toEqual(["Dependency Graph"]);

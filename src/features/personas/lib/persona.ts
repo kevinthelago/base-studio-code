@@ -71,6 +71,20 @@ export interface Persona {
   startPrompt: string;
   /** Attached skill ids (the Skills library, #636) written into the session's .claude/skills/. */
   skills: string[];
+  /** Attached MCP server ids — THE ONLY reason a server reaches a session.
+   *
+   *  It replaced three mechanisms that each answered the same question: `McpServer.projects[]`
+   *  (project scoping), `streamMcp` (per-stream assignment) and `paneMcpServers` (a per-pane
+   *  override). A skill already worked this way and an MCP server is the same kind of thing —
+   *  injectable capability an agent draws on — so it is stored and assigned the same way.
+   *
+   *  Authored with `bsc mcp server assign`, which writes THIS field rather than the server, so
+   *  there is one owner of the assignment. Optional: a persona authored before this carries none,
+   *  which reads as "no servers" rather than as an error.
+   *
+   *  The BUNDLED servers are not listed here — they ship with the app and reach every session
+   *  ambiently, the same way packaged personas are seeded rather than authored. */
+  mcp?: string[];
   /** The position's charter — what it is accountable for (#2193). One facet of the org abstraction,
    *  orthogonal to skills (capability) and role (permission); optional, so pre-#2193 personas are
    *  unaffected. Feeds the generated start prompt + the Org designer's position inspector. */

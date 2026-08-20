@@ -1398,57 +1398,20 @@ describe("agent fleet store", () => {
     expect(st.paneCwds[fleetPaneId("fb-key", "api")]).toBe("/base/worktrees/fb-key/api--api");  // fallback
   });
 
-  it("gives the director AND every worker the project's MCP servers (#876)", () => {
-    useAppStore.setState({
-      bscBaseDir: "/base",
-      // An MCP server scoped to this project (as a planner <mcp_assign> would create it),
-      // with {dir} already resolved to its install path.
-      mcpServers: [{
-        id: "mcp_comp", name: "Compliance", enabled: true, projects: ["mcp-proj"],
-        transport: "stdio", command: "uv", args: "run --directory /base/mcp/compliance-mcp-server compliance-mcp", env: [],
-      }],
-    });
-    useAppStore.getState().fleetStartProject("McpProj", fleet, "mcp-proj");
-    const st = useAppStore.getState();
-    const paneKey = (p: number) => p === 0 ? directorPaneId("mcp-proj") : fleetPaneId("mcp-proj", ["auth-ui", "api"][p - 1]);
-    const names = (p: number) => (st.paneMcpServers[paneKey(p)] ?? []).map((e) => e.name);
-    expect(names(0)).toContain("Compliance"); // director (pane 0)
-    expect(names(1)).toContain("Compliance"); // worker 1
-    expect(names(2)).toContain("Compliance"); // worker 2
-  });
-
-  it("director sees every installed server; workers get baseline + only their assigned (#1054)", () => {
-    useAppStore.setState({
-      bscBaseDir: "/base",
-      mcpServers: [
-        { id: "glob", name: "Glob",     enabled: true,  projects: [],      transport: "stdio", command: "x", args: "", env: [] },
-        { id: "dis",  name: "Disabled", enabled: false, projects: [],      transport: "stdio", command: "x", args: "", env: [] },
-        { id: "sci",  name: "SciTool",  enabled: false, projects: ["zzz"],  transport: "stdio", command: "x", args: "", env: [] },
-      ],
-    });
-    const f: FleetPlan = {
-      recommended: 2, reasoning: "", director: { enabled: true },
-      streams: [
-        { id: "sci", name: "Sci", repo: "o/r", owns: [], issues: [], dependsOn: [], mcp: ["SciTool"] },
-        { id: "ui",  name: "UI",  repo: "o/r", owns: [], issues: [], dependsOn: [] },
-      ],
-    };
-    useAppStore.getState().fleetStartProject("Multi", f, "multi-key");
-    const st = useAppStore.getState();
-    const paneKey = (p: number) => p === 0 ? directorPaneId("multi-key") : fleetPaneId("multi-key", ["sci", "ui"][p - 1]);
-    const names = (p: number) => (st.paneMcpServers[paneKey(p)] ?? []).map((e) => e.name).sort();
-    // Every session also gets the always-available built-in servers — Research (#1196) +
-    // Compliance (#1005). "Channel (mock)" (#3146/#3777) is a built-in too, but a DISABLED one:
-    // it is not global, and reaches a worker only by explicit per-stream assignment.
-    // Director (pane 0) sees ALL installed servers — including the disabled and other-project
-    // ones, so the disabled mock channel shows up here and NOT in either worker below.
-    expect(names(0)).toEqual(["Channel (mock)", "Compliance", "Disabled", "Glob", "Research", "SciTool"]);
-    // The science worker gets the global baseline + built-ins + its assigned SciTool
-    // (disabled/other-project, pulled in by the explicit assignment).
-    expect(names(1)).toEqual(["Compliance", "Glob", "Research", "SciTool"]);
-    // The UI worker, with nothing assigned, gets the global baseline + the built-ins.
-    expect(names(2)).toEqual(["Compliance", "Glob", "Research"]);
-  });
+  // TWO TESTS WERE HERE, and their coverage MOVED rather than vanished:
+  //   · "gives the director AND every worker the project's MCP servers (#876)" — project scoping
+  //   · "director sees every installed server; workers get baseline + only their assigned (#1054)"
+  //
+  // Both asserted mechanisms that no longer exist. `McpServer.projects[]`, `streamMcp` and the
+  // per-pane `paneMcpServers` map were three ways to answer one question and are gone: a server
+  // reaches a session because that session's PERSONA carries it
+  // (mcp-servers-belong-to-the-persona). The fleet launch therefore precomputes no server list, so
+  // there is nothing here to assert against.
+  //
+  // The rule they were really testing is now covered where it lives, in
+  // `features/mcp/lib/mcpServers.test.ts` → "resolvePersonaMcp — the ONE resolver": ambient
+  // built-ins reach everyone, a carried server is included even when disabled (which is what
+  // replaced the channel-mock carve-out), and `projects` is ignored entirely.
 
   it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {
     useAppStore.setState({ bscBaseDir: "/base" });
@@ -1805,24 +1768,10 @@ describe("mcp servers store", () => {
     expect(useAppStore.getState().mcpServers).toHaveLength(0);
   });
 
-  it("fleetStartProject resolves only enabled global + this-project servers onto panes", () => {
-    const servers: McpServer[] = [
-      { id: "g",     name: "g", enabled: true,  projects: [], transport: "stdio" },
-      { id: "p",     name: "p", enabled: true,  projects: ["proj-key"], transport: "stdio" },
-      { id: "off",   name: "x", enabled: false, projects: [], transport: "stdio" },
-      { id: "other", name: "o", enabled: true,  projects: ["zzz"], transport: "stdio" },
-    ];
-    useAppStore.setState({ bscBaseDir: "/base", mcpServers: servers });
-    const fleet: FleetPlan = {
-      recommended: 1, reasoning: "", director: { enabled: false },
-      streams: [{ id: "s0", name: "S0", repo: "own/web", owns: [], issues: [], dependsOn: [] }],
-    };
-    useAppStore.getState().fleetStartProject("ExtP", fleet, "proj-key");
-    // director disabled ⇒ pane 0 is the single worker "s0". Filter the always-present built-in
-    // servers (#1196 Research, #1005 Compliance) to keep this focused on user-server scoping.
-    const ids = (useAppStore.getState().paneMcpServers[fleetPaneId("proj-key", "s0")] ?? []).map(e => e.id).filter(id => id !== "builtin-research" && id !== "builtin-compliance");
-    expect(ids).toEqual(["g", "p"]);
-  });
+  // "fleetStartProject resolves only enabled global + this-project servers onto panes" WAS HERE.
+  // It asserted project scoping onto a per-pane map; both are gone
+  // (mcp-servers-belong-to-the-persona). A pane's server set is resolved at launch from its
+  // persona, and the rule is covered in `features/mcp/lib/mcpServers.test.ts`.
 });
 
 describe("hooks store", () => {

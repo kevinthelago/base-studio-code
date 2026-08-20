@@ -18,7 +18,7 @@ function mkStore(overrides: Record<string, unknown> = {}): AppStore {
     paneRoles: {}, paneRoleGlobs: {}, paneFlows: {}, paneProfiles: {}, agentProfiles: [],
     fleetPaneStreams: {},
     deniedCommands: [],
-    paneMcpServers: {}, mcpServers: [], paneHooks: {}, hooks: [],
+    mcpServers: [], paneHooks: {}, hooks: [],
     paneSkills: {}, skills: [], sessionSkillOverrides: {}, sessionSkillGroups: {}, skillGroups: [],
     paneWasClaude: {}, autoResumeClaude: false, uncleanShutdown: false, restoreRequested: {},
     llmProvider: "anthropic", llmModel: "claude-sonnet-4-6", claudeApiKey: "", openaiKey: "", geminiKey: "", localBaseUrl: "",
@@ -662,6 +662,46 @@ describe("studio confinement survives an unseeded store (#3423)", () => {
 // Each narrowing case is paired with the SAME store minus the persona binding, because the claim is a
 // DIFFERENCE ("the persona is what changed this"), and a one-sided assertion would still pass if the
 // role happened to produce the same denies.
+describe("launch resolves MCP SERVERS from the pane's persona too", () => {
+  // The same primitive as the capability block below, applied to the axis that was left behind.
+  // Three mechanisms used to answer this — project scoping, per-stream assignment, and a per-pane
+  // override map — and all three are gone.
+  const server = (id: string, over: Record<string, unknown> = {}) => ({
+    id, name: id, enabled: true, projects: [], transport: "stdio", command: "x", ...over,
+  });
+  const carrier = (mcp: string[]) => ({
+    id: "p-carrier", name: "Carrier", blurb: "", role: "worker", startPrompt: "", skills: [], mcp,
+  });
+  const withPersona = (mcp: string[], servers: unknown[]) => mkStore({
+    personas: [carrier(mcp)], panePersonas: { p: "p-carrier" }, paneRoles: { p: "worker" },
+    mcpServers: servers,
+  });
+  const names = (s: AppStore) =>
+    JSON.parse(buildAgentEnv(s, "p", "bsc-agent", "")?.BSC_AGENT_MCP ?? "[]").map((m: { name: string }) => m.name);
+
+  it("gives the session what its persona carries", () => {
+    expect(names(withPersona(["acme"], [server("acme")]))).toContain("acme");
+  });
+
+  it("does NOT give it a stored server nobody carries", () => {
+    // Under project scoping this server was global and every session got it. That is the behaviour
+    // this slice deliberately removes: reaching a session now requires being carried.
+    expect(names(withPersona([], [server("acme")]))).not.toContain("acme");
+  });
+
+  it("still gives every session the ambient built-ins", () => {
+    // A persona carrying nothing is a working session, not a toolless one.
+    expect(names(withPersona([], []))).toContain("Research");
+  });
+
+  it("a pane with NO persona gets the built-ins and nothing else", () => {
+    // An interactive console, or a pane whose persona was deleted.
+    const s = mkStore({ paneRoles: { p: "worker" }, mcpServers: [server("acme")] });
+    expect(names(s)).toContain("Research");
+    expect(names(s)).not.toContain("acme");
+  });
+});
+
 describe("launch resolves capability from the pane's PERSONA, not its role name", () => {
   /** A persona on the `worker` role whose floor is deliberately tighter than the worker row. */
   const narrowed = {
