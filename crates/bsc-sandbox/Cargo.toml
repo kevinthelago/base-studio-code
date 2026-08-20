@@ -1,0 +1,13 @@
+[package]
+name = "bsc-sandbox"
+version = "0.1.0"
+edition = "2021"
+description = "Renders an agent's isolation spec into an exec-ready argv: a systemd-run cgroup scope wrapping a bubblewrap namespace. Replaces the WSL2 subsystem in src-tauri/src/session/sandbox (phase-2-kernel-isolation-replaces-the-hook-floor). Tauri-free, dependency-free, and the RENDER is platform-independent so its tests run everywhere - only execution is Linux-gated."
+
+[lib]
+name = "bsc_sandbox"
+
+# Deliberately NO dependencies. The render is string-building over std, which keeps this crate out
+# of the DuckDB-shaped part of the workspace (see CLAUDE.md on which crates pay for that) and keeps
+# `cargo check -p bsc-sandbox` a couple of seconds rather than a couple of minutes.
+[dependencies]

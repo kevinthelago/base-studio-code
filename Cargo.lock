@@ -980,6 +980,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-sandbox"
+version = "0.1.0"
+
+[[package]]
 name = "bsc-session"
 version = "0.1.0"
 dependencies = [
@@ -1024,6 +1028,15 @@ version = "0.1.0"
 dependencies = [
  "bsc-util",
  "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-storefs"
+version = "0.1.0"
+dependencies = [
+ "bsc-sandbox",
  "serde",
  "serde_json",
 ]
