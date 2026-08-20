@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { closureOf, importedNames, importsFor, materialize, mergeById } from "./graph-rust-compile.mjs";
+import { closureOf, importedNames, importsFor, materialize, mergeById, materializedCrates, isMaterializedModule, MATERIALIZE_MARKER } from "./graph-rust-compile.mjs";
 
 /**
  * The materialization convention is the load-bearing part of the Rust sweep, and getting it wrong does
@@ -142,5 +142,41 @@ describe("gate sources", () => {
 
   it("ignores an entry with no id rather than keying on undefined", () => {
     expect(mergeById([{ code: "orphan" }, { id: "a.rs" }]).impls).toHaveLength(1);
+  });
+});
+
+// Tier A vs Tier R. A crate that materializes its source carries WHOLE MODULES, compiled inside the
+// crate against its dependencies — sweeping one as a standalone node is a category error that fails
+// loudly and wrongly (`bsc-blueprint-cli.rs` cannot resolve `bsc_json_store` alone, and should not).
+describe("materialized crates are Tier A, not Tier R", () => {
+  const manifests: Record<string, string> = {
+    "bsc-blueprint": `[package]
+name = "bsc-blueprint"
+${MATERIALIZE_MARKER}
+`,
+    "bsc-graph": `[package]
+name = "bsc-graph"
+`,
+  };
+
+  it("reads the opt-in from each crate's OWN manifest, never a literal list", () => {
+    const got = materializedCrates(["bsc-blueprint", "bsc-graph"], (d: string) => manifests[d] ?? null);
+    expect([...got]).toEqual(["bsc-blueprint"]);
+  });
+
+  it("tolerates a crate with no readable manifest", () => {
+    expect([...materializedCrates(["ghost"], () => null)]).toEqual([]);
+  });
+
+  it("excludes a record belonging to a materialized crate", () => {
+    const crates = new Set(["bsc-blueprint"]);
+    expect(isMaterializedModule("crates/bsc-blueprint/src/cli.rs", crates)).toBe(true);
+    expect(isMaterializedModule("crates/cve/src/install.rs", crates)).toBe(false);
+  });
+
+  it("ignores a record with no src, or one outside crates/", () => {
+    const crates = new Set(["bsc-blueprint"]);
+    expect(isMaterializedModule(undefined, crates)).toBe(false);
+    expect(isMaterializedModule("src/features/x.ts", crates)).toBe(false);
   });
 });

@@ -38,7 +38,7 @@
  * so a node missing one is a real defect and not a stylistic gap.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -91,6 +91,36 @@ export function loadGateSources(root) {
     read(join(root, "src-tauri", "data", "knowledge", "algorithms.json")),
     read(join(root, "graph", "algorithms.json")),
   );
+}
+
+/** The one line a crate adds to its manifest to have its source materialized from the graph. */
+export const MATERIALIZE_MARKER = 'build = "../graph-materialize/build.rs"';
+
+/**
+ * Crate directories whose source lives in the graph — read from each crate's OWN manifest.
+ *
+ * These carry Tier-A records: a whole crate module, compiled INSIDE its crate against its dependencies.
+ * Sweeping one as a standalone Tier-R node is a category error, and a loud one — `bsc-blueprint-cli.rs`
+ * fails with `cannot find module or crate bsc_json_store`, which is correct rather than a defect. The
+ * tier is still decided by the compile; this only keeps a record out of a population it never joined.
+ *
+ * Derived, never hand-maintained: a crate is in this set exactly when its manifest opts in, so the list
+ * cannot drift from reality the way a literal would.
+ */
+export function materializedCrates(cratesDirs, readManifest) {
+  const out = new Set();
+  for (const dir of cratesDirs) {
+    const text = readManifest(dir);
+    if (typeof text === "string" && text.includes(MATERIALIZE_MARKER)) out.add(dir);
+  }
+  return out;
+}
+
+/** Does this record's `src` belong to a crate that materializes its source? */
+export function isMaterializedModule(src, crates) {
+  if (typeof src !== "string") return false;
+  const m = src.match(/^crates\/([^/]+)\//);
+  return m ? crates.has(m[1]) : false;
 }
 
 /** Transitive closure of a node, split into the code to materialize and the primitives to import. */
@@ -175,7 +205,23 @@ if (process.argv[1]?.endsWith("graph-rust-compile.mjs")) {
   rmSync(work, { recursive: true, force: true });
   mkdirSync(join(work, "out"), { recursive: true });
 
-  const nodes = impls.filter((i) => i.tech === "rust" && i.role === "algorithm" && (i.code ?? "").trim());
+  // NOT wrapped in a catch. An earlier version swallowed everything here, which turned a missing import
+  // into an empty crate list — the filter silently did nothing and the sweep failed on a record it
+  // should never have swept. A broad catch around a lookup is how a guard quietly stops guarding.
+  const crateDirs = readdirSync(join(root, "crates"), { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name);
+  const materialized = materializedCrates(crateDirs, (dir) => {
+    try {
+      return readFileSync(join(root, "crates", dir, "Cargo.toml"), "utf8");
+    } catch {
+      return null;
+    }
+  });
+
+  const all = impls.filter((i) => i.tech === "rust" && i.role === "algorithm" && (i.code ?? "").trim());
+  const nodes = all.filter((i) => !isMaterializedModule(i.src, materialized));
+  const skipped = all.length - nodes.length;
 
   // HASH-CACHE. The gate runs on every commit while iterating, and re-compiling an unchanged library
   // to reach the same verdict is pure waste. The key covers what can change the answer: every swept
@@ -224,6 +270,13 @@ if (process.argv[1]?.endsWith("graph-rust-compile.mjs")) {
   const secs = ((Date.now() - started) / 1000).toFixed(1);
   const pass = nodes.length - failures.length;
   process.stdout.write(`\nrust nodes swept: ${nodes.length}   compiled: ${pass}   FAILED: ${failures.length}   (${secs}s)\n`);
+  // A skip nobody is told about is how a caller comes to believe a record was checked when it was not.
+  if (skipped) {
+    process.stdout.write(
+      `  (${skipped} Tier-A record(s) skipped — their crate materializes its source, so they compile ` +
+        `INSIDE it against its dependencies, never standalone)\n`,
+    );
+  }
   for (const f of failures) {
     process.stdout.write(`\n  ✗ ${f.id}  ${f.codes}\n`);
     const first = f.stderr.split("\n").filter((l) => l.startsWith("error")).slice(0, 2);
