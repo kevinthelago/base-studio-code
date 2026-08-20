@@ -1,30 +1,18 @@
-//! The plan store, projected as a read-only file tree.
+//! The plan store, projected as a read-only file tree at `/plan`.
 //!
-//! # Why
+//! Layout:
+//! ```text
+//! items/<ref>/{status,title,body,acceptance,labels,dependsOn}
+//! by-status/<status>/<ref>   contains the title — `ls` it to see what is in that state
+//! README                     states the staleness where a reader meets it
+//! ```
 //!
-//! An agent needs no documentation for a filesystem. `cat /plan/items/<ref>/status` requires no
-//! recall, no schema and no `--help` — it is the most-trained-on interface there is. A CLI has to
-//! buy that familiarity back with discoverability and validation; a filesystem starts with it.
-//!
-//! # Projection, not FUSE
-//!
-//! This renders a **snapshot**. That is deliberate for the first slice: a read-only projection is
-//! most of the value of a read surface at a fraction of the cost (no `libfuse3-dev`, no `fuser`
-//! dependency to target-gate away from the Windows build, no daemon per mount). FUSE buys writes
-//! and liveness, and those should be bought with evidence — see
-//! `phase-3-store-surfaces-are-filesystems`.
-//!
-//! The staleness is real and is stated in the generated `README`, where a reader will actually
-//! meet it. It is also already the semantics a worker has: its context is assembled once at
-//! launch.
-//!
-//! # Paths are `String`, not `PathBuf`, on purpose
-//!
-//! These are **guest** paths inside a Linux namespace, always separated by `/`. `PathBuf` renders
-//! with the *host* separator and compares by host rules, which is how `Path::is_absolute()`
-//! silently broke [`bsc_sandbox`] on Windows. Keeping the pure half on plain `String` means the
-//! projection cannot differ between the dev host and the target.
+//! Consumes the JSON `bsc plan list --FULL --json` emits. Plain `--json` is the LEAN summary
+//! shape, where `acceptance` is a COUNT rather than an array and `body` is absent entirely — it
+//! does not deserialize into [`PlanItem`] and fails at parse time.
 
+
+use crate::{id_is_safe, lines, Tree};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -47,32 +35,7 @@ pub struct PlanItem {
     pub depends_on: Vec<String>,
 }
 
-/// A rendered tree: relative guest path -> file contents.
-///
-/// `BTreeMap` so the output is deterministic — a projection that reordered between runs would
-/// make any diff of it useless.
-pub type Tree = BTreeMap<String, String>;
 
-/// A ref must not be able to escape its directory when joined onto a root.
-///
-/// Refs come from the store rather than from user prose, but this is the one place a bad value
-/// would become a path, and `materialize` writes to disk.
-fn ref_is_safe(r: &str) -> bool {
-    !r.is_empty()
-        && !r.starts_with('.')
-        && r.chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
-}
-
-fn lines(v: &[String]) -> String {
-    if v.is_empty() {
-        String::new()
-    } else {
-        let mut s = v.join("\n");
-        s.push('\n');
-        s
-    }
-}
 
 /// Render the tree. `generated_at` is passed in rather than read from the clock so the projection
 /// stays pure and its tests are deterministic.
@@ -80,7 +43,7 @@ pub fn project(items: &[PlanItem], generated_at: &str) -> Tree {
     let mut t = Tree::new();
     let mut by_status: BTreeMap<&str, Vec<&PlanItem>> = BTreeMap::new();
 
-    for it in items.iter().filter(|i| ref_is_safe(&i.reference)) {
+    for it in items.iter().filter(|i| id_is_safe(&i.reference)) {
         let base = format!("items/{}", it.reference);
         // Every field is always present, even when empty: a predictable shape means `cat` returns
         // nothing rather than failing, and an agent never has to test for a file's existence.
@@ -134,20 +97,6 @@ pub fn from_json(s: &str) -> Result<Vec<PlanItem>, serde_json::Error> {
     serde_json::from_str(s)
 }
 
-/// Write a rendered tree under `root`. The only part of this crate that touches a filesystem.
-///
-/// Kept separate from [`project`] so the rendering stays pure and testable on any host; this is
-/// the one function whose behaviour depends on there being a disk.
-pub fn materialize(root: &std::path::Path, tree: &Tree) -> std::io::Result<()> {
-    for (rel, contents) in tree {
-        let path = root.join(rel);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(&path, contents)?;
-    }
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {

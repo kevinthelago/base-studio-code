@@ -6,7 +6,7 @@
 //!
 //! ```sh
 //! bsc plan list --full --json \
-//!   | cargo run -q -p bsc-planfs --example launch -- /wt/repo--stream /tmp/planfs \
+//!   | cargo run -q -p bsc-storefs --example launch -- /wt/repo--stream /tmp/planfs \
 //!       cat /plan/items/some-ref/status \
 //!   > argv.txt
 //! mapfile -t ARGV < argv.txt && "${ARGV[@]}"
@@ -47,7 +47,7 @@ fn main() {
         eprintln!("reading plan JSON from stdin: {e}");
         std::process::exit(1);
     }
-    let items = match bsc_planfs::from_json(&buf) {
+    let items = match bsc_storefs::plan::from_json(&buf) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("parsing plan JSON (did you pass --full?): {e}");
@@ -55,8 +55,8 @@ fn main() {
         }
     };
 
-    let tree = bsc_planfs::project(&items, "launch");
-    if let Err(e) = bsc_planfs::materialize(std::path::Path::new(projection), &tree) {
+    let tree = bsc_storefs::plan::project(&items, "launch");
+    if let Err(e) = bsc_storefs::materialize(std::path::Path::new(projection), &tree) {
         eprintln!("materializing the projection under {projection}: {e}");
         std::process::exit(1);
     }

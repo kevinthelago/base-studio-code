@@ -2,12 +2,12 @@
 //!
 //! ```sh
 //! bsc plan list --full --json \
-//!   | cargo run -q -p bsc-planfs --example project -- /tmp/planfs 2026-08-20T00:00:00Z
+//!   | cargo run -q -p bsc-storefs --example project -- /tmp/planfs 2026-08-20T00:00:00Z
 //! ```
 //!
 //! **`--full` is required.** Plain `bsc plan list --json` is the LEAN summary shape, where
 //! `acceptance` is a *count* rather than an array and `body` is absent entirely — it does not
-//! deserialize into [`bsc_planfs::PlanItem`] and would fail at parse time.
+//! deserialize into [`bsc_storefs::PlanItem`] and would fail at parse time.
 //!
 //! Exists so the projection can be mounted for real via `bsc-sandbox` and read by an agent that
 //! has no CLI — which is the acceptance criterion for
@@ -30,7 +30,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let items = match bsc_planfs::from_json(&buf) {
+    let items = match bsc_storefs::plan::from_json(&buf) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("parsing plan JSON: {e}");
@@ -38,8 +38,8 @@ fn main() {
         }
     };
 
-    let tree = bsc_planfs::project(&items, &stamp);
-    if let Err(e) = bsc_planfs::materialize(&root, &tree) {
+    let tree = bsc_storefs::plan::project(&items, &stamp);
+    if let Err(e) = bsc_storefs::materialize(&root, &tree) {
         eprintln!("materializing under {}: {e}", root.display());
         std::process::exit(1);
     }
