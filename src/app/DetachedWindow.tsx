@@ -10,7 +10,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import {
-  GitHubWorkspace, AutomationsWorkspace, ProjectsWorkspace,
+  GitHubWorkspace, ProjectsWorkspace,
   LogsWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
@@ -18,7 +18,6 @@ import {
 // lookup keyed by the URL-supplied `page`) so there's no user-controlled dispatch.
 function renderDetachedSection(page: string, section: string): React.ReactNode {
   switch (page) {
-    case "automations": return <AutomationsWorkspace pageOverride={section} />;
     case "logs":          return <LogsWorkspace pageOverride={section} />;
     case "github":      return <GitHubWorkspace pageOverride={section} />;
     case "projects":    return <ProjectsWorkspace pageOverride={section} />;
