@@ -708,6 +708,7 @@ dependencies = [
  "bsc-fleet",
  "bsc-graph",
  "bsc-loop",
+ "bsc-mcp",
  "bsc-navigate",
  "bsc-persona",
  "bsc-project",
@@ -898,6 +899,16 @@ dependencies = [
  "bsc-sqlite-util",
  "rusqlite",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-mcp"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-json-store",
+ "bsc-util",
  "serde_json",
 ]
 
