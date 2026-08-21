@@ -51,6 +51,8 @@ pub(crate) fn plan_launch(
 /// (`ensure_session_settings` wrote into the missing configured path), and the agent's TUI would
 /// clear the warning off screen. Pure (no fs/env) so the exact wire string is unit-testable;
 /// `to_bash_path` is a no-op off Windows.
+/// `sandboxed` means this session runs inside a mount namespace, so every path it can see is a
+/// GUEST path — which is why it suppresses the cwd report. See the `osc7` binding below.
 pub(super) fn build_bash_init_line(
     cwd: &str,
     cwd_missing: bool,
@@ -58,6 +60,7 @@ pub(super) fn build_bash_init_line(
     launch: Option<&str>,
     claude_fn: &str,
     rc_bash: &str,
+    sandboxed: bool,
 ) -> String {
     // The suffix runs AFTER the final screen clear, so it's what the user actually sees: the launch
     // command normally, or — when the configured cwd is gone — the red warning as an inert shell's
@@ -93,7 +96,13 @@ pub(super) fn build_bash_init_line(
     // start in the app's own data directory with no repo and no role gate. Self-corrupting and
     // unrecoverable, since nothing re-derives the path afterwards. Withholding the report keeps the
     // configured cwd intact, so the pane fixes itself the moment its worktree is back.
-    let osc7 = if cwd_missing { "" } else { "__bsc_osc7; " };
+    // ...and a SANDBOXED session must not report its cwd either, for the same reason with a
+    // different cause. Inside a mount namespace the worktree is bound at `/repo`, so `$(pwd)` is a
+    // GUEST path — meaningless on the host by construction, not merely unexpected. Reporting it
+    // overwrote the pane's configured cwd with `/repo`, and the NEXT launch then tried to bind a
+    // host path that does not exist and died on the spot: a first launch that works and every one
+    // after it failing. Observed, not theorised — `paneCwds` really did end up `{"…": "/repo"}`.
+    let osc7 = if cwd_missing || sandboxed { "" } else { "__bsc_osc7; " };
     format!(
         "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
          __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
@@ -106,6 +115,28 @@ pub(super) fn build_bash_init_line(
 
 #[cfg(test)]
 mod tests {
+    // A SANDBOXED session must not report its cwd. Inside a mount namespace `$(pwd)` is a GUEST
+    // path (`/repo`), and the frontend writes the reported cwd straight back into `paneCwds` — so
+    // reporting it overwrote the pane's HOST cwd with `/repo`, and the next launch tried to bind a
+    // host path that does not exist and died instantly. Observed: `paneCwds` really did become
+    // `{"nsdemo:worker": "/repo"}`. Same failure #3937 fixed for the inert warning shell, reached
+    // by a different route, so it needs its own guard.
+    #[test]
+    fn a_sandboxed_session_does_not_report_its_guest_cwd() {
+        let sandboxed = super::build_bash_init_line(
+            "/home/u/wt/repo", false, "/home/u/wt/repo", None, "", "/rc.sh", true,
+        );
+        assert!(!sandboxed.contains("__bsc_osc7; "), "no cwd report inside a namespace: {sandboxed}");
+        // The helper itself is still DEFINED — only the reporting call is withheld, so anything
+        // else referencing it keeps working.
+        assert!(sandboxed.contains("__bsc_osc7() {"));
+        // ...and an ordinary session still reports, or the pane would never learn its cwd at all.
+        let normal = super::build_bash_init_line(
+            "/home/u/wt/repo", false, "/home/u/wt/repo", None, "", "/rc.sh", false,
+        );
+        assert!(normal.contains("__bsc_osc7; "), "an unsandboxed session still reports: {normal}");
+    }
+
     use super::{build_bash_init_line, plan_launch, LaunchPlan};
 
     const INIT: &str = "claude --continue 2>/dev/null || claude";
@@ -115,6 +146,7 @@ mod tests {
         let line = build_bash_init_line(
             "/home/u/projects/acme", false, "/home/u/projects/acme",
             Some("claude --continue"), "claude() { :; }; ", "/home/u/.base-studio-code/bsc-env.sh",
+            false,
         );
         // cd's into the (bash-form) cwd before anything else, sources the helpers, and appends the
         // launch as a `; <launch>` suffix; the whole line is one trailing-newline-terminated command.
@@ -127,7 +159,7 @@ mod tests {
 
     #[test]
     fn build_bash_init_line_empty_cwd_has_no_cd_and_no_launch_suffix() {
-        let line = build_bash_init_line("", false, "", None, "claude() { :; }; ", "/rc.sh");
+        let line = build_bash_init_line("", false, "", None, "claude() { :; }; ", "/rc.sh", false);
         assert!(!line.contains("cd \""), "no cd when cwd is empty: {line}");
         // No launch ⇒ the line ends right after the screen clear, no `;` suffix.
         assert!(line.ends_with("printf '\\033[2J\\033[3J\\033[H'\n"), "no launch suffix: {line}");
@@ -141,6 +173,7 @@ mod tests {
         let line = build_bash_init_line(
             "/home/u/projects/gone", true, "/home/u/projects",
             Some("claude --continue"), "claude() { :; }; ", "/rc.sh",
+            false,
         );
         assert!(line.contains("WARNING: configured directory"), "loud warning printed: {line}");
         assert!(line.contains("cd \"/home/u/projects\" 2>/dev/null; "), "cd's into the nearest ancestor: {line}");
@@ -158,6 +191,7 @@ mod tests {
         // Guards the byte-exact extraction (#2067) — one full render locked against the wire format.
         let line = build_bash_init_line(
             "/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc",
+            false,
         );
         assert_eq!(
             line,
@@ -215,7 +249,7 @@ mod tests {
     /// forever and the agent genuinely launches in the app's data dir with no repo and no role gate.
     #[test]
     fn a_missing_cwd_shell_never_reports_its_fallback_dir() {
-        let line = build_bash_init_line("/c/gone/networkmonitor--auth", true, "/c/gone", Some(INIT), "", "/rc");
+        let line = build_bash_init_line("/c/gone/networkmonitor--auth", true, "/c/gone", Some(INIT), "", "/rc", false);
         assert!(!line.contains("__bsc_osc7; __bsc_state idle"), "no osc7 report when the cwd is missing: {line}");
         assert!(line.contains("PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND; }__bsc_state idle\""),
             "PROMPT_COMMAND keeps the state marker but drops the cwd report: {line}");
@@ -227,7 +261,7 @@ mod tests {
     /// The healthy path is unchanged: a real cwd still reports, or the app loses cwd tracking entirely.
     #[test]
     fn a_present_cwd_still_reports_over_osc7() {
-        let line = build_bash_init_line("/c/wt/networkmonitor--auth", false, "/c/wt/networkmonitor--auth", Some(INIT), "", "/rc");
+        let line = build_bash_init_line("/c/wt/networkmonitor--auth", false, "/c/wt/networkmonitor--auth", Some(INIT), "", "/rc", false);
         assert!(line.contains("}__bsc_osc7; __bsc_state idle\""), "PROMPT_COMMAND reports the cwd: {line}");
         assert!(line.contains("__bsc_osc7; __bsc_state idle; printf"), "and reports once up front: {line}");
     }
@@ -237,7 +271,7 @@ mod tests {
     /// `3J` drops the scrollback as well.
     #[test]
     fn the_screen_clear_also_clears_scrollback() {
-        let line = build_bash_init_line("/c/wt/x", false, "/c/wt/x", Some(INIT), "", "/rc");
+        let line = build_bash_init_line("/c/wt/x", false, "/c/wt/x", Some(INIT), "", "/rc", false);
         assert!(line.contains("printf '\\033[2J\\033[3J\\033[H'"), "clears screen AND scrollback: {line}");
     }
 }
