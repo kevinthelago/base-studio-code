@@ -1358,6 +1358,96 @@ mod namespace_tests {
     // The end-to-end one: the argv the LAUNCH PATH produces is executed for real, and the escape
     // that a PreToolUse hook cannot see is checked against it. Everything above asserts strings;
     // this asserts behaviour.
+    // The one that matters: a sandboxed session must SURVIVE an external command.
+    //
+    // Every earlier attempt at this failed on HAND-COPYING the init line rather than on the
+    // hypothesis, so this copies nothing — it calls `build_bash_init_line` and feeds its exact
+    // bytes to a real PTY, which is the app's own shape. `script(1)` and a simplified init line
+    // both survive `ls -l`; the app does not, so the difference has to be in what the real builder
+    // emits.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_sandboxed_session_survives_an_external_command() {
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use std::io::{Read, Write};
+
+        if std::process::Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        let wt = std::env::temp_dir().join(format!("bsc-extcmd-{}", std::process::id()));
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(wt.join("main.rs"), "fn main() {}\n").unwrap();
+        let wt_s = wt.to_str().unwrap().to_string();
+
+        let argv = namespace_argv(Some("worker"), "extcmd", &wt_s, None, "/bin/bash")
+            .expect("a worker renders");
+
+        // The REAL init line, sandboxed. `rc_bash` is the host path the launcher passes today —
+        // it is NOT bound inside the namespace, which is exactly the condition under test.
+        let claude_fn = "claude() { __bsc_state run; command claude \"$@\"; }; ";
+        let init = super::launch::build_bash_init_line(
+            &wt_s, false, &wt_s, None, claude_fn,
+            "/home/nobody/.base-studio-code/bsc-env.sh", true,
+        );
+
+        let pty = native_pty_system()
+            .openpty(PtySize { rows: 30, cols: 165, pixel_width: 0, pixel_height: 0 })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new(&argv[0]);
+        for a in &argv[1..] {
+            cmd.arg(a);
+        }
+        let mut child = pty.slave.spawn_command(cmd).expect("spawn");
+        drop(pty.slave);
+
+        let mut reader = pty.master.try_clone_reader().expect("reader");
+        let collected = std::thread::spawn(move || {
+            let mut all = Vec::new();
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = reader.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                all.extend_from_slice(&buf[..n]);
+            }
+            all
+        });
+
+        let mut w = pty.master.take_writer().expect("writer");
+        let step = |w: &mut Box<dyn Write + Send>, bytes: &[u8]| {
+            w.write_all(bytes).ok();
+            w.flush().ok();
+            std::thread::sleep(std::time::Duration::from_millis(1200));
+        };
+        step(&mut w, init.as_bytes());
+        // The app REFITS the pty a beat after launch — observed in a real session:
+        // `refit · grid=165x30 → 165x28`. A resize signals SIGWINCH to the terminal's foreground
+        // process group, and inside a PID namespace that group is namespace-relative — the one
+        // app behaviour the earlier reproductions never exercised.
+        pty.master
+            .resize(PtySize { rows: 28, cols: 165, pixel_width: 0, pixel_height: 0 })
+            .expect("resize");
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        step(&mut w, b"ls -l\n");            // EXTERNAL: fork + exec, the step that killed it
+        step(&mut w, b"echo SURVIVED-EXT\n"); // only reachable if the shell is still there
+        let early = child.try_wait().ok().flatten();
+        step(&mut w, b"exit\n");
+        drop(w);
+
+        let out = collected.join().unwrap_or_default();
+        let text = String::from_utf8_lossy(&out).to_string();
+        let _ = std::fs::remove_dir_all(&wt);
+
+        assert!(text.contains("main.rs"), "the external command ran: {} bytes", out.len());
+        assert!(
+            text.contains("SURVIVED-EXT"),
+            "the shell must outlive an external command — exited early: {early:?}\n\
+             {} bytes emitted:\n{}",
+            out.len(),
+            text
+        );
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn the_rendered_argv_actually_isolates_when_executed() {
