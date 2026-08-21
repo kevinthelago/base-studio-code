@@ -473,6 +473,9 @@ fn pty_create_inner(
             .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
             .collect();
         let root = crate::platform::paths::bsc_base_dir().join("sandbox-stores").join(safe);
+        // The emitter rc travels with the outbox: written on the host, bound read-only into the
+        // cage, sourced by the init line. See `sandbox_emitter_rc` for why it is a file.
+        let _ = std::fs::write(root.join("bsc-rc"), launch::sandbox_emitter_rc());
         match std::fs::create_dir_all(root.join("coord").join("out")) {
             Ok(()) => Some(root.to_string_lossy().into_owned()),
             Err(e) => {
@@ -1212,6 +1215,11 @@ fn namespace_argv(
     let mut paths = SessionPaths { root: PathBuf::from(cwd), ..Default::default() };
     if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
         let root = PathBuf::from(root);
+        // The emitter rc, if the launcher wrote one beside the outbox.
+        let rc = root.join("bsc-rc");
+        if rc.is_file() {
+            paths.rc_file = Some(rc);
+        }
         for name in ["plan", "graph", "ui", "coord"] {
             let dir = root.join(name);
             if dir.is_dir() {

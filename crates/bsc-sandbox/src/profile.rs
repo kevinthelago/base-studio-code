@@ -124,6 +124,9 @@ pub struct SessionPaths {
     /// Host path to the one credential file the harness needs, bound read-only under `home`.
     /// Requires `home`; supplying it without one is refused rather than dropped.
     pub credential_file: Option<PathBuf>,
+    /// A shell rc bound read-only at [`crate::RC_GUEST_PATH`] — see [`SandboxSpec::rc_file`] for
+    /// why helpers travel as a file rather than inline in the init line.
+    pub rc_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -255,6 +258,7 @@ pub fn for_role(
         // gets its own STATE dir that does not land in the git tree and does not outlive the run.
         home: paths.home.clone(),
         credential_file: paths.credential_file.clone(),
+        rc_file: paths.rc_file.clone(),
         command,
     };
     // Render once so a bad spec is refused HERE, at the join, rather than at launch.
@@ -290,6 +294,7 @@ mod tests {
             deny_bash: String::new(),
             home: None,
             credential_file: None,
+            rc_file: None,
         }
     }
 
