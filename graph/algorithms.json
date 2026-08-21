@@ -6,7 +6,6 @@
         "rust.vec",
         "rust.slice"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "merge.rs",
       "kind": "transform",
@@ -23,7 +22,6 @@
         "rust.vec",
         "rust.slice"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "merge-sort.rs",
       "kind": "sort",
@@ -229,7 +227,6 @@
         "rust.vec",
         "rust.slice"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "bubble-sort.rs",
       "kind": "sort",
@@ -245,7 +242,6 @@
         "rust.vec",
         "rust.slice"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "heap-sort.rs",
       "kind": "sort",
@@ -262,7 +258,6 @@
         "rust.slice",
         "rust.iterator"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "quick-sort.rs",
       "kind": "sort",
@@ -278,7 +273,6 @@
         "rust.slice",
         "rust.option"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "binary-search.rs",
       "kind": "search",
@@ -295,7 +289,6 @@
         "rust.iterator",
         "rust.option"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "linear-search.rs",
       "kind": "search",
@@ -310,7 +303,6 @@
       "composes": [
         "rust.i64"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "fibonacci.rs",
       "kind": "accumulate",
