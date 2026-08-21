@@ -31,6 +31,7 @@
   "@/app/console/lib/usePaneTokenUsage",
   "@/app/console/panes/menuPlacement",
   "@/app/console/panes/viewDefs",
+  "@/app/console/terminal/TerminalHost",
   "@/app/console/terminal/TerminalSlot",
   "@/app/console/useCoordinator",
   "@/app/console/useDirectorPump",
