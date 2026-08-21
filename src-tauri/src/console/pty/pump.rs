@@ -19,11 +19,44 @@ pub(super) fn spawn_reader(
     std::thread::spawn(move || {
         let mut buf = vec![0u8; 8192];
         let mut leftover: Vec<u8> = Vec::new();
+        // Opt-in raw tap (`$BSC_PTY_DUMP` = a directory): append every byte this session emits to
+        // `<dir>/<pane>.bin`, verbatim and before any UTF-8 splitting.
+        //
+        // It exists because a session's OUTPUT is the one thing no reproduction can recover. A
+        // sandboxed pane died after its first external command having emitted 6974 bytes, while a
+        // faithful reproduction of the same launch — same argv, same init line, same resize, same
+        // command — survived on a few hundred. The extra bytes ARE the diagnosis, and they only
+        // exist inside a real session.
+        //
+        // Unset by default and fail-safe throughout: a bad path, a full disk or a permission error
+        // must never disturb the session being diagnosed.
+        let mut dump = std::env::var("BSC_PTY_DUMP").ok().filter(|d| !d.is_empty()).and_then(|dir| {
+            let safe: String = pane_id
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+                .collect();
+            let _ = std::fs::create_dir_all(&dir);
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(std::path::Path::new(&dir).join(format!("{safe}.bin")))
+                .map_err(|e| log::warn!("pty[{pane_id}] BSC_PTY_DUMP unavailable: {e}"))
+                .ok()
+        });
+        if dump.is_some() {
+            log::info!("pty[{pane_id}] raw output is being tapped to $BSC_PTY_DUMP");
+        }
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => { log::info!("pty[{pane_id}] reader EOF"); break; }
                 Err(e) => { log::warn!("pty[{pane_id}] reader error: {e}"); break; }
                 Ok(n) => {
+                    if let Some(f) = dump.as_mut() {
+                        use std::io::Write;
+                        // Best-effort: a failed write must not end the session it is diagnosing.
+                        let _ = f.write_all(&buf[..n]);
+                        let _ = f.flush();
+                    }
                     leftover.extend_from_slice(&buf[..n]);
                     let (text, keep) = split_utf8_at_boundary(&leftover);
                     leftover = keep;

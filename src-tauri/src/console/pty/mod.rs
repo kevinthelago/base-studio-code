@@ -452,12 +452,52 @@ fn pty_create_inner(
     // `unused` warning appears. That matters because Windows has no namespace to replace the
     // hooks WITH — demoting them there would silently weaken the posture on the platform this is
     // still developed on.
+    // What this session's harness needs on PATH inside the cage. Claude Code is a node program
+    // reached through a shim, so both have to be bound — its package lives under /usr/lib, which
+    // the curated arm already binds wholesale, so the shim resolves once it is there.
+    // The coordination outbox, prepared HERE because a sandboxed session cannot create it: the
+    // mountpoint has to exist on the host before bwrap can bind it, and inside the cage /coord
+    // would be a read-only projection anyway.
+    //
+    // Without it every `bsc-ask` / `bsc-maintain` in the worker protocol HANGS — the protocol
+    // pipes into them, so a missing reader leaves the writer waiting rather than failing. The
+    // shims in the init line write here; a drain turns these files into coord.log events.
+    //
+    // Best-effort: a session that cannot get an outbox still launches and simply cannot emit,
+    // which is strictly better than refusing to start.
+    let sandbox_stores = sandbox_stores.or_else(|| {
+        let role = sandbox_role.as_deref().filter(|r| !r.is_empty())?;
+        let _ = role;
+        let safe: String = pane_id
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+            .collect();
+        let root = crate::platform::paths::bsc_base_dir().join("sandbox-stores").join(safe);
+        // The emitter rc travels with the outbox: written on the host, bound read-only into the
+        // cage, sourced by the init line. See `sandbox_emitter_rc` for why it is a file.
+        let _ = std::fs::write(root.join("bsc-rc"), launch::sandbox_emitter_rc());
+        match std::fs::create_dir_all(root.join("coord").join("out")) {
+            Ok(()) => Some(root.to_string_lossy().into_owned()),
+            Err(e) => {
+                log::warn!("pty[{pane_id}] no coordination outbox ({e}); the session cannot emit");
+                None
+            }
+        }
+    });
+
+    let harness_bins: &[&str] = match provider_id.as_deref() {
+        Some("claude") | None => &["node", "claude"],
+        // Any other provider names its own runtime; an unknown one gets no extra binaries rather
+        // than a guess, so the failure is "command not found" and not a silently widened cage.
+        Some(_) => &[],
+    };
     let ns_argv: Option<Vec<String>> = namespace_argv(
         sandbox_role.as_deref(),
         &pane_id,
         &cwd,
         sandbox_stores.as_deref(),
         &shell,
+        harness_bins,
     );
 
     let mut cmd = if let Some(argv) = ns_argv.as_ref() {
@@ -1150,6 +1190,7 @@ fn namespace_argv(
     cwd: &str,
     stores_root: Option<&str>,
     shell: &str,
+    harness_bins: &[&str],
 ) -> Option<Vec<String>> {
     use bsc_sandbox::profile::{for_role, Role, SessionPaths};
     use std::path::PathBuf;
@@ -1174,6 +1215,11 @@ fn namespace_argv(
     let mut paths = SessionPaths { root: PathBuf::from(cwd), ..Default::default() };
     if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
         let root = PathBuf::from(root);
+        // The emitter rc, if the launcher wrote one beside the outbox.
+        let rc = root.join("bsc-rc");
+        if rc.is_file() {
+            paths.rc_file = Some(rc);
+        }
         for name in ["plan", "graph", "ui", "coord"] {
             let dir = root.join(name);
             if dir.is_dir() {
@@ -1198,7 +1244,11 @@ fn namespace_argv(
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
         .collect();
 
-    match for_role(role, unit, &paths, &[], Default::default(), scope_mode(), vec![shell.to_string(), "-i".into()]) {
+    // The session's HARNESS. Without it the cage is complete and useless: a worker launched with a
+    // 3 KB kickoff for `claude`, and the tty answered `bash: claude: command not found` — the agent
+    // runtime was never bound. `bins_for(role)` gives git and gh; a runtime is the caller's to name,
+    // which is the point of `extra_bins` (the alternative is Usr::All, i.e. every binary on the host).
+    match for_role(role, unit, &paths, harness_bins, Default::default(), scope_mode(), vec![shell.to_string(), "-i".into()]) {
         Ok(p) => {
             if let Some(c) = &p.caveat {
                 // A profile that knowingly grants more than the model wants must be visible at the
@@ -1240,6 +1290,7 @@ fn namespace_argv(
     _cwd: &str,
     _stores_root: Option<&str>,
     _shell: &str,
+    _harness_bins: &[&str],
 ) -> Option<Vec<String>> {
     if role.is_some_and(|r| !r.is_empty()) {
         log::warn!(
@@ -1265,7 +1316,7 @@ mod namespace_tests {
         // The invariant that matters: `sandbox_available()` must not claim a capability
         // `namespace_argv` then refuses. If it did, the frontend would write a hook list pointing at
         // /bsc-hook for a session that launches unsandboxed — no write-scope, no command floor.
-        let rendered = namespace_argv(Some("worker"), "probe", "/tmp/wt", None, "bash").is_some();
+        let rendered = namespace_argv(Some("worker"), "probe", "/tmp/wt", None, "bash", &[]).is_some();
         if namespace_supported() {
             assert!(rendered, "the probe says yes, so the launcher must render");
         } else {
@@ -1284,22 +1335,22 @@ mod namespace_tests {
 
     #[test]
     fn no_role_means_no_namespace_and_the_launch_path_is_untouched() {
-        assert!(namespace_argv(None, "p", "/tmp", None, "bash").is_none());
-        assert!(namespace_argv(Some(""), "p", "/tmp", None, "bash").is_none());
+        assert!(namespace_argv(None, "p", "/tmp", None, "bash", &[]).is_none());
+        assert!(namespace_argv(Some(""), "p", "/tmp", None, "bash", &[]).is_none());
     }
 
     #[test]
     fn an_unknown_role_refuses_rather_than_launching_unsandboxed() {
         // The security-relevant one. A typo must NOT quietly yield a session with no isolation —
         // the caller asked for a cage and would believe it got one.
-        assert!(namespace_argv(Some("wroker"), "p", "/tmp", None, "bash").is_none());
-        assert!(namespace_argv(Some("root"), "p", "/tmp", None, "bash").is_none());
+        assert!(namespace_argv(Some("wroker"), "p", "/tmp", None, "bash", &[]).is_none());
+        assert!(namespace_argv(Some("root"), "p", "/tmp", None, "bash", &[]).is_none());
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     fn a_known_role_renders_a_scope_wrapping_a_namespace() {
-        let a = namespace_argv(Some("worker"), "pane-1", "/tmp/wt", None, "bash")
+        let a = namespace_argv(Some("worker"), "pane-1", "/tmp/wt", None, "bash", &[])
             .expect("a known role with a cwd renders");
         assert_eq!(a[0], "systemd-run", "the scope carries the cgroup limits");
         assert!(a.iter().any(|x| x == "bwrap"), "and wraps a namespace");
@@ -1313,7 +1364,7 @@ mod namespace_tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn an_empty_cwd_refuses_because_there_is_nothing_to_bind_at_repo() {
-        assert!(namespace_argv(Some("worker"), "p", "", None, "bash").is_none());
+        assert!(namespace_argv(Some("worker"), "p", "", None, "bash", &[]).is_none());
     }
 
     #[cfg(target_os = "linux")]
@@ -1321,11 +1372,11 @@ mod namespace_tests {
     fn the_scope_name_is_derived_from_the_pane_so_two_launches_do_not_collide() {
         // systemd refuses a --unit that is still loaded, so a FIXED name makes the second launch
         // of a pane silently fail to start.
-        let a = namespace_argv(Some("worker"), "studio:worker-1", "/tmp/wt", None, "bash").unwrap();
+        let a = namespace_argv(Some("worker"), "studio:worker-1", "/tmp/wt", None, "bash", &[]).unwrap();
         let unit = a.iter().find(|x| x.starts_with("--unit=")).expect("a unit is named");
         assert!(unit.contains("studio"), "the pane id is in the unit: {unit}");
         assert!(!unit.contains(':'), "and sanitized to be unit-safe: {unit}");
-        let b = namespace_argv(Some("worker"), "studio:worker-2", "/tmp/wt", None, "bash").unwrap();
+        let b = namespace_argv(Some("worker"), "studio:worker-2", "/tmp/wt", None, "bash", &[]).unwrap();
         assert_ne!(unit, b.iter().find(|x| x.starts_with("--unit=")).unwrap());
     }
 
@@ -1343,6 +1394,7 @@ mod namespace_tests {
             "/tmp/wt",
             Some(root.to_str().unwrap()),
             "bash",
+            &[],
         )
         .unwrap();
 
@@ -1355,9 +1407,129 @@ mod namespace_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // The cage shipped complete and USELESS: a worker was launched with a 3 KB kickoff for
+    // `claude` and the tty answered `bash: claude: command not found`. Asserting the argv MENTIONS
+    // the binaries would not have caught that either — this runs it and asks the shell inside,
+    // which is the only answer that counts.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_harness_a_session_needs_is_actually_reachable_inside() {
+        if std::process::Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        let wt = std::env::temp_dir().join(format!("bsc-harness-{}", std::process::id()));
+        std::fs::create_dir_all(&wt).unwrap();
+        let wt_s = wt.to_str().unwrap().to_string();
+        let argv = namespace_argv(Some("worker"), "h", &wt_s, None, "/bin/sh", &["node", "claude"])
+            .expect("renders");
+        let sep = argv.iter().rposition(|x| x == "--").unwrap();
+        let mut cmd = std::process::Command::new(&argv[0]);
+        cmd.args(&argv[1..=sep]);
+        cmd.args(["/usr/bin/sh", "-c", r#"command -v node >/dev/null && echo NODE-OK; command -v claude >/dev/null && echo CLAUDE-OK; command -v bsc >/dev/null && echo BSC-REACHABLE; case ":$PATH:" in *:.:*) echo PATH-HAS-CWD;; esac"#]);
+        let out = cmd.output().expect("executes");
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let _ = std::fs::remove_dir_all(&wt);
+        assert!(text.contains("NODE-OK"), "the harness runtime must be reachable: {text:?}");
+        assert!(text.contains("CLAUDE-OK"), "and so must the harness itself: {text:?}");
+        // Binding a runtime is not licence to widen the cage.
+        assert!(!text.contains("BSC-REACHABLE"), "still no bsc — that would bind a writable store");
+        // ...and PATH must not carry the cwd, the agent's own writable worktree.
+        assert!(!text.contains("PATH-HAS-CWD"), "PATH must not contain `.`: {text:?}");
+    }
+
     // The end-to-end one: the argv the LAUNCH PATH produces is executed for real, and the escape
     // that a PreToolUse hook cannot see is checked against it. Everything above asserts strings;
     // this asserts behaviour.
+    // The one that matters: a sandboxed session must SURVIVE an external command.
+    //
+    // Every earlier attempt at this failed on HAND-COPYING the init line rather than on the
+    // hypothesis, so this copies nothing — it calls `build_bash_init_line` and feeds its exact
+    // bytes to a real PTY, which is the app's own shape. `script(1)` and a simplified init line
+    // both survive `ls -l`; the app does not, so the difference has to be in what the real builder
+    // emits.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_sandboxed_session_survives_an_external_command() {
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use std::io::{Read, Write};
+
+        if std::process::Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        let wt = std::env::temp_dir().join(format!("bsc-extcmd-{}", std::process::id()));
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(wt.join("main.rs"), "fn main() {}\n").unwrap();
+        let wt_s = wt.to_str().unwrap().to_string();
+
+        let argv = namespace_argv(Some("worker"), "extcmd", &wt_s, None, "/bin/bash", &["node", "claude"])
+            .expect("a worker renders");
+
+        // The REAL init line, sandboxed. `rc_bash` is the host path the launcher passes today —
+        // it is NOT bound inside the namespace, which is exactly the condition under test.
+        let claude_fn = "claude() { __bsc_state run; command claude \"$@\"; }; ";
+        let init = super::launch::build_bash_init_line(
+            &wt_s, false, &wt_s, None, claude_fn,
+            "/home/nobody/.base-studio-code/bsc-env.sh", true,
+        );
+
+        let pty = native_pty_system()
+            .openpty(PtySize { rows: 30, cols: 165, pixel_width: 0, pixel_height: 0 })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new(&argv[0]);
+        for a in &argv[1..] {
+            cmd.arg(a);
+        }
+        let mut child = pty.slave.spawn_command(cmd).expect("spawn");
+        drop(pty.slave);
+
+        let mut reader = pty.master.try_clone_reader().expect("reader");
+        let collected = std::thread::spawn(move || {
+            let mut all = Vec::new();
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = reader.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                all.extend_from_slice(&buf[..n]);
+            }
+            all
+        });
+
+        let mut w = pty.master.take_writer().expect("writer");
+        let step = |w: &mut Box<dyn Write + Send>, bytes: &[u8]| {
+            w.write_all(bytes).ok();
+            w.flush().ok();
+            std::thread::sleep(std::time::Duration::from_millis(1200));
+        };
+        step(&mut w, init.as_bytes());
+        // The app REFITS the pty a beat after launch — observed in a real session:
+        // `refit · grid=165x30 → 165x28`. A resize signals SIGWINCH to the terminal's foreground
+        // process group, and inside a PID namespace that group is namespace-relative — the one
+        // app behaviour the earlier reproductions never exercised.
+        pty.master
+            .resize(PtySize { rows: 28, cols: 165, pixel_width: 0, pixel_height: 0 })
+            .expect("resize");
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        step(&mut w, b"ls -l\n");            // EXTERNAL: fork + exec, the step that killed it
+        step(&mut w, b"echo SURVIVED-EXT\n"); // only reachable if the shell is still there
+        let early = child.try_wait().ok().flatten();
+        step(&mut w, b"exit\n");
+        drop(w);
+
+        let out = collected.join().unwrap_or_default();
+        let text = String::from_utf8_lossy(&out).to_string();
+        let _ = std::fs::remove_dir_all(&wt);
+
+        assert!(text.contains("main.rs"), "the external command ran: {} bytes", out.len());
+        assert!(
+            text.contains("SURVIVED-EXT"),
+            "the shell must outlive an external command — exited early: {early:?}\n\
+             {} bytes emitted:\n{}",
+            out.len(),
+            text
+        );
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn the_rendered_argv_actually_isolates_when_executed() {
@@ -1372,7 +1544,7 @@ mod namespace_tests {
         std::fs::create_dir_all(&theirs).unwrap();
         std::fs::write(theirs.join("secret.txt"), "SECRET").unwrap();
 
-        let argv = namespace_argv(Some("worker"), "exec-test", mine.to_str().unwrap(), None, "sh")
+        let argv = namespace_argv(Some("worker"), "exec-test", mine.to_str().unwrap(), None, "sh", &[])
             .expect("renders");
         // Replace the trailing interactive shell with a one-shot probe.
         let sep = argv.iter().rposition(|x| x == "--").unwrap();

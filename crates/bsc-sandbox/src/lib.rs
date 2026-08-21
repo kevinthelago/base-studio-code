@@ -131,6 +131,12 @@ pub const HOOK_GUEST_PATH: &str = "/bsc-hook";
 /// one file crosses.
 pub const CREDENTIAL_GUEST_REL: &str = ".claude/.credentials.json";
 
+/// Where [`SandboxSpec::rc_file`] is bound INSIDE the namespace.
+///
+/// At the root for the same reason as [`HOOK_GUEST_PATH`]: under [`Usr::All`] a path beneath /usr
+/// is a mountpoint inside a read-only bind, which bwrap refuses outright.
+pub const RC_GUEST_PATH: &str = "/bsc-rc";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxSpec {
     /// systemd scope name. Must be unit-safe: `[A-Za-z0-9_-]+`.
@@ -202,6 +208,16 @@ pub struct SandboxSpec {
     /// the sandbox adds is that it cannot MODIFY it, and that a `network: false` role cannot send
     /// it anywhere.
     pub credential_file: Option<PathBuf>,
+    /// A shell rc bound read-only at [`RC_GUEST_PATH`], for the session's init line to `source`.
+    ///
+    /// It exists because the init line is written to a PTY in CANONICAL MODE, where Linux caps a
+    /// line at 4096 bytes and TRUNCATES beyond it. Inlining ~1.5 KB of shell helpers alongside a
+    /// ~3 KB agent kickoff produced a 4332-byte line: cut mid-string, leaving an unterminated
+    /// quote, so the shell sat at its `>` continuation prompt and the agent never launched.
+    ///
+    /// A `source` is twenty characters however large the helpers are, which is the same reason
+    /// `bsc-env.sh` exists for an unsandboxed session.
+    pub rc_file: Option<PathBuf>,
     pub command: Vec<String>,
 }
 
@@ -306,6 +322,7 @@ impl SandboxSpec {
             hook_bin: None,
             home: None,
             credential_file: None,
+            rc_file: None,
             env: vec![("HOME".into(), "/repo".into())],
             network: false,
             // Deny by default here too: the spec's env is the WHOLE environment, not an overlay
@@ -377,6 +394,11 @@ impl SandboxSpec {
         if let Some(home) = &self.home {
             if !posix_absolute(home) {
                 return Err(SpecError::GuestPathNotAbsolute(home.clone()));
+            }
+        }
+        if let Some(rc) = &self.rc_file {
+            if !posix_absolute(rc) {
+                return Err(SpecError::HostPathNotAbsolute(rc.clone()));
             }
         }
         if let Some(cred) = &self.credential_file {
@@ -492,6 +514,28 @@ impl SandboxSpec {
                 a.extend(["--symlink", "usr/bin", "/sbin"].map(String::from));
             }
         }
+        // A network role needs the machinery to USE the network, and none of it lives in /usr.
+        // Without this the cage shares a network namespace and still cannot reach anything:
+        // Claude Code reported `Failed to connect to api.anthropic.com: ETIMEOUT`, which is DNS
+        // failing for want of a resolver, not a routing problem.
+        //
+        //   resolv.conf     the nameserver list — no DNS at all without it
+        //   nsswitch.conf   how glibc resolves names in the first place
+        //   hosts           the local overrides glibc consults first
+        //   ssl             the CA bundle; TLS fails even once DNS works
+        //
+        // Bound ONLY when the network is shared. A role with `network: false` has nothing to
+        // resolve and nothing to verify, so it gets none of it — the cage stays as small as the
+        // role's job allows, which is the same rule the curated /usr follows.
+        if self.network {
+            for f in ["/etc/resolv.conf", "/etc/nsswitch.conf", "/etc/hosts"] {
+                a.push("--ro-bind-try".into());
+                a.push(f.into());
+                a.push(f.into());
+            }
+            a.extend(["--ro-bind-try", "/etc/ssl", "/etc/ssl"].map(String::from));
+            a.extend(["--ro-bind-try", "/usr/lib/ssl", "/usr/lib/ssl"].map(String::from));
+        }
         a.extend(["--symlink", "usr/lib", "/lib"].map(String::from));
         a.extend(["--symlink", "usr/lib64", "/lib64"].map(String::from));
         a.extend(["--symlink", "usr/bin", "/bin"].map(String::from));
@@ -515,6 +559,11 @@ impl SandboxSpec {
         // bwrap CREATES the intermediate dirs when the destination sits on a tmpfs it owns, so
         // `<home>/.claude/` needs no prior mkdir — verified by running it, after the hook bind
         // taught us that binding into a READ-ONLY mount fails instead.
+        if let Some(rc) = &self.rc_file {
+            a.push("--ro-bind".into());
+            a.push(s(rc));
+            a.push(RC_GUEST_PATH.to_string());
+        }
         if let Some(home) = &self.home {
             a.push("--tmpfs".into());
             a.push(s(home));
@@ -600,6 +649,29 @@ mod tests {
             .map(|(i, _)| i)
             .expect("store must be mounted read-only at /plan");
         assert_eq!(a[ro + 2], "/plan");
+    }
+
+    #[test]
+    fn a_network_role_gets_what_it_takes_to_actually_use_the_network() {
+        // Sharing the netns is not enough: without a resolver the cage reaches nothing, which is
+        // how Claude Code timed out on api.anthropic.com inside a worker that HAD --share-net.
+        let mut sp = spec();
+        sp.network = true;
+        let a = sp.render().unwrap();
+        for f in ["/etc/resolv.conf", "/etc/nsswitch.conf", "/etc/hosts"] {
+            assert!(a.windows(3).any(|w| w[0] == "--ro-bind-try" && w[1] == f && w[2] == f),
+                    "{f} must be bound for a network role: {a:?}");
+        }
+        assert!(a.iter().any(|x| x == "/etc/ssl"), "and the CA bundle, or TLS fails: {a:?}");
+    }
+
+    #[test]
+    fn a_no_network_role_gets_no_resolver_and_no_ca_bundle() {
+        // Nothing to resolve and nothing to verify, so the cage stays smaller — the same rule the
+        // curated /usr follows.
+        let a = spec().render().unwrap();          // network is off by default
+        assert!(!a.iter().any(|x| x == "/etc/resolv.conf"));
+        assert!(!a.iter().any(|x| x == "/etc/ssl"));
     }
 
     #[test]

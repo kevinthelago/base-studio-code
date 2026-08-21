@@ -39,6 +39,43 @@ pub(crate) fn plan_launch(
     }
 }
 
+/// The shell rc a SANDBOXED session sources — the coordination emitters its protocol names.
+///
+/// The worker protocol tells an agent to run `bsc-ask`, `bsc-note`, `bsc-maintain` and friends.
+/// Inside a namespace those do not exist: they are functions from `bsc-env.sh`, reached through
+/// `BASH_ENV`, which is neither set nor bound. And because the protocol PIPES into them
+/// (`echo "…" | bsc-ask`), their absence does not surface as "command not found" — it HANGS, with
+/// the writer waiting on a reader that never exists.
+///
+/// This ships as a FILE the cage sources rather than inline shell in the init line, because that
+/// line goes to a PTY in canonical mode and Linux truncates it past 4096 bytes.
+///
+/// The contract is `bsc_storefs::coord`'s: the FILENAME is the verb, the CONTENTS are the message.
+/// `note` and `checkpoint` are deliberately NOT coordination verbs — they are local provenance, so
+/// they append beside the outbox instead of being emitted and rejected as an unknown verb.
+pub(super) fn sandbox_emitter_rc() -> String {
+    let mut e = String::from(
+        "# Coordination emitters for a sandboxed session (see console::pty::launch).\n\
+         __bsc_emit() { local v=\"$1\"; shift; local m=\"$*\"; \
+         if [ -z \"$m\" ]; then m=\"$(cat)\"; fi; \
+         if ! mkdir -p /coord/out 2>/dev/null; then \
+         echo \"bsc: no coordination outbox at /coord/out\" >&2; return 1; fi; \
+         printf '%s' \"$m\" > \"/coord/out/$v.$$\"; }\n",
+    );
+    for v in [
+        "ask", "answer", "assign", "brief", "closed", "commission", "deliver", "failed", "fork",
+        "issue", "landed", "maintain", "merged", "request", "waiting", "woke",
+    ] {
+        e.push_str(&format!("bsc-{v}() {{ __bsc_emit {v} \"$@\"; }}\n"));
+    }
+    e.push_str(
+        "bsc-note() { local m=\"$*\"; if [ -z \"$m\" ]; then m=\"$(cat)\"; fi; \
+         mkdir -p /coord/out 2>/dev/null; printf '%s\\n' \"$m\" >> /coord/out/.notes; }\n\
+         bsc-checkpoint() { bsc-note \"$@\"; }\n",
+    );
+    e
+}
+
 /// Build the bash init line written into a freshly opened Git-Bash PTY: `cd` into the session cwd
 /// (a loud red warning + nearest-existing-ancestor fallback when it's `cwd_missing`, nothing when
 /// `cwd` is empty), install the OSC-7 cwd + `__bsc_state` run/idle markers and the `claude()`
@@ -84,6 +121,18 @@ pub(super) fn build_bash_init_line(
     } else {
         format!("cd \"{}\" 2>/dev/null; ", to_bash_path(cwd))
     };
+    // The coordination emitters live in an rc bound into the cage, NOT inline here.
+    //
+    // The init line is written to a PTY in CANONICAL MODE, where Linux truncates a line past
+    // 4096 bytes. Inlining these alongside a ~3 KB agent kickoff produced a 4332-byte line: cut
+    // mid-string, unterminated quote, shell parked at its `>` continuation prompt, agent never
+    // launched. A `source` costs twenty characters however large the helpers grow — which is
+    // exactly why `bsc-env.sh` is a file for an unsandboxed session.
+    let emitters = if sandboxed {
+        format!("source \"{}\" 2>/dev/null; ", bsc_sandbox::RC_GUEST_PATH)
+    } else {
+        String::new()
+    };
     // Source the checkpoint helper into the interactive shell too: BASH_ENV only
     // covers non-interactive subshells (the agent's Bash tool), so a human typing
     // `bsc-checkpoint` in the console pane would otherwise not have it.
@@ -107,6 +156,7 @@ pub(super) fn build_bash_init_line(
         "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
          __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
          {claude_fn}\
+         {emitters}\
          {helpers_src}\
          PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}{osc7}__bsc_state idle\"; \
          {osc7}__bsc_state idle; printf '\\033[2J\\033[3J\\033[H'{init_suffix}\n"
@@ -115,6 +165,36 @@ pub(super) fn build_bash_init_line(
 
 #[cfg(test)]
 mod tests {
+    // The init line goes to a PTY in CANONICAL MODE, where Linux truncates past 4096 bytes.
+    // Inlining the emitters alongside a ~3 KB agent kickoff produced a 4332-byte line: cut
+    // mid-string, unterminated quote, shell parked at `>`, agent never launched. Measured from a
+    // real session's raw output. So the helpers travel as a FILE and the line just sources it.
+    #[test]
+    fn the_sandboxed_init_line_stays_far_under_the_tty_line_limit() {
+        let kickoff = "x".repeat(3000); // a realistic agent kickoff
+        let line = super::build_bash_init_line(
+            "/home/u/wt/repo", false, "/home/u/wt/repo", Some(&kickoff),
+            "claude() { :; }; ", "/rc.sh", true,
+        );
+        let longest = line.lines().map(str::len).max().unwrap_or(0);
+        assert!(longest < 4096, "a canonical-mode line is truncated past 4096: {longest}");
+        // And the emitters are reached by SOURCE, not by inlining them into that line.
+        assert!(line.contains("source \"/bsc-rc\""), "the rc is sourced: {line}");
+        assert!(!line.contains("__bsc_emit"), "and NOT inlined: {line}");
+    }
+
+    #[test]
+    fn the_emitter_rc_defines_what_the_protocol_names() {
+        let rc = super::sandbox_emitter_rc();
+        for verb in ["ask", "maintain", "landed", "assign"] {
+            assert!(rc.contains(&format!("bsc-{verb}()")), "bsc-{verb} must exist: {rc}");
+        }
+        // note/checkpoint are local provenance, not coordination verbs — emitting them would be
+        // rejected as unknown, so they append beside the outbox.
+        assert!(rc.contains("bsc-note()") && rc.contains("bsc-checkpoint()"));
+        assert!(rc.contains("/coord/out/"), "the contract is filename-is-the-verb: {rc}");
+    }
+
     // A SANDBOXED session must not report its cwd. Inside a mount namespace `$(pwd)` is a GUEST
     // path (`/repo`), and the frontend writes the reported cwd straight back into `paneCwds` — so
     // reporting it overwrote the pane's HOST cwd with `/repo`, and the next launch tried to bind a

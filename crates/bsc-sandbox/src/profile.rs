@@ -124,6 +124,9 @@ pub struct SessionPaths {
     /// Host path to the one credential file the harness needs, bound read-only under `home`.
     /// Requires `home`; supplying it without one is refused rather than dropped.
     pub credential_file: Option<PathBuf>,
+    /// A shell rc bound read-only at [`crate::RC_GUEST_PATH`] — see [`SandboxSpec::rc_file`] for
+    /// why helpers travel as a file rather than inline in the init line.
+    pub rc_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -180,6 +183,13 @@ fn hook_env(paths: &SessionPaths) -> Vec<(String, String)> {
         .unwrap_or_else(|| "/repo".to_string());
     let mut env = vec![
         ("HOME".to_string(), home),
+        // PATH is SET, not left to bash. `--clearenv` removes it, and bash's fallback default ends
+        // in `.` — measured inside the cage:
+        //   PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:.
+        // The current directory is the agent's own WRITABLE worktree, so a file named like a
+        // command would be found before the real one. Handing an agent a PATH it can write to is
+        // precisely what the isolation exists to prevent, so the cage supplies its own.
+        ("PATH".to_string(), "/usr/local/bin:/usr/bin:/bin".to_string()),
         (
             "TERM".to_string(),
             std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".into()),
@@ -248,6 +258,7 @@ pub fn for_role(
         // gets its own STATE dir that does not land in the git tree and does not outlive the run.
         home: paths.home.clone(),
         credential_file: paths.credential_file.clone(),
+        rc_file: paths.rc_file.clone(),
         command,
     };
     // Render once so a bad spec is refused HERE, at the join, rather than at launch.
@@ -283,6 +294,7 @@ mod tests {
             deny_bash: String::new(),
             home: None,
             credential_file: None,
+            rc_file: None,
         }
     }
 
@@ -488,6 +500,22 @@ ed".into(),
     }
 
     #[test]
+    fn path_is_supplied_so_bash_does_not_fall_back_to_one_containing_dot() {
+        // Measured before this: with PATH unset, bash defaults to a list ENDING IN `.` — the
+        // current directory, which inside the cage is the agent's own writable worktree. A repo
+        // file named `ls` would then win over /usr/bin/ls.
+        let a = gated();
+        let path = a
+            .windows(3)
+            .find(|w| w[0] == "--setenv" && w[1] == "PATH")
+            .map(|w| w[2].clone())
+            .expect("the cage supplies its own PATH");
+        assert!(!path.split(':').any(|p| p == "." || p.is_empty()),
+                "no cwd and no empty entry on PATH: {path}");
+        assert!(path.contains("/usr/bin"), "and the curated bins are reachable: {path}");
+    }
+
+    #[test]
     fn a_private_home_is_tmpfs_and_home_points_at_it() {
         let a = homed();
         assert!(a.windows(2).any(|w| w[0] == "--tmpfs" && w[1] == "/home/agent"));
@@ -657,12 +685,28 @@ ed"));
     }
 
     #[test]
-    fn term_crosses_but_nothing_else_does() {
-        // TERM is passed through deliberately — this is an interactive terminal session and a
-        // shell with no TERM renders badly. It carries no authority. The env is otherwise HOME.
+    fn nothing_is_inherited_and_the_declared_set_is_small() {
+        // The property is that no HOST value crosses, not that the list has a particular length —
+        // the spec's `env` IS the whole environment, so every entry here was chosen.
+        //
+        //   HOME  the worktree, so a shell has somewhere to be
+        //   TERM  an interactive terminal renders badly without it, and it carries no authority
+        //   PATH  supplied rather than left to bash, whose fallback default ends in `.` — the
+        //         agent's own writable worktree (see the PATH test above)
+        //
+        // TERM is the one value read from the host, and only its VALUE: a terminal type is not a
+        // capability. Everything else is a literal.
         let p = build(Role::Worker);
         let keys: Vec<&str> = p.spec.env.iter().map(|(k, _)| k.as_str()).collect();
-        assert_eq!(keys, vec!["HOME", "TERM"]);
+        assert_eq!(keys, vec!["HOME", "PATH", "TERM"]);
+        // The thing that actually matters: nothing carrying authority is in here.
+        for (k, _) in &p.spec.env {
+            assert!(
+                !k.starts_with("BSC_") && !k.contains("TOKEN") && !k.contains("SECRET")
+                    && !k.contains("KEY") && !k.contains("AWS") && !k.contains("GH_"),
+                "no credential or host-path variable may be declared: {k}"
+            );
+        }
     }
 
     #[test]
