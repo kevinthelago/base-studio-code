@@ -95,7 +95,7 @@ fn shot_dir_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
 /// (`~/.base-studio-code/projects/<key>/...`), or None for a non-project session (#plan-db).
 /// Workers run in `projects/<key>/.worktrees/...` and the director/planner in `projects/<key>/` —
 /// both resolve to the same hub db, so the whole fleet shares one canonical plan store.
-fn plan_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+pub(super) fn plan_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     let key = project_key_from_cwd(cwd)?;
     Some(crate::plan_db_path(&key.to_string_lossy()))
 }

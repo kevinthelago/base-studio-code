@@ -476,6 +476,10 @@ fn pty_create_inner(
         // The emitter rc travels with the outbox: written on the host, bound read-only into the
         // cage, sourced by the init line. See `sandbox_emitter_rc` for why it is a file.
         let _ = std::fs::write(root.join("bsc-rc"), launch::sandbox_emitter_rc());
+        // ...and the store projections the agent READS. Without these the launch logged
+        // `0 store(s)` and a worker told to consult its plan had no way to.
+        #[cfg(target_os = "linux")]
+        project_stores_for(&pane_id, &cwd, &root);
         match std::fs::create_dir_all(root.join("coord").join("out")) {
             Ok(()) => Some(root.to_string_lossy().into_owned()),
             Err(e) => {
@@ -1139,6 +1143,79 @@ mod tests {
 ///
 /// None of this is a global claim: on a host with no mount namespace the hooks remain the whole
 /// floor (see the `cfg(not(linux))` twin below, which refuses to pretend otherwise).
+/// Project this session's stores into `root`, so a sandboxed agent can READ them without `bsc`.
+///
+/// A caged session cannot run `bsc`: the binary is not bound, and binding it would mean binding a
+/// writable SQLite database into the namespace — the ambient authority the isolation exists to
+/// remove. `bsc-storefs` is the answer that was built for this and never called: the store becomes
+/// a read-only file tree the agent reaches with `cat` and `ls`.
+///
+/// Measured when this was missing: the launch logged `0 store(s)`, and a worker whose kickoff told
+/// it to consult its plan had no way to.
+///
+/// The projection is a SNAPSHOT, taken at launch. That is already the semantics a worker runs
+/// under — its context is assembled once at launch while the stores stay live — and the README the
+/// projection writes says so where a reader meets it.
+///
+/// Best-effort throughout: a session that cannot get a projection still launches with whatever it
+/// did get. Returning early would trade a degraded agent for no agent.
+#[cfg(target_os = "linux")]
+fn project_stores_for(pane_id: &str, cwd: &str, root: &std::path::Path) {
+    let Some(bsc) = env::bsc_bin_path() else {
+        log::warn!("pty[{pane_id}] no bundled bsc — the session gets no store projections");
+        return;
+    };
+    let Some(db) = env::plan_db_for_cwd(cwd) else {
+        // A plain console outside a project hub has no plan to read. Absent, not empty.
+        return;
+    };
+    if !db.is_file() {
+        return;
+    }
+
+    // `--full`, deliberately: plain `--json` is the LEAN summary shape, where `acceptance` is a
+    // COUNT rather than an array and `body` is absent — it does not deserialize and fails at parse
+    // time. The projection's own module docs say so, having been caught by it.
+    let out = std::process::Command::new(&bsc)
+        .args(["plan", "list", "--full", "--json"])
+        .env("BSC_PLAN_DB", &db)
+        .output();
+    let json = match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+        Ok(o) => {
+            log::warn!(
+                "pty[{pane_id}] plan projection skipped: bsc exited {}: {}",
+                o.status,
+                String::from_utf8_lossy(&o.stderr).trim()
+            );
+            return;
+        }
+        Err(e) => {
+            log::warn!("pty[{pane_id}] plan projection skipped: {e}");
+            return;
+        }
+    };
+
+    let items = match bsc_storefs::plan::from_json(&json) {
+        Ok(i) => i,
+        Err(e) => {
+            log::warn!("pty[{pane_id}] plan projection skipped: {e}");
+            return;
+        }
+    };
+    let stamp = bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms());
+    let tree = bsc_storefs::plan::project(&items, &stamp);
+    let dir = root.join("plan");
+    match bsc_storefs::materialize(&dir, &tree) {
+        Ok(()) => log::info!(
+            "pty[{pane_id}] projected {} plan item(s) to {}",
+            items.len(),
+            dir.display()
+        ),
+        Err(e) => log::warn!("pty[{pane_id}] plan projection could not be written: {e}"),
+    }
+}
+
 /// Which systemd scope this host will actually let us create — probed ONCE, then reused.
 ///
 /// It has to be probed rather than assumed, and that is not a hypothetical: `systemd-run --scope`
@@ -1405,6 +1482,45 @@ mod namespace_tests {
         let out = a.iter().position(|x| x == "/coord/out").unwrap();
         assert!(out > coord);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // A caged worker READS its plan as files, because it cannot run `bsc` — binding that would
+    // mean binding a writable database, the ambient authority the isolation removes. Before this
+    // the launch logged `0 store(s)` and a worker told to consult its plan simply could not.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_projected_plan_is_readable_inside_and_stays_read_only() {
+        if std::process::Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        let base = std::env::temp_dir().join(format!("bsc-planproj-{}", std::process::id()));
+        let wt = base.join("wt");
+        let stores = base.join("stores");
+        std::fs::create_dir_all(&wt).unwrap();
+        // Materialize a projection the way the launcher does, from the same library.
+        let items = bsc_storefs::plan::from_json(
+            r#"[{"ref":"demo-item","title":"A demo","status":"open","body":"b","acceptance":["a"],"labels":[],"dependsOn":[]}]"#,
+        )
+        .expect("the FULL shape parses");
+        let tree = bsc_storefs::plan::project(&items, "2026-01-01T00:00:00Z");
+        bsc_storefs::materialize(&stores.join("plan"), &tree).expect("materialize");
+
+        let argv = namespace_argv(
+            Some("worker"), "pp", wt.to_str().unwrap(),
+            Some(stores.to_str().unwrap()), "/bin/sh", &[],
+        )
+        .expect("renders");
+        let sep = argv.iter().rposition(|x| x == "--").unwrap();
+        let mut cmd = std::process::Command::new(&argv[0]);
+        cmd.args(&argv[1..=sep]);
+        cmd.args(["/usr/bin/sh", "-c", r#"cat /plan/items/demo-item/status 2>/dev/null; ls /plan/by-status 2>/dev/null | head -1; test -w /plan && echo PLAN-WRITABLE"#]);
+        let out = cmd.output().expect("executes");
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert!(text.contains("open"), "the item's status reads as a FILE: {text:?}");
+        // Read-only by the MOUNT, not by convention — an agent cannot rewrite its own plan.
+        assert!(!text.contains("PLAN-WRITABLE"), "/plan must be read-only: {text:?}");
     }
 
     // The cage shipped complete and USELESS: a worker was launched with a 3 KB kickoff for
