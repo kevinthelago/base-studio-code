@@ -6,13 +6,12 @@
         "rust.vec",
         "rust.slice"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "merge.rs",
       "kind": "transform",
       "name": "merge",
       "role": "algorithm",
-      "summary": "Interleave two sorted slices into one sorted Vec - the merge step of merge sort, taken in isolation.",
+      "summary": "Interleave two sorted slices into one sorted Vec — the merge step of merge sort, taken in isolation.",
       "tech": "rust",
       "vizCode": "({ datatype: 'array', input: [1,4,7,2,3,9], run(a) { const mid = 3; const left = []; const right = []; for (let i=0;i<mid;i++) left.push(a.get(i)); for (let i=mid;i<a.length;i++) right.push(a.get(i)); let i=0,j=0,k=0; while (i<left.length && j<right.length) { a.cursor('i',i); a.cursor('j',j); if (left[i] <= right[j]) { a.set(k, left[i]); a.mark(k,'from-a'); i++; } else { a.set(k, right[j]); a.mark(k,'from-b'); j++; } k++; } while (i<left.length) { a.set(k, left[i]); a.mark(k,'from-a'); i++; k++; } while (j<right.length) { a.set(k, right[j]); a.mark(k,'from-b'); j++; k++; } a.markSorted(); } })"
     },
@@ -23,13 +22,12 @@
         "rust.vec",
         "rust.slice"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "merge-sort.rs",
       "kind": "sort",
       "name": "merge_sort",
       "role": "algorithm",
-      "summary": "Split, recursively sort the halves, and merge - built on the merge primitive.",
+      "summary": "Split, recursively sort the halves, and merge — built on the merge primitive.",
       "tech": "rust"
     },
     {
@@ -213,7 +211,7 @@
       "name": "fibonacci",
       "role": "algorithm",
       "src": "features/algorithms/viz/examples/scalarAlgos.ts",
-      "summary": "The nth Fibonacci number (F0 = 0, F1 = 1), iterated bottom-up in O(n) - the TypeScript twin of fibonacci.rs and the #3116 Component to Algorithm example: a React component imports it via @bsc/algorithms/fibonacci and the Design Studio preview vendors this code so it runs the library impl live.",
+      "summary": "The nth Fibonacci number (F0 = 0, F1 = 1), iterated bottom-up in O(n) — the TypeScript twin of fibonacci.rs and the #3116 Component→Algorithm example: a React component imports it via @bsc/algorithms/fibonacci and the Design Studio preview vendors this code so it runs the library impl live.",
       "tech": "typescript",
       "tests": [
         {
@@ -229,7 +227,6 @@
         "rust.vec",
         "rust.slice"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "bubble-sort.rs",
       "kind": "sort",
@@ -245,7 +242,6 @@
         "rust.vec",
         "rust.slice"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "heap-sort.rs",
       "kind": "sort",
@@ -262,7 +258,6 @@
         "rust.slice",
         "rust.iterator"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "quick-sort.rs",
       "kind": "sort",
@@ -278,7 +273,6 @@
         "rust.slice",
         "rust.option"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "binary-search.rs",
       "kind": "search",
@@ -295,7 +289,6 @@
         "rust.iterator",
         "rust.option"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "linear-search.rs",
       "kind": "search",
@@ -310,7 +303,6 @@
       "composes": [
         "rust.i64"
       ],
-      "domain": "core",
       "folder": "core",
       "id": "fibonacci.rs",
       "kind": "accumulate",
