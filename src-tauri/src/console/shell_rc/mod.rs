@@ -57,6 +57,21 @@
 //  * (defer)      — bsc-defer (#369/#2145): Stop-hook; keeps a worker going or defers to the director.
 //  * fleet.sh     — bsc-fleet (#734): the director's roster view (joins fleet.roster.tsv + coord.log).
 //  * bsc.sh       — bsc (#1877): the ONE umbrella-binary dispatcher; execs $BSC_BIN (bsc plan|skill|…).
+//
+//  WHAT THE PreToolUse GATES ABOVE (confine/scope/deny/taint/supply) ARE, AND ARE NOT: they read a
+//  tool's DECLARED payload, so they are blind to whatever it spawns — `Bash("python3 build.py")`
+//  is inspected as a string, and once bash forks the hook has already returned. On a host with no
+//  mount namespace (Windows, macOS) they are the whole security floor, which is why none of them
+//  is platform-gated.
+//
+//  A session launched into a mount namespace (`namespace_argv` in `console::pty`, Linux) gets the
+//  KERNEL as its floor for PATHS — out-of-root is ABSENT rather than refused, inherited by every
+//  descendant. That subsumes `bsc-confine` and nothing else: `bsc-scope` enforces globs *within*
+//  the one rw worktree, which a mount cannot express (see the table in `bsc_sandbox::profile`).
+//
+//  These helpers reach a session through BASH_ENV, and a namespace spec sets neither BASH_ENV nor
+//  the BSC_* vars they read — so inside one they do not load at all. Sandboxed sessions currently
+//  have NO shell-helper layer; that is tracked on the phase-2 item, not a thing to assume away.
 //  * learned.sh   — bsc-learned (#1362): capture a self-correction CANDIDATE → `bsc plan lesson add`.
 
 /// Load an externalized `bsc-*` shell fragment from `data/shell/<name>` (config-dir-overridable, #2027).

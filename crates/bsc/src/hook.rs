@@ -4,6 +4,45 @@
 //! PreToolUse hooks still fire AND block in every mode — so this is how the deny-list is enforced once
 //! a session runs under bypass. Backed by the binary (not fragile shell JSON-parsing) so the floor
 //! comes straight from the shared `bsc_util::dangerous` registry, with no pattern drift.
+//!
+//! # These are the floor ONLY where there is no kernel isolation
+//!
+//! A PreToolUse hook reads the tool's **declared** payload. It sees `Bash("python3 build.py")` and
+//! nothing that `build.py` subsequently does — once bash forks, the hook has already returned and
+//! exited. The enforcement point is the tool call, not the process tree:
+//!
+//! ```text
+//! Bash("cat /etc/passwd")     the hook sees the command string     BLOCKED
+//! Bash("python3 build.py")    the hook sees "python3 build.py"
+//!    build.py: open("../other-agent/worktree/...")                 NOTHING SEES IT
+//! ```
+//!
+//! Where a session runs inside a **mount namespace** (`bsc_sandbox`, Linux only), the **kernel**
+//! takes over the part of this job that is path-shaped: an out-of-root path is not refused but
+//! **absent** (`ENOENT`), and every descendant inherits that without cooperating.
+//!
+//! **It takes over that part and no more.** A namespace is path-granular, so per
+//! `bsc_sandbox::profile`: `bsc-confine` is subsumed, `bsc-scope` is **not** (it enforces globs
+//! *within* one read-write worktree, which a mount cannot express), and `bsc-deny` only
+//! **partly** is (an absent binary cannot run, but a present one invoked with dangerous flags
+//! still needs checking). Hooks stop being the floor **only where a namespace actually replaces
+//! them**, never globally.
+//!
+//! # Open gap — inside a namespace these currently do not run AT ALL
+//!
+//! Not "run as telemetry": they are unreachable. The spec binds a curated `/usr` that excludes
+//! `bsc`, sets no `BASH_ENV`, and clears the environment down to `HOME`/`TERM`, so `bsc hook …`
+//! has no binary, the pure-shell gates never load, and `$BSC_REPO_ROOT`/`$BSC_SCOPE_GLOBS` are
+//! unset even if they did. So a sandboxed session today has kernel path-confinement and **no**
+//! glob write-scope and **no** dangerous-command check — which is a real regression on the two
+//! things the namespace was never able to subsume. Tracked on
+//! `phase-2-kernel-isolation-replaces-the-hook-floor`; do not read the table above as describing
+//! a posture that currently ships.
+//!
+//! On Windows and macOS there is no mount namespace, so on those hosts these **are** the whole
+//! floor. That is why nothing here is gated on the platform: the hooks must behave identically
+//! everywhere, and it is the *launcher* that decides what sits underneath them
+//! (`namespace_argv` in `console::pty`).
 
 use std::io::Read;
 
