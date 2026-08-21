@@ -314,6 +314,59 @@ describe("buildSessionSettings", () => {
     expect(out.denyToolRules).not.toContain("Task");
   });
 
+  // ── the SANDBOXED hook list (a-sandboxed-session-can-launch-its-harness) ────────────────────
+
+  it("leaves the hook list byte-identical when a session is not sandboxed", () => {
+    // The `sandboxed` parameter is additive and defaults false. Every existing caller passes two
+    // arguments, so nothing about a normal launch may move.
+    const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
+    expect(buildSessionSettings(s, "p").hooks).toEqual(buildSessionSettings(s, "p", false).hooks);
+  });
+
+  it("gives a sandboxed session ONLY the two gates a namespace cannot express", () => {
+    const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
+    const out = buildSessionSettings(s, "p", true);
+    expect(out.hooks).toEqual([
+      { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit", command: "/bsc-hook scope" },
+      { event: "PreToolUse", matcher: "Bash", command: "/bsc-hook bash-deny" },
+    ]);
+  });
+
+  it("drops bsc-confine from a sandboxed session because the MOUNT subsumes it", () => {
+    // Not an oversight and not a weakening: an out-of-root path inside a namespace is ABSENT
+    // rather than refused, for every descendant process — which is strictly stronger than the
+    // hook, and unlike the hook it survives a fork.
+    const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
+    expect(cmds(buildSessionSettings(s, "p", true))).not.toContain("bsc-confine");
+  });
+
+  it("emits NO shell-based gate to a sandboxed session, because none of them can run there", () => {
+    // Inside a namespace there is no `bsc` binary and no BASH_ENV, so every one of these is
+    // unreachable. Emitting a command that cannot run is worse than emitting none — it reads like
+    // a working gate in every settings dump and in the permission log's silence.
+    //
+    // THE LOSS IS REAL: a sandboxed session has no tool-attempt telemetry and no supply-chain gate.
+    // This test exists so that stays a decision rather than becoming a surprise.
+    const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
+    const c = cmds(buildSessionSettings(s, "p", true));
+    for (const shellGate of [
+      "bsc-audit", "bsc-mcp", "bsc-taint", "bsc-supply", "bsc-fork",
+      "bsc-superseded", "bsc-skill", "bsc-activity run", "bsc-tokens",
+    ]) {
+      expect(c).not.toContain(shellGate);
+    }
+  });
+
+  it("points the sandboxed gates at the SAME guest path bsc-sandbox binds", () => {
+    // HOOK_GUEST_PATH is hard-coded on both sides (here and crates/bsc-sandbox/src/lib.rs). A
+    // mismatch does not error — it produces a gate that silently never fires, which is the one
+    // failure mode worth a test of its own.
+    const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
+    for (const c of cmds(buildSessionSettings(s, "p", true))) {
+      expect(c.startsWith("/bsc-hook ")).toBe(true);
+    }
+  });
+
   it("installs the audit/confine/scope/taint/supply hooks for a worker role — and NO Stop bounce", () => {
     const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
     const out = buildSessionSettings(s, "p");
