@@ -35,6 +35,16 @@ pub mod dangerous;
 /// load-bearing and deliberately unchanged.
 pub mod deny;
 
+/// Write-scope matching (#1297) — the one gate a mount namespace cannot subsume, compiled here so
+/// the static hook binary a sandboxed session CAN reach carries the same rule as `scope.sh`.
+/// Deliberately hand-written fnmatch rather than a glob crate: shell `case` lets `*` cross `/`, and
+/// every mainstream glob crate does not.
+pub mod scope;
+
+/// The blocking decision for a Bash tool call — the dangerous floor then the session's deny
+/// patterns. ONE implementation, called by both `bsc hook bash-deny` and the standalone hook binary.
+pub mod bash_gate;
+
 /// Packaged seed data resolved at RUNTIME rather than `include_str!`'d, so a record edit is no
 /// longer a Rust invalidation. See the module docs for the measurements that motivated it.
 pub mod packaged;

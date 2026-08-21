@@ -83,6 +83,23 @@ pub const MINIMAL_BINS: &[&str] = &[
     "uniq", "wc", "xargs",
 ];
 
+/// Where [`SandboxSpec::hook_bin`] is bound INSIDE the namespace.
+///
+/// Fixed rather than caller-chosen, because a session's `.claude/settings.json` has to name it and
+/// that file is written by a different subsystem. A guest path both sides hard-code cannot drift;
+/// a configurable one silently can, and the failure mode is a gate that never fires.
+///
+/// **At the root, deliberately — NOT under `/usr`.** `/usr/local/bin/bsc-hook` was the obvious
+/// choice and it does not work: under [`Usr::All`] the spec does `--ro-bind /usr /usr`, and binding
+/// into that needs a mountpoint created inside a read-only mount, which bwrap refuses with
+/// `Can't create file at /usr/local/bin/bsc-hook: Read-only file system`. The launch fails
+/// outright. Under [`Usr::Curated`] it happens to work, so the bug would have hidden until someone
+/// widened a role — an end-to-end run caught it, string assertions had not.
+///
+/// The namespace's root is a tmpfs bwrap owns, so a mountpoint there always succeeds. There is no
+/// FHS tidiness to trade away: this filesystem is constructed, not inherited.
+pub const HOOK_GUEST_PATH: &str = "/bsc-hook";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxSpec {
     /// systemd scope name. Must be unit-safe: `[A-Za-z0-9_-]+`.
@@ -112,6 +129,22 @@ pub struct SandboxSpec {
     /// Defaults to `true` in [`profile::for_role`]. Setting it `false` is a deliberate,
     /// visible escape, the same way [`Usr::All`] is.
     pub clear_env: bool,
+    /// Host path to the `bsc-hook` binary, bound READ-ONLY at [`HOOK_GUEST_PATH`].
+    ///
+    /// A mount namespace is path-granular, so it subsumes `bsc-confine` and cannot subsume
+    /// `bsc-scope` (globs *within* one read-write worktree) or fully subsume `bsc-deny` (a present
+    /// binary invoked with dangerous flags). Those two checks therefore have to be reachable from
+    /// INSIDE, and that means a binary in the namespace.
+    ///
+    /// It is deliberately not `bsc`: the umbrella is ~66 MB and links a writable SQLite store,
+    /// which is the ambient authority the isolation exists to remove. `bsc-hook` is 0.21 MB, opens
+    /// nothing, and shares its decision logic with the umbrella via `bsc-util` so the two cannot
+    /// enforce different floors.
+    ///
+    /// `None` ⇒ no gates inside the namespace. That is a real posture (path confinement only), not
+    /// an error, so it stays expressible — but it is the weaker one and should be chosen, not
+    /// defaulted into.
+    pub hook_bin: Option<PathBuf>,
     pub command: Vec<String>,
 }
 
@@ -199,6 +232,10 @@ impl SandboxSpec {
                 Mount::ReadOnly { host: store.into(), guest: PathBuf::from("/plan") },
             ],
             cwd: PathBuf::from("/repo"),
+            // No gates by default here: this is the low-level constructor, and `profile::for_role`
+            // is where a real launch picks one up. Defaulting a security binary in would make its
+            // ABSENCE the silent case, which is backwards.
+            hook_bin: None,
             env: vec![("HOME".into(), "/repo".into())],
             network: false,
             // Deny by default here too: the spec's env is the WHOLE environment, not an overlay
@@ -260,6 +297,11 @@ impl SandboxSpec {
                 if b.is_empty() || b.starts_with('.') || b.bytes().any(|c| c == b'/' || c == 92) {
                     return Err(SpecError::BinNotABasename(b.clone()));
                 }
+            }
+        }
+        if let Some(hb) = &self.hook_bin {
+            if !posix_absolute(hb) {
+                return Err(SpecError::HostPathNotAbsolute(hb.clone()));
             }
         }
         for (k, _) in &self.env {
@@ -354,6 +396,16 @@ impl SandboxSpec {
         a.extend(["--proc", "/proc"].map(String::from));
         a.extend(["--dev", "/dev"].map(String::from));
         a.extend(["--tmpfs", "/tmp"].map(String::from));
+
+        // The PreToolUse gates a sandboxed session can actually reach. Bound AFTER the /usr arm so
+        // a curated bind cannot overmount it, and BEFORE the caller's mounts so a caller cannot
+        // shadow the gate with one of its own — a security check that a later mount can hide is not
+        // a check.
+        if let Some(hb) = &self.hook_bin {
+            a.push("--ro-bind".into());
+            a.push(s(hb));
+            a.push(HOOK_GUEST_PATH.to_string());
+        }
 
         for m in &self.mounts {
             match m {

@@ -102,6 +102,22 @@ pub struct SessionPaths {
     /// Each mountpoint must ALREADY EXIST inside its projection: bwrap cannot `mkdir` inside a
     /// read-only bind and fails with `Can't mkdir /coord/out: Read-only file system`.
     pub outboxes: Vec<(String, PathBuf)>,
+    /// Host path to the `bsc-hook` binary, bound read-only at [`crate::HOOK_GUEST_PATH`].
+    ///
+    /// A mount namespace subsumes `bsc-confine` and CANNOT subsume `bsc-scope` or fully subsume
+    /// `bsc-deny` (see the table in this module's docs), so those two checks have to be reachable
+    /// from inside. `None` ⇒ path confinement only, which is a real but weaker posture.
+    pub hook_bin: Option<PathBuf>,
+    /// `$BSC_SCOPE_GLOBS` for the gate — whitespace-separated globs, or `__bsc_deny_all__` for a
+    /// `code: none` role. Empty ⇒ no write-scope restriction.
+    ///
+    /// Note it is passed as CONFIG rather than inherited: the namespace clears the environment, and
+    /// the value the gate sees is namespace-relative (matched against paths under `/repo`), not the
+    /// host-shaped one an unsandboxed session would carry.
+    pub scope_globs: String,
+    /// `$BSC_DENY_BASH` for the gate — newline-separated role/user deny patterns. The built-in
+    /// dangerous floor is compiled in and needs no configuration.
+    pub deny_bash: String,
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +149,41 @@ fn bins_for(role: Role) -> Vec<&'static str> {
 /// `extra_bins` is the caller's toolchain — a Rust worker wants `cargo`/`rustc`, a Node one
 /// `node`/`npm`. Passing it explicitly is the point: the alternative is [`Usr::All`], which is
 /// every binary on the host.
+/// The namespace's WHOLE environment — `clear_env` drops everything else, so this list is not an
+/// overlay on the host's environment but a replacement for it.
+///
+/// Four things cross, and each is here for a stated reason:
+///
+/// - `HOME` — the worktree, so a shell has somewhere to be.
+/// - `TERM` — this is an interactive terminal session and a shell without it renders badly. It
+///   carries no authority. (Measured: an *inherited* environment brought `GH_TOKEN` and
+///   `AWS_SECRET` across, which is why nothing is inherited any more.)
+/// - `BSC_REPO_ROOT` / `BSC_SCOPE_GLOBS` / `BSC_DENY_BASH` — configuration for the `bsc-hook`
+///   gates, and only when a hook binary is actually bound. Passing them when nothing can read them
+///   would be noise that reads like a working gate.
+///
+/// `BSC_REPO_ROOT` is `/repo`, the GUEST path — the gate matches paths as the session sees them,
+/// so a host-shaped root would fail to strip and every write would land outside scope.
+fn hook_env(paths: &SessionPaths) -> Vec<(String, String)> {
+    let mut env = vec![
+        ("HOME".to_string(), "/repo".to_string()),
+        (
+            "TERM".to_string(),
+            std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".into()),
+        ),
+    ];
+    if paths.hook_bin.is_some() {
+        env.push(("BSC_REPO_ROOT".to_string(), "/repo".to_string()));
+        if !paths.scope_globs.is_empty() {
+            env.push(("BSC_SCOPE_GLOBS".to_string(), paths.scope_globs.clone()));
+        }
+        if !paths.deny_bash.is_empty() {
+            env.push(("BSC_DENY_BASH".to_string(), paths.deny_bash.clone()));
+        }
+    }
+    env
+}
+
 pub fn for_role(
     role: Role,
     unit: impl Into<String>,
@@ -171,15 +222,10 @@ pub fn for_role(
         // TERM is passed through because this is an interactive terminal session and a shell with
         // no TERM renders badly; it carries no authority. HOME is the worktree. Nothing else
         // crosses: measured, an inherited environment brought GH_TOKEN and AWS_SECRET with it.
-        env: vec![
-            ("HOME".into(), "/repo".into()),
-            (
-                "TERM".into(),
-                std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".into()),
-            ),
-        ],
+        env: hook_env(paths),
         network: role.needs_network(),
         clear_env: true,
+        hook_bin: paths.hook_bin.clone(),
         command,
     };
     // Render once so a bad spec is refused HERE, at the join, rather than at launch.
@@ -208,6 +254,22 @@ mod tests {
                 ("/coord/out".into(), PathBuf::from("/home/k/proj/coord-out")),
                 ("/ui/out".into(), PathBuf::from("/home/k/proj/ui-out")),
             ],
+            // The default fixture carries NO gates, so every pre-existing test keeps asserting the
+            // posture it was written against. `gated_paths()` is the opt-in.
+            hook_bin: None,
+            scope_globs: String::new(),
+            deny_bash: String::new(),
+        }
+    }
+
+    /// The same session, WITH the hook binary bound and configured.
+    fn gated_paths() -> SessionPaths {
+        SessionPaths {
+            hook_bin: Some(PathBuf::from("/opt/bsc/bsc-hook")),
+            scope_globs: "src/features/** crates/**".into(),
+            deny_bash: "vi
+ed".into(),
+            ..paths()
         }
     }
 
@@ -371,6 +433,80 @@ mod tests {
         assert_eq!(writable, vec!["/repo", "/coord/out", "/ui/out"]);
     }
 
+
+    // ── the hook gates (static-hook-binary-reaches-into-the-namespace) ──────────────────────────
+
+    fn gated() -> Vec<String> {
+        for_role(Role::Worker, "u", &gated_paths(), &[], Limits::default(), vec!["bash".into()])
+            .expect("a gated worker profile renders")
+            .spec
+            .render()
+            .expect("and validates")
+    }
+
+    #[test]
+    fn the_hook_binary_is_bound_read_only_at_the_fixed_guest_path() {
+        let a = gated();
+        assert!(
+            a.windows(3).any(|w| w[0] == "--ro-bind"
+                && w[1] == "/opt/bsc/bsc-hook"
+                && w[2] == crate::HOOK_GUEST_PATH),
+            "the gate binary must be bound READ-ONLY at the fixed path: {a:?}"
+        );
+    }
+
+    #[test]
+    fn no_hook_binary_means_no_gate_config_rather_than_dangling_vars() {
+        // Absence has to be honest. Exporting BSC_SCOPE_GLOBS with nothing able to read it would
+        // read like a working gate in every log and every `env` dump.
+        let a = for_role(Role::Worker, "u", &paths(), &[], Limits::default(), vec!["bash".into()])
+            .unwrap()
+            .spec
+            .render()
+            .unwrap();
+        assert!(!a.iter().any(|x| x.starts_with("BSC_")), "no gate vars without a gate: {a:?}");
+        assert!(!a.iter().any(|x| x == crate::HOOK_GUEST_PATH));
+    }
+
+    #[test]
+    fn the_gate_config_is_namespace_relative_never_a_host_path() {
+        let a = gated();
+        // bwrap renders `--setenv KEY VALUE` as THREE argv entries, not `KEY=VALUE`.
+        let setenv = |k: &str, v: &str| {
+            a.windows(3).any(|w| w[0] == "--setenv" && w[1] == k && w[2] == v)
+        };
+        assert!(
+            setenv("BSC_REPO_ROOT", "/repo"),
+            "the gate matches paths as the SESSION sees them; a host root would never strip: {a:?}"
+        );
+        assert!(setenv("BSC_SCOPE_GLOBS", "src/features/** crates/**"));
+        assert!(setenv("BSC_DENY_BASH", "vi
+ed"));
+        // And emphatically not the host worktree the caller passed in.
+        assert!(!a.windows(3).any(|w| w[0] == "--setenv"
+            && w[1] == "BSC_REPO_ROOT"
+            && w[2].starts_with("/home/")));
+    }
+
+    #[test]
+    fn a_caller_mount_cannot_shadow_the_gate() {
+        // A security check a later mount can overmount is not a check. The bind is emitted before
+        // the caller's own mounts, so bwrap applies it FIRST and a colliding mount would have to be
+        // an explicit later one rather than an accident of ordering.
+        let a = gated();
+        let hook_at = a.iter().position(|x| x == crate::HOOK_GUEST_PATH).expect("bound");
+        let first_store = a.iter().position(|x| x == "/plan").expect("stores are mounted");
+        assert!(hook_at < first_store, "the gate binds before caller mounts: {a:?}");
+    }
+
+    #[test]
+    fn the_gate_binary_is_not_bsc_and_binds_no_store() {
+        // The whole reason this is a separate binary: binding `bsc` would mean binding a writable
+        // SQLite database, which is the ambient authority the isolation exists to remove.
+        let a = gated();
+        assert!(!a.iter().any(|x| x == "/usr/bin/bsc"), "still no bsc: {a:?}");
+        assert!(!a.iter().any(|x| x.ends_with("plan.db") || x.ends_with("studio-code.db")));
+    }
 
     #[test]
     fn every_role_starts_from_an_empty_environment() {

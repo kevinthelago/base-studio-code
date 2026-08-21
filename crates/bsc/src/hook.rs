@@ -300,31 +300,12 @@ fn deny_log_line(ts: u128, pane: &str, cmd: &str, reason: &str) -> String {
     perm_log_line(ts, pane, "deny", "block", cmd, reason)
 }
 
-/// The blocking reason for `cmd`, if any: the always-on dangerous floor (`bsc_util::dangerous`,
-/// compiled in — the same source the bsc-agent runtime uses) first, then the newline-separated
-/// `env_denies` (`$BSC_DENY_BASH` — the session's role/user deny patterns). `None` ⇒ allow.
-/// Pure — the testable core of [`bash_deny`].
+/// The blocking reason for `cmd`, if any. **Delegates to [`bsc_util::bash_gate::deny_reason`]**
+/// — the decision moved to `bsc-util` when the standalone `bsc-hook` binary became a second
+/// caller, so a sandboxed session and this umbrella cannot enforce different floors. See that
+/// module for why a second copy was not acceptable.
 fn deny_reason(cmd: &str, env_denies: &str) -> Option<String> {
-    if cmd.is_empty() {
-        return None;
-    }
-    // #3948: `dangerous_match` excludes heredoc BODIES written by an inert reader (`cat`/`tee`), so
-    // the floor scans the COMMAND and not the FILE CONTENT it writes. A worker was blocked writing a
-    // Rust file whose doc comment illustrated an unsafe raw value with `rm -rf /`. A body piped into an
-    // interpreter (`bash <<EOF`) is still scanned — that one IS a command.
-    if let Some(p) = bsc_util::dangerous::dangerous_match(cmd) {
-        return Some(format!("the built-in dangerous-command floor ('{p}')"));
-    }
-    // #3483: the session's role/user patterns are PROGRAM NAMES (`vi`, `ed`, `tee`), so they match the
-    // program TOKEN — never a substring of an argument or a path. Substring-matching them denied `ed`
-    // inside `shared/ui` and `vi` inside `Kevin`, i.e. every absolute path on this machine. The floor
-    // above deliberately keeps `contains`: its entries are phrases and prefixes (`mkfs.`, `:(){`).
-    env_denies
-        .split('\n')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .find(|&p| bsc_util::deny::deny_matches(cmd, p))
-        .map(|p| format!("the denied pattern '{p}'"))
+    bsc_util::bash_gate::deny_reason(cmd, env_denies)
 }
 
 #[cfg(test)]
