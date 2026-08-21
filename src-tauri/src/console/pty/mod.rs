@@ -323,6 +323,8 @@ pub(crate) async fn pty_create(
     provider_id: Option<String>,
     wsl_distro: Option<String>,
     wsl_user: Option<String>,
+    sandbox_role: Option<String>,
+    sandbox_stores: Option<String>,
     app: AppHandle,
 ) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -330,7 +332,7 @@ pub(crate) async fn pty_create(
         // `AppHandle` is 'static and re-fetches it here, where it outlives the call.
         let state = app.state::<PtyState>();
         pty_create_inner(
-            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, startup_prompt_fresh_only, checkpoint_doc, model, provider_id, wsl_distro, wsl_user,
+            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, startup_prompt_fresh_only, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
             &app, &state,
         )
     })
@@ -367,6 +369,8 @@ fn pty_create_inner(
     // its private mode-700 home isolates it from co-located agents (raw Bash can't cross Unix perms).
     // Derive + provision it first via `ensure_sandbox_user`. None ⇒ the distro's default `agent` user.
     wsl_user: Option<String>,
+    sandbox_role: Option<String>,
+    sandbox_stores: Option<String>,
     app: &AppHandle,
     state: &PtyState,
 ) -> Result<bool, String> {
@@ -396,7 +400,32 @@ fn pty_create_inner(
     let into_sandbox_user = into_sandbox
         .as_ref()
         .and(wsl_user.as_deref().filter(|u| !u.is_empty()).map(str::to_string));
-    let mut cmd = if let Some(distro) = into_sandbox.as_deref() {
+    // phase-2 slice 3: a NAMESPACE session. Where `wsl_distro` swaps the command for a distro
+    // shell, this swaps it for the SAME shell wrapped in a cgroup scope and a mount namespace,
+    // rendered by `bsc_sandbox::profile`. The kernel becomes the floor instead of the PreToolUse
+    // hooks, which can only see a tool's DECLARED payload and are blind to what it spawns.
+    //
+    // Windows is bit-identical: the whole arm is `cfg`'d out and the params are consumed so no
+    // `unused` warning appears. That matters because Windows has no namespace to replace the
+    // hooks WITH — demoting them there would silently weaken the posture on the platform this is
+    // still developed on.
+    let ns_argv: Option<Vec<String>> = namespace_argv(
+        sandbox_role.as_deref(),
+        &pane_id,
+        &cwd,
+        sandbox_stores.as_deref(),
+        &shell,
+    );
+
+    let mut cmd = if let Some(argv) = ns_argv.as_ref() {
+        // argv[0] is `systemd-run`; the rest is the scope, the bwrap invocation and the shell.
+        // Passed as an ARGV, never a shell string — there is no quoting layer to get wrong.
+        let mut c = CommandBuilder::new(&argv[0]);
+        for a in &argv[1..] {
+            c.arg(a);
+        }
+        c
+    } else if let Some(distro) = into_sandbox.as_deref() {
         let mut c = CommandBuilder::new("wsl.exe");
         // `-d <distro>` [`-u <user>`] `-- bash -i` — the user arg makes the session run as its own
         // isolated Linux user when one was provisioned (#1994), else the distro's default user (#1988).
@@ -438,7 +467,9 @@ fn pty_create_inner(
         resolve_session_cwd(&pane_id, cwd, into_sandbox.is_some());
     // #1988: skip for a distro session — `effective_cwd` is a distro path (not a valid wsl.exe spawn
     // cwd), and folder-trust is a Claude-on-host concern. The distro init line cd's into it instead.
-    if into_sandbox.is_none() && !effective_cwd.is_empty() {
+    // A namespace session sets its own cwd via bwrap's --chdir, and `effective_cwd` is a HOST
+    // path that means nothing inside it.
+    if into_sandbox.is_none() && ns_argv.is_none() && !effective_cwd.is_empty() {
         cmd.cwd(&effective_cwd);
         // Pre-accept Claude Code's folder-trust prompt for this directory so the
         // auto-launched `claude` starts already trusted instead of blocking on
@@ -992,3 +1023,238 @@ mod tests {
     }
 }
 
+/// Render the argv that launches `shell` inside a namespace for `role`, or `None` when this
+/// session is not sandboxed.
+///
+/// Split out of [`pty_create_inner`] so the Linux-only half is one function rather than a `cfg`
+/// scattered through the launch path — and so the Windows build consumes every parameter and
+/// warns about none.
+///
+/// `stores_root` is a directory holding the `bsc-storefs` projections (`plan/`, `graph/`, `ui/`,
+/// `coord/`). Each subdirectory that EXISTS is mounted read-only at `/<name>`; one that does not
+/// is simply absent, which is the same principle the isolation itself runs on. A missing root
+/// means no store surfaces at all — the agent still gets its worktree.
+#[cfg(target_os = "linux")]
+fn namespace_argv(
+    role: Option<&str>,
+    pane_id: &str,
+    cwd: &str,
+    stores_root: Option<&str>,
+    shell: &str,
+) -> Option<Vec<String>> {
+    use bsc_sandbox::profile::{for_role, Role, SessionPaths};
+    use std::path::PathBuf;
+
+    let role_name = role.filter(|r| !r.is_empty())?;
+    // A closed set: an unrecognised role is REFUSED, never defaulted to something permissive.
+    // Falling back to "no sandbox" here would be worse than failing — the caller asked for
+    // isolation and would silently not get it.
+    let Some(role) = Role::parse(role_name) else {
+        log::error!(
+            "pty[{pane_id}] sandbox role {role_name:?} is not recognised — refusing to launch \
+             UNSANDBOXED. Known roles: planner worker director triage tester reviewer issuer \
+             juror documentor designer"
+        );
+        return None;
+    };
+    if cwd.is_empty() {
+        log::error!("pty[{pane_id}] sandbox role {role_name:?} needs a cwd to bind at /repo");
+        return None;
+    }
+
+    let mut paths = SessionPaths { root: PathBuf::from(cwd), ..Default::default() };
+    if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
+        let root = PathBuf::from(root);
+        for name in ["plan", "graph", "ui", "coord"] {
+            let dir = root.join(name);
+            if dir.is_dir() {
+                paths.stores.push((name.to_string(), dir));
+            }
+        }
+        // The writable holes, bound AFTER their read-only projections so each lands on top rather
+        // than being overmounted. The mountpoint must already exist inside the projection — bwrap
+        // cannot mkdir inside a read-only bind.
+        for (proj, guest) in [("coord", "/coord/out"), ("ui", "/ui/out")] {
+            let out = root.join(proj).join("out");
+            if out.is_dir() {
+                paths.outboxes.push((guest.to_string(), out));
+            }
+        }
+    }
+
+    // The pane id is already unique per session, which is exactly what a systemd scope name needs:
+    // `--unit` refuses a name that is still loaded, so a fixed one makes the second launch fail.
+    let unit: String = format!("bsc-{pane_id}")
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .collect();
+
+    match for_role(role, unit, &paths, &[], Default::default(), vec![shell.to_string(), "-i".into()]) {
+        Ok(p) => {
+            if let Some(c) = &p.caveat {
+                // A profile that knowingly grants more than the model wants must be visible at the
+                // point of launch, not only in a doc comment.
+                log::warn!("pty[{pane_id}] sandbox caveat: {c}");
+            }
+            match p.spec.render() {
+                Ok(argv) => {
+                    log::info!(
+                        "pty[{pane_id}] launching sandboxed as {role_name} — {} store(s), {} outbox(es)",
+                        paths.stores.len(),
+                        paths.outboxes.len()
+                    );
+                    Some(argv)
+                }
+                Err(e) => {
+                    log::error!("pty[{pane_id}] sandbox spec rejected: {e}");
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("pty[{pane_id}] sandbox profile refused: {e}");
+            None
+        }
+    }
+}
+
+/// Windows and macOS have no mount namespace to put a session in, so a sandbox request cannot be
+/// honoured. Returning `None` keeps the launch path identical to what it was before this existed.
+///
+/// It does NOT silently downgrade a request: the caller is told, loudly, that it asked for
+/// isolation it is not getting. The hooks remain the floor on those platforms, which is why
+/// nothing here demotes them.
+#[cfg(not(target_os = "linux"))]
+fn namespace_argv(
+    role: Option<&str>,
+    pane_id: &str,
+    _cwd: &str,
+    _stores_root: Option<&str>,
+    _shell: &str,
+) -> Option<Vec<String>> {
+    if role.is_some_and(|r| !r.is_empty()) {
+        log::warn!(
+            "pty[{pane_id}] a sandbox role was requested but this platform has no mount namespace \
+             — launching UNSANDBOXED with the PreToolUse hooks as the floor"
+        );
+    }
+    None
+}
+
+// ── the namespace launch arm (phase-2 slice 3) ───────────────────────────────────────────────
+//
+// These are the LAUNCH-PATH tests. The spec rendering itself is covered in `bsc-sandbox`; what
+// matters here is the glue: does a role name become a namespace, does an unknown one REFUSE, and
+// does the argv this produces actually run.
+
+#[cfg(test)]
+mod namespace_tests {
+    use super::namespace_argv;
+
+    #[test]
+    fn no_role_means_no_namespace_and_the_launch_path_is_untouched() {
+        assert!(namespace_argv(None, "p", "/tmp", None, "bash").is_none());
+        assert!(namespace_argv(Some(""), "p", "/tmp", None, "bash").is_none());
+    }
+
+    #[test]
+    fn an_unknown_role_refuses_rather_than_launching_unsandboxed() {
+        // The security-relevant one. A typo must NOT quietly yield a session with no isolation —
+        // the caller asked for a cage and would believe it got one.
+        assert!(namespace_argv(Some("wroker"), "p", "/tmp", None, "bash").is_none());
+        assert!(namespace_argv(Some("root"), "p", "/tmp", None, "bash").is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_known_role_renders_a_scope_wrapping_a_namespace() {
+        let a = namespace_argv(Some("worker"), "pane-1", "/tmp/wt", None, "bash")
+            .expect("a known role with a cwd renders");
+        assert_eq!(a[0], "systemd-run", "the scope carries the cgroup limits");
+        assert!(a.iter().any(|x| x == "bwrap"), "and wraps a namespace");
+        assert!(a.iter().any(|x| x == "--unshare-all"));
+        // The worktree is bound at /repo and the shell is last, after the final separator.
+        assert!(a.windows(3).any(|w| w[0] == "--bind" && w[1] == "/tmp/wt" && w[2] == "/repo"));
+        let sep = a.iter().rposition(|x| x == "--").unwrap();
+        assert_eq!(&a[sep + 1..], &["bash".to_string(), "-i".to_string()]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_empty_cwd_refuses_because_there_is_nothing_to_bind_at_repo() {
+        assert!(namespace_argv(Some("worker"), "p", "", None, "bash").is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_scope_name_is_derived_from_the_pane_so_two_launches_do_not_collide() {
+        // systemd refuses a --unit that is still loaded, so a FIXED name makes the second launch
+        // of a pane silently fail to start.
+        let a = namespace_argv(Some("worker"), "studio:worker-1", "/tmp/wt", None, "bash").unwrap();
+        let unit = a.iter().find(|x| x.starts_with("--unit=")).expect("a unit is named");
+        assert!(unit.contains("studio"), "the pane id is in the unit: {unit}");
+        assert!(!unit.contains(':'), "and sanitized to be unit-safe: {unit}");
+        let b = namespace_argv(Some("worker"), "studio:worker-2", "/tmp/wt", None, "bash").unwrap();
+        assert_ne!(unit, b.iter().find(|x| x.starts_with("--unit=")).unwrap());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn only_store_projections_that_exist_are_mounted() {
+        // A store the caller has not projected is ABSENT, not empty — the same principle the
+        // isolation runs on. Inventing a mount for a missing dir would fail the launch instead.
+        let root = std::env::temp_dir().join(format!("bsc-ns-test-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(root.join("plan"));
+        let _ = std::fs::create_dir_all(root.join("coord").join("out"));
+        let a = namespace_argv(
+            Some("worker"),
+            "p",
+            "/tmp/wt",
+            Some(root.to_str().unwrap()),
+            "bash",
+        )
+        .unwrap();
+
+        assert!(a.iter().any(|x| x == "/plan"), "the projected store is mounted");
+        assert!(!a.iter().any(|x| x == "/graph"), "an unprojected store is NOT");
+        // The writable hole lands AFTER its read-only projection, or it is overmounted.
+        let coord = a.iter().position(|x| x == "/coord").unwrap();
+        let out = a.iter().position(|x| x == "/coord/out").unwrap();
+        assert!(out > coord);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // The end-to-end one: the argv the LAUNCH PATH produces is executed for real, and the escape
+    // that a PreToolUse hook cannot see is checked against it. Everything above asserts strings;
+    // this asserts behaviour.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_rendered_argv_actually_isolates_when_executed() {
+        use std::process::Command;
+        if Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        let base = std::env::temp_dir().join(format!("bsc-ns-exec-{}", std::process::id()));
+        let mine = base.join("mine");
+        let theirs = base.join("theirs");
+        std::fs::create_dir_all(&mine).unwrap();
+        std::fs::create_dir_all(&theirs).unwrap();
+        std::fs::write(theirs.join("secret.txt"), "SECRET").unwrap();
+
+        let argv = namespace_argv(Some("worker"), "exec-test", mine.to_str().unwrap(), None, "sh")
+            .expect("renders");
+        // Replace the trailing interactive shell with a one-shot probe.
+        let sep = argv.iter().rposition(|x| x == "--").unwrap();
+        let mut cmd = Command::new(&argv[0]);
+        cmd.args(&argv[1..=sep]);
+        cmd.args(["/usr/bin/dash", "-c", &format!("cat {}/secret.txt", theirs.display())]);
+        let out = cmd.output().expect("the rendered argv is executable");
+
+        assert!(
+            !out.status.success(),
+            "a sibling worktree must be UNREACHABLE from inside the namespace; got: {}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+}

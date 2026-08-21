@@ -512,6 +512,7 @@ dependencies = [
  "bsc-navigate",
  "bsc-project",
  "bsc-runtime",
+ "bsc-sandbox",
  "bsc-session",
  "bsc-shot",
  "bsc-tunnel",
