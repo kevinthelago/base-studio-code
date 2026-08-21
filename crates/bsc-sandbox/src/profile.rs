@@ -118,6 +118,12 @@ pub struct SessionPaths {
     /// `$BSC_DENY_BASH` for the gate — newline-separated role/user deny patterns. The built-in
     /// dangerous floor is compiled in and needs no configuration.
     pub deny_bash: String,
+    /// A private `HOME` inside the namespace, backed by tmpfs. See [`SandboxSpec::home`] — the
+    /// short version is that the worktree owns session CONFIG and must not also own harness STATE.
+    pub home: Option<PathBuf>,
+    /// Host path to the one credential file the harness needs, bound read-only under `home`.
+    /// Requires `home`; supplying it without one is refused rather than dropped.
+    pub credential_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -165,8 +171,15 @@ fn bins_for(role: Role) -> Vec<&'static str> {
 /// `BSC_REPO_ROOT` is `/repo`, the GUEST path — the gate matches paths as the session sees them,
 /// so a host-shaped root would fail to strip and every write would land outside scope.
 fn hook_env(paths: &SessionPaths) -> Vec<(String, String)> {
+    // HOME follows the private tmpfs when there is one, and falls back to the worktree otherwise
+    // so every existing caller is unchanged.
+    let home = paths
+        .home
+        .as_ref()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|| "/repo".to_string());
     let mut env = vec![
-        ("HOME".to_string(), "/repo".to_string()),
+        ("HOME".to_string(), home),
         (
             "TERM".to_string(),
             std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".into()),
@@ -226,6 +239,11 @@ pub fn for_role(
         network: role.needs_network(),
         clear_env: true,
         hook_bin: paths.hook_bin.clone(),
+        // A private HOME on tmpfs whenever the caller asked for one. The worktree keeps the
+        // session CONFIG (`<worktree>/.claude/settings.json`, read from the cwd tree); the harness
+        // gets its own STATE dir that does not land in the git tree and does not outlive the run.
+        home: paths.home.clone(),
+        credential_file: paths.credential_file.clone(),
         command,
     };
     // Render once so a bad spec is refused HERE, at the join, rather than at launch.
@@ -259,6 +277,8 @@ mod tests {
             hook_bin: None,
             scope_globs: String::new(),
             deny_bash: String::new(),
+            home: None,
+            credential_file: None,
         }
     }
 
@@ -442,6 +462,117 @@ ed".into(),
             .spec
             .render()
             .expect("and validates")
+    }
+
+    // ── HOME and the one credential (a-sandboxed-session-can-launch-its-harness) ────────────────
+
+    fn homed_paths() -> SessionPaths {
+        SessionPaths {
+            home: Some(PathBuf::from("/home/agent")),
+            credential_file: Some(PathBuf::from("/host/kevin/.claude/.credentials.json")),
+            ..gated_paths()
+        }
+    }
+
+    fn homed() -> Vec<String> {
+        for_role(Role::Worker, "u", &homed_paths(), &[], Limits::default(), vec!["bash".into()])
+            .expect("renders")
+            .spec
+            .render()
+            .expect("validates")
+    }
+
+    #[test]
+    fn a_private_home_is_tmpfs_and_home_points_at_it() {
+        let a = homed();
+        assert!(a.windows(2).any(|w| w[0] == "--tmpfs" && w[1] == "/home/agent"));
+        assert!(a.windows(3).any(|w| w[0] == "--setenv" && w[1] == "HOME" && w[2] == "/home/agent"));
+        // And emphatically NOT the worktree — that is the collapse this exists to undo.
+        assert!(!a.windows(3).any(|w| w[0] == "--setenv" && w[1] == "HOME" && w[2] == "/repo"));
+    }
+
+    #[test]
+    fn without_a_private_home_the_worktree_is_still_home_so_callers_are_unchanged() {
+        let a = gated();
+        assert!(a.windows(3).any(|w| w[0] == "--setenv" && w[1] == "HOME" && w[2] == "/repo"));
+        assert!(!a.iter().any(|x| x == "/home/agent"));
+    }
+
+    #[test]
+    fn exactly_one_secret_crosses_and_it_is_read_only() {
+        let a = homed();
+        assert!(
+            a.windows(3).any(|w| w[0] == "--ro-bind"
+                && w[1] == "/host/kevin/.claude/.credentials.json"
+                && w[2] == "/home/agent/.claude/.credentials.json"),
+            "the credential binds READ-ONLY at the guest home: {a:?}"
+        );
+        // The whole ~/.claude must never cross — it holds every project's transcripts and settings.
+        assert!(
+            !a.windows(3).any(|w| w[0].starts_with("--ro-bind")
+                && w[1] == "/host/kevin/.claude"),
+            "the credential is ONE FILE, never the directory: {a:?}"
+        );
+        // And it is the only host path under a home directory that appears at all.
+        let secrets: Vec<&String> =
+            a.iter().filter(|x| x.starts_with("/host/kevin")).collect();
+        assert_eq!(secrets.len(), 1, "exactly one secret crosses, got {secrets:?}");
+    }
+
+    #[test]
+    fn a_credential_with_nowhere_to_land_is_refused_not_dropped() {
+        // Silently dropping it launches an UNAUTHENTICATED session, and a harness may report that
+        // as missing state rather than as an error — the #4084 shape, where a refused read was
+        // read as "nothing there" and every agent ran with memory disabled unnoticed.
+        let paths = SessionPaths {
+            home: None,
+            credential_file: Some(PathBuf::from("/host/kevin/.claude/.credentials.json")),
+            ..paths()
+        };
+        let err = for_role(Role::Worker, "u", &paths, &[], Limits::default(), vec!["bash".into()])
+            .and_then(|p| p.spec.render())
+            .expect_err("a credential with no home must refuse");
+        assert!(matches!(err, SpecError::CredentialWithoutHome), "got {err:?}");
+    }
+
+    #[test]
+    fn a_role_with_no_network_still_has_none_while_holding_a_credential() {
+        // Holding a token and being able to SEND it anywhere are separate properties, and the
+        // second is the one the namespace controls.
+        //
+        // Note a WORKER is not the example: `needs_network` is `uses_git() || uses_github()`, and a
+        // worker is both, so it legitimately gets the network. `designer` is `none` on every axis.
+        let a = for_role(
+            Role::Designer,
+            "u",
+            &homed_paths(),
+            &[],
+            Limits::default(),
+            vec!["bash".into()],
+        )
+        .unwrap()
+        .spec
+        .render()
+        .unwrap();
+        assert!(!a.iter().any(|x| x == "--share-net"), "designer has no network: {a:?}");
+        // ...while still holding the credential, which is the point of the pairing.
+        assert!(a.iter().any(|x| x.ends_with("/.claude/.credentials.json")));
+    }
+
+    #[test]
+    fn the_guest_credential_path_is_posix_on_every_host() {
+        // `PathBuf::join` uses the HOST separator, so building this guest path that way rendered
+        // `/home/agent\.claude/.credentials.json` when the spec was built on Windows. A guest path
+        // must never be constructed with host-platform path handling.
+        let a = homed();
+        let guest = a
+            .iter()
+            .find(|x| x.contains(".credentials.json") && x.starts_with("/home/agent"))
+            .expect("the credential is bound somewhere under the guest home");
+        assert_eq!(guest, "/home/agent/.claude/.credentials.json");
+        // 92 is the backslash byte, compared numerically for the reason lib.rs already states:
+        // a literal one is mangled by every layer between here and the file.
+        assert!(!guest.contains(char::from(92u8)), "no host separator in a guest path: {guest}");
     }
 
     #[test]

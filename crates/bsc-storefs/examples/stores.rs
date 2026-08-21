@@ -116,6 +116,10 @@ fn main() {
         clear_env: true,
         // No gates in this example: it demonstrates the STORE projections, not the hook layer.
         hook_bin: None,
+        // This example demonstrates the STORE projections; HOME and credentials belong to a real
+        // harness launch, not here.
+        home: None,
+        credential_file: None,
         command,
     };
 
