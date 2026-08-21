@@ -100,6 +100,13 @@ pub const MINIMAL_BINS: &[&str] = &[
 /// FHS tidiness to trade away: this filesystem is constructed, not inherited.
 pub const HOOK_GUEST_PATH: &str = "/bsc-hook";
 
+/// Where [`SandboxSpec::credential_file`] is bound, relative to [`SandboxSpec::home`].
+///
+/// The harness reads its token from `~/.claude/.credentials.json`. Binding the WHOLE `~/.claude`
+/// would hand the agent every project's transcripts and settings on the machine, so exactly this
+/// one file crosses.
+pub const CREDENTIAL_GUEST_REL: &str = ".claude/.credentials.json";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxSpec {
     /// systemd scope name. Must be unit-safe: `[A-Za-z0-9_-]+`.
@@ -145,6 +152,29 @@ pub struct SandboxSpec {
     /// an error, so it stays expressible — but it is the weaker one and should be chosen, not
     /// defaulted into.
     pub hook_bin: Option<PathBuf>,
+    /// A private `HOME` inside the namespace, backed by **tmpfs**.
+    ///
+    /// `None` leaves `HOME` to whatever [`Self::env`] declares — historically `/repo`, which
+    /// collapses two different things that merely share a name: the session's CONFIG
+    /// (`<worktree>/.claude/settings.json`, which belongs in the worktree and is read from the cwd
+    /// tree) and the harness's own STATE and credentials (`~/.claude`, which does not — it would
+    /// land in the git tree and outlive the session).
+    ///
+    /// tmpfs is the point: harness state is per-session and evaporates, so nothing accumulates in a
+    /// worktree that gets recycled and no transcript survives a run.
+    pub home: Option<PathBuf>,
+    /// Host path to the ONE credential file bound read-only at
+    /// `<home>/`[`CREDENTIAL_GUEST_REL`]. Requires [`Self::home`].
+    ///
+    /// This is the single deliberate secret. Before `clear_env`, 25 variables crossed by
+    /// inheritance including `GH_TOKEN` and `AWS_SECRET`; this is one file, chosen, read-only, and
+    /// nameable by a test.
+    ///
+    /// The agent can READ its own token — unavoidable, since the harness needs it to reach the
+    /// model, and inherent to running an agent at all rather than introduced by the sandbox. What
+    /// the sandbox adds is that it cannot MODIFY it, and that a `network: false` role cannot send
+    /// it anywhere.
+    pub credential_file: Option<PathBuf>,
     pub command: Vec<String>,
 }
 
@@ -158,12 +188,19 @@ pub enum SpecError {
     EnvKeyNotSafe(String),
     /// A curated bin is a BASENAME in /usr/bin, never a path.
     BinNotABasename(String),
+    /// A credential file was supplied with no `home` to bind it under. Refused rather than
+    /// dropped: a silently unauthenticated session degrades quietly (see #4084's shape).
+    CredentialWithoutHome,
 }
 
 impl std::fmt::Display for SpecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SpecError::EmptyCommand => write!(f, "sandbox spec has no command to run"),
+            SpecError::CredentialWithoutHome => write!(
+                f,
+                "a credential file was given with no `home` to bind it under — the session would                  launch unauthenticated, which a harness may report as missing state rather than                  as an error"
+            ),
             SpecError::UnitNotSafe(u) => {
                 write!(f, "unit name {u:?} is not unit-safe (want [A-Za-z0-9_-]+)")
             }
@@ -236,6 +273,8 @@ impl SandboxSpec {
             // is where a real launch picks one up. Defaulting a security binary in would make its
             // ABSENCE the silent case, which is backwards.
             hook_bin: None,
+            home: None,
+            credential_file: None,
             env: vec![("HOME".into(), "/repo".into())],
             network: false,
             // Deny by default here too: the spec's env is the WHOLE environment, not an overlay
@@ -302,6 +341,22 @@ impl SandboxSpec {
         if let Some(hb) = &self.hook_bin {
             if !posix_absolute(hb) {
                 return Err(SpecError::HostPathNotAbsolute(hb.clone()));
+            }
+        }
+        if let Some(home) = &self.home {
+            if !posix_absolute(home) {
+                return Err(SpecError::GuestPathNotAbsolute(home.clone()));
+            }
+        }
+        if let Some(cred) = &self.credential_file {
+            if !posix_absolute(cred) {
+                return Err(SpecError::HostPathNotAbsolute(cred.clone()));
+            }
+            // A credential with nowhere to land would be silently dropped, and the session would
+            // come up unauthenticated — which the harness may report as "no memory" rather than as
+            // an error (the #4084 shape). Refuse instead.
+            if self.home.is_none() {
+                return Err(SpecError::CredentialWithoutHome);
             }
         }
         for (k, _) in &self.env {
@@ -405,6 +460,28 @@ impl SandboxSpec {
             a.push("--ro-bind".into());
             a.push(s(hb));
             a.push(HOOK_GUEST_PATH.to_string());
+        }
+
+        // A private HOME on tmpfs, plus the one credential file. Both before the caller's mounts,
+        // for the same reason the gate is: a later mount must not be able to shadow either.
+        //
+        // bwrap CREATES the intermediate dirs when the destination sits on a tmpfs it owns, so
+        // `<home>/.claude/` needs no prior mkdir — verified by running it, after the hook bind
+        // taught us that binding into a READ-ONLY mount fails instead.
+        if let Some(home) = &self.home {
+            a.push("--tmpfs".into());
+            a.push(s(home));
+            if let Some(cred) = &self.credential_file {
+                a.push("--ro-bind".into());
+                a.push(s(cred));
+                // Joined as a STRING with an explicit '/', never `PathBuf::join`: that uses the
+                // HOST separator, so rendering this spec on Windows produced
+                // `/home/agent\.claude/.credentials.json` — a backslash inside a POSIX guest path.
+                // Same family as the `Path::is_absolute()` bug: host-platform path handling has no
+                // business constructing guest paths. A test pins the separator.
+                let h = s(home);
+                a.push(format!("{}/{}", h.trim_end_matches('/'), CREDENTIAL_GUEST_REL));
+            }
         }
 
         for m in &self.mounts {
