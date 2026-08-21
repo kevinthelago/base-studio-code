@@ -306,6 +306,47 @@ fn build_session_init_line(
 /// thread. Measured before: 43 concurrent calls at a 14.1s mean, with `pty_write` (keystrokes) queued
 /// behind them at 3.1s. The work is unchanged; it simply stops monopolizing the queue every other
 /// command shares. Same shape `preflight` already uses.
+/// Can this host actually put a session in a mount namespace?
+///
+/// The frontend cannot answer this on its own — it has no platform probe and no `plugin-os` — and it
+/// MUST know, because the settings it writes and the launch it requests are two separate calls and
+/// the hook list has to match what the launch really did.
+///
+/// The two failure directions are not symmetric, which is what decides the default:
+///
+/// * settings say sandboxed, launch is NOT ⇒ the shell gates were dropped and `/bsc-hook` does not
+///   exist. The session runs with **no** write-scope and **no** command floor. A regression.
+/// * settings say unsandboxed, launch IS ⇒ shell gates are configured but inert, and the kernel
+///   still confines paths. Degraded, never worse than today.
+///
+/// So this fails CLOSED: anything uncertain answers `false`, and the caller keeps the working shell
+/// gates. Being wrong in the safe direction costs a little redundancy; being wrong the other way
+/// costs the floor.
+#[tauri::command]
+pub(crate) fn sandbox_available() -> bool {
+    namespace_supported()
+}
+
+/// The platform half, split out so both the command and the tests read one answer.
+#[cfg(target_os = "linux")]
+fn namespace_supported() -> bool {
+    // `bwrap` is the launcher; without it the rendered argv cannot execute. Probing the binary
+    // rather than assuming it means a Linux host that never installed bubblewrap is reported
+    // honestly instead of failing at the first launch.
+    std::process::Command::new("bwrap")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Windows and macOS have no mount namespace, so the answer is a compile-time `false` rather than a
+/// probe that could be fooled by a `bwrap` on PATH under some emulation layer.
+#[cfg(not(target_os = "linux"))]
+fn namespace_supported() -> bool {
+    false
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn pty_create(
@@ -1170,7 +1211,29 @@ fn namespace_argv(
 
 #[cfg(test)]
 mod namespace_tests {
-    use super::namespace_argv;
+    use super::{namespace_argv, namespace_supported};
+
+    #[test]
+    fn the_probe_agrees_with_what_the_launcher_will_actually_do() {
+        // The invariant that matters: `sandbox_available()` must not claim a capability
+        // `namespace_argv` then refuses. If it did, the frontend would write a hook list pointing at
+        // /bsc-hook for a session that launches unsandboxed — no write-scope, no command floor.
+        let rendered = namespace_argv(Some("worker"), "probe", "/tmp/wt", None, "bash").is_some();
+        if namespace_supported() {
+            assert!(rendered, "the probe says yes, so the launcher must render");
+        } else {
+            assert!(!rendered, "the probe says no, so the launcher must refuse");
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn a_host_with_no_mount_namespace_reports_false_at_compile_time() {
+        // Not a runtime probe here: a `bwrap` reachable through some emulation layer must not make
+        // Windows claim an isolation it cannot provide.
+        assert!(!namespace_supported());
+    }
+
 
     #[test]
     fn no_role_means_no_namespace_and_the_launch_path_is_untouched() {
