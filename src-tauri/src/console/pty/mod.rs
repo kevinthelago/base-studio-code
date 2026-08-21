@@ -476,6 +476,18 @@ fn pty_create_inner(
         // The emitter rc travels with the outbox: written on the host, bound read-only into the
         // cage, sourced by the init line. See `sandbox_emitter_rc` for why it is a file.
         let _ = std::fs::write(root.join("bsc-rc"), launch::sandbox_emitter_rc());
+        // ...and the store projections the agent READS. Without these the launch logged
+        // `0 store(s)` and a worker told to consult its plan had no way to.
+        #[cfg(target_os = "linux")]
+        project_stores_for(&pane_id, &cwd, &root);
+        // ...and carry what the agent emits back to the host. Without this the emitters complete
+        // and reach nobody — a quieter failure than the hang they replaced.
+        #[cfg(target_os = "linux")]
+        spawn_outbox_drain(
+            pane_id.clone(),
+            root.join("coord").join("out"),
+            crate::platform::paths::bsc_base_dir().join("coord.log"),
+        );
         match std::fs::create_dir_all(root.join("coord").join("out")) {
             Ok(()) => Some(root.to_string_lossy().into_owned()),
             Err(e) => {
@@ -1139,6 +1151,162 @@ mod tests {
 ///
 /// None of this is a global claim: on a host with no mount namespace the hooks remain the whole
 /// floor (see the `cfg(not(linux))` twin below, which refuses to pretend otherwise).
+/// Drain a sandboxed session's coordination outbox into the real `coord.log`.
+///
+/// A caged agent cannot append to `coord.log` itself: the log lives on the host and the cage binds
+/// no writable path to it — deliberately, since a writable host path is the ambient authority the
+/// isolation removes. So it WRITES A FILE into `/coord/out` (the filename is the verb, the contents
+/// are the message) and something on this side has to carry that across. Without this the emitters
+/// completed and reached nobody, which is a quieter failure than the hang they replaced.
+///
+/// Polls rather than watches: an inotify watch would need the directory to outlive the session and
+/// a watcher per pane, and a one-second poll over a directory that is almost always empty costs
+/// nothing measurable next to the session it belongs to.
+///
+/// Everything is best-effort. A drain that cannot read, append or clean up leaves the entry where
+/// it is and tries again — losing an event is worse than repeating a scan, and a coordination
+/// channel must never be the thing that ends a session.
+#[cfg(target_os = "linux")]
+fn spawn_outbox_drain(pane_id: String, outbox: std::path::PathBuf, coord_log: std::path::PathBuf) {
+    std::thread::spawn(move || {
+        // The actor recorded on every event this session emits. `pane` is what joins an event to
+        // its session, exactly as the shell emitters do it.
+        let actor = "agent";
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+            // The session is gone once its outbox is: `pty_kill` removes the directory, which is
+            // also how this thread learns to stop without a channel.
+            if !outbox.is_dir() {
+                return;
+            }
+            let Ok(rd) = std::fs::read_dir(&outbox) else { continue };
+            // Sorted, so a drain is deterministic — `drain` documents that the caller sorts.
+            let mut entries: Vec<(String, String)> = Vec::new();
+            let mut consumed: Vec<std::path::PathBuf> = Vec::new();
+            let mut names: Vec<_> = rd.filter_map(Result::ok).map(|e| e.path()).collect();
+            names.sort();
+            for path in names {
+                let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+                // `.notes` is local provenance the agent keeps for itself, and `.rejected` is our
+                // own feedback — neither is an event to emit.
+                if name.starts_with('.') || name.ends_with(".rejected") {
+                    continue;
+                }
+                let Ok(body) = std::fs::read_to_string(&path) else { continue };
+                entries.push((name.to_string(), body));
+                consumed.push(path);
+            }
+            if entries.is_empty() {
+                continue;
+            }
+
+            let ts = bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms());
+            let (events, rejected) = bsc_storefs::coord::drain(&entries, &pane_id, &ts, actor);
+
+            if !events.is_empty() {
+                use std::io::Write;
+                let line: String = events
+                    .iter()
+                    .map(|e| format!("{}\t{}\t{}\t{}\t{}\n", e.ts, e.pane, e.verb, e.message, e.actor))
+                    .collect();
+                match std::fs::OpenOptions::new().create(true).append(true).open(&coord_log) {
+                    Ok(mut f) => {
+                        if let Err(e) = f.write_all(line.as_bytes()) {
+                            log::warn!("pty[{pane_id}] coord drain could not append: {e}");
+                            continue; // leave the entries; try again next tick
+                        }
+                        log::info!("pty[{pane_id}] drained {} coordination event(s)", events.len());
+                    }
+                    Err(e) => {
+                        log::warn!("pty[{pane_id}] coord drain could not open the log: {e}");
+                        continue;
+                    }
+                }
+            }
+            // Feedback the agent can READ: a rejection explains the fix rather than vanishing.
+            for (name, fix) in &rejected {
+                let _ = std::fs::write(outbox.join(name), fix);
+            }
+            for p in consumed {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+    });
+}
+
+/// Project this session's stores into `root`, so a sandboxed agent can READ them without `bsc`.
+///
+/// A caged session cannot run `bsc`: the binary is not bound, and binding it would mean binding a
+/// writable SQLite database into the namespace — the ambient authority the isolation exists to
+/// remove. `bsc-storefs` is the answer that was built for this and never called: the store becomes
+/// a read-only file tree the agent reaches with `cat` and `ls`.
+///
+/// Measured when this was missing: the launch logged `0 store(s)`, and a worker whose kickoff told
+/// it to consult its plan had no way to.
+///
+/// The projection is a SNAPSHOT, taken at launch. That is already the semantics a worker runs
+/// under — its context is assembled once at launch while the stores stay live — and the README the
+/// projection writes says so where a reader meets it.
+///
+/// Best-effort throughout: a session that cannot get a projection still launches with whatever it
+/// did get. Returning early would trade a degraded agent for no agent.
+#[cfg(target_os = "linux")]
+fn project_stores_for(pane_id: &str, cwd: &str, root: &std::path::Path) {
+    let Some(bsc) = env::bsc_bin_path() else {
+        log::warn!("pty[{pane_id}] no bundled bsc — the session gets no store projections");
+        return;
+    };
+    let Some(db) = env::plan_db_for_cwd(cwd) else {
+        // A plain console outside a project hub has no plan to read. Absent, not empty.
+        return;
+    };
+    if !db.is_file() {
+        return;
+    }
+
+    // `--full`, deliberately: plain `--json` is the LEAN summary shape, where `acceptance` is a
+    // COUNT rather than an array and `body` is absent — it does not deserialize and fails at parse
+    // time. The projection's own module docs say so, having been caught by it.
+    let out = std::process::Command::new(&bsc)
+        .args(["plan", "list", "--full", "--json"])
+        .env("BSC_PLAN_DB", &db)
+        .output();
+    let json = match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+        Ok(o) => {
+            log::warn!(
+                "pty[{pane_id}] plan projection skipped: bsc exited {}: {}",
+                o.status,
+                String::from_utf8_lossy(&o.stderr).trim()
+            );
+            return;
+        }
+        Err(e) => {
+            log::warn!("pty[{pane_id}] plan projection skipped: {e}");
+            return;
+        }
+    };
+
+    let items = match bsc_storefs::plan::from_json(&json) {
+        Ok(i) => i,
+        Err(e) => {
+            log::warn!("pty[{pane_id}] plan projection skipped: {e}");
+            return;
+        }
+    };
+    let stamp = bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms());
+    let tree = bsc_storefs::plan::project(&items, &stamp);
+    let dir = root.join("plan");
+    match bsc_storefs::materialize(&dir, &tree) {
+        Ok(()) => log::info!(
+            "pty[{pane_id}] projected {} plan item(s) to {}",
+            items.len(),
+            dir.display()
+        ),
+        Err(e) => log::warn!("pty[{pane_id}] plan projection could not be written: {e}"),
+    }
+}
+
 /// Which systemd scope this host will actually let us create — probed ONCE, then reused.
 ///
 /// It has to be probed rather than assumed, and that is not a hypothetical: `systemd-run --scope`
@@ -1405,6 +1573,83 @@ mod namespace_tests {
         let out = a.iter().position(|x| x == "/coord/out").unwrap();
         assert!(out > coord);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // What an agent emits has to REACH someone. It cannot append to coord.log itself — the log is
+    // on the host and the cage binds no writable path to it, deliberately — so it writes a file
+    // into /coord/out and this side carries it across. Before the drain the emitters completed and
+    // reached nobody, which is quieter than the hang they replaced and no better.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_outbox_drain_carries_an_emission_into_the_coordination_log() {
+        let base = std::env::temp_dir().join(format!("bsc-drain-{}", std::process::id()));
+        let outbox = base.join("coord").join("out");
+        std::fs::create_dir_all(&outbox).unwrap();
+        let log = base.join("coord.log");
+
+        // Exactly what the shim writes: the FILENAME is the verb, the CONTENTS are the message.
+        std::fs::write(outbox.join("ask.123"), "Which branch should I target?").unwrap();
+        std::fs::write(outbox.join("nonsense.1"), "not a verb").unwrap();
+        std::fs::write(outbox.join(".notes"), "local provenance, not an event").unwrap();
+
+        super::spawn_outbox_drain("demo:worker".into(), outbox.clone(), log.clone());
+        let mut text = String::new();
+        for _ in 0..40 {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            text = std::fs::read_to_string(&log).unwrap_or_default();
+            if text.contains("ask") { break; }
+        }
+
+        assert!(text.contains("Which branch should I target?"), "the message lands: {text:?}");
+        assert!(text.contains("demo:worker"), "tagged with the pane that emitted it: {text:?}");
+        assert!(text.contains("	ask	"), "as the ask verb, TSV: {text:?}");
+        // An unknown verb is REFUSED with feedback the agent can read, not silently dropped.
+        assert!(outbox.join("nonsense.1.rejected").is_file(), "a rejection explains the fix");
+        assert!(!text.contains("not a verb"), "and never reaches the log");
+        // Local provenance is not an event.
+        assert!(outbox.join(".notes").is_file(), ".notes is left alone");
+        assert!(!text.contains("local provenance"));
+
+        let _ = std::fs::remove_dir_all(&base);   // also stops the drain thread
+    }
+
+    // A caged worker READS its plan as files, because it cannot run `bsc` — binding that would
+    // mean binding a writable database, the ambient authority the isolation removes. Before this
+    // the launch logged `0 store(s)` and a worker told to consult its plan simply could not.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_projected_plan_is_readable_inside_and_stays_read_only() {
+        if std::process::Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        let base = std::env::temp_dir().join(format!("bsc-planproj-{}", std::process::id()));
+        let wt = base.join("wt");
+        let stores = base.join("stores");
+        std::fs::create_dir_all(&wt).unwrap();
+        // Materialize a projection the way the launcher does, from the same library.
+        let items = bsc_storefs::plan::from_json(
+            r#"[{"ref":"demo-item","title":"A demo","status":"open","body":"b","acceptance":["a"],"labels":[],"dependsOn":[]}]"#,
+        )
+        .expect("the FULL shape parses");
+        let tree = bsc_storefs::plan::project(&items, "2026-01-01T00:00:00Z");
+        bsc_storefs::materialize(&stores.join("plan"), &tree).expect("materialize");
+
+        let argv = namespace_argv(
+            Some("worker"), "pp", wt.to_str().unwrap(),
+            Some(stores.to_str().unwrap()), "/bin/sh", &[],
+        )
+        .expect("renders");
+        let sep = argv.iter().rposition(|x| x == "--").unwrap();
+        let mut cmd = std::process::Command::new(&argv[0]);
+        cmd.args(&argv[1..=sep]);
+        cmd.args(["/usr/bin/sh", "-c", r#"cat /plan/items/demo-item/status 2>/dev/null; ls /plan/by-status 2>/dev/null | head -1; test -w /plan && echo PLAN-WRITABLE"#]);
+        let out = cmd.output().expect("executes");
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert!(text.contains("open"), "the item's status reads as a FILE: {text:?}");
+        // Read-only by the MOUNT, not by convention — an agent cannot rewrite its own plan.
+        assert!(!text.contains("PLAN-WRITABLE"), "/plan must be read-only: {text:?}");
     }
 
     // The cage shipped complete and USELESS: a worker was launched with a 3 KB kickoff for

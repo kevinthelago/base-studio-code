@@ -22,6 +22,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 bsc-sandbox = { path = "../crates/bsc-sandbox" }
+# The store projections a sandboxed session reads instead of running `bsc` (which would mean
+# binding a writable database into the cage). See `project_stores_for`.
+bsc-storefs = { path = "../crates/bsc-storefs" }
 tauri = { version = "2", features = [] }
 tauri-plugin-store = "2"
 tauri-plugin-opener = "2"

@@ -515,6 +515,7 @@ dependencies = [
  "bsc-sandbox",
  "bsc-session",
  "bsc-shot",
+ "bsc-storefs",
  "bsc-tunnel",
  "bsc-util",
  "errordb",
