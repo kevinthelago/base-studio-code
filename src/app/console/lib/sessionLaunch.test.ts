@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL } from "@/app/console/lib/sessionLaunch";
+import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL, resolveSandboxBackend, usesNamespaceHooks } from "@/app/console/lib/sessionLaunch";
 import { DEBUG_STUDIO_SESSION_ID, designerSessionId,
   librarianSessionId, TEAMS_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 import { aiderProvider } from "@/app/console/lib/providers/providers/aider";
@@ -312,6 +312,54 @@ describe("buildSessionSettings", () => {
     expect(out.bypass).toBe(true);
     expect(out.allowedCommands).toEqual([]); // role-less: no restricted role surface, no write-scope
     expect(out.denyToolRules).not.toContain("Task");
+  });
+
+  // ── which backend, and what that implies (one policy, two backends) ─────────────────────────
+
+  it("prefers the namespace when a host can provide one", () => {
+    // Per-agent, proven by an escape test that EXECUTES a sibling-worktree read and gets ENOENT,
+    // and measured at 17 ms + 262 kB per agent. Cheapest and strongest — so it wins.
+    expect(resolveSandboxBackend({ namespaceAvailable: true, agentSandboxInstalled: true }))
+      .toBe("namespace");
+    expect(resolveSandboxBackend({ namespaceAvailable: true, agentSandboxInstalled: false }))
+      .toBe("namespace");
+  });
+
+  it("falls back to the sealed distro rather than to nothing", () => {
+    // A Windows host has no mount namespace, but the WSL2 distro is REAL isolation that already
+    // satisfies the raw-Bash cross-worktree criteria. Falling through to "none" there would give up
+    // isolation the machine can actually provide.
+    expect(resolveSandboxBackend({ namespaceAvailable: false, agentSandboxInstalled: true }))
+      .toBe("wsl");
+  });
+
+  it("reports none ONLY when the host genuinely cannot isolate", () => {
+    // There is no "off" input by design. `none` means the host cannot, never that someone declined
+    // — a setting that can turn isolation off is one that will be off on the machine where it
+    // mattered. This is what "sandboxed by default, no toggle" means in code.
+    expect(resolveSandboxBackend({ namespaceAvailable: false, agentSandboxInstalled: false }))
+      .toBe("none");
+  });
+
+  it("swaps the hook list for ONLY the namespace backend", () => {
+    // The asymmetry that makes this a separate question from "is it sandboxed": a WSL distro
+    // session still has BASH_ENV and still has `bsc`, so its shell gates work. Swapping its list
+    // for /bsc-hook would DELETE working gates and point at a binary not bound there.
+    expect(usesNamespaceHooks("namespace")).toBe(true);
+    expect(usesNamespaceHooks("wsl")).toBe(false);
+    expect(usesNamespaceHooks("none")).toBe(false);
+  });
+
+  it("never claims a backend the host did not report", () => {
+    // Fails closed. Claiming an unavailable backend is what makes a caller drop the shell gates for
+    // a session that never got a cage — the one regression this whole path is shaped to avoid.
+    for (const ns of [true, false]) {
+      for (const wsl of [true, false]) {
+        const got = resolveSandboxBackend({ namespaceAvailable: ns, agentSandboxInstalled: wsl });
+        if (got === "namespace") expect(ns).toBe(true);
+        if (got === "wsl") expect(wsl).toBe(true);
+      }
+    }
   });
 
   // ── the SANDBOXED hook list (a-sandboxed-session-can-launch-its-harness) ────────────────────
