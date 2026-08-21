@@ -3,6 +3,7 @@ import { render, cleanup, waitFor } from "@testing-library/react";
 import { TerminalView } from "@/app/console/panes/views/TerminalView";
 import { useAppStore } from "@/store";
 import { invoke } from "@tauri-apps/api/core";
+import { SHIFT_ENTER_BYTES } from "@/app/console/lib/terminalKeys";
 
 /**
  * #1239: the native console-input overlay (#1158) is reverted for Claude CLI sessions, so Claude's
@@ -16,10 +17,15 @@ import { invoke } from "@tauri-apps/api/core";
 // FitAddon with spies. focusSpy is hoisted so the mock factory can close over it.
 // `fits`/`refreshes` are the #3996 debounce probes — every FitAddon/Terminal the component builds
 // registers its spies here, so a test can count how many fits a burst of resize callbacks produced.
-const { focusSpy, fits, refreshes } = vi.hoisted(() => ({
+const { focusSpy, fits, refreshes, keyHandlers } = vi.hoisted(() => ({
   focusSpy: vi.fn(),
   fits: [] as ReturnType<typeof vi.fn>[],
   refreshes: [] as ReturnType<typeof vi.fn>[],
+  // #one-terminal-one-key-handler: xterm's setter is an ASSIGNMENT — one handler per terminal, last call
+  // wins. Stubbing it as a bare `vi.fn()` (what this mock did, and what `src/test/setup.ts` still does for
+  // terminals nobody drives) makes a clobber invisible, which is how a second attach silently killed
+  // Shift+Enter. Capturing every handler is what lets a test see how many there are and drive the real one.
+  keyHandlers: [] as Array<(e: KeyboardEvent) => boolean>,
 }));
 
 vi.mock("@xterm/xterm", () => {
@@ -38,7 +44,7 @@ vi.mock("@xterm/xterm", () => {
     onData = vi.fn(() => ({ dispose: vi.fn() }));
     focus = focusSpy;
     dispose = vi.fn();
-    attachCustomKeyEventHandler = vi.fn();
+    attachCustomKeyEventHandler = vi.fn((h: (e: KeyboardEvent) => boolean) => { keyHandlers.push(h); });
     getSelection = vi.fn(() => "");
     refresh = vi.fn();
     constructor() { refreshes.push(this.refresh); }
@@ -74,6 +80,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   focusSpy.mockClear();
+  keyHandlers.length = 0;
   // Simulate a live Claude session in this pane (what the OSC-100 "run" signal sets).
   useAppStore.setState({ paneClaudeActive: { [PANE]: true } });
 });
@@ -184,5 +191,41 @@ describe("resize coalescing (#3996)", () => {
     vi.advanceTimersByTime(90);
     // Firing against a disposed terminal is what threw the uncaught #2832 error.
     expect(fit, "no fit after dispose").not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #one-terminal-one-key-handler — the app-level half of the fix.
+ *
+ * `TerminalView` used to attach its own Shift+Enter handler (#4134) at construction, and
+ * `attachTerminalClipboard` attached the paste chords (#3157) later from `openIfReady`. Since xterm keeps
+ * exactly ONE custom key handler, the clipboard attach replaced the override and Shift+Enter stopped
+ * working in every terminal in the app. The override now travels INTO the clipboard attach, so there is a
+ * single handler and both behaviors live in it.
+ */
+describe("one terminal, one key handler", () => {
+  it("attaches exactly one custom key handler", async () => {
+    render(<TerminalView paneId={PANE} visible focused />);
+    await waitFor(() => expect(keyHandlers.length).toBeGreaterThan(0));
+    expect(keyHandlers, "a second attach would silently replace the first").toHaveLength(1);
+  });
+
+  it("Shift+Enter still sends ESC+CR through that one handler", async () => {
+    render(<TerminalView paneId={PANE} visible focused />);
+    await waitFor(() => expect(keyHandlers).toHaveLength(1));
+    vi.mocked(invoke).mockClear();
+
+    const claimed = keyHandlers[0](new KeyboardEvent("keydown", { key: "Enter", shiftKey: true }));
+    expect(claimed, "the chord is claimed so xterm does not ALSO send a plain CR").toBe(false);
+    expect(invoke).toHaveBeenCalledWith("pty_write", { paneId: PANE, data: SHIFT_ENTER_BYTES });
+  });
+
+  it("a plain Enter is left to xterm", async () => {
+    render(<TerminalView paneId={PANE} visible focused />);
+    await waitFor(() => expect(keyHandlers).toHaveLength(1));
+    vi.mocked(invoke).mockClear();
+    expect(keyHandlers[0](new KeyboardEvent("keydown", { key: "Enter" }))).toBe(true);
+    const writes = vi.mocked(invoke).mock.calls.filter((c) => c[0] === "pty_write");
+    expect(writes, "a submit must go through xterm's own CR, not ours").toHaveLength(0);
   });
 });
