@@ -269,6 +269,8 @@ fn resolve_session_cwd(pane_id: &str, cwd: String, sandbox: bool) -> ResolvedCwd
 #[allow(clippy::too_many_arguments)]
 fn build_session_init_line(
     sandbox: bool,
+    /* namespaced: a mount-namespace session — see build_bash_init_line */
+    namespaced: bool,
     shell_kind: crate::platform::shell::ShellKind,
     cwd: &str,
     cwd_missing: bool,
@@ -286,7 +288,7 @@ fn build_session_init_line(
     } else {
         match shell_kind {
             crate::platform::shell::ShellKind::Bash => {
-                build_bash_init_line(cwd, cwd_missing, effective_cwd, launch, claude_fn, rc_bash)
+                build_bash_init_line(cwd, cwd_missing, effective_cwd, launch, claude_fn, rc_bash, namespaced)
             }
             // PowerShell / cmd: bsc-* helpers, OSC7/state markers, and startup-prompt baking
             // are bash-only, so run a degraded init that cd's, clears, and prints a visible
@@ -628,7 +630,8 @@ fn pty_create_inner(
     // Assemble the init line the freshly opened PTY starts with — dispatched by sandbox mode / shell
     // kind to the byte-exact leaf builders (see `build_session_init_line`).
     let init_line = build_session_init_line(
-        into_sandbox.is_some(), resolved_shell.kind, &cwd, cwd_missing, &effective_cwd,
+        into_sandbox.is_some(),
+        ns_argv.is_some(), resolved_shell.kind, &cwd, cwd_missing, &effective_cwd,
         launch.as_deref(), launch_claude, &claude_fn, &rc_bash, model_alias.as_deref(), &env_map,
     );
     writer.write_all(init_line.as_bytes()).ok();
@@ -1028,17 +1031,17 @@ mod tests {
         let env_map: HashMap<String, String> = HashMap::new();
         // Non-sandbox Bash ⇒ byte-for-byte the Git-Bash builder's output.
         let bash = super::build_session_init_line(
-            false, crate::platform::shell::ShellKind::Bash,
+            false, false, crate::platform::shell::ShellKind::Bash,
             "/p", false, "/p", Some("claude"), true, "CLAUDE_FN;", "/rc", None, &env_map,
         );
         assert_eq!(
             bash,
-            super::build_bash_init_line("/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc"),
+            super::build_bash_init_line("/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc", false),
             "Bash kind reproduces build_bash_init_line exactly",
         );
         // Sandbox ⇒ byte-for-byte the distro builder's output (env + cd baked in, shell kind ignored).
         let sandbox = super::build_session_init_line(
-            true, crate::platform::shell::ShellKind::Bash,
+            true, false, crate::platform::shell::ShellKind::Bash,
             "/home/agent/p", false, "/home/agent/p", Some("claude"), true, "CLAUDE_FN;", "/rc", None, &env_map,
         );
         assert_eq!(
@@ -1096,6 +1099,50 @@ mod tests {
 ///
 /// None of this is a global claim: on a host with no mount namespace the hooks remain the whole
 /// floor (see the `cfg(not(linux))` twin below, which refuses to pretend otherwise).
+/// Which systemd scope this host will actually let us create — probed ONCE, then reused.
+///
+/// It has to be probed rather than assumed, and that is not a hypothetical: `systemd-run --scope`
+/// creates a SYSTEM scope, and an ordinary user gets
+/// `Failed to start transient scope unit: Interactive authentication required.` — the session dies
+/// before the shell ever runs. Agents are unprivileged by design (#1994 gives each its own Linux
+/// user), so the system scope is the mode almost nothing can use.
+///
+/// Order is user → system → none, i.e. least privilege that works. `--user` needs a running
+/// `systemd --user` for this uid, which a `useradd`-created agent lacks until `loginctl
+/// enable-linger` is set for it, so it is tried and not presumed either.
+///
+/// Cached because this spawns processes and a launch must not pay for it per pane.
+#[cfg(target_os = "linux")]
+fn scope_mode() -> bsc_sandbox::Scope {
+    use std::sync::OnceLock;
+    static MODE: OnceLock<bsc_sandbox::Scope> = OnceLock::new();
+    *MODE.get_or_init(|| {
+        let works = |args: &[&str]| {
+            std::process::Command::new("systemd-run")
+                .args(args)
+                .arg("--")
+                .arg("/bin/true")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+        if works(&["--user", "--scope", "--quiet", "--collect"]) {
+            log::info!("sandbox: cgroup caps via the USER systemd scope");
+            return bsc_sandbox::Scope::User;
+        }
+        if works(&["--scope", "--quiet", "--collect"]) {
+            log::info!("sandbox: cgroup caps via a SYSTEM systemd scope (running privileged)");
+            return bsc_sandbox::Scope::System;
+        }
+        // Loud, and specific about what is and is not lost. A session that believes it has a memory
+        // cap it does not have is how one runaway agent takes the machine down (#795).
+        log::warn!(
+            "sandbox: NO systemd scope available — sessions will be isolated but UNBOUNDED.              The namespace (filesystem, pid, network) is unaffected; the cgroup memory/task/CPU              caps are NOT applied. `systemd-run --user` needs a user systemd instance for this              uid: `loginctl enable-linger <user>` during provisioning fixes it."
+        );
+        bsc_sandbox::Scope::None
+    })
+}
+
 #[cfg(target_os = "linux")]
 fn namespace_argv(
     role: Option<&str>,
@@ -1151,7 +1198,7 @@ fn namespace_argv(
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
         .collect();
 
-    match for_role(role, unit, &paths, &[], Default::default(), vec![shell.to_string(), "-i".into()]) {
+    match for_role(role, unit, &paths, &[], Default::default(), scope_mode(), vec![shell.to_string(), "-i".into()]) {
         Ok(p) => {
             if let Some(c) = &p.caveat {
                 // A profile that knowingly grants more than the model wants must be visible at the
