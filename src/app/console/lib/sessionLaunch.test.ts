@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL, resolveSandboxBackend, usesNamespaceHooks } from "@/app/console/lib/sessionLaunch";
+import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL, resolveSandboxBackend, usesNamespaceHooks, sandboxPlanFor } from "@/app/console/lib/sessionLaunch";
 import { DEBUG_STUDIO_SESSION_ID, designerSessionId,
   librarianSessionId, TEAMS_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 import { aiderProvider } from "@/app/console/lib/providers/providers/aider";
@@ -312,6 +312,55 @@ describe("buildSessionSettings", () => {
     expect(out.bypass).toBe(true);
     expect(out.allowedCommands).toEqual([]); // role-less: no restricted role surface, no write-scope
     expect(out.denyToolRules).not.toContain("Task");
+  });
+
+  // ── the per-pane plan (wire-the-namespace-into-the-launch-path) ─────────────────────────────
+
+  it("plans a namespace for a role-carrying pane on a capable host", () => {
+    const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
+    const plan = sandboxPlanFor(s, "p", true);
+    expect(plan.backend).toBe("namespace");
+    expect(plan.role).toBe("worker");
+    expect(plan.namespaceHooks).toBe(true);
+  });
+
+  it("does NOT plan a namespace for a role-less pane, because the launcher would refuse it", () => {
+    // namespace_argv refuses an absent role rather than launching unsandboxed. Planning one here
+    // would make the settings claim a cage the launch never creates — the exact asymmetry that
+    // drops the shell gates for an unsandboxed session.
+    const plan = sandboxPlanFor(mkStore({}), "man:1", true);
+    expect(plan.backend).not.toBe("namespace");
+    expect(plan.role).toBeUndefined();
+    expect(plan.namespaceHooks).toBe(false);
+  });
+
+  it("reports the WSL backend where that is what the legacy path will do", () => {
+    // Read from the SAME store fields the distro block downstream reads, so the two cannot disagree.
+    const manual = mkStore({ sandboxConsoles: true });
+    expect(sandboxPlanFor(manual, "man:1", false).backend).toBe("wsl");
+    const identity = mkStore({ paneWslDistro: { p: "bsc-agent-sandbox" } });
+    expect(sandboxPlanFor(identity, "p", false).backend).toBe("wsl");
+  });
+
+  it("never asks for namespace hooks on the WSL backend", () => {
+    // A distro session still has BASH_ENV and bsc, so its shell gates work. Swapping them for
+    // /bsc-hook would delete working gates and point at a binary not bound there.
+    const s = mkStore({ paneRoles: { p: "worker" }, paneWslDistro: { p: "bsc-agent-sandbox" } });
+    const plan = sandboxPlanFor(s, "p", false);
+    expect(plan.backend).toBe("wsl");
+    expect(plan.namespaceHooks).toBe(false);
+    expect(plan.role).toBeUndefined();
+  });
+
+  it("plans nothing on a host that cannot isolate, leaving today's launch untouched", () => {
+    const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
+    const plan = sandboxPlanFor(s, "p", false);
+    expect(plan.backend).toBe("none");
+    expect(plan.namespaceHooks).toBe(false);
+    expect(plan.role).toBeUndefined();
+    // And the settings it drives are byte-identical to a plain two-arg call.
+    expect(buildSessionSettings(s, "p", plan.namespaceHooks).hooks)
+      .toEqual(buildSessionSettings(s, "p").hooks);
   });
 
   // ── which backend, and what that implies (one policy, two backends) ─────────────────────────
