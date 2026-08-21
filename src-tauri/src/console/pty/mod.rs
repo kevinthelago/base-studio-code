@@ -1307,6 +1307,18 @@ fn project_stores_for(pane_id: &str, cwd: &str, root: &std::path::Path) {
     }
 }
 
+/// The single credential a sandboxed harness needs, if it is there.
+///
+/// Exactly one file — never the whole `~/.claude`, which holds every project's transcripts and the
+/// machine's global settings. The agent can READ its own token, which is unavoidable since the
+/// harness needs it to reach the model; what the cage adds is that it cannot MODIFY it, and that a
+/// `network: false` role cannot send it anywhere.
+#[cfg(target_os = "linux")]
+fn credential_for_harness() -> Option<std::path::PathBuf> {
+    let p = crate::platform::paths::home_dir().join(".claude").join(".credentials.json");
+    p.is_file().then_some(p)
+}
+
 /// Which systemd scope this host will actually let us create — probed ONCE, then reused.
 ///
 /// It has to be probed rather than assumed, and that is not a hypothetical: `systemd-run --scope`
@@ -1380,7 +1392,31 @@ fn namespace_argv(
         return None;
     }
 
-    let mut paths = SessionPaths { root: PathBuf::from(cwd), ..Default::default() };
+    // A REFUSAL, not a smaller cage: a session whose cwd fell back to the home directory would
+    // bind the user's whole home read-write at /repo. That is not isolation with a wide root, it is
+    // the opposite of the thing — so it does not launch sandboxed at all.
+    if std::path::Path::new(cwd) == crate::platform::paths::home_dir() {
+        log::error!(
+            "pty[{pane_id}] refusing to sandbox a session whose cwd is the HOME directory —              binding it at /repo would put the user's whole home inside the cage.              Give the pane a real worktree."
+        );
+        return None;
+    }
+
+    let mut paths = SessionPaths {
+        root: PathBuf::from(cwd),
+        // A private HOME on tmpfs, so the harness's state and transcripts do not land in the git
+        // tree and do not outlive the session. `<worktree>/.claude/settings.json` keeps its job;
+        // this is the OTHER `.claude`, and conflating them is what left them sharing a directory.
+        home: Some(PathBuf::from("/home/agent")),
+        // ...and the ONE credential the harness needs, read-only.
+        //
+        // Without it Claude Code has nothing to authenticate with and stops at its interactive
+        // "Select login method" menu — which, in a pane whose input is wired for an agent, reads
+        // exactly like a frozen terminal. Observed. The spec has carried this since the harness
+        // work; the launcher simply never filled it in.
+        credential_file: credential_for_harness(),
+        ..Default::default()
+    };
     if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
         let root = PathBuf::from(root);
         // The emitter rc, if the launcher wrote one beside the outbox.
@@ -1650,6 +1686,45 @@ mod namespace_tests {
         assert!(text.contains("open"), "the item's status reads as a FILE: {text:?}");
         // Read-only by the MOUNT, not by convention — an agent cannot rewrite its own plan.
         assert!(!text.contains("PLAN-WRITABLE"), "/plan must be read-only: {text:?}");
+    }
+
+    // Claude Code with no credential stops at its interactive "Select login method" menu — which,
+    // in a pane whose input is wired for an agent, reads exactly like a frozen terminal. That is
+    // what shipped: the spec carried `credential_file` and the launcher never filled it in.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_sandboxed_session_carries_its_credential_and_nothing_else_from_home() {
+        if std::process::Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        // Only meaningful where the host actually HAS a credential to hand over.
+        let Some(_) = super::credential_for_harness() else { return };
+        let wt = std::env::temp_dir().join(format!("bsc-cred-{}", std::process::id()));
+        std::fs::create_dir_all(&wt).unwrap();
+        let argv = namespace_argv(Some("worker"), "c", wt.to_str().unwrap(), None, "/bin/sh", &[])
+            .expect("renders");
+        let sep = argv.iter().rposition(|x| x == "--").unwrap();
+        let mut cmd = std::process::Command::new(&argv[0]);
+        cmd.args(&argv[1..=sep]);
+        cmd.args(["/usr/bin/sh", "-c", r#"echo "HOME=$HOME"; test -r "$HOME/.claude/.credentials.json" && echo CRED-READABLE; (echo x > "$HOME/.claude/.credentials.json") 2>/dev/null && echo CRED-WRITABLE; ls -A "$HOME/.claude" | wc -l"#]);
+        let out = cmd.output().expect("executes");
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let _ = std::fs::remove_dir_all(&wt);
+
+        assert!(text.contains("HOME=/home/agent"), "a PRIVATE home, not the worktree: {text:?}");
+        assert!(text.contains("CRED-READABLE"), "the harness can authenticate: {text:?}");
+        assert!(!text.contains("CRED-WRITABLE"), "and cannot alter its token: {text:?}");
+        // Exactly one entry: never the whole ~/.claude, which holds every project's transcripts.
+        assert!(text.trim_end().ends_with("1"), "one file crosses, not a directory: {text:?}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_session_whose_cwd_is_home_refuses_rather_than_caging_the_whole_home() {
+        // Observed: a pane with no cwd fell back to $HOME and launched sandboxed, binding the
+        // user's entire home read-write at /repo. A cage containing everything is not a cage.
+        let home = crate::platform::paths::home_dir();
+        assert!(namespace_argv(Some("worker"), "h", home.to_str().unwrap(), None, "/bin/sh", &[]).is_none());
     }
 
     // The cage shipped complete and USELESS: a worker was launched with a 3 KB kickoff for
