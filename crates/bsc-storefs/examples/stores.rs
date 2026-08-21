@@ -114,6 +114,8 @@ fn main() {
         network: false,
         // The spec's env is the whole environment; an inherited one carries host credentials.
         clear_env: true,
+        // No gates in this example: it demonstrates the STORE projections, not the hook layer.
+        hook_bin: None,
         command,
     };
 
