@@ -1034,6 +1034,27 @@ mod tests {
 /// `coord/`). Each subdirectory that EXISTS is mounted read-only at `/<name>`; one that does not
 /// is simply absent, which is the same principle the isolation itself runs on. A missing root
 /// means no store surfaces at all — the agent still gets its worktree.
+///
+/// # What this DOES and DOES NOT take over from the PreToolUse hooks
+///
+/// `bsc-confine`, `bsc-scope` and `bsc-deny` inspect a tool's declared payload and are blind to
+/// whatever it spawns; the kernel is not. Once this returns `Some`, the mount namespace is the
+/// floor for **path confinement** — an out-of-root path is absent rather than refused, for every
+/// descendant.
+///
+/// It does **not** take over the rest, because a namespace is path-granular: `bsc-scope` enforces
+/// globs *within* the one read-write worktree, and `bsc-deny` polices the shape of a command whose
+/// binary is present. See the table in `bsc_sandbox::profile`.
+///
+/// **And note what actually ships today:** the spec binds a curated `/usr` without `bsc`, sets no
+/// `BASH_ENV`, and clears the environment to `HOME`/`TERM`, so inside the namespace those two
+/// hooks do not run *at all* — they are unreachable, not demoted to telemetry. A sandboxed session
+/// therefore has path confinement and no write-scope and no command check. That is a deliberate
+/// consequence of not binding `bsc` (which would mean ambient authority over a writable store),
+/// but it is a gap, and it is tracked rather than resolved.
+///
+/// None of this is a global claim: on a host with no mount namespace the hooks remain the whole
+/// floor (see the `cfg(not(linux))` twin below, which refuses to pretend otherwise).
 #[cfg(target_os = "linux")]
 fn namespace_argv(
     role: Option<&str>,
