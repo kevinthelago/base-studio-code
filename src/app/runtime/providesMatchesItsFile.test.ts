@@ -15,7 +15,7 @@
 // This is the standing check. It is deliberately narrow: it says nothing about a record that provides a
 // specifier unrelated to its `src` (a minted name, a module record beside per-component ones) — only that
 // a record pointing at a file and claiming that file's name must actually be it.
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { seedMatchesFile, fileAsRecordSource } from "../../../scripts/lib/recordSource.mjs";
@@ -89,5 +89,55 @@ describe("a record claiming its file's specifier IS that file", () => {
       stale,
       `these no longer claim their file's specifier — drop them from KNOWN_DIVERGED:\n  ${stale.join("\n  ")}`,
     ).toEqual([]);
+  });
+});
+
+// A FAITHFUL lift is still wrong when the module owns an IDENTITY SINGLETON.
+//
+// The rule above asks whether a record IS its file. That is necessary and it is not sufficient, and
+// `terminalhost` is the proof: its record was byte-identical to `TerminalHost.tsx` apart from a
+// trailing newline, so it PASSED the fidelity check — and it still broke every console pane.
+//
+// Because `provides` is a global override, a record-loaded consumer resolves the specifier to the
+// RECORD's compiled module. An identical copy is still a SECOND module instance, and for
+// `createContext`/`createStore` the whole meaning is the instance. `App.tsx` statically imported the
+// file and rendered its Provider on context A; the record-only `TerminalSlot` read context B and got
+// `null`. `useTerminalHost()` returning null is a supported state — the slot renders an inert div —
+// so nothing threw, nothing logged, and every static gate stayed green. The symptom was a console
+// pane with no terminal: `0 terms`, `pty_create` never called, on any FRESH store.
+//
+// So this check is about the module's NATURE, not its bytes, and it reads the FILE, since that is the
+// copy the static importers get.
+describe("a record must not claim a specifier whose module owns an identity singleton", () => {
+  /** `createContext` / `createStore` at module scope: a value whose IDENTITY is its meaning, so a
+   *  second instance is a different thing rather than an equal one. Deliberately narrow — a
+   *  module-scope `new Map()` used as a derived lookup table duplicates harmlessly. */
+  const IDENTITY_SINGLETON = /^\s*(?:export\s+)?const\s+\w+\s*=\s*(?:React\.)?(?:createContext|createStore)\s*[(<]/m;
+
+  const providers = Object.values(SEED)
+    .map((m) => m.default)
+    .filter((r): r is { id: string; provides: string } =>
+      Boolean(r?.id && typeof r.provides === "string" && r.provides.startsWith("@/")));
+
+  const fileFor = (spec: string): string | undefined => {
+    const base = join(REPO, "src", spec.slice(2));
+    for (const ext of [".tsx", ".ts"]) if (existsSync(base + ext)) return base + ext;
+    return undefined;
+  };
+
+  it("finds providers to check — a vacuous pass would hide the next one", () => {
+    expect(providers.length).toBeGreaterThan(0);
+  });
+
+  it("no record provides a specifier whose FILE creates a context or store", () => {
+    const offenders = providers
+      .map((r) => ({ r, f: fileFor(r.provides) }))
+      .filter((x) => x.f && IDENTITY_SINGLETON.test(readFileSync(x.f, "utf8")))
+      .map((x) => `${x.r.id} provides ${x.r.provides} (${x.f})`);
+    expect(offenders, [
+      "A record claiming a specifier whose module creates a context/store gives record-loaded",
+      "consumers a SECOND instance, so a Provider rendered from the static import is invisible to",
+      "them. Drop `provides` from the record — the module must stay the file's.",
+    ].join(" ")).toEqual([]);
   });
 });

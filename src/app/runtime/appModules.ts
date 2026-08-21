@@ -200,6 +200,7 @@ import * as Diagnostics from "@/shared/lib/core/diagnostics";
 import * as GraphPlatform from "@/app/console/graphPlatform";
 import * as TerminalClipboard from "@/shared/lib/session/terminalClipboard";
 import * as Terminal from "@/app/console/lib/terminal";
+import * as TerminalHost from "@/app/console/terminal/TerminalHost";
 import * as TerminalKeys from "@/app/console/lib/terminalKeys";
 import * as TerminalNudge from "@/app/console/lib/terminalNudge";
 import * as JumbleProbe from "@/app/console/lib/jumbleProbe";
@@ -520,6 +521,15 @@ const PLATFORM: Record<string, unknown> = {
   "@/app/console/graphPlatform": GraphPlatform,
   "@/shared/lib/session/terminalClipboard": TerminalClipboard,
   "@/app/console/lib/terminal": Terminal,
+  // The app's ONE terminal host, for the same reason `react` is above: it owns a module-scope
+  // `createContext`, and a context's meaning IS its instance. `TerminalSlot` is record-only, so it
+  // resolves this specifier through the loader — without this entry it would either fail to resolve
+  // or (when a record provided it) compile a SECOND module with a SECOND context, and every slot
+  // would read a context nobody provided. That is not hypothetical: a `terminalhost` record claiming
+  // this specifier made `useTerminalHost()` return null on any fresh store, so no console pane
+  // spawned a PTY at all — `0 terms`, `pty_create` never called, and nothing threw, because a null
+  // host is a supported state that renders an inert slot.
+  "@/app/console/terminal/TerminalHost": TerminalHost,
   "@/app/console/lib/terminalKeys": TerminalKeys,
   "@/app/console/lib/terminalNudge": TerminalNudge,
   "@/app/console/lib/jumbleProbe": JumbleProbe,
