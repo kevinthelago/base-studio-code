@@ -83,6 +83,30 @@ pub const MINIMAL_BINS: &[&str] = &[
     "uniq", "wc", "xargs",
 ];
 
+/// Which systemd scope wraps the namespace — i.e. where the cgroup limits are applied, if anywhere.
+///
+/// This exists because the obvious rendering does not work for the user agents actually run as.
+/// `systemd-run --scope` creates a **system** scope and needs root or an interactive polkit prompt;
+/// an ordinary user gets `Failed to start transient scope unit: Interactive authentication
+/// required.` and the session dies instantly. Agents are deliberately unprivileged — #1994 gives
+/// each its own Linux user — so the system scope is the one mode almost nothing can use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    /// `systemd-run --user --scope`. The caller's OWN systemd instance, so no privileges are
+    /// needed — but there must BE one for that uid. A `useradd`-created agent has none until
+    /// `loginctl enable-linger` is set for it, which belongs in provisioning.
+    User,
+    /// `systemd-run --scope`. A system scope: root, or a polkit prompt nobody is there to answer.
+    System,
+    /// No systemd wrapper at all — `bwrap` directly.
+    ///
+    /// **The isolation is unchanged and the LIMITS ARE GONE.** Namespaces are what confine the
+    /// filesystem, pids and network; the scope only ever carried the cgroup caps. A caller landing
+    /// here still gets a real cage, just an unbounded one, and must say so out loud — a session
+    /// believing it has caps it does not is how a memory cap becomes a machine-wide OOM.
+    None,
+}
+
 /// Where [`SandboxSpec::hook_bin`] is bound INSIDE the namespace.
 ///
 /// Fixed rather than caller-chosen, because a session's `.claude/settings.json` has to name it and
@@ -117,6 +141,9 @@ pub struct SandboxSpec {
     /// on something already unique, such as the pane id.
     pub unit: String,
     pub limits: Limits,
+    /// Which systemd scope carries [`Self::limits`]. [`Scope::None`] renders no wrapper and, with
+    /// it, no limits — see that variant.
+    pub scope: Scope,
     /// The base image. Defaults to [`Usr::Curated`] with [`MINIMAL_BINS`] — deny by default, with
     /// [`Usr::All`] as a visible escape rather than the silent status quo.
     pub usr: Usr,
@@ -262,6 +289,10 @@ impl SandboxSpec {
         SandboxSpec {
             unit: unit.into(),
             limits: Limits::default(),
+            // The USER scope by default: agents are unprivileged, and a system scope needs root or
+            // a polkit prompt nobody is there to answer. The launcher downgrades from here when it
+            // probes and finds no user systemd instance.
+            scope: Scope::User,
             // Deny by default. A caller that needs a toolchain widens this deliberately.
             usr: Usr::Curated(MINIMAL_BINS.iter().map(|s| s.to_string()).collect()),
             mounts: vec![
@@ -370,13 +401,9 @@ impl SandboxSpec {
     /// The full argv: a `systemd-run` scope carrying the limits, wrapping a `bwrap` namespace,
     /// wrapping the command.
     ///
-    /// Returns argv rather than a shell string — see the module docs.
-    pub fn render(&self) -> Result<Vec<String>, SpecError> {
-        self.validate()?;
-        let mut a: Vec<String> = Vec::new();
-
-        a.extend(["systemd-run", "--scope", "--quiet", "--collect"].map(String::from));
-        a.push(format!("--unit={}", self.unit));
+    /// The cgroup caps, as `systemd-run -p` flags. Called ONLY when a scope exists — see the note
+    /// in [`render`] about why they must not be emitted otherwise.
+    fn render_limits(&self, a: &mut Vec<String>) {
         if let Some(m) = &self.limits.memory_max {
             a.push("-p".into());
             a.push(format!("MemoryMax={m}"));
@@ -392,7 +419,27 @@ impl SandboxSpec {
             a.push("-p".into());
             a.push(format!("CPUWeight={w}"));
         }
-        a.push("--".into());
+    }
+
+    /// Returns argv rather than a shell string — see the module docs.
+    pub fn render(&self) -> Result<Vec<String>, SpecError> {
+        self.validate()?;
+        let mut a: Vec<String> = Vec::new();
+
+        // The scope wrapper, when there is one. Under `Scope::None` the whole prefix is dropped —
+        // INCLUDING the `-p` limit flags, which would otherwise be passed to a `systemd-run` that
+        // is not there. Rendering caps with nowhere to apply them is how a spec looks correct and
+        // enforces nothing.
+        if self.scope != Scope::None {
+            a.push("systemd-run".into());
+            if self.scope == Scope::User {
+                a.push("--user".into());
+            }
+            a.extend(["--scope", "--quiet", "--collect"].map(String::from));
+            a.push(format!("--unit={}", self.unit));
+            self.render_limits(&mut a);
+            a.push("--".into());
+        }
 
         a.push("bwrap".into());
         // --unshare-all covers mount/pid/net/user/uts/ipc/cgroup. --share-net selectively hands
@@ -583,6 +630,65 @@ mod tests {
         assert!(!a.iter().any(|x| x.starts_with("MemoryMax")));
         assert!(!a.iter().any(|x| x.starts_with("TasksMax")));
         assert!(!a.iter().any(|x| x.starts_with("CPUWeight")));
+    }
+
+    // ── the scope, and what each mode actually costs ────────────────────────────────────────
+
+    #[test]
+    fn the_user_scope_needs_no_privileges_and_says_so_in_the_argv() {
+        // The default, because agents are unprivileged. `--user` MUST precede `--scope`, which is
+        // how systemd-run reads it.
+        let a = spec().render().unwrap();
+        assert_eq!(a[0], "systemd-run");
+        assert_eq!(a[1], "--user");
+        assert!(a.contains(&"--scope".to_string()));
+    }
+
+    #[test]
+    fn the_system_scope_is_the_one_that_needs_root() {
+        // Kept expressible, not default: it is what produced `Failed to start transient scope
+        // unit: Interactive authentication required.` for an ordinary user.
+        let mut sp = spec();
+        sp.scope = Scope::System;
+        let a = sp.render().unwrap();
+        assert_eq!(a[0], "systemd-run");
+        assert!(!a.contains(&"--user".to_string()));
+    }
+
+    #[test]
+    fn no_scope_means_bwrap_directly_and_the_isolation_is_unchanged() {
+        let mut sp = spec();
+        sp.scope = Scope::None;
+        let a = sp.render().unwrap();
+        assert_eq!(a[0], "bwrap", "no wrapper at all: {a:?}");
+        assert!(!a.iter().any(|x| x == "systemd-run"));
+        // The cage itself is untouched — that is the whole point of the fallback being acceptable.
+        assert!(a.iter().any(|x| x == "--unshare-all"));
+        assert!(a.windows(3).any(|w| w[0] == "--bind" && w[2] == "/repo"));
+    }
+
+    #[test]
+    fn no_scope_drops_the_limits_rather_than_rendering_them_nowhere() {
+        // The failure this guards is subtle: `-p MemoryMax=…` with no `systemd-run` in front is
+        // either a bwrap argument error or silently meaningless, and either way a caller reading
+        // the spec would believe the cap applies. Losing the caps is acceptable; PRETENDING to
+        // have them is not.
+        let mut sp = spec();
+        sp.limits = Limits {
+            memory_max: Some("2G".into()),
+            tasks_max: Some(64),
+            cpu_weight: Some(50),
+        };
+        sp.scope = Scope::None;
+        let a = sp.render().unwrap();
+        assert!(!a.iter().any(|x| x == "-p"), "no -p flags without a scope: {a:?}");
+        assert!(!a.iter().any(|x| x.starts_with("MemoryMax")));
+        assert!(!a.iter().any(|x| x.starts_with("TasksMax")));
+        // ...and the SAME limits do render when there is a scope to carry them.
+        sp.scope = Scope::User;
+        let b = sp.render().unwrap();
+        assert!(b.iter().any(|x| x == "MemoryMax=2G"));
+        assert!(b.iter().any(|x| x == "TasksMax=64"));
     }
 
     #[test]

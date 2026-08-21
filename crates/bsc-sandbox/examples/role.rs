@@ -57,7 +57,7 @@ fn main() {
     // with "Unit <name>.scope was already loaded or has a fragment file", and back-to-back runs
     // of the same role collide. The pid is enough here; a real caller should use its pane id.
     let unit = format!("bsc-{}-{}", head[0], std::process::id());
-    match for_role(role, unit, &paths, &extra, Limits::default(), command) {
+    match for_role(role, unit, &paths, &extra, Limits::default(), bsc_sandbox::Scope::User, command) {
         Ok(p) => {
             if let Some(c) = &p.caveat {
                 eprintln!("CAVEAT: {c}");

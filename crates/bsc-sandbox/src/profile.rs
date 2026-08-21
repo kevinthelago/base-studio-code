@@ -33,7 +33,7 @@
 //! (`bsc_storefs::ui`), exactly as `/coord/out` is one for coordination. No role binds `bsc`, and
 //! [`Profile::caveat`] is `None` for every role.
 
-use crate::{Limits, Mount, SandboxSpec, SpecError, Usr, MINIMAL_BINS};
+use crate::{Limits, Mount, SandboxSpec, Scope, SpecError, Usr, MINIMAL_BINS};
 use std::path::PathBuf;
 
 /// The roles the app launches. Deliberately a closed set: an unrecognised role is **refused**,
@@ -203,6 +203,7 @@ pub fn for_role(
     paths: &SessionPaths,
     extra_bins: &[&str],
     limits: Limits,
+    scope: Scope,
     command: Vec<String>,
 ) -> Result<Profile, SpecError> {
     let mut mounts = vec![Mount::ReadWrite {
@@ -227,6 +228,9 @@ pub fn for_role(
     let spec = SandboxSpec {
         unit: unit.into(),
         limits,
+        // Defaults to the user scope; `for_role` takes it from the caller so the launcher can pass
+        // what it actually PROBED rather than what we hope is true.
+        scope,
         usr: Usr::Curated(bins),
         mounts,
         cwd: PathBuf::from("/repo"),
@@ -294,7 +298,7 @@ ed".into(),
     }
 
     fn build(role: Role) -> Profile {
-        for_role(role, "u", &paths(), &[], Limits::default(), vec!["sh".into()]).unwrap()
+        for_role(role, "u", &paths(), &[], Limits::default(), Scope::User, vec!["sh".into()]).unwrap()
     }
 
     #[test]
@@ -391,6 +395,7 @@ ed".into(),
             &paths(),
             &["cargo", "rustc"],
             Limits::default(),
+            Scope::User,
             vec!["sh".into()],
         )
         .unwrap();
@@ -457,7 +462,7 @@ ed".into(),
     // ── the hook gates (static-hook-binary-reaches-into-the-namespace) ──────────────────────────
 
     fn gated() -> Vec<String> {
-        for_role(Role::Worker, "u", &gated_paths(), &[], Limits::default(), vec!["bash".into()])
+        for_role(Role::Worker, "u", &gated_paths(), &[], Limits::default(), Scope::User, vec!["bash".into()])
             .expect("a gated worker profile renders")
             .spec
             .render()
@@ -475,7 +480,7 @@ ed".into(),
     }
 
     fn homed() -> Vec<String> {
-        for_role(Role::Worker, "u", &homed_paths(), &[], Limits::default(), vec!["bash".into()])
+        for_role(Role::Worker, "u", &homed_paths(), &[], Limits::default(), Scope::User, vec!["bash".into()])
             .expect("renders")
             .spec
             .render()
@@ -529,7 +534,7 @@ ed".into(),
             credential_file: Some(PathBuf::from("/host/kevin/.claude/.credentials.json")),
             ..paths()
         };
-        let err = for_role(Role::Worker, "u", &paths, &[], Limits::default(), vec!["bash".into()])
+        let err = for_role(Role::Worker, "u", &paths, &[], Limits::default(), Scope::User, vec!["bash".into()])
             .and_then(|p| p.spec.render())
             .expect_err("a credential with no home must refuse");
         assert!(matches!(err, SpecError::CredentialWithoutHome), "got {err:?}");
@@ -548,6 +553,7 @@ ed".into(),
             &homed_paths(),
             &[],
             Limits::default(),
+            Scope::User,
             vec!["bash".into()],
         )
         .unwrap()
@@ -590,7 +596,7 @@ ed".into(),
     fn no_hook_binary_means_no_gate_config_rather_than_dangling_vars() {
         // Absence has to be honest. Exporting BSC_SCOPE_GLOBS with nothing able to read it would
         // read like a working gate in every log and every `env` dump.
-        let a = for_role(Role::Worker, "u", &paths(), &[], Limits::default(), vec!["bash".into()])
+        let a = for_role(Role::Worker, "u", &paths(), &[], Limits::default(), Scope::User, vec!["bash".into()])
             .unwrap()
             .spec
             .render()
@@ -662,10 +668,10 @@ ed"));
     #[test]
     fn a_bad_spec_is_refused_at_the_join_not_at_launch() {
         // Rendering here means a caller learns about a broken profile when it builds one.
-        let e = for_role(Role::Worker, "bad unit", &paths(), &[], Limits::default(), vec!["sh".into()]);
+        let e = for_role(Role::Worker, "bad unit", &paths(), &[], Limits::default(), Scope::User, vec!["sh".into()]);
         assert_eq!(e.unwrap_err(), SpecError::UnitNotSafe("bad unit".into()));
 
-        let empty = for_role(Role::Worker, "u", &paths(), &[], Limits::default(), vec![]);
+        let empty = for_role(Role::Worker, "u", &paths(), &[], Limits::default(), Scope::User, vec![]);
         assert_eq!(empty.unwrap_err(), SpecError::EmptyCommand);
     }
 }

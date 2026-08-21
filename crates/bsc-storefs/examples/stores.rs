@@ -114,6 +114,8 @@ fn main() {
         network: false,
         // The spec's env is the whole environment; an inherited one carries host credentials.
         clear_env: true,
+        // The user scope: this example is run by a person, not by root.
+        scope: bsc_sandbox::Scope::User,
         // No gates in this example: it demonstrates the STORE projections, not the hook layer.
         hook_bin: None,
         // This example demonstrates the STORE projections; HOME and credentials belong to a real
