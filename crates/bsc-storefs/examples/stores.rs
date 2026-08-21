@@ -112,6 +112,8 @@ fn main() {
         cwd: PathBuf::from("/repo"),
         env: vec![("HOME".into(), "/repo".into())],
         network: false,
+        // The spec's env is the whole environment; an inherited one carries host credentials.
+        clear_env: true,
         command,
     };
 

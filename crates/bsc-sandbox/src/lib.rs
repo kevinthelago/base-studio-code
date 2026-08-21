@@ -102,6 +102,16 @@ pub struct SandboxSpec {
     pub env: Vec<(String, String)>,
     /// `false` (the default for a worker) unshares the network entirely.
     pub network: bool,
+    /// Start from an EMPTY environment and set only what [`Self::env`] names.
+    ///
+    /// Without this bwrap inherits the parent's environment wholesale. Measured on a real launch:
+    /// **25 variables crossed, including `GH_TOKEN` and `AWS_SECRET`** — live credentials handed
+    /// to an agent that never asked for them, plus `BSC_*` host paths that mean nothing inside.
+    /// With it: 2 variables, exactly what the spec declares.
+    ///
+    /// Defaults to `true` in [`profile::for_role`]. Setting it `false` is a deliberate,
+    /// visible escape, the same way [`Usr::All`] is.
+    pub clear_env: bool,
     pub command: Vec<String>,
 }
 
@@ -191,6 +201,9 @@ impl SandboxSpec {
             cwd: PathBuf::from("/repo"),
             env: vec![("HOME".into(), "/repo".into())],
             network: false,
+            // Deny by default here too: the spec's env is the WHOLE environment, not an overlay
+            // on whatever the app happened to be holding.
+            clear_env: true,
             command,
         }
     }
@@ -292,6 +305,11 @@ impl SandboxSpec {
             a.push("--share-net".into());
         }
         a.push("--die-with-parent".into());
+        // BEFORE any --setenv: bwrap applies arguments in order, so clearing after setting would
+        // wipe the very variables the spec declares.
+        if self.clear_env {
+            a.push("--clearenv".into());
+        }
 
         // The base image.
         match &self.usr {
@@ -623,5 +641,52 @@ mod tests {
             let sp = spec().with_usr(Usr::Curated(vec![bad.into()]));
             assert_eq!(sp.render().unwrap_err(), SpecError::BinNotABasename(bad.into()));
         }
+    }
+}
+
+#[cfg(test)]
+mod clear_env_tests {
+    use super::*;
+
+    fn spec() -> SandboxSpec {
+        SandboxSpec::worker("u", "/wt", "/store", vec!["sh".into()])
+    }
+
+    #[test]
+    fn a_worker_starts_from_an_empty_environment() {
+        // Without this, bwrap inherits the parent's environment wholesale. MEASURED on a real
+        // launch: 25 variables crossed, including GH_TOKEN and AWS_SECRET — live credentials
+        // handed to an agent that never asked for them.
+        assert!(spec().clear_env, "deny by default");
+        let a = spec().render().unwrap();
+        assert!(a.contains(&"--clearenv".to_string()));
+    }
+
+    #[test]
+    fn clearenv_precedes_every_setenv_or_it_wipes_them() {
+        // bwrap applies arguments IN ORDER. Clearing after setting would drop the very variables
+        // the spec declares, which fails silently as "the shell has no HOME".
+        let a = spec().render().unwrap();
+        let clear = a.iter().position(|x| x == "--clearenv").unwrap();
+        let first_set = a.iter().position(|x| x == "--setenv").unwrap();
+        assert!(clear < first_set, "--clearenv must come first");
+    }
+
+    #[test]
+    fn opting_out_is_possible_but_must_be_explicit() {
+        // The escape exists — some caller may genuinely need the host environment — but it is a
+        // visible field, not the default, exactly like Usr::All.
+        let mut s = spec();
+        s.clear_env = false;
+        assert!(!s.render().unwrap().contains(&"--clearenv".to_string()));
+    }
+
+    #[test]
+    fn the_declared_env_still_crosses() {
+        // Clearing must not defeat the spec: HOME is what makes /repo the agent's home.
+        let a = spec().render().unwrap();
+        let i = a.iter().position(|x| x == "--setenv").unwrap();
+        assert_eq!(a[i + 1], "HOME");
+        assert_eq!(a[i + 2], "/repo");
     }
 }

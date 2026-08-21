@@ -166,8 +166,20 @@ pub fn for_role(
         usr: Usr::Curated(bins),
         mounts,
         cwd: PathBuf::from("/repo"),
-        env: vec![("HOME".into(), "/repo".into())],
+        // The WHOLE environment, not an overlay — `clear_env` below drops everything else.
+        //
+        // TERM is passed through because this is an interactive terminal session and a shell with
+        // no TERM renders badly; it carries no authority. HOME is the worktree. Nothing else
+        // crosses: measured, an inherited environment brought GH_TOKEN and AWS_SECRET with it.
+        env: vec![
+            ("HOME".into(), "/repo".into()),
+            (
+                "TERM".into(),
+                std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".into()),
+            ),
+        ],
         network: role.needs_network(),
+        clear_env: true,
         command,
     };
     // Render once so a bad spec is refused HERE, at the join, rather than at launch.
@@ -357,6 +369,27 @@ mod tests {
         // The worktree plus exactly the outboxes the caller asked for — nothing else. Adding a
         // writable path anywhere in the stack has to change this line, which is the point.
         assert_eq!(writable, vec!["/repo", "/coord/out", "/ui/out"]);
+    }
+
+
+    #[test]
+    fn every_role_starts_from_an_empty_environment() {
+        // The leak this closes was not theoretical: an inherited environment carried GH_TOKEN and
+        // AWS_SECRET into the namespace. No role should opt out of that by accident.
+        for r in [Role::Planner, Role::Worker, Role::Director, Role::Triage, Role::Designer] {
+            let p = build(r);
+            assert!(p.spec.clear_env, "{r:?} must clear the environment");
+            assert!(p.spec.render().unwrap().contains(&"--clearenv".to_string()));
+        }
+    }
+
+    #[test]
+    fn term_crosses_but_nothing_else_does() {
+        // TERM is passed through deliberately — this is an interactive terminal session and a
+        // shell with no TERM renders badly. It carries no authority. The env is otherwise HOME.
+        let p = build(Role::Worker);
+        let keys: Vec<&str> = p.spec.env.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, vec!["HOME", "TERM"]);
     }
 
     #[test]
