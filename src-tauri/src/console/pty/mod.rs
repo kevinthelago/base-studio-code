@@ -455,6 +455,33 @@ fn pty_create_inner(
     // What this session's harness needs on PATH inside the cage. Claude Code is a node program
     // reached through a shim, so both have to be bound — its package lives under /usr/lib, which
     // the curated arm already binds wholesale, so the shim resolves once it is there.
+    // The coordination outbox, prepared HERE because a sandboxed session cannot create it: the
+    // mountpoint has to exist on the host before bwrap can bind it, and inside the cage /coord
+    // would be a read-only projection anyway.
+    //
+    // Without it every `bsc-ask` / `bsc-maintain` in the worker protocol HANGS — the protocol
+    // pipes into them, so a missing reader leaves the writer waiting rather than failing. The
+    // shims in the init line write here; a drain turns these files into coord.log events.
+    //
+    // Best-effort: a session that cannot get an outbox still launches and simply cannot emit,
+    // which is strictly better than refusing to start.
+    let sandbox_stores = sandbox_stores.or_else(|| {
+        let role = sandbox_role.as_deref().filter(|r| !r.is_empty())?;
+        let _ = role;
+        let safe: String = pane_id
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+            .collect();
+        let root = crate::platform::paths::bsc_base_dir().join("sandbox-stores").join(safe);
+        match std::fs::create_dir_all(root.join("coord").join("out")) {
+            Ok(()) => Some(root.to_string_lossy().into_owned()),
+            Err(e) => {
+                log::warn!("pty[{pane_id}] no coordination outbox ({e}); the session cannot emit");
+                None
+            }
+        }
+    });
+
     let harness_bins: &[&str] = match provider_id.as_deref() {
         Some("claude") | None => &["node", "claude"],
         // Any other provider names its own runtime; an unknown one gets no extra binaries rather

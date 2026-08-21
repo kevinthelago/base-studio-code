@@ -84,6 +84,44 @@ pub(super) fn build_bash_init_line(
     } else {
         format!("cd \"{}\" 2>/dev/null; ", to_bash_path(cwd))
     };
+    // The coordination emitters, for a SANDBOXED session only.
+    //
+    // The worker protocol instructs an agent to run `bsc-ask`, `bsc-note`, `bsc-maintain` and
+    // friends. Inside a namespace those do not exist: they are shell functions from `bsc-env.sh`,
+    // reached through `BASH_ENV`, which is neither set nor bound. So the kickoff told the agent to
+    // run commands that were not there — and because the protocol PIPES into them
+    // (`echo "…" | bsc-ask`), the failure was not a clean "command not found" but a HANG: the
+    // writer waits on a reader that never exists.
+    //
+    // `bsc_storefs::coord` already defines the answer — the FILENAME is the verb, the CONTENTS are
+    // the message — so these are one-line shims over it. Each accepts either calling convention the
+    // protocol uses: piped, or as arguments.
+    //
+    // `note` and `checkpoint` are deliberately NOT coordination verbs: they are local provenance,
+    // so they append beside the outbox rather than being emitted and rejected as an unknown verb.
+    let emitters = if sandboxed {
+        let mut e = String::from(
+            "__bsc_emit() { local v=\"$1\"; shift; local m=\"$*\"; \
+             if [ -z \"$m\" ]; then m=\"$(cat)\"; fi; \
+             if ! mkdir -p /coord/out 2>/dev/null; then \
+             echo \"bsc: no coordination outbox at /coord/out\" >&2; return 1; fi; \
+             printf '%s' \"$m\" > \"/coord/out/$v.$$\"; }; ",
+        );
+        for v in [
+            "ask", "answer", "assign", "brief", "closed", "commission", "deliver", "failed",
+            "fork", "issue", "landed", "maintain", "merged", "request", "waiting", "woke",
+        ] {
+            e.push_str(&format!("bsc-{v}() {{ __bsc_emit {v} \"$@\"; }}; "));
+        }
+        e.push_str(
+            "bsc-note() { local m=\"$*\"; if [ -z \"$m\" ]; then m=\"$(cat)\"; fi; \
+             mkdir -p /coord/out 2>/dev/null; printf '%s\\n' \"$m\" >> /coord/out/.notes; }; \
+             bsc-checkpoint() { bsc-note \"$@\"; }; ",
+        );
+        e
+    } else {
+        String::new()
+    };
     // Source the checkpoint helper into the interactive shell too: BASH_ENV only
     // covers non-interactive subshells (the agent's Bash tool), so a human typing
     // `bsc-checkpoint` in the console pane would otherwise not have it.
@@ -107,6 +145,7 @@ pub(super) fn build_bash_init_line(
         "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
          __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
          {claude_fn}\
+         {emitters}\
          {helpers_src}\
          PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}{osc7}__bsc_state idle\"; \
          {osc7}__bsc_state idle; printf '\\033[2J\\033[3J\\033[H'{init_suffix}\n"
@@ -115,6 +154,32 @@ pub(super) fn build_bash_init_line(
 
 #[cfg(test)]
 mod tests {
+    // The worker protocol NAMES bsc-ask / bsc-note / bsc-maintain, and inside a namespace they
+    // are absent — they come from bsc-env.sh via BASH_ENV, which is neither set nor bound. The
+    // protocol pipes into them, so their absence HANGS rather than erroring: the writer waits on
+    // a reader that never exists. Observed, in a real session.
+    #[test]
+    fn a_sandboxed_session_gets_the_emitters_its_protocol_tells_it_to_use() {
+        let line = super::build_bash_init_line("/wt", false, "/wt", None, "", "/rc.sh", true);
+        for verb in ["ask", "maintain", "landed", "assign"] {
+            assert!(line.contains(&format!("bsc-{verb}()")), "bsc-{verb} must be defined: {line}");
+        }
+        // note/checkpoint are local provenance, not coordination verbs — emitting them would be
+        // rejected as an unknown verb, so they append beside the outbox instead.
+        assert!(line.contains("bsc-note()") && line.contains("bsc-checkpoint()"));
+        // The contract is bsc_storefs::coord's: the FILENAME is the verb.
+        assert!(line.contains("/coord/out/"), "emitters write to the outbox: {line}");
+    }
+
+    #[test]
+    fn an_unsandboxed_session_gets_no_emitter_shims() {
+        // It has the real ones already, from bsc-env.sh. Defining shims over them would shadow
+        // the working implementation with a degraded one.
+        let line = super::build_bash_init_line("/wt", false, "/wt", None, "", "/rc.sh", false);
+        assert!(!line.contains("bsc-ask()"), "no shims where the real helpers load: {line}");
+        assert!(!line.contains("__bsc_emit"));
+    }
+
     // A SANDBOXED session must not report its cwd. Inside a mount namespace `$(pwd)` is a GUEST
     // path (`/repo`), and the frontend writes the reported cwd straight back into `paneCwds` — so
     // reporting it overwrote the pane's HOST cwd with `/repo`, and the next launch tried to bind a
