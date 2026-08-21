@@ -492,6 +492,28 @@ impl SandboxSpec {
                 a.extend(["--symlink", "usr/bin", "/sbin"].map(String::from));
             }
         }
+        // A network role needs the machinery to USE the network, and none of it lives in /usr.
+        // Without this the cage shares a network namespace and still cannot reach anything:
+        // Claude Code reported `Failed to connect to api.anthropic.com: ETIMEOUT`, which is DNS
+        // failing for want of a resolver, not a routing problem.
+        //
+        //   resolv.conf     the nameserver list — no DNS at all without it
+        //   nsswitch.conf   how glibc resolves names in the first place
+        //   hosts           the local overrides glibc consults first
+        //   ssl             the CA bundle; TLS fails even once DNS works
+        //
+        // Bound ONLY when the network is shared. A role with `network: false` has nothing to
+        // resolve and nothing to verify, so it gets none of it — the cage stays as small as the
+        // role's job allows, which is the same rule the curated /usr follows.
+        if self.network {
+            for f in ["/etc/resolv.conf", "/etc/nsswitch.conf", "/etc/hosts"] {
+                a.push("--ro-bind-try".into());
+                a.push(f.into());
+                a.push(f.into());
+            }
+            a.extend(["--ro-bind-try", "/etc/ssl", "/etc/ssl"].map(String::from));
+            a.extend(["--ro-bind-try", "/usr/lib/ssl", "/usr/lib/ssl"].map(String::from));
+        }
         a.extend(["--symlink", "usr/lib", "/lib"].map(String::from));
         a.extend(["--symlink", "usr/lib64", "/lib64"].map(String::from));
         a.extend(["--symlink", "usr/bin", "/bin"].map(String::from));
@@ -600,6 +622,29 @@ mod tests {
             .map(|(i, _)| i)
             .expect("store must be mounted read-only at /plan");
         assert_eq!(a[ro + 2], "/plan");
+    }
+
+    #[test]
+    fn a_network_role_gets_what_it_takes_to_actually_use_the_network() {
+        // Sharing the netns is not enough: without a resolver the cage reaches nothing, which is
+        // how Claude Code timed out on api.anthropic.com inside a worker that HAD --share-net.
+        let mut sp = spec();
+        sp.network = true;
+        let a = sp.render().unwrap();
+        for f in ["/etc/resolv.conf", "/etc/nsswitch.conf", "/etc/hosts"] {
+            assert!(a.windows(3).any(|w| w[0] == "--ro-bind-try" && w[1] == f && w[2] == f),
+                    "{f} must be bound for a network role: {a:?}");
+        }
+        assert!(a.iter().any(|x| x == "/etc/ssl"), "and the CA bundle, or TLS fails: {a:?}");
+    }
+
+    #[test]
+    fn a_no_network_role_gets_no_resolver_and_no_ca_bundle() {
+        // Nothing to resolve and nothing to verify, so the cage stays smaller — the same rule the
+        // curated /usr follows.
+        let a = spec().render().unwrap();          // network is off by default
+        assert!(!a.iter().any(|x| x == "/etc/resolv.conf"));
+        assert!(!a.iter().any(|x| x == "/etc/ssl"));
     }
 
     #[test]
