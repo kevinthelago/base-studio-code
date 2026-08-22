@@ -34,7 +34,7 @@
 //! [`Profile::caveat`] is `None` for every role.
 
 use crate::{Limits, Mount, SandboxSpec, Scope, SpecError, Usr, MINIMAL_BINS};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The roles the app launches. Deliberately a closed set: an unrecognised role is **refused**,
 /// never defaulted to something permissive.
@@ -271,8 +271,11 @@ pub fn for_role(
     // `command not found`.
     for b in extra_bins {
         if let Some(real) = real_bin_path(b) {
-            if real != PathBuf::from(format!("/usr/bin/{b}")) {
-                mounts.push(Mount::ReadOnly { host: real, guest: PathBuf::from(format!("/usr/bin/{b}")) });
+            // Formatted ONCE and compared by reference: allocating a PathBuf purely to compare against
+            // is what `clippy::cmp_owned` objects to, and it was building the same string twice.
+            let guest = format!("/usr/bin/{b}");
+            if real.as_path() != Path::new(&guest) {
+                mounts.push(Mount::ReadOnly { host: real, guest: PathBuf::from(guest) });
             }
         }
     }
