@@ -551,29 +551,35 @@ fn edge_member_for(spec: &str, dir: &Path, root: &Path) -> Option<String> {
 
 /// Resolve a relative specifier against `dir` and express it as `@/…`, or `None` when it names no file.
 fn alias_for(spec: &str, dir: &Path, root: &Path) -> Option<String> {
-    // Normalize by hand rather than `canonicalize`: that requires the path to exist BEFORE we know which
-    // extension to try, and returns an absolute platform path we would only have to strip again.
-    let mut parts: Vec<String> = Vec::new();
-    for seg in dir.to_string_lossy().replace(BACKSLASH, "/").split('/').chain(spec.split('/')) {
+    // Resolved with PathBuf, NOT by joining hand-normalized strings. The string form silently dropped
+    // the leading `/` of an absolute POSIX dir — `"/a/b".split('/')` yields an empty first segment and
+    // the `""` arm discarded it — so `base` stopped being absolute and `root.join(base)` prepended the
+    // root a SECOND time (`/tmp/t/tmp/t/src/…`). Nothing existed there, so every relative import
+    // resolved to `None` and was left as `./…`.
+    //
+    // It only ever worked on Windows: there an absolute dir is `C:/…`, whose first segment survives, so
+    // the result stayed absolute and `Path::join` REPLACES the base rather than appending to it. The
+    // first native Linux gate failed three extract tests on this.
+    let mut p = dir.to_path_buf();
+    for seg in spec.split('/') {
         match seg {
             "" | "." => {}
             ".." => {
-                parts.pop();
+                p.pop();
             }
-            other => parts.push(other.to_string()),
+            other => p.push(other),
         }
     }
-    let base = parts.join("/");
     // The forms the loader's own resolution accepts, in the order a bundler tries them.
     for suffix in [".ts", ".tsx", "/index.ts", "/index.tsx"] {
-        let candidate = format!("{base}{suffix}");
-        if !root.join(&candidate).exists() {
+        let mut with_ext = p.clone().into_os_string();
+        with_ext.push(suffix);
+        let candidate = PathBuf::from(with_ext);
+        let full = if candidate.is_absolute() { candidate } else { root.join(&candidate) };
+        if !full.exists() {
             continue;
         }
-        let rel = candidate
-            .strip_prefix(&format!("{}/", root.to_string_lossy().replace(BACKSLASH, "/")))
-            .unwrap_or(&candidate)
-            .to_string();
+        let rel = full.strip_prefix(root).ok()?.to_string_lossy().replace(BACKSLASH, "/");
         let rest = rel.strip_prefix("src/")?;
         // `@/x/y` is the registration key, so an `index` file is addressed by its DIRECTORY and every
         // form drops its extension — matching how `provides` is derived for the module itself.
