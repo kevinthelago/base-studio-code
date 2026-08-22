@@ -21,7 +21,6 @@ use bsc_shot::{default_png_path, is_png, shots_dir, Rect, ShotRequest, ShotResul
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::Duration;
 
 mod crop;
 
@@ -124,7 +123,10 @@ fn rect_from_css([x, y, w, h]: [f64; 4], component: &str) -> Result<Rect, String
 
 /// How long to wait for `CapturePreview`'s completion handler. Shorter than the CLI's timeout so the
 /// caller gets our real error rather than a bare timeout.
-const CAPTURE_TIMEOUT: Duration = Duration::from_millis(5_000);
+// Paired with its ONLY user, `capture_webview_png`, which is `#[cfg(windows)]`. Ungated it is dead
+// code on Linux and `-D warnings` rejects it — a Phase 1 artifact that disappears with that path.
+#[cfg(windows)]
+const CAPTURE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(5_000);
 
 /// The capture's device-pixels-per-CSS-pixel ratio (#3467).
 ///
