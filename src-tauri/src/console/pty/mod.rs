@@ -1059,7 +1059,20 @@ mod tests {
             "the director recovers its project HUB, got {}",
             r.cwd
         );
-        assert_eq!(r.effective_cwd, r.cwd, "the hub exists or not, effective tracks cwd here");
+        // `effective_cwd` is the nearest EXISTING ancestor of `cwd`, so it equals `cwd` only on a
+        // machine where the hub happens to be present. Asserting equality made this test read the
+        // DEVELOPER'S HOME: green where that hub existed, red on a fresh host — which is exactly how
+        // it failed on the first native Debian gate. The ancestor relation is the real invariant and
+        // holds either way, and it still fails if recovery or the fallback genuinely regresses.
+        // Guarded against vacuity: `starts_with("")` is true for anything, so an empty
+        // `effective_cwd` would make the check below meaningless rather than passing.
+        assert!(!r.effective_cwd.is_empty(), "a recovered cwd must resolve to SOME existing dir");
+        assert!(
+            r.cwd.starts_with(&r.effective_cwd),
+            "effective_cwd must be an ancestor of (or equal to) the recovered cwd: cwd={} effective={}",
+            r.cwd,
+            r.effective_cwd
+        );
     }
 
     #[test]
