@@ -19,4 +19,10 @@ bsc-cli-util = { path = "../bsc-cli-util" }
 # scaffold does (`--dir` > env > `~/.base-studio-code/personas`).
 bsc-util = { path = "../bsc-util" }
 # `rename` patches ONE field of the stored record without re-serializing a typed model.
+# The wire contract for `bsc persona use` (#change-a-panes-persona-from-the-cli) crosses the appchan,
+# so its request/result shapes are derived rather than hand-rolled.
+# The ONE bsc->app request channel — `use` changes frontend state, so it rides the same transport as
+# `bsc shot` / `bsc navigate` / `bsc fleet` rather than a second one.
+bsc-appchan = { path = "../bsc-appchan" }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -71,3 +71,54 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 }
+
+use serde::{Deserialize, Serialize};
+
+/// `bsc persona use` — the routing key for "change which persona a pane runs as".
+///
+/// Its own key, for the reason `fleet-wake` has one: this is not a question Rust can answer. The
+/// assignment lives in the frontend store (`panePersonas`), so the verb is an emit-and-ack round trip
+/// through [`bsc_appchan`] rather than a pure-Rust read.
+pub const USE_KIND: &str = "persona-use";
+
+/// Ask the app to run a pane as a different persona.
+///
+/// ## Why a relaunch is the default
+/// A persona is the LAUNCH primitive — capability, MCP servers and hooks are all resolved from it when
+/// the session starts. Rewriting `panePersonas` under a running session therefore changes nothing the
+/// agent can observe, and a caller who saw a success would reasonably believe otherwise. So the verb
+/// relaunches by default and says which it did; `--no-relaunch` is for staging an identity that the
+/// next launch will pick up.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UseRequest {
+    /// The pane to change. Identity-keyed (`<project>:<stream>`), the same grammar `bsc fleet` uses.
+    pub pane_id: String,
+    /// The persona id to run as — validated against the store BEFORE anything is killed.
+    pub persona_id: String,
+    /// Restart the session so the new identity is actually in effect. Default true; the CLI's
+    /// `--no-relaunch` clears it.
+    pub relaunch: bool,
+    /// Relaunch even when the pane is BUSY. A relaunch kills the PTY, so interrupting work in flight
+    /// is a deliberate act rather than a default — the same rule `fleet wake` applies.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub force: bool,
+}
+
+/// What actually happened — including what the pane used to be, so a change is reversible from the
+/// output alone rather than requiring the caller to have looked first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UseResult {
+    pub pane_id: String,
+    pub persona_id: String,
+    /// The persona the pane was running as, or `None` if it carried none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous: Option<String>,
+    /// Whether the session was restarted. False under `--no-relaunch`, where the identity applies at
+    /// the next launch.
+    pub relaunched: bool,
+    /// Whether the pane had work in flight — only ever true alongside `force`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub was_busy: bool,
+}

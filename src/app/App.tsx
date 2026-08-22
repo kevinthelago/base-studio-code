@@ -12,6 +12,7 @@ import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useHotkeys } from "@/app/useHotkeys";
 import { useNavigateBridge } from "@/app/useNavigateBridge";
 import { useFleetWakeBridge } from "@/app/useFleetWakeBridge";
+import { usePersonaUseBridge } from "@/app/usePersonaUseBridge";
 import { useSystemSessionBridge } from "@/app/useSystemSessionBridge";
 import { useFleetDirectorBridge } from "@/app/useFleetDirectorBridge";
 import { useDebugChannel } from "@/app/useDebugChannel";
@@ -54,6 +55,7 @@ export default function App() {
   // external session can steer the app to a view before capturing it.
   useNavigateBridge();
   useFleetWakeBridge();
+  usePersonaUseBridge();
   // #architect-starts-and-stops-system-sessions: apply `bsc session start|stop` — the architect's
   // lever over the app-owned studios, over a closed registry it cannot extend.
   useSystemSessionBridge();

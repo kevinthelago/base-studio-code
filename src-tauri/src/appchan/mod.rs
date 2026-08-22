@@ -122,6 +122,12 @@ fn handle(app: &tauri::AppHandle, env: &bsc_appchan::Envelope) -> Result<serde_j
             let res = crate::fleet::director_new::apply(app, &env.id, &req)?;
             serde_json::to_value(res).map_err(|e| e.to_string())
         }
+        bsc_persona::USE_KIND => {
+            let req: bsc_persona::UseRequest = serde_json::from_value(env.payload.clone())
+                .map_err(|e| format!("malformed persona use request: {e}"))?;
+            let res = crate::session::persona_use::apply(app, &env.id, &req)?;
+            serde_json::to_value(res).map_err(|e| e.to_string())
+        }
         bsc_navigate::KIND => {
             let req: bsc_navigate::NavRequest = serde_json::from_value(env.payload.clone())
                 .map_err(|e| format!("malformed navigate request: {e}"))?;

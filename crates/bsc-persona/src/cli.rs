@@ -14,6 +14,13 @@
 use bsc_cli_util::CmdDoc;
 use bsc_json_store::cli::CliSpec;
 
+/// How long `use` waits for the app, and how it polls — the same numbers `bsc fleet` uses, so the two
+/// verbs on this transport behave alike.
+const DEFAULT_TIMEOUT_MS: i64 = 10_000;
+const POLL_INTERVAL_MS: u64 = 50;
+/// Requests older than this are swept before a new one is written, so a dead run cannot accumulate.
+const STALE_MS: i64 = 60_000;
+
 const TAGLINE: &str = "the user persona store — list/get/set/remove ~/.base-studio-code/personas (#2094)";
 
 const COMMANDS: &[CmdDoc] = &[
@@ -70,6 +77,23 @@ An architect persona's name is what the Glance architect node is labelled with, 
 architect names itself or another one.",
     },
     CmdDoc {
+        name: "use",
+        summary: "run a pane as a different persona (relaunches it)",
+        usage: "USAGE:
+  bsc persona use <paneId> <personaId> [--no-relaunch] [--force] [--timeout <ms>] [--json|--pretty]
+
+Changes which persona a pane runs as. A persona is the LAUNCH primitive - capability, MCP servers and
+hooks all resolve from it when the session starts - so this RELAUNCHES the pane by default, and says
+so. Rewriting the assignment under a running session would change nothing the agent can observe.
+
+  --no-relaunch   set the assignment only; it applies at the next launch
+  --force         relaunch even when the pane is BUSY (a relaunch kills the session first)
+  --timeout <ms>  how long to wait for the app to answer
+
+Requires the desktop app to be running: the assignment lives in its store, not on disk. An unknown
+persona id is refused BEFORE anything is killed, and the error names ids that do exist.",
+    },
+    CmdDoc {
         name: "remove",
         summary: "delete a persona (no-op if absent)",
         usage: "\
@@ -102,6 +126,9 @@ const SPEC: CliSpec = CliSpec {
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     if args.first().map(String::as_str) == Some("rename") && args.get(1).map(String::as_str) != Some("help") {
         return rename(&args, prog);
+    }
+    if args.first().map(String::as_str) == Some("use") && args.get(1).map(String::as_str) != Some("help") {
+        return use_pane(&args, prog);
     }
     // The narrow-only floor clamp rides the shared runner's write-time batch gate (#2928), so the
     // check happens BEFORE any write and a bad batch is rejected whole — the same contract
@@ -266,6 +293,131 @@ fn rename(args: &[String], prog: &str) -> Result<(), String> {
     store.set(id, &out)?;
     println!("{out}");
     Ok(())
+}
+
+/// `bsc persona use <paneId> <personaId>` — run a pane as a different persona.
+///
+/// ## Why this cannot be answered here
+/// The assignment lives in the app's `panePersonas`, not on disk: the persona STORE is a file store
+/// this CLI owns, but which pane runs as which persona is frontend state. So the verb rides
+/// [`bsc_appchan`] — the one `bsc`→app channel, shared with `bsc shot` / `bsc navigate` / `bsc fleet`
+/// — rather than growing a second transport.
+///
+/// ## What is checked here, and what is not
+/// The persona id is resolved against the STORE here, before anything is sent, so a typo cannot reach
+/// the app and cannot kill a session on its way to failing. BUSY is deliberately NOT checked here:
+/// liveness lives in the app's `PtyState`, and a second opinion computed from this side is exactly how
+/// `list` and `wake` would come to disagree about what is running.
+fn use_pane(args: &[String], prog: &str) -> Result<(), String> {
+    let mut pane = String::new();
+    let mut persona = String::new();
+    let mut relaunch = true;
+    let mut force = false;
+    let mut json = false;
+    let mut pretty = false;
+    let mut timeout_ms: i64 = DEFAULT_TIMEOUT_MS;
+
+    let mut it = args.iter().skip(1);
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--no-relaunch" => relaunch = false,
+            "--force" => force = true,
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            "--timeout" => {
+                let v = it.next().ok_or("--timeout needs a value")?;
+                timeout_ms = v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?;
+            }
+            // Consumed by `store_dir` below, which re-reads the raw args — skipped here so it is not
+            // mistaken for the pane id, and so `use` resolves the same store every other verb does.
+            "--dir" => { it.next().ok_or("--dir needs a value")?; }
+            other if other.starts_with("--") => return Err(format!("{prog} use: unknown flag {other}")),
+            other if pane.is_empty() => pane = other.to_string(),
+            other if persona.is_empty() => persona = other.to_string(),
+            other => return Err(format!("{prog} use: unexpected argument {other}")),
+        }
+    }
+    if pane.trim().is_empty() || persona.trim().is_empty() {
+        return Err(format!("{prog} use: needs <paneId> and <personaId>"));
+    }
+
+    // Resolve the persona BEFORE the request goes anywhere: the app relaunches the pane to apply it,
+    // and a typo that got that far would kill a session on its way to an error.
+    let dir = store_dir(args, prog)?;
+    let store = bsc_json_store::Store::new(dir, SPEC.noun);
+    if store.get(persona.trim()).ok().flatten().is_none() {
+        // `Store::list` returns the record BODIES, not the ids — printing it raw dumped every persona's
+        // full JSON into the error, which is how this was caught. Pull the id out of each.
+        let mut known: Vec<String> = store
+            .list()
+            .iter()
+            .filter_map(|json| {
+                serde_json::from_str::<serde_json::Value>(json)
+                    .ok()?
+                    .get("id")?
+                    .as_str()
+                    .map(str::to_string)
+            })
+            .collect();
+        known.sort();
+        let names = if known.is_empty() {
+            "the persona store is empty".to_string()
+        } else {
+            format!("known: {}", known.join(", "))
+        };
+        return Err(format!("{prog} use: no persona '{}' — {names}", persona.trim()));
+    }
+
+    let req = crate::UseRequest {
+        pane_id: pane.trim().to_string(),
+        persona_id: persona.trim().to_string(),
+        relaunch,
+        force,
+    };
+
+    let chan = bsc_appchan::chan_dir()?;
+    let now = bsc_util::now_ms();
+    let _ = bsc_appchan::sweep_stale(&chan, now, STALE_MS);
+    let id = bsc_appchan::new_id(now);
+    bsc_appchan::write_request(&chan, &id, crate::USE_KIND, now, &req)?;
+
+    let reply = bsc_appchan::poll_reply(&chan, &id, timeout_ms, POLL_INTERVAL_MS, || {
+        format!(
+            "timed out after {timeout_ms}ms waiting for the app to answer.\n\
+             The request is at {}.\n\
+             Is the desktop app running? A pane's persona lives in its store — `bsc` cannot set it alone.",
+            bsc_appchan::request_path(&chan, &id).display()
+        )
+    })?;
+    if let Some(e) = reply.error {
+        return Err(format!("{prog} use: {e}"));
+    }
+    let res: crate::UseResult =
+        serde_json::from_value(reply.payload).map_err(|e| format!("{prog} use: malformed reply: {e}"))?;
+
+    if json || pretty {
+        let out = if pretty {
+            serde_json::to_string_pretty(&res)
+        } else {
+            serde_json::to_string(&res)
+        };
+        println!("{}", out.map_err(|e| e.to_string())?);
+    } else {
+        let was = res.previous.as_deref().unwrap_or("(none)");
+        println!("{} — {} → {}", res.pane_id, was, res.persona_id);
+        // Say which happened, every time: "set it and relaunched" and "set it for next time" are very
+        // different outcomes, and a caller that guesses wrong debugs the wrong thing.
+        println!(
+            "{}",
+            if res.relaunched {
+                "relaunched — the new persona is in effect"
+            } else {
+                "not relaunched — it applies at the next launch"
+            }
+        );
+    }
+    Ok(())
+
 }
 
 #[cfg(test)]
@@ -579,7 +731,7 @@ mod tests {
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
         let ov = bsc_cli_util::help_overview("bsc persona", TAGLINE, COMMANDS);
-        for c in ["list", "get", "set", "remove"] {
+        for c in ["list", "get", "set", "remove", "use"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
         let one = bsc_cli_util::help_for("bsc persona", TAGLINE, COMMANDS, "set");
@@ -587,4 +739,83 @@ mod tests {
         assert!(one.contains("stdin"));
         assert!(bsc_cli_util::help_for("bsc persona", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
     }
+
+    // ── `bsc persona use` — the checks that happen BEFORE the app is ever contacted ────────────────
+    //
+    // Everything here is deliberately reachable without a running app: the point of validating the
+    // persona id CLI-side is that a typo must not travel to the app, which would relaunch a pane on its
+    // way to failing. A test that needed the app could not pin that.
+
+    #[test]
+    fn use_needs_both_a_pane_and_a_persona() {
+        let e = use_pane(&["use".into()], "bsc persona").unwrap_err();
+        assert!(e.contains("needs <paneId> and <personaId>"), "{e}");
+        let e = use_pane(&["use".into(), "demo:worker".into()], "bsc persona").unwrap_err();
+        assert!(e.contains("needs <paneId> and <personaId>"), "{e}");
+    }
+
+    #[test]
+    fn use_rejects_an_unknown_flag_rather_than_treating_it_as_a_pane() {
+        let e = use_pane(&["use".into(), "--wat".into()], "bsc persona").unwrap_err();
+        assert!(e.contains("unknown flag --wat"), "{e}");
+    }
+
+    #[test]
+    fn use_refuses_an_unknown_persona_and_names_the_ones_that_exist() {
+        let dir = scratch("use-unknown");
+        let store = bsc_json_store::Store::new(dir.clone(), SPEC.noun);
+        store.set("reviewer", r#"{"id":"reviewer","name":"Reviewer","role":"reviewer"}"#).unwrap();
+
+        let e = use_pane(
+            &["use".into(), "demo:worker".into(), "nope".into(), "--dir".into(), dir.display().to_string()],
+            "bsc persona",
+        )
+        .unwrap_err();
+        // Named, so a caller that typo'd does not have to run a second command to find out what is real.
+        assert!(e.contains("no persona 'nope'"), "{e}");
+        assert!(e.contains("reviewer"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn use_names_persona_ids_and_never_dumps_their_bodies() {
+        // Caught by running it: `Store::list` yields record BODIES, so the refusal printed every
+        // persona's whole JSON — start prompt and all — instead of a list of ids.
+        let dir = scratch("use-ids");
+        let store = bsc_json_store::Store::new(dir.clone(), SPEC.noun);
+        store
+            .set("reviewer", r#"{"id":"reviewer","name":"Reviewer","role":"reviewer","startPrompt":"SECRET-PROSE"}"#)
+            .unwrap();
+
+        let e = use_pane(
+            &["use".into(), "demo:worker".into(), "nope".into(), "--dir".into(), dir.display().to_string()],
+            "bsc persona",
+        )
+        .unwrap_err();
+        assert!(e.contains("known: reviewer"), "{e}");
+        assert!(!e.contains("SECRET-PROSE"), "the refusal must list ids, not record bodies: {e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn use_says_so_when_the_store_is_empty_rather_than_printing_an_empty_list() {
+        let dir = scratch("use-empty");
+        let e = use_pane(
+            &["use".into(), "demo:worker".into(), "nope".into(), "--dir".into(), dir.display().to_string()],
+            "bsc persona",
+        )
+        .unwrap_err();
+        assert!(e.contains("the persona store is empty"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn use_is_in_the_help_catalog_with_its_flags() {
+        let h = bsc_cli_util::help_for("bsc persona", TAGLINE, COMMANDS, "use");
+        assert!(h.contains("--no-relaunch"), "{h}");
+        assert!(h.contains("--force"), "{h}");
+        // The relaunch is the surprising part of the verb, so the help has to lead with it.
+        assert!(h.contains("RELAUNCHES"), "{h}");
+    }
+
 }
