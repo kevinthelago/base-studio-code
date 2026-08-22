@@ -1490,7 +1490,9 @@ fn namespace_argv(
         credential_file: credential_for_harness(),
         // ...and the harness's own onboarding/account state, as a writable per-session COPY. Without
         // it the private HOME above reads as a first run and Claude asks for a pasted OAuth code.
-        harness_state_file: harness_state_for(pane_id, stores_root),
+        harness_state_file: stores_root
+            .filter(|r| !r.is_empty())
+            .and_then(|r| harness_state_for(pane_id, std::path::Path::new(r))),
         ..Default::default()
     };
     if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
