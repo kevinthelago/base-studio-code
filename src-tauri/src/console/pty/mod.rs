@@ -820,6 +820,23 @@ pub(crate) fn pane_liveness(pane_ids: Vec<String>, state: &PtyState) -> Vec<bsc_
         .collect()
 }
 
+/// Whether this is the FIRST write to `pane_id` since it vanished from the session map.
+///
+/// Exists so a dead pane reports itself exactly once. A user typing into a pane whose shell has exited
+/// produces one call per keystroke, and the choice is between a silent drop (which is what hid this bug)
+/// and a log line per keypress (which buries it). Neither is a report; the first one is.
+///
+/// The set is never pruned: a pane id is short, they are bounded by the panes a user opens, and a pane
+/// that comes back to life writes through the `Some` arm without consulting this at all.
+fn first_write_to_missing(pane_id: &str) -> bool {
+    static SEEN: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+        std::sync::OnceLock::new();
+    SEEN.get_or_init(Default::default)
+        .lock()
+        .map(|mut s| s.insert(pane_id.to_string()))
+        .unwrap_or(true)
+}
+
 #[tauri::command]
 pub(crate) fn pty_write(
     pane_id: String,
@@ -830,8 +847,22 @@ pub(crate) fn pty_write(
     match sessions.get_mut(&pane_id) {
         Some(s) => s.writer.write_all(data.as_bytes())
             .map_err(|e| { log::error!("pty[{pane_id}] write failed: {e}"); e.to_string() })?,
-        // Can happen during teardown races; the bytes are simply dropped.
-        None => log::debug!("pty[{pane_id}] write to missing session ({} bytes dropped)", data.len()),
+        // The session is gone. This IS a teardown race sometimes, and the bytes are dropped either
+        // way - but it is also what a pane whose shell exited looks like from here, and in that
+        // case it is not a race at all: it is every keystroke the user types into a corpse. At
+        // `debug` that was invisible while a maintainer sat typing into a dead pane wondering why
+        // the terminal had frozen. Warned ONCE per pane, because the alternative is a log line per
+        // keypress, which is its own way of hiding the signal.
+        None => {
+            if first_write_to_missing(&pane_id) {
+                log::warn!(
+                    "pty[{pane_id}] write to a session that is gone ({} bytes dropped) - the pane is no longer connected; further writes to it are logged at debug",
+                    data.len()
+                );
+            } else {
+                log::debug!("pty[{pane_id}] write to missing session ({} bytes dropped)", data.len());
+            }
+        }
     }
     Ok(())
 }
@@ -1879,5 +1910,29 @@ mod namespace_tests {
             String::from_utf8_lossy(&out.stdout)
         );
         let _ = std::fs::remove_dir_all(&base);
+    }
+}
+
+#[cfg(test)]
+mod dead_pane_tests {
+    use super::first_write_to_missing;
+
+    /// A pane whose shell has exited takes one keystroke per call here, so the report has to be
+    /// once-per-pane: silent hid the bug, and per-keypress would bury it just as well.
+    #[test]
+    fn a_vanished_pane_reports_itself_exactly_once() {
+        let pane = "dead-pane-tests:first:p0";
+        assert!(first_write_to_missing(pane), "the first write is the one that reports");
+        for _ in 0..50 {
+            assert!(!first_write_to_missing(pane), "every later write stays quiet");
+        }
+    }
+
+    /// The set is keyed by pane, so one dead pane never silences another.
+    #[test]
+    fn each_pane_gets_its_own_report() {
+        assert!(first_write_to_missing("dead-pane-tests:second:p0"));
+        assert!(first_write_to_missing("dead-pane-tests:third:p0"));
+        assert!(!first_write_to_missing("dead-pane-tests:second:p0"));
     }
 }

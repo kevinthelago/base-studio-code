@@ -3,6 +3,7 @@ import { render, cleanup, waitFor } from "@testing-library/react";
 import { TerminalView } from "@/app/console/panes/views/TerminalView";
 import { useAppStore } from "@/store";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { SHIFT_ENTER_BYTES } from "@/app/console/lib/terminalKeys";
 
 /**
@@ -17,7 +18,7 @@ import { SHIFT_ENTER_BYTES } from "@/app/console/lib/terminalKeys";
 // FitAddon with spies. focusSpy is hoisted so the mock factory can close over it.
 // `fits`/`refreshes` are the #3996 debounce probes — every FitAddon/Terminal the component builds
 // registers its spies here, so a test can count how many fits a burst of resize callbacks produced.
-const { focusSpy, fits, refreshes, keyHandlers } = vi.hoisted(() => ({
+const { focusSpy, fits, refreshes, keyHandlers, writes } = vi.hoisted(() => ({
   focusSpy: vi.fn(),
   fits: [] as ReturnType<typeof vi.fn>[],
   refreshes: [] as ReturnType<typeof vi.fn>[],
@@ -26,6 +27,9 @@ const { focusSpy, fits, refreshes, keyHandlers } = vi.hoisted(() => ({
   // terminals nobody drives) makes a clobber invisible, which is how a second attach silently killed
   // Shift+Enter. Capturing every handler is what lets a test see how many there are and drive the real one.
   keyHandlers: [] as Array<(e: KeyboardEvent) => boolean>,
+  // Every Terminal the component builds registers its write spy here, so a test can read what
+  // actually reached the terminal (the exit banner, #a-dead-console-pane-still-looks-alive).
+  writes: [] as ReturnType<typeof vi.fn>[],
 }));
 
 vi.mock("@xterm/xterm", () => {
@@ -47,7 +51,7 @@ vi.mock("@xterm/xterm", () => {
     attachCustomKeyEventHandler = vi.fn((h: (e: KeyboardEvent) => boolean) => { keyHandlers.push(h); });
     getSelection = vi.fn(() => "");
     refresh = vi.fn();
-    constructor() { refreshes.push(this.refresh); }
+    constructor() { refreshes.push(this.refresh); writes.push(this.write); }
   }
   return { Terminal };
 });
@@ -81,6 +85,11 @@ beforeAll(() => {
 beforeEach(() => {
   focusSpy.mockClear();
   keyHandlers.length = 0;
+  writes.length = 0;
+  // `listen` calls accumulate across tests; without this the exit handler found belongs to an
+  // already-unmounted terminal from an earlier test, and the banner lands on a spy nobody reads.
+  vi.mocked(listen).mockClear();
+  vi.mocked(invoke).mockClear();   // same reason — call ORDER is only comparable within one test
   // Simulate a live Claude session in this pane (what the OSC-100 "run" signal sets).
   useAppStore.setState({ paneClaudeActive: { [PANE]: true } });
 });
@@ -227,5 +236,52 @@ describe("one terminal, one key handler", () => {
     expect(keyHandlers[0](new KeyboardEvent("keydown", { key: "Enter" }))).toBe(true);
     const writes = vi.mocked(invoke).mock.calls.filter((c) => c[0] === "pty_write");
     expect(writes, "a submit must go through xterm's own CR, not ours").toHaveLength(0);
+  });
+});
+
+/**
+ * #a-dead-console-pane-still-looks-alive — a pane must SAY when its session is gone.
+ *
+ * TerminalView subscribed to `pty_data_<pane>` but never `pty_exit_<pane>`, so a console pane could not
+ * learn that its shell had exited. The terminal kept its last frame, the cursor kept blinking, and
+ * `pty_write` for a vanished session returns Ok and drops the bytes — so every keystroke after the exit
+ * silently succeeded into nothing. Reported as terminals freezing with no way to reproduce, which is
+ * exactly what it is: not a state you enter, one you are left in.
+ */
+describe("a dead console pane says so", () => {
+  const exitHandler = () => {
+    const call = vi.mocked(listen).mock.calls.find(([evt]) => evt === `pty_exit_${PANE}`);
+    return call?.[1] as ((ev: unknown) => void) | undefined;
+  };
+
+  it("subscribes to its pane's pty_exit", async () => {
+    render(<TerminalView paneId={PANE} visible focused />);
+    await waitFor(() => expect(exitHandler()).toBeTypeOf("function"));
+  });
+
+  it("writes a visible banner into the terminal when the session ends", async () => {
+    render(<TerminalView paneId={PANE} visible focused />);
+    await waitFor(() => expect(exitHandler()).toBeTypeOf("function"));
+    const write = writes[writes.length - 1];
+    write.mockClear();
+
+    exitHandler()!({ payload: undefined });
+
+    const written = write.mock.calls.map((c) => String(c[0])).join("");
+    expect(written, "an exited pane must not look like an idle prompt").toContain("session ended");
+    expect(written, "and it must say how to get a live shell back").toMatch(/relaunch/i);
+  });
+
+  it("subscribes BEFORE the PTY is spawned, so an immediate exit is not missed", async () => {
+    render(<TerminalView paneId={PANE} visible focused />);
+    await waitFor(() => expect(exitHandler()).toBeTypeOf("function"));
+    const subscribed = vi.mocked(listen).mock.invocationCallOrder[
+      vi.mocked(listen).mock.calls.findIndex(([evt]) => evt === `pty_exit_${PANE}`)
+    ];
+    const created = vi.mocked(invoke).mock.invocationCallOrder[
+      vi.mocked(invoke).mock.calls.findIndex(([cmd]) => cmd === "pty_create")
+    ];
+    expect(created, "pty_create should have been called").toBeDefined();
+    expect(subscribed).toBeLessThan(created);
   });
 });
