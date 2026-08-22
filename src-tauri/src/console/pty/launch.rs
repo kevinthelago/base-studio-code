@@ -90,6 +90,22 @@ pub(super) fn sandbox_emitter_rc() -> String {
 /// `to_bash_path` is a no-op off Windows.
 /// `sandboxed` means this session runs inside a mount namespace, so every path it can see is a
 /// GUEST path — which is why it suppresses the cwd report. See the `osc7` binding below.
+/// Strip what could escape a double-quoted bash word. The reasons are ours, not user input, but a
+/// path is interpolated into one and a message that broke the init line would take the whole session
+/// with it — a 4096-byte truncation already did exactly that once.
+fn shell_safe(s: &str) -> String {
+    // By CODE POINT, not char literals: a quote, a backslash and a backtick in one Rust expression
+    // is exactly the shape that gets mangled passing through a shell — it did, twice, writing this.
+    const UNSAFE: [char; 4] = [
+        char::from_u32(34).unwrap(),
+        char::from_u32(92).unwrap(),
+        char::from_u32(36).unwrap(),
+        char::from_u32(96).unwrap(),
+    ];
+    s.chars().filter(|c| !UNSAFE.contains(c)).collect()
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn build_bash_init_line(
     cwd: &str,
     cwd_missing: bool,
@@ -98,6 +114,9 @@ pub(super) fn build_bash_init_line(
     claude_fn: &str,
     rc_bash: &str,
     sandboxed: bool,
+    // Why a REQUESTED sandbox was refused, if it was. `None` covers both "it is sandboxed" and
+    // "it was never going to be" — a pane with no role gets no notice, because there is nothing to say.
+    sandbox_refused: Option<&str>,
 ) -> String {
     // The suffix runs AFTER the final screen clear, so it's what the user actually sees: the launch
     // command normally, or — when the configured cwd is gone — the red warning as an inert shell's
@@ -109,7 +128,24 @@ pub(super) fn build_bash_init_line(
             disp = to_bash_path(cwd),
         )
     } else {
-        launch.map(|s| format!("; {}", s)).unwrap_or_default()
+        // A refused cage is a DOWNGRADE, not a failure: the session still launches, so this prints
+        // alongside the agent rather than replacing it (unlike `cwd_missing`, which stops the agent
+        // because starting one in the wrong directory is worse than not starting it).
+        //
+        // It prints in the pane because the log is not where anyone is looking. The refusal was an
+        // app-log ERROR and nothing else, so a maintainer applied a Worker persona to two panes,
+        // relaunched several times, and each launch silently produced an ordinary shell with no
+        // explanation — three exchanges spent on a condition the app had already decided.
+        let notice = sandbox_refused
+            .map(|why| {
+                format!(
+                    "; printf '[1;33m[bsc] NOT sandboxed: %s[0m
+' \"{}\"",
+                    shell_safe(why)
+                )
+            })
+            .unwrap_or_default();
+        format!("{notice}{}", launch.map(|s| format!("; {}", s)).unwrap_or_default())
     };
     // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
     // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
@@ -169,13 +205,55 @@ mod tests {
     // Inlining the emitters alongside a ~3 KB agent kickoff produced a 4332-byte line: cut
     // mid-string, unterminated quote, shell parked at `>`, agent never launched. Measured from a
     // real session's raw output. So the helpers travel as a FILE and the line just sources it.
+    // ── a refused cage says so IN THE PANE (a-refused-cage-says-so-in-the-pane) ────────────────
+    //
+    // The refusal was an app-log ERROR and nothing else. A maintainer applied the Worker persona to
+    // two panes, relaunched several times, and every launch produced an ordinary uncaged shell with
+    // no /plan, no /ui and no explanation — three exchanges spent on a condition the app had already
+    // decided. New panes default to $HOME, so this is the DEFAULT path, not a corner case.
+
+    #[test]
+    fn a_refused_sandbox_prints_why_where_the_user_is_looking() {
+        let line = super::build_bash_init_line(
+            "/home/u", false, "/home/u", Some("claude"), "", "/rc", false,
+            Some("this pane's directory is your HOME (/home/u). Point it at a worktree."),
+        );
+        assert!(line.contains("NOT sandboxed"), "the downgrade must be visible: {line}");
+        assert!(line.contains("/home/u"), "and must name the actual directory: {line}");
+        // A refused cage is a DOWNGRADE, not a failure — the agent still starts, unlike `cwd_missing`.
+        assert!(line.contains("claude"), "the session must still launch: {line}");
+    }
+
+    #[test]
+    fn a_session_that_was_never_going_to_be_caged_says_nothing() {
+        // Silence is correct here: a pane with no role never asked for isolation, so a notice would
+        // be noise. `None` covers both that and "it IS sandboxed".
+        let line = super::build_bash_init_line(
+            "/home/u/wt", false, "/home/u/wt", Some("claude"), "", "/rc", false, None,
+        );
+        assert!(!line.contains("NOT sandboxed"), "no notice without a refusal: {line}");
+    }
+
+    #[test]
+    fn a_refusal_reason_cannot_break_out_of_the_init_line() {
+        // The reason is ours, but a PATH is interpolated into it, and a broken init line takes the
+        // whole session with it — a 4096-byte truncation already did exactly that once.
+        let nasty = format!("home {}{} {} x", char::from_u32(34).unwrap(), char::from_u32(96).unwrap(), char::from_u32(36).unwrap());
+        let line = super::build_bash_init_line(
+            "/home/u", false, "/home/u", Some("claude"), "", "/rc", false, Some(&nasty),
+        );
+        let notice = line.split("NOT sandboxed").nth(1).unwrap_or("");
+        for bad in [char::from_u32(34).unwrap(), char::from_u32(96).unwrap(), char::from_u32(36).unwrap()] {
+            assert!(!notice.split("\n").next().unwrap_or("").contains(bad), "unescaped {bad:?} in: {notice}");
+        }
+    }
+
     #[test]
     fn the_sandboxed_init_line_stays_far_under_the_tty_line_limit() {
         let kickoff = "x".repeat(3000); // a realistic agent kickoff
         let line = super::build_bash_init_line(
             "/home/u/wt/repo", false, "/home/u/wt/repo", Some(&kickoff),
-            "claude() { :; }; ", "/rc.sh", true,
-        );
+            "claude() { :; }; ", "/rc.sh", true, None);
         let longest = line.lines().map(str::len).max().unwrap_or(0);
         assert!(longest < 4096, "a canonical-mode line is truncated past 4096: {longest}");
         // And the emitters are reached by SOURCE, not by inlining them into that line.
@@ -204,16 +282,14 @@ mod tests {
     #[test]
     fn a_sandboxed_session_does_not_report_its_guest_cwd() {
         let sandboxed = super::build_bash_init_line(
-            "/home/u/wt/repo", false, "/home/u/wt/repo", None, "", "/rc.sh", true,
-        );
+            "/home/u/wt/repo", false, "/home/u/wt/repo", None, "", "/rc.sh", true, None);
         assert!(!sandboxed.contains("__bsc_osc7; "), "no cwd report inside a namespace: {sandboxed}");
         // The helper itself is still DEFINED — only the reporting call is withheld, so anything
         // else referencing it keeps working.
         assert!(sandboxed.contains("__bsc_osc7() {"));
         // ...and an ordinary session still reports, or the pane would never learn its cwd at all.
         let normal = super::build_bash_init_line(
-            "/home/u/wt/repo", false, "/home/u/wt/repo", None, "", "/rc.sh", false,
-        );
+            "/home/u/wt/repo", false, "/home/u/wt/repo", None, "", "/rc.sh", false, None);
         assert!(normal.contains("__bsc_osc7; "), "an unsandboxed session still reports: {normal}");
     }
 
@@ -226,8 +302,7 @@ mod tests {
         let line = build_bash_init_line(
             "/home/u/projects/acme", false, "/home/u/projects/acme",
             Some("claude --continue"), "claude() { :; }; ", "/home/u/.base-studio-code/bsc-env.sh",
-            false,
-        );
+            false, None);
         // cd's into the (bash-form) cwd before anything else, sources the helpers, and appends the
         // launch as a `; <launch>` suffix; the whole line is one trailing-newline-terminated command.
         assert!(line.starts_with("cd \"/home/u/projects/acme\" 2>/dev/null; "), "cd prefix first: {line}");
@@ -239,7 +314,7 @@ mod tests {
 
     #[test]
     fn build_bash_init_line_empty_cwd_has_no_cd_and_no_launch_suffix() {
-        let line = build_bash_init_line("", false, "", None, "claude() { :; }; ", "/rc.sh", false);
+        let line = build_bash_init_line("", false, "", None, "claude() { :; }; ", "/rc.sh", false, None);
         assert!(!line.contains("cd \""), "no cd when cwd is empty: {line}");
         // No launch ⇒ the line ends right after the screen clear, no `;` suffix.
         assert!(line.ends_with("printf '\\033[2J\\033[3J\\033[H'\n"), "no launch suffix: {line}");
@@ -253,8 +328,7 @@ mod tests {
         let line = build_bash_init_line(
             "/home/u/projects/gone", true, "/home/u/projects",
             Some("claude --continue"), "claude() { :; }; ", "/rc.sh",
-            false,
-        );
+            false, None);
         assert!(line.contains("WARNING: configured directory"), "loud warning printed: {line}");
         assert!(line.contains("cd \"/home/u/projects\" 2>/dev/null; "), "cd's into the nearest ancestor: {line}");
         assert!(line.contains("the agent was NOT started"), "warning states the launch suppression: {line}");
@@ -271,8 +345,7 @@ mod tests {
         // Guards the byte-exact extraction (#2067) — one full render locked against the wire format.
         let line = build_bash_init_line(
             "/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc",
-            false,
-        );
+            false, None);
         assert_eq!(
             line,
             "cd \"/p\" 2>/dev/null; __bsc_osc7() { printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }; \
@@ -329,7 +402,7 @@ mod tests {
     /// forever and the agent genuinely launches in the app's data dir with no repo and no role gate.
     #[test]
     fn a_missing_cwd_shell_never_reports_its_fallback_dir() {
-        let line = build_bash_init_line("/c/gone/networkmonitor--auth", true, "/c/gone", Some(INIT), "", "/rc", false);
+        let line = build_bash_init_line("/c/gone/networkmonitor--auth", true, "/c/gone", Some(INIT), "", "/rc", false, None);
         assert!(!line.contains("__bsc_osc7; __bsc_state idle"), "no osc7 report when the cwd is missing: {line}");
         assert!(line.contains("PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND; }__bsc_state idle\""),
             "PROMPT_COMMAND keeps the state marker but drops the cwd report: {line}");
@@ -341,7 +414,7 @@ mod tests {
     /// The healthy path is unchanged: a real cwd still reports, or the app loses cwd tracking entirely.
     #[test]
     fn a_present_cwd_still_reports_over_osc7() {
-        let line = build_bash_init_line("/c/wt/networkmonitor--auth", false, "/c/wt/networkmonitor--auth", Some(INIT), "", "/rc", false);
+        let line = build_bash_init_line("/c/wt/networkmonitor--auth", false, "/c/wt/networkmonitor--auth", Some(INIT), "", "/rc", false, None);
         assert!(line.contains("}__bsc_osc7; __bsc_state idle\""), "PROMPT_COMMAND reports the cwd: {line}");
         assert!(line.contains("__bsc_osc7; __bsc_state idle; printf"), "and reports once up front: {line}");
     }
@@ -351,7 +424,7 @@ mod tests {
     /// `3J` drops the scrollback as well.
     #[test]
     fn the_screen_clear_also_clears_scrollback() {
-        let line = build_bash_init_line("/c/wt/x", false, "/c/wt/x", Some(INIT), "", "/rc", false);
+        let line = build_bash_init_line("/c/wt/x", false, "/c/wt/x", Some(INIT), "", "/rc", false, None);
         assert!(line.contains("printf '\\033[2J\\033[3J\\033[H'"), "clears screen AND scrollback: {line}");
     }
 }

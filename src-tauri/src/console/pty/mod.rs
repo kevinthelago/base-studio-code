@@ -281,6 +281,9 @@ fn build_session_init_line(
     rc_bash: &str,
     model_alias: Option<&str>,
     env_map: &std::collections::HashMap<String, String>,
+    // Why a REQUESTED namespace was refused, if it was — printed in the pane so a downgrade is
+    // not silent. `None` when the session IS namespaced, and when one was never asked for.
+    sandbox_refused: Option<&str>,
 ) -> String {
     if sandbox {
         // A distro session always runs the distro's bash — bake its env + cd into the init line.
@@ -288,7 +291,7 @@ fn build_session_init_line(
     } else {
         match shell_kind {
             crate::platform::shell::ShellKind::Bash => {
-                build_bash_init_line(cwd, cwd_missing, effective_cwd, launch, claude_fn, rc_bash, namespaced)
+                build_bash_init_line(cwd, cwd_missing, effective_cwd, launch, claude_fn, rc_bash, namespaced, sandbox_refused)
             }
             // PowerShell / cmd: bsc-* helpers, OSC7/state markers, and startup-prompt baking
             // are bash-only, so run a degraded init that cd's, clears, and prints a visible
@@ -687,10 +690,25 @@ fn pty_create_inner(
     let claude_fn = harness.shell_fn(model_alias.as_deref());
     // Assemble the init line the freshly opened PTY starts with — dispatched by sandbox mode / shell
     // kind to the byte-exact leaf builders (see `build_session_init_line`).
+    // The pane has to SAY when it asked for a cage and did not get one. This reads the same
+    // `sandbox_refusal` the refusal itself does, so the notice and the decision cannot disagree.
+    #[cfg(target_os = "linux")]
+    let ns_refused: Option<String> =
+        if sandbox_role.as_deref().is_some_and(|r| !r.trim().is_empty()) && ns_argv.is_none() {
+            sandbox_refusal(&cwd)
+        } else {
+            None
+        };
+    #[cfg(not(target_os = "linux"))]
+    let ns_refused: Option<String> = None;
+
     let init_line = build_session_init_line(
         into_sandbox.is_some(),
         ns_argv.is_some(), resolved_shell.kind, &cwd, cwd_missing, &effective_cwd,
         launch.as_deref(), launch_claude, &claude_fn, &rc_bash, model_alias.as_deref(), &env_map,
+        // Only when a namespace was actually REQUESTED and did not happen. A pane with no role was
+        // never going to be caged, and a notice there would be noise rather than information.
+        ns_refused.as_deref(),
     );
     writer.write_all(init_line.as_bytes()).ok();
 
@@ -1121,17 +1139,17 @@ mod tests {
         // Non-sandbox Bash ⇒ byte-for-byte the Git-Bash builder's output.
         let bash = super::build_session_init_line(
             false, false, crate::platform::shell::ShellKind::Bash,
-            "/p", false, "/p", Some("claude"), true, "CLAUDE_FN;", "/rc", None, &env_map,
+            "/p", false, "/p", Some("claude"), true, "CLAUDE_FN;", "/rc", None, &env_map, None,
         );
         assert_eq!(
             bash,
-            super::build_bash_init_line("/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc", false),
+            super::build_bash_init_line("/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc", false, None),
             "Bash kind reproduces build_bash_init_line exactly",
         );
         // Sandbox ⇒ byte-for-byte the distro builder's output (env + cd baked in, shell kind ignored).
         let sandbox = super::build_session_init_line(
             true, false, crate::platform::shell::ShellKind::Bash,
-            "/home/agent/p", false, "/home/agent/p", Some("claude"), true, "CLAUDE_FN;", "/rc", None, &env_map,
+            "/home/agent/p", false, "/home/agent/p", Some("claude"), true, "CLAUDE_FN;", "/rc", None, &env_map, None,
         );
         assert_eq!(
             sandbox,
@@ -1269,6 +1287,28 @@ fn spawn_outbox_drain(pane_id: String, outbox: std::path::PathBuf, coord_log: st
             }
         }
     });
+}
+
+/// Why this session cannot be sandboxed, if it cannot — the ONE implementation, shared by the
+/// refusal in [`namespace_argv`] and the notice the pane prints.
+///
+/// Two callers for the same question is how they drift, and the drift here would be the worst kind:
+/// a pane that says it is caged when it is not, or one that warns when it is fine. So the check lives
+/// here and both sides ask it.
+///
+/// `None` means "no objection" — which is NOT the same as "will be sandboxed": a pane with no role
+/// was never going to be, and printing a notice there would be noise.
+#[cfg(target_os = "linux")]
+pub(super) fn sandbox_refusal(cwd: &str) -> Option<String> {
+    // A REFUSAL, not a smaller cage: a session whose cwd fell back to the home directory would bind
+    // the user's whole home read-write at /repo. That is not isolation with a wide root, it is the
+    // opposite of the thing.
+    if std::path::Path::new(cwd) == crate::platform::paths::home_dir() {
+        return Some(format!(
+            "this pane's directory is your HOME ({cwd}). Point it at a worktree or project hub              and relaunch."
+        ));
+    }
+    None
 }
 
 /// Where the shared `/graph` projection lives — ONE copy, reached by every sandboxed session.
@@ -1646,10 +1686,8 @@ fn namespace_argv(
     // A REFUSAL, not a smaller cage: a session whose cwd fell back to the home directory would
     // bind the user's whole home read-write at /repo. That is not isolation with a wide root, it is
     // the opposite of the thing — so it does not launch sandboxed at all.
-    if std::path::Path::new(cwd) == crate::platform::paths::home_dir() {
-        log::error!(
-            "pty[{pane_id}] refusing to sandbox a session whose cwd is the HOME directory —              binding it at /repo would put the user's whole home inside the cage.              Give the pane a real worktree."
-        );
+    if let Some(why) = sandbox_refusal(cwd) {
+        log::error!("pty[{pane_id}] refusing to sandbox: {why}");
         return None;
     }
 
@@ -2076,8 +2114,7 @@ mod namespace_tests {
         let claude_fn = "claude() { __bsc_state run; command claude \"$@\"; }; ";
         let init = super::launch::build_bash_init_line(
             &wt_s, false, &wt_s, None, claude_fn,
-            "/home/nobody/.base-studio-code/bsc-env.sh", true,
-        );
+            "/home/nobody/.base-studio-code/bsc-env.sh", true, None);
 
         let pty = native_pty_system()
             .openpty(PtySize { rows: 30, cols: 165, pixel_width: 0, pixel_height: 0 })
