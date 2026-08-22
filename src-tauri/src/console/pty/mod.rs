@@ -480,6 +480,12 @@ fn pty_create_inner(
         // `0 store(s)` and a worker told to consult its plan had no way to.
         #[cfg(target_os = "linux")]
         project_stores_for(&pane_id, &cwd, &root);
+        // ...and the shared /graph, built once and symlinked in (see `link_shared_graph`).
+        #[cfg(target_os = "linux")]
+        link_shared_graph(&pane_id, &root);
+        // ...and the component store, small enough to be per-pane.
+        #[cfg(target_os = "linux")]
+        project_ui_for(&pane_id, &root);
         // ...and carry what the agent emits back to the host. Without this the emitters complete
         // and reach nobody — a quieter failure than the hang they replaced.
         #[cfg(target_os = "linux")]
@@ -1265,6 +1271,178 @@ fn spawn_outbox_drain(pane_id: String, outbox: std::path::PathBuf, coord_log: st
     });
 }
 
+/// Where the shared `/graph` projection lives — ONE copy, reached by every sandboxed session.
+///
+/// `/plan` is per-project, `/coord` and `/ui` are per-session (both carry a writable outbox), so all
+/// three belong under the pane's own store root. `/graph` is none of those: it is a global store,
+/// byte-identical for every session, read-only, and by far the largest.
+///
+/// Measured before choosing this: `bsc graph impl list` is **12.4 MB and 755 ms** — every node
+/// carries its full `code`, because there the code IS the node — against 0.08 MB for `bsc ui list`.
+/// Projected per pane, a ten-session fleet would write ten identical trees: ~124 MB and ~7.5 s. So
+/// the graph is built once here and each pane gets a SYMLINK to it.
+///
+/// The symlink matters beyond disk: `namespace_argv` keeps resolving every store under the pane's own
+/// root, so it stays a pure function of its arguments and its tests stay hermetic. Reaching into a
+/// machine-global directory from inside it would have made "is `/graph` mounted?" depend on whether
+/// this machine happened to have a projection lying around.
+#[cfg(target_os = "linux")]
+fn shared_graph_dir() -> std::path::PathBuf {
+    crate::platform::paths::bsc_base_dir().join("sandbox-stores").join("_shared").join("graph")
+}
+
+/// Refresh the shared `/graph` projection when the algorithms store has moved on, and point this
+/// pane's store root at it.
+///
+/// ## Why a staleness check rather than once per boot
+/// The store is authored DURING a run, so a projection built once at startup would leave a caged
+/// session reading a boot-time snapshot. The check is exact and nearly free: the projection records
+/// the mtime of the file that produced it, so an unchanged store costs one `stat` rather than 12.4 MB
+/// of work.
+///
+/// Best-effort throughout — a projection that cannot be built leaves the session without `/graph`
+/// rather than without a session.
+#[cfg(target_os = "linux")]
+fn link_shared_graph(pane_id: &str, root: &std::path::Path) {
+    use std::sync::Mutex;
+    // One refresh at a time within this process: a fleet launch starts many panes at once, and
+    // without this they would all rebuild the same 12.4 MB tree over each other.
+    static LOCK: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
+    let _guard = LOCK.get_or_init(|| Mutex::new(())).lock();
+
+    let Some(bsc) = env::bsc_bin_path() else { return };
+    let dir = shared_graph_dir();
+    let stamp = dir.join(".source-mtime");
+    let backing = std::env::var_os("BSC_GRAPH_STORE")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            crate::platform::paths::bsc_base_dir().join("knowledge").join("algorithms.json")
+        });
+
+    // `0` when there is no WRITABLE store, rather than an early return: `bsc graph impl list` falls
+    // back to the packaged seed, so a machine that has never authored an algorithm still has a graph
+    // worth projecting. Returning here would have skipped it silently — and on the Linux box it also
+    // hid a real failure, where the bundled `bsc` cannot find its packaged seeds at all and panics.
+    // Attempting and reporting beats declining and saying nothing.
+    let source_mtime = backing
+        .metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let current = std::fs::read_to_string(&stamp).ok().and_then(|s| s.trim().parse::<u64>().ok());
+    if current != Some(source_mtime) || !dir.is_dir() {
+        match std::process::Command::new(&bsc).args(["graph", "impl", "list"]).output() {
+            Ok(o) if o.status.success() => {
+                let json = String::from_utf8_lossy(&o.stdout);
+                match bsc_storefs::graph::from_json(&json) {
+                    Ok(impls) => {
+                        let at = bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms());
+                        let tree = bsc_storefs::graph::project(&impls, &at);
+                        let _ = std::fs::remove_dir_all(&dir);
+                        match bsc_storefs::materialize(&dir, &tree) {
+                            Ok(()) => {
+                                let _ = std::fs::write(&stamp, source_mtime.to_string());
+                                log::info!(
+                                    "pty[{pane_id}] refreshed the shared /graph projection ({} impls)",
+                                    impls.len()
+                                );
+                            }
+                            Err(e) => {
+                                log::warn!("pty[{pane_id}] /graph projection could not be written: {e}");
+                                return;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("pty[{pane_id}] /graph projection skipped: {e}");
+                        return;
+                    }
+                }
+            }
+            Ok(o) => {
+                log::warn!(
+                    "pty[{pane_id}] /graph projection skipped: bsc exited {}: {}",
+                    o.status,
+                    String::from_utf8_lossy(&o.stderr).trim()
+                );
+                return;
+            }
+            Err(e) => {
+                log::warn!("pty[{pane_id}] /graph projection skipped: {e}");
+                return;
+            }
+        }
+    }
+
+    // Point this pane at it. `Path::is_dir` follows symlinks, so the ordinary discovery in
+    // `namespace_argv` picks it up with no special case, and bwrap binds the resolved target.
+    let link = root.join("graph");
+    let _ = std::fs::remove_file(&link);
+    let _ = std::fs::remove_dir_all(&link);
+    if let Err(e) = std::os::unix::fs::symlink(&dir, &link) {
+        log::warn!("pty[{pane_id}] could not link the shared /graph: {e}");
+    }
+}
+
+/// Project the component store at `/ui`, so a caged session can read what the app's UI is made of.
+///
+/// Per pane rather than shared, unlike [`link_shared_graph`], and the reason is size: `bsc ui list` is
+/// **0.08 MB** against the graph's 12.4 MB, so the duplication a shared copy would save is not worth
+/// the indirection. (It is also the store that will eventually carry a per-session writable outbox,
+/// which a shared read-only tree could not hold.)
+///
+/// **Read-only in this slice, deliberately.** `bsc-storefs`'s `/ui` design includes a writable
+/// `/ui/out` that a host-side drain turns into `bsc ui set` calls. That drain is its own item, and
+/// shipping the outbox before it exists would recreate exactly the failure the coordination emitters
+/// had: a session writes, and what it writes reaches nobody. So the mountpoint is not created yet.
+///
+/// Its own function rather than part of `project_stores_for` because that one returns early when
+/// there is no plan store, and a plain console outside a project hub should still get `/ui`.
+///
+/// Best-effort: a session that cannot get the projection still launches.
+#[cfg(target_os = "linux")]
+fn project_ui_for(pane_id: &str, root: &std::path::Path) {
+    let Some(bsc) = env::bsc_bin_path() else { return };
+
+    let json = match std::process::Command::new(&bsc).args(["ui", "list"]).output() {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+        Ok(o) => {
+            log::warn!(
+                "pty[{pane_id}] /ui projection skipped: bsc exited {}: {}",
+                o.status,
+                String::from_utf8_lossy(&o.stderr).trim()
+            );
+            return;
+        }
+        Err(e) => {
+            log::warn!("pty[{pane_id}] /ui projection skipped: {e}");
+            return;
+        }
+    };
+
+    let components = match bsc_storefs::ui::from_json(&json) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("pty[{pane_id}] /ui projection skipped: {e}");
+            return;
+        }
+    };
+    let at = bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms());
+    let tree = bsc_storefs::ui::project(&components, &at);
+    let dir = root.join("ui");
+    match bsc_storefs::materialize(&dir, &tree) {
+        Ok(()) => log::info!(
+            "pty[{pane_id}] projected {} component(s) to {}",
+            components.len(),
+            dir.display()
+        ),
+        Err(e) => log::warn!("pty[{pane_id}] /ui projection could not be written: {e}"),
+    }
+}
+
 /// Project this session's stores into `root`, so a sandboxed agent can READ them without `bsc`.
 ///
 /// A caged session cannot run `bsc`: the binary is not bound, and binding it would mean binding a
@@ -1660,6 +1838,37 @@ mod namespace_tests {
         assert!(!unit.contains(':'), "and sanitized to be unit-safe: {unit}");
         let b = namespace_argv(Some("worker"), "studio:worker-2", "/tmp/wt", None, "bash", &[]).unwrap();
         assert_ne!(unit, b.iter().find(|x| x.starts_with("--unit=")).unwrap());
+    }
+
+    /// `/graph` reaches the cage through a SYMLINK, and that has to keep working.
+    ///
+    /// The graph projection is 12.4 MB — measured, because every node carries its full `code` — and it
+    /// is a GLOBAL store, byte-identical for every session. So it is built once and each pane gets a
+    /// symlink to it rather than its own copy (~124 MB across a ten-session fleet, for nothing).
+    ///
+    /// The reason it is a symlink rather than `namespace_argv` reaching into a machine-global
+    /// directory: that would have made "is `/graph` mounted?" depend on whether this machine happened
+    /// to have a projection lying around, and the test right below this one asserts exactly that
+    /// question. Discovery stays a pure function of the pane's own root.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_symlinked_graph_projection_is_mounted_like_a_real_one() {
+        let base = std::env::temp_dir().join(format!("bsc-ns-link-{}", std::process::id()));
+        let shared = base.join("shared-graph");
+        let root = base.join("pane");
+        let _ = std::fs::create_dir_all(&shared);
+        let _ = std::fs::create_dir_all(&root);
+        std::os::unix::fs::symlink(&shared, root.join("graph")).expect("symlink the shared graph");
+
+        let a = namespace_argv(Some("worker"), "p", "/tmp/wt", Some(root.to_str().unwrap()), "bash", &[])
+            .unwrap();
+
+        // `Path::is_dir` follows the link, so discovery needs no special case and bwrap binds the
+        // resolved target.
+        assert!(a.iter().any(|x| x == "/graph"), "a symlinked projection must mount: {a:?}");
+        let i = a.iter().position(|x| x == "/graph").unwrap();
+        assert_eq!(a[i - 2], "--ro-bind", "the graph is READ-ONLY — every session shares it: {a:?}");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[cfg(target_os = "linux")]
