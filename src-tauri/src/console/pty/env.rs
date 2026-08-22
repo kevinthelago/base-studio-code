@@ -58,7 +58,7 @@ fn studio_dir_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     if cwd.is_empty() {
         return None;
     }
-    let native = crate::platform::shell::to_native_path(cwd);
+    let native = cwd.to_string();
     let dir = std::path::Path::new(&native);
     // A DIRECT child of the base dir — not a nested path that merely starts with it.
     if dir.parent() != Some(bsc_base_dir().as_path()) {

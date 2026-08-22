@@ -89,7 +89,7 @@ pub(crate) fn read_worktree_changes_batch(cwds: Vec<String>) -> Vec<WorktreeChan
 /// relaunched into a deleted directory (the split-brain that jammed the backend on every boot).
 #[tauri::command]
 pub(crate) fn dir_exists(path: String) -> bool {
-    !path.trim().is_empty() && std::path::Path::new(&to_native_path(&path)).is_dir()
+    !path.trim().is_empty() && std::path::Path::new(path.trim()).is_dir()
 }
 /// One commit in a worker's done-time audit (#920).
 #[derive(serde::Serialize)]

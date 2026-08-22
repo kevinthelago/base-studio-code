@@ -382,25 +382,6 @@ pub fn with_harvest_roots<T>(roots: Option<&str>, f: impl FnOnce() -> T) -> T {
     with_env_override(&HARVEST_ROOTS_OVERRIDE, roots, f)
 }
 
-/// A git-bash drive path (`/c/Users/…`) back to a native one (`C:/Users/…`) so Windows fs APIs can
-/// resolve it. The session writes `$BSC_REPO_ROOT` in BASH form, so comparing it against a native
-/// target would never match — the gate would refuse everything. Deliberately a local copy of
-/// src-tauri's `to_native_path`: that one is `pub(crate)` and the dependency direction runs
-/// src-tauri → crates, so it cannot be imported here.
-fn to_native_path(p: &str) -> String {
-    #[cfg(windows)]
-    {
-        let b = p.as_bytes();
-        if b.len() >= 3 && b[0] == b'/' && b[2] == b'/' && (b[1] as char).is_ascii_alphabetic() {
-            let drive = (b[1] as char).to_ascii_uppercase();
-            return format!("{drive}:/{}", &p[3..]);
-        }
-        p.to_string()
-    }
-    #[cfg(not(windows))]
-    p.to_string()
-}
-
 /// Refuse a path outside the session's FS-confinement root (#3475/#158) — the CLI twin of the
 /// `bsc-confine` PreToolUse hook.
 ///
@@ -427,7 +408,7 @@ pub fn require_harvestable_root(target: &std::path::Path) -> Result<(), String> 
     let root_real = resolved_root(&root_raw).ok_or_else(|| {
         format!(
             "the session's confinement root ({}) cannot be resolved — refusing to read outside it              ($BSC_REPO_ROOT, #158)",
-            to_native_path(root_raw.trim())
+            root_raw.trim()
         )
     })?;
     let target_real = target
@@ -462,7 +443,7 @@ fn resolved_root(raw: &str) -> Option<PathBuf> {
     if r.is_empty() {
         return None;
     }
-    PathBuf::from(to_native_path(r)).canonicalize().ok()
+    PathBuf::from(r).canonicalize().ok()
 }
 
 /// The EXTRA roots this session may HARVEST from (#3509) — `$BSC_HARVEST_ROOTS`, newline-separated.

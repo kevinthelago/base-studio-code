@@ -21,7 +21,7 @@ pub(crate) use crate::platform::fsx::{
     sanitize_project_key, worktree_slug,
 };
 pub(crate) use crate::platform::shell::{
-    bash_ansi_c_quote, split_utf8_at_boundary, to_bash_path, to_native_path,
+    bash_ansi_c_quote, split_utf8_at_boundary, to_bash_path,
 };
 pub(crate) use crate::app::state::UncleanShutdown;
 pub(crate) use crate::app::recovery::{claim_session_lock, session_lock_path};

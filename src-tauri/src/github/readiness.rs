@@ -37,7 +37,7 @@ fn run_probe_shell(
     // markers, and every tool read as not-found. That is what produced a critical, blocking
     // "install claude / install git" banner on a machine where both were installed and a login shell
     // found them: the probe never started. Same rule the rest of the backend already follows.
-    let cwd = crate::to_native_path(cwd);
+    let cwd = cwd.to_string();
     if !cwd.is_empty() {
         cmd.current_dir(&cwd);
     }

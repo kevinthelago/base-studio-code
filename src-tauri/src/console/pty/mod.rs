@@ -5,7 +5,7 @@
 // and the process-tree kill primitive (`PtyJob`) in [`job`] (#1660). Split out of a
 // single ~1150-line mod.rs (#1864); `pty_create` stays the readable orchestration.
 
-use crate::{nearest_existing_ancestor, to_native_path};
+use crate::nearest_existing_ancestor;
 use crate::mobile::tunnel;
 use crate::observability::perf;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -227,7 +227,6 @@ fn must_be_gated(pane_id: &str) -> bool {
 }
 
 fn resolve_session_cwd(pane_id: &str, cwd: String, sandbox: bool) -> ResolvedCwd {
-    let cwd = if sandbox { cwd } else { to_native_path(&cwd) };
     // #1819 recovery. Only for a HOST session: a sandbox cwd is a distro path, and the hub/repo dirs
     // resolved here are Windows paths that mean nothing inside the cage.
     //
