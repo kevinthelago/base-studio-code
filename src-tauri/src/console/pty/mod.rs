@@ -1350,6 +1350,48 @@ fn credential_for_harness() -> Option<std::path::PathBuf> {
     p.is_file().then_some(p)
 }
 
+/// A PER-SESSION, WRITABLE copy of the harness's own state file, if there is one to copy.
+///
+/// ## Why the credential alone was not enough
+/// Claude Code keeps its ONBOARDING and account state in `~/.claude.json`, separately from the
+/// credential. A private HOME holding `.claude/.credentials.json` but no `.claude.json` reads to it
+/// as a FIRST RUN: it starts the OAuth flow and asks for a pasted code — with the credential it
+/// needed sitting right beside it. Observed as a caged session demanding a login the user had
+/// already done, and it is why pasting mattered so much in that session.
+///
+/// ## Why a copy rather than a bind
+/// The harness REWRITES this file as it runs, so a read-only bind would fail every write, and a
+/// writable bind of the host's own config would hand the cage the ambient authority the isolation
+/// exists to remove — the agent could edit the machine's harness config. A copy gives it real,
+/// working state whose mutations die with the session, which is the same trade the plan projection
+/// and the coordination outbox already make.
+///
+/// Best-effort: a session that cannot get a copy still launches. It will re-run onboarding, which is
+/// worse than the alternative but better than not starting.
+#[cfg(target_os = "linux")]
+fn harness_state_for(pane_id: &str, stores_root: &std::path::Path) -> Option<std::path::PathBuf> {
+    let src = crate::platform::paths::home_dir().join(".claude.json");
+    if !src.is_file() {
+        return None;
+    }
+    let dir = stores_root.join("home");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("pty[{pane_id}] no harness state: cannot create {}: {e}", dir.display());
+        return None;
+    }
+    let dst = dir.join(".claude.json");
+    match std::fs::copy(&src, &dst) {
+        Ok(n) => {
+            log::info!("pty[{pane_id}] harness state copied ({n} bytes) — the cage will not re-run onboarding");
+            Some(dst)
+        }
+        Err(e) => {
+            log::warn!("pty[{pane_id}] no harness state: {e} — the session will re-run onboarding");
+            None
+        }
+    }
+}
+
 /// Which systemd scope this host will actually let us create — probed ONCE, then reused.
 ///
 /// It has to be probed rather than assumed, and that is not a hypothetical: `systemd-run --scope`
@@ -1446,6 +1488,9 @@ fn namespace_argv(
         // exactly like a frozen terminal. Observed. The spec has carried this since the harness
         // work; the launcher simply never filled it in.
         credential_file: credential_for_harness(),
+        // ...and the harness's own onboarding/account state, as a writable per-session COPY. Without
+        // it the private HOME above reads as a first run and Claude asks for a pasted OAuth code.
+        harness_state_file: harness_state_for(pane_id, stores_root),
         ..Default::default()
     };
     if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
