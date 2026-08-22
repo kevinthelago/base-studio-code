@@ -81,12 +81,9 @@ pub(crate) fn delete_project_dir_impl(project_key: &str, pty: &crate::console::p
     // greenfield draft plans in — so deleting a draft can't leave a half-baked folder behind.
     for dir in [project_dir(project_key), legacy_draft_dir(project_key), planning_workspace_dir(project_key)] {
         if !dir.exists() { continue; }
-        // Clear read-only first: on Windows `remove_dir_all` can't delete read-only files, and
-        // git pack files in a cloned-repo subdir are read-only — so a project with a linked repo
-        // would otherwise fail to delete (#793). Unix's `remove_dir_all` ignores file perms, so
-        // this is Windows-only.
-        #[cfg(windows)]
-        crate::platform::fsx::clear_readonly_recursive(&dir);
+        // (Phase 1) The read-only clear that stood here was Windows-only: `remove_dir_all` there
+        // cannot delete read-only files, and a cloned repo's git pack files are read-only. Unix
+        // ignores file perms for `remove_dir_all`, so nothing is needed.
         remove_dir_all_retrying(&dir).map_err(|e| format!("delete_project_dir: {e}"))?;
         log::info!("deleted project hub {:?}", dir);
     }
