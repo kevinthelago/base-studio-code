@@ -122,6 +122,7 @@ fn main() {
         // harness launch, not here.
         home: None,
         credential_file: None,
+        harness_state_file: None,
         // This example demonstrates the projections, not a session's shell helpers.
         rc_file: None,
         command,

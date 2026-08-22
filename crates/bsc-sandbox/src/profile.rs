@@ -124,6 +124,9 @@ pub struct SessionPaths {
     /// Host path to the one credential file the harness needs, bound read-only under `home`.
     /// Requires `home`; supplying it without one is refused rather than dropped.
     pub credential_file: Option<PathBuf>,
+    /// The harness's own state file (Claude Code's `~/.claude.json`) — a PER-SESSION COPY, bound
+    /// read-write. Without it a private HOME reads as a first run and the harness re-runs onboarding.
+    pub harness_state_file: Option<PathBuf>,
     /// A shell rc bound read-only at [`crate::RC_GUEST_PATH`] — see [`SandboxSpec::rc_file`] for
     /// why helpers travel as a file rather than inline in the init line.
     pub rc_file: Option<PathBuf>,
@@ -258,6 +261,7 @@ pub fn for_role(
         // gets its own STATE dir that does not land in the git tree and does not outlive the run.
         home: paths.home.clone(),
         credential_file: paths.credential_file.clone(),
+        harness_state_file: paths.harness_state_file.clone(),
         rc_file: paths.rc_file.clone(),
         command,
     };
@@ -294,6 +298,7 @@ mod tests {
             deny_bash: String::new(),
             home: None,
             credential_file: None,
+            harness_state_file: None,
             rc_file: None,
         }
     }
@@ -482,6 +487,78 @@ ed".into(),
     }
 
     // ── HOME and the one credential (a-sandboxed-session-can-launch-its-harness) ────────────────
+
+    // ── the harness's own state (a-caged-harness-reruns-onboarding) ─────────────────────────────
+    //
+    // The credential alone leaves a private HOME looking like a FIRST RUN to Claude Code, because its
+    // onboarding/account state lives in a separate `~/.claude.json`. It then starts the OAuth flow and
+    // asks for a pasted code — with the credential it needed sitting right beside it.
+
+    fn stated_paths() -> SessionPaths {
+        SessionPaths {
+            harness_state_file: Some(PathBuf::from("/host/session/home/.claude.json")),
+            ..homed_paths()
+        }
+    }
+
+    fn stated() -> Vec<String> {
+        for_role(Role::Worker, "u", &stated_paths(), &[], Limits::default(), Scope::User, vec!["bash".into()])
+            .expect("renders")
+            .spec
+            .render()
+            .expect("validates")
+    }
+
+    #[test]
+    fn harness_state_binds_read_write_under_the_guest_home() {
+        let argv = stated();
+        let i = argv
+            .iter()
+            .position(|a| a == "/host/session/home/.claude.json")
+            .expect("the state file must be bound");
+        // READ-WRITE: the harness rewrites this as it runs, so `--ro-bind` would fail every write
+        // rather than make the session stateless.
+        assert_eq!(argv[i - 1], "--bind", "harness state must be writable: {argv:?}");
+        assert_eq!(argv[i + 1], "/home/agent/.claude.json");
+    }
+
+    #[test]
+    fn the_guest_state_path_is_posix_even_when_rendered_on_windows() {
+        // Same family as the credential's separator bug: a `PathBuf::join` here emits a backslash
+        // inside a POSIX guest path when this renders on Windows.
+        let argv = stated();
+        let guest = argv
+            .iter()
+            .find(|a| a.starts_with("/home/agent") && a.ends_with(".claude.json"))
+            .expect("a guest-side state path");
+        assert!(!guest.contains(char::from(92)), "guest path must be POSIX: {guest}");
+    }
+
+    #[test]
+    fn state_without_a_home_is_refused_rather_than_dropped() {
+        // Dropping it silently puts the session back at the onboarding prompt, which reads as a frozen
+        // terminal rather than as an error — the failure this item is about.
+        let p = SessionPaths {
+            home: None,
+            credential_file: None,
+            harness_state_file: Some(PathBuf::from("/host/session/home/.claude.json")),
+            ..paths()
+        };
+        let err = for_role(Role::Worker, "u", &p, &[], Limits::default(), Scope::User, vec!["bash".into()])
+            .and_then(|p| p.spec.render())
+            .expect_err("state with no home must refuse");
+        assert!(matches!(err, SpecError::HarnessStateWithoutHome), "got {err:?}");
+    }
+
+    #[test]
+    fn a_session_with_no_state_file_still_renders() {
+        // Best-effort: a host with no `~/.claude.json` (a fresh machine) must still launch.
+        let argv = homed();
+        assert!(
+            !argv.iter().any(|a| a.ends_with("/.claude.json")),
+            "nothing should be bound when there is no state file: {argv:?}"
+        );
+    }
 
     fn homed_paths() -> SessionPaths {
         SessionPaths {

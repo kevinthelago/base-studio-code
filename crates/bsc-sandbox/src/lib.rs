@@ -131,6 +131,14 @@ pub const HOOK_GUEST_PATH: &str = "/bsc-hook";
 /// one file crosses.
 pub const CREDENTIAL_GUEST_REL: &str = ".claude/.credentials.json";
 
+/// Where [`SandboxSpec::harness_state_file`] is bound, relative to [`SandboxSpec::home`].
+///
+/// Claude Code keeps its ONBOARDING and account state here, separately from the credential. A HOME
+/// holding `.claude/.credentials.json` but no `.claude.json` reads to it as a first run, so it starts
+/// the OAuth flow and asks for a pasted code — which is exactly what a caged session did, while the
+/// credential it needed was sitting right beside it.
+pub const HARNESS_STATE_GUEST_REL: &str = ".claude.json";
+
 /// Where [`SandboxSpec::rc_file`] is bound INSIDE the namespace.
 ///
 /// At the root for the same reason as [`HOOK_GUEST_PATH`]: under [`Usr::All`] a path beneath /usr
@@ -208,6 +216,14 @@ pub struct SandboxSpec {
     /// the sandbox adds is that it cannot MODIFY it, and that a `network: false` role cannot send
     /// it anywhere.
     pub credential_file: Option<PathBuf>,
+    /// The harness's own state file, bound READ-WRITE at `<home>/`[`HARNESS_STATE_GUEST_REL`].
+    /// Requires [`Self::home`].
+    ///
+    /// Read-write, and therefore expected to be a PER-SESSION COPY rather than the host's own file:
+    /// the harness rewrites this as it runs, and a writable bind of the real one would hand the cage
+    /// exactly the ambient authority it exists to remove. The app makes the copy, the same way it
+    /// projects the plan store.
+    pub harness_state_file: Option<PathBuf>,
     /// A shell rc bound read-only at [`RC_GUEST_PATH`], for the session's init line to `source`.
     ///
     /// It exists because the init line is written to a PTY in CANONICAL MODE, where Linux caps a
@@ -234,6 +250,8 @@ pub enum SpecError {
     /// A credential file was supplied with no `home` to bind it under. Refused rather than
     /// dropped: a silently unauthenticated session degrades quietly (see #4084's shape).
     CredentialWithoutHome,
+    /// Same refusal as [`Self::CredentialWithoutHome`], for the harness state file.
+    HarnessStateWithoutHome,
 }
 
 impl std::fmt::Display for SpecError {
@@ -243,6 +261,10 @@ impl std::fmt::Display for SpecError {
             SpecError::CredentialWithoutHome => write!(
                 f,
                 "a credential file was given with no `home` to bind it under — the session would                  launch unauthenticated, which a harness may report as missing state rather than                  as an error"
+            ),
+            SpecError::HarnessStateWithoutHome => write!(
+                f,
+                "harness state was given with no `home` to bind it under — the session would re-run onboarding and ask for a pasted OAuth code"
             ),
             SpecError::UnitNotSafe(u) => {
                 write!(f, "unit name {u:?} is not unit-safe (want [A-Za-z0-9_-]+)")
@@ -322,6 +344,7 @@ impl SandboxSpec {
             hook_bin: None,
             home: None,
             credential_file: None,
+            harness_state_file: None,
             rc_file: None,
             env: vec![("HOME".into(), "/repo".into())],
             network: false,
@@ -399,6 +422,14 @@ impl SandboxSpec {
         if let Some(rc) = &self.rc_file {
             if !posix_absolute(rc) {
                 return Err(SpecError::HostPathNotAbsolute(rc.clone()));
+            }
+        }
+        if let Some(st) = &self.harness_state_file {
+            if !posix_absolute(st) {
+                return Err(SpecError::HostPathNotAbsolute(st.clone()));
+            }
+            if self.home.is_none() {
+                return Err(SpecError::HarnessStateWithoutHome);
             }
         }
         if let Some(cred) = &self.credential_file {
@@ -577,6 +608,17 @@ impl SandboxSpec {
                 // business constructing guest paths. A test pins the separator.
                 let h = s(home);
                 a.push(format!("{}/{}", h.trim_end_matches('/'), CREDENTIAL_GUEST_REL));
+            }
+            // READ-WRITE, unlike the credential: the harness rewrites its own state as it runs, and a
+            // read-only bind would make every write fail rather than make the session stateless. Safe
+            // because the caller binds a per-session COPY — see the field's docs.
+            if let Some(st) = &self.harness_state_file {
+                a.push("--bind".into());
+                a.push(s(st));
+                // Same string join as above: `PathBuf::join` would use the HOST separator and emit a
+                // backslash into a POSIX guest path when rendered on Windows.
+                let h = s(home);
+                a.push(format!("{}/{}", h.trim_end_matches('/'), HARNESS_STATE_GUEST_REL));
             }
         }
 
