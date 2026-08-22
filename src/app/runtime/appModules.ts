@@ -180,6 +180,8 @@ import * as UseNavigateBridge from "@/app/useNavigateBridge";
 import * as UseFleetWakeBridge from "@/app/useFleetWakeBridge";
 import * as PersonaUseBridge from "@/app/personaUseBridge";
 import * as UsePersonaUseBridge from "@/app/usePersonaUseBridge";
+import * as PersonaWhatamiBridge from "@/app/personaWhatamiBridge";
+import * as UsePersonaWhatamiBridge from "@/app/usePersonaWhatamiBridge";
 import * as UseDebugChannel from "@/app/useDebugChannel";
 import * as UseDockBack from "@/app/useDockBack";
 import * as Automations from "@/features/automations";
@@ -503,6 +505,8 @@ const PLATFORM: Record<string, unknown> = {
   "@/app/useFleetWakeBridge": UseFleetWakeBridge,
   "@/app/personaUseBridge": PersonaUseBridge,
   "@/app/usePersonaUseBridge": UsePersonaUseBridge,
+  "@/app/personaWhatamiBridge": PersonaWhatamiBridge,
+  "@/app/usePersonaWhatamiBridge": UsePersonaWhatamiBridge,
   "@/app/useDebugChannel": UseDebugChannel,
   "@/app/useDockBack": UseDockBack,
   "@/features/automations": Automations,
