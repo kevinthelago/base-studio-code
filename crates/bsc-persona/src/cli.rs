@@ -94,6 +94,21 @@ Requires the desktop app to be running: the assignment lives in its store, not o
 persona id is refused BEFORE anything is killed, and the error names ids that do exist.",
     },
     CmdDoc {
+        name: "whatami",
+        summary: "what THIS session is running as (persona + role)",
+        usage: "USAGE:
+  bsc persona whatami [--pane <paneId>] [--timeout <ms>] [--json|--pretty]
+
+Prints the persona and ROLE the calling pane is running as - the question that decides what the
+session is allowed to do. Defaults to the pane it is running in, read from $BSC_AUDIT_PANE, which
+every session carries; --pane names another.
+
+An agent can run this to check its own role rather than inferring it from its kickoff prose. A pane
+with no persona reports its role alone, which is a real state and not an error.
+
+Requires the desktop app to be running: the assignment lives in its store, not on disk.",
+    },
+    CmdDoc {
         name: "remove",
         summary: "delete a persona (no-op if absent)",
         usage: "\
@@ -129,6 +144,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     }
     if args.first().map(String::as_str) == Some("use") && args.get(1).map(String::as_str) != Some("help") {
         return use_pane(&args, prog);
+    }
+    if args.first().map(String::as_str) == Some("whatami") && args.get(1).map(String::as_str) != Some("help") {
+        return whatami(&args, prog);
     }
     // The narrow-only floor clamp rides the shared runner's write-time batch gate (#2928), so the
     // check happens BEFORE any write and a bad batch is rejected whole — the same contract
@@ -418,6 +436,110 @@ fn use_pane(args: &[String], prog: &str) -> Result<(), String> {
     }
     Ok(())
 
+}
+
+/// `bsc persona whatami` — what the calling session is running as.
+///
+/// ## Why a session cannot answer this itself
+/// Every session carries `$BSC_AUDIT_PANE`, so it knows its own pane id — but nothing carries the
+/// ROLE or the PERSONA. Those live in the app's `paneRoles` / `panePersonas`, which is frontend
+/// state, so the answer has to come from the app. This is the READ beside `use`'s write, on the same
+/// [`bsc_appchan`] transport.
+///
+/// ## Why it matters to the agent, not just the user
+/// A worker and a director have different capability floors, different git/gh permissions and
+/// different protocols. Without this an agent has to INFER its role from its kickoff prose, which is
+/// exactly the kind of guess that is confidently wrong.
+fn whatami(args: &[String], prog: &str) -> Result<(), String> {
+    let mut pane: Option<String> = None;
+    let mut json = false;
+    let mut pretty = false;
+    let mut timeout_ms: i64 = DEFAULT_TIMEOUT_MS;
+
+    let mut it = args.iter().skip(1);
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            "--pane" => pane = Some(it.next().ok_or("--pane needs a value")?.clone()),
+            "--timeout" => {
+                let v = it.next().ok_or("--timeout needs a value")?;
+                timeout_ms = v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?;
+            }
+            "--dir" => { it.next().ok_or("--dir needs a value")?; }
+            other if other.starts_with("--") => return Err(format!("{prog} whatami: unknown flag {other}")),
+            other if pane.is_none() => pane = Some(other.to_string()),
+            other => return Err(format!("{prog} whatami: unexpected argument {other}")),
+        }
+    }
+
+    // The pane a session is running in. Every session gets this, so an agent can just run
+    // `bsc persona whatami` without knowing its own id.
+    let pane = pane
+        .or_else(|| std::env::var("BSC_AUDIT_PANE").ok())
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .ok_or_else(|| {
+            // Said plainly rather than guessed: an empty or invented answer to "what am I" is worse
+            // than none, because the whole point is to stop an agent inferring its own role.
+            format!(
+                "{prog} whatami: no pane to describe — $BSC_AUDIT_PANE is not set, so this is not \
+                 running inside a session. Pass --pane <paneId> to ask about one."
+            )
+        })?;
+
+    let req = crate::WhatamiRequest { pane_id: pane.clone() };
+
+    let chan = bsc_appchan::chan_dir()?;
+    let now = bsc_util::now_ms();
+    let _ = bsc_appchan::sweep_stale(&chan, now, STALE_MS);
+    let id = bsc_appchan::new_id(now);
+    bsc_appchan::write_request(&chan, &id, crate::WHATAMI_KIND, now, &req)?;
+
+    let reply = bsc_appchan::poll_reply(&chan, &id, timeout_ms, POLL_INTERVAL_MS, || {
+        format!(
+            "timed out after {timeout_ms}ms waiting for the app to answer.\n\
+             The request is at {}.\n\
+             Is the desktop app running? A pane's identity lives in its store — `bsc` cannot read it alone.",
+            bsc_appchan::request_path(&chan, &id).display()
+        )
+    })?;
+    if let Some(e) = reply.error {
+        return Err(format!("{prog} whatami: {e}"));
+    }
+    let res: crate::WhatamiResult = serde_json::from_value(reply.payload)
+        .map_err(|e| format!("{prog} whatami: malformed reply: {e}"))?;
+
+    if json || pretty {
+        let out = if pretty {
+            serde_json::to_string_pretty(&res)
+        } else {
+            serde_json::to_string(&res)
+        };
+        println!("{}", out.map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+
+    println!("pane    {}", res.pane_id);
+    // Role first: it is the field that answers "what am I allowed to do", which is the reason this
+    // verb exists. A pane with neither is a plain interactive console, and saying so beats a blank.
+    match (&res.role, &res.persona_id) {
+        (None, None) => println!("        no role or persona — an unconfigured console session"),
+        _ => {
+            println!("role    {}", res.role.as_deref().unwrap_or("(none)"));
+            match (&res.persona_id, &res.persona_name) {
+                (Some(id), Some(name)) => println!("persona {name} ({id})"),
+                (Some(id), None) => println!("persona {id}"),
+                _ => println!("persona (none)"),
+            }
+        }
+    }
+    if let Some(p) = res.start_prompt.as_deref().filter(|p| !p.trim().is_empty()) {
+        let first = p.lines().next().unwrap_or("").trim();
+        // One line: the full start prompt can be pages, and this is an identity check, not a dump.
+        println!("brief   {}{}", first, if p.lines().count() > 1 { " …" } else { "" });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -731,7 +853,7 @@ mod tests {
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
         let ov = bsc_cli_util::help_overview("bsc persona", TAGLINE, COMMANDS);
-        for c in ["list", "get", "set", "remove", "use"] {
+        for c in ["list", "get", "set", "remove", "use", "whatami"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
         let one = bsc_cli_util::help_for("bsc persona", TAGLINE, COMMANDS, "set");
@@ -745,6 +867,46 @@ mod tests {
     // Everything here is deliberately reachable without a running app: the point of validating the
     // persona id CLI-side is that a typo must not travel to the app, which would relaunch a pane on its
     // way to failing. A test that needed the app could not pin that.
+
+    // ── `bsc persona whatami` (a-session-can-ask-what-it-is) ─────────────────────────────────────
+
+    #[test]
+    fn whatami_rejects_an_unknown_flag() {
+        let e = whatami(&["whatami".into(), "--wat".into()], "bsc persona").unwrap_err();
+        assert!(e.contains("unknown flag --wat"), "{e}");
+    }
+
+    #[test]
+    fn whatami_with_no_pane_to_infer_says_so_rather_than_guessing() {
+        // The whole point of the verb is that nothing has to guess what a session is, so guessing
+        // HERE would be self-defeating. Run outside a session it must say it has no pane.
+        // Same reason `PACKAGED_ENV_LOCK` exists: `cargo test` threads these inside one binary, so a
+        // process-global env var set by one thread is read by another. (nextest forks per test and
+        // would not need it — but the gate runs both.)
+        let _guard = PACKAGED_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev = std::env::var("BSC_AUDIT_PANE").ok();
+        std::env::remove_var("BSC_AUDIT_PANE");
+        let e = whatami(&["whatami".into()], "bsc persona").unwrap_err();
+        assert!(e.contains("no pane to describe"), "{e}");
+        assert!(e.contains("--pane"), "it must say how to ask anyway: {e}");
+        if let Some(p) = prev {
+            std::env::set_var("BSC_AUDIT_PANE", p);
+        }
+    }
+
+    #[test]
+    fn whatami_takes_the_pane_positionally_or_by_flag() {
+        // Both spellings must reach the same place; a caller should not have to remember which.
+        for args in [
+            vec!["whatami".to_string(), "demo:worker".to_string(), "--timeout".into(), "1".into()],
+            vec!["whatami".to_string(), "--pane".into(), "demo:worker".into(), "--timeout".into(), "1".into()],
+        ] {
+            let e = whatami(&args, "bsc persona").unwrap_err();
+            // With no app running this times out — which proves the pane RESOLVED and a request was
+            // sent, rather than being refused for want of one.
+            assert!(!e.contains("no pane to describe"), "the pane should have resolved: {e}");
+        }
+    }
 
     #[test]
     fn use_needs_both_a_pane_and_a_persona() {

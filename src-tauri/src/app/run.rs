@@ -75,6 +75,7 @@ pub fn run() {
         .manage(crate::navigate::NavPending::default())
         .manage(crate::fleet::wake::WakePending::default())
         .manage(crate::session::persona_use::PersonaUsePending::default())
+        .manage(crate::session::persona_use::WhatamiPending::default())
         // In-flight `bsc session start|stop` requests — the same park-and-ack shape as the wake above,
         // because bringing a studio up is frontend state (#architect-starts-and-stops-system-sessions).
         .manage(crate::session::system::LifecyclePending::default())
@@ -379,6 +380,7 @@ pub fn run() {
             logs::graph_dump,
             crate::fleet::wake::fleet_wake_ack,
             crate::session::persona_use::persona_use_ack,
+            crate::session::persona_use::persona_whatami_ack,
             crate::session::system::system_session_ack,
             crate::fleet::director_new::fleet_director_ack,
             logs::logs_pane_activity,

@@ -122,3 +122,40 @@ pub struct UseResult {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub was_busy: bool,
 }
+
+/// `bsc persona whatami` — the READ beside [`USE_KIND`]'s write.
+///
+/// Its own key for the same reason: the answer lives in the app's `panePersonas` / `paneRoles`, so it
+/// is an emit-and-ack round trip rather than something Rust can answer.
+pub const WHATAMI_KIND: &str = "persona-whatami";
+
+/// Ask the app what a pane is running as.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WhatamiRequest {
+    /// The pane to describe. The CLI defaults this to `$BSC_AUDIT_PANE`, which every session carries,
+    /// so an agent can simply run `bsc persona whatami` without knowing its own id.
+    pub pane_id: String,
+}
+
+/// What a pane is running as.
+///
+/// Every field past `pane_id` is optional on purpose: a pane with no persona is a REAL state (a plain
+/// interactive console), not an error, and reporting the role alone is the truthful answer rather than
+/// inventing an identity for it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WhatamiResult {
+    pub pane_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persona_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persona_name: Option<String>,
+    /// The session role the capability gate is applied from — the field that answers "what am I
+    /// allowed to do". Absent for a pane that never launched with one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// The persona's own start prompt, when it has one — what the agent was told to be.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_prompt: Option<String>,
+}

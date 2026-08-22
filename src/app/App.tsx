@@ -13,6 +13,7 @@ import { useHotkeys } from "@/app/useHotkeys";
 import { useNavigateBridge } from "@/app/useNavigateBridge";
 import { useFleetWakeBridge } from "@/app/useFleetWakeBridge";
 import { usePersonaUseBridge } from "@/app/usePersonaUseBridge";
+import { usePersonaWhatamiBridge } from "@/app/usePersonaWhatamiBridge";
 import { useSystemSessionBridge } from "@/app/useSystemSessionBridge";
 import { useFleetDirectorBridge } from "@/app/useFleetDirectorBridge";
 import { useDebugChannel } from "@/app/useDebugChannel";
@@ -56,6 +57,7 @@ export default function App() {
   useNavigateBridge();
   useFleetWakeBridge();
   usePersonaUseBridge();
+  usePersonaWhatamiBridge();
   // #architect-starts-and-stops-system-sessions: apply `bsc session start|stop` — the architect's
   // lever over the app-owned studios, over a closed registry it cannot extend.
   useSystemSessionBridge();

@@ -156,3 +156,92 @@ pub(crate) fn persona_use_ack(ack: PersonaUseAck, state: tauri::State<'_, Person
         log::debug!("persona_use_ack: no waiter for {} (timed out already?)", ack.id);
     }
 }
+
+/// What the frontend sends back for a whatami.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WhatamiAck {
+    pub id: String,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub persona_id: Option<String>,
+    #[serde(default)]
+    pub persona_name: Option<String>,
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub start_prompt: Option<String>,
+}
+
+/// In-flight whatami requests, keyed by request id.
+#[derive(Default)]
+pub struct WhatamiPending(Mutex<HashMap<String, Sender<WhatamiAck>>>);
+
+/// Ask the frontend what a pane is running as, and block until it answers.
+///
+/// The READ beside [`apply`]'s write, and it needs the same round trip for the same reason:
+/// `paneRoles` and `panePersonas` are zustand state that Rust cannot see.
+pub fn whatami(
+    app: &tauri::AppHandle,
+    id: &str,
+    req: &bsc_persona::WhatamiRequest,
+) -> Result<bsc_persona::WhatamiResult, String> {
+    if req.pane_id.trim().is_empty() {
+        return Err("persona whatami: no pane id".into());
+    }
+
+    let (tx, rx) = channel();
+    if let Some(state) = app.try_state::<WhatamiPending>() {
+        if let Ok(mut m) = state.0.lock() {
+            m.insert(id.to_string(), tx);
+        }
+    }
+
+    let mut payload = serde_json::to_value(req).map_err(|e| e.to_string())?;
+    payload
+        .as_object_mut()
+        .ok_or("persona whatami request did not serialize to an object")?
+        .insert("id".into(), serde_json::Value::String(id.to_string()));
+
+    app.emit("bsc://persona-whatami", payload)
+        .map_err(|e| format!("cannot reach the frontend: {e}"))?;
+
+    let drop_slot = || {
+        if let Some(state) = app.try_state::<WhatamiPending>() {
+            if let Ok(mut m) = state.0.lock() {
+                m.remove(id);
+            }
+        }
+    };
+    let ack = rx.recv_timeout(ACK_TIMEOUT).map_err(|_| {
+        drop_slot();
+        format!(
+            "the frontend did not answer within {}ms — is a window open, or was it mid-reload? \
+             (the app IS running; this is not a 'no app' timeout)",
+            ACK_TIMEOUT.as_millis()
+        )
+    })?;
+    drop_slot();
+
+    if let Some(e) = ack.error {
+        return Err(e);
+    }
+    Ok(bsc_persona::WhatamiResult {
+        pane_id: req.pane_id.clone(),
+        persona_id: ack.persona_id,
+        persona_name: ack.persona_name,
+        role: ack.role,
+        start_prompt: ack.start_prompt,
+    })
+}
+
+/// The frontend's answer, handed back to the blocked [`whatami`].
+#[tauri::command]
+pub(crate) fn persona_whatami_ack(ack: WhatamiAck, state: tauri::State<'_, WhatamiPending>) {
+    let tx = state.0.lock().ok().and_then(|mut m| m.remove(&ack.id));
+    if let Some(tx) = tx {
+        let _ = tx.send(ack);
+    } else {
+        log::debug!("persona_whatami_ack: no waiter for {} (timed out already?)", ack.id);
+    }
+}
