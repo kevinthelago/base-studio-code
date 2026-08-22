@@ -145,6 +145,14 @@ pub const HARNESS_STATE_GUEST_REL: &str = ".claude.json";
 /// is a mountpoint inside a read-only bind, which bwrap refuses outright.
 pub const RC_GUEST_PATH: &str = "/bsc-rc";
 
+/// Where the session's working tree is bound INSIDE the namespace.
+///
+/// The guest path is FIXED and deliberately unlike the host's: a cage whose repo lived at its real
+/// path would leak the host layout into every transcript. The cost is that anything the harness keys
+/// on an absolute path — its per-project trust record, notably — cannot match what the user approved
+/// on the host, because this path exists only inside the cage.
+pub const REPO_GUEST_PATH: &str = "/repo";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxSpec {
     /// systemd scope name. Must be unit-safe: `[A-Za-z0-9_-]+`.

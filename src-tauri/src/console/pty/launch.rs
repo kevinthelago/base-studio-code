@@ -139,8 +139,7 @@ pub(super) fn build_bash_init_line(
         let notice = sandbox_refused
             .map(|why| {
                 format!(
-                    "; printf '[1;33m[bsc] NOT sandboxed: %s[0m
-' \"{}\"",
+                    "; printf '[1;33m[bsc] NOT sandboxed: %s[0m\\n' \"{}\"",
                     shell_safe(why)
                 )
             })
@@ -224,6 +223,33 @@ mod tests {
         assert!(line.contains("claude"), "the session must still launch: {line}");
     }
 
+    /// The init line is ONE line, and the refusal notice is the only thing that ever put a second
+    /// one in it. `build_bash_init_line`'s output is written to a PTY in CANONICAL MODE, so a raw
+    /// newline does not format anything — it ENDS the command. The refusal notice shipped with a
+    /// literal newline inside its printf format string, which bash read as two commands: the first
+    /// with an unterminated single quote, so the shell parked at its `>` continuation prompt and the
+    /// agent never launched. Every existing test still passed, because `contains("NOT sandboxed")`
+    /// is true of a broken line too and the escaping test read only `.split("\n").next()`.
+    ///
+    /// Asserted over the WHOLE line rather than the notice: any future addition to this string is
+    /// covered by the same guard, which is the property that actually matters.
+    #[test]
+    fn the_init_line_is_a_single_line_even_when_a_refusal_is_printed() {
+        let line = super::build_bash_init_line(
+            "/home/u", false, "/home/u", Some("claude"), "", "/rc", false,
+            Some("this pane's directory is your HOME (/home/u). Point it at a worktree."),
+        );
+        assert_eq!(
+            line.matches('\n').count(),
+            1,
+            "the init line must contain exactly one newline — its terminator: {line:?}"
+        );
+        assert!(line.ends_with('\n'), "and that newline must be the LAST byte: {line:?}");
+        // The notice must still actually print a newline — as the two-character escape printf reads,
+        // not as a raw one. Losing it would run the launch output onto the notice's line.
+        assert!(line.contains(r"[0m\n' "), "the notice ends in an ESCAPED newline: {line}");
+    }
+
     #[test]
     fn a_session_that_was_never_going_to_be_caged_says_nothing() {
         // Silence is correct here: a pane with no role never asked for isolation, so a notice would
@@ -242,9 +268,22 @@ mod tests {
         let line = super::build_bash_init_line(
             "/home/u", false, "/home/u", Some("claude"), "", "/rc", false, Some(&nasty),
         );
-        let notice = line.split("NOT sandboxed").nth(1).unwrap_or("");
-        for bad in [char::from_u32(34).unwrap(), char::from_u32(96).unwrap(), char::from_u32(36).unwrap()] {
-            assert!(!notice.split("\n").next().unwrap_or("").contains(bad), "unescaped {bad:?} in: {notice}");
+        // Check the INTERPOLATED REASON, not the whole notice: the notice legitimately contains the
+        // double quotes that wrap the argument, so asserting over it forbids our own escaping.
+        //
+        // This read the first line only until the literal-newline bug was fixed — and that newline fell
+        // BEFORE the reason, so the assertion never once examined the text it exists to check. It passed
+        // for the entire life of the notice while checking nothing.
+        let arg = line.split("\\n' \"").nth(1).unwrap_or("");
+        let reason = arg.split(char::from_u32(34).unwrap()).next().unwrap_or("");
+        assert!(reason.contains("home"), "the reason must actually be found, not silently missed: {line:?}");
+        for bad in [
+            char::from_u32(34).unwrap(),
+            char::from_u32(92).unwrap(),
+            char::from_u32(36).unwrap(),
+            char::from_u32(96).unwrap(),
+        ] {
+            assert!(!reason.contains(bad), "unescaped {bad:?} in the reason: {reason:?}");
         }
     }
 

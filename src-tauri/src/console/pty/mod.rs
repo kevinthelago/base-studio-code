@@ -1613,12 +1613,74 @@ fn harness_state_for(pane_id: &str, stores_root: &std::path::Path) -> Option<std
     match std::fs::copy(&src, &dst) {
         Ok(n) => {
             log::info!("pty[{pane_id}] harness state copied ({n} bytes) — the cage will not re-run onboarding");
+            trust_guest_repo(pane_id, &dst);
             Some(dst)
         }
         Err(e) => {
             log::warn!("pty[{pane_id}] no harness state: {e} — the session will re-run onboarding");
             None
         }
+    }
+}
+
+/// Mark the cage's own workspace as already-trusted in the session's PRIVATE state copy.
+///
+/// Claude Code records trust PER ABSOLUTE PATH (`projects.<path>.hasTrustDialogAccepted`). Inside the
+/// namespace the tree is bound at [`bsc_sandbox::REPO_GUEST_PATH`], a path that exists nowhere on the
+/// host — so no amount of trusting the real directory can match it, and every caged session opened on
+/// the interactive trust dialog instead of a prompt:
+///
+/// ```text
+///   Accessing workspace: /repo
+///   Quick safety check: Is this a project you created or one you trust?
+///   ❯ 1. Yes, I trust this folder
+///     2. No, exit
+/// ```
+///
+/// The second option EXITS, and the dialog takes the keystrokes the user believed they were typing at
+/// an agent — so the observed symptom was "the session ends after the first command", with the cause
+/// two screens up and already scrolled away. Copying `~/.claude.json` (which this function completes)
+/// silenced the LOGIN prompt and made this one the next thing standing in the way.
+///
+/// Accepting it on the user's behalf is defensible ONLY because of what the path is: `/repo` is bound
+/// by this app, to the directory the user chose in the pane, for a session they gave a role to. The
+/// dialog's question — "do you trust this folder" — was answered when they pointed the pane at it.
+/// And the answer is not load-bearing here: the mount namespace, not the harness's prompt, is what
+/// confines the session. This grants nothing the cage does not already allow.
+///
+/// Deliberately writes ONLY the per-session copy, never `~/.claude.json`: the host's own trust record
+/// is the user's, and a sandbox launch must not edit it.
+///
+/// Fail-safe throughout — an unparseable or unwritable state file leaves the plain copy in place, which
+/// is exactly the behaviour before this existed.
+fn trust_guest_repo(pane_id: &str, state: &std::path::Path) {
+    let Ok(text) = std::fs::read_to_string(state) else {
+        log::warn!("pty[{pane_id}] harness state unreadable — the trust dialog will appear");
+        return;
+    };
+    let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&text) else {
+        log::warn!("pty[{pane_id}] harness state is not JSON — the trust dialog will appear");
+        return;
+    };
+    // The trust key's shape is `claude_config`'s to know — it already creates the `projects` map and
+    // the per-directory entry, and coerces a non-object at either level rather than silently skipping.
+    // Duplicating that here would be a second definition of the same fact.
+    crate::session::claude_config::mark_dir_trusted(&mut v, bsc_sandbox::REPO_GUEST_PATH);
+    // ...plus the ONBOARDING flag, which trust alone does not cover: a project the harness has never
+    // seen still runs its per-project intro, which is another screen in front of the agent.
+    if let Some(entry) = v
+        .get_mut("projects")
+        .and_then(|p| p.get_mut(bsc_sandbox::REPO_GUEST_PATH))
+        .and_then(|e| e.as_object_mut())
+    {
+        entry.insert("hasCompletedProjectOnboarding".into(), serde_json::Value::Bool(true));
+    }
+    match serde_json::to_string(&v).map(|out| std::fs::write(state, out)) {
+        Ok(Ok(())) => log::info!(
+            "pty[{pane_id}] {} pre-trusted in the session's state copy — no trust dialog",
+            bsc_sandbox::REPO_GUEST_PATH
+        ),
+        _ => log::warn!("pty[{pane_id}] could not pre-trust {} — the trust dialog will appear", bsc_sandbox::REPO_GUEST_PATH),
     }
 }
 
@@ -2180,6 +2242,163 @@ mod namespace_tests {
         assert!(
             text.contains("SURVIVED-EXT"),
             "the shell must outlive an external command — exited early: {early:?}\n\
+             {} bytes emitted:\n{}",
+            out.len(),
+            text
+        );
+    }
+
+    /// The same survival property, but with the STORES BOUND — which is the shape the app actually
+    /// launches and the one above does not.
+    ///
+    /// `a_sandboxed_session_survives_an_external_command` passes `stores_root: None`, so it binds no
+    /// `/plan` `/graph` `/ui` `/coord` projections, no writable outboxes, no rc and no harness-state
+    /// file. The app passes `Some(...)` and logs `4 store(s), 1 outbox(es)` on every launch. So the
+    /// green test covers a cage the app never launches, and a maintainer watched sessions die after
+    /// one command while it stayed green — this repo's recurring failure shape.
+    ///
+    /// Drives the same two steps: an EXTERNAL command (fork + exec), then a marker only a live shell
+    /// can print.
+    /// The cage's workspace must be PRE-TRUSTED, or the session opens on a modal whose second option
+    /// is "No, exit" — and the user's first keystrokes go to that modal, not to the agent.
+    ///
+    /// Trust is keyed on the ABSOLUTE path, and inside the namespace that path is `/repo`, which never
+    /// exists on the host. So this can never be satisfied by the user trusting the real directory; it
+    /// has to be written into the per-session copy.
+    #[test]
+    fn the_guest_workspace_is_pre_trusted_in_the_session_state_copy() {
+        let dir = std::env::temp_dir().join(format!("bsc-trust-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let state = dir.join(".claude.json");
+        // A realistic starting shape: the host's own projects, none of them the guest path.
+        std::fs::write(
+            &state,
+            r#"{"projects":{"/home/u/code":{"hasTrustDialogAccepted":true}},"autoUpdates":true}"#,
+        )
+        .unwrap();
+
+        super::trust_guest_repo("test-pane", &state);
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&state).unwrap()).unwrap();
+        assert_eq!(
+            v["projects"][bsc_sandbox::REPO_GUEST_PATH]["hasTrustDialogAccepted"],
+            serde_json::Value::Bool(true),
+            "the guest workspace must be trusted: {v}"
+        );
+        assert_eq!(
+            v["projects"][bsc_sandbox::REPO_GUEST_PATH]["hasCompletedProjectOnboarding"],
+            serde_json::Value::Bool(true),
+            "and must not re-run project onboarding: {v}"
+        );
+        // Everything else survives — this rewrites one entry, it does not rebuild the file.
+        assert_eq!(v["projects"]["/home/u/code"]["hasTrustDialogAccepted"], serde_json::Value::Bool(true));
+        assert_eq!(v["autoUpdates"], serde_json::Value::Bool(true), "unrelated state preserved: {v}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Fail-safe: a state file that is not JSON leaves the plain copy alone rather than destroying it.
+    #[test]
+    fn an_unparseable_harness_state_is_left_untouched() {
+        let dir = std::env::temp_dir().join(format!("bsc-trust-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let state = dir.join(".claude.json");
+        std::fs::write(&state, "not json at all").unwrap();
+        super::trust_guest_repo("test-pane", &state);
+        assert_eq!(
+            std::fs::read_to_string(&state).unwrap(),
+            "not json at all",
+            "a copy we cannot parse must survive intact"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_sandboxed_session_with_stores_bound_survives_an_external_command() {
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use std::io::{Read, Write};
+
+        if std::process::Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        let base = std::env::temp_dir().join(format!("bsc-stores-ext-{}", std::process::id()));
+        let wt = base.join("wt");
+        let stores = base.join("stores");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(wt.join("main.rs"), "fn main() {}\n").unwrap();
+        // The projections the launcher builds, in the shape `namespace_argv` looks for: four
+        // read-only store dirs, two of them carrying a writable `out/` hole.
+        for name in ["plan", "graph", "ui", "coord"] {
+            std::fs::create_dir_all(stores.join(name)).unwrap();
+        }
+        std::fs::write(stores.join("plan").join("items"), "demo\n").unwrap();
+        for proj in ["coord", "ui"] {
+            std::fs::create_dir_all(stores.join(proj).join("out")).unwrap();
+        }
+        let wt_s = wt.to_str().unwrap().to_string();
+        let stores_s = stores.to_str().unwrap().to_string();
+
+        let argv = super::namespace_argv(
+            Some("worker"), "storesext", &wt_s, Some(&stores_s), "/bin/bash", &["node", "claude"],
+        )
+        .expect("a worker with stores renders");
+
+        let claude_fn = "claude() { __bsc_state run; command claude \"$@\"; }; ";
+        let init = super::launch::build_bash_init_line(
+            &wt_s, false, &wt_s, None, claude_fn,
+            "/home/nobody/.base-studio-code/bsc-env.sh", true, None,
+        );
+
+        let pty = native_pty_system()
+            .openpty(PtySize { rows: 30, cols: 165, pixel_width: 0, pixel_height: 0 })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new(&argv[0]);
+        for a in &argv[1..] {
+            cmd.arg(a);
+        }
+        let mut child = pty.slave.spawn_command(cmd).expect("spawn");
+        drop(pty.slave);
+
+        let mut reader = pty.master.try_clone_reader().expect("reader");
+        let collected = std::thread::spawn(move || {
+            let mut all = Vec::new();
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = reader.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                all.extend_from_slice(&buf[..n]);
+            }
+            all
+        });
+
+        let mut w = pty.master.take_writer().expect("writer");
+        let step = |w: &mut Box<dyn Write + Send>, bytes: &[u8]| {
+            w.write_all(bytes).ok();
+            w.flush().ok();
+            std::thread::sleep(std::time::Duration::from_millis(1200));
+        };
+        step(&mut w, init.as_bytes());
+        // The app refits a beat after launch; SIGWINCH inside a PID namespace is namespace-relative.
+        pty.master
+            .resize(PtySize { rows: 28, cols: 165, pixel_width: 0, pixel_height: 0 })
+            .expect("resize");
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        step(&mut w, b"ls -l\n");
+        step(&mut w, b"echo SURVIVED-STORES\n");
+        let early = child.try_wait().ok().flatten();
+        step(&mut w, b"exit\n");
+        drop(w);
+
+        let out = collected.join().unwrap_or_default();
+        let text = String::from_utf8_lossy(&out).to_string();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert!(text.contains("main.rs"), "the external command ran: {} bytes", out.len());
+        assert!(
+            text.contains("SURVIVED-STORES"),
+            "the shell must outlive an external command with stores bound — exited early: {early:?}\n\
              {} bytes emitted:\n{}",
             out.len(),
             text
