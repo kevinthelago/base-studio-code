@@ -156,6 +156,33 @@ fn bins_for(role: Role) -> Vec<&'static str> {
     v
 }
 
+/// The real host path of an executable on `PATH`, following symlinks.
+///
+/// The curated `/usr` binds `/usr/bin/<name>` for every harness binary, which quietly assumes every
+/// one of them lives there. That holds for a system or npm-global install and is FALSE for a per-user
+/// install — Claude Code's default is `~/.local/bin/claude`, a symlink into a versioned directory
+/// under `$HOME`, and the cage gives the agent a private empty `$HOME` by design.
+///
+/// The failure was silent because the bind uses `--ro-bind-try`: a missing source is skipped rather
+/// than refused, so the launch succeeded and the agent met `command not found`. That is the same
+/// "the cage shipped complete and useless" failure the harness test exists to catch, in a new guise.
+///
+/// Returns `None` when the name is not on `PATH` at all — the caller then falls back to the
+/// `/usr/bin/<name>` bind, which is right for anything genuinely installed there.
+fn real_bin_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let cand = dir.join(name);
+        if cand.is_file() {
+            // Canonicalize: a launcher shim is usually a symlink into a versioned directory, and it is
+            // the TARGET that has to be bound.
+            return cand.canonicalize().ok().or(Some(cand));
+        }
+    }
+    None
+}
+
+
 /// Build the namespace a role runs in.
 ///
 /// `extra_bins` is the caller's toolchain — a Rust worker wants `cargo`/`rustc`, a Node one
@@ -237,6 +264,18 @@ pub fn for_role(
     let mut bins: Vec<String> = MINIMAL_BINS.iter().map(|s| s.to_string()).collect();
     bins.extend(bins_for(role).iter().map(|s| s.to_string()));
     bins.extend(extra_bins.iter().map(|s| s.to_string()));
+
+    // ...and bind each harness binary from where it ACTUALLY is. The curated `/usr` will also try
+    // `/usr/bin/<name>`; this mount lands afterwards, so a per-user install wins and a system one is
+    // unaffected. Without it a `~/.local` install is skipped in silence and the agent finds out at
+    // `command not found`.
+    for b in extra_bins {
+        if let Some(real) = real_bin_path(b) {
+            if real != PathBuf::from(format!("/usr/bin/{b}")) {
+                mounts.push(Mount::ReadOnly { host: real, guest: PathBuf::from(format!("/usr/bin/{b}")) });
+            }
+        }
+    }
 
     let spec = SandboxSpec {
         unit: unit.into(),
