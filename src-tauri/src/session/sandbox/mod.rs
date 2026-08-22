@@ -54,8 +54,10 @@ pub(crate) fn decode_wsl(bytes: &[u8]) -> String {
     let nuls = bytes[..sample].iter().filter(|&&b| b == 0).count();
     if sample >= 8 && nuls * 3 >= sample {
         let u16s: Vec<u16> = bytes
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&c| u16::from_le_bytes(c))
             .collect();
         String::from_utf16_lossy(&u16s)
     } else {
