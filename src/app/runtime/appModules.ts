@@ -178,6 +178,8 @@ import * as UseAppRepoRoot from "@/shared/hooks/useAppRepoRoot";
 import * as UseHotkeys from "@/app/useHotkeys";
 import * as UseNavigateBridge from "@/app/useNavigateBridge";
 import * as UseFleetWakeBridge from "@/app/useFleetWakeBridge";
+import * as PersonaUseBridge from "@/app/personaUseBridge";
+import * as UsePersonaUseBridge from "@/app/usePersonaUseBridge";
 import * as UseDebugChannel from "@/app/useDebugChannel";
 import * as UseDockBack from "@/app/useDockBack";
 import * as Automations from "@/features/automations";
@@ -499,6 +501,8 @@ const PLATFORM: Record<string, unknown> = {
   "@/app/useHotkeys": UseHotkeys,
   "@/app/useNavigateBridge": UseNavigateBridge,
   "@/app/useFleetWakeBridge": UseFleetWakeBridge,
+  "@/app/personaUseBridge": PersonaUseBridge,
+  "@/app/usePersonaUseBridge": UsePersonaUseBridge,
   "@/app/useDebugChannel": UseDebugChannel,
   "@/app/useDockBack": UseDockBack,
   "@/features/automations": Automations,

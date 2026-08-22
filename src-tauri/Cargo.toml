@@ -83,6 +83,9 @@ bsc-appchan = { path = "../crates/bsc-appchan" }
 bsc-navigate = { path = "../crates/bsc-navigate" }
 # Real fleet liveness over the shared channel (#4098) — the app owns PtyState, so only it can answer.
 bsc-fleet = { path = "../crates/bsc-fleet" }
+# The `bsc persona use` wire contract (#change-a-panes-persona-from-the-cli). The pane->persona map is
+# frontend state, so the app supplies only the emit-and-ack; the crate supplies the shapes.
+bsc-persona = { path = "../crates/bsc-persona" }
 # Read-only inspection of the live view answered by the appchan watcher (#3437).
 bsc-debug = { path = "../crates/bsc-debug" }
 # The app-owned SYSTEM SESSIONS' closed registry + lifecycle contract
