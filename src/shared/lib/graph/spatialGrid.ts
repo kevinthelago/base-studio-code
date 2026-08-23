@@ -215,3 +215,54 @@ export function pickNearest(
   }
   return best;
 }
+
+/**
+ * The node whose RECTANGLE contains (`x`,`y`), or -1 — the hit test for card-shaped nodes.
+ *
+ * `pickNearest` measures a circle, which is right for a dot and wrong for a card. On the Design Studio's
+ * 172x58 cards a circle of radius `max(w,h)/2` reaches 86 px vertically and selects a node a whole row
+ * away, while a circle of `min/2` misses the card's own ends. Neither radius is correct because the shape
+ * is not a circle.
+ *
+ * O(1) expected, exactly like `pickNearest`: the same cell neighbourhood, the same bounded occupancy.
+ * `reach` must cover the largest half-extent on EITHER axis or a wide card is unpickable near its ends.
+ *
+ * When rectangles overlap, the nearest CENTRE wins — the same tie-break a user expects when cards are
+ * densely packed and two hit areas meet.
+ */
+export function pickRect(
+  g: SpatialGrid,
+  xy: Float32Array,
+  halfW: Float32Array,
+  halfH: Float32Array,
+  x: number,
+  y: number,
+  reach: number,
+): number {
+  if (g.count === 0) return -1;
+  const r = Math.max(0, reach);
+  const c0 = clampInt(Math.floor((x - r - g.minX) / g.cellSize), g.cols);
+  const c1 = clampInt(Math.floor((x + r - g.minX) / g.cellSize), g.cols);
+  const r0 = clampInt(Math.floor((y - r - g.minY) / g.cellSize), g.rows);
+  const r1 = clampInt(Math.floor((y + r - g.minY) / g.cellSize), g.rows);
+  let best = -1;
+  let bestD2 = Infinity;
+  for (let row = r0; row <= r1; row++) {
+    const rowBase = row * g.cols;
+    const start = g.cellStart[rowBase + c0];
+    const end = g.cellStart[rowBase + c1 + 1];
+    for (let k = start; k < end; k++) {
+      const i = g.items[k];
+      const dx = x - xy[i * 2];
+      const dy = y - xy[i * 2 + 1];
+      // Containment first — cheaper than the distance, and it is the actual question.
+      if (dx < -halfW[i] || dx > halfW[i] || dy < -halfH[i] || dy > halfH[i]) continue;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        best = i;
+      }
+    }
+  }
+  return best;
+}
