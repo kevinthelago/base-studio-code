@@ -5,6 +5,7 @@
 // The pure half (grid build, viewport query, picking) IS unit-tested; this covers the half that needs a
 // real context.
 import { createGraphRenderer, NODE_SELECTED, type GraphRenderer } from "@/shared/lib/graph/glGraphRenderer";
+import { buildGlyphAtlas } from "@/shared/lib/graph/glyphAtlas";
 
 /** What a call-counting wrapper observed since the last `resetCounters()`. */
 export interface GlCounters {
@@ -26,6 +27,10 @@ declare global {
       select(i: number): void;
       move(i: number, x: number, y: number): void;
       counters(): GlCounters;
+      buildAtlas(): { ok: boolean; width: number; height: number; glyphs: number; ms: number };
+      labelEveryNode(): void;
+      setScale(scale: number): void;
+      glyphCount(): number;
       resetCounters(): void;
       isSoftware(): boolean;
     };
@@ -127,6 +132,27 @@ window.__glGraphHarness = {
   },
   select(i) { renderer?.setState(i, NODE_SELECTED); },
   move(i, x, y) { renderer?.setPosition(i, x, y); },
+  buildAtlas() {
+    const t = performance.now();
+    const a = buildGlyphAtlas("system-ui, sans-serif", { fontSize: 40, spread: 6 });
+    const ms = performance.now() - t;
+    if (!a || !renderer) return { ok: false, width: 0, height: 0, glyphs: 0, ms };
+    renderer.setAtlas(a);
+    return { ok: true, width: a.width, height: a.height, glyphs: a.glyphs.size, ms };
+  },
+  labelEveryNode() {
+    if (!renderer) return;
+    // EVERY node gets a label — the adversarial case for the LOD gate. If the gate does not hold, this
+    // is ~12M glyph quads.
+    const n = renderer.nodeCount;
+    const out: string[] = new Array(n);
+    for (let i = 0; i < n; i++) out[i] = `node-${i}`;
+    renderer.setLabels(out);
+  },
+  setScale(scale) {
+    renderer?.setView({ tx: 0, ty: 0, scale });
+  },
+  glyphCount() { return renderer?.lastGlyphCount ?? -1; },
   counters() { return { ...counters }; },
   resetCounters() {
     counters.bufferData = 0; counters.bufferSubData = 0; counters.bufferSubDataBytes = 0;
