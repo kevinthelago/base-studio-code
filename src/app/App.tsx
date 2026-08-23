@@ -16,6 +16,7 @@ import { usePersonaUseBridge } from "@/app/usePersonaUseBridge";
 import { usePersonaWhatamiBridge } from "@/app/usePersonaWhatamiBridge";
 import { useSystemSessionBridge } from "@/app/useSystemSessionBridge";
 import { useFleetDirectorBridge } from "@/app/useFleetDirectorBridge";
+import { useFleetStartBridge } from "@/app/useFleetStartBridge";
 import { useDebugChannel } from "@/app/useDebugChannel";
 import { useDockBack } from "@/app/useDockBack";
 import { useScheduler } from "@/features/automations";
@@ -64,6 +65,11 @@ export default function App() {
   // #architect-creates-a-director-with-discovery: apply `bsc fleet director new` — the architect's
   // one create into the project tier, launched through the same fleet path a full launch uses.
   useFleetDirectorBridge();
+  // `headless-fleet-launch-a-director-cannot-start-its-own-fleet`: apply `bsc fleet start` — the
+  // whole-fleet sibling of the above, so a director or architect can launch the fleet it planned
+  // without the planner UI. Rust settles every precondition and builds the worktrees; this places
+  // the panes, because a pane is zustand state Rust cannot touch.
+  useFleetStartBridge();
   // #3437: answer `bsc debug` — read-only inspection of the live DOM + preview state, so a session can
   // ask what is actually on screen instead of inferring it from source.
   useDebugChannel();
