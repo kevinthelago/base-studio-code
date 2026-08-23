@@ -21,38 +21,42 @@ const forward = () => press(4);
 describe("useNavHistory", () => {
   beforeEach(() => {
     useAppStore.setState({
-      activeWorkspace: "projects",
-      projectsPageMode: "projects",
+      // The Planner is gone (`delete-the-planner-ui-keep-the-planner`); history steps the ACTIVE
+      // workspace's page tab now, so the fixture starts on a tabbed graph workspace.
+      activeWorkspace: "algorithms",
+      activePageTab: {},
       glanceDrill: null,
       teamsDrill: null,
     });
   });
 
   it("mouse back exits a team pool drill; forward re-enters it (#2492)", () => {
-    useAppStore.setState({ projectsPageMode: "teams" });
+    // Teams is its own WORKSPACE now, so the drill lives there rather than on a Planner page.
+    useAppStore.setState({ activeWorkspace: "teams" });
     const hook = renderHook(() => useNavHistory());
     act(() => { useAppStore.getState().setTeamsDrill("pool:engineer"); });
     expect(useAppStore.getState().teamsDrill).toBe("pool:engineer");
 
     back();
     expect(useAppStore.getState().teamsDrill).toBeNull();
-    expect(useAppStore.getState().projectsPageMode).toBe("teams"); // still on the Teams page
+    expect(useAppStore.getState().activeWorkspace).toBe("teams"); // still on Teams
 
     forward();
     expect(useAppStore.getState().teamsDrill).toBe("pool:engineer");
     hook.unmount();
   });
 
-  it("planner page switches join the history (Projects ↔ Teams)", () => {
+  it("PAGE TAB switches join the history, for any tabbed workspace", () => {
+    // This used to be "planner page switches (Projects ↔ Teams)". History steps the ACTIVE
+    // workspace's tab now (`delete-the-planner-ui-keep-the-planner`), which is the general form —
+    // the Planner's page mode was one workspace's private enum.
+    useAppStore.setState({ activeWorkspace: "algorithms", activePageTab: { algorithms: "typescript" } });
     const hook = renderHook(() => useNavHistory());
-    act(() => { useAppStore.getState().setProjectsPageMode("teams"); });
-    act(() => { useAppStore.getState().setTeamsDrill("pool:x"); });
+    act(() => { useAppStore.getState().setActivePageTab("algorithms", "rust"); });
+    expect(useAppStore.getState().activePageTab.algorithms).toBe("rust");
 
-    back(); // drill out
-    expect(useAppStore.getState().teamsDrill).toBeNull();
-    expect(useAppStore.getState().projectsPageMode).toBe("teams");
-    back(); // page back
-    expect(useAppStore.getState().projectsPageMode).toBe("projects");
+    back();
+    expect(useAppStore.getState().activePageTab.algorithms).toBe("typescript");
     hook.unmount();
   });
 
@@ -65,7 +69,7 @@ describe("useNavHistory", () => {
     expect(useAppStore.getState().glanceDrill).toBeNull();
     expect(useAppStore.getState().activeWorkspace).toBe("glance");
     back();
-    expect(useAppStore.getState().activeWorkspace).toBe("projects");
+    expect(useAppStore.getState().activeWorkspace).toBe("algorithms");
     forward();
     expect(useAppStore.getState().activeWorkspace).toBe("glance");
     hook.unmount();
@@ -74,8 +78,7 @@ describe("useNavHistory", () => {
   it("back at the start of the stack is a no-op", () => {
     const hook = renderHook(() => useNavHistory());
     back();
-    expect(useAppStore.getState().activeWorkspace).toBe("projects");
-    expect(useAppStore.getState().projectsPageMode).toBe("projects");
+    expect(useAppStore.getState().activeWorkspace).toBe("algorithms");
     hook.unmount();
   });
 
@@ -85,7 +88,7 @@ describe("useNavHistory", () => {
     // A stale org drill set while Glance is showing is not a location change on Glance...
     act(() => { useAppStore.getState().setTeamsDrill("pool:stale"); });
     back(); // ...so one back returns to the planner, not to a phantom drill entry.
-    expect(useAppStore.getState().activeWorkspace).toBe("projects");
+    expect(useAppStore.getState().activeWorkspace).toBe("algorithms");
     hook.unmount();
   });
 });
@@ -93,7 +96,7 @@ describe("useNavHistory", () => {
 describe("useNavHistory — event delivery (#3946)", () => {
   beforeEach(() => {
     useAppStore.setState({
-      activeWorkspace: "projects", projectsPageMode: "projects", glanceDrill: null, teamsDrill: null,
+      activeWorkspace: "algorithms", activePageTab: {}, glanceDrill: null, teamsDrill: null,
     });
   });
 
@@ -117,7 +120,7 @@ describe("useNavHistory — event delivery (#3946)", () => {
     expect(useAppStore.getState().activeWorkspace).toBe("glance");
 
     pressFrom(child, "mouseup", 3);
-    expect(useAppStore.getState().activeWorkspace).toBe("projects");
+    expect(useAppStore.getState().activeWorkspace).toBe("algorithms");
 
     host.remove();
   });
@@ -126,7 +129,7 @@ describe("useNavHistory — event delivery (#3946)", () => {
     renderHook(() => useNavHistory());
     act(() => { useAppStore.setState({ activeWorkspace: "glance" }); });
     pressFrom(document.body, "pointerup", 3);
-    expect(useAppStore.getState().activeWorkspace).toBe("projects");
+    expect(useAppStore.getState().activeWorkspace).toBe("algorithms");
   });
 
   it("ignores the ordinary buttons — left/middle/right must never navigate", () => {

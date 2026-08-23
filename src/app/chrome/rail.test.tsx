@@ -12,7 +12,9 @@ const FULL = [
   // the Teams page beside the agents that get it rather than owning a rail destination.
   // "Automations" went the same way (hooks-and-schedules-belong-to-the-persona): its config is
   // carried by the persona and read on Teams, its history is a Logs tab.
-  "Console", "Glance", "Planner",
+  "Console", "Glance",
+  // The PLANNER is gone (`delete-the-planner-ui-keep-the-planner`): planning is the director's job,
+  // and the architect is the tier the user talks to.
   // The five GRAPHS (`five-graphs-become-rail-workspaces`) — Components, Teams, Algorithms, Data and
   // Sounds each spent time folded into the Planner as a tab; that collapse is reversed and they are
   // rail destinations again, kept together between the workflow screens and the utilities.

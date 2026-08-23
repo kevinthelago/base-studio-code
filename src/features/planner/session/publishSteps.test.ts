@@ -4,7 +4,9 @@ import {
   publishRepositories, scaffoldRepositories, ensureProjectBoard,
   createIssues, applyStreamLabels, seedPublishStatus, materializeIssues,
 } from "@/features/planner/session/publishSteps";
-import type { GhStatusMap, GhItemState } from "@/features/planner/session/GitHubStructureCard";
+// The status shapes moved onto publishSteps when GitHubStructureCard was deleted with the
+// planner screen — a type owned by a component dies with it.
+import type { GhStatusMap, GhItemState } from "@/features/planner/session/publishSteps";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 
 // ── test doubles ──────────────────────────────────────────────────────────────

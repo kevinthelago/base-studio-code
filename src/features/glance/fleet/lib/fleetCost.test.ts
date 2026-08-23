@@ -1,6 +1,6 @@
 // fleetCost (#2237) — cost aggregation (real) + energy estimate (directional).
 import { describe, it, expect } from "vitest";
-import { aggregateFleetCost, estimateEnergyWh, type TokenUsage } from "@/features/planner/fleet/lib/fleetCost";
+import { aggregateFleetCost, estimateEnergyWh, type TokenUsage } from "@/features/glance/fleet/lib/fleetCost";
 import { estimateEnergyWh as graphEstimateEnergyWh } from "@/shared/lib/algorithms/llmEnergy";
 
 const usage = (over: Partial<TokenUsage> & { pane: string }): TokenUsage => ({

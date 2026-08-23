@@ -25,13 +25,7 @@ import { registerSkillsPlatform } from "@/features/skills/graphPlatform";
 import { registerGlancePlatform } from "@/features/glance/graphPlatform";
 import { registerSoundsPlatform } from "@/features/sounds/graphPlatform";
 import { registerAlgorithmsPlatform } from "@/features/algorithms/graphPlatform";
-import { registerPlanningPlatform } from "@/features/planner/session/graphPlatform";
 import { registerConsolePlatform } from "@/app/console/graphPlatform";
-import { registerFleetPlatform } from "@/features/planner/fleet/graphPlatform";
-import { registerProjectsPlatform } from "@/features/planner/list/graphPlatform";
-import { registerPanePlatform } from "@/features/planner/pane/graphPlatform";
-import { registerBodiesPlatform } from "@/features/planner/bodies/graphPlatform";
-import { registerPreviewPlatform } from "@/features/planner/preview/graphPlatform";
 // These six used to arrive INCIDENTALLY: their feature barrel called `register…Platform()` at module
 // load, so any transitive import of the barrel registered them and this list did not need to name
 // them. The barrels no longer do that (ensure-platform-imports-the-platform-not-the-barrel), which is
@@ -88,13 +82,7 @@ beforeAll(() => {
   registerGlancePlatform();
   registerSoundsPlatform();
   registerAlgorithmsPlatform();
-  registerPlanningPlatform();
   registerConsolePlatform();
-  registerFleetPlatform();
-  registerProjectsPlatform();
-  registerPanePlatform();
-  registerBodiesPlatform();
-  registerPreviewPlatform();
   registerDebugPlatform();
   registerDesignsPlatform();
   registerPersonasPlatform();
