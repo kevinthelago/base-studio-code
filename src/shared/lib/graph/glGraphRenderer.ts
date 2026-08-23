@@ -30,7 +30,7 @@
 // `texSubImage2D` texel: O(1). It also halves edge memory (8 B/edge rather than 16 B).
 
 import type { GraphView } from "@/shared/ui/layouts/useGraphViewport";
-import { buildGrid, pickNearest, queryRect, type SpatialGrid } from "@/shared/lib/graph/spatialGrid";
+import { buildGrid, pickRect, queryRect, type SpatialGrid } from "@/shared/lib/graph/spatialGrid";
 import { layoutLabel, type GlyphAtlas } from "@/shared/lib/graph/glyphAtlas";
 import { levelFor, type LodPyramid } from "@/shared/lib/graph/lodPyramid";
 
@@ -44,7 +44,12 @@ export const NODE_DIMMED = 2;
 const POS_TEX_W = 2048;
 
 export interface GraphRenderer {
-  /** Upload node positions/sizes/colours. O(n); rebuilds the pick index. `rgba` is packed 0xAABBGGRR. */
+  /**
+   * Upload node positions/sizes/colours. O(n); rebuilds the pick index. `rgba` is packed 0xAABBGGRR.
+   *
+   * `size` is INTERLEAVED `[w0,h0, w1,h1, …]`. It was a single scalar per node and that shipped every
+   * card as a square — 172x58 drawn 172x172, swallowing the rows above and below.
+   */
   setNodes(xy: Float32Array, size: Float32Array, rgba: Uint32Array, count: number): void;
   /** Upload edges as node-index PAIRS. O(e). Endpoints are read from the position texture at draw time. */
   setEdges(pairs: Uint32Array, count: number): void;
@@ -81,35 +86,44 @@ export interface GraphRenderer {
 
 const NODE_VS = `#version 300 es
 layout(location=0) in vec2 aCorner;
-layout(location=1) in float aSize;
+layout(location=1) in vec2 aSize;
 layout(location=2) in vec4 aColor;
 layout(location=3) in float aState;
 uniform sampler2D uPos;
 uniform vec2 uViewport;
 uniform vec2 uTranslate;
 uniform float uScale;
-out vec2 vCorner; out vec4 vColor; out float vState; out float vPx;
+out vec2 vCorner; out vec4 vColor; out float vState; out float vPx; out vec2 vHalf;
 void main() {
   ivec2 t = ivec2(gl_InstanceID % ${POS_TEX_W}, gl_InstanceID / ${POS_TEX_W});
   vec2 p = texelFetch(uPos, t, 0).rg;
   vec2 world = p + aCorner * (aSize * 0.5);
   vec2 s = world * uScale + uTranslate;
   gl_Position = vec4(s.x / uViewport.x * 2.0 - 1.0, 1.0 - s.y / uViewport.y * 2.0, 0.0, 1.0);
-  vCorner = aCorner; vColor = aColor; vState = aState; vPx = aSize * uScale;
+  vCorner = aCorner; vColor = aColor; vState = aState;
+  // Half-extents in world units, normalised on the SHORT axis. The fragment shader evaluates the SDF in
+  // this space so the corner radius stays CIRCULAR: evaluating it in raw (-1..1) corner space stretches
+  // the radius with the aspect ratio and gives a 172x58 card lozenge ends.
+  vHalf = aSize / min(aSize.x, aSize.y);
+  // The THIN axis sets the pixel gradient, so antialiasing must be derived from it — using the long axis
+  // makes a wide, short card's edges soften as if it were three times taller than it is.
+  vPx = min(aSize.x, aSize.y) * uScale;
 }`;
 
 // Rounded-rect SDF. Chosen over a plain quad because the cost is PER-PIXEL, not per-node — the shape is
 // free at any count — and because it stays crisp at every zoom where a bitmap or a CSS border would not.
 const NODE_FS = `#version 300 es
 precision mediump float;
-in vec2 vCorner; in vec4 vColor; in float vState; in float vPx;
+in vec2 vCorner; in vec4 vColor; in float vState; in float vPx; in vec2 vHalf;
 out vec4 outColor;
 float sdRoundBox(vec2 p, vec2 b, float r) {
   vec2 q = abs(p) - b + r;
   return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
 void main() {
-  float d = sdRoundBox(vCorner, vec2(1.0), 0.35);
+  // vCorner is -1..1 on both axes; scaling by vHalf restores the real aspect, so the box is measured in
+  // units of the SHORT half-extent and the radius is the same in x and y.
+  float d = sdRoundBox(vCorner * vHalf, vHalf, 0.35);
   // One pixel expressed in local (-1..1) units, so antialiasing is a constant screen width at any zoom.
   float aa = max(fwidth(d), 1.0 / max(vPx, 1.0));
   float fill = 1.0 - smoothstep(-aa, aa, d);
@@ -246,6 +260,16 @@ export interface GraphRendererOpts {
   edgeWidthPx?: number;
   /** Edge colour, packed 0xAABBGGRR. Default a dim neutral. */
   edgeColor?: number;
+  /**
+   * Keep the drawing buffer after compositing so a caller can read the pixels back. OFF by default —
+   * it costs a copy every frame and no product path needs it.
+   *
+   * It exists because verifying this renderer WITHOUT it is not possible: a composited WebGL buffer is
+   * cleared before any later read, so `drawImage` reports an empty canvas for a graph that drew fine.
+   * That false negative is how "the pixels are lit" became the whole of slice 5's visual verification —
+   * and a graph drawn with every card three times too tall passes that check.
+   */
+  preserveDrawingBuffer?: boolean;
 }
 
 /**
@@ -257,7 +281,10 @@ export interface GraphRendererOpts {
  * able to afford it.
  */
 export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRendererOpts = {}): GraphRenderer | null {
-  const ctx = canvas.getContext("webgl2", { antialias: false, alpha: true, premultipliedAlpha: true, depth: false });
+  const ctx = canvas.getContext("webgl2", {
+    antialias: false, alpha: true, premultipliedAlpha: true, depth: false,
+    preserveDrawingBuffer: opts.preserveDrawingBuffer ?? false,
+  });
   if (!ctx) return null;
   // Bound to its own non-nullable const: the closures below are FUNCTION DECLARATIONS, which hoist, so
   // TypeScript will not carry the `if (!ctx)` narrowing into them.
@@ -313,7 +340,8 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   // Annotated: an un-annotated `new Float32Array(0)` infers `Float32Array<ArrayBuffer>`, which refuses the
   // caller's `Float32Array` (ArrayBufferLike) under TS 5.7 typed-array generics.
   let positions: Float32Array = new Float32Array(0);
-  let radii = new Float32Array(0);
+  let halfW = new Float32Array(0);
+  let halfH = new Float32Array(0);
   /** The largest node radius, kept as the pick search reach. Computed ONCE per `setNodes`: deriving it
    *  inside `pick` was an O(n) scan on every mousemove, which would have quietly cost more than the
    *  index saves and made the O(1) claim false. */
@@ -396,7 +424,7 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
 
   /** The upload itself, without recording it as the base set — used when swapping to an LOD level. */
   function uploadNodes(xy: Float32Array, size: Float32Array, rgba: Uint32Array, count: number): void {
-    nodeCount = Math.max(0, Math.min(count, xy.length >> 1, size.length, rgba.length));
+    nodeCount = Math.max(0, Math.min(count, xy.length >> 1, size.length >> 1, rgba.length));
     positions = xy;
     gridStale = true;
 
@@ -407,16 +435,23 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
     gl.bindTexture(gl.TEXTURE_2D, posTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, POS_TEX_W, posRows, 0, gl.RG, gl.FLOAT, padded);
 
-    radii = new Float32Array(nodeCount);
+    // Half-extents per axis — picking is a RECTANGLE, not a circle. A circle of radius max(w,h)/2 on a
+    // 172x58 card reaches 86 px vertically and selects a node a whole row away.
+    halfW = new Float32Array(nodeCount);
+    halfH = new Float32Array(nodeCount);
     maxRadius = 0;
     for (let i = 0; i < nodeCount; i++) {
-      const r = size[i] * 0.5;
-      radii[i] = r;
-      if (r > maxRadius) maxRadius = r;
+      const w = size[i * 2] * 0.5, h = size[i * 2 + 1] * 0.5;
+      halfW[i] = w;
+      halfH[i] = h;
+      // The grid query reach must still cover the largest half-extent on EITHER axis, or a wide card is
+      // unpickable near its ends.
+      if (w > maxRadius) maxRadius = w;
+      if (h > maxRadius) maxRadius = h;
     }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, sizeBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, size.subarray(0, nodeCount), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, size.subarray(0, nodeCount * 2), gl.STATIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, colorBuf);
     gl.bufferData(gl.ARRAY_BUFFER, unpackRgba(rgba, nodeCount), gl.STATIC_DRAW);
     stateBytes = new Uint8Array(nodeCount);
@@ -427,7 +462,7 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
     gl.bindBuffer(gl.ARRAY_BUFFER, nodeQuadBuf);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, sizeBuf);
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(1, 1);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(1, 1);
     gl.bindBuffer(gl.ARRAY_BUFFER, colorBuf);
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, 0, 0); gl.vertexAttribDivisor(2, 1);
     gl.bindBuffer(gl.ARRAY_BUFFER, stateBuf);
@@ -560,10 +595,10 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
       return;
     }
     const lv = lod.levels[k];
-    const size = new Float32Array(lv.n);
+    const size = new Float32Array(lv.n * 2);
     const rgba = new Uint32Array(lv.n);
     // An aggregate is drawn at its CELL size, so the level tiles the space it stands for instead of
-    // leaving gaps that read as missing data.
+    // leaving gaps that read as missing data. Square, unlike the cards it stands for — a cell IS square.
     size.fill(lv.cellSize);
     rgba.fill(lodColor);
     uploadNodes(lv.xy, size, rgba, lv.n);
@@ -619,12 +654,14 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
       const text = labels[i];
       if (!text) continue;
       // Label em size follows the node, so text zooms with the graph rather than floating free of it.
-      const emPx = radii[i] * 2 * view.scale * 0.32;
+      // The label follows the card's HEIGHT, not its width: a 172x58 card sized off its long axis would
+      // put ~55 px of text on a 58 px card.
+      const emPx = halfH[i] * 2 * view.scale * 0.55;
       if (emPx < MIN_LABEL_PX) continue;
       const scale = emPx / atlas.fontSize;
       const laid = layoutLabel(text, atlas);
       const originX = positions[i * 2] * view.scale + view.tx - (laid.width * scale) / 2;
-      const originY = positions[i * 2 + 1] * view.scale + view.ty + radii[i] * view.scale + emPx;
+      const originY = positions[i * 2 + 1] * view.scale + view.ty + halfH[i] * view.scale + emPx;
       for (const pg of laid.glyphs) {
         if (g >= MAX_LABEL_GLYPHS) return g;
         const q = pg.glyph;
@@ -648,9 +685,9 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
     // Screen → world is the inverse of the shader's transform, so picking and drawing cannot disagree.
     const wx = (cssX - view.tx) / view.scale;
     const wy = (cssY - view.ty) / view.scale;
-    // The reach must cover the LARGEST node, or a big node is unclickable near its own edge. Read, not
-    // computed — see `maxRadius`.
-    return pickNearest(grid, positions, radii, wx, wy, maxRadius);
+    // The reach must cover the LARGEST half-extent on either axis, or a wide card is unclickable near
+    // its ends. Read, not computed — see `maxRadius`.
+    return pickRect(grid, positions, halfW, halfH, wx, wy, maxRadius);
   }
 
   function dispose(): void {

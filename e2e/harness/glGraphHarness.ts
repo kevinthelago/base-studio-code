@@ -37,6 +37,7 @@ declare global {
       drawnAt(scale: number): { level: number; instances: number };
       resetCounters(): void;
       isSoftware(): boolean;
+      drawnExtentOf(i: number): { w: number; h: number; ratio: number } | string;
     };
   }
 }
@@ -44,6 +45,8 @@ declare global {
 const counters: GlCounters = { bufferData: 0, bufferSubData: 0, bufferSubDataBytes: 0, texImage2D: 0, texSubImage2D: 0, drawInstanced: 0 };
 let renderer: GraphRenderer | null = null;
 let gl: WebGL2RenderingContext | null = null;
+export const CARD_W = 172;
+export const CARD_H = 58;
 let positions = new Float32Array(0);
 let sizes = new Float32Array(0);
 let rendererName = "";
@@ -92,12 +95,15 @@ window.__glGraphHarness = {
     // predictable, and a random cloud would let a broken index pass by luck.
     const cols = Math.max(1, Math.ceil(Math.sqrt(nodes)));
     positions = new Float32Array(nodes * 2);
-    sizes = new Float32Array(nodes);
+    sizes = new Float32Array(nodes * 2);
     const rgba = new Uint32Array(nodes);
     for (let i = 0; i < nodes; i++) {
       positions[i * 2] = (i % cols) * 40;
       positions[i * 2 + 1] = Math.floor(i / cols) * 40;
-      sizes[i] = 24;
+      // RECTANGULAR on purpose — the shape the product actually draws (NODE_W x NODE_H = 172x58) and the
+      // shape a square-drawing bug is invisible against.
+      sizes[i * 2] = CARD_W;
+      sizes[i * 2 + 1] = CARD_H;
       rgba[i] = 0xff000000 | (i * 2654435761) & 0x00ffffff;
     }
     const r = rng(7);
@@ -106,7 +112,7 @@ window.__glGraphHarness = {
       pairs[e * 2] = Math.floor(r() * nodes);
       pairs[e * 2 + 1] = Math.floor(r() * nodes);
     }
-    renderer = createGraphRenderer(canvas);
+    renderer = createGraphRenderer(canvas, { preserveDrawingBuffer: true });
     if (!renderer) return { ok: false, renderer: rendererName, nodeCount: 0, edgeCount: 0 };
     renderer.resize(1280, 800, 1);
     renderer.setNodes(positions, sizes, rgba, nodes);
@@ -177,6 +183,50 @@ window.__glGraphHarness = {
   resetCounters() {
     counters.bufferData = 0; counters.bufferSubData = 0; counters.bufferSubDataBytes = 0;
     counters.texImage2D = 0; counters.texSubImage2D = 0; counters.drawInstanced = 0;
+  },
+  /**
+   * Measure what the renderer actually DRAWS for one card, on its OWN canvas.
+   *
+   * Isolated deliberately. Measuring against the shared million-node fixture does not work — its grid
+   * pitch is 40 px and the cards are 172 wide, so every node overlaps its neighbours and the lit bounding
+   * box spans the whole screen. It also keeps the shared graph untouched for any test that follows.
+   *
+   * This is the check slice 5 never had: it counted lit PIXELS, which is equally true of a graph drawn
+   * with every card three times too tall. Shape has to be measured, not presence of ink.
+   */
+  drawnExtentOf(_i) {
+    const c = document.createElement("canvas");
+    c.width = 512; c.height = 512;
+    const r = createGraphRenderer(c, { preserveDrawingBuffer: true });
+    if (!r) return "no renderer";
+    const g2 = c.getContext("webgl2");
+    if (!g2) return "no context";
+    const xy = new Float32Array([0, 0]);
+    const size = new Float32Array([CARD_W, CARD_H]);
+    const rgba = new Uint32Array([0xffffffff]);
+    r.resize(512, 512, 1);
+    r.setNodes(xy, size, rgba, 1);
+    r.setEdges(new Uint32Array(0), 0);
+    r.setView({ tx: 256, ty: 256, scale: 1 });
+    r.draw();
+    const px = new Uint8Array(512 * 512 * 4);
+    g2.readPixels(0, 0, 512, 512, g2.RGBA, g2.UNSIGNED_BYTE, px);
+    let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9, lit = 0;
+    for (let y = 0; y < 512; y++) {
+      for (let x = 0; x < 512; x++) {
+        if (px[(y * 512 + x) * 4 + 3] > 24) {
+          lit++;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    r.dispose();
+    if (lit === 0) return "nothing drawn";
+    const w = maxX - minX + 1, h = maxY - minY + 1;
+    return { w, h, ratio: +(w / h).toFixed(2) };
   },
   isSoftware() { return /swiftshader|llvmpipe|software|swrast/i.test(rendererName); },
 };

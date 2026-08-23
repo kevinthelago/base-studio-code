@@ -219,3 +219,23 @@ test("the LOD pyramid bounds the DRAWN instance count as you zoom out", async ()
   expect(await page.evaluate(() => window.__glGraphHarness!.glError())).toBe(0);
   await page.evaluate(() => window.__glGraphHarness!.detachLod());
 });
+
+test("a node is drawn at its OWN width and height, not as a square", async () => {
+  // THE GAP THAT LET THE SQUARE-NODE REGRESSION SHIP. Slice 5 was verified by counting lit pixels
+  // (25,128, 14.1% of the canvas) and by confirming picking "agreed with drawing" — both of which are
+  // true when every 172x58 card is drawn 172x172, because the pick radius was wrong in the same
+  // direction. Nothing measured SHAPE. This does.
+  test.setTimeout(600_000);
+  const got = await page.evaluate(() => window.__glGraphHarness!.drawnExtentOf(4242));
+  expect(typeof got, `expected a measurement, got: ${JSON.stringify(got)}`).not.toBe("string");
+  const { w, h, ratio } = got as { w: number; h: number; ratio: number };
+  // The harness draws 172 x 58 at scale 1. Allow a couple of px for the SDF's antialiased edge.
+  expect(w, `drawn width ${w}`).toBeGreaterThan(168);
+  expect(w).toBeLessThan(178);
+  expect(h, `drawn height ${h} — a square would be ~172 here, which is the bug`).toBeGreaterThan(54);
+  expect(h).toBeLessThan(64);
+  // Stated as the aspect too, because that is the number a reader can check against 172/58 = 2.97.
+  expect(ratio, `aspect ${ratio}, expected ~2.97`).toBeGreaterThan(2.6);
+  expect(ratio).toBeLessThan(3.3);
+  console.log(`  node drawn ${w}x${h} px (aspect ${ratio}) — cards are 172x58, a square would read 1.0`);
+});

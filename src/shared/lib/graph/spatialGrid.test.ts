@@ -1,7 +1,7 @@
 // The index's correctness AND its complexity. The second half is the point: a spatial index that is
 // merely correct but degrades to a scan has replaced an O(N) loop with a slower O(N) loop.
 import { describe, it, expect } from "vitest";
-import { buildGrid, queryRect, pickNearest, type SpatialGrid } from "@/shared/lib/graph/spatialGrid";
+import { buildGrid, queryRect, pickNearest, pickRect, type SpatialGrid } from "@/shared/lib/graph/spatialGrid";
 
 /** Deterministic RNG — a timing-free test that seeds from Math.random is a test that fails on a Friday. */
 function rng(seed: number): () => number {
@@ -184,5 +184,61 @@ describe("the complexity guarantee", () => {
     // 50× the nodes. A linear index would scan ~50× more; a constant-time one scans the same handful.
     expect(large).toBeLessThan(small * 3 + 20);
     expect(large).toBeLessThan(200);
+  });
+});
+
+describe("pickRect — the card-shaped hit test", () => {
+  // THE TEST THAT WOULD HAVE CAUGHT THE SQUARE-NODE REGRESSION. Nothing in the suite looked at node
+  // SHAPE, so a renderer drawing every 172x58 card as a 172x172 square passed every check: pixels were
+  // lit, the GL context was healthy, picking "agreed with drawing" — because picking was a circle of the
+  // same wrong radius, so the two agreed with each other and both were wrong.
+  const CARD_W = 172;
+  const CARD_H = 58;
+  /** Two cards, one directly above the other at a realistic row pitch. */
+  const twoRows = () => {
+    const xy = new Float32Array([0, 0, 0, CARD_H + 22]);
+    const hw = new Float32Array([CARD_W / 2, CARD_W / 2]);
+    const hh = new Float32Array([CARD_H / 2, CARD_H / 2]);
+    return { xy, hw, hh, g: buildGrid(xy, 2) };
+  };
+
+  it("selects a card at its far LEFT and RIGHT ends", () => {
+    // A circle of radius min(w,h)/2 = 29 would miss both — the naive "use the short axis" fix.
+    const { xy, hw, hh, g } = twoRows();
+    expect(pickRect(g, xy, hw, hh, -CARD_W / 2 + 2, 0, CARD_W)).toBe(0);
+    expect(pickRect(g, xy, hw, hh, CARD_W / 2 - 2, 0, CARD_W)).toBe(0);
+  });
+
+  it("does NOT select a card from a whole row away", () => {
+    // The actual regression: a circle of radius max(w,h)/2 = 86 reaches 86 px vertically, well past the
+    // 29 px the card occupies, and grabs the neighbour above or below.
+    const { xy, hw, hh, g } = twoRows();
+    const justBelowCard0 = CARD_H / 2 + 6;
+    expect(pickRect(g, xy, hw, hh, 0, justBelowCard0, CARD_W)).toBe(-1);
+    // …and the point that IS inside card 1 still selects card 1, so the test is not passing by refusing
+    // everything.
+    expect(pickRect(g, xy, hw, hh, 0, CARD_H + 22, CARD_W)).toBe(1);
+  });
+
+  it("respects the card's real aspect on both axes", () => {
+    const { xy, hw, hh, g } = twoRows();
+    expect(pickRect(g, xy, hw, hh, 0, 0, CARD_W)).toBe(0);            // centre
+    expect(pickRect(g, xy, hw, hh, 0, CARD_H / 2 - 1, CARD_W)).toBe(0); // inside, vertically
+    expect(pickRect(g, xy, hw, hh, 0, CARD_H / 2 + 1, CARD_W)).toBe(-1); // just outside
+    expect(pickRect(g, xy, hw, hh, CARD_W / 2 + 1, 0, CARD_W)).toBe(-1); // just outside, horizontally
+  });
+
+  it("breaks a tie between overlapping cards by nearest CENTRE", () => {
+    const xy = new Float32Array([0, 0, 20, 0]);
+    const hw = new Float32Array([50, 50]);
+    const hh = new Float32Array([20, 20]);
+    const g = buildGrid(xy, 2);
+    expect(pickRect(g, xy, hw, hh, 18, 0, 50)).toBe(1);
+    expect(pickRect(g, xy, hw, hh, 2, 0, 50)).toBe(0);
+  });
+
+  it("returns -1 on an empty grid rather than throwing on the render path", () => {
+    const g = buildGrid(new Float32Array(0), 0);
+    expect(pickRect(g, new Float32Array(0), new Float32Array(0), new Float32Array(0), 0, 0, 10)).toBe(-1);
   });
 });
