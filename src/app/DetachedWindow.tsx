@@ -10,7 +10,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import {
-  GitHubWorkspace, ProjectsWorkspace,
+  ProjectsWorkspace,
   LogsWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
@@ -19,7 +19,6 @@ import {
 function renderDetachedSection(page: string, section: string): React.ReactNode {
   switch (page) {
     case "logs":          return <LogsWorkspace pageOverride={section} />;
-    case "github":      return <GitHubWorkspace pageOverride={section} />;
     case "projects":    return <ProjectsWorkspace pageOverride={section} />;
     default:
       return (

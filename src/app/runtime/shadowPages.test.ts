@@ -77,7 +77,6 @@ describe("the shadow page catalogue", () => {
     mcppage: 0,        // mcp-analytics RELEASED — this page is now wholly record-only
     logspage: 0,       // Profiles/Assignments/Flow DELETED; Activity is record-only — wholly record-only
     automationspage: 0,   // Schedules DELETED once its three-way merge landed — wholly record-only now
-    githubpage: 0,        // BranchGraph + the eight summary/ cards went in the code-fallback cut too
   };
 
   for (const [pageId, parts] of Object.entries(RETIRED_PAGE_COPIES)) {
@@ -99,7 +98,10 @@ describe("the shadow page catalogue", () => {
         .map((m) => [m[1], m[2]] as const),
     );
     const railWorkspace: Record<string, string> = {
-      githubpage: "GitHubWorkspace",
+      // `githubpage` is NOT here any more: delete-the-github-screen-keep-the-integration removed the
+      // rail destination AND the page record. Unlike `skillspage`/`mcppage`, which merely lost their
+      // destination and still exist, this one is gone entirely — the INTEGRATION survives in
+      // `src-tauri/src/github` and Settings → GitHub, but no page renders it.
       // `automationspage` is NOT here any more: hooks-and-schedules-belong-to-the-persona retired
       // the rail destination, so the record has no lazy workspace to be wired to. It is unmounted,
       // like `skillspage` and `mcppage`.

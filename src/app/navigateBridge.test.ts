@@ -48,7 +48,7 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
     workspaces: [
       "console", "glance", "projects",
       "components", "teams", "algorithms", "data", "sounds",
-      "github", "logs", "settings",
+      "logs", "settings",
     ],
     // Per-workspace now (`navigation-vocabulary-follows-the-new-page-structure`): a flat list checked
     // every workspace's page against the Planner's, so a real Algorithms language would have been
@@ -79,16 +79,16 @@ describe("navigateBridge — component (the case #3261 needed a human click for)
   });
 
   it("#3599: OFF the Studio, sets the focus but does NOT yank the user off their current page", () => {
-    const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
+    const v = makeVocab({ activeWorkspace: "logs" });
     const ack = applyNavigate({ kit: "react-d3", component: "Heatmap" }, v);
     expect(ack.error).toBeUndefined();
     // The focus IS set (so the Studio shows it when the user opens it themselves) …
     expect(v.s.designsKitId).toBe("react-d3");
     expect(v.s.designsCompId).toBe("Heatmap");
     // … but the user's current view is UNTOUCHED — no forced navigation.
-    expect(v.s.activeWorkspace).toBe("github");
+    expect(v.s.activeWorkspace).toBe("logs");
     expect(v.s.projectsPageMode).toBe("projects");
-    expect(ack.workspace).toBe("github");
+    expect(ack.workspace).toBe("logs");
     // #4248: the refusal is STATED. Without this the ack reads as an ordinary success reporting the
     // current view, so a caller with nothing to photograph concludes the navigate failed and forces the
     // view with `navigate page designs` — the escalation that IS the yank.
@@ -98,7 +98,7 @@ describe("navigateBridge — component (the case #3261 needed a human click for)
   });
 
   it("#3599: an EXPLICIT workspace/page request still navigates (a deliberate steer, not a background focus)", () => {
-    const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
+    const v = makeVocab({ activeWorkspace: "logs" });
     const ack = applyNavigate({ workspace: "components", kit: "react-d3", component: "Heatmap" }, v);
     expect(ack.workspace).toBe("components");
     expect(ack.component).toBe("Heatmap");
@@ -168,13 +168,13 @@ describe("navigateBridge — the ack owes a mount only when one is actually comi
   });
 
   it("marks it on an EXPLICIT steer from off-Studio too — the view really does switch", () => {
-    const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
+    const v = makeVocab({ activeWorkspace: "logs" });
     const ack = applyNavigate({ workspace: "components", kit: "react-d3", component: "Heatmap" }, v);
     expect(ack.awaitMount).toBe("Heatmap");
   });
 
   it("awaits NOTHING on a #3599 decline — no frame will rebuild, so waiting would only burn the budget", () => {
-    const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
+    const v = makeVocab({ activeWorkspace: "logs" });
     const ack = applyNavigate({ kit: "react-d3", component: "Heatmap" }, v);
     expect(ack.declined).toBeDefined();
     expect(ack.awaitMount).toBeUndefined();
@@ -185,7 +185,7 @@ describe("navigateBridge — the ack owes a mount only when one is actually comi
   });
 
   it("awaits nothing when the presence gate (#4248) left the view alone", () => {
-    const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
+    const v = makeVocab({ activeWorkspace: "logs" });
     const ack = applyNavigate(
       { workspace: "components", kit: "react-d3", component: "Heatmap" },
       { ...v, humanPresent: () => true },
@@ -356,11 +356,11 @@ describe("the presence gate (#4248)", () => {
   /** Refusing the VIEW must not refuse the WORK: the focus lands so the Studio shows the right component
    *  the moment the user opens it — the same shape #3599 chose. */
   it("still sets the focus it was asked for", () => {
-    const v = { ...makeVocab({ activeWorkspace: "github" }), ...present };
+    const v = { ...makeVocab({ activeWorkspace: "logs" }), ...present };
     applyNavigate({ workspace: "projects", kit: "react-d3", component: "Heatmap" }, v);
     expect(v.s.designsKitId).toBe("react-d3");
     expect(v.s.designsCompId).toBe("Heatmap");
-    expect(v.s.activeWorkspace).toBe("github");
+    expect(v.s.activeWorkspace).toBe("logs");
   });
 
   /** Omitting the probe must behave exactly as before this landed — an absent signal cannot silently

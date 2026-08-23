@@ -22,7 +22,6 @@ import { resolve } from "node:path";
 import manifest from "@data/ui/platform-modules.json";
 import { registerPlatformModules } from "@/app/runtime/appModules";
 import { registerAutomationsPlatform } from "@/features/automations/graphPlatform";
-import { registerGithubPlatform } from "@/features/github/graphPlatform";
 import { registerMcpPlatform } from "@/features/mcp/graphPlatform";
 import { registerLogsPlatform } from "@/features/logs/graphPlatform";
 import { registerSkillsPlatform } from "@/features/skills/graphPlatform";
@@ -36,7 +35,6 @@ import { registerProjectsPlatform } from "@/features/planner/list/graphPlatform"
 import { registerPanePlatform } from "@/features/planner/pane/graphPlatform";
 import { registerBodiesPlatform } from "@/features/planner/bodies/graphPlatform";
 import { registerPreviewPlatform } from "@/features/planner/preview/graphPlatform";
-import { registerPlannerGithubPlatform } from "@/features/planner/github/graphPlatform";
 import { registerDebugPlatform } from "@/features/debug/graphPlatform";
 import { registerDesignsPlatform } from "@/features/designs/graphPlatform";
 import { registerPersonasPlatform } from "@/features/personas/graphPlatform";
@@ -60,7 +58,6 @@ const FILE = resolve(__dirname, "../../../../src-tauri/data/ui/platform-modules.
 function currentSpecifiers(): string[] {
   registerPlatformModules();
   registerAutomationsPlatform();
-  registerGithubPlatform();
   registerMcpPlatform();
   registerLogsPlatform();
   registerSkillsPlatform();
@@ -82,7 +79,6 @@ function currentSpecifiers(): string[] {
   registerPanePlatform();
   registerBodiesPlatform();
   registerPreviewPlatform();
-  registerPlannerGithubPlatform();
   return registeredSpecifiers();
 }
 

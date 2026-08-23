@@ -7,10 +7,6 @@ const base: CrumbState = {
   crumbEntity: {},
   projectsPageMode: "projects",
   projectsView: "list",
-  githubTab: "summary",
-  githubBoardOpen: false,
-  githubBoardTab: "board",
-  activeRepoName: undefined,
   settingsSection: "github",
   consoleTab: undefined,
   focusedAgentName: undefined,
@@ -51,14 +47,6 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
     // Every tab a Logs page ships needs an entry here. An unmapped id Title-Cases gracefully, so the
     // crumb is never BLANK -- but the fallback is a safety net, not the label, and it silently starts
     // deciding the name the moment a curated one is forgotten.
-  });
-
-  it("GitHub reflects the tab, the board drill, and the active repo", () => {
-    expect(crumb({ activeWorkspace: "github", githubTab: "repos" })).toBe("GitHub — Repositories");
-    expect(crumb({ activeWorkspace: "github", githubTab: "repos", activeRepoName: "base-studio-code" }))
-      .toBe("GitHub — Repositories — base-studio-code");
-    expect(crumb({ activeWorkspace: "github", githubBoardOpen: true, githubBoardTab: "roadmap" }))
-      .toBe("GitHub — Roadmap");
   });
 
   it("Settings shows the section LABEL, not the raw key", () => {

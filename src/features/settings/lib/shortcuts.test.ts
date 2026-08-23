@@ -11,7 +11,9 @@ describe("shortcuts registry", () => {
     // it to Glance, which had no key at all despite being the screen the app lands on.
     expect(SCREEN_KEY_MAP.F1).toBe("glance");
     expect(SCREEN_KEY_MAP.F2).toBe("projects");
-    expect(SCREEN_KEY_MAP.F6).toBe("github");
+    // F6 was GitHub; its screen is gone (delete-the-github-screen-keep-the-integration), so the key
+    // is deliberately UNBOUND rather than renumbered — the table's stated rule.
+    expect(SCREEN_KEY_MAP.F6).toBeUndefined();
     expect(SCREEN_KEY_MAP.F7).toBe("logs");
     expect(SCREEN_KEY_MAP.F8).toBe("settings");
   });
