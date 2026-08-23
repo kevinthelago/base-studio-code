@@ -27,6 +27,12 @@ pub fn run() {
     // `ring` explicitly before any TLS; Err just means one is already installed.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
+    // Name this app in the `User-Agent` every GitHub request carries. The transport moved to the
+    // Tauri-free `bsc-github` crate, whose default UA names the crate — so without this the header
+    // would silently change from `base-studio-code/<version>` to `bsc-github/<version>` on the very
+    // requests GitHub attributes to us. First call wins; the crate ignores a later one.
+    bsc_github::set_user_agent(crate::github::USER_AGENT);
+
     // Startup timing (#perf): wall clock from here to `setup` ≈ native + plugin init, before the
     // WebView even loads our page. The frontend logs the doc→paint portion separately.
     let boot_start = std::time::Instant::now();

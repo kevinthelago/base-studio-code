@@ -75,6 +75,9 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # and every `bsc-*` CLI agree on which on-disk store they read/write. `platform/paths.rs`
 # delegates `home_dir`/`bsc_base_dir` here.
 bsc-util = { path = "../crates/bsc-util" }
+# The GitHub REST/GraphQL transport, extracted so `bsc` can reach it too
+# (`extract-a-tauri-free-github-transport-crate`). `github/api.rs` is now thin shims over this.
+bsc-github = { path = "../crates/bsc-github" }
 # `bsc shot` (#3261): the request/response protocol the CLI and this watcher share. Tauri-free by
 # design — only the platform capture lives app-side.
 bsc-shot = { path = "../crates/bsc-shot" }

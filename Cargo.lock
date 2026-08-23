@@ -507,6 +507,7 @@ dependencies = [
  "bsc-data",
  "bsc-debug",
  "bsc-fleet",
+ "bsc-github",
  "bsc-graph",
  "bsc-llm",
  "bsc-navigate",
@@ -854,6 +855,18 @@ dependencies = [
  "bsc-util",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "bsc-github"
+version = "0.1.0"
+dependencies = [
+ "bsc-util",
+ "log",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
