@@ -262,3 +262,21 @@ test("a node is drawn as a CARD — surface fill, border, and a role dot in the 
   expect(distinctColours).toBeGreaterThan(3);
   console.log(`  card: surface ${JSON.stringify(centre)} · border ${JSON.stringify(edge)} · dot ${JSON.stringify(dot)}`);
 });
+
+test("the label takes the THEME's text colour, so it stays legible on the card", async () => {
+  // It was a literal near-white in the shader, written when the card was drawn in the role colour. Once
+  // the card became the surface token, the text's contrast against it was coincidence — and on a light
+  // theme it was near-white on near-white, which is what "I don't see the names" meant.
+  test.setTimeout(600_000);
+  const dark = await page.evaluate(() => window.__glGraphHarness!.labelContrast([0.1, 0.1, 0.12, 1]));
+  expect(typeof dark, `expected a sample, got ${JSON.stringify(dark)}`).not.toBe("string");
+  const d = dark as { surface: number[]; brightestGlyph: number[]; contrast: number };
+  // A LIGHT card with DARK text must show real contrast.
+  expect(d.contrast, `contrast ${d.contrast} between ${JSON.stringify(d.brightestGlyph)} and ${JSON.stringify(d.surface)}`).toBeGreaterThan(60);
+
+  // …and the regression itself: near-white text on that same light card is what vanished.
+  const washed = await page.evaluate(() => window.__glGraphHarness!.labelContrast([0.93, 0.94, 0.96, 1]));
+  const w = washed as { contrast: number };
+  expect(w.contrast, "near-white on a light card is the bug — it must contrast far less").toBeLessThan(d.contrast);
+  console.log(`  label contrast: themed ${d.contrast} vs hardcoded-near-white ${w.contrast} on a light card`);
+});

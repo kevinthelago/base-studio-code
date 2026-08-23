@@ -39,6 +39,7 @@ declare global {
       isSoftware(): boolean;
       drawnExtentOf(i: number): { w: number; h: number; ratio: number } | string;
       cardSample(): { centre: number[]; dot: number[]; edge: number[]; distinctColours: number } | string;
+      labelContrast(text: number[]): { surface: number[]; brightestGlyph: number[]; contrast: number; glyphPixels: number } | string;
     };
   }
 }
@@ -238,7 +239,7 @@ window.__glGraphHarness = {
     const g2 = c.getContext("webgl2");
     if (!g2) return "no context";
     // A vivid role colour, so a filled card is unmistakable from a surface one.
-    r.setPalette([0.11, 0.12, 0.14, 1], [0.35, 0.37, 0.40, 1], [0.36, 0.62, 1, 1]);
+    r.setPalette?.([0.11, 0.12, 0.14, 1], [0.35, 0.37, 0.40, 1], [0.36, 0.62, 1, 1]);
     r.resize(512, 512, 1);
     r.setNodes(new Float32Array([0, 0]), new Float32Array([CARD_W, CARD_H]), new Uint32Array([0xff00a0ff]), 1);
     r.setEdges(new Uint32Array(0), 0);
@@ -267,6 +268,61 @@ window.__glGraphHarness = {
     };
     r.dispose();
     return out;
+  },
+  /**
+   * Measure the LABEL's contrast against its card, isolating the glyphs by DIFFING two renders that
+   * differ only in text colour.
+   *
+   * The obvious method — find the pixel furthest in luminance from the surface — does not work: the
+   * vivid role dot wins every time, so it reports huge contrast for a label that is invisible. That is
+   * exactly the failure mode this whole session keeps producing, so the glyphs are identified by
+   * CONSTRUCTION here: render twice with different text colours and keep the pixels that moved. Only
+   * the text can have moved.
+   */
+  labelContrast(text) {
+    const render = (textColour: number[]) => {
+      const c = document.createElement("canvas");
+      c.width = 512; c.height = 256;
+      const r = createGraphRenderer(c, { preserveDrawingBuffer: true });
+      if (!r) return null;
+      const g2 = c.getContext("webgl2");
+      if (!g2) return null;
+      const atlas = buildGlyphAtlas("system-ui, sans-serif", { fontSize: 40, spread: 6 });
+      if (!atlas) return null;
+      r.setAtlas(atlas);
+      // A LIGHT card on purpose: the old literal near-white was invisible on exactly this.
+      r.setPalette?.([0.93, 0.94, 0.96, 1], [0.75, 0.76, 0.78, 1], [0.36, 0.62, 1, 1], textColour);
+      r.resize(512, 256, 1);
+      r.setNodes(new Float32Array([0, 0]), new Float32Array([CARD_W * 2, CARD_H * 2]), new Uint32Array([0xff00a0ff]), 1);
+      r.setEdges(new Uint32Array(0), 0);
+      r.setLabels(["Widget"]);
+      r.setView({ tx: 256, ty: 128, scale: 1 });
+      r.draw();
+      const px = new Uint8Array(512 * 256 * 4);
+      g2.readPixels(0, 0, 512, 256, g2.RGBA, g2.UNSIGNED_BYTE, px);
+      r.dispose();
+      return px;
+    };
+    // A reference render whose text is a colour nothing else on the card uses, so the diff is the text.
+    const ref = render([0, 1, 0, 1]);
+    const got = render(text);
+    if (!ref || !got) return "no renderer";
+    const lum = (r2: number, g3: number, b: number) => 0.2126 * r2 + 0.7152 * g3 + 0.0722 * b;
+    // Surface: inside the card, well below the text row.
+    const si = ((255 - (128 + 45)) * 512 + 256) * 4;
+    const surface = [got[si], got[si + 1], got[si + 2], got[si + 3]];
+    const sL = lum(surface[0], surface[1], surface[2]);
+    let n = 0, sum = 0, sample = surface;
+    for (let i = 0; i < ref.length; i += 4) {
+      // A pixel the text painted: it differs between the two renders.
+      const moved = Math.abs(ref[i] - got[i]) + Math.abs(ref[i + 1] - got[i + 1]) + Math.abs(ref[i + 2] - got[i + 2]);
+      if (moved < 24 || got[i + 3] < 40) continue;
+      const d = Math.abs(lum(got[i], got[i + 1], got[i + 2]) - sL);
+      if (d > sum / Math.max(n, 1)) sample = [got[i], got[i + 1], got[i + 2], got[i + 3]];
+      sum += d; n++;
+    }
+    if (n === 0) return "no glyph pixels found";
+    return { surface, brightestGlyph: sample, contrast: Math.round(sum / n), glyphPixels: n };
   },
   isSoftware() { return /swiftshader|llvmpipe|software|swrast/i.test(rendererName); },
 };
