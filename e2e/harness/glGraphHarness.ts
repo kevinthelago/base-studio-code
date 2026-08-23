@@ -1,0 +1,136 @@
+// Harness for the GPU graph renderer (`gpu-graph-slice-1-renderer-core`).
+//
+// It exists because jsdom has NO WebGL at all, so every claim this renderer makes — that it links, that
+// it draws without a GL error, that selection touches one byte — is invisible to vitest by construction.
+// The pure half (grid build, viewport query, picking) IS unit-tested; this covers the half that needs a
+// real context.
+import { createGraphRenderer, NODE_SELECTED, type GraphRenderer } from "@/shared/lib/graph/glGraphRenderer";
+
+/** What a call-counting wrapper observed since the last `resetCounters()`. */
+export interface GlCounters {
+  bufferData: number;
+  bufferSubData: number;
+  bufferSubDataBytes: number;
+  texImage2D: number;
+  texSubImage2D: number;
+  drawInstanced: number;
+}
+
+declare global {
+  interface Window {
+    __glGraphHarness?: {
+      create(nodes: number, edges: number): { ok: boolean; renderer: string; nodeCount: number; edgeCount: number };
+      draw(frames: number): number;
+      glError(): number;
+      pickCenterOfNode(i: number): number;
+      select(i: number): void;
+      move(i: number, x: number, y: number): void;
+      counters(): GlCounters;
+      resetCounters(): void;
+      isSoftware(): boolean;
+    };
+  }
+}
+
+const counters: GlCounters = { bufferData: 0, bufferSubData: 0, bufferSubDataBytes: 0, texImage2D: 0, texSubImage2D: 0, drawInstanced: 0 };
+let renderer: GraphRenderer | null = null;
+let gl: WebGL2RenderingContext | null = null;
+let positions = new Float32Array(0);
+let sizes = new Float32Array(0);
+let rendererName = "";
+
+/** Deterministic — a harness that seeds from Math.random cannot be compared run to run. */
+function rng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+}
+
+function instrument(ctx: WebGL2RenderingContext): void {
+  const bd = ctx.bufferData.bind(ctx);
+  const bsd = ctx.bufferSubData.bind(ctx);
+  const ti = ctx.texImage2D.bind(ctx);
+  const tsi = ctx.texSubImage2D.bind(ctx);
+  const dai = ctx.drawArraysInstanced.bind(ctx);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (ctx as any).bufferData = (...a: any[]) => { counters.bufferData++; return (bd as any)(...a); };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (ctx as any).bufferSubData = (...a: any[]) => {
+    counters.bufferSubData++;
+    const src = a[2];
+    if (src && typeof src.byteLength === "number") counters.bufferSubDataBytes += src.byteLength;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (bsd as any)(...a);
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (ctx as any).texImage2D = (...a: any[]) => { counters.texImage2D++; return (ti as any)(...a); };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (ctx as any).texSubImage2D = (...a: any[]) => { counters.texSubImage2D++; return (tsi as any)(...a); };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (ctx as any).drawArraysInstanced = (...a: any[]) => { counters.drawInstanced++; return (dai as any)(...a); };
+}
+
+window.__glGraphHarness = {
+  create(nodes, edges) {
+    const canvas = document.getElementById("gl") as HTMLCanvasElement;
+    const probe = canvas.getContext("webgl2");
+    if (!probe) return { ok: false, renderer: "none", nodeCount: 0, edgeCount: 0 };
+    gl = probe;
+    const dbg = probe.getExtension("WEBGL_debug_renderer_info");
+    rendererName = String(dbg ? probe.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : probe.getParameter(probe.RENDERER));
+    instrument(probe);
+
+    // A grid layout, not a random cloud: it is what the layered DAG produces, it makes `pickCenterOfNode`
+    // predictable, and a random cloud would let a broken index pass by luck.
+    const cols = Math.max(1, Math.ceil(Math.sqrt(nodes)));
+    positions = new Float32Array(nodes * 2);
+    sizes = new Float32Array(nodes);
+    const rgba = new Uint32Array(nodes);
+    for (let i = 0; i < nodes; i++) {
+      positions[i * 2] = (i % cols) * 40;
+      positions[i * 2 + 1] = Math.floor(i / cols) * 40;
+      sizes[i] = 24;
+      rgba[i] = 0xff000000 | (i * 2654435761) & 0x00ffffff;
+    }
+    const r = rng(7);
+    const pairs = new Uint32Array(edges * 2);
+    for (let e = 0; e < edges; e++) {
+      pairs[e * 2] = Math.floor(r() * nodes);
+      pairs[e * 2 + 1] = Math.floor(r() * nodes);
+    }
+    renderer = createGraphRenderer(canvas);
+    if (!renderer) return { ok: false, renderer: rendererName, nodeCount: 0, edgeCount: 0 };
+    renderer.resize(1280, 800, 1);
+    renderer.setNodes(positions, sizes, rgba, nodes);
+    renderer.setEdges(pairs, edges);
+    // Fit the whole grid so picking works in screen space without a separate transform to reason about.
+    const worldW = cols * 40;
+    const scale = 1280 / Math.max(worldW, 1);
+    renderer.setView({ tx: 0, ty: 0, scale });
+    return { ok: true, renderer: rendererName, nodeCount: renderer.nodeCount, edgeCount: renderer.edgeCount };
+  },
+  draw(frames) {
+    if (!renderer || !gl) return -1;
+    for (let i = 0; i < 3; i++) renderer.draw();
+    gl.finish();
+    const t = performance.now();
+    for (let i = 0; i < frames; i++) renderer.draw();
+    gl.finish();
+    return (performance.now() - t) / frames;
+  },
+  glError() { return gl ? gl.getError() : -1; },
+  pickCenterOfNode(i) {
+    if (!renderer) return -2;
+    // Feed pick the node's own centre transformed to screen space — the inverse of what the shader does,
+    // so a disagreement between drawing and picking shows up here rather than as a mis-click in the app.
+    const scale = 1280 / Math.max(Math.ceil(Math.sqrt(positions.length / 2)) * 40, 1);
+    return renderer.pick(positions[i * 2] * scale, positions[i * 2 + 1] * scale);
+  },
+  select(i) { renderer?.setState(i, NODE_SELECTED); },
+  move(i, x, y) { renderer?.setPosition(i, x, y); },
+  counters() { return { ...counters }; },
+  resetCounters() {
+    counters.bufferData = 0; counters.bufferSubData = 0; counters.bufferSubDataBytes = 0;
+    counters.texImage2D = 0; counters.texSubImage2D = 0; counters.drawInstanced = 0;
+  },
+  isSoftware() { return /swiftshader|llvmpipe|software|swrast/i.test(rendererName); },
+};
