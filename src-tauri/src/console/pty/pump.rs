@@ -7,6 +7,53 @@ use crate::split_utf8_at_boundary;
 use std::io::Read;
 use tauri::{AppHandle, Emitter, Manager};
 
+/// How the session's child actually ended, for the one log line that reports a session ending.
+///
+/// ## The gap this closes
+/// `reader EOF` and a byte count were the whole record of a session's death, and they cannot tell a
+/// clean `exit` from a `SIGKILL`. A sandboxed studio pane was dying ~10 s after every launch with
+/// nothing in the log but those two lines: the launch replayed perfectly outside the app — same
+/// argv, same scope, same resizes, same init line, same startup prompt — so every hypothesis about
+/// WHY had to be tested by reproduction rather than read off the evidence, and a plausible wrong one
+/// (`PR_SET_PDEATHSIG` is per-thread, so a retired `spawn_blocking` thread kills the cage) survived
+/// a long way on circumstantial fit before measurement refuted it. An exit status would have settled
+/// it in one line.
+///
+/// ## Why it reads the status here rather than waiting for it
+/// This runs on the emitter thread as the session finishes, so the child is normally already gone
+/// and `try_wait` answers immediately. It deliberately does NOT block: a session whose child is
+/// somehow still alive at EOF is itself worth reporting, and a pump thread that parked on `wait`
+/// would hold the state lock while doing it.
+///
+/// Never panics and never blocks the teardown — every failure degrades to a phrase, because this is
+/// a diagnostic and must not become a way for a session to fail to end.
+fn child_outcome(app: &AppHandle, pane_id: &str) -> String {
+    let Some(state) = app.try_state::<super::PtyState>() else {
+        return "exit=unknown (no session registry)".into();
+    };
+    // Recover from a poisoned lock rather than giving up: a diagnostic that goes silent exactly when
+    // something else has already panicked is worse than useless. Matches `kill_all_pty_sessions`.
+    let mut sessions = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(session) = sessions.get_mut(pane_id) else {
+        // The session was already removed — `pty_kill`, or a teardown that got here first. That is
+        // itself the answer: the app ended this one deliberately.
+        return "exit=n/a (session already removed — the app closed it)".into();
+    };
+    match session.child.try_wait() {
+        Ok(Some(status)) => {
+            let code = status.exit_code();
+            // A shell reports a fatal signal as 128+N; naming the signal is what turns "137" into
+            // "something SIGKILLed it", which is the distinction this whole helper exists for.
+            match code.checked_sub(128).filter(|n| (1..=64).contains(n)) {
+                Some(sig) => format!("exit={code} (killed by signal {sig})"),
+                None => format!("exit={code}"),
+            }
+        }
+        Ok(None) => "exit=none (child still running at EOF — the pty closed, the process did not)".into(),
+        Err(e) => format!("exit=unknown ({e})"),
+    }
+}
+
 /// Reader thread: decode PTY bytes and forward complete UTF-8 chunks over `tx`. The `leftover` buffer
 /// holds any trailing incomplete multi-byte sequence (e.g. ✓, →, box-drawing) so we never split a
 /// character across reads. Exits on EOF/error or when the emitter is gone; flushes any tail first so
@@ -143,6 +190,45 @@ pub(super) fn spawn_emitter(
         // Drop the pane's fault tap if it had one (#2264) — no-op for the common untapped pane.
         crate::observability::pty_faults::on_pane_exit(&pane_id);
         let _ = app.emit(&format!("pty_exit_{}", pane_id), ());
-        log::info!("pty[{pane_id}] session ended ({total} bytes)");
+        log::info!("pty[{pane_id}] session ended ({total} bytes) · {}", child_outcome(&app, &pane_id));
     });
+}
+
+#[cfg(test)]
+mod outcome_tests {
+    /// The signal decode is the whole point of the line, so it is pinned as a PURE rule.
+    ///
+    /// `child_outcome` itself needs a live Tauri `AppHandle` and a real child, so the part worth
+    /// testing is extracted here rather than mocked: 128+N is how a shell reports a fatal signal,
+    /// and turning 137 into "killed by signal 9" is the difference between a log line a reader can
+    /// act on and one they have to decode. The band is bounded because a plain exit code can also
+    /// exceed 128 — 255 is not "signal 127".
+    fn describe(code: u32) -> String {
+        match code.checked_sub(128).filter(|n| (1..=64).contains(n)) {
+            Some(sig) => format!("exit={code} (killed by signal {sig})"),
+            None => format!("exit={code}"),
+        }
+    }
+
+    #[test]
+    fn a_fatal_signal_is_named_and_a_plain_code_is_not() {
+        assert_eq!(describe(137), "exit=137 (killed by signal 9)");   // SIGKILL — the cage case
+        assert_eq!(describe(143), "exit=143 (killed by signal 15)");  // SIGTERM — an app teardown
+        assert_eq!(describe(0), "exit=0");                            // a clean exit
+        assert_eq!(describe(1), "exit=1");
+        // 128 exactly is not signal 0, and a high plain code is not a signal either.
+        assert_eq!(describe(128), "exit=128");
+        assert_eq!(describe(255), "exit=255");
+    }
+
+    /// The decode must match what `child_outcome` actually does — a second copy that drifts would
+    /// pass while the shipped line is wrong.
+    #[test]
+    fn the_shipped_decode_is_the_one_under_test() {
+        let src = include_str!("pump.rs");
+        assert!(
+            src.contains("code.checked_sub(128).filter(|n| (1..=64).contains(n))"),
+            "child_outcome's signal decode changed — update `describe` in this module to match",
+        );
+    }
 }
