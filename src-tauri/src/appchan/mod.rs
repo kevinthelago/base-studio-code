@@ -116,6 +116,12 @@ fn handle(app: &tauri::AppHandle, env: &bsc_appchan::Envelope) -> Result<serde_j
             let res = crate::session::system::apply(app, &env.id, &req)?;
             serde_json::to_value(res).map_err(|e| e.to_string())
         }
+        bsc_fleet::START_KIND => {
+            let req: bsc_fleet::StartRequest = serde_json::from_value(env.payload.clone())
+                .map_err(|e| format!("malformed fleet start request: {e}"))?;
+            let res = crate::fleet::start::apply(app, &env.id, &req)?;
+            serde_json::to_value(res).map_err(|e| e.to_string())
+        }
         bsc_fleet::DIRECTOR_KIND => {
             let req: bsc_fleet::DirectorNewRequest = serde_json::from_value(env.payload.clone())
                 .map_err(|e| format!("malformed fleet director request: {e}"))?;
@@ -175,6 +181,7 @@ mod tests {
             bsc_fleet::KIND,
             bsc_fleet::WAKE_KIND,
             bsc_fleet::DIRECTOR_KIND,
+            bsc_fleet::START_KIND,
             bsc_session::KIND,
             bsc_session::LIFECYCLE_KIND,
         ];

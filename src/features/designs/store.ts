@@ -528,7 +528,21 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
   designsKitId: "",
   designsCompId: null,
   setDesignsKit: (id) => set({ designsKitId: id, designsCompId: null }),
-  setDesignsComp: (id) => set({ designsCompId: id }),
+  /**
+   * IDEMPOTENT — re-selecting the component that is already selected must not notify.
+   *
+   * `set({ designsCompId: id })` builds a new state object every call, so Zustand notified every
+   * subscriber even when the id had not changed. Clicking the already-selected node in the Design
+   * Studio therefore re-rendered the whole workbench for no change: MEASURED at 103-150 ms per repeat
+   * click, with commits, on a graph where the click itself now does nothing.
+   *
+   * Returning the SAME state object is what makes Zustand skip the notification — a `===` check on the
+   * value is not enough, the object identity is what it compares. Deliberately NOT applied to
+   * `setDesignsKit`, which also clears the component: an early return there would change behaviour for
+   * a caller that relies on that clear, and it is not on this hot path (`selectComp` already guards it
+   * behind `c.kitId !== kitId`).
+   */
+  setDesignsComp: (id) => set((s) => (s.designsCompId === id ? s : { designsCompId: id })),
   designsPreviewState: "loaded",
   setDesignsPreviewState: (s) => set({ designsPreviewState: s }),
 

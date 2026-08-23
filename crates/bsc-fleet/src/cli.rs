@@ -2,7 +2,8 @@
 
 use crate::{
     DirectorNewRequest, DirectorNewResult, DirectorOutcome, FleetRequest, FleetResult, PaneLive,
-    WakeRequest, WakeResult, DIRECTOR_KIND, KIND, WAKE_KIND,
+    StartOutcome, StartRequest, StartResult, WakeRequest, WakeResult, DIRECTOR_KIND, KIND,
+    START_KIND, WAKE_KIND,
 };
 use bsc_cli_util::CmdDoc;
 
@@ -95,6 +96,32 @@ THERE IS NO STOP HERE, deliberately. A director coordinates a running fleet whos
 no-app-injection model, have no route back except the user's click. Ending one is the user's act.",
 },
 CmdDoc {
+    name: "start",
+    summary: "launch a project's whole fleet — the director and every worker stream",
+    usage: "\
+USAGE:
+  bsc fleet start <projectKey> [--force] [--timeout <ms>] [--json|--pretty]
+
+Brings up the fleet a project PLANNED: its director at the hub, and one worker per stream in its own
+git worktree on a stream-named branch. The whole-fleet sibling of `bsc fleet director new`, which
+creates the coordinator alone.
+
+THE FLEET COMES FROM plan.db, the sole fleet store — so this and a UI launch read the same rows and
+cannot disagree about what the fleet is. `bsc plan fleet` shows what will launch.
+
+IT FAILS CLOSED. Every worker's worktree is created BEFORE any session is placed; if one cannot be
+created, NO session starts and the error names the stream. A half-launched fleet reported as success
+is the failure this ordering prevents.
+
+A STREAM THAT NAMES NO REPO is skipped and REPORTED — it cannot be given a worktree, and a stream that
+silently never launches is invisible.
+
+AN ALREADY-RUNNING FLEET IS REFUSED, naming the live panes, rather than launched a second time: two
+workers on one worktree would fight over the same branch. `--force` relaunches anyway.
+
+The pane creation happens in the app (a pane is frontend state), so the desktop app must be running —
+the same requirement `bsc fleet wake` and `bsc fleet director new` have.",
+}, CmdDoc {
     name: "wake",
     summary: "wake a parked/reaped worker — the director's lever over a stopped session",
     usage: "USAGE:
@@ -190,9 +217,51 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `director` acts on one. Both live under the `bsc fleet director` grant prefix (which still
         // does not reach `bsc fleet wake`).
         "director" => cmd_director(&args, prog),
+        "start" => cmd_start(&args, prog),
         "wake" => cmd_wake(&args, prog),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
+}
+
+/// `start <projectKey>` — launch the whole fleet.
+fn cmd_start(args: &Args, prog: &str) -> Result<(), String> {
+    let key = args
+        .positional
+        .get(1)
+        .cloned()
+        .filter(|k| !k.trim().is_empty())
+        .ok_or_else(|| format!("{prog} start: needs a project key (`bsc project list` shows them)"))?;
+    let req = StartRequest { project_key: key.trim().to_string(), force: args.force };
+    // A fleet launch builds worktrees and places many panes, so it is given a longer default than the
+    // read verbs — a timeout here would report failure for a fleet that is in fact coming up.
+    let res: StartResult = ask(START_KIND, &req, args.timeout_ms.unwrap_or(45_000))?;
+    bsc_cli_util::emit(args.pretty, args.json, &res, || describe_start(&res));
+    Ok(())
+}
+
+fn describe_start(res: &StartResult) -> String {
+    let mut out = match res.outcome {
+        StartOutcome::AlreadyRunning => format!(
+            "{}: already running — {} live session(s): {}. Re-run with --force to relaunch.",
+            res.project_key,
+            res.streams.len(),
+            res.streams.join(", ")
+        ),
+        StartOutcome::Launched => format!(
+            "{}: launched {}{} worker(s){}",
+            res.project_key,
+            if res.director { "a director and " } else { "" },
+            res.streams.len(),
+            if res.streams.is_empty() { String::new() } else { format!(": {}", res.streams.join(", ")) }
+        ),
+    };
+    if !res.skipped_no_repo.is_empty() {
+        out.push_str(&format!(
+            "\n  skipped (no repo assigned): {}",
+            res.skipped_no_repo.join(", ")
+        ));
+    }
+    out
 }
 
 fn cmd_wake(args: &Args, prog: &str) -> Result<(), String> {
