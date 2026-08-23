@@ -35,7 +35,9 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   // `teamsDrill` lives in the store since #2492 (nav-history); reset it so a drill from another test
   // cannot leak a drilled canvas into this render.
-  useAppStore.setState({ teamsDrill: null, teams: SEEDED_TEAMS });
+  // `activePageTab` carries the entered team now, so reset it or a team entered by one case is still
+  // entered in the next.
+  useAppStore.setState({ teamsDrill: null, teams: SEEDED_TEAMS, activePageTab: {} });
 });
 
 /** A team's name shows in the TAB, the rail row AND the overview card, so tab queries are scoped to

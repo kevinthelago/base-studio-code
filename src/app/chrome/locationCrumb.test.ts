@@ -143,3 +143,46 @@ describe("locationCrumb — the graph workspaces", () => {
     })).toBe("Sounds");
   });
 });
+
+describe("locationCrumb — the graph workspaces name their active TAB", () => {
+  const base = {
+    activePageTab: {}, crumbEntity: {}, projectsPageMode: "projects", projectsView: "list",
+    githubTab: "summary", githubBoardOpen: false, githubBoardTab: "board", settingsSection: "general",
+  };
+
+  it("appends the tab, then the entity", () => {
+    // Workspace — Tab — Entity. The tab is the technology/team/kit; the entity is what the page reports
+    // for it. Both, in that order, so the crumb reads as a path.
+    expect(locationCrumb({
+      ...base, activeWorkspace: "algorithms",
+      activePageTab: { algorithms: "rust" }, crumbEntity: { algorithms: "Rust" },
+    })).toBe("Algorithms — Rust — Rust");
+
+    expect(locationCrumb({
+      ...base, activeWorkspace: "sounds", activePageTab: { sounds: "signal" },
+    })).toBe("Sounds — Signal");
+  });
+
+  it("Title-Cases a data-derived tab id rather than mapping it", () => {
+    // These vocabularies come from DATA — the languages the graph holds, the sound kits, the teams — so
+    // a curated label map would be a second copy that goes stale the moment the data changes. A stale
+    // map shows the WRONG name, which is worse than an unpolished one.
+    expect(locationCrumb({
+      ...base, activeWorkspace: "data", activePageTab: { data: "typescript" },
+    })).toBe("Data — Typescript");
+    expect(locationCrumb({
+      ...base, activeWorkspace: "teams", activePageTab: { teams: "org-default-fleet" },
+    })).toBe("Teams — Org Default Fleet");
+  });
+
+  it("does not render the Teams overview tab as a repeated word", () => {
+    // The overview's tab id is `teams`, so a naive append gives "Teams — Teams".
+    expect(locationCrumb({ ...base, activeWorkspace: "teams", activePageTab: { teams: "teams" } })).toBe("Teams");
+  });
+
+  it("shows the workspace alone before any tab has been chosen", () => {
+    // `activePageTab` is empty until the first selection; the crumb must degrade to the name, never to
+    // a dangling separator.
+    expect(locationCrumb({ ...base, activeWorkspace: "components" })).toBe("Components");
+  });
+});

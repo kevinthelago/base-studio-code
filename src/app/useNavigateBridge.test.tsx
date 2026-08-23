@@ -103,7 +103,9 @@ describe("useNavigateBridge reports what the preview actually MOUNTED", () => {
   /** On the Studio, with one component the bridge can resolve. */
   const onStudio = () =>
     useAppStore.setState({
-      activeWorkspace: "projects", projectsPageMode: "designs", designsKitId: "react-d3",
+      // The Design Studio is its own WORKSPACE now (`five-graphs-become-rail-workspaces`) — being on
+      // it is the whole condition, with no Planner page mode to also match.
+      activeWorkspace: "components", designsKitId: "react-d3",
       kits: [{ id: "react-d3", name: "D3" }],
       components: [{ id: "Heatmap", name: "Heatmap", kitId: "react-d3" }],
       hydrateComponents: vi.fn(async () => {}),

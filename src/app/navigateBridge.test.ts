@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { applyNavigate, type NavVocab } from "@/app/navigateBridge";
 import type { AppStore } from "@/store/types";
-import { WORKSPACES } from "@/app/registry";
+import { WORKSPACES, type Workspace } from "@/app/registry";
 
 // A minimal fake store: only the fields + actions applyNavigate touches. Mutating actions write into
 // `s` and `read()` returns it fresh — which is the point. Zustand hands out a NEW object per update, so a
@@ -11,6 +11,10 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
   const s: Record<string, unknown> = {
     activeWorkspace: "console",
     projectsPageMode: "projects",
+    // Each tabbed workspace keeps its page here (`navigation-vocabulary-follows-the-new-page-structure`).
+    // The ack reads the ACTIVE workspace's page from where that workspace stores it — it used to report
+    // `projectsPageMode` for every workspace, which was a confident lie once the graphs left the Planner.
+    activePageTab: { glance: "network", logs: "activity", teams: "teams" } as Record<string, string>,
     designsKitId: "",
     designsCompId: null,
     designsPreviewState: "loaded",
@@ -24,6 +28,10 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
     ],
     setWorkspace: (v: string) => { s.activeWorkspace = v; },
     setProjectsPageMode: (v: string) => { s.projectsPageMode = v; },
+    // The knob every tabbed workspace turns — glance, logs, and the four store-backed graphs.
+    setActivePageTab: (k: string, v: string) => {
+      s.activePageTab = { ...(s.activePageTab as Record<string, string>), [k]: v };
+    },
     setKitTheme: (v: string) => { s.kitTheme = v; },
     setDesignsKit: (v: string) => { s.designsKitId = v; s.designsCompId = null; },
     setDesignsComp: (v: string | null) => { s.designsCompId = v; },
@@ -42,12 +50,22 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
       "components", "teams", "algorithms", "data", "sounds",
       "github", "logs", "settings",
     ],
-    pages: ["projects", "teams", "designs", "algorithms", "sounds"],
+    // Per-workspace now (`navigation-vocabulary-follows-the-new-page-structure`): a flat list checked
+    // every workspace's page against the Planner's, so a real Algorithms language would have been
+    // refused for not being a Planner tab. `null` is PERMISSIVE — the graphs whose tabs come from
+    // hook-local data (languages present, sound kits) are deliberately not enumerated here.
+    pagesFor: (w: Workspace) =>
+      w === "projects" ? ["projects"]
+      : w === "teams" ? ["teams", "org-default-fleet"]
+      : w === "components" ? ["react", "react-native"]
+      : null,
   };
 }
 
 // The Design Studio "already showing" store — a component navigate folds to it (#3599).
-const onStudio = { activeWorkspace: "projects", projectsPageMode: "designs" };
+// The Design Studio is its own WORKSPACE now (`five-graphs-become-rail-workspaces`), so "on the
+// Studio" is a workspace, not a Planner page mode.
+const onStudio = { activeWorkspace: "components" };
 
 describe("navigateBridge — component (the case #3261 needed a human click for)", () => {
   it("when the Studio is showing, selects the component AND lands its workspace + page (intents, not steps)", () => {
@@ -55,8 +73,7 @@ describe("navigateBridge — component (the case #3261 needed a human click for)
     const ack = applyNavigate({ kit: "react-d3", component: "Heatmap" }, v);
     expect(ack.error).toBeUndefined();
     // The caller asked for a component; it should not have to know where the Studio lives.
-    expect(ack.workspace).toBe("projects");
-    expect(ack.page).toBe("designs");
+    expect(ack.workspace).toBe("components");
     expect(ack.kit).toBe("react-d3");
     expect(ack.component).toBe("Heatmap");
   });
@@ -82,9 +99,8 @@ describe("navigateBridge — component (the case #3261 needed a human click for)
 
   it("#3599: an EXPLICIT workspace/page request still navigates (a deliberate steer, not a background focus)", () => {
     const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
-    const ack = applyNavigate({ workspace: "projects", page: "designs", kit: "react-d3", component: "Heatmap" }, v);
-    expect(ack.workspace).toBe("projects");
-    expect(ack.page).toBe("designs");
+    const ack = applyNavigate({ workspace: "components", kit: "react-d3", component: "Heatmap" }, v);
+    expect(ack.workspace).toBe("components");
     expect(ack.component).toBe("Heatmap");
     expect(ack.declined, "an honoured steer declines nothing").toBeUndefined();
   });
@@ -153,7 +169,7 @@ describe("navigateBridge — the ack owes a mount only when one is actually comi
 
   it("marks it on an EXPLICIT steer from off-Studio too — the view really does switch", () => {
     const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
-    const ack = applyNavigate({ workspace: "projects", page: "designs", kit: "react-d3", component: "Heatmap" }, v);
+    const ack = applyNavigate({ workspace: "components", kit: "react-d3", component: "Heatmap" }, v);
     expect(ack.awaitMount).toBe("Heatmap");
   });
 
@@ -171,7 +187,7 @@ describe("navigateBridge — the ack owes a mount only when one is actually comi
   it("awaits nothing when the presence gate (#4248) left the view alone", () => {
     const v = makeVocab({ activeWorkspace: "github", projectsPageMode: "projects" });
     const ack = applyNavigate(
-      { workspace: "projects", page: "designs", kit: "react-d3", component: "Heatmap" },
+      { workspace: "components", kit: "react-d3", component: "Heatmap" },
       { ...v, humanPresent: () => true },
     );
     expect(ack.declined).toContain("someone is using the app");
@@ -223,7 +239,11 @@ describe("navigateBridge — unknown ids are errors, not silent no-ops", () => {
   it("rejects unknown workspace / page / kit / theme, listing the valid ones", () => {
     const v = makeVocab();
     expect(applyNavigate({ workspace: "nope" }, v).error).toContain("unknown workspace");
-    expect(applyNavigate({ page: "nope" }, v).error).toContain("unknown page");
+    // A page is checked against the TARGET workspace's vocabulary, so the case has to name a workspace
+    // that HAS one — `console`, the fixture's default, is permissive on purpose.
+    expect(applyNavigate({ workspace: "components", page: "nope" }, v).error).toContain("unknown page");
+    // …and a permissive workspace lets an arbitrary page through rather than refusing it.
+    expect(applyNavigate({ page: "anything" }, v).error).toBeUndefined();
     expect(applyNavigate({ kit: "nope" }, v).error).toContain("unknown kit");
     expect(applyNavigate({ theme: "nope" }, v).error).toContain("unknown theme");
   });
@@ -255,6 +275,8 @@ describe("the vocabulary the bridge is handed", () => {
     const ack = applyNavigate({ workspace: "logs" }, v);
     expect(ack.error).toBeUndefined();
     expect(ack.workspace).toBe("logs");
+    // The ack reports LOGS' own page, not the Planner's.
+    expect(ack.page).toBe("activity");
     // …and the key it replaced is genuinely gone, not merely aliased.
     expect(applyNavigate({ workspace: "security" }, v).error).toContain("unknown workspace");
   });
@@ -265,7 +287,9 @@ describe("navigateBridge — the other verbs", () => {
     const v = makeVocab();
     expect(applyNavigate({ workspace: "glance" }, v).workspace).toBe("glance");
     expect(v.s.designsCompId).toBeNull();
-    expect(applyNavigate({ page: "algorithms" }, v).page).toBe("algorithms");
+    // Stated on a workspace whose page the ack can actually read back: `console` has no page concept
+    // (its tabs are index-switched, not string pages), so a bare page there lands nowhere to report.
+    expect(applyNavigate({ workspace: "teams", page: "teams" }, v).page).toBe("teams");
     expect(applyNavigate({ theme: "nord" }, v).theme).toBe("nord");
   });
 
@@ -274,7 +298,7 @@ describe("navigateBridge — the other verbs", () => {
     const ack = applyNavigate({}, v);
     expect(ack).toEqual({
       workspace: "glance",
-      page: "projects",
+      page: "network",
       kit: "react-d3",
       component: "Heatmap",
       theme: "default",
@@ -299,30 +323,33 @@ describe("the presence gate (#4248)", () => {
    *  loop is made of explicit commands — it fired exactly this every ~7s to route around the component
    *  refusal, pulling the user off Algorithms/Sounds/Teams while they worked. */
   it("refuses a bare `page` steer while a human is using the app", () => {
-    const v = { ...makeVocab({ activeWorkspace: "projects", projectsPageMode: "algorithms" }), ...present };
-    const ack = applyNavigate({ page: "designs" }, v);
-    expect(v.s.projectsPageMode).toBe("algorithms"); // untouched
+    // A bare `page` now steers within the ACTIVE workspace, so the case is stated on one that has
+    // several pages: Teams, sitting on a team, asked to move to the overview.
+    const v = { ...makeVocab({ activeWorkspace: "teams" }), ...present };
+    v.s.activePageTab = { teams: "org-default-fleet" };
+    const ack = applyNavigate({ page: "teams" }, v);
+    expect((v.s.activePageTab as Record<string, string>).teams).toBe("org-default-fleet"); // untouched
     expect(ack.declined).toContain("someone is using the app");
   });
 
   it("refuses a workspace steer too", () => {
     const v = { ...makeVocab({ activeWorkspace: "console" }), ...present };
-    applyNavigate({ workspace: "projects", page: "designs" }, v);
+    applyNavigate({ workspace: "components", page: "react" }, v);
     expect(v.s.activeWorkspace).toBe("console");
   });
 
   /** The case the steering exists for (#3260/#3263): nobody is there, so nothing is being taken. */
   it("steers normally when nobody is present", () => {
     const v = { ...makeVocab({ activeWorkspace: "console" }), ...away };
-    const ack = applyNavigate({ workspace: "projects", page: "designs" }, v);
-    expect(v.s.activeWorkspace).toBe("projects");
+    const ack = applyNavigate({ workspace: "components", page: "react" }, v);
+    expect(v.s.activeWorkspace).toBe("components");
     expect(ack.declined).toBeUndefined();
   });
 
   it("--force is the human-driven escape hatch", () => {
     const v = { ...makeVocab({ activeWorkspace: "console" }), ...present };
-    const ack = applyNavigate({ workspace: "projects", page: "designs", force: true }, v);
-    expect(v.s.activeWorkspace).toBe("projects");
+    const ack = applyNavigate({ workspace: "components", page: "react", force: true }, v);
+    expect(v.s.activeWorkspace).toBe("components");
     expect(ack.declined).toBeUndefined();
   });
 
@@ -340,8 +367,8 @@ describe("the presence gate (#4248)", () => {
    *  disable a gate, nor silently enable one. */
   it("defaults to unattended when no probe is supplied", () => {
     const v = makeVocab({ activeWorkspace: "console" });
-    applyNavigate({ workspace: "projects", page: "designs" }, v);
-    expect(v.s.activeWorkspace).toBe("projects");
+    applyNavigate({ workspace: "components", page: "react" }, v);
+    expect(v.s.activeWorkspace).toBe("components");
   });
 
   it("a non-steering request is unaffected by presence", () => {
