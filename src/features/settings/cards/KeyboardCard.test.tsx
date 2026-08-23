@@ -65,11 +65,12 @@ describe("KeyboardCard", () => {
 
   it("screen-nav and zoom rows are now rebindable (#773)", () => {
     render(<KeyboardCard />);
-    // Screen nav: "Go to Planner" can be rebound.
-    const navBtn = screen.getByRole("button", { name: /Rebind Go to Planner/ });
+    // Screen nav: "Go to Glance" can be rebound. (Was "Go to Planner" until that screen was deleted
+    // — `delete-the-planner-ui-keep-the-planner`.)
+    const navBtn = screen.getByRole("button", { name: /Rebind Go to Glance/ });
     fireEvent.click(navBtn);
     fireEvent.keyDown(document, { code: "F9" });
-    expect(useAppStore.getState().keybindings["screen-projects"]).toBe("F9");
+    expect(useAppStore.getState().keybindings["screen-glance"]).toBe("F9");
 
     // Zoom: "Increase terminal font size" can be rebound.
     const zoomBtn = screen.getByRole("button", { name: /Rebind Increase terminal font size/ });

@@ -10,7 +10,8 @@ describe("shortcuts registry", () => {
     // Spot-check the canonical F-key bindings. F1 was Console until #2403 retired that page; #4167 gave
     // it to Glance, which had no key at all despite being the screen the app lands on.
     expect(SCREEN_KEY_MAP.F1).toBe("glance");
-    expect(SCREEN_KEY_MAP.F2).toBe("projects");
+    // F2 was the Planner; its screen is gone, so the key is unbound rather than renumbered.
+    expect(SCREEN_KEY_MAP.F2).toBeUndefined();
     // F6 was GitHub; its screen is gone (delete-the-github-screen-keep-the-integration), so the key
     // is deliberately UNBOUND rather than renumbered — the table's stated rule.
     expect(SCREEN_KEY_MAP.F6).toBeUndefined();

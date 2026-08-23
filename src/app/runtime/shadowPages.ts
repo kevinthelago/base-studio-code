@@ -127,59 +127,6 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ensurePlatform: () => import("@/app/console/ConsoleGraphHost"),
   },
   {
-    pageId: "planningpage",
-    label: "Planning",
-    // The planner Screen mounts this one with `visible` and keeps it MOUNTED across tabs (#4224).
-    rendersFrom: "graph",
-    modules: [
-      { recordId: "planningpage", file: null },
-      { recordId: "planning-header", file: null },
-      { recordId: "planning-notices", file: null },
-      { recordId: "planning-dialogs", file: null },
-      { recordId: "planning-publish-progress", file: null },
-      { recordId: "planning-injection-gate", file: null },
-      { recordId: "planning-github-structure", file: null }, // RETIRED — the record is the only copy,
-      // The focused project pane (#4227) — the plan half of this page. These are `provides` records, not
-      // `@/components/<id>` siblings, so the page composes them without naming a single one: it imports
-      // `@/features/planner/pane/ProjectPane` exactly as it did when that was a code module, and the
-      // resolver reaches the graph first. Listed here so they fall under the parity guard like the rest.
-      { recordId: "plan-pane", file: null },
-      { recordId: "plan-pane-shell", file: null },
-      { recordId: "plan-pane-bodies", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-pane-stage-bar", file: null },
-      { recordId: "plan-pane-rail", file: null },
-      { recordId: "plan-pane-mcp-modal", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-pane-primitives", file: null }, // RETIRED — the record is the only copy,
-      // The stage bodies (#4230) — the pane's body switch reaches these, and they reach each other,
-      // all by `provides`. Every file in that directory is here: it was checked for unreached
-      // components before scoping, and unlike `pane/` it had none.
-      { recordId: "plan-body-discovery", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-market", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-transformations", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-automations", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-skills", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-mcps", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-features", file: null }, // RETIRED — the record is the only copy
-      { recordId: "plan-body-file-intake", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-deployment", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-deploy-card", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-deploy-ship", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-deploy-target", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-deploy-primitives", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-source", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-scan-views", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-connector-form", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-streams", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-permissions", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-plan", file: null }, // RETIRED — the record is the only copy
-      { recordId: "plan-body-stream-cards", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-shared-deps", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-collapsible-card", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "plan-body-primitives", file: null }, // RETIRED — the record is the only copy,
-    ],
-    ensurePlatform: () => import("@/features/planner/graphPlatform").then((m) => m.registerPlannerPlatform()),
-  },
-  {
     pageId: "algorithmspage",
     label: "Algorithms",
     // Planner-mounted, like Sounds — not a rail Workspace (#4219).
@@ -236,29 +183,6 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
       { recordId: "glance-session-log", file: null }, // RETIRED — the record is the only copy,
     ],
     ensurePlatform: () => import("@/features/glance/graphPlatform").then((m) => m.registerGlancePlatform()),
-  },
-  {
-    pageId: "projectspage",
-    label: "Projects",
-    rendersFrom: "graph",
-    modules: [
-      { recordId: "projectspage", file: null },
-      // The list's components (#4232) — `provides` records, like `pane/` and `bodies/`. Authoring them
-      // is what the page's regeneration to ABSOLUTE specifiers unlocked: `provides` matches the exact
-      // specifier a record imports, so while the page said `./ProjectCard` none of these was reachable.
-      { recordId: "projects-card", file: null },
-      { recordId: "projects-rail", file: null },
-      { recordId: "projects-setup", file: null },
-      { recordId: "projects-blueprint-card", file: null },
-      { recordId: "projects-cloud-blueprints", file: null },
-      { recordId: "projects-reopen-modal", file: null }, // RETIRED — the record is the only copy,
-      { recordId: "projects-delete-modal", file: null },
-    ],
-    // The ONE page that does not register when its module evaluates: `ProjectsGraphHost` registers at
-    // first RENDER, to break an import cycle (see its comment). Shadow mode renders nothing, so it must
-    // call the registration itself — without this the whole planner-list surface reads as unbound, which
-    // is a 12-entry lie in the middle of the worklist this report exists to be.
-    ensurePlatform: () => import("@/features/planner/graphPlatform").then((m) => m.registerPlannerPlatform()).then(() => import("@/features/planner/list/graphPlatform").then((b) => b.registerProjectsPlatform())),
   },
   {
     pageId: "automationspage",

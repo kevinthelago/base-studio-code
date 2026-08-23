@@ -31,11 +31,13 @@ describe("applyNavigation — per-workspace page dispatch (#3602)", () => {
     }
   });
 
-  it("routes projects → setProjectsPageMode", () => {
+  it("routes a tabbed graph workspace → setActivePageTab", () => {
+    // The Planner had its own page-mode knob and is gone
+    // (`delete-the-planner-ui-keep-the-planner`); the graph workspaces keep their tab in
+    // `activePageTab`, which is the general form now.
     const s = fakeStore();
-    applyNavigation(s as unknown as AppStore, { workspace: "projects", page: "designs" });
-    expect(s.setProjectsPageMode).toHaveBeenCalledWith("designs");
-    expect(s.setActivePageTab).not.toHaveBeenCalled();
+    applyNavigation(s as unknown as AppStore, { workspace: "algorithms", page: "rust" });
+    expect(s.setActivePageTab).toHaveBeenCalledWith("algorithms", "rust");
   });
 
   it("routes settings → setSettingsSection", () => {
@@ -117,10 +119,10 @@ describe("store navigate action — the wiring cannot forget the page (#3602)", 
     expect(s.settingsSection).toBe("github");
   });
 
-  it("navigate to a projects page sets the page mode", () => {
-    useAppStore.getState().navigate({ workspace: "projects", page: "designs" });
+  it("navigate to a graph page sets its tab", () => {
+    useAppStore.getState().navigate({ workspace: "algorithms", page: "rust" });
     const s = useAppStore.getState();
-    expect(s.activeWorkspace).toBe("projects");
-    expect(s.projectsPageMode).toBe("designs");
+    expect(s.activeWorkspace).toBe("algorithms");
+    expect(s.activePageTab.algorithms).toBe("rust");
   });
 });

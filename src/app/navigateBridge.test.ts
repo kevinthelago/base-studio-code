@@ -46,7 +46,7 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
     // Kept in step with `WORKSPACES` by the test below, deliberately: this fixture drifting from the
     // registry is how `bsc navigate workspace <id>` could fail live while every test here stayed green.
     workspaces: [
-      "console", "glance", "projects",
+      "console", "glance",
       "components", "teams", "algorithms", "data", "sounds",
       "logs", "settings",
     ],
@@ -55,8 +55,7 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
     // refused for not being a Planner tab. `null` is PERMISSIVE — the graphs whose tabs come from
     // hook-local data (languages present, sound kits) are deliberately not enumerated here.
     pagesFor: (w: Workspace) =>
-      w === "projects" ? ["projects"]
-      : w === "teams" ? ["teams", "org-default-fleet"]
+      w === "teams" ? ["teams", "org-default-fleet"]
       : w === "components" ? ["react", "react-native"]
       : null,
   };
@@ -357,7 +356,7 @@ describe("the presence gate (#4248)", () => {
    *  the moment the user opens it — the same shape #3599 chose. */
   it("still sets the focus it was asked for", () => {
     const v = { ...makeVocab({ activeWorkspace: "logs" }), ...present };
-    applyNavigate({ workspace: "projects", kit: "react-d3", component: "Heatmap" }, v);
+    applyNavigate({ workspace: "components", kit: "react-d3", component: "Heatmap" }, v);
     expect(v.s.designsKitId).toBe("react-d3");
     expect(v.s.designsCompId).toBe("Heatmap");
     expect(v.s.activeWorkspace).toBe("logs");

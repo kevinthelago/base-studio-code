@@ -135,15 +135,14 @@ describe("registry wiring", () => {
   });
 
   it("screen-nav and zoom are rebindable single chords (#773)", () => {
-    expect(DEFAULT_BINDINGS["screen-projects"]).toBe("F2");
     expect(DEFAULT_BINDINGS["screen-settings"]).toBe("F8");
     expect(DEFAULT_BINDINGS["zoom-in"]).toBe("Ctrl+Equal");
     expect(DEFAULT_BINDINGS["zoom-reset"]).toBe("Ctrl+Digit0");
     // A bare F-key serializes to just the code, with no modifiers.
-    expect(eventToChord(ev({ code: "F2" }))).toBe("F2");
-    expect(matchesBinding(ev({ code: "F2" }), {}, "screen-projects")).toBe(true);
+    expect(eventToChord(ev({ code: "F1" }))).toBe("F1");
+    expect(matchesBinding(ev({ code: "F1" }), {}, "screen-glance")).toBe(true);
     // Conflict detection spans the whole rebindable set, screen + console actions included.
-    expect(findConflict({}, "screen-logs", "F2")).toBe("screen-projects");
+    expect(findConflict({}, "screen-logs", "F1")).toBe("screen-glance");
   });
 
   it("chordToCaps labels the zoom symbol codes", () => {

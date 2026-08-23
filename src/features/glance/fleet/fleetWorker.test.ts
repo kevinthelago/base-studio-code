@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { permissionRows, flowRows, paneCoords, TOOL_ORDER } from "@/features/planner/fleet/fleetWorker";
+import { permissionRows, flowRows, paneCoords, TOOL_ORDER } from "@/features/glance/fleet/fleetWorker";
 import type { AgentProfile } from "@/shared/lib/security/agentProfiles";
 import { DEFAULT_FLOW } from "@/features/planner/fleet/agentFlow";
 

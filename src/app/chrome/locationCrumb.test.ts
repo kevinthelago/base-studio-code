@@ -19,16 +19,7 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
     expect(crumb({ activeWorkspace: "glance", activePageTab: { glance: "fleet" } })).toBe("Glance — Fleet");
   });
 
-  it("Planner reflects EVERY sub-page mode — not just planning (the main gap)", () => {
-    expect(crumb({ activeWorkspace: "projects", projectsPageMode: "designs" })).toBe("Planner — Components");
-    expect(crumb({ activeWorkspace: "projects", projectsPageMode: "teams" })).toBe("Planner — Teams");
-    expect(crumb({ activeWorkspace: "projects", projectsPageMode: "algorithms" })).toBe("Planner — Algorithms");
-    expect(crumb({ activeWorkspace: "projects", projectsPageMode: "sounds" })).toBe("Planner — Sounds");
-    expect(crumb({ activeWorkspace: "projects", projectsPageMode: "projects" })).toBe("Planner — Projects");
-    expect(crumb({ activeWorkspace: "projects", projectsPageMode: "projects", projectsView: "planning" }))
-      .toBe("Planner — Projects — Planning");
-  });
-
+  
   // The Automations case was here. That workspace is retired
   // (hooks-and-schedules-belong-to-the-persona): its config is carried by the persona and read on
   // Teams, and its history is the Logs -> Automations tab. A persisted `activeWorkspace:
@@ -65,16 +56,14 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
     expect(crumb({ activeWorkspace: "glance", activePageTab: { glance: "network" }, crumbEntity: { glance: "cli-typer" } }))
       .toBe("Glance — Network — cli-typer");
     expect(crumb({ activeWorkspace: "glance", crumbEntity: {} })).toBe("Glance — Network"); // not drilled
-    // Planner graphs → the entered team, active kit, active language.
-    expect(crumb({ activeWorkspace: "projects", projectsPageMode: "designs", crumbEntity: { designs: "react-ui" } }))
-      .toBe("Planner — Components — react-ui");
-    expect(crumb({ activeWorkspace: "projects", projectsPageMode: "teams", crumbEntity: { teams: "Fleet Alpha" } }))
-      .toBe("Planner — Teams — Fleet Alpha");
-    expect(crumb({ activeWorkspace: "projects", projectsPageMode: "algorithms", crumbEntity: { algorithms: "Rust" } }))
-      .toBe("Planner — Algorithms — Rust");
-    // The Projects tab keeps its planning detail, not an entity.
-    expect(crumb({ activeWorkspace: "projects", projectsPageMode: "projects", projectsView: "planning", crumbEntity: { designs: "stale" } }))
-      .toBe("Planner — Projects — Planning");
+    // Each graph is its OWN workspace now (`five-graphs-become-rail-workspaces`), so the entity hangs
+    // off the workspace + its tab rather than off a Planner page mode.
+    expect(crumb({ activeWorkspace: "components", activePageTab: { components: "react" }, crumbEntity: { designs: "react-ui" } }))
+      .toBe("Components — React — react-ui");
+    expect(crumb({ activeWorkspace: "teams", activePageTab: { teams: "org-default-fleet" }, crumbEntity: { teams: "Fleet Alpha" } }))
+      .toBe("Teams — Org Default Fleet — Fleet Alpha");
+    expect(crumb({ activeWorkspace: "algorithms", activePageTab: { algorithms: "rust" }, crumbEntity: { algorithms: "Rust" } }))
+      .toBe("Algorithms — Rust — Rust");
   });
 
   it("an unmapped page id Title-Cases gracefully (a newly-added tab is never blank)", () => {

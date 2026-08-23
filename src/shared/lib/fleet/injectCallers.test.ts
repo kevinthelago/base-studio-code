@@ -108,9 +108,10 @@ const KNOWN_PTY_WRITERS: readonly string[] = [
   // argument.
   "/src/features/automations/lib/dispatch.ts",
   "/src/features/tunnel/lib/useTunnelAutomations.ts",
-  // The user pressing confirm/skip on a plan section, and the phone's keyboard — both a person.
-  "/src/features/planner/session/usePlanConfirmations.ts",
-  "/src/features/planner/session/usePlannerTunnelSync.ts",
+  // The phone's keyboard — a person. `usePlanConfirmations` sat beside it (the user pressing
+  // confirm/skip on a plan section) and is GONE with the planner screen
+  // (`delete-the-planner-ui-keep-the-planner`): removing an injector shrinks this list, which is the
+  // ratchet turning the right way.
   // The wrapper's own definition, and the launch/restore handshake.
   "/src/shared/lib/fleet/paneInject.ts",
   "/src/shared/lib/session/ensureClaudeRunning.ts",
@@ -121,7 +122,6 @@ const KNOWN_PTY_WRITERS: readonly string[] = [
   // because the two copies can DRIFT — a designer edit to a record is not an edit to the file — and a
   // capability list that cannot tell them apart could not show that.
   "@/features/automations/lib/dispatch",
-  "@/features/planner/session/usePlanConfirmations",
   "@/shared/lib/fleet/paneInject",
   "@/shared/lib/session/ensureClaudeRunning",
 

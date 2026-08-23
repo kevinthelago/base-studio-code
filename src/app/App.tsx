@@ -46,7 +46,7 @@ import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import { effectiveWorkspace } from "@/app/registry";
 import {
   SettingsWorkspace,
-  ProjectsWorkspace, LogsWorkspace, GlanceWorkspace, WorkspaceFallback,
+  LogsWorkspace, GlanceWorkspace, WorkspaceFallback,
   ComponentsWorkspace, TeamsWorkspace, AlgorithmsWorkspace, DataWorkspace, SoundsWorkspace,
 } from "@/app/lazyWorkspaces";
 
@@ -183,11 +183,6 @@ export default function App() {
           {activeWorkspace === "console" && tabs.length === 0 && (
             <ConsoleEmptyState onNew={consoleTabs.openNewTab} />
           )}
-          {/* Projects lazy-mounts on first visit, then stays mounted so its local state + PTY
-              sessions survive screen switches (CSS hides it when inactive). */}
-          <KeptMountedPage active={activeWorkspace === "projects"} fallback={<WorkspaceFallback />}>
-            <ProjectsWorkspace />
-          </KeptMountedPage>
           {/* THE FIVE GRAPHS (`five-graphs-become-rail-workspaces`) get the SAME keep-mounted treatment
               as Projects, and for the same reason: each docks an always-on studio session (the designer,
               librarian, architect and sound-designer), and a screen that unmounts on every rail click
