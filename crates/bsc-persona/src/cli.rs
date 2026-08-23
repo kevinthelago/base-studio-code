@@ -897,14 +897,28 @@ mod tests {
     #[test]
     fn whatami_takes_the_pane_positionally_or_by_flag() {
         // Both spellings must reach the same place; a caller should not have to remember which.
+        //
+        // THIS TEST ASSERTS THE PANE RESOLVED, and nothing more. It used to call `unwrap_err()`, which
+        // made it depend on something it is not about: `whatami` answers from the RUNNING APP, so with
+        // no app the request times out (an Err) and with an app it succeeds (an Ok). The old assertion
+        // only held in the first world, so the test failed for everyone with a dev app open — and
+        // `tauri dev` watches the repo root, which the zero-install worktree convention puts every
+        // `wt-*` inside, so editing Rust in a worktree restarts the app and the next gate there hits it.
+        //
+        // Either outcome proves what is being tested. What must NEVER appear is the refusal that says
+        // no pane could be determined at all, because that is the one failure meaning the argument was
+        // not read.
         for args in [
             vec!["whatami".to_string(), "demo:worker".to_string(), "--timeout".into(), "1".into()],
             vec!["whatami".to_string(), "--pane".into(), "demo:worker".into(), "--timeout".into(), "1".into()],
         ] {
-            let e = whatami(&args, "bsc persona").unwrap_err();
-            // With no app running this times out — which proves the pane RESOLVED and a request was
-            // sent, rather than being refused for want of one.
-            assert!(!e.contains("no pane to describe"), "the pane should have resolved: {e}");
+            match whatami(&args, "bsc persona") {
+                // The app answered: the pane resolved and a request completed.
+                Ok(()) => {}
+                // No app to answer: a transport failure still proves the pane resolved and a request
+                // was SENT — as long as it is not the "no pane" refusal.
+                Err(e) => assert!(!e.contains("no pane to describe"), "the pane should have resolved: {e}"),
+            }
         }
     }
 
