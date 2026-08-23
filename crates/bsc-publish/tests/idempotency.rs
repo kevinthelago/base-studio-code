@@ -201,3 +201,30 @@ fn republishing_an_unchanged_plan_creates_nothing() {
     assert_eq!(second.outcomes[0].status, Status::Exists);
     assert_eq!(api2.posts_to("/issues"), 0, "a republish must create nothing");
 }
+
+// ── The GitHub decision (`discovery-decides-whether-github-is-used`) ──────────
+
+/// The refusal is on an EXPLICIT `false` only — absent is undecided, not "no".
+///
+/// This is the whole non-regression story. Every project planned before the axis existed has no
+/// opinion, and refusing those would break publishing for all of them. It is also why the readiness
+/// line reports UNDECIDED rather than a default: a director must be able to tell "this project does
+/// not use GitHub" from "nobody has been asked".
+#[test]
+fn the_publish_refusal_reads_only_an_explicit_false() {
+    let decided = |v: serde_json::Value| -> Option<bool> {
+        v.get("usesGithub").and_then(|x| x.as_bool())
+    };
+    // Explicit answers.
+    assert_eq!(decided(serde_json::json!({ "usesGithub": false })), Some(false));
+    assert_eq!(decided(serde_json::json!({ "usesGithub": true })), Some(true));
+    // Undecided, in every shape it can arrive as — an empty classification, one that predates the
+    // axis, and an explicit null. None of these may be read as a refusal.
+    for undecided in [
+        serde_json::json!({}),
+        serde_json::json!({ "uiMode": "custom", "needsSource": true }),
+        serde_json::json!({ "usesGithub": serde_json::Value::Null }),
+    ] {
+        assert_eq!(decided(undecided.clone()), None, "must be undecided: {undecided}");
+    }
+}

@@ -15,6 +15,19 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   If there is no requirement yet, say so and stop -- do not infer one from the repo, and do not ask the
   user for it. Nothing below you can ask a question either, so an assumption you make here silently
   becomes every worker's assumption.
+- PUBLISHING TO GITHUB IS YOURS, IF THIS PROJECT USES IT (`discovery-decides-whether-github-is-used`).
+  The architect settles that in Discovery; you carry it out. Read the answer, do not infer it:
+
+      bsc plan classify get           # "usesGithub": true | false, or UNDECIDED
+      bsc publish run                 # repos, the project board, one issue per plan row
+
+  `true` -- publishing the repos, board and issues is your responsibility, and `bsc publish run` is
+  idempotent, so re-running it after the plan grows publishes only what is new.
+  `false` -- there is nothing to publish; `bsc publish` refuses, and that refusal is correct.
+  UNDECIDED -- nobody has answered. ASK THE ARCHITECT via `bsc plan brief`; do not decide it yourself
+  and do not read a connected GitHub account as consent. Whether a project has a remote is not a fact
+  about your machine, and it used to be treated as one -- publishing happened whenever a token
+  happened to be present, so the same project would or would not ship depending on who was logged in.
 - DECIDE UNDER AUTHORITY, AND CITE IT (#funnel-unattended-director). The requirement's `authority`
   clauses are what let you advance without a person present. Before deciding anything the user did not
   specify, check what you actually hold:

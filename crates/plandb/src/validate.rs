@@ -595,7 +595,11 @@ pub fn validate_classify_config(v: &Value) -> Result<(), String> {
             }
         }
     }
-    for k in ["needsMarket", "needsSource", "needsMcp", "needsSkills", "needsAutomations"] {
+    // `usesGithub` sits with the `needs*` flags rather than apart from them: it is the same KIND of
+    // discovery answer — a decision about what this project does, recorded once and read by everyone
+    // downstream — and validating it here means a mistyped value is refused loudly instead of quietly
+    // reading as `false` and turning publishing off.
+    for k in ["needsMarket", "needsSource", "needsMcp", "needsSkills", "needsAutomations", "usesGithub"] {
         if let Some(b) = v.get(k) {
             if !b.is_boolean() {
                 errs.push(format!(r#""{k}" must be a boolean (true/false) when present"#));
@@ -623,12 +627,21 @@ pub fn classify_readiness(v: &Value) -> String {
     if on("needsSkills") { stages.push("skills"); }
     if on("needsAutomations") { stages.push("automations"); }
     let list = if stages.is_empty() { "none".to_string() } else { stages.join(", ") };
+    // GitHub is reported as UNDECIDED when absent, not as a default. Every other axis here has a
+    // safe read-as value, but this one is a decision someone has to make: showing "no" for a project
+    // nobody has been asked about would look settled, and the whole point of recording it is that a
+    // director can tell "not using GitHub" from "nobody said".
+    let github = match v.get("usesGithub").and_then(Value::as_bool) {
+        Some(true) => "yes",
+        Some(false) => "no",
+        None => "UNDECIDED — ask before publishing",
+    };
     // #4115: both system axes are echoed BEFORE `uiMode`, because they govern whether uiMode means
     // anything — for an `own` project our pipeline never renders, whichever surface the designs came
     // from — and because they are the security-relevant answer the planner must be able to re-read.
     format!(
         " — {lifecycle} {app_type}; uiSystem {ui_system}; algorithmSystem {algo_system}; \
-         uiMode {ui}; optional stages: {list}"
+         uiMode {ui}; GitHub: {github}; optional stages: {list}"
     )
 }
 
@@ -2041,5 +2054,52 @@ mod requirement_validation_tests {
                 { "id": "a2", "scope": "auth provider", "grant": "any OIDC provider" },
             ],
         }));
+    }
+}
+
+#[cfg(test)]
+mod github_decision_tests {
+    use super::*;
+
+    /// `usesGithub` is validated like its sibling flags — a mistyped value is refused, not coerced.
+    ///
+    /// Coercion is the failure worth preventing: a string `"false"` read through `as_bool` is `None`,
+    /// which reads as "undecided", so a planner who wrote the wrong type would get a project nobody
+    /// ever publishes and no error explaining why.
+    #[test]
+    fn uses_github_must_be_a_boolean_when_present() {
+        let ok = serde_json::json!({ "usesGithub": true });
+        assert!(validate_classify_config(&ok).is_ok());
+        let ok2 = serde_json::json!({ "usesGithub": false });
+        assert!(validate_classify_config(&ok2).is_ok());
+
+        for bad in [serde_json::json!({"usesGithub": "true"}), serde_json::json!({"usesGithub": 1})] {
+            let err = validate_classify_config(&bad).unwrap_err();
+            assert!(err.contains("usesGithub"), "the error names the field: {err}");
+            assert!(err.contains("boolean"), "and says what it wanted: {err}");
+        }
+    }
+
+    /// ABSENT is "undecided", and it must READ that way rather than as a default.
+    ///
+    /// Every other axis here has a safe read-as value. This one is a decision someone has to make, so
+    /// reporting "no" for a project nobody has been asked about would look settled — and a director
+    /// could not tell "this project does not use GitHub" from "nobody said".
+    #[test]
+    fn an_unclassified_project_reads_as_undecided_not_as_no() {
+        let none = serde_json::json!({});
+        let line = classify_readiness(&none);
+        assert!(line.contains("UNDECIDED"), "absent must read as undecided: {line}");
+
+        assert!(classify_readiness(&serde_json::json!({ "usesGithub": true })).contains("GitHub: yes"));
+        assert!(classify_readiness(&serde_json::json!({ "usesGithub": false })).contains("GitHub: no"));
+    }
+
+    /// The axis is NON-REGRESSING: a classification that never mentions it still validates, so every
+    /// project that exists today keeps working unchanged.
+    #[test]
+    fn a_classification_without_the_field_is_still_valid() {
+        let legacy = serde_json::json!({ "uiMode": "custom", "needsSource": true });
+        assert!(validate_classify_config(&legacy).is_ok());
     }
 }

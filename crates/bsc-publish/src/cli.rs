@@ -104,6 +104,25 @@ fn cmd_run(args: &Args) -> Result<(), String> {
     })?;
     let store = plandb::Store::open(&db).map_err(|e| format!("could not open {}: {e}", db.display()))?;
 
+    // GITHUB IS A DISCOVERY DECISION (`discovery-decides-whether-github-is-used`), so honour it before
+    // touching anything. It used to be an accident of connection state — the UI published if a token
+    // happened to be present and committed locally otherwise — which meant nothing could tell "this
+    // project does not use GitHub" from "nobody is connected yet".
+    //
+    // Refused only on an EXPLICIT `false`. Absent is undecided, and a project planned before the axis
+    // existed has no opinion; refusing those would break every project that predates this.
+    if store.classify_get().ok().flatten().and_then(|c| c.get("usesGithub").and_then(|v| v.as_bool()))
+        == Some(false)
+    {
+        return Err(
+            "this project is classified as NOT using GitHub, so there is nothing to publish.\n\
+             That was decided in Discovery and recorded in the plan (`bsc plan classify get`).\n\
+             If it is wrong, change the decision rather than working around it: \
+             `bsc plan classify set` with \"usesGithub\": true."
+                .to_string(),
+        );
+    }
+
     let repos = store.repo_list().map_err(|e| format!("could not read repos: {e}"))?;
     if repos.is_empty() {
         return Err("nothing to publish — the plan has no linked repositories (`bsc plan repo add <owner/name>`)".into());
