@@ -225,7 +225,16 @@ describe("useGraphViewport initial fit (#3433)", () => {
 });
 
 describe("useGraphViewport wheel listener lifecycle (#2454)", () => {
-  it("zooms a viewport element attached AFTER the hook mounts", () => {
+  // The wheel paints IMPERATIVELY and tells React once the gesture settles (#zoom-re-renders-react-on-
+  // every-wheel-tick), the same contract the drag has had since #4140 — so `result.current.view` is
+  // eventually-consistent during a gesture and these tests have to let it settle before reading it.
+  // Without this, three of them failed and a fourth passed VACUOUSLY: it compared the uncommitted view
+  // against itself, so its invariant held trivially.
+  const settle = async () => {
+    await act(async () => { await new Promise((r) => setTimeout(r, 160)); });
+  };
+
+  it("zooms a viewport element attached AFTER the hook mounts", async () => {
     // Regression: Design Studio mounts the hook while the center pane shows the Library view, so
     // the canvas element only arrives later. The old mount effect ran once against an empty ref
     // and never re-attached — scroll-zoom stayed permanently dead.
@@ -234,12 +243,13 @@ describe("useGraphViewport wheel listener lifecycle (#2454)", () => {
     act(() => result.current.setVp(el));
     let cancelled = false;
     act(() => { cancelled = !wheel(el, { clientX: 300, clientY: 200 }); });
+    await settle();
     expect(result.current.view.scale).toBeCloseTo(NOTCH, 6);
     // Non-passive: the handler preventDefaults the page scroll.
     expect(cancelled).toBe(true);
   });
 
-  it("keeps the world point under the cursor fixed across a wheel zoom", () => {
+  it("keeps the world point under the cursor fixed across a wheel zoom", async () => {
     const { result } = renderHook(() => useGraphViewport({ w: 1000, h: 1000 }));
     const el = document.createElement("div"); // jsdom rect at (0,0) → viewport coords = client coords
     act(() => result.current.setVp(el));
@@ -247,29 +257,36 @@ describe("useGraphViewport wheel listener lifecycle (#2454)", () => {
     const v0 = result.current.view;
     const worldX = (mx - v0.tx) / v0.scale, worldY = (my - v0.ty) / v0.scale;
     act(() => { wheel(el, { clientX: mx, clientY: my }); });
+    await settle();
     const v = result.current.view;
+    // Assert the zoom actually HAPPENED before checking the anchor — otherwise an unchanged view
+    // satisfies the invariant trivially, which is exactly what this test started doing.
+    expect(v.scale).toBeCloseTo(NOTCH, 6);
     expect(worldX * v.scale + v.tx).toBeCloseTo(mx, 6);
     expect(worldY * v.scale + v.ty).toBeCloseTo(my, 6);
   });
 
-  it("does not double the listener when setVp repeats the same element", () => {
+  it("does not double the listener when setVp repeats the same element", async () => {
     const { result } = renderHook(() => useGraphViewport({ w: 1000, h: 1000 }));
     const el = document.createElement("div");
     act(() => result.current.setVp(el));
     act(() => result.current.setVp(el));
     act(() => { wheel(el); });
+    await settle();
     expect(result.current.view.scale).toBeCloseTo(NOTCH, 6); // exactly one zoom step, not two
   });
 
-  it("detaches from a replaced element and follows the new one", () => {
+  it("detaches from a replaced element and follows the new one", async () => {
     const { result } = renderHook(() => useGraphViewport({ w: 1000, h: 1000 }));
     const a = document.createElement("div");
     const b = document.createElement("div");
     act(() => result.current.setVp(a));
     act(() => result.current.setVp(b));
     act(() => { wheel(a); });
+    await settle();
     expect(result.current.view.scale).toBe(1); // the old element is inert
     act(() => { wheel(b); });
+    await settle();
     expect(result.current.view.scale).toBeCloseTo(NOTCH, 6);
   });
 
