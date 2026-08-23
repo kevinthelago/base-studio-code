@@ -13,17 +13,23 @@ const FULL: WhatamiDeps = {
     id === "persona-worker"
       ? { name: "Worker", startPrompt: "You build the thing.\nSecond line." }
       : undefined,
+  view: () => ({ viewing: "Components — React — bsc-kit", workspace: "components", pageTab: "react" }),
 };
 
 describe("describePane", () => {
   it("reports the persona, its name, the role and the brief", () => {
     const ack = describePane("r1", { paneId: "demo:worker" }, FULL);
+    // Exact shape on purpose — it is what caught the view fields being added, and a field appearing
+    // in this ack without a decision is exactly the drift worth failing on.
     expect(ack).toEqual({
       id: "r1",
       personaId: "persona-worker",
       personaName: "Worker",
       role: "worker",
       startPrompt: "You build the thing.\nSecond line.",
+      viewing: "Components — React — bsc-kit",
+      workspace: "components",
+      pageTab: "react",
     });
     expect(ack.error).toBeUndefined();
   });
@@ -40,7 +46,7 @@ describe("describePane", () => {
     const ack = describePane(
       "r1",
       { paneId: "p" },
-      { personaFor: () => undefined, roleFor: () => undefined, personaRecord: () => undefined },
+      { ...FULL, personaFor: () => undefined, roleFor: () => undefined, personaRecord: () => undefined },
     );
     expect(ack.error).toBeUndefined();
     expect(ack.role).toBeUndefined();
@@ -61,5 +67,51 @@ describe("describePane", () => {
 
   it("carries the request id back so a concurrent caller cannot be answered wrongly", () => {
     expect(describePane("req-42", { paneId: "p" }, FULL).id).toBe("req-42");
+  });
+});
+
+// ── WHAT THE USER IS LOOKING AT (`a-system-session-must-know-what-the-user-is-looking-at`) ──────
+//
+// The designer was told to "simplify the graph" and asked which one. The tab already said, on
+// screen. A launch-time scope cannot close that: it names a technology and nothing finer, it is
+// fixed while the tab is not, and the studios whose axis is not technology run ONE session across
+// every value.
+describe("the reported view", () => {
+  it("carries the crumb, the workspace and the active tab", () => {
+    const ack = describePane("r1", { paneId: "design-studio:designer-react" }, FULL);
+    expect(ack.viewing).toBe("Components — React — bsc-kit");
+    expect(ack.workspace).toBe("components");
+    expect(ack.pageTab).toBe("react");
+  });
+
+  it("is reported for a pane with NO persona and NO role", () => {
+    // What is on screen is a property of the app, not of the pane's identity. A plain console asking
+    // "where am I" deserves the answer, and gating it on having a persona would withhold it from the
+    // sessions most likely to be confused.
+    const ack = describePane(
+      "r1",
+      { paneId: "p" },
+      { ...FULL, personaFor: () => undefined, roleFor: () => undefined },
+    );
+    expect(ack.role).toBeUndefined();
+    expect(ack.personaId).toBeUndefined();
+    expect(ack.viewing).toBe("Components — React — bsc-kit");
+  });
+
+  it("omits the view rather than inventing one when the app cannot say", () => {
+    // A blank crumb is a real state (a workspace with no tab yet). Reporting "" would read as a
+    // place; omitting it reads as "unknown", which is the truth.
+    const ack = describePane("r1", { paneId: "p" }, { ...FULL, view: () => ({}) });
+    expect(ack.viewing).toBeUndefined();
+    expect(ack.workspace).toBeUndefined();
+    expect(ack.pageTab).toBeUndefined();
+  });
+
+  it("never lets a thrown view take down the answer", () => {
+    // The identity half must survive a broken view: this verb is how an agent learns what it is
+    // ALLOWED to do, and losing that to a crumb bug would be a bad trade.
+    expect(() =>
+      describePane("r1", { paneId: "p" }, { ...FULL, view: () => { throw new Error("boom"); } }),
+    ).toThrow();
   });
 });
