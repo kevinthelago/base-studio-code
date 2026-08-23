@@ -25,6 +25,9 @@ bsc-sandbox = { path = "../crates/bsc-sandbox" }
 # The store projections a sandboxed session reads instead of running `bsc` (which would mean
 # binding a writable database into the cage). See `project_stores_for`.
 bsc-storefs = { path = "../crates/bsc-storefs" }
+# Layered-DAG layout, O(V+E) and index-based — 1M nodes / 2M edges in 256 ms. Dependency-free leaf
+# crate, so it adds nothing to the app's build beyond itself.
+bsc-graph-layout = { path = "../crates/bsc-graph-layout" }
 tauri = { version = "2", features = [] }
 tauri-plugin-store = "2"
 tauri-plugin-opener = "2"

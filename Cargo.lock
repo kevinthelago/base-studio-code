@@ -509,6 +509,7 @@ dependencies = [
  "bsc-fleet",
  "bsc-github",
  "bsc-graph",
+ "bsc-graph-layout",
  "bsc-llm",
  "bsc-navigate",
  "bsc-persona",
