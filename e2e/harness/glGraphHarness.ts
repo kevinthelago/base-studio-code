@@ -38,6 +38,7 @@ declare global {
       resetCounters(): void;
       isSoftware(): boolean;
       drawnExtentOf(i: number): { w: number; h: number; ratio: number } | string;
+      cardSample(): { centre: number[]; dot: number[]; edge: number[]; distinctColours: number } | string;
     };
   }
 }
@@ -227,6 +228,45 @@ window.__glGraphHarness = {
     if (lit === 0) return "nothing drawn";
     const w = maxX - minX + 1, h = maxY - minY + 1;
     return { w, h, ratio: +(w / h).toFixed(2) };
+  },
+  /** Sample the drawn card at three places: its centre, the role dot, and its border. */
+  cardSample() {
+    const c = document.createElement("canvas");
+    c.width = 512; c.height = 512;
+    const r = createGraphRenderer(c, { preserveDrawingBuffer: true });
+    if (!r) return "no renderer";
+    const g2 = c.getContext("webgl2");
+    if (!g2) return "no context";
+    // A vivid role colour, so a filled card is unmistakable from a surface one.
+    r.setPalette([0.11, 0.12, 0.14, 1], [0.35, 0.37, 0.40, 1], [0.36, 0.62, 1, 1]);
+    r.resize(512, 512, 1);
+    r.setNodes(new Float32Array([0, 0]), new Float32Array([CARD_W, CARD_H]), new Uint32Array([0xff00a0ff]), 1);
+    r.setEdges(new Uint32Array(0), 0);
+    r.setView({ tx: 256, ty: 256, scale: 1 });
+    r.draw();
+    const px = new Uint8Array(512 * 512 * 4);
+    g2.readPixels(0, 0, 512, 512, g2.RGBA, g2.UNSIGNED_BYTE, px);
+    // readPixels is bottom-up; the card is centred at (256,256).
+    const at = (x: number, y: number) => {
+      const i = ((511 - y) * 512 + x) * 4;
+      return [px[i], px[i + 1], px[i + 2], px[i + 3]];
+    };
+    const left = 256 - CARD_W / 2, top = 256 - CARD_H / 2;
+    const seen = new Set<string>();
+    for (let y = top; y < top + CARD_H; y += 2) {
+      for (let x = left; x < left + CARD_W; x += 2) {
+        const p2 = at(Math.round(x), Math.round(y));
+        if (p2[3] > 40) seen.add(p2.slice(0, 3).join(","));
+      }
+    }
+    const out = {
+      centre: at(256, 256),
+      dot: at(Math.round(left + 17), Math.round(top + 19)),
+      edge: at(Math.round(left + 1), 256),
+      distinctColours: seen.size,
+    };
+    r.dispose();
+    return out;
   },
   isSoftware() { return /swiftshader|llvmpipe|software|swrast/i.test(rendererName); },
 };

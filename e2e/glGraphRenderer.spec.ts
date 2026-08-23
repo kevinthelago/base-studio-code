@@ -239,3 +239,26 @@ test("a node is drawn at its OWN width and height, not as a square", async () =>
   expect(ratio).toBeLessThan(3.3);
   console.log(`  node drawn ${w}x${h} px (aspect ${ratio}) — cards are 172x58, a square would read 1.0`);
 });
+
+test("a node is drawn as a CARD — surface fill, border, and a role dot in the corner", async () => {
+  // The previous shape test proved the node's EXTENT. This proves its CONTENT, which is the half that
+  // made the maintainer call the graph ugly: the whole card was filled with the role colour and the
+  // label floated underneath, instead of a surface card with an 8px dot.
+  test.setTimeout(600_000);
+  const s = await page.evaluate(() => window.__glGraphHarness!.cardSample());
+  expect(typeof s, `expected a sample, got ${JSON.stringify(s)}`).not.toBe("string");
+  const { centre, dot, edge, distinctColours } = s as { centre: number[]; dot: number[]; edge: number[]; distinctColours: number };
+
+  // The CENTRE is the surface, not the role colour. The harness paints a vivid role colour, so a filled
+  // card would show it here — that is exactly the bug.
+  const vivid = (c: number[]) => Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) > 60;
+  expect(vivid(centre), `card centre ${JSON.stringify(centre)} should be a neutral surface, not the role colour`).toBe(false);
+  // The DOT carries the role colour.
+  expect(vivid(dot), `the role dot ${JSON.stringify(dot)} should carry the role colour`).toBe(true);
+  // The EDGE is the border: distinct from the surface.
+  const differs = (a: number[], b: number[]) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) > 12;
+  expect(differs(edge, centre), `border ${JSON.stringify(edge)} vs surface ${JSON.stringify(centre)}`).toBe(true);
+  // A solid-filled card would be ~1 colour; a card has surface + border + dot + antialiasing.
+  expect(distinctColours).toBeGreaterThan(3);
+  console.log(`  card: surface ${JSON.stringify(centre)} · border ${JSON.stringify(edge)} · dot ${JSON.stringify(dot)}`);
+});

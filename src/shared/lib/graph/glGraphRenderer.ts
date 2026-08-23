@@ -70,6 +70,11 @@ export interface GraphRenderer {
    * Attach an LOD pyramid. From here the renderer draws the level the zoom can actually resolve, so the
    * frame cost tracks VIEWPORT AREA rather than node count. Pass `null` to go back to drawing the nodes.
    */
+  /**
+   * The card palette as 0..1 RGBA. Resolve from the live cascade (--bg-elev, --border, --accent) rather
+   * than hard-coding: a second copy of the palette is a second thing to keep in sync with the theme.
+   */
+  setPalette?(surface: readonly number[], border: readonly number[], accent: readonly number[]): void;
   setLod(pyramid: LodPyramid | null, aggregateColor?: number): void;
   /** Which pyramid level the last `draw()` used. 0 means the nodes themselves. */
   readonly lodLevel: number;
@@ -93,7 +98,7 @@ uniform sampler2D uPos;
 uniform vec2 uViewport;
 uniform vec2 uTranslate;
 uniform float uScale;
-out vec2 vCorner; out vec4 vColor; out float vState; out float vPx; out vec2 vHalf;
+out vec2 vCorner; out vec4 vColor; out float vState; out float vPx; out vec2 vHalf; out float vShort;
 void main() {
   ivec2 t = ivec2(gl_InstanceID % ${POS_TEX_W}, gl_InstanceID / ${POS_TEX_W});
   vec2 p = texelFetch(uPos, t, 0).rg;
@@ -105,6 +110,9 @@ void main() {
   // this space so the corner radius stays CIRCULAR: evaluating it in raw (-1..1) corner space stretches
   // the radius with the aspect ratio and gives a 172x58 card lozenge ends.
   vHalf = aSize / min(aSize.x, aSize.y);
+  // The short half-extent in WORLD units. The fragment shader measures the border, the dot and the
+  // padding in world units (they are card geometry, not screen geometry), and this is the conversion.
+  vShort = min(aSize.x, aSize.y) * 0.5;
   // The THIN axis sets the pixel gradient, so antialiasing must be derived from it — using the long axis
   // makes a wide, short card's edges soften as if it were three times taller than it is.
   vPx = min(aSize.x, aSize.y) * uScale;
@@ -114,8 +122,11 @@ void main() {
 // free at any count — and because it stays crisp at every zoom where a bitmap or a CSS border would not.
 const NODE_FS = `#version 300 es
 precision mediump float;
-in vec2 vCorner; in vec4 vColor; in float vState; in float vPx; in vec2 vHalf;
+in vec2 vCorner; in vec4 vColor; in float vState; in float vPx; in vec2 vHalf; in float vShort;
 out vec4 outColor;
+uniform vec4 uSurface;
+uniform vec4 uBorder;
+uniform vec4 uAccent;
 float sdRoundBox(vec2 p, vec2 b, float r) {
   vec2 q = abs(p) - b + r;
   return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
@@ -123,22 +134,40 @@ float sdRoundBox(vec2 p, vec2 b, float r) {
 void main() {
   // vCorner is -1..1 on both axes; scaling by vHalf restores the real aspect, so the box is measured in
   // units of the SHORT half-extent and the radius is the same in x and y.
-  float d = sdRoundBox(vCorner * vHalf, vHalf, 0.35);
-  // One pixel expressed in local (-1..1) units, so antialiasing is a constant screen width at any zoom.
+  vec2 p = vCorner * vHalf;
+  // Card metrics, mirroring .ds-node in designStudio.css. Expressed as world units over the short
+  // half-extent so they travel with the card's size instead of being pinned to one graph's numbers:
+  //   border-radius 11px · border 1px · padding 11px 13px · an 8px role dot in the first grid column.
+  float u = 1.0 / max(vShort, 0.0001);      // one world unit, in SDF space
+  float d = sdRoundBox(p, vHalf, 11.0 * u);
+  // One pixel in local units, so antialiasing is a constant screen width at any zoom.
   float aa = max(fwidth(d), 1.0 / max(vPx, 1.0));
-  float fill = 1.0 - smoothstep(-aa, aa, d);
-  if (fill <= 0.003) discard;
+  float card = 1.0 - smoothstep(-aa, aa, d);
+  if (card <= 0.003) discard;
+
   float st = floor(vState * 255.0 + 0.5);
-  vec3 rgb = vColor.rgb;
-  float alpha = vColor.a;
-  // A dimmed node keeps its hue and loses contrast; a selected one gets a bright ring rather than a
-  // different fill, so selection reads at a glance without recolouring the graph.
-  if (st == 2.0) { rgb = mix(rgb, vec3(0.5), 0.55); alpha *= 0.45; }
-  if (st == 1.0) {
-    float ring = 1.0 - smoothstep(-aa, aa, abs(d + 0.12) - 0.06);
-    rgb = mix(rgb, vec3(1.0), ring * 0.85);
-  }
-  outColor = vec4(rgb * fill * alpha, fill * alpha);
+  // The BORDER carries the state, never the fill — .ds-node keeps its elevated surface when selected
+  // (#2491), and painting the body would lose the role dot and the text contrast with it.
+  vec4 border = uBorder;
+  if (st == 1.0) border = uAccent;
+  if (st == 3.0) border = mix(uBorder, uAccent, 0.55);
+
+  // Inset by one world unit — the 1px border.
+  float interior = 1.0 - smoothstep(-aa, aa, d + 1.0 * u);
+  vec4 col = mix(border, uSurface, interior);
+
+  // The role dot: 8px across, centred in the first grid column (padding-left 13 + radius 4) and on the
+  // NAME row (padding-top 11 + half of that row). This is the only place the role colour appears — it
+  // used to be the entire card, which is what made the graph read as coloured blobs.
+  vec2 dotC = vec2(-vHalf.x + 17.0 * u, -vHalf.y + 19.0 * u);
+  float dotD = length(p - dotC) - 4.0 * u;
+  float dot = 1.0 - smoothstep(-aa, aa, dotD);
+  col.rgb = mix(col.rgb, vColor.rgb, dot * vColor.a);
+
+  // Dimmed: a related/background node loses contrast without losing its identity.
+  float alpha = col.a;
+  if (st == 2.0) { col.rgb = mix(col.rgb, uSurface.rgb, 0.45); alpha *= 0.55; }
+  outColor = vec4(col.rgb * card * alpha, card * alpha);
 }`;
 
 const EDGE_VS = `#version 300 es
@@ -291,6 +320,12 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   const gl: WebGL2RenderingContext = ctx;
 
   const edgeWidthPx = opts.edgeWidthPx ?? 1.5;
+  // The card palette. These defaults are a dark-surface guess; the caller resolves the REAL tokens
+  // (--bg-elev, --border, --accent) from the live cascade, so the graph follows the theme instead of
+  // carrying a second copy of it.
+  let surfaceRgba: [number, number, number, number] = [0.11, 0.12, 0.14, 1];
+  let borderRgba: [number, number, number, number] = [0.25, 0.27, 0.30, 1];
+  let accentRgba: [number, number, number, number] = [0.36, 0.62, 1.0, 1];
   const edgeColor = opts.edgeColor ?? 0x66808080;
 
   let nodeProg: WebGLProgram, edgeProg: WebGLProgram, labelProg: WebGLProgram;
@@ -366,6 +401,9 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
 
   const uNode = {
     pos: gl.getUniformLocation(nodeProg, "uPos"),
+    surface: gl.getUniformLocation(nodeProg, "uSurface"),
+    border: gl.getUniformLocation(nodeProg, "uBorder"),
+    accent: gl.getUniformLocation(nodeProg, "uAccent"),
     viewport: gl.getUniformLocation(nodeProg, "uViewport"),
     translate: gl.getUniformLocation(nodeProg, "uTranslate"),
     scale: gl.getUniformLocation(nodeProg, "uScale"),
@@ -550,6 +588,9 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
       gl.uniform2f(uNode.viewport, vpW, vpH);
       gl.uniform2f(uNode.translate, view.tx, view.ty);
       gl.uniform1f(uNode.scale, view.scale);
+      gl.uniform4f(uNode.surface, surfaceRgba[0], surfaceRgba[1], surfaceRgba[2], surfaceRgba[3]);
+      gl.uniform4f(uNode.border, borderRgba[0], borderRgba[1], borderRgba[2], borderRgba[3]);
+      gl.uniform4f(uNode.accent, accentRgba[0], accentRgba[1], accentRgba[2], accentRgba[3]);
       gl.bindVertexArray(nodeVao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nodeCount);
     }
@@ -615,6 +656,14 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
     }
   }
 
+  function setPalette(s: readonly number[], b: readonly number[], a: readonly number[]): void {
+    const four = (v: readonly number[], d: [number, number, number, number]): [number, number, number, number] =>
+      v.length >= 3 ? [v[0], v[1], v[2], v.length > 3 ? v[3] : 1] : d;
+    surfaceRgba = four(s, surfaceRgba);
+    borderRgba = four(b, borderRgba);
+    accentRgba = four(a, accentRgba);
+  }
+
   function setAtlas(a: GlyphAtlas): void {
     atlas = a;
     gl.bindTexture(gl.TEXTURE_2D, atlasTex);
@@ -656,12 +705,20 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
       // Label em size follows the node, so text zooms with the graph rather than floating free of it.
       // The label follows the card's HEIGHT, not its width: a 172x58 card sized off its long axis would
       // put ~55 px of text on a 58 px card.
-      const emPx = halfH[i] * 2 * view.scale * 0.55;
+      // The NAME's own size, mirroring .ds-node-name (13px on a 58px card) rather than a fraction of
+      // the box. The text sits INSIDE the card now, so it has to match the card's type scale or it
+      // overlaps the second row.
+      const emPx = (halfH[i] * 2) * (13 / 58) * view.scale;
       if (emPx < MIN_LABEL_PX) continue;
       const scale = emPx / atlas.fontSize;
       const laid = layoutLabel(text, atlas);
-      const originX = positions[i * 2] * view.scale + view.tx - (laid.width * scale) / 2;
-      const originY = positions[i * 2 + 1] * view.scale + view.ty + halfH[i] * view.scale + emPx;
+        // Left-aligned at the grid's name column: padding-left 13 + the 8px dot + an 8px column gap
+        // = 29 card units in from the left edge. It used to be centred UNDER the node.
+        const leftPx = (positions[i * 2] - halfW[i]) * view.scale + view.tx;
+        const originX = leftPx + (halfH[i] * 2) * (29 / 58) * view.scale;
+        // The name row's baseline: padding-top 11 plus the row's own height, in card units.
+        const topPx = (positions[i * 2 + 1] - halfH[i]) * view.scale + view.ty;
+        const originY = topPx + (halfH[i] * 2) * (23 / 58) * view.scale;
       for (const pg of laid.glyphs) {
         if (g >= MAX_LABEL_GLYPHS) return g;
         const q = pg.glyph;
@@ -703,7 +760,7 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   }
 
   return {
-    setNodes, setEdges, setState, setPosition, setView, resize, draw, pick, dispose, setAtlas, setLabels, setLod,
+    setNodes, setEdges, setState, setPosition, setView, resize, draw, pick, dispose, setAtlas, setLabels, setLod, setPalette,
     get lodLevel() { return lodLevel < 0 ? 0 : lodLevel; },
     get nodeCount() { return nodeCount; },
     get edgeCount() { return edgeCount; },
