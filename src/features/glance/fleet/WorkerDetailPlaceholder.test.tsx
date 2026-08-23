@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Placeholder } from "@/features/planner/fleet/WorkerDetailPlaceholder";
+import { Placeholder } from "@/features/glance/fleet/WorkerDetailPlaceholder";
 
 describe("WorkerDetail Placeholder (#499)", () => {
   it("renders its title, hint, and body copy", () => {

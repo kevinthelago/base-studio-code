@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Modal } from "@/features/planner/fleet/WorkerDetailModal";
+import { Modal } from "@/features/glance/fleet/WorkerDetailModal";
 
 describe("WorkerDetail Modal shell (#499)", () => {
   it("renders its title, children, and footer", () => {

@@ -134,7 +134,7 @@ const KNOWN_PTY_WRITERS: readonly string[] = [
   // It is legitimate: `send("steer" | "answer")` is a person typing into the worker-detail modal and
   // pressing send. It belongs here for the same reason the terminal does — a human is the author. What
   // was NOT acceptable is that nothing was watching it.
-  "@/features/planner/fleet/WorkerDetail",
+  "@/features/glance/fleet/WorkerDetail",
 
   // RETIRED to a record (#seed-the-store-only-records) — same capability, same argument, different form.
   "@/features/automations/useScheduler",
