@@ -74,7 +74,7 @@ fn claude_project_key(path: &str) -> String {
 /// Returns `true` if the value was changed, `false` if `key` was already trusted
 /// (so the caller can skip an unnecessary write and shrink the clobber window
 /// against a concurrently-running `claude`).
-fn mark_dir_trusted(config: &mut serde_json::Value, key: &str) -> bool {
+pub(crate) fn mark_dir_trusted(config: &mut serde_json::Value, key: &str) -> bool {
     use serde_json::{Map, Value};
     crate::platform::fsx::ensure_object(config);
     let obj = config.as_object_mut().unwrap();
