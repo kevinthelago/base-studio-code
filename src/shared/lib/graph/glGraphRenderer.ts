@@ -32,6 +32,7 @@
 import type { GraphView } from "@/shared/ui/layouts/useGraphViewport";
 import { buildGrid, pickNearest, queryRect, type SpatialGrid } from "@/shared/lib/graph/spatialGrid";
 import { layoutLabel, type GlyphAtlas } from "@/shared/lib/graph/glyphAtlas";
+import { levelFor, type LodPyramid } from "@/shared/lib/graph/lodPyramid";
 
 /** Per-instance state byte. Drives appearance in the shader; never causes a re-upload of anything else. */
 export const NODE_NORMAL = 0;
@@ -60,6 +61,13 @@ export interface GraphRenderer {
   /** Node index under a CSS-pixel point, or -1. O(1) expected — a grid query, never a scan, and never
    *  `readPixels` (a GPU readback is a pipeline stall costing more than the query it would replace). */
   pick(cssX: number, cssY: number): number;
+  /**
+   * Attach an LOD pyramid. From here the renderer draws the level the zoom can actually resolve, so the
+   * frame cost tracks VIEWPORT AREA rather than node count. Pass `null` to go back to drawing the nodes.
+   */
+  setLod(pyramid: LodPyramid | null, aggregateColor?: number): void;
+  /** Which pyramid level the last `draw()` used. 0 means the nodes themselves. */
+  readonly lodLevel: number;
   /** Upload the glyph atlas. Once per (font, size) — never per frame. */
   setAtlas(atlas: GlyphAtlas): void;
   /** Label text per node index. `null`/absent entries simply get no label. */
@@ -314,6 +322,11 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   let gridStale = true;
   let view: GraphView = { tx: 0, ty: 0, scale: 1 };
   let vpW = 1, vpH = 1;
+  let lod: LodPyramid | null = null;
+  let lodLevel = 0;
+  let lodColor = 0xffb0b0b0;
+  /** The level-0 node arrays, kept so going back down the pyramid does not need the caller. */
+  let baseNodes: { xy: Float32Array; size: Float32Array; rgba: Uint32Array; n: number } | null = null;
   let atlas: GlyphAtlas | null = null;
   let labels: readonly (string | null)[] = [];
   let lastGlyphCount = 0;
@@ -377,6 +390,12 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
     new Uint8Array(packed.buffer, packed.byteOffset, n * 4);
 
   function setNodes(xy: Float32Array, size: Float32Array, rgba: Uint32Array, count: number): void {
+    baseNodes = { xy, size, rgba, n: Math.max(0, Math.min(count, xy.length >> 1, size.length, rgba.length)) };
+    uploadNodes(xy, size, rgba, count);
+  }
+
+  /** The upload itself, without recording it as the base set — used when swapping to an LOD level. */
+  function uploadNodes(xy: Float32Array, size: Float32Array, rgba: Uint32Array, count: number): void {
     nodeCount = Math.max(0, Math.min(count, xy.length >> 1, size.length, rgba.length));
     positions = xy;
     gridStale = true;
@@ -470,6 +489,8 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   }
 
   function draw(): void {
+    // O(1): the level is arithmetic on the view scale. The swap below is skipped unless it changed.
+    if (lod) applyLevel(levelFor(lod, view.scale));
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -517,6 +538,46 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, lastGlyphCount);
     }
     gl.bindVertexArray(null);
+  }
+
+  /**
+   * Swap the drawn geometry to pyramid level `k` — `O(m)` in that level's population, and paid ONLY when
+   * the level changes, not per frame.
+   *
+   * Reuses the ordinary node upload rather than keeping a separate VAO and texture per level. Levels
+   * change a handful of times across a whole zoom sweep, so re-uploading ~n/4 floats on a transition is
+   * cheaper than the state and the code that per-level buffers would cost — and it means the LOD path
+   * runs through geometry that is already tested.
+   */
+  // NOT `useLevel`: a `use` prefix in this codebase means a React hook, and the lint rule that enforces
+  // that is right to — this is a plain function inside a factory, and calling it from `draw` would have
+  // read as a hook call outside a component to anyone scanning the file.
+  function applyLevel(k: number): void {
+    if (!lod || k === lodLevel) return;
+    lodLevel = k;
+    if (k === 0) {
+      if (baseNodes) uploadNodes(baseNodes.xy, baseNodes.size, baseNodes.rgba, baseNodes.n);
+      return;
+    }
+    const lv = lod.levels[k];
+    const size = new Float32Array(lv.n);
+    const rgba = new Uint32Array(lv.n);
+    // An aggregate is drawn at its CELL size, so the level tiles the space it stands for instead of
+    // leaving gaps that read as missing data.
+    size.fill(lv.cellSize);
+    rgba.fill(lodColor);
+    uploadNodes(lv.xy, size, rgba, lv.n);
+  }
+
+  function setLod(p: LodPyramid | null, aggregateColor?: number): void {
+    lod = p;
+    if (aggregateColor !== undefined) lodColor = aggregateColor;
+    // Force the next draw to re-evaluate: the pyramid may have changed under the same level number.
+    lodLevel = -1;
+    if (!p && baseNodes) {
+      lodLevel = 0;
+      uploadNodes(baseNodes.xy, baseNodes.size, baseNodes.rgba, baseNodes.n);
+    }
   }
 
   function setAtlas(a: GlyphAtlas): void {
@@ -605,7 +666,8 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   }
 
   return {
-    setNodes, setEdges, setState, setPosition, setView, resize, draw, pick, dispose, setAtlas, setLabels,
+    setNodes, setEdges, setState, setPosition, setView, resize, draw, pick, dispose, setAtlas, setLabels, setLod,
+    get lodLevel() { return lodLevel < 0 ? 0 : lodLevel; },
     get nodeCount() { return nodeCount; },
     get edgeCount() { return edgeCount; },
     get lastGlyphCount() { return lastGlyphCount; },

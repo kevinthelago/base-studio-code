@@ -6,6 +6,7 @@
 // real context.
 import { createGraphRenderer, NODE_SELECTED, type GraphRenderer } from "@/shared/lib/graph/glGraphRenderer";
 import { buildGlyphAtlas } from "@/shared/lib/graph/glyphAtlas";
+import { buildPyramid } from "@/shared/lib/graph/lodPyramid";
 
 /** What a call-counting wrapper observed since the last `resetCounters()`. */
 export interface GlCounters {
@@ -31,6 +32,9 @@ declare global {
       labelEveryNode(): void;
       setScale(scale: number): void;
       glyphCount(): number;
+      attachLod(): { levels: number; populations: number[]; buildMs: number };
+      detachLod(): void;
+      drawnAt(scale: number): { level: number; instances: number };
       resetCounters(): void;
       isSoftware(): boolean;
     };
@@ -153,6 +157,22 @@ window.__glGraphHarness = {
     renderer?.setView({ tx: 0, ty: 0, scale });
   },
   glyphCount() { return renderer?.lastGlyphCount ?? -1; },
+  attachLod() {
+    if (!renderer) return { levels: 0, populations: [], buildMs: 0 };
+    const t = performance.now();
+    const p = buildPyramid(positions, renderer.nodeCount);
+    const buildMs = performance.now() - t;
+    renderer.setLod(p);
+    return { levels: p.levels.length, populations: p.levels.map((l) => l.n), buildMs };
+  },
+  detachLod() { renderer?.setLod(null); },
+  drawnAt(scale) {
+    if (!renderer) return { level: -1, instances: -1 };
+    renderer.setView({ tx: 0, ty: 0, scale });
+    renderer.draw();
+    // `nodeCount` is what the last upload put in the buffer, so it IS the instance count the draw used.
+    return { level: renderer.lodLevel, instances: renderer.nodeCount };
+  },
   counters() { return { ...counters }; },
   resetCounters() {
     counters.bufferData = 0; counters.bufferSubData = 0; counters.bufferSubDataBytes = 0;
