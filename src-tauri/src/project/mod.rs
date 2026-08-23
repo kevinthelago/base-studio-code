@@ -7,3 +7,4 @@ pub mod plan_files;
 pub mod dead_code;
 pub mod ui_skeleton;
 pub mod preview;
+pub mod graph_layout;

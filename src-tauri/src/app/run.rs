@@ -323,6 +323,7 @@ pub fn run() {
             project::plan_files::clear_all_plan_files,
             project::plan_files::clear_project_plan_files,
             project::hub::list_local_projects,
+            project::graph_layout::graph_layout,
             project::files::write_project_file,
             project::files::write_project_file_bytes,
             project::dead_code::scan_dead_code,
