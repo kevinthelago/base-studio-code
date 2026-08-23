@@ -30,7 +30,8 @@
 // `texSubImage2D` texel: O(1). It also halves edge memory (8 B/edge rather than 16 B).
 
 import type { GraphView } from "@/shared/ui/layouts/useGraphViewport";
-import { buildGrid, pickNearest, type SpatialGrid } from "@/shared/lib/graph/spatialGrid";
+import { buildGrid, pickNearest, queryRect, type SpatialGrid } from "@/shared/lib/graph/spatialGrid";
+import { layoutLabel, type GlyphAtlas } from "@/shared/lib/graph/glyphAtlas";
 
 /** Per-instance state byte. Drives appearance in the shader; never causes a re-upload of anything else. */
 export const NODE_NORMAL = 0;
@@ -59,6 +60,12 @@ export interface GraphRenderer {
   /** Node index under a CSS-pixel point, or -1. O(1) expected — a grid query, never a scan, and never
    *  `readPixels` (a GPU readback is a pipeline stall costing more than the query it would replace). */
   pick(cssX: number, cssY: number): number;
+  /** Upload the glyph atlas. Once per (font, size) — never per frame. */
+  setAtlas(atlas: GlyphAtlas): void;
+  /** Label text per node index. `null`/absent entries simply get no label. */
+  setLabels(labels: readonly (string | null)[]): void;
+  /** How many glyph instances the last `draw()` emitted — the bounded number, for tests and telemetry. */
+  readonly lastGlyphCount: number;
   dispose(): void;
   readonly nodeCount: number;
   readonly edgeCount: number;
@@ -145,6 +152,56 @@ precision mediump float;
 in vec4 vColor; out vec4 outColor;
 void main() { outColor = vec4(vColor.rgb * vColor.a, vColor.a); }`;
 
+// Labels are drawn as one instanced quad per GLYPH, positioned in SCREEN space. Screen space rather
+// than world space because a label must stay the same size relative to its node while the graph zooms,
+// and because the CPU is already visiting each visible node to decide whether it gets a label at all.
+const LABEL_VS = `#version 300 es
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec4 aRect;
+layout(location=2) in vec4 aUv;
+uniform vec2 uViewport;
+out vec2 vUv;
+void main() {
+  vec2 s = aRect.xy + aCorner * aRect.zw;
+  gl_Position = vec4(s.x / uViewport.x * 2.0 - 1.0, 1.0 - s.y / uViewport.y * 2.0, 0.0, 1.0);
+  vUv = mix(aUv.xy, aUv.zw, aCorner);
+}`;
+
+// `fwidth` of the sampled distance is the whole reason this is a distance field: it gives the width of
+// one screen pixel IN FIELD UNITS, so the same texture antialiases correctly at any zoom instead of
+// blurring in and aliasing out the way a bitmap atlas does.
+const LABEL_FS = `#version 300 es
+precision mediump float;
+in vec2 vUv; out vec4 outColor;
+uniform sampler2D uAtlas;
+uniform vec4 uColor;
+void main() {
+  float d = texture(uAtlas, vUv).r;
+  float aa = max(fwidth(d), 0.001);
+  float a = smoothstep(0.5 - aa, 0.5 + aa, d);
+  if (a <= 0.004) discard;
+  outColor = vec4(uColor.rgb * uColor.a * a, uColor.a * a);
+}`;
+
+/**
+ * Smallest label the eye can use, in screen px of em size.
+ *
+ * This is not a taste setting — it is what BOUNDS THE WORK. A glyph is emitted only for a node whose
+ * label would clear this, so the number of labels is limited by screen area divided by legible size,
+ * never by graph size. Without it a million nodes means ~12M glyph quads, which is both over the frame
+ * budget (measured: 10M wide quads = 22.2 ms) and unreadable, which is the more important half.
+ */
+const MIN_LABEL_PX = 7;
+
+/**
+ * Hard cap on glyph instances per frame.
+ *
+ * The legibility gate already bounds this in every sane view; the cap covers the pathological one — a
+ * layout that stacked every node at one point would pass the gate for all of them at once. Truncating
+ * loses labels, which is visible and recoverable; not truncating stalls the frame.
+ */
+const MAX_LABEL_GLYPHS = 20000;
+
 function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
   const sh = gl.createShader(type);
   if (!sh) throw new Error("createShader returned null");
@@ -201,10 +258,11 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   const edgeWidthPx = opts.edgeWidthPx ?? 1.5;
   const edgeColor = opts.edgeColor ?? 0x66808080;
 
-  let nodeProg: WebGLProgram, edgeProg: WebGLProgram;
+  let nodeProg: WebGLProgram, edgeProg: WebGLProgram, labelProg: WebGLProgram;
   try {
     nodeProg = link(gl, NODE_VS, NODE_FS);
     edgeProg = link(gl, EDGE_VS, EDGE_FS);
+    labelProg = link(gl, LABEL_VS, LABEL_FS);
   } catch {
     // A driver that cannot compile these is a driver we fall back from, not one we crash on.
     return null;
@@ -220,6 +278,12 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   const edgeQuadBuf = gl.createBuffer()!;
   gl.bindBuffer(gl.ARRAY_BUFFER, edgeQuadBuf);
   gl.bufferData(gl.ARRAY_BUFFER, edgeQuad, gl.STATIC_DRAW);
+  // Labels need a 0..1 corner: `aRect.xy` is the quad's top-left and the corner scales `aRect.zw` off
+  // it. The node quad is -1..1 (centred) and the edge quad is 0..1 by 0.5 (a ribbon), so neither fits.
+  const unitQuad = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]);
+  const unitQuadBuf = gl.createBuffer()!;
+  gl.bindBuffer(gl.ARRAY_BUFFER, unitQuadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, unitQuad, gl.STATIC_DRAW);
 
   const sizeBuf = gl.createBuffer()!;
   const colorBuf = gl.createBuffer()!;
@@ -227,8 +291,12 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   const pairBuf = gl.createBuffer()!;
   const edgeColorBuf = gl.createBuffer()!;
   const posTex = gl.createTexture()!;
+  const atlasTex = gl.createTexture()!;
+  const labelRectBuf = gl.createBuffer()!;
+  const labelUvBuf = gl.createBuffer()!;
   const nodeVao = gl.createVertexArray()!;
   const edgeVao = gl.createVertexArray()!;
+  const labelVao = gl.createVertexArray()!;
 
   let nodeCount = 0;
   let edgeCount = 0;
@@ -246,12 +314,25 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   let gridStale = true;
   let view: GraphView = { tx: 0, ty: 0, scale: 1 };
   let vpW = 1, vpH = 1;
+  let atlas: GlyphAtlas | null = null;
+  let labels: readonly (string | null)[] = [];
+  let lastGlyphCount = 0;
+  // Reused across frames so the label pass allocates NOTHING per frame — the point of bounding the
+  // glyph count is lost if the bound is re-allocated 60 times a second.
+  const labelRects = new Float32Array(MAX_LABEL_GLYPHS * 4);
+  const labelUvs = new Float32Array(MAX_LABEL_GLYPHS * 4);
+  let visible = new Uint32Array(4096);
 
   const uNode = {
     pos: gl.getUniformLocation(nodeProg, "uPos"),
     viewport: gl.getUniformLocation(nodeProg, "uViewport"),
     translate: gl.getUniformLocation(nodeProg, "uTranslate"),
     scale: gl.getUniformLocation(nodeProg, "uScale"),
+  };
+  const uLabel = {
+    atlas: gl.getUniformLocation(labelProg, "uAtlas"),
+    viewport: gl.getUniformLocation(labelProg, "uViewport"),
+    color: gl.getUniformLocation(labelProg, "uColor"),
   };
   const uEdge = {
     pos: gl.getUniformLocation(edgeProg, "uPos"),
@@ -266,6 +347,25 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+  // LINEAR: the field is meant to be interpolated — nearest sampling would step the distance and put
+  // the antialiasing back where it started.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  gl.bindVertexArray(labelVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, unitQuadBuf);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, labelRectBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, labelRects.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(1, 1);
+  gl.bindBuffer(gl.ARRAY_BUFFER, labelUvBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, labelUvs.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(2, 1);
+  gl.bindVertexArray(null);
 
   gl.disable(gl.DEPTH_TEST);
   gl.enable(gl.BLEND);
@@ -397,7 +497,88 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
       gl.bindVertexArray(nodeVao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nodeCount);
     }
+    // Labels LAST so they sit above both nodes and edges, and because the pass is skipped entirely when
+    // nothing is legible — which is the common case at overview zoom.
+    lastGlyphCount = buildLabelInstances();
+    if (lastGlyphCount > 0) {
+      gl.useProgram(labelProg);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+      gl.uniform1i(uLabel.atlas, 1);
+      gl.uniform2f(uLabel.viewport, vpW, vpH);
+      gl.uniform4f(uLabel.color, 0.93, 0.94, 0.96, 1.0);
+      gl.bindVertexArray(labelVao);
+      // Only the glyphs actually written are uploaded — the buffers are allocated once at full capacity
+      // and re-filled, so a frame with 200 labels does not pay for a capacity of 20,000.
+      gl.bindBuffer(gl.ARRAY_BUFFER, labelRectBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, labelRects, 0, lastGlyphCount * 4);
+      gl.bindBuffer(gl.ARRAY_BUFFER, labelUvBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, labelUvs, 0, lastGlyphCount * 4);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, lastGlyphCount);
+    }
     gl.bindVertexArray(null);
+  }
+
+  function setAtlas(a: GlyphAtlas): void {
+    atlas = a;
+    gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+    // R8, one byte per texel: the field is a single channel, and storing it as RGBA would quadruple a
+    // texture that is uploaded once and sampled constantly.
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, a.width, a.height, 0, gl.RED, gl.UNSIGNED_BYTE, a.data);
+  }
+
+  function setLabels(l: readonly (string | null)[]): void {
+    labels = l;
+  }
+
+  /**
+   * Fill the glyph instance buffers for everything on screen and legible — `O(visible glyphs)`.
+   *
+   * The gate is what makes this bounded: a node whose label would render under `MIN_LABEL_PX` is
+   * skipped entirely, so the cost tracks SCREEN AREA rather than node count. A million-node graph
+   * zoomed out emits zero glyphs and costs one `queryRect`.
+   */
+  function buildLabelInstances(): number {
+    if (!atlas || labels.length === 0 || nodeCount === 0) return 0;
+    if (gridStale || !grid) { grid = buildGrid(positions, nodeCount); gridStale = false; }
+    // The world rect the viewport currently shows. No margin: unlike a DOM graph there is nothing to
+    // pre-mount, and a label that appears as it enters the screen is correct.
+    const wx = -view.tx / view.scale;
+    const wy = -view.ty / view.scale;
+    const ww = vpW / view.scale;
+    const wh = vpH / view.scale;
+    if (visible.length < nodeCount && visible.length < 1 << 20) {
+      visible = new Uint32Array(Math.min(nodeCount, 1 << 20));
+    }
+    const n = queryRect(grid, wx, wy, ww, wh, visible);
+    let g = 0;
+    for (let k = 0; k < n; k++) {
+      const i = visible[k];
+      const text = labels[i];
+      if (!text) continue;
+      // Label em size follows the node, so text zooms with the graph rather than floating free of it.
+      const emPx = radii[i] * 2 * view.scale * 0.32;
+      if (emPx < MIN_LABEL_PX) continue;
+      const scale = emPx / atlas.fontSize;
+      const laid = layoutLabel(text, atlas);
+      const originX = positions[i * 2] * view.scale + view.tx - (laid.width * scale) / 2;
+      const originY = positions[i * 2 + 1] * view.scale + view.ty + radii[i] * view.scale + emPx;
+      for (const pg of laid.glyphs) {
+        if (g >= MAX_LABEL_GLYPHS) return g;
+        const q = pg.glyph;
+        labelRects[g * 4] = originX + pg.x * scale;
+        labelRects[g * 4 + 1] = originY + pg.y * scale;
+        labelRects[g * 4 + 2] = q.w * scale;
+        labelRects[g * 4 + 3] = q.h * scale;
+        labelUvs[g * 4] = q.x / atlas.width;
+        labelUvs[g * 4 + 1] = q.y / atlas.height;
+        labelUvs[g * 4 + 2] = (q.x + q.w) / atlas.width;
+        labelUvs[g * 4 + 3] = (q.y + q.h) / atlas.height;
+        g++;
+      }
+    }
+    return g;
   }
 
   function pick(cssX: number, cssY: number): number {
@@ -412,17 +593,21 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   }
 
   function dispose(): void {
-    for (const b of [nodeQuadBuf, edgeQuadBuf, sizeBuf, colorBuf, stateBuf, pairBuf, edgeColorBuf]) gl.deleteBuffer(b);
+    for (const b of [nodeQuadBuf, edgeQuadBuf, unitQuadBuf, sizeBuf, colorBuf, stateBuf, pairBuf, edgeColorBuf, labelRectBuf, labelUvBuf]) gl.deleteBuffer(b);
     gl.deleteTexture(posTex);
+    gl.deleteTexture(atlasTex);
     gl.deleteVertexArray(nodeVao);
     gl.deleteVertexArray(edgeVao);
+    gl.deleteVertexArray(labelVao);
     gl.deleteProgram(nodeProg);
     gl.deleteProgram(edgeProg);
+    gl.deleteProgram(labelProg);
   }
 
   return {
-    setNodes, setEdges, setState, setPosition, setView, resize, draw, pick, dispose,
+    setNodes, setEdges, setState, setPosition, setView, resize, draw, pick, dispose, setAtlas, setLabels,
     get nodeCount() { return nodeCount; },
     get edgeCount() { return edgeCount; },
+    get lastGlyphCount() { return lastGlyphCount; },
   };
 }
