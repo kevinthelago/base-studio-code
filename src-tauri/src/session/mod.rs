@@ -10,6 +10,9 @@ pub mod launch;
 pub mod settings;
 pub mod sandbox;
 pub mod llm;
+/// The shared way a studio workspace is created — one directory per technology, and the session's
+/// context written into its `CLAUDE.md` instead of typed into its chat.
+pub mod studio_ws;
 pub mod designer;
 pub mod architect;
 pub mod librarian;

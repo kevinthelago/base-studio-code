@@ -139,6 +139,17 @@ pub const CREDENTIAL_GUEST_REL: &str = ".claude/.credentials.json";
 /// credential it needed was sitting right beside it.
 pub const HARNESS_STATE_GUEST_REL: &str = ".claude.json";
 
+/// Where [`SandboxSpec::history_dir`] is bound, relative to [`SandboxSpec::home`].
+///
+/// Claude Code keeps a session's TRANSCRIPTS here, one directory per working directory. `--continue`
+/// reads them, so on a tmpfs HOME there is never anything to continue: the caged designer reported
+/// `has_history=false · resumed=false` on every launch and started fresh every time, while the
+/// uncaged studios resumed normally from the user's real HOME.
+///
+/// Bound rather than made persistent wholesale, because the rest of a tmpfs HOME SHOULD die with the
+/// session — this is the one part whose whole purpose is to outlive it.
+pub const HISTORY_GUEST_REL: &str = ".claude/projects";
+
 /// Where [`SandboxSpec::rc_file`] is bound INSIDE the namespace.
 ///
 /// At the root for the same reason as [`HOOK_GUEST_PATH`]: under [`Usr::All`] a path beneath /usr
@@ -232,6 +243,19 @@ pub struct SandboxSpec {
     /// exactly the ambient authority it exists to remove. The app makes the copy, the same way it
     /// projects the plan store.
     pub harness_state_file: Option<PathBuf>,
+    /// A PERSISTENT host directory bound READ-WRITE at `<home>/`[`HISTORY_GUEST_REL`], so the session
+    /// can resume its own previous conversation. Requires [`Self::home`].
+    ///
+    /// The cage's HOME is a tmpfs on purpose — the harness's scratch state should not outlive the
+    /// session. Transcripts are the exception: a studio is a CONTINUING conversation, and one that
+    /// starts over on every launch is not the same feature. Per-session, like the state copy, and
+    /// outside the git tree, which is what the tmpfs was protecting.
+    ///
+    /// Note the harness keys these by the working directory, and inside the cage that is always
+    /// [`REPO_GUEST_PATH`] — so the key is stable across launches, which is exactly what makes
+    /// resuming possible. It also means two studios sharing a host directory would share a
+    /// conversation; they get one directory each instead.
+    pub history_dir: Option<PathBuf>,
     /// A shell rc bound read-only at [`RC_GUEST_PATH`], for the session's init line to `source`.
     ///
     /// It exists because the init line is written to a PTY in CANONICAL MODE, where Linux caps a
@@ -339,6 +363,9 @@ impl SandboxSpec {
             // a polkit prompt nobody is there to answer. The launcher downgrades from here when it
             // probes and finds no user systemd instance.
             scope: Scope::User,
+            // No history: a bare worker is a one-shot, and the escape demonstration must not depend
+            // on a directory existing. The studios opt in.
+            history_dir: None,
             // Deny by default. A caller that needs a toolchain widens this deliberately.
             usr: Usr::Curated(MINIMAL_BINS.iter().map(|s| s.to_string()).collect()),
             mounts: vec![
@@ -627,6 +654,16 @@ impl SandboxSpec {
                 // backslash into a POSIX guest path when rendered on Windows.
                 let h = s(home);
                 a.push(format!("{}/{}", h.trim_end_matches('/'), HARNESS_STATE_GUEST_REL));
+            }
+            // The one part of HOME that must SURVIVE the session — see the field's docs. Bound after
+            // the credential and the state file so it cannot be shadowed by either: bwrap applies
+            // mounts in order, and `.claude/projects` sits under the same `.claude` the credential
+            // creates.
+            if let Some(hist) = &self.history_dir {
+                a.push("--bind".into());
+                a.push(s(hist));
+                let h = s(home);
+                a.push(format!("{}/{}", h.trim_end_matches('/'), HISTORY_GUEST_REL));
             }
         }
 
