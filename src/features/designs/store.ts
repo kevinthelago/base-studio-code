@@ -16,7 +16,7 @@ import { kitUsageId, makeChange, planPropagation, dispatchKey } from "@/features
 import { SEED_COMPONENTS, SEED_KITS, planComponentRestamp, reconcileComponents, reconcileKits } from "./lib/seed";
 import { applyStamps } from "@/features/designs/lib/seedRefresh";
 import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "@/features/designs/lib/themes";
-import { loadComponents, loadComponentsGraph, loadKits, pushComponent, stampComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
+import { loadComponents, loadComponentsGraph, loadKits, pushComponent, stampComponent, dropComponent, pushKit, dropKit, APP_RECONCILE_WRITER } from "./lib/componentBridge";
 import { loadThemes, pushTheme, dropTheme, loadVariants } from "@/features/designs/lib/themeBridge";
 import { loadKitUsage, pushKitUsage, dropKitUsage } from "@/features/designs/lib/kitUsageBridge";
 import { setActiveKitThemes, applyVariantsToRoot, applyContributionsToRoot, applyAnimationsToRoot, kitAnimations, type DesignContributionOverlay } from "@/shared/ui/kit";
@@ -385,9 +385,9 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     // next hydrate picks up the newer copy instead. A record the store lacks has no prior rev to name and
     // is written unguarded, as before.
     const revById = new Map((loadedC ?? []).map((c) => [c.id, c.rev]));
-    for (const c of rc.pushes) void pushComponent(c, { ifVersion: revById.get(c.id) });
+    for (const c of rc.pushes) void pushComponent(c, { ifVersion: revById.get(c.id), by: APP_RECONCILE_WRITER });
     for (const id of rc.drops) void dropComponent(id);
-    for (const k of rk.pushes) void pushKit(k);
+    for (const k of rk.pushes) void pushKit(k, APP_RECONCILE_WRITER);
     for (const id of rk.drops) void dropKit(id);
   },
 
