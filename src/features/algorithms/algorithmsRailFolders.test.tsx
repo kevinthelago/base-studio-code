@@ -22,7 +22,7 @@ const foldered = buildKnowledge({
 });
 
 const renderRail = (graph: ReturnType<typeof buildKnowledge>) =>
-  render(<AlgorithmsRail graph={graph} activeTech="rust" selectedImpl={null} onSelectImpl={noop} onSelectLang={noop} />);
+  render(<AlgorithmsRail graph={graph} activeTech="rust" selectedImpl={null} onSelectImpl={noop} />);
 
 describe("AlgorithmsRail folder tree (#4107/#4128)", () => {
   it("nests the harvested folders under the language, tooltipped like the components rail", () => {

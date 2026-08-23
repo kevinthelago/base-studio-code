@@ -55,9 +55,12 @@ beforeEach(() => {
 const railRow = (name: string) =>
   screen.getAllByText(name).map((el) => el.closest("button.ds-comprow")).find(Boolean) as HTMLElement;
 
-/** The graph node card for a component (exact-name text match, so Chip ≠ LabelChip). */
+/** The graph node card for a component (exact-name text match, so Chip ≠ LabelChip).
+ *  `queryAllByText`, not `getAllByText`: a name that is nowhere on screen must come back FALSY rather
+ *  than throw. Since the rail became technology-scoped a component of another technology is absent
+ *  from both the graph AND the rail, and a throwing helper turns "is it absent?" into a test error. */
 const graphNode = (name: string) =>
-  screen.getAllByText(name).map((el) => el.closest(".ds-node")).find(Boolean) as HTMLElement;
+  screen.queryAllByText(name).map((el) => el.closest(".ds-node")).find(Boolean) as HTMLElement;
 
 describe("DesignsWorkbench (#2308)", () => {
   it("renders the kits→components rail and the composition graph as the one-and-only center view (#2453)", () => {
@@ -162,13 +165,19 @@ describe("DesignsWorkbench (#2308)", () => {
     const vueComp = { ...SEED_COMPONENTS[0], id: "vue-button", name: "VueButton", kitId: "vue-kit" };
     useAppStore.setState({ kits: [...SEED_KITS, vueKit], components: [...SEED_COMPONENTS, vueComp] });
     const { container } = render(<DesignsWorkbench />);
-    // The toolbar switcher is gone (#move-to-planner) — clicking a rail kit head activates that kit. The
-    // vue kit's head is labelled with its style ("material") under the single-kit style merge (#2506).
-    fireEvent.click(screen.getByText("material").closest("button.ds-kithead")!);
+    // The toolbar switcher is gone (#move-to-planner). Reaching ANOTHER technology's kit is the tab's
+    // job now (`technology-tabs-for-components-and-algorithms`) — and selecting the tab already lands
+    // on that technology's first kit, so it is the whole switch. Clicking the head afterwards would
+    // TOGGLE the group closed (`selectKit` expands it), which is why this stops at the tab; the
+    // rail-head path within one technology is covered below.
+    fireEvent.click(screen.getByText("vue"));
+    expect(screen.getByText("material").closest("button.ds-kithead")).toBeTruthy();
     // #3852: the header no longer names the kit, so assert the thing that actually matters — the graph is
     // re-scoped to the new kit's components (its node is present, the old kit's are not).
     expect(graphNode("VueButton")).toBeTruthy();
-    expect(graphNode("Chip")).toBeFalsy(); // scoped to graph NODES — "Chip" still lists in the rail tree
+    // Chip is a REACT component, so on the vue tab it is absent from the graph and the rail alike —
+    // the rail is technology-scoped now, where it used to list every technology's kits at once.
+    expect(graphNode("Chip")).toBeFalsy();
     expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();  // switching focuses nothing → hidden (#3090)
     // …then picking a component from the new kit reveals its details.
     fireEvent.click(railRow("VueButton"));
@@ -441,13 +450,25 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     useAppStore.setState({ kits: PACKAGED_KITS, components: REACT_UI_COMPONENTS });
   });
 
-  it("the packaged library renders grouped at BOTH levels: react (tech) → studio kit + data-viz group → components (#3194/#3242)", () => {
+  it("a rail kit head still switches kits WITHIN a technology — the tab does not replace it", () => {
+    // The tab moves between technologies; the rail head moves between kits inside one. Both paths
+    // exist, and losing the second would make a multi-kit technology unnavigable while every
+    // tab-level test stayed green.
+    render(<DesignsWorkbench />);
+    fireEvent.click(screen.getByText("Fleet").closest("button.ds-kithead")!);
+    expect(graphNode("Chip")).toBeFalsy(); // the studio kit's node is gone — the graph re-scoped
+    fireEvent.click(screen.getByText("react-ui").closest("button.ds-kithead")!);
+    expect(graphNode("Chip")).toBeTruthy(); // …and back
+  });
+
+  it("the rail starts at STYLE — the technology level is a TAB now (#3194/#3242)", () => {
     const { container } = render(<DesignsWorkbench />);
-    // Level 1 — the react tech header (all kits share react) + the multi-kit `data-viz` STYLE group (three
-    // viz kits now: algo-viz + matrix-viz + graph-viz, #3242), both `.ds-grouphead`.
+    // `technology-tabs-for-components-and-algorithms` lifted the tech level out of the rail. What is
+    // left is the `studio` style head and the multi-kit `data-viz` STYLE group (three viz kits:
+    // algo-viz + matrix-viz + graph-viz, #3242) — no `react` head among them.
     const heads = [...container.querySelectorAll(".ds-grouphead")];
     expect(heads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react"), expect.stringContaining("studio"), expect.stringContaining("data-viz"),
+      expect.stringContaining("studio"), expect.stringContaining("data-viz"),
     ]);
     expect(heads[0].getAttribute("aria-expanded")).toBe("true"); // default OPEN
     // Level 2 — `studio` now holds react-ui + `fleet` (#3462), so it is a GROUP with a kit row each
@@ -466,35 +487,39 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     expect(railRow("Chip")).toBeTruthy();
   });
 
-  it("a multi-tech library nests one collapsible tech group per technology, each style header a kit", () => {
+  it("a multi-tech library offers one TAB per technology, and the rail shows only the active one", () => {
     useAppStore.setState({ kits: [...PACKAGED_KITS, vueKit] });
     const { container } = render(<DesignsWorkbench />);
+    // The technologies are tabs. `react` is active (it holds the first kit), so the rail shows react's
+    // style groups and NOT vue's.
+    expect(screen.getByText("react")).toBeTruthy();
+    expect(screen.getByText("vue")).toBeTruthy();
     const heads = [...container.querySelectorAll(".ds-grouphead")];
-    // react tech + its multi-kit data-viz style group (#3242), then the vue tech.
     expect(heads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react"), expect.stringContaining("studio"),
-      expect.stringContaining("data-viz"), expect.stringContaining("vue"),
+      expect.stringContaining("studio"), expect.stringContaining("data-viz"),
     ]);
-    // Groups default OPEN — studio's two kits (react-ui + fleet, #3462) + motion + the three data-viz
-    // kits (by name) under react, then vue's merged material kithead.
+    // react's kits only — vue's `material` is behind its own tab.
     const kitHeads = [...container.querySelectorAll(".ds-kithead")];
     expect(kitHeads.map((h) => h.textContent)).toEqual([
       expect.stringContaining("react-ui"), expect.stringContaining("Fleet"),
       expect.stringContaining("motion"),
       expect.stringContaining("Algorithm Viz"), expect.stringContaining("Matrix Viz"), expect.stringContaining("Graph Viz"),
-      expect.stringContaining("material"),
     ]);
+    expect(kitHeads.some((h) => h.textContent?.includes("material"))).toBe(false);
   });
 
-  it("collapsing a tech group hides its kits (and their components); re-expanding restores them", () => {
+  it("selecting a technology tab re-scopes the rail to that technology's kits", () => {
+    // The tab cannot be active on its own — the graph, inspector and designer dock are all keyed on a
+    // KIT — so choosing a technology selects its first kit. Two selections for one concept is how they
+    // drift apart, which is why the tab is derived from the active kit rather than held beside it.
     useAppStore.setState({ kits: [...PACKAGED_KITS, vueKit] });
     const { container } = render(<DesignsWorkbench />);
-    const reactHead = container.querySelector(".ds-grouphead") as HTMLElement;
-    fireEvent.click(reactHead); // collapse the react group — only the vue style/kit head remains
-    expect(reactHead.getAttribute("aria-expanded")).toBe("false");
-    expect(container.querySelectorAll(".ds-kithead").length).toBe(1);
-    fireEvent.click(reactHead); // …and back
-    expect(container.querySelectorAll(".ds-kithead").length).toBe(PACKAGED_KITS.length + 1);
+    fireEvent.click(screen.getByText("vue"));
+    const kitHeads = [...container.querySelectorAll(".ds-kithead")];
+    expect(kitHeads.map((h) => h.textContent)).toEqual([expect.stringContaining("material")]);
+    // …and back, to prove the move is not one-way.
+    fireEvent.click(screen.getByText("react"));
+    expect([...container.querySelectorAll(".ds-kithead")].length).toBe(PACKAGED_KITS.length);
   });
 
   it("a component under the grouped rail is still fully driveable — selecting it follows in the inspector", () => {
@@ -517,12 +542,14 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     const { container } = render(<DesignsWorkbench />);
     // react (+ its multi-kit data-viz style group #3242) + the trailing missing-field tech bucket; the bare
     // kit merges into its "other" style head.
+    // The `other` TECH bucket is a tab now, so react's rail shows only its own style heads; the bare
+    // kit lives behind the trailing tab.
     const heads = [...container.querySelectorAll(".ds-grouphead")];
     expect(heads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react"), expect.stringContaining("studio"),
-      expect.stringContaining("data-viz"), expect.stringContaining("other"),
+      expect.stringContaining("studio"), expect.stringContaining("data-viz"),
     ]);
-    expect(container.querySelectorAll(".ds-kithead").length).toBe(PACKAGED_KITS.length + 1);
+    expect(screen.getByText("other")).toBeTruthy();
+    expect(container.querySelectorAll(".ds-kithead").length).toBe(PACKAGED_KITS.length);
   });
 
   it("SEVERAL kits sharing one (tech, style) still nest kit rows beneath the style group", () => {
@@ -532,7 +559,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     // react tech header + TWO multi-kit style groups: studio (react-ui + twin) and data-viz (the three viz
     // kits, #3242). Both styles now hold several kits, so both are groupheads.
     expect([...container.querySelectorAll(".ds-grouphead")].map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react"), expect.stringContaining("studio"), expect.stringContaining("data-viz"),
+      expect.stringContaining("studio"), expect.stringContaining("data-viz"),
     ]);
     // studio's two kit rows, then the single-kit `motion` style (merged, labelled by STYLE — #3451),
     // then data-viz's three kit rows.

@@ -22,8 +22,10 @@ const domained = buildKnowledge({
 });
 
 const noop = () => {};
-const renderRail = (graph: ReturnType<typeof buildKnowledge>) =>
-  render(<AlgorithmsRail graph={graph} activeTech="rust" selectedImpl={null} onSelectImpl={noop} onSelectLang={noop} />);
+// The rail shows ONE language now — the page's active tab
+// (`technology-tabs-for-components-and-algorithms`) — so a case has to say which.
+const renderRail = (graph: ReturnType<typeof buildKnowledge>, tech: "rust" | "typescript" = "rust") =>
+  render(<AlgorithmsRail graph={graph} activeTech={tech} selectedImpl={null} onSelectImpl={noop} />);
 
 describe("AlgorithmsRail — the domain dropdown is retired (#4128)", () => {
   it("renders NO domain control, even for a library that carries the domain facet", () => {
@@ -54,10 +56,27 @@ describe("AlgorithmsRail — the domain dropdown is retired (#4128)", () => {
   it("narrows by FOLDER PATH — how a domain-shaped collection is reached now", () => {
     // `shared/lib` and `shared/img` are distinct folders, so typing the path picks one out. This is the
     // affordance that replaces "pick a domain": it matches the components rail's `matchesQuery` (#3589).
-    renderRail(domained);
+    // Both impls are TypeScript, so the rail is rendered on that tab.
+    renderRail(domained, "typescript");
     fireEvent.change(screen.getByLabelText("Search"), { target: { value: "shared/lib" } });
     expect(screen.getByText("route")).toBeTruthy();
     expect(screen.queryByText("blur")).toBeNull();
-    expect(screen.queryByText("dijkstra")).toBeNull();
+  });
+
+  it("shows ONLY the active language — the tab is what switches it now", () => {
+    // The rail used to open with a head per language and nest every one of them, so it answered two
+    // questions at once: which language, and where inside it. The first moved to the page tabs.
+    //
+    // This also pins that scoping is by TECH and not by something incidental like folder: `dijkstra`
+    // and `plain` are the Rust impls, `route` and `blur` the TypeScript ones, and they share no folder.
+    renderRail(domained, "rust");
+    expect(screen.getByText("dijkstra")).toBeTruthy();
+    expect(screen.getByText("plain")).toBeTruthy();
+    expect(screen.queryByText("route"), "a TypeScript impl must not appear on the Rust tab").toBeNull();
+    expect(screen.queryByText("blur")).toBeNull();
+
+    // And no language HEAD remains — the level itself is gone, not merely filtered to one entry.
+    expect(screen.queryByText("Rust")).toBeNull();
+    expect(screen.queryByText("TypeScript")).toBeNull();
   });
 });
