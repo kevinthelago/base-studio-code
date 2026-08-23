@@ -106,6 +106,13 @@ every session carries; --pane names another.
 An agent can run this to check its own role rather than inferring it from its kickoff prose. A pane
 with no persona reports its role alone, which is a real state and not an error.
 
+It also reports `viewing` — WHAT THE USER IS LOOKING AT right now, worded as the titlebar words it
+(`Components — React — bsc-kit`). Read it before acting on anything phrased as `the graph`, `this
+kit` or `here`: a studio start prompt names its technology and nothing finer, the user can switch
+tabs mid-session, and the studios whose axis is not technology run one session across every value.
+`--json` additionally carries `workspace` and `pageTab` — the graph and its axis value — for a
+session that wants to act on them rather than print them.
+
 Requires the desktop app to be running: the assignment lives in its store, not on disk.",
     },
     CmdDoc {
@@ -538,6 +545,12 @@ fn whatami(args: &[String], prog: &str) -> Result<(), String> {
         let first = p.lines().next().unwrap_or("").trim();
         // One line: the full start prompt can be pages, and this is an identity check, not a dump.
         println!("brief   {}{}", first, if p.lines().count() > 1 { " …" } else { "" });
+    }
+    // WHERE THE USER IS. Last because it is the only line that changes between two runs a minute
+    // apart — identity is stable, the view is not, and putting the moving part at the bottom means a
+    // session re-reading this sees the change where it is looking.
+    if let Some(v) = res.viewing.as_deref().filter(|v| !v.trim().is_empty()) {
+        println!("viewing {v}");
     }
     Ok(())
 }

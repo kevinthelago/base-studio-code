@@ -171,6 +171,15 @@ pub struct WhatamiAck {
     pub role: Option<String>,
     #[serde(default)]
     pub start_prompt: Option<String>,
+    /// What the user is looking at, as the titlebar words it — the app's own `locationCrumb`.
+    #[serde(default)]
+    pub viewing: Option<String>,
+    /// The rail destination being rendered.
+    #[serde(default)]
+    pub workspace: Option<String>,
+    /// The active tab id — the graph's axis value.
+    #[serde(default)]
+    pub page_tab: Option<String>,
 }
 
 /// In-flight whatami requests, keyed by request id.
@@ -232,6 +241,11 @@ pub fn whatami(
         persona_name: ack.persona_name,
         role: ack.role,
         start_prompt: ack.start_prompt,
+        // Passed through verbatim rather than defaulted: an app that answers with no view has said
+        // "I do not know", and inventing one here would be the same lie in a different place.
+        viewing: ack.viewing,
+        workspace: ack.workspace,
+        page_tab: ack.page_tab,
     })
 }
 

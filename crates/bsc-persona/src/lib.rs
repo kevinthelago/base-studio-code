@@ -158,4 +158,69 @@ pub struct WhatamiResult {
     /// The persona's own start prompt, when it has one — what the agent was told to be.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_prompt: Option<String>,
+    /// WHAT THE USER IS LOOKING AT, worded as the titlebar words it: `Components — React — bsc-kit`.
+    ///
+    /// A studio's launch prompt names its technology and stops there — coarse (a technology holds
+    /// many kits), and fixed at launch while the tab is not. The studios whose axis is not technology
+    /// run ONE session across every value, so their prompt can never name the current one. Told to
+    /// "simplify the graph", the designer had to ask which one; this is the answer it could not see.
+    ///
+    /// Built by the app's own `locationCrumb` — the same function the titlebar renders — so the
+    /// session is told exactly what is on screen rather than a second opinion about it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viewing: Option<String>,
+    /// The rail destination being rendered (`components`, `algorithms`, `teams`, `data`, `sounds`, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    /// The active tab id — the graph's own AXIS VALUE (a technology, a team, a kit, a language).
+    /// The structured half of [`Self::viewing`], for a session that acts on it rather than prints it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_tab: Option<String>,
+}
+
+#[cfg(test)]
+mod view_tests {
+    use super::*;
+
+    /// The view fields are OPTIONAL on the wire, and that has to stay true.
+    ///
+    /// `whatami` answers a session that may be running against an older app (the CLI and the app are
+    /// separate binaries, and a `bsc` on PATH outlives the build that shipped it). An ack from an app
+    /// that predates these fields must still deserialize — otherwise adding an observability field
+    /// breaks the verb an agent uses to find out what it is, which is the worst possible thing to
+    /// break with a diagnostic.
+    #[test]
+    fn an_ack_without_the_view_still_deserializes() {
+        let old = r#"{"paneId":"p","role":"designer"}"#;
+        let res: WhatamiResult = serde_json::from_str(old).expect("an older app's ack must parse");
+        assert_eq!(res.role.as_deref(), Some("designer"));
+        assert!(res.viewing.is_none() && res.workspace.is_none() && res.page_tab.is_none());
+    }
+
+    /// ...and an absent view is OMITTED rather than serialized as null.
+    ///
+    /// `viewing: null` reads as "the app answered, and the answer is nothing"; an absent key reads as
+    /// "unknown". They are different states — a workspace with no tab selected yet is the first, a
+    /// stale app is the second — and the CLI prints the line only when it has something to say.
+    #[test]
+    fn an_absent_view_is_omitted_not_nulled() {
+        let json = serde_json::to_string(&WhatamiResult {
+            pane_id: "p".into(),
+            role: Some("designer".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(!json.contains("viewing"), "absent view must not appear at all: {json}");
+        assert!(!json.contains("null"), "no field should serialize as null: {json}");
+    }
+
+    /// The wire name is `pageTab`, not `page_tab` — the frontend sends camelCase.
+    #[test]
+    fn the_tab_field_crosses_as_camel_case() {
+        let res: WhatamiResult =
+            serde_json::from_str(r#"{"paneId":"p","viewing":"Components — React","pageTab":"react"}"#)
+                .expect("the frontend's camelCase ack must parse");
+        assert_eq!(res.page_tab.as_deref(), Some("react"));
+        assert_eq!(res.viewing.as_deref(), Some("Components — React"));
+    }
 }
