@@ -716,6 +716,7 @@ dependencies = [
  "bsc-navigate",
  "bsc-persona",
  "bsc-project",
+ "bsc-publish",
  "bsc-request",
  "bsc-runtime",
  "bsc-session",
@@ -975,6 +976,17 @@ dependencies = [
  "bsc-util",
  "plandb",
  "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-publish"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-github",
+ "plandb",
  "serde",
  "serde_json",
 ]
