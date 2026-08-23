@@ -40,7 +40,7 @@ beforeEach(() => {
 
 describe("DesignsWorkbench visibility gating (#3627)", () => {
   it("polls activity + scans previews when the Studio is the visible page", () => {
-    useAppStore.setState({ activeWorkspace: "projects", projectsPageMode: "designs" });
+    useAppStore.setState({ activeWorkspace: "components" });
     render(<DesignsWorkbench />);
     expect(uiSpy).toHaveBeenCalledWith(true);
     expect(scanSpy).toHaveBeenCalledWith(true, expect.anything(), undefined, expect.anything());
@@ -54,7 +54,7 @@ describe("DesignsWorkbench visibility gating (#3627)", () => {
   });
 
   it("hidden on the projects workspace when it's showing a non-designs page (e.g. Teams)", () => {
-    useAppStore.setState({ activeWorkspace: "projects", projectsPageMode: "teams" });
+    useAppStore.setState({ activeWorkspace: "teams" });
     render(<DesignsWorkbench />);
     expect(uiSpy).toHaveBeenCalledWith(false);
     expect(scanSpy).toHaveBeenCalledWith(false, expect.anything(), undefined, expect.anything());

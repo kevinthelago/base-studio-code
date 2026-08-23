@@ -46,7 +46,7 @@ beforeEach(() => {
     // scan and the activity poll on it, so a hidden Studio does no background work. Without this
     // the workbench renders the graph but no rail — and every rail-driven assertion below fails.
     // (`DesignsWorkbench.visibility.test.tsx` owns the hidden-page cases.)
-    activeWorkspace: "projects",
+    activeWorkspace: "components",
     projectsPageMode: "designs",
   });
 });

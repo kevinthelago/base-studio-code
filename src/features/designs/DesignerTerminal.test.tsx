@@ -38,9 +38,10 @@ vi.mock("@/app/console/panes/views/TerminalView", () => ({
 const claimedPanes = (root: HTMLElement) =>
   Array.from(root.querySelectorAll("[data-terminal-container]")).map((el) => (el as HTMLElement).dataset.terminalContainer);
 
-/** Put the shell on the Designs page (what `useStudioPageShowing` reads), or somewhere else. */
+/** Put the shell on the Components WORKSPACE (what `useStudioPageShowing` reads), or somewhere else.
+ *  It was the Planner's "designs" PAGE until `five-graphs-become-rail-workspaces`. */
 const showDesigns = (on: boolean) =>
-  useAppStore.setState({ activeWorkspace: on ? "projects" : "glance", projectsPageMode: "designs" });
+  useAppStore.setState({ activeWorkspace: on ? "components" : "glance" });
 
 beforeEach(() => {
   useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, wantedStudios: [], studioViewers: {} });

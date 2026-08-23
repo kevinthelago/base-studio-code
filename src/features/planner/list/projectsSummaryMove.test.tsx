@@ -10,13 +10,15 @@ import { PROJECT_MODES } from "@/features/planner/list/projectModes";
 // PROJECT_MODES half below is unaffected: it reads a plain data table, not the deleted component.
 
 describe("Projects modes (#1876)", () => {
-  it("no longer offers Summary — Projects + Teams (Fleet→Glance #2228, Personas→Teams #2199)", () => {
+  it("no longer offers Summary, and keeps Projects — the one page the Planner is for", () => {
     const labels = PROJECT_MODES.map((m) => m.label);
     expect(labels).not.toContain("Summary");
     expect(labels).toContain("Projects");
-    // Personas was folded into the Teams page (#2199); Fleet analytics into Glance (#2223/#2228).
-    expect(labels).toContain("Teams");
     expect(labels).not.toContain("Fleet");
     expect(labels).not.toContain("Personas");
+    // Teams was a Planner tab (#2199/#2700) until `five-graphs-become-rail-workspaces` gave it its
+    // own rail destination — it is asserted as a live Workspace in projectsPageModeStrip.test.tsx,
+    // which is where "it moved rather than vanished" belongs.
+    expect(labels).not.toContain("Teams");
   });
 });

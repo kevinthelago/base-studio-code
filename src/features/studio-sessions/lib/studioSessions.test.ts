@@ -5,6 +5,7 @@ import {
 } from "@/features/studio-sessions/lib/studioSessions";
 import { studioPageShowing } from "@/features/studio-sessions/useStudioPageShowing";
 import { isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
+import { WORKSPACES } from "@/app/registry";
 import { restrictedRoleCommands, isRestrictedRole, roleCapability, roleDeniedTools } from "@/shared/lib/session/sessionRoles";
 import { BUILTIN_PERSONAS } from "@/features/personas";
 
@@ -170,11 +171,19 @@ describe("studio session registry (#3357)", () => {
   });
 
   it("studioDetached reports the single-owner handoff — the main window must release a torn-off studio", () => {
+    // The key is the studio's WORKSPACE now, not "projects"
+    // (`five-graphs-become-rail-workspaces`). NOTE that nothing currently WRITES these keys: a
+    // Workspace has no tab strip until the technology tabs land, so in practice this is uniformly
+    // false and the main window is always the sole owner. That is safe — one owner, never two
+    // fighting over one PTY — so tear-off is dormant rather than broken, and the mechanism stays
+    // asserted here so restoring it is wiring, not rediscovery.
     expect(studioDetached("designerReact", {})).toBe(false);
-    expect(studioDetached("designerReact", { projects: ["designs"] })).toBe(true);
+    expect(studioDetached("designerReact", { components: ["designs"] })).toBe(true);
     // Scoped per section: tearing off Algorithms leaves the designer mounted here.
-    expect(studioDetached("designerReact", { projects: ["algorithms"] })).toBe(false);
-    expect(studioDetached("librarianRust", { projects: ["algorithms"] })).toBe(true);
+    expect(studioDetached("designerReact", { algorithms: ["algorithms"] })).toBe(false);
+    expect(studioDetached("librarianRust", { algorithms: ["algorithms"] })).toBe(true);
+    // And the Planner key, which used to carry all of them, now carries none.
+    expect(studioDetached("designerReact", { projects: ["designs"] })).toBe(false);
   });
 });
 
@@ -182,18 +191,45 @@ describe("studioPageShowing (#3357)", () => {
   // The studio pages are KEPT MOUNTED and merely CSS-hidden, so "mounted" is not "on screen" — if the
   // viewer count keyed off mounting it would never fall to 0 after a first visit and the reaper could
   // never fire. This is the rule that makes leaving the page actually count as leaving.
-  it("is true only while its page is the active Projects page", () => {
-    expect(studioPageShowing("designerReact", { activeWorkspace: "projects", projectsPageMode: "designs" }, null)).toBe(true);
-    expect(studioPageShowing("designerReact", { activeWorkspace: "projects", projectsPageMode: "teams" }, null)).toBe(false);
-    // Kept mounted but the user is on another WORKSPACE (Glance/Console) → not showing.
-    expect(studioPageShowing("designerReact", { activeWorkspace: "glance", projectsPageMode: "designs" }, null)).toBe(false);
+  it("is true only while its own WORKSPACE is active", () => {
+    // Each graph is a rail destination now (`five-graphs-become-rail-workspaces`), so this compares
+    // the workspace. It used to compare `projectsPageMode` because the graphs were Planner tabs;
+    // leaving it that way made every dock report false forever — and since `openStudio` IS the lazy
+    // launch, that is not a reaper leak but a total failure to start.
+    expect(studioPageShowing("designerReact", { activeWorkspace: "components" }, null)).toBe(true);
+    expect(studioPageShowing("designerReact", { activeWorkspace: "teams" }, null)).toBe(false);
+    // Kept mounted but the user is on another workspace entirely → not showing.
+    expect(studioPageShowing("designerReact", { activeWorkspace: "glance" }, null)).toBe(false);
+    // And the Planner, which used to host it, is now just another workspace.
+    expect(studioPageShowing("designerReact", { activeWorkspace: "projects" }, null)).toBe(false);
   });
 
-  it("maps each studio to its own page", () => {
-    const at = (mode: string) => ({ activeWorkspace: "projects", projectsPageMode: mode });
+  it("maps each studio to its own workspace", () => {
+    const at = (w: string) => ({ activeWorkspace: w });
     expect(studioPageShowing("librarianRust", at("algorithms"), null)).toBe(true);
     expect(studioPageShowing("architect", at("teams"), null)).toBe(true);
+    expect(studioPageShowing("soundDesigner", at("sounds"), null)).toBe(true);
     expect(studioPageShowing("librarianRust", at("teams"), null)).toBe(false);
+  });
+
+  it("starts the integrator from a page that actually exists", () => {
+    // Its `sectionId` was "integrations", which was never a Planner tab — so its dock could never
+    // report showing and the session could not start from a page at all. The Data graph is where
+    // connectors and sources are read, so that is where it docks.
+    expect(studioPageShowing("integrator", { activeWorkspace: "data" }, null)).toBe(true);
+    expect(studioPageShowing("integrator", { activeWorkspace: "projects" }, null)).toBe(false);
+  });
+
+  it("reports EVERY studio as showing on some live workspace", () => {
+    // The general form of the bug this slice fixes: a studio whose pageKey names nothing reachable
+    // never starts, and nothing errors — it simply is not there. Checked against the registry so a
+    // future rename cannot quietly strand one.
+    const liveKeys = new Set(WORKSPACES.map((w) => w.key as string));
+    for (const id of STUDIO_IDS) {
+      const page = STUDIO_SESSIONS[id].pageKey;
+      expect(liveKeys.has(page), `${id} docks on '${page}', which is not a live workspace`).toBe(true);
+      expect(studioPageShowing(id, { activeWorkspace: page }, null)).toBe(true);
+    }
   });
 
   // #a-stale-studio-id-in-a-record-must-not-kill-a-page — the regression, pinned.
@@ -203,7 +239,7 @@ describe("studioPageShowing (#3357)", () => {
   // and `.sectionId` threw, escaping to GraphErrorBoundary and falling back the WHOLE Algorithms
   // page. One stale id in one dock, and the page was gone.
   it("returns false for an id the registry does not know, instead of throwing", () => {
-    const at = { activeWorkspace: "projects", projectsPageMode: "algorithms" };
+    const at = { activeWorkspace: "algorithms" };
     for (const stale of ["librarian", "designer", "soundDesigner-typo", "planner"]) {
       // The cast is the POINT: this models a record naming a studio that no longer exists, which is
       // precisely what the type system cannot catch.
@@ -211,7 +247,7 @@ describe("studioPageShowing (#3357)", () => {
       expect(() => studioPageShowing(id, at, null)).not.toThrow();
       expect(studioPageShowing(id, at, null)).toBe(false);
       // The torn-off branch reads `def.pageKey` too, so it needs the same guard.
-      expect(() => studioPageShowing(id, at, { page: "projects", section: "algorithms" })).not.toThrow();
+      expect(() => studioPageShowing(id, at, { page: "algorithms", section: "algorithms" })).not.toThrow();
     }
   });
 
@@ -225,8 +261,10 @@ describe("studioPageShowing (#3357)", () => {
   });
 
   it("a torn-off section window is showing exactly the page it was detached for", () => {
-    const bg = { activeWorkspace: "glance", projectsPageMode: "projects" };
-    expect(studioPageShowing("designerReact", bg, { page: "projects", section: "designs" })).toBe(true);
-    expect(studioPageShowing("librarianRust", bg, { page: "projects", section: "designs" })).toBe(false);
+    // A detached window renders ONE page and has no rail, so its own `activeWorkspace` is irrelevant —
+    // the detached identity decides. Pinned with a deliberately unrelated background workspace.
+    const bg = { activeWorkspace: "glance" };
+    expect(studioPageShowing("designerReact", bg, { page: "components", section: "designs" })).toBe(true);
+    expect(studioPageShowing("librarianRust", bg, { page: "components", section: "designs" })).toBe(false);
   });
 });

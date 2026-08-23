@@ -39,7 +39,7 @@ beforeEach(() => {
     aiFocusedId: null,
     designsKitId: "",
     designsCompId: null,
-    activeWorkspace: "projects",
+    activeWorkspace: "components",
     projectsPageMode: "designs",
   });
 });
