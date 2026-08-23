@@ -146,6 +146,9 @@ describe("AlgorithmsWorkspace librarian dock (#2787)", () => {
   // this mirrors its impl-only assertions: click the `merge_sort` impl, read its inspector-unique code.
   it("clicking a graph node still drives the inspector with the dock present", () => {
     render(<TerminalHost><AlgorithmsWorkspace /></TerminalHost>);
+    // `merge_sort` is Rust and TypeScript is the default tab
+    // (`technology-tabs-for-components-and-algorithms`), so open its language first.
+    fireEvent.click(screen.getByText("Rust"));
     fireEvent.click(screen.getAllByText("merge_sort")[0]);
     expect(screen.getByText((c) => c.includes("merge(&left, &right)"))).toBeTruthy(); // inspector-unique code
   });

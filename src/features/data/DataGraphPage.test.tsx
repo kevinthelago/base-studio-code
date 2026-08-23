@@ -3,11 +3,22 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { DataGraphPage } from "@/features/data/DataGraphPage";
 
-const bscJson = vi.hoisted(() => vi.fn());
+// Defaulted to a resolved promise AT DEFINITION, not just in beforeEach: the store hydrates at module
+// LOAD — before any hook runs — and it calls `bscJson` too, so a bare `vi.fn()` returns undefined there
+// and the `.then` on it becomes an unhandled rejection that fails the run while every test reads green.
+const bscJson = vi.hoisted(() => vi.fn(async () => [] as unknown[]));
 vi.mock("@/shared/lib/core/bsc", () => ({ bscJson }));
 
 describe("DataGraphPage — the global data graph", () => {
-  beforeEach(() => bscJson.mockReset());
+  // Reset, then give the mock a PROMISE default. The page gained a language tab bar
+  // (`define-the-axis-for-teams-data-and-sounds`), which pulls in `usePageTabs` → the store — and the
+  // store's rehydrate calls `bscJson` too. A bare `mockReset()` leaves it returning `undefined`, so
+  // that hydration call did `.then` on nothing and surfaced as an unhandled rejection that failed the
+  // whole run while every test still reported green.
+  beforeEach(() => {
+    bscJson.mockReset();
+    bscJson.mockResolvedValue([]);
+  });
 
   it("reads the GLOBAL entity store, with no project key", async () => {
     // The whole point of the pillar: this is OUR data model, not a project's, so it must not be

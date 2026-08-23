@@ -17,7 +17,10 @@ const selectRailPosition = (name: string) =>
 // test can't leak a drilled canvas into the next render. Also restore the seeded teams (the no-teams
 // test #3033 empties them, and the store is a singleton). Start at the overview (orgId is local).
 const SEEDED_TEAMS = useAppStore.getState().teams;
-beforeEach(() => useAppStore.setState({ teamsDrill: null, teams: SEEDED_TEAMS }));
+// `activePageTab` is reset too: the entered team is a persisted TAB now
+// (`navigation-vocabulary-follows-the-new-page-structure`), so without this a team entered by one test
+// stays entered for the next — the store is a singleton and the tab outlives the render.
+beforeEach(() => useAppStore.setState({ teamsDrill: null, teams: SEEDED_TEAMS, activePageTab: {} }));
 
 /** Enter a team from the Teams overview by clicking its card (the [data-node] wrapper). */
 const teamCard = (name: string): HTMLElement =>
