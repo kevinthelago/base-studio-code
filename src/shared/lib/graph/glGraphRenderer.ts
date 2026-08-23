@@ -74,7 +74,13 @@ export interface GraphRenderer {
    * The card palette as 0..1 RGBA. Resolve from the live cascade (--bg-elev, --border, --accent) rather
    * than hard-coding: a second copy of the palette is a second thing to keep in sync with the theme.
    */
-  setPalette?(surface: readonly number[], border: readonly number[], accent: readonly number[]): void;
+  setPalette?(
+    surface: readonly number[],
+    border: readonly number[],
+    accent: readonly number[],
+    /** The label colour — `--fg`. Omitted by an older caller, which keeps the previous near-white. */
+    text?: readonly number[],
+  ): void;
   setLod(pyramid: LodPyramid | null, aggregateColor?: number): void;
   /** Which pyramid level the last `draw()` used. 0 means the nodes themselves. */
   readonly lodLevel: number;
@@ -326,6 +332,11 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   let surfaceRgba: [number, number, number, number] = [0.11, 0.12, 0.14, 1];
   let borderRgba: [number, number, number, number] = [0.25, 0.27, 0.30, 1];
   let accentRgba: [number, number, number, number] = [0.36, 0.62, 1.0, 1];
+  // The LABEL colour. It was a literal in the draw path — written when the card was drawn in the role
+  // colour, where near-white read against anything. The card is the surface token now, so the text's
+  // contrast against it was coincidence rather than a guarantee, and on a light theme it was
+  // near-white on near-white. This is the last colour in the renderer that has to come from the theme.
+  let textRgba: [number, number, number, number] = [0.93, 0.94, 0.96, 1];
   const edgeColor = opts.edgeColor ?? 0x66808080;
 
   let nodeProg: WebGLProgram, edgeProg: WebGLProgram, labelProg: WebGLProgram;
@@ -603,7 +614,7 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
       gl.bindTexture(gl.TEXTURE_2D, atlasTex);
       gl.uniform1i(uLabel.atlas, 1);
       gl.uniform2f(uLabel.viewport, vpW, vpH);
-      gl.uniform4f(uLabel.color, 0.93, 0.94, 0.96, 1.0);
+      gl.uniform4f(uLabel.color, textRgba[0], textRgba[1], textRgba[2], textRgba[3]);
       gl.bindVertexArray(labelVao);
       // Only the glyphs actually written are uploaded — the buffers are allocated once at full capacity
       // and re-filled, so a frame with 200 labels does not pay for a capacity of 20,000.
@@ -656,12 +667,20 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
     }
   }
 
-  function setPalette(s: readonly number[], b: readonly number[], a: readonly number[]): void {
-    const four = (v: readonly number[], d: [number, number, number, number]): [number, number, number, number] =>
-      v.length >= 3 ? [v[0], v[1], v[2], v.length > 3 ? v[3] : 1] : d;
+  function setPalette(
+    s: readonly number[],
+    b: readonly number[],
+    a: readonly number[],
+    text?: readonly number[],
+  ): void {
+    const four = (v: readonly number[] | undefined, d: [number, number, number, number]): [number, number, number, number] =>
+      v && v.length >= 3 ? [v[0], v[1], v[2], v.length > 3 ? v[3] : 1] : d;
     surfaceRgba = four(s, surfaceRgba);
     borderRgba = four(b, borderRgba);
     accentRgba = four(a, accentRgba);
+    // Optional: a caller written before the label colour existed keeps the previous default rather than
+    // getting a transparent — an invisible label is the bug this is fixing.
+    textRgba = four(text, textRgba);
   }
 
   function setAtlas(a: GlyphAtlas): void {
