@@ -47,6 +47,7 @@ import { effectiveWorkspace } from "@/app/registry";
 import {
   GitHubWorkspace, SettingsWorkspace,
   ProjectsWorkspace, LogsWorkspace, GlanceWorkspace, WorkspaceFallback,
+  ComponentsWorkspace, TeamsWorkspace, AlgorithmsWorkspace, DataWorkspace, SoundsWorkspace,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -195,8 +196,28 @@ export default function App() {
           <KeptMountedPage active={activeWorkspace === "projects"} fallback={<WorkspaceFallback />}>
             <ProjectsWorkspace />
           </KeptMountedPage>
+          {/* THE FIVE GRAPHS (`five-graphs-become-rail-workspaces`) get the SAME keep-mounted treatment
+              as Projects, and for the same reason: each docks an always-on studio session (the designer,
+              librarian, architect and sound-designer), and a screen that unmounts on every rail click
+              would kill and relaunch that PTY every time. They were previously kept mounted INSIDE the
+              Planner — leaving them as plain `activeWorkspace === x && <X />` would have quietly
+              regressed that, and a killed-and-restarted session looks like a slow page, not a bug. */}
+          <KeptMountedPage active={activeWorkspace === "components"} fallback={<WorkspaceFallback />}>
+            <ComponentsWorkspace />
+          </KeptMountedPage>
+          <KeptMountedPage active={activeWorkspace === "algorithms"} fallback={<WorkspaceFallback />}>
+            <AlgorithmsWorkspace />
+          </KeptMountedPage>
+          <KeptMountedPage active={activeWorkspace === "teams"} fallback={<WorkspaceFallback />}>
+            <TeamsWorkspace />
+          </KeptMountedPage>
+          <KeptMountedPage active={activeWorkspace === "sounds"} fallback={<WorkspaceFallback />}>
+            <SoundsWorkspace />
+          </KeptMountedPage>
+          {/* Data is the one graph with no studio and no PTY, so it mounts only while active. */}
           {/* The remaining screens mount only while active — their chunks load on first nav. */}
           <Suspense fallback={<WorkspaceFallback />}>
+            {activeWorkspace === "data"       && <DataWorkspace />}
             {activeWorkspace === "glance"     && <GlanceWorkspace />}
             {activeWorkspace === "github"     && <GitHubWorkspace />}
             {activeWorkspace === "logs"       && <LogsWorkspace />}

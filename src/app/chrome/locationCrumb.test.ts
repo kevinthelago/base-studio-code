@@ -94,3 +94,52 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
     expect(crumb({ activeWorkspace: "logs", activePageTab: { logs: "brand-new-tab" } })).toBe("Logs — Brand New Tab");
   });
 });
+
+// ── The five graphs as rail Workspaces (`five-graphs-become-rail-workspaces`) ──
+
+describe("locationCrumb — the graph workspaces", () => {
+  const base = {
+    activePageTab: {}, crumbEntity: {}, projectsPageMode: "projects", projectsView: "list",
+    githubTab: "summary", githubBoardOpen: false, githubBoardTab: "board", settingsSection: "general",
+  };
+
+  it("names each graph workspace", () => {
+    for (const [w, label] of [
+      ["components", "Components"], ["teams", "Teams"], ["algorithms", "Algorithms"],
+      ["data", "Data"], ["sounds", "Sounds"],
+    ] as const) {
+      expect(locationCrumb({ ...base, activeWorkspace: w })).toBe(label);
+    }
+  });
+
+  it("appends the navigated entity, mapping Components to the key its page reports under", () => {
+    // The near-miss worth pinning: the Design Studio reports its entity under `designs` (the old tab
+    // id) while its Workspace key is `components`. Reading crumbEntity[workspace] would work for the
+    // other four and silently show nothing here.
+    expect(locationCrumb({
+      ...base, activeWorkspace: "components", crumbEntity: { designs: "base-studio-code" },
+    })).toBe("Components — base-studio-code");
+
+    expect(locationCrumb({
+      ...base, activeWorkspace: "algorithms", crumbEntity: { algorithms: "Rust" },
+    })).toBe("Algorithms — Rust");
+
+    expect(locationCrumb({
+      ...base, activeWorkspace: "teams", crumbEntity: { teams: "Fleet Alpha" },
+    })).toBe("Teams — Fleet Alpha");
+  });
+
+  it("shows the workspace alone when the page reports no entity", () => {
+    // Data reports none today. The crumb must degrade to the name, never to a dangling separator.
+    expect(locationCrumb({ ...base, activeWorkspace: "data" })).toBe("Data");
+    expect(locationCrumb({ ...base, activeWorkspace: "sounds", crumbEntity: {} })).toBe("Sounds");
+  });
+
+  it("does not read a STALE entity from another graph", () => {
+    // crumbEntity is keyed per graph and persists across navigation, so a user who visited Algorithms
+    // and then opened Sounds must not see the language they left behind.
+    expect(locationCrumb({
+      ...base, activeWorkspace: "sounds", crumbEntity: { algorithms: "Rust" },
+    })).toBe("Sounds");
+  });
+});

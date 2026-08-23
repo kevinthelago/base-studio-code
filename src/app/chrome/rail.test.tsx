@@ -13,6 +13,10 @@ const FULL = [
   // "Automations" went the same way (hooks-and-schedules-belong-to-the-persona): its config is
   // carried by the persona and read on Teams, its history is a Logs tab.
   "Console", "Glance", "Planner",
+  // The five GRAPHS (`five-graphs-become-rail-workspaces`) — Components, Teams, Algorithms, Data and
+  // Sounds each spent time folded into the Planner as a tab; that collapse is reversed and they are
+  // rail destinations again, kept together between the workflow screens and the utilities.
+  "Components", "Teams", "Algorithms", "Data", "Sounds",
   "GitHub", "Logs", "Settings",
 ];
 const NO_CONSOLE = FULL.filter((l) => l !== "Console");
@@ -47,9 +51,30 @@ describe("Rail", () => {
     expect(onNavigate).toHaveBeenCalledWith("logs");
   });
 
-  it("no longer exposes Design Studio as a rail destination (#move-to-planner — it's a Planner tab now)", () => {
+  it("exposes the Design Studio as COMPONENTS, not under its old rail label", () => {
+    // It was a rail destination called "Design Studio", then a Planner tab labelled "Components"
+    // (#2818), and is now a rail destination under that later name. Both halves matter: the graph is
+    // reachable again, and the retired label does not come back with it.
     const { container } = render(<Rail active="glance" onNavigate={() => {}} />);
     expect(container.querySelector('.rail button[title="Design Studio"]')).toBeNull();
+    expect(container.querySelector('.rail button[title="Components"]')).toBeTruthy();
+  });
+
+  it("navigates to each graph by its own key, not through the Planner", () => {
+    // The whole point of the promotion: clicking Components dispatches "components", not
+    // "projects" plus a page mode. A rail that still routed through the Planner would look right
+    // and leave every graph one indirection away from where it now lives.
+    const onNavigate = vi.fn();
+    const { container } = render(<Rail active="glance" onNavigate={onNavigate} />);
+    for (const [label, key] of [
+      ["Components", "components"], ["Teams", "teams"], ["Algorithms", "algorithms"],
+      ["Data", "data"], ["Sounds", "sounds"],
+    ]) {
+      const btn = container.querySelector(`.rail button[title="${label}"]`) as HTMLElement;
+      expect(btn, `${label} is a rail destination`).toBeTruthy();
+      fireEvent.click(btn);
+      expect(onNavigate).toHaveBeenLastCalledWith(key);
+    }
   });
 
   it("marks the active screen", () => {
