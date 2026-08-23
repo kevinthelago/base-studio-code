@@ -261,35 +261,6 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ensurePlatform: () => import("@/features/planner/graphPlatform").then((m) => m.registerPlannerPlatform()).then(() => import("@/features/planner/list/graphPlatform").then((b) => b.registerProjectsPlatform())),
   },
   {
-    pageId: "githubpage",
-    label: "GitHub",
-    rendersFrom: "graph",
-    modules: [
-      // Graph-only for the same reason as automationspage/mcppage/logspage: the file copy was
-      // dead and was removed, and the barrel is index.ts now. The six part modules keep their files.
-      { recordId: "githubpage", file: null },
-      // Empty/GitHubSummary/Pulse are RELEASED FOR DELETION (graph-retire-shadow-and-generators): their
-      // records are settled against the seed, so the file has no second opinion left to give, and the
-      // per-stream deletion item cannot null these itself — it does not own this file. Nulled here so
-      // `git rm` in `src/features/github/**` is all that item has to do.
-      { recordId: "github-empty", file: null },
-      { recordId: "github-summary", file: null },
-      // Pulse.tsx backs NINE records; only this one is catalogued, so its deletion also needs
-      // `reconcile-record-src.cjs --retire` to move the other eight off `src`.
-      { recordId: "github-pulse", file: null },
-      { recordId: "github-branch-graph", file: null },
-      { recordId: "github-activity-heatmap", file: null },
-      { recordId: "github-ci-health", file: null },
-      { recordId: "github-contributors", file: null },
-      { recordId: "github-cross-repo-activity", file: null },
-      { recordId: "github-page-mode-strip", file: null },
-      { recordId: "github-language-mix", file: null },
-      { recordId: "github-open-prs", file: null },
-      { recordId: "github-repos-grid", file: null },
-    ],
-    ensurePlatform: () => import("@/features/github/graphPlatform").then((m) => m.registerGithubPlatform()),
-  },
-  {
     pageId: "automationspage",
     label: "Automations",
     rendersFrom: "graph",

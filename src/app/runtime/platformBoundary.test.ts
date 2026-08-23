@@ -19,7 +19,6 @@ import { describe, it, expect, beforeAll } from "vitest";
 import platformModules from "@data/ui/platform-modules.json";
 import { registerPlatformModules } from "@/app/runtime/appModules";
 import { registerAutomationsPlatform } from "@/features/automations/graphPlatform";
-import { registerGithubPlatform } from "@/features/github/graphPlatform";
 import { registerMcpPlatform } from "@/features/mcp/graphPlatform";
 import { registerLogsPlatform } from "@/features/logs/graphPlatform";
 import { registerSkillsPlatform } from "@/features/skills/graphPlatform";
@@ -33,7 +32,6 @@ import { registerProjectsPlatform } from "@/features/planner/list/graphPlatform"
 import { registerPanePlatform } from "@/features/planner/pane/graphPlatform";
 import { registerBodiesPlatform } from "@/features/planner/bodies/graphPlatform";
 import { registerPreviewPlatform } from "@/features/planner/preview/graphPlatform";
-import { registerPlannerGithubPlatform } from "@/features/planner/github/graphPlatform";
 // These six used to arrive INCIDENTALLY: their feature barrel called `register…Platform()` at module
 // load, so any transitive import of the barrel registered them and this list did not need to name
 // them. The barrels no longer do that (ensure-platform-imports-the-platform-not-the-barrel), which is
@@ -84,7 +82,6 @@ beforeAll(() => {
   // which is the bug class this file exists to prevent.
   registerPlatformModules();
   registerAutomationsPlatform();
-  registerGithubPlatform();
   registerMcpPlatform();
   registerLogsPlatform();
   registerSkillsPlatform();
@@ -98,7 +95,6 @@ beforeAll(() => {
   registerPanePlatform();
   registerBodiesPlatform();
   registerPreviewPlatform();
-  registerPlannerGithubPlatform();
   registerDebugPlatform();
   registerDesignsPlatform();
   registerPersonasPlatform();

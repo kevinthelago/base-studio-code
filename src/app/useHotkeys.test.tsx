@@ -54,9 +54,11 @@ describe("useHotkeys — Console-only listener (#1218)", () => {
     useAppStore.setState({ activeWorkspace: "settings" });
     renderHook(() => useHotkeys());
 
-    const ev = pressKey({ code: "F6" }); // screen-github
+    const ev = pressKey({ code: "F7" }); // screen-logs (F6 was GitHub, whose screen is gone)
 
-    expect(useAppStore.getState().activeWorkspace).toBe("github");
+    // Both halves: the key NAVIGATED, and it was consumed. Asserting only `defaultPrevented` would
+    // pass for a handler that swallowed the key and went nowhere.
+    expect(useAppStore.getState().activeWorkspace).toBe("logs");
     expect(ev.defaultPrevented).toBe(true);
   });
 
@@ -95,8 +97,9 @@ describe("useHotkeys — Console-only listener (#1218)", () => {
   it("re-attaches when returning to Console and detaches when leaving", () => {
     const { rerender } = renderHook(() => useHotkeys());
 
-    // Leave Console → listener detaches → key is inert.
-    act(() => { useAppStore.setState({ activeWorkspace: "github" }); });
+    // Leave Console → listener detaches → key is inert. (Was `github`, whose screen is gone —
+    // any non-Console workspace exercises the same detach.)
+    act(() => { useAppStore.setState({ activeWorkspace: "logs" }); });
     rerender();
     expect(pressKey(BROADCAST_TOGGLE).defaultPrevented).toBe(false);
     expect(useAppStore.getState().consoleBroadcast).toBe(false);
@@ -128,9 +131,11 @@ describe("useHotkeys — console hotkeys follow the Console-page toggle (#3575)"
     useAppStore.setState({ activeWorkspace: "console", showConsolePage: false });
     renderHook(() => useHotkeys());
 
-    const ev = pressKey({ code: "F6" }); // screen-github
+    const ev = pressKey({ code: "F7" }); // screen-logs (F6 was GitHub, whose screen is gone)
 
-    expect(useAppStore.getState().activeWorkspace).toBe("github");
+    // Both halves: the key NAVIGATED, and it was consumed. Asserting only `defaultPrevented` would
+    // pass for a handler that swallowed the key and went nowhere.
+    expect(useAppStore.getState().activeWorkspace).toBe("logs");
     expect(ev.defaultPrevented).toBe(true);
   });
 

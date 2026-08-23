@@ -17,7 +17,7 @@ const FULL = [
   // Sounds each spent time folded into the Planner as a tab; that collapse is reversed and they are
   // rail destinations again, kept together between the workflow screens and the utilities.
   "Components", "Teams", "Algorithms", "Data", "Sounds",
-  "GitHub", "Logs", "Settings",
+  "Logs", "Settings",
 ];
 const NO_CONSOLE = FULL.filter((l) => l !== "Console");
 
@@ -78,8 +78,8 @@ describe("Rail", () => {
   });
 
   it("marks the active screen", () => {
-    const { container } = render(<Rail active="github" onNavigate={() => {}} />);
+    const { container } = render(<Rail active="logs" onNavigate={() => {}} />);
     const active = container.querySelector(".rail button.active") as HTMLElement;
-    expect(active.getAttribute("title")).toBe("GitHub");
+    expect(active.getAttribute("title")).toBe("Logs");
   });
 });

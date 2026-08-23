@@ -136,7 +136,6 @@ describe("registry wiring", () => {
 
   it("screen-nav and zoom are rebindable single chords (#773)", () => {
     expect(DEFAULT_BINDINGS["screen-projects"]).toBe("F2");
-    expect(DEFAULT_BINDINGS["screen-github"]).toBe("F6");
     expect(DEFAULT_BINDINGS["screen-settings"]).toBe("F8");
     expect(DEFAULT_BINDINGS["zoom-in"]).toBe("Ctrl+Equal");
     expect(DEFAULT_BINDINGS["zoom-reset"]).toBe("Ctrl+Digit0");

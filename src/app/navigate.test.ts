@@ -38,12 +38,10 @@ describe("applyNavigation — per-workspace page dispatch (#3602)", () => {
     expect(s.setActivePageTab).not.toHaveBeenCalled();
   });
 
-  it("routes github → setGithubTab, settings → setSettingsSection", () => {
-    const gh = fakeStore();
-    applyNavigation(gh as unknown as AppStore, { workspace: "github", page: "issues" });
-    expect(gh.setGithubTab).toHaveBeenCalledWith("issues");
-
-
+  it("routes settings → setSettingsSection", () => {
+    // The `github` workspace routed to `setGithubTab` until its screen was removed
+    // (`delete-the-github-screen-keep-the-integration`). Settings → GitHub is where the integration
+    // lives now, which is also where a persisted `activeWorkspace: "github"` is migrated to.
     const se = fakeStore();
     applyNavigation(se as unknown as AppStore, { workspace: "settings", page: "github" });
     expect(se.setSettingsSection).toHaveBeenCalledWith("github");

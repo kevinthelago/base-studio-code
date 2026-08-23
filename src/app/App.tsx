@@ -45,7 +45,7 @@ import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import { effectiveWorkspace } from "@/app/registry";
 import {
-  GitHubWorkspace, SettingsWorkspace,
+  SettingsWorkspace,
   ProjectsWorkspace, LogsWorkspace, GlanceWorkspace, WorkspaceFallback,
   ComponentsWorkspace, TeamsWorkspace, AlgorithmsWorkspace, DataWorkspace, SoundsWorkspace,
 } from "@/app/lazyWorkspaces";
@@ -102,14 +102,10 @@ export default function App() {
   const tabs = useAppStore((s) => s.tabs);
   const activeTabIdx = useAppStore((s) => s.activeTabIdx);
   const focusedAgentName = useAppStore((s) => s.focusedAgentName);
-  const activeRepoName = useAppStore((s) => s.activeRepoName);
   const activePageTab = useAppStore((s) => s.activePageTab);
   const crumbEntity = useAppStore((s) => s.crumbEntity);
   const projectsPageMode = useAppStore((s) => s.projectsPageMode);
   const projectsView = useAppStore((s) => s.projectsView);
-  const githubTab = useAppStore((s) => s.githubTab);
-  const githubBoardOpen = useAppStore((s) => s.githubBoardOpen);
-  const githubBoardTab = useAppStore((s) => s.githubBoardTab);
   const settingsSection = useAppStore((s) => s.settingsSection);
   const hasHydrated = useAppStore((s) => s.hasHydrated);
   const showConsolePage = useAppStore((s) => s.showConsolePage);
@@ -145,10 +141,6 @@ export default function App() {
     crumbEntity,
     projectsPageMode,
     projectsView,
-    githubTab,
-    githubBoardOpen,
-    githubBoardTab,
-    activeRepoName,
     settingsSection,
     consoleTab: tabs[activeTabIdx]?.name,
     focusedAgentName,
@@ -219,7 +211,6 @@ export default function App() {
           <Suspense fallback={<WorkspaceFallback />}>
             {activeWorkspace === "data"       && <DataWorkspace />}
             {activeWorkspace === "glance"     && <GlanceWorkspace />}
-            {activeWorkspace === "github"     && <GitHubWorkspace />}
             {activeWorkspace === "logs"       && <LogsWorkspace />}
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
           </Suspense>
