@@ -15,6 +15,8 @@ describe("screen registry (#nav-pass)", () => {
     const all: Record<Workspace, true> = {
       console: true, glance: true, projects: true, github: true, logs: true,
       settings: true,
+      // The five GRAPHS (`five-graphs-become-rail-workspaces`).
+      components: true, teams: true, algorithms: true, data: true, sounds: true,
     };
     expect(new Set(WORKSPACES.map((s) => s.key))).toEqual(new Set(Object.keys(all)));
   });
@@ -23,6 +25,29 @@ describe("screen registry (#nav-pass)", () => {
     expect(workspaceLabel("console")).toBe("Console");
     expect(workspaceLabel("logs")).toBe("Logs");              // the Security/Agents screen became Logs
     expect(workspaceLabel("nonexistent" as Workspace)).toBe("nonexistent");
+  });
+
+  it("labels the five graphs by the names the rail and crumb show", () => {
+    // `components` is the case worth pinning: the Planner TAB id was "designs" (the internal feature
+    // name) while its LABEL was "Components" (#2818). The Workspace takes the label, so the key and
+    // the old tab id deliberately differ — and `migrateGraphPage` maps designs → components because
+    // of exactly this.
+    expect(workspaceLabel("components")).toBe("Components");
+    expect(workspaceLabel("teams")).toBe("Teams");
+    expect(workspaceLabel("algorithms")).toBe("Algorithms");
+    expect(workspaceLabel("data")).toBe("Data");
+    expect(workspaceLabel("sounds")).toBe("Sounds");
+  });
+
+  it("keeps the five graphs together in rail order", () => {
+    // Product-defined grouping: the graphs sit between the workflow destinations and the utilities.
+    // Asserted as CONTIGUITY rather than exact indices so reordering within the group, or adding a
+    // workflow screen above it, does not spuriously fail.
+    const keys = WORKSPACES.map((s) => s.key);
+    const graphs: Workspace[] = ["components", "teams", "algorithms", "data", "sounds"];
+    const idx = graphs.map((k) => keys.indexOf(k));
+    expect(idx.every((i) => i >= 0)).toBe(true);
+    expect(Math.max(...idx) - Math.min(...idx)).toBe(idx.length - 1);
   });
 });
 

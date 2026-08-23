@@ -35,7 +35,13 @@ function makeVocab(over: Partial<Record<string, unknown>> = {}): NavVocab & { s:
   return {
     s,
     read: () => s as unknown as AppStore,
-    workspaces: ["console", "glance", "projects", "github", "logs", "settings"],
+    // Kept in step with `WORKSPACES` by the test below, deliberately: this fixture drifting from the
+    // registry is how `bsc navigate workspace <id>` could fail live while every test here stayed green.
+    workspaces: [
+      "console", "glance", "projects",
+      "components", "teams", "algorithms", "data", "sounds",
+      "github", "logs", "settings",
+    ],
     pages: ["projects", "teams", "designs", "algorithms", "sounds"],
   };
 }

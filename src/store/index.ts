@@ -21,7 +21,7 @@ import { createSkillsSlice } from "@/features/skills/store";
 
 import { type AppStore } from "@/store/types";
 import { persistedState, migrateAutoResumeOff } from "@/store/persist";
-import { migrateRetiredWorkspace } from "@/store/retiredWorkspaces";
+import { migrateRetiredWorkspace, migrateGraphPage } from "@/store/retiredWorkspaces";
 import { createSessionSlice } from "@/store/slices/session";
 import { createPlanSlice } from "@/store/slices/plan";
 import { createProjectsSlice } from "@/store/slices/projects";
@@ -135,6 +135,16 @@ export const useAppStore = create<AppStore>()(
         // tab's theme try-on preview (right-pane themes menu + palette + big preview). A last-mode of
         // "themes" now opens Components (Designs).
         if (state && (state.projectsPageMode as string) === "themes") state.projectsPageMode = "designs";
+        // The five graphs left the Planner and became rail Workspaces
+        // (`five-graphs-become-rail-workspaces`), so a persisted page-mode naming one has to be
+        // forwarded to the Workspace it became.
+        //
+        // ORDER IS LOAD-BEARING: this runs AFTER the two page-mode RENAMES above, not before. A user
+        // whose last mode was "design" or "themes" is only spelled "designs" once those have run, and
+        // "designs" is the key this maps to Components. Hoisting this above them would leave both of
+        // those users on the Planner — the exact silent wrong-page this migration exists to prevent,
+        // and one that nothing would report because it looks like a normal Projects view.
+        migrateGraphPage(state);
         // Refresh BUILT-IN blueprints from code on every load (#677). They're code-owned
         // templates, but `blueprints` is persisted — so improvements to a built-in (the
         // `optional` UI stage, enabled repos, updated prompts, …) would never reach a user
