@@ -81,6 +81,7 @@ pub fn run() {
         .manage(crate::session::system::LifecyclePending::default())
         // In-flight `bsc fleet director new` creates — the same park-and-ack shape as the wake above.
         .manage(crate::fleet::director_new::DirectorPending::default())
+        .manage(crate::fleet::start::StartPending::default())
         // In-flight `bsc debug` inspections (#3437) — the same park-and-ack shape as navigate.
         .manage(crate::debug::DebugPending::default())
         .manage(scope_registry.clone())
@@ -383,6 +384,7 @@ pub fn run() {
             crate::session::persona_use::persona_whatami_ack,
             crate::session::system::system_session_ack,
             crate::fleet::director_new::fleet_director_ack,
+            crate::fleet::start::fleet_start_ack,
             logs::logs_pane_activity,
             logs::logs_done_panes,
             logs::logs_waiting,
