@@ -76,6 +76,7 @@ const fn internal(name: &'static str, summary: &'static str, store: Option<&'sta
 
 const COMMANDS: &[Surface] = &[
     active("plan", "per-project plan store: issues, features, fleet, sections", Some("plan.db — per-project, $BSC_PLAN_DB")),
+    active("publish", "push a plan's GitHub structure — repos, board, one issue per plan row", Some("plan.db + GitHub")),
     active("errors", "per-project runtime-fault store: fingerprinted errors + alerts", Some("error.db — per-project hub")),
     active("usage", "per-project usage-events store: record + query what users do (epic #3809)", Some("usage.db — per-project hub")),
     active("project", "cross-project hub: list local projects + the .published marker", Some("the project hub list + the .published marker")),
@@ -202,6 +203,7 @@ mod serve;
 pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
     match cmd {
         "plan" => plandb::cli::run(rest, "bsc plan"),
+        "publish" => bsc_publish::cli::run(rest, "bsc publish"),
         "errors" => errordb::cli::run(rest, "bsc errors"),
         "usage" => usagedb::cli::run(rest, "bsc usage"),
         "project" => bsc_project::cli::run(rest, "bsc project"),

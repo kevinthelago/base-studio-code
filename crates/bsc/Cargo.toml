@@ -58,6 +58,10 @@ bsc-graph = { path = "../bsc-graph" }
 # `bsc cad` — the Rust-native mesh/SDF geometry kernel (#3387, kernel #2621): mesh an op-tree spec to STL.
 bsc-cad = { path = "../bsc-cad" }
 plandb = { path = "../plandb" }
+# `bsc publish` — push a plan's GitHub structure with no frontend involved
+# (`headless-publish-so-the-ui-is-not-the-only-publisher`). It sits ABOVE plandb + bsc-github rather
+# than inside `bsc plan`, which routes wholly into the store crate.
+bsc-publish = { path = "../bsc-publish" }
 errordb = { path = "../errordb" }
 # `bsc usage` — the per-project usage-events store (#3812, epic #3809): a running/generated app records
 # usage events, an agent reads what users do. The dev-process analogue of errordb.
