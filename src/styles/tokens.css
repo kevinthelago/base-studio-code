@@ -520,7 +520,20 @@ textarea.input{ height:auto; min-height:64px; padding:8px 10px; resize:vertical;
    component CSS keeps working; this just owns the flex-column page/body layout once. */
 .screen { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative; }
 .screen .screen-page { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.screen .screen-body { flex: 1; overflow: auto; min-width: 0; }
+/* The Screen body is a flex ITEM of `.screen` and must also be a flex CONTAINER, or a page that asks to
+   FILL gets no height to fill. As a block it sized to its content: on the components workspace the rail's
+   ~15,000px component tree set `.ds-graph`'s height (measured: body 732, scrollHeight 15330), `overflow:
+   auto` then turned the whole screen into a scroller, and the rail never scrolled internally because it
+   was never constrained. `teams` had it too, milder only because its rail is shorter.
+
+   Safe on the shared class rather than behind a per-workspace modifier because every Screen consumer is a
+   fill-the-space surface — algorithms, data, designs, glance, planner, sounds, teams — so there is no
+   flowing-document page for which a block body would be the right behaviour. A page that IS taller than
+   the body still overflows and still scrolls here; `overflow: auto` is unchanged.
+
+   `min-height: 0` is load-bearing: without it a flex item refuses to shrink below its content and the
+   constraint never reaches the page. */
+.screen .screen-body { flex: 1; overflow: auto; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
 /* #4170 — the page-scoped crash fallback. Sits INSIDE .screen-body, so the PageTabs strip above it is
    untouched and the user can always navigate off a broken page. */
 .page-boundary { padding: 24px; max-width: 640px; }
