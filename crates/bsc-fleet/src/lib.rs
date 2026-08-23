@@ -37,6 +37,55 @@ pub const WAKE_KIND: &str = "fleet-wake";
 /// [`WAKE_KIND`]: creating a session is a frontend store action, not a pure-Rust answer.
 pub const DIRECTOR_KIND: &str = "fleet-director";
 
+/// `bsc fleet start` — launch a project's WHOLE fleet (director + every worker stream).
+///
+/// Its own routing key, for the same reason as [`WAKE_KIND`] and [`DIRECTOR_KIND`]: the pane
+/// creation is a frontend store action, not a pure-Rust answer. This is the whole-fleet sibling of
+/// `fleet director new` — that one creates the coordinator alone, this one brings up the fleet it
+/// coordinates.
+pub const START_KIND: &str = "fleet-start";
+
+/// Ask the app to launch a project's fleet.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartRequest {
+    /// An EXISTING project's key. Refused when it names nothing — this LAUNCHES a fleet, it does not
+    /// create a project.
+    pub project_key: String,
+    /// Relaunch even when sessions for this project are already live. Without it an existing fleet is
+    /// reported rather than duplicated: two workers on one worktree would fight over the same branch.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub force: bool,
+}
+
+/// What a start actually did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StartOutcome {
+    #[default]
+    Launched,
+    /// Sessions for this project are already live and `force` was not set.
+    AlreadyRunning,
+}
+
+/// The reply to a start.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartResult {
+    pub project_key: String,
+    pub outcome: StartOutcome,
+    /// Whether a director was included.
+    #[serde(default)]
+    pub director: bool,
+    /// The stream ids that got a worker.
+    #[serde(default)]
+    pub streams: Vec<String>,
+    /// Streams SKIPPED because they name no repo, so nothing can be worktree'd for them. Reported
+    /// rather than silently dropped — a stream that never launches is otherwise invisible.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_no_repo: Vec<String>,
+}
+
 /// The pane a project's director runs on. Pane identity is `<projectKey>:director`, the same grammar
 /// [`director_project_key`] reads back — one spelling, so create / list / brief all name the same pane.
 pub fn director_pane_id(project_key: &str) -> String {
@@ -238,6 +287,65 @@ mod tests {
         assert_eq!(rv["woke"], true);
         assert_eq!(rv["wasBusy"], true);
         assert_eq!(serde_json::from_value::<WakeResult>(rv).unwrap(), res);
+    }
+
+    /// The start contract is a CROSS-PROCESS wire: `bsc` serializes the request, the app
+    /// deserializes it, and the reply comes back the same way. A rename on either side is invisible
+    /// to the compiler and shows up as a launch that silently does nothing.
+    #[test]
+    fn the_start_contract_round_trips() {
+        let req = StartRequest { project_key: "my-app".into(), force: true };
+        let back: StartRequest = serde_json::from_str(&serde_json::to_string(&req).unwrap()).unwrap();
+        assert_eq!(back, req);
+
+        let res = StartResult {
+            project_key: "my-app".into(),
+            outcome: StartOutcome::Launched,
+            director: true,
+            streams: vec!["api".into(), "ui".into()],
+            skipped_no_repo: vec!["docs".into()],
+        };
+        let back: StartResult = serde_json::from_str(&serde_json::to_string(&res).unwrap()).unwrap();
+        assert_eq!(back, res);
+    }
+
+    /// The field names the app reads. camelCase on the wire, like every other appchan payload — a
+    /// snake_case `project_key` would deserialize to the empty default and the app would refuse the
+    /// launch with "no project key" for a request that named one.
+    #[test]
+    fn the_start_request_is_camel_case_on_the_wire() {
+        let json = serde_json::to_value(StartRequest {
+            project_key: "my-app".into(),
+            force: false,
+        })
+        .unwrap();
+        assert_eq!(json["projectKey"], "my-app");
+        // `force` is skipped when false, so the common request stays minimal.
+        assert!(json.get("force").is_none(), "a default force must not be sent: {json}");
+
+        let res = serde_json::to_value(StartResult {
+            project_key: "k".into(),
+            outcome: StartOutcome::AlreadyRunning,
+            director: false,
+            streams: vec![],
+            skipped_no_repo: vec![],
+        })
+        .unwrap();
+        assert_eq!(res["projectKey"], "k");
+        assert_eq!(res["outcome"], "alreadyRunning");
+        // An empty skip list is omitted rather than sent as [] — nothing was skipped.
+        assert!(res.get("skippedNoRepo").is_none());
+    }
+
+    /// `start` must not share a routing key with the other fleet verbs: they take different request
+    /// shapes AND different paths through the app, so a collision would hand a launch to the liveness
+    /// reader and answer it with a pane list.
+    #[test]
+    fn start_has_its_own_routing_key() {
+        assert_eq!(START_KIND, "fleet-start");
+        for other in [KIND, WAKE_KIND, DIRECTOR_KIND] {
+            assert_ne!(START_KIND, other);
+        }
     }
 
     /// `wake` must not share `list`'s routing key: they take different request shapes AND different
