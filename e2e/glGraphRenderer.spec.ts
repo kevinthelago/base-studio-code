@@ -75,6 +75,10 @@ test("draws without a GL error", async () => {
 
 test("the whole graph is TWO draw calls per frame, whatever the node count", async () => {
   test.setTimeout(240_000);
+  // Asserted, not assumed: this runs before any label is set, so the label pass contributes nothing.
+  // Without this line the "8" below would quietly become a statement about test ORDER — and a later
+  // reordering would change what the test means without changing what it says.
+  expect(await page.evaluate(() => window.__glGraphHarness!.glyphCount()), "no labels are set yet").toBe(0);
   await page.evaluate(() => window.__glGraphHarness!.resetCounters());
   await page.evaluate(() => window.__glGraphHarness!.draw(1));
   const c = await page.evaluate(() => window.__glGraphHarness!.counters());
@@ -119,4 +123,53 @@ test("moving a node writes ONE texel, not the whole position texture", async () 
   expect(c.texSubImage2D).toBe(1);
   expect(c.texImage2D).toBe(0);
   expect(c.bufferData).toBe(0);
+});
+
+test("builds a distance-field atlas from a real font, once", async () => {
+  test.setTimeout(240_000);
+  const a = await page.evaluate(() => window.__glGraphHarness!.buildAtlas());
+  expect(a.ok, "the atlas needs a real 2D context — jsdom has no text rasterization, which is why this is here").toBe(true);
+  expect(a.glyphs).toBe(95); // printable ASCII
+  expect(a.width).toBeGreaterThan(0);
+  expect(a.height).toBeGreaterThan(0);
+  console.log(`  atlas ${a.width}x${a.height}, ${a.glyphs} glyphs, built in ${a.ms.toFixed(0)}ms`);
+});
+
+test("the LOD gate bounds glyphs by SCREEN AREA, not by graph size", async () => {
+  test.setTimeout(240_000);
+  await page.evaluate(() => window.__glGraphHarness!.labelEveryNode());
+
+  // Zoomed out over a million labelled nodes. Ungated this is ~12M glyph quads — over the frame budget
+  // (10M wide quads measured at 22.2 ms) and illegible, which is the more important half. The gate must
+  // emit NOTHING here.
+  await page.evaluate(() => window.__glGraphHarness!.setScale(0.02));
+  await page.evaluate(() => window.__glGraphHarness!.draw(1));
+  const zoomedOut = await page.evaluate(() => window.__glGraphHarness!.glyphCount());
+  expect(zoomedOut, "a million labels at overview zoom must cost zero glyphs").toBe(0);
+
+  // Zoomed in far enough to read. Now labels appear — but only for what is on screen, so the count is
+  // bounded by the viewport and stays orders of magnitude below the node count.
+  await page.evaluate(() => window.__glGraphHarness!.setScale(2));
+  await page.evaluate(() => window.__glGraphHarness!.draw(1));
+  const zoomedIn = await page.evaluate(() => window.__glGraphHarness!.glyphCount());
+  expect(zoomedIn, "zoomed in, some labels are legible and must render").toBeGreaterThan(0);
+  expect(zoomedIn, "…but bounded by screen area, not by the million nodes behind it").toBeLessThan(20_000);
+  console.log(`  glyphs: ${zoomedOut} at 0.02x, ${zoomedIn} at 2x, over 1,000,000 labelled nodes`);
+});
+
+test("every visible label is ONE instanced draw call", async () => {
+  test.setTimeout(240_000);
+  await page.evaluate(() => window.__glGraphHarness!.setScale(2));
+  await page.evaluate(() => window.__glGraphHarness!.resetCounters());
+  await page.evaluate(() => window.__glGraphHarness!.draw(1));
+  const c = await page.evaluate(() => window.__glGraphHarness!.counters());
+  const glyphs = await page.evaluate(() => window.__glGraphHarness!.glyphCount());
+  expect(glyphs).toBeGreaterThan(0);
+  // `draw(1)` runs 4 frames (3 warm-up + 1 timed). Nodes + edges + labels = 3 calls per frame, so 12 —
+  // a CONSTANT, whatever the glyph count. A per-label or per-node draw would scale with `glyphs`.
+  expect(c.drawInstanced).toBe(12);
+  // The atlas is uploaded ONCE, at setAtlas — never per frame.
+  expect(c.texImage2D).toBe(0);
+  // Two `bufferSubData` per frame (rects + uvs), so 8 across 4 frames — not one per label.
+  expect(c.bufferSubData).toBe(8);
 });
