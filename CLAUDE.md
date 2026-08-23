@@ -130,8 +130,15 @@ base-studio-code/
 │   ├── features/            # ONE FOLDER PER FEATURE = UI + lib/ (pure domain) + store.ts (its slice)
 │   │   │                    #   + index.ts (public API barrel). Import UI via @/features/<x>; import
 │   │   │                    #   the pure domain via @/features/<x>/lib/* (keeps React out of non-UI).
-│   │   ├── skills/ · mcp/ · automations/ · github/ · tunnel/ · logs/ · settings/
-│   │   └── planner/         #   the flagship (session/, pane/, bodies/, blueprints/, stages/, …, lib/)
+│   │   ├── designs/ · teams/ · algorithms/ · data/ · sounds/   # the FIVE GRAPH workspaces — one rail
+│   │   │                    #   destination each, tabbed by their OWN axis (tech / team / kit / language).
+│   │   │                    #   NOTE the Components workspace is `designs/` (DesignsWorkbench); there is
+│   │   │                    #   no `features/components/` — `@/app/lazyWorkspaces` is the map to read.
+│   │   ├── glance/          #   the cockpit: the project graph + its fleet panes (Fleet lives HERE, #2223)
+│   │   ├── studio/ · studio-sessions/ · personas/ · debug/
+│   │   ├── skills/ · mcp/ · automations/ · tunnel/ · logs/ · settings/ · github/ (slice only, no screen)
+│   │   └── planner/         #   DOMAIN ONLY — no UI (blueprints/, stages/, issues/, fleet/, lib/, …);
+│   │                        #   the plan model the architect + director drive through `bsc plan`
 │   ├── shared/              # feature-agnostic; no feature imports it
 │   │   ├── lib/             #   core (log/perf/llm), session, fleet, security, cleanup
 │   │   ├── hooks/  ·  data/ #   shared hooks · typed sample data (mock.ts)
@@ -146,11 +153,15 @@ base-studio-code/
 
 ### Frontend conventions (feature-first, #1309)
 
-> **MOST OF THE FRONTEND IS NOT FILES.** ~1,204 modules ship as RECORDS — 482 component records under
-> `src-tauri/data/components/app/**` plus 722 implementations in `data/knowledge/algorithms.json` — and
-> the files that held them are deleted (epic #3604, "the graph IS the app"). **69 non-test modules
-> remain under `src/`**, and the harvest is FINISHED: `retire-module --dry` was run against every one of
-> them and none is retirable. The floor: 26 hold MODULE STATE on a specifier that is also REGISTERED
+> **MOST OF THE FRONTEND IS NOT FILES.** ~1,019 modules ship as RECORDS — 339 component records under
+> `src-tauri/data/components/app/**` plus 680 implementations in `data/knowledge/algorithms.json` — and
+> the files that held them are deleted (epic #3604, "the graph IS the app"). **78 non-test modules
+> remain under `src/`**. The harvest that produced that floor is finished — `retire-module --dry` was run
+> against every module and none was retirable — but the COUNT has moved since (it was 69), so the
+> per-reason breakdown below is the last one that summed and is now **stale by roughly nine modules**.
+> Re-derive it before relying on any single figure; the shape is what still holds.
+>
+> The floor, as last derived: 26 hold MODULE STATE on a specifier that is also REGISTERED
 > (two live copies — `bsc graph impl set` refuses the write), 14 use `import.meta.glob`, 10 are imported
 > STATICALLY by `main.tsx`/`App.tsx`, 7 are type-only, 6 are algorithms seed modules whose node `code` is
 > generated *from* the file, and one each for the entry, test setup, a `vite.config.ts` import, a record
@@ -182,6 +193,24 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
   destinations are `*Workspace` (`registry.ts` `Workspace` type + `activeWorkspace`); Settings sections
   are Pages (`features/settings/pages/*Page`). Console keeps its own nested **Tab → Pane → View**. Full
   convention: [`docs/frontend-structure.md`](docs/frontend-structure.md).
+- **THE RAIL IS THE FIVE GRAPHS** (`epic-the-graphs-are-the-app`): **Console** (opt-in) · **Glance** ·
+  **Components** · **Teams** · **Algorithms** · **Data** · **Sounds** · **Logs** · **Settings**. Each
+  graph is a Workspace whose **PageTabs are its own axis** — Components and Algorithms by TECHNOLOGY
+  (react/react-native; rust/typescript), Teams by TEAM, Sounds by KIT, Data by LANGUAGE.
+  - **The tab is a LENS, not a partition.** Technology is a CURATION scope — it says who may WRITE a
+    record (`studioScopeDirective` splits the designer and librarian per technology) and nothing about
+    what may REFERENCE one. The cross-graph URN grammar makes that concrete: `@bsc/algorithms/fibonacci`
+    is kit-less, so a React component resolves a TypeScript implementation across both pillar AND
+    technology. A tab bar rendering technologies as disjoint worlds would assert in the chrome exactly
+    the silo epic #3114 removed from the model. `algorithmsLens.test.ts` / `componentsLens.test.ts` are
+    the guards: no tab selection may hide an edge the store holds.
+  - **The PLANNER and GITHUB screens are gone**, and their functions are not. Planning is the
+    director's job — the architect runs discovery with the user, then creates a director that completes
+    the plan and designs its team — so the planner's 142 React-free modules, `src-tauri/src/planner`,
+    the fleet and plan.db all remain, driven by `bsc plan` / `bsc publish` / `bsc fleet start`.
+    Likewise `src-tauri/src/github` still runs publish and readiness, and Settings → GitHub is still
+    where an account is connected. Whether a project uses GitHub at all is a DISCOVERY decision
+    (`bsc plan classify`, `usesGithub`), not a guess from whether a token happens to be present.
 - **A feature owns everything it needs:** `features/<x>/` holds the UI, a `lib/` of pure (React-free)
   domain logic, a `store.ts` (its Zustand slice + slice interface), colocated tests, and an `index.ts`
   barrel that is the feature's public API. **Cross-feature, import ONLY the barrel `@/features/<x>`** —
@@ -200,9 +229,11 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
   interface. Per-feature slices live in `features/<x>/store.ts`; the core app state + labelled residuals
   (`console`, `core`, `shell`, `plan`, `projects`, `session`) remain under `store/slices/` — a candidate
   for further splitting later.
-- The former big `planner` files are **now decomposed**: `Planning.tsx` (~820 lines) is an orchestrator
-  over `PlanningHeader`/`PlanningNotices`/`PlanningDialogs`/`planningTerminal`/`planningSession`, and
-  `ProjectPane.tsx` (~150 lines) split into `projectPane.types.ts`/`projectPaneData.ts`/`projectPane.css`.
+- **The planner's UI is deleted** (`delete-the-planner-ui-keep-the-planner`) — `Planning.tsx`,
+  `ProjectPane.tsx` and the rest of the pitch-to-plan screen. `features/planner/` is now DOMAIN ONLY,
+  and its barrel is too: eleven modules outside the feature import through it and #1545 lets them reach
+  nothing else, so a UI export creeping back would pull React into the store's type graph and into
+  Glance. If it imports react, it does not belong there.
 - **Cross-repo contract fixtures** (`tunnelProtocol.fixtures.json`, `plannerCore.fixtures.json`) live in
   their feature's `lib/` but are byte-exact wire contracts ALSO consumed by the Rust tests and
   mobile-studio-code. The Rust tests resolve them **by filename** (`find_fixture` in
@@ -219,7 +250,7 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
 ```
 base-studio-code (desktop host)
 ├── Agent Orchestrator      — spawns/manages parallel agent sessions       (src-tauri/src/{console,session,fleet})
-├── GitHub Integration      — OAuth, repo selection, PR/issue access       (src-tauri/src/github)
+├── GitHub Integration      — OAuth + publish/readiness; NO screen (src-tauri/src/github, Settings)
 ├── Mobile relay client     — dials the Cloudflare relay for mobile pairing (src-tauri/src/mobile/tunnel)
 └── UI Shell                — Tauri WebView running the React frontend
 ```
@@ -246,7 +277,21 @@ mobile-studio-code (standalone app — separate repo; usable on its own)
 
 ## Project Planning
 
-The flagship feature. A **dedicated, app-owned planning session** turns a pitch (new project) or an existing repo set into a complete, executable plan: the feature breakdown, the GitHub structure (milestones + granular issues), the parallel-agent fleet, and the context files every downstream session runs under. The user steers the conversation; the planner produces everything. Entry: `src/features/planner/` (`session/Planning.tsx`, `list/ProjectsList.tsx`); backend setup: `src-tauri/src/planner/workspace.rs` (`setup_workspaces`).
+**There is no planner SCREEN, and no planner tier.** Planning is a three-tier funnel now — architect →
+director → workers — and the responsibilities the planning session used to hold are split across it:
+
+- **The architect** is the one session the user talks to. It runs **Discovery** with them, records the
+  outcome as `bsc plan requirement` (`{ statement, discovery, authority }`) plus the classification
+  (`bsc plan classify` — including **`usesGithub`**, the decision about whether this project ships to
+  GitHub at all), and then **creates the director** (`bsc fleet director new`).
+- **The director** completes the plan, designs its team, and executes: it publishes the GitHub structure
+  when the project uses GitHub (`bsc publish run`), and launches the fleet (`bsc fleet start`).
+
+What that leaves in the codebase: `features/planner/` is DOMAIN ONLY (no UI), `src-tauri/src/planner/`
+still writes the workspaces (`setup_workspaces`), and `plan.db` is still the store everything reads
+through `bsc plan`. The sections below describe the plan MODEL — stages, blueprints, issues, fleet —
+which is intact and agent-driven; where they mention a screen, a pane or a card, that surface is gone
+and the same data is reached with `bsc plan`.
 
 ### The right pane — focused plan view (#652)
 The planning page is a split: the live Claude session (terminal, center) + the **focused project pane** (`ProjectPane.tsx`, `focus` mode). The pane shows **one phase at a time** — a navigable **stepper** (per-phase status from `sectionStatus`: complete/active/locked/upcoming, incomplete phases pulse), a phase header with a **gate pill** (`evalGate`), lock/done banners, the phase body (Context / Structure+lens / Permissions+director, else a generic card), and a **footer advance bar** (back · jump/back-to-current · approve & continue when the gate passes · publish). It auto-follows the live session (`currentSection` = active phase) while letting the user navigate; selection resets on a project switch. Pure model: `focusedPlan.ts`; shell: `FocusedShell.tsx`. (Replaced the all-sections scroll + the full-width N-bar.)
