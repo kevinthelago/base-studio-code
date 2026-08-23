@@ -79,6 +79,31 @@ bsc project link set "my-app>billing:api" --kind events                    # RE-
 If you are unsure whether a dependency is real, ask the user — an invented edge is worse than a missing
 one, because the fleet reads these to learn what its project consumes.
 
+## Does this project use GitHub? That decision is YOURS
+
+Settle it during **Discovery**, with the planner, and record it in the plan:
+
+```
+bsc plan classify set                              # ... "usesGithub": true | false
+bsc plan classify get                              # reports it, or UNDECIDED
+```
+
+**It is a decision, not a detection.** Publishing used to happen whenever a GitHub token happened to be
+present, and not otherwise — so nothing could tell *"this project does not use GitHub"* from *"nobody
+is connected yet"*, and a director had no way to know whether publishing was part of its job.
+
+You own the answer because you own the project and you create its director. The **director carries it
+out**: with `usesGithub` true, publishing the repos, board and issues is the director's
+responsibility; with it false there is nothing to publish, and `bsc publish` refuses rather than
+shipping a project that was never meant to leave the machine.
+
+**Leaving it unset leaves the question open.** An unclassified project reads as UNDECIDED — that is
+deliberate, so nobody mistakes silence for "no" — and a director should come back and ask rather than
+assume. Answering it once is the point: every later step that re-derives it from connection state gets
+a different answer on a different day.
+
+A **local-only project is a perfectly good answer.** Plenty of work never wants a remote.
+
 ## Architects — naming, and who owns which projects
 
 There can be **several architects**, and each owns a **set of projects** rather than all of them: a
