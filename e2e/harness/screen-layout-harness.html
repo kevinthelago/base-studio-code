@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>screen layout harness</title>
+    <!-- The REAL stylesheet. The whole point is to exercise the shipped cascade, which jsdom does not
+         have at all — this bug is a computed `display` on a shared class and is structurally invisible
+         to a unit test. -->
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <style>
+      html, body { margin: 0; height: 600px; }
+      /* Stand in for the app shell chain above the Screen: a bounded flex column. */
+      #root { display: flex; flex-direction: column; height: 600px; overflow: hidden; }
+      /* A page that wants to FILL — what every Screen consumer is. */
+      .fill-page { flex: 1 1 0%; min-height: 0; display: flex; overflow: hidden; }
+      /* A pane whose CONTENT is far taller than the screen — the rail with its component tree. */
+      .tall-pane { flex: 0 1 266px; overflow: auto; }
+      .tall-content { height: 9000px; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="screen">
+        <div class="screen-page">
+          <div class="screen-body">
+            <div class="fill-page">
+              <div class="tall-pane"><div class="tall-content"></div></div>
+              <div style="flex:1"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
