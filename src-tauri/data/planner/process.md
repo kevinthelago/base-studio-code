@@ -504,24 +504,6 @@ and `risks` apply to almost every project.
   2–4 feature versions), each with a one-line theme; adapt the cadence to the goal/scope/users (a
   regulated or data-migration product may need longer, gated releases).
 
-**Settle before the stage closes — the decision the whole downstream tier reads:**
-
-- **Will this project use GitHub?** Ask it plainly, and record the answer with
-  `bsc plan classify set` (`"usesGithub": true` / `false`) as part of the closing classification.
-
-  This is a DECISION, not a detection. Publishing used to happen if a token happened to be present
-  and not otherwise, which meant nobody could tell "this project does not use GitHub" from "nobody is
-  connected yet" — and a director had no way to know whether publishing was part of its job.
-
-  The **architect** owns the answer (it owns the project and creates its director), and the
-  **director** carries it out: with `usesGithub` true, publishing the repos, board and issues is the
-  director's responsibility; with it false, there is nothing to publish and `bsc publish` refuses.
-  Leaving it unset leaves the question open — `bsc plan classify get` reports it as UNDECIDED, and a
-  director should ask rather than assume.
-
-  A local-only project is a perfectly good answer. Plenty of work never wants a remote, and saying so
-  once is better than every later step re-deriving it from connection state.
-
 **Capture only where it materially shapes the build — otherwise fold it into the
 feature that needs it, or skip:**
 - `security` — threat-model highlights, secret management, supply-chain controls,

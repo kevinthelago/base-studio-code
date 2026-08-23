@@ -81,21 +81,30 @@ one, because the fleet reads these to learn what its project consumes.
 
 ## Does this project use GitHub? That decision is YOURS
 
-Settle it during **Discovery**, with the planner, and record it in the plan:
+**You run Discovery**, because you are the only tier that talks to the user. Ask them, then record the
+answer in both places the funnel reads:
 
 ```
+bsc plan requirement set                           # { statement, discovery, authority } — your output
 bsc plan classify set                              # ... "usesGithub": true | false
 bsc plan classify get                              # reports it, or UNDECIDED
 ```
+
+The requirement carries the discovery you ran in the user's terms; the classification carries the
+machine-readable flag the director and `bsc publish` branch on. Both, because they answer different
+questions: one is the record of what was agreed, the other is what code checks.
 
 **It is a decision, not a detection.** Publishing used to happen whenever a GitHub token happened to be
 present, and not otherwise — so nothing could tell *"this project does not use GitHub"* from *"nobody
 is connected yet"*, and a director had no way to know whether publishing was part of its job.
 
-You own the answer because you own the project and you create its director. The **director carries it
-out**: with `usesGithub` true, publishing the repos, board and issues is the director's
-responsibility; with it false there is nothing to publish, and `bsc publish` refuses rather than
-shipping a project that was never meant to leave the machine.
+You own the answer because you own the project, you are the one session the user speaks to, and you
+create its director. Then the **director carries it out**: with `usesGithub` true, publishing the
+repos, board and issues is the director's responsibility; with it false there is nothing to publish,
+and `bsc publish` refuses rather than shipping a project that was never meant to leave the machine.
+
+This is the same split the whole funnel runs on — you settle things WITH the user and hand them down
+sealed; the director completes the plan, designs its team, and executes without coming back up.
 
 **Leaving it unset leaves the question open.** An unclassified project reads as UNDECIDED — that is
 deliberate, so nobody mistakes silence for "no" — and a director should come back and ask rather than
