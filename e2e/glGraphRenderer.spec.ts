@@ -14,6 +14,13 @@
 //     5M wide quads (edges)   13.2  ms/frame    76 fps    57 MB
 //    10M wide quads           22.2  ms/frame    45 fps   114 MB
 //
+// TIMEOUTS ARE 600 s, NOT A GUESS. Drawing 1M nodes + 2M edges under SwiftShader takes MINUTES: measured
+// at 2.3, 3.3 and 3.6 minutes across runs, and 4.0 when a full `cargo`/`vitest` gate was competing for
+// the CPU — which is where the old 240 s budget failed. The work is inherently slow here (see the header
+// on software rasterization), so the budget has to cover the loaded case or the suite reports machine
+// load as a product failure. Do NOT read a timeout at this scale as a regression without checking what
+// else was running.
+//
 // SERIAL, WITH ONE SHARED GRAPH. Building a million nodes and two million edges under SwiftShader costs
 // tens of seconds, and doing it per test blew the default timeout on two of five. The graph is immutable
 // across the read-only assertions, and the two mutating tests (`select`, `move`) touch one instance each
@@ -40,7 +47,7 @@ test.beforeAll(async ({ browser }) => {
   page = await browser.newPage();
   page.on("pageerror", (e) => pageErrors.push(String(e)));
   // Generous: this is the software-rasterizer upload of 1M nodes + 2M edges, once for the whole file.
-  test.setTimeout(240_000);
+  test.setTimeout(600_000);
   await page.goto(HARNESS);
   await page.waitForFunction(() => !!window.__glGraphHarness);
   made = await page.evaluate(([n, e]) => window.__glGraphHarness!.create(n, e), [NODES, EDGES]);
@@ -56,7 +63,7 @@ test("constructs and uploads a million nodes and two million edges", async () =>
 });
 
 test("draws without a GL error", async () => {
-  test.setTimeout(240_000);
+  test.setTimeout(600_000);
   const perFrame = await page.evaluate(() => window.__glGraphHarness!.draw(3));
   // 0 is GL_NO_ERROR. Anything else means the draw was REJECTED — the most likely way a shader or
   // attribute-layout mistake reaches production looking fine, because a rejected draw is simply invisible.
@@ -74,7 +81,7 @@ test("draws without a GL error", async () => {
 });
 
 test("the whole graph is TWO draw calls per frame, whatever the node count", async () => {
-  test.setTimeout(240_000);
+  test.setTimeout(600_000);
   // Asserted, not assumed: this runs before any label is set, so the label pass contributes nothing.
   // Without this line the "8" below would quietly become a statement about test ORDER — and a later
   // reordering would change what the test means without changing what it says.
@@ -92,6 +99,12 @@ test("the whole graph is TWO draw calls per frame, whatever the node count", asy
 });
 
 test("picking agrees with drawing at a million nodes", async () => {
+  // The only test here that was left on Playwright's default 30 s, while its seven siblings raise it.
+  // The assertions take ~30 ms; the budget is for the SHARED page, which holds a million-node GL state
+  // under a software rasterizer and is minutes deep into a serial file. It timed out once on a loaded
+  // machine and passed at 30 ms on the next two runs — a flake with no signal in it, and a red test
+  // that means nothing is worse than a slow one.
+  test.setTimeout(600_000);
   // Spread across the whole index, including the first and last node: an off-by-one in the position
   // texture's row addressing shows up at the ends, not in the middle.
   for (const i of [0, 1, 2047, 2048, 500_000, 999_999]) {
@@ -126,7 +139,7 @@ test("moving a node writes ONE texel, not the whole position texture", async () 
 });
 
 test("builds a distance-field atlas from a real font, once", async () => {
-  test.setTimeout(240_000);
+  test.setTimeout(600_000);
   const a = await page.evaluate(() => window.__glGraphHarness!.buildAtlas());
   expect(a.ok, "the atlas needs a real 2D context — jsdom has no text rasterization, which is why this is here").toBe(true);
   expect(a.glyphs).toBe(95); // printable ASCII
@@ -136,7 +149,7 @@ test("builds a distance-field atlas from a real font, once", async () => {
 });
 
 test("the LOD gate bounds glyphs by SCREEN AREA, not by graph size", async () => {
-  test.setTimeout(240_000);
+  test.setTimeout(600_000);
   await page.evaluate(() => window.__glGraphHarness!.labelEveryNode());
 
   // Zoomed out over a million labelled nodes. Ungated this is ~12M glyph quads — over the frame budget
@@ -158,7 +171,7 @@ test("the LOD gate bounds glyphs by SCREEN AREA, not by graph size", async () =>
 });
 
 test("every visible label is ONE instanced draw call", async () => {
-  test.setTimeout(240_000);
+  test.setTimeout(600_000);
   await page.evaluate(() => window.__glGraphHarness!.setScale(2));
   await page.evaluate(() => window.__glGraphHarness!.resetCounters());
   await page.evaluate(() => window.__glGraphHarness!.draw(1));
@@ -172,4 +185,37 @@ test("every visible label is ONE instanced draw call", async () => {
   expect(c.texImage2D).toBe(0);
   // Two `bufferSubData` per frame (rects + uvs), so 8 across 4 frames — not one per label.
   expect(c.bufferSubData).toBe(8);
+});
+
+test("the LOD pyramid bounds the DRAWN instance count as you zoom out", async () => {
+  test.setTimeout(600_000);
+  const lod = await page.evaluate(() => window.__glGraphHarness!.attachLod());
+  expect(lod.levels, "a million nodes must produce a real pyramid, not one level").toBeGreaterThan(3);
+  // Geometric collapse — each level a fraction of the one below.
+  for (let i = 1; i < lod.populations.length; i++) {
+    expect(lod.populations[i], `level ${i}`).toBeLessThan(lod.populations[i - 1]);
+  }
+  console.log(`  pyramid: ${lod.levels} levels ${JSON.stringify(lod.populations)} built in ${lod.buildMs.toFixed(0)}ms`);
+
+  // Zoomed IN: level 0, the nodes themselves — the pyramid must be transparent at close range.
+  const near = await page.evaluate(() => window.__glGraphHarness!.drawnAt(4));
+  expect(near.level).toBe(0);
+  expect(near.instances).toBe(NODES);
+
+  // Zoomed OUT: a coarser level, and DRAMATICALLY fewer instances. This is the whole epic in one
+  // assertion — the frame stops paying for nodes it cannot resolve.
+  const far = await page.evaluate(() => window.__glGraphHarness!.drawnAt(0.01));
+  expect(far.level).toBeGreaterThan(0);
+  expect(far.instances).toBeLessThan(NODES / 10);
+  console.log(`  drawn: ${near.instances} at 4x (level ${near.level}) -> ${far.instances} at 0.01x (level ${far.level})`);
+
+  // Monotonic: zooming further out never draws MORE.
+  let prev = Infinity;
+  for (const s of [1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01]) {
+    const r = await page.evaluate((sc) => window.__glGraphHarness!.drawnAt(sc), s);
+    expect(r.instances, `scale ${s}`).toBeLessThanOrEqual(prev);
+    prev = r.instances;
+  }
+  expect(await page.evaluate(() => window.__glGraphHarness!.glError())).toBe(0);
+  await page.evaluate(() => window.__glGraphHarness!.detachLod());
 });
