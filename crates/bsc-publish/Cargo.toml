@@ -1,0 +1,20 @@
+[package]
+name = "bsc-publish"
+version = "0.1.0"
+edition = "2021"
+
+# Publish a plan's GitHub structure with no frontend involved
+# (`headless-publish-so-the-ui-is-not-the-only-publisher`).
+#
+# It lives in its OWN crate rather than under `bsc plan` because `bsc plan` routes wholly into
+# `plandb`, a store crate with no networking — putting reqwest + TLS behind a SQLite store would be
+# a layering inversion, and depending the other way (plandb -> publish -> plandb) is a cycle. So
+# publish sits ABOVE both stores and the transport, and `bsc` dispatches to it directly.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The plan is the input: repos, issues (with their GitHub identity), and fleet streams.
+plandb = { path = "../plandb" }
+# The transport, extracted so this crate can exist at all.
+bsc-github = { path = "../bsc-github" }
+bsc-cli-util = { path = "../bsc-cli-util" }
