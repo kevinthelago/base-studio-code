@@ -103,6 +103,8 @@ fn main() {
     }
 
     let spec = SandboxSpec {
+        // A demonstration of the STORE projections, not of a conversation — no transcripts to keep.
+        history_dir: None,
         unit: unit_from(&worktree),
         limits: Limits { memory_max: Some("2G".into()), tasks_max: Some(512), cpu_weight: None },
         // Curated, not Usr::All. Binding /usr wholesale would hand this agent every binary on the

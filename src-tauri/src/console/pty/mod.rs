@@ -1580,6 +1580,31 @@ fn credential_for_harness() -> Option<std::path::PathBuf> {
     p.is_file().then_some(p)
 }
 
+/// The pane's PERSISTENT transcript directory, created on the host so bwrap can bind it.
+///
+/// Claude Code stores conversations under `$HOME/.claude/projects/<cwd-slug>/`. The cage's HOME is a
+/// tmpfs, so those died with every session and `--continue` never had anything to continue — the
+/// caged designer started fresh on every launch while the uncaged studios resumed normally.
+///
+/// Per PANE, not per role: the pane id is what distinguishes `designer-react` from
+/// `designer-react-native`, and inside the cage both see the same cwd (`/repo`), so sharing one host
+/// directory would make them share a conversation. That is the same collision the per-technology
+/// workspace directories fix on the host side, and it has to hold on both.
+///
+/// Best-effort: a session that cannot get one still launches and simply cannot resume, which is
+/// strictly better than refusing to start.
+#[cfg(target_os = "linux")]
+fn history_dir_for(pane_id: &str, stores_root: &std::path::Path) -> Option<std::path::PathBuf> {
+    let dir = stores_root.join("home").join("projects");
+    match std::fs::create_dir_all(&dir) {
+        Ok(()) => Some(dir),
+        Err(e) => {
+            log::warn!("pty[{pane_id}] no transcript dir ({e}); this session will not resume");
+            None
+        }
+    }
+}
+
 /// A PER-SESSION, WRITABLE copy of the harness's own state file, if there is one to copy.
 ///
 /// ## Why the credential alone was not enough
@@ -1783,6 +1808,13 @@ fn namespace_argv(
         harness_state_file: stores_root
             .filter(|r| !r.is_empty())
             .and_then(|r| harness_state_for(pane_id, std::path::Path::new(r))),
+        // ...and the one part of the private HOME that must OUTLIVE the session: the harness's
+        // transcripts, so `claude --continue` has something to continue. Without it a caged session
+        // reported `has_history=false` on every launch and started over — which is not a small
+        // annoyance for a STUDIO, whose whole value is a conversation that accumulates.
+        history_dir: stores_root
+            .filter(|r| !r.is_empty())
+            .and_then(|r| history_dir_for(pane_id, std::path::Path::new(r))),
         ..Default::default()
     };
     if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
