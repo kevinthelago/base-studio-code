@@ -52,7 +52,39 @@ pub enum Role {
     Designer,
 }
 
+/// Every [`Role`], for sweeps that must not miss one.
+///
+/// Kept exhaustive by [`Role::assert_listed`] rather than by discipline: adding a variant makes
+/// that match fail to compile until the variant is added here too. A role missing from this list
+/// is not a smaller sweep — it is a guard that silently stops covering it, which is precisely how
+/// `needs_network` shipped wrong for exactly one role.
+pub const ALL_ROLES: [Role; 10] = [
+    Role::Planner,
+    Role::Worker,
+    Role::Director,
+    Role::Triage,
+    Role::Tester,
+    Role::Reviewer,
+    Role::Issuer,
+    Role::Juror,
+    Role::Documentor,
+    Role::Designer,
+];
+
 impl Role {
+    /// Compile-time proof that [`ALL_ROLES`] names every variant.
+    ///
+    /// The match is exhaustive and every arm asserts the variant is in the list, so a new `Role`
+    /// breaks the build here — at the list — instead of quietly shrinking every sweep that reads it.
+    #[cfg(test)]
+    fn assert_listed(self) {
+        let listed = match self {
+            Role::Planner | Role::Worker | Role::Director | Role::Triage | Role::Tester => true,
+            Role::Reviewer | Role::Issuer | Role::Juror | Role::Documentor | Role::Designer => true,
+        };
+        assert!(listed && ALL_ROLES.contains(&self), "{self:?} is missing from ALL_ROLES");
+    }
+
     pub fn parse(s: &str) -> Option<Role> {
         Some(match s {
             "planner" => Role::Planner,
@@ -79,11 +111,52 @@ impl Role {
         !matches!(self, Role::Designer)
     }
 
-    /// Network is DERIVED from the two axes rather than guessed per role: fetching, pushing and
-    /// every `gh` call cross the network. Only `designer` is `none/none/none`, and only it runs
-    /// with the network unshared.
-    pub fn needs_network(self) -> bool {
+    /// Does this role's own WORK reach a remote — a git remote or the GitHub API?
+    ///
+    /// Derived from the two axes rather than guessed per role: fetching, pushing and every `gh`
+    /// call cross the network. `designer` is the one role that is `none/none/none`, so it is the
+    /// one role whose work needs no remote at all.
+    ///
+    /// This is NOT the same question as [`Self::needs_network`], and conflating the two is exactly
+    /// what broke the designer — see there. Kept `pub` and kept accurate because it is the axis a
+    /// per-destination egress filter would be built from, the day there is a mechanism for one.
+    pub fn work_reaches_a_remote(self) -> bool {
         self.uses_git() || self.uses_github()
+    }
+
+    /// Does this role's cage need the network? **Always** — because the HARNESS runs inside it.
+    ///
+    /// ## The bug this signature exists to prevent
+    /// This used to be `uses_git() || uses_github()`, which reasoned only about the role's own
+    /// tools. That is correct about git and `gh` and silently wrong about the LLM: every session
+    /// is driven by a harness that must reach its provider's API, and the harness is INSIDE the
+    /// cage — `namespace_argv` binds `node` and `claude`, and copies the credential and the
+    /// harness state in, precisely so the caged Claude Code can authenticate.
+    ///
+    /// Every role except `designer` happens to need git or `gh`, so the gap was invisible until
+    /// the one `none/none/none` role got caged. Then the designer's session unshared the network,
+    /// Claude Code could not reach `api.anthropic.com`, and the pane died into a defunct `bwrap`
+    /// showing the harness's own *"Session creation failed"*. The identical symptom is already
+    /// recorded one layer down, in the comment that added the resolver binds for network roles.
+    ///
+    /// ## Why this is not "the designer lost its isolation"
+    /// It lost the part of it that could never have worked. Everything else the profile gives it
+    /// still holds — a curated `/usr`, a private `HOME` on tmpfs, read-only store projections, a
+    /// writable outbox instead of the `bsc` binary, no git and no `gh`. What it does NOT have is a
+    /// per-destination egress filter, and it never did: `bwrap` shares the host network namespace
+    /// wholesale, so the only two states available here are "all of it" and "none of it". A role
+    /// that must talk to an API cannot be given "none of it".
+    ///
+    /// Narrowing this to the provider endpoint alone needs a mechanism this crate does not have
+    /// (a per-session netns with filtering, or a proxy). That is a separate piece of work, and
+    /// [`Self::work_reaches_a_remote`] is deliberately kept — it is the honest answer to "would
+    /// this role's own tools touch a remote?", which is what such a filter would be built from.
+    pub fn needs_network(self) -> bool {
+        // Unconditional, and deliberately not written as `work_reaches_a_remote() || harness`: the
+        // harness alone settles it for every role, so an expression suggesting the role's own axes
+        // still participate would be misleading. They do not. `work_reaches_a_remote` stays as the
+        // separate, still-true question above.
+        true
     }
 }
 
@@ -360,6 +433,26 @@ ed".into(),
         for_role(role, "u", &paths(), &[], Limits::default(), Scope::User, vec!["sh".into()]).unwrap()
     }
 
+    /// `ALL_ROLES` names every variant — the precondition for every sweep below.
+    ///
+    /// Without this the sweeps look thorough and quietly skip whatever was added last. `parse` is
+    /// checked in the same direction: a role the app can NAME but the list omits would be caged by
+    /// a profile no test ever swept.
+    #[test]
+    fn all_roles_names_every_variant() {
+        for r in ALL_ROLES {
+            r.assert_listed();
+        }
+        assert_eq!(ALL_ROLES.len(), 10, "a Role was added or removed — update the sweeps");
+        for name in [
+            "planner", "worker", "director", "triage", "tester", "reviewer", "issuer", "juror",
+            "documentor", "designer",
+        ] {
+            let r = Role::parse(name).unwrap_or_else(|| panic!("{name} should parse"));
+            assert!(ALL_ROLES.contains(&r), "{name} parses but is not in ALL_ROLES");
+        }
+    }
+
     #[test]
     fn an_unknown_role_is_refused_not_defaulted() {
         // The security-relevant one: a typo must not silently yield a permissive namespace.
@@ -369,16 +462,57 @@ ed".into(),
         assert_eq!(Role::parse("worker"), Some(Role::Worker));
     }
 
+    /// EVERY role gets the network, because the harness runs inside the cage.
+    ///
+    /// This test is the INVERSE of the one it replaces (`only_designer_runs_without_the_network`),
+    /// and the inversion is the point rather than a relaxation. The old rule read the network off
+    /// the role's git/github axes; the designer is the one role that is none on both, so it alone
+    /// launched with `--unshare-all` and no `--share-net`. That was correct about git and `gh` and
+    /// wrong about the LLM: Claude Code runs INSIDE the namespace, could not reach
+    /// `api.anthropic.com`, and the pane died into a defunct `bwrap` showing the harness's own
+    /// "Session creation failed".
+    ///
+    /// So the assertion has to be that no role is network-less, checked over the WHOLE role set
+    /// rather than a sample — a new `none/none/none` role would otherwise reintroduce exactly this
+    /// bug and no test would say so.
     #[test]
-    fn only_designer_runs_without_the_network() {
-        // Derived from the git/github axes rather than guessed: fetching, pushing and every gh
-        // call cross the network, and designer is the one role that is none on both.
-        assert!(!Role::Designer.needs_network());
-        for r in [Role::Planner, Role::Worker, Role::Director, Role::Triage, Role::Juror] {
-            assert!(r.needs_network(), "{r:?} should have the network");
+    fn every_role_gets_the_network_because_the_harness_is_in_the_cage() {
+        for r in ALL_ROLES {
+            assert!(r.needs_network(), "{r:?} must have the network — its harness is in the cage");
+            assert!(build(r).spec.network, "{r:?} must render --share-net");
         }
-        assert!(!build(Role::Designer).spec.network);
-        assert!(build(Role::Worker).spec.network);
+    }
+
+    /// The role's OWN reach is still a real question, and still answered honestly.
+    ///
+    /// `work_reaches_a_remote` is what `needs_network` used to be. It is kept — and kept correct —
+    /// because it is the axis a per-destination egress filter would be built from. Losing it would
+    /// mean rediscovering which roles actually touch a remote when that work starts.
+    #[test]
+    fn the_designer_is_still_the_one_role_whose_own_work_needs_no_remote() {
+        assert!(!Role::Designer.work_reaches_a_remote());
+        for r in ALL_ROLES {
+            if r == Role::Designer {
+                continue;
+            }
+            assert!(r.work_reaches_a_remote(), "{r:?} reaches a remote through git or gh");
+        }
+    }
+
+    /// A cage with the network shared must also carry the machinery to USE it.
+    ///
+    /// `--share-net` alone is not connectivity: without a resolver the session gets
+    /// "Failed to connect to api.anthropic.com: ETIMEOUT", which reads as a routing problem and is
+    /// DNS failing for want of `/etc/resolv.conf`. That was already fixed for network roles; this
+    /// pins it for the role that only just became one, since the designer is the role that would
+    /// regress silently if the binds were ever made conditional on something narrower.
+    #[test]
+    fn the_designer_cage_carries_the_resolver_and_the_ca_bundle() {
+        let argv = build(Role::Designer).spec.render().unwrap();
+        assert!(argv.iter().any(|a| a == "--share-net"), "designer must share the net");
+        for f in ["/etc/resolv.conf", "/etc/nsswitch.conf", "/etc/hosts", "/etc/ssl"] {
+            assert!(argv.iter().any(|a| a == f), "designer cage is missing {f}");
+        }
     }
 
     #[test]
@@ -687,13 +821,20 @@ ed".into(),
         assert!(matches!(err, SpecError::CredentialWithoutHome), "got {err:?}");
     }
 
+    /// The credential crosses the boundary exactly once, and NOTHING here bounds where it can go.
+    ///
+    /// This test used to assert the opposite half too — that the designer held a credential it had
+    /// no network to send anywhere. That property is GONE, and it is recorded here rather than
+    /// deleted with the assertion, because losing a security property silently is worse than
+    /// losing it: the harness runs inside the cage and must reach its provider, so every role now
+    /// shares the host network namespace. `bwrap` offers no per-destination filter, so "can hold a
+    /// token" and "can send it" are no longer separable by this mechanism for ANY role.
+    ///
+    /// What the namespace still bounds is how MUCH crosses: one credential file, read-only, at a
+    /// fixed guest path — which is what the assertions below pin. Narrowing egress again needs a
+    /// filtering netns or a proxy; until then this doc comment is the honest statement of the gap.
     #[test]
-    fn a_role_with_no_network_still_has_none_while_holding_a_credential() {
-        // Holding a token and being able to SEND it anywhere are separate properties, and the
-        // second is the one the namespace controls.
-        //
-        // Note a WORKER is not the example: `needs_network` is `uses_git() || uses_github()`, and a
-        // worker is both, so it legitimately gets the network. `designer` is `none` on every axis.
+    fn exactly_one_credential_crosses_and_egress_is_no_longer_bounded() {
         let a = for_role(
             Role::Designer,
             "u",
@@ -707,9 +848,16 @@ ed".into(),
         .spec
         .render()
         .unwrap();
-        assert!(!a.iter().any(|x| x == "--share-net"), "designer has no network: {a:?}");
-        // ...while still holding the credential, which is the point of the pairing.
+        // The credential is bound, read-only, at the guest path the harness reads.
         assert!(a.iter().any(|x| x.ends_with("/.claude/.credentials.json")));
+        // ...and it is the ONLY host secret that crosses. This is the assertion that still bounds
+        // something, so it is the one that has to stay sharp.
+        let secrets: Vec<&String> = a.iter().filter(|x| x.starts_with("/host/kevin")).collect();
+        assert_eq!(secrets.len(), 1, "exactly one secret crosses, got {secrets:?}");
+        // And the gap, asserted rather than merely described: the designer DOES have the network
+        // now. If a future change re-unshares it, this fails and points at the doc comment above
+        // instead of at a session that dies with "Session creation failed".
+        assert!(a.iter().any(|x| x == "--share-net"), "the harness needs the network: {a:?}");
     }
 
     #[test]
