@@ -31,7 +31,7 @@ const claimedPanes = (root: HTMLElement) =>
 beforeEach(() => {
   useAppStore.setState({
     wantedStudios: [], studioViewers: {},
-    activeWorkspace: "projects", projectsPageMode: "teams",
+    activeWorkspace: "teams",
   });
 });
 afterEach(() => cleanup());

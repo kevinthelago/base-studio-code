@@ -41,7 +41,7 @@ beforeEach(() => {
     designsCompId: null,
     // The Studio must be the VISIBLE page or the graph never renders (#3627) — same gate every other
     // workbench test sets.
-    activeWorkspace: "projects",
+    activeWorkspace: "components",
     projectsPageMode: "designs",
   });
 });

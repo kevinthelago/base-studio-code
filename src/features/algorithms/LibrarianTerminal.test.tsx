@@ -30,7 +30,7 @@ const claimedPanes = (root: HTMLElement) =>
 beforeEach(() => {
   useAppStore.setState({
     wantedStudios: [], studioViewers: {},
-    activeWorkspace: "projects", projectsPageMode: "algorithms",
+    activeWorkspace: "algorithms",
   });
 });
 afterEach(() => cleanup());
@@ -67,11 +67,12 @@ describe("LibrarianTerminal dock (#3357)", () => {
   });
 
   it("keeps the session warm when the page is left — only the reaper reclaims it now", () => {
-    // The Algorithms page is kept mounted (#2827); leaving it moves the shell's page mode, which drops the
-    // VIEWER. Before #3357 an unmount here killed the PTY; the session must now survive both, so the
-    // Glance morph can keep showing it.
+    // The Algorithms page is kept mounted (#2827); leaving it moves the shell's active WORKSPACE
+    // (`five-graphs-become-rail-workspaces` — it was the Planner's page mode), which drops the VIEWER.
+    // Before #3357 an unmount here killed the PTY; the session must now survive both, so the Glance
+    // morph can keep showing it.
     const { rerender, unmount } = render(<TerminalHost><LibrarianTerminal tech="rust" /></TerminalHost>);
-    useAppStore.setState({ projectsPageMode: "projects" });
+    useAppStore.setState({ activeWorkspace: "glance" });
     rerender(<TerminalHost><LibrarianTerminal tech="rust" /></TerminalHost>);
     expect(useAppStore.getState().studioViewers.librarianRust).toBe(0);
     expect(useAppStore.getState().wantedStudios).toContain("librarianRust");
