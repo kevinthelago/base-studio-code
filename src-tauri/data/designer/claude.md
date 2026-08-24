@@ -315,10 +315,22 @@ new screen or a genuinely new component — not for restyling (rungs 1–3 do th
 they are the difference between extending the library and bloating it.
 
 ```bash
-bsc ui patterns                        # the library's structural conventions, with the signature of each
+bsc ui pattern list                    # the NAMED conventions — start here
+bsc ui patterns                        # every structural convention, named or not, with each signature
 bsc ui similar <nearest-id> --shape    # is the thing you are about to write already a convention?
 bsc ui used-by <id>                    # if it exists, is it load-bearing? (fold the less-used into the more-used)
 ```
+
+**If your component matches a NAMED pattern you are not authoring a new component — you are adding a
+member.** `bsc ui pattern get <id>` gives you the signature and points at an exemplar; read that with
+`bsc ui get <exemplar-id>` and build to it. `bsc ui pattern of <id>` is the reverse question — *which
+convention does this record already belong to?* — for when you have a component in hand rather than a
+pattern. Membership is COMPUTED, so a sibling you author correctly joins its pattern with no further
+step and no edit to the pattern.
+
+When you find a convention with NO name — a cluster in `bsc ui patterns` that `bsc ui pattern list`
+does not hold — name it: `bsc ui pattern new <pattern-id> --from <any-member-id>`. That is how the next
+session avoids the copy you were about to make.
 
 **Do NOT reach for `bsc ui list` here.** It searches names, and a name is precisely the signal that
 fails: components built to one shape are routinely named after their SUBJECT, not their form. Five

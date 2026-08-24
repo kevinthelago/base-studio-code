@@ -1017,6 +1017,31 @@ fn cluster_findings(pairs: Vec<Finding>, comps: &[Comp]) -> Vec<Finding> {
 /// It also skips [`worth_scoring`]. That pre-filter admits a pair on a near NAME or a hard co-location
 /// signal — neither of which a shape match has by definition — so applying it here would gate out exactly
 /// the population this mode exists to find. The sweep is O(n²) over the library either way.
+/// How alike two records are STRUCTURALLY, from their stored JSON — the same measure `--shape` and
+/// `bsc ui patterns` rank on. `None` when neither side carries anything comparable (both source-less
+/// AND composes-less): unknown, which is not the same as unalike.
+pub fn shape_score(a: &Value, b: &Value) -> Option<f64> {
+    let (a, b) = (parse(a)?, parse(b)?);
+    let terms = shape_terms(&a, &b);
+    (!terms.iter().all(|t| t.value.is_none())).then(|| mean(&terms))
+}
+
+/// A record's SHAPE SIGNATURE as plain data — `{ composes, skeleton }`, both sorted.
+///
+/// The same two fields [`shape_clusters`] intersects across a cluster's members, exposed for one record
+/// so a PATTERN can carry a signature that is readable rather than implied. The skeleton drops its
+/// counts here: a signature says which tags the shape involves, and pinning "exactly two toggles" would
+/// make a pattern that no three-toggle sibling could ever match.
+pub fn shape_signature(v: &Value) -> Value {
+    let Some(c) = parse(v) else {
+        return serde_json::json!({ "composes": [], "skeleton": [] });
+    };
+    serde_json::json!({
+        "composes": c.composes.iter().cloned().collect::<Vec<_>>(),
+        "skeleton": c.skeleton.keys().cloned().collect::<Vec<_>>(),
+    })
+}
+
 /// The library's structural EQUIVALENCE CLASSES — every live record clustered by shape
 /// (#shape-similarity-is-pairwise-so-a-pattern-can-only-be-confirmed-never-found).
 ///
