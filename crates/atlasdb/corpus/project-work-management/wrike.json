@@ -1,0 +1,261 @@
+{
+  "id": "wrike",
+  "name": "Wrike",
+  "domain": "project-work-management",
+  "domainName": "Project / Work Management",
+  "capabilities": [
+    {
+      "slug": "structure",
+      "label": "Structure",
+      "detail": "Tasks, subtasks, to-do lists, folders, projects, Spaces (locked/private), Space templates, cross-tagging (categorize across folders without duplication), custom fields, calculated fields (Budget/Cost/ROI), custom statuses, per-phase workflows",
+      "features": [
+        "Tasks",
+        "subtasks",
+        "to-do lists",
+        "folders",
+        "projects",
+        "Spaces (locked/private)",
+        "Space templates",
+        "cross-tagging (categorize across folders without duplication)",
+        "custom fields",
+        "calculated fields (Budget/Cost/ROI)",
+        "custom statuses",
+        "per-phase workflows"
+      ]
+    },
+    {
+      "slug": "custom-item-types",
+      "label": "Custom Item Types",
+      "detail": "company/team libraries with custom names/icons; ESM types (Service Requests/KB Articles/Surveys), OKR types, Agile types (Bugs/Epics/Features/Sprints/Stories); per-type business logic/automation",
+      "features": [
+        "company/team libraries with custom names/icons; ESM types (Service Requests/KB Articles/Surveys)",
+        "OKR types",
+        "Agile types (Bugs/Epics/Features/Sprints/Stories); per-type business logic/automation"
+      ]
+    },
+    {
+      "slug": "views",
+      "label": "Views",
+      "detail": "Table, List (hierarchical), Board/Kanban, Gantt/timeline, Calendar, Chart, Workload, File, Dashboard, Stream; per-member Primary View; dynamic filters; saved/shareable custom views",
+      "features": [
+        "Table",
+        "List (hierarchical)",
+        "Board/Kanban",
+        "Gantt/timeline",
+        "Calendar",
+        "Chart",
+        "Workload",
+        "File",
+        "Dashboard",
+        "Stream; per-member Primary View; dynamic filters; saved/shareable custom views"
+      ]
+    },
+    {
+      "slug": "gantt-scheduling",
+      "label": "Gantt/scheduling",
+      "detail": "interactive timelines, dependencies, critical path, milestones, real-time adjustment, drag-drop rescheduling, bottleneck ID",
+      "features": [
+        "interactive timelines",
+        "dependencies",
+        "critical path",
+        "milestones",
+        "real-time adjustment",
+        "drag-drop rescheduling",
+        "bottleneck ID"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "when/then rule engine, status updates, auto-assignment, notifications/comments, approval/handoff automation, NL rule generation, mobile commands, required fields + workflow gates",
+      "features": [
+        "when/then rule engine",
+        "status updates",
+        "auto-assignment",
+        "notifications/comments",
+        "approval/handoff automation",
+        "NL rule generation",
+        "mobile commands",
+        "required fields + workflow gates"
+      ]
+    },
+    {
+      "slug": "workload-resource",
+      "label": "Workload/resource",
+      "detail": "Workload charts, resource bookings/time reservations, Effort management, capacity balancing, idle-time prevention, advanced resource/capacity planning, job/role management",
+      "features": [
+        "Workload charts",
+        "resource bookings/time reservations",
+        "Effort management",
+        "capacity balancing",
+        "idle-time prevention",
+        "advanced resource/capacity planning",
+        "job/role management"
+      ]
+    },
+    {
+      "slug": "time-tracking-budgeting",
+      "label": "Time tracking/budgeting",
+      "detail": "time tracking by role, timelog, billable hours, project/portfolio/client budgeting, cost monitoring, invoice management, forecasting",
+      "features": [
+        "time tracking by role",
+        "timelog",
+        "billable hours",
+        "project/portfolio/client budgeting",
+        "cost monitoring",
+        "invoice management",
+        "forecasting"
+      ]
+    },
+    {
+      "slug": "portfolio",
+      "label": "Portfolio",
+      "detail": "portfolio overview (charts/progress), portfolio budgets, cross-project roll-up reporting",
+      "features": [
+        "portfolio overview (charts/progress)",
+        "portfolio budgets",
+        "cross-project roll-up reporting"
+      ]
+    },
+    {
+      "slug": "goals-okrs",
+      "label": "Goals/OKRs",
+      "detail": "OKRs dashboard, Company OKRs dashboard (strategy alignment), OKR custom item templates",
+      "features": [
+        "OKRs dashboard",
+        "Company OKRs dashboard (strategy alignment)",
+        "OKR custom item templates"
+      ]
+    },
+    {
+      "slug": "dashboards-analytics",
+      "label": "Dashboards/analytics",
+      "detail": "ready-made + custom dashboards, widget library, chart types, mobile dashboards, real-time + scheduled reports, comparison reports (trend over periods), PDF export, advanced analytics/BI (360° reports), instant alerts",
+      "features": [
+        "ready-made + custom dashboards",
+        "widget library",
+        "chart types",
+        "mobile dashboards",
+        "real-time + scheduled reports",
+        "comparison reports (trend over periods)",
+        "PDF export",
+        "advanced analytics/BI (360° reports)",
+        "instant alerts"
+      ]
+    },
+    {
+      "slug": "agile",
+      "label": "Agile",
+      "detail": "Scrum & Kanban boards, sprints, epics/features/stories/bugs types",
+      "features": [
+        "Scrum & Kanban boards",
+        "sprints",
+        "epics/features/stories/bugs types"
+      ]
+    },
+    {
+      "slug": "templates-blueprints",
+      "label": "Templates/blueprints",
+      "detail": "Blueprints (reusable templates), workspace/project templates, item-type templates, space templates",
+      "features": [
+        "Blueprints (reusable templates)",
+        "workspace/project templates",
+        "item-type templates",
+        "space templates"
+      ]
+    },
+    {
+      "slug": "docs-collaboration",
+      "label": "Docs/collaboration",
+      "detail": "Wrike Document Editor (co-editing), @mentions, comments, file storage, guest/external requester collaboration, activity stream, Wrike Whiteboard (by Klaxoon)",
+      "features": [
+        "Wrike Document Editor (co-editing)",
+        "@mentions",
+        "comments",
+        "file storage",
+        "guest/external requester collaboration",
+        "activity stream",
+        "Wrike Whiteboard (by Klaxoon)"
+      ]
+    },
+    {
+      "slug": "request-forms",
+      "label": "Request forms",
+      "detail": "dynamic request forms, auto-populated specs routed to teams, auto-creation of tasks/projects",
+      "features": [
+        "dynamic request forms",
+        "auto-populated specs routed to teams",
+        "auto-creation of tasks/projects"
+      ]
+    },
+    {
+      "slug": "proofing-dam",
+      "label": "Proofing/DAM",
+      "detail": "proofing on images/video/documents/webpages, markup/annotation, dynamic version comparison, internal + guest approvals, approval chains, DAM integrations (Bynder/Box/Dropbox/Drive)",
+      "features": [
+        "proofing on images/video/documents/webpages",
+        "markup/annotation",
+        "dynamic version comparison",
+        "internal + guest approvals",
+        "approval chains",
+        "DAM integrations (Bynder/Box/Dropbox/Drive)"
+      ]
+    },
+    {
+      "slug": "ai-work-intelligence",
+      "label": "AI (Work Intelligence)",
+      "detail": "Work Intelligence framework, Wrike Copilot, AI Agents (no-code process-specific), AI Elite action packs, generative AI (plans/descriptions/content), project-risk prediction, NL search (Vertex AI), summaries, auto-fill custom fields, Wrike Datahub, MCP Server, connections to Claude/ChatGPT/Copilot/Gemini",
+      "features": [
+        "Work Intelligence framework",
+        "Wrike Copilot",
+        "AI Agents (no-code process-specific)",
+        "AI Elite action packs",
+        "generative AI (plans/descriptions/content)",
+        "project-risk prediction",
+        "NL search (Vertex AI)",
+        "summaries",
+        "auto-fill custom fields",
+        "Wrike Datahub",
+        "MCP Server",
+        "connections to Claude/ChatGPT/Copilot/Gemini"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "400+ apps, Wrike Integrate (no-code integration platform), Wrike Sync / Two-Way Sync (22+ systems incl. Jira/GitHub), Adobe CC, Salesforce, HubSpot, Slack, Teams, Tableau, open API",
+      "features": [
+        "400+ apps",
+        "Wrike Integrate (no-code integration platform)",
+        "Wrike Sync / Two-Way Sync (22+ systems incl. Jira/GitHub)",
+        "Adobe CC",
+        "Salesforce",
+        "HubSpot",
+        "Slack",
+        "Teams",
+        "Tableau",
+        "open API"
+      ]
+    },
+    {
+      "slug": "security",
+      "label": "Security",
+      "detail": "Wrike Lock (customer-managed keys), EDLP (data-loss prevention), custom access roles, locked Spaces, user groups, SSO (Azure/Google/Okta/OneLogin), 2FA, audit reports, EU/US data residency; SOC 2 Type II, ISO 27001/27018, CSA STAR, GDPR, CCPA",
+      "features": [
+        "Wrike Lock (customer-managed keys)",
+        "EDLP (data-loss prevention)",
+        "custom access roles",
+        "locked Spaces",
+        "user groups",
+        "SSO (Azure/Google/Okta/OneLogin)",
+        "2FA",
+        "audit reports",
+        "EU/US data residency; SOC 2 Type II",
+        "ISO 27001/27018",
+        "CSA STAR",
+        "GDPR",
+        "CCPA"
+      ]
+    }
+  ]
+}

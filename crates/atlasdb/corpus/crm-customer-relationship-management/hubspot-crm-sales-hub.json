@@ -1,0 +1,130 @@
+{
+  "id": "hubspot-crm-sales-hub",
+  "name": "HubSpot CRM / Sales Hub",
+  "domain": "crm-customer-relationship-management",
+  "domainName": "CRM (Customer Relationship Management)",
+  "capabilities": [
+    {
+      "slug": "contact-and-deal",
+      "label": "Contact & Deal",
+      "detail": "records w/ full history, import, custom objects (Ent), deal board, permissions",
+      "features": [
+        "records w/ full history",
+        "import",
+        "custom objects (Ent)",
+        "deal board",
+        "permissions"
+      ]
+    },
+    {
+      "slug": "pipeline-and-forecasting",
+      "label": "Pipeline & Forecasting",
+      "detail": "pipeline mgmt, Smart Deal Progression, AI forecasting, deal scoring, predictive lead scoring",
+      "features": [
+        "pipeline mgmt",
+        "Smart Deal Progression",
+        "AI forecasting",
+        "deal scoring",
+        "predictive lead scoring"
+      ]
+    },
+    {
+      "slug": "sales-engagement",
+      "label": "Sales Engagement",
+      "detail": "sequences, playbooks, snippets, Breeze Prospecting Agent, AI Guided Selling",
+      "features": [
+        "sequences",
+        "playbooks",
+        "snippets",
+        "Breeze Prospecting Agent",
+        "AI Guided Selling"
+      ]
+    },
+    {
+      "slug": "email-and-comms",
+      "label": "Email & Comms",
+      "detail": "email tracking, templates, AI email writer, shared inbox, live chat, chatbot builder",
+      "features": [
+        "email tracking",
+        "templates",
+        "AI email writer",
+        "shared inbox",
+        "live chat",
+        "chatbot builder"
+      ]
+    },
+    {
+      "slug": "calling-and-meetings",
+      "label": "Calling & Meetings",
+      "detail": "call tracking, power dialer + voicemail drops, meeting scheduler, AI meeting prep/follow-up",
+      "features": [
+        "call tracking",
+        "power dialer + voicemail drops",
+        "meeting scheduler",
+        "AI meeting prep/follow-up"
+      ]
+    },
+    {
+      "slug": "conversation-intelligence",
+      "label": "Conversation Intelligence",
+      "detail": "call recording/transcription/analytics",
+      "features": [
+        "call recording/transcription/analytics"
+      ]
+    },
+    {
+      "slug": "quotes-and-payments",
+      "label": "Quotes & Payments",
+      "detail": "quotes, AI CPQ, payment links/collection",
+      "features": [
+        "quotes",
+        "AI CPQ",
+        "payment links/collection"
+      ]
+    },
+    {
+      "slug": "ai-breeze",
+      "label": "AI (Breeze)",
+      "detail": "Assistant (research/prep/summarize), Prospecting Agent, Customer Agent, content writer",
+      "features": [
+        "Assistant (research/prep/summarize)",
+        "Prospecting Agent",
+        "Customer Agent",
+        "content writer"
+      ]
+    },
+    {
+      "slug": "reporting",
+      "label": "Reporting",
+      "detail": "dashboards, sales analytics, pipeline analytics",
+      "features": [
+        "dashboards",
+        "sales analytics",
+        "pipeline analytics"
+      ]
+    },
+    {
+      "slug": "bundled",
+      "label": "Bundled",
+      "detail": "form builder, landing pages, ad mgmt, email marketing, ticketing (service)",
+      "features": [
+        "form builder",
+        "landing pages",
+        "ad mgmt",
+        "email marketing",
+        "ticketing (service)"
+      ]
+    },
+    {
+      "slug": "ecosystem",
+      "label": "Ecosystem",
+      "detail": "2,000+ app marketplace, bidirectional sync, mobile apps",
+      "features": [
+        "2",
+        "000+ app marketplace",
+        "bidirectional sync",
+        "mobile apps"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "id": "oracle-netsuite",
+  "name": "Oracle NetSuite",
+  "domain": "erp-enterprise-resource-planning",
+  "domainName": "ERP (Enterprise Resource Planning)",
+  "capabilities": [
+    {
+      "slug": "financials",
+      "label": "Financials",
+      "detail": "GL, AR, AP, cash mgmt, tax, multi-book accounting (parallel GAAP/IFRS/statutory), real-time close, SOX controls; Advanced Financials (budgeting/forecasting, allocations, amortization, statistical accounts, JE approval)",
+      "features": [
+        "GL",
+        "AR",
+        "AP",
+        "cash mgmt",
+        "tax",
+        "multi-book accounting (parallel GAAP/IFRS/statutory)",
+        "real-time close",
+        "SOX controls; Advanced Financials (budgeting/forecasting, allocations, amortization, statistical accounts, JE approval)"
+      ]
+    },
+    {
+      "slug": "suitebilling-arm",
+      "label": "SuiteBilling / ARM",
+      "detail": "subscription billing (recurring/usage/milestone), tiered/volume pricing, prorations, consolidated invoicing; ASC 606/IFRS 15 rev-rec, performance obligations, SSP, multi-element, contract mods",
+      "features": [
+        "subscription billing (recurring/usage/milestone)",
+        "tiered/volume pricing",
+        "prorations",
+        "consolidated invoicing; ASC 606/IFRS 15 rev-rec",
+        "performance obligations",
+        "SSP",
+        "multi-element",
+        "contract mods"
+      ]
+    },
+    {
+      "slug": "order-and-inventory",
+      "label": "Order & Inventory",
+      "detail": "sales orders/returns/fulfillment, multi-location, drop-ship, RMA, backorder; FIFO/LIFO/avg/standard costing, lot/serial/bin, demand planning/reorder, cycle counting",
+      "features": [
+        "sales orders/returns/fulfillment",
+        "multi-location",
+        "drop-ship",
+        "RMA",
+        "backorder; FIFO/LIFO/avg/standard costing",
+        "lot/serial/bin",
+        "demand planning/reorder",
+        "cycle counting"
+      ]
+    },
+    {
+      "slug": "wms",
+      "label": "WMS",
+      "detail": "mobile barcode, wave/batch/zone picking, putaway/slotting/replenishment, cartonization",
+      "features": [
+        "mobile barcode",
+        "wave/batch/zone picking",
+        "putaway/slotting/replenishment",
+        "cartonization"
+      ]
+    },
+    {
+      "slug": "procurement",
+      "label": "Procurement",
+      "detail": "requisition-to-PO + approvals, vendor portals/scorecards, three-way match, blanket POs, punchout",
+      "features": [
+        "requisition-to-PO + approvals",
+        "vendor portals/scorecards",
+        "three-way match",
+        "blanket POs",
+        "punchout"
+      ]
+    },
+    {
+      "slug": "manufacturing",
+      "label": "Manufacturing",
+      "detail": "multi-level/configurable/phantom BOMs, work orders/routing, WIP accounting, lean, demand-driven MRP, ECOs, shop-floor app",
+      "features": [
+        "multi-level/configurable/phantom BOMs",
+        "work orders/routing",
+        "WIP accounting",
+        "lean",
+        "demand-driven MRP",
+        "ECOs",
+        "shop-floor app"
+      ]
+    },
+    {
+      "slug": "crm-psa-hr-analytics",
+      "label": "CRM/PSA/HR/Analytics",
+      "detail": "SFA + PRM + marketing automation; SuiteProjects (planning, resource mgmt, T&M/fixed/milestone billing, utilization); SuitePeople (HR + US payroll); SuiteAnalytics (saved searches, dashboards, Workbook, Connect ODBC/JDBC)",
+      "features": [
+        "SFA + PRM + marketing automation; SuiteProjects (planning, resource mgmt, T&M/fixed/milestone billing, utilization); SuitePeople (HR + US payroll); SuiteAnalytics (saved searches, dashboards, Workbook, Connect ODBC/JDBC)"
+      ]
+    },
+    {
+      "slug": "suitecommerce-and-oneworld",
+      "label": "SuiteCommerce & OneWorld",
+      "detail": "B2C/B2B storefronts; multi-currency/language/tax, intercompany + eliminations, country compliance (NFe/SDI/GST); SuiteSuccess industry editions",
+      "features": [
+        "B2C/B2B storefronts; multi-currency/language/tax",
+        "intercompany + eliminations",
+        "country compliance (NFe/SDI/GST); SuiteSuccess industry editions"
+      ]
+    }
+  ]
+}

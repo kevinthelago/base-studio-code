@@ -1,0 +1,205 @@
+{
+  "id": "salesforce-service-cloud",
+  "name": "Salesforce Service Cloud",
+  "domain": "itsm-service-helpdesk",
+  "domainName": "ITSM / Service / Helpdesk",
+  "capabilities": [
+    {
+      "slug": "case-management",
+      "label": "Case management",
+      "detail": "unified case record with 360° cross-channel view, multi-source creation (Email/Web-to-Case/portal/social/phone-CTI), Einstein Case Classification (auto reason/priority + field auto-fill), assignment/escalation rules + queues, case merge/teams, case swarming (Slack)",
+      "features": [
+        "unified case record with 360° cross-channel view",
+        "multi-source creation (Email/Web-to-Case/portal/social/phone-CTI)",
+        "Einstein Case Classification (auto reason/priority + field auto-fill)",
+        "assignment/escalation rules + queues",
+        "case merge/teams",
+        "case swarming (Slack)"
+      ]
+    },
+    {
+      "slug": "service-console",
+      "label": "Service Console",
+      "detail": "Lightning Console with multi-tab/split-view, unified desktop (customer 360 + history + knowledge), macros, Quick Text, guided actions + Service Planner (AI resolution plans), interaction timeline",
+      "features": [
+        "Lightning Console with multi-tab/split-view",
+        "unified desktop (customer 360 + history + knowledge)",
+        "macros",
+        "Quick Text",
+        "guided actions + Service Planner (AI resolution plans)",
+        "interaction timeline"
+      ]
+    },
+    {
+      "slug": "omni-channel-routing",
+      "label": "Omni-Channel routing",
+      "detail": "unified queue across email/phone/chat/SMS/WhatsApp/social, skills-based, routing by skill/availability/capacity/priority, supervisor view, presence + capacity",
+      "features": [
+        "unified queue across email/phone/chat/SMS/WhatsApp/social",
+        "skills-based",
+        "routing by skill/availability/capacity/priority",
+        "supervisor view",
+        "presence + capacity"
+      ]
+    },
+    {
+      "slug": "digital-engagement",
+      "label": "Digital engagement",
+      "detail": "email/web chat/embedded messaging, in-app + web messaging, SMS, WhatsApp, Messenger, Apple/Google business messaging, social, voice — all logged to CRM",
+      "features": [
+        "email/web chat/embedded messaging",
+        "in-app + web messaging",
+        "SMS",
+        "WhatsApp",
+        "Messenger",
+        "Apple/Google business messaging",
+        "social",
+        "voice — all logged to CRM"
+      ]
+    },
+    {
+      "slug": "knowledge-self-service",
+      "label": "Knowledge/self-service",
+      "detail": "Salesforce Knowledge (authoring/categorization/versioning/approval), Einstein Article Recommendations, knowledge-attach to cases",
+      "features": [
+        "Salesforce Knowledge (authoring/categorization/versioning/approval)",
+        "Einstein Article Recommendations",
+        "knowledge-attach to cases"
+      ]
+    },
+    {
+      "slug": "experience-cloud-portals",
+      "label": "Experience Cloud (portals)",
+      "detail": "branded self-service portals/help centers, community forums, case submission + status tracking, article access + CMS, usage analytics",
+      "features": [
+        "branded self-service portals/help centers",
+        "community forums",
+        "case submission + status tracking",
+        "article access + CMS",
+        "usage analytics"
+      ]
+    },
+    {
+      "slug": "slas-entitlements",
+      "label": "SLAs/entitlements",
+      "detail": "Entitlements, Service Contracts, Milestones with time-based targets, milestone actions via Flow, Agentic Milestones (Beta) using Prompt Builder for AI messaging near breach",
+      "features": [
+        "Entitlements",
+        "Service Contracts",
+        "Milestones with time-based targets",
+        "milestone actions via Flow",
+        "Agentic Milestones (Beta) using Prompt Builder for AI messaging near breach"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "Salesforce Flow (process automation, SLA escalation, notifications), assignment + escalation rules, macros, approval processes, telephony-event-triggered logic",
+      "features": [
+        "Salesforce Flow (process automation, SLA escalation, notifications)",
+        "assignment + escalation rules",
+        "macros",
+        "approval processes",
+        "telephony-event-triggered logic"
+      ]
+    },
+    {
+      "slug": "ai-agentforce-einstein",
+      "label": "AI (Agentforce/Einstein)",
+      "detail": "Agentforce Service Agent (autonomous generative resolution across channels), Agentforce Contact Center, Einstein Copilot, Service Replies + Reply Recommendations (grounded in past tickets + knowledge), Work/Conversation Summaries, Next Best Action, Case Classification + routing, real-time sentiment, Prompt Builder, grounding in Data Cloud",
+      "features": [
+        "Agentforce Service Agent (autonomous generative resolution across channels)",
+        "Agentforce Contact Center",
+        "Einstein Copilot",
+        "Service Replies + Reply Recommendations (grounded in past tickets + knowledge)",
+        "Work/Conversation Summaries",
+        "Next Best Action",
+        "Case Classification + routing",
+        "real-time sentiment",
+        "Prompt Builder",
+        "grounding in Data Cloud"
+      ]
+    },
+    {
+      "slug": "chatbots",
+      "label": "Chatbots",
+      "detail": "Einstein Bots (NLU-driven, Salesforce-data-integrated, escalate to human with context)",
+      "features": [
+        "Einstein Bots (NLU-driven, Salesforce-data-integrated, escalate to human with context)"
+      ]
+    },
+    {
+      "slug": "contact-center-voice-cti",
+      "label": "Contact center/voice (CTI)",
+      "detail": "Service Cloud Voice (native telephony in queue), live transcription (Amazon Transcribe/Contact Lens), skills-based call routing, Open CTI, click-to-call/screen pop, partner telephony (Amazon Connect + BYO), AI voice automation",
+      "features": [
+        "Service Cloud Voice (native telephony in queue)",
+        "live transcription (Amazon Transcribe/Contact Lens)",
+        "skills-based call routing",
+        "Open CTI",
+        "click-to-call/screen pop",
+        "partner telephony (Amazon Connect + BYO)",
+        "AI voice automation"
+      ]
+    },
+    {
+      "slug": "field-service-fsl",
+      "label": "Field Service (FSL)",
+      "detail": "work order management, appointment scheduling optimization, dispatcher console (map + Gantt), resource/crew management, offline mobile app (e-signature/photos/knowledge), asset/inventory/parts, IoT predictive maintenance",
+      "features": [
+        "work order management",
+        "appointment scheduling optimization",
+        "dispatcher console (map + Gantt)",
+        "resource/crew management",
+        "offline mobile app (e-signature/photos/knowledge)",
+        "asset/inventory/parts",
+        "IoT predictive maintenance"
+      ]
+    },
+    {
+      "slug": "service-catalog-incident",
+      "label": "Service catalog/incident",
+      "detail": "self-service Service Catalog, Incident Management (link related cases, problem/change tracking, proactive status broadcasting)",
+      "features": [
+        "self-service Service Catalog",
+        "Incident Management (link related cases, problem/change tracking, proactive status broadcasting)"
+      ]
+    },
+    {
+      "slug": "reporting",
+      "label": "Reporting",
+      "detail": "native dashboards/reports, Service Analytics / CRM Analytics (Tableau) with AI trends + demand forecasting, Omni-Channel supervisor dashboards, Einstein Conversation Mining",
+      "features": [
+        "native dashboards/reports",
+        "Service Analytics / CRM Analytics (Tableau) with AI trends + demand forecasting",
+        "Omni-Channel supervisor dashboards",
+        "Einstein Conversation Mining"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "REST + SOAP APIs, AppExchange, MuleSoft, Slack, custom record types, Data Cloud grounding",
+      "features": [
+        "REST + SOAP APIs",
+        "AppExchange",
+        "MuleSoft",
+        "Slack",
+        "custom record types",
+        "Data Cloud grounding"
+      ]
+    },
+    {
+      "slug": "editions",
+      "label": "Editions",
+      "detail": "Starter ($25) / Professional ($75) / Enterprise ($150) / Unlimited ($300) / Agentforce 1 Service; add-ons: Digital Engagement, Voice, Field Service, Experience Cloud, Einstein/Agentforce",
+      "features": [
+        "Starter ($25) / Professional ($75) / Enterprise ($150) / Unlimited ($300) / Agentforce 1 Service; add-ons: Digital Engagement",
+        "Voice",
+        "Field Service",
+        "Experience Cloud",
+        "Einstein/Agentforce"
+      ]
+    }
+  ]
+}

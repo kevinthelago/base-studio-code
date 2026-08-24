@@ -1,0 +1,285 @@
+{
+  "id": "sage-intacct",
+  "name": "Sage Intacct",
+  "domain": "finance-accounting-billing-spend",
+  "domainName": "Finance / Accounting / Billing / Spend",
+  "capabilities": [
+    {
+      "slug": "gl-dimensions",
+      "label": "GL/dimensions",
+      "detail": "Intelligent GL with real-time posting, AI outlier/anomaly detection, multi-dimensional architecture (location/department/project/employee/class/item/customer/vendor + custom dimensions) instead of a bloated CoA, continuous/soft close, full audit trail",
+      "features": [
+        "Intelligent GL with real-time posting",
+        "AI outlier/anomaly detection",
+        "multi-dimensional architecture (location/department/project/employee/class/item/customer/vendor + custom dimensions) instead of a bloated CoA",
+        "continuous/soft close",
+        "full audit trail"
+      ]
+    },
+    {
+      "slug": "ap",
+      "label": "AP",
+      "detail": "vendor invoice capture & automation, automated payment-cycle workflows, payment scheduling, approval routing, early-payment discount tracking, Sage AP Automation (AI invoice capture), Amex vendor payment integration",
+      "features": [
+        "vendor invoice capture & automation",
+        "automated payment-cycle workflows",
+        "payment scheduling",
+        "approval routing",
+        "early-payment discount tracking",
+        "Sage AP Automation (AI invoice capture)",
+        "Amex vendor payment integration"
+      ]
+    },
+    {
+      "slug": "ar",
+      "label": "AR",
+      "detail": "automated invoicing/billing, automated collections & reminders, credit-term administration, customizable payment options, DSO reduction",
+      "features": [
+        "automated invoicing/billing",
+        "automated collections & reminders",
+        "credit-term administration",
+        "customizable payment options",
+        "DSO reduction"
+      ]
+    },
+    {
+      "slug": "cash-bank-reconciliation",
+      "label": "Cash/bank reconciliation",
+      "detail": "real-time visibility across bank/credit-card/merchant accounts, automated bank reconciliation, cash-flow classification, cash forecasting",
+      "features": [
+        "real-time visibility across bank/credit-card/merchant accounts",
+        "automated bank reconciliation",
+        "cash-flow classification",
+        "cash forecasting"
+      ]
+    },
+    {
+      "slug": "order-management",
+      "label": "Order management",
+      "detail": "quote-to-cash automation, sales order processing/fulfillment, sophisticated pricing, high-volume orders, Salesforce quote-to-order",
+      "features": [
+        "quote-to-cash automation",
+        "sales order processing/fulfillment",
+        "sophisticated pricing",
+        "high-volume orders",
+        "Salesforce quote-to-order"
+      ]
+    },
+    {
+      "slug": "purchasing-procurement",
+      "label": "Purchasing/procurement",
+      "detail": "requisitions & approvals, PO creation/management, predefined workflows, vendor standardization & pricing controls, spend analysis",
+      "features": [
+        "requisitions & approvals",
+        "PO creation/management",
+        "predefined workflows",
+        "vendor standardization & pricing controls",
+        "spend analysis"
+      ]
+    },
+    {
+      "slug": "reporting-dashboards",
+      "label": "Reporting/dashboards",
+      "detail": "real-time role-based dashboards, live-data custom report builder (no Excel export), drill-down, multi-dimensional analysis, Interactive Custom Report Writer, Interactive Visual Explorer, Digital Board Book",
+      "features": [
+        "real-time role-based dashboards",
+        "live-data custom report builder (no Excel export)",
+        "drill-down",
+        "multi-dimensional analysis",
+        "Interactive Custom Report Writer",
+        "Interactive Visual Explorer",
+        "Digital Board Book"
+      ]
+    },
+    {
+      "slug": "budgeting-fp-and-a-sage-intacct-planning",
+      "label": "Budgeting/FP&A (Sage Intacct Planning)",
+      "detail": "collaborative budgeting, what-if scenarios, rolling forecasts, budget-vs-actual variance",
+      "features": [
+        "collaborative budgeting",
+        "what-if scenarios",
+        "rolling forecasts",
+        "budget-vs-actual variance"
+      ]
+    },
+    {
+      "slug": "multi-entity-consolidation",
+      "label": "Multi-entity/consolidation",
+      "detail": "consolidate hundreds of entities in minutes, continuous consolidation, automated inter-entity transactions & eliminations, cross-entity/currency/geography roll-up, local tax/accounting-rule compliance",
+      "features": [
+        "consolidate hundreds of entities in minutes",
+        "continuous consolidation",
+        "automated inter-entity transactions & eliminations",
+        "cross-entity/currency/geography roll-up",
+        "local tax/accounting-rule compliance"
+      ]
+    },
+    {
+      "slug": "multi-currency",
+      "label": "Multi-currency",
+      "detail": "multi-currency transactions with auto rate updates, multi-currency consolidation/reporting",
+      "features": [
+        "multi-currency transactions with auto rate updates",
+        "multi-currency consolidation/reporting"
+      ]
+    },
+    {
+      "slug": "revenue-recognition",
+      "label": "Revenue recognition",
+      "detail": "ASC 606 / IFRS 15 automation, contract revenue management, complex streams (subscriptions/licenses/milestones), audit trails",
+      "features": [
+        "ASC 606 / IFRS 15 automation",
+        "contract revenue management",
+        "complex streams (subscriptions/licenses/milestones)",
+        "audit trails"
+      ]
+    },
+    {
+      "slug": "contract-subscription-billing",
+      "label": "Contract/subscription billing",
+      "detail": "recurring billing automation, customizable pricing/billing schedules, renewal automation, MRR tracking, hybrid/usage models, CRM-to-financials",
+      "features": [
+        "recurring billing automation",
+        "customizable pricing/billing schedules",
+        "renewal automation",
+        "MRR tracking",
+        "hybrid/usage models",
+        "CRM-to-financials"
+      ]
+    },
+    {
+      "slug": "project-accounting",
+      "label": "Project accounting",
+      "detail": "cost/budget/profitability tracking, project costing (labor/materials/overhead), project billing, T&E integration, margin analysis, project rev rec",
+      "features": [
+        "cost/budget/profitability tracking",
+        "project costing (labor/materials/overhead)",
+        "project billing",
+        "T&E integration",
+        "margin analysis",
+        "project rev rec"
+      ]
+    },
+    {
+      "slug": "time-and-expense",
+      "label": "Time & expense",
+      "detail": "mobile T&E capture, approval workflows, project/engagement allocation",
+      "features": [
+        "mobile T&E capture",
+        "approval workflows",
+        "project/engagement allocation"
+      ]
+    },
+    {
+      "slug": "fixed-assets-leases",
+      "label": "Fixed assets/leases",
+      "detail": "asset tracking with auto depreciation, disposal management, GAAP-compliant lease accounting",
+      "features": [
+        "asset tracking with auto depreciation",
+        "disposal management",
+        "GAAP-compliant lease accounting"
+      ]
+    },
+    {
+      "slug": "spend-management",
+      "label": "Spend management",
+      "detail": "proactive/upfront budget controls, real-time budget-impact visibility, overspend prevention, multi-dimensional spend reporting",
+      "features": [
+        "proactive/upfront budget controls",
+        "real-time budget-impact visibility",
+        "overspend prevention",
+        "multi-dimensional spend reporting"
+      ]
+    },
+    {
+      "slug": "inventory",
+      "label": "Inventory",
+      "detail": "stock tracking/valuation, multi-location, replenishment optimization, demand planning, barcode/WMS",
+      "features": [
+        "stock tracking/valuation",
+        "multi-location",
+        "replenishment optimization",
+        "demand planning",
+        "barcode/WMS"
+      ]
+    },
+    {
+      "slug": "allocations",
+      "label": "Allocations",
+      "detail": "Dynamic Allocations engine, recurring revenue/expense/investment allocation, cross-department/project/entity, dimension-based rules",
+      "features": [
+        "Dynamic Allocations engine",
+        "recurring revenue/expense/investment allocation",
+        "cross-department/project/entity",
+        "dimension-based rules"
+      ]
+    },
+    {
+      "slug": "nonprofit-fund-accounting",
+      "label": "Nonprofit/fund accounting",
+      "detail": "fund accounting, Grant Tracking & Billing, conditional-grant rev rec, functional expense allocation, mission-impact reporting",
+      "features": [
+        "fund accounting",
+        "Grant Tracking & Billing",
+        "conditional-grant rev rec",
+        "functional expense allocation",
+        "mission-impact reporting"
+      ]
+    },
+    {
+      "slug": "industry-verticals",
+      "label": "Industry verticals",
+      "detail": "Construction, Real Estate, Nonprofit, SaaS",
+      "features": [
+        "Construction",
+        "Real Estate",
+        "Nonprofit",
+        "SaaS"
+      ]
+    },
+    {
+      "slug": "ai-automation",
+      "label": "AI/automation",
+      "detail": "Sage Copilot AI assistant, close automation (Copilot close agent), automated sub-ledger reconciliation, AI variance/anomaly detection, predictive insights",
+      "features": [
+        "Sage Copilot AI assistant",
+        "close automation (Copilot close agent)",
+        "automated sub-ledger reconciliation",
+        "AI variance/anomaly detection",
+        "predictive insights"
+      ]
+    },
+    {
+      "slug": "saas-intelligence",
+      "label": "SaaS Intelligence",
+      "detail": "pre-built subscription-metrics dashboards (ARR/MRR/CAC/NDR/churn)",
+      "features": [
+        "pre-built subscription-metrics dashboards (ARR/MRR/CAC/NDR/churn)"
+      ]
+    },
+    {
+      "slug": "api-integrations",
+      "label": "API/integrations",
+      "detail": "bidirectional Salesforce CRM (quote-to-cash), open API, AvaTax, document management, Collaborate embedded messaging",
+      "features": [
+        "bidirectional Salesforce CRM (quote-to-cash)",
+        "open API",
+        "AvaTax",
+        "document management",
+        "Collaborate embedded messaging"
+      ]
+    },
+    {
+      "slug": "compliance",
+      "label": "Compliance",
+      "detail": "GAAP, ASC 606 / IFRS 15, FASB support, built-in audit trails, local statutory compliance",
+      "features": [
+        "GAAP",
+        "ASC 606 / IFRS 15",
+        "FASB support",
+        "built-in audit trails",
+        "local statutory compliance"
+      ]
+    }
+  ]
+}

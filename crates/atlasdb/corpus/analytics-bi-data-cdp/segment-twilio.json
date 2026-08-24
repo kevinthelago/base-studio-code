@@ -1,0 +1,172 @@
+{
+  "id": "segment-twilio",
+  "name": "Segment (Twilio)",
+  "domain": "analytics-bi-data-cdp",
+  "domainName": "Analytics / BI / Data / CDP",
+  "capabilities": [
+    {
+      "slug": "collection-ingestion",
+      "label": "Collection/ingestion",
+      "detail": "Connections product, Sources (web/mobile/server), analytics.js, iOS/Android SDKs, server-side libraries, HTTP Tracking API, cloud sources, Segment Spec (track/identify/group/page/screen), Replays, high-throughput ingest (~400K events/sec)",
+      "features": [
+        "Connections product",
+        "Sources (web/mobile/server)",
+        "analytics.js",
+        "iOS/Android SDKs",
+        "server-side libraries",
+        "HTTP Tracking API",
+        "cloud sources",
+        "Segment Spec (track/identify/group/page/screen)",
+        "Replays",
+        "high-throughput ingest (~400K events/sec)"
+      ]
+    },
+    {
+      "slug": "integrations-destinations",
+      "label": "Integrations/destinations",
+      "detail": "Connections catalog of 450–750+ pre-built connectors (analytics/advertising/ESP/CRM/warehouses), Sources + Destinations split",
+      "features": [
+        "Connections catalog of 450–750+ pre-built connectors (analytics/advertising/ESP/CRM/warehouses)",
+        "Sources + Destinations split"
+      ]
+    },
+    {
+      "slug": "data-quality-protocols",
+      "label": "Data quality (Protocols)",
+      "detail": "Tracking Plan (central data spec), schema enforcement, selective blocking of non-conforming events at source, violation dashboard, real-time validation, source quarantine, Data Transformations, anomaly detection/alerts, Typewriter (strongly-typed libraries)",
+      "features": [
+        "Tracking Plan (central data spec)",
+        "schema enforcement",
+        "selective blocking of non-conforming events at source",
+        "violation dashboard",
+        "real-time validation",
+        "source quarantine",
+        "Data Transformations",
+        "anomaly detection/alerts",
+        "Typewriter (strongly-typed libraries)"
+      ]
+    },
+    {
+      "slug": "identity-profiles-unify",
+      "label": "Identity/profiles (Unify)",
+      "detail": "real-time identity resolution across devices/channels, Golden Profiles (online + offline merge), deterministic + probabilistic matching, external identifiers, Profiles Sync (to warehouse), Profile API, Predictive Traits enrichment",
+      "features": [
+        "real-time identity resolution across devices/channels",
+        "Golden Profiles (online + offline merge)",
+        "deterministic + probabilistic matching",
+        "external identifiers",
+        "Profiles Sync (to warehouse)",
+        "Profile API",
+        "Predictive Traits enrichment"
+      ]
+    },
+    {
+      "slug": "audiences-engage",
+      "label": "Audiences (Engage)",
+      "detail": "real-time dynamic Audiences, Computed Traits, SQL Traits, Linked Audiences (query warehouse directly — Snowflake/BigQuery/Redshift/Databricks), Journeys, Generative Audiences (NL audience creation), contextual payloads",
+      "features": [
+        "real-time dynamic Audiences",
+        "Computed Traits",
+        "SQL Traits",
+        "Linked Audiences (query warehouse directly — Snowflake/BigQuery/Redshift/Databricks)",
+        "Journeys",
+        "Generative Audiences (NL audience creation)",
+        "contextual payloads"
+      ]
+    },
+    {
+      "slug": "activation",
+      "label": "Activation",
+      "detail": "Destinations (750+), Reverse ETL activation, real-time personalization, Twilio Engage omnichannel orchestration (SMS/WhatsApp/RCS/Email via SendGrid/Voice/Video)",
+      "features": [
+        "Destinations (750+)",
+        "Reverse ETL activation",
+        "real-time personalization",
+        "Twilio Engage omnichannel orchestration (SMS/WhatsApp/RCS/Email via SendGrid/Voice/Video)"
+      ]
+    },
+    {
+      "slug": "ai-predictions-customerai",
+      "label": "AI/predictions (CustomerAI)",
+      "detail": "CustomerAI Predictions, AI Predictive Traits, LTV prediction, churn scoring, purchase-propensity, Generative Audiences",
+      "features": [
+        "CustomerAI Predictions",
+        "AI Predictive Traits",
+        "LTV prediction",
+        "churn scoring",
+        "purchase-propensity",
+        "Generative Audiences"
+      ]
+    },
+    {
+      "slug": "warehouses-lakes",
+      "label": "Warehouses/lakes",
+      "detail": "warehouse destinations (Snowflake/BigQuery/Redshift/Postgres/Databricks/Azure), S3, Data Lakes on S3, Profiles Sync, warehouse-as-a-source",
+      "features": [
+        "warehouse destinations (Snowflake/BigQuery/Redshift/Postgres/Databricks/Azure)",
+        "S3",
+        "Data Lakes on S3",
+        "Profiles Sync",
+        "warehouse-as-a-source"
+      ]
+    },
+    {
+      "slug": "reverse-etl",
+      "label": "Reverse ETL",
+      "detail": "SQL-defined sync models, warehouse sources, scheduled syncs, incremental change detection, route as events into Engage or to 750+ destinations, sync monitoring",
+      "features": [
+        "SQL-defined sync models",
+        "warehouse sources",
+        "scheduled syncs",
+        "incremental change detection",
+        "route as events into Engage or to 750+ destinations",
+        "sync monitoring"
+      ]
+    },
+    {
+      "slug": "functions",
+      "label": "Functions",
+      "detail": "author custom sources + destinations in JavaScript",
+      "features": [
+        "author custom sources + destinations in JavaScript"
+      ]
+    },
+    {
+      "slug": "real-time",
+      "label": "Real-time",
+      "detail": "real-time event streaming, real-time profile updates, Data Observability",
+      "features": [
+        "real-time event streaming",
+        "real-time profile updates",
+        "Data Observability"
+      ]
+    },
+    {
+      "slug": "privacy",
+      "label": "Privacy",
+      "detail": "Privacy Portal (GDPR/CCPA automation), consent management, data deletion/suppression, centralized governance",
+      "features": [
+        "Privacy Portal (GDPR/CCPA automation)",
+        "consent management",
+        "data deletion/suppression",
+        "centralized governance"
+      ]
+    },
+    {
+      "slug": "developer-api",
+      "label": "Developer/API",
+      "detail": "Public API, Debugger (live event inspection), Replays, Delivery Overview, Alerting, Typewriter, Terraform provider, dbt integration, Profile API",
+      "features": [
+        "Public API",
+        "Debugger (live event inspection)",
+        "Replays",
+        "Delivery Overview",
+        "Alerting",
+        "Typewriter",
+        "Terraform provider",
+        "dbt integration",
+        "Profile API"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "id": "email-marketing-common-feature-themes",
+  "name": "Email/Marketing — common feature themes",
+  "domain": "email-and-marketing-automation-esp-map",
+  "domainName": "Email & Marketing Automation (ESP / MAP)",
+  "capabilities": [
+    {
+      "slug": "drag-drop-email-builders-are-table-stakes",
+      "label": "Drag-drop email builders are table stakes",
+      "detail": "— no-code block/WYSIWYG editor + large responsive-template library + brand-kit governance + mobile/inbox-rendering testing. Depth differentiates: AMPscript/Liquid scripting (Salesforce, Braze), reusable modular Content Blocks with API (Braze), Content Studio DAM (Mailchimp).",
+      "features": [
+        "— no-code block/WYSIWYG editor + large responsive-template library + brand-kit governance + mobile/inbox-rendering testing. Depth differentiates: AMPscript/Liquid scripting (Salesforce, Braze)",
+        "reusable modular Content Blocks with API (Braze)",
+        "Content Studio DAM (Mailchimp)."
+      ]
+    },
+    {
+      "slug": "visual-journey-automation-builders-are-the-core-engine",
+      "label": "Visual journey/automation builders are the core engine",
+      "detail": "— canvas with triggers, conditional/decision splits, delays, pre-built templates (welcome/abandoned-cart/post-purchase/win-back). Braze/Salesforce add API-triggered and transactional real-time journeys.",
+      "features": [
+        "— canvas with triggers",
+        "conditional/decision splits",
+        "delays",
+        "pre-built templates (welcome/abandoned-cart/post-purchase/win-back). Braze/Salesforce add API-triggered and transactional real-time journeys."
+      ]
+    },
+    {
+      "slug": "segmentation-predictive-behavioral-targeting-universal",
+      "label": "Segmentation + predictive/behavioral targeting universal",
+      "detail": ", tiered by data model — SMB tools (Constant Contact, Mailchimp) rule-based; leaders offer real-time behavioral over full event history (Klaviyo), SQL/zero-copy warehouse segments (Braze CDI, Salesforce Data Cloud), predictive segments (churn/CLV/next-order).",
+      "features": [
+        "tiered by data model — SMB tools (Constant Contact, Mailchimp) rule-based; leaders offer real-time behavioral over full event history (Klaviyo)",
+        "SQL/zero-copy warehouse segments (Braze CDI, Salesforce Data Cloud)",
+        "predictive segments (churn/CLV/next-order)."
+      ]
+    },
+    {
+      "slug": "ai-is-the-primary-battleground",
+      "label": "AI is the primary battleground",
+      "detail": "— Intuit Assist, Klaviyo AI (40+), BrazeAI + agentic Decisioning Studio, Adobe Sensei/GenAI, Einstein + Agentforce, Breeze Copilot/Agents, BrandKit AI. Recurring: generative copy/subject lines, send-time optimization, predictive scoring, and — newest — autonomous/agentic assistants.",
+      "features": [
+        "— Intuit Assist",
+        "Klaviyo AI (40+)",
+        "BrazeAI + agentic Decisioning Studio",
+        "Adobe Sensei/GenAI",
+        "Einstein + Agentforce",
+        "Breeze Copilot/Agents",
+        "BrandKit AI. Recurring: generative copy/subject lines",
+        "send-time optimization",
+        "predictive scoring",
+        "and — newest — autonomous/agentic assistants."
+      ]
+    },
+    {
+      "slug": "a-b-send-time-optimization-everywhere",
+      "label": "A/B + send-time optimization everywhere",
+      "detail": "; multivariate + AI \"best-variant-per-recipient\" (Klaviyo, Braze Intelligent Selection, Einstein) are up-market differentiators.",
+      "features": [
+        "; multivariate + AI \"best-variant-per-recipient\" (Klaviyo, Braze Intelligent Selection, Einstein) are up-market differentiators."
+      ]
+    },
+    {
+      "slug": "omnichannel-beyond-email-now-standard",
+      "label": "Omnichannel beyond email now standard",
+      "detail": "— SMS/MMS near-universal (add-on for SMB tools); mobile push + in-app + WhatsApp separate the true engagement platforms (Braze/Klaviyo/Salesforce/Marketo/HubSpot) from email-first SMB tools (Mailchimp/Constant Contact). Braze widest (push/web push/Content Cards/RCS/LINE/KakaoTalk); paid-media/ad-audience sync common.",
+      "features": [
+        "— SMS/MMS near-universal (add-on for SMB tools); mobile push + in-app + WhatsApp separate the true engagement platforms (Braze/Klaviyo/Salesforce/Marketo/HubSpot) from email-first SMB tools (Mailchimp/Constant Contact). Braze widest (push/web push/Content Cards/RCS/LINE/KakaoTalk); paid-media/ad-audience sync common."
+      ]
+    },
+    {
+      "slug": "landing-pages-forms-pop-ups-bundled-everywhere",
+      "label": "Landing pages, forms, pop-ups bundled everywhere",
+      "detail": "; progressive-profiling/multi-step forms + CloudPages/microsites are the enterprise/B2B upgrade (Marketo, Salesforce).",
+      "features": [
+        "; progressive-profiling/multi-step forms + CloudPages/microsites are the enterprise/B2B upgrade (Marketo, Salesforce)."
+      ]
+    },
+    {
+      "slug": "deliverability-tooling-shared-pillar",
+      "label": "Deliverability tooling shared pillar",
+      "detail": "— dedicated IPs, SPF/DKIM/DMARC, IP warming, reputation monitoring, seed/inbox-placement testing. Klaviyo (Deliverability Hub) + Braze surface it as a named product; enterprise adds bot-filtering (Einstein Metrics Guard).",
+      "features": [
+        "— dedicated IPs",
+        "SPF/DKIM/DMARC",
+        "IP warming",
+        "reputation monitoring",
+        "seed/inbox-placement testing. Klaviyo (Deliverability Hub) + Braze surface it as a named product; enterprise adds bot-filtering (Einstein Metrics Guard)."
+      ]
+    },
+    {
+      "slug": "cdp-first-party-data-story-is-the-strategic-dividing-line",
+      "label": "CDP/first-party-data story is the strategic dividing line",
+      "detail": "— Klaviyo (KDP), Braze (Data Platform + Cloud Data Ingestion/Currents), Salesforce (Data Cloud) position a unified-profile CDP vs the lighter contact-database model of Mailchimp/Constant Contact. HubSpot's Smart CRM is the built-in-CRM variant.",
+      "features": [
+        "— Klaviyo (KDP)",
+        "Braze (Data Platform + Cloud Data Ingestion/Currents)",
+        "Salesforce (Data Cloud) position a unified-profile CDP vs the lighter contact-database model of Mailchimp/Constant Contact. HubSpot's Smart CRM is the built-in-CRM variant."
+      ]
+    },
+    {
+      "slug": "analytics-ranges-from-campaign-metrics-to-full-revenue-attribution",
+      "label": "Analytics ranges from campaign metrics to full revenue attribution",
+      "detail": "— enterprise/B2B add multi-touch attribution + revenue-cycle analytics (Marketo Measure/Bizible, Salesforce Datorama, HubSpot), plus peer benchmarking (Klaviyo, Mailchimp).",
+      "features": [
+        "— enterprise/B2B add multi-touch attribution + revenue-cycle analytics (Marketo Measure/Bizible, Salesforce Datorama, HubSpot)",
+        "plus peer benchmarking (Klaviyo, Mailchimp)."
+      ]
+    },
+    {
+      "slug": "b2b-vs-b2c-e-commerce-is-the-clearest-positioning-split",
+      "label": "B2B vs B2C/e-commerce is the clearest positioning split",
+      "detail": "— Marketo + Pardot center on lead scoring/grading/nurturing/ABM/CRM sync; Klaviyo/Mailchimp/Constant Contact center on e-commerce (Shopify/WooCommerce sync, product recommendations, abandoned-cart, shoppable emails). HubSpot straddles both via its unified CRM.",
+      "features": [
+        "— Marketo + Pardot center on lead scoring/grading/nurturing/ABM/CRM sync; Klaviyo/Mailchimp/Constant Contact center on e-commerce (Shopify/WooCommerce sync, product recommendations, abandoned-cart, shoppable emails). HubSpot straddles both via its unified CRM."
+      ]
+    },
+    {
+      "slug": "large-integration-marketplaces-open-apis-universal",
+      "label": "Large integration marketplaces + open APIs universal",
+      "detail": "(300+ Mailchimp, 350+ Klaviyo, 170+ Braze, 2,000+ HubSpot, AppExchange/LaunchPoint for Salesforce/Marketo). Emerging differentiator: MCP servers for LLM/agent access (Klaviyo, Braze).",
+      "features": [
+        "(300+ Mailchimp, 350+ Klaviyo, 170+ Braze, 2,000+ HubSpot, AppExchange/LaunchPoint for Salesforce/Marketo). Emerging differentiator: MCP servers for LLM/agent access (Klaviyo, Braze)."
+      ]
+    },
+    {
+      "slug": "adjacent-smb-bundles-differentiate",
+      "label": "Adjacent SMB bundles differentiate",
+      "detail": "— Constant Contact (events/RSVP, website + logo builder, surveys) + Mailchimp (websites, transactional email via Mandrill, Content Studio) bundle broad SMB tooling; enterprise platforms specialize in orchestration depth + governance (approvals/workspaces/SSO/data residency) + data infrastructure.",
+      "features": [
+        "— Constant Contact (events/RSVP, website + logo builder, surveys) + Mailchimp (websites, transactional email via Mandrill, Content Studio) bundle broad SMB tooling; enterprise platforms specialize in orchestration depth + governance (approvals/workspaces/SSO/data residency) + data infrastructure."
+      ]
+    }
+  ]
+}

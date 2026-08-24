@@ -478,6 +478,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlasdb"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "include_dir",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "atoi"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -703,6 +715,7 @@ dependencies = [
 name = "bsc"
 version = "0.1.0"
 dependencies = [
+ "atlasdb",
  "bsc-blueprint",
  "bsc-cad",
  "bsc-cli-util",

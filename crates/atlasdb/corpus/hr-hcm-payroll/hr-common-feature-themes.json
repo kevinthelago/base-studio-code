@@ -1,0 +1,123 @@
+{
+  "id": "hr-common-feature-themes",
+  "name": "HR — common feature themes",
+  "domain": "hr-hcm-payroll",
+  "domainName": "HR / HCM / Payroll",
+  "capabilities": [
+    {
+      "slug": "table-stakes-core-hris",
+      "label": "Table-stakes core HRIS",
+      "detail": "— single system-of-record, profiles, org charts, document mgmt + e-sig, RBAC, configurable approval workflows, ESS/MSS (web + native mobile).",
+      "features": [
+        "— single system-of-record",
+        "profiles",
+        "org charts",
+        "document mgmt + e-sig",
+        "RBAC",
+        "configurable approval workflows",
+        "ESS/MSS (web + native mobile)."
+      ]
+    },
+    {
+      "slug": "full-service-payroll-with-automated-tax-as-baseline",
+      "label": "Full-service payroll with automated tax as baseline",
+      "detail": "— auto federal/state/local calc/filing/remittance, multi-state, W-2/1099, direct deposit, garnishments, off-cycle; enterprise players (Workday, ADP, SAP, Rippling) differentiate on **global/multi-country payroll** (100–185+ countries).",
+      "features": [
+        "— auto federal/state/local calc/filing/remittance",
+        "multi-state",
+        "W-2/1099",
+        "direct deposit",
+        "garnishments",
+        "off-cycle; enterprise players (Workday, ADP, SAP, Rippling) differentiate on **global/multi-country payroll** (100–185+ countries)."
+      ]
+    },
+    {
+      "slug": "benefits-administration-converges",
+      "label": "Benefits administration converges",
+      "detail": "— open enrollment, medical/dental/vision, HSA/FSA, 401(k), life/disability, carrier EDI, ACA/COBRA, auto deduction sync; SMB vendors lean on partner marketplaces (Guideline, Human Interest), enterprise builds native.",
+      "features": [
+        "— open enrollment",
+        "medical/dental/vision",
+        "HSA/FSA",
+        "401(k)",
+        "life/disability",
+        "carrier EDI",
+        "ACA/COBRA",
+        "auto deduction sync; SMB vendors lean on partner marketplaces (Guideline, Human Interest)",
+        "enterprise builds native."
+      ]
+    },
+    {
+      "slug": "time-attendance-scheduling",
+      "label": "Time/attendance/scheduling",
+      "detail": "universal (clock in/out, PTO/leave accruals, overtime, shift scheduling, auto-sync to payroll); geofencing/kiosk + labor forecasting are up-market differentiators.",
+      "features": [
+        "universal (clock in/out, PTO/leave accruals, overtime, shift scheduling, auto-sync to payroll); geofencing/kiosk + labor forecasting are up-market differentiators."
+      ]
+    },
+    {
+      "slug": "full-talent-lifecycle-now-expected",
+      "label": "Full talent lifecycle now expected",
+      "detail": "— ATS → onboarding → performance/goals → comp → learning → succession/internal mobility. Enterprise suites offer all deeply; SMB tools lean on integrations.",
+      "features": [
+        "— ATS → onboarding → performance/goals → comp → learning → succession/internal mobility. Enterprise suites offer all deeply; SMB tools lean on integrations."
+      ]
+    },
+    {
+      "slug": "ai-is-the-current-battleground",
+      "label": "AI is the current battleground",
+      "detail": "— every vendor ships a conversational copilot (Illuminate, ADP Assist, Ask BambooHR, Gus, Joule) + AI for job descriptions/screening/matching/anomaly detection/turnover prediction. Workday/SAP/Rippling push into **autonomous agents**.",
+      "features": [
+        "— every vendor ships a conversational copilot (Illuminate, ADP Assist, Ask BambooHR, Gus, Joule) + AI for job descriptions/screening/matching/anomaly detection/turnover prediction. Workday/SAP/Rippling push into **autonomous agents**."
+      ]
+    },
+    {
+      "slug": "skills-based-talent-intelligence",
+      "label": "Skills-based talent intelligence",
+      "detail": "rising — Workday Skills Cloud, SAP Talent Intelligence Hub / Growth Portfolio / 30k-skill ontology, Opportunity Marketplace internal mobility reframe talent around inferred skills.",
+      "features": [
+        "rising — Workday Skills Cloud",
+        "SAP Talent Intelligence Hub / Growth Portfolio / 30k-skill ontology",
+        "Opportunity Marketplace internal mobility reframe talent around inferred skills."
+      ]
+    },
+    {
+      "slug": "analytics-benchmarking",
+      "label": "Analytics/benchmarking",
+      "detail": "— from canned reports (SMB) to custom builders (Rippling, BambooHR) to industry benchmarking on massive datasets (ADP DataCloud 39M+ employees) + turnover/risk prediction.",
+      "features": [
+        "— from canned reports (SMB) to custom builders (Rippling, BambooHR) to industry benchmarking on massive datasets (ADP DataCloud 39M+ employees) + turnover/risk prediction."
+      ]
+    },
+    {
+      "slug": "experience-engagement",
+      "label": "Experience/engagement",
+      "detail": "now a named pillar — BambooHR community/wellbeing, SAP Qualtrics, Workday Employee Voice.",
+      "features": [
+        "now a named pillar — BambooHR community/wellbeing",
+        "SAP Qualtrics",
+        "Workday Employee Voice."
+      ]
+    },
+    {
+      "slug": "compliance-security-as-selling-point",
+      "label": "Compliance/security as selling point",
+      "detail": "— multi-state/tax, ACA, SOC 2 / ISO 27001, encryption, audit trails universal; global vendors add 100+ country statutory localization.",
+      "features": [
+        "— multi-state/tax",
+        "ACA",
+        "SOC 2 / ISO 27001",
+        "encryption",
+        "audit trails universal; global vendors add 100+ country statutory localization."
+      ]
+    },
+    {
+      "slug": "differentiators",
+      "label": "Differentiators",
+      "detail": "Rippling = unifies HR + IT (MDM/SSO/device inventory) + Finance (spend/cards/bills) on one Employee Graph · ADP = payroll-tax/compliance depth + PEO/outsourcing + DataCloud benchmarking · Workday = workforce planning (Adaptive) + Skills Cloud + Extend platform · SAP = deepest global localization/payroll + Talent Intelligence Hub + BTP · BambooHR = SMB all-in-one + employee experience/wellbeing · Gusto = SMB payroll-first + financial wellness (Wallet/on-demand pay). **PEO/EOR/global-employment** is a common adjacent play (Rippling, ADP, Gusto Global).",
+      "features": [
+        "Rippling = unifies HR + IT (MDM/SSO/device inventory) + Finance (spend/cards/bills) on one Employee Graph · ADP = payroll-tax/compliance depth + PEO/outsourcing + DataCloud benchmarking · Workday = workforce planning (Adaptive) + Skills Cloud + Extend platform · SAP = deepest global localization/payroll + Talent Intelligence Hub + BTP · BambooHR = SMB all-in-one + employee experience/wellbeing · Gusto = SMB payroll-first + financial wellness (Wallet/on-demand pay). **PEO/EOR/global-employment** is a common adjacent play (Rippling, ADP, Gusto Global)."
+      ]
+    }
+  ]
+}

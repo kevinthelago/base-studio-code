@@ -1,0 +1,163 @@
+{
+  "id": "bizagi",
+  "name": "Bizagi",
+  "domain": "bpm-and-process-automation",
+  "domainName": "BPM & Process Automation",
+  "capabilities": [
+    {
+      "slug": "process-modeling-modeler",
+      "label": "Process modeling (Modeler)",
+      "detail": "free desktop + cloud, full BPMN 2.0, drag-drop, enrich with policies/risks/KPIs, validation, publish/export (Word/PDF/Excel/Visio/web/SharePoint), Modeler Services",
+      "features": [
+        "free desktop + cloud",
+        "full BPMN 2.0",
+        "drag-drop",
+        "enrich with policies/risks/KPIs",
+        "validation",
+        "publish/export (Word/PDF/Excel/Visio/web/SharePoint)",
+        "Modeler Services"
+      ]
+    },
+    {
+      "slug": "simulation",
+      "label": "Simulation",
+      "detail": "multi-level (validation + resource/time/cost), bottleneck ID, what-if, optimization before implementation",
+      "features": [
+        "multi-level (validation + resource/time/cost)",
+        "bottleneck ID",
+        "what-if",
+        "optimization before implementation"
+      ]
+    },
+    {
+      "slug": "process-mining",
+      "label": "Process mining",
+      "detail": "discover flows from logs → auto-build BPMN, AI flow analysis, surface bottlenecks",
+      "features": [
+        "discover flows from logs → auto-build BPMN",
+        "AI flow analysis",
+        "surface bottlenecks"
+      ]
+    },
+    {
+      "slug": "low-code-studio",
+      "label": "Low-code (Studio)",
+      "detail": "build/automate/deploy in 7 steps, no/low/pro-code, Data Model with reusable shared business objects, auto-generated forms, App Designer, integrated Work Portal runtime",
+      "features": [
+        "build/automate/deploy in 7 steps",
+        "no/low/pro-code",
+        "Data Model with reusable shared business objects",
+        "auto-generated forms",
+        "App Designer",
+        "integrated Work Portal runtime"
+      ]
+    },
+    {
+      "slug": "experience-matrix",
+      "label": "Experience Matrix",
+      "detail": "persona × business-object × interaction matrix, per-persona tailored experiences, embedded Power BI",
+      "features": [
+        "persona × business-object × interaction matrix",
+        "per-persona tailored experiences",
+        "embedded Power BI"
+      ]
+    },
+    {
+      "slug": "forms-ux-work-portal",
+      "label": "Forms/UX (Work Portal)",
+      "detail": "auto-generated + customizable forms, Widget Xchange, dynamic visibility via rules, persona-based context-aware portal, multi-language",
+      "features": [
+        "auto-generated + customizable forms",
+        "Widget Xchange",
+        "dynamic visibility via rules",
+        "persona-based context-aware portal",
+        "multi-language"
+      ]
+    },
+    {
+      "slug": "rules-engine",
+      "label": "Rules engine",
+      "detail": "graphical authoring (simple→complex), conditional routing, event/action automation, rules shared/reused across projects",
+      "features": [
+        "graphical authoring (simple→complex)",
+        "conditional routing",
+        "event/action automation",
+        "rules shared/reused across projects"
+      ]
+    },
+    {
+      "slug": "workflow-automation-service",
+      "label": "Workflow (Automation Service)",
+      "detail": "BPMN execution engine, process-to-web-app conversion, workload balancing/routing (allocation, delegation, calendars/SLAs), structured + unstructured",
+      "features": [
+        "BPMN execution engine",
+        "process-to-web-app conversion",
+        "workload balancing/routing (allocation, delegation, calendars/SLAs)",
+        "structured + unstructured"
+      ]
+    },
+    {
+      "slug": "case-management",
+      "label": "Case management",
+      "detail": "structured + unstructured/dynamic, knowledge-worker empowerment, real-time tracking, people + processes + systems + AI",
+      "features": [
+        "structured + unstructured/dynamic",
+        "knowledge-worker empowerment",
+        "real-time tracking",
+        "people + processes + systems + AI"
+      ]
+    },
+    {
+      "slug": "integration",
+      "label": "Integration",
+      "detail": "SOA engine, REST/SOAP, Xchange marketplace, pre-built connectors (SAP/Salesforce/Dynamics/SharePoint/OCR/AI/e-sig), Connector Editor, native RPA",
+      "features": [
+        "SOA engine",
+        "REST/SOAP",
+        "Xchange marketplace",
+        "pre-built connectors (SAP/Salesforce/Dynamics/SharePoint/OCR/AI/e-sig)",
+        "Connector Editor",
+        "native RPA"
+      ]
+    },
+    {
+      "slug": "ai-ai-hub-ada",
+      "label": "AI (AI Hub / Ada)",
+      "detail": "reusable GenAI Agents (Azure OpenAI), NL prompt config (content gen/summarization/PII obfuscation/categorization/translation/sentiment), AI Actions, Enterprise Knowledge base, Ada AI-Assistant, predictive analytics, AI Ignite packages",
+      "features": [
+        "reusable GenAI Agents (Azure OpenAI)",
+        "NL prompt config (content gen/summarization/PII obfuscation/categorization/translation/sentiment)",
+        "AI Actions",
+        "Enterprise Knowledge base",
+        "Ada AI-Assistant",
+        "predictive analytics",
+        "AI Ignite packages"
+      ]
+    },
+    {
+      "slug": "analytics-reporting",
+      "label": "Analytics/reporting",
+      "detail": "Process Analytics, Business Insights Datasets (BYO reporting), live dashboards (cycle times/bottlenecks/SLA compliance), predictive/self-optimizing, embedded Power BI",
+      "features": [
+        "Process Analytics",
+        "Business Insights Datasets (BYO reporting)",
+        "live dashboards (cycle times/bottlenecks/SLA compliance)",
+        "predictive/self-optimizing",
+        "embedded Power BI"
+      ]
+    },
+    {
+      "slug": "deployment-governance",
+      "label": "Deployment/governance",
+      "detail": "Automation Service PaaS on Azure, Management Portal, VPC isolation, Security Center, FIPS-140, HA active-active DR",
+      "features": [
+        "Automation Service PaaS on Azure",
+        "Management Portal",
+        "VPC isolation",
+        "Security Center",
+        "FIPS-140",
+        "HA active-active DR"
+      ]
+    }
+  ]
+}

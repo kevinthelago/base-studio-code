@@ -1,0 +1,291 @@
+{
+  "id": "jira-software",
+  "name": "Jira (Software)",
+  "domain": "project-work-management",
+  "domainName": "Project / Work Management",
+  "capabilities": [
+    {
+      "slug": "work-items",
+      "label": "Work items",
+      "detail": "Epics, Stories, Tasks, Subtasks, Bugs, custom work types, configurable hierarchy, custom fields, labels, components, versions/fix-versions, story-point/time estimation, work-item linking, priorities, assignees/reporters, issue keys",
+      "features": [
+        "Epics",
+        "Stories",
+        "Tasks",
+        "Subtasks",
+        "Bugs",
+        "custom work types",
+        "configurable hierarchy",
+        "custom fields",
+        "labels",
+        "components",
+        "versions/fix-versions",
+        "story-point/time estimation",
+        "work-item linking",
+        "priorities",
+        "assignees/reporters",
+        "issue keys"
+      ]
+    },
+    {
+      "slug": "views",
+      "label": "Views",
+      "detail": "Scrum board, Kanban board, Backlog, Timeline (roadmap), Calendar, List, Summary, Code, Deployments, Forms, Pages, Goals, Approvals",
+      "features": [
+        "Scrum board",
+        "Kanban board",
+        "Backlog",
+        "Timeline (roadmap)",
+        "Calendar",
+        "List",
+        "Summary",
+        "Code",
+        "Deployments",
+        "Forms",
+        "Pages",
+        "Goals",
+        "Approvals"
+      ]
+    },
+    {
+      "slug": "backlog-sprints",
+      "label": "Backlog/sprints",
+      "detail": "centralized backlog, drag-drop prioritization, sprint creation/planning, sprint goals, estimation/story points, start/complete sprint, backlog grooming, epic/version grouping",
+      "features": [
+        "centralized backlog",
+        "drag-drop prioritization",
+        "sprint creation/planning",
+        "sprint goals",
+        "estimation/story points",
+        "start/complete sprint",
+        "backlog grooming",
+        "epic/version grouping"
+      ]
+    },
+    {
+      "slug": "agile-scrum-kanban",
+      "label": "Agile/Scrum/Kanban",
+      "detail": "customizable boards, swimlanes, WIP limits, status-mapped columns, quick filters, Kanban backlog, release hub, deployment-frequency + cycle-time metrics",
+      "features": [
+        "customizable boards",
+        "swimlanes",
+        "WIP limits",
+        "status-mapped columns",
+        "quick filters",
+        "Kanban backlog",
+        "release hub",
+        "deployment-frequency + cycle-time metrics"
+      ]
+    },
+    {
+      "slug": "roadmaps-timeline",
+      "label": "Roadmaps (Timeline)",
+      "detail": "epic timeline, dependency lines, release markers, progress bars, drag-to-schedule, multi-team forecasting",
+      "features": [
+        "epic timeline",
+        "dependency lines",
+        "release markers",
+        "progress bars",
+        "drag-to-schedule",
+        "multi-team forecasting"
+      ]
+    },
+    {
+      "slug": "advanced-roadmaps-jira-plans-premium",
+      "label": "Advanced Roadmaps/Jira Plans (Premium)",
+      "detail": "cross-project/team planning, custom hierarchy above epic, capacity planning, scenario/what-if, dependency mapping/report, auto-scheduler, releases/teams, spreadsheet plan view, exports",
+      "features": [
+        "cross-project/team planning",
+        "custom hierarchy above epic",
+        "capacity planning",
+        "scenario/what-if",
+        "dependency mapping/report",
+        "auto-scheduler",
+        "releases/teams",
+        "spreadsheet plan view",
+        "exports"
+      ]
+    },
+    {
+      "slug": "dependencies",
+      "label": "Dependencies",
+      "detail": "cross-team/project mapping, timeline dependency lines, dependencies report",
+      "features": [
+        "cross-team/project mapping",
+        "timeline dependency lines",
+        "dependencies report"
+      ]
+    },
+    {
+      "slug": "capacity-resource",
+      "label": "Capacity/resource",
+      "detail": "team + sprint capacity, velocity forecasting, workload management, story-point/time capacity",
+      "features": [
+        "team + sprint capacity",
+        "velocity forecasting",
+        "workload management",
+        "story-point/time capacity"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "no-code if-this-then-that builder, triggers/conditions/actions, smart values, branching, scheduled rules, single/multi-project/global, hundreds of templates, cross-tool (Slack/Teams/Bitbucket/GitHub), audit log, Rovo NL rule creation",
+      "features": [
+        "no-code if-this-then-that builder",
+        "triggers/conditions/actions",
+        "smart values",
+        "branching",
+        "scheduled rules",
+        "single/multi-project/global",
+        "hundreds of templates",
+        "cross-tool (Slack/Teams/Bitbucket/GitHub)",
+        "audit log",
+        "Rovo NL rule creation"
+      ]
+    },
+    {
+      "slug": "reports-gadgets",
+      "label": "Reports/gadgets",
+      "detail": "Sprint report, Burndown, Burnup, Velocity, Release/Version burndown, Epic report, Control chart (cycle time), Cumulative flow, Created-vs-Resolved, workload gadgets, customizable dashboards, saved filters (JQL)",
+      "features": [
+        "Sprint report",
+        "Burndown",
+        "Burnup",
+        "Velocity",
+        "Release/Version burndown",
+        "Epic report",
+        "Control chart (cycle time)",
+        "Cumulative flow",
+        "Created-vs-Resolved",
+        "workload gadgets",
+        "customizable dashboards",
+        "saved filters (JQL)"
+      ]
+    },
+    {
+      "slug": "goals-okrs",
+      "label": "Goals/OKRs",
+      "detail": "Goals to track priorities, align work, cross-functional connections, progress tracking",
+      "features": [
+        "Goals to track priorities",
+        "align work",
+        "cross-functional connections",
+        "progress tracking"
+      ]
+    },
+    {
+      "slug": "portfolio",
+      "label": "Portfolio",
+      "detail": "Plans for program planning, multi-team roadmaps, portfolio rollups",
+      "features": [
+        "Plans for program planning",
+        "multi-team roadmaps",
+        "portfolio rollups"
+      ]
+    },
+    {
+      "slug": "forms",
+      "label": "Forms",
+      "detail": "no-code intake forms, forms attached to work items",
+      "features": [
+        "no-code intake forms",
+        "forms attached to work items"
+      ]
+    },
+    {
+      "slug": "workflows",
+      "label": "Workflows",
+      "detail": "custom workflows, statuses/transitions, workflow schemes, custom fields, screens/schemes",
+      "features": [
+        "custom workflows",
+        "statuses/transitions",
+        "workflow schemes",
+        "custom fields",
+        "screens/schemes"
+      ]
+    },
+    {
+      "slug": "collaboration",
+      "label": "Collaboration",
+      "detail": "@mentions, comments, watchers, notifications, Confluence page linking, approvals",
+      "features": [
+        "@mentions",
+        "comments",
+        "watchers",
+        "notifications",
+        "Confluence page linking",
+        "approvals"
+      ]
+    },
+    {
+      "slug": "devops",
+      "label": "DevOps",
+      "detail": "Bitbucket/GitHub/GitLab, development panel (branches/commits/PRs/builds/deploys), Code & Deployments views, smart commits, feature flags, releases, Open DevOps/Compass",
+      "features": [
+        "Bitbucket/GitHub/GitLab",
+        "development panel (branches/commits/PRs/builds/deploys)",
+        "Code & Deployments views",
+        "smart commits",
+        "feature flags",
+        "releases",
+        "Open DevOps/Compass"
+      ]
+    },
+    {
+      "slug": "marketplace",
+      "label": "Marketplace",
+      "detail": "Atlassian Marketplace 3,000+ apps",
+      "features": [
+        "Atlassian Marketplace 3",
+        "000+ apps"
+      ]
+    },
+    {
+      "slug": "ai-rovo-atlassian-intelligence",
+      "label": "AI (Rovo/Atlassian Intelligence)",
+      "detail": "Rovo Agents/Chat/Search (across SaaS apps), Rovo Studio, Teamwork Graph, AI work breakdown/assignment, summaries, bottleneck/trend detection, progress tracking from Slack/Figma/Gmail, NL automation",
+      "features": [
+        "Rovo Agents/Chat/Search (across SaaS apps)",
+        "Rovo Studio",
+        "Teamwork Graph",
+        "AI work breakdown/assignment",
+        "summaries",
+        "bottleneck/trend detection",
+        "progress tracking from Slack/Figma/Gmail",
+        "NL automation"
+      ]
+    },
+    {
+      "slug": "jira-product-discovery",
+      "label": "Jira Product Discovery",
+      "detail": "idea capture, prioritization, custom fields/formulas, board/timeline views, published read-only views, delivery tickets linking ideas to work, insights",
+      "features": [
+        "idea capture",
+        "prioritization",
+        "custom fields/formulas",
+        "board/timeline views",
+        "published read-only views",
+        "delivery tickets linking ideas to work",
+        "insights"
+      ]
+    },
+    {
+      "slug": "security-admin",
+      "label": "Security/admin",
+      "detail": "permission schemes + project roles, SAML SSO, SCIM, Atlassian Guard, data residency, audit logs, IP allowlisting, sandbox, JQL/saved filters, mobile",
+      "features": [
+        "permission schemes + project roles",
+        "SAML SSO",
+        "SCIM",
+        "Atlassian Guard",
+        "data residency",
+        "audit logs",
+        "IP allowlisting",
+        "sandbox",
+        "JQL/saved filters",
+        "mobile"
+      ]
+    }
+  ]
+}

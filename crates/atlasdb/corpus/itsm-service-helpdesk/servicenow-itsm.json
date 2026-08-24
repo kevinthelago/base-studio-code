@@ -1,0 +1,191 @@
+{
+  "id": "servicenow-itsm",
+  "name": "ServiceNow ITSM",
+  "domain": "itsm-service-helpdesk",
+  "domainName": "ITSM / Service / Helpdesk",
+  "capabilities": [
+    {
+      "slug": "incident",
+      "label": "Incident",
+      "detail": "unified logging/tracking, AI classification (auto category/priority/assignment), intelligent auto-routing, ML agent assist, alert-to-ticket, one-click resolutions, Now Assist AI-drafted notes/closure, automated escalations",
+      "features": [
+        "unified logging/tracking",
+        "AI classification (auto category/priority/assignment)",
+        "intelligent auto-routing",
+        "ML agent assist",
+        "alert-to-ticket",
+        "one-click resolutions",
+        "Now Assist AI-drafted notes/closure",
+        "automated escalations"
+      ]
+    },
+    {
+      "slug": "major-incident",
+      "label": "Major incident",
+      "detail": "MIM workbench, auto triggers/promotion, structured escalation, stakeholder comms, on-call scheduling, post-incident reviews",
+      "features": [
+        "MIM workbench",
+        "auto triggers/promotion",
+        "structured escalation",
+        "stakeholder comms",
+        "on-call scheduling",
+        "post-incident reviews"
+      ]
+    },
+    {
+      "slug": "problem",
+      "label": "Problem",
+      "detail": "root-cause analysis, incident-to-problem correlation, known-error tracking, workarounds, proactive prevention",
+      "features": [
+        "root-cause analysis",
+        "incident-to-problem correlation",
+        "known-error tracking",
+        "workarounds",
+        "proactive prevention"
+      ]
+    },
+    {
+      "slug": "change",
+      "label": "Change",
+      "detail": "full lifecycle, automated risk/impact assessment, change models, approval policies, CAB workbench, DevOps Change Velocity (pipeline-driven auto tickets/approvals)",
+      "features": [
+        "full lifecycle",
+        "automated risk/impact assessment",
+        "change models",
+        "approval policies",
+        "CAB workbench",
+        "DevOps Change Velocity (pipeline-driven auto tickets/approvals)"
+      ]
+    },
+    {
+      "slug": "request-catalog",
+      "label": "Request/catalog",
+      "detail": "self-service catalog, AI search, order guides, request tracking, CMDB-backed items",
+      "features": [
+        "self-service catalog",
+        "AI search",
+        "order guides",
+        "request tracking",
+        "CMDB-backed items"
+      ]
+    },
+    {
+      "slug": "knowledge-self-service",
+      "label": "Knowledge/self-service",
+      "detail": "AI-suggested articles, Now Assist GenAI article generation from resolved cases, AI Search with RAG, deflection",
+      "features": [
+        "AI-suggested articles",
+        "Now Assist GenAI article generation from resolved cases",
+        "AI Search with RAG",
+        "deflection"
+      ]
+    },
+    {
+      "slug": "ai-chatbots-agent-assist",
+      "label": "AI/chatbots/agent-assist",
+      "detail": "Now Assist for ITSM GenAI (summarization/generation/closure), Virtual Agent (Slack/Teams), prebuilt ITSM AI Agent collection, Predictive Intelligence, Agent Intelligence",
+      "features": [
+        "Now Assist for ITSM GenAI (summarization/generation/closure)",
+        "Virtual Agent (Slack/Teams)",
+        "prebuilt ITSM AI Agent collection",
+        "Predictive Intelligence",
+        "Agent Intelligence"
+      ]
+    },
+    {
+      "slug": "asset-config-cmdb",
+      "label": "Asset/config (CMDB)",
+      "detail": "single-model CMDB, Discovery (auto-catalog HW/SW/VMs/network/cloud), Service Mapping (auto-updating dependency maps), CI relationship views",
+      "features": [
+        "single-model CMDB",
+        "Discovery (auto-catalog HW/SW/VMs/network/cloud)",
+        "Service Mapping (auto-updating dependency maps)",
+        "CI relationship views"
+      ]
+    },
+    {
+      "slug": "sla",
+      "label": "SLA",
+      "detail": "SLA/OLA definitions/schedules, dynamic pause/reset/cancel, breach escalation, compliance-trend dashboards",
+      "features": [
+        "SLA/OLA definitions/schedules",
+        "dynamic pause/reset/cancel",
+        "breach escalation",
+        "compliance-trend dashboards"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "Flow Designer, escalation/notification/reassignment automation, IntegrationHub spokes, approval automation",
+      "features": [
+        "Flow Designer",
+        "escalation/notification/reassignment automation",
+        "IntegrationHub spokes",
+        "approval automation"
+      ]
+    },
+    {
+      "slug": "reporting",
+      "label": "Reporting",
+      "detail": "native reporting + dashboards, Performance Analytics, Benchmarks, Process Mining",
+      "features": [
+        "native reporting + dashboards",
+        "Performance Analytics",
+        "Benchmarks",
+        "Process Mining"
+      ]
+    },
+    {
+      "slug": "continual-improvement",
+      "label": "Continual improvement",
+      "detail": "CIM, Workforce Optimization, Vendor Management Workspace",
+      "features": [
+        "CIM",
+        "Workforce Optimization",
+        "Vendor Management Workspace"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "REST + SOAP, IntegrationHub (450+ connectors), OAuth two-way, DevOps integrations",
+      "features": [
+        "REST + SOAP",
+        "IntegrationHub (450+ connectors)",
+        "OAuth two-way",
+        "DevOps integrations"
+      ]
+    },
+    {
+      "slug": "portals",
+      "label": "Portals",
+      "detail": "Agent Workspace, Employee Center, Service Portal, Walk-up Experience",
+      "features": [
+        "Agent Workspace",
+        "Employee Center",
+        "Service Portal",
+        "Walk-up Experience"
+      ]
+    },
+    {
+      "slug": "omnichannel",
+      "label": "Omnichannel",
+      "detail": "email/chat/async (SMS/WhatsApp/Messenger/LINE/Google Business), voice, portal, kiosk — AI-native",
+      "features": [
+        "email/chat/async (SMS/WhatsApp/Messenger/LINE/Google Business)",
+        "voice",
+        "portal",
+        "kiosk — AI-native"
+      ]
+    },
+    {
+      "slug": "mobile",
+      "label": "Mobile",
+      "detail": "Now Mobile + Now Mobile Agent",
+      "features": [
+        "Now Mobile + Now Mobile Agent"
+      ]
+    }
+  ]
+}

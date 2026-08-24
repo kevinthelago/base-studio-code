@@ -1,0 +1,188 @@
+{
+  "id": "bigcommerce",
+  "name": "BigCommerce",
+  "domain": "ecommerce-commerce",
+  "domainName": "eCommerce / Commerce",
+  "capabilities": [
+    {
+      "slug": "storefront-themes",
+      "label": "Storefront/themes",
+      "detail": "Page Builder (drag-drop WYSIWYG), Stencil theme framework + Theme Marketplace, Catalyst (Next.js/React headless storefront reference), Makeswift visual editor, Multi-Storefront (multiple branded storefronts on one backend)",
+      "features": [
+        "Page Builder (drag-drop WYSIWYG)",
+        "Stencil theme framework + Theme Marketplace",
+        "Catalyst (Next.js/React headless storefront reference)",
+        "Makeswift visual editor",
+        "Multi-Storefront (multiple branded storefronts on one backend)"
+      ]
+    },
+    {
+      "slug": "catalog",
+      "label": "Catalog",
+      "detail": "large/complex catalogs, product options & variants (250 options / 600 SKUs per product), product rules, custom fields, bulk pricing, faceted/product filtering, digital products, shared catalog across storefronts",
+      "features": [
+        "large/complex catalogs",
+        "product options & variants (250 options / 600 SKUs per product)",
+        "product rules",
+        "custom fields",
+        "bulk pricing",
+        "faceted/product filtering",
+        "digital products",
+        "shared catalog across storefronts"
+      ]
+    },
+    {
+      "slug": "cart-checkout",
+      "label": "Cart/checkout",
+      "detail": "optimized one-page checkout, Open Checkout (customizable checkout SDK), persistent + saved cart, express checkout, digital wallets",
+      "features": [
+        "optimized one-page checkout",
+        "Open Checkout (customizable checkout SDK)",
+        "persistent + saved cart",
+        "express checkout",
+        "digital wallets"
+      ]
+    },
+    {
+      "slug": "payments",
+      "label": "Payments",
+      "detail": "65+ pre-integrated gateways with no BigCommerce transaction fees, PayPal (Braintree preferred rates), Apple/Google/Amazon Pay, cryptocurrency payments, CBD/high-risk-friendly processing, stored cards",
+      "features": [
+        "65+ pre-integrated gateways with no BigCommerce transaction fees",
+        "PayPal (Braintree preferred rates)",
+        "Apple/Google/Amazon Pay",
+        "cryptocurrency payments",
+        "CBD/high-risk-friendly processing",
+        "stored cards"
+      ]
+    },
+    {
+      "slug": "promotions",
+      "label": "Promotions",
+      "detail": "rules-based promotions engine (cart-level/BOGO/tiered), coupon codes, automatic promotions, banners, gift certificates, customer-group pricing",
+      "features": [
+        "rules-based promotions engine (cart-level/BOGO/tiered)",
+        "coupon codes",
+        "automatic promotions",
+        "banners",
+        "gift certificates",
+        "customer-group pricing"
+      ]
+    },
+    {
+      "slug": "inventory",
+      "label": "Inventory",
+      "detail": "tracking, multi-location, low-stock, integrates with external OMS/ERP",
+      "features": [
+        "tracking",
+        "multi-location",
+        "low-stock",
+        "integrates with external OMS/ERP"
+      ]
+    },
+    {
+      "slug": "multi-channel",
+      "label": "Multi-channel",
+      "detail": "Channel Manager, Amazon/eBay/Walmart, Google Shopping, Meta, TikTok, Feedonomics product-feed management (owned), POS integrations (Square/Clover), omnichannel via multi-storefront",
+      "features": [
+        "Channel Manager",
+        "Amazon/eBay/Walmart",
+        "Google Shopping",
+        "Meta",
+        "TikTok",
+        "Feedonomics product-feed management (owned)",
+        "POS integrations (Square/Clover)",
+        "omnichannel via multi-storefront"
+      ]
+    },
+    {
+      "slug": "b2b",
+      "label": "B2B",
+      "detail": "B2B Edition (BundleB2B), corporate/company accounts + buyer roles, quoting, price lists, customer groups & custom pricing, purchase orders, shared shopping lists, invoice portal",
+      "features": [
+        "B2B Edition (BundleB2B)",
+        "corporate/company accounts + buyer roles",
+        "quoting",
+        "price lists",
+        "customer groups & custom pricing",
+        "purchase orders",
+        "shared shopping lists",
+        "invoice portal"
+      ]
+    },
+    {
+      "slug": "internationalization",
+      "label": "Internationalization",
+      "detail": "multi-currency (transactional), multi-language via Multi-Storefront + apps, Feedonomics international feeds, region-specific storefronts",
+      "features": [
+        "multi-currency (transactional)",
+        "multi-language via Multi-Storefront + apps",
+        "Feedonomics international feeds",
+        "region-specific storefronts"
+      ]
+    },
+    {
+      "slug": "seo-marketing",
+      "label": "SEO/marketing",
+      "detail": "built-in SEO (customizable URLs, microdata/rich snippets), native abandoned-cart saver, product reviews, email-marketing integrations (Klaviyo/Mailchimp), coupons, banners, Enterprise Growth Package (SEO/CRO)",
+      "features": [
+        "built-in SEO (customizable URLs, microdata/rich snippets)",
+        "native abandoned-cart saver",
+        "product reviews",
+        "email-marketing integrations (Klaviyo/Mailchimp)",
+        "coupons",
+        "banners",
+        "Enterprise Growth Package (SEO/CRO)"
+      ]
+    },
+    {
+      "slug": "headless-composable",
+      "label": "Headless/composable",
+      "detail": "MACH-certified \"Open SaaS,\" headless via Catalyst/Next.js/WordPress plugin/Gatsby/Nuxt/Frontastic/Deity, GraphQL Storefront API + REST Management APIs + webhooks, no vendor lock-in",
+      "features": [
+        "MACH-certified \"Open SaaS",
+        "\" headless via Catalyst/Next.js/WordPress plugin/Gatsby/Nuxt/Frontastic/Deity",
+        "GraphQL Storefront API + REST Management APIs + webhooks",
+        "no vendor lock-in"
+      ]
+    },
+    {
+      "slug": "apps",
+      "label": "Apps",
+      "detail": "App Marketplace (1,200+ apps), best-in-breed third-party integrations",
+      "features": [
+        "App Marketplace (1,200+ apps)",
+        "best-in-breed third-party integrations"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "BigCommerce Analytics & Insights (ecommerce/customer/product/marketing/merchandising reports), Big Open Data Solutions, GA4",
+      "features": [
+        "BigCommerce Analytics & Insights (ecommerce/customer/product/marketing/merchandising reports)",
+        "Big Open Data Solutions",
+        "GA4"
+      ]
+    },
+    {
+      "slug": "shipping",
+      "label": "Shipping",
+      "detail": "real-time carrier quotes (UPS/FedEx/USPS), shipping rules/zones, ShipperHQ + 3PL integrations, BOPIS via multi-location",
+      "features": [
+        "real-time carrier quotes (UPS/FedEx/USPS)",
+        "shipping rules/zones",
+        "ShipperHQ + 3PL integrations",
+        "BOPIS via multi-location"
+      ]
+    },
+    {
+      "slug": "subscriptions",
+      "label": "Subscriptions",
+      "detail": "via apps (Recharge, Rebillia) — not native",
+      "features": [
+        "via apps (Recharge, Rebillia) — not native"
+      ]
+    }
+  ]
+}

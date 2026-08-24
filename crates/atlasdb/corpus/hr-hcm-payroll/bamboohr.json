@@ -1,0 +1,227 @@
+{
+  "id": "bamboohr",
+  "name": "BambooHR",
+  "domain": "hr-hcm-payroll",
+  "domainName": "HR / HCM / Payroll",
+  "capabilities": [
+    {
+      "slug": "core-hr",
+      "label": "Core HR",
+      "detail": "centralized records, directory/profiles, custom fields/forms, org chart, document mgmt + e-sig, workflow/approvals, alerts/notifications, activity feed, RBAC, audit trail, import/export, custom branding, SSO, employee portal, tasks",
+      "features": [
+        "centralized records",
+        "directory/profiles",
+        "custom fields/forms",
+        "org chart",
+        "document mgmt + e-sig",
+        "workflow/approvals",
+        "alerts/notifications",
+        "activity feed",
+        "RBAC",
+        "audit trail",
+        "import/export",
+        "custom branding",
+        "SSO",
+        "employee portal",
+        "tasks"
+      ]
+    },
+    {
+      "slug": "payroll",
+      "label": "Payroll",
+      "detail": "full-service, unlimited + off-cycle runs, multi-state, multi-rate, prorated, direct deposit, federal/state/local filing with specialists, W-2/1099, garnishments, on-demand/earned-wage access, custom journal-entry builder, audit trail, QuickBooks/Xero/NetSuite/Sage Intacct integrations",
+      "features": [
+        "full-service",
+        "unlimited + off-cycle runs",
+        "multi-state",
+        "multi-rate",
+        "prorated",
+        "direct deposit",
+        "federal/state/local filing with specialists",
+        "W-2/1099",
+        "garnishments",
+        "on-demand/earned-wage access",
+        "custom journal-entry builder",
+        "audit trail",
+        "QuickBooks/Xero/NetSuite/Sage Intacct integrations"
+      ]
+    },
+    {
+      "slug": "benefits",
+      "label": "Benefits",
+      "detail": "online open enrollment, self-enrollment (web + mobile), auto new-hire elections, medical/dental/vision, HSA/FSA, life/disability, 401(k) (Human Interest), carrier connections, broker access, deduction sync",
+      "features": [
+        "online open enrollment",
+        "self-enrollment (web + mobile)",
+        "auto new-hire elections",
+        "medical/dental/vision",
+        "HSA/FSA",
+        "life/disability",
+        "401(k) (Human Interest)",
+        "carrier connections",
+        "broker access",
+        "deduction sync"
+      ]
+    },
+    {
+      "slug": "time-pto",
+      "label": "Time/PTO",
+      "detail": "tracking, clock in/out, timesheets, auto capture, overtime, scheduling, time-off requests, sick tracking, auto PTO accruals, approvals, PTO-to-payroll sync",
+      "features": [
+        "tracking",
+        "clock in/out",
+        "timesheets",
+        "auto capture",
+        "overtime",
+        "scheduling",
+        "time-off requests",
+        "sick tracking",
+        "auto PTO accruals",
+        "approvals",
+        "PTO-to-payroll sync"
+      ]
+    },
+    {
+      "slug": "recruiting-ats",
+      "label": "Recruiting/ATS",
+      "detail": "applicant tracking, job posting, careers page, requisitions, pipeline, talent pool, resume search, interview scheduling, reference checking, offer mgmt, mobile hiring",
+      "features": [
+        "applicant tracking",
+        "job posting",
+        "careers page",
+        "requisitions",
+        "pipeline",
+        "talent pool",
+        "resume search",
+        "interview scheduling",
+        "reference checking",
+        "offer mgmt",
+        "mobile hiring"
+      ]
+    },
+    {
+      "slug": "onboarding-offboarding",
+      "label": "Onboarding/offboarding",
+      "detail": "customizable checklists/packets, pre-boarding emails, e-paperwork, orientation workflows, offboarding",
+      "features": [
+        "customizable checklists/packets",
+        "pre-boarding emails",
+        "e-paperwork",
+        "orientation workflows",
+        "offboarding"
+      ]
+    },
+    {
+      "slug": "performance",
+      "label": "Performance",
+      "detail": "custom + pre-built cycles, goal tracking, 360 feedback, peer appraisals, self-assessments, 1:1s, development plans, growth paths, skills tracking, analytics",
+      "features": [
+        "custom + pre-built cycles",
+        "goal tracking",
+        "360 feedback",
+        "peer appraisals",
+        "self-assessments",
+        "1:1s",
+        "development plans",
+        "growth paths",
+        "skills tracking",
+        "analytics"
+      ]
+    },
+    {
+      "slug": "experience-engagement",
+      "label": "Experience/engagement",
+      "detail": "employee community, eNPS with AI topic summaries, wellbeing (heatmap, Happiness/Motivators/Relationships scoring), pulse surveys, question library, recognition/rewards",
+      "features": [
+        "employee community",
+        "eNPS with AI topic summaries",
+        "wellbeing (heatmap, Happiness/Motivators/Relationships scoring)",
+        "pulse surveys",
+        "question library",
+        "recognition/rewards"
+      ]
+    },
+    {
+      "slug": "comp-total-rewards",
+      "label": "Comp/total rewards",
+      "detail": "comp management, Total Rewards module, transparent comp, benchmarking with market data",
+      "features": [
+        "comp management",
+        "Total Rewards module",
+        "transparent comp",
+        "benchmarking with market data"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "standard + custom reports, real-time, custom dashboards, workforce analytics, turnover tracking/prediction, benchmarks",
+      "features": [
+        "standard + custom reports",
+        "real-time",
+        "custom dashboards",
+        "workforce analytics",
+        "turnover tracking/prediction",
+        "benchmarks"
+      ]
+    },
+    {
+      "slug": "self-service",
+      "label": "Self-service",
+      "detail": "portal, self-updated info, pay stub/tax-doc access, direct-deposit/withholding self-edits, time-off, benefits self-enrollment, mobile",
+      "features": [
+        "portal",
+        "self-updated info",
+        "pay stub/tax-doc access",
+        "direct-deposit/withholding self-edits",
+        "time-off",
+        "benefits self-enrollment",
+        "mobile"
+      ]
+    },
+    {
+      "slug": "compliance",
+      "label": "Compliance",
+      "detail": "multi-state/tax, HIPAA, OSHA, policy mgmt, ACA, encrypted storage",
+      "features": [
+        "multi-state/tax",
+        "HIPAA",
+        "OSHA",
+        "policy mgmt",
+        "ACA",
+        "encrypted storage"
+      ]
+    },
+    {
+      "slug": "mobile",
+      "label": "Mobile",
+      "detail": "native iOS/Android",
+      "features": [
+        "native iOS/Android"
+      ]
+    },
+    {
+      "slug": "ai",
+      "label": "AI",
+      "detail": "Bamboo AI / \"Ask BambooHR\", agentic workflows (report/schedule building), AI job-description generator, turnover/retention prediction, AI survey sentiment/topic summaries",
+      "features": [
+        "Bamboo AI / \"Ask BambooHR\"",
+        "agentic workflows (report/schedule building)",
+        "AI job-description generator",
+        "turnover/retention prediction",
+        "AI survey sentiment/topic summaries"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "150+ prebuilt, open API, embedded partner experiences, SSO",
+      "features": [
+        "150+ prebuilt",
+        "open API",
+        "embedded partner experiences",
+        "SSO"
+      ]
+    }
+  ]
+}

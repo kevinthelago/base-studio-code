@@ -1,0 +1,110 @@
+{
+  "id": "microsoft-dynamics-365-finance-and-supply-chain",
+  "name": "Microsoft Dynamics 365 Finance & Supply Chain",
+  "domain": "erp-enterprise-resource-planning",
+  "domainName": "ERP (Enterprise Resource Planning)",
+  "capabilities": [
+    {
+      "slug": "gl-ap-ar",
+      "label": "GL / AP / AR",
+      "detail": "dimensions, consolidation & intercompany, period close; two/three-way match, OCR invoice extraction, withholding tax; ASC 606 rev-rec, aging/collections, dunning",
+      "features": [
+        "dimensions",
+        "consolidation & intercompany",
+        "period close; two/three-way match",
+        "OCR invoice extraction",
+        "withholding tax; ASC 606 rev-rec",
+        "aging/collections",
+        "dunning"
+      ]
+    },
+    {
+      "slug": "cash-bank-and-budgeting",
+      "label": "Cash/Bank & Budgeting",
+      "detail": "AI cash-flow forecasting, statement reconciliation, positive pay, NACHA/SEPA/ISO 20022; multi-dimensional budgets, scenario planning, budget control, rolling forecasts",
+      "features": [
+        "AI cash-flow forecasting",
+        "statement reconciliation",
+        "positive pay",
+        "NACHA/SEPA/ISO 20022; multi-dimensional budgets",
+        "scenario planning",
+        "budget control",
+        "rolling forecasts"
+      ]
+    },
+    {
+      "slug": "fixed-assets-and-cost-accounting",
+      "label": "Fixed Assets & Cost Accounting",
+      "detail": "multiple depreciation books (tax/GAAP/IFRS), lease accounting (ASC 842/IFRS 16); driver-based allocation, ABC, profitability analysis",
+      "features": [
+        "multiple depreciation books (tax/GAAP/IFRS)",
+        "lease accounting (ASC 842/IFRS 16); driver-based allocation",
+        "ABC",
+        "profitability analysis"
+      ]
+    },
+    {
+      "slug": "tax",
+      "label": "Tax",
+      "detail": "global engine (55+ localizations), VAT/GST/use tax, e-filing",
+      "features": [
+        "global engine (55+ localizations)",
+        "VAT/GST/use tax",
+        "e-filing"
+      ]
+    },
+    {
+      "slug": "procurement-and-sourcing",
+      "label": "Procurement & Sourcing",
+      "detail": "requisitions/approvals, RFQs, vendor agreements/rebates, collaboration portals, category mgmt, reverse auctions",
+      "features": [
+        "requisitions/approvals",
+        "RFQs",
+        "vendor agreements/rebates",
+        "collaboration portals",
+        "category mgmt",
+        "reverse auctions"
+      ]
+    },
+    {
+      "slug": "manufacturing",
+      "label": "Manufacturing",
+      "detail": "discrete + process (batch/formula, potency, catch-weight, co/by-products) + lean (Kanban, pegging)",
+      "features": [
+        "discrete + process (batch/formula, potency, catch-weight, co/by-products) + lean (Kanban, pegging)"
+      ]
+    },
+    {
+      "slug": "master-planning-inventory-wms-tms",
+      "label": "Master Planning / Inventory / WMS / TMS",
+      "detail": "AI demand forecasting, MRP/MPS, Planning Optimization, finite capacity; batch/serial traceability, valuation, cycle counting; location directives, wave/mobile execution, license plates, slotting, cross-docking; load building, route optimization, rate shopping, freight audit",
+      "features": [
+        "AI demand forecasting",
+        "MRP/MPS",
+        "Planning Optimization",
+        "finite capacity; batch/serial traceability",
+        "valuation",
+        "cycle counting; location directives",
+        "wave/mobile execution",
+        "license plates",
+        "slotting",
+        "cross-docking; load building",
+        "route optimization",
+        "rate shopping",
+        "freight audit"
+      ]
+    },
+    {
+      "slug": "asset-mgmt-and-pim",
+      "label": "Asset Mgmt & PIM",
+      "detail": "preventive/condition-based/IoT predictive maintenance, work orders; product master, attributes/variants, configurations, engineering change",
+      "features": [
+        "preventive/condition-based/IoT predictive maintenance",
+        "work orders; product master",
+        "attributes/variants",
+        "configurations",
+        "engineering change"
+      ]
+    }
+  ]
+}

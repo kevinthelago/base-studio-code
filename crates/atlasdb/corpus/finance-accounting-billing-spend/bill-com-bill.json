@@ -1,0 +1,202 @@
+{
+  "id": "bill-com-bill",
+  "name": "Bill.com (BILL)",
+  "domain": "finance-accounting-billing-spend",
+  "domainName": "Finance / Accounting / Billing / Spend",
+  "capabilities": [
+    {
+      "slug": "ap-capture-and-ai-bill-ai",
+      "label": "AP — capture & AI (BILL AI)",
+      "detail": "AI invoice capture (~99% key-field accuracy), OCR auto-extraction, email/PDF/mobile-photo intake, vendor auto-population, multi-line auto-coding, duplicate-invoice detection, digital storage with search",
+      "features": [
+        "AI invoice capture (~99% key-field accuracy)",
+        "OCR auto-extraction",
+        "email/PDF/mobile-photo intake",
+        "vendor auto-population",
+        "multi-line auto-coding",
+        "duplicate-invoice detection",
+        "digital storage with search"
+      ]
+    },
+    {
+      "slug": "ap-matching-procurement",
+      "label": "AP — matching/procurement",
+      "detail": "2-way and 3-way invoice matching against POs/receipts, purchase requests/orders, tolerance rules (Corporate/Enterprise), batch handling up to ~2,000 bills",
+      "features": [
+        "2-way and 3-way invoice matching against POs/receipts",
+        "purchase requests/orders",
+        "tolerance rules (Corporate/Enterprise)",
+        "batch handling up to ~2",
+        "000 bills"
+      ]
+    },
+    {
+      "slug": "ap-approvals-controls",
+      "label": "AP — approvals/controls",
+      "detail": "customizable multi-step routing by amount/department/vendor, standard vs custom policies by tier, real-time status tracking, in-app messaging, mobile approvals, dual control (Enterprise)",
+      "features": [
+        "customizable multi-step routing by amount/department/vendor",
+        "standard vs custom policies by tier",
+        "real-time status tracking",
+        "in-app messaging",
+        "mobile approvals",
+        "dual control (Enterprise)"
+      ]
+    },
+    {
+      "slug": "ap-payment-methods",
+      "label": "AP — payment methods",
+      "detail": "ACH/ePayment, mailed checks, credit/debit card, virtual card, domestic wire, next-day ACH, \"Pay Faster\" same/next-day, BILL vendor network",
+      "features": [
+        "ACH/ePayment",
+        "mailed checks",
+        "credit/debit card",
+        "virtual card",
+        "domestic wire",
+        "next-day ACH",
+        "\"Pay Faster\" same/next-day",
+        "BILL vendor network"
+      ]
+    },
+    {
+      "slug": "international",
+      "label": "International",
+      "detail": "130+ countries, 100+ currencies, international wire in USD or local currency, local-transfer (often same-day, $0 wire fee on local currency), international card payments, real-time FX with rate calculator",
+      "features": [
+        "130+ countries",
+        "100+ currencies",
+        "international wire in USD or local currency",
+        "local-transfer (often same-day, $0 wire fee on local currency)",
+        "international card payments",
+        "real-time FX with rate calculator"
+      ]
+    },
+    {
+      "slug": "ar-invoicing",
+      "label": "AR — invoicing",
+      "detail": "branded customizable templates, custom fields, auto invoice numbering, scheduled/immediate send, recurring invoices",
+      "features": [
+        "branded customizable templates",
+        "custom fields",
+        "auto invoice numbering",
+        "scheduled/immediate send",
+        "recurring invoices"
+      ]
+    },
+    {
+      "slug": "ar-payments-collections",
+      "label": "AR — payments/collections",
+      "detail": "accept ACH/card/virtual-card/check, auto-charge/auto-pay, automated reminders/nudges, record external payments, aging/receivables reporting",
+      "features": [
+        "accept ACH/card/virtual-card/check",
+        "auto-charge/auto-pay",
+        "automated reminders/nudges",
+        "record external payments",
+        "aging/receivables reporting"
+      ]
+    },
+    {
+      "slug": "spend-and-expense-divvy-cards",
+      "label": "Spend & Expense (Divvy) — cards",
+      "detail": "BILL Divvy corporate card, unlimited physical & virtual cards, instant issuance, per-card/employee limits, freeze/lock from mobile, real-time monitoring",
+      "features": [
+        "BILL Divvy corporate card",
+        "unlimited physical & virtual cards",
+        "instant issuance",
+        "per-card/employee limits",
+        "freeze/lock from mobile",
+        "real-time monitoring"
+      ]
+    },
+    {
+      "slug": "spend-and-expense-budgets",
+      "label": "Spend & Expense — budgets",
+      "detail": "custom departmental/project budgets, proactive budgets (funds deducted at swipe), auto-decline over budget/policy, enforceable spend policies",
+      "features": [
+        "custom departmental/project budgets",
+        "proactive budgets (funds deducted at swipe)",
+        "auto-decline over budget/policy",
+        "enforceable spend policies"
+      ]
+    },
+    {
+      "slug": "spend-and-expense-expense-management",
+      "label": "Spend & Expense — expense management",
+      "detail": "real-time visibility, AI categorization/coding, receipt capture (photo/text-to-receipt), automated expense reports, dashboards, full audit trail",
+      "features": [
+        "real-time visibility",
+        "AI categorization/coding",
+        "receipt capture (photo/text-to-receipt)",
+        "automated expense reports",
+        "dashboards",
+        "full audit trail"
+      ]
+    },
+    {
+      "slug": "spend-and-expense-reimbursements-credit-rewards",
+      "label": "Spend & Expense — reimbursements/credit/rewards",
+      "detail": "automated reimbursement workflows, business credit lines $1K–$5M ($0 annual fee), rewards (up to 7x restaurants/5x hotels), travel management",
+      "features": [
+        "automated reimbursement workflows",
+        "business credit lines $1K–$5M ($0 annual fee)",
+        "rewards (up to 7x restaurants/5x hotels)",
+        "travel management"
+      ]
+    },
+    {
+      "slug": "vendor-network-management",
+      "label": "Vendor/network management",
+      "detail": "BILL vendor network, automated vendor onboarding/validation, W-9 collection & verification, vendor bank details hidden from payer",
+      "features": [
+        "BILL vendor network",
+        "automated vendor onboarding/validation",
+        "W-9 collection & verification",
+        "vendor bank details hidden from payer"
+      ]
+    },
+    {
+      "slug": "security-fraud",
+      "label": "Security/fraud",
+      "detail": "predictive real-time AI fraud monitoring, time-stamped audit trail, role-based access, SSO (Enterprise), dual control (Enterprise)",
+      "features": [
+        "predictive real-time AI fraud monitoring",
+        "time-stamped audit trail",
+        "role-based access",
+        "SSO (Enterprise)",
+        "dual control (Enterprise)"
+      ]
+    },
+    {
+      "slug": "accounting-sync-two-way",
+      "label": "Accounting sync (two-way)",
+      "detail": "deep 2-way sync with QuickBooks (Online/Pro/Premier/Enterprise), Xero, Sage Intacct, NetSuite, Dynamics 365 BC, Acumatica; auto-reconciliation",
+      "features": [
+        "deep 2-way sync with QuickBooks (Online/Pro/Premier/Enterprise)",
+        "Xero",
+        "Sage Intacct",
+        "NetSuite",
+        "Dynamics 365 BC",
+        "Acumatica; auto-reconciliation"
+      ]
+    },
+    {
+      "slug": "multi-entity-platform",
+      "label": "Multi-entity/platform",
+      "detail": "multi-entity/multi-location AP (Enterprise), API Platform, Slack integration (Spend & Expense), priority support (Enterprise)",
+      "features": [
+        "multi-entity/multi-location AP (Enterprise)",
+        "API Platform",
+        "Slack integration (Spend & Expense)",
+        "priority support (Enterprise)"
+      ]
+    },
+    {
+      "slug": "pricing",
+      "label": "Pricing",
+      "detail": "AP/AR — Essentials $49/user · Team $65 · Corporate $89 (procurement + 2/3-way matching) · Enterprise custom (multi-entity/SSO/dual control/API); Spend & Expense free ($0/user)",
+      "features": [
+        "AP/AR — Essentials $49/user · Team $65 · Corporate $89 (procurement + 2/3-way matching) · Enterprise custom (multi-entity/SSO/dual control/API); Spend & Expense free ($0/user)"
+      ]
+    }
+  ]
+}

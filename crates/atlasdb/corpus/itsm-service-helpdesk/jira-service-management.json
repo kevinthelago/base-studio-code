@@ -1,0 +1,193 @@
+{
+  "id": "jira-service-management",
+  "name": "Jira Service Management",
+  "domain": "itsm-service-helpdesk",
+  "domainName": "ITSM / Service / Helpdesk",
+  "capabilities": [
+    {
+      "slug": "request-ticket",
+      "label": "Request/ticket",
+      "detail": "configurable request types, customizable queues, triage + auto-assignment rules, request-to-issue linking, approvals, ITIL workflows, CSAT, mobile app; part of Service Collection (JSM + CSM + Assets + Rovo)",
+      "features": [
+        "configurable request types",
+        "customizable queues",
+        "triage + auto-assignment rules",
+        "request-to-issue linking",
+        "approvals",
+        "ITIL workflows",
+        "CSAT",
+        "mobile app; part of Service Collection (JSM + CSM + Assets + Rovo)"
+      ]
+    },
+    {
+      "slug": "incident",
+      "label": "Incident",
+      "detail": "centralized alert aggregation, auto categorization/prioritization, major-incident escalation with auto chat channels, incident swarming, templates, native video bridge + Zoom/Slack/Teams war rooms, Statuspage, runbooks, timeline, auto postmortem/PIR to Confluence",
+      "features": [
+        "centralized alert aggregation",
+        "auto categorization/prioritization",
+        "major-incident escalation with auto chat channels",
+        "incident swarming",
+        "templates",
+        "native video bridge + Zoom/Slack/Teams war rooms",
+        "Statuspage",
+        "runbooks",
+        "timeline",
+        "auto postmortem/PIR to Confluence"
+      ]
+    },
+    {
+      "slug": "on-call-alerting-opsgenie",
+      "label": "On-call/alerting (Opsgenie)",
+      "detail": "scheduling with rotations, routing/escalation rules, multi-channel notifications, de-duplication/grouping, on-call analytics",
+      "features": [
+        "scheduling with rotations",
+        "routing/escalation rules",
+        "multi-channel notifications",
+        "de-duplication/grouping",
+        "on-call analytics"
+      ]
+    },
+    {
+      "slug": "omnichannel",
+      "label": "Omnichannel",
+      "detail": "self-service portal, email-to-ticket, virtual agent + conversational support in Slack/Teams (Atlassian Assist), Slack alerting",
+      "features": [
+        "self-service portal",
+        "email-to-ticket",
+        "virtual agent + conversational support in Slack/Teams (Atlassian Assist)",
+        "Slack alerting"
+      ]
+    },
+    {
+      "slug": "knowledge-confluence",
+      "label": "Knowledge (Confluence)",
+      "detail": "Confluence-backed KB, self-service deflection, ML/federated search, Atlassian Intelligence \"AI Answers\" (generative search) in portal + Slack, usage insights",
+      "features": [
+        "Confluence-backed KB",
+        "self-service deflection",
+        "ML/federated search",
+        "Atlassian Intelligence \"AI Answers\" (generative search) in portal + Slack",
+        "usage insights"
+      ]
+    },
+    {
+      "slug": "slas",
+      "label": "SLAs",
+      "detail": "define/track targets, multiple SLAs, varied calendars + OLA chains, breach-risk escalation, SLA via REST API",
+      "features": [
+        "define/track targets",
+        "multiple SLAs",
+        "varied calendars + OLA chains",
+        "breach-risk escalation",
+        "SLA via REST API"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "no-code rules engine, OOTB templates, triage/routing/assignment, approval + deployment-gating, HTTP actions, automation-powered change-risk assessment",
+      "features": [
+        "no-code rules engine",
+        "OOTB templates",
+        "triage/routing/assignment",
+        "approval + deployment-gating",
+        "HTTP actions",
+        "automation-powered change-risk assessment"
+      ]
+    },
+    {
+      "slug": "ai-chatbots",
+      "label": "AI/chatbots",
+      "detail": "Rovo AI agents (triage, incident resolution, auto-documentation, pattern-recognition problem detection), Rovo chatbots, virtual service agent, Atlassian Intelligence, AI dynamic forms, ML grouping",
+      "features": [
+        "Rovo AI agents (triage, incident resolution, auto-documentation, pattern-recognition problem detection)",
+        "Rovo chatbots",
+        "virtual service agent",
+        "Atlassian Intelligence",
+        "AI dynamic forms",
+        "ML grouping"
+      ]
+    },
+    {
+      "slug": "asset-config-assets-insight",
+      "label": "Asset/config (Assets/Insight)",
+      "detail": "flexible asset/CMDB (now in Standard), inventory/ownership/lifecycle, network scanning + discovery, object schemas, CI-to-service dependency mapping, federated asset integration",
+      "features": [
+        "flexible asset/CMDB (now in Standard)",
+        "inventory/ownership/lifecycle",
+        "network scanning + discovery",
+        "object schemas",
+        "CI-to-service dependency mapping",
+        "federated asset integration"
+      ]
+    },
+    {
+      "slug": "change",
+      "label": "Change",
+      "detail": "requests with dev-tool/CI-CD context, risk-based routing, auto risk assessment + auto-approval, native drag-drop change calendar, Confluence change plans, deployment gating, CI/CD (Bitbucket Pipelines + 3rd-party)",
+      "features": [
+        "requests with dev-tool/CI-CD context",
+        "risk-based routing",
+        "auto risk assessment + auto-approval",
+        "native drag-drop change calendar",
+        "Confluence change plans",
+        "deployment gating",
+        "CI/CD (Bitbucket Pipelines + 3rd-party)"
+      ]
+    },
+    {
+      "slug": "problem",
+      "label": "Problem",
+      "detail": "logging linked to incidents/postmortems, incident-to-problem grouping, workaround recording, root-cause with commit tagging, Rovo pattern recognition",
+      "features": [
+        "logging linked to incidents/postmortems",
+        "incident-to-problem grouping",
+        "workaround recording",
+        "root-cause with commit tagging",
+        "Rovo pattern recognition"
+      ]
+    },
+    {
+      "slug": "reporting",
+      "label": "Reporting",
+      "detail": "OOTB reports + global dashboards, Atlassian Analytics cross-product, on-call analytics, CSAT",
+      "features": [
+        "OOTB reports + global dashboards",
+        "Atlassian Analytics cross-product",
+        "on-call analytics",
+        "CSAT"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "REST API, Atlassian Marketplace, importers/connectors",
+      "features": [
+        "REST API",
+        "Atlassian Marketplace",
+        "importers/connectors"
+      ]
+    },
+    {
+      "slug": "devops",
+      "label": "DevOps",
+      "detail": "deep Jira Software integration, Bitbucket/GitHub/GitLab/Jenkins, dev panel (branches/commits/PRs/builds/deploys), deployment context, commit-to-problem tagging",
+      "features": [
+        "deep Jira Software integration",
+        "Bitbucket/GitHub/GitLab/Jenkins",
+        "dev panel (branches/commits/PRs/builds/deploys)",
+        "deployment context",
+        "commit-to-problem tagging"
+      ]
+    },
+    {
+      "slug": "packaging",
+      "label": "Packaging",
+      "detail": "Free/Standard/Premium/Enterprise + Data Center; Assets from Standard",
+      "features": [
+        "Free/Standard/Premium/Enterprise + Data Center; Assets from Standard"
+      ]
+    }
+  ]
+}

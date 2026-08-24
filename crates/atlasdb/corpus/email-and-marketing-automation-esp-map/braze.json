@@ -1,0 +1,218 @@
+{
+  "id": "braze",
+  "name": "Braze",
+  "domain": "email-and-marketing-automation-esp-map",
+  "domainName": "Email & Marketing Automation (ESP / MAP)",
+  "capabilities": [
+    {
+      "slug": "email-builder",
+      "label": "Email builder",
+      "detail": "drag-drop + HTML editor, Content Blocks (reusable modular) + API, template library, Media Library, product blocks, promotion codes, transactional email, brand-kit governance, Figma/Canva integration (Creative Studio), Inbox Vision previews",
+      "features": [
+        "drag-drop + HTML editor",
+        "Content Blocks (reusable modular) + API",
+        "template library",
+        "Media Library",
+        "product blocks",
+        "promotion codes",
+        "transactional email",
+        "brand-kit governance",
+        "Figma/Canva integration (Creative Studio)",
+        "Inbox Vision previews"
+      ]
+    },
+    {
+      "slug": "campaigns",
+      "label": "Campaigns",
+      "detail": "single/multichannel, scheduled/action-triggered/API-triggered, message approvals + governance, time-zone scheduling, rate limiting, frequency capping, quiet hours",
+      "features": [
+        "single/multichannel",
+        "scheduled/action-triggered/API-triggered",
+        "message approvals + governance",
+        "time-zone scheduling",
+        "rate limiting",
+        "frequency capping",
+        "quiet hours"
+      ]
+    },
+    {
+      "slug": "orchestration-canvas",
+      "label": "Orchestration (Canvas)",
+      "detail": "Canvas Flow journey builder, templates, Action/Audience Paths, Decision Split (real-time routing), Delay/Message/User-Update/Send-to-Destination steps, Experiment Paths, Agent step, Content Optimizer step, Feature Flags step, real-time + event triggers, entry/re-entry rules",
+      "features": [
+        "Canvas Flow journey builder",
+        "templates",
+        "Action/Audience Paths",
+        "Decision Split (real-time routing)",
+        "Delay/Message/User-Update/Send-to-Destination steps",
+        "Experiment Paths",
+        "Agent step",
+        "Content Optimizer step",
+        "Feature Flags step",
+        "real-time + event triggers",
+        "entry/re-entry rules"
+      ]
+    },
+    {
+      "slug": "segmentation",
+      "label": "Segmentation",
+      "detail": "dynamic real-time multi-filter, Segment Extensions, CDI Segments (zero-copy SQL against your warehouse), RFM/Catalog/geofence/location, computed segments, Global Control Group, suppression lists, subscription groups, preference-center-driven",
+      "features": [
+        "dynamic real-time multi-filter",
+        "Segment Extensions",
+        "CDI Segments (zero-copy SQL against your warehouse)",
+        "RFM/Catalog/geofence/location",
+        "computed segments",
+        "Global Control Group",
+        "suppression lists",
+        "subscription groups",
+        "preference-center-driven"
+      ]
+    },
+    {
+      "slug": "personalization-liquid-connected-content-catalogs",
+      "label": "Personalization (Liquid/Connected Content/Catalogs)",
+      "detail": "Liquid templating, Connected Content (real-time external API injection), Catalogs with catalog-triggered messaging (back-in-stock/price-drop), custom/nested attributes, purchase events, AI + rules-based recommendations, BrazeAI Liquid Assistant",
+      "features": [
+        "Liquid templating",
+        "Connected Content (real-time external API injection)",
+        "Catalogs with catalog-triggered messaging (back-in-stock/price-drop)",
+        "custom/nested attributes",
+        "purchase events",
+        "AI + rules-based recommendations",
+        "BrazeAI Liquid Assistant"
+      ]
+    },
+    {
+      "slug": "a-b-experimentation",
+      "label": "A/B/experimentation",
+      "detail": "A/B/n, multivariate, Canvas Experiment Paths, Winning Path (auto-select), Personalized Paths, Intelligent Selection, Content Optimizer (continuous), Global Control/Holdout groups, Impact Reporting",
+      "features": [
+        "A/B/n",
+        "multivariate",
+        "Canvas Experiment Paths",
+        "Winning Path (auto-select)",
+        "Personalized Paths",
+        "Intelligent Selection",
+        "Content Optimizer (continuous)",
+        "Global Control/Holdout groups",
+        "Impact Reporting"
+      ]
+    },
+    {
+      "slug": "cross-channel",
+      "label": "Cross-channel",
+      "detail": "email, mobile push, web push, in-app messages, Content Cards, Banners, SMS, MMS, RCS, WhatsApp, LINE, KakaoTalk, Webhooks, transactional, Intelligent Channel (best-channel), Intelligent Timing, cross-channel frequency capping",
+      "features": [
+        "email",
+        "mobile push",
+        "web push",
+        "in-app messages",
+        "Content Cards",
+        "Banners",
+        "SMS",
+        "MMS",
+        "RCS",
+        "WhatsApp",
+        "LINE",
+        "KakaoTalk",
+        "Webhooks",
+        "transactional",
+        "Intelligent Channel (best-channel)",
+        "Intelligent Timing",
+        "cross-channel frequency capping"
+      ]
+    },
+    {
+      "slug": "landing-pages-web",
+      "label": "Landing pages/web",
+      "detail": "hosted landing pages with Liquid, Surveys, preference centers, Feature Flags (server-side config/rollout via SDK), web messaging, in-browser Content Cards/banners",
+      "features": [
+        "hosted landing pages with Liquid",
+        "Surveys",
+        "preference centers",
+        "Feature Flags (server-side config/rollout via SDK)",
+        "web messaging",
+        "in-browser Content Cards/banners"
+      ]
+    },
+    {
+      "slug": "paid-media",
+      "label": "Paid media",
+      "detail": "Paid Media channel + Media Audience Sync to Meta/Google/TikTok/Snapchat/Pinterest/Criteo",
+      "features": [
+        "Paid Media channel + Media Audience Sync to Meta/Google/TikTok/Snapchat/Pinterest/Criteo"
+      ]
+    },
+    {
+      "slug": "cdp-currents",
+      "label": "CDP/Currents",
+      "detail": "Braze Data Platform, user profiles, Cloud Data Ingestion (Snowflake/Redshift/Databricks/BigQuery), Data Transformation, REST ingestion APIs, SDKs, Snowflake Data Sharing, Currents (real-time event streaming), export APIs",
+      "features": [
+        "Braze Data Platform",
+        "user profiles",
+        "Cloud Data Ingestion (Snowflake/Redshift/Databricks/BigQuery)",
+        "Data Transformation",
+        "REST ingestion APIs",
+        "SDKs",
+        "Snowflake Data Sharing",
+        "Currents (real-time event streaming)",
+        "export APIs"
+      ]
+    },
+    {
+      "slug": "analytics-report-builder",
+      "label": "Analytics (Report Builder)",
+      "detail": "campaign/Canvas analytics, retention/funnel/custom-events/revenue reports, Dashboard Builder, Query Builder / SQL Composer, uninstall tracking, Impact Reporting, real-time",
+      "features": [
+        "campaign/Canvas analytics",
+        "retention/funnel/custom-events/revenue reports",
+        "Dashboard Builder",
+        "Query Builder / SQL Composer",
+        "uninstall tracking",
+        "Impact Reporting",
+        "real-time"
+      ]
+    },
+    {
+      "slug": "ai-brazeai",
+      "label": "AI (BrazeAI)",
+      "detail": "Decisioning Studio (agentic AI decisioning on OfferFit engine — optimizes channel/message/creative/offer/frequency), BrazeAI Agents / Agent Console, BrazeAI Operator (in-dashboard copilot), Predictive Suite (Churn/Purchase), Intelligence Suite (Intelligent Selection/Timing, Channel Filter, Variant Selection), generative AI (copy/image/QA/SQL/Liquid), item recommendations",
+      "features": [
+        "Decisioning Studio (agentic AI decisioning on OfferFit engine — optimizes channel/message/creative/offer/frequency)",
+        "BrazeAI Agents / Agent Console",
+        "BrazeAI Operator (in-dashboard copilot)",
+        "Predictive Suite (Churn/Purchase)",
+        "Intelligence Suite (Intelligent Selection/Timing, Channel Filter, Variant Selection)",
+        "generative AI (copy/image/QA/SQL/Liquid)",
+        "item recommendations"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "170+ partner integrations, REST APIs (messaging/ingestion/export/Content Block), Braze MCP Server, Currents connectors, CDP integrations (Segment/mParticle), Snowflake Data Sharing",
+      "features": [
+        "170+ partner integrations",
+        "REST APIs (messaging/ingestion/export/Content Block)",
+        "Braze MCP Server",
+        "Currents connectors",
+        "CDP integrations (Segment/mParticle)",
+        "Snowflake Data Sharing"
+      ]
+    },
+    {
+      "slug": "admin-security",
+      "label": "Admin/security",
+      "detail": "user provisioning, SAML SSO (Entra/Okta/OneLogin), roles/permissions/Teams, multi-workspace, message approvals, EU data residency",
+      "features": [
+        "user provisioning",
+        "SAML SSO (Entra/Okta/OneLogin)",
+        "roles/permissions/Teams",
+        "multi-workspace",
+        "message approvals",
+        "EU data residency"
+      ]
+    }
+  ]
+}

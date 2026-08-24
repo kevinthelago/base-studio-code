@@ -1,0 +1,271 @@
+{
+  "id": "monday-com",
+  "name": "Monday.com",
+  "domain": "project-work-management",
+  "domainName": "Project / Work Management",
+  "capabilities": [
+    {
+      "slug": "structure",
+      "label": "Structure",
+      "detail": "Boards, Items, Subitems, Groups, Workspaces, 200+ templates, Column Center, item updates, board power-ups",
+      "features": [
+        "Boards",
+        "Items",
+        "Subitems",
+        "Groups",
+        "Workspaces",
+        "200+ templates",
+        "Column Center",
+        "item updates",
+        "board power-ups"
+      ]
+    },
+    {
+      "slug": "column-types-30",
+      "label": "Column types (30+)",
+      "detail": "Status, Priority, Label, Text, Numbers, People, Date, Timeline, Dropdown (up to 500 options), Tags, Checkbox, Rating, Progress, Formula, Mirror, Connect boards, Dependency, Time tracking, Files, Location, Country, Phone, Email, Link, Vote, Button, Monday Doc, Auto number",
+      "features": [
+        "Status",
+        "Priority",
+        "Label",
+        "Text",
+        "Numbers",
+        "People",
+        "Date",
+        "Timeline",
+        "Dropdown (up to 500 options)",
+        "Tags",
+        "Checkbox",
+        "Rating",
+        "Progress",
+        "Formula",
+        "Mirror",
+        "Connect boards",
+        "Dependency",
+        "Time tracking",
+        "Files",
+        "Location",
+        "Country",
+        "Phone",
+        "Email",
+        "Link",
+        "Vote",
+        "Button",
+        "Monday Doc",
+        "Auto number"
+      ]
+    },
+    {
+      "slug": "views",
+      "label": "Views",
+      "detail": "Table, Kanban, Gantt, Timeline, Calendar, Chart, Workload, Map, Cards, Form, Files, Dashboard; My Work (cross-board)",
+      "features": [
+        "Table",
+        "Kanban",
+        "Gantt",
+        "Timeline",
+        "Calendar",
+        "Chart",
+        "Workload",
+        "Map",
+        "Cards",
+        "Form",
+        "Files",
+        "Dashboard; My Work (cross-board)"
+      ]
+    },
+    {
+      "slug": "gantt-dependencies",
+      "label": "Gantt/dependencies",
+      "detail": "drag-drop Gantt, four dependency types (FS/SS/FF/SF), critical path, baselines, milestones",
+      "features": [
+        "drag-drop Gantt",
+        "four dependency types (FS/SS/FF/SF)",
+        "critical path",
+        "baselines",
+        "milestones"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "visual builder, 200+ recipe templates, if-this-then-that, status/date/creation/assignment triggers, auto-assign, auto-create, handover/move, cross-board & integration automations, AI-powered, tiered action caps",
+      "features": [
+        "visual builder",
+        "200+ recipe templates",
+        "if-this-then-that",
+        "status/date/creation/assignment triggers",
+        "auto-assign",
+        "auto-create",
+        "handover/move",
+        "cross-board & integration automations",
+        "AI-powered",
+        "tiered action caps"
+      ]
+    },
+    {
+      "slug": "workload-resource",
+      "label": "Workload/resource",
+      "detail": "Workload view (capacity over period), resource allocation/balancing, capacity planning",
+      "features": [
+        "Workload view (capacity over period)",
+        "resource allocation/balancing",
+        "capacity planning"
+      ]
+    },
+    {
+      "slug": "docs",
+      "label": "Docs",
+      "detail": "WorkDocs (real-time), embedded board widgets, connected boards, Doc column, Whiteboards",
+      "features": [
+        "WorkDocs (real-time)",
+        "embedded board widgets",
+        "connected boards",
+        "Doc column",
+        "Whiteboards"
+      ]
+    },
+    {
+      "slug": "forms-workforms",
+      "label": "Forms (WorkForms)",
+      "detail": "any board → intake form, form view, automated workflow entry on submission",
+      "features": [
+        "any board → intake form",
+        "form view",
+        "automated workflow entry on submission"
+      ]
+    },
+    {
+      "slug": "dashboards-widgets",
+      "label": "Dashboards/widgets",
+      "detail": "real-time dashboards (1/5/50 boards by tier), 30+ widgets (Chart/Numbers/Battery/Gantt/Timeline/Workload/Pivot/Table/Map), scheduled/executive/portfolio reports, exports",
+      "features": [
+        "real-time dashboards (1/5/50 boards by tier)",
+        "30+ widgets (Chart/Numbers/Battery/Gantt/Timeline/Workload/Pivot/Table/Map)",
+        "scheduled/executive/portfolio reports",
+        "exports"
+      ]
+    },
+    {
+      "slug": "goals-okrs",
+      "label": "Goals/OKRs",
+      "detail": "OKR management, goal tracking, key-result linking, automated updates, Goal Tracker agent",
+      "features": [
+        "OKR management",
+        "goal tracking",
+        "key-result linking",
+        "automated updates",
+        "Goal Tracker agent"
+      ]
+    },
+    {
+      "slug": "portfolio",
+      "label": "Portfolio",
+      "detail": "cross-project portfolio views, strategy-to-execution, portfolio Gantt/critical path, PMO oversight",
+      "features": [
+        "cross-project portfolio views",
+        "strategy-to-execution",
+        "portfolio Gantt/critical path",
+        "PMO oversight"
+      ]
+    },
+    {
+      "slug": "time-tracking",
+      "label": "Time tracking",
+      "detail": "built-in tracker column, billable hours, productivity insights",
+      "features": [
+        "built-in tracker column",
+        "billable hours",
+        "productivity insights"
+      ]
+    },
+    {
+      "slug": "agile",
+      "label": "Agile",
+      "detail": "Sprint management, Agile Insights, velocity charts, burndown (via monday dev)",
+      "features": [
+        "Sprint management",
+        "Agile Insights",
+        "velocity charts",
+        "burndown (via monday dev)"
+      ]
+    },
+    {
+      "slug": "collaboration",
+      "label": "Collaboration",
+      "detail": "item updates, comments, @mentions, file sharing, centralized Files view, activity logs, Teams/Guests",
+      "features": [
+        "item updates",
+        "comments",
+        "@mentions",
+        "file sharing",
+        "centralized Files view",
+        "activity logs",
+        "Teams/Guests"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "850+ apps — Slack, Teams, Gmail, Outlook, Zoom, Jira, GitHub, GitLab, Salesforce, HubSpot, QuickBooks, Zendesk, Stripe, Typeform, Zapier, Make; REST API",
+      "features": [
+        "850+ apps — Slack",
+        "Teams",
+        "Gmail",
+        "Outlook",
+        "Zoom",
+        "Jira",
+        "GitHub",
+        "GitLab",
+        "Salesforce",
+        "HubSpot",
+        "QuickBooks",
+        "Zendesk",
+        "Stripe",
+        "Typeform",
+        "Zapier",
+        "Make; REST API"
+      ]
+    },
+    {
+      "slug": "ai-monday-ai-digital-workforce",
+      "label": "AI (monday AI/digital workforce)",
+      "detail": "AI Agents + custom Agent Builder, Sidekick assistant, AI Blocks; Research/Reporting/Insights/Meeting/Process agents; conversational queries, AI summaries/status, multi-provider (Claude/ChatGPT/Copilot/Gemini/Perplexity), Monday MCP",
+      "features": [
+        "AI Agents + custom Agent Builder",
+        "Sidekick assistant",
+        "AI Blocks; Research/Reporting/Insights/Meeting/Process agents; conversational queries",
+        "AI summaries/status",
+        "multi-provider (Claude/ChatGPT/Copilot/Gemini/Perplexity)",
+        "Monday MCP"
+      ]
+    },
+    {
+      "slug": "security-admin",
+      "label": "Security/admin",
+      "detail": "granular multi-level permissions, private boards/docs, guest access, SSO, audit logs, session mgmt, no-model-training, agent activity logs",
+      "features": [
+        "granular multi-level permissions",
+        "private boards/docs",
+        "guest access",
+        "SSO",
+        "audit logs",
+        "session mgmt",
+        "no-model-training",
+        "agent activity logs"
+      ]
+    },
+    {
+      "slug": "products",
+      "label": "Products",
+      "detail": "work management, CRM, dev, service, campaigns; MondayDB; mobile + desktop",
+      "features": [
+        "work management",
+        "CRM",
+        "dev",
+        "service",
+        "campaigns; MondayDB; mobile + desktop"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,226 @@
+{
+  "id": "gusto",
+  "name": "Gusto",
+  "domain": "hr-hcm-payroll",
+  "domainName": "HR / HCM / Payroll",
+  "capabilities": [
+    {
+      "slug": "core-hr",
+      "label": "Core HR",
+      "detail": "profiles/records, directory, org charts, custom admin permissions, secure document vault (I-9s/W-4s), unified dashboard, self-service, email/software provisioning, lifetime portal access",
+      "features": [
+        "profiles/records",
+        "directory",
+        "org charts",
+        "custom admin permissions",
+        "secure document vault (I-9s/W-4s)",
+        "unified dashboard",
+        "self-service",
+        "email/software provisioning",
+        "lifetime portal access"
+      ]
+    },
+    {
+      "slug": "payroll",
+      "label": "Payroll",
+      "detail": "full-service US, unlimited runs, auto federal/state/local calc/filing, AutoPilot, multi-state, W-2/1099, contractor payments, flexible schedules, multiple rates, off-cycle/bonus, garnishments, reimbursements, tip credits/holiday pay, next/same-day direct deposit, check printing, prepaid debit cards, post-submission edits, multi-reviewer approval",
+      "features": [
+        "full-service US",
+        "unlimited runs",
+        "auto federal/state/local calc/filing",
+        "AutoPilot",
+        "multi-state",
+        "W-2/1099",
+        "contractor payments",
+        "flexible schedules",
+        "multiple rates",
+        "off-cycle/bonus",
+        "garnishments",
+        "reimbursements",
+        "tip credits/holiday pay",
+        "next/same-day direct deposit",
+        "check printing",
+        "prepaid debit cards",
+        "post-submission edits",
+        "multi-reviewer approval"
+      ]
+    },
+    {
+      "slug": "global",
+      "label": "Global",
+      "detail": "Gusto Global EOR (via Remote), international contractor payments in 120+ countries, multi-currency/FX, Wise + USDC settlement",
+      "features": [
+        "Gusto Global EOR (via Remote)",
+        "international contractor payments in 120+ countries",
+        "multi-currency/FX",
+        "Wise + USDC settlement"
+      ]
+    },
+    {
+      "slug": "tax-compliance",
+      "label": "Tax/compliance",
+      "detail": "auto payment/filing, W-2/1099, state registration (20+ states add-on), R&D tax-credit, ACA/HIPAA/ERISA/COBRA/Section 125, compliance alerts, new-hire reporting, harassment-training tracking, state/local registration (Mosey), SOC 1/2",
+      "features": [
+        "auto payment/filing",
+        "W-2/1099",
+        "state registration (20+ states add-on)",
+        "R&D tax-credit",
+        "ACA/HIPAA/ERISA/COBRA/Section 125",
+        "compliance alerts",
+        "new-hire reporting",
+        "harassment-training tracking",
+        "state/local registration (Mosey)",
+        "SOC 1/2"
+      ]
+    },
+    {
+      "slug": "benefits",
+      "label": "Benefits",
+      "detail": "health via 100+ carrier licensed-broker marketplace, 401(k) via Guideline, workers' comp (AP Intego), HSA/FSA/dependent-care, commuter, life/disability, auto deduction sync, licensed advising, COBRA/ACA",
+      "features": [
+        "health via 100+ carrier licensed-broker marketplace",
+        "401(k) via Guideline",
+        "workers' comp (AP Intego)",
+        "HSA/FSA/dependent-care",
+        "commuter",
+        "life/disability",
+        "auto deduction sync",
+        "licensed advising",
+        "COBRA/ACA"
+      ]
+    },
+    {
+      "slug": "time-pto",
+      "label": "Time/PTO",
+      "detail": "built-in tracking (mobile/browser), Time Kiosk, geolocation, project tracking, scheduling, Time & Attendance Plus add-on, PTO policies, requests/approvals, accrual tracking, auto-sync to payroll",
+      "features": [
+        "built-in tracking (mobile/browser)",
+        "Time Kiosk",
+        "geolocation",
+        "project tracking",
+        "scheduling",
+        "Time & Attendance Plus add-on",
+        "PTO policies",
+        "requests/approvals",
+        "accrual tracking",
+        "auto-sync to payroll"
+      ]
+    },
+    {
+      "slug": "hiring-ats",
+      "label": "Hiring/ATS",
+      "detail": "in-app ATS, multi-board posting, AI-assisted postings, candidate mgmt, custom offer letters, background checks (Checkr), import hires to payroll, provisioning",
+      "features": [
+        "in-app ATS",
+        "multi-board posting",
+        "AI-assisted postings",
+        "candidate mgmt",
+        "custom offer letters",
+        "background checks (Checkr)",
+        "import hires to payroll",
+        "provisioning"
+      ]
+    },
+    {
+      "slug": "onboarding",
+      "label": "Onboarding",
+      "detail": "custom checklists, self-onboarding, paperless e-sig (W-4/I-9), document storage, auto new-hire state reporting",
+      "features": [
+        "custom checklists",
+        "self-onboarding",
+        "paperless e-sig (W-4/I-9)",
+        "document storage",
+        "auto new-hire state reporting"
+      ]
+    },
+    {
+      "slug": "performance",
+      "label": "Performance",
+      "detail": "reviews, goal tracking, feedback, check-ins, anonymous surveys, trend analysis, 15Five/Culture Amp/PerformYard integrations",
+      "features": [
+        "reviews",
+        "goal tracking",
+        "feedback",
+        "check-ins",
+        "anonymous surveys",
+        "trend analysis",
+        "15Five/Culture Amp/PerformYard integrations"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "workforce analytics, payroll/time-off/benefits/compliance reports, workforce costing, custom reports, auto accounting journal entries",
+      "features": [
+        "workforce analytics",
+        "payroll/time-off/benefits/compliance reports",
+        "workforce costing",
+        "custom reports",
+        "auto accounting journal entries"
+      ]
+    },
+    {
+      "slug": "self-service-gusto-wallet",
+      "label": "Self-service / Gusto Wallet",
+      "detail": "portal + mobile (pay stubs/tax forms/benefits/hours/expenses/PTO), Gusto Wallet spending account + debit card, up to 5 Savings Goals, On-Demand Pay/Cashout (Clair), paycheck splitter, budgeting tools",
+      "features": [
+        "portal + mobile (pay stubs/tax forms/benefits/hours/expenses/PTO)",
+        "Gusto Wallet spending account + debit card",
+        "up to 5 Savings Goals",
+        "On-Demand Pay/Cashout (Clair)",
+        "paycheck splitter",
+        "budgeting tools"
+      ]
+    },
+    {
+      "slug": "employer-financial",
+      "label": "Employer financial",
+      "detail": "Gusto Money, Bill Pay (vendor mgmt), invoicing, Payroll Bridge cash-flow tool",
+      "features": [
+        "Gusto Money",
+        "Bill Pay (vendor mgmt)",
+        "invoicing",
+        "Payroll Bridge cash-flow tool"
+      ]
+    },
+    {
+      "slug": "ai",
+      "label": "AI",
+      "detail": "Gus AI assistant (chat, company-specific answers, data reports, approve time-off/tasks), AI-assisted postings, AI compliance Q&A, ChatGPT/Claude/Slack integrations",
+      "features": [
+        "Gus AI assistant (chat, company-specific answers, data reports, approve time-off/tasks)",
+        "AI-assisted postings",
+        "AI compliance Q&A",
+        "ChatGPT/Claude/Slack integrations"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "~150 across accounting/time/POS/hiring/performance/expense — QuickBooks, Xero, Slack, Expensify, Asana, DocuSign, 15Five, Deputy, Checkr, Carta, GitHub",
+      "features": [
+        "~150 across accounting/time/POS/hiring/performance/expense — QuickBooks",
+        "Xero",
+        "Slack",
+        "Expensify",
+        "Asana",
+        "DocuSign",
+        "15Five",
+        "Deputy",
+        "Checkr",
+        "Carta",
+        "GitHub"
+      ]
+    },
+    {
+      "slug": "support",
+      "label": "Support",
+      "detail": "HR Resource Center, certified HR expert access, dedicated success manager",
+      "features": [
+        "HR Resource Center",
+        "certified HR expert access",
+        "dedicated success manager"
+      ]
+    }
+  ]
+}

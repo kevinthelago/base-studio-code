@@ -1,0 +1,167 @@
+{
+  "id": "servicenow-app-engine-now-platform",
+  "name": "ServiceNow App Engine / Now Platform",
+  "domain": "bpm-and-process-automation",
+  "domainName": "BPM & Process Automation",
+  "capabilities": [
+    {
+      "slug": "low-code-app-engine-studio",
+      "label": "Low-code (App Engine Studio)",
+      "detail": "visual drag-drop for pro + citizen devs, templates, Table Builder, Management Center (governance/portfolio/license), automated testing, real-time collaboration, Now Store",
+      "features": [
+        "visual drag-drop for pro + citizen devs",
+        "templates",
+        "Table Builder",
+        "Management Center (governance/portfolio/license)",
+        "automated testing",
+        "real-time collaboration",
+        "Now Store"
+      ]
+    },
+    {
+      "slug": "visual-ux-now-experience",
+      "label": "Visual UX (Now Experience)",
+      "detail": "UI Builder (WYSIWYG + custom components), Configurable Workspaces (single-pane, Agent Assist), Service Portal, Playbooks, Native Mobile App Builder, Now Assist for Creator",
+      "features": [
+        "UI Builder (WYSIWYG + custom components)",
+        "Configurable Workspaces (single-pane, Agent Assist)",
+        "Service Portal",
+        "Playbooks",
+        "Native Mobile App Builder",
+        "Now Assist for Creator"
+      ]
+    },
+    {
+      "slug": "workflow-flow-designer",
+      "label": "Workflow (Flow Designer)",
+      "detail": "no-code triggers/actions/subflows/logic, NL flow authoring, conditional branching, approvals, scheduled triggers, Process Automation Designer (multi-flow cross-team), Workflow Studio",
+      "features": [
+        "no-code triggers/actions/subflows/logic",
+        "NL flow authoring",
+        "conditional branching",
+        "approvals",
+        "scheduled triggers",
+        "Process Automation Designer (multi-flow cross-team)",
+        "Workflow Studio"
+      ]
+    },
+    {
+      "slug": "integration-integrationhub",
+      "label": "Integration (IntegrationHub)",
+      "detail": "200+ certified Spokes (thousands of actions), custom Spokes, Connections & Credentials, REST/SOAP/GraphQL, inbound triggers, Remote Tables, Data Streams",
+      "features": [
+        "200+ certified Spokes (thousands of actions)",
+        "custom Spokes",
+        "Connections & Credentials",
+        "REST/SOAP/GraphQL",
+        "inbound triggers",
+        "Remote Tables",
+        "Data Streams"
+      ]
+    },
+    {
+      "slug": "rpa-rpa-hub",
+      "label": "RPA (RPA Hub)",
+      "detail": "attended + unattended, Desktop Design Studio, robot/queue management, credential vault, Automation Engine bundle (IntegrationHub + RPA + Document Intelligence)",
+      "features": [
+        "attended + unattended",
+        "Desktop Design Studio",
+        "robot/queue management",
+        "credential vault",
+        "Automation Engine bundle (IntegrationHub + RPA + Document Intelligence)"
+      ]
+    },
+    {
+      "slug": "ai-genai-now-assist",
+      "label": "AI/GenAI (Now Assist)",
+      "detail": "LLM assist platform-wide, Now LLM + BYO LLM (Azure OpenAI/Anthropic Claude/Gemini), text-to-code/text-to-flow, chat/case summarization, Skill Kit/GenAI Controller (custom skills)",
+      "features": [
+        "LLM assist platform-wide",
+        "Now LLM + BYO LLM (Azure OpenAI/Anthropic Claude/Gemini)",
+        "text-to-code/text-to-flow",
+        "chat/case summarization",
+        "Skill Kit/GenAI Controller (custom skills)"
+      ]
+    },
+    {
+      "slug": "agentic-ai",
+      "label": "Agentic AI",
+      "detail": "AI Agents (goal-plan-reason-act with tools/scripts/flows/GenAI), pre-built IT/CSM/HR agents, AI Agent Studio, Orchestrator (multi-agent sequencing), Control Tower (governance), AI Agent Fabric (3rd-party via MCP + Google A2A), guardrails",
+      "features": [
+        "AI Agents (goal-plan-reason-act with tools/scripts/flows/GenAI)",
+        "pre-built IT/CSM/HR agents",
+        "AI Agent Studio",
+        "Orchestrator (multi-agent sequencing)",
+        "Control Tower (governance)",
+        "AI Agent Fabric (3rd-party via MCP + Google A2A)",
+        "guardrails"
+      ]
+    },
+    {
+      "slug": "predictive-ml-predictive-intelligence",
+      "label": "Predictive ML (Predictive Intelligence)",
+      "detail": "classification/similarity/clustering/regression, auto categorization/routing/assignment, Decision Builder/Tables, Virtual Agent, Performance Analytics",
+      "features": [
+        "classification/similarity/clustering/regression",
+        "auto categorization/routing/assignment",
+        "Decision Builder/Tables",
+        "Virtual Agent",
+        "Performance Analytics"
+      ]
+    },
+    {
+      "slug": "process-mining",
+      "label": "Process mining",
+      "detail": "auto-discovery from logs, process maps + variant analysis, conformance checking, case prediction, root-cause insights, native mining of audit + agent logs (no ETL), Task Mining",
+      "features": [
+        "auto-discovery from logs",
+        "process maps + variant analysis",
+        "conformance checking",
+        "case prediction",
+        "root-cause insights",
+        "native mining of audit + agent logs (no ETL)",
+        "Task Mining"
+      ]
+    },
+    {
+      "slug": "document-ai-document-intelligence",
+      "label": "Document AI (Document Intelligence)",
+      "detail": "IDP, low-code guided setup, continuous learning, human-in-the-loop, zero-historical-data start",
+      "features": [
+        "IDP",
+        "low-code guided setup",
+        "continuous learning",
+        "human-in-the-loop",
+        "zero-historical-data start"
+      ]
+    },
+    {
+      "slug": "data-fabric-workflow-data-fabric-csdm",
+      "label": "Data fabric (Workflow Data Fabric/CSDM)",
+      "detail": "zero-copy real-time data across ERP/ITSM/HR/CRM, Workflow Data Network, single source of truth, lineage/governance, CSDM, CMDB, virtual/remote tables",
+      "features": [
+        "zero-copy real-time data across ERP/ITSM/HR/CRM",
+        "Workflow Data Network",
+        "single source of truth",
+        "lineage/governance",
+        "CSDM",
+        "CMDB",
+        "virtual/remote tables"
+      ]
+    },
+    {
+      "slug": "governance-devops",
+      "label": "Governance/DevOps",
+      "detail": "low-code governance/guardrails, Automated Test Framework, DevOps Change Velocity, native Git (GitHub/GitLab/Azure DevOps), versioning, update sets/scoped apps, RBAC",
+      "features": [
+        "low-code governance/guardrails",
+        "Automated Test Framework",
+        "DevOps Change Velocity",
+        "native Git (GitHub/GitLab/Azure DevOps)",
+        "versioning",
+        "update sets/scoped apps",
+        "RBAC"
+      ]
+    }
+  ]
+}

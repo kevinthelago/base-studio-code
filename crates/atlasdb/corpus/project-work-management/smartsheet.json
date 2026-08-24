@@ -1,0 +1,230 @@
+{
+  "id": "smartsheet",
+  "name": "Smartsheet",
+  "domain": "project-work-management",
+  "domainName": "Project / Work Management",
+  "capabilities": [
+    {
+      "slug": "grid",
+      "label": "Grid",
+      "detail": "Grid/Table view, cross-sheet cell linking, formulas/functions, filters/sorting/grouping, colored dropdowns, baselines, attachments, publish links, custom branding",
+      "features": [
+        "Grid/Table view",
+        "cross-sheet cell linking",
+        "formulas/functions",
+        "filters/sorting/grouping",
+        "colored dropdowns",
+        "baselines",
+        "attachments",
+        "publish links",
+        "custom branding"
+      ]
+    },
+    {
+      "slug": "views",
+      "label": "Views",
+      "detail": "Grid, Gantt, Card (Kanban), Calendar (drag-drop scheduling), Timeline",
+      "features": [
+        "Grid",
+        "Gantt",
+        "Card (Kanban)",
+        "Calendar (drag-drop scheduling)",
+        "Timeline"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "automated workflows (triggers + actions), conditional logic, alerts/reminders, assign-task/update-field, approval workflows, request-an-update, record locking, recurring, Bridge (advanced business-process)",
+      "features": [
+        "automated workflows (triggers + actions)",
+        "conditional logic",
+        "alerts/reminders",
+        "assign-task/update-field",
+        "approval workflows",
+        "request-an-update",
+        "record locking",
+        "recurring",
+        "Bridge (advanced business-process)"
+      ]
+    },
+    {
+      "slug": "dependencies",
+      "label": "Dependencies",
+      "detail": "task dependencies, critical path, milestones, baselines, predecessors, auto-scheduling",
+      "features": [
+        "task dependencies",
+        "critical path",
+        "milestones",
+        "baselines",
+        "predecessors",
+        "auto-scheduling"
+      ]
+    },
+    {
+      "slug": "resource-management",
+      "label": "Resource Management",
+      "detail": "allocation/scheduling, workload tracking, capacity heat map, over-allocation resolution, utilization/BI reports, budgeting/expense, time tracking/timesheets, forecasting, Resource Planning",
+      "features": [
+        "allocation/scheduling",
+        "workload tracking",
+        "capacity heat map",
+        "over-allocation resolution",
+        "utilization/BI reports",
+        "budgeting/expense",
+        "time tracking/timesheets",
+        "forecasting",
+        "Resource Planning"
+      ]
+    },
+    {
+      "slug": "dashboards",
+      "label": "Dashboards",
+      "detail": "live dashboards, widget builder (metric/chart/image/report/web-content), Reports (roll up sheets), Work Insights (auto-generated viz), Portfolios rollup, AI Dashboard Builder",
+      "features": [
+        "live dashboards",
+        "widget builder (metric/chart/image/report/web-content)",
+        "Reports (roll up sheets)",
+        "Work Insights (auto-generated viz)",
+        "Portfolios rollup",
+        "AI Dashboard Builder"
+      ]
+    },
+    {
+      "slug": "forms",
+      "label": "Forms",
+      "detail": "branded, conditional logic, embed/share, mobile/offline, Voice-Powered Forms, Intelligent Form Fill (AI voice → fields)",
+      "features": [
+        "branded",
+        "conditional logic",
+        "embed/share",
+        "mobile/offline",
+        "Voice-Powered Forms",
+        "Intelligent Form Fill (AI voice → fields)"
+      ]
+    },
+    {
+      "slug": "proofing",
+      "label": "Proofing",
+      "detail": "file proofing, annotation/feedback, version comparison, approvals",
+      "features": [
+        "file proofing",
+        "annotation/feedback",
+        "version comparison",
+        "approvals"
+      ]
+    },
+    {
+      "slug": "portfolio",
+      "label": "Portfolio",
+      "detail": "Control Center (blueprints, standardized provisioning, global updates, portfolio rollup, intake, archiving), Portfolios & Scenario Planning, WorkApps portfolio views",
+      "features": [
+        "Control Center (blueprints, standardized provisioning, global updates, portfolio rollup, intake, archiving)",
+        "Portfolios & Scenario Planning",
+        "WorkApps portfolio views"
+      ]
+    },
+    {
+      "slug": "time-tracking",
+      "label": "Time tracking",
+      "detail": "via Resource Management, utilization reporting",
+      "features": [
+        "via Resource Management",
+        "utilization reporting"
+      ]
+    },
+    {
+      "slug": "templates",
+      "label": "Templates",
+      "detail": "templates/template sets, solution templates, blueprints (Control Center), custom branding",
+      "features": [
+        "templates/template sets",
+        "solution templates",
+        "blueprints (Control Center)",
+        "custom branding"
+      ]
+    },
+    {
+      "slug": "collaboration",
+      "label": "Collaboration",
+      "detail": "Conversations (row/sheet comments), sharing/permissions, @mentions, shared workspaces, File library, e-signatures, Document Generation (PDFs from sheet data)",
+      "features": [
+        "Conversations (row/sheet comments)",
+        "sharing/permissions",
+        "@mentions",
+        "shared workspaces",
+        "File library",
+        "e-signatures",
+        "Document Generation (PDFs from sheet data)"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "Connectors (Salesforce/Jira/Dynamics 365/ServiceNow/Google/Power BI/Tableau); Teams/Slack/365/Adobe CC/DocuSign; REST API; Data Shuttle, DataMesh, DataTable, Pivot App, Calendar App; MCP connectors / Smartsheet MCP Server / Claude Connector",
+      "features": [
+        "Connectors (Salesforce/Jira/Dynamics 365/ServiceNow/Google/Power BI/Tableau); Teams/Slack/365/Adobe CC/DocuSign; REST API; Data Shuttle",
+        "DataMesh",
+        "DataTable",
+        "Pivot App",
+        "Calendar App; MCP connectors / Smartsheet MCP Server / Claude Connector"
+      ]
+    },
+    {
+      "slug": "workapps",
+      "label": "WorkApps",
+      "detail": "no-code role-based web/mobile apps, Dynamic View (secure row-level request management)",
+      "features": [
+        "no-code role-based web/mobile apps",
+        "Dynamic View (secure row-level request management)"
+      ]
+    },
+    {
+      "slug": "ai",
+      "label": "AI",
+      "detail": "Smart Assist, Smart Columns (summarize/translate/sentiment), AI Dashboard Builder, Generate Formulas (NL→formula), Analyze Data, Generate Text/Summaries, Intelligent Form Fill, AI Project Setup, MCP, Knowledge Graph (Amazon Neptune)",
+      "features": [
+        "Smart Assist",
+        "Smart Columns (summarize/translate/sentiment)",
+        "AI Dashboard Builder",
+        "Generate Formulas (NL→formula)",
+        "Analyze Data",
+        "Generate Text/Summaries",
+        "Intelligent Form Fill",
+        "AI Project Setup",
+        "MCP",
+        "Knowledge Graph (Amazon Neptune)"
+      ]
+    },
+    {
+      "slug": "content-dam",
+      "label": "Content/DAM",
+      "detail": "Brandfolder (DAM), File library, versioning, Adobe CC",
+      "features": [
+        "Brandfolder (DAM)",
+        "File library",
+        "versioning",
+        "Adobe CC"
+      ]
+    },
+    {
+      "slug": "security-governance",
+      "label": "Security/governance",
+      "detail": "Admin Center, Plan Insights, Enterprise Plan Manager, SAML SSO, MFA, custom email domains, data retention, egress policies, Customer-Managed Encryption Keys, Event Reporting, Activity Log, Smartsheet Regions (data residency)",
+      "features": [
+        "Admin Center",
+        "Plan Insights",
+        "Enterprise Plan Manager",
+        "SAML SSO",
+        "MFA",
+        "custom email domains",
+        "data retention",
+        "egress policies",
+        "Customer-Managed Encryption Keys",
+        "Event Reporting",
+        "Activity Log",
+        "Smartsheet Regions (data residency)"
+      ]
+    }
+  ]
+}

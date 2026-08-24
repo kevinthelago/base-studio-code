@@ -1,0 +1,220 @@
+{
+  "id": "klaviyo",
+  "name": "Klaviyo",
+  "domain": "email-and-marketing-automation-esp-map",
+  "domainName": "Email & Marketing Automation (ESP / MAP)",
+  "capabilities": [
+    {
+      "slug": "email-builder",
+      "label": "Email builder",
+      "detail": "160+ templates, drag-drop editor, content blocks, global brand styles/content kit, reusable saved sections, dynamic product blocks, dark-mode rendering, visual inbox testing, preview with live customer data, HTML editor",
+      "features": [
+        "160+ templates",
+        "drag-drop editor",
+        "content blocks",
+        "global brand styles/content kit",
+        "reusable saved sections",
+        "dynamic product blocks",
+        "dark-mode rendering",
+        "visual inbox testing",
+        "preview with live customer data",
+        "HTML editor"
+      ]
+    },
+    {
+      "slug": "campaigns",
+      "label": "Campaigns",
+      "detail": "email, SMS, mobile push, omnichannel, marketing calendar, scheduled/personalized send time, per-campaign revenue attribution",
+      "features": [
+        "email",
+        "SMS",
+        "mobile push",
+        "omnichannel",
+        "marketing calendar",
+        "scheduled/personalized send time",
+        "per-campaign revenue attribution"
+      ]
+    },
+    {
+      "slug": "automation-flows",
+      "label": "Automation/flows",
+      "detail": "60+ flow templates (welcome/abandoned cart/browse abandonment/post-purchase/price-drop/back-in-stock/win-back), conditional/trigger splits, delays, smart sending, cross-channel, in-flow A/B, Flows AI (build from prompt), Composer AI agent (beta)",
+      "features": [
+        "60+ flow templates (welcome/abandoned cart/browse abandonment/post-purchase/price-drop/back-in-stock/win-back)",
+        "conditional/trigger splits",
+        "delays",
+        "smart sending",
+        "cross-channel",
+        "in-flow A/B",
+        "Flows AI (build from prompt)",
+        "Composer AI agent (beta)"
+      ]
+    },
+    {
+      "slug": "segmentation",
+      "label": "Segmentation",
+      "detail": "real-time segment updates, behavioral, hundreds of data points, custom properties, unlimited historical/event data (no look-back limit), predictive segments (churn/CLV/next-order), ML-based RFM, Segments AI (natural language), ad-platform audience sync",
+      "features": [
+        "real-time segment updates",
+        "behavioral",
+        "hundreds of data points",
+        "custom properties",
+        "unlimited historical/event data (no look-back limit)",
+        "predictive segments (churn/CLV/next-order)",
+        "ML-based RFM",
+        "Segments AI (natural language)",
+        "ad-platform audience sync"
+      ]
+    },
+    {
+      "slug": "personalization",
+      "label": "Personalization",
+      "detail": "per-recipient dynamic product blocks, recommendation types (Recently Viewed/Best Sellers/Predicted Next Purchase/Category Affinity), in-editor product feeds, fallback blocks, channel-affinity routing",
+      "features": [
+        "per-recipient dynamic product blocks",
+        "recommendation types (Recently Viewed/Best Sellers/Predicted Next Purchase/Category Affinity)",
+        "in-editor product feeds",
+        "fallback blocks",
+        "channel-affinity routing"
+      ]
+    },
+    {
+      "slug": "a-b-testing",
+      "label": "A/B testing",
+      "detail": "campaign + flow A/B tests (send time/channel/content/discount), AI-powered tests predicting best variant per customer",
+      "features": [
+        "campaign + flow A/B tests (send time/channel/content/discount)",
+        "AI-powered tests predicting best variant per customer"
+      ]
+    },
+    {
+      "slug": "deliverability",
+      "label": "Deliverability",
+      "detail": "Deliverability Hub (email + SMS), deliverability score with factor breakdown, sender-reputation monitoring, Email Deliverability by Flow, guided IP/domain warming, peer benchmarking, Google Postmaster/Everest",
+      "features": [
+        "Deliverability Hub (email + SMS)",
+        "deliverability score with factor breakdown",
+        "sender-reputation monitoring",
+        "Email Deliverability by Flow",
+        "guided IP/domain warming",
+        "peer benchmarking",
+        "Google Postmaster/Everest"
+      ]
+    },
+    {
+      "slug": "sms-push-whatsapp",
+      "label": "SMS/push/WhatsApp",
+      "detail": "SMS campaigns + flows, two-way/automated SMS, MMS, AI SMS assistant, consent/compliance, age-gating, quiet hours, mobile push, WhatsApp, RCS for Business, last-touch multi-channel attribution",
+      "features": [
+        "SMS campaigns + flows",
+        "two-way/automated SMS",
+        "MMS",
+        "AI SMS assistant",
+        "consent/compliance",
+        "age-gating",
+        "quiet hours",
+        "mobile push",
+        "WhatsApp",
+        "RCS for Business",
+        "last-touch multi-channel attribution"
+      ]
+    },
+    {
+      "slug": "landing-pages-forms",
+      "label": "Landing pages/forms",
+      "detail": "pop-ups, fly-outs, embedded, multi-step, teasers, consent collection, form A/B testing, AI form optimization",
+      "features": [
+        "pop-ups",
+        "fly-outs",
+        "embedded",
+        "multi-step",
+        "teasers",
+        "consent collection",
+        "form A/B testing",
+        "AI form optimization"
+      ]
+    },
+    {
+      "slug": "cdp",
+      "label": "CDP",
+      "detail": "Klaviyo Data Platform + Advanced CDP, unified profiles, identity resolution, 350+ integrations as data sources, real-time data, computed/predictive properties, audience activation, multi-brand Portfolio management",
+      "features": [
+        "Klaviyo Data Platform + Advanced CDP",
+        "unified profiles",
+        "identity resolution",
+        "350+ integrations as data sources",
+        "real-time data",
+        "computed/predictive properties",
+        "audience activation",
+        "multi-brand Portfolio management"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "dashboards across email/SMS/push, custom + pre-built reports, revenue/ROI attribution, benchmarking vs ~100 peer brands, RFM/product analysis, flow drop-off analytics",
+      "features": [
+        "dashboards across email/SMS/push",
+        "custom + pre-built reports",
+        "revenue/ROI attribution",
+        "benchmarking vs ~100 peer brands",
+        "RFM/product analysis",
+        "flow drop-off analytics"
+      ]
+    },
+    {
+      "slug": "ai-klaviyo-ai-40-features",
+      "label": "AI (Klaviyo AI, 40+ features)",
+      "detail": "predictive analytics (CLV/churn/next-order/channel affinity), subject-line generator, send-time optimization, Segments AI, Flows AI, email/SMS copy generation, Brand Voice AI, smart translations, Image Remix, anomaly monitoring, sentiment analysis, Composer AI agent, external LLM (OpenAI/Bedrock/Claude/MCP)",
+      "features": [
+        "predictive analytics (CLV/churn/next-order/channel affinity)",
+        "subject-line generator",
+        "send-time optimization",
+        "Segments AI",
+        "Flows AI",
+        "email/SMS copy generation",
+        "Brand Voice AI",
+        "smart translations",
+        "Image Remix",
+        "anomaly monitoring",
+        "sentiment analysis",
+        "Composer AI agent",
+        "external LLM (OpenAI/Bedrock/Claude/MCP)"
+      ]
+    },
+    {
+      "slug": "reviews",
+      "label": "Reviews",
+      "detail": "review request emails/SMS, star-rating widgets, photo/video reviews, on-site Q&A, AI moderation, Google Shopping syndication, review data in flows/segments",
+      "features": [
+        "review request emails/SMS",
+        "star-rating widgets",
+        "photo/video reviews",
+        "on-site Q&A",
+        "AI moderation",
+        "Google Shopping syndication",
+        "review data in flows/segments"
+      ]
+    },
+    {
+      "slug": "customer-service",
+      "label": "Customer service",
+      "detail": "Customer Hub (self-service, order tracking, \"Buy again\"), Helpdesk (ticketing/shared inbox/macros), Customer Agent (24/7 AI support + sell)",
+      "features": [
+        "Customer Hub (self-service, order tracking, \"Buy again\")",
+        "Helpdesk (ticketing/shared inbox/macros)",
+        "Customer Agent (24/7 AI support + sell)"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "350+ integrations + App Marketplace (Shopify/WooCommerce/BigCommerce/Magento/Salesforce/Meta/TikTok), full API, MCP Server",
+      "features": [
+        "350+ integrations + App Marketplace (Shopify/WooCommerce/BigCommerce/Magento/Salesforce/Meta/TikTok)",
+        "full API",
+        "MCP Server"
+      ]
+    }
+  ]
+}

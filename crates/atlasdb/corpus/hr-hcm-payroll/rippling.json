@@ -1,0 +1,250 @@
+{
+  "id": "rippling",
+  "name": "Rippling",
+  "domain": "hr-hcm-payroll",
+  "domainName": "HR / HCM / Payroll",
+  "capabilities": [
+    {
+      "slug": "core-hr",
+      "label": "Core HR",
+      "detail": "unified Employee Graph (single source of truth), records/profiles, org chart, custom fields, document mgmt, self-service portal, mobile, 100+ country localization, 650+ integrations",
+      "features": [
+        "unified Employee Graph (single source of truth)",
+        "records/profiles",
+        "org chart",
+        "custom fields",
+        "document mgmt",
+        "self-service portal",
+        "mobile",
+        "100+ country localization",
+        "650+ integrations"
+      ]
+    },
+    {
+      "slug": "workflow-automation",
+      "label": "Workflow automation",
+      "detail": "Workflow Studio / no-code Automator, custom triggers on any employee data (start dates/salary/FSA balance/device health), 3rd-party triggers (GitHub PR merged, Zendesk CSAT), chained cross-cloud actions (payroll + provisioning + device order + benefits), policy engine",
+      "features": [
+        "Workflow Studio / no-code Automator",
+        "custom triggers on any employee data (start dates/salary/FSA balance/device health)",
+        "3rd-party triggers (GitHub PR merged, Zendesk CSAT)",
+        "chained cross-cloud actions (payroll + provisioning + device order + benefits)",
+        "policy engine"
+      ]
+    },
+    {
+      "slug": "permissions",
+      "label": "Permissions",
+      "detail": "RBAC profiles attached to attributes, dynamic auto-updating on promotion/team change, custom approval chains",
+      "features": [
+        "RBAC profiles attached to attributes",
+        "dynamic auto-updating on promotion/team change",
+        "custom approval chains"
+      ]
+    },
+    {
+      "slug": "payroll",
+      "label": "Payroll",
+      "detail": "native US (all 50 states), global 185+ countries & 50+ currencies, single unified pay run, auto tax calc/filing, mandatory-benefits localization, free off-cycle, edit-until-days-before, GL integrations, sub-second net-pay",
+      "features": [
+        "native US (all 50 states)",
+        "global 185+ countries & 50+ currencies",
+        "single unified pay run",
+        "auto tax calc/filing",
+        "mandatory-benefits localization",
+        "free off-cycle",
+        "edit-until-days-before",
+        "GL integrations",
+        "sub-second net-pay"
+      ]
+    },
+    {
+      "slug": "benefits",
+      "label": "Benefits",
+      "detail": "500+ carrier EDI/API, real-time transmission status, open enrollment, medical/dental/vision, life/disability, FSA/HSA/commuter, 401(k), ACA, COBRA, auto deduction sync, broker support",
+      "features": [
+        "500+ carrier EDI/API",
+        "real-time transmission status",
+        "open enrollment",
+        "medical/dental/vision",
+        "life/disability",
+        "FSA/HSA/commuter",
+        "401(k)",
+        "ACA",
+        "COBRA",
+        "auto deduction sync",
+        "broker support"
+      ]
+    },
+    {
+      "slug": "time-scheduling",
+      "label": "Time/scheduling",
+      "detail": "clock in/out (desktop/mobile/kiosk/badge), geofencing, shift scheduling, PTO auto-sync, auto overtime, break/meal tracking, workflow-based approvals",
+      "features": [
+        "clock in/out (desktop/mobile/kiosk/badge)",
+        "geofencing",
+        "shift scheduling",
+        "PTO auto-sync",
+        "auto overtime",
+        "break/meal tracking",
+        "workflow-based approvals"
+      ]
+    },
+    {
+      "slug": "recruiting-ats",
+      "label": "Recruiting/ATS",
+      "detail": "job posting, pipeline, interview scheduling, hire-to-record (no re-entry), AI Application Review, AI Interview Assistant (recording/transcription), AI Smart Scheduling, Greenhouse integration",
+      "features": [
+        "job posting",
+        "pipeline",
+        "interview scheduling",
+        "hire-to-record (no re-entry)",
+        "AI Application Review",
+        "AI Interview Assistant (recording/transcription)",
+        "AI Smart Scheduling",
+        "Greenhouse integration"
+      ]
+    },
+    {
+      "slug": "onboarding-offboarding",
+      "label": "Onboarding/offboarding",
+      "detail": "automated workflows (90-second setup), auto device/app provisioning, offboarding with auto account disabling/deprovisioning",
+      "features": [
+        "automated workflows (90-second setup)",
+        "auto device/app provisioning",
+        "offboarding with auto account disabling/deprovisioning"
+      ]
+    },
+    {
+      "slug": "performance",
+      "label": "Performance",
+      "detail": "review cycles, calibration, payroll-synced performance bonuses (add-on)",
+      "features": [
+        "review cycles",
+        "calibration",
+        "payroll-synced performance bonuses (add-on)"
+      ]
+    },
+    {
+      "slug": "learning",
+      "label": "Learning",
+      "detail": "create/assign courses, completion tracking, compliance training",
+      "features": [
+        "create/assign courses",
+        "completion tracking",
+        "compliance training"
+      ]
+    },
+    {
+      "slug": "headcount-comp",
+      "label": "Headcount/comp",
+      "detail": "headcount planning with hiring/cost forecasting, planned-vs-actual, comp bands (min/mid/max), geographic differentials, band-breach approval gating",
+      "features": [
+        "headcount planning with hiring/cost forecasting",
+        "planned-vs-actual",
+        "comp bands (min/mid/max)",
+        "geographic differentials",
+        "band-breach approval gating"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "custom report builder, arbitrary joins across datasets, real-time cross-cloud dashboards (HR/IT/finance/3rd-party)",
+      "features": [
+        "custom report builder",
+        "arbitrary joins across datasets",
+        "real-time cross-cloud dashboards (HR/IT/finance/3rd-party)"
+      ]
+    },
+    {
+      "slug": "it-mdm",
+      "label": "IT — MDM",
+      "detail": "unified cross-OS MDM (Windows/Mac/mobile), zero-touch enrollment, security policy enforcement, remote lock/wipe, global device procurement (30+ countries)",
+      "features": [
+        "unified cross-OS MDM (Windows/Mac/mobile)",
+        "zero-touch enrollment",
+        "security policy enforcement",
+        "remote lock/wipe",
+        "global device procurement (30+ countries)"
+      ]
+    },
+    {
+      "slug": "it-iam",
+      "label": "IT — IAM",
+      "detail": "SSO across 650+ apps, MFA, conditional access, RBAC, auto provisioning/deprovisioning, password manager",
+      "features": [
+        "SSO across 650+ apps",
+        "MFA",
+        "conditional access",
+        "RBAC",
+        "auto provisioning/deprovisioning",
+        "password manager"
+      ]
+    },
+    {
+      "slug": "it-app-inventory-mgmt",
+      "label": "IT — app/inventory mgmt",
+      "detail": "deploy/update/remove apps, usage monitoring, approved-app enforcement, malicious-app detection; order/ship/retrieve/store devices, warehousing, lifecycle tracking",
+      "features": [
+        "deploy/update/remove apps",
+        "usage monitoring",
+        "approved-app enforcement",
+        "malicious-app detection; order/ship/retrieve/store devices",
+        "warehousing",
+        "lifecycle tracking"
+      ]
+    },
+    {
+      "slug": "finance-spend",
+      "label": "Finance — spend",
+      "detail": "Rippling Spend (payroll + expenses + cards + bills), real-time visibility, policy controls, automated approvals, corporate cards, expense capture, global reimbursements, Bill Pay (AP), procurement, travel booking",
+      "features": [
+        "Rippling Spend (payroll + expenses + cards + bills)",
+        "real-time visibility",
+        "policy controls",
+        "automated approvals",
+        "corporate cards",
+        "expense capture",
+        "global reimbursements",
+        "Bill Pay (AP)",
+        "procurement",
+        "travel booking"
+      ]
+    },
+    {
+      "slug": "global-employment",
+      "label": "Global employment",
+      "detail": "EOR (~80+ countries), PEO (US), contractor management (185+ countries)",
+      "features": [
+        "EOR (~80+ countries)",
+        "PEO (US)",
+        "contractor management (185+ countries)"
+      ]
+    },
+    {
+      "slug": "ai",
+      "label": "AI",
+      "detail": "Rippling AI (production agents on HR/IT/finance data), NL querying across systems, agents for payroll troubleshooting/onboarding/compliance/reporting/interview summarization",
+      "features": [
+        "Rippling AI (production agents on HR/IT/finance data)",
+        "NL querying across systems",
+        "agents for payroll troubleshooting/onboarding/compliance/reporting/interview summarization"
+      ]
+    },
+    {
+      "slug": "compliance",
+      "label": "Compliance",
+      "detail": "automated compliance, multi-state tax registration, new-hire reporting, SOC 1/2/3, ISO 27001, ISO 42001, CSA STAR Level 2",
+      "features": [
+        "automated compliance",
+        "multi-state tax registration",
+        "new-hire reporting",
+        "SOC 1/2/3",
+        "ISO 27001",
+        "ISO 42001",
+        "CSA STAR Level 2"
+      ]
+    }
+  ]
+}

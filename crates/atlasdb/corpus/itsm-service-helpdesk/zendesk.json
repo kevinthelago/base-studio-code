@@ -1,0 +1,164 @@
+{
+  "id": "zendesk",
+  "name": "Zendesk",
+  "domain": "itsm-service-helpdesk",
+  "domainName": "ITSM / Service / Helpdesk",
+  "capabilities": [
+    {
+      "slug": "ticketing",
+      "label": "Ticketing",
+      "detail": "unified Agent Workspace (email/chat/messaging/voice/social), omnichannel threading, custom fields/forms/statuses, views/queues, AI-suggested macros, triggers + automations, side conversations, customer-context panel, custom objects",
+      "features": [
+        "unified Agent Workspace (email/chat/messaging/voice/social)",
+        "omnichannel threading",
+        "custom fields/forms/statuses",
+        "views/queues",
+        "AI-suggested macros",
+        "triggers + automations",
+        "side conversations",
+        "customer-context panel",
+        "custom objects"
+      ]
+    },
+    {
+      "slug": "routing-slas",
+      "label": "Routing/SLAs",
+      "detail": "omnichannel + skills-based + capacity/workload-aware routing, priority/group/overflow/after-hours, IVR, SLA policies with escalation, Copilot routing",
+      "features": [
+        "omnichannel + skills-based + capacity/workload-aware routing",
+        "priority/group/overflow/after-hours",
+        "IVR",
+        "SLA policies with escalation",
+        "Copilot routing"
+      ]
+    },
+    {
+      "slug": "messaging-live-chat",
+      "label": "Messaging/live chat",
+      "detail": "web + mobile-SDK messaging, live + async, social (WhatsApp/Messenger/Instagram/X), SMS, proactive messages, no-code Flow Builder bots",
+      "features": [
+        "web + mobile-SDK messaging",
+        "live + async",
+        "social (WhatsApp/Messenger/Instagram/X)",
+        "SMS",
+        "proactive messages",
+        "no-code Flow Builder bots"
+      ]
+    },
+    {
+      "slug": "voice-talk",
+      "label": "Voice (Talk)",
+      "detail": "inbound/outbound VoIP + PSTN, IVR, routing, voicemail, callback, warm transfers/conferencing, recording/monitoring, barge + whisper, AI transcription + post-call summaries, AI voice agents, QA dead-air detection",
+      "features": [
+        "inbound/outbound VoIP + PSTN",
+        "IVR",
+        "routing",
+        "voicemail",
+        "callback",
+        "warm transfers/conferencing",
+        "recording/monitoring",
+        "barge + whisper",
+        "AI transcription + post-call summaries",
+        "AI voice agents",
+        "QA dead-air detection"
+      ]
+    },
+    {
+      "slug": "ai-agents-copilot",
+      "label": "AI agents/Copilot",
+      "detail": "autonomous full-resolution AI agents across web/mobile/messaging/voice (~80%), no-code Agent Builder, multilingual/multi-brand, intent detection, Copilot next-action + auto-assist, Intelligent Triage, generative replies/search, Resolution Learning Loop, external-model integration, outcome-based pricing",
+      "features": [
+        "autonomous full-resolution AI agents across web/mobile/messaging/voice (~80%)",
+        "no-code Agent Builder",
+        "multilingual/multi-brand",
+        "intent detection",
+        "Copilot next-action + auto-assist",
+        "Intelligent Triage",
+        "generative replies/search",
+        "Resolution Learning Loop",
+        "external-model integration",
+        "outcome-based pricing"
+      ]
+    },
+    {
+      "slug": "knowledge-help-center",
+      "label": "Knowledge/help center",
+      "detail": "help center + community, branded portal, localization, versioning, AI article generation from tickets, generative search, content cues/gap ID, unified Knowledge Graph (Confluence/Drive)",
+      "features": [
+        "help center + community",
+        "branded portal",
+        "localization",
+        "versioning",
+        "AI article generation from tickets",
+        "generative search",
+        "content cues/gap ID",
+        "unified Knowledge Graph (Confluence/Drive)"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "event triggers + time-based, macros, no-code Flow Builder, Action/App Builder, approval workflows",
+      "features": [
+        "event triggers + time-based",
+        "macros",
+        "no-code Flow Builder",
+        "Action/App Builder",
+        "approval workflows"
+      ]
+    },
+    {
+      "slug": "reporting-explore",
+      "label": "Reporting (Explore)",
+      "detail": "prebuilt + custom dashboards, NL quick reports, real-time monitoring, CSAT, metrics library, AI dashboards, scheduled delivery",
+      "features": [
+        "prebuilt + custom dashboards",
+        "NL quick reports",
+        "real-time monitoring",
+        "CSAT",
+        "metrics library",
+        "AI dashboards",
+        "scheduled delivery"
+      ]
+    },
+    {
+      "slug": "wfm-and-qa",
+      "label": "WFM & QA",
+      "detail": "AI staffing forecasts, auto scheduling, schedule-adherence, QA AI scoring across 100% of human + AI interactions, auto review/coaching",
+      "features": [
+        "AI staffing forecasts",
+        "auto scheduling",
+        "schedule-adherence",
+        "QA AI scoring across 100% of human + AI interactions",
+        "auto review/coaching"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "1,800+ Marketplace apps, prebuilt connectors, Apps Framework, REST APIs, webhooks, Sunshine open data platform, Conversations API, SDKs",
+      "features": [
+        "1",
+        "800+ Marketplace apps",
+        "prebuilt connectors",
+        "Apps Framework",
+        "REST APIs",
+        "webhooks",
+        "Sunshine open data platform",
+        "Conversations API",
+        "SDKs"
+      ]
+    },
+    {
+      "slug": "enterprise",
+      "label": "Enterprise",
+      "detail": "custom agent roles + granular permissions, sandbox, multi-brand, audit logs",
+      "features": [
+        "custom agent roles + granular permissions",
+        "sandbox",
+        "multi-brand",
+        "audit logs"
+      ]
+    }
+  ]
+}

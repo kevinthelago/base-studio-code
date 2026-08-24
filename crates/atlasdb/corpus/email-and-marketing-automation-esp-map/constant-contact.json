@@ -1,0 +1,226 @@
+{
+  "id": "constant-contact",
+  "name": "Constant Contact",
+  "domain": "email-and-marketing-automation-esp-map",
+  "domainName": "Email & Marketing Automation (ESP / MAP)",
+  "capabilities": [
+    {
+      "slug": "email-builder",
+      "label": "Email builder",
+      "detail": "drag-drop editor, 200+ responsive templates (incl. 90+ newsletter), mobile-optimized, image gallery, Canva integration, Shutterstock stock images, BrandKit brand-color auto-import from your site, HTML editor, test-email preview, customizable CTAs",
+      "features": [
+        "drag-drop editor",
+        "200+ responsive templates (incl. 90+ newsletter)",
+        "mobile-optimized",
+        "image gallery",
+        "Canva integration",
+        "Shutterstock stock images",
+        "BrandKit brand-color auto-import from your site",
+        "HTML editor",
+        "test-email preview",
+        "customizable CTAs"
+      ]
+    },
+    {
+      "slug": "campaigns",
+      "label": "Campaigns",
+      "detail": "email newsletters, scheduled sends, resend-to-non-openers, multichannel campaign planner (email + social + SMS with recommended scheduling), surveys/polls",
+      "features": [
+        "email newsletters",
+        "scheduled sends",
+        "resend-to-non-openers",
+        "multichannel campaign planner (email + social + SMS with recommended scheduling)",
+        "surveys/polls"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "automation path builder (multi-step), 12 event-based triggers, pre-made + custom templates (Premium), welcome series, drip campaigns, autoresponders, abandoned-cart recovery (Premium), auto contact tagging by clicks/purchases/attendance, scheduled email + SMS, conditions/delays/actions",
+      "features": [
+        "automation path builder (multi-step)",
+        "12 event-based triggers",
+        "pre-made + custom templates (Premium)",
+        "welcome series",
+        "drip campaigns",
+        "autoresponders",
+        "abandoned-cart recovery (Premium)",
+        "auto contact tagging by clicks/purchases/attendance",
+        "scheduled email + SMS",
+        "conditions/delays/actions"
+      ]
+    },
+    {
+      "slug": "sms",
+      "label": "SMS",
+      "detail": "automated VIP alerts, abandoned-cart reminders, event updates, appointment reminders, promotional/mass texting, bundled with email + social automations, SMS analytics (US-only add-on)",
+      "features": [
+        "automated VIP alerts",
+        "abandoned-cart reminders",
+        "event updates",
+        "appointment reminders",
+        "promotional/mass texting",
+        "bundled with email + social automations",
+        "SMS analytics (US-only add-on)"
+      ]
+    },
+    {
+      "slug": "segmentation",
+      "label": "Segmentation",
+      "detail": "up to 1,000 lists, multiple lists per contact, Segmentation Builder (profile/activity/engagement/list membership/shopping/source/tags), auto-updating dynamic segments, ecommerce segmentation (Premium), list clean-up",
+      "features": [
+        "up to 1",
+        "000 lists",
+        "multiple lists per contact",
+        "Segmentation Builder (profile/activity/engagement/list membership/shopping/source/tags)",
+        "auto-updating dynamic segments",
+        "ecommerce segmentation (Premium)",
+        "list clean-up"
+      ]
+    },
+    {
+      "slug": "personalization",
+      "label": "Personalization",
+      "detail": "dynamic content blocks (Premium), merge-field personalization, custom contact fields",
+      "features": [
+        "dynamic content blocks (Premium)",
+        "merge-field personalization",
+        "custom contact fields"
+      ]
+    },
+    {
+      "slug": "a-b-testing",
+      "label": "A/B testing",
+      "detail": "subject-line A/B, multivariate (higher tiers)",
+      "features": [
+        "subject-line A/B",
+        "multivariate (higher tiers)"
+      ]
+    },
+    {
+      "slug": "deliverability",
+      "label": "Deliverability",
+      "detail": "~97% deliverability, domain authentication (SPF/DKIM), CAN-SPAM, clear unsubscribe with feedback collection",
+      "features": [
+        "~97% deliverability",
+        "domain authentication (SPF/DKIM)",
+        "CAN-SPAM",
+        "clear unsubscribe with feedback collection"
+      ]
+    },
+    {
+      "slug": "social",
+      "label": "Social",
+      "detail": "create/schedule/post to multiple platforms, social inbox/monitoring, AI \"remix\" of emails into social posts, Facebook/Instagram lead ads, lookalike targeting, Google Ad Manager, social ads manager",
+      "features": [
+        "create/schedule/post to multiple platforms",
+        "social inbox/monitoring",
+        "AI \"remix\" of emails into social posts",
+        "Facebook/Instagram lead ads",
+        "lookalike targeting",
+        "Google Ad Manager",
+        "social ads manager"
+      ]
+    },
+    {
+      "slug": "landing-pages-forms-pop-ups",
+      "label": "Landing pages/forms/pop-ups",
+      "detail": "drag-drop LP builder, LP templates, custom short URL, sign-up forms (banner/flyout/inline/pop-up), timed pop-ups, embeddable forms, AI-assisted lead-magnet generator (55 templates, share via link/QR/social/WhatsApp)",
+      "features": [
+        "drag-drop LP builder",
+        "LP templates",
+        "custom short URL",
+        "sign-up forms (banner/flyout/inline/pop-up)",
+        "timed pop-ups",
+        "embeddable forms",
+        "AI-assisted lead-magnet generator (55 templates, share via link/QR/social/WhatsApp)"
+      ]
+    },
+    {
+      "slug": "contacts-crm",
+      "label": "Contacts/CRM",
+      "detail": "centralized contact database, import/organization, CRM/lead-gen tools, activity tracking",
+      "features": [
+        "centralized contact database",
+        "import/organization",
+        "CRM/lead-gen tools",
+        "activity tracking"
+      ]
+    },
+    {
+      "slug": "events-rsvp",
+      "label": "Events/RSVP",
+      "detail": "drag-drop event creation, virtual + in-person, ticketing, RSVP + registration forms, automatic reminders, event promotion, multi-currency, payment via cards/PayPal/Venmo, Stripe + PayPal",
+      "features": [
+        "drag-drop event creation",
+        "virtual + in-person",
+        "ticketing",
+        "RSVP + registration forms",
+        "automatic reminders",
+        "event promotion",
+        "multi-currency",
+        "payment via cards/PayPal/Venmo",
+        "Stripe + PayPal"
+      ]
+    },
+    {
+      "slug": "e-commerce",
+      "label": "E-commerce",
+      "detail": "Shopify + WooCommerce integration, shoppable emails, ecommerce templates (Premium), abandoned-cart reminders, shopping-activity segmentation, revenue/ROI tracking",
+      "features": [
+        "Shopify + WooCommerce integration",
+        "shoppable emails",
+        "ecommerce templates (Premium)",
+        "abandoned-cart reminders",
+        "shopping-activity segmentation",
+        "revenue/ROI tracking"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "real-time open/click/bounce reporting, click heat maps, campaign comparison, engagement/device tracking, ROI/revenue tracking, Google Analytics",
+      "features": [
+        "real-time open/click/bounce reporting",
+        "click heat maps",
+        "campaign comparison",
+        "engagement/device tracking",
+        "ROI/revenue tracking",
+        "Google Analytics"
+      ]
+    },
+    {
+      "slug": "ai-brandkit-ai",
+      "label": "AI (BrandKit AI)",
+      "detail": "AI content/copy generator, AI subject-line generator, AI social-post remix, AI lead-magnet generator, BrandKit AI (auto-pull logo/colors/images from site), AI multichannel campaign planner",
+      "features": [
+        "AI content/copy generator",
+        "AI subject-line generator",
+        "AI social-post remix",
+        "AI lead-magnet generator",
+        "BrandKit AI (auto-pull logo/colors/images from site)",
+        "AI multichannel campaign planner"
+      ]
+    },
+    {
+      "slug": "website-logo-builder",
+      "label": "Website/logo builder",
+      "detail": "AI-powered website builder, free Logo Maker",
+      "features": [
+        "AI-powered website builder",
+        "free Logo Maker"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "marketplace (thousands; some sources cite 5,000+), Shopify/WooCommerce/Salesforce/QuickBooks/Zapier/Gmail/Outlook/Meta/Canva/Shutterstock, developer API, SMTP",
+      "features": [
+        "marketplace (thousands; some sources cite 5,000+)",
+        "Shopify/WooCommerce/Salesforce/QuickBooks/Zapier/Gmail/Outlook/Meta/Canva/Shutterstock",
+        "developer API",
+        "SMTP"
+      ]
+    }
+  ]
+}

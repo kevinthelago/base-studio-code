@@ -1,0 +1,170 @@
+{
+  "id": "sap-s-4hana",
+  "name": "SAP S/4HANA",
+  "domain": "erp-enterprise-resource-planning",
+  "domainName": "ERP (Enterprise Resource Planning)",
+  "capabilities": [
+    {
+      "slug": "finance-fi",
+      "label": "Finance (FI)",
+      "detail": "Universal Journal (unified financial + management accounting), real-time processes, cash mgmt, integrated business planning, advanced compliance reporting, predictive analytics, Central Finance, treasury & risk, financial close, cost & profitability",
+      "features": [
+        "Universal Journal (unified financial + management accounting)",
+        "real-time processes",
+        "cash mgmt",
+        "integrated business planning",
+        "advanced compliance reporting",
+        "predictive analytics",
+        "Central Finance",
+        "treasury & risk",
+        "financial close",
+        "cost & profitability"
+      ]
+    },
+    {
+      "slug": "controlling-co",
+      "label": "Controlling (CO)",
+      "detail": "cost element/center accounting, activity-based costing, internal orders, product cost controlling, CO-PA, profit center accounting",
+      "features": [
+        "cost element/center accounting",
+        "activity-based costing",
+        "internal orders",
+        "product cost controlling",
+        "CO-PA",
+        "profit center accounting"
+      ]
+    },
+    {
+      "slug": "sales-and-distribution-sd",
+      "label": "Sales & Distribution (SD)",
+      "detail": "order-to-cash, quotes/orders/pricing, rebate mgmt, credit mgmt, billing/invoicing, foreign trade, shipping & transportation",
+      "features": [
+        "order-to-cash",
+        "quotes/orders/pricing",
+        "rebate mgmt",
+        "credit mgmt",
+        "billing/invoicing",
+        "foreign trade",
+        "shipping & transportation"
+      ]
+    },
+    {
+      "slug": "materials-mgmt-mm",
+      "label": "Materials Mgmt (MM)",
+      "detail": "procurement/purchasing, inventory, MRP, vendor eval, invoice verification, three-way matching, valuation",
+      "features": [
+        "procurement/purchasing",
+        "inventory",
+        "MRP",
+        "vendor eval",
+        "invoice verification",
+        "three-way matching",
+        "valuation"
+      ]
+    },
+    {
+      "slug": "production-planning-pp",
+      "label": "Production Planning (PP)",
+      "detail": "APS, MRP Live, capacity planning, production orders, process/repetitive mfg, Kanban, product cost planning, detailed scheduling",
+      "features": [
+        "APS",
+        "MRP Live",
+        "capacity planning",
+        "production orders",
+        "process/repetitive mfg",
+        "Kanban",
+        "product cost planning",
+        "detailed scheduling"
+      ]
+    },
+    {
+      "slug": "quality-qm",
+      "label": "Quality (QM)",
+      "detail": "planning, inspection, certificates, audit mgmt, non-conformance, supplier quality, batch mgmt",
+      "features": [
+        "planning",
+        "inspection",
+        "certificates",
+        "audit mgmt",
+        "non-conformance",
+        "supplier quality",
+        "batch mgmt"
+      ]
+    },
+    {
+      "slug": "plant-maintenance-pm",
+      "label": "Plant Maintenance (PM)",
+      "detail": "maintenance planning, equipment/asset mgmt, work orders, preventive/predictive maintenance, condition monitoring, mobile",
+      "features": [
+        "maintenance planning",
+        "equipment/asset mgmt",
+        "work orders",
+        "preventive/predictive maintenance",
+        "condition monitoring",
+        "mobile"
+      ]
+    },
+    {
+      "slug": "project-system-ps",
+      "label": "Project System (PS)",
+      "detail": "structuring, budget/cost control, resource mgmt, scheduling, revenue/profitability, change mgmt",
+      "features": [
+        "structuring",
+        "budget/cost control",
+        "resource mgmt",
+        "scheduling",
+        "revenue/profitability",
+        "change mgmt"
+      ]
+    },
+    {
+      "slug": "hcm",
+      "label": "HCM",
+      "detail": "org mgmt, personnel admin, payroll, time mgmt, performance/goals, LMS, recruitment/onboarding, succession, ESS/MSS, comp & benefits",
+      "features": [
+        "org mgmt",
+        "personnel admin",
+        "payroll",
+        "time mgmt",
+        "performance/goals",
+        "LMS",
+        "recruitment/onboarding",
+        "succession",
+        "ESS/MSS",
+        "comp & benefits"
+      ]
+    },
+    {
+      "slug": "scm-apo",
+      "label": "SCM / APO",
+      "detail": "advanced planning, transportation & warehouse mgmt, supplier collaboration, Global Trade Services; Demand Planning, Supply Network Planning, PP/DS, Global ATP, Transportation Planning, network design, what-if",
+      "features": [
+        "advanced planning",
+        "transportation & warehouse mgmt",
+        "supplier collaboration",
+        "Global Trade Services; Demand Planning",
+        "Supply Network Planning",
+        "PP/DS",
+        "Global ATP",
+        "Transportation Planning",
+        "network design",
+        "what-if"
+      ]
+    },
+    {
+      "slug": "crm-and-ehs",
+      "label": "CRM & EHS",
+      "detail": "SFA, campaign mgmt, service/field service, interaction center, loyalty; EHS compliance, hazardous-substance/waste mgmt, incident mgmt, sustainability",
+      "features": [
+        "SFA",
+        "campaign mgmt",
+        "service/field service",
+        "interaction center",
+        "loyalty; EHS compliance",
+        "hazardous-substance/waste mgmt",
+        "incident mgmt",
+        "sustainability"
+      ]
+    }
+  ]
+}

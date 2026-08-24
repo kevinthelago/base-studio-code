@@ -1,0 +1,94 @@
+{
+  "id": "pipedrive",
+  "name": "Pipedrive",
+  "domain": "crm-customer-relationship-management",
+  "domainName": "CRM (Customer Relationship Management)",
+  "capabilities": [
+    {
+      "slug": "pipeline-and-deals",
+      "label": "Pipeline & Deals",
+      "detail": "visual pipelines, stage progression, goals, Focus View",
+      "features": [
+        "visual pipelines",
+        "stage progression",
+        "goals",
+        "Focus View"
+      ]
+    },
+    {
+      "slug": "leads",
+      "label": "Leads",
+      "detail": "lead inbox, qualification/prioritization, LeadBooster (chatbot/live chat/forms/prospector), Web Visitors",
+      "features": [
+        "lead inbox",
+        "qualification/prioritization",
+        "LeadBooster (chatbot/live chat/forms/prospector)",
+        "Web Visitors"
+      ]
+    },
+    {
+      "slug": "contact-and-comms",
+      "label": "Contact & Comms",
+      "detail": "timeline, email sync + tracking, sales inbox, templates, mobile calling w/ auto-tracking",
+      "features": [
+        "timeline",
+        "email sync + tracking",
+        "sales inbox",
+        "templates",
+        "mobile calling w/ auto-tracking"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "workflow/task automation, webhooks + open API, qualification sequences",
+      "features": [
+        "workflow/task automation",
+        "webhooks + open API",
+        "qualification sequences"
+      ]
+    },
+    {
+      "slug": "ai",
+      "label": "AI",
+      "detail": "Sales Assistant (deal recs), AI email writer/summarizer, AI report generator",
+      "features": [
+        "Sales Assistant (deal recs)",
+        "AI email writer/summarizer",
+        "AI report generator"
+      ]
+    },
+    {
+      "slug": "reporting-docs",
+      "label": "Reporting/Docs",
+      "detail": "customizable reports, forecasting, Smart Docs (proposals/contracts/e-sign)",
+      "features": [
+        "customizable reports",
+        "forecasting",
+        "Smart Docs (proposals/contracts/e-sign)"
+      ]
+    },
+    {
+      "slug": "add-ons",
+      "label": "Add-ons",
+      "detail": "Projects (delivery), Campaigns (email marketing), 500+ marketplace apps",
+      "features": [
+        "Projects (delivery)",
+        "Campaigns (email marketing)",
+        "500+ marketplace apps"
+      ]
+    },
+    {
+      "slug": "security",
+      "label": "Security",
+      "detail": "per-company encrypted DBs, permissions, SSO, 2FA, audit logs; mobile w/ \"Nearby\"",
+      "features": [
+        "per-company encrypted DBs",
+        "permissions",
+        "SSO",
+        "2FA",
+        "audit logs; mobile w/ \"Nearby\""
+      ]
+    }
+  ]
+}

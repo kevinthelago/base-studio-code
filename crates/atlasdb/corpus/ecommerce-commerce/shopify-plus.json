@@ -1,0 +1,248 @@
+{
+  "id": "shopify-plus",
+  "name": "Shopify (+ Plus)",
+  "domain": "ecommerce-commerce",
+  "domainName": "eCommerce / Commerce",
+  "capabilities": [
+    {
+      "slug": "storefront-themes",
+      "label": "Storefront/themes",
+      "detail": "Online Store 2.0, 800+ themes + Theme Store, drag-drop visual theme editor with \"sections everywhere,\" Liquid templating + custom Liquid blocks, Metaobjects (custom structured content) + Metafields, rich media (video, 3D/AR), AI store/theme generation + Shopify Magic content, custom domains, blog, customer accounts, responsive + accessibility-optimized",
+      "features": [
+        "Online Store 2.0",
+        "800+ themes + Theme Store",
+        "drag-drop visual theme editor with \"sections everywhere",
+        "\" Liquid templating + custom Liquid blocks",
+        "Metaobjects (custom structured content) + Metafields",
+        "rich media (video, 3D/AR)",
+        "AI store/theme generation + Shopify Magic content",
+        "custom domains",
+        "blog",
+        "customer accounts",
+        "responsive + accessibility-optimized"
+      ]
+    },
+    {
+      "slug": "catalog",
+      "label": "Catalog",
+      "detail": "unlimited products, variants (100/product, more via combinations), manual + automated collections, product options, digital/downloadable products, tags/types/vendors, CSV import/export, barcode/SKU, product recommendations, contextual (per-market/B2B) catalogs",
+      "features": [
+        "unlimited products",
+        "variants (100/product, more via combinations)",
+        "manual + automated collections",
+        "product options",
+        "digital/downloadable products",
+        "tags/types/vendors",
+        "CSV import/export",
+        "barcode/SKU",
+        "product recommendations",
+        "contextual (per-market/B2B) catalogs"
+      ]
+    },
+    {
+      "slug": "cart-checkout",
+      "label": "Cart/checkout",
+      "detail": "Shopify Checkout (~15% better converting), one-page + one-click checkout, Checkout Extensibility (UI extensions, branding API, web pixels), Shopify Functions (custom discounts, delivery/payment customization, validation), draft orders, abandoned-checkout recovery, Shop Pay accelerated checkout",
+      "features": [
+        "Shopify Checkout (~15% better converting)",
+        "one-page + one-click checkout",
+        "Checkout Extensibility (UI extensions, branding API, web pixels)",
+        "Shopify Functions (custom discounts, delivery/payment customization, validation)",
+        "draft orders",
+        "abandoned-checkout recovery",
+        "Shop Pay accelerated checkout"
+      ]
+    },
+    {
+      "slug": "payments",
+      "label": "Payments",
+      "detail": "Shopify Payments, 100+ third-party gateways, Shop Pay (150M+ buyer network), Shop Pay Installments (BNPL), Apple Pay/Google Pay, gift cards, split/partial payments & deposits (POS), chargeback/fraud + dispute management, quick payouts, PCI/EMV, Tap to Pay + card readers (POS)",
+      "features": [
+        "Shopify Payments",
+        "100+ third-party gateways",
+        "Shop Pay (150M+ buyer network)",
+        "Shop Pay Installments (BNPL)",
+        "Apple Pay/Google Pay",
+        "gift cards",
+        "split/partial payments & deposits (POS)",
+        "chargeback/fraud + dispute management",
+        "quick payouts",
+        "PCI/EMV",
+        "Tap to Pay + card readers (POS)"
+      ]
+    },
+    {
+      "slug": "promotions",
+      "label": "Promotions",
+      "detail": "automatic + code discounts (%/fixed/BOGO/free shipping), discount combinations, Shopify Functions custom promotions, Shopify Bundles, gift cards, Shopify Forms, customer segmentation",
+      "features": [
+        "automatic + code discounts (%/fixed/BOGO/free shipping)",
+        "discount combinations",
+        "Shopify Functions custom promotions",
+        "Shopify Bundles",
+        "gift cards",
+        "Shopify Forms",
+        "customer segmentation"
+      ]
+    },
+    {
+      "slug": "inventory-oms",
+      "label": "Inventory/OMS",
+      "detail": "multi-location inventory (real-time sync), transfers/adjustments/receive/send, purchase orders + demand forecasting (Sidekick AI / Stocky), low-stock alerts, Shopify Fulfillment Network / Flexport",
+      "features": [
+        "multi-location inventory (real-time sync)",
+        "transfers/adjustments/receive/send",
+        "purchase orders + demand forecasting (Sidekick AI / Stocky)",
+        "low-stock alerts",
+        "Shopify Fulfillment Network / Flexport"
+      ]
+    },
+    {
+      "slug": "multi-channel",
+      "label": "Multi-channel",
+      "detail": "Online Store, POS, Shop app, Buy Button, social (Instagram/Facebook/TikTok/Pinterest/YouTube), Google & YouTube channel + Merchant Center sync, Amazon, Walmart, Collabs (creators), Linkpop, BOPIS, ship-from-store, local delivery",
+      "features": [
+        "Online Store",
+        "POS",
+        "Shop app",
+        "Buy Button",
+        "social (Instagram/Facebook/TikTok/Pinterest/YouTube)",
+        "Google & YouTube channel + Merchant Center sync",
+        "Amazon",
+        "Walmart",
+        "Collabs (creators)",
+        "Linkpop",
+        "BOPIS",
+        "ship-from-store",
+        "local delivery"
+      ]
+    },
+    {
+      "slug": "b2b",
+      "label": "B2B",
+      "detail": "native Shopify B2B (Plus) on the same store as DTC, company profiles + multiple locations, customer-specific catalogs & price lists, net payment terms, quantity rules, B2B checkout, wholesale",
+      "features": [
+        "native Shopify B2B (Plus) on the same store as DTC",
+        "company profiles + multiple locations",
+        "customer-specific catalogs & price lists",
+        "net payment terms",
+        "quantity rules",
+        "B2B checkout",
+        "wholesale"
+      ]
+    },
+    {
+      "slug": "internationalization",
+      "label": "Internationalization",
+      "detail": "Shopify Markets (+ Managed Markets), multi-currency via Shopify Payments, multi-language via Translate & Adapt, local domains/subfolders, geolocation redirect, duties & import taxes, market-specific catalogs/pricing, 150+ country activation (Plus)",
+      "features": [
+        "Shopify Markets (+ Managed Markets)",
+        "multi-currency via Shopify Payments",
+        "multi-language via Translate & Adapt",
+        "local domains/subfolders",
+        "geolocation redirect",
+        "duties & import taxes",
+        "market-specific catalogs/pricing",
+        "150+ country activation (Plus)"
+      ]
+    },
+    {
+      "slug": "seo-marketing",
+      "label": "SEO/marketing",
+      "detail": "built-in SEO (meta/sitemap/canonical), Shopify Email, marketing automations, Shopify Audiences (Plus, CAC reduction), Shopify Forms, Shopify Inbox (chat), Google/Meta ad integrations, abandoned-cart, segmentation, Collabs, blog",
+      "features": [
+        "built-in SEO (meta/sitemap/canonical)",
+        "Shopify Email",
+        "marketing automations",
+        "Shopify Audiences (Plus, CAC reduction)",
+        "Shopify Forms",
+        "Shopify Inbox (chat)",
+        "Google/Meta ad integrations",
+        "abandoned-cart",
+        "segmentation",
+        "Collabs",
+        "blog"
+      ]
+    },
+    {
+      "slug": "headless-composable",
+      "label": "Headless/composable",
+      "detail": "Storefront API (GraphQL, no rate limits), Hydrogen (React/Remix framework), Oxygen (free global hosting), Admin API, Customer Account API, Shopify Functions, Metaobjects, Shopify CLI, \"Commerce for Agents\"/agentic tools",
+      "features": [
+        "Storefront API (GraphQL, no rate limits)",
+        "Hydrogen (React/Remix framework)",
+        "Oxygen (free global hosting)",
+        "Admin API",
+        "Customer Account API",
+        "Shopify Functions",
+        "Metaobjects",
+        "Shopify CLI",
+        "\"Commerce for Agents\"/agentic tools"
+      ]
+    },
+    {
+      "slug": "apps",
+      "label": "Apps",
+      "detail": "Shopify App Store (8,000+ apps — \"largest commerce ecosystem\"), app extensions, theme app extensions, Shopify Functions",
+      "features": [
+        "Shopify App Store (8,000+ apps — \"largest commerce ecosystem\")",
+        "app extensions",
+        "theme app extensions",
+        "Shopify Functions"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "Analytics dashboards + Live View, ShopifyQL / ShopifyQL Notebooks (Plus), reports (finance/sales/inventory/behavior/marketing/customer), custom reports (Plus)",
+      "features": [
+        "Analytics dashboards + Live View",
+        "ShopifyQL / ShopifyQL Notebooks (Plus)",
+        "reports (finance/sales/inventory/behavior/marketing/customer)",
+        "custom reports (Plus)"
+      ]
+    },
+    {
+      "slug": "shipping-fulfillment",
+      "label": "Shipping/fulfillment",
+      "detail": "Shopify Shipping (discounted labels), real-time carrier-calculated rates (Plus/annual), local delivery & pickup, Shopify Fulfillment Network / 3PL, self-serve returns, packing slips, auto-calculated tax & shipping",
+      "features": [
+        "Shopify Shipping (discounted labels)",
+        "real-time carrier-calculated rates (Plus/annual)",
+        "local delivery & pickup",
+        "Shopify Fulfillment Network / 3PL",
+        "self-serve returns",
+        "packing slips",
+        "auto-calculated tax & shipping"
+      ]
+    },
+    {
+      "slug": "subscriptions",
+      "label": "Subscriptions",
+      "detail": "Subscription APIs + selling plans, Shopify Subscriptions app, Shop Pay subscriptions",
+      "features": [
+        "Subscription APIs + selling plans",
+        "Shopify Subscriptions app",
+        "Shop Pay subscriptions"
+      ]
+    },
+    {
+      "slug": "plus-only-enterprise",
+      "label": "Plus-only enterprise",
+      "detail": "Shopify Flow (automation), Launchpad (scheduled flash sales/events), Organization Admin, up to 10 expansion stores, wholesale channel, bespoke/custom apps + higher API limits, user roles & permissions, 99.99% uptime SLA, 10K+ checkouts/min, sandbox/dev stores, POS Pro",
+      "features": [
+        "Shopify Flow (automation)",
+        "Launchpad (scheduled flash sales/events)",
+        "Organization Admin",
+        "up to 10 expansion stores",
+        "wholesale channel",
+        "bespoke/custom apps + higher API limits",
+        "user roles & permissions",
+        "99.99% uptime SLA",
+        "10K+ checkouts/min",
+        "sandbox/dev stores",
+        "POS Pro"
+      ]
+    }
+  ]
+}

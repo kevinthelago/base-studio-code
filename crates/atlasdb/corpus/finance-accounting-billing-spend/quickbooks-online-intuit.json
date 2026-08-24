@@ -1,0 +1,253 @@
+{
+  "id": "quickbooks-online-intuit",
+  "name": "QuickBooks Online (Intuit)",
+  "domain": "finance-accounting-billing-spend",
+  "domainName": "Finance / Accounting / Billing / Spend",
+  "capabilities": [
+    {
+      "slug": "gl-chart-of-accounts",
+      "label": "GL/chart of accounts",
+      "detail": "double-entry, chart of accounts (unlimited on Advanced), GL report, journal entries, automated bookkeeping/auto-categorization, class + location tracking, custom/enhanced custom fields (Advanced), fixed asset accounting (Advanced), multicurrency (Essentials+), audit log",
+      "features": [
+        "double-entry",
+        "chart of accounts (unlimited on Advanced)",
+        "GL report",
+        "journal entries",
+        "automated bookkeeping/auto-categorization",
+        "class + location tracking",
+        "custom/enhanced custom fields (Advanced)",
+        "fixed asset accounting (Advanced)",
+        "multicurrency (Essentials+)",
+        "audit log"
+      ]
+    },
+    {
+      "slug": "invoicing-ar",
+      "label": "Invoicing/AR",
+      "detail": "invoices + estimates, customizable invoices, progress invoicing, recurring invoices (Essentials+), auto payment reminders, delayed charges, track expenses/time by customer, batch invoices (Advanced), \"Invoicing on Autopilot\" (AI, Advanced), pay-enabled links, estimate-to-invoice, credit memos",
+      "features": [
+        "invoices + estimates",
+        "customizable invoices",
+        "progress invoicing",
+        "recurring invoices (Essentials+)",
+        "auto payment reminders",
+        "delayed charges",
+        "track expenses/time by customer",
+        "batch invoices (Advanced)",
+        "\"Invoicing on Autopilot\" (AI, Advanced)",
+        "pay-enabled links",
+        "estimate-to-invoice",
+        "credit memos"
+      ]
+    },
+    {
+      "slug": "bill-pay-ap",
+      "label": "Bill pay/AP",
+      "detail": "manage bills, bill tracking & payment scheduling, purchase orders (Plus+), vendor management, integrated Bill Pay (Elite bundled in Advanced), AP approval requests, print checks",
+      "features": [
+        "manage bills",
+        "bill tracking & payment scheduling",
+        "purchase orders (Plus+)",
+        "vendor management",
+        "integrated Bill Pay (Elite bundled in Advanced)",
+        "AP approval requests",
+        "print checks"
+      ]
+    },
+    {
+      "slug": "expense-management",
+      "label": "Expense management",
+      "detail": "income/expense tracking, mobile receipt capture, auto-match receipts, categorize expenses, team expense tracking, billable expenses, tax-deduction maximization",
+      "features": [
+        "income/expense tracking",
+        "mobile receipt capture",
+        "auto-match receipts",
+        "categorize expenses",
+        "team expense tracking",
+        "billable expenses",
+        "tax-deduction maximization"
+      ]
+    },
+    {
+      "slug": "bank-reconciliation",
+      "label": "Bank reconciliation",
+      "detail": "automated bank feeds, auto-download & auto-categorize, reconciliation, bank rules, \"Continuously Clean Books\" (AI, Advanced), AI find-and-fix errors",
+      "features": [
+        "automated bank feeds",
+        "auto-download & auto-categorize",
+        "reconciliation",
+        "bank rules",
+        "\"Continuously Clean Books\" (AI, Advanced)",
+        "AI find-and-fix errors"
+      ]
+    },
+    {
+      "slug": "reporting",
+      "label": "Reporting",
+      "detail": "modern-view reports, P&L, balance sheet, cash flow, GL; ~20 reports (Simple Start) → 115+ customizable (Advanced), custom report builder, business analytics center (Advanced), Spreadsheet Sync/Excel (Advanced), Conversational BI + AI forecasting (Advanced)",
+      "features": [
+        "modern-view reports",
+        "P&L",
+        "balance sheet",
+        "cash flow",
+        "GL; ~20 reports (Simple Start) → 115+ customizable (Advanced)",
+        "custom report builder",
+        "business analytics center (Advanced)",
+        "Spreadsheet Sync/Excel (Advanced)",
+        "Conversational BI + AI forecasting (Advanced)"
+      ]
+    },
+    {
+      "slug": "budgeting-fp-and-a",
+      "label": "Budgeting/FP&A",
+      "detail": "budgets (Plus+), budget vs actuals, AI forecasting, cash flow planner, business analytics dashboard (Advanced)",
+      "features": [
+        "budgets (Plus+)",
+        "budget vs actuals",
+        "AI forecasting",
+        "cash flow planner",
+        "business analytics dashboard (Advanced)"
+      ]
+    },
+    {
+      "slug": "multi-entity",
+      "label": "Multi-entity",
+      "detail": "not native (separate companies or third-party apps; multi-location + class tracking on Plus+) — a known gap vs mid-market ERPs",
+      "features": [
+        "not native (separate companies or third-party apps; multi-location + class tracking on Plus+) — a known gap vs mid-market ERPs"
+      ]
+    },
+    {
+      "slug": "tax",
+      "label": "Tax",
+      "detail": "automated sales tax (rate calc by location, collect/report/pay), sales tax tracking, 1099 contractor management + e-file, deduction tracking",
+      "features": [
+        "automated sales tax (rate calc by location, collect/report/pay)",
+        "sales tax tracking",
+        "1099 contractor management + e-file",
+        "deduction tracking"
+      ]
+    },
+    {
+      "slug": "payroll-core-premium-elite-add-ons",
+      "label": "Payroll (Core/Premium/Elite add-ons)",
+      "detail": "full-service auto payroll, automated federal/state tax calc/filing/payment, W-2/1099 filing, next-day (Core) / same-day (Premium/Elite) direct deposit, health benefits & workers' comp, 401(k), tax penalty protection up to $25K (Elite)",
+      "features": [
+        "full-service auto payroll",
+        "automated federal/state tax calc/filing/payment",
+        "W-2/1099 filing",
+        "next-day (Core) / same-day (Premium/Elite) direct deposit",
+        "health benefits & workers' comp",
+        "401(k)",
+        "tax penalty protection up to $25K (Elite)"
+      ]
+    },
+    {
+      "slug": "payments-quickbooks-payments",
+      "label": "Payments (QuickBooks Payments)",
+      "detail": "cards, ACH, digital wallets (Apple/Google Pay/PayPal/Venmo), contactless/NFC, mobile card reader + GoPayment, virtual terminal, payment links, recurring, next-day funding, instant deposit with QuickBooks Checking, e-commerce integrations",
+      "features": [
+        "cards",
+        "ACH",
+        "digital wallets (Apple/Google Pay/PayPal/Venmo)",
+        "contactless/NFC",
+        "mobile card reader + GoPayment",
+        "virtual terminal",
+        "payment links",
+        "recurring",
+        "next-day funding",
+        "instant deposit with QuickBooks Checking",
+        "e-commerce integrations"
+      ]
+    },
+    {
+      "slug": "inventory",
+      "label": "Inventory",
+      "detail": "track inventory & COGS (Plus+), quantity/valuation, purchase orders, reorder points/low-stock, product/service catalog",
+      "features": [
+        "track inventory & COGS (Plus+)",
+        "quantity/valuation",
+        "purchase orders",
+        "reorder points/low-stock",
+        "product/service catalog"
+      ]
+    },
+    {
+      "slug": "projects-job-costing",
+      "label": "Projects/job costing",
+      "detail": "track project profitability (Plus+), job costing, estimated-vs-actual (Advanced), assign transactions/time/expenses to projects",
+      "features": [
+        "track project profitability (Plus+)",
+        "job costing",
+        "estimated-vs-actual (Advanced)",
+        "assign transactions/time/expenses to projects"
+      ]
+    },
+    {
+      "slug": "time-mileage",
+      "label": "Time/mileage",
+      "detail": "track time & add to invoices (Essentials+), billable time, QuickBooks Time (GPS clock-in via Payroll Premium/Elite), automatic GPS mileage tracking",
+      "features": [
+        "track time & add to invoices (Essentials+)",
+        "billable time",
+        "QuickBooks Time (GPS clock-in via Payroll Premium/Elite)",
+        "automatic GPS mileage tracking"
+      ]
+    },
+    {
+      "slug": "cash-flow",
+      "label": "Cash flow",
+      "detail": "cash flow management, planner/forecast, statement, business dashboard",
+      "features": [
+        "cash flow management",
+        "planner/forecast",
+        "statement",
+        "business dashboard"
+      ]
+    },
+    {
+      "slug": "workflow-controls-advanced",
+      "label": "Workflow/controls (Advanced)",
+      "detail": "custom approval workflows, custom user roles, batch enter/edit, revenue recognition (Plus+/Advanced), point-in-time data restoration",
+      "features": [
+        "custom approval workflows",
+        "custom user roles",
+        "batch enter/edit",
+        "revenue recognition (Plus+/Advanced)",
+        "point-in-time data restoration"
+      ]
+    },
+    {
+      "slug": "ai-intuit-assist",
+      "label": "AI (Intuit Assist)",
+      "detail": "AI assistant, AI-drafted invoices & follow-ups, Continuously Clean Books, Conversational BI, AI error detection & forecasting",
+      "features": [
+        "AI assistant",
+        "AI-drafted invoices & follow-ups",
+        "Continuously Clean Books",
+        "Conversational BI",
+        "AI error detection & forecasting"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "750+ app marketplace, open API, Shopify/Amazon/eBay sync, Stripe/Square/PayPal, TurboTax",
+      "features": [
+        "750+ app marketplace",
+        "open API",
+        "Shopify/Amazon/eBay sync",
+        "Stripe/Square/PayPal",
+        "TurboTax"
+      ]
+    },
+    {
+      "slug": "plan-tiers",
+      "label": "Plan tiers",
+      "detail": "Solopreneur (~$20) · Simple Start (~$38, 1 user) · Essentials (~$75, 3 users, multicurrency/time/bills) · Plus (~$115, 5 users, inventory/projects/budgets/POs/rev rec) · Advanced (~$275, 25 users, batch/workflows/roles/analytics)",
+      "features": [
+        "Solopreneur (~$20) · Simple Start (~$38, 1 user) · Essentials (~$75, 3 users, multicurrency/time/bills) · Plus (~$115, 5 users, inventory/projects/budgets/POs/rev rec) · Advanced (~$275, 25 users, batch/workflows/roles/analytics)"
+      ]
+    }
+  ]
+}

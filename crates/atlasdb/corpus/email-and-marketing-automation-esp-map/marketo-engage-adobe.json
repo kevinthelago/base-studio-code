@@ -1,0 +1,249 @@
+{
+  "id": "marketo-engage-adobe",
+  "name": "Marketo Engage (Adobe)",
+  "domain": "email-and-marketing-automation-esp-map",
+  "domainName": "Email & Marketing Automation (ESP / MAP)",
+  "capabilities": [
+    {
+      "slug": "email-builder",
+      "label": "Email builder",
+      "detail": "drag-drop Email Designer v2, responsive templates, reusable modules/snippets, HTML/free-form editing, approval workflow, mobile preview, email variables/branded templates, batch + triggered sends",
+      "features": [
+        "drag-drop Email Designer v2",
+        "responsive templates",
+        "reusable modules/snippets",
+        "HTML/free-form editing",
+        "approval workflow",
+        "mobile preview",
+        "email variables/branded templates",
+        "batch + triggered sends"
+      ]
+    },
+    {
+      "slug": "campaigns-programs",
+      "label": "Campaigns/programs",
+      "detail": "Smart Campaigns (batch + trigger), program types (Email/Event/Webinar/Engagement/Default/Nurture), cloneable programs, program tags/channels, flow steps with choices/wait steps, my tokens, local assets",
+      "features": [
+        "Smart Campaigns (batch + trigger)",
+        "program types (Email/Event/Webinar/Engagement/Default/Nurture)",
+        "cloneable programs",
+        "program tags/channels",
+        "flow steps with choices/wait steps",
+        "my tokens",
+        "local assets"
+      ]
+    },
+    {
+      "slug": "automation-engagement",
+      "label": "Automation/engagement",
+      "detail": "Engagement Programs with cadence-based nurture streams, stream transitions/content exhaustion, drip nurturing, trigger journeys, interesting moments, cross-program membership rules, webhooks/custom flow actions",
+      "features": [
+        "Engagement Programs with cadence-based nurture streams",
+        "stream transitions/content exhaustion",
+        "drip nurturing",
+        "trigger journeys",
+        "interesting moments",
+        "cross-program membership rules",
+        "webhooks/custom flow actions"
+      ]
+    },
+    {
+      "slug": "segmentation-smart-lists",
+      "label": "Segmentation/Smart Lists",
+      "detail": "dynamic rule-based Smart Lists, static lists, Segmentations & Segments, demographic/firmographic/behavioral filters, nested logic, data-value-change/anonymous-to-known triggers",
+      "features": [
+        "dynamic rule-based Smart Lists",
+        "static lists",
+        "Segmentations & Segments",
+        "demographic/firmographic/behavioral filters",
+        "nested logic",
+        "data-value-change/anonymous-to-known triggers"
+      ]
+    },
+    {
+      "slug": "personalization",
+      "label": "Personalization",
+      "detail": "personalization tokens, dynamic content by segment (email/LP/snippets), My Tokens, velocity scripting, Web Personalization / Real-Time Personalization (RTP), account-based web personalization, geo/firmographic/behavioral targeting",
+      "features": [
+        "personalization tokens",
+        "dynamic content by segment (email/LP/snippets)",
+        "My Tokens",
+        "velocity scripting",
+        "Web Personalization / Real-Time Personalization (RTP)",
+        "account-based web personalization",
+        "geo/firmographic/behavioral targeting"
+      ]
+    },
+    {
+      "slug": "a-b-testing",
+      "label": "A/B testing",
+      "detail": "email A/B (subject/whole email/from/date-time), champion/challenger, auto winner selection, landing page A/B, engagement-program content testing",
+      "features": [
+        "email A/B (subject/whole email/from/date-time)",
+        "champion/challenger",
+        "auto winner selection",
+        "landing page A/B",
+        "engagement-program content testing"
+      ]
+    },
+    {
+      "slug": "deliverability",
+      "label": "Deliverability",
+      "detail": "spam/inbox monitoring, communication limits, subscription management, dedicated IP, SPF/DKIM, domain warm-up, suppression lists, GDPR/CCPA opt-out, Email Insights",
+      "features": [
+        "spam/inbox monitoring",
+        "communication limits",
+        "subscription management",
+        "dedicated IP",
+        "SPF/DKIM",
+        "domain warm-up",
+        "suppression lists",
+        "GDPR/CCPA opt-out",
+        "Email Insights"
+      ]
+    },
+    {
+      "slug": "cross-channel",
+      "label": "Cross-channel",
+      "detail": "email, SMS, mobile push, in-app, social (sharing/sign-in/referral widgets), web (RTP), digital ad targeting (LinkedIn/Google/Facebook audience sync), Dynamic Chat (conversational/chatbot + meeting booking), Interactive Webinars, ON24/Zoom integrations, Adobe Experience Cloud orchestration",
+      "features": [
+        "email",
+        "SMS",
+        "mobile push",
+        "in-app",
+        "social (sharing/sign-in/referral widgets)",
+        "web (RTP)",
+        "digital ad targeting (LinkedIn/Google/Facebook audience sync)",
+        "Dynamic Chat (conversational/chatbot + meeting booking)",
+        "Interactive Webinars",
+        "ON24/Zoom integrations",
+        "Adobe Experience Cloud orchestration"
+      ]
+    },
+    {
+      "slug": "landing-pages-forms",
+      "label": "Landing pages/forms",
+      "detail": "guided + free-form builder, responsive templates, progressive profiling forms, pre-fill forms, field validation, hidden fields, Forms 2.0, tokens, landing page A/B",
+      "features": [
+        "guided + free-form builder",
+        "responsive templates",
+        "progressive profiling forms",
+        "pre-fill forms",
+        "field validation",
+        "hidden fields",
+        "Forms 2.0",
+        "tokens",
+        "landing page A/B"
+      ]
+    },
+    {
+      "slug": "lead-management",
+      "label": "Lead management",
+      "detail": "lead scoring (demographic + behavioral), negative scoring/decay, Revenue Cycle Model lifecycle stages, nurturing, routing/assignment, data normalization, deduplication, progressive profiling, anonymous tracking, custom objects/fields, activity log",
+      "features": [
+        "lead scoring (demographic + behavioral)",
+        "negative scoring/decay",
+        "Revenue Cycle Model lifecycle stages",
+        "nurturing",
+        "routing/assignment",
+        "data normalization",
+        "deduplication",
+        "progressive profiling",
+        "anonymous tracking",
+        "custom objects/fields",
+        "activity log"
+      ]
+    },
+    {
+      "slug": "abm",
+      "label": "ABM",
+      "detail": "Named Accounts, account smart lists, account-based scoring, ABM dashboard/health, tiering, target-account nurture, account-level web personalization, predictive account selection",
+      "features": [
+        "Named Accounts",
+        "account smart lists",
+        "account-based scoring",
+        "ABM dashboard/health",
+        "tiering",
+        "target-account nurture",
+        "account-level web personalization",
+        "predictive account selection"
+      ]
+    },
+    {
+      "slug": "crm-sales-integration",
+      "label": "CRM/sales integration",
+      "detail": "native Salesforce sync (bi-directional), MS Dynamics 365, Veeva CRM, Marketo Sales Insight (best bets/watch list/interesting moments/lead priority), sales alerts, LaunchPoint ecosystem/API",
+      "features": [
+        "native Salesforce sync (bi-directional)",
+        "MS Dynamics 365",
+        "Veeva CRM",
+        "Marketo Sales Insight (best bets/watch list/interesting moments/lead priority)",
+        "sales alerts",
+        "LaunchPoint ecosystem/API"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "OOTB reports, Revenue Cycle Analytics, Revenue Explorer (custom cubes), Opportunity Influence Analyzer, Program/Success Path Analyzer, multi-touch attribution, custom dashboards, report subscriptions, marketing calendar",
+      "features": [
+        "OOTB reports",
+        "Revenue Cycle Analytics",
+        "Revenue Explorer (custom cubes)",
+        "Opportunity Influence Analyzer",
+        "Program/Success Path Analyzer",
+        "multi-touch attribution",
+        "custom dashboards",
+        "report subscriptions",
+        "marketing calendar"
+      ]
+    },
+    {
+      "slug": "ai-adobe-sensei",
+      "label": "AI (Adobe Sensei)",
+      "detail": "Predictive Audiences, Predictive Content (by channel), Content AI, send-time optimization, auto-segmentation, propensity scoring, AI lead prioritization, generative AI content (Adobe GenAI)",
+      "features": [
+        "Predictive Audiences",
+        "Predictive Content (by channel)",
+        "Content AI",
+        "send-time optimization",
+        "auto-segmentation",
+        "propensity scoring",
+        "AI lead prioritization",
+        "generative AI content (Adobe GenAI)"
+      ]
+    },
+    {
+      "slug": "marketo-measure-bizible",
+      "label": "Marketo Measure (Bizible)",
+      "detail": "multi-touch attribution models (first/last/W/U-shaped/full-path/custom), revenue attribution, influenced pipeline, cross-channel ROI, ad-spend tracking, offline/online touchpoint stitching, account-based attribution, Bizible Discover",
+      "features": [
+        "multi-touch attribution models (first/last/W/U-shaped/full-path/custom)",
+        "revenue attribution",
+        "influenced pipeline",
+        "cross-channel ROI",
+        "ad-spend tracking",
+        "offline/online touchpoint stitching",
+        "account-based attribution",
+        "Bizible Discover"
+      ]
+    },
+    {
+      "slug": "platform",
+      "label": "Platform",
+      "detail": "Workspaces & Person Data Partitions (multi-brand/region), role-based permissions, Design Studio, REST & SOAP APIs, bulk import/export APIs, LaunchPoint marketplace, Munchkin web tracking, GDPR/CCPA governance, Adobe Experience Platform/AEM integration, sandboxes",
+      "features": [
+        "Workspaces & Person Data Partitions (multi-brand/region)",
+        "role-based permissions",
+        "Design Studio",
+        "REST & SOAP APIs",
+        "bulk import/export APIs",
+        "LaunchPoint marketplace",
+        "Munchkin web tracking",
+        "GDPR/CCPA governance",
+        "Adobe Experience Platform/AEM integration",
+        "sandboxes"
+      ]
+    }
+  ]
+}

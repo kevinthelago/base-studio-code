@@ -82,6 +82,7 @@ const COMMANDS: &[Surface] = &[
     active("project", "cross-project hub: list local projects + the .published marker", Some("the project hub list + the .published marker")),
     active("skill", "global skills + task-groups store", Some("skills.db — global")),
     active("compliance", "compliance standards corpus", Some("the packaged compliance corpus")),
+    active("atlas", "product feature inventories: domains · products · capabilities (relational)", Some("atlas.db — global")),
     active("blueprint", "user blueprint store", Some("blueprints/ — user")),
     active("persona", "user persona store: agent identities (prompt + skills + model over a role)", Some("personas/ — user")),
     active("sound", "user sound-kit store: synthesized cues (primitives + voices + cues)", Some("sounds/ — user")),
@@ -211,6 +212,9 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "compliance" => compliance::cli::run(rest, "bsc compliance"),
         "blueprint" => bsc_blueprint::cli::run(rest, "bsc blueprint"),
         "persona" => bsc_persona::cli::run(rest, "bsc persona"),
+        // The RELATIONAL corpus store — product feature inventories. Distinct from `bsc data`, which
+        // is per-project and whose rows come from connectors scanning a live system.
+        "atlas" => atlasdb::cli::run(rest, "bsc atlas"),
         "sound" => bsc_sound::cli::run(rest, "bsc sound"),
         "teams" => bsc_teams::cli::run(rest, "bsc teams"),
         "studio" => bsc_studio::cli::run(rest, "bsc studio"),

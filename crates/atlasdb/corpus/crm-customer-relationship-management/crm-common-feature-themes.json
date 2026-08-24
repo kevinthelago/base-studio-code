@@ -1,0 +1,59 @@
+{
+  "id": "crm-common-feature-themes",
+  "name": "CRM — common feature themes",
+  "domain": "crm-customer-relationship-management",
+  "domainName": "CRM (Customer Relationship Management)",
+  "capabilities": [
+    {
+      "slug": "table-stakes-all-5",
+      "label": "Table-stakes (all 5)",
+      "detail": "contact/account mgmt · lead capture/mgmt · deal pipeline w/ custom stages · activity/task tracking · email sync+tracking+templates · forecasting · custom reports/dashboards · workflow automation · mobile apps · integration marketplace/API · role-based security",
+      "features": [
+        "contact/account mgmt · lead capture/mgmt · deal pipeline w/ custom stages · activity/task tracking · email sync+tracking+templates · forecasting · custom reports/dashboards · workflow automation · mobile apps · integration marketplace/API · role-based security"
+      ]
+    },
+    {
+      "slug": "near-universal-ai-assistant",
+      "label": "Near-universal AI assistant",
+      "detail": "branded generative layer everywhere (Einstein/Agentforce, Breeze, Copilot, Zia, Sales Assistant) → predictive scoring, AI email drafting, record/call summarization, autonomous \"agents\" (SFDC/MSFT/Zoho)",
+      "features": [
+        "branded generative layer everywhere (Einstein/Agentforce, Breeze, Copilot, Zia, Sales Assistant) → predictive scoring",
+        "AI email drafting",
+        "record/call summarization",
+        "autonomous \"agents\" (SFDC/MSFT/Zoho)"
+      ]
+    },
+    {
+      "slug": "sequences-cadences",
+      "label": "Sequences / cadences",
+      "detail": "multi-touch automated outreach is standard",
+      "features": [
+        "multi-touch automated outreach is standard"
+      ]
+    },
+    {
+      "slug": "conversation-intelligence",
+      "label": "Conversation intelligence",
+      "detail": "call transcription/analysis + coaching maturing into a table-stake",
+      "features": [
+        "call transcription/analysis + coaching maturing into a table-stake"
+      ]
+    },
+    {
+      "slug": "cpq",
+      "label": "CPQ",
+      "detail": "native mid-market+ (SFDC/HubSpot/Zoho)",
+      "features": [
+        "native mid-market+ (SFDC/HubSpot/Zoho)"
+      ]
+    },
+    {
+      "slug": "differentiators",
+      "label": "Differentiators",
+      "detail": "SFDC = enterprise breadth (territory, PRM, Revenue/billing, enablement, AppExchange) · MSFT = Microsoft-stack + autonomous agents · HubSpot = free tier + all-in-one bundle · Zoho = customization/low-code + value · Pipedrive = SMB simplicity + modular add-ons",
+      "features": [
+        "SFDC = enterprise breadth (territory, PRM, Revenue/billing, enablement, AppExchange) · MSFT = Microsoft-stack + autonomous agents · HubSpot = free tier + all-in-one bundle · Zoho = customization/low-code + value · Pipedrive = SMB simplicity + modular add-ons"
+      ]
+    }
+  ]
+}

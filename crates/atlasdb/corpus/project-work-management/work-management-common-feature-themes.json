@@ -1,0 +1,161 @@
+{
+  "id": "work-management-common-feature-themes",
+  "name": "Work Management — common feature themes",
+  "domain": "project-work-management",
+  "domainName": "Project / Work Management",
+  "capabilities": [
+    {
+      "slug": "multiple-work-views-are-table-stakes",
+      "label": "Multiple work views are table stakes",
+      "detail": "— List/Grid, Board/Kanban, Gantt/Timeline, Calendar universal; most add Workload + Chart/Dashboard. Breadth is a differentiator (ClickUp 15+, Monday, Wrike widest); Notion reaches the same via database \"layouts.\"",
+      "features": [
+        "— List/Grid",
+        "Board/Kanban",
+        "Gantt/Timeline",
+        "Calendar universal; most add Workload + Chart/Dashboard. Breadth is a differentiator (ClickUp 15+, Monday, Wrike widest); Notion reaches the same via database \"layouts.\""
+      ]
+    },
+    {
+      "slug": "no-code-automation-engine-everywhere",
+      "label": "No-code automation engine everywhere",
+      "detail": "— universal trigger→condition→action builders with recipe libraries (Monday 200+, Jira/ClickUp 100s). Frontier: AI-authored automation (Jira Rovo, Wrike, ClickUp) + agents that execute steps.",
+      "features": [
+        "— universal trigger→condition→action builders with recipe libraries (Monday 200+, Jira/ClickUp 100s). Frontier: AI-authored automation (Jira Rovo, Wrike, ClickUp) + agents that execute steps."
+      ]
+    },
+    {
+      "slug": "task-dependencies-critical-path",
+      "label": "Task dependencies + critical path",
+      "detail": "standard on Gantt/Timeline; advanced cross-project mapping is premium-tier (Jira Advanced Roadmaps, Monday portfolio, Wrike).",
+      "features": [
+        "standard on Gantt/Timeline; advanced cross-project mapping is premium-tier (Jira Advanced Roadmaps, Monday portfolio, Wrike)."
+      ]
+    },
+    {
+      "slug": "workload-resource-capacity",
+      "label": "Workload/resource/capacity",
+      "detail": "consistent mid-to-enterprise; Smartsheet (Resource Management), Wrike (bookings + effort + roles), Jira (Advanced Roadmaps capacity) deepest, incl. scenario/what-if (Jira, Smartsheet).",
+      "features": [
+        "consistent mid-to-enterprise; Smartsheet (Resource Management)",
+        "Wrike (bookings + effort + roles)",
+        "Jira (Advanced Roadmaps capacity) deepest",
+        "incl. scenario/what-if (Jira, Smartsheet)."
+      ]
+    },
+    {
+      "slug": "portfolio-management",
+      "label": "Portfolio management",
+      "detail": "for cross-project rollup + PMO recurs across all seven; Smartsheet Control Center + Jira Plans most enterprise-grade.",
+      "features": [
+        "for cross-project rollup + PMO recurs across all seven; Smartsheet Control Center + Jira Plans most enterprise-grade."
+      ]
+    },
+    {
+      "slug": "docs-wikis-whiteboards-converging-into-the-pm-tool",
+      "label": "Docs/wikis + whiteboards converging into the PM tool",
+      "detail": "— Monday WorkDocs, ClickUp Docs/Whiteboards, Wrike Document Editor, Notion (docs-native) blur tracker ↔ knowledge base.",
+      "features": [
+        "— Monday WorkDocs",
+        "ClickUp Docs/Whiteboards",
+        "Wrike Document Editor",
+        "Notion (docs-native) blur tracker ↔ knowledge base."
+      ]
+    },
+    {
+      "slug": "intake-forms-with-conditional-branching-logic",
+      "label": "Intake forms with conditional/branching logic",
+      "detail": "universal, routing straight into tasks/automations.",
+      "features": [
+        "universal",
+        "routing straight into tasks/automations."
+      ]
+    },
+    {
+      "slug": "dashboards-reporting-via-widget-card-libraries",
+      "label": "Dashboards/reporting via widget/card libraries",
+      "detail": "— real-time, filterable, shareable; agile metrics (burndown/burnup/velocity/cumulative flow/cycle time) recur.",
+      "features": [
+        "— real-time",
+        "filterable",
+        "shareable; agile metrics (burndown/burnup/velocity/cumulative flow/cycle time) recur."
+      ]
+    },
+    {
+      "slug": "goals-okrs-linked-to-execution",
+      "label": "Goals/OKRs linked to execution",
+      "detail": "now a standard layer with rollup from tasks to objectives.",
+      "features": [
+        "now a standard layer with rollup from tasks to objectives."
+      ]
+    },
+    {
+      "slug": "native-time-tracking-budgeting",
+      "label": "Native time tracking + budgeting",
+      "detail": "varies — deep in ClickUp/Wrike/Smartsheet; lighter/add-on in Asana/Monday.",
+      "features": [
+        "varies — deep in ClickUp/Wrike/Smartsheet; lighter/add-on in Asana/Monday."
+      ]
+    },
+    {
+      "slug": "agile-sprints",
+      "label": "Agile/sprints",
+      "detail": "— Jira depth leader (backlog/sprints/scrum-kanban/full report suite/DevOps dev panel); others offer sprint workflows as a secondary capability.",
+      "features": [
+        "— Jira depth leader (backlog/sprints/scrum-kanban/full report suite/DevOps dev panel); others offer sprint workflows as a secondary capability."
+      ]
+    },
+    {
+      "slug": "templates-blueprints",
+      "label": "Templates/blueprints",
+      "detail": "everywhere — Wrike Blueprints, Smartsheet Control Center, Notion's 30,000+ gallery (largest).",
+      "features": [
+        "everywhere — Wrike Blueprints",
+        "Smartsheet Control Center",
+        "Notion's 30",
+        "000+ gallery (largest)."
+      ]
+    },
+    {
+      "slug": "deep-integration-ecosystems-open-apis",
+      "label": "Deep integration ecosystems + open APIs",
+      "detail": "— counts are a marketing axis (Monday 850+, Wrike 400+, ClickUp 1,000+, Atlassian 3,000+); bi-directional sync is the enterprise-migration hook.",
+      "features": [
+        "— counts are a marketing axis (Monday 850+, Wrike 400+, ClickUp 1,000+, Atlassian 3,000+); bi-directional sync is the enterprise-migration hook."
+      ]
+    },
+    {
+      "slug": "ai-is-the-current-battleground",
+      "label": "AI is the current battleground",
+      "detail": "— all seven ship agentic AI (assistants + prebuilt/custom action-taking agents), cross-app enterprise search, AI summaries/status, NL→formula/automation, near-universal **MCP + multi-model (Claude/ChatGPT/Gemini/Copilot)**.",
+      "features": [
+        "— all seven ship agentic AI (assistants + prebuilt/custom action-taking agents)",
+        "cross-app enterprise search",
+        "AI summaries/status",
+        "NL→formula/automation",
+        "near-universal **MCP + multi-model (Claude/ChatGPT/Gemini/Copilot)**."
+      ]
+    },
+    {
+      "slug": "enterprise-security-baseline-uniform",
+      "label": "Enterprise security baseline uniform",
+      "detail": "— SAML SSO, SCIM, audit logs, RBAC, guest controls, data residency, SOC 2 / ISO 27001 / GDPR / HIPAA. Differentiators: customer-managed encryption keys (Wrike Lock, Smartsheet CMEK) + DLP (Wrike EDLP).",
+      "features": [
+        "— SAML SSO",
+        "SCIM",
+        "audit logs",
+        "RBAC",
+        "guest controls",
+        "data residency",
+        "SOC 2 / ISO 27001 / GDPR / HIPAA. Differentiators: customer-managed encryption keys (Wrike Lock, Smartsheet CMEK) + DLP (Wrike EDLP)."
+      ]
+    },
+    {
+      "slug": "structural-philosophy-differs",
+      "label": "Structural philosophy differs",
+      "detail": "Smartsheet spreadsheet-rooted · Jira issue/agile-rooted · Notion page/database-rooted · Asana/Monday/ClickUp/Wrike task/board-rooted \"work OS\" — all converging on the same superset.",
+      "features": [
+        "Smartsheet spreadsheet-rooted · Jira issue/agile-rooted · Notion page/database-rooted · Asana/Monday/ClickUp/Wrike task/board-rooted \"work OS\" — all converging on the same superset."
+      ]
+    }
+  ]
+}

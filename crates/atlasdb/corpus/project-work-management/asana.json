@@ -1,0 +1,224 @@
+{
+  "id": "asana",
+  "name": "Asana",
+  "domain": "project-work-management",
+  "domainName": "Project / Work Management",
+  "capabilities": [
+    {
+      "slug": "task-project",
+      "label": "Task/project",
+      "detail": "Tasks (owners/dates/descriptions), Subtasks, Projects, My Tasks, Inbox, Multi-homing (one task in up to 20 projects with synced updates), Recurring tasks, Milestones, Sections, Custom fields, assignees/collaborators, priority/status fields, attachments",
+      "features": [
+        "Tasks (owners/dates/descriptions)",
+        "Subtasks",
+        "Projects",
+        "My Tasks",
+        "Inbox",
+        "Multi-homing (one task in up to 20 projects with synced updates)",
+        "Recurring tasks",
+        "Milestones",
+        "Sections",
+        "Custom fields",
+        "assignees/collaborators",
+        "priority/status fields",
+        "attachments"
+      ]
+    },
+    {
+      "slug": "views",
+      "label": "Views",
+      "detail": "List, Board (Kanban), Timeline, Gantt, Calendar, Workload, multiple custom views",
+      "features": [
+        "List",
+        "Board (Kanban)",
+        "Timeline",
+        "Gantt",
+        "Calendar",
+        "Workload",
+        "multiple custom views"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "Rules (trigger → actions), Custom Rules (conditional logic), Bundles / Workflow Bundles (processes across projects), Workflow Builder (visual no-code)",
+      "features": [
+        "Rules (trigger → actions)",
+        "Custom Rules (conditional logic)",
+        "Bundles / Workflow Bundles (processes across projects)",
+        "Workflow Builder (visual no-code)"
+      ]
+    },
+    {
+      "slug": "dependencies",
+      "label": "Dependencies",
+      "detail": "task dependencies, dependency rules, indicators on Timeline/Gantt",
+      "features": [
+        "task dependencies",
+        "dependency rules",
+        "indicators on Timeline/Gantt"
+      ]
+    },
+    {
+      "slug": "workload-resource",
+      "label": "Workload/resource",
+      "detail": "Workload, Universal Workload (Enterprise), Capacity Planning, Effort/hours fields, rebalancing",
+      "features": [
+        "Workload",
+        "Universal Workload (Enterprise)",
+        "Capacity Planning",
+        "Effort/hours fields",
+        "rebalancing"
+      ]
+    },
+    {
+      "slug": "docs",
+      "label": "Docs",
+      "detail": "Project brief/overview, Messages (conversations/announcements), Status updates, rich-text descriptions",
+      "features": [
+        "Project brief/overview",
+        "Messages (conversations/announcements)",
+        "Status updates",
+        "rich-text descriptions"
+      ]
+    },
+    {
+      "slug": "forms",
+      "label": "Forms",
+      "detail": "Forms (standardized requests), Branching Logic (up to 5 nested levels), branded, form-to-task routing",
+      "features": [
+        "Forms (standardized requests)",
+        "Branching Logic (up to 5 nested levels)",
+        "branded",
+        "form-to-task routing"
+      ]
+    },
+    {
+      "slug": "dashboards-reporting",
+      "label": "Dashboards/reporting",
+      "detail": "Reporting Dashboards, Advanced Reporting (across goals + portfolios), Universal Reporting, custom charts (velocity/burndown/workload), Formula/Lock Custom Fields, CSV export",
+      "features": [
+        "Reporting Dashboards",
+        "Advanced Reporting (across goals + portfolios)",
+        "Universal Reporting",
+        "custom charts (velocity/burndown/workload)",
+        "Formula/Lock Custom Fields",
+        "CSV export"
+      ]
+    },
+    {
+      "slug": "goals-okrs",
+      "label": "Goals/OKRs",
+      "detail": "Goals, Sub-goals, goal-to-work linking, Goal Templates/Types (Enterprise), Smart Goals (AI-assisted)",
+      "features": [
+        "Goals",
+        "Sub-goals",
+        "goal-to-work linking",
+        "Goal Templates/Types (Enterprise)",
+        "Smart Goals (AI-assisted)"
+      ]
+    },
+    {
+      "slug": "portfolio",
+      "label": "Portfolio",
+      "detail": "Portfolios, portfolio reporting, status/timeline/workload roll-up, PowerPoint/PDF exports (Enterprise)",
+      "features": [
+        "Portfolios",
+        "portfolio reporting",
+        "status/timeline/workload roll-up",
+        "PowerPoint/PDF exports (Enterprise)"
+      ]
+    },
+    {
+      "slug": "time-tracking",
+      "label": "Time tracking",
+      "detail": "Time Tracking (forecasting/budgeting), Timesheets & Budgets, actual vs estimated",
+      "features": [
+        "Time Tracking (forecasting/budgeting)",
+        "Timesheets & Budgets",
+        "actual vs estimated"
+      ]
+    },
+    {
+      "slug": "agile-sprints",
+      "label": "Agile/sprints",
+      "detail": "Boards for backlog/sprints, sprint planning, backlog mgmt, standups, retrospectives, velocity/burndown widgets, Scrum templates, Jira Cloud data sync",
+      "features": [
+        "Boards for backlog/sprints",
+        "sprint planning",
+        "backlog mgmt",
+        "standups",
+        "retrospectives",
+        "velocity/burndown widgets",
+        "Scrum templates",
+        "Jira Cloud data sync"
+      ]
+    },
+    {
+      "slug": "collaboration",
+      "label": "Collaboration",
+      "detail": "Comments, @mentions, Messages, Announcements, reactions, Proofing (comment on images/PDFs → tasks), Approvals, Status updates, guest collaboration",
+      "features": [
+        "Comments",
+        "@mentions",
+        "Messages",
+        "Announcements",
+        "reactions",
+        "Proofing (comment on images/PDFs → tasks)",
+        "Approvals",
+        "Status updates",
+        "guest collaboration"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "300+ apps — Google Workspace, M365/Teams, Slack, Zoom, Salesforce, HubSpot, ServiceNow, Jira Cloud sync, Tableau, Power BI, Adobe CC, GitHub, Zapier, API, AI Connectors & MCP (ChatGPT/Claude/Gemini)",
+      "features": [
+        "300+ apps — Google Workspace",
+        "M365/Teams",
+        "Slack",
+        "Zoom",
+        "Salesforce",
+        "HubSpot",
+        "ServiceNow",
+        "Jira Cloud sync",
+        "Tableau",
+        "Power BI",
+        "Adobe CC",
+        "GitHub",
+        "Zapier",
+        "API",
+        "AI Connectors & MCP (ChatGPT/Claude/Gemini)"
+      ]
+    },
+    {
+      "slug": "ai-asana-intelligence-ai-studio",
+      "label": "AI (Asana Intelligence/AI Studio)",
+      "detail": "AI Studio (no-code AI-workflow builder), AI Teammates (30 prebuilt agents), Asana Dash (AI Chief of Staff), Smart Status (risk detection), Smart Chat/Editor/Summaries/Fields/Goals, Agentic Work Management, MCP",
+      "features": [
+        "AI Studio (no-code AI-workflow builder)",
+        "AI Teammates (30 prebuilt agents)",
+        "Asana Dash (AI Chief of Staff)",
+        "Smart Status (risk detection)",
+        "Smart Chat/Editor/Summaries/Fields/Goals",
+        "Agentic Work Management",
+        "MCP"
+      ]
+    },
+    {
+      "slug": "security-admin",
+      "label": "Security/admin",
+      "detail": "Admin Console, permissions/access controls, guest mgmt, SAML/Google SSO, Service Accounts, Audit Log API / Audit Suite, EKM/compliance APIs",
+      "features": [
+        "Admin Console",
+        "permissions/access controls",
+        "guest mgmt",
+        "SAML/Google SSO",
+        "Service Accounts",
+        "Audit Log API / Audit Suite",
+        "EKM/compliance APIs"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,267 @@
+{
+  "id": "notion",
+  "name": "Notion",
+  "domain": "project-work-management",
+  "domainName": "Project / Work Management",
+  "capabilities": [
+    {
+      "slug": "pages-blocks-docs",
+      "label": "Pages/blocks/docs",
+      "detail": "block-based editor (50+ block types), toggles, code snippets, formulas, tables, auto TOC, synced blocks, embeds (Loom/YouTube/Maps/Drive/PDF), link previews (Figma/GitHub), backlinks, nested pages, @-mentions, version history/restore, cover images/icons",
+      "features": [
+        "block-based editor (50+ block types)",
+        "toggles",
+        "code snippets",
+        "formulas",
+        "tables",
+        "auto TOC",
+        "synced blocks",
+        "embeds (Loom/YouTube/Maps/Drive/PDF)",
+        "link previews (Figma/GitHub)",
+        "backlinks",
+        "nested pages",
+        "@-mentions",
+        "version history/restore",
+        "cover images/icons"
+      ]
+    },
+    {
+      "slug": "databases",
+      "label": "Databases",
+      "detail": "customizable properties (text/number/select/status/date/person/files/formula/relation/rollup/button/ID/place), relations, rollups, formulas, filters/sorts/grouping, sub-items, dependencies, linked databases / multiple data sources, database templates",
+      "features": [
+        "customizable properties (text/number/select/status/date/person/files/formula/relation/rollup/button/ID/place)",
+        "relations",
+        "rollups",
+        "formulas",
+        "filters/sorts/grouping",
+        "sub-items",
+        "dependencies",
+        "linked databases / multiple data sources",
+        "database templates"
+      ]
+    },
+    {
+      "slug": "views",
+      "label": "Views",
+      "detail": "Table, Board (Kanban), Timeline (Gantt), Calendar, List, Gallery, Chart; per-view customization",
+      "features": [
+        "Table",
+        "Board (Kanban)",
+        "Timeline (Gantt)",
+        "Calendar",
+        "List",
+        "Gallery",
+        "Chart; per-view customization"
+      ]
+    },
+    {
+      "slug": "database-automations",
+      "label": "Database automations",
+      "detail": "no-code if-this-then-that; triggers (page added/property edited/recurring); actions (edit property, add/edit pages, in-app notification, Gmail send, webhook/HTTP POST, Slack notification, variables); button automations; AI autofill actions",
+      "features": [
+        "no-code if-this-then-that; triggers (page added/property edited/recurring); actions (edit property, add/edit pages, in-app notification, Gmail send, webhook/HTTP POST, Slack notification, variables); button automations; AI autofill actions"
+      ]
+    },
+    {
+      "slug": "charts-dashboards",
+      "label": "Charts/dashboards",
+      "detail": "bar/line/donut/number charts, group-by, aggregation, drilldown, multi-widget dashboards with global filters, PNG/SVG export",
+      "features": [
+        "bar/line/donut/number charts",
+        "group-by",
+        "aggregation",
+        "drilldown",
+        "multi-widget dashboards with global filters",
+        "PNG/SVG export"
+      ]
+    },
+    {
+      "slug": "project-portfolio",
+      "label": "Project/portfolio",
+      "detail": "Projects & Tasks databases, sub-tasks, status/assignee/dates, priority, dependencies, \"My Tasks\", progress bars, portfolio timeline, page-level access per assignee, doc↔project relations (PRDs/specs/RFCs)",
+      "features": [
+        "Projects & Tasks databases",
+        "sub-tasks",
+        "status/assignee/dates",
+        "priority",
+        "dependencies",
+        "\"My Tasks\"",
+        "progress bars",
+        "portfolio timeline",
+        "page-level access per assignee",
+        "doc↔project relations (PRDs/specs/RFCs)"
+      ]
+    },
+    {
+      "slug": "sprints-agile",
+      "label": "Sprints/agile",
+      "detail": "automated sprints, backlog grooming, sprint templates, AI Autofill for user stories/key results",
+      "features": [
+        "automated sprints",
+        "backlog grooming",
+        "sprint templates",
+        "AI Autofill for user stories/key results"
+      ]
+    },
+    {
+      "slug": "goals-okrs",
+      "label": "Goals/OKRs",
+      "detail": "Goals/OKR databases + templates, relations/rollups linking tasks to goals, AI Autofill, progress via charts",
+      "features": [
+        "Goals/OKR databases + templates",
+        "relations/rollups linking tasks to goals",
+        "AI Autofill",
+        "progress via charts"
+      ]
+    },
+    {
+      "slug": "forms-notion-forms",
+      "label": "Forms (Notion Forms)",
+      "detail": "unlimited free forms, multiple question types, required fields, conditional logic, anonymous submissions, responses land in databases, forms trigger automations, private/public sharing, embed",
+      "features": [
+        "unlimited free forms",
+        "multiple question types",
+        "required fields",
+        "conditional logic",
+        "anonymous submissions",
+        "responses land in databases",
+        "forms trigger automations",
+        "private/public sharing",
+        "embed"
+      ]
+    },
+    {
+      "slug": "docs-wikis",
+      "label": "Docs/wikis",
+      "detail": "real-time co-editing, comments, @-mentions, suggested edits (suggestion mode), wikis/KB, teamspaces, verified pages, home page, template library, fine-grained permissions, content analytics",
+      "features": [
+        "real-time co-editing",
+        "comments",
+        "@-mentions",
+        "suggested edits (suggestion mode)",
+        "wikis/KB",
+        "teamspaces",
+        "verified pages",
+        "home page",
+        "template library",
+        "fine-grained permissions",
+        "content analytics"
+      ]
+    },
+    {
+      "slug": "notion-ai",
+      "label": "Notion AI",
+      "detail": "Notion Agent (action-taking), Custom Agents (scheduled/triggered 24/7), Agent Skills, Agent Orchestration (coordinate Claude & others), AI Blocks, Notion Q&A, Enterprise Search (Notion/Slack/GitHub/Jira), AI Connectors, AI Meeting Notes (transcription + summaries), Research Mode, AI Autofill, AI database creation",
+      "features": [
+        "Notion Agent (action-taking)",
+        "Custom Agents (scheduled/triggered 24/7)",
+        "Agent Skills",
+        "Agent Orchestration (coordinate Claude & others)",
+        "AI Blocks",
+        "Notion Q&A",
+        "Enterprise Search (Notion/Slack/GitHub/Jira)",
+        "AI Connectors",
+        "AI Meeting Notes (transcription + summaries)",
+        "Research Mode",
+        "AI Autofill",
+        "AI database creation"
+      ]
+    },
+    {
+      "slug": "notion-calendar",
+      "label": "Notion Calendar",
+      "detail": "Google/Outlook/iCloud sync, multi-calendar, scheduling/availability links, auto-block busy slots, Zoom/Google/Apple meeting creation, time-zone visualization",
+      "features": [
+        "Google/Outlook/iCloud sync",
+        "multi-calendar",
+        "scheduling/availability links",
+        "auto-block busy slots",
+        "Zoom/Google/Apple meeting creation",
+        "time-zone visualization"
+      ]
+    },
+    {
+      "slug": "notion-mail",
+      "label": "Notion Mail",
+      "detail": "AI email client (Gmail), AI auto-labels, AI-drafted replies, snippets/templates, scheduled send, snooze/follow-ups, custom inbox views",
+      "features": [
+        "AI email client (Gmail)",
+        "AI auto-labels",
+        "AI-drafted replies",
+        "snippets/templates",
+        "scheduled send",
+        "snooze/follow-ups",
+        "custom inbox views"
+      ]
+    },
+    {
+      "slug": "notion-sites",
+      "label": "Notion Sites",
+      "detail": "publish pages as websites, 10,000+ site templates, custom domains, SEO tools, nav bar w/ search, light/dark themes, remove branding, Google Analytics",
+      "features": [
+        "publish pages as websites",
+        "10",
+        "000+ site templates",
+        "custom domains",
+        "SEO tools",
+        "nav bar w/ search",
+        "light/dark themes",
+        "remove branding",
+        "Google Analytics"
+      ]
+    },
+    {
+      "slug": "templates",
+      "label": "Templates",
+      "detail": "template gallery (30,000+ templates), one-click duplication, creator monetization",
+      "features": [
+        "template gallery (30,000+ templates)",
+        "one-click duplication",
+        "creator monetization"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "Slack, GitHub, Jira, Google Drive, Figma, HubSpot, Gmail, Teams, Linear, Outlook, Calendly, Canva, Loom, Mixpanel, Tableau; live data syncs (Salesforce/Jira); Public API; AI Connectors; MCP; webhooks",
+      "features": [
+        "Slack",
+        "GitHub",
+        "Jira",
+        "Google Drive",
+        "Figma",
+        "HubSpot",
+        "Gmail",
+        "Teams",
+        "Linear",
+        "Outlook",
+        "Calendly",
+        "Canva",
+        "Loom",
+        "Mixpanel",
+        "Tableau; live data syncs (Salesforce/Jira); Public API; AI Connectors; MCP; webhooks"
+      ]
+    },
+    {
+      "slug": "security-admin",
+      "label": "Security/admin",
+      "detail": "SAML SSO, SCIM, audit log, granular/page-level permissions, guest management, encryption in transit/at rest, data residency, 99.9% uptime SLA, AI data governance (no training on customer data), workspace analytics; SOC 2 Type 2, ISO 27001/27701/27017/27018, HIPAA (BAA), GDPR",
+      "features": [
+        "SAML SSO",
+        "SCIM",
+        "audit log",
+        "granular/page-level permissions",
+        "guest management",
+        "encryption in transit/at rest",
+        "data residency",
+        "99.9% uptime SLA",
+        "AI data governance (no training on customer data)",
+        "workspace analytics; SOC 2 Type 2",
+        "ISO 27001/27701/27017/27018",
+        "HIPAA (BAA)",
+        "GDPR"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,251 @@
+{
+  "id": "hubspot-marketing-hub",
+  "name": "HubSpot Marketing Hub",
+  "domain": "email-and-marketing-automation-esp-map",
+  "domainName": "Email & Marketing Automation (ESP / MAP)",
+  "capabilities": [
+    {
+      "slug": "email",
+      "label": "Email",
+      "detail": "drag-drop editor, goal-based + responsive templates, personalization tokens, smart/dynamic content, engagement-triggered automation, scheduled send, AI subject-line suggestions, AI content writing, slash-command rewrite/tone, Messaging Insights (beta), open/click/conversion tracking, dedicated IP option",
+      "features": [
+        "drag-drop editor",
+        "goal-based + responsive templates",
+        "personalization tokens",
+        "smart/dynamic content",
+        "engagement-triggered automation",
+        "scheduled send",
+        "AI subject-line suggestions",
+        "AI content writing",
+        "slash-command rewrite/tone",
+        "Messaging Insights (beta)",
+        "open/click/conversion tracking",
+        "dedicated IP option"
+      ]
+    },
+    {
+      "slug": "campaigns-marketing-studio",
+      "label": "Campaigns (Marketing Studio)",
+      "detail": "unified AI-powered campaign workspace (plan/create/execute), campaign builder, asset association for collective measurement, task management, campaign calendar, collaboration/comments, real-time performance reporting, campaign-level ROI",
+      "features": [
+        "unified AI-powered campaign workspace (plan/create/execute)",
+        "campaign builder",
+        "asset association for collective measurement",
+        "task management",
+        "campaign calendar",
+        "collaboration/comments",
+        "real-time performance reporting",
+        "campaign-level ROI"
+      ]
+    },
+    {
+      "slug": "automation-workflows",
+      "label": "Automation/workflows",
+      "detail": "visual workflow editor, custom multi-step workflows, if/then branching, pre-built templates, email sequences, form-triggered automation, journey orchestration, dynamic content by behavior, internal notifications, multi-channel coordination",
+      "features": [
+        "visual workflow editor",
+        "custom multi-step workflows",
+        "if/then branching",
+        "pre-built templates",
+        "email sequences",
+        "form-triggered automation",
+        "journey orchestration",
+        "dynamic content by behavior",
+        "internal notifications",
+        "multi-channel coordination"
+      ]
+    },
+    {
+      "slug": "segmentation",
+      "label": "Segmentation",
+      "detail": "active/static lists, AI-powered behavioral & demographic segments, Audience Segments (anonymous-visitor targeting by fit + intent), Lookalike Lists, CRM-data-driven targeting",
+      "features": [
+        "active/static lists",
+        "AI-powered behavioral & demographic segments",
+        "Audience Segments (anonymous-visitor targeting by fit + intent)",
+        "Lookalike Lists",
+        "CRM-data-driven targeting"
+      ]
+    },
+    {
+      "slug": "personalization",
+      "label": "Personalization",
+      "detail": "website personalization at scale, smart content by location/device/lifecycle/CRM data, personalization tokens, dynamic forms that skip answered questions, smart CTAs",
+      "features": [
+        "website personalization at scale",
+        "smart content by location/device/lifecycle/CRM data",
+        "personalization tokens",
+        "dynamic forms that skip answered questions",
+        "smart CTAs"
+      ]
+    },
+    {
+      "slug": "a-b-multivariate",
+      "label": "A/B/multivariate",
+      "detail": "email A/B (subject + content), landing-page A/B, multivariate with auto winner selection, adaptive testing",
+      "features": [
+        "email A/B (subject + content)",
+        "landing-page A/B",
+        "multivariate with auto winner selection",
+        "adaptive testing"
+      ]
+    },
+    {
+      "slug": "sms-whatsapp",
+      "label": "SMS/WhatsApp",
+      "detail": "SMS with personalization tokens, two-way conversational SMS, quiet hours by local time, native WhatsApp Business integration, shared inbox, SMS/WhatsApp workflow automation, omnichannel nurturing",
+      "features": [
+        "SMS with personalization tokens",
+        "two-way conversational SMS",
+        "quiet hours by local time",
+        "native WhatsApp Business integration",
+        "shared inbox",
+        "SMS/WhatsApp workflow automation",
+        "omnichannel nurturing"
+      ]
+    },
+    {
+      "slug": "landing-pages-forms-ctas",
+      "label": "Landing pages/forms/CTAs",
+      "detail": "drag-drop LP builder, mobile-optimized templates, AI copywriting, SEO title/description generation (beta), form builder (embedded/standalone/pop-up/exit-intent/multi-step), conditional logic/routing, smart fields/autofill, spam filtering, CTA builder with personalization/testing, pop-ups",
+      "features": [
+        "drag-drop LP builder",
+        "mobile-optimized templates",
+        "AI copywriting",
+        "SEO title/description generation (beta)",
+        "form builder (embedded/standalone/pop-up/exit-intent/multi-step)",
+        "conditional logic/routing",
+        "smart fields/autofill",
+        "spam filtering",
+        "CTA builder with personalization/testing",
+        "pop-ups"
+      ]
+    },
+    {
+      "slug": "smart-crm-cdp",
+      "label": "Smart CRM/CDP",
+      "detail": "unified Smart CRM (auto-add from forms), contact records with engagement history, multi-currency, Breeze Intelligence enrichment, buyer-intent identification",
+      "features": [
+        "unified Smart CRM (auto-add from forms)",
+        "contact records with engagement history",
+        "multi-currency",
+        "Breeze Intelligence enrichment",
+        "buyer-intent identification"
+      ]
+    },
+    {
+      "slug": "lead-scoring",
+      "label": "Lead scoring",
+      "detail": "manual scoring (positive/negative points), AI-assisted engagement scoring, fit scoring (company type/size/revenue), combined fit+engagement, score decay, prioritization, routing/distribution, automated follow-up",
+      "features": [
+        "manual scoring (positive/negative points)",
+        "AI-assisted engagement scoring",
+        "fit scoring (company type/size/revenue)",
+        "combined fit+engagement",
+        "score decay",
+        "prioritization",
+        "routing/distribution",
+        "automated follow-up"
+      ]
+    },
+    {
+      "slug": "ads",
+      "label": "Ads",
+      "detail": "cross-network campaigns (Meta/Instagram/Google/LinkedIn/TikTok), ad preview, CRM-powered audiences, custom & lookalike audiences, ad sequence builder, up to 50 conversion events, hourly bi-directional sync, four attribution models",
+      "features": [
+        "cross-network campaigns (Meta/Instagram/Google/LinkedIn/TikTok)",
+        "ad preview",
+        "CRM-powered audiences",
+        "custom & lookalike audiences",
+        "ad sequence builder",
+        "up to 50 conversion events",
+        "hourly bi-directional sync",
+        "four attribution models"
+      ]
+    },
+    {
+      "slug": "social",
+      "label": "Social",
+      "detail": "AI social post generator (beta), publish/schedule to LinkedIn/Facebook/Instagram/TikTok/Reddit/X, optimal-time recommendations, auto-share on blog publish, keyword monitoring, AI sentiment tracking, unified social inbox, social ROI reports",
+      "features": [
+        "AI social post generator (beta)",
+        "publish/schedule to LinkedIn/Facebook/Instagram/TikTok/Reddit/X",
+        "optimal-time recommendations",
+        "auto-share on blog publish",
+        "keyword monitoring",
+        "AI sentiment tracking",
+        "unified social inbox",
+        "social ROI reports"
+      ]
+    },
+    {
+      "slug": "analytics-attribution",
+      "label": "Analytics/attribution",
+      "detail": "Marketing Analytics dashboard, custom dashboards/reports, multi-touch revenue attribution, Contact Create attribution, traffic-by-source, funnel analysis, Pathfinder journey analysis, Advanced Marketing Reporting (customer journey analytics)",
+      "features": [
+        "Marketing Analytics dashboard",
+        "custom dashboards/reports",
+        "multi-touch revenue attribution",
+        "Contact Create attribution",
+        "traffic-by-source",
+        "funnel analysis",
+        "Pathfinder journey analysis",
+        "Advanced Marketing Reporting (customer journey analytics)"
+      ]
+    },
+    {
+      "slug": "ai-breeze",
+      "label": "AI (Breeze)",
+      "detail": "Breeze Copilot (in-app conversational AI grounded in CRM), Breeze Agents (Content/Social/Customer/Prospecting), Breeze Intelligence (enrichment, buyer-intent), content assistant, AI subject lines, AI predictive/engagement lead scoring, AI sentiment, AI SEO/meta optimization",
+      "features": [
+        "Breeze Copilot (in-app conversational AI grounded in CRM)",
+        "Breeze Agents (Content/Social/Customer/Prospecting)",
+        "Breeze Intelligence (enrichment, buyer-intent)",
+        "content assistant",
+        "AI subject lines",
+        "AI predictive/engagement lead scoring",
+        "AI sentiment",
+        "AI SEO/meta optimization"
+      ]
+    },
+    {
+      "slug": "seo-blog",
+      "label": "SEO/blog",
+      "detail": "topic clusters/strategy, keyword recommendations by impact, in-editor SEO, canonical URL management, keyword tracking, Google Search Console integration, HubSpot AEO (answer-engine optimization) + AEO Grader, blog builder, AI content generator",
+      "features": [
+        "topic clusters/strategy",
+        "keyword recommendations by impact",
+        "in-editor SEO",
+        "canonical URL management",
+        "keyword tracking",
+        "Google Search Console integration",
+        "HubSpot AEO (answer-engine optimization) + AEO Grader",
+        "blog builder",
+        "AI content generator"
+      ]
+    },
+    {
+      "slug": "website-live-engagement",
+      "label": "Website/live engagement",
+      "detail": "no-code website builder, live chat, chatbot builder",
+      "features": [
+        "no-code website builder",
+        "live chat",
+        "chatbot builder"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "2,000+ integrations via App Marketplace, bi-directional Salesforce sync, native ad/social connectors, HubSpot API, tiered features (teams, partitioning, sandboxes, custom reporting)",
+      "features": [
+        "2",
+        "000+ integrations via App Marketplace",
+        "bi-directional Salesforce sync",
+        "native ad/social connectors",
+        "HubSpot API",
+        "tiered features (teams, partitioning, sandboxes, custom reporting)"
+      ]
+    }
+  ]
+}

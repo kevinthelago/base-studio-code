@@ -1,0 +1,236 @@
+{
+  "id": "adp",
+  "name": "ADP",
+  "domain": "hr-hcm-payroll",
+  "domainName": "HR / HCM / Payroll",
+  "capabilities": [
+    {
+      "slug": "core-hr",
+      "label": "Core HR",
+      "detail": "centralized DB, profiles/job history, document mgmt + e-sig, org charts, customizable workflows/approvals, custom objects/views, SSO, RBAC, alerts, workforce planning",
+      "features": [
+        "centralized DB",
+        "profiles/job history",
+        "document mgmt + e-sig",
+        "org charts",
+        "customizable workflows/approvals",
+        "custom objects/views",
+        "SSO",
+        "RBAC",
+        "alerts",
+        "workforce planning"
+      ]
+    },
+    {
+      "slug": "payroll",
+      "label": "Payroll",
+      "detail": "automated online, continuous/real-time, RUN & DONE autopilot, AI anomaly detection, direct deposit (incl. split), Wisely paycard, 1099-NEC, off-cycle/pay-anyone, pretax/post-tax deductions, retirement automation, bill pay/invoicing",
+      "features": [
+        "automated online",
+        "continuous/real-time",
+        "RUN & DONE autopilot",
+        "AI anomaly detection",
+        "direct deposit (incl. split)",
+        "Wisely paycard",
+        "1099-NEC",
+        "off-cycle/pay-anyone",
+        "pretax/post-tax deductions",
+        "retirement automation",
+        "bill pay/invoicing"
+      ]
+    },
+    {
+      "slug": "tax-compliance",
+      "label": "Tax/compliance",
+      "detail": "auto federal/state/local calc/filing/remittance, multi-state, W-2/1099 + IRS e-file, garnishments, SUI/unemployment claims, tax-credit ID (WOTC/R&D), ACA reporting, employment/income verification, payroll-tax registration (SmartCompliance)",
+      "features": [
+        "auto federal/state/local calc/filing/remittance",
+        "multi-state",
+        "W-2/1099 + IRS e-file",
+        "garnishments",
+        "SUI/unemployment claims",
+        "tax-credit ID (WOTC/R&D)",
+        "ACA reporting",
+        "employment/income verification",
+        "payroll-tax registration (SmartCompliance)"
+      ]
+    },
+    {
+      "slug": "global-payroll",
+      "label": "Global payroll",
+      "detail": "140+ countries, unified global practitioner portal, multi-currency, in-country compliance, legislative monitoring, \"My Pay\" self-service in 35 languages, tiered outsourcing",
+      "features": [
+        "140+ countries",
+        "unified global practitioner portal",
+        "multi-currency",
+        "in-country compliance",
+        "legislative monitoring",
+        "\"My Pay\" self-service in 35 languages",
+        "tiered outsourcing"
+      ]
+    },
+    {
+      "slug": "benefits",
+      "label": "Benefits",
+      "detail": "online open enrollment/dashboard, life-event/dependent mgmt, deduction sync, 401(k)/SIMPLE/SEP with match tracking, ADPIA group health, workers' comp Pay-by-Pay, P&C insurance, ACA",
+      "features": [
+        "online open enrollment/dashboard",
+        "life-event/dependent mgmt",
+        "deduction sync",
+        "401(k)/SIMPLE/SEP with match tracking",
+        "ADPIA group health",
+        "workers' comp Pay-by-Pay",
+        "P&C insurance",
+        "ACA"
+      ]
+    },
+    {
+      "slug": "time-wfm",
+      "label": "Time/WFM",
+      "detail": "automated time tracking, clock in/out, attendance/policy enforcement, PTO tracking, auto scheduling/shift assignment, labor forecasting/budgeting, labor-cost/compliance, leave/absence case management",
+      "features": [
+        "automated time tracking",
+        "clock in/out",
+        "attendance/policy enforcement",
+        "PTO tracking",
+        "auto scheduling/shift assignment",
+        "labor forecasting/budgeting",
+        "labor-cost/compliance",
+        "leave/absence case management"
+      ]
+    },
+    {
+      "slug": "recruiting-ats",
+      "label": "Recruiting/ATS",
+      "detail": "candidate pipeline, job posting + multi-channel, ZipRecruiter integration, resume mgmt, candidate scoring, interview scheduling, AI job descriptions, background checks",
+      "features": [
+        "candidate pipeline",
+        "job posting + multi-channel",
+        "ZipRecruiter integration",
+        "resume mgmt",
+        "candidate scoring",
+        "interview scheduling",
+        "AI job descriptions",
+        "background checks"
+      ]
+    },
+    {
+      "slug": "onboarding",
+      "label": "Onboarding",
+      "detail": "guided digital, pre-boarding, integration programs, handbook assistance, offboarding",
+      "features": [
+        "guided digital",
+        "pre-boarding",
+        "integration programs",
+        "handbook assistance",
+        "offboarding"
+      ]
+    },
+    {
+      "slug": "performance",
+      "label": "Performance",
+      "detail": "review creation/distribution, goal alignment, continuous feedback, 360, peer feedback, self-assessments, analytics",
+      "features": [
+        "review creation/distribution",
+        "goal alignment",
+        "continuous feedback",
+        "360",
+        "peer feedback",
+        "self-assessments",
+        "analytics"
+      ]
+    },
+    {
+      "slug": "talent-learning",
+      "label": "Talent/learning",
+      "detail": "development plans, LMS integration, coaching, competency/skill tracking, succession, StandOut assessments",
+      "features": [
+        "development plans",
+        "LMS integration",
+        "coaching",
+        "competency/skill tracking",
+        "succession",
+        "StandOut assessments"
+      ]
+    },
+    {
+      "slug": "compensation",
+      "label": "Compensation",
+      "detail": "comp management, benchmarking vs 39M+ US employees / 9,000+ titles, pay-gap/equity ID, reward programs",
+      "features": [
+        "comp management",
+        "benchmarking vs 39M+ US employees / 9",
+        "000+ titles",
+        "pay-gap/equity ID",
+        "reward programs"
+      ]
+    },
+    {
+      "slug": "analytics-datacloud",
+      "label": "Analytics (DataCloud)",
+      "detail": "cross-payroll/HR consolidation, industry benchmarking (largest dataset — 1M+ employers, 39M+ employees), pre-configured KPIs, custom dashboards, talent analytics, retention/turnover prediction, labor-cost/benefits/DEI insights, ADP Assist conversational analytics",
+      "features": [
+        "cross-payroll/HR consolidation",
+        "industry benchmarking (largest dataset — 1M+ employers, 39M+ employees)",
+        "pre-configured KPIs",
+        "custom dashboards",
+        "talent analytics",
+        "retention/turnover prediction",
+        "labor-cost/benefits/DEI insights",
+        "ADP Assist conversational analytics"
+      ]
+    },
+    {
+      "slug": "self-service",
+      "label": "Self-service",
+      "detail": "ADP Mobile Solutions, portal/ADP Connect, pay history, schedule viewing, benefits, W-2 access",
+      "features": [
+        "ADP Mobile Solutions",
+        "portal/ADP Connect",
+        "pay history",
+        "schedule viewing",
+        "benefits",
+        "W-2 access"
+      ]
+    },
+    {
+      "slug": "peo-outsourcing",
+      "label": "PEO/outsourcing",
+      "detail": "ADP TotalSource PEO (co-employment, Fortune-500 benefits), Comprehensive Services, HCM Managed Services, à-la-carte, HR HelpDesk 24/7, dedicated managers",
+      "features": [
+        "ADP TotalSource PEO (co-employment, Fortune-500 benefits)",
+        "Comprehensive Services",
+        "HCM Managed Services",
+        "à-la-carte",
+        "HR HelpDesk 24/7",
+        "dedicated managers"
+      ]
+    },
+    {
+      "slug": "ai",
+      "label": "AI",
+      "detail": "ADP Assist generative assistant, payroll anomaly detection, AI job descriptions, candidate scoring, turnover prediction, conversational data access",
+      "features": [
+        "ADP Assist generative assistant",
+        "payroll anomaly detection",
+        "AI job descriptions",
+        "candidate scoring",
+        "turnover prediction",
+        "conversational data access"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "ADP Marketplace, open APIs + SmartConnect, prebuilt (Workday/Oracle/SAP/Infor/Okta), Clover POS, WorkMarket contingent workforce, DataCloud licensing",
+      "features": [
+        "ADP Marketplace",
+        "open APIs + SmartConnect",
+        "prebuilt (Workday/Oracle/SAP/Infor/Okta)",
+        "Clover POS",
+        "WorkMarket contingent workforce",
+        "DataCloud licensing"
+      ]
+    }
+  ]
+}

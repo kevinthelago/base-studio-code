@@ -1,0 +1,164 @@
+{
+  "id": "nintex",
+  "name": "Nintex",
+  "domain": "bpm-and-process-automation",
+  "domainName": "BPM & Process Automation",
+  "capabilities": [
+    {
+      "slug": "process-management-promapp",
+      "label": "Process management (Promapp)",
+      "detail": "visual/collaborative mapping, live capture, publish/share, risk alerts + management, improvement tracking, training/competency records, ISO compliance, AI Process Generator, Model-to-Map (BPMN→procedures), Process Capture, Visio→BPMN via ML",
+      "features": [
+        "visual/collaborative mapping",
+        "live capture",
+        "publish/share",
+        "risk alerts + management",
+        "improvement tracking",
+        "training/competency records",
+        "ISO compliance",
+        "AI Process Generator",
+        "Model-to-Map (BPMN→procedures)",
+        "Process Capture",
+        "Visio→BPMN via ML"
+      ]
+    },
+    {
+      "slug": "workflow-automation-automation-cloud-k2",
+      "label": "Workflow automation (Automation Cloud/K2)",
+      "detail": "no-code drag-drop, automated approvals/notifications/routing, human-in-the-loop, serial & parallel, business logic, adaptive workflows, audit trails, Data Tables, AI Workflow Generator",
+      "features": [
+        "no-code drag-drop",
+        "automated approvals/notifications/routing",
+        "human-in-the-loop",
+        "serial & parallel",
+        "business logic",
+        "adaptive workflows",
+        "audit trails",
+        "Data Tables",
+        "AI Workflow Generator"
+      ]
+    },
+    {
+      "slug": "low-code-nintex-apps-skuid",
+      "label": "Low-code (Nintex Apps/Skuid)",
+      "detail": "no-code builder, inline-editable forms/grids, dashboards, task lists, portals, complex record create/update, Nintex Apps for Salesforce",
+      "features": [
+        "no-code builder",
+        "inline-editable forms/grids",
+        "dashboards",
+        "task lists",
+        "portals",
+        "complex record create/update",
+        "Nintex Apps for Salesforce"
+      ]
+    },
+    {
+      "slug": "forms-k2-smartforms",
+      "label": "Forms (K2 SmartForms)",
+      "detail": "drag-drop designer, reusable, validation rules, dynamic/conditional logic, multi-language, Style Profile Designer",
+      "features": [
+        "drag-drop designer",
+        "reusable",
+        "validation rules",
+        "dynamic/conditional logic",
+        "multi-language",
+        "Style Profile Designer"
+      ]
+    },
+    {
+      "slug": "rpa-kryon",
+      "label": "RPA (Kryon)",
+      "detail": "no-code bot designer, 200+ commands, attended + unattended, patented ML + OCR (computer vision), exception handling, credentials vault, cloud + on-prem",
+      "features": [
+        "no-code bot designer",
+        "200+ commands",
+        "attended + unattended",
+        "patented ML + OCR (computer vision)",
+        "exception handling",
+        "credentials vault",
+        "cloud + on-prem"
+      ]
+    },
+    {
+      "slug": "process-discovery-task-mining-kryon",
+      "label": "Process discovery/task mining (Kryon)",
+      "detail": "desktop discovery robots (non-intrusive), computer-vision capture, AI variant analysis, auto process mapping, automation-suitability evaluation, auto-generation of workflows",
+      "features": [
+        "desktop discovery robots (non-intrusive)",
+        "computer-vision capture",
+        "AI variant analysis",
+        "auto process mapping",
+        "automation-suitability evaluation",
+        "auto-generation of workflows"
+      ]
+    },
+    {
+      "slug": "document-generation-docgen",
+      "label": "Document generation (DocGen)",
+      "detail": "no-code doc gen/personalization from data (esp. Salesforce), dynamic field tagger, PDF stamps, quotes/invoices/contracts, trigger actions on generation",
+      "features": [
+        "no-code doc gen/personalization from data (esp. Salesforce)",
+        "dynamic field tagger",
+        "PDF stamps",
+        "quotes/invoices/contracts",
+        "trigger actions on generation"
+      ]
+    },
+    {
+      "slug": "esignature-nintex-sign-assuresign",
+      "label": "eSignature (Nintex Sign/AssureSign)",
+      "detail": "create/send/sign/track, one-click send from DocGen with signed docs routed back to Salesforce",
+      "features": [
+        "create/send/sign/track",
+        "one-click send from DocGen with signed docs routed back to Salesforce"
+      ]
+    },
+    {
+      "slug": "ai-and-agentic-orchestration",
+      "label": "AI & agentic orchestration",
+      "detail": "Agentic Business Orchestration, Agent Designer (build/evaluate/orchestrate custom agents), autonomous execution, evaluation framework, chatbot dev, AI doc actions (Text Extraction/Language/Translate/Summarize/Sentiment/Info Extraction)",
+      "features": [
+        "Agentic Business Orchestration",
+        "Agent Designer (build/evaluate/orchestrate custom agents)",
+        "autonomous execution",
+        "evaluation framework",
+        "chatbot dev",
+        "AI doc actions (Text Extraction/Language/Translate/Summarize/Sentiment/Info Extraction)"
+      ]
+    },
+    {
+      "slug": "integration",
+      "label": "Integration",
+      "detail": "Nintex Gateway (on-prem), native connectors (Salesforce/M365/SharePoint), SQL/WebServices, Azure AD & Okta SSO",
+      "features": [
+        "Nintex Gateway (on-prem)",
+        "native connectors (Salesforce/M365/SharePoint)",
+        "SQL/WebServices",
+        "Azure AD & Okta SSO"
+      ]
+    },
+    {
+      "slug": "analytics-governance",
+      "label": "Analytics/governance",
+      "detail": "central dashboard, process/operational analytics, audit trails, RBAC, ISO 27001/27701/9001 + SOC-2, GDPR/PCI/HIPAA alignment",
+      "features": [
+        "central dashboard",
+        "process/operational analytics",
+        "audit trails",
+        "RBAC",
+        "ISO 27001/27701/9001 + SOC-2",
+        "GDPR/PCI/HIPAA alignment"
+      ]
+    },
+    {
+      "slug": "deployment",
+      "label": "Deployment",
+      "detail": "Automation Cloud (SaaS), Automation K2 (self-hosted), cloud + on-prem RPA",
+      "features": [
+        "Automation Cloud (SaaS)",
+        "Automation K2 (self-hosted)",
+        "cloud + on-prem RPA"
+      ]
+    }
+  ]
+}

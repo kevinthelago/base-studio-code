@@ -1,0 +1,76 @@
+{
+  "id": "infor-cloudsuite-industry-specific",
+  "name": "Infor CloudSuite (industry-specific)",
+  "domain": "erp-enterprise-resource-planning",
+  "domainName": "ERP (Enterprise Resource Planning)",
+  "capabilities": [
+    {
+      "slug": "financials",
+      "label": "Financials",
+      "detail": "multi-dimensional/multi-entity GL w/ encumbrance, AP (OCR/AI, three-way match, dup detection), AR (cash app, collections, credit), Cash (in-house banking, payment factory), Fixed Assets (lease ASC 842/IFRS 16)",
+      "features": [
+        "multi-dimensional/multi-entity GL w/ encumbrance",
+        "AP (OCR/AI, three-way match, dup detection)",
+        "AR (cash app, collections, credit)",
+        "Cash (in-house banking, payment factory)",
+        "Fixed Assets (lease ASC 842/IFRS 16)"
+      ]
+    },
+    {
+      "slug": "supply-chain",
+      "label": "Supply Chain",
+      "detail": "procurement (sourcing RFQ/RFP, contracts, punchout, landed cost), inventory (lot/serial, ABC counting, consignment), order mgmt (EDI/web, ATP, rebate), WMS (3D viz, labor/yard mgmt, task interleaving, AS/RS/voice/robotics, 3PL), planning (ML forecasting, multi-echelon optimization, S&OP, demand sensing)",
+      "features": [
+        "procurement (sourcing RFQ/RFP, contracts, punchout, landed cost)",
+        "inventory (lot/serial, ABC counting, consignment)",
+        "order mgmt (EDI/web, ATP, rebate)",
+        "WMS (3D viz, labor/yard mgmt, task interleaving, AS/RS/voice/robotics, 3PL)",
+        "planning (ML forecasting, multi-echelon optimization, S&OP, demand sensing)"
+      ]
+    },
+    {
+      "slug": "manufacturing-3-engines-ln-m3-syteline",
+      "label": "Manufacturing (3 engines — LN/M3/SyteLine)",
+      "detail": "discrete (multi-level BOMs, APS finite scheduling, ECM, CTO configurator, subcontracting) + process (recipe/formula, potency, catch-weight, shelf-life FEFO, allergen, batch genealogy) + DDMRP/what-if",
+      "features": [
+        "discrete (multi-level BOMs, APS finite scheduling, ECM, CTO configurator, subcontracting) + process (recipe/formula, potency, catch-weight, shelf-life FEFO, allergen, batch genealogy) + DDMRP/what-if"
+      ]
+    },
+    {
+      "slug": "quality-hcm-eam",
+      "label": "Quality / HCM / EAM",
+      "detail": "inspection plans, CAPA, CoA, SPC, supplier scorecards; Core HR + Talent + Workforce Mgmt + multi-country Payroll; asset registry, preventive/predictive (IoT), RCM, GIS, mobile offline",
+      "features": [
+        "inspection plans",
+        "CAPA",
+        "CoA",
+        "SPC",
+        "supplier scorecards; Core HR + Talent + Workforce Mgmt + multi-country Payroll; asset registry",
+        "preventive/predictive (IoT)",
+        "RCM",
+        "GIS",
+        "mobile offline"
+      ]
+    },
+    {
+      "slug": "crm-cpq-plm-service",
+      "label": "CRM / CPQ / PLM / Service",
+      "detail": "SFA + case + Social CRM; rules-based 2D/3D configurator + guided selling; PLM (BOM/formulation versioning, NPI stage-gate, REACH/RoHS); field service dispatch + warranty + depot/repair",
+      "features": [
+        "SFA + case + Social CRM; rules-based 2D/3D configurator + guided selling; PLM (BOM/formulation versioning, NPI stage-gate, REACH/RoHS); field service dispatch + warranty + depot/repair"
+      ]
+    },
+    {
+      "slug": "infor-os-platform",
+      "label": "Infor OS platform",
+      "detail": "Coleman AI, Birst Analytics, ION (integration/event/data lake), Document Mgmt, Ming.le (SSO/social); industry CloudSuites (Industrial, F&B, Distribution, A&D, Fashion, Automotive, Chemicals, Healthcare, Public Sector)",
+      "features": [
+        "Coleman AI",
+        "Birst Analytics",
+        "ION (integration/event/data lake)",
+        "Document Mgmt",
+        "Ming.le (SSO/social); industry CloudSuites (Industrial, F&B, Distribution, A&D, Fashion, Automotive, Chemicals, Healthcare, Public Sector)"
+      ]
+    }
+  ]
+}

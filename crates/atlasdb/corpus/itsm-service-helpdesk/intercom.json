@@ -1,0 +1,164 @@
+{
+  "id": "intercom",
+  "name": "Intercom",
+  "domain": "itsm-service-helpdesk",
+  "domainName": "ITSM / Service / Helpdesk",
+  "capabilities": [
+    {
+      "slug": "ticketing-inbox",
+      "label": "Ticketing/inbox",
+      "detail": "omnichannel shared inbox, AI-enhanced ticketing (auto categorization/prioritization/routing), 3 ticket types (customer/back-office/tracker), one-click conversation-to-ticket, custom states, forms, multiple team inboxes, macros, bulk edit, searchable views",
+      "features": [
+        "omnichannel shared inbox",
+        "AI-enhanced ticketing (auto categorization/prioritization/routing)",
+        "3 ticket types (customer/back-office/tracker)",
+        "one-click conversation-to-ticket",
+        "custom states",
+        "forms",
+        "multiple team inboxes",
+        "macros",
+        "bulk edit",
+        "searchable views"
+      ]
+    },
+    {
+      "slug": "assignment-routing-slas",
+      "label": "Assignment/routing/SLAs",
+      "detail": "no-code auto assignment, Round Robin with skip-away, auto-unassign, inbox limits, ticket SLAs (FRT/NRT/TTC/TTR), office-hours targets, escalation triggers",
+      "features": [
+        "no-code auto assignment",
+        "Round Robin with skip-away",
+        "auto-unassign",
+        "inbox limits",
+        "ticket SLAs (FRT/NRT/TTC/TTR)",
+        "office-hours targets",
+        "escalation triggers"
+      ]
+    },
+    {
+      "slug": "omnichannel",
+      "label": "Omnichannel",
+      "detail": "live chat/Messenger, inbound email, in-app chats/banners/tooltips, phone/voice, WhatsApp, SMS, social apps, email campaigns",
+      "features": [
+        "live chat/Messenger",
+        "inbound email",
+        "in-app chats/banners/tooltips",
+        "phone/voice",
+        "WhatsApp",
+        "SMS",
+        "social apps",
+        "email campaigns"
+      ]
+    },
+    {
+      "slug": "knowledge-help-center",
+      "label": "Knowledge/help center",
+      "detail": "Knowledge Hub (unified content feeding Fin + Help Center), Articles-powered Help Center (public/private/multilingual/multibrand), searchable KB, company/customer portal",
+      "features": [
+        "Knowledge Hub (unified content feeding Fin + Help Center)",
+        "Articles-powered Help Center (public/private/multilingual/multibrand)",
+        "searchable KB",
+        "company/customer portal"
+      ]
+    },
+    {
+      "slug": "ai-agent-fin",
+      "label": "AI Agent (Fin)",
+      "detail": "on all plans (outcome-based ~$0.99/resolution), ~76% autonomous resolution across chat/email/voice, Apex 1.0 + Apex Flash models, 45+ languages, clarifying questions, Fin Voice + human handoff, read/write to 3rd-party systems, multi-step Procedures, Fin Tasks/actions, auto-triage, works with any helpdesk (Salesforce/HubSpot/Freshdesk/Zendesk) via API/MCP, testing suite, observability dashboard",
+      "features": [
+        "on all plans (outcome-based ~$0.99/resolution)",
+        "~76% autonomous resolution across chat/email/voice",
+        "Apex 1.0 + Apex Flash models",
+        "45+ languages",
+        "clarifying questions",
+        "Fin Voice + human handoff",
+        "read/write to 3rd-party systems",
+        "multi-step Procedures",
+        "Fin Tasks/actions",
+        "auto-triage",
+        "works with any helpdesk (Salesforce/HubSpot/Freshdesk/Zendesk) via API/MCP",
+        "testing suite",
+        "observability dashboard"
+      ]
+    },
+    {
+      "slug": "agent-assist-ai-ops",
+      "label": "Agent-assist/AI ops",
+      "detail": "Copilot in-inbox assistant ($29/agent/mo, drafts replies, KB answers, translation), Fin Operator (back-office AI configuring/tuning Fin + maintaining knowledge)",
+      "features": [
+        "Copilot in-inbox assistant ($29/agent/mo, drafts replies, KB answers, translation)",
+        "Fin Operator (back-office AI configuring/tuning Fin + maintaining knowledge)"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "visual no-code Workflows, triggers/conditions/actions, auto routing, tagging, CSAT automation, idle auto-closure, custom actions + objects",
+      "features": [
+        "visual no-code Workflows",
+        "triggers/conditions/actions",
+        "auto routing",
+        "tagging",
+        "CSAT automation",
+        "idle auto-closure",
+        "custom actions + objects"
+      ]
+    },
+    {
+      "slug": "proactive-outbound",
+      "label": "Proactive/outbound",
+      "detail": "Product Tours, Surveys, Posts, Push, Carousels, Banners, Tooltips, checklists, Series campaigns (behavioral targeting)",
+      "features": [
+        "Product Tours",
+        "Surveys",
+        "Posts",
+        "Push",
+        "Carousels",
+        "Banners",
+        "Tooltips",
+        "checklists",
+        "Series campaigns (behavioral targeting)"
+      ]
+    },
+    {
+      "slug": "reporting",
+      "label": "Reporting",
+      "detail": "AI Insights (auto-scores conversations across Fin + humans), CX Score, Topics Explorer, always-on QA, custom scorecards, 100+ chart types, real-time Fin usage/cost",
+      "features": [
+        "AI Insights (auto-scores conversations across Fin + humans)",
+        "CX Score",
+        "Topics Explorer",
+        "always-on QA",
+        "custom scorecards",
+        "100+ chart types",
+        "real-time Fin usage/cost"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "300+ App Store (Salesforce/HubSpot/Stripe/Slack/Jira/GitHub/Shopify), REST APIs, Data Connectors, MCP, Fin for Platforms",
+      "features": [
+        "300+ App Store (Salesforce/HubSpot/Stripe/Slack/Jira/GitHub/Shopify)",
+        "REST APIs",
+        "Data Connectors",
+        "MCP",
+        "Fin for Platforms"
+      ]
+    },
+    {
+      "slug": "security",
+      "label": "Security",
+      "detail": "SSO, 2FA, SCIM, IP restrictions, HIPAA, SOC2/ISO 27001/42001/27701, data residency (US/EU/Australia)",
+      "features": [
+        "SSO",
+        "2FA",
+        "SCIM",
+        "IP restrictions",
+        "HIPAA",
+        "SOC2/ISO 27001/42001/27701",
+        "data residency (US/EU/Australia)"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,213 @@
+{
+  "id": "adobe-commerce-magento",
+  "name": "Adobe Commerce (Magento)",
+  "domain": "ecommerce-commerce",
+  "domainName": "eCommerce / Commerce",
+  "capabilities": [
+    {
+      "slug": "editions",
+      "label": "Editions",
+      "detail": "Magento Open Source (free) vs Adobe Commerce (paid; on-prem or Adobe Commerce Cloud), MySQL/MariaDB + PHP + EAV data model, Elasticsearch/OpenSearch catalog search",
+      "features": [
+        "Magento Open Source (free) vs Adobe Commerce (paid; on-prem or Adobe Commerce Cloud)",
+        "MySQL/MariaDB + PHP + EAV data model",
+        "Elasticsearch/OpenSearch catalog search"
+      ]
+    },
+    {
+      "slug": "storefront-themes",
+      "label": "Storefront/themes",
+      "detail": "Luma + custom themes, Page Builder (drag-drop CMS with content staging/preview/scheduling), CMS pages/blocks/widgets, dynamic blocks (segment-targeted), PWA Studio (Venia), new Edge Delivery Services storefront",
+      "features": [
+        "Luma + custom themes",
+        "Page Builder (drag-drop CMS with content staging/preview/scheduling)",
+        "CMS pages/blocks/widgets",
+        "dynamic blocks (segment-targeted)",
+        "PWA Studio (Venia)",
+        "new Edge Delivery Services storefront"
+      ]
+    },
+    {
+      "slug": "catalog",
+      "label": "Catalog",
+      "detail": "product types — simple/configurable/grouped/bundle/virtual/downloadable/gift card, attributes & attribute sets (EAV), categories, layered/faceted navigation, related/upsell/cross-sell, reviews & ratings, tier pricing, visual merchandising, Live Search (Adobe Sensei AI search/faceting), Product Recommendations (Sensei), Catalog Service, catalog permissions (B2B)",
+      "features": [
+        "product types — simple/configurable/grouped/bundle/virtual/downloadable/gift card",
+        "attributes & attribute sets (EAV)",
+        "categories",
+        "layered/faceted navigation",
+        "related/upsell/cross-sell",
+        "reviews & ratings",
+        "tier pricing",
+        "visual merchandising",
+        "Live Search (Adobe Sensei AI search/faceting)",
+        "Product Recommendations (Sensei)",
+        "Catalog Service",
+        "catalog permissions (B2B)"
+      ]
+    },
+    {
+      "slug": "cart-checkout",
+      "label": "Cart/checkout",
+      "detail": "one-page checkout, guest checkout, instant purchase, persistent/saved cart, multi-address checkout, gift options/messages, cart price rules, checkout customization",
+      "features": [
+        "one-page checkout",
+        "guest checkout",
+        "instant purchase",
+        "persistent/saved cart",
+        "multi-address checkout",
+        "gift options/messages",
+        "cart price rules",
+        "checkout customization"
+      ]
+    },
+    {
+      "slug": "payments",
+      "label": "Payments",
+      "detail": "Payment Services / Adobe Commerce Payments, PayPal/Braintree + gateway extensions, stored/vaulted cards, purchase order & payment-on-account (B2B)",
+      "features": [
+        "Payment Services / Adobe Commerce Payments",
+        "PayPal/Braintree + gateway extensions",
+        "stored/vaulted cards",
+        "purchase order & payment-on-account (B2B)"
+      ]
+    },
+    {
+      "slug": "promotions",
+      "label": "Promotions",
+      "detail": "catalog price rules, cart price rules (coupons — %/fixed/BOGO/free shipping), auto-generated coupon codes, tiered pricing, gift cards, store credit, reward points/loyalty, gift registry, related-product rules",
+      "features": [
+        "catalog price rules",
+        "cart price rules (coupons — %/fixed/BOGO/free shipping)",
+        "auto-generated coupon codes",
+        "tiered pricing",
+        "gift cards",
+        "store credit",
+        "reward points/loyalty",
+        "gift registry",
+        "related-product rules"
+      ]
+    },
+    {
+      "slug": "inventory-oms",
+      "label": "Inventory/OMS",
+      "detail": "Multi-Source Inventory (sources/stocks/reservations/source-selection & distance-priority algorithms), salable quantity, Adobe Commerce Order Management, in-store pickup/BOPIS, backorders",
+      "features": [
+        "Multi-Source Inventory (sources/stocks/reservations/source-selection & distance-priority algorithms)",
+        "salable quantity",
+        "Adobe Commerce Order Management",
+        "in-store pickup/BOPIS",
+        "backorders"
+      ]
+    },
+    {
+      "slug": "multi-channel",
+      "label": "Multi-channel",
+      "detail": "Amazon Sales Channel (historic), feed/marketplace extensions, multi-store selling",
+      "features": [
+        "Amazon Sales Channel (historic)",
+        "feed/marketplace extensions",
+        "multi-store selling"
+      ]
+    },
+    {
+      "slug": "b2b-adobe-commerce-only",
+      "label": "B2B (Adobe Commerce only)",
+      "detail": "company accounts (hierarchy/roles/permissions), shared catalogs with custom pricing, negotiable quotes / Request for Quote, requisition lists, quick order, purchase orders, company credit / payment on account, order approval workflows",
+      "features": [
+        "company accounts (hierarchy/roles/permissions)",
+        "shared catalogs with custom pricing",
+        "negotiable quotes / Request for Quote",
+        "requisition lists",
+        "quick order",
+        "purchase orders",
+        "company credit / payment on account",
+        "order approval workflows"
+      ]
+    },
+    {
+      "slug": "internationalization",
+      "label": "Internationalization",
+      "detail": "multiple websites / stores / store views in one install, multi-currency, multi-language (locale packs), tax rules by region, per-store catalogs & pricing",
+      "features": [
+        "multiple websites / stores / store views in one install",
+        "multi-currency",
+        "multi-language (locale packs)",
+        "tax rules by region",
+        "per-store catalogs & pricing"
+      ]
+    },
+    {
+      "slug": "seo-marketing",
+      "label": "SEO/marketing",
+      "detail": "SEO (URL rewrites/meta/XML sitemap/canonical/rich snippets), newsletters/email, abandoned-cart email, reviews, related products, GA/Tag Manager, Adobe Experience Cloud integration (Target/Analytics/AEM/Marketo)",
+      "features": [
+        "SEO (URL rewrites/meta/XML sitemap/canonical/rich snippets)",
+        "newsletters/email",
+        "abandoned-cart email",
+        "reviews",
+        "related products",
+        "GA/Tag Manager",
+        "Adobe Experience Cloud integration (Target/Analytics/AEM/Marketo)"
+      ]
+    },
+    {
+      "slug": "headless-composable",
+      "label": "Headless/composable",
+      "detail": "GraphQL API + REST & SOAP APIs, PWA Studio, Adobe Commerce App Builder (out-of-process serverless extensibility), API Mesh, Commerce Webhooks, Catalog Service / Live Search / Recommendations as services",
+      "features": [
+        "GraphQL API + REST & SOAP APIs",
+        "PWA Studio",
+        "Adobe Commerce App Builder (out-of-process serverless extensibility)",
+        "API Mesh",
+        "Commerce Webhooks",
+        "Catalog Service / Live Search / Recommendations as services"
+      ]
+    },
+    {
+      "slug": "extensions",
+      "label": "Extensions",
+      "detail": "Adobe Commerce Marketplace (thousands of extensions & themes), modular architecture",
+      "features": [
+        "Adobe Commerce Marketplace (thousands of extensions & themes)",
+        "modular architecture"
+      ]
+    },
+    {
+      "slug": "analytics-bi",
+      "label": "Analytics/BI",
+      "detail": "Adobe Commerce Intelligence (formerly Magento BI), built-in reports (sales/tax/abandoned carts/bestsellers/coupons), dashboards, Product Recommendations analytics, Adobe Analytics integration",
+      "features": [
+        "Adobe Commerce Intelligence (formerly Magento BI)",
+        "built-in reports (sales/tax/abandoned carts/bestsellers/coupons)",
+        "dashboards",
+        "Product Recommendations analytics",
+        "Adobe Analytics integration"
+      ]
+    },
+    {
+      "slug": "shipping",
+      "label": "Shipping",
+      "detail": "shipping methods (flat/table rate/free), carrier integrations (UPS/FedEx/USPS/DHL), shipping rules, dimensional shipping, multi-address, BOPIS via MSI",
+      "features": [
+        "shipping methods (flat/table rate/free)",
+        "carrier integrations (UPS/FedEx/USPS/DHL)",
+        "shipping rules",
+        "dimensional shipping",
+        "multi-address",
+        "BOPIS via MSI"
+      ]
+    },
+    {
+      "slug": "ai",
+      "label": "AI",
+      "detail": "Adobe Sensei across Live Search, Product Recommendations, intelligent merchandising, GenAI capabilities",
+      "features": [
+        "Adobe Sensei across Live Search",
+        "Product Recommendations",
+        "intelligent merchandising",
+        "GenAI capabilities"
+      ]
+    }
+  ]
+}

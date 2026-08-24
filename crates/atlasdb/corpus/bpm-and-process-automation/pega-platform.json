@@ -1,0 +1,177 @@
+{
+  "id": "pega-platform",
+  "name": "Pega Platform",
+  "domain": "bpm-and-process-automation",
+  "domainName": "BPM & Process Automation",
+  "capabilities": [
+    {
+      "slug": "app-design-and-genai-blueprint",
+      "label": "App design & GenAI blueprint",
+      "detail": "Pega GenAI Blueprint (plain-language → application blueprint), GenAI Autopilot (auto-suggests case types/life cycle/data model/portals/view fields), Customer Engagement Blueprint, instant blueprint-to-Platform generation",
+      "features": [
+        "Pega GenAI Blueprint (plain-language → application blueprint)",
+        "GenAI Autopilot (auto-suggests case types/life cycle/data model/portals/view fields)",
+        "Customer Engagement Blueprint",
+        "instant blueprint-to-Platform generation"
+      ]
+    },
+    {
+      "slug": "low-code-app-dev",
+      "label": "Low-code app dev",
+      "detail": "App Studio (drag-drop model-driven), Dev Studio, Case Designer, data-object authoring, reusable rules, situational layer cake/inheritance, omnichannel single-codebase, Build with AI",
+      "features": [
+        "App Studio (drag-drop model-driven)",
+        "Dev Studio",
+        "Case Designer",
+        "data-object authoring",
+        "reusable rules",
+        "situational layer cake/inheritance",
+        "omnichannel single-codebase",
+        "Build with AI"
+      ]
+    },
+    {
+      "slug": "constellation-ui-ux",
+      "label": "Constellation UI/UX",
+      "detail": "Constellation design system (React, DX API, stateless microservices), Views/templates/widgets, OOTB accessibility + localization, responsive omnichannel presentation layer",
+      "features": [
+        "Constellation design system (React, DX API, stateless microservices)",
+        "Views/templates/widgets",
+        "OOTB accessibility + localization",
+        "responsive omnichannel presentation layer"
+      ]
+    },
+    {
+      "slug": "case-management-workflow-bpm",
+      "label": "Case management / workflow (BPM)",
+      "detail": "case types with stages/steps/life cycles, dynamic/adaptive case handling, human + automated orchestration, milestones, SLAs, routing/prioritization/escalation, microjourneys, governance/compliance automation",
+      "features": [
+        "case types with stages/steps/life cycles",
+        "dynamic/adaptive case handling",
+        "human + automated orchestration",
+        "milestones",
+        "SLAs",
+        "routing/prioritization/escalation",
+        "microjourneys",
+        "governance/compliance automation"
+      ]
+    },
+    {
+      "slug": "process-ai",
+      "label": "Process AI",
+      "detail": "real-time event processing, predict/avoid SLA breaches, AI case routing/prioritization/escalation/resolution, self-optimizing processes",
+      "features": [
+        "real-time event processing",
+        "predict/avoid SLA breaches",
+        "AI case routing/prioritization/escalation/resolution",
+        "self-optimizing processes"
+      ]
+    },
+    {
+      "slug": "agentic-ai",
+      "label": "Agentic AI",
+      "detail": "Predictable AI Agent (governed/compliant), multi-agent orchestration, dynamic workflow invocation, agentic governance (audit/hallucination protection), reasoning/planning, bring-your-own model, cross-channel conversational front + back-end",
+      "features": [
+        "Predictable AI Agent (governed/compliant)",
+        "multi-agent orchestration",
+        "dynamic workflow invocation",
+        "agentic governance (audit/hallucination protection)",
+        "reasoning/planning",
+        "bring-your-own model",
+        "cross-channel conversational front + back-end"
+      ]
+    },
+    {
+      "slug": "genai-suite",
+      "label": "GenAI suite",
+      "detail": "GenAI Coach, Knowledge Buddy, Knowledge Agent, Self-Service Agent (chat/voice), GenAI Automate, prompt orchestration",
+      "features": [
+        "GenAI Coach",
+        "Knowledge Buddy",
+        "Knowledge Agent",
+        "Self-Service Agent (chat/voice)",
+        "GenAI Automate",
+        "prompt orchestration"
+      ]
+    },
+    {
+      "slug": "decisioning-rules",
+      "label": "Decisioning/rules",
+      "detail": "Customer Decision Hub, Next-Best-Action (arbitration, engagement policies), decision strategies, real-time 1:1 personalization, business-rules engine",
+      "features": [
+        "Customer Decision Hub",
+        "Next-Best-Action (arbitration, engagement policies)",
+        "decision strategies",
+        "real-time 1:1 personalization",
+        "business-rules engine"
+      ]
+    },
+    {
+      "slug": "predictive-adaptive-ai",
+      "label": "Predictive/adaptive AI",
+      "detail": "Prediction Studio, Adaptive Decision Manager (self-learning), 3rd-party ML connections, scenario testing",
+      "features": [
+        "Prediction Studio",
+        "Adaptive Decision Manager (self-learning)",
+        "3rd-party ML connections",
+        "scenario testing"
+      ]
+    },
+    {
+      "slug": "rpa-robotics",
+      "label": "RPA/robotics",
+      "detail": "attended + unattended RPA, legacy/no-API automation, non-invasive legacy wrapping combined with decisioning + workflow",
+      "features": [
+        "attended + unattended RPA",
+        "legacy/no-API automation",
+        "non-invasive legacy wrapping combined with decisioning + workflow"
+      ]
+    },
+    {
+      "slug": "process-mining-and-workforce-intelligence",
+      "label": "Process mining & workforce intelligence",
+      "detail": "Process Mining (AI as-is modeling from logs), Mining Assistant, task mining, Workforce Intelligence (desktop discovery bots, gap analysis)",
+      "features": [
+        "Process Mining (AI as-is modeling from logs)",
+        "Mining Assistant",
+        "task mining",
+        "Workforce Intelligence (desktop discovery bots, gap analysis)"
+      ]
+    },
+    {
+      "slug": "integration-data",
+      "label": "Integration/data",
+      "detail": "Integration Designer, visual data model, Connect REST/SOAP, connectors (Salesforce/SAP/ServiceNow/Kafka), data pages, Process Fabric (cross-silo orchestration)",
+      "features": [
+        "Integration Designer",
+        "visual data model",
+        "Connect REST/SOAP",
+        "connectors (Salesforce/SAP/ServiceNow/Kafka)",
+        "data pages",
+        "Process Fabric (cross-silo orchestration)"
+      ]
+    },
+    {
+      "slug": "channels",
+      "label": "Channels",
+      "detail": "Mobile (one-click build), Voice AI/IVR, Email Bot, chatbot/messaging, unified cross-channel service",
+      "features": [
+        "Mobile (one-click build)",
+        "Voice AI/IVR",
+        "Email Bot",
+        "chatbot/messaging",
+        "unified cross-channel service"
+      ]
+    },
+    {
+      "slug": "devops-governance",
+      "label": "DevOps/governance",
+      "detail": "Deployment Manager (model-driven CI/CD, branch merging, quality gates), 100% auditability, enterprise security controls",
+      "features": [
+        "Deployment Manager (model-driven CI/CD, branch merging, quality gates)",
+        "100% auditability",
+        "enterprise security controls"
+      ]
+    }
+  ]
+}
