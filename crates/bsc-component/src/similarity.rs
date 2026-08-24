@@ -1017,6 +1017,110 @@ fn cluster_findings(pairs: Vec<Finding>, comps: &[Comp]) -> Vec<Finding> {
 /// It also skips [`worth_scoring`]. That pre-filter admits a pair on a near NAME or a hard co-location
 /// signal — neither of which a shape match has by definition — so applying it here would gate out exactly
 /// the population this mode exists to find. The sweep is O(n²) over the library either way.
+/// The library's structural EQUIVALENCE CLASSES — every live record clustered by shape
+/// (#shape-similarity-is-pairwise-so-a-pattern-can-only-be-confirmed-never-found).
+///
+/// [`rank_shape_similar`] answers "what is built like THIS?" from a seed the caller must already have,
+/// which means a pattern can only ever be CONFIRMED by someone who already suspects it. This is the
+/// other half: sweep every pair, and return the groups. It is the same connected-components pass
+/// [`cluster_findings`] runs for `near-duplicate-cluster`, over the shape score instead of the blended
+/// one — the blended score structurally cannot see these groups, because a differing NAME halves it
+/// however identically two records are built.
+///
+/// **Connected components CHAIN, and that is reported rather than hidden.** `A~B` and `B~C` put all
+/// three in one group even when `A` and `C` are unalike, which is right for "these are related" and
+/// wrong for "these are one pattern". So each cluster carries `cohesion` — the WEAKEST pairwise score
+/// inside it. A cluster at cohesion 1.00 is an exact equivalence class; one well below the threshold is
+/// a chain, and the caller can see which it is instead of trusting the size.
+///
+/// Each cluster also carries the `signature` its members SHARE — the composes entries and skeleton
+/// entries present in every one of them. A member list says which records are alike; the signature says
+/// what they are, which is what a pattern needs before it can be named.
+pub fn shape_clusters(components: &[Value], threshold: f64, min_size: usize) -> Vec<Value> {
+    let comps: Vec<Comp> = components.iter().filter_map(parse).filter(live).collect();
+    // The pair graph. O(n²) like every other sweep here, over a cheaper score than the blended one.
+    let mut adj: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); comps.len()];
+    let mut pair: BTreeMap<(usize, usize), f64> = BTreeMap::new();
+    for i in 0..comps.len() {
+        for j in (i + 1)..comps.len() {
+            let terms = shape_terms(&comps[i], &comps[j]);
+            // Nothing to compare — both sides source-less AND composes-less. Not "identical", unknown.
+            if terms.iter().all(|t| t.value.is_none()) {
+                continue;
+            }
+            let sc = mean(&terms);
+            if sc >= threshold {
+                adj[i].insert(j);
+                adj[j].insert(i);
+                pair.insert((i, j), sc);
+            }
+        }
+    }
+    let mut seen = vec![false; comps.len()];
+    let mut out: Vec<(usize, f64, Value)> = Vec::new();
+    for start in 0..comps.len() {
+        if seen[start] || adj[start].is_empty() {
+            continue;
+        }
+        let (mut stack, mut group) = (vec![start], Vec::new());
+        while let Some(n) = stack.pop() {
+            if std::mem::replace(&mut seen[n], true) {
+                continue;
+            }
+            group.push(n);
+            stack.extend(adj[n].iter().copied().filter(|m| !seen[*m]));
+        }
+        if group.len() < min_size {
+            continue;
+        }
+        group.sort_by(|a, b| comps[*a].id.cmp(&comps[*b].id));
+
+        // Cohesion: the weakest pair IN the group, including the pairs no edge connects. A chain has a
+        // low one however many members it has, which is the whole reason it is reported.
+        let mut cohesion = 1.0f64;
+        for (a, x) in group.iter().enumerate() {
+            for y in group.iter().skip(a + 1) {
+                let (lo, hi) = if x < y { (*x, *y) } else { (*y, *x) };
+                let sc = pair.get(&(lo, hi)).copied().unwrap_or_else(|| {
+                    let t = shape_terms(&comps[lo], &comps[hi]);
+                    if t.iter().all(|q| q.value.is_none()) { 0.0 } else { mean(&t) }
+                });
+                cohesion = cohesion.min(sc);
+            }
+        }
+
+        // The SIGNATURE — what every member has, which is what names the pattern.
+        let shared = |pick: &dyn Fn(&Comp) -> BTreeSet<String>| -> Vec<String> {
+            let mut it = group.iter().map(|i| pick(&comps[*i]));
+            let first = it.next().unwrap_or_default();
+            it.fold(first, |acc, s| acc.intersection(&s).cloned().collect()).into_iter().collect()
+        };
+        let composes = shared(&|c: &Comp| c.composes.clone());
+        let skeleton = shared(&|c: &Comp| c.skeleton.keys().cloned().collect());
+        let kits: BTreeSet<&str> = group.iter().map(|i| comps[*i].kit.as_str()).collect();
+        out.push((
+            group.len(),
+            cohesion,
+            serde_json::json!({
+                "size": group.len(),
+                "cohesion": (cohesion * 100.0).round() / 100.0,
+                "kits": kits.into_iter().collect::<Vec<_>>(),
+                "signature": { "composes": composes, "skeleton": skeleton },
+                "members": group.iter().map(|i| serde_json::json!({
+                    "id": comps[*i].id, "name": comps[*i].name, "kit": comps[*i].kit,
+                })).collect::<Vec<_>>(),
+            }),
+        ));
+    }
+    // Biggest first, then tightest, then by first member id so the order is stable.
+    out.sort_by(|a, b| {
+        b.0.cmp(&a.0)
+            .then_with(|| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| a.2["members"][0]["id"].as_str().cmp(&b.2["members"][0]["id"].as_str()))
+    });
+    out.into_iter().map(|(_, _, v)| v).collect()
+}
+
 pub fn rank_shape_similar(target_id: &str, components: &[Value], top: usize, floor: f64) -> Vec<Value> {
     let comps: Vec<Comp> = components.iter().filter_map(parse).collect();
     let Some(target) = comps.iter().find(|c| c.id == target_id) else {
@@ -1312,6 +1416,71 @@ mod tests {
         // An expression attribute is skipped BALANCED, so a nested tag inside it is not read as an attr.
         let nested = jsx_skeleton("<Panel body={cond ? <A x={1}/> : <B/>} tone=\"warn\"/>");
         assert!(nested.contains_key("panel(body,tone)"), "{nested:?}");
+    }
+
+    /// The sweep half of the shape surface: groups, their shared signature, and the chain that a size
+    /// alone would hide (#shape-similarity-is-pairwise-so-a-pattern-can-only-be-confirmed-never-found).
+    #[test]
+    fn shape_clusters_returns_equivalence_classes_with_a_signature() {
+        // Three cards built to one shape, under three unrelated names — the case `dupes` cannot see,
+        // because a differing name halves the blended score however identically they are built.
+        let card = |id: &str, name: &str| {
+            json!({
+                "id": id, "name": name, "kitId": "k", "role": "composite", "composes": ["Card", "ToggleRow"],
+                "srcText": format!("export const {name} = () => <Card title=\"x\"><ToggleRow on={{a}} onToggle={{b}} title=\"t\"/></Card>;"),
+            })
+        };
+        // ... and an unrelated record, to prove the sweep is not just grouping everything.
+        let other = json!({
+            "id": "chart", "name": "Chart", "kitId": "k", "role": "composite", "composes": ["Axis"],
+            "srcText": "export const Chart = () => <Axis scale={s}><Line points={p}/></Axis>;",
+        });
+        let recs = vec![card("a", "SandboxCard"), card("b", "DebugCard"), card("c", "SecurityCard"), other];
+
+        let cl = shape_clusters(&recs, 0.9, 2);
+        assert_eq!(cl.len(), 1, "one pattern, and the chart is not in it: {cl:?}");
+        assert_eq!(cl[0]["size"], 3);
+        assert_eq!(cl[0]["cohesion"], 1.0, "an exact equivalence class, not a chain");
+        // The SIGNATURE is what names the pattern — a member list alone says nothing about what it IS.
+        let sig = &cl[0]["signature"];
+        fn strs(v: &Value) -> Vec<String> {
+            v.as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect()
+        }
+        assert_eq!(strs(&sig["composes"]), vec!["card", "togglerow"]);
+        assert!(strs(&sig["skeleton"]).iter().any(|x| x == "togglerow(on,ontoggle,title)"), "{sig:?}");
+        // Blended, these three never meet — which is the whole reason this verb exists.
+        assert!(
+            near_duplicate_findings(&recs, 0.55).iter().all(|f| f.node_ids.len() < 3),
+            "the dedup sweep cannot see a same-shape group under differing names",
+        );
+
+        // `--min` is a floor on size; at 4 the three-member pattern is below it.
+        assert!(shape_clusters(&recs, 0.9, 4).is_empty());
+        // A tombstone never joins a pattern, consistent with the rest of the surface.
+        let mut with_tomb = recs.clone();
+        with_tomb.push(json!({ "id": "d", "suppressed": true, "supersededBy": "a" }));
+        assert_eq!(shape_clusters(&with_tomb, 0.9, 2)[0]["size"], 3, "the tombstone did not join");
+    }
+
+    /// A chained cluster must be legible AS a chain. Connected components put `A~B~C` in one group even
+    /// when A and C are unalike, and a size alone would present that as a three-member pattern.
+    #[test]
+    fn a_chained_cluster_reports_its_weakest_pair_not_its_size() {
+        // A shares its skeleton with B, B shares its composes with C, A and C share neither.
+        let rec = |id: &str, composes: &[&str], src: &str| {
+            json!({ "id": id, "name": id, "kitId": "k", "role": "composite", "composes": composes, "srcText": src })
+        };
+        let a = rec("a", &["Card"], "export const A = () => <Card><Row x={1}/></Card>;");
+        let b = rec("b", &["Card"], "export const B = () => <Card><Row x={1}/></Card>;");
+        let c = rec("c", &["Card"], "export const C = () => <Card><Panel y={2}/></Card>;");
+        let cl = shape_clusters(&[a, b, c], 0.5, 2);
+        assert_eq!(cl.len(), 1);
+        assert_eq!(cl[0]["size"], 3);
+        let cohesion = cl[0]["cohesion"].as_f64().unwrap();
+        assert!(cohesion < 1.0, "a-to-c is the weak link and must pull cohesion down: {cohesion}");
+        // The shared signature is correspondingly thin — `Card` is all three actually agree on.
+        let sk = cl[0]["signature"]["skeleton"].as_array().unwrap();
+        assert!(sk.iter().all(|x| x.as_str() != Some("row(x)")), "not every member renders a Row: {sk:?}");
     }
 
     /// The two defects that made the shape signal wrong in both directions at once

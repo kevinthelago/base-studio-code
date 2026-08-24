@@ -677,6 +677,43 @@ genuinely owns — is exactly the part a bar would hide. Read the ranking; docto
 --kit scopes; --json emits the rows; --pretty indents. A READ — never scope-gated.",
     },
     CmdDoc {
+        name: "patterns",
+        summary: "the library's structural EQUIVALENCE CLASSES — the whole-library shape sweep, no seed needed (#shape-similarity-is-pairwise-so-a-pattern-can-only-be-confirmed-never-found)",
+        usage: "\
+USAGE:
+  bsc ui patterns [--kit K] [--threshold 0..1] [--min N] [--json] [--pretty]
+
+`bsc ui similar <id> --shape` answers `what is built like THIS?` from a seed the caller must already
+have — so a pattern can only ever be CONFIRMED by someone who already suspects it. This is the other
+half: it sweeps every LIVE record pairwise on the shape score and returns the groups themselves.
+
+The one sweep that already existed, `bsc ui dupes`, structurally cannot find these: it is blended
+(0.5 name + 0.5 contract), and a differing NAME halves a pair however identically it is built. Six
+settings cards composing [Card, ToggleRow] around one skeleton score 34% blended and never meet.
+
+Each cluster carries three things beyond its member list:
+
+  signature   what every member SHARES — the composes entries and the rendered tags common to all of
+              them. A member list says WHICH records are alike; the signature says WHAT they are, which
+              is what a pattern needs before anyone can name it.
+  cohesion    the WEAKEST pairwise score inside the cluster. Connected components CHAIN — A~B and B~C
+              group all three even when A and C are unalike — so a cohesion well under the threshold
+              means `related`, not `uniform`, and the row says CHAINED. At cohesion 1.00 the cluster is
+              an exact equivalence class.
+  kits        every kit represented. Cross-kit by design, like `dupes`.
+
+--threshold sets the bar (default 0.90, MEASURED — see the constant); --min the smallest cluster
+(default 2; a pair is a legitimate pattern-of-two); --kit scopes; --json emits the clusters; --pretty
+indents. The threshold and the counts are always PRINTED before the rows, because a sweep whose bar is
+invisible reads as `this is everything`.
+
+Suppressed records are excluded, as everywhere on this surface. A READ — never scope-gated.
+
+NOT a dedup proposal. Two records sharing a shape are usually SUPPOSED to: that is what a pattern is.
+Reach for `bsc ui dupes` when the question is `should these be one component?` and this when it is
+`what conventions does this library already have?`",
+    },
+    CmdDoc {
         name: "define-animation",
         summary: "author a component's motion as data — animation JSON on stdin, upsert by name (#2869)",
         usage: "\
@@ -1360,6 +1397,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_exports(&args[1..])
+            }
+        }
+        Some("patterns") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "patterns"));
+                Ok(())
+            } else {
+                cmd_patterns(&args[1..])
             }
         }
         // The component-animation authoring verbs (#2869): motion as DATA on a component record. Custom
@@ -3960,6 +4005,28 @@ fn cmd_dupes(args: &[String]) -> Result<(), String> {
 /// WHOLE library (name + contract distance), ranked most-similar first. The discover-before-authoring read:
 /// a session checks whether a component like the one it is about to build already exists. Cross-kit;
 /// PROPOSE-ONLY. `--top` caps the rows (default 10); `--threshold` sets a minimum overall score.
+/// The bar `bsc ui patterns` clusters at. MEASURED against the real library, and by a criterion rather
+/// than by taste: **0.90 is the loosest bar at which no cluster is a CHAIN.**
+///
+/// | threshold | clusters | records | largest | cohesion 1.00 | chained |
+/// |---|---|---|---|---|---|
+/// | 1.00 | 14 | 40 | 5 | 14 | 0 |
+/// | **0.90** | **16** | **45** | **5** | **13** | **0** |
+/// | 0.85 | 19 | 53 | 5 | 13 | **2** |
+/// | 0.80 | 19 | 59 | 5 | 10 | 3 |
+/// | 0.70 | 22 | 83 | 11 | 7 | 5 |
+/// | 0.60 | 35 | 135 | 24 | 5 | 6 |
+///
+/// Below 0.90 connected components start chaining — `A~B` and `B~C` grouping records that are not
+/// themselves alike — and by 0.60 the largest "pattern" is a 24-member blob. Above it the extra
+/// tightness costs two real clusters and buys nothing, since 0.95 and 1.00 return the same 14.
+///
+/// Re-measure before moving it; the value is only defensible against the distribution, exactly as
+/// `MULTI_COMPONENT_MIN` and `FAMILY_SHELL_SHARE` are. Chained clusters are still REPORTED at any
+/// threshold rather than dropped — `cohesion` is on every row — so a lower bar is a legible trade and
+/// not a silent one.
+const PATTERN_THRESHOLD: f64 = 0.90;
+
 fn cmd_similar(args: &[String]) -> Result<(), String> {
     let (mut dir, mut json, mut pretty) = (None::<String>, false, false);
     let (mut id, mut top, mut floor) = (None::<String>, 10usize, 0.0f64);
@@ -4169,6 +4236,83 @@ fn cmd_used_by(args: &[String]) -> Result<(), String> {
         println!("'{}' ({}) is composed by NOTHING in its kit — an orphan candidate (used-by 0).", key.1, key.0);
     } else {
         println!("'{}' ({}) is composed by {} component(s): {}", key.1, key.0, composers.len(), composers.join(", "));
+    }
+    Ok(())
+}
+
+/// `bsc ui patterns` — the whole-library shape sweep
+/// (#shape-similarity-is-pairwise-so-a-pattern-can-only-be-confirmed-never-found).
+///
+/// `similar --shape` needs a seed, so it can only CONFIRM a pattern someone already suspects. This
+/// returns the equivalence classes themselves. Prints the threshold and the counts before the rows —
+/// a sweep whose bar is invisible reads as "this is everything".
+fn cmd_patterns(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut json, mut pretty, mut kit_filter) = (None::<String>, false, false, None::<String>);
+    let (mut threshold, mut min_size) = (PATTERN_THRESHOLD, 2usize);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--kit" => kit_filter = it.next().cloned(),
+            "--threshold" => {
+                threshold = it.next().and_then(|s| s.parse::<f64>().ok()).ok_or("--threshold needs a number in [0,1]")?;
+            }
+            "--min" => {
+                min_size = it.next().and_then(|s| s.parse::<usize>().ok()).filter(|n| *n >= 2)
+                    .ok_or("--min needs an integer of 2 or more (a cluster of one is not a pattern)")?;
+            }
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    if !(0.0..=1.0).contains(&threshold) {
+        return Err("--threshold must be in [0,1]".to_string());
+    }
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> = store
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .filter(|c| kit_filter.as_deref().is_none_or(|k| c.get("kitId").and_then(serde_json::Value::as_str) == Some(k)))
+        .collect();
+    let clusters = crate::similarity::shape_clusters(&comps, threshold, min_size);
+    if json {
+        let out = if pretty { serde_json::to_string_pretty(&clusters) } else { serde_json::to_string(&clusters) };
+        println!("{}", out.map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+    let clustered: usize = clusters.iter().filter_map(|c| c["size"].as_u64()).sum::<u64>() as usize;
+    println!(
+        "{} structural pattern(s) over {} record(s) — {} of {} scanned are in one, at threshold {threshold:.2} (min {min_size}).",
+        clusters.len(),
+        clustered,
+        clustered,
+        comps.len(),
+    );
+    if clusters.is_empty() {
+        println!("Nothing clusters at that bar. Lower --threshold to see looser groupings.");
+        return Ok(());
+    }
+    for c in &clusters {
+        let sig = &c["signature"];
+        let list = |v: &serde_json::Value| {
+            v.as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default()
+        };
+        let (composes, skeleton) = (list(&sig["composes"]), list(&sig["skeleton"]));
+        let cohesion = c["cohesion"].as_f64().unwrap_or(0.0);
+        println!(
+            "\n  {} members · cohesion {:.0}%{}",
+            c["size"].as_u64().unwrap_or(0),
+            cohesion * 100.0,
+            // Connected components chain; below the bar the group is related, not uniform.
+            if cohesion + 1e-9 < threshold { "  ← CHAINED (some members are not alike)" } else { "" },
+        );
+        println!("    composes: {}", if composes.is_empty() { "—".into() } else { composes });
+        println!("    renders:  {}", if skeleton.is_empty() { "—".into() } else { skeleton });
+        let names: Vec<&str> =
+            c["members"].as_array().into_iter().flatten().filter_map(|m| m["name"].as_str()).collect();
+        println!("    {}", names.join(", "));
     }
     Ok(())
 }
@@ -6651,7 +6795,7 @@ export const P = () => <X />;"
             vec![
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "test", "doctor", "dupes", "similar", "used-by", "exports", "define-animation", "list-animations", "remove-animation",
+                "backing", "test", "doctor", "dupes", "similar", "used-by", "exports", "patterns", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
@@ -8106,6 +8250,37 @@ export const P = () => <X />;"
         assert_eq!(idx.get(&("mui".into(), "Button".into())).map(Vec::len), Some(1), "the other kit's Button is separate");
         assert!(!idx.contains_key(&("react-ui".into(), "Card".into())), "nothing composes Card ⇒ absent (an orphan/root)");
         assert_eq!(idx.get(&("react-ui".into(), "Icon".into())).map(Vec::len), Some(1), "a composed NAME appears even with no own record");
+    }
+
+    #[test]
+    fn patterns_sweeps_the_library_and_prints_its_bar() {
+        let store = tmp_component_store("patterns");
+        let dir = store.dir().to_string_lossy().into_owned();
+        for (id, name) in [("a", "SandboxCard"), ("b", "DebugCard"), ("c", "SecurityCard")] {
+            let rec = serde_json::json!({
+                "id": id, "name": name, "kitId": "react-ui", "role": "composite",
+                "composes": ["Card", "ToggleRow"],
+                "srcText": format!("export const {name} = () => <Card title=\"x\"><ToggleRow on={{a}} onToggle={{b}} title=\"t\"/></Card>;"),
+            });
+            store.set(id, &rec.to_string()).unwrap();
+        }
+        let d = |extra: &[&str]| {
+            extra.iter().map(|s| s.to_string()).chain(["--dir".to_string(), dir.clone()]).collect::<Vec<_>>()
+        };
+        assert!(run(d(&["patterns"]), "bsc ui").is_ok(), "the default sweep");
+        assert!(run(d(&["patterns", "--json", "--pretty"]), "bsc ui").is_ok(), "--json --pretty");
+        assert!(run(d(&["patterns", "--kit", "react-ui", "--threshold", "0.8", "--min", "3"]), "bsc ui").is_ok());
+        assert!(run(vec!["patterns".into(), "help".into()], "bsc ui").is_ok(), "help reachable");
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "patterns"), "the verb is documented");
+
+        // The flags REFUSE rather than silently coerce — a bar you cannot trust is worse than no sweep.
+        assert!(run(d(&["patterns", "--threshold", "2"]), "bsc ui").is_err(), "out of [0,1]");
+        assert!(run(d(&["patterns", "--threshold", "nope"]), "bsc ui").is_err(), "not a number");
+        assert!(run(d(&["patterns", "--min", "1"]), "bsc ui").is_err(), "a cluster of one is not a pattern");
+        assert!(run(d(&["patterns", "--nope"]), "bsc ui").is_err(), "unknown flag");
+
+        // The default is the measured one, and the table above it is what makes it defensible.
+        assert!((PATTERN_THRESHOLD - 0.90).abs() < 1e-9, "re-measure before moving this");
     }
 
     #[test]
