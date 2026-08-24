@@ -309,6 +309,31 @@ because the look must coexist with the default (e.g. a `danger` button alongside
 The lowest rung: authoring the components and specs themselves. Reserve it for building the kit — a
 new screen or a genuinely new component — not for restyling (rungs 1–3 do that live).
 
+### Before you author: ask the graph what already exists
+
+**Three reads, in this order, every time you are about to add a component.** They take seconds and
+they are the difference between extending the library and bloating it.
+
+```bash
+bsc ui patterns                        # the library's structural conventions, with the signature of each
+bsc ui similar <nearest-id> --shape    # is the thing you are about to write already a convention?
+bsc ui used-by <id>                    # if it exists, is it load-bearing? (fold the less-used into the more-used)
+```
+
+**Do NOT reach for `bsc ui list` here.** It searches names, and a name is precisely the signal that
+fails: components built to one shape are routinely named after their SUBJECT, not their form. Five
+settings cards built identically are called `ConsolePageCard`, `IssueSecurityCard`,
+`KitChangeApprovalCard`, `SandboxedConsolesCard` and `TelemetryCard`, and no substring joins them.
+`bsc ui list` is for reaching a record whose id you already know.
+
+`bsc ui dupes` answers a different question again — *"should these be ONE component?"* — and is
+blended half on name, so it cannot see this either. `--shape` is deliberately blind to the name.
+
+**Two records sharing a shape are usually SUPPOSED to** — that is what a pattern is. A 100% shape
+match is not an error; it is the library telling you the convention you should be following. What it
+forbids is inventing a sixth way to build the same thing. Match the convention, or extend the
+existing component with a `variant` (rung 3).
+
 **Every component you author needs a real implementation — that is YOUR job, not a later step.** A
 component is not its metadata (`role`/`composes`/`props`/`tags`); it is a working module the preview
 mounts and renders. When you add a component you MUST give it a buildable implementation in its
@@ -541,8 +566,25 @@ Each component record carries:
   kits, and an entry that resolves to nothing is dropped rather than drawn, so the graph reads as
   complete while the reference names nothing. `bsc ui doctor` enforces this as
   **dangling-composes-reference** (#89).
-- **One component per job**: before adding a component, `bsc ui list` and search for an existing
-  one — extend it with a variant (rung 3) rather than duplicating it.
+- **One component per job** — and **a NAME SEARCH WILL NOT FIND THE DUPLICATE.** Before adding a
+  component, run `bsc ui patterns` (the library's structural conventions) and then
+  `bsc ui similar <nearest-id> --shape`. Extend what you find with a variant (rung 3) rather than
+  duplicating it.
+  This used to say "`bsc ui list` and search", and that is the one search this problem defeats.
+  Measured: a session authored `TelemetryCard` — `composes: [Card, ToggleRow]`, one toggle with a
+  description — and `bsc ui similar --shape` scored it **100% against four existing records**. The
+  four are named `ConsolePageCard`, `IssueSecurityCard`, `KitChangeApprovalCard` and
+  `SandboxedConsolesCard`: they share no token with "telemetry", and the convention they belong to
+  has no name at all. `bsc ui list --raw | grep -i telemetry` returns four hits, every one of them a
+  CHART (`telemetry-module`, `telemetrypanel`, `telemetryview`, `telemetrygallerypage`) and none a
+  settings card. Four irrelevant hits is worse than zero — it looks like you checked.
+  **The library's shape is not in its names.** Ask the graph, not the vocabulary.
+- **One record, one item**: a record called `Card` exports `Card` and the things that belong to it —
+  its props type, its variant enum, a `useCard` hook. It does NOT export `ListItemCard`. The id is the
+  only handle anything has on what a record holds, so a second component exported from it has no id,
+  never previews, is never a `composes` edge, and is carried off silently by a merge. Check with
+  **`bsc ui exports <id>`**, which groups a record's exports into the items they name; `bsc ui doctor`
+  reports the sharp case as **multi-export**.
 - **Variants over forks**: a visual tweak is a new `variant` on the existing component, not a new
   component.
 - **Rename, don't re-create**: a component that outgrew its name gets `bsc ui rename <id> <NewName>` —
