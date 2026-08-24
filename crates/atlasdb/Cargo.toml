@@ -1,0 +1,17 @@
+[package]
+name = "atlasdb"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Shared leaf utilities (#1646): the one home-dir resolver.
+bsc-util = { path = "../bsc-util" }
+# Shared CLI arg parsing, so this store's flags behave like every other store's.
+bsc-cli-util = { path = "../bsc-cli-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Embeds the packaged corpus (src-tauri/data/atlas/**) at compile time so a fresh atlas.db seeds on
+# first open — the same pattern skilldb uses for src-tauri/data/skills.
+include_dir = "0.7"
+# `bundled` compiles SQLite from source (matches skilldb / plandb) for cross-platform reliability.
+rusqlite = { version = "0.40", features = ["bundled"] }

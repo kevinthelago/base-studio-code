@@ -1,0 +1,207 @@
+{
+  "id": "finance-common-feature-themes",
+  "name": "Finance — common feature themes",
+  "domain": "finance-accounting-billing-spend",
+  "domainName": "Finance / Accounting / Billing / Spend",
+  "capabilities": [
+    {
+      "slug": "ap-automation",
+      "label": "AP automation",
+      "detail": "AI/OCR invoice capture, multi-step approval workflows, duplicate detection, and multiple payment rails (ACH/check/card/wire/international) appear in QuickBooks, Xero, Sage Intacct, Bill.com, Ramp, and Brex.",
+      "features": [
+        "AI/OCR invoice capture",
+        "multi-step approval workflows",
+        "duplicate detection",
+        "and multiple payment rails (ACH/check/card/wire/international) appear in QuickBooks",
+        "Xero",
+        "Sage Intacct",
+        "Bill.com",
+        "Ramp",
+        "and Brex."
+      ]
+    },
+    {
+      "slug": "ar-invoicing",
+      "label": "AR/invoicing",
+      "detail": "branded customizable invoices, recurring invoices, automated payment reminders/dunning, online \"pay now\" links, and aging reports are near-universal (QBO, Xero, Sage Intacct, Bill.com, Stripe).",
+      "features": [
+        "branded customizable invoices",
+        "recurring invoices",
+        "automated payment reminders/dunning",
+        "online \"pay now\" links",
+        "and aging reports are near-universal (QBO, Xero, Sage Intacct, Bill.com, Stripe)."
+      ]
+    },
+    {
+      "slug": "bank-reconciliation",
+      "label": "Bank reconciliation",
+      "detail": "automatic bank feeds with AI/rule-based auto-categorization and matching in every accounting-ledger vendor.",
+      "features": [
+        "automatic bank feeds with AI/rule-based auto-categorization and matching in every accounting-ledger vendor."
+      ]
+    },
+    {
+      "slug": "accounting-system-sync",
+      "label": "Accounting-system sync",
+      "detail": "the spend/card/billing players all treat QuickBooks / Xero / Sage Intacct / NetSuite as the system of record and offer deep two-way GL sync (Bill.com, Ramp, Brex, Stripe RevRec) — they layer on top of the ledger rather than replace it.",
+      "features": [
+        "the spend/card/billing players all treat QuickBooks / Xero / Sage Intacct / NetSuite as the system of record and offer deep two-way GL sync (Bill.com, Ramp, Brex, Stripe RevRec) — they layer on top of the ledger rather than replace it."
+      ]
+    },
+    {
+      "slug": "corporate-cards-spend-controls",
+      "label": "Corporate cards + spend controls",
+      "detail": "unlimited physical/virtual cards, per-card/category/merchant limits, real-time policy enforcement, freeze/lock — the shared core of Ramp, Brex, and Bill.com (Divvy).",
+      "features": [
+        "unlimited physical/virtual cards",
+        "per-card/category/merchant limits",
+        "real-time policy enforcement",
+        "freeze/lock — the shared core of Ramp",
+        "Brex",
+        "and Bill.com (Divvy)."
+      ]
+    },
+    {
+      "slug": "expense-management",
+      "label": "Expense management",
+      "detail": "receipt OCR capture, auto-categorization, reimbursements, mileage, per diem recur across Ramp, Brex, Bill.com, Xero Expenses, QBO.",
+      "features": [
+        "receipt OCR capture",
+        "auto-categorization",
+        "reimbursements",
+        "mileage",
+        "per diem recur across Ramp",
+        "Brex",
+        "Bill.com",
+        "Xero Expenses",
+        "QBO."
+      ]
+    },
+    {
+      "slug": "reporting-dashboards",
+      "label": "Reporting/dashboards",
+      "detail": "real-time customizable dashboards, P&L/balance-sheet/cash-flow, drill-down across all ledger vendors, with real-time spend analytics on the card platforms.",
+      "features": [
+        "real-time customizable dashboards",
+        "P&L/balance-sheet/cash-flow",
+        "drill-down across all ledger vendors",
+        "with real-time spend analytics on the card platforms."
+      ]
+    },
+    {
+      "slug": "multi-currency-international-payments",
+      "label": "Multi-currency/international payments",
+      "detail": "FX-priced cross-border payments + multi-currency ledgers everywhere except entry-tier accounting.",
+      "features": [
+        "FX-priced cross-border payments + multi-currency ledgers everywhere except entry-tier accounting."
+      ]
+    },
+    {
+      "slug": "ai-automation-agents",
+      "label": "AI/automation agents",
+      "detail": "every vendor markets an AI layer — Intuit Assist, Sage Copilot, BILL AI, Ramp Intelligence agents, Brex Assistant, Stripe Smart Retries — for coding, anomaly/fraud detection, close automation.",
+      "features": [
+        "every vendor markets an AI layer — Intuit Assist",
+        "Sage Copilot",
+        "BILL AI",
+        "Ramp Intelligence agents",
+        "Brex Assistant",
+        "Stripe Smart Retries — for coding",
+        "anomaly/fraud detection",
+        "close automation."
+      ]
+    },
+    {
+      "slug": "differentiators",
+      "label": "Differentiators",
+      "detail": "",
+      "features": []
+    },
+    {
+      "slug": "accounting-ledgers-vs-spend-layers",
+      "label": "Accounting ledgers vs spend layers",
+      "detail": "QuickBooks, Xero, Sage Intacct are the actual double-entry GL/system-of-record; Ramp, Brex, Bill.com are spend/AP layers that sync into those ledgers and monetize via card interchange/cashback (cards & software often free) rather than seat licenses.",
+      "features": [
+        "QuickBooks",
+        "Xero",
+        "Sage Intacct are the actual double-entry GL/system-of-record; Ramp",
+        "Brex",
+        "Bill.com are spend/AP layers that sync into those ledgers and monetize via card interchange/cashback (cards & software often free) rather than seat licenses."
+      ],
+      "nested": true
+    },
+    {
+      "slug": "mid-market-erp-depth-sage-intacct-only",
+      "label": "Mid-market ERP depth (Sage Intacct only)",
+      "detail": "multi-dimensional GL, multi-entity global consolidation, ASC 606 rev rec, project/fund/grant accounting, industry verticals — capabilities QuickBooks/Xero explicitly lack (multi-entity is a known gap).",
+      "features": [
+        "multi-dimensional GL",
+        "multi-entity global consolidation",
+        "ASC 606 rev rec",
+        "project/fund/grant accounting",
+        "industry verticals — capabilities QuickBooks/Xero explicitly lack (multi-entity is a known gap)."
+      ],
+      "nested": true
+    },
+    {
+      "slug": "billing-engine-stripe-only",
+      "label": "Billing engine (Stripe only)",
+      "detail": "subscription + usage-based/metered billing, dunning/Revenue Recovery, entitlements/feature gating, developer/API-first billing — the only one with true metered/usage billing at scale.",
+      "features": [
+        "subscription + usage-based/metered billing",
+        "dunning/Revenue Recovery",
+        "entitlements/feature gating",
+        "developer/API-first billing — the only one with true metered/usage billing at scale."
+      ],
+      "nested": true
+    },
+    {
+      "slug": "business-banking-treasury-ramp-and-brex",
+      "label": "Business banking/treasury (Ramp & Brex)",
+      "detail": "FDIC-swept checking/vault, money-market yield, cash-flow forecasting — the accounting vendors do not bundle a business bank account.",
+      "features": [
+        "FDIC-swept checking/vault",
+        "money-market yield",
+        "cash-flow forecasting — the accounting vendors do not bundle a business bank account."
+      ],
+      "nested": true
+    },
+    {
+      "slug": "travel-and-procurement-ramp-and-brex",
+      "label": "Travel & procurement (Ramp & Brex)",
+      "detail": "in-app travel booking with policy enforcement + full purchase-request-to-PO procurement are unique to the spend-management platforms.",
+      "features": [
+        "in-app travel booking with policy enforcement + full purchase-request-to-PO procurement are unique to the spend-management platforms."
+      ],
+      "nested": true
+    },
+    {
+      "slug": "payroll",
+      "label": "Payroll",
+      "detail": "native only in QuickBooks (Core/Premium/Elite); Xero relies on Gusto (US) or in-region payroll; the spend/billing vendors have none.",
+      "features": [
+        "native only in QuickBooks (Core/Premium/Elite); Xero relies on Gusto (US) or in-region payroll; the spend/billing vendors have none."
+      ],
+      "nested": true
+    },
+    {
+      "slug": "vendor-network-bill-com",
+      "label": "Vendor network (Bill.com)",
+      "detail": "BILL's millions-strong vendor payment network + W-9/1099 verification is its signature moat.",
+      "features": [
+        "BILL's millions-strong vendor payment network + W-9/1099 verification is its signature moat."
+      ],
+      "nested": true
+    },
+    {
+      "slug": "rewards-ceilings",
+      "label": "Rewards ceilings",
+      "detail": "Brex up to 7x category cashback and Bill.com/Divvy up to 7x, vs Ramp's flat ~1.5–5% savings-oriented model.",
+      "features": [
+        "Brex up to 7x category cashback and Bill.com/Divvy up to 7x",
+        "vs Ramp's flat ~1.5–5% savings-oriented model."
+      ],
+      "nested": true
+    }
+  ]
+}

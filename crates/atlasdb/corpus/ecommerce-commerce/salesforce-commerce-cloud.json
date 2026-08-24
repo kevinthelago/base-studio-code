@@ -1,0 +1,185 @@
+{
+  "id": "salesforce-commerce-cloud",
+  "name": "Salesforce Commerce Cloud",
+  "domain": "ecommerce-commerce",
+  "domainName": "eCommerce / Commerce",
+  "capabilities": [
+    {
+      "slug": "storefront",
+      "label": "Storefront",
+      "detail": "Storefront Reference Architecture (SFRA), Composable Storefront / PWA Kit (React headless) on Managed Runtime, Page Designer (drag-drop merchandising/content), content slots, Experience Builder (B2B on Lightning), mobile-first",
+      "features": [
+        "Storefront Reference Architecture (SFRA)",
+        "Composable Storefront / PWA Kit (React headless) on Managed Runtime",
+        "Page Designer (drag-drop merchandising/content)",
+        "content slots",
+        "Experience Builder (B2B on Lightning)",
+        "mobile-first"
+      ]
+    },
+    {
+      "slug": "catalog",
+      "label": "Catalog",
+      "detail": "catalog management, master/variation products, product sets & bundles, categories, shared catalogs (B2B), price books, Einstein Product Recommendations",
+      "features": [
+        "catalog management",
+        "master/variation products",
+        "product sets & bundles",
+        "categories",
+        "shared catalogs (B2B)",
+        "price books",
+        "Einstein Product Recommendations"
+      ]
+    },
+    {
+      "slug": "search-merchandising",
+      "label": "Search/merchandising",
+      "detail": "Einstein Search + Search Dictionaries, Einstein Predictive Sort, sorting rules & searchandising, guided navigation/refinements, Commerce Insights",
+      "features": [
+        "Einstein Search + Search Dictionaries",
+        "Einstein Predictive Sort",
+        "sorting rules & searchandising",
+        "guided navigation/refinements",
+        "Commerce Insights"
+      ]
+    },
+    {
+      "slug": "cart-checkout",
+      "label": "Cart/checkout",
+      "detail": "cart, saved carts, hosted checkout, Salesforce Payments, guest & registered checkout",
+      "features": [
+        "cart",
+        "saved carts",
+        "hosted checkout",
+        "Salesforce Payments",
+        "guest & registered checkout"
+      ]
+    },
+    {
+      "slug": "payments",
+      "label": "Payments",
+      "detail": "Salesforce Payments, gateway integrations via LINK/cartridges, fraud (integrations)",
+      "features": [
+        "Salesforce Payments",
+        "gateway integrations via LINK/cartridges",
+        "fraud (integrations)"
+      ]
+    },
+    {
+      "slug": "promotions",
+      "label": "Promotions",
+      "detail": "promotions engine (product/order/shipping), qualifiers, campaigns, coupons/source codes, customer groups, price books",
+      "features": [
+        "promotions engine (product/order/shipping)",
+        "qualifiers",
+        "campaigns",
+        "coupons/source codes",
+        "customer groups",
+        "price books"
+      ]
+    },
+    {
+      "slug": "inventory-oms",
+      "label": "Inventory/OMS",
+      "detail": "Salesforce Order Management (distributed order mgmt, fulfillment orchestration, payment capture, returns/RMA), Omnichannel Inventory (real-time availability across locations), BOPIS/ship-from-store",
+      "features": [
+        "Salesforce Order Management (distributed order mgmt, fulfillment orchestration, payment capture, returns/RMA)",
+        "Omnichannel Inventory (real-time availability across locations)",
+        "BOPIS/ship-from-store"
+      ]
+    },
+    {
+      "slug": "multi-channel",
+      "label": "Multi-channel",
+      "detail": "B2C, B2B, B2B2C, D2C, integrations with Marketing Cloud/Service Cloud/Data Cloud (Customer 360), social/agentic channels",
+      "features": [
+        "B2C",
+        "B2B",
+        "B2B2C",
+        "D2C",
+        "integrations with Marketing Cloud/Service Cloud/Data Cloud (Customer 360)",
+        "social/agentic channels"
+      ]
+    },
+    {
+      "slug": "ai",
+      "label": "AI",
+      "detail": "Commerce Einstein (recommendations, predictive sort, search recommendations, commerce insights), Agentforce agentic commerce (merchant/concierge agents), GenAI merchandising, Einstein personalization",
+      "features": [
+        "Commerce Einstein (recommendations, predictive sort, search recommendations, commerce insights)",
+        "Agentforce agentic commerce (merchant/concierge agents)",
+        "GenAI merchandising",
+        "Einstein personalization"
+      ]
+    },
+    {
+      "slug": "b2b",
+      "label": "B2B",
+      "detail": "B2B Commerce — account hierarchies, contracts & entitlements, custom price lists, reorders, split shipments, buyer personas, quotes (with CPQ), account-based catalogs",
+      "features": [
+        "B2B Commerce — account hierarchies",
+        "contracts & entitlements",
+        "custom price lists",
+        "reorders",
+        "split shipments",
+        "buyer personas",
+        "quotes (with CPQ)",
+        "account-based catalogs"
+      ]
+    },
+    {
+      "slug": "internationalization",
+      "label": "Internationalization",
+      "detail": "multi-site (sites/realms), multi-currency, multi-language, localization, tax/locale by region",
+      "features": [
+        "multi-site (sites/realms)",
+        "multi-currency",
+        "multi-language",
+        "localization",
+        "tax/locale by region"
+      ]
+    },
+    {
+      "slug": "seo-marketing",
+      "label": "SEO/marketing",
+      "detail": "SEO tooling, Marketing Cloud + Data Cloud + Personalization integration, Loyalty Management, commerce campaigns, promotions",
+      "features": [
+        "SEO tooling",
+        "Marketing Cloud + Data Cloud + Personalization integration",
+        "Loyalty Management",
+        "commerce campaigns",
+        "promotions"
+      ]
+    },
+    {
+      "slug": "headless-composable",
+      "label": "Headless/composable",
+      "detail": "SCAPI (Commerce API) + legacy OCAPI, Composable Storefront + Managed Runtime, headless-ready",
+      "features": [
+        "SCAPI (Commerce API) + legacy OCAPI",
+        "Composable Storefront + Managed Runtime",
+        "headless-ready"
+      ]
+    },
+    {
+      "slug": "apps",
+      "label": "Apps",
+      "detail": "AppExchange, LINK cartridge partner ecosystem",
+      "features": [
+        "AppExchange",
+        "LINK cartridge partner ecosystem"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "Commerce Insights, CCAC reports & dashboards, Einstein analytics, Data Cloud reporting",
+      "features": [
+        "Commerce Insights",
+        "CCAC reports & dashboards",
+        "Einstein analytics",
+        "Data Cloud reporting"
+      ]
+    }
+  ]
+}

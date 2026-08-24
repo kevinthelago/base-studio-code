@@ -1,0 +1,240 @@
+{
+  "id": "sap-successfactors",
+  "name": "SAP SuccessFactors",
+  "domain": "hr-hcm-payroll",
+  "domainName": "HR / HCM / Payroll",
+  "capabilities": [
+    {
+      "slug": "core-hr-employee-central",
+      "label": "Core HR (Employee Central)",
+      "detail": "central data repository, People Profile, lifecycle events, position management, org management with dynamic structures/cost centers, live org charts, Metadata Framework (custom objects), Business Rules framework, approval workflows, Intelligent Services alerts, multi-language/currency, mobile",
+      "features": [
+        "central data repository",
+        "People Profile",
+        "lifecycle events",
+        "position management",
+        "org management with dynamic structures/cost centers",
+        "live org charts",
+        "Metadata Framework (custom objects)",
+        "Business Rules framework",
+        "approval workflows",
+        "Intelligent Services alerts",
+        "multi-language/currency",
+        "mobile"
+      ]
+    },
+    {
+      "slug": "global-localization",
+      "label": "Global localization",
+      "detail": "100+ country configs, country-specific rules + statutory reporting, GDPR controls, role + field-level security, encryption, audit trails, regulatory updates",
+      "features": [
+        "100+ country configs",
+        "country-specific rules + statutory reporting",
+        "GDPR controls",
+        "role + field-level security",
+        "encryption",
+        "audit trails",
+        "regulatory updates"
+      ]
+    },
+    {
+      "slug": "payroll-ec-payroll",
+      "label": "Payroll (EC Payroll)",
+      "detail": "100+ countries, Payroll Control Center with automated validations + proactive error detection, real-time EC integration, customizable engine/schemas, retro/off-cycle, garnishments, tax calc, direct deposit, AI-powered Explain Pay 24/7",
+      "features": [
+        "100+ countries",
+        "Payroll Control Center with automated validations + proactive error detection",
+        "real-time EC integration",
+        "customizable engine/schemas",
+        "retro/off-cycle",
+        "garnishments",
+        "tax calc",
+        "direct deposit",
+        "AI-powered Explain Pay 24/7"
+      ]
+    },
+    {
+      "slug": "time-attendance",
+      "label": "Time/attendance",
+      "detail": "Time Off/absence, leave-balance, requests, approval workflows, Time Tracking (timesheets, clock in/out, overtime/premium calc, exception/schedule mgmt)",
+      "features": [
+        "Time Off/absence",
+        "leave-balance",
+        "requests",
+        "approval workflows",
+        "Time Tracking (timesheets, clock in/out, overtime/premium calc, exception/schedule mgmt)"
+      ]
+    },
+    {
+      "slug": "benefits",
+      "label": "Benefits",
+      "detail": "global admin, guided enrollment, health-insurance + retirement, multi-regional types, consolidated enrollment/cost reporting",
+      "features": [
+        "global admin",
+        "guided enrollment",
+        "health-insurance + retirement",
+        "multi-regional types",
+        "consolidated enrollment/cost reporting"
+      ]
+    },
+    {
+      "slug": "recruiting-ats",
+      "label": "Recruiting/ATS",
+      "detail": "applicant tracking, Career Site Builder, Recruiting Posting (thousands of boards), CRM, AI candidate matching/bias reduction, nurture campaigns, competency-based interview scoring, candidate comparison, configurable offers with approval routing, operational dashboards",
+      "features": [
+        "applicant tracking",
+        "Career Site Builder",
+        "Recruiting Posting (thousands of boards)",
+        "CRM",
+        "AI candidate matching/bias reduction",
+        "nurture campaigns",
+        "competency-based interview scoring",
+        "candidate comparison",
+        "configurable offers with approval routing",
+        "operational dashboards"
+      ]
+    },
+    {
+      "slug": "onboarding-offboarding",
+      "label": "Onboarding/offboarding",
+      "detail": "preboarding, structured task assignment, paperless, multi-hire, cross-boarding (internal moves), compliance workflows, offboarding with device return/knowledge transfer",
+      "features": [
+        "preboarding",
+        "structured task assignment",
+        "paperless",
+        "multi-hire",
+        "cross-boarding (internal moves)",
+        "compliance workflows",
+        "offboarding with device return/knowledge transfer"
+      ]
+    },
+    {
+      "slug": "performance-goals",
+      "label": "Performance/goals",
+      "detail": "goal management with weighting/SMART templates, goal libraries, cascading/alignment, Continuous Performance Management, 360 feedback, calibration, 1:1s",
+      "features": [
+        "goal management with weighting/SMART templates",
+        "goal libraries",
+        "cascading/alignment",
+        "Continuous Performance Management",
+        "360 feedback",
+        "calibration",
+        "1:1s"
+      ]
+    },
+    {
+      "slug": "compensation-variable-pay",
+      "label": "Compensation/variable pay",
+      "detail": "planning templates, salary/merit/bonus, real-time budget + scenario simulation, salary ranges/compa-ratio, comp calibration; Variable Pay (metric-based calc + payout, individual/team/group allocation)",
+      "features": [
+        "planning templates",
+        "salary/merit/bonus",
+        "real-time budget + scenario simulation",
+        "salary ranges/compa-ratio",
+        "comp calibration; Variable Pay (metric-based calc + payout, individual/team/group allocation)"
+      ]
+    },
+    {
+      "slug": "learning",
+      "label": "Learning",
+      "detail": "course catalog/enrollment, self-paced + ILT/blended, completion tracking, certifications, compliance/safety, social/mobile, AI recommendations",
+      "features": [
+        "course catalog/enrollment",
+        "self-paced + ILT/blended",
+        "completion tracking",
+        "certifications",
+        "compliance/safety",
+        "social/mobile",
+        "AI recommendations"
+      ]
+    },
+    {
+      "slug": "succession-career",
+      "label": "Succession/career",
+      "detail": "succession planning on EC data, key-position ID, pipelines, skills-led talent pools with readiness, development plans, career worksheets/paths, gap ID",
+      "features": [
+        "succession planning on EC data",
+        "key-position ID",
+        "pipelines",
+        "skills-led talent pools with readiness",
+        "development plans",
+        "career worksheets/paths",
+        "gap ID"
+      ]
+    },
+    {
+      "slug": "talent-intelligence-hub-skills",
+      "label": "Talent Intelligence Hub/skills",
+      "detail": "centralized Attributes Library, Growth Portfolio (role/person skills with proficiency), AI/ML skill recommendations, Skills Ontology (30,000+ validated skills), external skill-library integration",
+      "features": [
+        "centralized Attributes Library",
+        "Growth Portfolio (role/person skills with proficiency)",
+        "AI/ML skill recommendations",
+        "Skills Ontology (30,000+ validated skills)",
+        "external skill-library integration"
+      ]
+    },
+    {
+      "slug": "opportunity-marketplace",
+      "label": "Opportunity Marketplace",
+      "detail": "AI skills-based matching to internal gigs/projects/mentoring, personalized recommendations, stretch assignments, AI career guidance, dynamic teams",
+      "features": [
+        "AI skills-based matching to internal gigs/projects/mentoring",
+        "personalized recommendations",
+        "stretch assignments",
+        "AI career guidance",
+        "dynamic teams"
+      ]
+    },
+    {
+      "slug": "workforce-planning-analytics",
+      "label": "Workforce planning/analytics",
+      "detail": "People Analytics with Stories + prebuilt dashboards, Workforce Analytics (retention/turnover/engagement/headcount/demographics), SAP Analytics Cloud integration, turnover forecasting, strategic workforce planning",
+      "features": [
+        "People Analytics with Stories + prebuilt dashboards",
+        "Workforce Analytics (retention/turnover/engagement/headcount/demographics)",
+        "SAP Analytics Cloud integration",
+        "turnover forecasting",
+        "strategic workforce planning"
+      ]
+    },
+    {
+      "slug": "experience",
+      "label": "Experience",
+      "detail": "ESS/MSS, Qualtrics-powered surveys/listening, SAP Build Work Zone digital HR homepage, HR service delivery/case management with omnichannel self-service + KB",
+      "features": [
+        "ESS/MSS",
+        "Qualtrics-powered surveys/listening",
+        "SAP Build Work Zone digital HR homepage",
+        "HR service delivery/case management with omnichannel self-service + KB"
+      ]
+    },
+    {
+      "slug": "ai-joule",
+      "label": "AI (Joule)",
+      "detail": "Joule generative copilot (90+ use cases), Joule Agents for autonomous HR tasks, AI-assisted writing (correct/enhance/translate/generate, job descriptions, interview questions), HR-policy Q&A, service auto-classification, case summarization + next-best-action, AI candidate/skill matching",
+      "features": [
+        "Joule generative copilot (90+ use cases)",
+        "Joule Agents for autonomous HR tasks",
+        "AI-assisted writing (correct/enhance/translate/generate, job descriptions, interview questions)",
+        "HR-policy Q&A",
+        "service auto-classification",
+        "case summarization + next-best-action",
+        "AI candidate/skill matching"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "SAP BTP extensions, Integration Center, prebuilt + open APIs, Intelligent Services event framework, native S/4HANA/ERP + finance integration, 3rd-party payroll/benefits/LMS connectors",
+      "features": [
+        "SAP BTP extensions",
+        "Integration Center",
+        "prebuilt + open APIs",
+        "Intelligent Services event framework",
+        "native S/4HANA/ERP + finance integration",
+        "3rd-party payroll/benefits/LMS connectors"
+      ]
+    }
+  ]
+}

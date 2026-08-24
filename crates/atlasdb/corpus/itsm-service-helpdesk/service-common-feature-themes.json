@@ -1,0 +1,111 @@
+{
+  "id": "service-common-feature-themes",
+  "name": "Service — common feature themes",
+  "domain": "itsm-service-helpdesk",
+  "domainName": "ITSM / Service / Helpdesk",
+  "capabilities": [
+    {
+      "slug": "autonomous-ai-agents-are-the-headline-in-every-suite",
+      "label": "Autonomous AI agents are the headline in every suite",
+      "detail": "— ServiceNow AI Agents, Zendesk AI Agents, Freddy, JSM Rovo, Intercom Fin, Salesforce Agentforce — all pitch full-resolution (~76–80%) bots with multi-step actions that read/write connected systems. **Outcome-based pricing** (pay per resolution) is emerging (Intercom Fin ~$0.99, Zendesk).",
+      "features": [
+        "— ServiceNow AI Agents",
+        "Zendesk AI Agents",
+        "Freddy",
+        "JSM Rovo",
+        "Intercom Fin",
+        "Salesforce Agentforce — all pitch full-resolution (~76–80%) bots with multi-step actions that read/write connected systems. **Outcome-based pricing** (pay per resolution) is emerging (Intercom Fin ~$0.99, Zendesk)."
+      ]
+    },
+    {
+      "slug": "agent-assist-copilots",
+      "label": "Agent-assist copilots",
+      "detail": "universal — AI-drafted replies, tone/rewrite, summaries, next-best-action live in the workspace.",
+      "features": [
+        "universal — AI-drafted replies",
+        "tone/rewrite",
+        "summaries",
+        "next-best-action live in the workspace."
+      ]
+    },
+    {
+      "slug": "omnichannel-inbox-unified-routing",
+      "label": "Omnichannel inbox + unified routing",
+      "detail": "is table stakes — email/chat/async/WhatsApp/SMS/social/voice into one workspace with skills/capacity/priority routing. Voice/contact-center depth differentiates (Zendesk Talk, Service Cloud Voice, Freshcaller ship full telephony; Intercom/JSM lighter).",
+      "features": [
+        "is table stakes — email/chat/async/WhatsApp/SMS/social/voice into one workspace with skills/capacity/priority routing. Voice/contact-center depth differentiates (Zendesk Talk, Service Cloud Voice, Freshcaller ship full telephony; Intercom/JSM lighter)."
+      ]
+    },
+    {
+      "slug": "kb-ai-generated-self-service",
+      "label": "KB + AI-generated self-service",
+      "detail": "— everyone pairs a KB/help center with generative search + AI article generation from tickets; deflection is the shared ROI story.",
+      "features": [
+        "— everyone pairs a KB/help center with generative search + AI article generation from tickets; deflection is the shared ROI story."
+      ]
+    },
+    {
+      "slug": "automation-engines",
+      "label": "Automation engines",
+      "detail": "— no-code visual builders (Flow Designer, Salesforce Flow, JSM rules, Intercom Workflows, Freshworks Automator) + triggers/macros.",
+      "features": [
+        "— no-code visual builders (Flow Designer, Salesforce Flow, JSM rules, Intercom Workflows, Freshworks Automator) + triggers/macros."
+      ]
+    },
+    {
+      "slug": "itsm-depth-cmdb-change-problem-incident-discovery",
+      "label": "ITSM depth (CMDB/change/problem/incident/discovery)",
+      "detail": "cleanly separates the ITSM platforms (ServiceNow, Freshservice, JSM — CMDB + auto-discovery + ITIL + major-incident/on-call) from the customer-service-first tools (Zendesk, Intercom, Service Cloud, which lack a true CMDB). ServiceNow deepest; JSM differentiates on native DevOps/dev-tool integration.",
+      "features": [
+        "cleanly separates the ITSM platforms (ServiceNow, Freshservice, JSM — CMDB + auto-discovery + ITIL + major-incident/on-call) from the customer-service-first tools (Zendesk, Intercom, Service Cloud, which lack a true CMDB). ServiceNow deepest; JSM differentiates on native DevOps/dev-tool integration."
+      ]
+    },
+    {
+      "slug": "sla-management",
+      "label": "SLA management",
+      "detail": "universal; Freshservice XLAs and Salesforce Entitlements/Milestones are notable variants.",
+      "features": [
+        "universal; Freshservice XLAs and Salesforce Entitlements/Milestones are notable variants."
+      ]
+    },
+    {
+      "slug": "analytics-qa-wfm",
+      "label": "Analytics/QA + WFM",
+      "detail": "increasingly bundled — Zendesk (Explore + WFM + AI QA across 100%) and Salesforce (CRM Analytics/Tableau) lead.",
+      "features": [
+        "increasingly bundled — Zendesk (Explore + WFM + AI QA across 100%) and Salesforce (CRM Analytics/Tableau) lead."
+      ]
+    },
+    {
+      "slug": "large-marketplaces-open-apis",
+      "label": "Large marketplaces + open APIs",
+      "detail": "as moat — Zendesk 1,800+, Freshworks 1,200+, AppExchange, Atlassian Marketplace, Intercom 300+, ServiceNow IntegrationHub 450+. **MCP support** newly appearing.",
+      "features": [
+        "as moat — Zendesk 1",
+        "800+",
+        "Freshworks 1",
+        "200+",
+        "AppExchange",
+        "Atlassian Marketplace",
+        "Intercom 300+",
+        "ServiceNow IntegrationHub 450+. **MCP support** newly appearing."
+      ]
+    },
+    {
+      "slug": "self-service-portals",
+      "label": "Self-service portals",
+      "detail": "(customer + employee) standard; ITSM adds employee catalogs (ServiceNow Employee Center, Freshservice + Employee Journeys) spanning IT/HR/facilities.",
+      "features": [
+        "(customer + employee) standard; ITSM adds employee catalogs (ServiceNow Employee Center, Freshservice + Employee Journeys) spanning IT/HR/facilities."
+      ]
+    },
+    {
+      "slug": "field-service",
+      "label": "Field service",
+      "detail": "is a Salesforce-specific differentiator (FSL); no other vendor here ships comparable dispatch/scheduling/mobile-technician depth.",
+      "features": [
+        "is a Salesforce-specific differentiator (FSL); no other vendor here ships comparable dispatch/scheduling/mobile-technician depth."
+      ]
+    }
+  ]
+}

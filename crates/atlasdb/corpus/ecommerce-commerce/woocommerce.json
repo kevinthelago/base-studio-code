@@ -1,0 +1,184 @@
+{
+  "id": "woocommerce",
+  "name": "WooCommerce",
+  "domain": "ecommerce-commerce",
+  "domainName": "eCommerce / Commerce",
+  "capabilities": [
+    {
+      "slug": "storefront-themes",
+      "label": "Storefront/themes",
+      "detail": "any WordPress theme (Storefront + block/FSE themes), WooCommerce Blocks (product grid blocks — Bestsellers/Top-Rated/New/On-Sale/Hand-Picked/category), Gutenberg + page-builder (Elementor) compatibility, full site editing",
+      "features": [
+        "any WordPress theme (Storefront + block/FSE themes)",
+        "WooCommerce Blocks (product grid blocks — Bestsellers/Top-Rated/New/On-Sale/Hand-Picked/category)",
+        "Gutenberg + page-builder (Elementor) compatibility",
+        "full site editing"
+      ]
+    },
+    {
+      "slug": "catalog",
+      "label": "Catalog",
+      "detail": "product types — simple/variable/grouped/external-affiliate/virtual/downloadable, unlimited products, categories/tags/attributes, Product Bundles/Composite Products/Product Add-Ons (extensions), custom fields, reviews & ratings, related/upsell/cross-sell",
+      "features": [
+        "product types — simple/variable/grouped/external-affiliate/virtual/downloadable",
+        "unlimited products",
+        "categories/tags/attributes",
+        "Product Bundles/Composite Products/Product Add-Ons (extensions)",
+        "custom fields",
+        "reviews & ratings",
+        "related/upsell/cross-sell"
+      ]
+    },
+    {
+      "slug": "cart-checkout",
+      "label": "Cart/checkout",
+      "detail": "Cart & Checkout Blocks (no-code editing), guest checkout, coupons at checkout, Store API (headless cart/checkout), express-checkout buttons",
+      "features": [
+        "Cart & Checkout Blocks (no-code editing)",
+        "guest checkout",
+        "coupons at checkout",
+        "Store API (headless cart/checkout)",
+        "express-checkout buttons"
+      ]
+    },
+    {
+      "slug": "payments",
+      "label": "Payments",
+      "detail": "WooPayments (native, Stripe-powered), Stripe/PayPal/Square/Amazon Pay, Apple/Google Pay, 140+ region-specific gateways, BACS bank transfer/cheque/cash on delivery, recurring payments",
+      "features": [
+        "WooPayments (native, Stripe-powered)",
+        "Stripe/PayPal/Square/Amazon Pay",
+        "Apple/Google Pay",
+        "140+ region-specific gateways",
+        "BACS bank transfer/cheque/cash on delivery",
+        "recurring payments"
+      ]
+    },
+    {
+      "slug": "promotions",
+      "label": "Promotions",
+      "detail": "coupons (%/fixed cart/fixed product/free shipping), usage limits & restrictions, Smart Coupons & Dynamic Pricing (extensions), on-sale pricing",
+      "features": [
+        "coupons (%/fixed cart/fixed product/free shipping)",
+        "usage limits & restrictions",
+        "Smart Coupons & Dynamic Pricing (extensions)",
+        "on-sale pricing"
+      ]
+    },
+    {
+      "slug": "inventory",
+      "label": "Inventory",
+      "detail": "stock management, low/out-of-stock notifications, backorders, stock status/hold, multi-location via extensions",
+      "features": [
+        "stock management",
+        "low/out-of-stock notifications",
+        "backorders",
+        "stock status/hold",
+        "multi-location via extensions"
+      ]
+    },
+    {
+      "slug": "multi-channel",
+      "label": "Multi-channel",
+      "detail": "Google for WooCommerce (Listings & Ads), Meta, Pinterest, TikTok, Amazon/eBay (CedCommerce/Codisto), Point of Sale (Square, POS extensions)",
+      "features": [
+        "Google for WooCommerce (Listings & Ads)",
+        "Meta",
+        "Pinterest",
+        "TikTok",
+        "Amazon/eBay (CedCommerce/Codisto)",
+        "Point of Sale (Square, POS extensions)"
+      ]
+    },
+    {
+      "slug": "b2b",
+      "label": "B2B",
+      "detail": "via extensions — B2B for WooCommerce, Wholesale Suite, Request-a-Quote, customer-specific/role-based pricing",
+      "features": [
+        "via extensions — B2B for WooCommerce",
+        "Wholesale Suite",
+        "Request-a-Quote",
+        "customer-specific/role-based pricing"
+      ]
+    },
+    {
+      "slug": "internationalization",
+      "label": "Internationalization",
+      "detail": "24+ core translations, multilingual via WPML/Polylang/MultilingualPress, multi-currency + currency switcher (extensions), geolocation",
+      "features": [
+        "24+ core translations",
+        "multilingual via WPML/Polylang/MultilingualPress",
+        "multi-currency + currency switcher (extensions)",
+        "geolocation"
+      ]
+    },
+    {
+      "slug": "seo-marketing",
+      "label": "SEO/marketing",
+      "detail": "WordPress SEO (Yoast/Rank Math), WooCommerce Marketing hub, email marketing (Mailchimp/MailPoet/Klaviyo), AutomateWoo (marketing automation, abandoned cart, follow-ups), GA, product feeds, reviews",
+      "features": [
+        "WordPress SEO (Yoast/Rank Math)",
+        "WooCommerce Marketing hub",
+        "email marketing (Mailchimp/MailPoet/Klaviyo)",
+        "AutomateWoo (marketing automation, abandoned cart, follow-ups)",
+        "GA",
+        "product feeds",
+        "reviews"
+      ]
+    },
+    {
+      "slug": "headless-rest",
+      "label": "Headless/REST",
+      "detail": "WooCommerce REST API + Store API + webhooks, open-source PHP with hooks/filters, fully headless-capable, self-hostable (\"complete ownership\")",
+      "features": [
+        "WooCommerce REST API + Store API + webhooks",
+        "open-source PHP with hooks/filters",
+        "fully headless-capable",
+        "self-hostable (\"complete ownership\")"
+      ]
+    },
+    {
+      "slug": "extensions",
+      "label": "Extensions",
+      "detail": "WooCommerce Marketplace (700+ extensions) + entire WordPress plugin ecosystem (59,000+), open-source & extensible, Jetpack (security/performance/backups)",
+      "features": [
+        "WooCommerce Marketplace (700+ extensions) + entire WordPress plugin ecosystem (59,000+)",
+        "open-source & extensible",
+        "Jetpack (security/performance/backups)"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "WooCommerce Analytics (revenue/orders/products/categories/coupons/taxes/downloads/stock/customers reports), GA integration, Jetpack site stats",
+      "features": [
+        "WooCommerce Analytics (revenue/orders/products/categories/coupons/taxes/downloads/stock/customers reports)",
+        "GA integration",
+        "Jetpack site stats"
+      ]
+    },
+    {
+      "slug": "shipping",
+      "label": "Shipping",
+      "detail": "WooCommerce Shipping (discounted USPS/DHL labels, print at home), flat rate/free shipping/local pickup, shipping zones & classes, real-time carrier rates + Table Rate / ShipStation (extensions), tax calc (WooCommerce Tax, Avalara)",
+      "features": [
+        "WooCommerce Shipping (discounted USPS/DHL labels, print at home)",
+        "flat rate/free shipping/local pickup",
+        "shipping zones & classes",
+        "real-time carrier rates + Table Rate / ShipStation (extensions)",
+        "tax calc (WooCommerce Tax, Avalara)"
+      ]
+    },
+    {
+      "slug": "subscriptions-memberships",
+      "label": "Subscriptions/memberships",
+      "detail": "WooCommerce Subscriptions (recurring billing, variable subs, free trials, sign-up fees), WooCommerce Memberships, WooCommerce Deposits, WooCommerce Bookings / Appointments",
+      "features": [
+        "WooCommerce Subscriptions (recurring billing, variable subs, free trials, sign-up fees)",
+        "WooCommerce Memberships",
+        "WooCommerce Deposits",
+        "WooCommerce Bookings / Appointments"
+      ]
+    }
+  ]
+}

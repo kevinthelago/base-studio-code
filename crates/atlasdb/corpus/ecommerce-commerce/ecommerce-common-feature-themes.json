@@ -1,0 +1,102 @@
+{
+  "id": "ecommerce-common-feature-themes",
+  "name": "eCommerce — common feature themes",
+  "domain": "ecommerce-commerce",
+  "domainName": "eCommerce / Commerce",
+  "capabilities": [
+    {
+      "slug": "table-stakes-across-all",
+      "label": "Table-stakes across all",
+      "detail": "product catalog with variants/options, cart & checkout, coupon/promotion engine, multiple payment gateways + digital wallets, order & inventory management, tax & shipping calculation, SEO tooling, app/extension marketplace. Everyone now offers abandoned-cart recovery, reviews/ratings, and customer accounts.",
+      "features": [
+        "product catalog with variants/options",
+        "cart & checkout",
+        "coupon/promotion engine",
+        "multiple payment gateways + digital wallets",
+        "order & inventory management",
+        "tax & shipping calculation",
+        "SEO tooling",
+        "app/extension marketplace. Everyone now offers abandoned-cart recovery",
+        "reviews/ratings",
+        "and customer accounts."
+      ]
+    },
+    {
+      "slug": "headless-composable-is-universal-but-delivered-differently",
+      "label": "Headless/composable is universal but delivered differently",
+      "detail": "— Shopify (Storefront API + Hydrogen/Oxygen), BigCommerce (MACH \"Open SaaS\" + Catalyst), Salesforce (SCAPI/OCAPI + PWA Kit), Adobe (GraphQL + PWA Studio + App Builder), commercetools (API-first, no monolith) vs WooCommerce (REST/Store API on open-source WordPress). commercetools + BigCommerce are the explicit MACH-certified pure-composable plays; Shopify/Salesforce/Adobe bolt headless onto a full suite.",
+      "features": [
+        "— Shopify (Storefront API + Hydrogen/Oxygen)",
+        "BigCommerce (MACH \"Open SaaS\" + Catalyst)",
+        "Salesforce (SCAPI/OCAPI + PWA Kit)",
+        "Adobe (GraphQL + PWA Studio + App Builder)",
+        "commercetools (API-first, no monolith) vs WooCommerce (REST/Store API on open-source WordPress). commercetools + BigCommerce are the explicit MACH-certified pure-composable plays; Shopify/Salesforce/Adobe bolt headless onto a full suite."
+      ]
+    },
+    {
+      "slug": "ai-is-the-current-battleground",
+      "label": "AI is the current battleground",
+      "detail": "— Shopify Sidekick/Magic + Shopify Audiences, Salesforce Einstein + Agentforce (agentic commerce), Adobe Sensei (Live Search/Recommendations/GenAI), BigCommerce AI merchandising, commercetools AI agents with human-in-the-loop. AI search, personalized recommendations, generative content converging as standard.",
+      "features": [
+        "— Shopify Sidekick/Magic + Shopify Audiences",
+        "Salesforce Einstein + Agentforce (agentic commerce)",
+        "Adobe Sensei (Live Search/Recommendations/GenAI)",
+        "BigCommerce AI merchandising",
+        "commercetools AI agents with human-in-the-loop. AI search",
+        "personalized recommendations",
+        "generative content converging as standard."
+      ]
+    },
+    {
+      "slug": "native-b2b-unified-b2b-dtc-is-a-major-differentiator",
+      "label": "Native B2B + unified B2B/DTC is a major differentiator",
+      "detail": "— Shopify B2B (same store), Salesforce B2B Commerce, Adobe Commerce B2B, BigCommerce B2B Edition all offer company accounts, custom catalogs/price lists, quotes, purchase orders, payment terms. WooCommerce relies on third-party extensions.",
+      "features": [
+        "— Shopify B2B (same store)",
+        "Salesforce B2B Commerce",
+        "Adobe Commerce B2B",
+        "BigCommerce B2B Edition all offer company accounts",
+        "custom catalogs/price lists",
+        "quotes",
+        "purchase orders",
+        "payment terms. WooCommerce relies on third-party extensions."
+      ]
+    },
+    {
+      "slug": "internationalization-ships-natively-on-the-enterprise-tier",
+      "label": "Internationalization ships natively on the enterprise tier",
+      "detail": "— Shopify Markets, Adobe multi-store, Salesforce multi-site (multi-currency/multi-language/geo-routing/duties/tax); WooCommerce and BigCommerce lean on extensions/multi-storefront.",
+      "features": [
+        "— Shopify Markets",
+        "Adobe multi-store",
+        "Salesforce multi-site (multi-currency/multi-language/geo-routing/duties/tax); WooCommerce and BigCommerce lean on extensions/multi-storefront."
+      ]
+    },
+    {
+      "slug": "business-model-spectrum",
+      "label": "Business-model spectrum",
+      "detail": "Shopify & BigCommerce = hosted SaaS (fast time-to-market, app ecosystem); Salesforce & Adobe = enterprise suites tied to their broader clouds (Customer 360 / Experience Cloud) with OMS + heavy customization; commercetools = pure API-first composable; WooCommerce = open-source, self-hosted, maximum ownership + WordPress plugin breadth.",
+      "features": [
+        "Shopify & BigCommerce = hosted SaaS (fast time-to-market, app ecosystem); Salesforce & Adobe = enterprise suites tied to their broader clouds (Customer 360 / Experience Cloud) with OMS + heavy customization; commercetools = pure API-first composable; WooCommerce = open-source",
+        "self-hosted",
+        "maximum ownership + WordPress plugin breadth."
+      ]
+    },
+    {
+      "slug": "distinct-differentiators",
+      "label": "Distinct differentiators",
+      "detail": "Shopify's Shop Pay network + Payments + Functions · BigCommerce's no-transaction-fees + Feedonomics + multi-storefront · Salesforce's Order Management + Omnichannel Inventory + Agentforce · Adobe's Multi-Source Inventory + Page Builder + deepest native B2B (negotiable quotes/requisition lists) · WooCommerce's open-source ownership + Subscriptions/Memberships/Bookings suite + 59k-plugin ecosystem.",
+      "features": [
+        "Shopify's Shop Pay network + Payments + Functions · BigCommerce's no-transaction-fees + Feedonomics + multi-storefront · Salesforce's Order Management + Omnichannel Inventory + Agentforce · Adobe's Multi-Source Inventory + Page Builder + deepest native B2B (negotiable quotes/requisition lists) · WooCommerce's open-source ownership + Subscriptions/Memberships/Bookings suite + 59k-plugin ecosystem."
+      ]
+    },
+    {
+      "slug": "recurring-subscription-commerce",
+      "label": "Recurring/subscription commerce",
+      "detail": "native/first-party for WooCommerce (Subscriptions) and Shopify (Subscription APIs + Shop Pay); Salesforce/Adobe/BigCommerce typically via add-ons/partners (Recharge, etc.).",
+      "features": [
+        "native/first-party for WooCommerce (Subscriptions) and Shopify (Subscription APIs + Shop Pay); Salesforce/Adobe/BigCommerce typically via add-ons/partners (Recharge, etc.)."
+      ]
+    }
+  ]
+}

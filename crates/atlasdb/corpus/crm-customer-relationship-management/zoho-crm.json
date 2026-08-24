@@ -1,0 +1,105 @@
+{
+  "id": "zoho-crm",
+  "name": "Zoho CRM",
+  "domain": "crm-customer-relationship-management",
+  "domainName": "CRM (Customer Relationship Management)",
+  "capabilities": [
+    {
+      "slug": "sales-force-automation",
+      "label": "Sales Force Automation",
+      "detail": "built-in calling, email + mass email, multi-pipeline, data enrichment, tasks/meetings/reminders",
+      "features": [
+        "built-in calling",
+        "email + mass email",
+        "multi-pipeline",
+        "data enrichment",
+        "tasks/meetings/reminders"
+      ]
+    },
+    {
+      "slug": "process-automation",
+      "label": "Process Automation",
+      "detail": "workflow automation, Blueprint (process enforcement), Cadences (branching multichannel), approvals, Journey Orchestration",
+      "features": [
+        "workflow automation",
+        "Blueprint (process enforcement)",
+        "Cadences (branching multichannel)",
+        "approvals",
+        "Journey Orchestration"
+      ]
+    },
+    {
+      "slug": "zia-ai",
+      "label": "Zia AI",
+      "detail": "sales AI agents, generative recommendations/follow-ups, predictive (conversion/close/churn), email intelligence, anomaly detection, custom ML via QuickML",
+      "features": [
+        "sales AI agents",
+        "generative recommendations/follow-ups",
+        "predictive (conversion/close/churn)",
+        "email intelligence",
+        "anomaly detection",
+        "custom ML via QuickML"
+      ]
+    },
+    {
+      "slug": "customization",
+      "label": "Customization",
+      "detail": "Canvas (no-code UI), Client Script, custom modules, conditional layouts, Kiosk Studio, Wizards, \"CRM for Everyone\"",
+      "features": [
+        "Canvas (no-code UI)",
+        "Client Script",
+        "custom modules",
+        "conditional layouts",
+        "Kiosk Studio",
+        "Wizards",
+        "\"CRM for Everyone\""
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "custom reports, dynamic dashboards, forecasting, reporting hierarchy",
+      "features": [
+        "custom reports",
+        "dynamic dashboards",
+        "forecasting",
+        "reporting hierarchy"
+      ]
+    },
+    {
+      "slug": "territory",
+      "label": "Territory",
+      "detail": "assignment by line/geo/vertical, multi-team",
+      "features": [
+        "assignment by line/geo/vertical",
+        "multi-team"
+      ]
+    },
+    {
+      "slug": "omnichannel-cpq-inventory",
+      "label": "Omnichannel/CPQ/Inventory",
+      "detail": "journeys, portals, CPQ w/ price rules, inventory (invoices/orders/vendors)",
+      "features": [
+        "journeys",
+        "portals",
+        "CPQ w/ price rules",
+        "inventory (invoices/orders/vendors)"
+      ]
+    },
+    {
+      "slug": "dev-and-security",
+      "label": "Dev & Security",
+      "detail": "REST APIs, custom functions, sandbox, marketplace, HIPAA, field-level encryption, GDPR, mobile",
+      "features": [
+        "REST APIs",
+        "custom functions",
+        "sandbox",
+        "marketplace",
+        "HIPAA",
+        "field-level encryption",
+        "GDPR",
+        "mobile"
+      ]
+    }
+  ]
+}

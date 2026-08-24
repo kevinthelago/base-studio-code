@@ -1,0 +1,266 @@
+{
+  "id": "stripe-billing-invoicing",
+  "name": "Stripe (Billing/Invoicing)",
+  "domain": "finance-accounting-billing-spend",
+  "domainName": "Finance / Accounting / Billing / Spend",
+  "capabilities": [
+    {
+      "slug": "subscription-pricing-models",
+      "label": "Subscription pricing models",
+      "detail": "flat-rate, per-seat, tiered, volume, graduated, usage-based/metered, hybrid/multi-attribute, pay-as-you-go, multi-currency (135+), pricing tables",
+      "features": [
+        "flat-rate",
+        "per-seat",
+        "tiered",
+        "volume",
+        "graduated",
+        "usage-based/metered",
+        "hybrid/multi-attribute",
+        "pay-as-you-go",
+        "multi-currency (135+)",
+        "pricing tables"
+      ]
+    },
+    {
+      "slug": "subscription-management",
+      "label": "Subscription management",
+      "detail": "free/paid trials, proration, installments, subscription phases & schedules, migration, upgrades/downgrades, pause/resume, cancellation surveys, renewals, promotion codes/coupons/discounts, credit & debit notes, custom billing logic via scripts",
+      "features": [
+        "free/paid trials",
+        "proration",
+        "installments",
+        "subscription phases & schedules",
+        "migration",
+        "upgrades/downgrades",
+        "pause/resume",
+        "cancellation surveys",
+        "renewals",
+        "promotion codes/coupons/discounts",
+        "credit & debit notes",
+        "custom billing logic via scripts"
+      ]
+    },
+    {
+      "slug": "usage-based-billing-metering-meters",
+      "label": "Usage-based billing/metering (Meters)",
+      "detail": "meter events, real-time aggregation (100K+ events/sec), rate cards, dimension-based pricing, prepaid credits with real-time burndown, credit grants, token/outcome-based pricing, embedded usage/spend dashboards with alerts, cloud-marketplace integrations",
+      "features": [
+        "meter events",
+        "real-time aggregation (100K+ events/sec)",
+        "rate cards",
+        "dimension-based pricing",
+        "prepaid credits with real-time burndown",
+        "credit grants",
+        "token/outcome-based pricing",
+        "embedded usage/spend dashboards with alerts",
+        "cloud-marketplace integrations"
+      ]
+    },
+    {
+      "slug": "invoicing",
+      "label": "Invoicing",
+      "detail": "one-off & recurring invoices, no-code Dashboard + API creation, Stripe-hosted invoice pages, PDF downloads, custom-domain email delivery, custom numbering, branding, line items/discounts/tax rates, draft/void/refund/mark-as-paid, credit notes, e-invoicing compliance apps, auto-reconciliation via virtual bank numbers, Financial Connections",
+      "features": [
+        "one-off & recurring invoices",
+        "no-code Dashboard + API creation",
+        "Stripe-hosted invoice pages",
+        "PDF downloads",
+        "custom-domain email delivery",
+        "custom numbering",
+        "branding",
+        "line items/discounts/tax rates",
+        "draft/void/refund/mark-as-paid",
+        "credit notes",
+        "e-invoicing compliance apps",
+        "auto-reconciliation via virtual bank numbers",
+        "Financial Connections"
+      ]
+    },
+    {
+      "slug": "auto-collection-reminders",
+      "label": "Auto collection/reminders",
+      "detail": "automatic due/past-due email reminders, automatic invoice advancement, auto-collection vs send-invoice modes",
+      "features": [
+        "automatic due/past-due email reminders",
+        "automatic invoice advancement",
+        "auto-collection vs send-invoice modes"
+      ]
+    },
+    {
+      "slug": "quotes-cpq",
+      "label": "Quotes (CPQ)",
+      "detail": "quotes combining recurring + one-off with discounts/taxes, draft→open→accepted, auto-numbering, PDF, convert to subscriptions/schedules or draft invoices, expiration/auto-cancel, revisions",
+      "features": [
+        "quotes combining recurring + one-off with discounts/taxes",
+        "draft→open→accepted",
+        "auto-numbering",
+        "PDF",
+        "convert to subscriptions/schedules or draft invoices",
+        "expiration/auto-cancel",
+        "revisions"
+      ]
+    },
+    {
+      "slug": "customer-portal-self-serve",
+      "label": "Customer portal (self-serve)",
+      "detail": "update payment methods/billing info/tax IDs, view/download/pay invoices, upgrade/downgrade (up to 10 products), cancel (immediate/period-end), pause, cancellation deflection with coupons, 40+ languages, 40+ payment methods",
+      "features": [
+        "update payment methods/billing info/tax IDs",
+        "view/download/pay invoices",
+        "upgrade/downgrade (up to 10 products)",
+        "cancel (immediate/period-end)",
+        "pause",
+        "cancellation deflection with coupons",
+        "40+ languages",
+        "40+ payment methods"
+      ]
+    },
+    {
+      "slug": "payment-methods",
+      "label": "Payment methods",
+      "detail": "100+ global methods, cards, ACH/SEPA/Bacs Direct Debit, bank transfers, wallets (Apple/Google Pay), BNPL, stablecoins, 135+ currencies, location-optimized display, multiprocessor support",
+      "features": [
+        "100+ global methods",
+        "cards",
+        "ACH/SEPA/Bacs Direct Debit",
+        "bank transfers",
+        "wallets (Apple/Google Pay)",
+        "BNPL",
+        "stablecoins",
+        "135+ currencies",
+        "location-optimized display",
+        "multiprocessor support"
+      ]
+    },
+    {
+      "slug": "dunning-revenue-recovery",
+      "label": "Dunning / Revenue Recovery",
+      "detail": "Smart Retries (AI retry timing, ~38% recovery), automatic card updater / network tokens, automated failed-payment/expiry emails, configurable dunning flows, no-code recovery recipes, recovery analytics",
+      "features": [
+        "Smart Retries (AI retry timing, ~38% recovery)",
+        "automatic card updater / network tokens",
+        "automated failed-payment/expiry emails",
+        "configurable dunning flows",
+        "no-code recovery recipes",
+        "recovery analytics"
+      ]
+    },
+    {
+      "slug": "entitlements-feature-gating",
+      "label": "Entitlements/feature gating",
+      "detail": "Features, Product Features, Entitlements & Active Entitlements, subscription-to-feature access mapping, Entitlements API",
+      "features": [
+        "Features",
+        "Product Features",
+        "Entitlements & Active Entitlements",
+        "subscription-to-feature access mapping",
+        "Entitlements API"
+      ]
+    },
+    {
+      "slug": "revenue-recognition",
+      "label": "Revenue recognition",
+      "detail": "ASC 606 / IFRS 15 accrual accounting, deferred revenue automation, revenue subledger mapped to GL, same-day close, handles upgrades/prorations/refunds/disputes/FX, custom rules engine, Standalone Selling Prices for bundles, CSV import for non-Stripe transactions, App Store/Google Play connectors, revenue waterfall, trial balances, audit-ready statements, GL exports",
+      "features": [
+        "ASC 606 / IFRS 15 accrual accounting",
+        "deferred revenue automation",
+        "revenue subledger mapped to GL",
+        "same-day close",
+        "handles upgrades/prorations/refunds/disputes/FX",
+        "custom rules engine",
+        "Standalone Selling Prices for bundles",
+        "CSV import for non-Stripe transactions",
+        "App Store/Google Play connectors",
+        "revenue waterfall",
+        "trial balances",
+        "audit-ready statements",
+        "GL exports"
+      ]
+    },
+    {
+      "slug": "stripe-tax",
+      "label": "Stripe Tax",
+      "detail": "automatic sales tax/VAT/GST in 100+ countries & all US states, 600+ tax categories, VAT-ID validation, reverse-charge/zero-rate B2B, threshold/nexus monitoring with alerts, VAT OSS monitoring, US registrations managed by Stripe, registrations in 90+ countries, automated filing/remittance via partners (TaxJar/Taxually), works across Checkout/Billing/Invoicing/Connect + non-Stripe processors",
+      "features": [
+        "automatic sales tax/VAT/GST in 100+ countries & all US states",
+        "600+ tax categories",
+        "VAT-ID validation",
+        "reverse-charge/zero-rate B2B",
+        "threshold/nexus monitoring with alerts",
+        "VAT OSS monitoring",
+        "US registrations managed by Stripe",
+        "registrations in 90+ countries",
+        "automated filing/remittance via partners (TaxJar/Taxually)",
+        "works across Checkout/Billing/Invoicing/Connect + non-Stripe processors"
+      ]
+    },
+    {
+      "slug": "reporting-analytics",
+      "label": "Reporting/analytics",
+      "detail": "billing analytics & benchmarks, MRR/churn/failure-rate tracking, AR aging, Stripe Sigma (custom SQL), recovery analytics, Data Pipeline warehouse sync (Snowflake/Redshift/Databricks/S3)",
+      "features": [
+        "billing analytics & benchmarks",
+        "MRR/churn/failure-rate tracking",
+        "AR aging",
+        "Stripe Sigma (custom SQL)",
+        "recovery analytics",
+        "Data Pipeline warehouse sync (Snowflake/Redshift/Databricks/S3)"
+      ]
+    },
+    {
+      "slug": "sales-led-api",
+      "label": "Sales-led/API",
+      "detail": "no-code Dashboard tools, pricing tables, full Billing API, CRM & CPQ integrations, webhooks, quotes for sales-led deals, Metronome for enterprise contracts",
+      "features": [
+        "no-code Dashboard tools",
+        "pricing tables",
+        "full Billing API",
+        "CRM & CPQ integrations",
+        "webhooks",
+        "quotes for sales-led deals",
+        "Metronome for enterprise contracts"
+      ]
+    },
+    {
+      "slug": "integrations-sync",
+      "label": "Integrations/sync",
+      "detail": "NetSuite connector, Xero, QuickBooks, Sage Intacct, Bill.com (16+ platforms for RevRec), ERP integrations, App Marketplace, webhook automation",
+      "features": [
+        "NetSuite connector",
+        "Xero",
+        "QuickBooks",
+        "Sage Intacct",
+        "Bill.com (16+ platforms for RevRec)",
+        "ERP integrations",
+        "App Marketplace",
+        "webhook automation"
+      ]
+    },
+    {
+      "slug": "connect-marketplaces",
+      "label": "Connect/marketplaces",
+      "detail": "Stripe Connect for marketplace/platform payouts & billing, per-connected-account portal configs, Tax & Invoicing for platforms",
+      "features": [
+        "Stripe Connect for marketplace/platform payouts & billing",
+        "per-connected-account portal configs",
+        "Tax & Invoicing for platforms"
+      ]
+    },
+    {
+      "slug": "payments-billing-relevant",
+      "label": "Payments (billing-relevant)",
+      "detail": "Checkout, Payment Links (no-code email/SMS/QR), Elements, Link one-click, Adaptive Acceptance/Pricing, network tokens & card account updater, Radar fraud detection, Smart Disputes, PCI L1 / SOC 2 / ISO 27001 / GDPR",
+      "features": [
+        "Checkout",
+        "Payment Links (no-code email/SMS/QR)",
+        "Elements",
+        "Link one-click",
+        "Adaptive Acceptance/Pricing",
+        "network tokens & card account updater",
+        "Radar fraud detection",
+        "Smart Disputes",
+        "PCI L1 / SOC 2 / ISO 27001 / GDPR"
+      ]
+    }
+  ]
+}

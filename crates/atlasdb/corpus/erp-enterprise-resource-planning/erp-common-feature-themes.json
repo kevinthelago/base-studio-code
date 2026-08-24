@@ -1,0 +1,124 @@
+{
+  "id": "erp-common-feature-themes",
+  "name": "ERP — common feature themes",
+  "domain": "erp-enterprise-resource-planning",
+  "domainName": "ERP (Enterprise Resource Planning)",
+  "capabilities": [
+    {
+      "slug": "universal-core-financials",
+      "label": "Universal core financials",
+      "detail": "GL, AP, AR, cash/bank, fixed assets, tax — the non-negotiable foundation",
+      "features": [
+        "GL",
+        "AP",
+        "AR",
+        "cash/bank",
+        "fixed assets",
+        "tax — the non-negotiable foundation"
+      ]
+    },
+    {
+      "slug": "multi-entity-multi-currency-multi-book",
+      "label": "Multi-entity / multi-currency / multi-book",
+      "detail": "consolidation, intercompany eliminations, parallel GAAP/IFRS/statutory ledgers (SAP Universal Journal, NetSuite OneWorld, D365 consolidation, Workday multi-book, Infor multi-entity)",
+      "features": [
+        "consolidation",
+        "intercompany eliminations",
+        "parallel GAAP/IFRS/statutory ledgers (SAP Universal Journal, NetSuite OneWorld, D365 consolidation, Workday multi-book, Infor multi-entity)"
+      ]
+    },
+    {
+      "slug": "compliance-automation",
+      "label": "Compliance automation",
+      "detail": "ASC 606 / IFRS 15 rev-rec + ASC 842/IFRS 16 lease accounting are table-stakes; immutable audit trails, SOX, segregation-of-duties, country e-invoicing/VAT/GST localizations universal",
+      "features": [
+        "ASC 606 / IFRS 15 rev-rec + ASC 842/IFRS 16 lease accounting are table-stakes; immutable audit trails",
+        "SOX",
+        "segregation-of-duties",
+        "country e-invoicing/VAT/GST localizations universal"
+      ]
+    },
+    {
+      "slug": "procure-to-pay",
+      "label": "Procure-to-pay",
+      "detail": "requisitions, POs, three-way match, vendor portals, catalog/punchout, OCR/AI invoice capture, approval workflows",
+      "features": [
+        "requisitions",
+        "POs",
+        "three-way match",
+        "vendor portals",
+        "catalog/punchout",
+        "OCR/AI invoice capture",
+        "approval workflows"
+      ]
+    },
+    {
+      "slug": "order-to-cash-and-inventory",
+      "label": "Order-to-cash & inventory",
+      "detail": "sales orders, multi-location inventory (lot/serial/bin), multiple valuation methods, demand planning/reorder points",
+      "features": [
+        "sales orders",
+        "multi-location inventory (lot/serial/bin)",
+        "multiple valuation methods",
+        "demand planning/reorder points"
+      ]
+    },
+    {
+      "slug": "wms",
+      "label": "WMS",
+      "detail": "mobile barcode/RF, wave/zone picking, putaway/slotting, cross-docking; automation/robotics + labor mgmt differentiate the deep WMS (Infor, D365)",
+      "features": [
+        "mobile barcode/RF",
+        "wave/zone picking",
+        "putaway/slotting",
+        "cross-docking; automation/robotics + labor mgmt differentiate the deep WMS (Infor, D365)"
+      ]
+    },
+    {
+      "slug": "manufacturing-depth-the-big-differentiator",
+      "label": "Manufacturing depth = the big differentiator",
+      "detail": "SAP + D365 + Infor cover discrete + process + lean w/ BOMs/routings/MRP/MPS/finite-APS/CAPA (strongest lineage); NetSuite/Odoo lighter MRP; **Workday has none** (finance + HCM only)",
+      "features": [
+        "SAP + D365 + Infor cover discrete + process + lean w/ BOMs/routings/MRP/MPS/finite-APS/CAPA (strongest lineage); NetSuite/Odoo lighter MRP; **Workday has none** (finance + HCM only)"
+      ]
+    },
+    {
+      "slug": "master-planning-scm",
+      "label": "Master planning / SCM",
+      "detail": "statistical + AI/ML demand forecasting, MRP, S&OP, multi-echelon optimization, demand sensing; transportation mgmt (load building, route/rate optimization, freight audit) in SCM-heavy suites",
+      "features": [
+        "statistical + AI/ML demand forecasting",
+        "MRP",
+        "S&OP",
+        "multi-echelon optimization",
+        "demand sensing; transportation mgmt (load building, route/rate optimization, freight audit) in SCM-heavy suites"
+      ]
+    },
+    {
+      "slug": "eam-plant-maintenance",
+      "label": "EAM / plant maintenance",
+      "detail": "preventive + IoT predictive maintenance, work orders, spare-parts inventory",
+      "features": [
+        "preventive + IoT predictive maintenance",
+        "work orders",
+        "spare-parts inventory"
+      ]
+    },
+    {
+      "slug": "embedded-ai-analytics",
+      "label": "Embedded AI + analytics",
+      "detail": "native BI/AI layer each (SAP predictive, SuiteAnalytics, D365 Copilot, Workday Prism + Adaptive, Infor OS Coleman/Birst)",
+      "features": [
+        "native BI/AI layer each (SAP predictive, SuiteAnalytics, D365 Copilot, Workday Prism + Adaptive, Infor OS Coleman/Birst)"
+      ]
+    },
+    {
+      "slug": "differentiators",
+      "label": "Differentiators",
+      "detail": "SAP = deepest end-to-end + Universal Journal · NetSuite = cloud-native modular billing · D365 = Microsoft/Power Platform + AI · Workday = finance+HCM on one real-time object model · Infor = industry CloudSuites + 3 mfg engines · Odoo = 100+ low-cost open-source modular apps",
+      "features": [
+        "SAP = deepest end-to-end + Universal Journal · NetSuite = cloud-native modular billing · D365 = Microsoft/Power Platform + AI · Workday = finance+HCM on one real-time object model · Infor = industry CloudSuites + 3 mfg engines · Odoo = 100+ low-cost open-source modular apps"
+      ]
+    }
+  ]
+}

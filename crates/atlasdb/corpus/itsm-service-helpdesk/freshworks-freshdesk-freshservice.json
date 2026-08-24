@@ -1,0 +1,190 @@
+{
+  "id": "freshworks-freshdesk-freshservice",
+  "name": "Freshworks (Freshdesk / Freshservice)",
+  "domain": "itsm-service-helpdesk",
+  "domainName": "ITSM / Service / Helpdesk",
+  "capabilities": [
+    {
+      "slug": "ticketing-incident",
+      "label": "Ticketing/incident",
+      "detail": "shared inbox, rule-based dispatch + auto-assign, parent-child/linked tickets, templates, custom fields/objects, multilingual, threads & tasks (Freshdesk); AI-routed incident mgmt, major incident, DEX device/app health, agent workload (Freshservice)",
+      "features": [
+        "shared inbox",
+        "rule-based dispatch + auto-assign",
+        "parent-child/linked tickets",
+        "templates",
+        "custom fields/objects",
+        "multilingual",
+        "threads & tasks (Freshdesk); AI-routed incident mgmt",
+        "major incident",
+        "DEX device/app health",
+        "agent workload (Freshservice)"
+      ]
+    },
+    {
+      "slug": "omnichannel",
+      "label": "Omnichannel",
+      "detail": "email/chat (Freshchat)/phone (Freshcaller)/social/WhatsApp/web forms (Freshdesk); email/phone/chat/widget + ServiceBot on Teams/Slack (Freshservice)",
+      "features": [
+        "email/chat (Freshchat)/phone (Freshcaller)/social/WhatsApp/web forms (Freshdesk); email/phone/chat/widget + ServiceBot on Teams/Slack (Freshservice)"
+      ]
+    },
+    {
+      "slug": "knowledge-self-service",
+      "label": "Knowledge/self-service",
+      "detail": "multilingual KB, versioning, approval, Email-to-KB, community forums, bot suggestions (Freshdesk); knowledge mgmt + unified portal (Freshservice)",
+      "features": [
+        "multilingual KB",
+        "versioning",
+        "approval",
+        "Email-to-KB",
+        "community forums",
+        "bot suggestions (Freshdesk); knowledge mgmt + unified portal (Freshservice)"
+      ]
+    },
+    {
+      "slug": "slas",
+      "label": "SLAs",
+      "detail": "multiple policies, business hours, escalations (Freshdesk); custom SLAs, OLAs, XLAs (quality + effort), CSAT (Freshservice)",
+      "features": [
+        "multiple policies",
+        "business hours",
+        "escalations (Freshdesk); custom SLAs",
+        "OLAs",
+        "XLAs (quality + effort)",
+        "CSAT (Freshservice)"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "Dispatch'r/Observer/Supervisor + scenario automations, round-robin/load-balanced/skill routing (Freshdesk); no-code Workflow Automator, orchestration center, Employee Journeys (Freshservice)",
+      "features": [
+        "Dispatch'r/Observer/Supervisor + scenario automations",
+        "round-robin/load-balanced/skill routing (Freshdesk); no-code Workflow Automator",
+        "orchestration center",
+        "Employee Journeys (Freshservice)"
+      ]
+    },
+    {
+      "slug": "ai-freddy",
+      "label": "AI (Freddy)",
+      "detail": "Freddy AI Agent (autonomous ~80% resolution, prebuilt Shopify/Stripe/PayPal), Freddy Copilot (suggestions/summarization/sentiment/translation — add-on), Freddy AI Insights (trend/root-cause/SLA-breach, NL \"ask Freddy\"), Agent Studio, Freddy AI Trust (PII masking/audit)",
+      "features": [
+        "Freddy AI Agent (autonomous ~80% resolution, prebuilt Shopify/Stripe/PayPal)",
+        "Freddy Copilot (suggestions/summarization/sentiment/translation — add-on)",
+        "Freddy AI Insights (trend/root-cause/SLA-breach, NL \"ask Freddy\")",
+        "Agent Studio",
+        "Freddy AI Trust (PII masking/audit)"
+      ]
+    },
+    {
+      "slug": "asset-config-freshservice",
+      "label": "Asset/config (Freshservice)",
+      "detail": "ITAM lifecycle, advanced discovery (on-prem/cloud/hybrid), multi-source CMDB, dependency mapping, IPAM, SaaS Management, PO/contract mgmt, inventory",
+      "features": [
+        "ITAM lifecycle",
+        "advanced discovery (on-prem/cloud/hybrid)",
+        "multi-source CMDB",
+        "dependency mapping",
+        "IPAM",
+        "SaaS Management",
+        "PO/contract mgmt",
+        "inventory"
+      ]
+    },
+    {
+      "slug": "change-problem-release-freshservice",
+      "label": "Change/problem/release (Freshservice)",
+      "detail": "change with risk ID + approval, proactive problem (AI insights, timeline root-cause), ITIL release",
+      "features": [
+        "change with risk ID + approval",
+        "proactive problem (AI insights, timeline root-cause)",
+        "ITIL release"
+      ]
+    },
+    {
+      "slug": "service-catalog-freshservice",
+      "label": "Service catalog (Freshservice)",
+      "detail": "unified catalog, self-service portal, automated approvals, e-signatures, on/offboarding journeys, MSP mode",
+      "features": [
+        "unified catalog",
+        "self-service portal",
+        "automated approvals",
+        "e-signatures",
+        "on/offboarding journeys",
+        "MSP mode"
+      ]
+    },
+    {
+      "slug": "itom-freshservice",
+      "label": "ITOM (Freshservice)",
+      "detail": "alert management + event correlation + noise reduction, on-call, service health monitoring, status-page, cloud management",
+      "features": [
+        "alert management + event correlation + noise reduction",
+        "on-call",
+        "service health monitoring",
+        "status-page",
+        "cloud management"
+      ]
+    },
+    {
+      "slug": "project-management-freshservice",
+      "label": "Project management (Freshservice)",
+      "detail": "planning/tracking, portfolio",
+      "features": [
+        "planning/tracking",
+        "portfolio"
+      ]
+    },
+    {
+      "slug": "reporting",
+      "label": "Reporting",
+      "detail": "predefined + custom dashboards, agent-availability, CSAT (Freshdesk); reports across tickets/SLAs/assets/changes, no-code analytics (Freshservice)",
+      "features": [
+        "predefined + custom dashboards",
+        "agent-availability",
+        "CSAT (Freshdesk); reports across tickets/SLAs/assets/changes",
+        "no-code analytics (Freshservice)"
+      ]
+    },
+    {
+      "slug": "collaboration",
+      "label": "Collaboration",
+      "detail": "collision detection, canned responses, team huddle, external collaborators, multi-brand (Freshdesk)",
+      "features": [
+        "collision detection",
+        "canned responses",
+        "team huddle",
+        "external collaborators",
+        "multi-brand (Freshdesk)"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "1,200+ Marketplace, REST APIs, sandbox, mobile apps",
+      "features": [
+        "1",
+        "200+ Marketplace",
+        "REST APIs",
+        "sandbox",
+        "mobile apps"
+      ]
+    },
+    {
+      "slug": "security",
+      "label": "Security",
+      "detail": "branded portal, RBAC, SAML SSO, JWT, audit logs, IP whitelisting, agent shifts",
+      "features": [
+        "branded portal",
+        "RBAC",
+        "SAML SSO",
+        "JWT",
+        "audit logs",
+        "IP whitelisting",
+        "agent shifts"
+      ]
+    }
+  ]
+}

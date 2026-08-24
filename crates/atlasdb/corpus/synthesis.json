@@ -1,0 +1,61 @@
+{
+  "title": "Enterprise Software — Competitive Feature Inventory",
+  "rows": [
+    {
+      "kind": "pattern",
+      "section": "The universal enterprise-software pattern (present in EVERY category above)",
+      "domain": "cross-category-synthesis-what-to-build-to-compete",
+      "label": "A visual, no-code builder",
+      "detail": "as the primary authoring surface (workflow/journey/dashboard/page/report canvas)."
+    },
+    {
+      "kind": "pattern",
+      "section": "The universal enterprise-software pattern (present in EVERY category above)",
+      "domain": "cross-category-synthesis-what-to-build-to-compete",
+      "label": "A rules/automation engine",
+      "detail": "(trigger → condition → action) with a template library."
+    },
+    {
+      "kind": "pattern",
+      "section": "The universal enterprise-software pattern (present in EVERY category above)",
+      "domain": "cross-category-synthesis-what-to-build-to-compete",
+      "label": "An agentic AI layer",
+      "detail": "— every single vendor in every single category now ships (a) a conversational copilot, (b) generative authoring (NL → app/flow/email/report), and (c) autonomous multi-step **agents** with governance/guardrails. MCP + Google A2A are the emerging interop standards; most are LLM-agnostic/BYO-model."
+    },
+    {
+      "kind": "pattern",
+      "section": "The universal enterprise-software pattern (present in EVERY category above)",
+      "domain": "cross-category-synthesis-what-to-build-to-compete",
+      "label": "A unified data layer / semantic model",
+      "detail": "— CDP (marketing/analytics), Data Fabric (BPM/ServiceNow), Employee Graph (HR), semantic layer (BI), Customer 360 (CRM/commerce). \"Define-once, use-everywhere\" governed data is the strategic moat."
+    },
+    {
+      "kind": "pattern",
+      "section": "The universal enterprise-software pattern (present in EVERY category above)",
+      "domain": "cross-category-synthesis-what-to-build-to-compete",
+      "label": "A large pre-built integration marketplace + open REST/GraphQL APIs + webhooks",
+      "detail": "— connector counts (300–8,000+) are an explicit marketing axis."
+    },
+    {
+      "kind": "pattern",
+      "section": "The universal enterprise-software pattern (present in EVERY category above)",
+      "domain": "cross-category-synthesis-what-to-build-to-compete",
+      "label": "Enterprise governance baseline",
+      "detail": "— SAML SSO, SCIM, RBAC, audit logs, data residency, SOC 2 / ISO 27001 / GDPR / HIPAA."
+    },
+    {
+      "kind": "pattern",
+      "section": "The universal enterprise-software pattern (present in EVERY category above)",
+      "domain": "cross-category-synthesis-what-to-build-to-compete",
+      "label": "Tiered pricing (free/entry → pro → enterprise/custom)",
+      "detail": "with the AI/agentic/governance features gated to the top tiers."
+    },
+    {
+      "kind": "statement",
+      "section": "The universal enterprise-software pattern (present in EVERY category above)",
+      "domain": "cross-category-synthesis-what-to-build-to-compete",
+      "label": "The generational shift every incumbent is racing toward",
+      "detail": "from human-operated software → to **agent-operated software**. Outcome-based pricing (pay-per-resolution, Intercom Fin / Zendesk) is the leading edge of this in support; agentic commerce (\"Commerce for Agents,\" Agentforce) and agentic finance (Ramp/Brex AI agents) are the same move in their categories. **A platform that is agent-native from the ground up — where the graph IS the app and agents author + operate it — leapfrogs the bolt-on-AI incumbents.** That is precisely the base-studio-code thesis."
+    }
+  ]
+}

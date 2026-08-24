@@ -1,0 +1,195 @@
+{
+  "id": "looker-google",
+  "name": "Looker (Google)",
+  "domain": "analytics-bi-data-cdp",
+  "domainName": "Analytics / BI / Data / CDP",
+  "capabilities": [
+    {
+      "slug": "connectors",
+      "label": "Connectors",
+      "detail": "50+ SQL dialects (BigQuery/Snowflake/Redshift/Databricks/Postgres/MySQL/SQL Server/Oracle/Spanner/Trino), direct in-database (no extraction), Looker Studio 800+ partner connectors + Google-native (BigQuery/Ads/GA4/Search Console/Sheets/YouTube)",
+      "features": [
+        "50+ SQL dialects (BigQuery/Snowflake/Redshift/Databricks/Postgres/MySQL/SQL Server/Oracle/Spanner/Trino)",
+        "direct in-database (no extraction)",
+        "Looker Studio 800+ partner connectors + Google-native (BigQuery/Ads/GA4/Search Console/Sheets/YouTube)"
+      ]
+    },
+    {
+      "slug": "modeling-semantic-layer-lookml",
+      "label": "Modeling / semantic layer (LookML)",
+      "detail": "version-controlled modeling language, define-metrics-once universal semantic model, dimensions/measures/derived tables/explores/joins, Looker Modeler (standalone semantic-layer service), curated data catalog with governed metrics, Git-based version control (branches/PRs) in the IDE",
+      "features": [
+        "version-controlled modeling language",
+        "define-metrics-once universal semantic model",
+        "dimensions/measures/derived tables/explores/joins",
+        "Looker Modeler (standalone semantic-layer service)",
+        "curated data catalog with governed metrics",
+        "Git-based version control (branches/PRs) in the IDE"
+      ]
+    },
+    {
+      "slug": "semantic-layer-distribution-open-sql-interface",
+      "label": "Semantic-layer distribution (Open SQL Interface)",
+      "detail": "JDBC driver exposing governed LookML metrics to external BI — Tableau (native connector), Power BI, ThoughtSpot, Mode, Connected Sheets, SAP Analytics Cloud",
+      "features": [
+        "JDBC driver exposing governed LookML metrics to external BI — Tableau (native connector)",
+        "Power BI",
+        "ThoughtSpot",
+        "Mode",
+        "Connected Sheets",
+        "SAP Analytics Cloud"
+      ]
+    },
+    {
+      "slug": "dashboards-viz",
+      "label": "Dashboards/viz",
+      "detail": "LookML + user-defined dashboards, Looks (saved queries), native chart library, custom viz (marketplace + API), conditional formatting, cross-filtering, merged results, Looker Studio drag-drop editor",
+      "features": [
+        "LookML + user-defined dashboards",
+        "Looks (saved queries)",
+        "native chart library",
+        "custom viz (marketplace + API)",
+        "conditional formatting",
+        "cross-filtering",
+        "merged results",
+        "Looker Studio drag-drop editor"
+      ]
+    },
+    {
+      "slug": "self-service",
+      "label": "Self-service",
+      "detail": "Explores (ad-hoc query building without SQL), drill-downs, pivots, filters, table calculations, custom fields/dimensions/measures, saving/sharing Looks",
+      "features": [
+        "Explores (ad-hoc query building without SQL)",
+        "drill-downs",
+        "pivots",
+        "filters",
+        "table calculations",
+        "custom fields/dimensions/measures",
+        "saving/sharing Looks"
+      ]
+    },
+    {
+      "slug": "sql-derived-tables",
+      "label": "SQL/derived tables",
+      "detail": "SQL Runner (raw SQL console), native + SQL-based derived tables, Persistent Derived Tables (PDTs), aggregate awareness/tables",
+      "features": [
+        "SQL Runner (raw SQL console)",
+        "native + SQL-based derived tables",
+        "Persistent Derived Tables (PDTs)",
+        "aggregate awareness/tables"
+      ]
+    },
+    {
+      "slug": "ai-ml-nlq-gemini-in-looker",
+      "label": "AI/ML + NLQ (Gemini in Looker)",
+      "detail": "Conversational Analytics (chat grounded in semantic model), Data Agents, Advanced Analytics (NL → Python), LookML Assistant, Formula/Visualization/Insight/Admin Assistants, Semantic Search, Conversational Analytics API + Slack; BigQuery ML + Vertex AI",
+      "features": [
+        "Conversational Analytics (chat grounded in semantic model)",
+        "Data Agents",
+        "Advanced Analytics (NL → Python)",
+        "LookML Assistant",
+        "Formula/Visualization/Insight/Admin Assistants",
+        "Semantic Search",
+        "Conversational Analytics API + Slack; BigQuery ML + Vertex AI"
+      ]
+    },
+    {
+      "slug": "embedded-powered-by-looker",
+      "label": "Embedded (\"Powered by Looker\")",
+      "detail": "Embed SDK (dashboards/Looks/Explores/Reports/extensions), private + public/SSO embedding, signed/cookieless embed URLs, theming/white-labeling",
+      "features": [
+        "Embed SDK (dashboards/Looks/Explores/Reports/extensions)",
+        "private + public/SSO embedding",
+        "signed/cookieless embed URLs",
+        "theming/white-labeling"
+      ]
+    },
+    {
+      "slug": "developer-api",
+      "label": "Developer/API",
+      "detail": "REST API, SDKs (Python/TS/Kotlin/Swift/Go/R/.NET), Extension Framework, Looker Components (React UI), Marketplace, Looker Blocks (prebuilt LookML), API Explorer",
+      "features": [
+        "REST API",
+        "SDKs (Python/TS/Kotlin/Swift/Go/R/.NET)",
+        "Extension Framework",
+        "Looker Components (React UI)",
+        "Marketplace",
+        "Looker Blocks (prebuilt LookML)",
+        "API Explorer"
+      ]
+    },
+    {
+      "slug": "data-actions-write-back",
+      "label": "Data actions/write-back",
+      "detail": "Data Actions (row/cell-level), Action Hub + Action API (webhooks), prebuilt integrations (Slack/Segment/Twilio/SendGrid/Sheets/Zapier), custom write-back",
+      "features": [
+        "Data Actions (row/cell-level)",
+        "Action Hub + Action API (webhooks)",
+        "prebuilt integrations (Slack/Segment/Twilio/SendGrid/Sheets/Zapier)",
+        "custom write-back"
+      ]
+    },
+    {
+      "slug": "governance",
+      "label": "Governance",
+      "detail": "RBAC (roles/permission sets/model sets), dynamic row-level security via user attributes, content access controls, SSO/SAML/OIDC/LDAP/OAuth, audit logging, content + LookML validators, column-level access, IP allowlisting, system-activity analytics",
+      "features": [
+        "RBAC (roles/permission sets/model sets)",
+        "dynamic row-level security via user attributes",
+        "content access controls",
+        "SSO/SAML/OIDC/LDAP/OAuth",
+        "audit logging",
+        "content + LookML validators",
+        "column-level access",
+        "IP allowlisting",
+        "system-activity analytics"
+      ]
+    },
+    {
+      "slug": "real-time-performance",
+      "label": "Real-time/performance",
+      "detail": "datagroups + caching policies, PDT rebuild triggers/scheduling, query caching, aggregate awareness, incremental PDTs, live in-warehouse queries",
+      "features": [
+        "datagroups + caching policies",
+        "PDT rebuild triggers/scheduling",
+        "query caching",
+        "aggregate awareness",
+        "incremental PDTs",
+        "live in-warehouse queries"
+      ]
+    },
+    {
+      "slug": "collaboration",
+      "label": "Collaboration",
+      "detail": "scheduled deliveries (email/Slack/S3/GCS/SFTP/webhook) in PDF/CSV/PNG/JSON/XLSX, folders/spaces, boards, favorites, Looker Studio sharing + team workspaces",
+      "features": [
+        "scheduled deliveries (email/Slack/S3/GCS/SFTP/webhook) in PDF/CSV/PNG/JSON/XLSX",
+        "folders/spaces",
+        "boards",
+        "favorites",
+        "Looker Studio sharing + team workspaces"
+      ]
+    },
+    {
+      "slug": "alerting",
+      "label": "Alerting",
+      "detail": "native dashboard alerts (threshold/condition) via email/Slack/webhook, recurring checks",
+      "features": [
+        "native dashboard alerts (threshold/condition) via email/Slack/webhook",
+        "recurring checks"
+      ]
+    },
+    {
+      "slug": "deployment",
+      "label": "Deployment",
+      "detail": "Looker (Google Cloud core, managed on GCP), Looker (original) hosted/customer-hosted, multi-cloud warehouse connectivity, Looker Studio (free) + Studio Pro (Gemini, SLA/support)",
+      "features": [
+        "Looker (Google Cloud core, managed on GCP)",
+        "Looker (original) hosted/customer-hosted",
+        "multi-cloud warehouse connectivity",
+        "Looker Studio (free) + Studio Pro (Gemini, SLA/support)"
+      ]
+    }
+  ]
+}

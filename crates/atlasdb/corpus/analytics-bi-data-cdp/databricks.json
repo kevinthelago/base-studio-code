@@ -1,0 +1,226 @@
+{
+  "id": "databricks",
+  "name": "Databricks",
+  "domain": "analytics-bi-data-cdp",
+  "domainName": "Analytics / BI / Data / CDP",
+  "capabilities": [
+    {
+      "slug": "lakehouse-storage",
+      "label": "Lakehouse storage",
+      "detail": "Delta Lake (ACID, Time Travel, Change Data Feed, schema enforcement), Predictive Optimization (AI auto table tuning), Liquid Clustering, Delta UniForm, Apache Iceberg support, Unity REST + Iceberg REST Catalog APIs",
+      "features": [
+        "Delta Lake (ACID, Time Travel, Change Data Feed, schema enforcement)",
+        "Predictive Optimization (AI auto table tuning)",
+        "Liquid Clustering",
+        "Delta UniForm",
+        "Apache Iceberg support",
+        "Unity REST + Iceberg REST Catalog APIs"
+      ]
+    },
+    {
+      "slug": "compute",
+      "label": "Compute",
+      "detail": "Photon query engine, Apache Spark, serverless compute, auto-managed clusters, CPU/GPU serverless, scale-to-zero autoscaling, per-second billing",
+      "features": [
+        "Photon query engine",
+        "Apache Spark",
+        "serverless compute",
+        "auto-managed clusters",
+        "CPU/GPU serverless",
+        "scale-to-zero autoscaling",
+        "per-second billing"
+      ]
+    },
+    {
+      "slug": "lakebase-oltp",
+      "label": "Lakebase (OLTP)",
+      "detail": "managed Postgres for the lakehouse, Database Branching, point-in-time recovery, scale-to-zero, read replicas, Delta→Postgres sync, PostgREST API, Postgres extensions (PostGIS, pgvector), persistent agent memory, Unity Catalog governance",
+      "features": [
+        "managed Postgres for the lakehouse",
+        "Database Branching",
+        "point-in-time recovery",
+        "scale-to-zero",
+        "read replicas",
+        "Delta→Postgres sync",
+        "PostgREST API",
+        "Postgres extensions (PostGIS, pgvector)",
+        "persistent agent memory",
+        "Unity Catalog governance"
+      ]
+    },
+    {
+      "slug": "data-engineering-lakeflow",
+      "label": "Data engineering (Lakeflow)",
+      "detail": "Lakeflow Connect (managed ingestion connectors), Lakeflow Declarative Pipelines (formerly Delta Live Tables — data quality/CDC/transformation), Lakeflow Jobs (orchestration), Lakeflow Designer (AI low-code), Genie Code (agentic pipeline dev), Auto Loader, medallion architecture, batch + streaming ETL",
+      "features": [
+        "Lakeflow Connect (managed ingestion connectors)",
+        "Lakeflow Declarative Pipelines (formerly Delta Live Tables — data quality/CDC/transformation)",
+        "Lakeflow Jobs (orchestration)",
+        "Lakeflow Designer (AI low-code)",
+        "Genie Code (agentic pipeline dev)",
+        "Auto Loader",
+        "medallion architecture",
+        "batch + streaming ETL"
+      ]
+    },
+    {
+      "slug": "real-time-streaming",
+      "label": "Real-time/streaming",
+      "detail": "Structured Streaming (exactly-once), Streaming Tables, near-real-time pipelines",
+      "features": [
+        "Structured Streaming (exactly-once)",
+        "Streaming Tables",
+        "near-real-time pipelines"
+      ]
+    },
+    {
+      "slug": "data-warehouse-sql",
+      "label": "Data warehouse/SQL",
+      "detail": "Databricks SQL, Serverless SQL Warehouses, Photon, Materialized Views, Streaming Tables, SQL Editor (AI-assisted), AI-driven query optimization, Lakehouse Federation (query external platforms), built-in AI functions",
+      "features": [
+        "Databricks SQL",
+        "Serverless SQL Warehouses",
+        "Photon",
+        "Materialized Views",
+        "Streaming Tables",
+        "SQL Editor (AI-assisted)",
+        "AI-driven query optimization",
+        "Lakehouse Federation (query external platforms)",
+        "built-in AI functions"
+      ]
+    },
+    {
+      "slug": "notebooks",
+      "label": "Notebooks",
+      "detail": "Python/R/Scala/SQL, co-authoring, inline comments, auto versioning, interactive viz, Git via Repos, IDE integrations (VS Code/PyCharm), RStudio + JupyterLab, Databricks Assistant",
+      "features": [
+        "Python/R/Scala/SQL",
+        "co-authoring",
+        "inline comments",
+        "auto versioning",
+        "interactive viz",
+        "Git via Repos",
+        "IDE integrations (VS Code/PyCharm)",
+        "RStudio + JupyterLab",
+        "Databricks Assistant"
+      ]
+    },
+    {
+      "slug": "ai-ml-mosaic-ai",
+      "label": "AI/ML (Mosaic AI)",
+      "detail": "Agent Bricks (build/tune agents on enterprise data, synthetic data gen, custom eval), Agent Framework, Agent Evaluation, Model Training (fine-tune/pretrain LLMs + classical ML), Model Serving (serverless CPU/GPU), Foundation Model APIs (Llama/Mistral/proprietary via Azure OpenAI/Bedrock/Anthropic), Pay-Per-Token + Provisioned Throughput, Batch Inference / AI Functions, Managed MLflow, AutoML",
+      "features": [
+        "Agent Bricks (build/tune agents on enterprise data, synthetic data gen, custom eval)",
+        "Agent Framework",
+        "Agent Evaluation",
+        "Model Training (fine-tune/pretrain LLMs + classical ML)",
+        "Model Serving (serverless CPU/GPU)",
+        "Foundation Model APIs (Llama/Mistral/proprietary via Azure OpenAI/Bedrock/Anthropic)",
+        "Pay-Per-Token + Provisioned Throughput",
+        "Batch Inference / AI Functions",
+        "Managed MLflow",
+        "AutoML"
+      ]
+    },
+    {
+      "slug": "vector-ai-search",
+      "label": "Vector/AI search",
+      "detail": "Mosaic AI Vector Search (hybrid semantic + BM25), built-in reranking, automated sync (auto embedding gen), serverless scale, Unity Catalog access controls + lineage",
+      "features": [
+        "Mosaic AI Vector Search (hybrid semantic + BM25)",
+        "built-in reranking",
+        "automated sync (auto embedding gen)",
+        "serverless scale",
+        "Unity Catalog access controls + lineage"
+      ]
+    },
+    {
+      "slug": "ai-governance-gateway",
+      "label": "AI governance gateway",
+      "detail": "Mosaic AI Gateway (governance across every LLM + MCP, rate limiting, lineage, unified provider interface)",
+      "features": [
+        "Mosaic AI Gateway (governance across every LLM + MCP, rate limiting, lineage, unified provider interface)"
+      ]
+    },
+    {
+      "slug": "bi-analytics",
+      "label": "BI/analytics",
+      "detail": "AI/BI Dashboards (AI-assisted datasets, low-code), Genie / Genie Spaces (NL conversational analytics), Genie API (embedded), Databricks Assistant, direct BI integration (Power BI/Tableau/Looker/Sigma/Qlik/ThoughtSpot), no per-seat license limits",
+      "features": [
+        "AI/BI Dashboards (AI-assisted datasets, low-code)",
+        "Genie / Genie Spaces (NL conversational analytics)",
+        "Genie API (embedded)",
+        "Databricks Assistant",
+        "direct BI integration (Power BI/Tableau/Looker/Sigma/Qlik/ThoughtSpot)",
+        "no per-seat license limits"
+      ]
+    },
+    {
+      "slug": "semantic-layer",
+      "label": "Semantic layer",
+      "detail": "Unity Catalog Business Semantics, Metric Views (governed metrics)",
+      "features": [
+        "Unity Catalog Business Semantics",
+        "Metric Views (governed metrics)"
+      ]
+    },
+    {
+      "slug": "governance-unity-catalog",
+      "label": "Governance (Unity Catalog)",
+      "detail": "unified catalog for data/models/agents/MCPs across clouds, fine-grained + attribute-based access control (ABAC), tags, auto classification, end-to-end column-level lineage, agentic quality monitoring, governance dashboard, audit trail, Lakewatch (agentic SIEM), service principals, OIDC/OAuth 2.0 + SSO",
+      "features": [
+        "unified catalog for data/models/agents/MCPs across clouds",
+        "fine-grained + attribute-based access control (ABAC)",
+        "tags",
+        "auto classification",
+        "end-to-end column-level lineage",
+        "agentic quality monitoring",
+        "governance dashboard",
+        "audit trail",
+        "Lakewatch (agentic SIEM)",
+        "service principals",
+        "OIDC/OAuth 2.0 + SSO"
+      ]
+    },
+    {
+      "slug": "data-sharing",
+      "label": "Data sharing",
+      "detail": "Delta Sharing / OpenSharing (open cross-cloud live sharing without replication), Databricks Marketplace, Clean Rooms (privacy-safe, multi-cloud), Partner Connect",
+      "features": [
+        "Delta Sharing / OpenSharing (open cross-cloud live sharing without replication)",
+        "Databricks Marketplace",
+        "Clean Rooms (privacy-safe, multi-cloud)",
+        "Partner Connect"
+      ]
+    },
+    {
+      "slug": "applications",
+      "label": "Applications",
+      "detail": "Databricks Apps (Dash/Gradio/Streamlit + Python, serverless compute, IDE + Git + CI/CD, Unity Catalog governance), GenAI apps",
+      "features": [
+        "Databricks Apps (Dash/Gradio/Streamlit + Python, serverless compute, IDE + Git + CI/CD, Unity Catalog governance)",
+        "GenAI apps"
+      ]
+    },
+    {
+      "slug": "cdp",
+      "label": "CDP",
+      "detail": "CustomersLake CDP",
+      "features": [
+        "CustomersLake CDP"
+      ]
+    },
+    {
+      "slug": "deployment-pricing",
+      "label": "Deployment/pricing",
+      "detail": "multi-cloud (AWS/Azure/GCP), serverless, DBUs (pay-as-you-go per-second), per-workload SKUs, Committed Use Contracts",
+      "features": [
+        "multi-cloud (AWS/Azure/GCP)",
+        "serverless",
+        "DBUs (pay-as-you-go per-second)",
+        "per-workload SKUs",
+        "Committed Use Contracts"
+      ]
+    }
+  ]
+}

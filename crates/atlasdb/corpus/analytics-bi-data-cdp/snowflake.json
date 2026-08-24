@@ -1,0 +1,193 @@
+{
+  "id": "snowflake",
+  "name": "Snowflake",
+  "domain": "analytics-bi-data-cdp",
+  "domainName": "Analytics / BI / Data / CDP",
+  "capabilities": [
+    {
+      "slug": "engine-architecture",
+      "label": "Engine/architecture",
+      "detail": "multi-cluster shared-data, storage/compute separation, elastic virtual warehouses (auto-suspend/resume, multi-cluster auto-scaling), micro-partitioned columnar storage with automatic clustering, serverless, ANSI SQL, materialized views, search optimization service, query acceleration, result caching, semi-structured (VARIANT/JSON/Avro/ORC/Parquet/XML) + geospatial, Standard/Enterprise/Business Critical/VPS editions",
+      "features": [
+        "multi-cluster shared-data",
+        "storage/compute separation",
+        "elastic virtual warehouses (auto-suspend/resume, multi-cluster auto-scaling)",
+        "micro-partitioned columnar storage with automatic clustering",
+        "serverless",
+        "ANSI SQL",
+        "materialized views",
+        "search optimization service",
+        "query acceleration",
+        "result caching",
+        "semi-structured (VARIANT/JSON/Avro/ORC/Parquet/XML) + geospatial",
+        "Standard/Enterprise/Business Critical/VPS editions"
+      ]
+    },
+    {
+      "slug": "ingestion",
+      "label": "Ingestion",
+      "detail": "COPY INTO bulk, Snowpipe (serverless micro-batch), Snowpipe Streaming (low-latency), Kafka connector, internal/external stages (S3/GCS/Azure), auto schema detection (INFER_SCHEMA), schema evolution, DML error logging, native connectors (Openflow)",
+      "features": [
+        "COPY INTO bulk",
+        "Snowpipe (serverless micro-batch)",
+        "Snowpipe Streaming (low-latency)",
+        "Kafka connector",
+        "internal/external stages (S3/GCS/Azure)",
+        "auto schema detection (INFER_SCHEMA)",
+        "schema evolution",
+        "DML error logging",
+        "native connectors (Openflow)"
+      ]
+    },
+    {
+      "slug": "open-table-formats",
+      "label": "Open table formats",
+      "detail": "Apache Iceberg tables (managed + external), external tables, Iceberg REST / Polaris Catalog interoperability",
+      "features": [
+        "Apache Iceberg tables (managed + external)",
+        "external tables",
+        "Iceberg REST / Polaris Catalog interoperability"
+      ]
+    },
+    {
+      "slug": "transformation",
+      "label": "Transformation",
+      "detail": "Snowpark (Python/Java/Scala DataFrame API, UDFs/UDTFs, stored procs), pandas on Snowflake, Dynamic Tables (declarative auto-refreshing incremental pipelines), Streams (CDC) + Tasks (orchestration), Snowflake Scripting, SnowConvert AI migration",
+      "features": [
+        "Snowpark (Python/Java/Scala DataFrame API, UDFs/UDTFs, stored procs)",
+        "pandas on Snowflake",
+        "Dynamic Tables (declarative auto-refreshing incremental pipelines)",
+        "Streams (CDC) + Tasks (orchestration)",
+        "Snowflake Scripting",
+        "SnowConvert AI migration"
+      ]
+    },
+    {
+      "slug": "data-sharing",
+      "label": "Data sharing",
+      "detail": "Secure Data Sharing (live no-copy), Snowflake Marketplace (free/paid data + apps), Listings (cross-cloud/region), Data Exchange, Data Clean Rooms, Reader Accounts, Snowgrid cross-cloud replication/failover",
+      "features": [
+        "Secure Data Sharing (live no-copy)",
+        "Snowflake Marketplace (free/paid data + apps)",
+        "Listings (cross-cloud/region)",
+        "Data Exchange",
+        "Data Clean Rooms",
+        "Reader Accounts",
+        "Snowgrid cross-cloud replication/failover"
+      ]
+    },
+    {
+      "slug": "ai-cortex-ai",
+      "label": "AI (Cortex AI)",
+      "detail": "Cortex LLM functions / AISQL (COMPLETE/SUMMARIZE/TRANSLATE/SENTIMENT/EXTRACT_ANSWER/EMBED/CLASSIFY over Claude/Llama/Mistral/OpenAI/Arctic), Cortex Analyst (NL text-to-SQL over semantic models), Cortex Search (hybrid vector + keyword RAG), Cortex Agents (multi-tool agentic orchestration), Snowflake Copilot, Document AI, Cortex Fine-tuning, Cortex AI Guardrails (PII/PHI redact), Snowflake Intelligence, VECTOR type",
+      "features": [
+        "Cortex LLM functions / AISQL (COMPLETE/SUMMARIZE/TRANSLATE/SENTIMENT/EXTRACT_ANSWER/EMBED/CLASSIFY over Claude/Llama/Mistral/OpenAI/Arctic)",
+        "Cortex Analyst (NL text-to-SQL over semantic models)",
+        "Cortex Search (hybrid vector + keyword RAG)",
+        "Cortex Agents (multi-tool agentic orchestration)",
+        "Snowflake Copilot",
+        "Document AI",
+        "Cortex Fine-tuning",
+        "Cortex AI Guardrails (PII/PHI redact)",
+        "Snowflake Intelligence",
+        "VECTOR type"
+      ]
+    },
+    {
+      "slug": "ml-snowflake-ml",
+      "label": "ML (Snowflake ML)",
+      "detail": "ML Functions (forecasting/anomaly/classification/contribution explorer), Model Registry (versioning + lineage), Feature Store, ML Jobs, MLOps, GPU via Container Runtime",
+      "features": [
+        "ML Functions (forecasting/anomaly/classification/contribution explorer)",
+        "Model Registry (versioning + lineage)",
+        "Feature Store",
+        "ML Jobs",
+        "MLOps",
+        "GPU via Container Runtime"
+      ]
+    },
+    {
+      "slug": "apps-dev",
+      "label": "Apps/dev",
+      "detail": "Streamlit in Snowflake, Snowflake Notebooks, Native App Framework (package data + logic, Marketplace monetization), Snowpark Container Services (managed containers, GPU), Snowsight, Snowflake CLI, VS Code extension, REST/SQL API, drivers (Python/Spark/Node/Go/.NET/JDBC/ODBC), Git integration",
+      "features": [
+        "Streamlit in Snowflake",
+        "Snowflake Notebooks",
+        "Native App Framework (package data + logic, Marketplace monetization)",
+        "Snowpark Container Services (managed containers, GPU)",
+        "Snowsight",
+        "Snowflake CLI",
+        "VS Code extension",
+        "REST/SQL API",
+        "drivers (Python/Spark/Node/Go/.NET/JDBC/ODBC)",
+        "Git integration"
+      ]
+    },
+    {
+      "slug": "governance-horizon-catalog",
+      "label": "Governance (Horizon Catalog)",
+      "detail": "RBAC, column-level security + dynamic masking, row access policies, aggregation/projection policies, object tagging + tag-based masking, auto sensitive-data classification, end-to-end column-level lineage, Access History, Data Metric Functions (quality monitoring), Trust Center, Universal Search, differential privacy, Time Travel (≤90 days), Fail-safe, Tri-Secret Secure encryption, network policies",
+      "features": [
+        "RBAC",
+        "column-level security + dynamic masking",
+        "row access policies",
+        "aggregation/projection policies",
+        "object tagging + tag-based masking",
+        "auto sensitive-data classification",
+        "end-to-end column-level lineage",
+        "Access History",
+        "Data Metric Functions (quality monitoring)",
+        "Trust Center",
+        "Universal Search",
+        "differential privacy",
+        "Time Travel (≤90 days)",
+        "Fail-safe",
+        "Tri-Secret Secure encryption",
+        "network policies"
+      ]
+    },
+    {
+      "slug": "auth",
+      "label": "Auth",
+      "detail": "MFA, federated/SSO, SAML, Snowflake + External OAuth, key-pair auth, programmatic access tokens, SCIM",
+      "features": [
+        "MFA",
+        "federated/SSO",
+        "SAML",
+        "Snowflake + External OAuth",
+        "key-pair auth",
+        "programmatic access tokens",
+        "SCIM"
+      ]
+    },
+    {
+      "slug": "real-time",
+      "label": "Real-time",
+      "detail": "Snowpipe Streaming, Dynamic Tables, Streams CDC, low-latency serving via hybrid tables",
+      "features": [
+        "Snowpipe Streaming",
+        "Dynamic Tables",
+        "Streams CDC",
+        "low-latency serving via hybrid tables"
+      ]
+    },
+    {
+      "slug": "transactional-unistore",
+      "label": "Transactional (Unistore)",
+      "detail": "Hybrid Tables (row-store OLTP, row-level locking, enforced PK/FK/UNIQUE, secondary indexes, mixed OLTP+OLAP)",
+      "features": [
+        "Hybrid Tables (row-store OLTP, row-level locking, enforced PK/FK/UNIQUE, secondary indexes, mixed OLTP+OLAP)"
+      ]
+    },
+    {
+      "slug": "deployment-pricing",
+      "label": "Deployment/pricing",
+      "detail": "multi-cloud (AWS/Azure/GCP), consumption-based credit pricing (per-second compute, separate storage), cross-cloud portability",
+      "features": [
+        "multi-cloud (AWS/Azure/GCP)",
+        "consumption-based credit pricing (per-second compute, separate storage)",
+        "cross-cloud portability"
+      ]
+    }
+  ]
+}

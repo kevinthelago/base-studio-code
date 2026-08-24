@@ -1,0 +1,203 @@
+{
+  "id": "amplitude",
+  "name": "Amplitude",
+  "domain": "analytics-bi-data-cdp",
+  "domainName": "Analytics / BI / Data / CDP",
+  "capabilities": [
+    {
+      "slug": "product-behavioral-analytics",
+      "label": "Product/behavioral analytics",
+      "detail": "Event Segmentation, Funnel Analysis, Retention, User Paths / Pathfinder, Journeys, Lifecycle, Stickiness, Compass (predictive engagement), Personas, Cohort analysis, Data Tables, User Sessions, Dashboards, Notebooks, custom events/formulas, revenue/impact analysis",
+      "features": [
+        "Event Segmentation",
+        "Funnel Analysis",
+        "Retention",
+        "User Paths / Pathfinder",
+        "Journeys",
+        "Lifecycle",
+        "Stickiness",
+        "Compass (predictive engagement)",
+        "Personas",
+        "Cohort analysis",
+        "Data Tables",
+        "User Sessions",
+        "Dashboards",
+        "Notebooks",
+        "custom events/formulas",
+        "revenue/impact analysis"
+      ]
+    },
+    {
+      "slug": "ai-nl",
+      "label": "AI/NL",
+      "detail": "AI Agents (run analyses, root-cause investigation, build dashboards, flag problems, Slack updates), Ask Amplitude, MCP Server (behavioral context into Claude/Cursor/GitHub), Agent Analytics (observability for AI agents), AI Feedback, AI Visibility (brand tracking across LLM search), AI Governance, AI session summaries, Forecasts",
+      "features": [
+        "AI Agents (run analyses, root-cause investigation, build dashboards, flag problems, Slack updates)",
+        "Ask Amplitude",
+        "MCP Server (behavioral context into Claude/Cursor/GitHub)",
+        "Agent Analytics (observability for AI agents)",
+        "AI Feedback",
+        "AI Visibility (brand tracking across LLM search)",
+        "AI Governance",
+        "AI session summaries",
+        "Forecasts"
+      ]
+    },
+    {
+      "slug": "collection",
+      "label": "Collection",
+      "detail": "SDKs (iOS/Android/RN/Flutter/JS/Python/Node/Java/C#/TS), Autocapture, Data Planning, developer toolkit, event streaming, warehouse ingestion",
+      "features": [
+        "SDKs (iOS/Android/RN/Flutter/JS/Python/Node/Java/C#/TS)",
+        "Autocapture",
+        "Data Planning",
+        "developer toolkit",
+        "event streaming",
+        "warehouse ingestion"
+      ]
+    },
+    {
+      "slug": "cdp",
+      "label": "CDP",
+      "detail": "Identity Resolution (unified profiles), Audience Management (behavioral segmentation without extra instrumentation), Audience Activation (email/ads/product), Cohort syncing, Data Federation, 300+ integrations, no-code activation",
+      "features": [
+        "Identity Resolution (unified profiles)",
+        "Audience Management (behavioral segmentation without extra instrumentation)",
+        "Audience Activation (email/ads/product)",
+        "Cohort syncing",
+        "Data Federation",
+        "300+ integrations",
+        "no-code activation"
+      ]
+    },
+    {
+      "slug": "data-governance-govern",
+      "label": "Data governance (Govern)",
+      "detail": "event/schema planning, automated schema QA, ingestion rules blocking sensitive data, codeless schema updates, event/property merge, data-health monitoring, taxonomy management, tracking plans",
+      "features": [
+        "event/schema planning",
+        "automated schema QA",
+        "ingestion rules blocking sensitive data",
+        "codeless schema updates",
+        "event/property merge",
+        "data-health monitoring",
+        "taxonomy management",
+        "tracking plans"
+      ]
+    },
+    {
+      "slug": "experimentation-feature-experiment",
+      "label": "Experimentation (Feature Experiment)",
+      "detail": "enterprise feature flags, guided experiment design, sequential testing, T-tests, multi-armed bandits, CUPED variance reduction, mutual exclusion groups, holdouts, behavioral cohort targeting, local + remote evaluation, client/server-side, APIs + CI/CD, roll out/back",
+      "features": [
+        "enterprise feature flags",
+        "guided experiment design",
+        "sequential testing",
+        "T-tests",
+        "multi-armed bandits",
+        "CUPED variance reduction",
+        "mutual exclusion groups",
+        "holdouts",
+        "behavioral cohort targeting",
+        "local + remote evaluation",
+        "client/server-side",
+        "APIs + CI/CD",
+        "roll out/back"
+      ]
+    },
+    {
+      "slug": "web-experimentation",
+      "label": "Web experimentation",
+      "detail": "no-code visual editor (any CMS), A/B testing, behavioral cohort + page-level targeting, personalization, redirect/variant, CRO, real-time stats, Session Replay integration",
+      "features": [
+        "no-code visual editor (any CMS)",
+        "A/B testing",
+        "behavioral cohort + page-level targeting",
+        "personalization",
+        "redirect/variant",
+        "CRO",
+        "real-time stats",
+        "Session Replay integration"
+      ]
+    },
+    {
+      "slug": "session-replay",
+      "label": "Session Replay",
+      "detail": "event-based capture/filtering, AI session summaries (friction + sentiment), heatmaps (clicks/scrolls/engagement), zoning insights, A/B validation, default text masking, Privacy/DSAR API, mobile (iOS/Android/RN)",
+      "features": [
+        "event-based capture/filtering",
+        "AI session summaries (friction + sentiment)",
+        "heatmaps (clicks/scrolls/engagement)",
+        "zoning insights",
+        "A/B validation",
+        "default text masking",
+        "Privacy/DSAR API",
+        "mobile (iOS/Android/RN)"
+      ]
+    },
+    {
+      "slug": "guides-and-surveys-in-product",
+      "label": "Guides & Surveys (in-product)",
+      "detail": "Tours, Checklists, Announcements, Tooltips, Banners, Modals; NPS/feedback/microsurveys; behavior/cohort targeting, A/B testing of guides, brand customization",
+      "features": [
+        "Tours",
+        "Checklists",
+        "Announcements",
+        "Tooltips",
+        "Banners",
+        "Modals; NPS/feedback/microsurveys; behavior/cohort targeting",
+        "A/B testing of guides",
+        "brand customization"
+      ]
+    },
+    {
+      "slug": "monitors-alerts",
+      "label": "Monitors/alerts",
+      "detail": "anomaly detection, regression alerts, monitors, AI forecasts/trend detection",
+      "features": [
+        "anomaly detection",
+        "regression alerts",
+        "monitors",
+        "AI forecasts/trend detection"
+      ]
+    },
+    {
+      "slug": "integrations-150",
+      "label": "Integrations (150+)",
+      "detail": "warehouses/lakes (Snowflake/BigQuery/Redshift/Databricks/S3), CDPs (Segment/mParticle/RudderStack/Tealium), engagement (Braze/Customer.io/Iterable/OneSignal), marketing automation (HubSpot/Marketo/Klaviyo/Mailchimp), ad networks, feature management (LaunchDarkly/Split/Optimizely), reverse-ETL (Hightouch/Census), event streaming (Kinesis/Pub/Sub)",
+      "features": [
+        "warehouses/lakes (Snowflake/BigQuery/Redshift/Databricks/S3)",
+        "CDPs (Segment/mParticle/RudderStack/Tealium)",
+        "engagement (Braze/Customer.io/Iterable/OneSignal)",
+        "marketing automation (HubSpot/Marketo/Klaviyo/Mailchimp)",
+        "ad networks",
+        "feature management (LaunchDarkly/Split/Optimizely)",
+        "reverse-ETL (Hightouch/Census)",
+        "event streaming (Kinesis/Pub/Sub)"
+      ]
+    },
+    {
+      "slug": "security",
+      "label": "Security",
+      "detail": "SSO, RBAC, data access controls, project permissions, Privacy/DSAR APIs",
+      "features": [
+        "SSO",
+        "RBAC",
+        "data access controls",
+        "project permissions",
+        "Privacy/DSAR APIs"
+      ]
+    },
+    {
+      "slug": "pricing",
+      "label": "Pricing",
+      "detail": "Free (2M events/mo forever, incl. AI Agents/MCP/session replay/experiments/guides at limited volumes), Plus (usage-based), Growth (advanced exploration/monitoring/SSO), Enterprise (unlimited projects/RBAC)",
+      "features": [
+        "Free (2M events/mo forever, incl. AI Agents/MCP/session replay/experiments/guides at limited volumes)",
+        "Plus (usage-based)",
+        "Growth (advanced exploration/monitoring/SSO)",
+        "Enterprise (unlimited projects/RBAC)"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "id": "bpm-common-feature-themes",
+  "name": "BPM — common feature themes",
+  "domain": "bpm-and-process-automation",
+  "domainName": "BPM & Process Automation",
+  "capabilities": [
+    {
+      "slug": "visual-process-modeling-is-table-stakes",
+      "label": "Visual process modeling is table stakes",
+      "detail": "— BPM leaders (Camunda, Bizagi, Nintex Promapp) anchor on open BPMN 2.0 + DMN; low-code app platforms (Pega, Appian, ServiceNow) favor proprietary model-driven canvases.",
+      "features": [
+        "— BPM leaders (Camunda, Bizagi, Nintex Promapp) anchor on open BPMN 2.0 + DMN; low-code app platforms (Pega, Appian, ServiceNow) favor proprietary model-driven canvases."
+      ]
+    },
+    {
+      "slug": "low-code-app-building-wraps-the-workflow-engine",
+      "label": "Low-code app building wraps the workflow engine",
+      "detail": "— Pega/Appian/ServiceNow/Bizagi/Nintex pair the process engine with a low/no-code app builder (data model + forms + UI + logic); Camunda is the outlier (developer-centric orchestration).",
+      "features": [
+        "— Pega/Appian/ServiceNow/Bizagi/Nintex pair the process engine with a low/no-code app builder (data model + forms + UI + logic); Camunda is the outlier (developer-centric orchestration)."
+      ]
+    },
+    {
+      "slug": "case-management-alongside-structured-workflow",
+      "label": "Case management alongside structured workflow",
+      "detail": "— dynamic/adaptive case handling next to deterministic straight-through processes (Pega, Appian, Bizagi, ServiceNow); pure-orchestration vendors (Camunda, Nintex) lean on structured flows.",
+      "features": [
+        "— dynamic/adaptive case handling next to deterministic straight-through processes (Pega, Appian, Bizagi, ServiceNow); pure-orchestration vendors (Camunda, Nintex) lean on structured flows."
+      ]
+    },
+    {
+      "slug": "agentic-ai-is-the-current-battleground",
+      "label": "Agentic AI is the current battleground",
+      "detail": "— every vendor markets autonomous AI agents + multi-agent orchestration with governance; MCP + Google A2A open-agent-interop appear across Appian/Camunda/ServiceNow; most are LLM-agnostic/BYO-model.",
+      "features": [
+        "— every vendor markets autonomous AI agents + multi-agent orchestration with governance; MCP + Google A2A open-agent-interop appear across Appian/Camunda/ServiceNow; most are LLM-agnostic/BYO-model."
+      ]
+    },
+    {
+      "slug": "genai-assisted-authoring",
+      "label": "GenAI-assisted authoring",
+      "detail": "— NL-to-app/flow/process generation is now standard (Pega Blueprint/Autopilot, Appian Composer, ServiceNow Now Assist, Bizagi Ada, Nintex generators, Camunda Copilot).",
+      "features": [
+        "— NL-to-app/flow/process generation is now standard (Pega Blueprint/Autopilot, Appian Composer, ServiceNow Now Assist, Bizagi Ada, Nintex generators, Camunda Copilot)."
+      ]
+    },
+    {
+      "slug": "rpa-idp-round-out-hyperautomation",
+      "label": "RPA + IDP round out \"hyperautomation\"",
+      "detail": "— most bundle attended/unattended bots for legacy systems + AI/OCR document extraction with human-in-the-loop.",
+      "features": [
+        "— most bundle attended/unattended bots for legacy systems + AI/OCR document extraction with human-in-the-loop."
+      ]
+    },
+    {
+      "slug": "pre-built-connector-ecosystems-marketplaces",
+      "label": "Pre-built connector ecosystems + marketplaces",
+      "detail": "— REST/SOAP/GraphQL plus large certified connector libraries (ServiceNow 200+, Camunda 500+, Bizagi Xchange, Nintex Gateway) — the iPaaS overlap.",
+      "features": [
+        "— REST/SOAP/GraphQL plus large certified connector libraries (ServiceNow 200+, Camunda 500+, Bizagi Xchange, Nintex Gateway) — the iPaaS overlap."
+      ]
+    },
+    {
+      "slug": "process-mining-converging-with-execution",
+      "label": "Process mining converging with execution",
+      "detail": "— vendors mine their own execution/audit logs (no ETL) to close discover→model→automate→monitor→optimize; conformance/bottleneck/predictive recur.",
+      "features": [
+        "— vendors mine their own execution/audit logs (no ETL) to close discover→model→automate→monitor→optimize; conformance/bottleneck/predictive recur."
+      ]
+    },
+    {
+      "slug": "business-rules-decisioning-engine",
+      "label": "Business rules/decisioning engine",
+      "detail": "— a separable rules/decision layer (DMN or proprietary decision tables) is universal.",
+      "features": [
+        "— a separable rules/decision layer (DMN or proprietary decision tables) is universal."
+      ]
+    },
+    {
+      "slug": "enterprise-governance-devops",
+      "label": "Enterprise governance/DevOps",
+      "detail": "— model-driven CI/CD, environment promotion, versioning, regression testing, audit trails, RBAC/SSO, multi-tenancy consistently emphasized.",
+      "features": [
+        "— model-driven CI/CD",
+        "environment promotion",
+        "versioning",
+        "regression testing",
+        "audit trails",
+        "RBAC/SSO",
+        "multi-tenancy consistently emphasized."
+      ]
+    },
+    {
+      "slug": "differentiators",
+      "label": "Differentiators",
+      "detail": "Pega = real-time decisioning/Next-Best-Action + Customer Decision Hub · Appian = Data Fabric (virtual unified data layer) + 8-week Guarantee · Camunda = developer-first standards-based high-throughput orchestration (Zeebe), no lock-in · ServiceNow = Now Platform breadth + deepest agentic stack · Bizagi = free collaborative modeling + simulation + Experience Matrix · Nintex = process-to-document lifecycle (Promapp + DocGen + eSignature) + Kryon vision discovery",
+      "features": [
+        "Pega = real-time decisioning/Next-Best-Action + Customer Decision Hub · Appian = Data Fabric (virtual unified data layer) + 8-week Guarantee · Camunda = developer-first standards-based high-throughput orchestration (Zeebe)",
+        "no lock-in · ServiceNow = Now Platform breadth + deepest agentic stack · Bizagi = free collaborative modeling + simulation + Experience Matrix · Nintex = process-to-document lifecycle (Promapp + DocGen + eSignature) + Kryon vision discovery"
+      ]
+    }
+  ]
+}

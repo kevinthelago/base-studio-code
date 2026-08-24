@@ -1,0 +1,171 @@
+{
+  "id": "salesforce-sales-cloud",
+  "name": "Salesforce Sales Cloud",
+  "domain": "crm-customer-relationship-management",
+  "domainName": "CRM (Customer Relationship Management)",
+  "capabilities": [
+    {
+      "slug": "lead-management",
+      "label": "Lead Management",
+      "detail": "lead capture & qualification, Einstein Lead Scoring (AI 1–99), web-to-lead, assignment/routing rules, Einstein Recommended Connections",
+      "features": [
+        "lead capture & qualification",
+        "Einstein Lead Scoring (AI 1–99)",
+        "web-to-lead",
+        "assignment/routing rules",
+        "Einstein Recommended Connections"
+      ]
+    },
+    {
+      "slug": "account-and-contact",
+      "label": "Account & Contact",
+      "detail": "account/contact records, Einstein Relationship Insights, Einstein Account Insights, contact-gap identification",
+      "features": [
+        "account/contact records",
+        "Einstein Relationship Insights",
+        "Einstein Account Insights",
+        "contact-gap identification"
+      ]
+    },
+    {
+      "slug": "opportunity-management",
+      "label": "Opportunity Management",
+      "detail": "stages, Products & Price Books, Forecast Categories, Einstein Opportunity Scoring & Insights, Opportunity Contact Roles",
+      "features": [
+        "stages",
+        "Products & Price Books",
+        "Forecast Categories",
+        "Einstein Opportunity Scoring & Insights",
+        "Opportunity Contact Roles"
+      ]
+    },
+    {
+      "slug": "forecasting",
+      "label": "Forecasting",
+      "detail": "forecast types/categories, Einstein Forecasting (AI revenue/close-date), team vs. quota, collaborative forecasting",
+      "features": [
+        "forecast types/categories",
+        "Einstein Forecasting (AI revenue/close-date)",
+        "team vs. quota",
+        "collaborative forecasting"
+      ]
+    },
+    {
+      "slug": "pipeline-inspection",
+      "label": "Pipeline Inspection",
+      "detail": "deal-history change view, heatmaps, AI recommendations, bottleneck/high-value prioritization",
+      "features": [
+        "deal-history change view",
+        "heatmaps",
+        "AI recommendations",
+        "bottleneck/high-value prioritization"
+      ]
+    },
+    {
+      "slug": "sales-engagement",
+      "label": "Sales Engagement",
+      "detail": "automated Sales Cadences (email/call/touchpoint), stage-change triggers, reply exit points, work console, Sales Dialer",
+      "features": [
+        "automated Sales Cadences (email/call/touchpoint)",
+        "stage-change triggers",
+        "reply exit points",
+        "work console",
+        "Sales Dialer"
+      ]
+    },
+    {
+      "slug": "activity-and-email",
+      "label": "Activity & Email",
+      "detail": "Salesforce Inbox, Einstein Activity Capture (auto-log + sentiment), tasks, call logging",
+      "features": [
+        "Salesforce Inbox",
+        "Einstein Activity Capture (auto-log + sentiment)",
+        "tasks",
+        "call logging"
+      ]
+    },
+    {
+      "slug": "conversation-intelligence",
+      "label": "Conversation Intelligence",
+      "detail": "Einstein Conversation Insights (transcription, key moments, coaching, telephony/Zoom)",
+      "features": [
+        "Einstein Conversation Insights (transcription, key moments, coaching, telephony/Zoom)"
+      ]
+    },
+    {
+      "slug": "quoting-cpq-revenue",
+      "label": "Quoting / CPQ / Revenue",
+      "detail": "CPQ (config/bundle + approvals), Billing (invoicing/payments/collections), Orders, Revenue Cloud",
+      "features": [
+        "CPQ (config/bundle + approvals)",
+        "Billing (invoicing/payments/collections)",
+        "Orders",
+        "Revenue Cloud"
+      ]
+    },
+    {
+      "slug": "territory-and-field",
+      "label": "Territory & Field",
+      "detail": "Enterprise Territory Management (mapping/models/rules/optimization), Territory Planning, Salesforce Maps (geo, live location, routing)",
+      "features": [
+        "Enterprise Territory Management (mapping/models/rules/optimization)",
+        "Territory Planning",
+        "Salesforce Maps (geo, live location, routing)"
+      ]
+    },
+    {
+      "slug": "partner-channel",
+      "label": "Partner / Channel",
+      "detail": "PRM, partner portal, lead sharing, channel management",
+      "features": [
+        "PRM",
+        "partner portal",
+        "lead sharing",
+        "channel management"
+      ]
+    },
+    {
+      "slug": "ai-einstein-agentforce",
+      "label": "AI (Einstein/Agentforce)",
+      "detail": "scoring, forecasting, activity capture, Einstein Copilot/GPT, autonomous Agentforce agents, automated contacts",
+      "features": [
+        "scoring",
+        "forecasting",
+        "activity capture",
+        "Einstein Copilot/GPT",
+        "autonomous Agentforce agents",
+        "automated contacts"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "Revenue Intelligence / CRM Analytics dashboards, custom reports & dashboards",
+      "features": [
+        "Revenue Intelligence / CRM Analytics dashboards",
+        "custom reports & dashboards"
+      ]
+    },
+    {
+      "slug": "enablement",
+      "label": "Enablement",
+      "detail": "outcome-based coaching, onboarding tracks, Sales Cloud for Slack",
+      "features": [
+        "outcome-based coaching",
+        "onboarding tracks",
+        "Sales Cloud for Slack"
+      ]
+    },
+    {
+      "slug": "platform",
+      "label": "Platform",
+      "detail": "Salesforce Flow (no-code), Apex triggers, AppExchange marketplace, mobile app",
+      "features": [
+        "Salesforce Flow (no-code)",
+        "Apex triggers",
+        "AppExchange marketplace",
+        "mobile app"
+      ]
+    }
+  ]
+}

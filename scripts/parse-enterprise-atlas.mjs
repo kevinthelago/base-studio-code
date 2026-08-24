@@ -19,7 +19,8 @@
 // (AI 1–99), web-to-lead". A naive split corrupts those. This tracks depth, and still stores `detail`
 // verbatim so the split is a convenience over the source rather than a replacement for it.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
 /** Split a feature list on top-level commas only — depth-aware, so parenthesised commas survive. */
 export function splitFeatures(detail) {
@@ -111,6 +112,61 @@ export function parseAtlas(md) {
   return { title, domains, products, rows, unparsed };
 }
 
+/** `a Product Name (v2)` -> `a-product-name-v2`. Stable, filename-safe, and the store's join key. */
+export function slug(s) {
+  return s
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+/**
+ * Emit the packaged corpus: one JSON per PRODUCT under `<dir>/<domain>/<product>.json`, plus one
+ * `synthesis.json`.
+ *
+ * Per PRODUCT rather than per domain because a product's inventory is the unit that CHANGES — a
+ * vendor ships something and one file moves. A per-domain file would make every vendor update a
+ * diff against ten unrelated competitors.
+ */
+export function emitCorpus(parsed, dir) {
+  rmSync(dir, { recursive: true, force: true });
+  const byProduct = new Map();
+  for (const r of parsed.rows) {
+    if (r.kind !== "capability") continue;
+    const key = `${slug(r.domain)}/${slug(r.product)}`;
+    if (!byProduct.has(key)) {
+      byProduct.set(key, {
+        id: slug(r.product),
+        name: r.product,
+        domain: slug(r.domain),
+        domainName: r.domain,
+        capabilities: [],
+      });
+    }
+    byProduct.get(key).capabilities.push({
+      slug: slug(r.capability),
+      label: r.capability,
+      detail: r.detail,
+      features: r.features,
+      ...(r.nested ? { nested: true } : {}),
+    });
+  }
+  let n = 0;
+  for (const [key, product] of byProduct) {
+    const [domainDir] = key.split("/");
+    mkdirSync(join(dir, domainDir), { recursive: true });
+    writeFileSync(join(dir, `${key}.json`), JSON.stringify(product, null, 2) + "\n");
+    n++;
+  }
+  const synthesis = parsed.rows
+    .filter((r) => r.kind !== "capability")
+    .map((r) => ({ kind: r.kind, section: r.section, domain: slug(r.domain), label: r.capability, detail: r.detail }));
+  writeFileSync(join(dir, "synthesis.json"), JSON.stringify({ title: parsed.title, rows: synthesis }, null, 2) + "\n");
+  return { products: n, synthesis: synthesis.length };
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   const path = process.argv[2] ?? "docs/enterprise-atlas.md";
   const out = parseAtlas(readFileSync(path, "utf8"));
@@ -123,6 +179,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       `features   ${out.rows.reduce((n, r) => n + r.features.length, 0)}\n` +
       `unparsed   ${out.unparsed.length}`,
     );
+  } else if (process.argv.includes("--emit")) {
+    const dir = process.argv[process.argv.indexOf("--emit") + 1];
+    if (!dir) { console.error("--emit needs a directory"); process.exit(2); }
+    const { products, synthesis } = emitCorpus(out, dir);
+    console.log(`emitted ${products} product file(s) + ${synthesis} synthesis row(s) to ${dir}`);
   } else {
     console.log(JSON.stringify(out, null, 2));
   }

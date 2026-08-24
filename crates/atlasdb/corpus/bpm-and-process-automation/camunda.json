@@ -1,0 +1,184 @@
+{
+  "id": "camunda",
+  "name": "Camunda",
+  "domain": "bpm-and-process-automation",
+  "domainName": "BPM & Process Automation",
+  "capabilities": [
+    {
+      "slug": "positioning",
+      "label": "Positioning",
+      "detail": "Camunda 8 universal + agentic process orchestration, developer-centric, built on open ISO standards (BPMN, DMN), vendor-independent",
+      "features": [
+        "Camunda 8 universal + agentic process orchestration",
+        "developer-centric",
+        "built on open ISO standards (BPMN, DMN)",
+        "vendor-independent"
+      ]
+    },
+    {
+      "slug": "process-modeling-bpmn",
+      "label": "Process modeling (BPMN)",
+      "detail": "BPMN 2.0, Web Modeler (collaborative), Desktop Modeler, business↔IT collaboration, versioning, ad-hoc sub-processes (for AI agents), Copilot, connector templates",
+      "features": [
+        "BPMN 2.0",
+        "Web Modeler (collaborative)",
+        "Desktop Modeler",
+        "business↔IT collaboration",
+        "versioning",
+        "ad-hoc sub-processes (for AI agents)",
+        "Copilot",
+        "connector templates"
+      ]
+    },
+    {
+      "slug": "decision-modeling-dmn",
+      "label": "Decision modeling (DMN)",
+      "detail": "DMN engine, decision tables, Decision Requirements Diagrams, FEEL expressions, Business Knowledge Models, History Service, decision-table unit testing",
+      "features": [
+        "DMN engine",
+        "decision tables",
+        "Decision Requirements Diagrams",
+        "FEEL expressions",
+        "Business Knowledge Models",
+        "History Service",
+        "decision-table unit testing"
+      ]
+    },
+    {
+      "slug": "workflow-engine-zeebe",
+      "label": "Workflow engine (Zeebe)",
+      "detail": "cloud-native distributed, horizontal scalability, event-streaming/message architecture, HA & resilience, message correlation, timers, instance modification/migration, hot backups, gRPC + REST",
+      "features": [
+        "cloud-native distributed",
+        "horizontal scalability",
+        "event-streaming/message architecture",
+        "HA & resilience",
+        "message correlation",
+        "timers",
+        "instance modification/migration",
+        "hot backups",
+        "gRPC + REST"
+      ]
+    },
+    {
+      "slug": "human-tasks-tasklist",
+      "label": "Human tasks (Tasklist)",
+      "detail": "single workspace, task queue with claim/auto-assign, reassignment, pre-populated forms, runtime-editable properties, SLA-adherence visibility, escalations, case history",
+      "features": [
+        "single workspace",
+        "task queue with claim/auto-assign",
+        "reassignment",
+        "pre-populated forms",
+        "runtime-editable properties",
+        "SLA-adherence visibility",
+        "escalations",
+        "case history"
+      ]
+    },
+    {
+      "slug": "operations-operate",
+      "label": "Operations (Operate)",
+      "detail": "live instance monitoring, incident detection/resolution, immutable audit trails, logging",
+      "features": [
+        "live instance monitoring",
+        "incident detection/resolution",
+        "immutable audit trails",
+        "logging"
+      ]
+    },
+    {
+      "slug": "process-analytics-optimize",
+      "label": "Process analytics (Optimize)",
+      "detail": "KPI dashboards, branch analysis, heatmaps, outlier/bottleneck ID, BPMN/DMN execution viz, target-value monitoring, predictive analytics, ML-ready datasets, ProcessOS",
+      "features": [
+        "KPI dashboards",
+        "branch analysis",
+        "heatmaps",
+        "outlier/bottleneck ID",
+        "BPMN/DMN execution viz",
+        "target-value monitoring",
+        "predictive analytics",
+        "ML-ready datasets",
+        "ProcessOS"
+      ]
+    },
+    {
+      "slug": "integration-connectors",
+      "label": "Integration/connectors",
+      "detail": "500+ connectors (Salesforce/SAP/Oracle/Workday/ServiceNow/Slack/Teams/AWS/Azure/GCP), outbound + inbound/webhook + protocol (REST/GraphQL/SOAP/gRPC/AMQP/Kafka), Connector SDK, Marketplace",
+      "features": [
+        "500+ connectors (Salesforce/SAP/Oracle/Workday/ServiceNow/Slack/Teams/AWS/Azure/GCP)",
+        "outbound + inbound/webhook + protocol (REST/GraphQL/SOAP/gRPC/AMQP/Kafka)",
+        "Connector SDK",
+        "Marketplace"
+      ]
+    },
+    {
+      "slug": "rpa",
+      "label": "RPA",
+      "detail": "Camunda RPA (Robot Framework subset), bot orchestration as process steps with audit trails",
+      "features": [
+        "Camunda RPA (Robot Framework subset)",
+        "bot orchestration as process steps with audit trails"
+      ]
+    },
+    {
+      "slug": "idp",
+      "label": "IDP",
+      "detail": "AI/OCR/ML classify-extract-validate (invoices/contracts/claims/IDs)",
+      "features": [
+        "AI/OCR/ML classify-extract-validate (invoices/contracts/claims/IDs)"
+      ]
+    },
+    {
+      "slug": "ai-agentic-orchestration",
+      "label": "AI / agentic orchestration",
+      "detail": "governed agentic orchestration, AI reasoning native in BPMN, ad-hoc sub-processes for autonomous execution, deterministic + agentic + dynamic models, LLM-agnostic (GPT-4/Gemini/Claude), AI connectors (OpenAI/Bedrock/Hugging Face), MCP + A2A, human-in-the-loop, tool allow/deny lists",
+      "features": [
+        "governed agentic orchestration",
+        "AI reasoning native in BPMN",
+        "ad-hoc sub-processes for autonomous execution",
+        "deterministic + agentic + dynamic models",
+        "LLM-agnostic (GPT-4/Gemini/Claude)",
+        "AI connectors (OpenAI/Bedrock/Hugging Face)",
+        "MCP + A2A",
+        "human-in-the-loop",
+        "tool allow/deny lists"
+      ]
+    },
+    {
+      "slug": "developer-api",
+      "label": "Developer/API",
+      "detail": "custom job workers (Java/Go/Python/Node/C#/Ruby), Zeebe REST + gRPC, OpenAPI, embedded Java engine, SDKs, OAuth 2.0",
+      "features": [
+        "custom job workers (Java/Go/Python/Node/C#/Ruby)",
+        "Zeebe REST + gRPC",
+        "OpenAPI",
+        "embedded Java engine",
+        "SDKs",
+        "OAuth 2.0"
+      ]
+    },
+    {
+      "slug": "admin-identity",
+      "label": "Admin/identity",
+      "detail": "Identity (RBAC/SSO/SAML/OIDC/SCIM), packaged Keycloak, Console cluster management, compensation/error handling",
+      "features": [
+        "Identity (RBAC/SSO/SAML/OIDC/SCIM)",
+        "packaged Keycloak",
+        "Console cluster management",
+        "compensation/error handling"
+      ]
+    },
+    {
+      "slug": "deployment",
+      "label": "Deployment",
+      "detail": "SaaS + Self-Managed (Docker/Helm/K8s), multi-tenancy, cloud-native",
+      "features": [
+        "SaaS + Self-Managed (Docker/Helm/K8s)",
+        "multi-tenancy",
+        "cloud-native"
+      ]
+    }
+  ]
+}

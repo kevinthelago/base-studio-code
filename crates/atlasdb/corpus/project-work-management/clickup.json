@@ -1,0 +1,298 @@
+{
+  "id": "clickup",
+  "name": "ClickUp",
+  "domain": "project-work-management",
+  "domainName": "Project / Work Management",
+  "capabilities": [
+    {
+      "slug": "tasks",
+      "label": "Tasks",
+      "detail": "Tasks, nested Subtasks, checklists, multiple assignees, custom statuses, custom task types, priorities, tags, recurring, Milestones, Epics, Sprint points, My Tasks, Home, Reminders, Approvals",
+      "features": [
+        "Tasks",
+        "nested Subtasks",
+        "checklists",
+        "multiple assignees",
+        "custom statuses",
+        "custom task types",
+        "priorities",
+        "tags",
+        "recurring",
+        "Milestones",
+        "Epics",
+        "Sprint points",
+        "My Tasks",
+        "Home",
+        "Reminders",
+        "Approvals"
+      ]
+    },
+    {
+      "slug": "custom-fields",
+      "label": "Custom fields",
+      "detail": "Text/Number/Currency/Dropdown/Labels/Date/Formula/Rating/Progress/Email/Phone/Website/Location/Files/User/Task-relationship/AI Fields; sort/filter/group/report by field",
+      "features": [
+        "Text/Number/Currency/Dropdown/Labels/Date/Formula/Rating/Progress/Email/Phone/Website/Location/Files/User/Task-relationship/AI Fields; sort/filter/group/report by field"
+      ]
+    },
+    {
+      "slug": "hierarchy",
+      "label": "Hierarchy",
+      "detail": "Workspace → Spaces → Folders → Lists → Tasks → Subtasks; Subfolders",
+      "features": [
+        "Workspace → Spaces → Folders → Lists → Tasks → Subtasks; Subfolders"
+      ]
+    },
+    {
+      "slug": "views-15",
+      "label": "Views (15+)",
+      "detail": "List, Board, Calendar, Gantt, Table, Timeline, Workload, Box, Activity, Mind Map, Map, Doc, Chat, Whiteboard, Form, Embed; Portfolios",
+      "features": [
+        "List",
+        "Board",
+        "Calendar",
+        "Gantt",
+        "Table",
+        "Timeline",
+        "Workload",
+        "Box",
+        "Activity",
+        "Mind Map",
+        "Map",
+        "Doc",
+        "Chat",
+        "Whiteboard",
+        "Form",
+        "Embed; Portfolios"
+      ]
+    },
+    {
+      "slug": "automation",
+      "label": "Automation",
+      "detail": "100+ templates, custom Triggers/Actions/Conditions, AI Automation Builder, dynamic assignees, AI Actions, email/integration automations, audit logs, Autopilot/Super Agents (standups/status/triage)",
+      "features": [
+        "100+ templates",
+        "custom Triggers/Actions/Conditions",
+        "AI Automation Builder",
+        "dynamic assignees",
+        "AI Actions",
+        "email/integration automations",
+        "audit logs",
+        "Autopilot/Super Agents (standups/status/triage)"
+      ]
+    },
+    {
+      "slug": "dependencies",
+      "label": "Dependencies",
+      "detail": "Blocking/Waiting-on, Linked tasks, Doc relationships, Backlinks (bi-directional), Custom relationships, Rollups, Gantt dependency rescheduling",
+      "features": [
+        "Blocking/Waiting-on",
+        "Linked tasks",
+        "Doc relationships",
+        "Backlinks (bi-directional)",
+        "Custom relationships",
+        "Rollups",
+        "Gantt dependency rescheduling"
+      ]
+    },
+    {
+      "slug": "workload-resource",
+      "label": "Workload/resource",
+      "detail": "Workload view, Box view (drag-drop reassignment, point capacity), Time estimates, team point capacity, Planner, Scheduling, Teams Hub",
+      "features": [
+        "Workload view",
+        "Box view (drag-drop reassignment, point capacity)",
+        "Time estimates",
+        "team point capacity",
+        "Planner",
+        "Scheduling",
+        "Teams Hub"
+      ]
+    },
+    {
+      "slug": "docs-wikis",
+      "label": "Docs/wikis",
+      "detail": "Docs, Wikis, nested pages, real-time co-editing, comment-to-task, version history, Docs Hub, templates, permissions, Notepad",
+      "features": [
+        "Docs",
+        "Wikis",
+        "nested pages",
+        "real-time co-editing",
+        "comment-to-task",
+        "version history",
+        "Docs Hub",
+        "templates",
+        "permissions",
+        "Notepad"
+      ]
+    },
+    {
+      "slug": "whiteboards",
+      "label": "Whiteboards",
+      "detail": "freehand canvas, connect to tasks, one-click convert to projects, AI image generation, real-time collaboration, export to PDF",
+      "features": [
+        "freehand canvas",
+        "connect to tasks",
+        "one-click convert to projects",
+        "AI image generation",
+        "real-time collaboration",
+        "export to PDF"
+      ]
+    },
+    {
+      "slug": "forms",
+      "label": "Forms",
+      "detail": "custom fields, conditional logic, form-to-task, automated workflows, custom branding, Forms Hub, response dashboards, AI Insights (sentiment/FAQs)",
+      "features": [
+        "custom fields",
+        "conditional logic",
+        "form-to-task",
+        "automated workflows",
+        "custom branding",
+        "Forms Hub",
+        "response dashboards",
+        "AI Insights (sentiment/FAQs)"
+      ]
+    },
+    {
+      "slug": "dashboards-60-cards",
+      "label": "Dashboards (60+ cards)",
+      "detail": "Charts, Tables, Workload, Time-tracking, Calculation, Sprint cards (Burndown/Burnup/Velocity/Cumulative Flow/Lead & Cycle Time), live sync, shareable client portals with granular permissions, AI Cards",
+      "features": [
+        "Charts",
+        "Tables",
+        "Workload",
+        "Time-tracking",
+        "Calculation",
+        "Sprint cards (Burndown/Burnup/Velocity/Cumulative Flow/Lead & Cycle Time)",
+        "live sync",
+        "shareable client portals with granular permissions",
+        "AI Cards"
+      ]
+    },
+    {
+      "slug": "goals-okrs",
+      "label": "Goals/OKRs",
+      "detail": "Goals, Targets (task/numerical/true-false/currency), Goal Folders, progress rollup, owners, permissions",
+      "features": [
+        "Goals",
+        "Targets (task/numerical/true-false/currency)",
+        "Goal Folders",
+        "progress rollup",
+        "owners",
+        "permissions"
+      ]
+    },
+    {
+      "slug": "agile-sprints",
+      "label": "Agile/sprints",
+      "detail": "Sprints, story/sprint points, Sprint folders, backlog mgmt, sprint automations, Scrum/Kanban, Burndown/Burnup/Velocity/Cumulative Flow, Lead & Cycle Time, native Git integrations",
+      "features": [
+        "Sprints",
+        "story/sprint points",
+        "Sprint folders",
+        "backlog mgmt",
+        "sprint automations",
+        "Scrum/Kanban",
+        "Burndown/Burnup/Velocity/Cumulative Flow",
+        "Lead & Cycle Time",
+        "native Git integrations"
+      ]
+    },
+    {
+      "slug": "time-tracking",
+      "label": "Time tracking",
+      "detail": "global timer, manual/retroactive entry, estimates vs actual, Timesheets, billable time + invoicing, rollups, Chrome extension, integrations (Toggl/Harvest/Everhour)",
+      "features": [
+        "global timer",
+        "manual/retroactive entry",
+        "estimates vs actual",
+        "Timesheets",
+        "billable time + invoicing",
+        "rollups",
+        "Chrome extension",
+        "integrations (Toggl/Harvest/Everhour)"
+      ]
+    },
+    {
+      "slug": "templates",
+      "label": "Templates",
+      "detail": "Task/List/Doc/Space/Folder/View/Whiteboard templates, Template Center, save-as-template, import",
+      "features": [
+        "Task/List/Doc/Space/Folder/View/Whiteboard templates",
+        "Template Center",
+        "save-as-template",
+        "import"
+      ]
+    },
+    {
+      "slug": "collaboration-chat",
+      "label": "Collaboration/chat",
+      "detail": "Chat (Channels/DMs/Threads/Posts), mentions, message-to-task, voice/video calls with auto-summaries, assigned comments, Clips (screen recording), SyncUps, Inbox, proofing, email PM, offline sync",
+      "features": [
+        "Chat (Channels/DMs/Threads/Posts)",
+        "mentions",
+        "message-to-task",
+        "voice/video calls with auto-summaries",
+        "assigned comments",
+        "Clips (screen recording)",
+        "SyncUps",
+        "Inbox",
+        "proofing",
+        "email PM",
+        "offline sync"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "1,000+ (Slack, Zoom, Google Workspace, Jira, GitHub, Figma, Salesforce), API, Webhooks, ClickUp MCP, native Git",
+      "features": [
+        "1",
+        "000+ (Slack, Zoom, Google Workspace, Jira, GitHub, Figma, Salesforce)",
+        "API",
+        "Webhooks",
+        "ClickUp MCP",
+        "native Git"
+      ]
+    },
+    {
+      "slug": "ai-clickup-brain-brain-max",
+      "label": "AI (ClickUp Brain / Brain MAX)",
+      "detail": "multiplayer contextual AI with persistent memory, AI Chats, AI Tasks/Projects, Super Agents (Strategist/Developer/Visual Designer), AI Notetaker, Talk to Text, AI Writer, Catch Me Up, Deep/Enterprise Search, AI image generation, AI Fields & Cards, Skills (tool-calling), presentation/dashboard/prototype generation, premium models (GPT/Claude Opus/Gemini), hybrid vector+graph retrieval",
+      "features": [
+        "multiplayer contextual AI with persistent memory",
+        "AI Chats",
+        "AI Tasks/Projects",
+        "Super Agents (Strategist/Developer/Visual Designer)",
+        "AI Notetaker",
+        "Talk to Text",
+        "AI Writer",
+        "Catch Me Up",
+        "Deep/Enterprise Search",
+        "AI image generation",
+        "AI Fields & Cards",
+        "Skills (tool-calling)",
+        "presentation/dashboard/prototype generation",
+        "premium models (GPT/Claude Opus/Gemini)",
+        "hybrid vector+graph retrieval"
+      ]
+    },
+    {
+      "slug": "security-admin",
+      "label": "Security/admin",
+      "detail": "2FA (incl. SMS), Google/SAML SSO + SCIM, Enterprise Permissions & Governance, unlimited custom roles, guest permissions, audit log, SOC 2/ISO 27001/GDPR/HIPAA, data residency, white-label branding",
+      "features": [
+        "2FA (incl. SMS)",
+        "Google/SAML SSO + SCIM",
+        "Enterprise Permissions & Governance",
+        "unlimited custom roles",
+        "guest permissions",
+        "audit log",
+        "SOC 2/ISO 27001/GDPR/HIPAA",
+        "data residency",
+        "white-label branding"
+      ]
+    }
+  ]
+}

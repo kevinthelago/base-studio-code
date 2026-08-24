@@ -1,0 +1,221 @@
+{
+  "id": "ramp",
+  "name": "Ramp",
+  "domain": "finance-accounting-billing-spend",
+  "domainName": "Finance / Accounting / Billing / Spend",
+  "capabilities": [
+    {
+      "slug": "corporate-cards",
+      "label": "Corporate cards",
+      "detail": "unlimited physical & virtual cards, single-use/recurring virtual cards, purpose-specific cards, preset limits by card/category, category & merchant restrictions (auto-block), vendor-level approvals, card locking on violation, auto coding/reconciliation, no annual fees/interest, Visa in 200+ countries, local card issuing in 30+ countries",
+      "features": [
+        "unlimited physical & virtual cards",
+        "single-use/recurring virtual cards",
+        "purpose-specific cards",
+        "preset limits by card/category",
+        "category & merchant restrictions (auto-block)",
+        "vendor-level approvals",
+        "card locking on violation",
+        "auto coding/reconciliation",
+        "no annual fees/interest",
+        "Visa in 200+ countries",
+        "local card issuing in 30+ countries"
+      ]
+    },
+    {
+      "slug": "cashback-rewards",
+      "label": "Cashback/rewards",
+      "detail": "up to ~5% cashback, redeemable for travel/gift cards/deposits, $350k+ partner offers, Automatic Payment Agent routes card-eligible bills to earn cashback",
+      "features": [
+        "up to ~5% cashback",
+        "redeemable for travel/gift cards/deposits",
+        "$350k+ partner offers",
+        "Automatic Payment Agent routes card-eligible bills to earn cashback"
+      ]
+    },
+    {
+      "slug": "expense-management",
+      "label": "Expense management",
+      "detail": "OCR receipt auto-capture, smart receipt matching, auto-categorization, multi-channel submission (web/mobile/SMS/Slack/Teams), automatic mileage tracking, per diem, reimbursements in 1–2 days, non-employee/global reimbursement in 60+ countries & 40 currencies, missing-receipt reminders",
+      "features": [
+        "OCR receipt auto-capture",
+        "smart receipt matching",
+        "auto-categorization",
+        "multi-channel submission (web/mobile/SMS/Slack/Teams)",
+        "automatic mileage tracking",
+        "per diem",
+        "reimbursements in 1–2 days",
+        "non-employee/global reimbursement in 60+ countries & 40 currencies",
+        "missing-receipt reminders"
+      ]
+    },
+    {
+      "slug": "policy-enforcement",
+      "label": "Policy enforcement",
+      "detail": "pre-transaction spend controls, real-time flagging/blocking of out-of-policy, dynamic policy builder, Policy Agent reviews 100% of expenses (approves compliant, escalates risky)",
+      "features": [
+        "pre-transaction spend controls",
+        "real-time flagging/blocking of out-of-policy",
+        "dynamic policy builder",
+        "Policy Agent reviews 100% of expenses (approves compliant, escalates risky)"
+      ]
+    },
+    {
+      "slug": "bill-pay-ap-automation",
+      "label": "Bill pay/AP automation",
+      "detail": "invoice OCR at 99% accuracy, AI line-item transcription, auto-coding agent (learns GL mapping), custom approval workflows, Approval Agent with recommendations, 2-way & 3-way PO matching, duplicate detection, Fraud Prevention Agent (flags vendor bank-detail changes), recurring/scheduled bills, batch payments, AP aging, bidirectional ERP sync (NetSuite/QuickBooks/Sage Intacct)",
+      "features": [
+        "invoice OCR at 99% accuracy",
+        "AI line-item transcription",
+        "auto-coding agent (learns GL mapping)",
+        "custom approval workflows",
+        "Approval Agent with recommendations",
+        "2-way & 3-way PO matching",
+        "duplicate detection",
+        "Fraud Prevention Agent (flags vendor bank-detail changes)",
+        "recurring/scheduled bills",
+        "batch payments",
+        "AP aging",
+        "bidirectional ERP sync (NetSuite/QuickBooks/Sage Intacct)"
+      ]
+    },
+    {
+      "slug": "payment-methods",
+      "label": "Payment methods",
+      "detail": "ACH & same-day ACH, one-time virtual card, paper checks, domestic & international wire (USD + foreign), pay vendors in 200+ countries",
+      "features": [
+        "ACH & same-day ACH",
+        "one-time virtual card",
+        "paper checks",
+        "domestic & international wire (USD + foreign)",
+        "pay vendors in 200+ countries"
+      ]
+    },
+    {
+      "slug": "procurement",
+      "label": "Procurement",
+      "detail": "AI-powered intake (parses contracts/screenshots), customizable request forms, dynamic & parallel approval routing, Slack approvals, auto-generated POs, virtual card issuance, 3-way matching with payment blocking, Ironclad & Okta integrations",
+      "features": [
+        "AI-powered intake (parses contracts/screenshots)",
+        "customizable request forms",
+        "dynamic & parallel approval routing",
+        "Slack approvals",
+        "auto-generated POs",
+        "virtual card issuance",
+        "3-way matching with payment blocking",
+        "Ironclad & Okta integrations"
+      ]
+    },
+    {
+      "slug": "vendor-management",
+      "label": "Vendor management",
+      "detail": "centralized vendor database, automated record creation, W-9 collection & 1099 automation (form population + IRS filing), vendor self-service portal, compliance-doc collection, renewal reminders, quote benchmarking",
+      "features": [
+        "centralized vendor database",
+        "automated record creation",
+        "W-9 collection & 1099 automation (form population + IRS filing)",
+        "vendor self-service portal",
+        "compliance-doc collection",
+        "renewal reminders",
+        "quote benchmarking"
+      ]
+    },
+    {
+      "slug": "travel-ramp-travel",
+      "label": "Travel (Ramp Travel)",
+      "detail": "in-app flight/hotel/car booking, real-time policy status at booking, pre-spend enforcement, intelligent approval routing, auto trip creation & expense aggregation, hotel price monitoring with auto-rebook, works with any provider, 24/7 travel support (Plus)",
+      "features": [
+        "in-app flight/hotel/car booking",
+        "real-time policy status at booking",
+        "pre-spend enforcement",
+        "intelligent approval routing",
+        "auto trip creation & expense aggregation",
+        "hotel price monitoring with auto-rebook",
+        "works with any provider",
+        "24/7 travel support (Plus)"
+      ]
+    },
+    {
+      "slug": "accounting-automation",
+      "label": "Accounting automation",
+      "detail": "automatic coding, real-time bidirectional GL sync, auto-categorization, receipt matching, month-end close acceleration, integrations with QuickBooks/Xero/NetSuite/Sage Intacct (+ Workday/Oracle Fusion on Enterprise), custom accounting rules",
+      "features": [
+        "automatic coding",
+        "real-time bidirectional GL sync",
+        "auto-categorization",
+        "receipt matching",
+        "month-end close acceleration",
+        "integrations with QuickBooks/Xero/NetSuite/Sage Intacct (+ Workday/Oracle Fusion on Enterprise)",
+        "custom accounting rules"
+      ]
+    },
+    {
+      "slug": "budgets-reporting",
+      "label": "Budgets/reporting",
+      "detail": "budgets by department/project/vendor with automated enforcement, real-time tracking, overspend alerts; real-time spend reports, custom dashboards & report builder, natural-language/AI reporting, Compliance Dashboard",
+      "features": [
+        "budgets by department/project/vendor with automated enforcement",
+        "real-time tracking",
+        "overspend alerts; real-time spend reports",
+        "custom dashboards & report builder",
+        "natural-language/AI reporting",
+        "Compliance Dashboard"
+      ]
+    },
+    {
+      "slug": "ramp-intelligence-ai-agents",
+      "label": "Ramp Intelligence (AI agents)",
+      "detail": "Policy Enforcement Agent, Approval Agent, AP Agents (transcription/categorization/3-way matching), Fraud Detection, Expense Auto-Coding, Price Negotiation Intelligence (benchmarks vs 70,000+ businesses), Hotel Price Monitoring, Vendor Payment Automation",
+      "features": [
+        "Policy Enforcement Agent",
+        "Approval Agent",
+        "AP Agents (transcription/categorization/3-way matching)",
+        "Fraud Detection",
+        "Expense Auto-Coding",
+        "Price Negotiation Intelligence (benchmarks vs 70,000+ businesses)",
+        "Hotel Price Monitoring",
+        "Vendor Payment Automation"
+      ]
+    },
+    {
+      "slug": "treasury-business-account",
+      "label": "Treasury/business account",
+      "detail": "Ramp Business Checking (variable APY, instant payments), Ramp Investment Account (managed fixed-income), FDIC insurance via IntraFi ICS, SIPC on investments, no fees/minimums, free same-day ACH & international wires, RTP, virtual accounts with auto-reject, Target Balance auto-transfer, 13-week cash-flow forecasting",
+      "features": [
+        "Ramp Business Checking (variable APY, instant payments)",
+        "Ramp Investment Account (managed fixed-income)",
+        "FDIC insurance via IntraFi ICS",
+        "SIPC on investments",
+        "no fees/minimums",
+        "free same-day ACH & international wires",
+        "RTP",
+        "virtual accounts with auto-reject",
+        "Target Balance auto-transfer",
+        "13-week cash-flow forecasting"
+      ]
+    },
+    {
+      "slug": "fx-global-controls",
+      "label": "FX/global/controls",
+      "detail": "multi-currency, international payments, reimburse in 60+ countries/40 currencies, local card issuing in 30+ countries, SSO, role-based access + audit logging (Plus), multi-entity, 200+ integrations",
+      "features": [
+        "multi-currency",
+        "international payments",
+        "reimburse in 60+ countries/40 currencies",
+        "local card issuing in 30+ countries",
+        "SSO",
+        "role-based access + audit logging (Plus)",
+        "multi-entity",
+        "200+ integrations"
+      ]
+    },
+    {
+      "slug": "pricing",
+      "label": "Pricing",
+      "detail": "Ramp Free ($0) · Ramp Plus ($15/user + platform fee) · Ramp Enterprise (custom — Workday/Oracle, locally-funded reimbursements, dedicated manager)",
+      "features": [
+        "Ramp Free ($0) · Ramp Plus ($15/user + platform fee) · Ramp Enterprise (custom — Workday/Oracle, locally-funded reimbursements, dedicated manager)"
+      ]
+    }
+  ]
+}

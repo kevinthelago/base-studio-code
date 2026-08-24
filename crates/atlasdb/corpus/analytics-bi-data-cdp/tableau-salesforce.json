@@ -1,0 +1,200 @@
+{
+  "id": "tableau-salesforce",
+  "name": "Tableau (Salesforce)",
+  "domain": "analytics-bi-data-cdp",
+  "domainName": "Analytics / BI / Data / CDP",
+  "capabilities": [
+    {
+      "slug": "products",
+      "label": "Products",
+      "detail": "Desktop (authoring), Cloud (SaaS), Server (self-hosted), Prep (Builder + Conductor), Public (free), Reader, Mobile, Bridge (private-data connectivity), Cloud Manager, Tableau Next / Data 360 (Salesforce-native), Exchange; roles — Creator/Explorer/Viewer",
+      "features": [
+        "Desktop (authoring)",
+        "Cloud (SaaS)",
+        "Server (self-hosted)",
+        "Prep (Builder + Conductor)",
+        "Public (free)",
+        "Reader",
+        "Mobile",
+        "Bridge (private-data connectivity)",
+        "Cloud Manager",
+        "Tableau Next / Data 360 (Salesforce-native)",
+        "Exchange; roles — Creator/Explorer/Viewer"
+      ]
+    },
+    {
+      "slug": "connectors",
+      "label": "Connectors",
+      "detail": "100+ native (Excel/Salesforce/BigQuery/Snowflake/Redshift/SAP HANA/Box/Drive), ODBC/JDBC, Connector SDK, published data sources, Virtual Connections, .hyper extracts, spatial, Custom SQL, live vs extract, Bridge",
+      "features": [
+        "100+ native (Excel/Salesforce/BigQuery/Snowflake/Redshift/SAP HANA/Box/Drive)",
+        "ODBC/JDBC",
+        "Connector SDK",
+        "published data sources",
+        "Virtual Connections",
+        ".hyper extracts",
+        "spatial",
+        "Custom SQL",
+        "live vs extract",
+        "Bridge"
+      ]
+    },
+    {
+      "slug": "data-prep-modeling",
+      "label": "Data prep/modeling",
+      "detail": "Prep Builder (visual flows — filter/calc/join incl. spatial/union/pivot/aggregate/clean), Prep Conductor (schedule/monitor/alerts/REST API), agentic AI cleaning, data blending, relationship modeling",
+      "features": [
+        "Prep Builder (visual flows — filter/calc/join incl. spatial/union/pivot/aggregate/clean)",
+        "Prep Conductor (schedule/monitor/alerts/REST API)",
+        "agentic AI cleaning",
+        "data blending",
+        "relationship modeling"
+      ]
+    },
+    {
+      "slug": "dashboards-viz",
+      "label": "Dashboards/viz",
+      "detail": "drag-drop authoring, wide chart library, interactive dashboards, dashboard actions (filter/highlight/URL/parameter), Story Points, maps/spatial, web authoring, device layouts, Accelerators (prebuilt dashboards)",
+      "features": [
+        "drag-drop authoring",
+        "wide chart library",
+        "interactive dashboards",
+        "dashboard actions (filter/highlight/URL/parameter)",
+        "Story Points",
+        "maps/spatial",
+        "web authoring",
+        "device layouts",
+        "Accelerators (prebuilt dashboards)"
+      ]
+    },
+    {
+      "slug": "calculations",
+      "label": "Calculations",
+      "detail": "LOD expressions, table calculations, calculated fields, parameters, sets, groups, bins, reference lines, built-in forecasting/trend/clustering, spatial functions",
+      "features": [
+        "LOD expressions",
+        "table calculations",
+        "calculated fields",
+        "parameters",
+        "sets",
+        "groups",
+        "bins",
+        "reference lines",
+        "built-in forecasting/trend/clustering",
+        "spatial functions"
+      ]
+    },
+    {
+      "slug": "ai-ml-nlq",
+      "label": "AI/ML + NLQ",
+      "detail": "Tableau Pulse (AI metric insights — trends/anomalies/drivers; digests; follow-up Q&A), Tableau Agent (conversational exploration, recommended questions, guided calcs, AI data transformation, viz authoring/summaries), Ask Data (NLQ), Explain Data (statistical drivers), Agentforce/Einstein in Tableau Next",
+      "features": [
+        "Tableau Pulse (AI metric insights — trends/anomalies/drivers; digests; follow-up Q&A)",
+        "Tableau Agent (conversational exploration, recommended questions, guided calcs, AI data transformation, viz authoring/summaries)",
+        "Ask Data (NLQ)",
+        "Explain Data (statistical drivers)",
+        "Agentforce/Einstein in Tableau Next"
+      ]
+    },
+    {
+      "slug": "semantic-layer",
+      "label": "Semantic layer",
+      "detail": "Tableau Semantics (in Data 360 / Next), Pulse metric definitions reusable across surfaces",
+      "features": [
+        "Tableau Semantics (in Data 360 / Next)",
+        "Pulse metric definitions reusable across surfaces"
+      ]
+    },
+    {
+      "slug": "embedded",
+      "label": "Embedded",
+      "detail": "Embedding API v3 (<tableau-viz> web component), Embed Web Authoring / Ask Data / Pulse, JS ES6 + React/Angular, SSO/modern auth, Connected Apps, user-attribute data access, row-level security",
+      "features": [
+        "Embedding API v3 (<tableau-viz> web component)",
+        "Embed Web Authoring / Ask Data / Pulse",
+        "JS ES6 + React/Angular",
+        "SSO/modern auth",
+        "Connected Apps",
+        "user-attribute data access",
+        "row-level security"
+      ]
+    },
+    {
+      "slug": "governance",
+      "label": "Governance",
+      "detail": "RBAC, row-level security via Data Policies + Virtual Connections, certification, data-quality warnings, Cloud Manager multi-site admin, admin views, scheduled refreshes",
+      "features": [
+        "RBAC",
+        "row-level security via Data Policies + Virtual Connections",
+        "certification",
+        "data-quality warnings",
+        "Cloud Manager multi-site admin",
+        "admin views",
+        "scheduled refreshes"
+      ]
+    },
+    {
+      "slug": "data-management-catalog",
+      "label": "Data management/catalog",
+      "detail": "Data Management add-on, Tableau Catalog (discovery/certification/tagging/Data Details/quality warnings/lineage & impact), Metadata API, Virtual Connections",
+      "features": [
+        "Data Management add-on",
+        "Tableau Catalog (discovery/certification/tagging/Data Details/quality warnings/lineage & impact)",
+        "Metadata API",
+        "Virtual Connections"
+      ]
+    },
+    {
+      "slug": "real-time",
+      "label": "Real-time",
+      "detail": "live connections/real-time query, scheduled + incremental refreshes",
+      "features": [
+        "live connections/real-time query",
+        "scheduled + incremental refreshes"
+      ]
+    },
+    {
+      "slug": "collaboration",
+      "label": "Collaboration",
+      "detail": "publish to Cloud/Server/Public, subscriptions, Pulse digests via email/Slack, commenting, Custom Views",
+      "features": [
+        "publish to Cloud/Server/Public",
+        "subscriptions",
+        "Pulse digests via email/Slack",
+        "commenting",
+        "Custom Views"
+      ]
+    },
+    {
+      "slug": "alerting",
+      "label": "Alerting",
+      "detail": "data-driven alerts, Pulse insight/anomaly notifications, Prep flow-failure alerts",
+      "features": [
+        "data-driven alerts",
+        "Pulse insight/anomaly notifications",
+        "Prep flow-failure alerts"
+      ]
+    },
+    {
+      "slug": "mobile",
+      "label": "Mobile",
+      "detail": "Tableau Mobile, device layouts, offline snapshots",
+      "features": [
+        "Tableau Mobile",
+        "device layouts",
+        "offline snapshots"
+      ]
+    },
+    {
+      "slug": "deployment",
+      "label": "Deployment",
+      "detail": "Cloud (SaaS), Server (on-prem/cloud), Public, Tableau Next / Data 360",
+      "features": [
+        "Cloud (SaaS)",
+        "Server (on-prem/cloud)",
+        "Public",
+        "Tableau Next / Data 360"
+      ]
+    }
+  ]
+}

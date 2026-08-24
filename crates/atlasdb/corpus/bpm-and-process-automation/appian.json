@@ -1,0 +1,150 @@
+{
+  "id": "appian",
+  "name": "Appian",
+  "domain": "bpm-and-process-automation",
+  "domainName": "BPM & Process Automation",
+  "capabilities": [
+    {
+      "slug": "process-automation-bpm",
+      "label": "Process automation (BPM)",
+      "detail": "BPM, visual Process Models, orchestration across systems/people/digital workers, Dynamic Case Management, Case Management Studio, business rules & decisioning",
+      "features": [
+        "BPM",
+        "visual Process Models",
+        "orchestration across systems/people/digital workers",
+        "Dynamic Case Management",
+        "Case Management Studio",
+        "business rules & decisioning"
+      ]
+    },
+    {
+      "slug": "low-code-dev",
+      "label": "Low-code dev",
+      "detail": "visual drag-drop, spec-driven, AI-Augmented Development (Composer — NL → app), AI Copilot, Appian Guarantee (8-week delivery)",
+      "features": [
+        "visual drag-drop",
+        "spec-driven",
+        "AI-Augmented Development (Composer — NL → app)",
+        "AI Copilot",
+        "Appian Guarantee (8-week delivery)"
+      ]
+    },
+    {
+      "slug": "interfaces-total-experience",
+      "label": "Interfaces (Total Experience)",
+      "detail": "SAIL (self-assembling interface layer), Portals (public web apps), Records (record types as UI + data), responsive web & mobile",
+      "features": [
+        "SAIL (self-assembling interface layer)",
+        "Portals (public web apps)",
+        "Records (record types as UI + data)",
+        "responsive web & mobile"
+      ]
+    },
+    {
+      "slug": "rpa",
+      "label": "RPA",
+      "detail": "RPA bots, low-code RPA actions, Computer Vision automation (desktop + Citrix), screen scraping, digital workers orchestrated with humans",
+      "features": [
+        "RPA bots",
+        "low-code RPA actions",
+        "Computer Vision automation (desktop + Citrix)",
+        "screen scraping",
+        "digital workers orchestrated with humans"
+      ]
+    },
+    {
+      "slug": "idp",
+      "label": "IDP",
+      "detail": "AI/ML document extraction, DocCenter, native key-value extraction, confidence thresholds, human-in-the-loop",
+      "features": [
+        "AI/ML document extraction",
+        "DocCenter",
+        "native key-value extraction",
+        "confidence thresholds",
+        "human-in-the-loop"
+      ]
+    },
+    {
+      "slug": "ai-agentic-automation",
+      "label": "AI / agentic automation",
+      "detail": "AI Agents (autonomous multi-step tasks as process nodes), Agent Studio, AI Skill Designer, bounded autonomy/guardrails, GenAI/LLM integration objects, MCP support, private AI, human-in-the-loop escalation, role-based agent permissions",
+      "features": [
+        "AI Agents (autonomous multi-step tasks as process nodes)",
+        "Agent Studio",
+        "AI Skill Designer",
+        "bounded autonomy/guardrails",
+        "GenAI/LLM integration objects",
+        "MCP support",
+        "private AI",
+        "human-in-the-loop escalation",
+        "role-based agent permissions"
+      ]
+    },
+    {
+      "slug": "data-fabric",
+      "label": "Data Fabric",
+      "detail": "virtual unified data layer (connect without migration), single ontology, Record Types, data virtualization, row/field-level security, NL querying, self-service reporting, auto-scaling to 20M rows",
+      "features": [
+        "virtual unified data layer (connect without migration)",
+        "single ontology",
+        "Record Types",
+        "data virtualization",
+        "row/field-level security",
+        "NL querying",
+        "self-service reporting",
+        "auto-scaling to 20M rows"
+      ]
+    },
+    {
+      "slug": "process-intelligence-process-hq",
+      "label": "Process Intelligence (Process HQ)",
+      "detail": "unified process + business-data hub, process mining, auto-discovery/diagrams, bottleneck detection, conformance monitoring, KPI tracking, AI insights + improvement recommendations",
+      "features": [
+        "unified process + business-data hub",
+        "process mining",
+        "auto-discovery/diagrams",
+        "bottleneck detection",
+        "conformance monitoring",
+        "KPI tracking",
+        "AI insights + improvement recommendations"
+      ]
+    },
+    {
+      "slug": "integration",
+      "label": "Integration",
+      "detail": "API Integration, Integration Objects (external systems + LLMs), connected systems, MCP external access",
+      "features": [
+        "API Integration",
+        "Integration Objects (external systems + LLMs)",
+        "connected systems",
+        "MCP external access"
+      ]
+    },
+    {
+      "slug": "governance-security-devops",
+      "label": "Governance/security/DevOps",
+      "detail": "environment-wide policies (prompt-injection/data-leakage guards), audit trails, RBAC, Trust Center, deployment tooling, testing",
+      "features": [
+        "environment-wide policies (prompt-injection/data-leakage guards)",
+        "audit trails",
+        "RBAC",
+        "Trust Center",
+        "deployment tooling",
+        "testing"
+      ]
+    },
+    {
+      "slug": "packaged-solutions",
+      "label": "Packaged solutions",
+      "detail": "Enterprise Modernization, Contract Lifecycle Management, Federal Acquisition, eProcurement, Insurance Underwriting & Claims, Public Sector Case Management",
+      "features": [
+        "Enterprise Modernization",
+        "Contract Lifecycle Management",
+        "Federal Acquisition",
+        "eProcurement",
+        "Insurance Underwriting & Claims",
+        "Public Sector Case Management"
+      ]
+    }
+  ]
+}

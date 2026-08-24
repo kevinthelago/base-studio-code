@@ -1,0 +1,249 @@
+{
+  "id": "xero",
+  "name": "Xero",
+  "domain": "finance-accounting-billing-spend",
+  "domainName": "Finance / Accounting / Billing / Spend",
+  "capabilities": [
+    {
+      "slug": "gl-chart-of-accounts",
+      "label": "GL/chart of accounts",
+      "detail": "double-entry GL, default chart by business type (customizable), journal entries (single/compound/recurring), tracking categories (department/location), role-based access (Standard/Invoice Only/Read-only/Adviser/Administrator), find-and-recode",
+      "features": [
+        "double-entry GL",
+        "default chart by business type (customizable)",
+        "journal entries (single/compound/recurring)",
+        "tracking categories (department/location)",
+        "role-based access (Standard/Invoice Only/Read-only/Adviser/Administrator)",
+        "find-and-recode"
+      ]
+    },
+    {
+      "slug": "invoicing-ar",
+      "label": "Invoicing/AR",
+      "detail": "customizable branded online invoices, recurring/repeating invoices, automated overdue reminders (dunning), real-time payment status, \"pay now\" links, multi-currency invoicing, customer statements, aged receivables, partial payments/overpayments, quote-to-invoice",
+      "features": [
+        "customizable branded online invoices",
+        "recurring/repeating invoices",
+        "automated overdue reminders (dunning)",
+        "real-time payment status",
+        "\"pay now\" links",
+        "multi-currency invoicing",
+        "customer statements",
+        "aged receivables",
+        "partial payments/overpayments",
+        "quote-to-invoice"
+      ]
+    },
+    {
+      "slug": "quotes",
+      "label": "Quotes",
+      "detail": "create/send quotes, templates, convert accepted quotes to invoices, status tracking",
+      "features": [
+        "create/send quotes",
+        "templates",
+        "convert accepted quotes to invoices",
+        "status tracking"
+      ]
+    },
+    {
+      "slug": "bill-pay-ap",
+      "label": "Bill pay/AP",
+      "detail": "enter & track bills with due dates, bill approval workflows, batch/scheduled payments, email-to-bills (PDF capture), supplier management, aged payables, Bill Pay (US, card/ACH)",
+      "features": [
+        "enter & track bills with due dates",
+        "bill approval workflows",
+        "batch/scheduled payments",
+        "email-to-bills (PDF capture)",
+        "supplier management",
+        "aged payables",
+        "Bill Pay (US, card/ACH)"
+      ]
+    },
+    {
+      "slug": "expense-management-xero-expenses",
+      "label": "Expense management (Xero Expenses)",
+      "detail": "dedicated app, receipt photo capture, employee expense claims & reimbursement, mileage/spending claims, expense reports, approvals (Established plan)",
+      "features": [
+        "dedicated app",
+        "receipt photo capture",
+        "employee expense claims & reimbursement",
+        "mileage/spending claims",
+        "expense reports",
+        "approvals (Established plan)"
+      ]
+    },
+    {
+      "slug": "bank-reconciliation",
+      "label": "Bank reconciliation",
+      "detail": "automatic daily bank feeds, statement-line auto-matching, pattern-learning suggestions, bank rules, bulk/auto reconciliation, cash coding, multi-bank connectivity",
+      "features": [
+        "automatic daily bank feeds",
+        "statement-line auto-matching",
+        "pattern-learning suggestions",
+        "bank rules",
+        "bulk/auto reconciliation",
+        "cash coding",
+        "multi-bank connectivity"
+      ]
+    },
+    {
+      "slug": "reporting",
+      "label": "Reporting",
+      "detail": "P&L, balance sheet, cash flow, aged receivables/payables, sales/tax reports, customizable reports with tracking categories, real-time KPI dashboard, data export",
+      "features": [
+        "P&L",
+        "balance sheet",
+        "cash flow",
+        "aged receivables/payables",
+        "sales/tax reports",
+        "customizable reports with tracking categories",
+        "real-time KPI dashboard",
+        "data export"
+      ]
+    },
+    {
+      "slug": "budgeting-fp-and-a-analytics-analytics-plus",
+      "label": "Budgeting/FP&A (Analytics/Analytics Plus)",
+      "detail": "budget manager & variance reporting, 30-day short-term cash flow forecast, extended forecasting (90/180 days, Analytics Plus), business snapshot, what-if scenario planning",
+      "features": [
+        "budget manager & variance reporting",
+        "30-day short-term cash flow forecast",
+        "extended forecasting (90/180 days, Analytics Plus)",
+        "business snapshot",
+        "what-if scenario planning"
+      ]
+    },
+    {
+      "slug": "multi-currency",
+      "label": "Multi-currency",
+      "detail": "160+ currencies (Established), daily rate updates, multi-currency invoices/bills/payments, realized/unrealized FX, base-currency consolidation",
+      "features": [
+        "160+ currencies (Established)",
+        "daily rate updates",
+        "multi-currency invoices/bills/payments",
+        "realized/unrealized FX",
+        "base-currency consolidation"
+      ]
+    },
+    {
+      "slug": "tax-gst-vat",
+      "label": "Tax/GST/VAT",
+      "detail": "sales tax setup & tracking, automated tax calc, GST/VAT return reporting, W-9 and 1099 management (US)",
+      "features": [
+        "sales tax setup & tracking",
+        "automated tax calc",
+        "GST/VAT return reporting",
+        "W-9 and 1099 management (US)"
+      ]
+    },
+    {
+      "slug": "payroll",
+      "label": "Payroll",
+      "detail": "in-region Xero Payroll (UK/AU/NZ — pay runs, payslips, tax filing, leave, pensions/super, self-service); US payroll via native Gusto integration",
+      "features": [
+        "in-region Xero Payroll (UK/AU/NZ — pay runs, payslips, tax filing, leave, pensions/super, self-service); US payroll via native Gusto integration"
+      ]
+    },
+    {
+      "slug": "payments",
+      "label": "Payments",
+      "detail": "accept card/ACH via Stripe/GoCardless/Square, online invoice payment, partial payments, mobile payments",
+      "features": [
+        "accept card/ACH via Stripe/GoCardless/Square",
+        "online invoice payment",
+        "partial payments",
+        "mobile payments"
+      ]
+    },
+    {
+      "slug": "inventory",
+      "label": "Inventory",
+      "detail": "track stock items, buy/sell price management, auto stock updates, low-stock alerts, inventory reporting (advanced needs third-party app)",
+      "features": [
+        "track stock items",
+        "buy/sell price management",
+        "auto stock updates",
+        "low-stock alerts",
+        "inventory reporting (advanced needs third-party app)"
+      ]
+    },
+    {
+      "slug": "projects-job-costing-xero-projects",
+      "label": "Projects/job costing (Xero Projects)",
+      "detail": "project tracking, timesheets, cost/expense assignment, budgets, planned-vs-actual, project quotes/invoicing, profitability reports",
+      "features": [
+        "project tracking",
+        "timesheets",
+        "cost/expense assignment",
+        "budgets",
+        "planned-vs-actual",
+        "project quotes/invoicing",
+        "profitability reports"
+      ]
+    },
+    {
+      "slug": "pos-fixed-assets",
+      "label": "POs/fixed assets",
+      "detail": "create/send POs, PO-to-bill matching; fixed asset register, depreciation, disposals",
+      "features": [
+        "create/send POs",
+        "PO-to-bill matching; fixed asset register",
+        "depreciation",
+        "disposals"
+      ]
+    },
+    {
+      "slug": "contacts-crm-lite",
+      "label": "Contacts/CRM-lite",
+      "detail": "customer & supplier database, contact groups, per-contact transaction history, smart lists",
+      "features": [
+        "customer & supplier database",
+        "contact groups",
+        "per-contact transaction history",
+        "smart lists"
+      ]
+    },
+    {
+      "slug": "integrations-app-store",
+      "label": "Integrations/App Store",
+      "detail": "1,000+ app marketplace, open REST API, native Shopify; Gusto, Stripe/GoCardless/Square, ApprovalMax, Dext; Xero HQ / Practice Manager",
+      "features": [
+        "1",
+        "000+ app marketplace",
+        "open REST API",
+        "native Shopify; Gusto",
+        "Stripe/GoCardless/Square",
+        "ApprovalMax",
+        "Dext; Xero HQ / Practice Manager"
+      ]
+    },
+    {
+      "slug": "hubdoc-all-plans",
+      "label": "Hubdoc (all plans)",
+      "detail": "automatic bill/receipt data capture, document storage, publish-to-Xero as coded transactions",
+      "features": [
+        "automatic bill/receipt data capture",
+        "document storage",
+        "publish-to-Xero as coded transactions"
+      ]
+    },
+    {
+      "slug": "mobile",
+      "label": "Mobile",
+      "detail": "Xero Accounting, Xero Me (payroll/self-service/timesheets), Expenses and Projects apps",
+      "features": [
+        "Xero Accounting",
+        "Xero Me (payroll/self-service/timesheets)",
+        "Expenses and Projects apps"
+      ]
+    },
+    {
+      "slug": "plan-tiers-us",
+      "label": "Plan tiers (US)",
+      "detail": "Early (unlimited users, ~20 invoices/mo, 5 bills/mo) · Growing (unlimited invoices/bills, bulk reconciliation) · Established (adds multi-currency, Xero Expenses, Xero Projects, Analytics Plus); Gusto payroll paid add-on",
+      "features": [
+        "Early (unlimited users, ~20 invoices/mo, 5 bills/mo) · Growing (unlimited invoices/bills, bulk reconciliation) · Established (adds multi-currency, Xero Expenses, Xero Projects, Analytics Plus); Gusto payroll paid add-on"
+      ]
+    }
+  ]
+}

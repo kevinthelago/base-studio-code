@@ -1,0 +1,191 @@
+{
+  "id": "workday-hcm",
+  "name": "Workday HCM",
+  "domain": "hr-hcm-payroll",
+  "domainName": "HR / HCM / Payroll",
+  "capabilities": [
+    {
+      "slug": "core-hr",
+      "label": "Core HR",
+      "detail": "HR management, org & position management, worker records, business process framework, security groups/RBAC, global compliance/localization, HR Service Delivery, ESS/MSS, custom objects/rules/views, unified Data Hub",
+      "features": [
+        "HR management",
+        "org & position management",
+        "worker records",
+        "business process framework",
+        "security groups/RBAC",
+        "global compliance/localization",
+        "HR Service Delivery",
+        "ESS/MSS",
+        "custom objects/rules/views",
+        "unified Data Hub"
+      ]
+    },
+    {
+      "slug": "payroll",
+      "label": "Payroll",
+      "detail": "continuous gross-to-net engine, US/Canada, multiple pay groups/cycles, configurable earnings/deductions, auto tax updates, retro/off-cycle, \"anytime audit\" with AI anomaly detection, Payroll Agent, Pay Transparency, global payroll to 180+ countries via APIs + partner connectors (Strada/CloudPay/Deel)",
+      "features": [
+        "continuous gross-to-net engine",
+        "US/Canada",
+        "multiple pay groups/cycles",
+        "configurable earnings/deductions",
+        "auto tax updates",
+        "retro/off-cycle",
+        "\"anytime audit\" with AI anomaly detection",
+        "Payroll Agent",
+        "Pay Transparency",
+        "global payroll to 180+ countries via APIs + partner connectors (Strada/CloudPay/Deel)"
+      ]
+    },
+    {
+      "slug": "benefits",
+      "label": "Benefits",
+      "detail": "plan/event/eligibility config, open enrollment, life events, EOI, health/HSA/FSA/retirement, ACA, provider connectivity, Workday Wellness",
+      "features": [
+        "plan/event/eligibility config",
+        "open enrollment",
+        "life events",
+        "EOI",
+        "health/HSA/FSA/retirement",
+        "ACA",
+        "provider connectivity",
+        "Workday Wellness"
+      ]
+    },
+    {
+      "slug": "time-absence",
+      "label": "Time/absence",
+      "detail": "global time entry/tracking, mobile/web clocks, approval workflows, global time-calc rules, absence/leave, AI-driven scheduling, demand forecasting",
+      "features": [
+        "global time entry/tracking",
+        "mobile/web clocks",
+        "approval workflows",
+        "global time-calc rules",
+        "absence/leave",
+        "AI-driven scheduling",
+        "demand forecasting"
+      ]
+    },
+    {
+      "slug": "recruiting-ats",
+      "label": "Recruiting/ATS",
+      "detail": "talent acquisition, requisitions, candidate pipeline, HiredScore AI screening/matching, Recruiter Agent, conversational ATS + Candidate Experience Agent (Paradox), referrals, interview/offer, diverse pools",
+      "features": [
+        "talent acquisition",
+        "requisitions",
+        "candidate pipeline",
+        "HiredScore AI screening/matching",
+        "Recruiter Agent",
+        "conversational ATS + Candidate Experience Agent (Paradox)",
+        "referrals",
+        "interview/offer",
+        "diverse pools"
+      ]
+    },
+    {
+      "slug": "onboarding",
+      "label": "Onboarding",
+      "detail": "preboarding/onboarding, personalized day-0 experience, early training",
+      "features": [
+        "preboarding/onboarding",
+        "personalized day-0 experience",
+        "early training"
+      ]
+    },
+    {
+      "slug": "performance-talent",
+      "label": "Performance/talent",
+      "detail": "reviews, goals/OKRs, succession + Succession Agent, talent development, career growth, internal mobility (HiredScore AI), sentiment",
+      "features": [
+        "reviews",
+        "goals/OKRs",
+        "succession + Succession Agent",
+        "talent development",
+        "career growth",
+        "internal mobility (HiredScore AI)",
+        "sentiment"
+      ]
+    },
+    {
+      "slug": "learning",
+      "label": "Learning",
+      "detail": "Workday Learning (Sana-powered), interactive content, skill-tied learning",
+      "features": [
+        "Workday Learning (Sana-powered)",
+        "interactive content",
+        "skill-tied learning"
+      ]
+    },
+    {
+      "slug": "compensation",
+      "label": "Compensation",
+      "detail": "comp management/planning, merit/bonus/stock/grades, cost-impact modeling",
+      "features": [
+        "comp management/planning",
+        "merit/bonus/stock/grades",
+        "cost-impact modeling"
+      ]
+    },
+    {
+      "slug": "workforce-planning-analytics",
+      "label": "Workforce planning/analytics",
+      "detail": "strategic workforce/headcount/skills planning, org design/scenario modeling, driver-based with instant cost impact, skills-gap, Adaptive Planning integration, augmented analytics, benchmarking",
+      "features": [
+        "strategic workforce/headcount/skills planning",
+        "org design/scenario modeling",
+        "driver-based with instant cost impact",
+        "skills-gap",
+        "Adaptive Planning integration",
+        "augmented analytics",
+        "benchmarking"
+      ]
+    },
+    {
+      "slug": "skills-cloud",
+      "label": "Skills Cloud",
+      "detail": "AI skills foundation, skill inference/normalization, skills-based matching, skills-gap intelligence",
+      "features": [
+        "AI skills foundation",
+        "skill inference/normalization",
+        "skills-based matching",
+        "skills-gap intelligence"
+      ]
+    },
+    {
+      "slug": "experience-engagement",
+      "label": "Experience/engagement",
+      "detail": "Employee Voice (feedback/pulse), Manager Insights Hub, personalized experience, self-service dashboards",
+      "features": [
+        "Employee Voice (feedback/pulse)",
+        "Manager Insights Hub",
+        "personalized experience",
+        "self-service dashboards"
+      ]
+    },
+    {
+      "slug": "ai",
+      "label": "AI",
+      "detail": "Workday Illuminate, Sana enterprise AI, AI agents (Recruiter/Expenses/Succession/Optimize/Payroll/Candidate), Agent System of Record, predictive analytics, Responsible AI",
+      "features": [
+        "Workday Illuminate",
+        "Sana enterprise AI",
+        "AI agents (Recruiter/Expenses/Succession/Optimize/Payroll/Candidate)",
+        "Agent System of Record",
+        "predictive analytics",
+        "Responsible AI"
+      ]
+    },
+    {
+      "slug": "platform",
+      "label": "Platform",
+      "detail": "Workday Extend (low/no-code), Orchestrate/integrations, unified single cloud data core, real-time reporting",
+      "features": [
+        "Workday Extend (low/no-code)",
+        "Orchestrate/integrations",
+        "unified single cloud data core",
+        "real-time reporting"
+      ]
+    }
+  ]
+}

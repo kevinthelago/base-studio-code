@@ -1,0 +1,193 @@
+{
+  "id": "mailchimp-intuit",
+  "name": "Mailchimp (Intuit)",
+  "domain": "email-and-marketing-automation-esp-map",
+  "domainName": "Email & Marketing Automation (ESP / MAP)",
+  "capabilities": [
+    {
+      "slug": "email-builder-templates",
+      "label": "Email builder/templates",
+      "detail": "drag-drop + block-based builder, 100+ templates, custom-coded HTML, Content Studio (DAM, Photoshop integration, image editing), Creative Assistant (AI on-brand designs from site colors/fonts/logo), brand kit, Content Optimizer (flags broken links/merge-tag issues), scheduling, RSS-to-email",
+      "features": [
+        "drag-drop + block-based builder",
+        "100+ templates",
+        "custom-coded HTML",
+        "Content Studio (DAM, Photoshop integration, image editing)",
+        "Creative Assistant (AI on-brand designs from site colors/fonts/logo)",
+        "brand kit",
+        "Content Optimizer (flags broken links/merge-tag issues)",
+        "scheduling",
+        "RSS-to-email"
+      ]
+    },
+    {
+      "slug": "campaigns",
+      "label": "Campaigns",
+      "detail": "regular/classic email, newsletters, automated campaigns, plain-text, scheduling, remove-branding, multi-audience",
+      "features": [
+        "regular/classic email",
+        "newsletters",
+        "automated campaigns",
+        "plain-text",
+        "scheduling",
+        "remove-branding",
+        "multi-audience"
+      ]
+    },
+    {
+      "slug": "automation-journeys",
+      "label": "Automation/journeys",
+      "detail": "Customer Journey Builder (visual), 60+ templates, behavioral/event triggers, welcome/abandoned-cart/post-purchase/win-back/birthday, conditional branching + nested logic, delays, up to 200 flows, cross-channel email+SMS+social, webhooks",
+      "features": [
+        "Customer Journey Builder (visual)",
+        "60+ templates",
+        "behavioral/event triggers",
+        "welcome/abandoned-cart/post-purchase/win-back/birthday",
+        "conditional branching + nested logic",
+        "delays",
+        "up to 200 flows",
+        "cross-channel email+SMS+social",
+        "webhooks"
+      ]
+    },
+    {
+      "slug": "segmentation",
+      "label": "Segmentation",
+      "detail": "advanced multi-condition (nested), pre-built segments, predictive segmentation (likely-to-purchase/churn/high-LTV), behavioral/purchase/geo/date/demographic, lifecycle segments, tags, custom fields",
+      "features": [
+        "advanced multi-condition (nested)",
+        "pre-built segments",
+        "predictive segmentation (likely-to-purchase/churn/high-LTV)",
+        "behavioral/purchase/geo/date/demographic",
+        "lifecycle segments",
+        "tags",
+        "custom fields"
+      ]
+    },
+    {
+      "slug": "personalization",
+      "label": "Personalization",
+      "detail": "dynamic content blocks, conditional content, merge tags, product recommendations, predicted demographics",
+      "features": [
+        "dynamic content blocks",
+        "conditional content",
+        "merge tags",
+        "product recommendations",
+        "predicted demographics"
+      ]
+    },
+    {
+      "slug": "a-b-multivariate",
+      "label": "A/B/multivariate",
+      "detail": "A/B + multivariate, subject-line/content/send-time, auto winner selection",
+      "features": [
+        "A/B + multivariate",
+        "subject-line/content/send-time",
+        "auto winner selection"
+      ]
+    },
+    {
+      "slug": "deliverability",
+      "label": "Deliverability",
+      "detail": "~99% delivery, dedicated sending domains, bounce/spam handling, denylist sync, Send Time + Send Day Optimization",
+      "features": [
+        "~99% delivery",
+        "dedicated sending domains",
+        "bounce/spam handling",
+        "denylist sync",
+        "Send Time + Send Day Optimization"
+      ]
+    },
+    {
+      "slug": "sms-omnichannel",
+      "label": "SMS/omnichannel",
+      "detail": "SMS & MMS add-on (credit-based), transactional SMS, consent management, SMS flows, social scheduling, retargeting ads (Facebook/Instagram/Google)",
+      "features": [
+        "SMS & MMS add-on (credit-based)",
+        "transactional SMS",
+        "consent management",
+        "SMS flows",
+        "social scheduling",
+        "retargeting ads (Facebook/Instagram/Google)"
+      ]
+    },
+    {
+      "slug": "landing-pages-forms-sites",
+      "label": "Landing pages/forms/sites",
+      "detail": "landing page + website builder, custom domains, embedded/popup forms, surveys, appointment reminders",
+      "features": [
+        "landing page + website builder",
+        "custom domains",
+        "embedded/popup forms",
+        "surveys",
+        "appointment reminders"
+      ]
+    },
+    {
+      "slug": "crm-audiences",
+      "label": "CRM/audiences",
+      "detail": "Marketing CRM, audience dashboard, tags/profiles, predicted demographics, zero/first-party data, role-based access (5 roles)",
+      "features": [
+        "Marketing CRM",
+        "audience dashboard",
+        "tags/profiles",
+        "predicted demographics",
+        "zero/first-party data",
+        "role-based access (5 roles)"
+      ]
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics",
+      "detail": "marketing reports/dashboards, campaign performance (opens/clicks/revenue), custom reports, Smart Recommendations, benchmark reporting, AI Revenue Intelligence",
+      "features": [
+        "marketing reports/dashboards",
+        "campaign performance (opens/clicks/revenue)",
+        "custom reports",
+        "Smart Recommendations",
+        "benchmark reporting",
+        "AI Revenue Intelligence"
+      ]
+    },
+    {
+      "slug": "ai-intuit-assist",
+      "label": "AI (Intuit Assist)",
+      "detail": "Email Content Generator, Subject Line Helper, Creative Assistant, Content Optimizer, Send-Time/Day Optimization, Predictive Segmentation (20+ AI features)",
+      "features": [
+        "Email Content Generator",
+        "Subject Line Helper",
+        "Creative Assistant",
+        "Content Optimizer",
+        "Send-Time/Day Optimization",
+        "Predictive Segmentation (20+ AI features)"
+      ]
+    },
+    {
+      "slug": "integrations-e-commerce",
+      "label": "Integrations/e-commerce",
+      "detail": "300+ integrations (Shopify/WooCommerce/Square/Stripe/Wix/Squarespace/WordPress/Salesforce), Marketing API, webhooks, store sync, abandoned-cart data, mobile app",
+      "features": [
+        "300+ integrations (Shopify/WooCommerce/Square/Stripe/Wix/Squarespace/WordPress/Salesforce)",
+        "Marketing API",
+        "webhooks",
+        "store sync",
+        "abandoned-cart data",
+        "mobile app"
+      ]
+    },
+    {
+      "slug": "transactional-mandrill",
+      "label": "Transactional (Mandrill)",
+      "detail": "transactional API + SMTP, dedicated infra (99.99% uptime), templates, real-time analytics, webhooks, multi-domain, transactional SMS",
+      "features": [
+        "transactional API + SMTP",
+        "dedicated infra (99.99% uptime)",
+        "templates",
+        "real-time analytics",
+        "webhooks",
+        "multi-domain",
+        "transactional SMS"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "id": "microsoft-dynamics-365-sales",
+  "name": "Microsoft Dynamics 365 Sales",
+  "domain": "crm-customer-relationship-management",
+  "domainName": "CRM (Customer Relationship Management)",
+  "capabilities": [
+    {
+      "slug": "lead-and-opportunity",
+      "label": "Lead & Opportunity",
+      "detail": "Sales Qualification Agent (autonomous), AI lead/opp scoring, prioritized work lists, AI meeting-prep notes",
+      "features": [
+        "Sales Qualification Agent (autonomous)",
+        "AI lead/opp scoring",
+        "prioritized work lists",
+        "AI meeting-prep notes"
+      ]
+    },
+    {
+      "slug": "acceleration-and-pipeline-intelligence",
+      "label": "Acceleration & Pipeline Intelligence",
+      "detail": "Sales Opportunity Agent (deal-risk detection), sequences, NL-query pipeline review, Sales Close Agent (preview), CRM data-enrichment agents",
+      "features": [
+        "Sales Opportunity Agent (deal-risk detection)",
+        "sequences",
+        "NL-query pipeline review",
+        "Sales Close Agent (preview)",
+        "CRM data-enrichment agents"
+      ]
+    },
+    {
+      "slug": "copilot-ai",
+      "label": "Copilot / AI",
+      "detail": "NL querying + prebuilt prompts, email drafting, call summaries w/ KPI analysis, Sales Research Agent, custom agents via Copilot Studio",
+      "features": [
+        "NL querying + prebuilt prompts",
+        "email drafting",
+        "call summaries w/ KPI analysis",
+        "Sales Research Agent",
+        "custom agents via Copilot Studio"
+      ]
+    },
+    {
+      "slug": "conversation-intelligence",
+      "label": "Conversation Intelligence",
+      "detail": "transcription/analysis, coaching, KPI insights",
+      "features": [
+        "transcription/analysis",
+        "coaching",
+        "KPI insights"
+      ]
+    },
+    {
+      "slug": "forecasting-and-analytics",
+      "label": "Forecasting & Analytics",
+      "detail": "revenue forecasting, team performance analytics, relationship health",
+      "features": [
+        "revenue forecasting",
+        "team performance analytics",
+        "relationship health"
+      ]
+    },
+    {
+      "slug": "relationship-selling",
+      "label": "Relationship Selling",
+      "detail": "LinkedIn Sales Navigator integration",
+      "features": [
+        "LinkedIn Sales Navigator integration"
+      ]
+    },
+    {
+      "slug": "extensibility",
+      "label": "Extensibility",
+      "detail": "custom processes, Power Platform (Apps/Automate/Pages/BI), external data",
+      "features": [
+        "custom processes",
+        "Power Platform (Apps/Automate/Pages/BI)",
+        "external data"
+      ]
+    },
+    {
+      "slug": "collaboration",
+      "label": "Collaboration",
+      "detail": "Teams + Outlook integration; role-based access, Customer Lockbox; mobile",
+      "features": [
+        "Teams + Outlook integration; role-based access",
+        "Customer Lockbox; mobile"
+      ]
+    }
+  ]
+}

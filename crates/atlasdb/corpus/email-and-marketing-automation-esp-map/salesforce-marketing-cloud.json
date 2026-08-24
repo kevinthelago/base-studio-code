@@ -1,0 +1,248 @@
+{
+  "id": "salesforce-marketing-cloud",
+  "name": "Salesforce Marketing Cloud",
+  "domain": "email-and-marketing-automation-esp-map",
+  "domainName": "Email & Marketing Automation (ESP / MAP)",
+  "capabilities": [
+    {
+      "slug": "email-builder-content-builder-email-studio",
+      "label": "Email builder (Content Builder / Email Studio)",
+      "detail": "drag-drop builder, reusable/interactive content blocks, responsive templates, inbox rendering testing, dynamic content, AMPscript personalization, open-time/live content, data-extension-driven send, subject/content/sender A/B, approvals, BrandBuilder (multi-brand)",
+      "features": [
+        "drag-drop builder",
+        "reusable/interactive content blocks",
+        "responsive templates",
+        "inbox rendering testing",
+        "dynamic content",
+        "AMPscript personalization",
+        "open-time/live content",
+        "data-extension-driven send",
+        "subject/content/sender A/B",
+        "approvals",
+        "BrandBuilder (multi-brand)"
+      ]
+    },
+    {
+      "slug": "journeys-journey-builder",
+      "label": "Journeys (Journey Builder)",
+      "detail": "visual canvas, multi-channel (email/SMS/push/ads/web), multiple entry sources, decision/engagement/random/scoring splits, wait-by-attribute, Einstein STO activity, Path Optimizer (in-journey A/B/n), goals & exit criteria, real-time/transactional journeys, Flow-based journeys (Growth/Advanced)",
+      "features": [
+        "visual canvas",
+        "multi-channel (email/SMS/push/ads/web)",
+        "multiple entry sources",
+        "decision/engagement/random/scoring splits",
+        "wait-by-attribute",
+        "Einstein STO activity",
+        "Path Optimizer (in-journey A/B/n)",
+        "goals & exit criteria",
+        "real-time/transactional journeys",
+        "Flow-based journeys (Growth/Advanced)"
+      ]
+    },
+    {
+      "slug": "automation-automation-studio",
+      "label": "Automation (Automation Studio)",
+      "detail": "scheduled/triggered automations, import file, file transfer, data extract, SQL query, filter, script (SSJS), data-extension refresh, wait steps, multi-step chaining into Journey Builder",
+      "features": [
+        "scheduled/triggered automations",
+        "import file",
+        "file transfer",
+        "data extract",
+        "SQL query",
+        "filter",
+        "script (SSJS)",
+        "data-extension refresh",
+        "wait steps",
+        "multi-step chaining into Journey Builder"
+      ]
+    },
+    {
+      "slug": "segmentation",
+      "label": "Segmentation",
+      "detail": "Contact Builder (contact model/attribute groups/populations), data extensions, Audience Builder/Studio, SQL query segmentation, Data Cloud unified-profile segments, Einstein natural-language segment creation, suppression lists",
+      "features": [
+        "Contact Builder (contact model/attribute groups/populations)",
+        "data extensions",
+        "Audience Builder/Studio",
+        "SQL query segmentation",
+        "Data Cloud unified-profile segments",
+        "Einstein natural-language segment creation",
+        "suppression lists"
+      ]
+    },
+    {
+      "slug": "cdp-data-cloud",
+      "label": "CDP (Data Cloud)",
+      "detail": "unified profiles, cross-source ingestion + identity resolution, calculated insights, real-time streams, cross-channel segment activation, Audience Studio (DMP), Data Studio (data lakes)",
+      "features": [
+        "unified profiles",
+        "cross-source ingestion + identity resolution",
+        "calculated insights",
+        "real-time streams",
+        "cross-channel segment activation",
+        "Audience Studio (DMP)",
+        "Data Studio (data lakes)"
+      ]
+    },
+    {
+      "slug": "personalization-interaction-studio",
+      "label": "Personalization (Interaction Studio)",
+      "detail": "real-time website/behavioral tracking, 1:1 open-time & web personalization, Einstein Recipes (recommendations), Einstein Decisions (next-best-action/offer), Einstein Content Selection, Email & Web Recommendations, Data Science Workbench",
+      "features": [
+        "real-time website/behavioral tracking",
+        "1:1 open-time & web personalization",
+        "Einstein Recipes (recommendations)",
+        "Einstein Decisions (next-best-action/offer)",
+        "Einstein Content Selection",
+        "Email & Web Recommendations",
+        "Data Science Workbench"
+      ]
+    },
+    {
+      "slug": "a-b-experimentation",
+      "label": "A/B/experimentation",
+      "detail": "Content Builder A/B, Journey Path Optimizer (A/B/n incl. STO-vs-control), Einstein Content Testing, auto winner selection",
+      "features": [
+        "Content Builder A/B",
+        "Journey Path Optimizer (A/B/n incl. STO-vs-control)",
+        "Einstein Content Testing",
+        "auto winner selection"
+      ]
+    },
+    {
+      "slug": "deliverability",
+      "label": "Deliverability",
+      "detail": "Sender Authentication Package (dedicated IP/private domain/branded links), SPF/DKIM/DMARC, deliverability monitoring, Einstein Metrics Guard/bot-filtering, IP warming, CAN-SPAM compliance",
+      "features": [
+        "Sender Authentication Package (dedicated IP/private domain/branded links)",
+        "SPF/DKIM/DMARC",
+        "deliverability monitoring",
+        "Einstein Metrics Guard/bot-filtering",
+        "IP warming",
+        "CAN-SPAM compliance"
+      ]
+    },
+    {
+      "slug": "cross-channel-mobile-studio",
+      "label": "Cross-channel (Mobile Studio)",
+      "detail": "SMS/MMS (MobileConnect), group messaging (GroupConnect incl. WhatsApp/LINE), push (MobilePush), silent/in-app push, location/geofencing & beacon triggers, native SMS/WhatsApp (Growth/Advanced)",
+      "features": [
+        "SMS/MMS (MobileConnect)",
+        "group messaging (GroupConnect incl. WhatsApp/LINE)",
+        "push (MobilePush)",
+        "silent/in-app push",
+        "location/geofencing & beacon triggers",
+        "native SMS/WhatsApp (Growth/Advanced)"
+      ]
+    },
+    {
+      "slug": "advertising-social-web",
+      "label": "Advertising/social/web",
+      "detail": "Advertising Studio (CRM-matched ad audiences, lookalikes on Facebook/Google, ad journeys), Web Studio/CloudPages (landing pages/microsites/forms/coupons/smart capture), Google Analytics 360 integration",
+      "features": [
+        "Advertising Studio (CRM-matched ad audiences, lookalikes on Facebook/Google, ad journeys)",
+        "Web Studio/CloudPages (landing pages/microsites/forms/coupons/smart capture)",
+        "Google Analytics 360 integration"
+      ]
+    },
+    {
+      "slug": "landing-pages-cloudpages",
+      "label": "Landing pages (CloudPages)",
+      "detail": "drag-drop LP/microsite builder, smart-capture forms, coupon/code pages, AMPscript dynamic pages, AI-assisted forms/LPs (Growth)",
+      "features": [
+        "drag-drop LP/microsite builder",
+        "smart-capture forms",
+        "coupon/code pages",
+        "AMPscript dynamic pages",
+        "AI-assisted forms/LPs (Growth)"
+      ]
+    },
+    {
+      "slug": "b2b-account-engagement-pardot",
+      "label": "B2B (Account Engagement / Pardot)",
+      "detail": "Engagement Studio (visual nurture builder), lead scoring (interest) + grading (A–F fit), automation rules, dynamic lists, forms/form-handlers, landing pages, ABM dashboards & account-based scoring, sales alerts, CRM sync, B2B Marketing Analytics, campaign influence/ROI",
+      "features": [
+        "Engagement Studio (visual nurture builder)",
+        "lead scoring (interest) + grading (A–F fit)",
+        "automation rules",
+        "dynamic lists",
+        "forms/form-handlers",
+        "landing pages",
+        "ABM dashboards & account-based scoring",
+        "sales alerts",
+        "CRM sync",
+        "B2B Marketing Analytics",
+        "campaign influence/ROI"
+      ]
+    },
+    {
+      "slug": "analytics-intelligence-datorama",
+      "label": "Analytics (Intelligence / Datorama)",
+      "detail": "170+ data connectors, ETL/harmonization (Connect & Mix), custom cross-channel dashboards, Tableau integration, Datorama Marketplace apps, Analytics Builder, Einstein Marketing Intelligence",
+      "features": [
+        "170+ data connectors",
+        "ETL/harmonization (Connect & Mix)",
+        "custom cross-channel dashboards",
+        "Tableau integration",
+        "Datorama Marketplace apps",
+        "Analytics Builder",
+        "Einstein Marketing Intelligence"
+      ]
+    },
+    {
+      "slug": "ai-einstein",
+      "label": "AI (Einstein)",
+      "detail": "Send Time Optimization (per-contact, 168 slots), Engagement Scoring (Loyalists/Window Shoppers/Selective/Dormant), Engagement Frequency, Copy Insights (generative subject/body), Content Selection & Tagging, Messaging Insights (anomaly detection), Churn Prediction (no-code), Segment Creation",
+      "features": [
+        "Send Time Optimization (per-contact, 168 slots)",
+        "Engagement Scoring (Loyalists/Window Shoppers/Selective/Dormant)",
+        "Engagement Frequency",
+        "Copy Insights (generative subject/body)",
+        "Content Selection & Tagging",
+        "Messaging Insights (anomaly detection)",
+        "Churn Prediction (no-code)",
+        "Segment Creation"
+      ]
+    },
+    {
+      "slug": "ai-generative-agentforce",
+      "label": "AI (generative/Agentforce)",
+      "detail": "Agentforce Campaign Designer (multi-channel campaign/LP/strategy generation), Einstein Copilot, generative briefs, AI subject/heading/body, natural-language segment building, content grounded in Data Cloud",
+      "features": [
+        "Agentforce Campaign Designer (multi-channel campaign/LP/strategy generation)",
+        "Einstein Copilot",
+        "generative briefs",
+        "AI subject/heading/body",
+        "natural-language segment building",
+        "content grounded in Data Cloud"
+      ]
+    },
+    {
+      "slug": "integrations",
+      "label": "Integrations",
+      "detail": "REST & SOAP APIs, Marketing Cloud Connect (bi-directional Sales/Service Cloud sync), transactional messaging API, AppExchange, Distributed Marketing (partner/franchise), Loyalty Management, MobileConnect/MobilePush SDKs, Einstein 1 platform",
+      "features": [
+        "REST & SOAP APIs",
+        "Marketing Cloud Connect (bi-directional Sales/Service Cloud sync)",
+        "transactional messaging API",
+        "AppExchange",
+        "Distributed Marketing (partner/franchise)",
+        "Loyalty Management",
+        "MobileConnect/MobilePush SDKs",
+        "Einstein 1 platform"
+      ]
+    },
+    {
+      "slug": "editions",
+      "label": "Editions",
+      "detail": "Engagement, Growth (Data Cloud-anchored, Flow automation), Advanced, Nonprofits, Account Engagement editions (Growth/Plus/Advanced/Premium)",
+      "features": [
+        "Engagement",
+        "Growth (Data Cloud-anchored, Flow automation)",
+        "Advanced",
+        "Nonprofits",
+        "Account Engagement editions (Growth/Plus/Advanced/Premium)"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "id": "analytics-common-feature-themes",
+  "name": "Analytics — common feature themes",
+  "domain": "analytics-bi-data-cdp",
+  "domainName": "Analytics / BI / Data / CDP",
+  "capabilities": [
+    {
+      "slug": "nl-query-agentic-ai-now-table-stakes",
+      "label": "NL-query + agentic AI now table stakes",
+      "detail": "— everyone ships \"chat with your data\" grounded in a semantic model (Power BI Copilot, Tableau Agent/Pulse, Looker Conversational Analytics, Snowflake Cortex Analyst, Databricks Genie, Amplitude Ask). Frontier moved from NLQ to autonomous **AI agents** (Amplitude AI Agents, Databricks Agent Bricks, Snowflake Cortex Agents, Tableau Agentforce).",
+      "features": [
+        "— everyone ships \"chat with your data\" grounded in a semantic model (Power BI Copilot, Tableau Agent/Pulse, Looker Conversational Analytics, Snowflake Cortex Analyst, Databricks Genie, Amplitude Ask). Frontier moved from NLQ to autonomous **AI agents** (Amplitude AI Agents, Databricks Agent Bricks, Snowflake Cortex Agents, Tableau Agentforce)."
+      ]
+    },
+    {
+      "slug": "semantic-metrics-layer-is-the-strategic-battleground",
+      "label": "Semantic/metrics layer is the strategic battleground",
+      "detail": "— define-metrics-once governed models (LookML the pioneer, now openable to rival BI via Open SQL Interface; Power BI semantic models; Snowflake semantic models for Cortex; Databricks Unity Catalog Business Semantics; Tableau Semantics).",
+      "features": [
+        "— define-metrics-once governed models (LookML the pioneer, now openable to rival BI via Open SQL Interface; Power BI semantic models; Snowflake semantic models for Cortex; Databricks Unity Catalog Business Semantics; Tableau Semantics)."
+      ]
+    },
+    {
+      "slug": "governed-catalog-column-level-lineage",
+      "label": "Governed catalog + column-level lineage",
+      "detail": "— Tableau Catalog, Purview, Snowflake Horizon, Databricks Unity Catalog: discovery, sensitive-data classification, tagging, RBAC + row/column-level security, dynamic masking, lineage/impact.",
+      "features": [
+        "— Tableau Catalog",
+        "Purview",
+        "Snowflake Horizon",
+        "Databricks Unity Catalog: discovery",
+        "sensitive-data classification",
+        "tagging",
+        "RBAC + row/column-level security",
+        "dynamic masking",
+        "lineage/impact."
+      ]
+    },
+    {
+      "slug": "consumption-pricing-at-platform-tier-vs-per-user-at-bi-tier",
+      "label": "Consumption pricing at platform tier vs per-user at BI tier",
+      "detail": "— Snowflake (credits) + Databricks (DBUs) bill per-second compute with storage/compute separation; BI tools (Power BI, Tableau, Looker) bill per-user/role (Databricks markets \"no per-seat limits\" for BI).",
+      "features": [
+        "— Snowflake (credits) + Databricks (DBUs) bill per-second compute with storage/compute separation; BI tools (Power BI, Tableau, Looker) bill per-user/role (Databricks markets \"no per-seat limits\" for BI)."
+      ]
+    },
+    {
+      "slug": "embedded-analytics-developer-apis-everywhere",
+      "label": "Embedded analytics + developer APIs everywhere",
+      "detail": "— Tableau Embedding API v3, Power BI Embedded, Looker Embed SDK / Extension Framework, REST APIs + multi-language SDKs; white-labeling, SSO, row-level scoping universal.",
+      "features": [
+        "— Tableau Embedding API v3",
+        "Power BI Embedded",
+        "Looker Embed SDK / Extension Framework",
+        "REST APIs + multi-language SDKs; white-labeling",
+        "SSO",
+        "row-level scoping universal."
+      ]
+    },
+    {
+      "slug": "open-lakehouse-apache-iceberg-convergence",
+      "label": "Open lakehouse + Apache Iceberg convergence",
+      "detail": "— Snowflake + Databricks both support managed Iceberg + REST catalogs, open no-copy data sharing (Secure Data Sharing / Delta Sharing), Marketplaces, and Clean Rooms.",
+      "features": [
+        "— Snowflake + Databricks both support managed Iceberg + REST catalogs",
+        "open no-copy data sharing (Secure Data Sharing / Delta Sharing)",
+        "Marketplaces",
+        "and Clean Rooms."
+      ]
+    },
+    {
+      "slug": "streaming-real-time-as-first-class",
+      "label": "Streaming/real-time as first-class",
+      "detail": "— Snowpipe Streaming + Dynamic Tables, Databricks Structured Streaming + Streaming Tables, Power BI Fabric Real-Time Intelligence, Segment 400K events/sec; CDC a common primitive.",
+      "features": [
+        "— Snowpipe Streaming + Dynamic Tables",
+        "Databricks Structured Streaming + Streaming Tables",
+        "Power BI Fabric Real-Time Intelligence",
+        "Segment 400K events/sec; CDC a common primitive."
+      ]
+    },
+    {
+      "slug": "cdp-triad-identity-audiences-activation-reverse-etl",
+      "label": "CDP triad — identity, audiences, activation, reverse ETL",
+      "detail": "— Segment + Amplitude share identity resolution/golden profiles, behavioral audiences, activation to 300–750+ destinations. Warehouse-native patterns converge the categories (Segment Linked Audiences/Reverse ETL query the warehouse; the warehouses themselves push into CDP territory — Databricks CustomersLake).",
+      "features": [
+        "— Segment + Amplitude share identity resolution/golden profiles",
+        "behavioral audiences",
+        "activation to 300–750+ destinations. Warehouse-native patterns converge the categories (Segment Linked Audiences/Reverse ETL query the warehouse; the warehouses themselves push into CDP territory — Databricks CustomersLake)."
+      ]
+    },
+    {
+      "slug": "predictive-ai-on-customer-data",
+      "label": "Predictive/AI on customer data",
+      "detail": "— Segment CustomerAI + Amplitude ship packaged predictions (LTV/churn/purchase propensity) + generative audience creation from NL.",
+      "features": [
+        "— Segment CustomerAI + Amplitude ship packaged predictions (LTV/churn/purchase propensity) + generative audience creation from NL."
+      ]
+    },
+    {
+      "slug": "product-analytics-primitives-amplitude-s-niche",
+      "label": "Product-analytics primitives (Amplitude's niche)",
+      "detail": "— funnels/retention/cohorts/user paths/lifecycle + session replay + in-product guides/surveys + A/B experimentation as an integrated suite the general BI tools don't natively cover.",
+      "features": [
+        "— funnels/retention/cohorts/user paths/lifecycle + session replay + in-product guides/surveys + A/B experimentation as an integrated suite the general BI tools don't natively cover."
+      ]
+    },
+    {
+      "slug": "governance-of-ai-itself-is-the-newest-layer",
+      "label": "Governance of AI itself is the newest layer",
+      "detail": "— Databricks Mosaic AI Gateway + Snowflake Cortex AI Guardrails govern LLM/MCP usage (rate limiting, PII/PHI redaction, lineage); Amplitude AI Governance / Agent Analytics observe agent behavior.",
+      "features": [
+        "— Databricks Mosaic AI Gateway + Snowflake Cortex AI Guardrails govern LLM/MCP usage (rate limiting, PII/PHI redaction, lineage); Amplitude AI Governance / Agent Analytics observe agent behavior."
+      ]
+    },
+    {
+      "slug": "collaboration-scheduled-delivery-threshold-alerting",
+      "label": "Collaboration/scheduled delivery/threshold alerting",
+      "detail": "baseline (email/Slack subscriptions, data-driven alerts, commenting, mobile); differentiator shifted to AI-generated proactive alerts + anomaly detection (Tableau Pulse, Power BI Data Activator, Amplitude monitors).",
+      "features": [
+        "baseline (email/Slack subscriptions, data-driven alerts, commenting, mobile); differentiator shifted to AI-generated proactive alerts + anomaly detection (Tableau Pulse, Power BI Data Activator, Amplitude monitors)."
+      ]
+    }
+  ]
+}

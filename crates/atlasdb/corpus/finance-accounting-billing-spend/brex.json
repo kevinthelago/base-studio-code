@@ -1,0 +1,226 @@
+{
+  "id": "brex",
+  "name": "Brex",
+  "domain": "finance-accounting-billing-spend",
+  "domainName": "Finance / Accounting / Billing / Spend",
+  "capabilities": [
+    {
+      "slug": "corporate-cards",
+      "label": "Corporate cards",
+      "detail": "physical Mastercard in 210+ countries, unlimited instant virtual cards, local-currency cards in 50–60 countries/30+ currencies, vendor cards with recurring/expiration controls, mobile wallet, up to 30x higher limits underwritten on business financials (no personal guarantee), one-click card transfer on employee departure, chip-and-PIN",
+      "features": [
+        "physical Mastercard in 210+ countries",
+        "unlimited instant virtual cards",
+        "local-currency cards in 50–60 countries/30+ currencies",
+        "vendor cards with recurring/expiration controls",
+        "mobile wallet",
+        "up to 30x higher limits underwritten on business financials (no personal guarantee)",
+        "one-click card transfer on employee departure",
+        "chip-and-PIN"
+      ]
+    },
+    {
+      "slug": "spend-controls-policy",
+      "label": "Spend controls/policy",
+      "detail": "category & merchant restrictions (block or require approval), per-transaction approval workflows/limits, real-time point-of-purchase enforcement, customizable policies by use case/level/department/entity/team/individual/global, dynamic approval chains, anomalous-spend flagging (Brex AI)",
+      "features": [
+        "category & merchant restrictions (block or require approval)",
+        "per-transaction approval workflows/limits",
+        "real-time point-of-purchase enforcement",
+        "customizable policies by use case/level/department/entity/team/individual/global",
+        "dynamic approval chains",
+        "anomalous-spend flagging (Brex AI)"
+      ]
+    },
+    {
+      "slug": "budgets",
+      "label": "Budgets",
+      "detail": "Live Budgets (top-level allocations cascaded to department heads then teams/individuals), real-time tracking, hierarchical provisioning, multi-level limits, stipend/travel/procurement limits",
+      "features": [
+        "Live Budgets (top-level allocations cascaded to department heads then teams/individuals)",
+        "real-time tracking",
+        "hierarchical provisioning",
+        "multi-level limits",
+        "stipend/travel/procurement limits"
+      ]
+    },
+    {
+      "slug": "expense-management",
+      "label": "Expense management",
+      "detail": "AI auto-generated/auto-matched receipts for common merchants (Uber/Lyft/Gmail), text-in receipts, IRS/local-tax-compliant itemized collection, auto-generated memos, real-time blocking of non-compliant purchases, auto-approve in-policy/decline out-of-policy, Slack/SMS/WhatsApp flag notifications, automated expense reports, dynamic review chains + AI compliance audits (Premium)",
+      "features": [
+        "AI auto-generated/auto-matched receipts for common merchants (Uber/Lyft/Gmail)",
+        "text-in receipts",
+        "IRS/local-tax-compliant itemized collection",
+        "auto-generated memos",
+        "real-time blocking of non-compliant purchases",
+        "auto-approve in-policy/decline out-of-policy",
+        "Slack/SMS/WhatsApp flag notifications",
+        "automated expense reports",
+        "dynamic review chains + AI compliance audits (Premium)"
+      ]
+    },
+    {
+      "slug": "reimbursements-global-payouts",
+      "label": "Reimbursements/global payouts",
+      "detail": "unlimited reimbursements (no per-transaction fees), international reimbursements in 40+ countries (~3 days), local-currency payouts, subsidiary/local-entity reimbursements from own bank accounts, VAT documentation (Premium)",
+      "features": [
+        "unlimited reimbursements (no per-transaction fees)",
+        "international reimbursements in 40+ countries (~3 days)",
+        "local-currency payouts",
+        "subsidiary/local-entity reimbursements from own bank accounts",
+        "VAT documentation (Premium)"
+      ]
+    },
+    {
+      "slug": "bill-pay-ap-automation",
+      "label": "Bill pay/AP automation",
+      "detail": "AI-automated invoice entry/approval/payment/reconciliation, automated approval workflows, PO creation & employee PO requests, two-way invoice-to-PO matching, batch payment scheduling by due date/entity/currency, card-based vendor payments (virtual cards) to earn rewards, unified payables dashboard",
+      "features": [
+        "AI-automated invoice entry/approval/payment/reconciliation",
+        "automated approval workflows",
+        "PO creation & employee PO requests",
+        "two-way invoice-to-PO matching",
+        "batch payment scheduling by due date/entity/currency",
+        "card-based vendor payments (virtual cards) to earn rewards",
+        "unified payables dashboard"
+      ]
+    },
+    {
+      "slug": "business-account-banking",
+      "label": "Business account/banking",
+      "detail": "free business checking (same-day ACH, unlimited check sends & domestic wires), up to 240 uniquely numbered accounts, instant account/routing on approval, FDIC-insured deposits (Column N.A.), Treasury money-market yield (~4.36%) with same-hour liquidity & auto top-up, Vault with up to $6M FDIC coverage across 24 banks, no minimums/overdraft/monthly fees",
+      "features": [
+        "free business checking (same-day ACH, unlimited check sends & domestic wires)",
+        "up to 240 uniquely numbered accounts",
+        "instant account/routing on approval",
+        "FDIC-insured deposits (Column N.A.)",
+        "Treasury money-market yield (~4.36%) with same-hour liquidity & auto top-up",
+        "Vault with up to $6M FDIC coverage across 24 banks",
+        "no minimums/overdraft/monthly fees"
+      ]
+    },
+    {
+      "slug": "travel",
+      "label": "Travel",
+      "detail": "in-app flight/hotel/car booking within policy, global inventory, multi-currency, auto-enforced policies at purchase, auto-captured receipts, smart trip grouping, unlimited itinerary changes, real-time traveler visibility, 24/7 live agent support, group travel events, BrexPay for Navan",
+      "features": [
+        "in-app flight/hotel/car booking within policy",
+        "global inventory",
+        "multi-currency",
+        "auto-enforced policies at purchase",
+        "auto-captured receipts",
+        "smart trip grouping",
+        "unlimited itinerary changes",
+        "real-time traveler visibility",
+        "24/7 live agent support",
+        "group travel events",
+        "BrexPay for Navan"
+      ]
+    },
+    {
+      "slug": "procurement",
+      "label": "Procurement",
+      "detail": "PO-like approval flows for all spend types, PO creation & employee requests, two-way PO matching, merchant card controls & custom approvals (Smart Card), intake & smart routing, real-time procurement visibility",
+      "features": [
+        "PO-like approval flows for all spend types",
+        "PO creation & employee requests",
+        "two-way PO matching",
+        "merchant card controls & custom approvals (Smart Card)",
+        "intake & smart routing",
+        "real-time procurement visibility"
+      ]
+    },
+    {
+      "slug": "accounting-automation",
+      "label": "Accounting automation",
+      "detail": "AI auto-categorization & smart GL coding/auto-mapping, auto-assigned departments/projects/GL codes, OCR receipt matching in any language/currency, automated reconciliation, continuous/daily in-month close, real-time transaction sync (not batches), native ERP integrations (NetSuite/QuickBooks/Xero/Sage Intacct), ERP/HRIS customization (Premium), 1,000+ integrations",
+      "features": [
+        "AI auto-categorization & smart GL coding/auto-mapping",
+        "auto-assigned departments/projects/GL codes",
+        "OCR receipt matching in any language/currency",
+        "automated reconciliation",
+        "continuous/daily in-month close",
+        "real-time transaction sync (not batches)",
+        "native ERP integrations (NetSuite/QuickBooks/Xero/Sage Intacct)",
+        "ERP/HRIS customization (Premium)",
+        "1",
+        "000+ integrations"
+      ]
+    },
+    {
+      "slug": "reporting",
+      "label": "Reporting",
+      "detail": "real-time spend/budget reports across payment types, burn-rate tracking, AI customizable alerts for spikes/anomalies, real-time P&L-owner budget views, ROI/savings insights",
+      "features": [
+        "real-time spend/budget reports across payment types",
+        "burn-rate tracking",
+        "AI customizable alerts for spikes/anomalies",
+        "real-time P&L-owner budget views",
+        "ROI/savings insights"
+      ]
+    },
+    {
+      "slug": "brex-ai-assistant",
+      "label": "Brex AI/Assistant",
+      "detail": "AI custom spend rules, AI expense review, anomaly detection, AI GL-coding suggestions, AI-generated receipts/memos, AI compliance audits, behavioral fraud analysis, duplicate detection",
+      "features": [
+        "AI custom spend rules",
+        "AI expense review",
+        "anomaly detection",
+        "AI GL-coding suggestions",
+        "AI-generated receipts/memos",
+        "AI compliance audits",
+        "behavioral fraud analysis",
+        "duplicate detection"
+      ]
+    },
+    {
+      "slug": "rewards",
+      "label": "Rewards",
+      "detail": "up to 7x cash back with category multipliers (7x rideshare, 4x prepaid travel, 3x restaurants, 2x software), redemption as cash back/statement credit, 350,000+ partner perks, rewards on bill-pay card spend",
+      "features": [
+        "up to 7x cash back with category multipliers (7x rideshare, 4x prepaid travel, 3x restaurants, 2x software)",
+        "redemption as cash back/statement credit",
+        "350",
+        "000+ partner perks",
+        "rewards on bill-pay card spend"
+      ]
+    },
+    {
+      "slug": "global-multi-entity-multi-currency",
+      "label": "Global/multi-entity/multi-currency",
+      "detail": "operate in virtually any currency, global cards in 120–210+ countries, local-currency cards in 50+ countries, up to 2 entities (Essentials) / multi-entity US & International (Premium) / unlimited global entities (Enterprise), global payments in 30+ currencies, VAT docs",
+      "features": [
+        "operate in virtually any currency",
+        "global cards in 120–210+ countries",
+        "local-currency cards in 50+ countries",
+        "up to 2 entities (Essentials) / multi-entity US & International (Premium) / unlimited global entities (Enterprise)",
+        "global payments in 30+ currencies",
+        "VAT docs"
+      ]
+    },
+    {
+      "slug": "security-support",
+      "label": "Security/support",
+      "detail": "SOC 1 Type I / SOC 2 Type II, PCI-DSS, admin center (Enterprise), custom approval rules & vendor safe lists, 24/7 global support (chat/phone/Slack/text/WhatsApp), dedicated account managers (Enterprise), API access",
+      "features": [
+        "SOC 1 Type I / SOC 2 Type II",
+        "PCI-DSS",
+        "admin center (Enterprise)",
+        "custom approval rules & vendor safe lists",
+        "24/7 global support (chat/phone/Slack/text/WhatsApp)",
+        "dedicated account managers (Enterprise)",
+        "API access"
+      ]
+    },
+    {
+      "slug": "pricing",
+      "label": "Pricing",
+      "detail": "Essentials ($0/user) · Premium ($12/user) · Enterprise (custom) · Smart Card (custom, procurement-focused)",
+      "features": [
+        "Essentials ($0/user) · Premium ($12/user) · Enterprise (custom) · Smart Card (custom, procurement-focused)"
+      ]
+    }
+  ]
+}

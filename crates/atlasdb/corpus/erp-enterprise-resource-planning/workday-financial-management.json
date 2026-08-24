@@ -1,0 +1,60 @@
+{
+  "id": "workday-financial-management",
+  "name": "Workday Financial Management",
+  "domain": "erp-enterprise-resource-planning",
+  "domainName": "ERP (Enterprise Resource Planning)",
+  "capabilities": [
+    {
+      "slug": "core-financials",
+      "label": "Core Financials",
+      "detail": "real-time event-based ledger, multiple books + multi-currency, **worktag dimensionality** (replaces rigid account strings), short chart of accounts",
+      "features": [
+        "real-time event-based ledger",
+        "multiple books + multi-currency",
+        "**worktag dimensionality** (replaces rigid account strings)",
+        "short chart of accounts"
+      ]
+    },
+    {
+      "slug": "ap-ar-revenue",
+      "label": "AP / AR / Revenue",
+      "detail": "OCR invoice capture, PO/receipt match, bank connectivity; customer invoicing, dunning, cash application; ASC 606/IFRS 15 billing schedules & performance obligations",
+      "features": [
+        "OCR invoice capture",
+        "PO/receipt match",
+        "bank connectivity; customer invoicing",
+        "dunning",
+        "cash application; ASC 606/IFRS 15 billing schedules & performance obligations"
+      ]
+    },
+    {
+      "slug": "project-accounting-and-spend",
+      "label": "Project Accounting & Spend",
+      "detail": "labor/materials/expense vs budget, project billing/rev-rec (HCM-linked labor rates); requisition-to-pay, contract/catalog/punchout, spend analysis; mobile expense capture + policy routing",
+      "features": [
+        "labor/materials/expense vs budget",
+        "project billing/rev-rec (HCM-linked labor rates); requisition-to-pay",
+        "contract/catalog/punchout",
+        "spend analysis; mobile expense capture + policy routing"
+      ]
+    },
+    {
+      "slug": "fixed-assets-cash-tax-grants",
+      "label": "Fixed Assets / Cash / Tax / Grants",
+      "detail": "full asset lifecycle + multi-book depreciation; real-time cash positioning; tax determination + 3rd-party engines; grant award tracking & sponsor reporting",
+      "features": [
+        "full asset lifecycle + multi-book depreciation; real-time cash positioning; tax determination + 3rd-party engines; grant award tracking & sponsor reporting"
+      ]
+    },
+    {
+      "slug": "planning-and-reporting",
+      "label": "Planning & Reporting",
+      "detail": "Adaptive Planning (driver-based, scenario, workforce planning vs actuals); live-ledger financial statements & drill; immutable audit trail, segregation-of-duties, SOX; Prism Analytics (blends transactional + operational). **No manufacturing/inventory** — finance + HCM focus",
+      "features": [
+        "Adaptive Planning (driver-based, scenario, workforce planning vs actuals); live-ledger financial statements & drill; immutable audit trail",
+        "segregation-of-duties",
+        "SOX; Prism Analytics (blends transactional + operational). **No manufacturing/inventory** — finance + HCM focus"
+      ]
+    }
+  ]
+}

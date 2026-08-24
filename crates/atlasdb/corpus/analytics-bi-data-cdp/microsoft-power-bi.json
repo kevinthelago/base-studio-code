@@ -1,0 +1,222 @@
+{
+  "id": "microsoft-power-bi",
+  "name": "Microsoft Power BI",
+  "domain": "analytics-bi-data-cdp",
+  "domainName": "Analytics / BI / Data / CDP",
+  "capabilities": [
+    {
+      "slug": "connectors",
+      "label": "Connectors",
+      "detail": "100+ sources, Power Query (M language), Dataflows Gen2 (reusable ETL), on-prem gateway, DirectQuery/Import/Direct Lake modes, composite models, OneLake integration, datamarts, scheduled + incremental refresh, XMLA endpoint, Fabric Real-Time Hub/eventstreams, CDC",
+      "features": [
+        "100+ sources",
+        "Power Query (M language)",
+        "Dataflows Gen2 (reusable ETL)",
+        "on-prem gateway",
+        "DirectQuery/Import/Direct Lake modes",
+        "composite models",
+        "OneLake integration",
+        "datamarts",
+        "scheduled + incremental refresh",
+        "XMLA endpoint",
+        "Fabric Real-Time Hub/eventstreams",
+        "CDC"
+      ]
+    },
+    {
+      "slug": "modeling",
+      "label": "Modeling",
+      "detail": "semantic models (datasets), DAX, calculated columns/measures, visual calculations, relationships, star-schema, row-level (RLS) + object-level (OLS) security, Q&A linguistic modeling, hierarchies, performance analyzer, external tools (Tabular Editor/DAX Studio), field parameters, calculation groups, what-if parameters",
+      "features": [
+        "semantic models (datasets)",
+        "DAX",
+        "calculated columns/measures",
+        "visual calculations",
+        "relationships",
+        "star-schema",
+        "row-level (RLS) + object-level (OLS) security",
+        "Q&A linguistic modeling",
+        "hierarchies",
+        "performance analyzer",
+        "external tools (Tabular Editor/DAX Studio)",
+        "field parameters",
+        "calculation groups",
+        "what-if parameters"
+      ]
+    },
+    {
+      "slug": "dashboards-viz",
+      "label": "Dashboards/viz",
+      "detail": "interactive reports + dashboards, 30+ built-in visuals, custom visuals (AppSource), report themes, conditional formatting, report-page tooltips, drillthrough, cross-filter/highlight, bookmarks, small multiples, analytics pane (reference/trend/forecast), Power Apps visual, translytical task flows (write-back)",
+      "features": [
+        "interactive reports + dashboards",
+        "30+ built-in visuals",
+        "custom visuals (AppSource)",
+        "report themes",
+        "conditional formatting",
+        "report-page tooltips",
+        "drillthrough",
+        "cross-filter/highlight",
+        "bookmarks",
+        "small multiples",
+        "analytics pane (reference/trend/forecast)",
+        "Power Apps visual",
+        "translytical task flows (write-back)"
+      ]
+    },
+    {
+      "slug": "self-service",
+      "label": "Self-service",
+      "detail": "Q&A NL visual, drag-drop canvas, drill down/up, filters pane, quick insights, personalize visuals, Analyze in Excel",
+      "features": [
+        "Q&A NL visual",
+        "drag-drop canvas",
+        "drill down/up",
+        "filters pane",
+        "quick insights",
+        "personalize visuals",
+        "Analyze in Excel"
+      ]
+    },
+    {
+      "slug": "ai-ml-nlq",
+      "label": "AI/ML + NLQ",
+      "detail": "Copilot in Power BI (report/page creation, summarize, ask data, generate DAX, measure descriptions, standalone full-screen + mobile Copilot with citations/voice), Fabric data agents, AI visuals — Key influencers, Decomposition tree, Smart narrative, Anomaly detection; forecasting, clustering, R/Python visuals",
+      "features": [
+        "Copilot in Power BI (report/page creation, summarize, ask data, generate DAX, measure descriptions, standalone full-screen + mobile Copilot with citations/voice)",
+        "Fabric data agents",
+        "AI visuals — Key influencers",
+        "Decomposition tree",
+        "Smart narrative",
+        "Anomaly detection; forecasting",
+        "clustering",
+        "R/Python visuals"
+      ]
+    },
+    {
+      "slug": "semantic-layer",
+      "label": "Semantic layer",
+      "detail": "enterprise semantic models as shared layer, shared/reusable datasets, Power BI Goals (scorecards/KPIs/targets)",
+      "features": [
+        "enterprise semantic models as shared layer",
+        "shared/reusable datasets",
+        "Power BI Goals (scorecards/KPIs/targets)"
+      ]
+    },
+    {
+      "slug": "embedded",
+      "label": "Embedded",
+      "detail": "Power BI Embedded (App-Owns / User-Owns Data), white-label, embed in SharePoint/Teams/PowerPoint/Outlook, developer APIs, custom-visual SDK, template apps",
+      "features": [
+        "Power BI Embedded (App-Owns / User-Owns Data)",
+        "white-label",
+        "embed in SharePoint/Teams/PowerPoint/Outlook",
+        "developer APIs",
+        "custom-visual SDK",
+        "template apps"
+      ]
+    },
+    {
+      "slug": "real-time-streaming",
+      "label": "Real-time/streaming",
+      "detail": "Fabric Real-Time Intelligence — Real-Time Hub, Eventstreams (Kafka/Kinesis/Pub-Sub/MQTT/Event Hubs/IoT Hub/CDC, windowed aggregations, routing), Eventhouse + KQL database (Kusto, native anomaly detection), real-time dashboards, streaming datasets, digital twin builder (preview)",
+      "features": [
+        "Fabric Real-Time Intelligence — Real-Time Hub",
+        "Eventstreams (Kafka/Kinesis/Pub-Sub/MQTT/Event Hubs/IoT Hub/CDC, windowed aggregations, routing)",
+        "Eventhouse + KQL database (Kusto, native anomaly detection)",
+        "real-time dashboards",
+        "streaming datasets",
+        "digital twin builder (preview)"
+      ]
+    },
+    {
+      "slug": "governance",
+      "label": "Governance",
+      "detail": "Microsoft Purview integration, sensitivity labels, RLS/OLS, endorsement (Certified/Promoted), lineage view, usage metrics, audit logs, Fabric admin portal, deployment pipelines (dev/test/prod), Git integration, OneLake security",
+      "features": [
+        "Microsoft Purview integration",
+        "sensitivity labels",
+        "RLS/OLS",
+        "endorsement (Certified/Promoted)",
+        "lineage view",
+        "usage metrics",
+        "audit logs",
+        "Fabric admin portal",
+        "deployment pipelines (dev/test/prod)",
+        "Git integration",
+        "OneLake security"
+      ]
+    },
+    {
+      "slug": "collaboration",
+      "label": "Collaboration",
+      "detail": "workspaces, apps (content distribution), Fabric Org Apps, Teams/PowerPoint/Outlook/Excel integration, comments, co-authoring",
+      "features": [
+        "workspaces",
+        "apps (content distribution)",
+        "Fabric Org Apps",
+        "Teams/PowerPoint/Outlook/Excel integration",
+        "comments",
+        "co-authoring"
+      ]
+    },
+    {
+      "slug": "alerting",
+      "label": "Alerting",
+      "detail": "data-driven alerts, Data Activator (rule-based real-time alerts + automation triggering Power Automate/pipelines/Spark), email subscriptions",
+      "features": [
+        "data-driven alerts",
+        "Data Activator (rule-based real-time alerts + automation triggering Power Automate/pipelines/Spark)",
+        "email subscriptions"
+      ]
+    },
+    {
+      "slug": "mobile",
+      "label": "Mobile",
+      "detail": "Power BI Mobile (iOS/Android/Windows), phone-optimized layouts, mobile Copilot, offline, mobile alerts",
+      "features": [
+        "Power BI Mobile (iOS/Android/Windows)",
+        "phone-optimized layouts",
+        "mobile Copilot",
+        "offline",
+        "mobile alerts"
+      ]
+    },
+    {
+      "slug": "paginated-reports",
+      "label": "Paginated reports",
+      "detail": "pixel-perfect print-ready, Report Builder, RDL, export to PDF/Excel/Word",
+      "features": [
+        "pixel-perfect print-ready",
+        "Report Builder",
+        "RDL",
+        "export to PDF/Excel/Word"
+      ]
+    },
+    {
+      "slug": "deployment",
+      "label": "Deployment",
+      "detail": "Desktop (Windows), service (cloud), Report Server (on-prem), Embedded, Microsoft Fabric capacity",
+      "features": [
+        "Desktop (Windows)",
+        "service (cloud)",
+        "Report Server (on-prem)",
+        "Embedded",
+        "Microsoft Fabric capacity"
+      ]
+    },
+    {
+      "slug": "pricing",
+      "label": "Pricing",
+      "detail": "Free (Desktop/Fabric free), Pro (~$14/user/mo), Premium Per User (~$24/user/mo), Embedded (capacity), Fabric capacities (F/P SKUs), Report Server",
+      "features": [
+        "Free (Desktop/Fabric free)",
+        "Pro (~$14/user/mo)",
+        "Premium Per User (~$24/user/mo)",
+        "Embedded (capacity)",
+        "Fabric capacities (F/P SKUs)",
+        "Report Server"
+      ]
+    }
+  ]
+}

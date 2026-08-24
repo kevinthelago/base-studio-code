@@ -1,0 +1,92 @@
+{
+  "id": "odoo-100-modular-apps",
+  "name": "Odoo (100+ modular apps)",
+  "domain": "erp-enterprise-resource-planning",
+  "domainName": "ERP (Enterprise Resource Planning)",
+  "capabilities": [
+    {
+      "slug": "finance",
+      "label": "Finance",
+      "detail": "Accounting (bank sync, reports), Invoicing, Expenses, Documents (OCR), Sign (e-sig), Spreadsheets (BI)",
+      "features": [
+        "Accounting (bank sync, reports)",
+        "Invoicing",
+        "Expenses",
+        "Documents (OCR)",
+        "Sign (e-sig)",
+        "Spreadsheets (BI)"
+      ]
+    },
+    {
+      "slug": "sales-and-crm",
+      "label": "Sales & CRM",
+      "detail": "CRM, Sales, POS, Subscriptions, Rental, Amazon/eBay connectors",
+      "features": [
+        "CRM",
+        "Sales",
+        "POS",
+        "Subscriptions",
+        "Rental",
+        "Amazon/eBay connectors"
+      ]
+    },
+    {
+      "slug": "inventory-and-mfg",
+      "label": "Inventory & Mfg",
+      "detail": "Inventory (multi-step routes), Purchase, Barcode, Maintenance, Quality; Manufacturing/MRP, PLM, Shop Floor",
+      "features": [
+        "Inventory (multi-step routes)",
+        "Purchase",
+        "Barcode",
+        "Maintenance",
+        "Quality; Manufacturing/MRP",
+        "PLM",
+        "Shop Floor"
+      ]
+    },
+    {
+      "slug": "hr",
+      "label": "HR",
+      "detail": "Employees, Recruitment, Time Off, Appraisals, Payroll, Fleet",
+      "features": [
+        "Employees",
+        "Recruitment",
+        "Time Off",
+        "Appraisals",
+        "Payroll",
+        "Fleet"
+      ]
+    },
+    {
+      "slug": "marketing-and-services",
+      "label": "Marketing & Services",
+      "detail": "Email/Automation/Social/SMS Marketing, Events, Surveys; Project, Timesheets, Field Service, Helpdesk, Planning, Appointments",
+      "features": [
+        "Email/Automation/Social/SMS Marketing",
+        "Events",
+        "Surveys; Project",
+        "Timesheets",
+        "Field Service",
+        "Helpdesk",
+        "Planning",
+        "Appointments"
+      ]
+    },
+    {
+      "slug": "website-and-productivity",
+      "label": "Website & Productivity",
+      "detail": "Website/CMS, eCommerce, Blog/Forum, eLearning, Live Chat; Discuss, Knowledge, Approvals, IoT, **Studio (no-code customization)**",
+      "features": [
+        "Website/CMS",
+        "eCommerce",
+        "Blog/Forum",
+        "eLearning",
+        "Live Chat; Discuss",
+        "Knowledge",
+        "Approvals",
+        "IoT",
+        "**Studio (no-code customization)**"
+      ]
+    }
+  ]
+}
