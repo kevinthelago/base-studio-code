@@ -71,18 +71,26 @@ export async function rustLayout(
   edges: Uint32Array,
   opts: RustLayoutOpts = {},
 ): Promise<RustLayout> {
-  const invoke = (globalThis as { __TAURI_INTERNALS__?: { invoke: (c: string, a: unknown) => Promise<unknown> } })
-    .__TAURI_INTERNALS__?.invoke;
+  const invoke = (globalThis as {
+    __TAURI_INTERNALS__?: { invoke: (c: string, a: unknown, o?: unknown) => Promise<unknown> };
+  }).__TAURI_INTERNALS__?.invoke;
   if (!invoke) throw new Error("graph_layout: no Tauri IPC (running outside the app shell)");
-  const res = await invoke("graph_layout", {
-    nodeCount,
-    // A typed array does not survive the IPC boundary as one; the command takes a plain number list.
-    edges: Array.from(edges),
-    spacingX: opts.spacingX,
-    spacingY: opts.spacingY,
-    passes: opts.passes,
-    noCache: opts.noCache,
-  });
+  // THE EDGE LIST IS THE BODY, not an argument. `Array.from` used to sit here to feed JSON, and it was
+  // 38 ms of the 226 ms round trip at 600,000 edges — pure transport tax on the way to a 256 ms layout
+  // of a graph three times larger. A `Uint8Array` body crosses as bytes and is 16 MB at 2M edges where
+  // the JSON was ~40 MB of text plus a parse.
+  //
+  // `edges.buffer` is NOT used directly: a view may be a window onto a larger buffer (`subarray`), and
+  // sending the whole buffer would ship a longer edge list than the caller passed.
+  const body = new Uint8Array(edges.buffer, edges.byteOffset, edges.byteLength);
+  // The scalars ride as headers, so the body stays nothing but edges. Header values are strings, and an
+  // absent one is the command's documented default — so an undefined option is simply not sent.
+  const headers: Record<string, string> = { "x-node-count": String(nodeCount) };
+  if (opts.spacingX !== undefined) headers["x-spacing-x"] = String(opts.spacingX);
+  if (opts.spacingY !== undefined) headers["x-spacing-y"] = String(opts.spacingY);
+  if (opts.passes !== undefined) headers["x-passes"] = String(opts.passes);
+  if (opts.noCache !== undefined) headers["x-no-cache"] = String(opts.noCache);
+  const res = await invoke("graph_layout", body, { headers });
   if (!(res instanceof ArrayBuffer)) {
     // The whole reason this command exists is that it does NOT come back as JSON. If it ever does, the
     // transport regressed to the thing it was built to avoid, and that must be loud.
